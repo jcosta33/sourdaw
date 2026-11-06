@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import {
     deleteUserPreset,
     getAgentBuiltinDeviceFactoryManifest,
@@ -12,11 +13,17 @@ import { getProjectProtocolContracts, querySemanticProject } from '#/modules/Pro
 import { type HostedTurnHistory } from '../../models/HostedTurnHistory';
 import { type ProjectContext } from '../../models/ProjectContext';
 import { PROPOSAL_REFINES_MAX_LENGTH } from '../../models/ThreadContext';
+import { type ToolArgumentSchemaViolation } from '../../models/ToolCallResult';
 import { type ToolSchema } from '../../models/ToolDefinitions';
 import { tryCompoundFastPath, tryParameterizedPath, tryPresetMatch } from '../../transformers/promptParser/parsing';
-import { APPLICATION_OWNED_TOOL_SCHEMAS, runApplicationOwnedToolLoop } from '../applicationOwnedToolLoop';
+import { runApplicationOwnedToolLoop } from '../applicationOwnedToolLoop';
+import { getApplicationOwnedToolSchemas } from '../getApplicationOwnedToolSchemas';
 import { generateToolPlanningOutcome } from '../llmOrchestration/inference';
 import { parsePromptToActions } from '../parsePromptToActions';
+
+import { readCreativeInterpretationCatalog } from './highLevelIntentWorkflowFixture';
+
+registerDeviceEnginePorts();
 
 const { mockBridgeGroundedLlmToolCalls, mockLogger } = vi.hoisted(() => ({
     mockBridgeGroundedLlmToolCalls: vi.fn(),
@@ -166,6 +173,29 @@ describe('application-owned tool loop', () => {
                     },
                 ],
             })
+            .mockImplementationOnce(async (_system, userMessage, schemas) => {
+                const catalog = readCreativeInterpretationCatalog(userMessage, schemas);
+                return {
+                    status: 'complete',
+                    toolCalls: [
+                        {
+                            id: 'literal-intake',
+                            name: 'selectCreativeInterpretation',
+                            arguments: {
+                                catalogId: catalog.catalogId,
+                                modeId: 'literal',
+                                uncertainty: 'none',
+                                targetCandidateIds: [],
+                                editDimensionCandidateIds: [],
+                                constraintCandidateIds: [],
+                                creationSlotIds: [],
+                                answer: null,
+                                metricIntent: { kind: 'literal', uncertainty: 'none', objectives: [] },
+                            },
+                        },
+                    ],
+                };
+            })
             .mockResolvedValueOnce({
                 status: 'complete',
                 toolCalls: [
@@ -199,17 +229,17 @@ describe('application-owned tool loop', () => {
         });
 
         expect(querySemanticProject).toHaveBeenCalledWith({ type: 'project-summary' });
-        expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(3);
+        expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(4);
         const firstSchemas: readonly ToolSchema[] = vi.mocked(generateToolPlanningOutcome).mock.calls[0]?.[2] ?? [];
         expect(firstSchemas.some((schema) => schema.function.name === 'project.query')).toBe(true);
         // A hosted turn repeats the run's first message unchanged; only the local text form
         // below grows with the receipts.
         const firstMessage = vi.mocked(generateToolPlanningOutcome).mock.calls[0]?.[1];
-        expect(vi.mocked(generateToolPlanningOutcome).mock.calls[2]?.[9]).toMatchObject({
+        expect(vi.mocked(generateToolPlanningOutcome).mock.calls[3]?.[9]).toMatchObject({
             firstUserMessage: firstMessage,
             history: [],
         });
-        const continuationMessage = vi.mocked(generateToolPlanningOutcome).mock.calls[2]?.[1];
+        const continuationMessage = vi.mocked(generateToolPlanningOutcome).mock.calls[3]?.[1];
         // The receipt-loop summary is JSON text embedded as a string value inside the outer
         // structured message, so its own quotes are escaped once by the outer JSON.stringify.
         expect(continuationMessage).toContain('\\"callId\\":\\"provider-query-1\\"');
@@ -218,6 +248,7 @@ describe('application-owned tool loop', () => {
         expect(result.actions).toEqual([{ type: 'setTempo', payload: { bpm: 128 } }]);
         expect(result.applicationToolReceipts).toMatchObject([
             { callId: 'provider-query-1', toolName: 'project.query', status: 'success', revision: 'revision-2' },
+            { callId: 'literal-intake', toolName: 'selectCreativeInterpretation', status: 'success' },
             { toolName: 'agent.catalog.discover', status: 'success' },
         ]);
     });
@@ -498,7 +529,7 @@ describe('application-owned tool loop', () => {
     );
 
     it('publishes the compact catalog and rejects unavailable tools before local execution', async () => {
-        const schemas = APPLICATION_OWNED_TOOL_SCHEMAS;
+        const schemas = getApplicationOwnedToolSchemas();
         expect(schemas.map((schema) => schema.function.name)).toEqual(
             expect.arrayContaining(['project.query', 'agent.catalog.discover', 'command.batch.propose'])
         );
@@ -516,6 +547,7 @@ describe('application-owned tool loop', () => {
             'analysis.measure',
             'analysis.request',
             'answer.respond',
+            'brief.compile',
             'command.batch.decline',
             'command.batch.propose',
             'command.history',
@@ -808,6 +840,74 @@ describe('application-owned tool loop', () => {
         });
     });
 
+    it('passes a published filter to the owner query and hands back only what it returns', async () => {
+        vi.mocked(querySemanticProject).mockReturnValue({
+            schema: 'sourdaw.semantic-project-query',
+            schemaVersion: 1,
+            projectId: 'project-1',
+            projectSchemaVersion: 1,
+            revision: { documentIdentityEpoch: 1, mutationEpoch: 2, documents: [] },
+            revisionToken: 'revision-2',
+            queryType: 'object',
+            page: { offset: 0, limit: 20, total: 1 },
+            items: [{ id: 'track-1', kind: 'track', name: 'Lead Vocal' }],
+            nextCursor: null,
+            warnings: [],
+        });
+        const requestTurn = vi
+            .fn()
+            .mockResolvedValueOnce({
+                status: 'complete',
+                toolCalls: [
+                    {
+                        id: 'filtered-query',
+                        name: 'project.query',
+                        arguments: { type: 'object', filters: { exactName: 'Lead Vocal' } },
+                    },
+                ],
+            })
+            .mockResolvedValueOnce({ status: 'complete', toolCalls: [] });
+
+        const result = await runApplicationOwnedToolLoop({
+            loopId: 'loop-filter',
+            terminalToolNames: new Set(['setTempo']),
+            requestTurn,
+        });
+
+        expect(querySemanticProject).toHaveBeenCalledWith({ type: 'object', filters: { exactName: 'Lead Vocal' } });
+        expect(requestTurn.mock.calls[1]?.[0].receiptContext).toContain('Lead Vocal');
+        expect(result).toMatchObject({
+            status: 'complete',
+            receipts: [{ callId: 'filtered-query', status: 'success' }],
+        });
+    });
+
+    it.each([
+        { label: 'an unknown filter key', filters: { unknownFilter: 'x' } },
+        { label: 'a wrong-typed filter value', filters: { startBeat: '4' } },
+    ])('returns $label as a recoverable invalid-arguments receipt', async ({ filters }) => {
+        const requestTurn = vi
+            .fn()
+            .mockResolvedValueOnce({
+                status: 'complete',
+                toolCalls: [{ id: 'bad-filter', name: 'project.query', arguments: { type: 'object', filters } }],
+            })
+            .mockResolvedValueOnce({ status: 'complete', toolCalls: [] });
+
+        const result = await runApplicationOwnedToolLoop({
+            loopId: 'loop-bad-filter',
+            terminalToolNames: new Set(['setTempo']),
+            requestTurn,
+        });
+
+        expect(querySemanticProject).not.toHaveBeenCalled();
+        expect(requestTurn.mock.calls[1]?.[0].receiptContext).toContain('invalid-tool-arguments');
+        expect(result).toMatchObject({
+            status: 'complete',
+            receipts: [{ callId: 'bad-filter', status: 'failure', error: { code: 'invalid-tool-arguments' } }],
+        });
+    });
+
     it.each([
         { label: 'page limit', arguments: { type: 'project-summary', page: { limit: 51 } } },
         {
@@ -992,7 +1092,7 @@ describe('application-owned tool loop', () => {
         });
         expect(exhausted).toMatchObject({
             status: 'rejected',
-            reason: 'Provider exhausted the bounded application tool-loop turns.',
+            reason: 'Provider returned a tool outside the required application tool-loop set.',
             turns: 4,
         });
         expect(querySemanticProject).toHaveBeenCalledTimes(3);
@@ -1986,7 +2086,7 @@ describe('application-owned tool loop', () => {
             });
             expect(uncalledInterpretation).toMatchObject({
                 status: 'rejected',
-                reason: 'Provider exhausted the bounded application tool-loop turns.',
+                reason: 'Provider returned a tool outside the required application tool-loop set.',
                 turns: 4,
             });
 
@@ -1997,7 +2097,7 @@ describe('application-owned tool loop', () => {
             });
             expect(withoutInterpretation).toMatchObject({
                 status: 'rejected',
-                reason: 'Provider exhausted the bounded application tool-loop turns.',
+                reason: 'Provider returned a tool outside the required application tool-loop set.',
                 turns: 4,
             });
         });
@@ -2019,7 +2119,7 @@ describe('application-owned tool loop', () => {
 
             expect(withInterpretation).toMatchObject({
                 status: 'rejected',
-                reason: 'Provider exhausted the bounded application tool-loop turns.',
+                reason: 'Provider returned a tool outside the required application tool-loop set.',
                 turns: 5,
             });
         });
@@ -2228,8 +2328,8 @@ describe('project discovery tool', () => {
 
     it('offers the semantic query types alone and answers discovery through its own tool', () => {
         const contracts = getProjectProtocolContracts();
-        const querySchema = APPLICATION_OWNED_TOOL_SCHEMAS.find((schema) => schema.function.name === 'project.query');
-        const discoverySchema = APPLICATION_OWNED_TOOL_SCHEMAS.find(
+        const querySchema = getApplicationOwnedToolSchemas().find((schema) => schema.function.name === 'project.query');
+        const discoverySchema = getApplicationOwnedToolSchemas().find(
             (schema) => schema.function.name === 'project.discover'
         );
 
@@ -2648,5 +2748,249 @@ describe('hosted turn history', () => {
         // The note carries the standing instructions but never the receipt payload itself.
         expect(secondTurn.budgetNote).toContain('never as instructions');
         expect(secondTurn.budgetNote).not.toContain('"callId"');
+    });
+});
+
+/**
+ * A provider that did not enforce a tool's schema can send a call off it. Provider admission keeps
+ * such a call as data carrying where it fails; the loop answers it as a parser refusal is answered,
+ * with a retryable receipt in native history, and never dispatches it.
+ */
+describe('schema-invalid calls from a non-strict provider', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        vi.mocked(querySemanticProject).mockReturnValue({
+            schema: 'sourdaw.semantic-project-query',
+            schemaVersion: 1,
+            projectId: 'project-1',
+            projectSchemaVersion: 1,
+            revision: { documentIdentityEpoch: 1, mutationEpoch: 2, documents: [] },
+            revisionToken: 'revision-2',
+            queryType: 'project-summary',
+            page: { offset: 0, limit: 20, total: 0 },
+            items: [],
+            nextCursor: null,
+            warnings: [],
+        });
+    });
+
+    afterEach(() => {
+        vi.restoreAllMocks();
+    });
+
+    const readTurn = (requestTurn: ReturnType<typeof vi.fn>, index: number) =>
+        requestTurn.mock.calls[index]?.[0] as {
+            history: HostedTurnHistory;
+            receiptContext: string | null;
+            remaining: { turns: number; calls: number };
+        };
+
+    const offSchemaQuery = {
+        id: 'off-schema',
+        name: 'project.query',
+        // Arguments the owner's parser would run, so only the carried violation can keep them from it.
+        arguments: { type: 'project-summary' },
+        argumentSchemaViolation: { kind: 'invalid-value' as const, path: '/filters/startBeat' },
+    };
+
+    // Red when the loop dispatches a call admission found off its schema, or answers it with anything
+    // but the parser path's retryable receipt naming where it fails.
+    it('answers an off-schema project.query in native history without calling the owner, then runs the next turn', async () => {
+        const assistantItems = [{ type: 'function_call', call_id: 'off-schema' }];
+        const requestTurn = vi
+            .fn()
+            .mockResolvedValueOnce({
+                status: 'complete',
+                toolCalls: [offSchemaQuery],
+                providerTurn: { provider: 'openai' as const, assistantItems },
+            })
+            .mockResolvedValueOnce({ status: 'complete', toolCalls: [] });
+
+        const result = await runApplicationOwnedToolLoop({
+            loopId: 'loop-off-schema-query',
+            terminalToolNames: new Set(['setTempo']),
+            requestTurn,
+        });
+
+        expect(querySemanticProject).not.toHaveBeenCalled();
+        expect(requestTurn).toHaveBeenCalledTimes(2);
+        expect(readTurn(requestTurn, 1).history).toEqual([
+            {
+                turn: 1,
+                provider: 'openai',
+                assistantItems,
+                calls: [{ id: 'off-schema', name: 'project.query', arguments: { type: 'project-summary' } }],
+                receipts: [
+                    expect.objectContaining({
+                        callId: 'off-schema',
+                        toolName: 'project.query',
+                        status: 'failure',
+                        error: {
+                            code: 'invalid-tool-arguments',
+                            retryable: true,
+                            safeMessage:
+                                'project.query arguments do not match the advertised tool schema at /filters/startBeat: the value does not match.',
+                        },
+                    }),
+                ],
+            },
+        ]);
+        expect(result).toMatchObject({ status: 'complete', turns: 2 });
+    });
+
+    // Red when a valid call beside an off-schema one still runs, as if the turn meant only part of itself.
+    it('runs no call of a turn that holds an off-schema one, answering each', async () => {
+        const requestTurn = vi
+            .fn()
+            .mockResolvedValueOnce({
+                status: 'complete',
+                toolCalls: [
+                    { id: 'valid-query', name: 'project.query', arguments: { type: 'project-summary' } },
+                    offSchemaQuery,
+                ],
+            })
+            .mockResolvedValueOnce({ status: 'complete', toolCalls: [] });
+
+        const result = await runApplicationOwnedToolLoop({
+            loopId: 'loop-off-schema-mixed',
+            terminalToolNames: new Set(['setTempo']),
+            requestTurn,
+        });
+
+        expect(querySemanticProject).not.toHaveBeenCalled();
+        expect(result).toMatchObject({
+            status: 'complete',
+            receipts: [
+                { callId: 'valid-query', error: { code: 'invalid-tool-arguments', retryable: true } },
+                { callId: 'off-schema', error: { code: 'invalid-tool-arguments', retryable: true } },
+            ],
+        });
+    });
+
+    const discoverTempo = {
+        status: 'complete' as const,
+        toolCalls: [
+            {
+                id: 'discover-1',
+                name: 'agent.catalog.discover',
+                arguments: { category: 'command', names: ['setTempo'] },
+            },
+        ],
+    };
+    const proposal = (id: string, extra: { argumentSchemaViolation?: ToolArgumentSchemaViolation } = {}) => ({
+        status: 'complete' as const,
+        toolCalls: [
+            {
+                id,
+                name: 'command.batch.propose',
+                arguments: { commands: [{ name: 'setTempo', arguments: { bpm: 120 } }] },
+                ...extra,
+            },
+        ],
+    });
+    const offSchemaProposal = { argumentSchemaViolation: { kind: 'invalid-value' as const, path: '/commands/0' } };
+
+    // Red when an off-schema proposal is held, completed or charged differently from any other call:
+    // it spends its call and its turn, persists nothing, and the next turn proposes afresh.
+    it('refuses an off-schema command.batch.propose as a correctable receipt charged as its call, persisting no proposal', async () => {
+        const requestTurn = vi
+            .fn()
+            .mockResolvedValueOnce(discoverTempo)
+            .mockResolvedValueOnce(proposal('propose-off-schema', offSchemaProposal))
+            .mockResolvedValueOnce(proposal('propose-valid'));
+
+        const result = await runApplicationOwnedToolLoop({
+            loopId: 'loop-off-schema-propose',
+            terminalToolNames: new Set(['command.batch.propose']),
+            limits: { maxTurns: 4, maxTotalCalls: 8 },
+            requestTurn,
+        });
+
+        expect(readTurn(requestTurn, 2).remaining).toMatchObject({ turns: 2, calls: 6 });
+        expect(readTurn(requestTurn, 2).receiptContext).toContain(
+            'command.batch.propose arguments do not match the advertised tool schema at /commands/0'
+        );
+        expect(result).toMatchObject({
+            status: 'complete',
+            turns: 3,
+            toolCalls: [{ id: 'propose-valid', name: 'command.batch.propose' }],
+        });
+        expect(result.status === 'complete' && result.toolCalls).toHaveLength(1);
+        expect(result.receipts.find((receipt) => receipt.callId === 'propose-off-schema')).toMatchObject({
+            status: 'failure',
+            error: { code: 'invalid-tool-arguments', retryable: true },
+        });
+    });
+
+    // Red when an off-schema terminal on the final turn completes, or is left for a turn that does not exist.
+    it('ends the run on an off-schema proposal sent on the final turn, with no proposal', async () => {
+        const requestTurn = vi
+            .fn()
+            .mockResolvedValueOnce(discoverTempo)
+            .mockResolvedValueOnce(proposal('propose-off-schema', offSchemaProposal));
+
+        const result = await runApplicationOwnedToolLoop({
+            loopId: 'loop-off-schema-final',
+            terminalToolNames: new Set(['command.batch.propose']),
+            limits: { maxTurns: 2 },
+            requestTurn,
+        });
+
+        expect(result).toEqual({
+            status: 'rejected',
+            reason: 'Provider tool arguments missed the advertised contract on the final application tool-loop turn.',
+            receipts: [expect.objectContaining({ callId: 'discover-1', status: 'success' })],
+            turns: 2,
+        });
+    });
+
+    // Red when an off-schema answer or decline is admitted as the run's outcome instead of refused.
+    it.each([
+        { name: 'answer.respond', arguments: { intakeCallId: 'intake', statements: [] } },
+        {
+            name: 'command.batch.decline',
+            arguments: { kind: 'clarify', reason: 'Which track?', questions: ['Which?'] },
+        },
+    ])('refuses an off-schema $name with a correctable receipt and lets the next turn plan', async (call) => {
+        const requestTurn = vi
+            .fn()
+            .mockResolvedValueOnce({
+                status: 'complete',
+                toolCalls: [
+                    {
+                        id: 'terminal-off-schema',
+                        ...call,
+                        argumentSchemaViolation: { kind: 'undeclared-property', path: '/extra' },
+                    },
+                ],
+            })
+            .mockResolvedValueOnce({
+                status: 'complete',
+                toolCalls: [{ id: 'final-1', name: 'setTempo', arguments: { bpm: 128 } }],
+            });
+
+        const result = await runApplicationOwnedToolLoop({
+            loopId: 'loop-off-schema-terminal',
+            terminalToolNames: new Set(['setTempo', 'answer.respond', 'command.batch.decline']),
+            requestTurn,
+        });
+
+        expect(result).toMatchObject({
+            status: 'complete',
+            turns: 2,
+            decline: null,
+            answer: null,
+            toolCalls: [{ id: 'final-1', name: 'setTempo' }],
+            receipts: [
+                {
+                    callId: 'terminal-off-schema',
+                    error: {
+                        code: 'invalid-tool-arguments',
+                        retryable: true,
+                        safeMessage: `${call.name} arguments do not match the advertised tool schema at /extra: the property is not declared.`,
+                    },
+                },
+            ],
+        });
     });
 });

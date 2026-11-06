@@ -1,5 +1,9 @@
-@import 'tailwindcss';
+/* Class names come only from the app: its sources and the HTML entry. Automatic detection would
+   also scan scripts, docs, and tool configuration that never reach the browser. */
+@import 'tailwindcss' source('../');
 @import './tokens.css';
+
+@source '../../index.html';
 
 @layer base {
     * {
@@ -144,7 +148,6 @@
     .transport-bar__project-name-input {
         width: 100%;
     }
-
 }
 
 @container (max-width: 739px) {

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { getPluginById } from '#/modules/Arrangement/models/DeviceParameter';
 import { getPresetContractVersion } from '#/modules/Arrangement/models/GetPresetContractVersion';
 import { MIX_RECIPE_ROLES } from '#/modules/Arrangement/models/MixRecipe';
@@ -7,6 +8,8 @@ import { type SoundPreset } from '#/modules/Arrangement/models/SoundPreset';
 import { buildMixRecipeCatalog } from '#/modules/Arrangement/repositories/mixRecipes/mixRecipeCatalog';
 import { buildPresetMixRecipes } from '#/modules/Arrangement/services/buildPresetMixRecipes';
 import { getFactoryPresets, getMixRecipeCatalog } from '#/modules/Arrangement/useCases';
+
+registerDeviceEnginePorts();
 
 function chainPreset(overrides: Partial<SoundPreset> = {}): SoundPreset {
     return {
@@ -84,13 +87,19 @@ describe('buildPresetMixRecipes', () => {
         expect(recipe?.title).toContain('Factory preset');
     });
 
-    // Red when a preset with no resolvable descriptor or no role is published anyway.
+    // Red when a preset with no resolvable descriptor is published anyway.
     it.each([
         ['tags that name no descriptor', chainPreset({ tags: ['vocal', 'channel-strip'] })],
-        ['tags and a category that name no role', chainPreset({ tags: ['glue', 'compression'] })],
         ['only a corrective descriptor', chainPreset({ tags: ['vocal', 'thin', 'muddy'] })],
     ])('does not publish a preset with %s', (_label, preset) => {
         expect(buildPresetMixRecipes([preset])).toEqual([]);
+    });
+
+    // Red when a generic processor is dropped, or given a role neither its category nor its tags name.
+    it('publishes a preset whose tags and category name no role with no role', () => {
+        const recipes = buildPresetMixRecipes([chainPreset({ tags: ['glue', 'compression'] })]);
+
+        expect(recipes.map((recipe) => [recipe.id, recipe.roles])).toEqual([['preset:test-vocal-chain:glued', []]]);
     });
 
     it('takes a role from the category when the category is itself a role', () => {

@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './e2eTest';
 
 import type { AutomationLane } from '../../src/modules/Automation/models/Automation';
 

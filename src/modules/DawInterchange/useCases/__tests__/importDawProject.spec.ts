@@ -41,19 +41,8 @@ vi.mock('../parseDawProject', () => ({
 // Keep the real ZIP guard and XML parser. jsdom has no Worker, so only the
 // worker transport is replaced with the production extraction core.
 vi.mock('../extractDawProjectZipEntries', async () => {
-    const { runDawProjectZipWorkerRequest } = await import('../runDawProjectZipWorkerRequest');
-    return {
-        extractDawProjectZipEntries: (
-            input: Parameters<typeof import('../extractDawProjectZipEntries').extractDawProjectZipEntries>[0]
-        ) =>
-            Promise.resolve({
-                entries: runDawProjectZipWorkerRequest({
-                    bytes: input.bytes.slice().buffer,
-                    phase: input.phase,
-                    restrictLimits: input.restrictLimits,
-                }),
-            }),
-    };
+    const { extractDawProjectZipEntriesInProcess } = await import('../../testing/extractDawProjectZipEntriesInProcess');
+    return { extractDawProjectZipEntries: extractDawProjectZipEntriesInProcess };
 });
 
 const mockTransaction = { canActivate: () => true };
@@ -185,6 +174,17 @@ describe('importDawProject', () => {
         await importDawProject({ buffer: new ArrayBuffer(8), fileName: 'test.dawproject', shouldProceed });
 
         expect(mocks.applyImportedProjectData).toHaveBeenCalledWith(expect.objectContaining({ shouldProceed }));
+    });
+
+    it("hands the replacement the Don't Save choice for the outgoing project", async () => {
+        vi.clearAllMocks();
+        setupHappyPath();
+
+        await importDawProject({ buffer: new ArrayBuffer(8), fileName: 'test.dawproject', outgoingProject: 'discard' });
+
+        expect(mocks.applyImportedProjectData).toHaveBeenCalledWith(
+            expect.objectContaining({ outgoingProject: 'discard' })
+        );
     });
 
     it('does not notify success when apply returns false', async () => {

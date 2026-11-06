@@ -991,6 +991,29 @@ describe('deleteRemoteBranch', () => {
         expect(deleteRemoteBranch('gone-branch', runner)).toBe('already-gone');
     });
 
+    it('should resolve already-gone when the runner throws an HTTP 404 Reference-does-not-exist error', () => {
+        const runner = (): string => {
+            throw new Error('gh: Reference does not exist (HTTP 404)');
+        };
+        expect(deleteRemoteBranch('raced-branch', runner)).toBe('already-gone');
+    });
+
+    it('should reject an HTTP 404 Not Found, naming the branch and carrying the original error as cause', () => {
+        const original = new Error('gh: Not Found (HTTP 404)');
+        const runner = (): string => {
+            throw original;
+        };
+        let caught: unknown;
+        try {
+            deleteRemoteBranch('unreachable-branch', runner);
+        } catch (error) {
+            caught = error;
+        }
+        expect(caught).toBeInstanceOf(Error);
+        expect((caught as Error).message).toContain('unreachable-branch');
+        expect((caught as Error).cause).toBe(original);
+    });
+
     it('should reject with an error naming the branch and carrying the original error as cause on any other failure', () => {
         const original = new Error('gh: some other failure (HTTP 404)');
         const runner = (): string => {

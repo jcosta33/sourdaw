@@ -1,8 +1,10 @@
 import { type AppAction, type RetiredTakeLaneSnapshot } from '#/utils/handlerContract';
+import { valuesEqual } from '#/utils/structuralEquality';
 
 import { getTrackStoreState } from '../getTrackStoreState';
 
 import { projectedTakeLaneOwners } from './projectedTakeLaneOwners';
+import { regionsOverlap } from './regionsOverlap';
 
 /**
  * A captured lane can be absent or replaced by a new lane for its track. Its
@@ -31,7 +33,7 @@ export function retiredTakeLaneOwnersMatchStore(
             }
         }
     }
-    return retiredLanes.every(({ lane, retiredTakeIds }) => {
+    return retiredLanes.every(({ lane, retiredTakeIds, retiredBaseGapAudioSources }) => {
         const target = lanes.find((live) => live.id === lane.id || live.trackId === lane.trackId);
         const retiredTakes = lane.takes.filter((take) => retiredTakeIds?.includes(take.id));
         return (
@@ -39,6 +41,15 @@ export function retiredTakeLaneOwnersMatchStore(
             // restore instead of consuming history with only some takes back.
             (retiredTakes.length === 0 || hostIds.has(lane.trackId)) &&
             lanes.every((live) => live.id !== lane.id || live.trackId === lane.trackId) &&
+            (retiredBaseGapAudioSources ?? []).every(
+                (captured) =>
+                    !(target?.baseGapAudioSources ?? []).some(
+                        (tile) =>
+                            tile.clipId === captured.clipId &&
+                            regionsOverlap(tile, captured) &&
+                            !valuesEqual(tile, captured)
+                    )
+            ) &&
             retiredTakes.every((captured) =>
                 lanes.every((live) =>
                     live.takes.every(

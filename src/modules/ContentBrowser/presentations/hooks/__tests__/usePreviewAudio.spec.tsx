@@ -1,19 +1,18 @@
-import { renderHook, act } from '@testing-library/react';
+import { renderHook, act, waitFor, cleanup } from '@testing-library/react';
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 
-const { mockGetAudioContext } = vi.hoisted(() => ({
-    mockGetAudioContext: vi.fn(),
-}));
+type Engine = typeof import('#/modules/AudioEngine/useCases').audioEngine;
+let usePreviewAudio: typeof import('../usePreviewAudio').usePreviewAudio;
+const fixture = { engine: null as Engine | null };
 
-vi.mock('#/modules/AudioEngine/useCases', () => ({
-    getAudioContext: mockGetAudioContext,
-}));
-
-import { usePreviewAudio } from '../usePreviewAudio';
-
-function makeMockContext() {
+async function makeMockContext() {
     const gain = {
-        gain: { value: 1, setValueAtTime: vi.fn(), exponentialRampToValueAtTime: vi.fn() },
+        gain: {
+            value: 1,
+            setValueAtTime: vi.fn(),
+            cancelScheduledValues: vi.fn(),
+            exponentialRampToValueAtTime: vi.fn(),
+        },
         connect: vi.fn(),
         disconnect: vi.fn(),
     };
@@ -55,30 +54,51 @@ function makeMockContext() {
         stop: vi.fn(),
         onended: null as (() => void) | null,
     };
+    const silentNode = () => ({ connect: vi.fn(), disconnect: vi.fn(), fftSize: 256, smoothingTimeConstant: 0.8 });
     const ctx = {
         state: 'running',
+        sampleRate: 48_000,
+        createAnalyser: silentNode,
+        createChannelSplitter: silentNode,
         currentTime: 0,
         resume: vi.fn().mockResolvedValue(undefined),
+        close: vi.fn().mockResolvedValue(undefined),
         destination: {},
         createBufferSource,
         createOscillator: vi.fn(() => oscillator),
         createGain: vi.fn(() => gain),
         decodeAudioData: vi.fn(() => Promise.resolve({} as AudioBuffer)),
     };
+    vi.stubGlobal(
+        'AudioContext',
+        vi.fn(function () {
+            return ctx;
+        })
+    );
+    fixture.engine = (await import('#/modules/AudioEngine/useCases')).audioEngine;
+    expect(fixture.engine.context).toBe(ctx);
+    usePreviewAudio = (await import('../usePreviewAudio')).usePreviewAudio;
     return { ctx, gain, source, sources, oscillator };
 }
 
 describe('usePreviewAudio', () => {
     beforeEach(() => {
+        vi.resetModules();
         vi.clearAllMocks();
     });
 
-    afterEach(() => {
+    afterEach(async () => {
+        await act(async () => {
+            cleanup();
+            await fixture.engine?.dispose();
+        });
+        fixture.engine = null;
         vi.restoreAllMocks();
+        vi.unstubAllGlobals();
     });
 
-    it('returns a PreviewHandle with playingId null initially', () => {
-        mockGetAudioContext.mockReturnValue(makeMockContext().ctx);
+    it('returns a PreviewHandle with playingId null initially', async () => {
+        await makeMockContext();
         const { result } = renderHook(() => usePreviewAudio());
         expect(result.current.playingId).toBeNull();
         expect(typeof result.current.play).toBe('function');
@@ -86,9 +106,8 @@ describe('usePreviewAudio', () => {
         expect(typeof result.current.playTone).toBe('function');
     });
 
-    it('sets playingId when playing a buffer', () => {
-        const { ctx, source } = makeMockContext();
-        mockGetAudioContext.mockReturnValue(ctx);
+    it('sets playingId when playing a buffer', async () => {
+        const { source } = await makeMockContext();
         const { result } = renderHook(() => usePreviewAudio());
         const buffer = { duration: 1 } as AudioBuffer;
         act(() => {
@@ -98,9 +117,8 @@ describe('usePreviewAudio', () => {
         expect(source.buffer).toBe(buffer);
     });
 
-    it('clears playingId on stop', () => {
-        const { ctx } = makeMockContext();
-        mockGetAudioContext.mockReturnValue(ctx);
+    it('clears playingId on stop', async () => {
+        await makeMockContext();
         const { result } = renderHook(() => usePreviewAudio());
         act(() => {
             result.current.play('sample-1', {} as AudioBuffer);
@@ -112,10 +130,9 @@ describe('usePreviewAudio', () => {
         expect(result.current.playingId).toBeNull();
     });
 
-    it('resumes the context if it is suspended', () => {
-        const { ctx } = makeMockContext();
+    it('resumes the context if it is suspended', async () => {
+        const { ctx } = await makeMockContext();
         ctx.state = 'suspended';
-        mockGetAudioContext.mockReturnValue(ctx);
         const { result } = renderHook(() => usePreviewAudio());
         act(() => {
             result.current.play('sample-1', {} as AudioBuffer);
@@ -123,9 +140,8 @@ describe('usePreviewAudio', () => {
         expect(ctx.resume).toHaveBeenCalled();
     });
 
-    it('plays a tone via oscillator', () => {
-        const { ctx, oscillator } = makeMockContext();
-        mockGetAudioContext.mockReturnValue(ctx);
+    it('plays a tone via oscillator', async () => {
+        const { ctx, oscillator } = await makeMockContext();
         const { result } = renderHook(() => usePreviewAudio());
         act(() => {
             result.current.playTone('tone-1', 440, 0.5);
@@ -136,9 +152,8 @@ describe('usePreviewAudio', () => {
         expect(oscillator.start).toHaveBeenCalled();
     });
 
-    it('stops the previous source when playing a new one', () => {
-        const { ctx, source } = makeMockContext();
-        mockGetAudioContext.mockReturnValue(ctx);
+    it('stops the previous source when playing a new one', async () => {
+        const { source } = await makeMockContext();
         const { result } = renderHook(() => usePreviewAudio());
         act(() => {
             result.current.play('sample-1', {} as AudioBuffer);
@@ -152,7 +167,7 @@ describe('usePreviewAudio', () => {
     });
 
     it('does not start audio source if stop() is called while decode is in-flight', async () => {
-        const { ctx, source } = makeMockContext();
+        const { ctx, source } = await makeMockContext();
         let resolveDecode!: (buffer: AudioBuffer) => void;
         ctx.decodeAudioData = vi.fn(
             () =>
@@ -160,7 +175,6 @@ describe('usePreviewAudio', () => {
                     resolveDecode = resolve;
                 })
         );
-        mockGetAudioContext.mockReturnValue(ctx);
 
         const { result } = renderHook(() => usePreviewAudio());
         const fakeFile = {
@@ -168,8 +182,7 @@ describe('usePreviewAudio', () => {
         } as unknown as File;
 
         const playPromise = result.current.playFile('sample1', fakeFile);
-        await Promise.resolve();
-        await Promise.resolve();
+        await waitFor(() => expect(ctx.decodeAudioData).toHaveBeenCalledTimes(1));
 
         // Call stop while decode is pending
         act(() => {
@@ -189,7 +202,7 @@ describe('usePreviewAudio', () => {
     });
 
     it('does not start audio source if unmounted while decode is in-flight', async () => {
-        const { ctx, source } = makeMockContext();
+        const { ctx, source } = await makeMockContext();
         let resolveDecode!: (buffer: AudioBuffer) => void;
         ctx.decodeAudioData = vi.fn(
             () =>
@@ -197,7 +210,6 @@ describe('usePreviewAudio', () => {
                     resolveDecode = resolve;
                 })
         );
-        mockGetAudioContext.mockReturnValue(ctx);
 
         const { result, unmount } = renderHook(() => usePreviewAudio());
         const fakeFile = {
@@ -205,8 +217,7 @@ describe('usePreviewAudio', () => {
         } as unknown as File;
 
         const playPromise = result.current.playFile('sample1', fakeFile);
-        await Promise.resolve();
-        await Promise.resolve();
+        await waitFor(() => expect(ctx.decodeAudioData).toHaveBeenCalledTimes(1));
 
         // Unmount while decode is pending
         unmount();
@@ -222,7 +233,7 @@ describe('usePreviewAudio', () => {
     });
 
     it('plays only the latest audition under reversed decode completion order', async () => {
-        const { ctx, source } = makeMockContext();
+        const { ctx, source } = await makeMockContext();
         let resolveDecode1!: (buffer: AudioBuffer) => void;
         let resolveDecode2!: (buffer: AudioBuffer) => void;
 
@@ -240,7 +251,6 @@ describe('usePreviewAudio', () => {
                         resolveDecode2 = resolve;
                     })
             );
-        mockGetAudioContext.mockReturnValue(ctx);
 
         const { result } = renderHook(() => usePreviewAudio());
         const fakeFile1 = {
@@ -251,12 +261,10 @@ describe('usePreviewAudio', () => {
         } as unknown as File;
 
         const playPromise1 = result.current.playFile('s1', fakeFile1);
-        await Promise.resolve();
-        await Promise.resolve();
+        await waitFor(() => expect(ctx.decodeAudioData).toHaveBeenCalledTimes(1));
 
         const playPromise2 = result.current.playFile('s2', fakeFile2);
-        await Promise.resolve();
-        await Promise.resolve();
+        await waitFor(() => expect(ctx.decodeAudioData).toHaveBeenCalledTimes(2));
 
         // Resolve decode 2 first
         const buffer2 = { id: 'buf2' } as unknown as AudioBuffer;
@@ -280,5 +288,35 @@ describe('usePreviewAudio', () => {
         expect(result.current.playingId).toBe('s2');
         expect(source.start).toHaveBeenCalledTimes(1);
         expect(ctx.createBufferSource).toHaveBeenCalledTimes(1);
+    });
+    it('an older decoded file cannot acquire sound over a newer exclusive gesture', async () => {
+        const { ctx } = await makeMockContext();
+        const decode = Promise.withResolvers<AudioBuffer>();
+        ctx.decodeAudioData.mockReturnValueOnce(decode.promise);
+        const { result } = renderHook(() => usePreviewAudio());
+        const file = { arrayBuffer: async () => new ArrayBuffer(8) } as unknown as File;
+        const pending = result.current.playFile('old-file', file);
+        await waitFor(() => expect(ctx.decodeAudioData).toHaveBeenCalledTimes(1));
+        let exclusive: ReturnType<Engine['beginExclusiveAudioPreviewIntent']> | undefined;
+        act(() => {
+            exclusive = fixture.engine?.beginExclusiveAudioPreviewIntent();
+        });
+        await act(async () => {
+            decode.resolve({} as AudioBuffer);
+            await pending;
+        });
+        expect(exclusive?.isCurrent()).toBe(true);
+        expect(ctx.createBufferSource).not.toHaveBeenCalled();
+        expect(result.current.playingId).toBeNull();
+    });
+
+    it('natural tone completion clears the playing identity without a second source stop', async () => {
+        const { oscillator } = await makeMockContext();
+        const { result } = renderHook(() => usePreviewAudio());
+        act(() => result.current.playTone('tone', 440, 0.5));
+        expect(oscillator.stop).toHaveBeenCalledTimes(1);
+        act(() => oscillator.onended?.());
+        expect(result.current.playingId).toBeNull();
+        expect(oscillator.stop).toHaveBeenCalledTimes(1);
     });
 });

@@ -8,16 +8,13 @@ Owns studio monitor output selection, monitor speaker calibration offsets, liste
 
 ## Public Contract Surface
 
-- **`useCases`**: `switchMonitor`, `toggleDim`, `toggleMono`, `getControlRoomHandlers`. (Internal use cases: `addMonitor`, `calibrateMonitor`, `createCueMix`, `deleteCueMix`, `getEffectiveVolume`, `setCueTrackLevel`, `setDimLevel`, `setMonitorVolume`, `setTalkbackLevel`, `toggleMute`, `toggleReference`, `toggleTalkback`).
-- **`stores`**: `controlRoomStore`, types `ControlRoomState`, `MonitorOutput`, `CueMix`.
-- **`events`**: None.
-- **`presentations/views`**: None.
-- **Handler maps**: `getControlRoomHandlers` (`handleSwitchMonitor`, `handleToggleControlRoomDim`, `handleToggleControlRoomMono`).
+Public surface: `useCases/index.ts`, `stores/index.ts`. The module exports no events or views, and most of its use cases are internal.
 
 ## Key Subsystems
 
 - **`stores/controlRoom.ts`**: Reactive state machine holding monitor speaker configurations, active monitor ID, monitoring volume (dB), dim attenuation level/active flag, mono monitoring status, reference audition toggle, cue mix definitions, and talkback level.
 - **`useCases/controlRoom/`**: State manipulation use cases and effective volume computation (`getEffectiveVolume = monitorVolume + (dimActive ? dimLevel : 0) + activeMonitor.gainDb + activeMonitor.calibrationDb`).
+- **`useCases/controlRoom/syncControlRoomMonitoring.ts`**: The only writer of the engine's monitoring insert. It applies the store's mono and dim to the listening path through AudioEngine's `setControlRoomMonitoring` on setup and on every store change; the dim level is folded to a linear gain here, so the engine never reads monitoring state. The shell's boot sequence subscribes it.
 - **`handlers/`**: Production command handlers translating UI/agent commands to control room state modifications.
 
 ## Invariants & Traps
@@ -30,5 +27,5 @@ Owns studio monitor output selection, monitor speaker calibration offsets, liste
 
 PR CI owns broader unit and crate suites. Locally run only the exact changed spec or filtered Rust test.
 
-- **Focused unit tests**: `pnpm test:run <changed-spec>`
+- **Focused unit tests**: `pnpm guard --profile focused -- pnpm test:run <changed-spec>`
 - PR CI checks module boundaries; inspect that result after cross-module changes.

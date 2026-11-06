@@ -1,7 +1,6 @@
-import { expect, test } from '@playwright/test';
-
 import { FADER_MAX_GAIN } from '../../src/utils/audioLevelLaw';
 
+import { expect, test } from './e2eTest';
 import { launch_from_template, launch_new_project, setupWorkspace } from './e2eUtils';
 
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
@@ -25,13 +24,13 @@ test.describe('Browser tabs deep', () => {
 
     test('Effects tab lists multiple effect categories', async ({ page }) => {
         const browser = page.getByRole('complementary', { name: 'Browser panel' });
-        await browser.getByRole('button', { name: 'Effects', exact: true }).click();
+        await browser.getByRole('tab', { name: 'Effects', exact: true }).click();
         expect(await browser.getByRole('button').count()).toBeGreaterThan(5);
     });
 
     test('Project tab shows project metadata', async ({ page }) => {
         const browser = page.getByRole('complementary', { name: 'Browser panel' });
-        await browser.getByRole('button', { name: 'Project', exact: true }).click();
+        await browser.getByRole('tab', { name: 'Project', exact: true }).click();
         // The Project tab surfaces project meta (name, created date, tuning).
         await expect(browser.getByText(/PROJECT META|Name|Created/i).first()).toBeVisible({ timeout: 5000 });
     });

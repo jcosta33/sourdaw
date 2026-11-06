@@ -1,11 +1,14 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { clampDeviceParamWrite, trackStore, type Device, type Track } from '#/modules/Arrangement/stores';
 
 import { audioEngine } from '../../../repositories/createWebAudioEngine';
 import { isDeviceCarriedByNativeSession } from '../../livePlayback/isDeviceCarriedByNativeSession';
 import { sendNativeDeviceParameters } from '../../livePlayback/sendNativeDeviceParameters';
 import { updateDeviceParam } from '../updateDeviceParam';
+
+registerDeviceEnginePorts();
 
 vi.mock('../../../repositories/createWebAudioEngine', () => ({
     audioEngine: {

@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { getProductionCommandHandlerMaps } from '#/app/getProductionCommandHandlerMaps';
+import { registerKernelPorts } from '#/app/registerKernelPorts';
 import { Container } from '#/infra/di/Container';
 import { createEventBus } from '#/infra/events/createEventBus';
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
@@ -40,6 +41,8 @@ import { playMacro } from '../playback';
 // resolution the fold predicate uses — or every later lane-referencing step
 // addresses a phantom. These rows drive the exact recorded macro through the
 // real handler registry, real dispatch and real stores.
+
+registerKernelPorts();
 
 type NotificationEvents = {
     'ui.notify': NotifyPayload;

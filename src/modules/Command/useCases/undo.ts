@@ -2,16 +2,18 @@ import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { AppActionCommittedError, AppActionConflictError } from '../errors/AppActionExecutionError';
 import { isActionEntry, type UndoEntry } from '../models/UndoEntry';
+import { isInertUndoUnit, newestUndoUnit, undoEntryLabel } from '../models/UndoUnit';
 import { undoStore } from '../stores/undoStore';
 
 import { executeActionGroupUndo, type UndoOutcome } from './executeActionGroupUndo';
 import { executeAppAction, type ExecuteAppActionOptions } from './executeAppAction';
 import { getCommandHandler } from './getCommandHandler';
-import { getLegacyTrimInverseReplayFailure } from './getLegacyTrimInverseReplayFailure';
+import { getLegacyInverseReplayFailure } from './getLegacyInverseReplayFailure';
 import { getProjectMutationAdmissionFailure } from './getProjectMutationAdmissionFailure';
 import { normalizeLegacyLoopAnchorInverse } from './normalizeLegacyLoopAnchorInverse';
 import { normalizeSingletonUndoGroups } from './normalizeSingletonUndoGroups';
 import { runUndoRedoExclusive } from './undoRedo';
+import { runPreparedUndoReplay } from './undoReplayPreparationPort';
 import { undoTreeMoveTo } from './undoTree/undoTreeMoveTo';
 
 /** What one `undo()` call did to the entry that headed `past` when it began. */
@@ -29,10 +31,6 @@ export type UndoResult = {
 /** The undo entry now at the top of `past`, or `null` when `past` is empty. */
 function currentEntryId(past: readonly UndoEntry[]): string | null {
     return past.length > 0 ? past[past.length - 1]!.id : null;
-}
-
-function undoEntryLabel(entry: UndoEntry): string {
-    return entry.groupLabel || entry.label || (isActionEntry(entry) ? entry.action.type : 'action');
 }
 
 function notifyUndoConflict(label: string): void {
@@ -75,7 +73,11 @@ type ExecuteUndoInput = {
  * older undoable entries. Dropped inert entries never reach `future` — nothing
  * was undone, so redo must not re-apply their action.
  */
-async function executeUndo({ entry, runExecuteAppAction }: ExecuteUndoInput): Promise<UndoOutcome> {
+function executeUndo(input: ExecuteUndoInput): Promise<UndoOutcome> {
+    return runPreparedUndoReplay({ entries: [input.entry] }, () => applyUndo(input));
+}
+
+async function applyUndo({ entry, runExecuteAppAction }: ExecuteUndoInput): Promise<UndoOutcome> {
     if (entry.kind === 'callback') {
         entry.undo();
         return { status: 'undone' };
@@ -92,7 +94,7 @@ async function executeUndo({ entry, runExecuteAppAction }: ExecuteUndoInput): Pr
             skipMacroRecording: true,
         };
         if (inverseAction.type === 'trimClipStart' && inverseAction.payload.midiOffsetBeats === undefined) {
-            options.authorizeFirstHandler = () => getLegacyTrimInverseReplayFailure([inverseAction]);
+            options.authorizeFirstHandler = () => getLegacyInverseReplayFailure([inverseAction], 'undo');
         }
         await runExecuteAppAction(inverseAction, options);
         return { status: 'undone' };
@@ -121,19 +123,24 @@ type UndoCandidate = {
 };
 
 function takeCandidate(past: readonly UndoEntry[]): UndoCandidate | null {
-    if (past.length === 0) {
+    const unit = newestUndoUnit(past);
+    if (!unit) {
         return null;
     }
-    const head = past[past.length - 1]!;
-    if (!head.groupId) {
-        return { head, entries: [head], below: past.slice(0, -1) };
-    }
+    return { head: past[unit.last]!, entries: past.slice(unit.first), below: past.slice(0, unit.first) };
+}
 
-    let index = past.length - 1;
-    while (index >= 0 && past[index]!.groupId === head.groupId) {
-        index--;
+/** `past` with every fully inert unit at its top removed. Undoing one writes
+ *  nothing, so dropping it costs the user no undo; partially inert units stay. */
+function dropInertTopUnits(past: readonly UndoEntry[]): readonly UndoEntry[] {
+    let remaining = past;
+    for (;;) {
+        const top = takeCandidate(remaining);
+        if (!top || !isInertUndoUnit(top.entries)) {
+            return remaining;
+        }
+        remaining = top.below;
     }
-    return { head, entries: past.slice(index + 1), below: past.slice(0, index + 1) };
 }
 
 /** One member of a step target: an action entry whose inverse resolves to a
@@ -171,16 +178,6 @@ function canStepOverConflictOnto(candidate: UndoCandidate): boolean {
  */
 function isAtomicActionGroup(entries: readonly UndoEntry[]): boolean {
     return entries.every((entry) => isActionEntry(entry) && entry.inverseAction !== null);
-}
-
-/**
- * Whether the scan would drop this unit without running anything: every member
- * is an action entry without an `inverseAction`. A mixed unit still has a
- * member that writes (or a callback that runs), so only a fully inert unit can
- * be purged ahead of a blocked undo.
- */
-function isInertUnit(candidate: UndoCandidate): boolean {
-    return candidate.entries.every((entry) => isActionEntry(entry) && entry.inverseAction === null);
 }
 
 type CandidateOutcome =
@@ -300,9 +297,12 @@ type StepOverInput = {
 
 /**
  * One conflicted unit no longer wedges the whole history behind it (#2881): a
- * single step onto the unit directly beneath is attempted, gated by
- * `canStepOverConflictOnto`, and nothing further. One keystroke touches at most
- * two units (the conflicted head attempted, one step target undone) and emits at
+ * single step onto the first unit beneath that is not fully inert is attempted,
+ * gated by `canStepOverConflictOnto`, and nothing further. Fully inert units
+ * between the two are no step target — undoing one writes nothing — so they are
+ * dropped exactly as the head purge drops them, and stay dropped whether or not
+ * the step that follows is admitted. One keystroke touches at most two real
+ * units (the conflicted head attempted, one step target undone) and emits at
  * most two notifications (the conflict message plus the skip summary) — never an
  * unbounded scan. The conflicted unit stays at the head of `past`, retryable, so
  * `headConsumed` stays `false` and history sweeps still stop on it.
@@ -314,9 +314,10 @@ async function stepOverConflictedHeadOrSettle({
     retained,
     beneath,
 }: StepOverInput): Promise<UndoResult> {
-    const next = takeCandidate(beneath);
+    const beneathPastInert = dropInertTopUnits(beneath);
+    const next = takeCandidate(beneathPastInert);
     if (!next || !canStepOverConflictOnto(next)) {
-        return settleWithoutUndo({ initialPast, headId, retainedPast: [...beneath, ...retained] });
+        return settleWithoutUndo({ initialPast, headId, retainedPast: [...beneathPastInert, ...retained] });
     }
 
     const outcome = await undoCandidate(next);
@@ -331,8 +332,9 @@ async function stepOverConflictedHeadOrSettle({
         });
     }
     if (outcome.status === 'inert') {
-        // Unreachable — the gate admits only members carrying an inverse — but
-        // dropping an inert unit here matches the scan's own inert purge.
+        // Unreachable — fully inert units beneath were dropped above, and the
+        // gate admits only members carrying an inverse — but dropping an inert
+        // unit here matches the scan's own inert purge.
         return settleWithoutUndo({ initialPast, headId, retainedPast: [...next.below, ...retained] });
     }
 
@@ -363,18 +365,11 @@ async function undoImpl(stepOverConflicts: boolean): Promise<UndoResult> {
 
     const initialPast: readonly UndoEntry[] = initial.past;
     const headId = initialPast[initialPast.length - 1]!.id;
-    let past: readonly UndoEntry[] = initialPast;
 
     // Drop fully inert head units before anything can refuse (#2881): undoing
     // one writes nothing, and a dead row left above a blocked undo would hide
     // the real head's label from the notification that reports it.
-    while (past.length > 0) {
-        const inertHead = takeCandidate(past);
-        if (!inertHead || !isInertUnit(inertHead)) {
-            break;
-        }
-        past = inertHead.below;
-    }
+    let past = dropInertTopUnits(initialPast);
 
     // While project mutation admission fails, every inverse would refuse on
     // admission alone before any handler runs, so attempting one — or stepping
@@ -396,7 +391,8 @@ async function undoImpl(stepOverConflicts: boolean): Promise<UndoResult> {
     // A conflict no longer wedges everything beneath it (#2881) — for the
     // keystroke entry point. The conflicted unit stays retained at the head of
     // `past` — retryable, with `headConsumed: false` — and undo attempts
-    // exactly one unit beneath it, and only when every member's inverse
+    // exactly one unit beneath it, passing and dropping any fully inert units
+    // in between, and only when every member's inverse
     // resolves to a handler that declares `canReportConflict`: a handler whose
     // `execute` can genuinely refuse to write against a diverged document.
     // Handlers routed through `toHandlerExecutionResult` and callback entries
@@ -404,8 +400,8 @@ async function undoImpl(stepOverConflicts: boolean): Promise<UndoResult> {
     // edit that caused the conflict; the wedge above those runs is deliberate —
     // #2881's own limit, and between a blocked history and a clobbered edit,
     // blocked is recoverable. Anchor-targeted history sweeps
-    // (`undoToIndex`, via `stepOverConflicts: false`) never step: their target
-    // row names the entry the user clicked to KEEP, so a step there would undo
+    // (`moveHistoryToStep`, via `stepOverConflicts: false`) never step: their
+    // target names the entry the user clicked to KEEP, so a step there would undo
     // the row the sweep was pointed at. #2878 mirrors this for redo; see #3641
     // for the callback arc.
     for (;;) {

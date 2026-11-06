@@ -1,8 +1,8 @@
 import { readFile } from 'node:fs/promises';
 
-import { expect, test } from '@playwright/test';
 import { unzipSync } from 'fflate';
 
+import { expect, test } from './e2eTest';
 import { launch_from_template, setupWorkspace } from './e2eUtils';
 import { installFilePickerCapture } from './exportFilePickerCapture';
 

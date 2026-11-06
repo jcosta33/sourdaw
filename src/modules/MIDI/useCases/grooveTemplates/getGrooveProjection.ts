@@ -1,13 +1,22 @@
-import { isBeatInClipLoopWindow } from '#/utils/clipLoopOrigin';
+import { isBeatInClipLoopWindow, resolveClipLoopOriginAdvance } from '#/utils/clipLoopOrigin';
+import {
+    loopPassGrooveDisplacedNoteStartBeat,
+    loopPassNoteEndBeat,
+    loopPassNoteOverflowBeats,
+    loopPassNoteStartBeat,
+} from '#/utils/loopPassNoteSegments';
 
-import { SAME_BEAT_TOLERANCE } from '../../models/SameBeatTolerance';
 import { type GrooveTemplateState } from '../../stores/grooveTemplateStore';
 
 import { applyGrooveTemplate } from './applyGrooveTemplate';
 
 type GrooveEvent = { id: string; startBeat: number; velocity: number };
-/** `beatsIntoNote` on an input event is the cut an earlier stage already made of its note (Yeast plays what the clip head left). */
-type ClipMidiEvent = GrooveEvent & { duration: number; beatsIntoNote?: number };
+/**
+ * `beatsIntoNote` on an input event is the cut an earlier stage already made of its note (Yeast plays what the clip head
+ * left). `sequencerGrooveApplied` marks an event the project groove already placed: a Yeast segment it moves out of its
+ * pass is handed to the rack at its landing (`loopPassGrooveDisplacedNoteStartBeat`) and must not be grooved again.
+ */
+type ClipMidiEvent = GrooveEvent & { duration: number; beatsIntoNote?: number; sequencerGrooveApplied?: boolean };
 type ProjectCommittedGrooveInput<Event extends GrooveEvent> = {
     events: readonly Event[];
     consumerType: GrooveTemplateState['assignments'][number]['consumerType'];
@@ -26,7 +35,10 @@ type ProjectClipMidiEventsInput<Event extends ClipMidiEvent> = {
      * The clip's loop anchor (#4988). Playback callers carry it so the loop
      * window stays anchored to the source across start trims; absent, the
      * window admits everything below the loop length, exactly as before the
-     * anchor existed (display and legacy callers).
+     * anchor existed (display and legacy callers). Carried, it also places
+     * the loop on the anchor's pass grid (`resolveClipLoopPassGrid`):
+     * `iterationStartBeat` is then a grid seam, and each row plays its phase
+     * in the anchored loop, `relative + advance`, into the pass.
      */
     loopOriginBeat?: number;
     clipGrooveAlreadyApplied?: boolean;
@@ -47,6 +59,115 @@ type GrooveProjection = {
 };
 
 const projectionsByState = new WeakMap<GrooveTemplateState, GrooveProjection>();
+
+/**
+ * Whether the project groove carries an absolute start inside its pass to or past the pass end. Such a start was
+ * carried there after its producer played it (a rack re-timed it): the loop law puts it on the pass head, which a
+ * live window has already played by then, so it sounds on no route. The moves a producer can foresee it hands on
+ * itself, already placed where the loop puts them (`sequencerGrooveApplied`).
+ */
+function isPushedPastPassEndAfterItsProducer(
+    producedStartBeat: number,
+    groovedStartBeat: number,
+    passStartBeat: number,
+    loopLengthBeats: number
+): boolean {
+    const offsetBeats = groovedStartBeat - passStartBeat;
+    return (
+        producedStartBeat >= passStartBeat &&
+        offsetBeats >= 0 &&
+        loopPassGrooveDisplacedNoteStartBeat(groovedStartBeat, passStartBeat, loopLengthBeats) !== undefined
+    );
+}
+
+/** One event of one clip pass, grooved: what each of its segments carries, and the bounds that cut them. */
+type ProjectedSegmentSource<Event extends ClipMidiEvent> = {
+    event: Event;
+    velocity: number;
+    iterationStartBeat: number;
+    clipStartBeat: number;
+    /** The pass end, or the clip end when it comes first. */
+    iterationEndBeat: number;
+};
+
+/**
+ * The segment of the event over `[startBeat, endBeat)` cut to its pass and its clip, or none when nothing is left.
+ * `beatsIntoNoteAtStart` is how far into the note `startBeat` is, before the clip cuts it.
+ */
+function createProjectedSegment<Event extends ClipMidiEvent>(
+    { event, velocity, iterationStartBeat, clipStartBeat, iterationEndBeat }: ProjectedSegmentSource<Event>,
+    startBeat: number,
+    endBeat: number,
+    beatsIntoNoteAtStart: number
+): ProjectedSegment<Event>[] {
+    const allowedStartBeat = Math.max(iterationStartBeat, clipStartBeat);
+    if (endBeat === startBeat) {
+        if (startBeat < allowedStartBeat || startBeat >= iterationEndBeat) {
+            return [];
+        }
+        return [{ ...event, startBeat, duration: 0, velocity }];
+    }
+    const clippedStartBeat = Math.max(allowedStartBeat, startBeat);
+    const clippedEndBeat = Math.min(iterationEndBeat, endBeat);
+    if (clippedEndBeat <= clippedStartBeat) {
+        return [];
+    }
+    const segment: ProjectedSegment<Event> = {
+        ...event,
+        startBeat: clippedStartBeat,
+        duration: clippedEndBeat - clippedStartBeat,
+        velocity,
+    };
+    const beatsIntoNote = (event.beatsIntoNote ?? 0) + beatsIntoNoteAtStart + (clippedStartBeat - startBeat);
+    if (beatsIntoNote > 0) {
+        segment.beatsIntoNote = beatsIntoNote;
+    }
+    return [segment];
+}
+
+type LoopPassInterval = {
+    /** The grooved start and length. */
+    startBeat: number;
+    durationBeats: number;
+    loopLengthBeats: number;
+    eventsAreAbsolute: boolean;
+};
+
+/**
+ * The pass segmentation every route shares (`loopPassNoteSegments`): the in-pass segment, and the tail that rings
+ * past the pass end struck on the pass head.
+ *
+ * Absolute events were segmented by their producer before it played them: a Yeast rack is handed each pass's tail
+ * as its own note at the head, and every segment the project groove moves out of its pass already placed. A tail
+ * this projection would still strike on the head was added after that, by the rack (length that runs past the pass
+ * end, or a start the project groove pulls back across the head): a live window could only strike it after the head
+ * had passed, so an absolute event ends at the pass end on every route.
+ */
+function segmentLoopPass<Event extends ClipMidiEvent>(
+    source: ProjectedSegmentSource<Event>,
+    { startBeat, durationBeats, loopLengthBeats, eventsAreAbsolute }: LoopPassInterval
+): ProjectedSegment<Event>[] {
+    const { iterationStartBeat } = source;
+    const wrappedStartBeat = loopPassNoteStartBeat(startBeat, iterationStartBeat, loopLengthBeats);
+    const firstEndBeat = loopPassNoteEndBeat(wrappedStartBeat, durationBeats, iterationStartBeat, loopLengthBeats);
+    const firstSegments = createProjectedSegment(source, wrappedStartBeat, firstEndBeat, 0);
+    const overflowBeats = loopPassNoteOverflowBeats(
+        wrappedStartBeat,
+        durationBeats,
+        iterationStartBeat,
+        loopLengthBeats
+    );
+    if (overflowBeats === 0 || eventsAreAbsolute) {
+        return firstSegments;
+    }
+    const wrappedSegments = createProjectedSegment(
+        source,
+        iterationStartBeat,
+        iterationStartBeat + overflowBeats,
+        firstEndBeat - wrappedStartBeat
+    );
+    return [...wrappedSegments, ...firstSegments];
+}
 
 export function getGrooveProjection(state: GrooveTemplateState): GrooveProjection {
     const existing = projectionsByState.get(state);
@@ -85,6 +206,11 @@ export function getGrooveProjection(state: GrooveTemplateState): GrooveProjectio
         const clipProjected = clipGrooveAlreadyApplied
             ? events
             : projectCommittedGroove({ events, consumerType: 'clip', consumerId: clipId });
+        // A row's place in a grid pass is its offset-relative start plus the
+        // trim advance: its phase in the loop the anchor laid down.
+        const loopAdvanceBeats = eventsAreAbsolute
+            ? 0
+            : resolveClipLoopOriginAdvance({ startBeat: clipStartBeat, loopOriginBeat, loopEnabled });
 
         // Order law (#5198 review): the committed clip groove displaces a
         // stored start FIRST and the loop window below reads the GROOVED
@@ -112,81 +238,51 @@ export function getGrooveProjection(state: GrooveTemplateState): GrooveProjectio
             ) {
                 return [];
             }
-            const absoluteStartBeat = eventsAreAbsolute ? event.startBeat : iterationStartBeat + relativeStartBeat;
-            const [sequencerProjected = event] = projectCommittedGroove({
-                events: [{ ...event, startBeat: absoluteStartBeat }],
-                consumerType: 'sequencer',
-                consumerId: 'project',
-            });
+            const absoluteStartBeat = eventsAreAbsolute
+                ? event.startBeat
+                : iterationStartBeat + relativeStartBeat + loopAdvanceBeats;
+            const placedEvent = { ...event, startBeat: absoluteStartBeat };
+            const [sequencerProjected = event] = event.sequencerGrooveApplied
+                ? [placedEvent]
+                : projectCommittedGroove({
+                      events: [placedEvent],
+                      consumerType: 'sequencer',
+                      consumerId: 'project',
+                  });
+            const segmentSource = {
+                event,
+                velocity: sequencerProjected.velocity,
+                iterationStartBeat,
+                clipStartBeat,
+                iterationEndBeat: Math.min(clipEndBeat, iterationStartBeat + loopLengthBeats),
+            };
             const intervalStartBeat = sequencerProjected.startBeat;
             const intervalDurationBeats = sequencerProjected.duration;
-            const intervalEndBeat = intervalStartBeat + intervalDurationBeats;
-            const iterationEndBeat = Math.min(clipEndBeat, iterationStartBeat + loopLengthBeats);
-
-            // `beatsIntoNoteAtStart` is how far into the note `startBeat` is, before the clip cuts it.
-            function createSegment(
-                startBeat: number,
-                endBeat: number,
-                beatsIntoNoteAtStart: number
-            ): ProjectedSegment<Event>[] {
-                const allowedStartBeat = Math.max(iterationStartBeat, clipStartBeat);
-                if (endBeat === startBeat) {
-                    if (startBeat < allowedStartBeat || startBeat >= iterationEndBeat) {
-                        return [];
-                    }
-                    return [
-                        {
-                            ...event,
-                            startBeat,
-                            duration: 0,
-                            velocity: sequencerProjected.velocity,
-                        },
-                    ];
-                }
-                const clippedStartBeat = Math.max(iterationStartBeat, clipStartBeat, startBeat);
-                const clippedEndBeat = Math.min(iterationEndBeat, endBeat);
-                if (clippedEndBeat <= clippedStartBeat) {
-                    return [];
-                }
-                const segment: ProjectedSegment<Event> = {
-                    ...event,
-                    startBeat: clippedStartBeat,
-                    duration: clippedEndBeat - clippedStartBeat,
-                    velocity: sequencerProjected.velocity,
-                };
-                const beatsIntoNote =
-                    (event.beatsIntoNote ?? 0) + beatsIntoNoteAtStart + (clippedStartBeat - startBeat);
-                if (beatsIntoNote > 0) {
-                    segment.beatsIntoNote = beatsIntoNote;
-                }
-                return [segment];
-            }
-
             if (!loopEnabled || loopLengthBeats <= 0) {
-                return createSegment(intervalStartBeat, intervalEndBeat, 0);
+                return createProjectedSegment(
+                    segmentSource,
+                    intervalStartBeat,
+                    intervalStartBeat + intervalDurationBeats,
+                    0
+                );
             }
-
-            const offsetFromIteration = intervalStartBeat - iterationStartBeat;
-            const moduloOffset = ((offsetFromIteration % loopLengthBeats) + loopLengthBeats) % loopLengthBeats;
-            // A start that float noise leaves just below a loop length is the next pass head,
-            // not a sliver at the loop end followed by the whole note again at that head.
-            const wrappedOffset = loopLengthBeats - moduloOffset <= SAME_BEAT_TOLERANCE ? 0 : moduloOffset;
-            const wrappedStartBeat = iterationStartBeat + wrappedOffset;
-            const preservedDuration = Math.min(intervalDurationBeats, loopLengthBeats);
-            const firstEndBeat = Math.min(iterationStartBeat + loopLengthBeats, wrappedStartBeat + preservedDuration);
-            const firstSegments = createSegment(wrappedStartBeat, firstEndBeat, 0);
-            const remainingDuration = preservedDuration - (firstEndBeat - wrappedStartBeat);
-            // On a non-dyadic grid the first segment's end misses the note's end by float noise,
-            // so a note that stops at or before the loop end still leaves a remainder of that size.
-            if (remainingDuration <= SAME_BEAT_TOLERANCE) {
-                return firstSegments;
+            if (
+                eventsAreAbsolute &&
+                isPushedPastPassEndAfterItsProducer(
+                    event.startBeat,
+                    intervalStartBeat,
+                    iterationStartBeat,
+                    loopLengthBeats
+                )
+            ) {
+                return [];
             }
-            const wrappedSegments = createSegment(
-                iterationStartBeat,
-                iterationStartBeat + remainingDuration,
-                firstEndBeat - wrappedStartBeat
-            );
-            return [...wrappedSegments, ...firstSegments];
+            return segmentLoopPass(segmentSource, {
+                startBeat: intervalStartBeat,
+                durationBeats: intervalDurationBeats,
+                loopLengthBeats,
+                eventsAreAbsolute,
+            });
         });
     }
     const created = { projectCommittedGroove, projectClipMidiEvents };

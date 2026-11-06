@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
+
 import { MANDATORY_PLANNING_TOOL_NAMES } from '../../../models/AgentToolCatalogNames';
 import { createCreativeInterpretationToolSchema } from '../../../models/CreativeInterpretation';
 import { type ToolSchema } from '../../../models/ToolDefinitions';
@@ -9,6 +11,8 @@ import { getPlanningProviderToolSchemas } from '../../getPlanningProviderToolSch
 import { getProjectContext } from '../../getProjectContext';
 import { prepareCreativeInterpretationCatalog } from '../../prepareCreativeInterpretationCatalog';
 import { generateToolPlanningOutcome, WEBLLM_TOOL_BUDGET } from '../inference';
+
+registerDeviceEnginePorts();
 
 const mocks = vi.hoisted(() => ({
     catalogMode: 'canonical',

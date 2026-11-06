@@ -10,17 +10,35 @@ This complements the boundary model in
 [03-typescript-module.md](./03-typescript-module.md) (§3.3, §4, §6). When you add or change a
 boundary rule, check it against every row below.
 
-## The four cruises
+## The gates
 
-`pnpm deps:validate` (`scripts/check-dependency-boundaries.mjs`) runs four cruises, each with its
-own exact known-violations baseline (repaired debt cannot stay silently authorized):
+`pnpm deps:validate` (`scripts/check-dependency-boundaries.mjs`) first runs its static source
+guards, then seven gates. Each compares its rows exactly against what it accepts, so repaired debt
+cannot stay silently authorized: six against their own known-violations baselines, and module tiers
+against the reasoned allowances in its manifest ([03 §7.5](./03-typescript-module.md#75-module-tiers)):
 
-| Cruise       | Config                                 | Sees                                                    |
-| ------------ | -------------------------------------- | ------------------------------------------------------- |
-| main         | `.dependency-cruiser.cjs`              | value + tagged type-only edges (`tsPreCompilationDeps`) |
-| reachability | `.dependency-cruiser.reachability.cjs` | transitive causal edges                                 |
-| types        | `.dependency-cruiser.types.cjs`        | type-only-specific duplicate boundary rules             |
-| tests        | `.dependency-cruiser.tests.cjs`        | test-inclusive barrel boundaries                        |
+| Gate                    | Source                                 | Sees                                                    |
+| ----------------------- | -------------------------------------- | ------------------------------------------------------- |
+| main                    | `.dependency-cruiser.cjs`              | value + tagged type-only edges (`tsPreCompilationDeps`) |
+| contract re-export reg. | static `export … from` syntax reader   | re-exports of private folders from contract folders     |
+| module tiers            | `.dependency-cruiser.module-tiers.cjs` | module-pair edges against tiers; module-level cycles    |
+| worker spawns           | static AST reader                      | `new Worker(new URL(…))` and `?worker` targets          |
+| reachability            | `.dependency-cruiser.reachability.cjs` | transitive causal edges                                 |
+| types                   | `.dependency-cruiser.types.cjs`        | type-only-specific duplicate boundary rules             |
+| tests                   | `.dependency-cruiser.tests.cjs`        | test-inclusive barrel boundaries                        |
+
+## Worker spawns
+
+`new Worker(new URL('./x.ts', import.meta.url))` is a URL reference, not an import, so dependency-cruiser
+never draws an edge to the worker entry and the `workers-*` isolation rules reach it only by file location.
+An entry outside a `workers/` folder would run unconstrained code on another thread with no rule applying.
+The **worker spawns** gate closes this: it reads every `new Worker(...)` and `new SharedWorker(...)` and every
+import specifier whose Vite query carries `worker` or `sharedworker` (including `?worker&inline`) in production
+code under `src/`, resolves the target,
+and reports a row unless it lies under `src/modules/<Module>/workers/` or `src/infra/<area>/workers/`. A target
+that is not a string literal is a row too, since nothing can check where it points. `?worker&url` is a worklet
+processor URL and is governed by `worklets/` instead. A specifier built at run time, such as `import(path)`, is
+invisible to any static reader and stays a review matter.
 
 ## The six laundering patterns
 
@@ -61,7 +79,7 @@ own exact known-violations baseline (repaired debt cannot stay silently authoriz
    → **Closed by** re-anchoring every barrel rule to the live contract-folder form
    `(useCases|events|stores|presentations/views)/index.ts` (`cross-module-index-only`,
    `contract-barrel-scope`, `no-models-repos-transformers-in-index`, …). The retired module-root
-   barrel is rejected outright by the architecture checker (0/50 modules have a root `index.ts`).
+   barrel is rejected outright by the architecture checker: a module-root `index.ts` is an error.
 
 5. **`from`-scope exclusions.** A cross-module rule scoped `from: ^src/modules/` never inspects an
    importer that lives _outside_ that prefix (`src/app`, `src/components`, `src/routes`,
@@ -69,10 +87,7 @@ own exact known-violations baseline (repaired debt cannot stay silently authoriz
    → **Closed by** a dedicated origin rule per non-module root, all carried into the types cruise:
    `external-module-contracts-only` (`^src/(app|components|routes)/`, barrels only) and the
    total-ban `infra-no-module-imports`, `utils-no-module-imports`, `helpers-no-module-imports`.
-   `app-to-modules-public-surface-only` covers the live `^src/app/` composition root. The further
-   `shared-no-module-imports` (`^src/shared/`) rule is **provisioned but dormant** because that
-   directory does not exist; it enforces the boundary if the layout is introduced, but must not be
-   cited as an active closure today.
+   `app-to-modules-public-surface-only` covers the live `^src/app/` composition root.
 
 6. **Violation classes with no rule at all.** The contract-barrel rule only checks that the import
    _path_ is a barrel — it says nothing about layering _direction_ or write-surface breadth. A

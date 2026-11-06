@@ -174,6 +174,40 @@ beforeEach(() => {
 
 describe('handleRestoreClipSplitState — surviving left source', () => {
     it.each([
+        { audioOffsetSeconds: 0 },
+        { audioLoopStartSeconds: 0 },
+        { audioLoopPassEntrySeconds: 0 },
+        { audioLoopPassOriginBeat: 1 },
+        { loopOriginBeat: 1 },
+        { loopLength: 2 },
+    ])('rejects a changed source facet under an audio-promotion capture %j', (change) => {
+        const source = { ...makeClipSnapshot('c1'), audioOffsetBeats: 1, loopEnabled: true };
+        const promoted = {
+            ...source,
+            endBeat: 2,
+            loopLength: 4,
+            loopOriginBeat: 0,
+            audioOffsetSeconds: 0.5,
+            audioUnwrappedOffsetSeconds: 0.5,
+            audioLoopStartSeconds: 0.5,
+            audioLoopPassEntrySeconds: 0.5,
+            audioLoopPassOriginBeat: 0,
+        };
+        const original = makeSnapshot({ leftClip: source, rightClip: null, audioSourceTempoAtStart: 120 });
+        const captured = makeSnapshot({
+            leftClip: promoted,
+            rightClip: { ...makeClipSnapshot('c2'), startBeat: 2 },
+            audioSourceTempoAtStart: 120,
+        });
+        const valid = makeAction(captured, original);
+        expect(handleRestoreClipSplitState.validateSessionActionArguments?.(valid.payload)).toBe(true);
+        const changed = makeAction({ ...captured, leftClip: { ...promoted, ...change } }, original);
+        expect(handleRestoreClipSplitState.validateSessionActionArguments?.(changed.payload)).toBe(false);
+        expect(handleRestoreClipSplitState.execute(changed)).toEqual({ status: 'conflict' });
+        expect(mockedReplaceTrackState).not.toHaveBeenCalled();
+    });
+
+    it.each([
         ['loop anchor', { loopOriginBeat: 4 }, { loopOriginBeat: 3 }],
         ['absent loop anchor', {}, { loopOriginBeat: 0 }],
         ['present loop anchor', { loopOriginBeat: 0 }, {}],
@@ -202,6 +236,42 @@ describe('handleRestoreClipSplitState — surviving left source', () => {
             expect(mockedWriteSatellite).not.toHaveBeenCalled();
             expect(mockedRestoreTakes).not.toHaveBeenCalled();
             expect(mockedRemoveTakes).not.toHaveBeenCalled();
+        }
+    );
+});
+
+describe('handleRestoreClipSplitState — derived loop length on the split left', () => {
+    /** A loop-enabled source over [0,16) with no stored loop length: it loops its own 16 beats. */
+    function unsizedLoopSource(type: 'midi' | 'audio', loopEnabled: boolean): ClipStateSnapshot {
+        return { ...makeClipSnapshot('c1'), type, endBeat: 16, loopEnabled, loopOriginBeat: 0 };
+    }
+
+    function splitAt6(source: ClipStateSnapshot, leftChange: Partial<ClipStateSnapshot>) {
+        return makeAction(
+            makeSnapshot({
+                leftClip: { ...source, endBeat: 6, ...leftChange },
+                rightClip: { ...makeClipSnapshot('c2'), type: source.type, startBeat: 6, endBeat: 16 },
+            }),
+            makeSnapshot({ leftClip: source, rightClip: null })
+        );
+    }
+
+    it('admits a looping MIDI left carrying the loop length the split derives from the whole source', () => {
+        const action = splitAt6(unsizedLoopSource('midi', true), { loopLength: 16 });
+        expect(handleRestoreClipSplitState.validateSessionActionArguments?.(action.payload)).toBe(true);
+    });
+
+    it.each([
+        ['a looping MIDI left whose loop length differs from the derived one', 'midi', true, { loopLength: 8 }],
+        ['a non-looping MIDI left that gains a loop length', 'midi', false, { loopLength: 16 }],
+        ['an audio left whose loop length changes', 'audio', true, { loopLength: 16 }],
+    ] satisfies [string, 'midi' | 'audio', boolean, Partial<ClipStateSnapshot>][])(
+        'refuses %s before writes',
+        (_case, type, loopEnabled, leftChange) => {
+            const action = splitAt6(unsizedLoopSource(type, loopEnabled), leftChange);
+            expect(handleRestoreClipSplitState.validateSessionActionArguments?.(action.payload)).toBe(false);
+            expect(handleRestoreClipSplitState.execute(action)).toEqual({ status: 'conflict' });
+            expect(mockedReplaceTrackState).not.toHaveBeenCalled();
         }
     );
 });
@@ -289,6 +359,7 @@ describe('handleRestoreClipSplitState — satellites', () => {
         );
 
         expect(result).toEqual({ status: 'conflict' });
+        expect(mockedRestoreMidi).toHaveBeenCalledTimes(1);
         expect(mockedWriteSatellite).not.toHaveBeenCalled();
     });
 
@@ -439,7 +510,7 @@ describe('handleRestoreClipSplitState — take lanes (#4521)', () => {
             afterAmbiguousCommit: expect.any(Function),
         });
         expect(mockedRemoveTakes).toHaveBeenCalledWith(['c2']);
-        expect(mockedPlanRetirement).toHaveBeenCalledWith(['c2'], new Set());
+        expect(mockedPlanRetirement).toHaveBeenCalledWith(['c2'], new Set(), { preservedBaseGapAudioSources: [] });
         expect(mockedPlanRetirement.mock.invocationCallOrder[0]).toBeLessThan(
             mockedRestoreReKey.mock.invocationCallOrder[0]!
         );
@@ -480,7 +551,9 @@ describe('handleRestoreClipSplitState — take lanes (#4521)', () => {
             },
         };
         expect(handleRestoreClipSplitState.execute(action)).toMatchObject({ status: 'written' });
-        expect(mockedPlanRetirement).toHaveBeenCalledWith(['c2'], new Set([ownedTake.id]));
+        expect(mockedPlanRetirement).toHaveBeenCalledWith(['c2'], new Set([ownedTake.id]), {
+            preservedBaseGapAudioSources: [],
+        });
         expect(retiredTakeLanes).toEqual([]);
     });
 

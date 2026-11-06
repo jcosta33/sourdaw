@@ -236,7 +236,7 @@ const automationRangeStrategyDefinitions = [
                 return rejection(
                     index,
                     call.name,
-                    'Expected exact impact-bus IDs, one existing section, and a positive bounded dB lift'
+                    'Expected exact bus IDs, one existing section, and a positive bounded dB lift'
                 );
             }
             const hasInvalidTarget = trackIds.some((trackId) => {
@@ -264,7 +264,7 @@ const automationRangeStrategyDefinitions = [
                 return rejection(
                     index,
                     call.name,
-                    'Expected every impact bus to have gain headroom, enabled automation, and no existing gain lane'
+                    'Expected every bus to have gain headroom, enabled automation, and no existing gain lane'
                 );
             }
             return {

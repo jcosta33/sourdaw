@@ -19,7 +19,7 @@ import {
 import { type ApplicationToolReceipt } from '../../models/ApplicationOwnedTool';
 import { type AiBackendPreference, type RunnableAiBackend } from '../../models/LlmOrchestrationTypes';
 import { type ModelProviderName } from '../../models/ModelProviderProtocol';
-import { type PlanningOutcome } from '../../models/PlanningOutcome';
+import { type AnswerSuggestion, type PlanningOutcome } from '../../models/PlanningOutcome';
 import { guardReadonlyPlanningResult } from '../../models/PlanningProfile';
 import { getCloudProviderInfo } from '../../repositories/cloudLlm/getCloudProviderInfo';
 import { getActiveModelId } from '../../repositories/webLlm/getActiveModelId';
@@ -30,6 +30,7 @@ import { unionProposalProtectionFacts } from '../agentReference/proposalGroundin
 import { preparedStemImportResources } from '../agentReference/registerPreparedStemImportResources';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { agentRunWorkLease } from '../agentRunWorkLease';
+import { agentWorkBudget } from '../agentWorkBudget';
 import { ApplicationOwnedToolLoopRequestError } from '../applicationOwnedToolLoop';
 import { agentRunCancellation } from '../cancelAgentRun';
 import { describePendingActionConfirmation } from '../describePendingActionConfirmation';
@@ -37,6 +38,7 @@ import { getAgentExecutionModeFailure } from '../getAgentExecutionModeFailure';
 import { planPromptActions } from '../planPromptActions';
 import { readChatThreadContext } from '../readChatThreadContext';
 import { recordAgentProviderUsage } from '../recordAgentProviderUsage';
+import { settledProjectContentMatches } from '../settledProjectContentMatches';
 
 import { appendAnswerChatMessages } from './appendAnswerChatMessages';
 import { executeImmediatePromptCommand } from './executeImmediatePromptCommand';
@@ -57,6 +59,8 @@ type PromptChatRequestOptions = {
     resume?: AgentRunDecisionResume;
     onResumedRunAdmitted?: (runId: string) => void;
     onResumedPlanAccepted?: () => void;
+    /** An earlier answer's suggestion the user asked to see proposed; the planner compiles it without a provider. */
+    suggestion?: AnswerSuggestion;
 };
 
 type PromptChatRequestInput = {
@@ -370,6 +374,17 @@ function admitRefinement(request: PromptChatRequestInput, refines: string | unde
 }
 
 /**
+ * A brief card is only ever a proposal the user confirms, so a mode that previews or plans without
+ * proposing refuses it, as it refuses a refinement. `null` admits the plan.
+ */
+function admitBriefWrite(request: PromptChatRequestInput, actions: PromptPlanResult['actions']): string | null {
+    if (proposesForApproval(request) || !actions.some((action) => action.type === 'setProductionBrief')) {
+        return null;
+    }
+    return `Writing the production brief proposes it for approval, which ${request.interactionMode} mode never proposes.`;
+}
+
+/**
  * An answer completes its run the same way on a first turn and on a decision resume: the receipts
  * it read are recorded, a resumed decision counts as settled by the replacement attempt, and the
  * reply is an ordinary assistant message.
@@ -391,9 +406,33 @@ async function completeAnsweredRun(input: {
         });
         return;
     }
+    if (!settledProjectContentMatches(projectRevision)) {
+        throw new AiProposalInvalidatedError();
+    }
     request.options?.onResumedPlanAccepted?.();
+    if (aborter.signal.aborted) {
+        await agentRunCancellation.cancel({
+            runId: admission.runId,
+            reason: 'User cancelled the run before planning completed.',
+        });
+        return;
+    }
+    const run = agentRunLifecycle.get(admission.runId);
+    if (
+        !run ||
+        AGENT_RUN_TERMINAL_PHASES.has(run.phase) ||
+        run.cancellation.generation !== admission.planningLease.cancellationGeneration
+    ) {
+        return;
+    }
+    if (!settledProjectContentMatches(projectRevision)) {
+        throw new AiProposalInvalidatedError();
+    }
     agentRunLifecycle.transitionPhase({ runId: admission.runId, phase: 'completed' });
-    appendAnswerChatMessages(request.userText, outcome);
+    appendAnswerChatMessages(request.userText, outcome, {
+        projectIdentity: captureProjectIdentity(),
+        projectRevision,
+    });
 }
 
 /**
@@ -589,6 +628,11 @@ async function dispatchPromptPlan(input: {
         await refusePlannedRequest(request, admission, refinement.reason, refinement.category, result.actions);
         return undefined;
     }
+    const briefRefusal = admitBriefWrite(request, result.actions);
+    if (briefRefusal !== null) {
+        await refusePlannedRequest(request, admission, briefRefusal, 'authorization', result.actions);
+        return undefined;
+    }
     if (result.actions.length > 0) {
         appendChatMessage({
             id: `msg-${crypto.randomUUID()}`,
@@ -616,7 +660,6 @@ async function dispatchPromptPlan(input: {
             actions: result.actions,
             context,
             prompt: request.userText,
-            wholeProjectVibeMixPlan: result.wholeProjectVibeMixPlan,
             workflowCapabilityId: result.workflowCapabilityId,
             inheritedProtectedUnchanged: [
                 refinedCardProtections,
@@ -695,6 +738,7 @@ async function dispatchPromptPlan(input: {
                 matchSelectorPredicates: result.matchSelectorPredicates,
                 adoptedRecipes: result.adoptedRecipes,
                 measuredPreview: result.measuredPreview,
+                metricGoalState: compiledActionExecution.metricGoalState,
                 batchPosition: getBatchPosition(result.batchSchedule),
                 groundingBasis,
                 protectionFacts,
@@ -926,6 +970,8 @@ export async function orchestratePromptChatRequest(
         setActiveAborter(null);
     };
     const profileOptions = input.interactionMode === 'explain' ? { profile: 'readonly-answer' as const } : {};
+    const suggestion = input.options?.suggestion;
+    const suggestionOptions = suggestion === undefined ? {} : { suggestion };
     try {
         const { context, result, projectRevision } = await planPromptActions({
             prompt: input.userText,
@@ -956,27 +1002,11 @@ export async function orchestratePromptChatRequest(
                           : { status: 'rejected' as const, reason: budgetReservation.reason ?? 'agent budget limit' };
                   }
                 : undefined,
-            onLocalWorkAttempt: ({ analysisCount, downloadBytes, storageBytes }) => {
-                const estimates = [
-                    ['localAnalysis', analysisCount],
-                    ['downloadBytes', downloadBytes],
-                    ['storageBytes', storageBytes],
-                ] as const;
-                return (
-                    agentRunLifecycle.reserveBudgetBatch({
-                        runId: admission.runId,
-                        attempts: estimates.map(([category, estimate]) => ({
-                            attemptId: `stem-preparation:${category}`,
-                            category,
-                            estimate,
-                            provenance: 'versioned-estimate',
-                        })),
-                    }).status === 'reserved'
-                );
-            },
+            onLocalWorkAttempt: agentWorkBudget.admitStemPreparation(admission.runId),
             providerPlanning: admission.providerPlanning ? 'enabled' : 'disabled',
             // Read before this request joins the thread, so the thread holds only its earlier turns.
             thread: readChatThreadContext(),
+            ...suggestionOptions,
         });
         if (!settleCompletedPlanning(admission, input.userText)) {
             return undefined;

@@ -45,6 +45,7 @@ const trackStripStub = {
     preFaderTap: { connect: () => {} },
 };
 
+vi.mock('#/modules/CrdtDocument/useCases', () => ({ captureProjectRootIdentity: () => 'scheduler-fixture-root' }));
 vi.mock('#/infra/logger/appLogger', () => ({ logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn() } }));
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
     captureProjectRootIdentity: vi.fn<typeof import('#/modules/CrdtDocument/useCases').captureProjectRootIdentity>(
@@ -74,8 +75,6 @@ vi.mock('#/modules/Arrangement/stores', () => ({
     persistDeviceParam: vi.fn(),
     resolveEligibleDeviceWriteTarget: vi.fn(),
 }));
-vi.mock('#/modules/Collaboration/stores', () => ({ collaborationStore: { value: null } }));
-vi.mock('#/modules/Collaboration/useCases', () => ({ getAssetTransfer: () => null }));
 vi.mock('#/modules/MIDI/stores', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/MIDI/stores')>()),
     midiStore: {
@@ -123,12 +122,15 @@ vi.mock('#/modules/Automation/useCases', () => ({
 }));
 vi.mock('#/modules/Arrangement/useCases', () => ({
     takeOwnsRecordingRoot: vi.fn(() => true),
+    prepareRecoveredRecording: vi.fn(),
+    admitRecordingCaptureClock: vi.fn(),
     discardRecording: vi.fn(),
     startRecording: vi.fn(() => []),
     stopRecording: vi.fn(),
     addTakeLane: vi.fn(),
     addTake: vi.fn(),
     stageRecordingTake: vi.fn(),
+    observeRecordingPassEntry: vi.fn(),
     commitRecording: vi.fn(),
     updateClip: vi.fn(),
     resolveClipsWithComping: (_trackId: string, clips: { startBeat: number; endBeat: number }[]) =>
@@ -142,6 +144,9 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
 }));
 const scheduleClickSpy = vi.hoisted(() => vi.fn<(time: number, isAccent: boolean, volume: number) => void>());
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    builtinSynthVoice: { read: () => synthVoices },
+    ensureCachedAudioBuffersDurable: vi.fn(),
+    createNativeRecordingCaptureClock: () => ({ last: null, read: () => ({ carrier: 'browser' as const }) }),
     analyzePitchForClip: vi.fn(),
     ensureBusStrip: vi.fn(),
     getEngineState: vi.fn(),
@@ -193,7 +198,8 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
 const scheduleNoteSpy = vi.hoisted(() =>
     vi.fn<(ctx: unknown, destination: unknown, pitch: number, startTime: number, ...rest: unknown[]) => unknown>()
 );
-vi.mock('#/modules/Synth/useCases', () => ({
+// The built-in synth voice this spec's notes sound through, read through the AudioEngine port.
+const synthVoices = vi.hoisted(() => ({
     getDrumKitDefByIndex: () => null,
     scheduleDrumKitNote: vi.fn(),
     scheduleKitNote: vi.fn(),

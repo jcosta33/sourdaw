@@ -18,6 +18,8 @@ const DB_MARKS = [0, -6, -12, -24, -48] as const;
 const MIN_DB = METER_FLOOR_DB;
 const PEAK_HOLD_DURATION_MS = 1500;
 const PEAK_HOLD_FALL_RATE = 0.02;
+/** 0 dB, where `dbToPercent` reaches 100%: the meter cannot draw above it. */
+const FULL_SCALE_LINEAR = 1;
 
 const linearToDb = (linear: number): number => {
     if (linear <= 0) {
@@ -142,19 +144,24 @@ export const LevelMeter = ({ trackId, height = 'h-full', width = 'w-2' }: LevelM
                 announceMeterValue('unavailable', MIN_DB);
                 return;
             }
-            const peakDb = linearToDb(rawPeak);
-            announceMeterValue(`${peakDb.toFixed(1)} dB`, peakDb);
-            vuSampleRef.current[0] = rawPeak;
+            // An infinite or over-scale reading is a full-scale clip. Clamped here
+            // so the VU ballistics (Infinity decays to NaN) and the peak hold
+            // (Infinity never falls) stay finite and recover when the signal does.
+            const peak = Math.min(rawPeak, FULL_SCALE_LINEAR);
+            const trueDb = linearToDb(rawPeak);
+            const peakDb = linearToDb(peak);
+            announceMeterValue(trueDb === Number.POSITIVE_INFINITY ? '+∞ dB' : `${trueDb.toFixed(1)} dB`, peakDb);
+            vuSampleRef.current[0] = peak;
             const rawRms = vuMeterRef.current.update(vuSampleRef.current, Math.max(0, deltaMs) / 1000);
-            if (rawPeak >= peakHoldRef.current) {
-                peakHoldRef.current = rawPeak;
+            if (peak >= peakHoldRef.current) {
+                peakHoldRef.current = peak;
                 peakHoldTimeRef.current = currentTime;
             } else if (currentTime - peakHoldTimeRef.current > PEAK_HOLD_DURATION_MS) {
                 peakHoldRef.current = Math.max(0, peakHoldRef.current - PEAK_HOLD_FALL_RATE);
             }
 
             const holdDb = linearToDb(peakHoldRef.current);
-            const peakPct = dbToPercent(linearToDb(rawPeak));
+            const peakPct = dbToPercent(peakDb);
             const rmsPct = dbToPercent(linearToDb(rawRms));
             const holdPct = dbToPercent(holdDb);
 

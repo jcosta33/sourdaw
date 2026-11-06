@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
 
 const { resumeSend } = vi.hoisted(() => ({
@@ -14,6 +15,8 @@ vi.mock('../sendChatMessage', () => ({ sendChatMessage: resumeSend }));
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { agentRunControls } from '../getAgentRunControlProjection';
 import { getPlanningProviderSchemaContract } from '../planningProviderSchema';
+
+registerDeviceEnginePorts();
 
 const grants = {
     allowedOperationPrefixes: ['muteTrack'],

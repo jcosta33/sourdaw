@@ -45,7 +45,7 @@ vi.mock('#/infra/audioWorklet/workletInitShared', () => ({
     })),
 }));
 
-vi.mock('../../services/proofChamberProcessor.ts?worker&url', () => ({ default: 'proof-chamber-processor-url' }));
+vi.mock('../../worklets/proofChamberProcessor.ts?worker&url', () => ({ default: 'proof-chamber-processor-url' }));
 
 describe('isProofChamberDevice', () => {
     it('should return true only for the dutch-oven device type string', () => {

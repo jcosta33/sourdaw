@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
     duplicateClipCore: vi.fn(),
     prepareDuplicateClipTargetId: vi.fn(() => 'copy-next'),
     resolveEligibleClipWriteTarget: vi.fn(),
+    stampCreatedClipStateGuard: vi.fn(),
 }));
 
 vi.mock('../../../useCases/clip/duplicateClipCore', () => ({ duplicateClipCore: mocks.duplicateClipCore }));
@@ -16,6 +17,9 @@ vi.mock('../../../useCases/clip/prepareDuplicateClipTargetId', () => ({
 }));
 vi.mock('../../../stores/resolveEligibleClipWriteTarget', () => ({
     resolveEligibleClipWriteTarget: mocks.resolveEligibleClipWriteTarget,
+}));
+vi.mock('../stampCreatedClipStateGuard', () => ({
+    stampCreatedClipStateGuard: mocks.stampCreatedClipStateGuard,
 }));
 
 const eligibleSource = { status: 'eligible', trackId: 't1', clipId: 'c1' } as const;
@@ -83,14 +87,37 @@ describe('handleDuplicateClipAt', () => {
         expect(handleDuplicateClipAt.execute(action())).toEqual({ status: 'no-write' });
     });
 
-    it('describes a discardDuplicatedClip inverse keyed on the exact copy id', () => {
+    it('describes a guarded discardDuplicatedClip inverse keyed on the exact copy id', () => {
         const desc = handleDuplicateClipAt.describe(action());
 
         expect(desc.label).toBe('Duplicate clip at destination');
         expect(desc.inverseAction).toEqual({
             type: 'discardDuplicatedClip',
-            payload: { clipId: 'copy-next' },
+            payload: { clipId: 'copy-next', generatedMidiStateGuard: { entityJson: '', midiByClipIdJson: '' } },
         });
+    });
+
+    it('stamps the guard the inverse already holds once the copy is written', () => {
+        const forward = action({ targetClipId: 'copy-42' });
+        const desc = handleDuplicateClipAt.describe(forward);
+        expect(mocks.stampCreatedClipStateGuard).not.toHaveBeenCalled();
+
+        void handleDuplicateClipAt.execute(forward);
+
+        const inverse = desc.inverseAction;
+        if (inverse?.type !== 'discardDuplicatedClip') {
+            throw new Error('expected a discardDuplicatedClip inverse');
+        }
+        expect(mocks.stampCreatedClipStateGuard).toHaveBeenCalledTimes(1);
+        const [stampedGuard, stampedClipId] = mocks.stampCreatedClipStateGuard.mock.calls[0]!;
+        expect(stampedGuard).toBe(inverse.payload.generatedMidiStateGuard);
+        expect(stampedClipId).toBe('copy-42');
+    });
+
+    it('stamps nothing when the core duplicate fails', () => {
+        mocks.duplicateClipCore.mockReturnValue(false);
+        void handleDuplicateClipAt.execute(action());
+        expect(mocks.stampCreatedClipStateGuard).not.toHaveBeenCalled();
     });
 
     it('validates a solo member against source, destination, and fresh copy id', () => {

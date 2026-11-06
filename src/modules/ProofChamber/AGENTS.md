@@ -4,10 +4,7 @@
 
 ## Public Contract Surface
 
-- **Views** (`presentations/views/index.ts`): `ProofChamberPanel`.
-- **Stores**: `chamberStore` (`stores/chamberStore.ts`).
-- **Use Cases**: Internal use cases (`decodeImpulseResponse`, `hydrateChamberStateFromProject`, `updateChamberEngine`, `registerChamberInstance`).
-- **Events**: No public events.
+Public surface: `presentations/views/index.ts`. The store lives in `stores/chamberStore.ts` and the use cases are internal.
 
 ## Key Subsystems
 
@@ -26,6 +23,6 @@
 
 PR CI owns broader unit and crate suites. Locally run only the exact changed spec or filtered Rust test.
 
-- `pnpm test:run <changed-spec>`
-- `pnpm cargo:test --package proof-chamber <filter>`
+- `pnpm guard --profile focused -- pnpm test:run <changed-spec>`
+- `pnpm guard --profile focused -- pnpm cargo:test --package proof-chamber <filter>`
 - PR CI checks module boundaries; inspect that result after cross-module changes.

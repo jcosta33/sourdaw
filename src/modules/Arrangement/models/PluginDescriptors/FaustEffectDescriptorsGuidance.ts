@@ -412,7 +412,7 @@ export const FAUST_EFFECT_DESCRIPTORS_GUIDANCE = [
     descriptorGuidance(
         'faust-lufs-meter',
         analysisGuidance(
-            'Measure loudness without changing audio.',
+            'Measure momentary and short-term loudness without changing audio.',
             ['Use meter readings as evidence rather than a gain command.'],
             ['The selected window and target determine how the reading is interpreted.'],
             ['Chasing short-term readings can cause unnecessary processing.'],

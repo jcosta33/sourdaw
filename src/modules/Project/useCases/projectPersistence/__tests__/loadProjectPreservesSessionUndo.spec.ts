@@ -108,7 +108,8 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     updateMidiFxParam: vi.fn(),
     wireSidechainRoute: vi.fn(),
 }));
-vi.mock('#/modules/CrdtDocument/useCases', () => ({
+vi.mock('#/modules/CrdtDocument/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/CrdtDocument/useCases')>()),
     commandSourcePublicationMatches: vi.fn<
         typeof import('#/modules/CrdtDocument/useCases').commandSourcePublicationMatches
     >(() => false),
@@ -193,6 +194,7 @@ import { pushUndoEntry, reconcileSessionUndoForProject } from '#/modules/Command
 import { defaultProjectStoreState, projectStore } from '../../../stores/projectStore';
 import { loadProject } from '../loadProject';
 import { setProjectIdentityTransitionDependencies } from '../projectIdentityTransitionDependencies';
+import { projectLifecycleRegistry } from '../projectLifecycleRegistry';
 
 const RESTORED_PROJECT_ID = 'project-x';
 const OTHER_PROJECT_ID = 'project-y';
@@ -219,9 +221,18 @@ function restoreProjectVia(projectCrdtToStoresImpl: () => void): void {
     });
 }
 
+/**
+ * The module hydrate a load runs is outside this spec's claim, and the
+ * production registration reaches every module this spec replaces with a
+ * partial double, so one stand-in participant takes the place of the modules
+ * it hydrates.
+ */
+const moduleHydrateParticipant = { module: 'ModuleHydrateStandIn', hydrateFromProjectData: vi.fn() };
+
 describe('loadProject preserves session undo history for the same project (#3331)', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        projectLifecycleRegistry.configure([moduleHydrateParticipant]);
         mocks.documentIdentity.epoch = 0;
         // `#/modules/Command/useCases` is intentionally unmocked (see file
         // header), so its undo store is a real singleton that otherwise

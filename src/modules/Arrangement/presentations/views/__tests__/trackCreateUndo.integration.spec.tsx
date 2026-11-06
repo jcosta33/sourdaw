@@ -58,8 +58,7 @@ import { TrackListView } from '../TrackListView';
  *
  * Graph-cut (non-spread listings, not fake handler maps): AiRuntime/useCases,
  * WorkspaceShell/useCases, MIDI/useCases, Yeast/useCases, and Knead/useCases.
- * WorkspaceShell setWorkspaceMode (TrackListView) and setSoloMode
- * (resetPreferences/updatePreferences), the MIDI/useCases barrel names the
+ * WorkspaceShell setWorkspaceMode (TrackListView), the MIDI/useCases barrel names the
  * remaining graph imports, Yeast `hydrateYeastCrdtProjection`, and Knead
  * pitch-analysis hydration return live `actual.*`; AiRuntime lists only the
  * stubbed `injectPromptDraft`. `getArrangementHandlers` / `setArrangementEventBus`
@@ -73,24 +72,26 @@ vi.mock('#/utils/UI/useContextMenuDismiss', () => ({ useContextMenuDismiss: vi.f
 vi.mock('#/modules/AiRuntime/useCases', () => ({
     injectPromptDraft: vi.fn(),
 }));
-// Non-spread listing: TrackListView imports setWorkspaceMode;
-// resetPreferences and updatePreferences import setSoloMode.
+// Non-spread listing: TrackListView imports setWorkspaceMode.
 vi.mock('#/modules/WorkspaceShell/useCases', async () => {
     const actual = await vi.importActual<typeof import('#/modules/WorkspaceShell/useCases')>(
         '#/modules/WorkspaceShell/useCases'
     );
     return {
-        setSoloMode: actual.setSoloMode,
         setWorkspaceMode: actual.setWorkspaceMode,
     };
 });
 // Non-spread listing of MIDI names the remaining graph imports through the
 // barrel — Arrangement handler/use-case wiring (addTrack, clip
-// glue/split, handleDiscardDuplicatedClip, freeze bounce, …) and CrdtDocument
-// `prepareDrumPreviewBranches` for `projectDrumPreviewCandidateNotes`.
+// glue/split, handleDiscardDuplicatedClip, freeze bounce, …) and the composition
+// root's `registerProjectSlotProjections` for `projectDrumPreviewCandidateNotes`.
 vi.mock('#/modules/MIDI/useCases', async () => {
     const actual = await vi.importActual<typeof import('#/modules/MIDI/useCases')>('#/modules/MIDI/useCases');
     return {
+        captureEventPositionAt: actual.captureEventPositionAt,
+        replaceFrozenMidiTakeRow: actual.replaceFrozenMidiTakeRow,
+        sealHeldRecordedMidiNotes: actual.sealHeldRecordedMidiNotes,
+        snapshotMidiClipData: actual.snapshotMidiClipData,
         isExactMidiClipDataActionSnapshot: actual.isExactMidiClipDataActionSnapshot,
         decodeMidiClipDataSnapshots: actual.decodeMidiClipDataSnapshots,
         adaptGrooveTemplateForConsumer: vi.fn(),
@@ -169,6 +170,7 @@ vi.mock('#/modules/Project/useCases', () => ({
     saveProjectBeforeReplacement: vi.fn(),
 }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    builtinSynthVoice: { read: vi.fn() },
     rearmCommittedTrackInputMonitoring: vi.fn(async () => undefined),
     reconcileAutoInputMonitoring: vi.fn(),
     stopTrackInputMonitoring: vi.fn(),
@@ -187,6 +189,8 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     getAudioContext: vi.fn(() => ({ currentTime: 0, sampleRate: 48000 })),
     getAudioDevices: vi.fn(() => Promise.resolve([])),
     getCachedAudioBuffer: vi.fn(),
+    restoreUnpinnedAudioBuffersFromIdb: vi.fn(),
+    holdAudioBufferForSession: vi.fn(),
     getCompensationDelay: vi.fn(() => 0),
     getDeviceChainTailSeconds: vi.fn(() => 0),
     getMasterAnalyser: vi.fn(() => null),

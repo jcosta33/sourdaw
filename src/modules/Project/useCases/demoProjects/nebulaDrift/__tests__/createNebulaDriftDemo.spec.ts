@@ -61,8 +61,9 @@ describe('createNebulaDriftDemo', () => {
     it('builds the demo transport on the preference-seeded state, not the unseeded model default', () => {
         // The demo's full-state transport replace runs after the store reset has
         // seeded the Recording preferences; rebuilding from the model default
-        // would silently drop that seed (#4673).
-        expect(demoSource).toContain('transportStore.set({ ...preferencesSeededTransportState(), tempo: bpm');
+        // would silently drop that seed (#4673). Transport's new-project seed
+        // builds on the preferences.
+        expect(demoSource).toContain('seedTransportForNewProject({ tempo: bpm');
     });
 
     /**
@@ -112,15 +113,20 @@ describe('createNebulaDriftDemo', () => {
         expect(Number(firstPoint![1])).toBeGreaterThan(0);
     });
 
-    it('commits project truth before yielding for device readiness', () => {
+    it('commits project truth before starting the detached device-readiness report', () => {
         const metadataCreationOffset = demoSource.lastIndexOf('createFreshProjectMetadata({');
         const projectWriteOffset = demoSource.lastIndexOf('projectStore.set(projectMetadata);');
-        const readinessOffset = demoSource.indexOf('reportDeviceReadiness(await waitForDevices(), originatingEpoch);');
+        const readinessOffset = demoSource.indexOf(
+            'reportDeviceReadinessWhenSettled(waitForDevices(), committedGeneration);'
+        );
 
         expect(metadataCreationOffset).toBeGreaterThan(0);
         expect(projectWriteOffset).toBeGreaterThan(0);
         expect(readinessOffset).toBeGreaterThan(0);
         expect(metadataCreationOffset).toBeLessThan(projectWriteOffset);
         expect(projectWriteOffset).toBeLessThan(readinessOffset);
+        // The demo's app action must settle before bank admission does, or the
+        // launch overlay waits for the Levain bank to finish staging.
+        expect(demoSource).not.toContain('await waitForDevices()');
     });
 });

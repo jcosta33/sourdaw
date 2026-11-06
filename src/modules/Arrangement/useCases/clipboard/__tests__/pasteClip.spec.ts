@@ -191,6 +191,54 @@ describe('pasteClip', () => {
         expect(pasteClip()).toBe(true);
 
         expect(mocks.addClip).toHaveBeenCalledWith(expect.objectContaining({ midiOffsetBeats: 2 }));
+        const input = mocks.addClip.mock.calls[0]?.[0];
+        expect(input).toBeDefined();
+        expect(Object.hasOwn(input!, 'audioOffsetSeconds')).toBe(false);
+        expect(Object.hasOwn(input!, 'audioLoopPassOriginBeat')).toBe(false);
+    });
+
+    it('carries a captured physical audio entry and relocates its loop pass origin', () => {
+        const entry = createClipboardEntry({ startBeat: 6, endBeat: 14 });
+        Object.assign(entry.clip, {
+            type: 'audio',
+            audioBufferId: 'buffer-1',
+            audioOffsetBeats: 99,
+            audioOffsetSeconds: -0.25,
+            audioUnwrappedOffsetSeconds: 3.5,
+            audioLoopStartSeconds: 1.5,
+            audioLoopPassEntrySeconds: 4.5,
+            audioLoopPassOriginBeat: 4,
+            loopOriginBeat: 2,
+            loopEnabled: true,
+            loopLength: 4,
+            stretchMode: 'timestretch',
+            stretchRatio: 2,
+        });
+        setClipClipboard([entry]);
+        mocks.playheadPositionRef.current = 20;
+        mocks.getTrackState.mockReturnValue({
+            selectedTrackId: 'target-track',
+            tracks: [
+                { id: 'source-track', kind: 'audio' },
+                { id: 'target-track', kind: 'audio' },
+            ],
+        });
+        mocks.addClip.mockReturnValue({ id: 'pasted-clip' });
+
+        expect(pasteClip()).toBe(true);
+        expect(mocks.addClip).toHaveBeenCalledWith(
+            expect.objectContaining({
+                trackId: 'target-track',
+                startBeat: 20,
+                endBeat: 28,
+                audioOffsetSeconds: -0.25,
+                audioUnwrappedOffsetSeconds: 3.5,
+                audioLoopStartSeconds: 1.5,
+                audioLoopPassEntrySeconds: 4.5,
+                loopOriginBeat: 16,
+                audioLoopPassOriginBeat: 18,
+            })
+        );
     });
 
     it('clones the captured satellites onto the pasted clip with re-keyed ids and fresh records', () => {

@@ -60,10 +60,32 @@ function getMeasureWireToolSchema(schema: ToolSchema): ToolSchema {
  * a list advertises that leaf as a JSON string, which `decodeHostedProposalWireCall` restores.
  */
 export function getHostedProposalWireToolSchema(schema: ToolSchema): ToolSchema {
+    const parameters = schema.function.parameters;
+    const properties = parameters.properties;
     if (schema.function.name === COMMAND_BATCH_PROPOSAL_TOOL_NAME) {
+        if (
+            parameters.type === 'object' &&
+            parameters.additionalProperties === false &&
+            parameters.required.length === 0 &&
+            Object.keys(properties).length === 0
+        ) {
+            return schema;
+        }
         return getProposalWireToolSchema(schema);
     }
     if (schema.function.name === ANALYSIS_MEASURE_TOOL_NAME) {
+        if (
+            !Object.hasOwn(properties, 'proposal') &&
+            parameters.type === 'object' &&
+            parameters.additionalProperties === false &&
+            Object.keys(properties).every((key) => ['scope', 'range', 'metrics'].includes(key)) &&
+            isRecord(properties.scope) &&
+            isRecord(properties.range) &&
+            parameters.required.includes('scope') &&
+            parameters.required.includes('range')
+        ) {
+            return schema;
+        }
         return getMeasureWireToolSchema(schema);
     }
     return schema;

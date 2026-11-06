@@ -13,27 +13,30 @@
  * Toaster folder + pad tracks use **muted oklch** strip/clip colors (not the kit’s bright PAD_COLORS).
  */
 import { assertReleaseAdmittedDevices } from '#/infra/release/deviceReleaseAdmission';
-import { trackStore, markerStore } from '#/modules/Arrangement/stores';
-import { createTrack, projectTrackToLiveStrip } from '#/modules/Arrangement/useCases';
-import { waitForDevices } from '#/modules/AudioEngine/useCases';
-import { automationStore } from '#/modules/Automation/stores';
-import { createAutomationLane } from '#/modules/Automation/useCases';
-import { LEGACY_MIDI_PROBABILITY_SEED, midiStore } from '#/modules/MIDI/stores';
-import { addChordEvent, replaceChordTrackState } from '#/modules/MIDI/useCases';
-import { addSidechainRoute } from '#/modules/Routing/useCases';
-import { getDefaultPadNames } from '#/modules/Toaster/useCases';
-import { tempoMapStore, timeSignatureMapStore, transportStore } from '#/modules/Transport/stores';
 import {
-    addTempoChange,
+    createTrack,
+    projectTrackToLiveStrip,
+    restoreMarkerSnapshot,
+    setTrackState,
+} from '#/modules/Arrangement/useCases';
+import { waitForDevices } from '#/modules/AudioEngine/useCases';
+import { createAutomationLane, restoreAutomationSnapshot } from '#/modules/Automation/useCases';
+import { addChordEvent, replaceChordTrackState, setMidiStoreState } from '#/modules/MIDI/useCases';
+import { addSidechainRoute } from '#/modules/Routing/useCases';
+import { timeSignatureMapStore } from '#/modules/Transport/stores';
+import {
+    restoreTimelineMapSnapshot,
     addTimeSignatureChange,
     ensureTrackStrips,
-    preferencesSeededTransportState,
+    replaceTimeSignatureMap,
+    seedTransportForNewProject,
 } from '#/modules/Transport/useCases';
 
 import { projectStore } from '../../../stores/projectStore';
 import { createFreshProjectMetadata } from '../../createFreshProjectMetadata';
-import { projectLoadEpoch } from '../../projectPersistence/helpers/runProjectLoadTransaction';
-import { reportDeviceReadiness } from '../../projectTemplates/templateHelpers/reportDeviceReadiness';
+import { committedProject } from '../../projectPersistence/helpers/committedProjectAuthority';
+import { reportDeviceReadinessWhenSettled } from '../../projectTemplates/templateHelpers/reportDeviceReadinessWhenSettled';
+import { templateDeviceContent } from '../../projectTemplates/templateHelpers/templateDeviceContent';
 import { applyPreset } from '../demoUtils/applyPreset';
 import { createMidiClip } from '../demoUtils/createMidiClip';
 import { note } from '../demoUtils/note';
@@ -194,7 +197,7 @@ export async function demo5_NebulaDrift(): Promise<void> {
         },
     ];
 
-    const defaultPadNames = getDefaultPadNames();
+    const defaultPadNames = templateDeviceContent.read('createNebulaDriftDemo').defaultPadNames();
     const toasterPadTracks = Array.from({ length: 16 }, (_, index) => {
         const child = createTrack({
             name: defaultPadNames[index] ?? `Pad ${index + 1}`,
@@ -1357,7 +1360,7 @@ export async function demo5_NebulaDrift(): Promise<void> {
     ];
 
     assertReleaseAdmittedDevices(tracks);
-    trackStore.set({ tracks, selectedTrackId: tLeadMoog.id });
+    setTrackState({ tracks, selectedTrackId: tLeadMoog.id });
 
     const notesByClipId: Record<string, MidiNote[]> = {
         [cSub.id]: subN,
@@ -1386,14 +1389,15 @@ export async function demo5_NebulaDrift(): Promise<void> {
     };
     Object.assign(notesByClipId, toasterNotesByClipId);
 
-    midiStore.set({
-        probabilitySeed: midiStore.value?.probabilitySeed ?? LEGACY_MIDI_PROBABILITY_SEED,
+    // The MIDI owner keeps the current probability seed (the legacy seed when
+    // there is none) for a state that names no seed of its own.
+    setMidiStoreState({
         notesByClipId,
         ccByClipId: {},
         pitchBendByClipId: {},
     });
 
-    transportStore.set({ ...preferencesSeededTransportState(), tempo: bpm, loopEnd: TB, isLooping: true });
+    seedTransportForNewProject({ tempo: bpm, loopEnd: TB, isLooping: true });
 
     function mkLane(trackId: string, param: string, label: string, min: number, max: number) {
         return createAutomationLane(trackId, param, label, min, max);
@@ -2228,9 +2232,9 @@ export async function demo5_NebulaDrift(): Promise<void> {
         }),
     ];
 
-    automationStore.set({ lanes });
+    restoreAutomationSnapshot({ lanes });
 
-    markerStore.set({
+    restoreMarkerSnapshot({
         markers: [
             { id: crypto.randomUUID(), beat: 0, name: 'Horizon', color: 'oklch(0.38 0.08 260)' },
             { id: crypto.randomUUID(), beat: S.build1, name: 'Tide In', color: 'oklch(0.40 0.07 200)' },
@@ -2279,17 +2283,23 @@ export async function demo5_NebulaDrift(): Promise<void> {
         ],
     });
 
-    // ── Tempo drift (76 → 78 at Peak → back to 76 at Fog) ─────────────────
-    tempoMapStore.set({ changes: [] });
-    addTempoChange(0, bpm, 'instant');
-    addTempoChange(S.peak, 78, 'linear');
-    addTempoChange(S.breakdown, bpm, 'linear');
-
     // ── Time signature: brief 6/8 excursion at Peak, back to 4/4 ──────────
-    timeSignatureMapStore.set({ changes: [] });
+    replaceTimeSignatureMap({ changes: [] });
     addTimeSignatureChange(0, 4, 4);
     addTimeSignatureChange(S.peak, 6, 8);
     addTimeSignatureChange(S.peak + 12, 4, 4);
+
+    // Restore the demo's target clock without creating user edit history.
+    restoreTimelineMapSnapshot({
+        tempoMap: {
+            changes: [
+                { id: crypto.randomUUID(), beat: 0, tempo: bpm, curve: 'instant' },
+                { id: crypto.randomUUID(), beat: S.peak, tempo: 78, curve: 'linear' },
+                { id: crypto.randomUUID(), beat: S.breakdown, tempo: bpm, curve: 'linear' },
+            ],
+        },
+        timeSignatureMap: timeSignatureMapStore.value,
+    });
 
     // ── Chord track — 8-chord progression matching Warm Halo voicings ────
     //   Am9 | Cmaj9 | Em7 | Dm9 | Fmaj7 | G7 | Am9 | Bbmaj7
@@ -2336,6 +2346,10 @@ export async function demo5_NebulaDrift(): Promise<void> {
     projectStore.set(projectMetadata);
 
     ensureTrackStrips();
-    const originatingEpoch = projectLoadEpoch.current;
-    reportDeviceReadiness(await waitForDevices(), originatingEpoch);
+    // Same rule as finalizeTemplate: report readiness behind the workspace, so a
+    // progressing Levain admission cannot hold this app action (and the launch
+    // overlay) open until the bank commits. Capture the committed generation so
+    // the report is suppressed once the user leaves this project.
+    const committedGeneration = committedProject.generation;
+    reportDeviceReadinessWhenSettled(waitForDevices(), committedGeneration);
 }

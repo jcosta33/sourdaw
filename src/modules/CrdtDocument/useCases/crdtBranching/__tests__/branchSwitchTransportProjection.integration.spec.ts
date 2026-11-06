@@ -1,5 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
+import { registerKernelPorts } from '#/app/registerKernelPorts';
+import { registerProjectSlotProjections } from '#/app/registerProjectSlotProjections';
 import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
@@ -15,6 +18,8 @@ import { setupProjectionBridge } from '../../projection/setupProjectionBridge';
 import { registerCrdtStorageRuntime } from '../../registerCrdtStorageRuntime';
 import { forkProjectBranch } from '../forkProjectBranch';
 import { switchBranch } from '../switchBranch';
+
+registerDeviceEnginePorts();
 
 // The store projects the active branch's document. A tempo committed locally
 // on one branch is not the incoming branch's tempo, so switching must leave the
@@ -43,6 +48,8 @@ function set_tempo(tempo: number): void {
 
 let unsubscribe_projection: (() => void) | null = null;
 
+registerKernelPorts();
+
 describe('branch switch projects the incoming branch transport', () => {
     beforeEach(() => {
         vi.clearAllMocks();
@@ -50,6 +57,7 @@ describe('branch switch projects the incoming branch transport', () => {
         vi.stubGlobal('navigator', { ...navigator, locks: createControlledLockManager().locks });
         automergeRepository.createProject('branch transport projection test');
         registerCrdtStorageRuntime();
+        registerProjectSlotProjections();
         resetAutomergeStorageProjections(DOC_PREFIX_ROOT);
         transportStore.set(defaultTransportState);
         flushAutomergeStorageWrites();

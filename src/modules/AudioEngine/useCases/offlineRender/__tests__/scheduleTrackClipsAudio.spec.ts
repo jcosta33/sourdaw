@@ -101,6 +101,14 @@ const mocks = vi.hoisted(() => {
         automationValue,
         audioBufferCache: { get: vi.fn<(id: string) => AudioBuffer | undefined>(() => undefined) },
         buildDeviceChain: vi.fn(() => Promise.resolve([])),
+        synthVoice: {
+            getDrumKitDefByIndex: vi.fn(() => null),
+            getSynthParamsFromDevices: vi.fn(() => null),
+            scheduleDrumKitNote: vi.fn(),
+            scheduleKitNote: vi.fn(),
+            scheduleNote: vi.fn(),
+            scheduleNoteOffline: vi.fn(),
+        },
     };
 });
 
@@ -136,13 +144,8 @@ vi.mock('../../buildDeviceChain', () => ({
     buildDeviceChain: mocks.buildDeviceChain,
 }));
 
-vi.mock('#/modules/Synth/useCases', () => ({
-    getDrumKitDefByIndex: vi.fn(() => null),
-    getSynthParamsFromDevices: vi.fn(() => null),
-    scheduleDrumKitNote: vi.fn(),
-    scheduleKitNote: vi.fn(),
-    scheduleNote: vi.fn(),
-    scheduleNoteOffline: vi.fn(),
+vi.mock('../../scheduling/builtinSynthVoice', () => ({
+    builtinSynthVoice: { read: () => mocks.synthVoice },
 }));
 
 vi.mock('#/modules/AudioEngine/services/deviceResolution', () => ({

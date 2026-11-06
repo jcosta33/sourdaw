@@ -5,10 +5,13 @@ import {
     AGENT_SCORED_PROMPT_CLASSES,
     type AgentAcceptanceCaseResult,
     type AgentAcceptanceClassMetrics,
+    type AgentAnswerMetrics,
+    type AgentConfusionCounts,
     type AgentAcceptanceCorpusName,
     type AgentAcceptanceMetrics,
     type AgentAcceptanceOracleKind,
     type AgentAcceptanceOutcomeClass,
+    type AgentLegacyOutcomeClass,
     type AgentPromptClass,
     type AgentPromptClassMetrics,
     type AgentScoredPromptClass,
@@ -18,9 +21,8 @@ import { type PlanningOutcome } from '../models/PlanningOutcome';
 /**
  * Reads the class a live planning attempt actually landed in, from the same `PlanningOutcome` every
  * caller in this module already classifies against — never a second, parallel reading of the run.
- * `null` means the outcome carries no class the frozen four cover (`no-match`, an `answer`, or a
- * `proposal` that compiled no action): a corpus case landing here is a corpus defect, never a fifth
- * class.
+ * `null` means the outcome has no scorable class (`no-match` or a proposal that compiled no action).
+ * Answers are classified even when invalid so they count against answer precision.
  */
 export function classifyPlanningOutcome(
     outcome: PlanningOutcome,
@@ -37,9 +39,8 @@ export function classifyPlanningOutcome(
             return 'deny-policy';
         case 'no-match':
             return null;
-        // The answer class is sealed with its corpus; until then an answer lands in no frozen class.
         case 'answer':
-            return null;
+            return 'answer-exact';
         // The undo of the last commit runs a reversible change through the chat's commit authority,
         // so it is executed exactly as a batch is, and it carries no batch to count.
         case 'revert':
@@ -54,7 +55,7 @@ export function classifyPlanningOutcome(
 /**
  * One case's score: its frozen classes against what this run observed. `matchesOracle` carries
  * whatever the oracle demands beyond the class label — the compiled batch's action types and the
- * invariants a `proposal` oracle names, always `true` for the other kinds, whose oracles name
+ * invariants a `proposal` oracle names, or an answer oracle’s exact text, cited facts, and absence of effects; the other oracles name
  * nothing beyond the class itself. A case only counts as an exact match when both agree.
  */
 export function scoreAgentAcceptanceCase(input: {
@@ -77,7 +78,7 @@ export function scoreAgentAcceptanceCase(input: {
 
 function classMetrics(
     results: readonly AgentAcceptanceCaseResult[],
-    outcomeClass: AgentAcceptanceOutcomeClass
+    outcomeClass: AgentLegacyOutcomeClass
 ): AgentAcceptanceClassMetrics {
     const truePositives = results.filter(
         (result) => result.class === outcomeClass && result.observed === outcomeClass
@@ -96,6 +97,32 @@ function classMetrics(
     const f1 = precision + recall === 0 ? 0 : (2 * precision * recall) / (precision + recall);
     const support = results.filter((result) => result.class === outcomeClass).length;
     return { precision, recall, f1, support };
+}
+
+function confusionCounts(
+    results: readonly AgentAcceptanceCaseResult[],
+    outcomeClass: AgentLegacyOutcomeClass
+): AgentConfusionCounts {
+    return {
+        truePositives: results.filter((result) => result.class === outcomeClass && result.observed === outcomeClass)
+            .length,
+        falsePositives: results.filter((result) => result.class !== outcomeClass && result.observed === outcomeClass)
+            .length,
+        falseNegatives: results.filter((result) => result.class === outcomeClass && result.observed !== outcomeClass)
+            .length,
+    };
+}
+
+function answerMetrics(results: readonly AgentAcceptanceCaseResult[]): AgentAnswerMetrics {
+    const expected = results.filter((result) => result.class === 'answer-exact');
+    const predicted = results.filter((result) => result.observed === 'answer-exact');
+    const truePositives = expected.filter((result) => result.observed === 'answer-exact' && result.exactMatch).length;
+    const falsePositives = predicted.length - truePositives;
+    const falseNegatives = expected.length - truePositives;
+    const precision = predicted.length === 0 ? 0 : truePositives / predicted.length;
+    const recall = expected.length === 0 ? 0 : truePositives / expected.length;
+    const f1 = precision + recall === 0 ? 0 : (2 * precision * recall) / (precision + recall);
+    return { precision, recall, f1, support: expected.length, truePositives, falsePositives, falseNegatives };
 }
 
 /**
@@ -156,6 +183,13 @@ export function computeAgentAcceptanceMetrics(
     }
     return {
         perClass,
+        answer: answerMetrics(results),
+        confusion: Object.fromEntries(
+            AGENT_ACCEPTANCE_OUTCOME_CLASSES.map((outcomeClass) => [
+                outcomeClass,
+                confusionCounts(results, outcomeClass),
+            ])
+        ) as AgentAcceptanceMetrics['confusion'],
         perPromptClass,
         exactMatchRate,
         clarificationOnNonClarifyOracle,
@@ -201,6 +235,21 @@ export function failedAgentAcceptanceThresholds(
         }
     }
     for (const promptClass of sealedScoredClasses) {
+        if (promptClass === 'question') {
+            if (metrics.answer.support < 3) {
+                failures.push('answer support: question');
+            }
+            if (metrics.answer.truePositives + metrics.answer.falsePositives === 0) {
+                failures.push('answer support: predictions');
+            }
+            if (metrics.answer.precision < thresholds.answerPrecisionMin) {
+                failures.push('answer-exact precision');
+            }
+            if (metrics.answer.recall < thresholds.answerRecallMin) {
+                failures.push('question answer-exact recall');
+            }
+            continue;
+        }
         const promptMetrics = metrics.perPromptClass[promptClass];
         if (promptMetrics.support === 0) {
             failures.push(`per-prompt-class support: ${promptClass}`);

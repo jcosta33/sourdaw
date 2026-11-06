@@ -6,7 +6,12 @@ import { importMidiFile, setTimelineHorizontalScrollbarScrollX } from '#/modules
 import { decodeAudioFile, discardDecodedAudioFile } from '#/modules/AudioEngine/useCases';
 import { executeAppActionBatch } from '#/modules/Command/useCases';
 import { defaultWorkspaceState } from '#/modules/WorkspaceShell/stores';
-import { ARRANGE_RESIZE_HANDLE_WIDTH, MIN_TIMELINE_COLUMN_WIDTH } from '#/utils/Layout/allocateMainFirstWidths';
+import { setSessionViewWidth, setTrackListWidth, updateWorkspaceState } from '#/modules/WorkspaceShell/useCases';
+import {
+    ARRANGE_RESIZE_HANDLE_WIDTH,
+    MIN_TIMELINE_COLUMN_WIDTH,
+    MIN_TRACK_LIST_WIDTH,
+} from '#/utils/Layout/allocateMainFirstWidths';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { type Clip, type Track } from '../../../models/TrackViewTypes';
@@ -50,8 +55,24 @@ vi.mock('#/modules/Arrangement/presentations/views', () => ({
     ArrangementBar: () => <div data-testid="arrangement-bar">Arrangement Bar</div>,
     MarkerLane: () => <div data-testid="marker-lane">Marker Lane</div>,
     BeatRulerBar: () => <div data-testid="beat-ruler">Beat Ruler</div>,
-    TimelineChromeSurface: ({ children, className }: { children?: React.ReactNode; className?: string }) => (
-        <div className={className}>{children}</div>
+    TimelineChromeSurface: ({
+        children,
+        className,
+        style,
+        'aria-label': ariaLabel,
+        'aria-hidden': ariaHidden,
+        'data-testid': testId,
+    }: {
+        children?: React.ReactNode;
+        className?: string;
+        style?: React.CSSProperties;
+        'aria-label'?: string;
+        'aria-hidden'?: boolean | 'true' | 'false';
+        'data-testid'?: string;
+    }) => (
+        <div className={className} style={style} aria-label={ariaLabel} aria-hidden={ariaHidden} data-testid={testId}>
+            {children}
+        </div>
     ),
     TrackListView: ({ style, extraHeaderHeight }: { style?: React.CSSProperties; extraHeaderHeight?: number }) => (
         <div data-testid="track-list-view" style={style} data-extra-height={extraHeaderHeight} />
@@ -59,6 +80,7 @@ vi.mock('#/modules/Arrangement/presentations/views', () => ({
     ARRANGEMENT_BAR_HEIGHT: 22,
     BEAT_RULER_HEIGHT: 18,
     MARKER_LANE_HEIGHT: 20,
+    TIMELINE_HORIZONTAL_SCROLLBAR_HEIGHT: 10,
 }));
 
 // Non-spread listing of only SessionView — avoids loading LoopStationPanel from
@@ -115,6 +137,7 @@ vi.mock('../../hooks/useWorkspaceState', () => ({
 
 vi.mock('#/modules/WorkspaceShell/useCases', () => ({
     closeScratchPad: vi.fn(),
+    updateWorkspaceState: vi.fn(),
     setSessionViewWidth: vi.fn(),
     setTrackListWidth: vi.fn(),
     closeCollaborationPanel: vi.fn(),
@@ -124,17 +147,41 @@ vi.mock('#/modules/WorkspaceShell/useCases', () => ({
     setWorkspaceMode: vi.fn(),
 }));
 
-vi.mock('../../components/ResizeHandle', () => ({
-    ResizeHandle: ({
-        direction,
-        onResize: _onResize,
-        onResizeEnd: _onResizeEnd,
-    }: {
-        direction: string;
-        onResize: (delta: number) => void;
-        onResizeEnd: () => void;
-    }) => <div data-testid="resize-handle" data-direction={direction} />,
-}));
+vi.mock('../../components/ResizeHandle', async () => {
+    const { DragResizeHandle } = await import('#/components/ui/DragResizeHandle');
+    return {
+        ResizeHandle: ({
+            direction,
+            label,
+            valueNow,
+            valueMin,
+            valueMax,
+            onResize,
+            onSetSize,
+            onResizeEnd,
+        }: {
+            direction: 'horizontal' | 'vertical';
+            label: string;
+            valueNow: number;
+            valueMin: number;
+            valueMax: number;
+            onResize: (delta: number) => void;
+            onSetSize: (size: number) => void;
+            onResizeEnd: () => void;
+        }) => (
+            <DragResizeHandle
+                direction={direction}
+                aria-label={label}
+                aria-valuenow={Math.round(valueNow)}
+                aria-valuemin={valueMin}
+                aria-valuemax={valueMax}
+                onResize={onResize}
+                onSetSize={onSetSize}
+                onResizeEnd={onResizeEnd}
+            />
+        ),
+    };
+});
 
 vi.mock('../TimelineMinimapResizeHandle', () => ({
     TimelineMinimapResizeHandle: ({
@@ -165,12 +212,24 @@ vi.mock('../TimelineMinimapResizeHandle', () => ({
 
 vi.mock('../Timeline/ChordTrackLane', () => ({
     ChordTrackLane: () => <div data-testid="chord-track-lane">Chord Track Lane</div>,
+    CHORD_TRACK_LANE_HEIGHT: 26,
 }));
 
 vi.mock('../Timeline/ScratchPadView', () => ({
-    ScratchPadView: ({ height }: { height: number }) => (
-        <div data-testid="scratch-pad-view" style={{ height }}>
+    ScratchPadView: ({
+        height,
+        collapsed,
+        onCollapsedChange,
+    }: {
+        height: number;
+        collapsed: boolean;
+        onCollapsedChange: (collapsed: boolean) => void;
+    }) => (
+        <div data-testid="scratch-pad-view" data-collapsed={collapsed} style={{ height }}>
             Scratch Pad
+            <button type="button" onClick={() => onCollapsedChange(!collapsed)}>
+                Toggle scratch pad collapse
+            </button>
         </div>
     ),
 }));
@@ -316,6 +375,12 @@ const readFirstScrollbarCall = (): { scrollX: number; maxScrollX: number } => {
         throw new Error('Expected horizontal scrollbar write use case to be called');
     }
     return input;
+};
+
+const expectValueWithinAnnouncedBounds = (separator: HTMLElement): void => {
+    const now = Number(separator.getAttribute('aria-valuenow'));
+    expect(now).toBeGreaterThanOrEqual(Number(separator.getAttribute('aria-valuemin')));
+    expect(now).toBeLessThanOrEqual(Number(separator.getAttribute('aria-valuemax')));
 };
 
 describe('ArrangeView', () => {
@@ -584,6 +649,58 @@ describe('ArrangeView', () => {
         expect(document.querySelector('.daw-scrollbar-thumb')).toBeInTheDocument();
     });
 
+    it('reserves the horizontal scrollbar strip even when the content fits, without a thumb', () => {
+        // The track list ends with a spacer of this height, so the two columns
+        // only share a scroll range if the strip never appears or disappears.
+        vi.mocked(useTracks).mockReturnValue({
+            tracks: [makeTrack({ clipEndBeat: 8 })],
+            selectedTrackId: 'track-1',
+        });
+
+        // jsdom lays nothing out; give the timeline column a width wider than the
+        // 256-beat minimum content (3072px) so nothing overflows.
+        const clientWidth = vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(5000);
+
+        try {
+            render(<ArrangeView />);
+
+            const strip = screen.getByTestId('timeline-horizontal-scrollbar');
+            expect(strip).toHaveStyle({ height: '10px' });
+            expect(strip).toHaveAttribute('aria-hidden', 'true');
+            expect(strip).not.toHaveAttribute('aria-label');
+            expect(document.querySelector('.daw-scrollbar-thumb')).not.toBeInTheDocument();
+        } finally {
+            clientWidth.mockRestore();
+        }
+    });
+
+    it('labels the strip as the horizontal scrollbar while the content overflows', () => {
+        renderOverflowingTimeline();
+
+        const strip = screen.getByTestId('timeline-horizontal-scrollbar');
+        expect(strip).toHaveStyle({ height: '10px' });
+        expect(strip).toHaveAttribute('aria-label', 'Timeline horizontal scrollbar');
+        expect(strip).not.toHaveAttribute('aria-hidden');
+    });
+
+    it('leaves the arrangement row and timeline column free of intrinsic-height floors', () => {
+        // `min-height: min-content` made the arrangement as tall as every track
+        // and pushed the bottom panels out of the window. The shell now floors
+        // the arrangement explicitly.
+        vi.mocked(useTracks).mockReturnValue({
+            tracks: [makeTrack({ clipEndBeat: 8 })],
+            selectedTrackId: 'track-1',
+        });
+
+        render(<ArrangeView />);
+
+        const row = screen.getByTestId('track-list-view').parentElement;
+        const column = screen.getByTestId('arrangement-bar').parentElement;
+        expect(row).toHaveClass('h-full');
+        expect(row).not.toHaveClass('min-h-min');
+        expect(column).not.toHaveClass('min-h-min');
+    });
+
     it('should coalesce horizontal scrollbar drag writes through the Arrangement use case', () => {
         const frameCallbacks: FrameRequestCallback[] = [];
         const requestAnimationFrameSpy = vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
@@ -695,6 +812,58 @@ describe('ArrangeView', () => {
         expect(preferencesMocks.setTimelineMinimapHeight).toHaveBeenCalledWith(96);
     });
 
+    it('publishes the live minimap preview height to the workspace and clears it when the preview ends', () => {
+        preferencesMocks.store.value = {
+            preferencesSchemaVersion: 1,
+            showMinimap: true,
+            timelineMinimapHeight: 72,
+        };
+        vi.mocked(useTracks).mockReturnValue({
+            tracks: [makeTrack({ clipEndBeat: 32 })],
+            selectedTrackId: 'track-1',
+        });
+
+        const { rerender, unmount } = render(<ArrangeView />);
+        expect(updateWorkspaceState).toHaveBeenLastCalledWith({ timelineMinimapPreviewHeight: null });
+
+        fireEvent.pointerMove(screen.getByTestId('timeline-minimap-resize-handle'));
+        expect(updateWorkspaceState).toHaveBeenLastCalledWith({ timelineMinimapPreviewHeight: 96 });
+
+        preferencesMocks.store.value = {
+            preferencesSchemaVersion: 1,
+            showMinimap: true,
+            timelineMinimapHeight: 88,
+        };
+        rerender(<ArrangeView />);
+        expect(updateWorkspaceState).toHaveBeenLastCalledWith({ timelineMinimapPreviewHeight: null });
+
+        fireEvent.pointerMove(screen.getByTestId('timeline-minimap-resize-handle'));
+        expect(updateWorkspaceState).toHaveBeenLastCalledWith({ timelineMinimapPreviewHeight: 96 });
+        unmount();
+        expect(updateWorkspaceState).toHaveBeenLastCalledWith({ timelineMinimapPreviewHeight: null });
+    });
+
+    it('keeps the scratch pad collapsed state in the workspace rather than in the pad', () => {
+        vi.mocked(useWorkspaceState).mockReturnValue({
+            ...defaultWorkspaceState,
+            trackListOpen: true,
+            trackListWidth: 200,
+            scratchPadOpen: true,
+            scratchPadCollapsed: true,
+            scratchPadHeight: 150,
+        });
+        vi.mocked(useTracks).mockReturnValue({
+            tracks: [makeTrack({ clipEndBeat: 32 })],
+            selectedTrackId: 'track-1',
+        });
+
+        render(<ArrangeView />);
+
+        expect(screen.getByTestId('scratch-pad-view')).toHaveAttribute('data-collapsed', 'true');
+        fireEvent.click(screen.getByRole('button', { name: 'Toggle scratch pad collapse' }));
+        expect(updateWorkspaceState).toHaveBeenCalledWith({ scratchPadCollapsed: false });
+    });
+
     it('drops a stale local preview when a newer persisted height arrives', () => {
         preferencesMocks.store.value = {
             preferencesSchemaVersion: 1,
@@ -748,5 +917,99 @@ describe('ArrangeView', () => {
         expect(trackListWidth + ARRANGE_RESIZE_HANDLE_WIDTH + MIN_TIMELINE_COLUMN_WIDTH).toBeLessThanOrEqual(150);
         expect(timelineColumn).toHaveClass('min-w-0');
         expect(timelineColumn).toHaveStyle({ minWidth: `${MIN_TIMELINE_COLUMN_WIDTH}px` });
+    });
+
+    it('announces the shown width under a squeezed row and Home stores the minimum outright', () => {
+        Object.defineProperty(HTMLElement.prototype, 'clientWidth', {
+            configurable: true,
+            get: () => 150,
+        });
+        vi.mocked(useWorkspaceState).mockReturnValue({
+            ...defaultWorkspaceState,
+            trackListOpen: true,
+            trackListWidth: 220,
+            scratchPadOpen: false,
+            scratchPadHeight: 150,
+        });
+        vi.mocked(useTracks).mockReturnValue({
+            tracks: [makeTrack({ clipEndBeat: 32 })],
+            selectedTrackId: 'track-1',
+        });
+
+        render(<ArrangeView />);
+
+        const separator = screen.getByRole('separator', { name: 'Resize track list' });
+        const shownWidth = Number.parseFloat(screen.getByTestId('track-list-view').style.width);
+        expect(shownWidth).toBeLessThan(220);
+        expect(separator).toHaveAttribute('aria-valuenow', String(Math.round(shownWidth)));
+
+        fireEvent.keyDown(separator, { key: 'Home' });
+
+        expect(setTrackListWidth).toHaveBeenLastCalledWith(MIN_TRACK_LIST_WIDTH);
+        expectValueWithinAnnouncedBounds(screen.getByRole('separator', { name: 'Resize track list' }));
+    });
+
+    it('announces the shown session width under a squeezed row and Home stores the minimum outright', () => {
+        Object.defineProperty(HTMLElement.prototype, 'clientWidth', {
+            configurable: true,
+            get: () => 150,
+        });
+        vi.mocked(useWorkspaceState).mockReturnValue({
+            ...defaultWorkspaceState,
+            trackListOpen: false,
+            dualViewOpen: true,
+            sessionViewWidth: 300,
+            scratchPadOpen: false,
+            scratchPadHeight: 150,
+        });
+        vi.mocked(useTracks).mockReturnValue({
+            tracks: [makeTrack({ clipEndBeat: 32 })],
+            selectedTrackId: 'track-1',
+        });
+
+        render(<ArrangeView />);
+
+        const separator = screen.getByRole('separator', { name: 'Resize session view' });
+        const shownWidth = Number.parseFloat(screen.getByTestId('session-view').parentElement?.style.width ?? '');
+        expect(shownWidth).toBeLessThan(300);
+        expect(separator).toHaveAttribute('aria-valuenow', String(Math.round(shownWidth)));
+        expectValueWithinAnnouncedBounds(separator);
+
+        fireEvent.keyDown(separator, { key: 'Home' });
+
+        expect(setSessionViewWidth).toHaveBeenLastCalledWith(200);
+        expectValueWithinAnnouncedBounds(screen.getByRole('separator', { name: 'Resize session view' }));
+    });
+
+    it('names the track list and session view separators and exposes their widths', () => {
+        vi.mocked(useWorkspaceState).mockReturnValue({
+            ...defaultWorkspaceState,
+            trackListOpen: true,
+            trackListWidth: 220,
+            dualViewOpen: true,
+            sessionViewWidth: 300,
+            scratchPadOpen: false,
+            scratchPadHeight: 150,
+        });
+        vi.mocked(useTracks).mockReturnValue({
+            tracks: [makeTrack({ clipEndBeat: 32 })],
+            selectedTrackId: 'track-1',
+        });
+
+        render(<ArrangeView />);
+
+        const trackList = screen.getByRole('separator', { name: 'Resize track list' });
+        const shownTrackListWidth = Number.parseFloat(screen.getByTestId('track-list-view').style.width);
+        expect(trackList).toHaveAttribute('aria-valuenow', String(Math.round(shownTrackListWidth)));
+        expect(trackList).toHaveAttribute('aria-valuemin', String(MIN_TRACK_LIST_WIDTH));
+        expect(trackList).toHaveAttribute('aria-valuemax', '400');
+
+        const session = screen.getByRole('separator', { name: 'Resize session view' });
+        const shownSessionWidth = Number.parseFloat(
+            screen.getByTestId('session-view').parentElement?.style.width ?? ''
+        );
+        expect(session).toHaveAttribute('aria-valuenow', String(Math.round(shownSessionWidth)));
+        expect(session).toHaveAttribute('aria-valuemin', '200');
+        expect(session).toHaveAttribute('aria-valuemax', '800');
     });
 });

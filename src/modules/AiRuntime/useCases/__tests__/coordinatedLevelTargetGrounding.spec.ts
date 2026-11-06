@@ -1,10 +1,14 @@
 import { describe, expect, it } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
+
 import { type ProjectContext } from '../../models/ProjectContext';
 import { bridgeGroundedLlmToolCalls } from '../agentReference/bridgeGroundedLlmToolCalls';
 import { getApplicationProtectedObjects } from '../agentReference/getApplicationProtectedObjects';
 import { compileArbitraryCommandList } from '../compileArbitraryCommandList';
 import { groundCompiledCommandBatch } from '../groundCompiledCommandBatch';
+
+registerDeviceEnginePorts();
 
 /**
  * One level change stated once for a coordinated list of named tracks.

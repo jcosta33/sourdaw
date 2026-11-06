@@ -28,6 +28,7 @@ vi.mock('#/modules/AudioAnalysis/useCases', () => ({
 }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     decodeAudioFile: mocks.decodeAudioFile,
+    openCachedAudioBufferHold: () => ({ retain: vi.fn(), release: vi.fn() }),
     releasePreviewAudioBuffer: vi.fn(),
 }));
 vi.mock('#/modules/Collaboration/useCases', () => ({
@@ -40,6 +41,9 @@ vi.mock('#/modules/Transport/stores', () => ({
     DEFAULT_TEMPO_BPM: 120,
     transportStore: { value: { tempo: 120 } },
     readBarStartBeat: vi.fn<typeof import('#/modules/Transport/stores').readBarStartBeat>(() => null),
+    // Command's macro readers share this graph; stem preparation does not call them.
+    readTempoAtBeat: vi.fn<typeof import('#/modules/Transport/stores').readTempoAtBeat>(() => 120),
+    readTempoMapEditTargets: vi.fn<typeof import('#/modules/Transport/stores').readTempoMapEditTargets>(() => null),
 }));
 
 import { agentRunLifecycle } from '../../agentRunLifecycle';
@@ -158,6 +162,25 @@ describe('prepareStemImport budget admission', () => {
             { protectAcrossTransfer: true },
         ]);
         expect(mocks.stageLocalAsset).not.toHaveBeenCalled();
+    });
+
+    it('decodes every stem under the caller’s residency hold (#6003)', async () => {
+        const files = [new File(['kick'], 'kick.wav'), new File(['snare'], 'snare.wav')];
+        mocks.pickFiles.mockResolvedValue(files);
+        mocks.decodeAudioFile.mockImplementation((file: File) =>
+            Promise.resolve({ id: `buffer-${file.name}`, buffer: { duration: 1, length: 48_000, numberOfChannels: 2 } })
+        );
+        mocks.stageDurableAsset.mockImplementation((_file: File, name: string, leaseId: string) =>
+            Promise.resolve({ hash: `hash-${name}`, leaseId })
+        );
+        const hold = { retain: vi.fn(), release: vi.fn() };
+
+        await prepareStemImport(undefined, () => true, hold);
+
+        expect(mocks.decodeAudioFile.mock.calls).toEqual([
+            [files[0], hold],
+            [files[1], hold],
+        ]);
     });
 
     it('preserves the preparation error while a transient durable cleanup remains retryable', async () => {

@@ -1,7 +1,8 @@
 import { fileURLToPath } from 'node:url';
 
-import { expect, test, type Page } from '@playwright/test';
+import { type Page } from '@playwright/test';
 
+import { expect, test } from './e2eTest';
 import { launch_from_template, setupWorkspace } from './e2eUtils';
 
 // A small bundled WAV fixture — imported through the Browser's file input so a
@@ -22,10 +23,10 @@ async function openLibraryTab(page: Page): Promise<void> {
         await page.getByRole('button', { name: /Toggle browser/i }).click();
         await expect(browserPanel).toBeVisible();
     }
-    await browserPanel.getByRole('button', { name: 'Library', exact: true }).click();
+    await browserPanel.getByRole('tab', { name: 'Library', exact: true }).click();
     // The Folders sub-tab is the default; its presence confirms the Library tab
     // is mounted.
-    await expect(browserPanel.getByRole('button', { name: 'Folders', exact: true })).toBeVisible();
+    await expect(browserPanel.getByRole('tab', { name: 'Folders', exact: true })).toBeVisible();
 }
 
 test.describe('Sample Library favorites', () => {
@@ -100,7 +101,7 @@ test.describe('Sample Library favorites', () => {
 
         // The "Imported" sub-tab renders the SamplesTab list. Import a real WAV
         // through the hidden file input so exactly one sample row exists.
-        await browserPanel.getByRole('button', { name: 'Imported', exact: true }).click();
+        await browserPanel.getByRole('tab', { name: 'Imported', exact: true }).click();
         const fileInput = browserPanel.locator('input[type="file"]');
         await fileInput.setInputFiles(SAMPLE_FIXTURE);
 
@@ -110,13 +111,13 @@ test.describe('Sample Library favorites', () => {
 
         // The row's favorite star starts in its "Add" state; clicking flips the
         // same button to the "Remove" state.
-        const addFavorite = browserPanel.getByRole('button', { name: 'Add to favorites' });
+        const addFavorite = browserPanel.getByRole('button', { name: `Add ${SAMPLE_NAME} to favorites` });
         await expect(addFavorite).toBeVisible();
-        await expect(browserPanel.getByRole('button', { name: 'Remove from favorites' })).toHaveCount(0);
+        await expect(browserPanel.getByRole('button', { name: `Remove ${SAMPLE_NAME} from favorites` })).toHaveCount(0);
 
         await addFavorite.click();
 
-        const removeFavorite = browserPanel.getByRole('button', { name: 'Remove from favorites' });
+        const removeFavorite = browserPanel.getByRole('button', { name: `Remove ${SAMPLE_NAME} from favorites` });
         await expect(removeFavorite).toBeVisible();
         await expect(addFavorite).toHaveCount(0);
 
@@ -146,14 +147,14 @@ test.describe('Sample Library favorites', () => {
         // Instruments is the Browser's default tab. Searching from its root
         // flattens matching factory presets into PresetItem rows, each with a
         // favorite star.
-        await browserPanel.getByRole('button', { name: 'Instruments', exact: true }).click();
+        await browserPanel.getByRole('tab', { name: 'Instruments', exact: true }).click();
         await browserPanel.getByLabel('Search browser').fill('synth');
 
-        const addFavorite = browserPanel.getByRole('button', { name: 'Add to favorites' });
+        const addFavorite = browserPanel.getByRole('button', { name: /^Add .+ to favorites$/ });
         await expect(addFavorite.first()).toBeVisible();
 
         // A fresh workspace has no favorited presets.
-        const removeFavorite = browserPanel.getByRole('button', { name: 'Remove from favorites' });
+        const removeFavorite = browserPanel.getByRole('button', { name: /^Remove .+ from favorites$/ });
         await expect(removeFavorite).toHaveCount(0);
 
         const initialAddCount = await addFavorite.count();

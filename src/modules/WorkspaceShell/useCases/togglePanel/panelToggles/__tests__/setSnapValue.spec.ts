@@ -1,18 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { type WorkspaceState } from '../../../../models/WorkspaceState';
 import { setSnapValue } from '../setSnapValue';
 
 const mocks = vi.hoisted(() => ({
-    getWorkspaceState: vi.fn<() => Partial<WorkspaceState> | null>(),
-    updateWorkspaceState: vi.fn(),
+    setTimelineSnapValue: vi.fn(),
 }));
 
-vi.mock('../../../../repositories/getWorkspaceState', () => ({
-    getWorkspaceState: mocks.getWorkspaceState,
-}));
-vi.mock('../../../../repositories/updateWorkspaceState', () => ({
-    updateWorkspaceState: mocks.updateWorkspaceState,
+vi.mock('#/modules/Arrangement/useCases', () => ({
+    setSnapValue: mocks.setTimelineSnapValue,
 }));
 
 describe('setSnapValue', () => {
@@ -20,19 +15,9 @@ describe('setSnapValue', () => {
         vi.clearAllMocks();
     });
 
-    it('does not update when workspace state is missing', () => {
-        mocks.getWorkspaceState.mockReturnValue(null);
-
+    it('writes the snap value through the timeline editing owner', () => {
         setSnapValue(0.25);
 
-        expect(mocks.updateWorkspaceState).not.toHaveBeenCalled();
-    });
-
-    it('writes the snap value when workspace state exists', () => {
-        mocks.getWorkspaceState.mockReturnValue({});
-
-        setSnapValue(0.25);
-
-        expect(mocks.updateWorkspaceState).toHaveBeenCalledWith({ snapValue: 0.25 });
+        expect(mocks.setTimelineSnapValue).toHaveBeenCalledWith(0.25);
     });
 });

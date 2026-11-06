@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './e2eTest';
 import { launch_new_project, setupWorkspace } from './e2eUtils';
 
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
@@ -63,14 +63,19 @@ test.describe('Preferences settings', () => {
         await setupWorkspace(page);
         await launch_new_project(page);
         await page.getByRole('button', { name: 'Open Preferences' }).click();
-        await page.getByRole('dialog').filter({ hasText: /Preferences/i }).waitFor({ state: 'visible', timeout: 5000 });
+        await page
+            .getByRole('dialog')
+            .filter({ hasText: /Preferences/i })
+            .waitFor({ state: 'visible', timeout: 5000 });
     });
 
     test.afterEach(async ({ page }) => {
         await page.keyboard.press('Escape');
     });
 
-    test('Performance section exposes the audio-processing-profile selector and switches its description', async ({ page }) => {
+    test('Performance section exposes the audio-processing-profile selector and switches its description', async ({
+        page,
+    }) => {
         const dialog = page.getByRole('dialog').filter({ hasText: /Preferences/i });
         // Navigate to the Performance section (not the default General view).
         await dialog.getByRole('button', { name: 'Performance', exact: true }).click();

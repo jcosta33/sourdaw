@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { defaultTrackState } from '#/modules/Arrangement/stores';
+import { defaultTrackState, timelineEditingStore } from '#/modules/Arrangement/stores';
 import {
     addClip,
     addMarker,
@@ -13,7 +13,6 @@ import { addAutomationLane, addAutomationPoint } from '#/modules/Automation/useC
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 import { clearUndoHistory, executeAppAction, redo, undo } from '#/modules/Command/useCases';
 import { addChordEvent, clearChordTrack } from '#/modules/MIDI/useCases';
-import { workspaceStore } from '#/modules/WorkspaceShell/stores';
 import { toggleRippleEditing } from '#/modules/WorkspaceShell/useCases';
 import { type AppAction } from '#/utils/handlerContract';
 
@@ -120,7 +119,7 @@ describe('production brief', () => {
                 },
             ],
         });
-        if (workspaceStore.value?.rippleEditing) {
+        if (timelineEditingStore.value?.rippleEditing) {
             toggleRippleEditing();
         }
         addClip({
@@ -134,7 +133,7 @@ describe('production brief', () => {
     });
 
     afterEach(() => {
-        if (workspaceStore.value?.rippleEditing) {
+        if (timelineEditingStore.value?.rippleEditing) {
             toggleRippleEditing();
         }
         clearUndoHistory();
@@ -859,6 +858,160 @@ describe('production brief', () => {
                 { type: 'setTrackGain', payload: { trackId: 'track-guitar', gain: 0.7, expectedGain: 1 } },
             ])
         ).toBe(true);
+    });
+
+    describe('a track whose active alternative still stores a clip deleted from the track', () => {
+        const lockChorusRange = () => {
+            const current = projectStore.value!;
+            projectStore.set({
+                ...current,
+                productionBrief: {
+                    ...current.productionBrief,
+                    locks: [
+                        {
+                            id: 'lock-chorus',
+                            scope: { kind: 'range', startBeat: 32, endBeat: 48 },
+                            statement: 'Keep Chorus One arrangement fixed',
+                            createdAt: 111,
+                        },
+                    ],
+                },
+            });
+        };
+        const chorusClip = (id: string, endBeat = 44) => ({
+            id,
+            trackId: 'track-takes',
+            name: id,
+            startBeat: 36,
+            endBeat,
+            type: 'audio' as const,
+            color: '#000',
+            fadeInBeats: 0,
+            fadeOutBeats: 0,
+            gain: 1,
+            locked: false,
+            muted: false,
+        });
+        // The stored copy of the active alternative is refreshed only on switch or create.
+        const seedTakesTrack = (liveClipIds: string[]) =>
+            setTrackStoreState({
+                ...structuredClone(defaultTrackState),
+                tracks: [
+                    {
+                        ...createTrack({ id: 'track-takes', name: 'Takes', kind: 'audio' }),
+                        clips: liveClipIds.map((id) => chorusClip(id)),
+                        activeAlternativeId: 'alt-main',
+                        alternatives: [{ id: 'alt-main', name: 'Alternative 1', clips: [chorusClip('clip-deleted')] }],
+                    },
+                ],
+            });
+
+        it('lets the track be removed or duplicated once the clip left the locked range', () => {
+            lockChorusRange();
+            seedTakesTrack([]);
+
+            expect(
+                doesProductionBriefAllowActionBatch([{ type: 'removeTrack', payload: { trackId: 'track-takes' } }])
+            ).toBe(true);
+            expect(
+                doesProductionBriefAllowActionBatch([{ type: 'duplicateTrack', payload: { trackId: 'track-takes' } }])
+            ).toBe(true);
+        });
+
+        // `clip-wide` runs 36-52, so moving it to start at beat 20 (outside the locked 32-48 on its own
+        // beats) only reaches the range through the clip's length, which `findClip` has to supply.
+        const seedWideClip = (where: 'live' | 'stale-active-copy') =>
+            setTrackStoreState({
+                ...structuredClone(defaultTrackState),
+                tracks: [
+                    {
+                        ...createTrack({ id: 'track-takes', name: 'Takes', kind: 'audio' }),
+                        clips: where === 'live' ? [chorusClip('clip-wide', 52)] : [],
+                        activeAlternativeId: 'alt-main',
+                        alternatives: [
+                            {
+                                id: 'alt-main',
+                                name: 'Alternative 1',
+                                clips: where === 'stale-active-copy' ? [chorusClip('clip-wide', 52)] : [],
+                            },
+                        ],
+                    },
+                ],
+            });
+        const moveWideClipBeforeRange: AppAction = {
+            type: 'moveClip',
+            payload: { clipId: 'clip-wide', trackId: 'track-takes', startBeat: 20 },
+        };
+
+        it('measures a move by the live clip length and ignores a clip only the stale active copy holds', () => {
+            lockChorusRange();
+
+            seedWideClip('live');
+            expect(doesProductionBriefAllowActionBatch([moveWideClipBeforeRange])).toBe(false);
+
+            seedWideClip('stale-active-copy');
+            expect(doesProductionBriefAllowActionBatch([moveWideClipBeforeRange])).toBe(true);
+        });
+
+        it('admits an action naming a clip only the stale active copy holds inside the locked range', () => {
+            lockChorusRange();
+            const removeClip: AppAction = { type: 'removeClip', payload: { clipId: 'clip-deleted' } };
+
+            seedTakesTrack([]);
+            expect(doesProductionBriefAllowActionBatch([removeClip])).toBe(true);
+
+            seedTakesTrack(['clip-deleted']);
+            expect(doesProductionBriefAllowActionBatch([removeClip])).toBe(false);
+        });
+
+        it('owns the live and parked clips under a track lock, not the clip deleted from the track', () => {
+            const current = projectStore.value!;
+            projectStore.set({
+                ...current,
+                productionBrief: {
+                    ...current.productionBrief,
+                    locks: [
+                        {
+                            id: 'lock-takes',
+                            scope: { kind: 'track', trackId: 'track-takes' },
+                            statement: 'Keep the takes track fixed',
+                            createdAt: 111,
+                        },
+                    ],
+                },
+            });
+            setTrackStoreState({
+                ...structuredClone(defaultTrackState),
+                tracks: [
+                    {
+                        ...createTrack({ id: 'track-takes', name: 'Takes', kind: 'audio' }),
+                        clips: [chorusClip('clip-live')],
+                        activeAlternativeId: 'alt-main',
+                        alternatives: [
+                            { id: 'alt-main', name: 'Alternative 1', clips: [chorusClip('clip-deleted')] },
+                            { id: 'alt-parked', name: 'Alternative 2', clips: [chorusClip('clip-parked')] },
+                        ],
+                    },
+                ],
+            });
+            const removeClip = (clipId: string): AppAction => ({ type: 'removeClip', payload: { clipId } });
+
+            expect(doesProductionBriefAllowActionBatch([removeClip('clip-live')])).toBe(false);
+            expect(doesProductionBriefAllowActionBatch([removeClip('clip-parked')])).toBe(false);
+            expect(doesProductionBriefAllowActionBatch([removeClip('clip-deleted')])).toBe(true);
+        });
+
+        it('still refuses removing or duplicating the track while a live clip sits in the locked range', () => {
+            lockChorusRange();
+            seedTakesTrack(['clip-live']);
+
+            expect(
+                doesProductionBriefAllowActionBatch([{ type: 'removeTrack', payload: { trackId: 'track-takes' } }])
+            ).toBe(false);
+            expect(
+                doesProductionBriefAllowActionBatch([{ type: 'duplicateTrack', payload: { trackId: 'track-takes' } }])
+            ).toBe(false);
+        });
     });
 
     it('rejects a range write whose materialized beats overlap a locked range, whatever range form it was asked in', () => {

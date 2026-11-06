@@ -1,4 +1,10 @@
-import { CLIP_GAIN_LAW, SEND_LEVEL_LAW, TRACK_FADER_LAW } from '#/utils/audioLevelLaw';
+import {
+    CLIP_GAIN_LAW,
+    METRONOME_LEVEL_LAW,
+    SEND_LEVEL_LAW,
+    TRACK_FADER_LAW,
+    VCA_LEVEL_LAW,
+} from '#/utils/audioLevelLaw';
 
 export type ProjectContext = {
     productionBrief?: ProjectContextProductionBrief;
@@ -14,6 +20,7 @@ export type ProjectContext = {
     punchOutBeat: number;
     metronomeEnabled: boolean;
     metronomeVolume: number;
+    metronomeVolumeDb?: number | null;
     masterGain: number;
     /**
      * {@link masterGain} in decibels; `null` at silence, which has no finite
@@ -61,6 +68,8 @@ export type ProjectContextLevelLaw = {
     sendCeilingDb: 0;
     /** Ceiling of a clip's own gain trim, in decibels. */
     clipCeilingDb: number;
+    vcaCeilingDb: number;
+    metronomeCeilingDb: number;
 };
 
 /**
@@ -75,6 +84,8 @@ export const PROJECT_CONTEXT_LEVEL_LAW: ProjectContextLevelLaw = {
     sendFloorDb: SEND_LEVEL_LAW.floorDb,
     sendCeilingDb: 0,
     clipCeilingDb: CLIP_GAIN_LAW.ceilingDb,
+    vcaCeilingDb: VCA_LEVEL_LAW.ceilingDb,
+    metronomeCeilingDb: METRONOME_LEVEL_LAW.ceilingDb,
 };
 
 export type ProjectContextProductionBriefScope =
@@ -235,6 +246,7 @@ export type ProjectContextVcaGroup = {
     id: string;
     name: string;
     gain: number;
+    gainDb?: number | null;
     muted: boolean;
     trackIds: string[];
 };

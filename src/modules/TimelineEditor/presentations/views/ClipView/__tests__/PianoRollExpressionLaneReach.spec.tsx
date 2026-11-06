@@ -195,6 +195,8 @@ vi.mock('../../../helpers/pianoRollConstants', () => ({
     EMPTY_NOTES: [],
     getVisiblePitches: vi.fn(() => [60, 61, 62, 63, 64]),
     getPianoRollExtentBeats: vi.fn(() => 256),
+    getPianoRollContentHeight: (rowCount: number) => 28 + rowCount * 24,
+    getPianoRollRowTop: (row: number) => 28 + row * 24,
 }));
 
 describe('PianoRoll expression lane reachability (real NotePropertyLane)', () => {

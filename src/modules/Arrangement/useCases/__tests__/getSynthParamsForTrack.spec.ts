@@ -4,8 +4,6 @@ import * as subject from '../getSynthParamsForTrack';
 
 const mocks = vi.hoisted(() => ({
     getTrackById: vi.fn<(id: string) => { devices: unknown[] } | undefined>(),
-    // Deterministic stub: the module loads the default from getSynthParamsFromDevices([])
-    // at import time, so the stub must be meaningful before any beforeEach runs.
     getSynthParamsFromDevices: vi.fn<(devices: unknown[]) => { marker: string }>((devices) => ({
         marker: `devices:${JSON.stringify(devices)}`,
     })),
@@ -15,8 +13,12 @@ vi.mock('../getTrackById', () => ({
     getTrackById: (id: string) => mocks.getTrackById(id),
 }));
 
-vi.mock('#/modules/Synth/useCases', () => ({
-    getSynthParamsFromDevices: (devices: unknown[]) => mocks.getSynthParamsFromDevices(devices),
+vi.mock('#/modules/AudioEngine/useCases', () => ({
+    builtinSynthVoice: {
+        read: () => ({
+            getSynthParamsFromDevices: (devices: unknown[]) => mocks.getSynthParamsFromDevices(devices),
+        }),
+    },
 }));
 
 describe('getSynthParamsForTrack', () => {

@@ -1,3 +1,4 @@
+import { toJS } from '@automerge/automerge';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -6,13 +7,26 @@ import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
-import { getWarpState, setWarpState, trackStore, warpStateStore } from '#/modules/Arrangement/stores';
+import {
+    clipSelectionStore,
+    defaultClipSelectionState,
+    getWarpState,
+    setWarpState,
+    trackStore,
+    warpStateStore,
+} from '#/modules/Arrangement/stores';
 import { createTrack, updateWarpMarkerBeat } from '#/modules/Arrangement/useCases';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
 import { getFinalFeatureHandlers } from '#/modules/AudioEngine/useCases';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 import { clearUndoHistory, executeAppAction } from '#/modules/Command/useCases';
-import { createCrdtDoc, getCrdtDoc, registerCrdtStorageRuntime, removeCrdtDoc } from '#/modules/CrdtDocument/useCases';
+import {
+    captureProjectRootIdentity,
+    createCrdtDoc,
+    getCrdtDoc,
+    registerCrdtStorageRuntime,
+    removeCrdtDoc,
+} from '#/modules/CrdtDocument/useCases';
 import { preferencesStore } from '#/modules/Preferences/stores';
 import { resetPreferences } from '#/modules/Preferences/useCases';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
@@ -24,8 +38,11 @@ import {
 } from '#/utils/Notification/notificationEventBus';
 
 import { defaultElasticAudioState, elasticAudioStore } from '../../../stores/elasticAudio';
+import { detectTransients } from '../../../useCases/elasticAudio/detectTransients';
 import { detectTransientsForClip } from '../../../useCases/elasticAudio/detectTransientsForClip';
+import { setElasticSensitivityRootIdentityCapture } from '../../../useCases/elasticAudio/elasticSensitivityDependencies';
 import { openElasticEditor } from '../../../useCases/elasticAudio/openElasticEditor';
+import { setElasticSensitivity } from '../../../useCases/elasticAudio/setElasticSensitivity';
 import { toggleMarkerLock } from '../../../useCases/elasticAudio/toggleMarkerLock';
 import { ElasticEditorPanel } from '../ElasticEditorPanel';
 
@@ -41,6 +58,13 @@ const lockedMarker: WarpState['markers'][number] = {
     origin: 'transient-auto',
     confidence: 0.73,
     locked: true,
+};
+const selectedUserMarker: WarpState['markers'][number] = {
+    id: 'selected-user',
+    originalBeat: 0.9,
+    warpedBeat: 1.2,
+    origin: 'user',
+    locked: false,
 };
 const otherWarpState: WarpState = {
     enabled: true,
@@ -95,8 +119,10 @@ describe('locked transient markers through the real Elastic editor', () => {
         configureAutomergeStoragePort(null);
         createCrdtDoc('root');
         registerCrdtStorageRuntime();
+        setElasticSensitivityRootIdentityCapture(captureProjectRootIdentity);
         clearHandlerRegistry();
         clearUndoHistory();
+        clipSelectionStore.set(defaultClipSelectionState);
         const track = createTrack({ id: 'audio-track', name: 'Audio', kind: 'audio', withoutDefaultDevice: true });
         trackStore.set({
             tracks: [
@@ -141,12 +167,116 @@ describe('locked transient markers through the real Elastic editor', () => {
         clearHandlerRegistry();
         clearUndoHistory();
         elasticAudioStore.set(defaultElasticAudioState);
+        clipSelectionStore.set(defaultClipSelectionState);
         trackStore.set({ tracks: [], selectedTrackId: null });
         warpStateStore.set({ states: {} });
         flushAutomergeStorageWrites();
         configureAutomergeStoragePort(null);
         removeCrdtDoc('root');
     });
+
+    it.each(['explicitly-open', 'selected-only'] as const)(
+        'changes real marker source from sensitivity with an %s audio target',
+        async (mode) => {
+            if (mode === 'selected-only') {
+                elasticAudioStore.set(defaultElasticAudioState);
+                clipSelectionStore.set({ ...defaultClipSelectionState, selectedClipId: CLIP_ID });
+            }
+            const samples = burstSamples();
+            const original = samples.slice();
+            supplyBuffer(samples);
+            setWarpState(CLIP_ID, { ...getWarpState(CLIP_ID), markers: [lockedMarker, selectedUserMarker] });
+            flushAutomergeStorageWrites();
+            render(<ElasticEditorPanel />);
+            const slider = screen.getByRole('slider', { name: 'Transient detection sensitivity' });
+            expect(slider).toBeVisible();
+            expect(rawWarpState().markers).toEqual([lockedMarker, selectedUserMarker]);
+            fireEvent.keyDown(slider, { key: 'End' });
+            await waitFor(() => expect(rawWarpState().markers.length).toBeGreaterThan(2));
+            flushAutomergeStorageWrites();
+            expect(rawWarpState().markers).toEqual(getWarpState(CLIP_ID).markers);
+            expect(rawWarpState().markers.find((marker) => marker.id === lockedMarker.id)).toEqual(lockedMarker);
+            expect(rawWarpState().markers.find((marker) => marker.id === selectedUserMarker.id)).toEqual(
+                selectedUserMarker
+            );
+            expect(rawWarpState('other-clip')).toEqual(otherWarpState);
+            expect(samples).toEqual(original);
+            expect(elasticAudioStore.value?.openClipId).toBe(mode === 'selected-only' ? null : CLIP_ID);
+        }
+    );
+
+    it.each(['selection-ABA', 'root-replacement', 'preference-root-replacement'] as const)(
+        'preserves real native rows when the pending %s owner expires',
+        async (change) => {
+            vi.useFakeTimers();
+            try {
+                const samples = burstSamples();
+                const original = samples.slice();
+                expect(detectTransients(samples, SAMPLE_RATE, 0.4).length).toBeGreaterThan(0);
+                supplyBuffer(samples);
+                setWarpState(CLIP_ID, { ...getWarpState(CLIP_ID), markers: [lockedMarker, selectedUserMarker] });
+                flushAutomergeStorageWrites();
+                elasticAudioStore.set(defaultElasticAudioState);
+                clipSelectionStore.set({ ...defaultClipSelectionState, selectedClipId: CLIP_ID });
+                render(<ElasticEditorPanel />);
+                expect(screen.getByRole('slider', { name: 'Transient detection sensitivity' })).toBeVisible();
+                const replaceRoot = (): void => {
+                    const tracks = trackStore.value;
+                    if (!tracks) {
+                        throw new Error('Original track fixture missing');
+                    }
+                    const warp = getWarpState(CLIP_ID);
+                    createCrdtDoc('root');
+                    trackStore.set({
+                        ...tracks,
+                        tracks: tracks.tracks.map((track) => ({ ...track, name: 'Successor' })),
+                    });
+                    setWarpState(CLIP_ID, {
+                        ...warp,
+                        markers: [{ ...lockedMarker, id: 'successor-root-locked' }, selectedUserMarker],
+                    });
+                    flushAutomergeStorageWrites();
+                };
+                const unsubscribe =
+                    change === 'preference-root-replacement' ? preferencesStore.subscribe(replaceRoot) : undefined;
+                const pending = setElasticSensitivity(0.9);
+                unsubscribe?.();
+                if (change === 'selection-ABA') {
+                    act(() => {
+                        clipSelectionStore.set({ ...defaultClipSelectionState, selectedClipId: 'other-clip' });
+                        clipSelectionStore.set({ ...defaultClipSelectionState, selectedClipId: CLIP_ID });
+                    });
+                } else if (change === 'root-replacement') {
+                    replaceRoot();
+                }
+                const root = getCrdtDoc('root');
+                if (!root) {
+                    throw new Error('Root fixture missing');
+                }
+                const before = toJS(root);
+                await act(async () => {
+                    await vi.advanceTimersByTimeAsync(150);
+                    await pending;
+                });
+                flushAutomergeStorageWrites();
+                expect(getCrdtDoc('root')).toEqual(before);
+                expect(elasticAudioStore.value?.detected).toBe(false);
+                expect(samples).toEqual(original);
+                const fresh = setElasticSensitivity(0.4);
+                await act(async () => {
+                    await vi.advanceTimersByTimeAsync(150);
+                    await fresh;
+                });
+                expect(getWarpState(CLIP_ID).markers.length).toBeGreaterThan(2);
+                flushAutomergeStorageWrites();
+                expect(rawWarpState().markers.length).toBeGreaterThan(2);
+                expect(rawWarpState().markers).toEqual(getWarpState(CLIP_ID).markers);
+                expect(samples).toEqual(original);
+            } finally {
+                vi.useRealTimers();
+            }
+        }
+    );
 
     it('Detect preserves the edited locked automatic row in raw CRDT, store and visible count', () => {
         const samples = new Float32Array(SAMPLE_RATE);

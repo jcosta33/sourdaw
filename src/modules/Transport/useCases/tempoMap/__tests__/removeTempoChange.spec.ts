@@ -1,75 +1,31 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-type TempoChange = {
-    id: string;
-    beat: number;
-    tempo: number;
-    curve: 'instant' | 'linear';
-};
+const { execute } = vi.hoisted(() => ({ execute: vi.fn() }));
+vi.mock('#/modules/Command/useCases', () => ({ executeAppAction: execute }));
 
-type TempoMapStoreState = {
-    changes: TempoChange[];
-};
+import { removeTempoChange } from '../removeTempoChange';
 
-const { setMock, mockStore } = vi.hoisted(() => {
-    const ref = {
-        value: { changes: [] as TempoChange[] } as TempoMapStoreState | null,
-    };
-    const setMock = vi.fn((next: typeof ref.value) => {
-        ref.value = next;
-    });
-    return { setMock, mockStore: ref };
-});
-
-vi.mock('../../../stores/tempoMapStore', () => ({
-    tempoMapStore: {
-        get value() {
-            return mockStore.value;
-        },
-        set: setMock,
-    },
-}));
-
-import * as subject from '../removeTempoChange';
-
+// Row, source and saved-history behavior lives in tempoMapCommands.integration;
+// this public wrapper must return the real owning Command promise.
 describe('removeTempoChange', () => {
     beforeEach(() => {
-        mockStore.value = { changes: [] };
-        setMock.mockClear();
+        execute.mockReset();
     });
 
-    it('should export removeTempoChange', () => {
-        expect(subject.removeTempoChange).toBeDefined();
-        const kind = typeof subject.removeTempoChange;
-        expect(kind === 'function' || kind === 'object').toBe(true);
+    it('returns the actual Command completion for the requested musical edit', async () => {
+        const completion = Promise.resolve();
+        execute.mockReturnValue(completion);
+        expect(removeTempoChange('head')).toBe(completion);
+        expect(execute).toHaveBeenCalledExactlyOnceWith({
+            type: 'editTempoMap',
+            payload: { edit: { type: 'remove', id: 'head' } },
+        });
+        await completion;
     });
 
-    it('removes the change matching the given id and keeps the rest', () => {
-        mockStore.value = {
-            changes: [
-                { id: 'a', beat: 0, tempo: 120, curve: 'instant' },
-                { id: 'b', beat: 8, tempo: 140, curve: 'linear' },
-            ],
-        };
-        subject.removeTempoChange('a');
-        const result = setMock.mock.calls[0]![0]!;
-        expect(result.changes.map((c) => c.id)).toEqual(['b']);
-    });
-
-    it('is a no-op when the tempo map store has no state', () => {
-        // Defensive guard against a null store snapshot: must not throw, must
-        // not call set.
-        mockStore.value = null;
-        subject.removeTempoChange('a');
-        expect(setMock).not.toHaveBeenCalled();
-    });
-
-    it('leaves an empty list when removing the only change', () => {
-        mockStore.value = {
-            changes: [{ id: 'a', beat: 0, tempo: 120, curve: 'instant' }],
-        };
-        subject.removeTempoChange('a');
-        const result = setMock.mock.calls[0]![0]!;
-        expect(result.changes).toEqual([]);
+    it('preserves a Command refusal for its caller', async () => {
+        const failure = new Error('Owning row changed');
+        execute.mockRejectedValue(failure);
+        await expect(removeTempoChange('head')).rejects.toBe(failure);
     });
 });

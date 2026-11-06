@@ -1,15 +1,20 @@
 import { batchStoreUpdates } from '#/infra/store/createStore';
-import { restampLoopOriginEntry, shiftLoopOriginEntry } from '#/utils/clipLoopOrigin';
+import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
+import { hasExactAudioSourceFields } from '#/utils/hasExactAudioSourceFields';
 
+import { type Clip } from '../../models/Track';
+import { getHeldClips } from '../../models/TrackAlternativeClips';
 import { getTrackState, type TrackState } from '../../repositories/track/getTrackState';
 import { setTrackState } from '../../repositories/track/setTrackState';
 import { collectLiveClipIds } from '../../services/collectLiveClipIds';
 import { markerStore, type MarkerStoreState } from '../../stores/markerStore';
 import { takeLaneStore } from '../../stores/takeLaneStore';
 import { planTakeRetirement } from '../comping/planTakeRetirement';
+import { reconcileTransitionBaseGaps } from '../comping/reconcileTakeReKeySources';
 import { restoreTakesForClip } from '../comping/restoreTakesForClip';
 
 import { clipSatelliteStateCodec } from './clipSatelliteStateCodec';
+import { deletedRightContentEntry } from './deletedRightContentEntry';
 import { isValidClipSatelliteStateRestorePlan } from './isValidClipSatelliteStateRestorePlan';
 import { prepareClipSatelliteStateRestore } from './prepareClipSatelliteStateRestore';
 import { prepareTakeLaneStateRestore } from './prepareTakeLaneStateRestore';
@@ -233,9 +238,10 @@ function takeRetirementsMatchDeletedRange(
     const afterIds = collectLiveClipIds(after.tracks);
     // A right fragment can replace its source id without erasing its material.
     // Only a clip wholly inside the original delete span belongs to retirement.
+    // Erased means held before and not after, so both sides read held clips.
     const erasedIds = new Set(
         before.tracks.flatMap((track) =>
-            [...track.clips, ...track.alternatives.flatMap((alternative) => alternative.clips)]
+            getHeldClips(track)
                 .filter(
                     (clip) =>
                         clip.startBeat >= range.startBeat && clip.endBeat <= range.endBeat && !afterIds.has(clip.id)
@@ -250,6 +256,43 @@ function takeRetirementsMatchDeletedRange(
 }
 
 /** Satellite writes follow erased clips and surviving re-keyed sources, never every shifted clip. */
+function rightSurvivorMatches(candidate: Clip, original: Clip, expected: Clip): boolean {
+    if (!hasExactAudioSourceFields(original) || !hasExactAudioSourceFields(candidate)) {
+        return false;
+    }
+    if (original.type !== 'audio') {
+        return timeOperationStateCodec.valuesEqual(candidate, expected);
+    }
+    if (!Object.hasOwn(candidate, 'audioOffsetSeconds')) {
+        return (
+            !Object.hasOwn(original, 'audioOffsetSeconds') && timeOperationStateCodec.valuesEqual(candidate, expected)
+        );
+    }
+    const sourceFields = new Set([
+        'audioOffsetSeconds',
+        'audioUnwrappedOffsetSeconds',
+        'audioLoopStartSeconds',
+        'audioLoopPassEntrySeconds',
+        'audioLoopPassOriginBeat',
+    ]);
+    const ownerFacets = (clip: Clip) =>
+        Object.fromEntries(Object.entries(clip).filter(([key]) => !sourceFields.has(key)));
+    let expectedOwner = expected;
+    if (original.loopEnabled) {
+        expectedOwner = {
+            ...expected,
+            loopLength: projectClipLoopExpansion({
+                clipDurationBeats: original.endBeat - original.startBeat,
+                configuredLoopLengthBeats: original.loopLength,
+                loopEnabled: true,
+            }).loopLengthBeats,
+        };
+    }
+    // The saved clock may no longer exist. Source-cut production proves source
+    // seconds; satellite authority proves this exact range-derived owner.
+    return timeOperationStateCodec.valuesEqual(ownerFacets(candidate), ownerFacets(expectedOwner));
+}
+
 function deletedSatelliteOwners(
     before: TrackState,
     after: TrackState,
@@ -258,6 +301,12 @@ function deletedSatelliteOwners(
     const owners = new Set<string>();
     const beforeIds = collectLiveClipIds(before.tracks);
     const afterIds = collectLiveClipIds(after.tracks);
+    const afterIdCounts = new Map<string, number>();
+    for (const track of after.tracks) {
+        for (const clip of track.clips) {
+            afterIdCounts.set(clip.id, (afterIdCounts.get(clip.id) ?? 0) + 1);
+        }
+    }
     const duration = range.endBeat - range.startBeat;
     for (const track of before.tracks) {
         const nextTrack = after.tracks.find((candidate) => candidate.id === track.id);
@@ -268,29 +317,26 @@ function deletedSatelliteOwners(
             if (afterIds.has(clip.id) || clip.startBeat < range.startBeat || clip.startBeat >= range.endBeat) {
                 continue;
             }
+            if (!hasExactAudioSourceFields(clip)) {
+                continue;
+            }
             if (clip.endBeat <= range.endBeat) {
                 owners.add(clip.id);
                 continue;
             }
             // Only the exact right survivor produced by Delete Time owns the
             // source's satellites. A changed local id alone is no authority.
-            let rightLoopOrigin: ReturnType<typeof shiftLoopOriginEntry>;
-            if (clip.type === 'midi') {
-                rightLoopOrigin = restampLoopOriginEntry(clip, range.startBeat);
-            } else {
-                rightLoopOrigin = shiftLoopOriginEntry(clip, -duration);
-            }
             const survivors = nextTrack.clips.filter(
                 (candidate) =>
                     !beforeIds.has(candidate.id) &&
-                    timeOperationStateCodec.valuesEqual(candidate, {
+                    afterIdCounts.get(candidate.id) === 1 &&
+                    rightSurvivorMatches(candidate, clip, {
                         ...clip,
                         id: candidate.id,
                         startBeat: range.startBeat,
                         endBeat: clip.endBeat - duration,
                         audioOffsetBeats: (clip.audioOffsetBeats ?? 0) + (range.endBeat - clip.startBeat),
-                        midiOffsetBeats: 0,
-                        ...rightLoopOrigin,
+                        ...deletedRightContentEntry(clip, range),
                     })
             );
             if (survivors.length === 1) {
@@ -817,6 +863,47 @@ function localStateIsStillPrepared(prepared: PreparedLocalState): boolean {
     );
 }
 
+function takeLaneSourcesAndTakesAreStillPrepared(plan: TakeLaneTransitionPlan | null): boolean {
+    if (!plan) {
+        return true;
+    }
+    const lanes = takeLaneStore.value?.lanes ?? [];
+    const direction = plan.appliedEffect === 'restore' ? 'restore' : 'apply';
+    const replayFacets = (take: NonNullable<TakeLaneTransitionPlan['reKeyedLanes']>[number]['takesBefore'][number]) =>
+        Object.fromEntries(Object.entries(take).filter(([key, value]) => key !== 'selected' && value !== undefined));
+    return (plan.reKeyedLanes ?? []).every((transition) => {
+        const owner = lanes.find((lane) => lane.id === transition.laneId || lane.trackId === transition.trackId);
+        const from = direction === 'restore' ? transition.takesAfter : transition.takesBefore;
+        const to = direction === 'restore' ? transition.takesBefore : transition.takesAfter;
+        const toById = new Map(to.map((take) => [take.id, take]));
+        const reserved = new Map(to.map((take) => [take.id, take.clipId]));
+        for (const take of from) {
+            reserved.set(take.id, take.clipId);
+        }
+        return (
+            reconcileTransitionBaseGaps(
+                owner ?? { id: transition.laneId, trackId: transition.trackId, takes: [], activeCompRegions: [] },
+                transition,
+                direction
+            ) !== null &&
+            lanes.every((lane) => lane.id !== transition.laneId || lane.trackId === transition.trackId) &&
+            lanes.every((lane) =>
+                lane.takes.every(
+                    (take) => !reserved.has(take.id) || (lane === owner && take.clipId === reserved.get(take.id))
+                )
+            ) &&
+            from.every((source) => {
+                const target = toById.get(source.id);
+                if (target && timeOperationStateCodec.valuesEqual(replayFacets(source), replayFacets(target))) {
+                    return true;
+                }
+                const live = owner?.takes.find((take) => take.id === source.id);
+                return !live || timeOperationStateCodec.valuesEqual(replayFacets(live), replayFacets(source));
+            })
+        );
+    });
+}
+
 function prepareDisappearingClipTakeRetirement(
     local: PreparedLocalState,
     takeLanes: TakeLaneTransitionPlan | null
@@ -847,7 +934,22 @@ function prepareDisappearingClipTakeRetirement(
     const preservedLaneIds = new Set(
         (capturedState?.lanes ?? []).filter((lane) => !planOwnedLaneIds.has(lane.id)).map((lane) => lane.id)
     );
-    const retirement = planTakeRetirement(disappearingClipIds, transitionTakeIds, { preservedLaneIds });
+    // The joined transition also owns its exact FROM source tiles. Retiring
+    // them here makes that owner's later source guard refuse its own replay.
+    const preservedBaseGapAudioSources = (takeLanes?.reKeyedLanes ?? []).flatMap(
+        (lane) =>
+            (takeLanes?.appliedEffect === 'restore' ? lane.baseGapAudioSourcesAfter : lane.baseGapAudioSourcesBefore) ??
+            []
+    );
+    if (takeLanes?.appliedEffect === 'retire') {
+        preservedBaseGapAudioSources.push(
+            ...takeLanes.retiredLanes.flatMap((snapshot) => snapshot.retiredBaseGapAudioSources ?? [])
+        );
+    }
+    const retirement = planTakeRetirement(disappearingClipIds, transitionTakeIds, {
+        preservedLaneIds,
+        preservedBaseGapAudioSources,
+    });
     if (!retirement) {
         return null;
     }
@@ -987,7 +1089,8 @@ function prepareCombinedStateUnchecked(value: unknown, deps: TimeOperationDepend
         plan,
         handles,
         hasChanges: handles.length > 0,
-        preflight: () => localStateIsStillPrepared(localState),
+        preflight: () =>
+            localStateIsStillPrepared(localState) && takeLaneSourcesAndTakesAreStillPrepared(plan.takeLanes),
     };
 }
 

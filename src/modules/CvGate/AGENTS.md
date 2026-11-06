@@ -4,13 +4,13 @@ Control Voltage (CV) and Gate output routing and conversion for analog/modular s
 
 ## Public Contract Surface
 
-- **Use Cases** (`useCases/index.ts`): `addCvOutput`, `removeCvOutput`, `setCvValue`, `setVoltageStandard`, `setClockDivision`, `hydrateCvGateState`.
-- **Stores** (`stores/index.ts`): `cvGateStore`, `defaultCvGateState`, `CvGateState`, `CvOutputChannel`.
+Public surface: `useCases/index.ts`, `stores/index.ts`.
 
 ## Key Subsystems
 
 - **CV Conversion** (`useCases/cvConversion/`): Pitch-to-voltage conversion (`midiNoteToCv`) supporting `1v-per-octave` (1/12 V per semitone) and `hz-per-volt` standards.
 - **Output Management** (`useCases/cvOutputOperations/`): Physical output channel mapping, clock division, trigger pulse width (`triggerPulseMs`), and gate threshold configuration.
+- **Command handlers** (`handlers/cvOutput/`): `addCvOutput` and its undo inverse `removeCvOutput`, registered with Command through `getCvGateHandlers`. An add the use case refuses (duplicate channel, unknown type) records no undo entry.
 - **Persistence** (`stores/cvGate.ts`): Automerge CRDT document storage for persistent CV/Gate output routing and calibration.
 
 ## Invariants & Traps
@@ -23,5 +23,5 @@ Control Voltage (CV) and Gate output routing and conversion for analog/modular s
 
 PR CI owns broader unit and crate suites. Locally run only the exact changed spec or filtered Rust test.
 
-- `pnpm test:run <changed-spec>`
+- `pnpm guard --profile focused -- pnpm test:run <changed-spec>`
 - PR CI checks module boundaries; inspect that result after cross-module changes.

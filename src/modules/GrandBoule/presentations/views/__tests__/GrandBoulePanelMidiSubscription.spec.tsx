@@ -53,9 +53,9 @@ vi.mock('../../../useCases/resolveGrandBouleEngine', () => ({
 
 type TestBusEvents = {
     'track.added': import('#/modules/Arrangement/events').TrackAddedPayload;
-    'midi.noteOn': import('#/modules/WorkspaceShell/events').MidiNoteOnPayload;
-    'midi.noteOff': import('#/modules/WorkspaceShell/events').MidiNoteOffPayload;
-    'midi.pedalCc': import('#/modules/WorkspaceShell/events').MidiPedalCcPayload;
+    'midi.noteOn': import('#/modules/MIDI/events').MidiNoteOnPayload;
+    'midi.noteOff': import('#/modules/MIDI/events').MidiNoteOffPayload;
+    'midi.pedalCc': import('#/modules/MIDI/events').MidiPedalCcPayload;
 };
 
 type TestBusHandler<TEventName extends keyof TestBusEvents> = (

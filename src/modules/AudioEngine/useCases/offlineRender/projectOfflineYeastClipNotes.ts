@@ -1,4 +1,4 @@
-import { isBeatAdmittedByAnchoredClipLoopWindow } from '#/utils/clipLoopOrigin';
+import { isBeatInEnabledClipLoopWindow } from '#/utils/clipLoopOrigin';
 
 import { type OfflineMidiEventProjector } from '../../repositories/offlineScheduler/offlineMidiEventProjectorState';
 import { type OfflinePpqEndpointProjector } from '../../repositories/offlineScheduler/offlinePpqEndpointProjectorState';
@@ -19,6 +19,10 @@ type ProcessedOfflineYeastNote = {
      * already owned membership on this same figure.
      */
     sourceRelativeBeat?: number;
+    /** How far into its source row the rack input began: the cut the pass made before the rack (absent: none). */
+    beatsIntoNote?: number;
+    /** The project groove already placed the rack input (a push past its pass end, handed on from the pass head). */
+    sequencerGrooveApplied?: boolean;
 };
 
 type ProjectOfflineYeastClipNotesInput = {
@@ -71,7 +75,7 @@ export function projectOfflineYeastClipNotes({
     const admittedNotes = notes.filter(
         (note) =>
             note.sourceRelativeBeat === undefined ||
-            isBeatAdmittedByAnchoredClipLoopWindow({
+            isBeatInEnabledClipLoopWindow({
                 relativeBeat: note.sourceRelativeBeat,
                 startBeat: clipStartBeat,
                 loopOriginBeat,
@@ -79,13 +83,17 @@ export function projectOfflineYeastClipNotes({
                 loopEnabled,
             })
     );
+    // The rack was handed each note at its audible beat, already cut to its
+    // pass, so its output is absolute; the cut it was made from carries on.
     const projectedNotes = projectMidiEvents({
         events: admittedNotes.map((note) => ({
             id: note.id,
             pitch: note.pitch,
             velocity: note.velocity,
-            startBeat: note.startPpq - midiOffsetBeats,
+            startBeat: note.startPpq,
             duration: Math.max(0, note.endPpq - note.startPpq),
+            beatsIntoNote: note.beatsIntoNote,
+            sequencerGrooveApplied: note.sequencerGrooveApplied,
         })),
         clipId,
         clipStartBeat,

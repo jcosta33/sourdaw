@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { act, render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { MidiDevicePicker } from '../MidiDevicePicker';
@@ -13,10 +13,11 @@ vi.mock('#/infra/store/useStore', () => ({
         ],
         selectedInputId: null,
         enumerationError: null,
+        enumerationCompleted: false,
     })),
 }));
 
-const mockInitWebMidi = vi.fn(() => Promise.resolve());
+const mockInitWebMidi = vi.fn<() => Promise<boolean>>(() => Promise.resolve(true));
 const mockSelectMidiInput = vi.fn();
 
 vi.mock('#/modules/MIDI/stores', () => ({
@@ -41,6 +42,7 @@ describe('MidiDevicePicker', () => {
             ],
             selectedInputId: null,
             enumerationError: null,
+            enumerationCompleted: false,
         });
     });
 
@@ -108,7 +110,6 @@ describe('MidiDevicePicker', () => {
             inputs: [],
             selectedInputId: null,
         });
-        mockInitWebMidi.mockResolvedValue(undefined);
 
         render(<MidiDevicePicker />);
 
@@ -116,23 +117,41 @@ describe('MidiDevicePicker', () => {
         expect(screen.getByLabelText('Refresh MIDI devices')).toBeInTheDocument();
         expect(screen.queryByText('MIDI not supported in this browser')).not.toBeInTheDocument();
 
-        await waitFor(() => {
-            expect(mockInitWebMidi).toHaveBeenCalled();
+        expect(mockInitWebMidi).not.toHaveBeenCalled();
+        await act(async () => {
+            fireEvent.click(screen.getByLabelText('Refresh MIDI devices'));
         });
-
-        mockInitWebMidi.mockClear();
-        fireEvent.click(screen.getByLabelText('Refresh MIDI devices'));
         expect(mockInitWebMidi).toHaveBeenCalledTimes(1);
     });
 
-    it('should show connected badge when device is selected', () => {
+    it('says MIDI access was not allowed and how to allow it, without suggesting a refresh', () => {
+        (useStore as ReturnType<typeof vi.fn>).mockReturnValue({
+            isSupported: true,
+            enumerationError: 'Permission denied',
+            accessDenied: true,
+            inputs: [],
+            selectedInputId: null,
+        });
+
+        render(<MidiDevicePicker />);
+
+        expect(screen.getByText(/MIDI access was not allowed for this site/)).toHaveTextContent(
+            /site settings control in the address bar, then reload the page/
+        );
+        expect(screen.queryByText(/Refresh to try again/)).not.toBeInTheDocument();
+        expect(screen.getByRole('option', { name: 'MIDI access not allowed' })).toBeInTheDocument();
+    });
+
+    it('should show connected badge when device is selected', async () => {
         (useStore as ReturnType<typeof vi.fn>).mockReturnValue({
             isSupported: true,
             inputs: [{ id: 'midi1', name: 'MIDI Keyboard', manufacturer: 'Roland' }],
             selectedInputId: 'midi1',
             enumerationError: null,
         });
-        render(<MidiDevicePicker />);
+        await act(async () => {
+            render(<MidiDevicePicker />);
+        });
         // The component shows "Connected:" when selectedInputId is set
         expect(screen.getByText(/Connected:/)).toBeInTheDocument();
     });
@@ -172,8 +191,9 @@ describe('MidiDevicePicker', () => {
             enumerationError: 'enumeration failed',
             inputs: [],
             selectedInputId: null,
+            enumerationCompleted: false,
         });
-        mockInitWebMidi.mockReturnValue(new Promise(() => {}));
+        mockInitWebMidi.mockReturnValue(new Promise<boolean>(() => {}));
 
         render(<MidiDevicePicker />);
 
@@ -181,41 +201,148 @@ describe('MidiDevicePicker', () => {
         expect(screen.getByLabelText('Refresh MIDI devices')).toBeInTheDocument();
         expect(screen.queryByText('Detecting devices...')).not.toBeInTheDocument();
         expect(screen.queryByText('Detecting MIDI devices...')).not.toBeInTheDocument();
-        expect(screen.getByText('No MIDI devices found')).toBeInTheDocument();
+        expect(screen.getByRole('option', { name: "Couldn't list MIDI devices" })).toBeInTheDocument();
+        expect(screen.queryByRole('option', { name: 'No MIDI devices found' })).not.toBeInTheDocument();
     });
 
-    it('shows the detecting state and a disabled select while devices are empty and not initialised', async () => {
+    it('shows the detecting state and a disabled select while devices are empty and no enumeration has completed', async () => {
         (useStore as ReturnType<typeof vi.fn>).mockReturnValue({
             isSupported: true,
             inputs: [],
             selectedInputId: null,
+            enumerationCompleted: false,
         });
-        // Block initWebMidi from settling so `initialised` stays false.
-        mockInitWebMidi.mockReturnValue(new Promise(() => {}));
+        // Block initWebMidi from publishing; no enumeration has completed.
+        mockInitWebMidi.mockReturnValue(new Promise<boolean>(() => {}));
 
         render(<MidiDevicePicker />);
         await waitFor(() => {
             expect(screen.getByText('Detecting devices...')).toBeInTheDocument();
         });
-        // Detection hint is shown while not initialised and inputs empty.
+        // Detection hint is shown while no enumeration has completed and inputs are empty.
         expect(screen.getByText('Detecting MIDI devices...')).toBeInTheDocument();
         // The select is disabled when there are no inputs.
         expect(screen.getByLabelText('MIDI input device')).toBeDisabled();
     });
 
-    it('shows "No MIDI devices found" once initialised with an empty device list', async () => {
+    it('shows "No MIDI devices found" once the store records a completed enumeration', async () => {
         (useStore as ReturnType<typeof vi.fn>).mockReturnValue({
             isSupported: true,
             inputs: [],
             selectedInputId: null,
+            enumerationCompleted: true,
         });
-        // initWebMidi resolves ⇒ initialised becomes true.
-        mockInitWebMidi.mockResolvedValue(undefined);
 
         render(<MidiDevicePicker />);
         await waitFor(() => {
             expect(screen.getByText('No MIDI devices found')).toBeInTheDocument();
         });
+    });
+
+    it('settles when an enumeration error clears with a completed enumeration', async () => {
+        (useStore as ReturnType<typeof vi.fn>).mockReturnValue({
+            isSupported: true,
+            inputs: [],
+            selectedInputId: null,
+            enumerationError: 'denied',
+            enumerationCompleted: false,
+        });
+
+        const { rerender } = render(<MidiDevicePicker />);
+        expect(screen.getByRole('option', { name: "Couldn't list MIDI devices" })).toBeInTheDocument();
+
+        // A registered state-change listener cleared the error with a successful
+        // empty enumeration; this picker's own init never ran.
+        (useStore as ReturnType<typeof vi.fn>).mockReturnValue({
+            isSupported: true,
+            inputs: [],
+            selectedInputId: null,
+            enumerationError: null,
+            enumerationCompleted: true,
+        });
+        rerender(<MidiDevicePicker />);
+
+        await waitFor(() => {
+            expect(screen.getByRole('option', { name: 'No MIDI devices found' })).toBeInTheDocument();
+        });
+        expect(mockInitWebMidi).not.toHaveBeenCalled();
+        expect(screen.queryByText('Detecting devices...')).not.toBeInTheDocument();
+        expect(screen.queryByText('Detecting MIDI devices...')).not.toBeInTheDocument();
+    });
+
+    it('keeps detecting when a superseded attempt settles while a newer attempt is pending', async () => {
+        (useStore as ReturnType<typeof vi.fn>).mockReturnValue({
+            isSupported: true,
+            inputs: [],
+            selectedInputId: null,
+            enumerationError: null,
+            enumerationCompleted: false,
+        });
+
+        let resolveOlder: (published: boolean) => void = () => {};
+        mockInitWebMidi
+            .mockImplementationOnce(
+                () =>
+                    new Promise<boolean>((resolve) => {
+                        resolveOlder = resolve;
+                    })
+            )
+            .mockImplementationOnce(() => new Promise<boolean>(() => {}));
+
+        const { rerender } = render(<MidiDevicePicker />);
+        fireEvent.click(screen.getByLabelText('Refresh MIDI devices'));
+        expect(mockInitWebMidi).toHaveBeenCalledTimes(2);
+
+        // The mount attempt was superseded by Refresh and publishes nothing.
+        await act(async () => {
+            resolveOlder(false);
+        });
+        expect(screen.getByRole('option', { name: 'Detecting devices...' })).toBeInTheDocument();
+        expect(screen.queryByRole('option', { name: 'No MIDI devices found' })).not.toBeInTheDocument();
+
+        // Only the newer attempt's successful publish settles the picker.
+        (useStore as ReturnType<typeof vi.fn>).mockReturnValue({
+            isSupported: true,
+            inputs: [],
+            selectedInputId: null,
+            enumerationError: null,
+            enumerationCompleted: true,
+        });
+        rerender(<MidiDevicePicker />);
+        await waitFor(() => {
+            expect(screen.getByRole('option', { name: 'No MIDI devices found' })).toBeInTheDocument();
+        });
+    });
+
+    it('settles from a completed enumeration published without this picker initiating it', async () => {
+        (useStore as ReturnType<typeof vi.fn>).mockReturnValue({
+            isSupported: true,
+            inputs: [],
+            selectedInputId: null,
+            enumerationError: null,
+            enumerationCompleted: false,
+        });
+        mockInitWebMidi.mockImplementationOnce(() => new Promise<boolean>(() => {}));
+
+        const { rerender } = render(<MidiDevicePicker />);
+        expect(screen.getByRole('option', { name: 'Detecting devices...' })).toBeInTheDocument();
+
+        // A foreign init (the boot init) published this successful empty
+        // enumeration; this mount's own attempt is still pending.
+        (useStore as ReturnType<typeof vi.fn>).mockReturnValue({
+            isSupported: true,
+            inputs: [],
+            selectedInputId: null,
+            enumerationError: null,
+            enumerationCompleted: true,
+        });
+        rerender(<MidiDevicePicker />);
+
+        await waitFor(() => {
+            expect(screen.getByRole('option', { name: 'No MIDI devices found' })).toBeInTheDocument();
+        });
+        expect(screen.queryByText('Detecting devices...')).not.toBeInTheDocument();
+        expect(screen.queryByText('Detecting MIDI devices...')).not.toBeInTheDocument();
     });
 
     it('omits the manufacturer parenthetical when it is "Unknown"', async () => {
@@ -242,7 +369,7 @@ describe('MidiDevicePicker', () => {
         expect(mockSelectMidiInput).not.toHaveBeenCalled();
     });
 
-    it('renders "Connected: Unknown" when the selected device is no longer in the input list', () => {
+    it('renders "Connected: Unknown" when the selected device is no longer in the input list', async () => {
         (useStore as ReturnType<typeof vi.fn>).mockReturnValue({
             isSupported: true,
             inputs: [{ id: 'midi1', name: 'MIDI Keyboard', manufacturer: 'Roland' }],
@@ -250,7 +377,9 @@ describe('MidiDevicePicker', () => {
             selectedInputId: 'disconnected',
             enumerationError: null,
         });
-        render(<MidiDevicePicker />);
+        await act(async () => {
+            render(<MidiDevicePicker />);
+        });
         // find() returns undefined ⇒ `?? 'Unknown'` fallback ⇒ "Connected: Unknown".
         expect(screen.getByText('Connected: Unknown')).toBeInTheDocument();
     });

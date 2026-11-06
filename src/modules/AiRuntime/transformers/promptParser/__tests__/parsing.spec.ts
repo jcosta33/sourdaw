@@ -520,8 +520,9 @@ describe('promptParser parsing', () => {
         it('parses multiple track creation', () => {
             const actions = tryCompoundFastPath('add 2 midi tracks', context);
             expect(actions).toEqual([
-                { type: 'addTrack', payload: { name: 'Midi 1', kind: 'midi' } },
-                { type: 'addTrack', payload: { name: 'Midi 2', kind: 'midi' } },
+                // Nameless: the track owner numbers them after the project's own MIDI tracks.
+                { type: 'addTrack', payload: { kind: 'midi' } },
+                { type: 'addTrack', payload: { kind: 'midi' } },
             ]);
         });
 

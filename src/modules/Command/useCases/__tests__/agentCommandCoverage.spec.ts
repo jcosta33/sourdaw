@@ -5,6 +5,7 @@ import { getAudioRenderingHandlers } from '#/modules/AudioRendering/useCases';
 import { getAutomationHandlers } from '#/modules/Automation/useCases';
 import { getDrumPreviewBranchHandlers } from '#/modules/CrdtDocument/useCases';
 import { getMidiNoteTransformHandlers } from '#/modules/MIDI/useCases';
+import { getProjectHandlers } from '#/modules/Project/useCases';
 import { getTransportHandlers } from '#/modules/Transport/useCases';
 import { getYeastHandlers } from '#/modules/Yeast/useCases';
 
@@ -31,6 +32,7 @@ const OWNER_FACTORY_NAMES: Record<AgentCommandLedgerOwner, string> = {
     Automation: 'getAutomationHandlers',
     CrdtDocument: 'getDrumPreviewBranchHandlers',
     MIDI: 'getMidiNoteTransformHandlers',
+    Project: 'getProjectHandlers',
     Transport: 'getTransportHandlers',
     Yeast: 'getYeastHandlers',
 };
@@ -42,6 +44,7 @@ function buildActionTypeOwnerMap(): Map<string, AgentCommandLedgerOwner> {
         ['Automation', getAutomationHandlers()],
         ['CrdtDocument', getDrumPreviewBranchHandlers({ canMutateBranchMetadata: () => true })],
         ['MIDI', getMidiNoteTransformHandlers()],
+        ['Project', getProjectHandlers()],
         ['Transport', getTransportHandlers()],
         ['Yeast', getYeastHandlers()],
     ];
@@ -63,6 +66,7 @@ describe('agent command ledger coverage', () => {
             getAutomationHandlers(),
             getDrumPreviewBranchHandlers({ canMutateBranchMetadata: () => true }),
             getMidiNoteTransformHandlers(),
+            getProjectHandlers(),
             getTransportHandlers(),
             getYeastHandlers(),
         ]);

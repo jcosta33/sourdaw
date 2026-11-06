@@ -4,11 +4,7 @@ Acoustic grand piano physical modeling and multi-sample virtual instrument (stri
 
 ## Public Contract Surface
 
-- **Use Cases** (`useCases/index.ts`): `getGrandBouleHandlers`, `prepareOfflineGrandBoule`, `captureOfflineGrandBoule`, `projectGrandBouleCalibrationToNativePatch`, `setGrandBouleEventBus`, `initGrandBouleSubscribers`, `initGrandBouleDocumentReconciliation`, `reconcileGrandBouleDevicesFromProject`, `setGrandBouleMorphBalance`, `setGrandBouleMorphEnabled`, `setGrandBouleMorphModel`, `setGrandBouleMorphPosition`.
-- **Stores** (`stores/index.ts`): `grandBouleStore`, `createGrandBouleStore`, `peekGrandBouleStore`, `subscribeToGrandBouleStoreCreation`, `resetGrandBouleStores`, `defaultGrandBouleState`, `createDefaultGrandBouleState`, `applyVelocityCurve`.
-- **Views** (`presentations/views/index.ts`): `GrandBoulePanel`.
-- **Events** (`events/index.ts`): No public events.
-- **Handler Maps**: `getGrandBouleHandlers` exposes `setGrandBouleDeviceState`.
+Public surface: `useCases/index.ts`, `stores/index.ts`, `presentations/views/index.ts`.
 
 ## Key Subsystems
 
@@ -27,6 +23,6 @@ Acoustic grand piano physical modeling and multi-sample virtual instrument (stri
 
 PR CI owns broader unit and crate suites. Locally run only the exact changed spec or filtered Rust test.
 
-- `pnpm test:run <changed-spec>`
-- `pnpm cargo:test --package daw-dsp grand_boule`
+- `pnpm guard --profile focused -- pnpm test:run <changed-spec>`
+- `pnpm guard --profile focused -- pnpm cargo:test --package daw-dsp grand_boule`
 - PR CI checks module boundaries; inspect that result after cross-module changes.

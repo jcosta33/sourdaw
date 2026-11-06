@@ -1,11 +1,12 @@
 import { decodeAudioFile, discardDecodedAudioFile } from '#/modules/AudioEngine/useCases';
-import { getAssetTransfer } from '#/modules/Collaboration/useCases';
 import { executeAppActionBatch } from '#/modules/Command/useCases';
 import { DEFAULT_TEMPO_BPM, transportStore } from '#/modules/Transport/stores';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { createTrack } from '../models/Track';
 import { getTrackState } from '../repositories/track/getTrackState';
+
+import { collaborationAssetTransfer } from './collaborationAssetTransfer';
 
 type ImportAudioFileOptions = {
     shouldContinue: () => boolean;
@@ -14,7 +15,7 @@ type ImportAudioFileOptions = {
 type ImportAudioFileOutput = 'completed' | 'superseded';
 
 type AudioImportBatchResult = Awaited<ReturnType<typeof executeAppActionBatch>>;
-type AssetTransfer = ReturnType<typeof getAssetTransfer>;
+type AssetTransfer = ReturnType<ReturnType<typeof collaborationAssetTransfer.read>['current']>;
 type StagedAsset = Awaited<ReturnType<NonNullable<AssetTransfer>['stageLocalAsset']>>;
 
 function getBatchFailureReason(result: AudioImportBatchResult): string {
@@ -168,7 +169,7 @@ export async function importAudioFile(
     const endBeat = Math.ceil(durationBeats / 4) * 4;
     const name = file.name.replace(/\.[^.]+$/, '');
 
-    const assetTransfer = getAssetTransfer();
+    const assetTransfer = collaborationAssetTransfer.read('importAudioFile').current();
     const stagedAssetResult = await stageAudioAsset(assetTransfer, file);
     if (stagedAssetResult === 'failed') {
         discardDecodedAudioFile(bufferId);

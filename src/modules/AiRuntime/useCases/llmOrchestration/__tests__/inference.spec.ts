@@ -1,14 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
+
 import { HostedAiHttpStatusError } from '../../../errors/HostedAiHttpStatusError';
 import { isModelProviderFailureError } from '../../../errors/ModelProviderFailureError';
 import { ToolPlanningRejectedError } from '../../../errors/ToolPlanningRejectedError';
 import { DEFAULT_AGENT_RESOURCE_LIMITS } from '../../../models/AgentResourceLimits';
-import {
-    CREATIVE_INTERPRETATION_TOOL_NAME,
-    createCreativeInterpretationToolSchema,
-    type CreativeInterpretationCatalog,
-} from '../../../models/CreativeInterpretation';
+import { CREATIVE_INTERPRETATION_TOOL_NAME } from '../../../models/CreativeInterpretation';
 import { TOOL_PLAN_MAX_OUTPUT_TOKENS } from '../../../models/HostedToolPlanLimits';
 import { type HostedTurnHistory } from '../../../models/HostedTurnHistory';
 import { LOCAL_PLANNING_TEMPLATE_OVERHEAD_TOKENS } from '../../../models/LocalPlanningBudget';
@@ -20,6 +18,7 @@ import {
     AUTO_TOOL_CHOICE,
     type HostedToolChoiceDirective,
 } from '../../../repositories/cloudLlm/cloudInference/hostedToolPlan';
+import { projectOpenAiStrictToolSchema } from '../../../repositories/cloudLlm/cloudInference/projectOpenAiStrictToolSchema';
 import { type OpenAiCompatibleCloudRuntime } from '../../../repositories/cloudLlm/cloudSession';
 import { getWebLlmContextWindowSize } from '../../../repositories/webLlm/getWebLlmContextWindowSize';
 import { agentReferenceStore } from '../../../stores/agentReferenceStore';
@@ -31,18 +30,27 @@ import {
     AGENT_DEVICE_MANIFEST_TOOL_NAME,
     ANALYSIS_COMPARE_REFERENCE_TOOL_NAME,
     ANALYSIS_MEASURE_TOOL_NAME,
+    BRIEF_COMPILE_TOOL_NAME,
+    getAgentToolCatalogSchemas,
     PROJECT_DISCOVERY_TOOL_NAME,
     RECIPE_DISCOVERY_TOOL_NAME,
     RECIPE_EXPANSION_TOOL_NAME,
 } from '../../agentToolCatalog';
 import { runApplicationOwnedToolLoop } from '../../applicationOwnedToolLoop';
+import { buildAgentContext } from '../../buildAgentContext';
 import { configureAgentResourceLimits } from '../../configureAgentResourceLimits';
+import { createPlanningInterpretationToolSchema } from '../../createPlanningInterpretationToolSchema';
 import { getPlanningProviderToolSchemas } from '../../getPlanningProviderToolSchemas';
+import { getProjectContext } from '../../getProjectContext';
 import { getProviderRouteView } from '../../getProviderRouteView';
 import { parseAnalysisMeasureArguments } from '../../parseAnalysisMeasureArguments';
 import { getPlanningProviderSchemaContract } from '../../planningProviderSchema';
+import { prepareAnswerInterpretationCatalog } from '../../prepareAnswerInterpretationCatalog';
+import { prepareCreativeInterpretationCatalog } from '../../prepareCreativeInterpretationCatalog';
 import { recordAgentProviderUsage } from '../../recordAgentProviderUsage';
 import { generateToolPlanningOutcome, WEBLLM_TOOL_BUDGET, type ProviderAttemptAdmission } from '../inference';
+
+registerDeviceEnginePorts();
 
 const mocks = vi.hoisted(() => ({
     backendChain: { value: [] as ('cloud' | 'webllm')[] },
@@ -157,19 +165,16 @@ const compatibleRuntime: OpenAiCompatibleCloudRuntime = {
 };
 
 /** A published catalog in the shape production hands the schema builder. */
-const creativeCatalog: CreativeInterpretationCatalog = {
-    schemaVersion: 1,
-    catalogId: 'creative-catalog-1',
-    revision: 'revision-1',
-    requestDigest: 'digest-1',
-    selection: { trackId: null, clipId: null, clipIds: [], activeView: 'arrange' },
-    unresolvedExplicitReferences: [],
-    modes: ['edit'],
-    targets: [],
-    dimensions: [],
-    constraints: [],
-    creationSlots: [],
-};
+function jointInterpretationSchema(): ToolSchema {
+    const context = getProjectContext();
+    const prompt = 'Describe';
+    const projectRevision = 'revision';
+    return createPlanningInterpretationToolSchema({
+        creative: prepareCreativeInterpretationCatalog({ prompt, context, projectRevision }),
+        answer: prepareAnswerInterpretationCatalog({ prompt, context, projectRevision }),
+        binding: buildAgentContext({ fixedPolicy: 'system', prompt, context, projectRevision }).planningBinding,
+    });
+}
 
 function toolSchema(name: string, description?: string): ToolSchema {
     return {
@@ -240,6 +245,194 @@ describe('generateToolPlanningOutcome', () => {
             state: 'ready',
             backend: 'cloud',
             modelId: 'hosted-model',
+        });
+    });
+
+    describe('project.query filters on a non-strict hosted provider', () => {
+        function projectQuerySchemas(): ToolSchema[] {
+            return getAgentToolCatalogSchemas().filter((schema) => schema.function.name === 'project.query');
+        }
+
+        function replyWithQueryArguments(
+            queryArguments: Record<string, unknown>,
+            strictness: { strictToolSchemas: boolean; nonStrictToolNames?: string[] } = { strictToolSchemas: false }
+        ): void {
+            mocks.backendChain.value = ['cloud'];
+            mocks.generateCloudToolCalls.mockResolvedValue({
+                providerRequestId: null,
+                calls: [{ id: 'query-call', name: 'project.query', arguments: queryArguments }],
+                ...strictness,
+                usage: null,
+            });
+        }
+
+        /** The loop's own turn, which says it answers a schema-invalid call with a receipt. */
+        function planLoopTurn() {
+            return generateToolPlanningOutcome(
+                'system',
+                'find the lead vocal',
+                projectQuerySchemas(),
+                undefined,
+                undefined,
+                undefined,
+                undefined,
+                undefined,
+                undefined,
+                {
+                    firstUserMessage: 'find the lead vocal',
+                    history: [],
+                    budgetNote: '',
+                    answersSchemaInvalidCalls: true,
+                }
+            );
+        }
+
+        it('admits a filter the owner publishes', async () => {
+            replyWithQueryArguments({ type: 'object', filters: { exactName: 'Lead Vocal' } });
+
+            await expect(
+                generateToolPlanningOutcome('system', 'find the lead vocal', projectQuerySchemas())
+            ).resolves.toMatchObject({
+                status: 'complete',
+                toolCalls: [
+                    { name: 'project.query', arguments: { type: 'object', filters: { exactName: 'Lead Vocal' } } },
+                ],
+            });
+        });
+
+        // Red when admission still fails the attempt for a call the provider never held to its schema,
+        // or admits it without saying where it misses, which the loop's receipt names to the model.
+        it.each([
+            {
+                label: 'an unknown filter key',
+                filters: { unknownFilter: 'x' },
+                violation: { kind: 'undeclared-property', path: '/filters/unknownFilter' },
+            },
+            {
+                label: 'a wrong-typed filter value',
+                filters: { startBeat: '4' },
+                violation: { kind: 'invalid-value', path: '/filters/startBeat' },
+            },
+        ])('admits $label as a recoverable schema violation the loop answers', async ({ filters, violation }) => {
+            replyWithQueryArguments({ type: 'object', filters });
+
+            await expect(planLoopTurn()).resolves.toMatchObject({
+                status: 'complete',
+                toolCalls: [
+                    {
+                        id: 'query-call',
+                        name: 'project.query',
+                        arguments: { type: 'object', filters },
+                        argumentSchemaViolation: violation,
+                    },
+                ],
+                proposal: null,
+            });
+        });
+
+        // Red when Anthropic's per-tool strictness is read as the request's: a tool its strict budget
+        // sent loose is no more enforced than one on a non-strict request.
+        it('admits the violation from a tool a strict request sent without strict enforcement', async () => {
+            replyWithQueryArguments(
+                { type: 'object', filters: { startBeat: '4' } },
+                { strictToolSchemas: true, nonStrictToolNames: ['project.query'] }
+            );
+
+            await expect(planLoopTurn()).resolves.toMatchObject({
+                status: 'complete',
+                toolCalls: [{ argumentSchemaViolation: { kind: 'invalid-value', path: '/filters/startBeat' } }],
+            });
+        });
+
+        // Red when the violation is admitted where the provider enforced the schema, which only a broken
+        // stream can violate, or for a caller that has no receipt to answer it with.
+        it.each([
+            { label: 'a strict-schema request', strictness: { strictToolSchemas: true }, answers: true },
+            {
+                label: 'a strict request that names other tools loose',
+                strictness: { strictToolSchemas: true, nonStrictToolNames: ['answer.respond'] },
+                answers: true,
+            },
+            { label: 'a caller that does not answer it', strictness: { strictToolSchemas: false }, answers: false },
+        ])('still fails the attempt on $label', async ({ strictness, answers }) => {
+            replyWithQueryArguments({ type: 'object', filters: { startBeat: '4' } }, strictness);
+
+            if (answers) {
+                await expect(planLoopTurn()).rejects.toThrow('The model provider request failed.');
+                return;
+            }
+            await expect(
+                generateToolPlanningOutcome('system', 'find the lead vocal', projectQuerySchemas())
+            ).rejects.toThrow('The model provider request failed.');
+        });
+    });
+
+    describe('project.query on a strict hosted provider', () => {
+        function isRecord(value: unknown): value is Record<string, unknown> {
+            return typeof value === 'object' && value !== null && !Array.isArray(value);
+        }
+
+        function isNullable(node: Record<string, unknown>): boolean {
+            return Array.isArray(node.type) && node.type.includes('null');
+        }
+
+        /** The reply a strict model sends: every property the projection made nullable is null. */
+        function unsetOptionals(projected: Record<string, unknown>): Record<string, unknown> {
+            const properties = isRecord(projected.properties) ? projected.properties : {};
+            const reply: Record<string, unknown> = {};
+            for (const [key, property] of Object.entries(properties)) {
+                if (!isRecord(property)) {
+                    continue;
+                }
+                if (isNullable(property)) {
+                    reply[key] = null;
+                } else if (property.type === 'object') {
+                    reply[key] = unsetOptionals(property);
+                }
+            }
+            return reply;
+        }
+
+        it('reads the nulls a strict reply sends for unset optional arguments as absent', async () => {
+            const projectQuery = getAgentToolCatalogSchemas().find(
+                (schema) => schema.function.name === 'project.query'
+            );
+            if (projectQuery === undefined) {
+                throw new Error('project.query is not published');
+            }
+            const projected = projectOpenAiStrictToolSchema(projectQuery).function.parameters;
+            const projectedFilters = isRecord(projected.properties) ? projected.properties.filters : undefined;
+            if (!isRecord(projectedFilters)) {
+                throw new Error('project.query publishes no filters schema');
+            }
+            const strictReply = {
+                ...unsetOptionals(projected),
+                type: 'object',
+                filters: { ...unsetOptionals(projectedFilters), exactName: 'Lead Vocal' },
+            };
+            expect(strictReply).toMatchObject({
+                page: null,
+                sinceRevision: null,
+                filters: { muted: null, startBeat: null },
+            });
+            mocks.backendChain.value = ['cloud'];
+            mocks.generateCloudToolCalls.mockResolvedValue({
+                providerRequestId: null,
+                calls: [{ id: 'query-call', name: 'project.query', arguments: strictReply }],
+                strictToolSchemas: true,
+                usage: null,
+            });
+
+            const outcome = await generateToolPlanningOutcome('system', 'find the lead vocal', [projectQuery]);
+
+            expect(outcome.status).toBe('complete');
+            expect(outcome.status === 'complete' && outcome.toolCalls).toEqual([
+                {
+                    id: 'query-call',
+                    name: 'project.query',
+                    arguments: { type: 'object', filters: { exactName: 'Lead Vocal' } },
+                },
+            ]);
         });
     });
 
@@ -1701,9 +1894,8 @@ describe('generateToolPlanningOutcome', () => {
         });
 
         const advertisedTools = mocks.generateWebLlmToolCalls.mock.calls[0]?.[2] ?? [];
-        // The budget now exceeds the five mandatory tools plus the 30 tools the prompt selector
-        // hands over (#4371 raised it from 31 to 36), so the selector's cap binds here.
-        expect(advertisedTools).toHaveLength(5 + 30);
+        // Spare ceiling capacity does not create more optional slots.
+        expect(advertisedTools).toHaveLength(5 + 1);
         expect(advertisedTools.length).toBeLessThanOrEqual(WEBLLM_TOOL_BUDGET);
         expect(advertisedTools.map((tool: ToolSchema) => tool.function.name)).toEqual(
             expect.arrayContaining([
@@ -1732,7 +1924,7 @@ describe('generateToolPlanningOutcome', () => {
             toolSchema('agent.command-index.search'),
             toolSchema('agent.catalog.discover'),
             ...competingTools,
-            createCreativeInterpretationToolSchema(creativeCatalog),
+            jointInterpretationSchema(),
         ];
 
         await expect(generateToolPlanningOutcome('system', 'plan a command', schemas)).resolves.toMatchObject({
@@ -1740,7 +1932,7 @@ describe('generateToolPlanningOutcome', () => {
         });
 
         const advertisedTools = mocks.generateWebLlmToolCalls.mock.calls[0]?.[2] ?? [];
-        expect(advertisedTools).toHaveLength(WEBLLM_TOOL_BUDGET);
+        expect(advertisedTools).toHaveLength(8);
         expect(advertisedTools.map((tool: ToolSchema) => tool.function.name)).toContain(
             CREATIVE_INTERPRETATION_TOOL_NAME
         );
@@ -1755,18 +1947,21 @@ describe('generateToolPlanningOutcome', () => {
         const schemas = getPlanningProviderToolSchemas();
 
         // The list production sends must carry exactly the planning contract plus every workflow action tool, and this holds across catalog growth.
-        // The reference comparison is the one contract tool offered only while the user has a reference loaded, and none is loaded here.
+        // The reference comparison is offered only while the user has a reference loaded, and none is
+        // loaded here; the brief only to a hosted chat request that asks for it, which this is not.
         expect(new Set(schemas.map((tool) => tool.function.name))).toEqual(
             new Set([
                 ...planningContract
                     .map((tool) => tool.function.name)
-                    .filter((name) => name !== ANALYSIS_COMPARE_REFERENCE_TOOL_NAME),
+                    .filter(
+                        (name) => name !== ANALYSIS_COMPARE_REFERENCE_TOOL_NAME && name !== BRIEF_COMPILE_TOOL_NAME
+                    ),
                 ...WORKFLOW_ACTION_TOOL_NAMES,
             ])
         );
 
         // Production appends the creative interpretation schema to that list on every run.
-        const productionSchemas = [...schemas, createCreativeInterpretationToolSchema(creativeCatalog)];
+        const productionSchemas = [...schemas, jointInterpretationSchema()];
 
         await expect(generateToolPlanningOutcome('system', 'plan a command', productionSchemas)).resolves.toMatchObject(
             {
@@ -1785,7 +1980,7 @@ describe('generateToolPlanningOutcome', () => {
         // The mandatory set (workflow selector, the application tools including the five planning
         // tools #4371 made mandatory, every workflow action tool) leaves one free slot under the
         // WebLLM budget, and it goes to the first non-mandatory catalog tool.
-        expect(advertisedNames).toHaveLength(WEBLLM_TOOL_BUDGET);
+        expect(advertisedNames).toHaveLength(37);
         expect(new Set(advertisedNames)).toEqual(
             new Set([
                 'selectWorkflowCapability',
@@ -1866,7 +2061,7 @@ describe('generateToolPlanningOutcome', () => {
             mocks.generateWebLlmToolCalls.mockResolvedValue({ status: 'complete', toolCalls: [] });
 
             const schemas = getPlanningProviderToolSchemas();
-            const productionSchemas = [...schemas, createCreativeInterpretationToolSchema(creativeCatalog)];
+            const productionSchemas = [...schemas, jointInterpretationSchema()];
 
             await expect(generateToolPlanningOutcome('system', prompt, productionSchemas)).resolves.toMatchObject({
                 status: 'complete',
@@ -1877,7 +2072,7 @@ describe('generateToolPlanningOutcome', () => {
 
             // These tools are mandatory (#4371), so they ride every prompt, and the budget still leaves
             // the one prompt-selected slot, which keeps project.discover for these prompts.
-            expect(advertisedNames).toHaveLength(WEBLLM_TOOL_BUDGET);
+            expect(advertisedNames).toHaveLength(37);
             expect(advertisedNames).toContain(PROJECT_DISCOVERY_TOOL_NAME);
             expect(advertisedNames).toContain(RECIPE_DISCOVERY_TOOL_NAME);
             expect(advertisedNames).toContain(RECIPE_EXPANSION_TOOL_NAME);
@@ -1904,10 +2099,7 @@ describe('generateToolPlanningOutcome', () => {
         });
         try {
             const prompt = 'compare my mix to the reference track I loaded';
-            const productionSchemas = [
-                ...getPlanningProviderToolSchemas(),
-                createCreativeInterpretationToolSchema(creativeCatalog),
-            ];
+            const productionSchemas = [...getPlanningProviderToolSchemas(), jointInterpretationSchema()];
 
             mocks.backendChain.value = ['webllm'];
             mocks.generateWebLlmToolCalls.mockResolvedValue({ status: 'complete', toolCalls: [] });
@@ -1944,7 +2136,7 @@ describe('generateToolPlanningOutcome', () => {
         });
 
         const schemas = getPlanningProviderToolSchemas();
-        const productionSchemas = [...schemas, createCreativeInterpretationToolSchema(creativeCatalog)];
+        const productionSchemas = [...schemas, jointInterpretationSchema()];
 
         await expect(
             generateToolPlanningOutcome(

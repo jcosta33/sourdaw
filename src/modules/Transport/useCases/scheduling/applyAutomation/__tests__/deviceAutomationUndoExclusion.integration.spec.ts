@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
 import { type Device, type Track, trackStore } from '#/modules/Arrangement/stores';
 import { getArrangementHandlers } from '#/modules/Arrangement/useCases';
@@ -25,6 +26,8 @@ import { runProjectLoadTransaction, setProjectIdentityTransitionDependencies } f
 import { tempoMapStore } from '../../../../stores/tempoMapStore';
 import { defaultTransportState, transportStore } from '../../../../stores/transportStore';
 import { applyAutomation } from '../applyAutomation';
+
+registerDeviceEnginePorts();
 
 // Command, Arrangement, Automerge and history stay real. This is the engine's
 // shared Web Audio/native parameter boundary; no live graph exists in Vitest.

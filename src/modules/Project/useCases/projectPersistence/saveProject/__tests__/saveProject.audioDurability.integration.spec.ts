@@ -164,6 +164,9 @@ describe('saveProject audio durability integration', () => {
             { createFreshProjectMetadata },
             { configureCollaborationAssetOwner },
             { withProjectAudioStorageLock },
+            { registerProjectLifecycle },
+            { registerDeviceEnginePorts },
+            { registerSupportingServicePorts },
         ] = await Promise.all([
             import('#/modules/AudioEngine/useCases'),
             import('#/modules/AudioEngine/stores'),
@@ -176,6 +179,9 @@ describe('saveProject audio durability integration', () => {
             import('../../../createFreshProjectMetadata'),
             import('#/modules/Collaboration/useCases'),
             import('#/infra/storage/withProjectAudioStorageLock'),
+            import('#/app/registerProjectLifecycle'),
+            import('#/app/registerDeviceEnginePorts'),
+            import('#/app/registerSupportingServicePorts'),
         ]);
         const context = audioEngine.context as AudioContext & {
             createBuffer: typeof createAudioBuffer;
@@ -192,6 +198,9 @@ describe('saveProject audio durability integration', () => {
         configureDurableAudioBufferOwnership(project.collectDurableOwnedAudioBufferIds);
         project.setProjectIdentityTransitionDependencies({ leaveCollaborationSession: () => Promise.resolve() });
         resetCrdtProjectAuthority('Durability');
+        registerProjectLifecycle();
+        registerDeviceEnginePorts();
+        registerSupportingServicePorts();
         resetModuleStoresToDefault();
         projectStore.set({
             ...createFreshProjectMetadata({

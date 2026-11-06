@@ -48,6 +48,47 @@ describe('isPromotableRuntimeClipCollection — accept path', () => {
     });
 });
 
+describe('canonical source provenance at alternative activation', () => {
+    it.each([
+        { type: 'audio', audioOffsetSeconds: Number.NaN },
+        { type: 'audio', audioOffsetSeconds: 0, audioUnwrappedOffsetSeconds: Infinity },
+        { type: 'audio', audioOffsetSeconds: 0, audioLoopPassEntrySeconds: Infinity },
+        { type: 'audio', audioOffsetSeconds: 0, audioLoopPassOriginBeat: Number.NaN },
+        { type: 'audio', audioLoopStartSeconds: 0 },
+        { type: 'midi', audioOffsetSeconds: 0 },
+    ])('rejects malformed or wrong-media canonical source provenance %j', (fields) => {
+        expect(
+            isPromotableRuntimeClipCollection({
+                value: [{ ...validClip('c1'), ...fields }],
+                targetTrackId: 't1',
+                tracks: minimalTracks(),
+                source: SOURCE,
+            })
+        ).toBe(false);
+    });
+
+    it('admits canonical zero with finite signed preroll and independent loop provenance', () => {
+        expect(
+            isPromotableRuntimeClipCollection({
+                value: [
+                    {
+                        ...validClip('c1'),
+                        type: 'audio',
+                        audioOffsetSeconds: 0,
+                        audioUnwrappedOffsetSeconds: 4,
+                        audioLoopStartSeconds: -0.5,
+                        audioLoopPassEntrySeconds: 1,
+                        audioLoopPassOriginBeat: 0,
+                    },
+                ],
+                targetTrackId: 't1',
+                tracks: minimalTracks(),
+                source: SOURCE,
+            })
+        ).toBe(true);
+    });
+});
+
 describe('isPromotableRuntimeClipCollection — value shape rejections', () => {
     it('rejects a non-array value', () => {
         expect(

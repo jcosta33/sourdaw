@@ -8,11 +8,7 @@ Owns real-time visual audio meters, scopes, and spectrum visualizations (peak/RM
 
 ## Public Contract Surface
 
-- **`presentations/views`**: `AnalysisPanel`, `Goniometer`, `LevelMeter`, `LUFSMeter`, `Oscilloscope`, `PhaseCorrelationDisplay`, `SpatialPanner`, `Spectrogram`, `SpectrumAnalyzer`, `Wavetable3D`, `WebGpuSpectrumAnalyzer`.
-- **`useCases`**: None.
-- **`events`**: None.
-- **`stores`**: None.
-- **Handler maps**: None.
+Public surface: `presentations/views/index.ts` only; the module exports no use cases, stores, events or handlers.
 
 ## Key Subsystems
 
@@ -29,5 +25,5 @@ Owns real-time visual audio meters, scopes, and spectrum visualizations (peak/RM
 
 PR CI owns broader unit and crate suites. Locally run only the exact changed spec or filtered Rust test.
 
-- **Focused unit tests**: `pnpm test:run <changed-spec>`
+- **Focused unit tests**: `pnpm guard --profile focused -- pnpm test:run <changed-spec>`
 - PR CI checks module boundaries; inspect that result after cross-module changes.

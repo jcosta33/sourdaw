@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { logger } from '#/infra/logger/appLogger';
+import * as synthVoices from '#/modules/Synth/useCases';
 import { defaultTransportState, setGestureClockSource, transportStore } from '#/modules/Transport/stores';
 import { dbToGain } from '#/utils/audioLevelLaw';
 
@@ -18,6 +19,20 @@ const schedule_device_key_on = vi.hoisted(() => vi.fn());
 const schedule_device_key_off = vi.hoisted(() => vi.fn());
 /** Stand-in for the PluginHost Faust registry: which device types are Faust instruments. */
 const faust_instrument_types = vi.hoisted(() => ({ value: new Set<string>() }));
+
+vi.mock('#/modules/Arrangement/useCases', () => ({
+    getRecordingMidiAdmission: () => undefined,
+    retireRecordingMidiAdmission: () => undefined,
+    takeOwnsRecordingRoot: () => true,
+}));
+
+vi.mock('../recordingMidiAdmissionPort', () => ({
+    recordingMidiAdmissionPort: {
+        getRecordingMidiAdmission: () => undefined,
+        retireRecordingMidiAdmission: () => undefined,
+        takeOwnsRecordingRoot: () => true,
+    },
+}));
 
 type TestMidiEvent = {
     timeSamples: number;
@@ -38,6 +53,7 @@ vi.mock('../../../repositories/webMidi/getTargetTrackId', () => ({
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     applyNoteExpression: apply_note_expression,
+    builtinSynthVoice: { read: () => synthVoices },
     audioEngine: {
         context: audio_clock,
         ensureTrackStrip: ensure_track_strip,
@@ -60,6 +76,18 @@ vi.mock('#/modules/PluginHost/useCases', () => ({
     isFaustInstrumentModule: (moduleId: string) => faust_instrument_types.value.has(moduleId),
 }));
 
+// The composition root's registrar loads every device barrel, and those read
+// the AudioEngine barrel this spec mocks whole, so the one port the note-on
+// route reads is filled here with the calibration the root composes: the
+// played Grand Boule's own store.
+const { applyVelocityCurve, createGrandBouleStore } = await import('#/modules/GrandBoule/stores');
+const { velocityCalibration } = await import('../velocityCalibration');
+velocityCalibration.configure({
+    calibratedVelocity: (deviceId, velocity) => {
+        const calibration = createGrandBouleStore(deviceId).value?.midiCalibration;
+        return calibration ? applyVelocityCurve(velocity, calibration) : null;
+    },
+});
 const { getSynthParamsFromDevices, scheduleNote } = await import('#/modules/Synth/useCases');
 const { handleWebMidiNoteOn } = await import('../handleWebMidiNoteOn');
 const { handleWebMidiNoteOff } = await import('../handleWebMidiNoteOff');

@@ -4,15 +4,15 @@ import { planRippleDelete } from '../planRippleDelete';
 
 const mocks = vi.hoisted(() => ({
     getTrackStoreState: vi.fn(),
-    workspaceStore: { value: null as { rippleEditing?: boolean } | null },
+    timelineEditingStore: { value: null as { rippleEditing?: boolean } | null },
 }));
 
 vi.mock('../../getTrackStoreState', () => ({
     getTrackStoreState: mocks.getTrackStoreState,
 }));
 
-vi.mock('#/modules/WorkspaceShell/stores', () => ({
-    workspaceStore: mocks.workspaceStore,
+vi.mock('../../../stores/timelineEditingStore', () => ({
+    timelineEditingStore: mocks.timelineEditingStore,
 }));
 
 describe('planRippleDelete', () => {
@@ -20,7 +20,7 @@ describe('planRippleDelete', () => {
 
     it('uses the supplied replay prefix for exact removal geometry and ordering', () => {
         mocks.getTrackStoreState.mockReturnValue({ tracks: [] });
-        mocks.workspaceStore.value = { rippleEditing: true };
+        mocks.timelineEditingStore.value = { rippleEditing: true };
         const original = {
             tracks: [
                 {
@@ -47,7 +47,7 @@ describe('planRippleDelete', () => {
     });
 
     it.each([false, true])('uses captured ripple=%s over the opposite workspace preference', (ripple) => {
-        mocks.workspaceStore.value = { rippleEditing: !ripple };
+        mocks.timelineEditingStore.value = { rippleEditing: !ripple };
         const state = {
             tracks: [
                 {
@@ -63,7 +63,7 @@ describe('planRippleDelete', () => {
         expect(plan?.nextClips).toEqual([
             { id: 'b', trackId: 't1', startBeat: ripple ? 0 : 4, endBeat: ripple ? 4 : 8 },
         ]);
-        expect(mocks.workspaceStore.value.rippleEditing).toBe(!ripple);
+        expect(mocks.timelineEditingStore.value.rippleEditing).toBe(!ripple);
     });
 
     it('plans a simple delete without ripple if disabled', () => {
@@ -75,7 +75,7 @@ describe('planRippleDelete', () => {
         mocks.getTrackStoreState.mockReturnValue({
             tracks: [{ id: 't1', clips: mockClips }],
         });
-        mocks.workspaceStore.value = { rippleEditing: false };
+        mocks.timelineEditingStore.value = { rippleEditing: false };
 
         const plan = planRippleDelete({ trackId: 't1', clipIds: ['c2'] });
 
@@ -96,7 +96,7 @@ describe('planRippleDelete', () => {
         mocks.getTrackStoreState.mockReturnValue({
             tracks: [{ id: 't1', clips: mockClips }],
         });
-        mocks.workspaceStore.value = { rippleEditing: true };
+        mocks.timelineEditingStore.value = { rippleEditing: true };
 
         // Gap = c2 end (8) - c2 start (4) = 4.
         const plan = planRippleDelete({ trackId: 't1', clipIds: ['c2'] });
@@ -107,6 +107,42 @@ describe('planRippleDelete', () => {
             startBeat: 6, // 10 - 4
             endBeat: 10, // 14 - 4
         });
+    });
+
+    it('plans a physical loop pass origin at the relocated beat without rebasing source seconds', () => {
+        const follower = {
+            id: 'follower',
+            trackId: 't1',
+            startBeat: 10,
+            endBeat: 18,
+            audioOffsetSeconds: -0.25,
+            audioUnwrappedOffsetSeconds: 3.5,
+            audioLoopStartSeconds: 1.5,
+            audioLoopPassEntrySeconds: 4.5,
+            audioLoopPassOriginBeat: 8,
+            loopOriginBeat: 6,
+        };
+        const ordinary = { id: 'ordinary', trackId: 't1', startBeat: 20, endBeat: 24 };
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [
+                { id: 't1', clips: [{ id: 'removed', trackId: 't1', startBeat: 4, endBeat: 8 }, follower, ordinary] },
+            ],
+        });
+        const plan = planRippleDelete({ trackId: 't1', clipIds: ['removed'], ripple: true });
+        expect(plan?.nextClips.find((clip) => clip.id === 'follower')).toMatchObject({
+            startBeat: 6,
+            endBeat: 14,
+            audioOffsetSeconds: -0.25,
+            audioUnwrappedOffsetSeconds: 3.5,
+            audioLoopStartSeconds: 1.5,
+            audioLoopPassEntrySeconds: 4.5,
+            audioLoopPassOriginBeat: 4,
+            loopOriginBeat: 2,
+        });
+        const shiftedOrdinary = plan?.nextClips.find((clip) => clip.id === 'ordinary');
+        expect(shiftedOrdinary).toMatchObject({ startBeat: 16, endBeat: 20 });
+        expect(Object.hasOwn(shiftedOrdinary!, 'audioLoopPassOriginBeat')).toBe(false);
+        expect(follower).toMatchObject({ startBeat: 10, audioLoopPassOriginBeat: 8 });
     });
 
     it('bails if track or clips not found', () => {
@@ -123,7 +159,7 @@ describe('planRippleDelete', () => {
         mocks.getTrackStoreState.mockReturnValue({
             tracks: [{ id: 't1', clips: [{ id: 'c1', startBeat: 0, endBeat: 4 }] }],
         });
-        mocks.workspaceStore.value = { rippleEditing: true };
+        mocks.timelineEditingStore.value = { rippleEditing: true };
         expect(planRippleDelete({ trackId: 't1', clipIds: ['nope'] })).toBeNull();
     });
 
@@ -140,7 +176,7 @@ describe('planRippleDelete', () => {
                 },
             ],
         });
-        mocks.workspaceStore.value = null;
+        mocks.timelineEditingStore.value = null;
 
         const plan = planRippleDelete({ trackId: 't1', clipIds: ['c2'] });
 
@@ -164,7 +200,7 @@ describe('planRippleDelete', () => {
                 },
             ],
         });
-        mocks.workspaceStore.value = { rippleEditing: true };
+        mocks.timelineEditingStore.value = { rippleEditing: true };
 
         // Remove c3 (8-10) and c1 (0-2): span is [0,10), gap=10. c4 shifts by 10.
         const plan = planRippleDelete({ trackId: 't1', clipIds: ['c3', 'c1'] });

@@ -471,6 +471,7 @@ function transitionAgentRunPhase(input: {
 }
 
 function recordAgentRunPlan(input: {
+    metricGoalState?: string;
     runId: string;
     summary: string;
     commandIds: string[];
@@ -495,25 +496,56 @@ function recordAgentRunPlan(input: {
             grants: structuredClone(refuseDeferredMediaGrants(input.grants)),
             budgets: mergeAgentRunBudgets(run.budgets, input.budgets),
             plan: carryBatchSchedule(
-                structuredClone(
-                    input.plan ??
-                        createLegacyAgentRunPlan({
-                            summary: input.summary,
-                            commandIds: input.commandIds,
-                            serializedBatchIdentity: input.serializedBatchIdentity,
-                            applicationToolReceipts: input.applicationToolReceipts ?? [],
-                            revision: input.revision,
-                            scope: input.scope,
-                        })
-                ),
+                {
+                    ...structuredClone(
+                        input.plan ??
+                            createLegacyAgentRunPlan({
+                                summary: input.summary,
+                                commandIds: input.commandIds,
+                                serializedBatchIdentity: input.serializedBatchIdentity,
+                                applicationToolReceipts: input.applicationToolReceipts ?? [],
+                                revision: input.revision,
+                                scope: input.scope,
+                            })
+                    ),
+                    metricGoalState: input.metricGoalState ?? input.plan?.metricGoalState,
+                },
                 run.plan
             ),
         };
     });
 }
 
+/** Keep the run's approval snapshot aligned when a pending card is rebound after unrelated project edits. */
+function rebindAgentRunMetricGoalState(input: {
+    runId: string;
+    expectedMetricGoalState: string | undefined;
+    metricGoalState: string;
+    revision: string;
+}): boolean {
+    const run = getAgentRun(input.runId);
+    if (run === null || run.plan === null) {
+        return true;
+    }
+    if (run.phase !== 'waiting-for-approval' || run.plan.metricGoalState !== input.expectedMetricGoalState) {
+        return false;
+    }
+    updateAgentRun(input.runId, Date.now(), (current) => ({
+        ...current,
+        revisions: { ...current.revisions, planned: input.revision },
+        plan:
+            current.plan === null
+                ? null
+                : { ...current.plan, metricGoalState: input.metricGoalState, revision: input.revision },
+    }));
+    return true;
+}
+
 /** A plan recorded for a later batch replaces the earlier one but never drops the schedule both belong to. */
 function carryBatchSchedule(next: AgentRunPlan, previous: AgentRunPlan | null): AgentRunPlan {
+    if (next.metricGoalState === undefined && previous?.metricGoalState !== undefined) {
+        next = { ...next, metricGoalState: previous.metricGoalState };
+    }
     if (next.batchSchedule !== undefined || previous?.batchSchedule === undefined) {
         return next;
     }
@@ -2446,6 +2478,7 @@ export const agentRunLifecycle = {
     recordSagaCompensation: recordAgentRunSagaCompensation,
     recordApplicationToolEvidence: recordAgentRunApplicationToolEvidence,
     recordPlan: recordAgentRunPlan,
+    rebindMetricGoalState: rebindAgentRunMetricGoalState,
     recordDecision: recordAgentRunDecision,
     recordProviderUsage: recordAgentRunProviderUsage,
     recordPreparedStemImportRecovery: recordAgentRunPreparedStemImportRecovery,

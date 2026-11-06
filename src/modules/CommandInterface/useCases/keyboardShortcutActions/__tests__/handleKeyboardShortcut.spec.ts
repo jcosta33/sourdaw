@@ -40,6 +40,7 @@ vi.mock('#/modules/WorkspaceShell/stores', async (importOriginal) => {
 });
 
 vi.mock('#/modules/WorkspaceShell/useCases', () => ({
+    closeCollaborationPanel: vi.fn(),
     cycleAutomationVisibility: vi.fn(),
     toggleCommandPalette: vi.fn(),
     toggleWorkspaceMode: vi.fn(),
@@ -52,7 +53,7 @@ vi.mock('#/modules/WorkspaceShell/useCases', () => ({
     toggleVirtualKeyboard: vi.fn(),
     openExportDialog: vi.fn(),
     openPreferencesDialog: vi.fn(),
-    TOOL_SHORTCUTS: {},
+    getToolForKeyPress: vi.fn(() => null),
 }));
 
 vi.mock('#/modules/Arrangement/stores', () => ({
@@ -79,6 +80,8 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     clearClipSelection: vi.fn(),
     selectAllClips: vi.fn(),
     selectClipWithFocus: vi.fn(),
+    setClipSelection: vi.fn(),
+    prepareDuplicateClipTargetId: vi.fn(() => 'copy-1'),
     setMarqueeSelection: vi.fn(),
     cancelActiveTimelineGesture: vi.fn(() => false),
     executeUndoableDuplicateTimeRange: vi.fn(),
@@ -124,7 +127,7 @@ describe('handleKeyboardShortcut', () => {
             shift: false,
             alt: false,
             repeat: false,
-            isInput: false,
+            keyTarget: 'workspace',
         };
 
         const prevent = handleKeydown(desc);

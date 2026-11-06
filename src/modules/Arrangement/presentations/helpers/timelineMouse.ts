@@ -4,6 +4,7 @@
  * These have no React dependencies and can be called from any
  * of the three main handlers (mousedown, mousemove, mouseup).
  */
+import { getRenderedTrackTops } from '../../models/TimelineTrackExtent';
 import { timelineViewStore } from '../../stores/timelineViewStore';
 import { buildTimelineRenderModel } from '../../useCases/buildTimelineRenderModel';
 import { getTrackAtY } from '../../useCases/timelineInteractions/getTrackAtY';
@@ -33,7 +34,7 @@ export const resolveTrackAtY = (contentY: number): TrackHitResult | null => {
         return null;
     }
     const height = tracks[hit.index]?.height ?? 64;
-    const offset = tracks.slice(0, hit.index).reduce((sum, time) => sum + (time.height ?? 64), 0);
+    const offset = getRenderedTrackTops(tracks)[hit.index]!;
     return { trackId: tracks[hit.index]!.id, height, offset, index: hit.index };
 };
 

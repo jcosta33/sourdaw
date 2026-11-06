@@ -11,7 +11,6 @@
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
 import { MODEL_RELEASE_ADMISSION } from '#/infra/release/modelReleaseAdmission';
-import { midiStore, type MidiStoreState } from '#/modules/MIDI/stores';
 
 import { type DdspInstrument, type KokoroModel, type ModelDownloadStatus } from '../models/BrowserModel';
 import { DDSP_INSTRUMENT_CATALOG } from '../models/DdspInstrumentCatalog';
@@ -26,6 +25,7 @@ import { modelRegistryStore } from '../stores/modelRegistryStore';
 import { renderQueueStore, markPhraseStale } from '../stores/renderQueueStore';
 
 import { getDdspPhraseId } from './getDdspPhraseId';
+import { midiNoteEditSource } from './midiNoteEditSource';
 
 /** Stored so it can be cancelled on re-initialization (e.g. HMR) or in tests. */
 let midiStaleSubscription: (() => void) | undefined;
@@ -159,7 +159,7 @@ export const initBrowserAi = inject({
                 `[BrowserAi] Registry initialized: ${String(ddspInstruments.length)} DDSP instruments, Kokoro: ${kokoroModel?.status ?? 'withheld'}`
             );
 
-            // ── 5. Subscribe to midiStore — mark rendered phrases stale on edit ──
+            // ── 5. Subscribe to MIDI note edits — mark rendered phrases stale on edit ──
             // The unsubscribe function is stored at module scope so it is not garbage-collected
             // and can be called if the module is ever torn down (e.g. in tests or HMR).
             midiStaleSubscription?.();
@@ -170,8 +170,9 @@ export const initBrowserAi = inject({
             // BrowserAi, diffing a populated map against that empty baseline would mark
             // every already-rendered phrase stale. Instead, adopt the first emission as
             // the baseline and only compare from the second emission onward.
-            let prevNotesByClipId: MidiStoreState['notesByClipId'] | undefined;
-            midiStaleSubscription = midiStore.subscribe((next) => {
+            const { subscribe } = midiNoteEditSource.read('initBrowserAi');
+            let prevNotesByClipId: Readonly<Record<string, unknown>> | undefined;
+            midiStaleSubscription = subscribe((next) => {
                 const nextNotesByClipId = next?.notesByClipId ?? {};
 
                 // First emission (incl. the hydration emission): establish the baseline

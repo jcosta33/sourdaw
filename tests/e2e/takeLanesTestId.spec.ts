@@ -1,5 +1,6 @@
-import { expect, test, type Page } from '@playwright/test';
+import { type Page } from '@playwright/test';
 
+import { expect, test } from './e2eTest';
 import { launch_from_template, setupWorkspace } from './e2eUtils';
 
 function bassTrackRow(page: Page) {
@@ -12,7 +13,7 @@ function bassTrackRow(page: Page) {
 }
 
 function variationToggle(page: Page) {
-    return bassTrackRow(page).getByRole('button', { name: 'Toggle variation lanes' });
+    return bassTrackRow(page).getByRole('button', { name: 'Variation lanes for Bass' });
 }
 
 async function openTakeLanes(page: Page): Promise<void> {

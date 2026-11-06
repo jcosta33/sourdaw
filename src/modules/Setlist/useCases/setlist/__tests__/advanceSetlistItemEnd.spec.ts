@@ -22,11 +22,14 @@ const transportRuntime = vi.hoisted(() => ({
 }));
 
 vi.mock('#/modules/Command/useCases', () => ({
+    executeAppActionBatch: vi.fn(async () => ({ status: 'committed' as const, actions: [] })),
+    generateGroupId: (label: string) => ({ groupId: 'setlist-transport-test', groupLabel: label }),
     executeUserAppAction: vi.fn(),
     pushUndoEntry: vi.fn(),
 }));
 
 vi.mock('#/modules/Transport/useCases', () => ({
+    getTempoWriteTarget: () => ({ writable: true, tempo: transportRuntime.tempo, tempoChangeId: null }),
     preferencesSeededTransportState: vi.fn(),
     secondsBetweenBeats: (
         _changes: readonly unknown[],

@@ -6,8 +6,10 @@ import { restampLoopOriginEntry } from '#/utils/clipLoopOrigin';
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { updateClip } from '../../repositories/track/updateClip';
 import { resolveEligibleClipWriteTarget } from '../../stores/resolveEligibleClipWriteTarget';
+import { liveTempoTimeline } from '../liveTempoTimeline';
 
 import { reversedClipAudioOffsetBeats } from './reversedClipAudioOffsetBeats';
+import { reversedClipAudioSource } from './reversedClipAudioSource';
 
 /**
  * `reversedBufferId` is resolved by the command layer before dispatch rather than minted
@@ -33,6 +35,14 @@ export function reverseClip(clipId: string, reversedBufferId?: string): boolean 
 
     const buffer = getCachedAudioBuffer({ bufferId: clip.audioBufferId });
     if (!buffer) {
+        return false;
+    }
+    const audioSource = reversedClipAudioSource(
+        clip,
+        buffer.length / buffer.sampleRate,
+        liveTempoTimeline.secondsAtBeat
+    );
+    if (audioSource === null) {
         return false;
     }
 
@@ -101,6 +111,7 @@ export function reverseClip(clipId: string, reversedBufferId?: string): boolean 
             // pre-reverse anchor (`handleReverseClip`), so undo/redo
             // round-trips it exactly and recovers the original read.
             ...restampLoopOriginEntry(candidate, candidate.startBeat),
+            ...audioSource,
         };
         if (remappedAudioOffsetBeats === undefined) {
             return reversedClip;

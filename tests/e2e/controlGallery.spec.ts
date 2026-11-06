@@ -1,5 +1,4 @@
-import { expect, test } from '@playwright/test';
-
+import { expect, test } from './e2eTest';
 import { LAUNCH_SCREEN_FIRST_PAINT_TIMEOUT_MS, launch_new_project, setupWorkspace } from './e2eUtils';
 
 test('development control gallery shows source tokens and interactive shared controls', async ({ page }, testInfo) => {
@@ -12,7 +11,7 @@ test('development control gallery shows source tokens and interactive shared con
     await expect(galleryHeading).toBeVisible({ timeout: LAUNCH_SCREEN_FIRST_PAINT_TIMEOUT_MS });
 
     const tokens = page.getByRole('list', { name: 'Design tokens' }).locator('[data-token-name]');
-    await expect(tokens).toHaveCount(193);
+    await expect(tokens).toHaveCount(200);
 
     for (const category of ['Knob', 'Fader', 'Toggle', 'LED', 'Meter', 'Display']) {
         await expect(page.getByRole('region', { name: category })).toBeVisible();

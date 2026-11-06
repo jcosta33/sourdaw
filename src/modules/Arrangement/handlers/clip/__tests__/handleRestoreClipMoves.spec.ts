@@ -84,12 +84,46 @@ describe('handleRestoreClipMoves', () => {
         // undo must reverse both numbers: an anchor left at 4 under the
         // restored start 4 would read advance 0 and re-roll the loop passes.
         mocks.getTrackStoreState.mockReturnValue({
-            tracks: [{ id: 't1', clips: [{ id: 'c9', startBeat: 7, endBeat: 11, loopOriginBeat: 4 }] }],
+            tracks: [
+                {
+                    id: 't1',
+                    clips: [
+                        {
+                            id: 'c9',
+                            startBeat: 7,
+                            endBeat: 11,
+                            loopOriginBeat: 4,
+                            audioOffsetSeconds: -0.25,
+                            audioUnwrappedOffsetSeconds: 3.5,
+                            audioLoopStartSeconds: 1.5,
+                            audioLoopPassEntrySeconds: 4.5,
+                            audioLoopPassOriginBeat: 5,
+                        },
+                    ],
+                },
+            ],
         });
         void handleRestoreClipMoves.execute(restoreAction([], [{ clipId: 'c9', origStartBeat: 4, origEndBeat: 8 }]));
 
         expect(mocks.setTrackState).toHaveBeenCalledWith({
-            tracks: [{ id: 't1', clips: [{ id: 'c9', startBeat: 4, endBeat: 8, loopOriginBeat: 1 }] }],
+            tracks: [
+                {
+                    id: 't1',
+                    clips: [
+                        {
+                            id: 'c9',
+                            startBeat: 4,
+                            endBeat: 8,
+                            loopOriginBeat: 1,
+                            audioOffsetSeconds: -0.25,
+                            audioUnwrappedOffsetSeconds: 3.5,
+                            audioLoopStartSeconds: 1.5,
+                            audioLoopPassEntrySeconds: 4.5,
+                            audioLoopPassOriginBeat: 2,
+                        },
+                    ],
+                },
+            ],
         });
     });
 

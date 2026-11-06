@@ -386,7 +386,8 @@ describe('getProjectContext', () => {
                     ],
                     activeAlternativeId: 'alt-active',
                     alternatives: [
-                        { id: 'alt-active', name: 'Active', clips: [{ id: 'c1' }] },
+                        // Stale stored copy: the active alternative's clips are the track's own `clips`.
+                        { id: 'alt-active', name: 'Active', clips: [{ id: 'c1' }, { id: 'c-deleted' }] },
                         { id: 'alt-hidden', name: 'Hidden take', clips: [{ id: 'c-hidden' }] },
                     ],
                     devices: [
@@ -727,7 +728,7 @@ describe('getProjectContext', () => {
         };
 
         const first = getProjectContext();
-        expect(first.vcaGroups).toEqual(mocks.vcaStoreValue.value.groups);
+        expect(first.vcaGroups).toEqual([{ ...mocks.vcaStoreValue.value.groups[0], gainDb: 20 * Math.log10(0.75) }]);
 
         mocks.vcaStoreValue.value = {
             groups: [{ ...mocks.vcaStoreValue.value.groups[0]!, gain: 0.6 }],
@@ -736,6 +737,7 @@ describe('getProjectContext', () => {
 
         expect(second).not.toBe(first);
         expect(second.vcaGroups?.[0]?.gain).toBe(0.6);
+        expect(second.vcaGroups?.[0]?.gainDb).toBeCloseTo(20 * Math.log10(0.6));
     });
 
     it('maps arrangement sections and invalidates the cache when their bounds change', () => {

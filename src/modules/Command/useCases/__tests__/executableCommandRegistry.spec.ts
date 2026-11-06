@@ -13,8 +13,10 @@ import {
     describeLevelLawDb,
     FADER_GAIN_RANGE_DESCRIPTION,
     FADER_MAX_GAIN_LABEL,
+    METRONOME_LEVEL_LAW,
     SEND_LEVEL_LAW,
     TRACK_FADER_LAW,
+    VCA_LEVEL_LAW,
 } from '#/utils/audioLevelLaw';
 import { ADD_NOTES_MAX_NOTES_PER_COMMAND, MIDI_NOTE_MIN_DURATION_BEATS } from '#/utils/midiNoteBatchLimits';
 
@@ -81,7 +83,11 @@ const EXPECTED_COMMANDS = [
         'addTrack',
         'Create a new track in the session.',
         {
-            name: { type: 'string', description: 'Display name (e.g. "Kick", "Vocals", "Synth Pad")' },
+            name: {
+                type: 'string',
+                description:
+                    'Display name (e.g. "Kick", "Vocals", "Synth Pad"). Omit it to name the track by its kind and the next free number.',
+            },
             kind: { type: 'string', enum: ['audio', 'midi', 'folder'], description: 'Track type' },
             binding: {
                 type: 'string',
@@ -89,7 +95,7 @@ const EXPECTED_COMMANDS = [
                 description: 'Optional plan-local name. Later calls may target this newly created track as $<binding>.',
             },
         },
-        ['name', 'kind'],
+        ['kind'],
         'bounded-reversible',
         false
     ),
@@ -961,9 +967,16 @@ const EXPECTED_COMMANDS = [
     ),
     expectedCommand(
         'setMetronomeVolume',
-        'Set metronome volume from 0.0 through 1.0.',
-        { volume: { type: 'number', description: '0.0 to 1.0' } },
-        ['volume'],
+        `Set metronome volume in decibels. Exactly one of volumeDb, deltaDb, or volume. ${describeLevelLawDb(METRONOME_LEVEL_LAW)}.`,
+        {
+            volumeDb: {
+                type: 'number',
+                description: `Absolute metronome level. ${describeLevelLawDb(METRONOME_LEVEL_LAW)}`,
+            },
+            deltaDb: { type: 'number', description: 'Relative change in decibels from the current metronome level.' },
+            volume: { type: 'number', description: 'Deprecated linear volume from 0.0 to 1.0; prefer decibels.' },
+        },
+        [],
         'bounded-reversible',
         false
     ),
@@ -987,12 +1000,14 @@ const EXPECTED_COMMANDS = [
     ),
     expectedCommand(
         'setVcaGain',
-        'Set an existing VCA group gain from 0.0 through 2.0.',
+        `Set an existing VCA group gain in decibels. Exactly one of gainDb, deltaDb, or gain. ${describeLevelLawDb(VCA_LEVEL_LAW)}.`,
         {
             vcaGroupId: { type: 'string', description: 'Existing VCA group ID' },
-            gain: { type: 'number', description: '0.0 to 2.0' },
+            gainDb: { type: 'number', description: `Absolute VCA gain. ${describeLevelLawDb(VCA_LEVEL_LAW)}` },
+            deltaDb: { type: 'number', description: 'Relative change in decibels from the current VCA gain.' },
+            gain: { type: 'number', description: 'Deprecated linear gain from 0.0 to 2.0; prefer decibels.' },
         },
-        ['vcaGroupId', 'gain'],
+        ['vcaGroupId'],
         'authority-sensitive',
         true
     ),
@@ -1205,21 +1220,21 @@ const EXPECTED_COMMANDS = [
     ),
     expectedCommand(
         'automateTrackGainRange',
-        'Lift an app-grounded set of impact buses by a bounded relative dB amount inside one arrangement section.',
+        'Lift each named bus by a bounded relative dB amount as gain automation inside one named arrangement section.',
         {
             trackIds: {
                 type: 'array',
                 items: { type: 'string' },
                 minItems: 1,
                 uniqueItems: true,
-                description: 'Exact app-grounded impact-bus IDs',
+                description: 'The exact buses the request names',
             },
-            sectionName: { type: 'string', description: 'Existing target chorus name' },
+            sectionName: { type: 'string', description: 'Existing arrangement section name the request names' },
             gainDb: {
                 type: 'number',
                 exclusiveMinimum: 0,
                 maximum: 6,
-                description: 'Bounded decibel lift selected by the planning policy',
+                description: 'Positive number of decibels the request states to lift the gain inside the section',
             },
         },
         ['trackIds', 'sectionName', 'gainDb'],
@@ -2467,10 +2482,24 @@ const EXPECTED_GROUNDING = [
     },
     {
         actionType: 'setMetronomeVolume',
-        intentPhrases: ['set metronome volume', 'set the metronome volume', 'change metronome volume'],
+        intentPhrases: [
+            'set metronome volume',
+            'set the metronome volume',
+            'change metronome volume',
+            'turn the metronome volume down',
+            'turn the metronome volume up',
+        ],
         targetRules: [],
         valueRules: [
-            { argument: 'volume', kind: 'number-if-present', requiredInPrompt: true, scale: 'percentage-only' },
+            { argument: 'volumeDb', kind: 'number-if-present', requiredInPrompt: true, levelForm: 'absolute-decibel' },
+            { argument: 'deltaDb', kind: 'number-if-present', requiredInPrompt: true, levelForm: 'relative-decibel' },
+            {
+                argument: 'volume',
+                kind: 'number-if-present',
+                requiredInPrompt: true,
+                scale: 'percentage-only',
+                levelForm: 'linear',
+            },
         ],
     },
     {
@@ -2533,7 +2562,17 @@ const EXPECTED_GROUNDING = [
             'change vca volume',
         ],
         targetRules: [{ argument: 'vcaGroupId', capability: 'vca-group' }],
-        valueRules: [{ argument: 'gain', kind: 'number-if-present', requiredInPrompt: true, scale: 'percentage-only' }],
+        valueRules: [
+            { argument: 'gainDb', kind: 'number-if-present', requiredInPrompt: true, levelForm: 'absolute-decibel' },
+            { argument: 'deltaDb', kind: 'number-if-present', requiredInPrompt: true, levelForm: 'relative-decibel' },
+            {
+                argument: 'gain',
+                kind: 'number-if-present',
+                requiredInPrompt: true,
+                scale: 'percentage-only',
+                levelForm: 'linear',
+            },
+        ],
     },
     {
         actionType: 'createVcaGroup',
@@ -2727,16 +2766,18 @@ const EXPECTED_GROUNDING = [
     },
     {
         actionType: 'automateTrackGainRange',
-        intentPhrases: ['make the second chorus hit harder', 'second chorus hit harder'],
+        intentPhrases: ['lift', 'gain lift'],
         targetRules: [
             {
                 argument: 'trackIds',
                 capability: 'routable-source',
                 cardinality: 'many',
-                promptRole: 'members',
             },
         ],
-        valueRules: [],
+        valueRules: [
+            { argument: 'sectionName', kind: 'section-reference' },
+            { argument: 'gainDb', kind: 'number-if-present', requiredInPrompt: true },
+        ],
     },
     {
         actionType: 'automateSendRanges',

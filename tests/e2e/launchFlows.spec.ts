@@ -1,5 +1,18 @@
-import { expect, test } from '@playwright/test';
+import { type Locator } from '@playwright/test';
+
+import { chooseProjectDirectory } from './chosenProjectDirectory';
+import { expect, test } from './e2eTest';
 import { launch_new_project, setupWorkspace, wait_for_workspace_ready } from './e2eUtils';
+
+type Box = { x: number; y: number; width: number; height: number };
+
+const boxOf = async (locator: Locator, name: string): Promise<Box> => {
+    const box = await locator.boundingBox();
+    if (box === null) {
+        throw new Error(`${name} has no bounding box`);
+    }
+    return box;
+};
 
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
 
@@ -19,10 +32,38 @@ test.describe('Launch Screen & Project Entry', () => {
             await expect(page.getByRole('button', { name: 'EDM' })).toBeVisible();
             await expect(page.getByRole('button', { name: 'Cinematic' })).toBeVisible();
 
-            await page.getByRole('button', { name: 'Film', exact: true }).click();
+            await page.getByRole('radio', { name: 'Film', exact: true }).click();
 
             await expect(page.getByRole('button', { name: 'Cinematic' })).toBeVisible();
             await expect(page.getByRole('button', { name: 'EDM' })).toBeHidden();
+        });
+
+        test('Template view keeps its place and card size under every category filter', async ({ page }) => {
+            await page.getByLabel('Sourdaw — start a project').waitFor({ state: 'visible' });
+            await page.locator('#launch-from-template').click();
+
+            const back_button = page.getByRole('button', { name: 'Back to home' });
+            const chip_group = page.getByRole('radiogroup', { name: 'Template category' });
+            const card = page.getByRole('button', { name: 'Cinematic' });
+            await expect(back_button).toBeVisible();
+            await expect(card).toBeVisible();
+
+            const back_box = await boxOf(back_button, 'Back button');
+            const chips_box = await boxOf(chip_group, 'Template category group');
+            const all_card_box = await boxOf(card, 'Cinematic card');
+
+            for (const name of ['Music', 'Demos', 'Podcast', 'Film']) {
+                await page.getByRole('radio', { name, exact: true }).click();
+                await expect(page.getByRole('radio', { name, exact: true })).toBeChecked();
+                const back_now = await boxOf(back_button, 'Back button');
+                const chips_now = await boxOf(chip_group, 'Template category group');
+                expect(Math.abs(back_now.y - back_box.y)).toBeLessThanOrEqual(1);
+                expect(Math.abs(chips_now.y - chips_box.y)).toBeLessThanOrEqual(1);
+            }
+
+            await expect(card).toBeVisible();
+            const film_card_box = await boxOf(card, 'Cinematic card');
+            expect(Math.abs(film_card_box.height - all_card_box.height)).toBeLessThanOrEqual(1);
         });
 
         test('Can load a template from the grid and enter the workspace', async ({ page }) => {
@@ -68,6 +109,27 @@ test.describe('Launch Screen & Project Entry', () => {
 
             await page.getByRole('button', { name: 'Back to home' }).click();
             await expect(page.locator('#launch-new-project')).toBeVisible();
+        });
+
+        test('Reduced motion drops the launch overlay exit transition', async ({ page }) => {
+            const launch_screen = page.getByLabel('Sourdaw — start a project');
+            await launch_screen.waitFor({ state: 'visible' });
+            await expect(launch_screen).toHaveCSS('transition-property', 'none');
+
+            await launch_new_project(page);
+        });
+
+        test.describe('with full motion', () => {
+            test.use({ reducedMotion: 'no-preference' });
+
+            test('Launch overlay fades out into the workspace', async ({ page }) => {
+                const launch_screen = page.getByLabel('Sourdaw — start a project');
+                await launch_screen.waitFor({ state: 'visible' });
+                await expect(launch_screen).toHaveCSS('transition-property', 'opacity, scale');
+                await expect(launch_screen).toHaveCSS('transition-duration', '0.65s');
+
+                await launch_new_project(page);
+            });
         });
     });
 
@@ -117,6 +179,7 @@ test.describe('Launch Screen & Project Entry', () => {
         });
 
         test('Saving the project clears the unsaved changes indicator', async ({ page }) => {
+            await chooseProjectDirectory(page);
             await page.keyboard.press(`${MOD}+k`);
             await page.getByPlaceholder('Type a command...', { exact: true }).fill('Add MIDI Track');
             await page.getByRole('option', { name: 'Add MIDI Track' }).click();

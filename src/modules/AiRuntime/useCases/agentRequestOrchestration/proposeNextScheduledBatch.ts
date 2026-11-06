@@ -55,12 +55,8 @@ function readProviderProposal(schedule: AgentRunBatchSchedule): AgentRunProvider
     }
 }
 
-/** Grounds the slice at `position` against the live project exactly as the planner grounded the first. */
-function groundScheduledSlice(
-    run: AgentRun,
-    schedule: AgentRunBatchSchedule,
-    position: number
-): GroundedScheduledBatch {
+/** Grounds the bulk-set slice at `position` against the live project exactly as the planner grounded the first. */
+function groundBulkSetSlice(run: AgentRun, schedule: AgentRunBatchSchedule, position: number): GroundedScheduledBatch {
     const requestProtections = schedule.requestProtections;
     if (requestProtections === undefined || requestProtections.request !== run.request) {
         return {
@@ -119,6 +115,7 @@ function groundScheduledSlice(
     }
     const plannedSchedule: NonNullable<IntentResult['batchSchedule']> = {
         schemaVersion: schedule.schemaVersion,
+        kind: schedule.kind,
         scheduleId: schedule.scheduleId,
         position,
         total: schedule.total,
@@ -133,10 +130,12 @@ function groundScheduledSlice(
         revision,
         result: {
             actions: grounded.actions,
+            metricGoalState: schedule.metricGoalState,
             actionCommandGraph: grounded.actionCommandGraph,
             rawText: run.request,
             requiresConfirmation: grounded.requiresConfirmation,
             applicationToolReceipts: structuredClone(run.plan?.applicationToolReceipts ?? []),
+            terminalMeasurementSettlement: run.plan?.terminalMeasurementSettlement,
             executionMode: 'atomic',
             providerKnownTargetIds: grounded.providerKnownTargetIds,
             matchSelectorPredicates:
@@ -146,6 +145,22 @@ function groundScheduledSlice(
             batchSchedule: plannedSchedule,
         },
     };
+}
+
+/** Grounds the slice at `position` by what the schedule's slices hold. */
+function groundScheduledSlice(
+    run: AgentRun,
+    schedule: AgentRunBatchSchedule,
+    position: number
+): GroundedScheduledBatch {
+    switch (schedule.kind) {
+        case 'bulk-set':
+            return groundBulkSetSlice(run, schedule, position);
+        default: {
+            const exhaustive: never = schedule.kind;
+            throw new Error(`Unsupported batch schedule kind: ${String(exhaustive)}`);
+        }
+    }
 }
 
 /**
@@ -205,6 +220,7 @@ async function dispatchScheduledBatch(
             commandEnvelopes,
             commandBatch,
             agentApproval: compiledActionExecution.agentApproval,
+            metricGoalState: compiledActionExecution.metricGoalState,
             affectedIds: description.affectedIds,
             protectedUnchanged: description.protectedUnchanged,
             protectionFacts: grounded.result.protectionFacts,

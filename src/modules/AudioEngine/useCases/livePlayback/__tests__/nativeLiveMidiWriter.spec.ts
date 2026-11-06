@@ -18,6 +18,8 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
+
 import {
     type AudioGraphApplyResult,
     type AudioGraphBackend,
@@ -41,6 +43,8 @@ import {
 import { pumpNativeLiveMidiWriter } from '../pumpNativeLiveMidiWriter';
 import { repositionNativeLiveGraphSession } from '../repositionNativeLiveGraphSession';
 import { requestNativeLiveMidiWriterRearm } from '../requestNativeLiveMidiWriterRearm';
+
+registerDeviceEnginePorts();
 
 const SAMPLE_RATE = 48_000;
 const TARGET = { trackId: 'midi-1', deviceId: 'd1' } as const;

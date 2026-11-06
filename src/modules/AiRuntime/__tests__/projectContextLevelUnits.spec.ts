@@ -94,6 +94,8 @@ describe('project context level units', () => {
             sendFloorDb: SEND_MIN_DB,
             sendCeilingDb: 0,
             clipCeilingDb: CLIP_GAIN_LAW.ceilingDb,
+            vcaCeilingDb: 20 * Math.log10(2),
+            metronomeCeilingDb: 0,
         });
     });
 
@@ -110,6 +112,89 @@ describe('project context level units', () => {
         expect(panLane).toBeDefined();
         expect(panLane).not.toHaveProperty('minValueDb');
         expect(panLane).not.toHaveProperty('maxValueDb');
+    });
+
+    it('carries current VCA and metronome levels in full and delta provider messages', () => {
+        const base = getProjectContext();
+        const group = { id: 'vca-one', name: 'VCA One', gain: 0.5, muted: false, trackIds: [] };
+        const first = buildAgentContext({
+            fixedPolicy: 'policy',
+            prompt: 'Set levels',
+            context: { ...base, metronomeVolume: 0.5, vcaGroups: [group] },
+            projectRevision: 'one',
+        });
+        const changed = buildAgentContext({
+            fixedPolicy: 'policy',
+            prompt: 'Set levels',
+            context: { ...base, metronomeVolume: 0.25, vcaGroups: [{ ...group, gain: 0 }] },
+            projectRevision: 'two',
+            priorEvidence: first.evidence,
+        });
+        for (const message of [changed.message, changed.localMessage]) {
+            expect(message).toContain('"metronomeVolumeDb":-12.041199826559248');
+            expect(message).toContain('"gainDb":null');
+        }
+        const second = buildAgentContext({
+            fixedPolicy: 'policy',
+            prompt: 'Set levels',
+            context: { ...base, metronomeVolume: 0, vcaGroups: [] },
+            projectRevision: 'three',
+            priorEvidence: changed.evidence,
+        });
+        expect(second.evidence.delta.mode).toBe('delta');
+        expect(second.evidence.snapshot.identity).not.toBe(first.evidence.snapshot.identity);
+        for (const message of [first.message, first.localMessage]) {
+            expect(message).toContain('"metronomeVolumeDb":-6.020599913279624');
+            const project = JSON.parse(
+                message
+                    .slice(message.indexOf('<project_context>\n') + '<project_context>\n'.length)
+                    .split('\n</project_context>')[0] ?? '{}'
+            ) as { vcaGroups: Array<{ id: string; gain: number; gainDb: number | null }> };
+            expect(project.vcaGroups.find((candidate) => candidate.id === group.id)).toMatchObject({
+                gain: 0.5,
+                gainDb: -6.020599913279624,
+            });
+        }
+        for (const message of [second.message, second.localMessage]) {
+            expect(message).toContain('"metronomeVolume":0');
+            expect(message).toContain('"metronomeVolumeDb":null');
+            expect(message).toContain('"vcaGroups":[]');
+            expect(message.split('"floorDb"')).toHaveLength(2);
+        }
+    });
+
+    it('falls back to the full context when VCA groups exceed the bounded delta', () => {
+        const base = getProjectContext();
+        const groups = Array.from({ length: 65 }, (_, index) => ({
+            id: `vca-${String(index)}`,
+            name: `VCA ${String(index)}`,
+            gain: 1,
+            muted: false,
+            trackIds: [],
+        }));
+        const first = buildAgentContext({
+            fixedPolicy: 'policy',
+            prompt: 'Set levels',
+            context: { ...base, vcaGroups: groups },
+            projectRevision: 'one',
+        });
+        const next = buildAgentContext({
+            fixedPolicy: 'policy',
+            prompt: 'Set levels',
+            context: { ...base, vcaGroups: groups },
+            projectRevision: 'two',
+            priorEvidence: first.evidence,
+        });
+        expect(first.evidence.snapshot.truncated).toBe(true);
+        expect(next.evidence.delta.mode).toBe('full');
+        expect(next.message).toContain('vca-64');
+        expect(next.localMessage).toContain('vca-64');
+    });
+
+    it('keeps a long local request whole when its bounded leading copy is truncated', () => {
+        const prompt = 'A'.repeat(513);
+        const built = buildAgentContext({ fixedPolicy: 'policy', prompt, context: getProjectContext() });
+        expect(built.localMessage).toContain(`<user_request>\n${prompt}\n</user_request>`);
     });
 
     it('hands the planner decibels and the law it reads them against', () => {

@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { REDO_NOT_APPLIED } from '#/modules/Command/useCases';
 import { LEGACY_MIDI_PROBABILITY_SEED } from '#/modules/MIDI/stores';
+import * as midiUseCases from '#/modules/MIDI/useCases';
 import { getMidiStoreState, setMidiStoreState } from '#/modules/MIDI/useCases';
 import { defaultTransportState, timeSignatureMapStore, transportStore } from '#/modules/Transport/stores';
 
@@ -46,11 +47,6 @@ vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
     pushUndoEntry: mocks.pushUndoEntry,
 }));
 
-vi.mock('#/modules/MIDI/useCases', async (importOriginal) => ({
-    ...(await importOriginal<typeof import('#/modules/MIDI/useCases')>()),
-    readMidiFile: mocks.readMidiFile,
-}));
-
 vi.mock('#/utils/Notification/notifyUser', () => ({
     notifyUser: mocks.notifyUser,
 }));
@@ -85,7 +81,9 @@ const importedNote = {
 
 describe('importMidiFile', () => {
     beforeEach(() => {
+        vi.restoreAllMocks();
         vi.clearAllMocks();
+        vi.spyOn(midiUseCases, 'readMidiFile').mockImplementation(mocks.readMidiFile);
         shouldInjectConcurrentTrack = true;
         trackStore.set({ tracks: [], selectedTrackId: null });
         transportStore.set(defaultTransportState);
@@ -146,7 +144,9 @@ describe('importMidiFile', () => {
     });
 
     it('preserves MIDI state written between parsing and the import write', async () => {
-        await importMidiFile(new File([], 'import.mid'), { shouldContinue: () => true });
+        const file = new File([], 'import.mid');
+        await importMidiFile(file, { shouldContinue: () => true });
+        expect(mocks.readMidiFile).toHaveBeenCalledExactlyOnceWith(file);
 
         const importedClipId = trackStore.value?.tracks[0]?.clips[0]?.id;
         if (!importedClipId) {

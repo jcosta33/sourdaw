@@ -1,8 +1,8 @@
 import { addClip, getAllTracks } from '#/modules/Arrangement/useCases';
 import { getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
 import { addMidiNote } from '#/modules/MIDI/useCases';
-import { readTempoAtBeat } from '#/modules/Transport/stores';
-import { resolveClipLoopOriginAdvance } from '#/utils/clipLoopOrigin';
+import { readBeatAtSamples, readSecondsAtBeat, readTempoAtBeat } from '#/modules/Transport/stores';
+import { projectAudioLoopPassSegments } from '#/utils/audioSourceTime';
 import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
 import { frequencyToMidiNote } from '#/utils/pitch';
 import { boundStretchRatio } from '#/utils/stretchRatioBound';
@@ -72,21 +72,11 @@ function estimatePitch(data: Float32Array, start: number, length: number, sample
     return sampleRate / bestLag;
 }
 
-type ClipPlaybackFields = {
-    startBeat: number;
-    endBeat: number;
-    audioOffsetBeats?: number;
-    stretchMode?: string;
-    stretchRatio?: number;
-    loopEnabled?: boolean;
-    loopLength?: number;
-    loopOriginBeat?: number;
-};
+type ClipPlaybackFields = ReturnType<typeof getAllTracks>[number]['clips'][number];
 
 type AudibleSourceSpan = {
-    iteration: number;
-    /** The beat inside the pass where this segment's sound begins, pre-roll included. */
-    passStartBeats: number;
+    /** Absolute song second where this source read first sounds, pre-roll included. */
+    timelineStartSec: number;
     /** The first source second this segment reads. */
     startSec: number;
     /** The source seconds this segment reads. */
@@ -97,28 +87,19 @@ type AudibleClipWindow = {
     clipBeats: number;
     secondsPerBeat: number;
     stretchRatio: number;
-    loopLengthBeats: number;
     spans: AudibleSourceSpan[];
 };
 
 /**
- * The source spans the offline scheduler would play for this clip: trim, slip,
- * stretch, and loop, on a flat tempo. Null when the clip has no positive length.
- *
- * A looped clip's passes read the loop region the clip was looped with, in
- * source beats (`audioOffsetBeats - (startBeat - loopOriginBeat)`, #4988),
- * entering at the trim advance's phase — the same read
- * `projectOfflineAudioClipPlaybacks` and the live scheduler recover — so one
- * pass entered past the region head projects as its region tail and wrapped
- * head, two reads, and material past the region end is never read. An
- * unanchored clip — or a stale-anchored one with the loop off — advances zero,
- * which puts the region at the offset with the entry at the region head: the
- * pre-anchor single read, exactly as before.
+ * The physical source spans live playback reads for a raw clip. The shared
+ * projector owns its canonical entry, wrap, and original pass seams; the
+ * Transport reader owns the tempo map along each destination span.
  */
 function projectAudibleClipWindow(
     clip: ClipPlaybackFields,
     tempo: number,
-    bufferDurationSec: number
+    bufferDurationSec: number,
+    secondsAtBeat: (beat: number) => number
 ): AudibleClipWindow | null {
     const clipBeats = clip.endBeat - clip.startBeat;
     if (!Number.isFinite(clipBeats) || clipBeats <= 0) {
@@ -134,44 +115,26 @@ function projectAudibleClipWindow(
     });
     const loopLen = loop.loopLengthBeats;
 
-    const loopAdvanceBeats = resolveClipLoopOriginAdvance({
-        startBeat: clip.startBeat,
-        loopOriginBeat: clip.loopOriginBeat,
-        loopEnabled: clip.loopEnabled ?? false,
-    });
-    const regionStartBeats = (clip.audioOffsetBeats ?? 0) - loopAdvanceBeats;
-    const regionEntryBeats = ((loopAdvanceBeats % loopLen) + loopLen) % loopLen;
-
-    // The segments one pass reads, mirroring the offline projector's
-    // `buildPassSegments`: the region tail from the entry phase, then the
-    // wrapped region head.
-    function buildPassSegments(
-        passLengthBeats: number
-    ): Array<{ startBeat: number; endBeat: number; sourceStartBeats: number }> {
-        if (regionEntryBeats <= 0) {
-            return [{ startBeat: 0, endBeat: passLengthBeats, sourceStartBeats: regionStartBeats }];
-        }
-        const headSegmentEndBeat = Math.min(passLengthBeats, loopLen - regionEntryBeats);
-        const segments = [
-            { startBeat: 0, endBeat: headSegmentEndBeat, sourceStartBeats: regionStartBeats + regionEntryBeats },
-        ];
-        if (passLengthBeats > headSegmentEndBeat) {
-            segments.push({
-                startBeat: headSegmentEndBeat,
-                endBeat: passLengthBeats,
-                sourceStartBeats: regionStartBeats,
-            });
-        }
-        return segments;
-    }
-
     const spans: AudibleSourceSpan[] = [];
     for (let iteration = 0; iteration < loop.iterationCount && iteration * loopLen < clipBeats; iteration++) {
-        const remainingBeats = Math.min(loopLen, clipBeats - iteration * loopLen);
-        for (const segment of buildPassSegments(remainingBeats)) {
-            const segmentSourceStartSec = segment.sourceStartBeats * secondsPerBeat;
+        const iterationStartBeat = clip.startBeat + iteration * loopLen;
+        const iterationEndBeat = Math.min(clip.endBeat, iterationStartBeat + loopLen);
+        const segments = projectAudioLoopPassSegments({
+            clip,
+            loopLengthBeats: loopLen,
+            iterationStartBeat,
+            iterationEndBeat,
+            stretchRatio,
+            tempoAtClipStart: tempo,
+            secondsAtBeat,
+        });
+        for (const segment of segments) {
+            const segmentSourceStartSec = segment.sourceStartSeconds;
+            const segmentStartSec = secondsAtBeat(iterationStartBeat + segment.startOffsetBeats);
+            const segmentEndSec = secondsAtBeat(iterationStartBeat + segment.endOffsetBeats);
             const segmentPreRollSec = Math.max(0, -segmentSourceStartSec) / stretchRatio;
-            const audibleDestSec = (segment.endBeat - segment.startBeat) * secondsPerBeat - segmentPreRollSec;
+            const timelineStartSec = segmentStartSec + segmentPreRollSec;
+            const audibleDestSec = segmentEndSec - timelineStartSec;
             if (!(audibleDestSec > 0)) {
                 continue;
             }
@@ -182,8 +145,7 @@ function projectAudibleClipWindow(
                 continue;
             }
             spans.push({
-                iteration,
-                passStartBeats: segment.startBeat + segmentPreRollSec / secondsPerBeat,
+                timelineStartSec,
                 startSec: segmentBufferStartSec,
                 durationSec: sourceDurationSec,
             });
@@ -194,7 +156,6 @@ function projectAudibleClipWindow(
         clipBeats,
         secondsPerBeat,
         stretchRatio,
-        loopLengthBeats: loopLen,
         spans,
     };
 }
@@ -279,7 +240,8 @@ export function audioToMidi(options: AudioToMidiOptions): boolean {
         }
 
         const tempo = readTempoAtBeat({ beat: clip.startBeat });
-        const audible = projectAudibleClipWindow(clip, tempo, buffer.duration);
+        const secondsAtBeat = (beat: number) => readSecondsAtBeat({ beat });
+        const audible = projectAudibleClipWindow(clip, tempo, buffer.duration, secondsAtBeat);
         if (!audible) {
             return false;
         }
@@ -299,10 +261,8 @@ export function audioToMidi(options: AudioToMidiOptions): boolean {
             }
 
             for (const onset of onsets) {
-                const noteStartBeat =
-                    span.iteration * audible.loopLengthBeats +
-                    span.passStartBeats +
-                    onset.timeSec / audible.stretchRatio / audible.secondsPerBeat;
+                const onsetSongSeconds = span.timelineStartSec + onset.timeSec / audible.stretchRatio;
+                const noteStartBeat = readBeatAtSamples({ samples: onsetSongSeconds, sampleRate: 1 }) - clip.startBeat;
                 if (noteStartBeat < 0 || noteStartBeat >= audible.clipBeats) {
                     continue;
                 }

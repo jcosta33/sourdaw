@@ -9,8 +9,18 @@ import { Row } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { ScrollArea } from '#/components/ui/scroll-area';
 import { useStore } from '#/infra/store/useStore';
-import { clipSelectionStore, defaultClipSelectionState } from '#/modules/Arrangement/stores';
-import { clearClipSelection, selectClipWithFocus } from '#/modules/Arrangement/useCases';
+import {
+    clipSelectionStore,
+    defaultClipSelectionState,
+    defaultDeviceSelectionState,
+    deviceSelectionStore,
+} from '#/modules/Arrangement/stores';
+import {
+    clearClipSelection,
+    clearDeviceSelection,
+    selectClipWithFocus,
+    selectDevice,
+} from '#/modules/Arrangement/useCases';
 import { toggleInspector } from '#/modules/WorkspaceShell/useCases';
 
 import { useTracks } from '../hooks/useTracks';
@@ -46,12 +56,13 @@ const inspectorSlotMinWidth = ({ style, isDeviceView }: { style?: CSSProperties;
 
 export const InspectorPanel = ({ style }: InspectorPanelProps): ReactElement => {
     const { tracks, selectedTrackId } = useTracks();
+    const [signalFlowExpanded, setSignalFlowExpanded] = useState(false);
     const masterTrack = tracks.find((time) => time.kind === 'master');
 
     const selectedTrack =
         (selectedTrackId ? tracks.find((time) => time.id === selectedTrackId) : null) ?? masterTrack ?? null;
     const wsSelectedClipId = useStore(clipSelectionStore, defaultClipSelectionState).selectedClipId;
-    const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null);
+    const { selectedDeviceId } = useStore(deviceSelectionStore, defaultDeviceSelectionState);
 
     const selectedClip = selectedTrack?.clips.find((context) => context.id === wsSelectedClipId) ?? null;
     const selectedDevice = selectedTrack?.devices.find((data) => data.id === selectedDeviceId) ?? null;
@@ -59,13 +70,7 @@ export const InspectorPanel = ({ style }: InspectorPanelProps): ReactElement => 
     const isDeviceView = !!selectedDevice;
     const renderInspectorContent = (): ReactElement => {
         if (selectedDevice && selectedTrack) {
-            return (
-                <DeviceInspector
-                    device={selectedDevice}
-                    trackId={selectedTrack.id}
-                    onBack={() => setSelectedDeviceId(null)}
-                />
-            );
+            return <DeviceInspector device={selectedDevice} trackId={selectedTrack.id} onBack={clearDeviceSelection} />;
         }
         if (selectedClip && selectedTrack) {
             // Keyed by clip id: ClipInspector owns local rename-draft state that
@@ -82,22 +87,31 @@ export const InspectorPanel = ({ style }: InspectorPanelProps): ReactElement => 
             );
         }
         if (selectedTrack) {
+            // Keyed by track id: every section keeps local preview and gesture state
+            // that belongs to the track it started on, so a switch must remount them.
+            // Panel-wide view state (the Signal Flow disclosure) lives above the key.
             return (
                 <TrackInspector
+                    key={selectedTrack.id}
                     track={selectedTrack}
                     allTracks={tracks}
                     onSelectClip={selectClipWithFocus}
-                    onSelectDevice={setSelectedDeviceId}
+                    onSelectDevice={selectDevice}
+                    signalFlowExpanded={signalFlowExpanded}
+                    onSignalFlowExpandedChange={setSignalFlowExpanded}
                 />
             );
         }
         if (masterTrack) {
             return (
                 <TrackInspector
+                    key={masterTrack.id}
                     track={masterTrack}
                     allTracks={tracks}
                     onSelectClip={selectClipWithFocus}
-                    onSelectDevice={setSelectedDeviceId}
+                    onSelectDevice={selectDevice}
+                    signalFlowExpanded={signalFlowExpanded}
+                    onSignalFlowExpandedChange={setSignalFlowExpanded}
                 />
             );
         }

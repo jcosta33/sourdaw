@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
+
 import { isHostedAiHttpStatusError } from '../../../../errors/HostedAiHttpStatusError';
 import { HostedToolCallingProtocolError } from '../../../../errors/HostedToolCallingProtocolError';
 import { ToolPlanningRejectedError } from '../../../../errors/ToolPlanningRejectedError';
@@ -9,6 +11,8 @@ import { getHostedProposalWireToolSchema } from '../../../../useCases/llmOrchest
 import { type OpenAiCompatibleCloudRuntime } from '../../cloudSession';
 import { generateOpenAiCompatibleToolCalls } from '../generateOpenAiCompatibleToolCalls';
 import { AUTO_TOOL_CHOICE, type HostedToolChoiceDirective } from '../hostedToolPlan';
+
+registerDeviceEnginePorts();
 
 const runtime: OpenAiCompatibleCloudRuntime = {
     provider: 'openai-compatible',
@@ -161,53 +165,56 @@ describe('generateOpenAiCompatibleToolCalls', () => {
         expect(body).not.toHaveProperty('reasoning_effort');
     });
 
-    it('narrows the wire tools to the required directive and never sends parallel_tool_calls', async () => {
-        const twoTools = [
-            tools[0]!,
-            {
-                type: 'function' as const,
-                function: {
-                    name: 'setTempo',
-                    description: 'Set tempo',
-                    parameters: {
-                        type: 'object' as const,
-                        properties: { bpm: { type: 'number' } },
-                        required: ['bpm'],
-                        additionalProperties: false,
+    it.each([undefined, false, true])(
+        'narrows required tools and omits parallel_tool_calls for directive %s',
+        async (parallelToolCalls) => {
+            const twoTools = [
+                tools[0]!,
+                {
+                    type: 'function' as const,
+                    function: {
+                        name: 'setTempo',
+                        description: 'Set tempo',
+                        parameters: {
+                            type: 'object' as const,
+                            properties: { bpm: { type: 'number' } },
+                            required: ['bpm'],
+                            additionalProperties: false,
+                        },
                     },
                 },
-            },
-        ];
-        const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
-            new Response(JSON.stringify({ choices: [{ finish_reason: 'stop', message: { tool_calls: [] } }] }), {
-                status: 200,
-                headers: { 'Content-Type': 'application/json' },
-            })
-        );
-        vi.stubGlobal('fetch', fetchMock);
+            ];
+            const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+                new Response(JSON.stringify({ choices: [{ finish_reason: 'stop', message: { tool_calls: [] } }] }), {
+                    status: 200,
+                    headers: { 'Content-Type': 'application/json' },
+                })
+            );
+            vi.stubGlobal('fetch', fetchMock);
 
-        await generateOpenAiCompatibleToolCalls({
-            runtime,
-            systemPrompt: 'system',
-            userMessage: 'mute drums',
-            toolSchemas: twoTools,
-            maxOutputTokens: 8192,
-            directive: { mode: 'required', toolNames: ['muteTrack'] },
-        });
+            await generateOpenAiCompatibleToolCalls({
+                runtime,
+                systemPrompt: 'system',
+                userMessage: 'mute drums',
+                toolSchemas: twoTools,
+                maxOutputTokens: 8192,
+                directive: { mode: 'required', toolNames: ['muteTrack'], parallelToolCalls },
+            });
 
-        const request = fetchMock.mock.calls[0]?.[1];
-        if (!request || typeof request.body !== 'string') {
-            throw new Error('Expected a JSON request body');
+            const request = fetchMock.mock.calls[0]?.[1];
+            if (!request || typeof request.body !== 'string') {
+                throw new Error('Expected a JSON request body');
+            }
+            const body = JSON.parse(request.body) as {
+                tools: Array<{ function: { name: string } }>;
+                tool_choice: unknown;
+            };
+            expect(body.tool_choice).toBe('required');
+            expect(body.tools).toHaveLength(1);
+            expect(body.tools[0]?.function.name).toBe('muteTrack');
+            expect(body).not.toHaveProperty('parallel_tool_calls');
         }
-        const body = JSON.parse(request.body) as {
-            tools: Array<{ function: { name: string } }>;
-            tool_choice: unknown;
-        };
-        expect(body.tool_choice).toBe('required');
-        expect(body.tools).toHaveLength(1);
-        expect(body.tools[0]?.function.name).toBe('muteTrack');
-        expect(body).not.toHaveProperty('parallel_tool_calls');
-    });
+    );
 
     it('narrows to exactly the directive-named tools, in their advertised order, dropping an unnamed one', async () => {
         const threeTools = [

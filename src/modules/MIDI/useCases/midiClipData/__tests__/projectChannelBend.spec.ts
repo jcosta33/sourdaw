@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
+import { midiFragmentWindowEntry, resolveLoopedOffsetBeats } from '#/utils/clipLoopOrigin';
+
 import { type MidiCC, type MidiPitchBend } from '../../../models/MidiNote';
 import { projectChannelBend } from '../projectChannelBend';
 
@@ -51,8 +53,80 @@ describe('projectChannelBend', () => {
         });
 
         expect(points).toEqual([
-            { beat: 3, frame: 72_000, recordedBeat: 3, value: 8_191, rangeSemitones: 2 },
-            { beat: 4, frame: 96_000, recordedBeat: 4, value: 0, rangeSemitones: 2 },
+            {
+                beat: 3,
+                frame: 72_000,
+                recordedBeat: 3,
+                value: 8_191,
+                rangeSemitones: 2,
+                channel: 0,
+                channelScoped: false,
+            },
+            { beat: 4, frame: 96_000, recordedBeat: 4, value: 0, rangeSemitones: 2, channel: 0, channelScoped: false },
+        ]);
+    });
+
+    it('keeps the channel of every move and the scope of a recorded wheel', () => {
+        const points = projectChannelBend({
+            clips: [
+                {
+                    clip: { startBeat: 0, endBeat: 8, midiOffsetBeats: 0 },
+                    controlChanges: [],
+                    pitchBends: [{ ...bend('wheel', 1, 8_191, 2), channelScoped: true }, bend('drawn', 2, 0)],
+                },
+            ],
+            frameAtBeat,
+        });
+
+        expect(points.map(({ beat, channel, channelScoped }) => ({ beat, channel, channelScoped }))).toEqual([
+            { beat: 1, channel: 2, channelScoped: true },
+            { beat: 2, channel: 0, channelScoped: false },
+        ]);
+    });
+
+    it('plays a trimmed head as the untrimmed clip when carried rows of one channel share a beat', () => {
+        // An MPE switch-off writes a centred unscoped row and the channel's scoped wheel in one call, on one beat,
+        // and the later of them in the list is the one in force. The carry must keep that order, not the order
+        // the lanes first appeared in, where the earlier scoped wheel put the scoped lane first.
+        const pitchBends = [
+            { ...bend('s1', 1, 1_000), channelScoped: true },
+            bend('u1', 3, 2_000),
+            bend('u2', 5, 0),
+            { ...bend('s2', 5, 1_000), channelScoped: true },
+        ];
+        const heardAt = (clip: { startBeat: number; endBeat: number; midiOffsetBeats: number }) => {
+            const points = projectChannelBend({ clips: [{ clip, controlChanges: [], pitchBends }], frameAtBeat });
+            const inForce = (channel: number) =>
+                points.findLast((point) => point.beat <= 6 && (!point.channelScoped || point.channel === channel))
+                    ?.value;
+            return { channel0: inForce(0), channel1: inForce(1) };
+        };
+
+        const untrimmed = heardAt({ startBeat: 0, endBeat: 10, midiOffsetBeats: 0 });
+
+        expect(untrimmed).toEqual({ channel0: 1_000, channel1: 0 });
+        expect(heardAt({ startBeat: 6, endBeat: 10, midiOffsetBeats: 6 })).toEqual(untrimmed);
+    });
+
+    it('carries a drawn bend and a later recorded wheel of one channel onto a trimmed head, in recorded order', () => {
+        // Keyed by channel alone, the carry kept only the later (scoped) row, so a note of another channel lost the
+        // drawn bend it hears on the untrimmed clip.
+        const points = projectChannelBend({
+            clips: [
+                {
+                    clip: { startBeat: 3, endBeat: 8, midiOffsetBeats: 3 },
+                    controlChanges: [],
+                    pitchBends: [{ ...bend('wheel', 2, 8_191), channelScoped: true }, bend('drawn', 1, 4_096)],
+                },
+            ],
+            frameAtBeat,
+        });
+
+        expect(
+            points.map(({ beat, recordedBeat, value, channelScoped }) => ({ beat, recordedBeat, value, channelScoped }))
+        ).toEqual([
+            { beat: 3, recordedBeat: 1, value: 4_096, channelScoped: false },
+            { beat: 3, recordedBeat: 2, value: 8_191, channelScoped: true },
         ]);
     });
 
@@ -73,6 +147,36 @@ describe('projectChannelBend', () => {
         expect(points.map(({ beat, frame, recordedBeat }) => ({ beat, frame, recordedBeat }))).toEqual([
             { beat: 2, frame: 48_000, recordedBeat: 0.5 },
             { beat: 3, frame: 72_000, recordedBeat: 3 },
+        ]);
+    });
+
+    it('keeps a frozen carried move’s source order across cropped pass occurrences', () => {
+        const sourceControlChanges = declareRange(4, 12);
+        const points = projectChannelBend({
+            clips: [
+                {
+                    clip: { startBeat: 2, endBeat: 4, midiOffsetBeats: 2 },
+                    controlChanges: [],
+                    pitchBends: [{ ...bend('carried-first', 2, 8191), sourceRecordedBeat: 5.5 }],
+                    sourceControlChanges,
+                    sourceBeatOffset: -4,
+                },
+                {
+                    clip: { startBeat: 6, endBeat: 8, midiOffsetBeats: 6 },
+                    controlChanges: [],
+                    pitchBends: [{ ...bend('carried-second', 6, 8191), sourceRecordedBeat: 5.5 }],
+                    sourceControlChanges,
+                    sourceBeatOffset: 0,
+                },
+            ],
+            frameAtBeat,
+        });
+
+        expect(
+            points.map(({ beat, recordedBeat, rangeSemitones }) => ({ beat, recordedBeat, rangeSemitones }))
+        ).toEqual([
+            { beat: 2, recordedBeat: 1.5, rangeSemitones: 12 },
+            { beat: 6, recordedBeat: 5.5, rangeSemitones: 12 },
         ]);
     });
 
@@ -442,6 +546,192 @@ describe('projectChannelBend', () => {
                 [0, 12],
                 [2, 12],
             ]);
+        });
+    });
+
+    describe('with a looping clip whose head is cut a loop or more past its anchor', () => {
+        type Clip = Parameters<typeof projectChannelBend>[0]['clips'][number]['clip'];
+        type Lanes = { controlChanges: readonly MidiCC[]; pitchBends: readonly MidiPitchBend[] };
+
+        // The uncut source: loop [0, 4) of content anchored at timeline 1 and
+        // first trimmed to 3, so it plays content 2 at timeline 3. Its pass
+        // grid wraps at timeline 5, 9, 13 and 17. Delete Time over [1, 9.5)
+        // opens the clip on content 0.5 at timeline 1, 8.5 beats earlier.
+        const uncut: Clip = {
+            startBeat: 3,
+            endBeat: 19,
+            midiOffsetBeats: 2,
+            loopEnabled: true,
+            loopLength: 4,
+            loopOriginBeat: 1,
+        };
+        const cutBeat = 9.5;
+        const excisedShiftBeats = 8.5;
+
+        /** Delete Time over `[fragmentStartBeat, cutBeat)`, or a split's right fragment when they are equal. */
+        function cutHead(clip: Clip, fragmentStartBeat: number, atBeat = cutBeat): Clip {
+            return {
+                ...clip,
+                ...midiFragmentWindowEntry({ ...clip, type: 'midi' }, atBeat, fragmentStartBeat),
+                startBeat: fragmentStartBeat,
+                endBeat: clip.endBeat - (atBeat - fragmentStartBeat),
+            };
+        }
+
+        /** `trimClipStart`: the anchor stays, the offset wraps into the loop and every row shifts by the wrap. */
+        function trimStart(clip: Clip, lanes: Lanes, startBeat: number): { clip: Clip; lanes: Lanes } {
+            const rawOffsetBeats = (clip.midiOffsetBeats ?? 0) + (startBeat - clip.startBeat);
+            const midiOffsetBeats = resolveLoopedOffsetBeats({
+                offsetBeats: rawOffsetBeats,
+                loopEnabled: true,
+                clipDurationBeats: clip.endBeat - startBeat,
+                configuredLoopLengthBeats: clip.loopLength,
+            });
+            const shiftBeats = midiOffsetBeats - rawOffsetBeats;
+            return {
+                clip: { ...clip, startBeat, midiOffsetBeats },
+                lanes: {
+                    controlChanges: lanes.controlChanges.map((row) => ({ ...row, beat: row.beat + shiftBeats })),
+                    pitchBends: lanes.pitchBends.map((row) => ({ ...row, beat: row.beat + shiftBeats })),
+                },
+            };
+        }
+
+        function points(clip: Clip, lanes: Lanes) {
+            return projectChannelBend({ clips: [{ clip, ...lanes }], frameAtBeat });
+        }
+
+        /**
+         * The bend a note on `noteChannel` hears at `beat`, with where it was recorded moved onto the uncut
+         * clip's timeline by `shiftBeats`, so a trimmed clip and its source compare directly.
+         */
+        function heardAt(clip: Clip, lanes: Lanes, beat: number, noteChannel: number, shiftBeats = 0) {
+            const inForce = points(clip, lanes).findLast(
+                (point) => point.beat <= beat && (!point.channelScoped || point.channel === noteChannel)
+            );
+            return (
+                inForce && {
+                    value: inForce.value,
+                    rangeSemitones: inForce.rangeSemitones,
+                    recordedBeat: inForce.recordedBeat + shiftBeats,
+                }
+            );
+        }
+
+        function onHead(clip: Clip, lanes: Lanes) {
+            return points(clip, lanes)
+                .filter((point) => point.beat === clip.startBeat)
+                .map(({ value, recordedBeat, rangeSemitones, channel }) => ({
+                    value,
+                    recordedBeat,
+                    rangeSemitones,
+                    channel,
+                }));
+        }
+
+        it('begins a head excised mid-pass with the bend the pass before ended on, recorded where that pass played it', () => {
+            // Timeline 9.5 of the uncut loop is content 0.5, after the bend at
+            // 3.5 of the pass before (timeline 8.5) and before this pass's own
+            // row at 1, so that bend is in force there.
+            const lanes = { controlChanges: [], pitchBends: [bend('low', 1, -2_000), bend('high', 3.5, 6_000)] };
+
+            expect(heardAt(uncut, lanes, cutBeat, 0)).toEqual({ value: 6_000, rangeSemitones: 2, recordedBeat: 8.5 });
+            expect(onHead(cutHead(uncut, 1), lanes)).toEqual([
+                { value: 6_000, recordedBeat: 0, rangeSemitones: 2, channel: 0 },
+            ]);
+        });
+
+        it('bends every channel as the uncut clip does at every beat after the cut, for a split and a start trim alike', () => {
+            const lanes: Lanes = {
+                controlChanges: declareRange(3, 12),
+                pitchBends: [
+                    { ...bend('wheel-this-pass', 0.3, 8_191, 1), channelScoped: true },
+                    bend('drawn', 2.75, 1_500),
+                    { ...bend('wheel-pass-before', 3.5, -4_000, 1), channelScoped: true },
+                ],
+            };
+            const shapes = [
+                { name: 'head excised', shiftBeats: excisedShiftBeats, clip: cutHead(uncut, 1), lanes },
+                { name: 'split right fragment', shiftBeats: 0, clip: cutHead(uncut, cutBeat), lanes },
+                { name: 'start trimmed', shiftBeats: 0, ...trimStart(uncut, lanes, cutBeat) },
+            ];
+
+            for (const shape of shapes) {
+                for (const beat of [9.5, 9.6, 10.3, 11.1, 12.7, 13.9, 16.35, 18.2]) {
+                    for (const noteChannel of [0, 1]) {
+                        const trimmedBeat = beat - shape.shiftBeats;
+                        expect({
+                            shape: shape.name,
+                            beat,
+                            noteChannel,
+                            heard: heardAt(shape.clip, shape.lanes, trimmedBeat, noteChannel, shape.shiftBeats),
+                        }).toEqual({
+                            shape: shape.name,
+                            beat,
+                            noteChannel,
+                            heard: heardAt(uncut, lanes, beat, noteChannel),
+                        });
+                    }
+                }
+            }
+        });
+
+        it('posts the pass before ahead of this pass on the head, so a channel’s own later wheel outranks a drawn bend', () => {
+            // The drawn bend played at 8.5 in the uncut loop, channel 1's wheel at
+            // 9.2: a channel 1 note hears the wheel, any other note the drawn bend.
+            const lanes = {
+                controlChanges: [],
+                pitchBends: [
+                    { ...bend('wheel-this-pass', 0.2, 8_191, 1), channelScoped: true },
+                    bend('drawn-pass-before', 3.5, 1_500),
+                ],
+            };
+            const trimmed = cutHead(uncut, 1);
+
+            expect(heardAt(trimmed, lanes, 1, 1)?.value).toBe(8_191);
+            expect(heardAt(trimmed, lanes, 1, 0)?.value).toBe(1_500);
+            expect(heardAt(uncut, lanes, cutBeat, 1)?.value).toBe(8_191);
+            expect(heardAt(uncut, lanes, cutBeat, 0)?.value).toBe(1_500);
+        });
+
+        it('carries this pass’s row before the cut over the lane’s row from the pass before', () => {
+            const lanes = { controlChanges: [], pitchBends: [bend('early', 0.2, 1_000), bend('late', 3.5, 6_000)] };
+
+            expect(onHead(cutHead(uncut, 1), lanes)).toEqual([
+                { value: 1_000, recordedBeat: 0.7, rangeSemitones: 2, channel: 0 },
+            ]);
+        });
+
+        it('plays a bend row exactly on the cut once, never behind the bend the pass before left', () => {
+            const lanes = { controlChanges: [], pitchBends: [bend('on-cut', 0.5, 3_000), bend('late', 3.5, 6_000)] };
+
+            expect(onHead(cutHead(uncut, 1), lanes)).toEqual([
+                { value: 3_000, recordedBeat: 1, rangeSemitones: 2, channel: 0 },
+            ]);
+        });
+
+        it('reads a bend from the pass before at the depth declared where it was recorded, not at the cut', () => {
+            // ±7 is in force at the cut (content 0.5), ±12 from content 3, so the
+            // bend at 3.5 the pass before played sounded at ±12.
+            const lanes = {
+                controlChanges: [...declareRange(0.2, 7), ...declareRange(3, 12)],
+                pitchBends: [bend('late', 3.5, 6_000)],
+            };
+
+            expect(heardAt(uncut, lanes, cutBeat, 0)).toEqual({ value: 6_000, rangeSemitones: 12, recordedBeat: 8.5 });
+            expect(onHead(cutHead(uncut, 1), lanes)).toEqual([
+                { value: 6_000, recordedBeat: 0, rangeSemitones: 12, channel: 0 },
+            ]);
+        });
+
+        it('carries nothing into a head cut less than a loop past its anchor, as the source played from the anchor', () => {
+            // Timeline 2.5 lies in the first pass from the anchor at 1: no pass
+            // ended before it, so the bend at 3.5 has not yet played there.
+            const lanes = { controlChanges: [], pitchBends: [bend('late', 3.5, 6_000)] };
+            const anchoredAtHead: Clip = { ...uncut, startBeat: 1, midiOffsetBeats: 0 };
+
+            expect(heardAt(anchoredAtHead, lanes, 2.5, 0)).toBeUndefined();
+            expect(onHead(cutHead(anchoredAtHead, 2.5, 2.5), lanes)).toEqual([]);
         });
     });
 });

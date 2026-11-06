@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { DEFAULT_PATCH, migrateGrinderPatch, type GrinderPatch } from '../../../models/GrinderPatch';
+import { parseGrinderNamFile } from '../../../services/parseGrinderNamFile';
 import { syncGrinderPatchToAudio } from '../syncGrinderPatchToAudio';
 
 vi.mock('#/modules/Arrangement/stores', () => ({
@@ -32,6 +33,23 @@ describe('syncGrinderPatchToAudio', () => {
             }),
         });
     }
+
+    it('carries every weight from an actually parsed NAM through the production patch producer', () => {
+        const document = {
+            architecture: 'Linear',
+            version: '0.5.4',
+            sample_rate: 48000,
+            config: { receptive_field: 2, bias: false },
+            weights: [0.25, -0.5],
+        };
+        const entry = parseGrinderNamFile({ file_name: 'real.nam', file_text: JSON.stringify(document) });
+        run(
+            migrateGrinderPatch({ ...DEFAULT_PATCH, neuralModelSource: 'imported', neuralModelProfile: entry.profile })
+        );
+        const call = update_device_patch.mock.calls.find(([, , patch]) => typeof patch.modelJson === 'string');
+        expect(call).toBeDefined();
+        expect(JSON.parse(call?.[2].modelJson ?? 'null')).toEqual(document);
+    });
 
     beforeEach(() => {
         vi.clearAllMocks();

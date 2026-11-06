@@ -1,13 +1,18 @@
 import { prepareClipMidiRowCoordinateShift } from '#/modules/MIDI/useCases';
 import { resolveLoopedOffsetBeats } from '#/utils/clipLoopOrigin';
 
+import { takeLaneStore } from '../../stores/takeLaneStore';
+import { getTrackStoreState } from '../getTrackStoreState';
 import { updateClip } from '../updateClip';
 
+import { audioClipSlipOwner } from './audioClipSlipOwner';
+import { audioClipStartTrimState } from './audioClipStartTrimState';
+import { prepareAudioClipSlip } from './prepareAudioClipSlip';
 import { slipWrapRowLiftBeats } from './slipWrapRowLiftBeats';
 
 /**
  * Slip clip content — slides internal content (audio or MIDI) within fixed boundaries.
- * Non-destructive: adjusts audioOffsetBeats (audio) or midiOffsetBeats (MIDI).
+ * Non-destructive: translates canonical audio source coordinates or midiOffsetBeats.
  * Clip boundaries stay fixed; a raising MIDI wrap translates stored coordinates.
  *
  * A looped MIDI clip stores the offset's phase inside `[0, loopLength)` (the
@@ -43,7 +48,22 @@ export function slipClipContent(
     }
 ): boolean {
     if (type === 'audio') {
-        return updateClip(clipId, (context) => ({ ...context, audioOffsetBeats: newOffset }));
+        const clip = getTrackStoreState()
+            ?.tracks.flatMap((track) => track.clips)
+            .find((row) => row.id === clipId);
+        if (!clip) {
+            return false;
+        }
+        const before = {
+            clip,
+            lanes: takeLaneStore.value?.lanes.filter((lane) => lane.trackId === clip.trackId) ?? [],
+        };
+        const after = prepareAudioClipSlip(
+            before,
+            newOffset,
+            audioClipStartTrimState.timeline(audioClipStartTrimState.captureClock())
+        );
+        return after !== null && audioClipSlipOwner.write(before, after);
     }
     const refused = new Error('The complete MIDI coordinate shift could not be applied');
     let capture:

@@ -4,6 +4,7 @@ import { logger } from '#/infra/logger/appLogger';
 import { FADER_MAX_GAIN } from '#/utils/audioLevelLaw';
 
 import { createMockAudioContext } from '../../../../helpers/__tests__/audioContext.mock';
+import { engineDeviceCollaborators } from '../../useCases/engineDeviceCollaborators';
 import { getAudioDeviceRuntimeSink } from '../audioDeviceRuntimeSink';
 import { createDeviceReadinessDiagnostics } from '../deviceReadinessDiagnostics';
 import { RuntimeGraphMutationFailure, RuntimeGraphMutationRejected, TrackNode, type TrackNodeDeps } from '../TrackNode';
@@ -56,6 +57,7 @@ describe('TrackNode', () => {
             getSendsForTrack: vi.fn().mockReturnValue([]),
             pendingDevicePromises: new Set(),
             readinessDiagnostics: createDeviceReadinessDiagnostics(),
+            collaborators: engineDeviceCollaborators,
         };
         vi.clearAllMocks();
         setPluginParameter.mockResolvedValue(undefined);

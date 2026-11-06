@@ -56,6 +56,7 @@ export const SHARD_MATRIX_JOBS: ReadonlyArray<readonly [string, string, readonly
     ['validation.yml', 'unit', UNIT_SHARDS],
     ['nightly.yml', 'unit', UNIT_SHARDS],
     ['nightly.yml', 'e2e', E2E_SHARDS],
+    ['nightly.yml', 'e2e-coverage', E2E_SHARDS],
 ];
 
 const NODE_SETUP_ACTIONS = ['Checkout', 'Set up pnpm', 'Set up Node'] as const;
@@ -68,7 +69,8 @@ const SHARDED_BROWSER_STEPS = [
     'Report shard failure',
     'Upload blob report',
 ] as const;
-// The required and nightly unit shards both run in a fresh unprivileged account.
+// The required and nightly unit shards both run in a fresh unprivileged account,
+// which installs the pinned Chromium the real-render specs launch.
 const ISOLATED_UNIT_STEPS = [
     'Checkout',
     'Prepare unit tool directory',
@@ -76,6 +78,7 @@ const ISOLATED_UNIT_STEPS = [
     'Set up Node',
     'Prepare isolated unit account',
     'Install dependencies',
+    'Install Chromium',
     'Run shard',
     'Report shard failure',
 ] as const;
@@ -170,14 +173,14 @@ export const STEP_INVENTORY: Readonly<Record<string, Readonly<Record<string, rea
     },
     'health-gates.yml': {
         admission: ['Checkout trusted admission', 'Set up Node', 'Read reviews', 'Decide admission'],
-        scope: [...SETUP_PNPM_NODE, 'Plan affected checks', 'Upload scope manifest'],
+        scope: [...SETUP_PNPM_NODE, 'Fetch coverage map', 'Plan affected checks', 'Upload scope manifest'],
         validation: null,
         affected: null,
         codeql: ['Checkout', 'Initialise CodeQL', 'Analyse'],
         gate: ['Require selected checks to succeed'],
     },
     'pr-checks.yml': {
-        scope: [...SETUP_PNPM_NODE, 'Plan affected checks', 'Upload scope manifest'],
+        scope: [...SETUP_PNPM_NODE, 'Fetch coverage map', 'Plan affected checks', 'Upload scope manifest'],
         validation: null,
     },
     'validation.yml': {
@@ -257,6 +260,7 @@ export const STEP_INVENTORY: Readonly<Record<string, Readonly<Record<string, rea
         ],
         'collab-server': [
             'Checkout',
+            'Install Node',
             'Set up Node',
             'Install server dependencies',
             'Collaboration server health gates',
@@ -294,6 +298,18 @@ export const STEP_INVENTORY: Readonly<Record<string, Readonly<Record<string, rea
             'Upload the agent workspace proof record',
         ],
         'e2e-report': [...SETUP_PNPM_NODE, 'Download blob reports', 'Merge into one report', 'Upload report'],
+        'e2e-coverage': [
+            ...SETUP_NODE,
+            'Verify preinstalled browser runtime',
+            'Run shard with coverage',
+            'Upload coverage records',
+        ],
+        'e2e-coverage-map': [
+            ...SETUP_PNPM_NODE,
+            'Download coverage records',
+            'Build the coverage map',
+            'Upload the coverage map',
+        ],
         codeql: ['Checkout', 'Initialise CodeQL', 'Analyse'],
         secrets: [
             'Checkout trusted scanner',

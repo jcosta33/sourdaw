@@ -1,5 +1,6 @@
-import { test, expect, type Page } from '@playwright/test';
+import { type Page } from '@playwright/test';
 
+import { test, expect } from './e2eTest';
 import { launch_new_project, setupWorkspace } from './e2eUtils';
 
 async function openChatPanel(page: Page): Promise<void> {
@@ -26,37 +27,22 @@ test.describe('Chat composer — agent execution mode select', () => {
 
         // Default is Explain: conversational placeholder, chat mode.
         await expect(mode).toHaveValue('explain');
-        await expect(input).toHaveAttribute(
-            'placeholder',
-            'Send a message... (Shift+Enter for newline)'
-        );
+        await expect(input).toHaveAttribute('placeholder', 'Send a message... (Shift+Enter for newline)');
         // The labels stay capitalized — the value is what flows to the send
         // path, the label is what the user reads.
-        await expect(mode.locator('option')).toHaveText([
-            'Explain',
-            'Plan',
-            'Preview',
-            'Apply',
-            'Macro',
-        ]);
+        await expect(mode.locator('option')).toHaveText(['Explain', 'Plan', 'Preview', 'Apply', 'Macro']);
 
         // Any non-explain mode flips the composer to its command contract:
         // the placeholder names execution, the value follows the selection.
         for (const option of ['plan', 'preview', 'apply', 'macro']) {
             await mode.selectOption(option);
             await expect(mode).toHaveValue(option);
-            await expect(input).toHaveAttribute(
-                'placeholder',
-                'Type a command to execute or generate...'
-            );
+            await expect(input).toHaveAttribute('placeholder', 'Type a command to execute or generate...');
         }
 
         // Back to Explain: the conversational placeholder returns.
         await mode.selectOption('explain');
         await expect(mode).toHaveValue('explain');
-        await expect(input).toHaveAttribute(
-            'placeholder',
-            'Send a message... (Shift+Enter for newline)'
-        );
+        await expect(input).toHaveAttribute('placeholder', 'Send a message... (Shift+Enter for newline)');
     });
 });

@@ -267,7 +267,7 @@ describe('initWebMidi', () => {
         );
     });
 
-    it('should return false if neither is supported', async () => {
+    it('retains capability support when browser access is refused', async () => {
         const onMidiMessage = vi.fn<(event: WebMidiInputMessage) => void>();
         requestMidiAccessMock.mockRejectedValue(new Error('no access'));
         vi.mocked(isDesktopRuntime).mockReturnValue(false);
@@ -275,7 +275,47 @@ describe('initWebMidi', () => {
         const result = await initWebMidi({ onMidiMessage });
 
         expect(result).toBe(false);
-        expect(setStateMock).toHaveBeenCalledWith({ isSupported: false, enumerationError: 'no access' });
+        expect(setStateMock).toHaveBeenCalledWith({
+            isSupported: true,
+            enumerationError: 'no access',
+            accessDenied: false,
+        });
+    });
+
+    it.each(['NotAllowedError', 'SecurityError'])('publishes a %s rejection as a denied permission', async (name) => {
+        const onMidiMessage = vi.fn<(event: WebMidiInputMessage) => void>();
+        requestMidiAccessMock.mockRejectedValue(new DOMException('Permission denied', name));
+        vi.mocked(isDesktopRuntime).mockReturnValue(false);
+
+        await initWebMidi({ onMidiMessage });
+
+        expect(setStateMock).toHaveBeenCalledWith({
+            isSupported: true,
+            enumerationError: 'Permission denied',
+            accessDenied: true,
+        });
+    });
+
+    it('does not classify a denial by its message text', async () => {
+        const onMidiMessage = vi.fn<(event: WebMidiInputMessage) => void>();
+        requestMidiAccessMock.mockRejectedValue(new DOMException('Permission denied', 'InvalidStateError'));
+        vi.mocked(isDesktopRuntime).mockReturnValue(false);
+
+        await initWebMidi({ onMidiMessage });
+
+        expect(setStateMock).toHaveBeenCalledWith(expect.objectContaining({ accessDenied: false }));
+    });
+
+    it('does not publish a denial when the desktop native fallback lists the ports', async () => {
+        const onMidiMessage = vi.fn<(event: WebMidiInputMessage) => void>();
+        requestMidiAccessMock.mockRejectedValue(new DOMException('Permission denied', 'NotAllowedError'));
+        vi.mocked(isDesktopRuntime).mockReturnValue(true);
+        vi.mocked(desktopInvoke).mockResolvedValue([]);
+
+        await initWebMidi({ onMidiMessage });
+
+        expect(setStateMock).not.toHaveBeenCalledWith(expect.objectContaining({ accessDenied: true }));
+        expect(setStateMock).toHaveBeenCalledWith(expect.objectContaining({ enumerationError: null }));
     });
 
     it('should remove the active event listener when the selected input disappears', async () => {
@@ -335,6 +375,7 @@ describe('initWebMidi', () => {
                 inputs: [expect.objectContaining({ id: 'in-2' })],
                 selectedInputId: 'in-2',
                 enumerationError: null,
+                enumerationCompleted: true,
             },
             { persistSelection: false }
         );
@@ -437,6 +478,7 @@ describe('initWebMidi', () => {
                 inputs: [expect.objectContaining({ id: 'in-1' })],
                 selectedInputId: 'in-1',
                 enumerationError: null,
+                enumerationCompleted: true,
             },
             { persistSelection: false }
         );

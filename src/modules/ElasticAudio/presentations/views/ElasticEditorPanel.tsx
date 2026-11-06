@@ -9,7 +9,9 @@ import { useStore } from '#/infra/store/useStore';
 import {
     clipSelectionStore,
     defaultClipSelectionState,
+    defaultTimelineEditingState,
     defaultTrackState,
+    timelineEditingStore,
     trackStore,
     defaultWarpStateStoreState,
     warpStateStore,
@@ -24,7 +26,6 @@ import {
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
 import { preferencesStore } from '#/modules/Preferences/stores';
 import { defaultPreferences } from '#/modules/Preferences/useCases';
-import { defaultWorkspaceState, workspaceStore } from '#/modules/WorkspaceShell/stores';
 import { resolveToken } from '#/utils/UI/resolveToken';
 
 import { audioWarpStore, WARP_ALGORITHMS, type WarpAlgorithm } from '../../stores/audioWarp';
@@ -36,6 +37,7 @@ import { detectTransientsForClip } from '../../useCases/elasticAudio/detectTrans
 import { markElasticDetectionComplete } from '../../useCases/elasticAudio/markElasticDetectionComplete';
 import { quantizeTransients } from '../../useCases/elasticAudio/quantizeTransients';
 import { removeMarker } from '../../useCases/elasticAudio/removeMarker';
+import { resolveElasticEditorTarget } from '../../useCases/elasticAudio/resolveElasticEditorTarget';
 import { selectElasticMarkers } from '../../useCases/elasticAudio/selectElasticMarkers';
 import { setElasticSensitivity } from '../../useCases/elasticAudio/setElasticSensitivity';
 import { setElasticTool } from '../../useCases/elasticAudio/setElasticTool';
@@ -95,7 +97,7 @@ const EMPTY_WARP_STATE: WarpStateView = { enabled: false, markers: [], stretchMo
 export const ElasticEditorPanel = (): ReactElement => {
     const elasticState = useStore(elasticAudioStore, defaultElasticAudioState);
     const preferences = useStore(preferencesStore, defaultPreferences);
-    const workspaceState = useStore(workspaceStore, defaultWorkspaceState);
+    const timelineEditing = useStore(timelineEditingStore, defaultTimelineEditingState);
     const clipSelection = useStore(clipSelectionStore, defaultClipSelectionState);
     const trackState = useStore(trackStore, defaultTrackState);
     const warpStates = useStore(warpStateStore, defaultWarpStateStoreState);
@@ -105,8 +107,7 @@ export const ElasticEditorPanel = (): ReactElement => {
         globalPitchShift: 0,
     });
 
-    const clipId = elasticState.openClipId ?? clipSelection.selectedClipId;
-    const clip = clipId === null ? null : findClip(trackState.tracks, clipId);
+    const { clipId, clip } = resolveElasticEditorTarget(elasticState, clipSelection, trackState);
     const isAudioClip = clip !== null && clip.type === 'audio';
 
     const warpState = (clipId === null ? undefined : warpStates.states[clipId]) ?? EMPTY_WARP_STATE;
@@ -266,7 +267,7 @@ export const ElasticEditorPanel = (): ReactElement => {
         didDragRef.current = true;
         const x = getCanvasX(event);
         const beatRaw = Math.max(0, x / beatWidth);
-        const beat = drag.ctrlKey || event.ctrlKey ? snapToGrid(beatRaw, workspaceState.snapValue ?? 1) : beatRaw;
+        const beat = drag.ctrlKey || event.ctrlKey ? snapToGrid(beatRaw, timelineEditing.snapValue ?? 1) : beatRaw;
         updateWarpMarkerBeat({
             clipId,
             markerId: drag.markerId,
@@ -455,19 +456,6 @@ export const ElasticEditorPanel = (): ReactElement => {
         </Stack>
     );
 };
-
-function findClip(
-    tracks: ReadonlyArray<{ clips: ReadonlyArray<{ id: string; type: string; audioBufferId?: string }> }>,
-    clipId: string
-): { id: string; type: string; audioBufferId?: string } | null {
-    for (const track of tracks) {
-        const clip = track.clips.find((c) => c.id === clipId);
-        if (clip) {
-            return clip;
-        }
-    }
-    return null;
-}
 
 function countMarkers(markers: ReadonlyArray<WarpMarkerView>): {
     transient: number;

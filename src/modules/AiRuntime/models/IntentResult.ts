@@ -9,10 +9,11 @@ import { type PlanningRejectionEvidence } from './PlanningRejectionEvidence';
 import { type ProposalGroundingBasis, type ProposalProtectionFacts } from './ProposalGroundingBasis';
 import { type AdoptedRecipe } from './RetainedCompilation';
 import { type SemanticCommandListMatchSelectorRecord } from './SemanticCommandList';
-import { type WholeProjectVibeMixPlan } from './WholeProjectVibeMixPlan';
 import { type WorkflowCapabilityId } from './WorkflowCapability';
 
 export type IntentResult = {
+    /** Versioned app-owned intent and actual preview proof; absent legacy work stays unverified. */
+    metricGoalState?: string;
     actions: ExecutableRuntimeAction[];
     rawText: string;
     requiresConfirmation: boolean;
@@ -26,12 +27,12 @@ export type IntentResult = {
     executionMode?: 'atomic';
     /** Application-validated dependency and batch-local producer metadata aligned to actions. */
     actionCommandGraph?: ActionCommandGraph;
-    /** Structured, inert explanation for a bounded whole-project proposal. */
-    wholeProjectVibeMixPlan?: WholeProjectVibeMixPlan;
     preparationRequest?: 'stem-import';
     workflowCapabilityId?: WorkflowCapabilityId;
     /** Correlated, bounded receipts produced by application-owned read tools during provider planning. */
     applicationToolReceipts?: ApplicationToolReceipt[];
+    /** Bounded application-owned settlement of deferred terminal controls, separate from metric proof. */
+    terminalMeasurementSettlement?: string;
     /** Bounded metadata retained from the normalized provider proposal; never authority on its own. */
     providerProposal?: AgentRunProviderProposal;
     /** Direct stable targets proven from the provider's semantic list against one project snapshot. */

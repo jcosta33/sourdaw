@@ -11,6 +11,7 @@ import { MetaText } from '../../components/Inspector/MetaText';
 
 import { resolveDeviceLayout } from './deviceLayoutRegistry';
 import { GenericDeviceLayout } from './GenericDeviceLayout';
+import { resolveDevicePlugin } from './resolveDevicePlugin';
 
 import './layouts/BuiltinSynthLayout';
 import './layouts/BuiltinLufsMeterLayout';
@@ -84,13 +85,7 @@ function deriveParamsFromValues(device: Device): DeviceParameter[] {
 }
 
 export const DeviceInspector = ({ device, trackId, onBack }: DeviceInspectorProps): ReactElement => {
-    const plugin = getBuiltinPlugins().find(
-        (param) =>
-            param.id === device.type ||
-            param.id === `builtin-${device.type}` ||
-            param.name.toLowerCase() === device.type?.toLowerCase() ||
-            param.name === device.name
-    );
+    const plugin = resolveDevicePlugin(getBuiltinPlugins(), device);
 
     // Use static descriptor params, or derive from parameterValues for Faust/dynamic devices
     const parameters = plugin?.parameters ?? deriveParamsFromValues(device);
@@ -111,7 +106,7 @@ export const DeviceInspector = ({ device, trackId, onBack }: DeviceInspectorProp
     };
 
     return (
-        <Stack gap={4} className="p-3">
+        <Stack gap={4} className="@container p-3">
             <InspectorDetailHeader
                 title={<h3 className="truncate text-xs font-medium text-foreground">{device.name}</h3>}
                 onBack={onBack}

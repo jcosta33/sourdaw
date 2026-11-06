@@ -1,6 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { setSnapValue } from '../setSnapValue';
 import { toggleInspector } from '../toggleInspector';
 import { toggleMixer } from '../toggleMixer';
 import { toggleSidebar } from '../toggleSidebar';
@@ -40,11 +39,5 @@ describe('Workspace Toggles', () => {
         mocks.getWorkspaceState.mockReturnValue({ mixerOpen: false });
         toggleMixer();
         expect(mocks.updateWorkspaceState).toHaveBeenCalledWith({ mixerOpen: true });
-    });
-
-    it('setSnapValue updates snap setting', () => {
-        mocks.getWorkspaceState.mockReturnValue({});
-        setSnapValue(0.25);
-        expect(mocks.updateWorkspaceState).toHaveBeenCalledWith({ snapValue: 0.25 });
     });
 });

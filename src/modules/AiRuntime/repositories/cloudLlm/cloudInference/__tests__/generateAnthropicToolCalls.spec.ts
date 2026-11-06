@@ -1,17 +1,21 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
+
 import { isHostedAiHttpStatusError } from '../../../../errors/HostedAiHttpStatusError';
 import {
     COMMAND_BATCH_DECLINE_TOOL_NAME,
     COMMAND_BATCH_PROPOSAL_TOOL_NAME,
 } from '../../../../models/AgentToolCatalogNames';
 import { type ToolSchema } from '../../../../models/Tools/Types';
-import { APPLICATION_OWNED_TOOL_SCHEMAS } from '../../../../useCases/applicationOwnedToolLoop';
+import { getApplicationOwnedToolSchemas } from '../../../../useCases/getApplicationOwnedToolSchemas';
 import { getPlanningProviderToolSchemas } from '../../../../useCases/getPlanningProviderToolSchemas';
 import { getHostedProposalWireToolSchema } from '../../../../useCases/llmOrchestration/getHostedProposalWireToolSchema';
 import { encodeWireToolName } from '../encodeWireToolName';
 import { generateAnthropicToolCalls } from '../generateAnthropicToolCalls';
-import { AUTO_TOOL_CHOICE } from '../hostedToolPlan';
+import { AUTO_TOOL_CHOICE, type HostedToolChoiceDirective } from '../hostedToolPlan';
+
+registerDeviceEnginePorts();
 
 const requestProvider = vi.hoisted(() => vi.fn());
 
@@ -162,6 +166,43 @@ describe('generateAnthropicToolCalls', () => {
         expect(body.tools).toHaveLength(1);
         expect(body.tools[0]?.name).toBe('setTempo');
         expect(body.tools[0]?.cache_control).toEqual({ type: 'ephemeral' });
+    });
+
+    it.each(['auto', 'required'] as const)('nests the single-call control for an explicit %s step', async (mode) => {
+        returnPayload({
+            content: [{ type: 'tool_use', id: 'single', name: 'setTempo', input: { bpm: 120 } }],
+            stop_reason: 'tool_use',
+        });
+        let directive: HostedToolChoiceDirective;
+        if (mode === 'required') {
+            directive = { mode, toolNames: ['setTempo'], parallelToolCalls: false };
+        } else {
+            directive = { mode, parallelToolCalls: false };
+        }
+        await generateAnthropicToolCalls({
+            runtime,
+            systemPrompt: 'system',
+            userMessage: 'faster',
+            toolSchemas,
+            maxOutputTokens: 8192,
+            directive,
+            signal: new AbortController().signal,
+        });
+        const request: unknown = requestProvider.mock.calls[0]?.[0];
+        if (
+            typeof request !== 'object' ||
+            request === null ||
+            !('body' in request) ||
+            typeof request.body !== 'string'
+        ) {
+            throw new TypeError('Expected the actual provider request.');
+        }
+        const body: unknown = JSON.parse(request.body);
+        expect(body).toHaveProperty('tool_choice', {
+            type: mode === 'required' ? 'any' : 'auto',
+            disable_parallel_tool_use: true,
+        });
+        expect(body).not.toHaveProperty('disable_parallel_tool_use');
     });
 
     it('narrows to exactly the directive-named tools, in their advertised order, dropping an unnamed one', async () => {
@@ -688,7 +729,7 @@ describe('generateAnthropicToolCalls', () => {
 
         it.each([
             ['getPlanningProviderToolSchemas()', getPlanningProviderToolSchemas()],
-            ['APPLICATION_OWNED_TOOL_SCHEMAS', APPLICATION_OWNED_TOOL_SCHEMAS],
+            ['getApplicationOwnedToolSchemas()', getApplicationOwnedToolSchemas()],
         ])('keeps the strict subset of %s within the documented complexity caps', async (_label, toolSchemas) => {
             const body = await captureRequestBody(toolSchemas);
             const strictTools = body.tools.filter((wireTool) => wireTool.strict === true);
@@ -718,6 +759,35 @@ describe('generateAnthropicToolCalls', () => {
             // whole request's 24-parameter budget — so it must be sent non-strict.
             expect(proposeTool?.strict).toBeUndefined();
             expect(declineTool?.strict).toBe(true);
+        });
+
+        // Red when the plan reports a tool its budget sent loose as enforced, or names one by its wire
+        // form: admission reads this list to decide whether a call off its schema can be answered.
+        it('reports by canonical name exactly the tools the strict budget sent without strict', async () => {
+            returnPayload({ content: [], stop_reason: 'end_turn' });
+            const toolSchemas = getPlanningProviderToolSchemas();
+            const result = await generateAnthropicToolCalls({
+                runtime,
+                systemPrompt: 'system',
+                userMessage: 'turn the drums down 2 dB',
+                toolSchemas,
+                maxOutputTokens: 8192,
+                directive: AUTO_TOOL_CHOICE,
+                signal: new AbortController().signal,
+            });
+            const request = requestProvider.mock.calls[0]?.[0] as { body: string } | undefined;
+            if (!request) {
+                throw new Error('Expected a recorded provider request');
+            }
+            const body = JSON.parse(request.body) as { tools: WireTool[] };
+            const looseWireNames = body.tools
+                .filter((wireTool) => wireTool.strict !== true)
+                .map((wireTool) => wireTool.name);
+
+            expect(result.strictToolSchemas).toBe(true);
+            expect(result.nonStrictToolNames).toContain(COMMAND_BATCH_PROPOSAL_TOOL_NAME);
+            expect(result.nonStrictToolNames).not.toContain(COMMAND_BATCH_DECLINE_TOOL_NAME);
+            expect(result.nonStrictToolNames?.map((name) => encodeWireToolName(name))).toEqual(looseWireNames);
         });
     });
 });

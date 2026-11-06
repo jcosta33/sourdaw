@@ -1,7 +1,8 @@
-import { resolveMusicalRange } from '#/modules/Arrangement/useCases';
+import { nextDefaultTrackName, resolveMusicalRange } from '#/modules/Arrangement/useCases';
 import { getNotesForClip, projectDrumPreviewCandidateNotes } from '#/modules/MIDI/useCases';
 import { getBarStartBeat } from '#/modules/Transport/useCases';
 import { FADER_MAX_GAIN, resolveSendLevelFields, SEND_LEVEL_LAW, toLevelDb } from '#/utils/audioLevelLaw';
+import { normalizeDeviceParameterValueUnit } from '#/utils/deviceParameterValueUnit';
 import { type AppAction } from '#/utils/handlerContract';
 
 import { type MaterializableRuntimeAction } from '../models/ExecutableRuntimeAction';
@@ -453,14 +454,12 @@ export function materializeActionStateGuards(
             if (tracksById.has(action.payload.id)) {
                 return { status: 'rejected', reason: `Track identity is already in use: ${action.payload.id}` };
             }
+            // A nameless track is pinned to the owner's default name for its kind among the
+            // tracks projected so far, so the proposal, its guards and its replay name it once.
+            const name = action.payload.name ?? nextDefaultTrackName(action.payload.kind, [...tracksById.values()]);
             tracksById.set(
                 action.payload.id,
-                createProjectedTrack(
-                    action.payload.id,
-                    action.payload.name,
-                    action.payload.kind,
-                    action.payload.initialDeviceId
-                )
+                createProjectedTrack(action.payload.id, name, action.payload.kind, action.payload.initialDeviceId)
             );
             deviceIdsByTrack.set(
                 action.payload.id,
@@ -469,7 +468,9 @@ export function materializeActionStateGuards(
                     : []
             );
             frozenByTrack.set(action.payload.id, false);
-            materialized.push(action);
+            materialized.push(
+                action.payload.name === undefined ? { ...action, payload: { ...action.payload, name } } : action
+            );
             continue;
         }
         if (action.type === 'addDevice') {
@@ -545,41 +546,11 @@ export function materializeActionStateGuards(
             continue;
         }
         if (action.type === 'setDeviceParameter' && hasDeviceParameterStateGuards(action)) {
-            const owners = [...tracksById.values()].filter((track) =>
-                track.devices.some((device) => device.id === action.payload.deviceId)
-            );
-            const owner = owners.length === 1 ? owners[0] : undefined;
-            const device = owner?.devices.find((candidate) => candidate.id === action.payload.deviceId);
-            const parameter = device?.parameters?.find((candidate) => candidate.id === action.payload.paramId);
-            const valuePresent = parameter?.valuePresent !== false;
-            if (
-                !owner ||
-                !device ||
-                !parameter ||
-                owner.frozen === true ||
-                (action.payload.expectedTrackId !== undefined && action.payload.expectedTrackId !== owner.id) ||
-                (action.payload.expectedDeviceType !== undefined &&
-                    action.payload.expectedDeviceType !== device.type) ||
-                (action.payload.expectedValuePresent !== undefined &&
-                    action.payload.expectedValuePresent !== valuePresent) ||
-                (action.payload.expectedValue !== undefined &&
-                    (!valuePresent || action.payload.expectedValue !== parameter.value)) ||
-                (action.payload.expectedTrackFrozen !== undefined &&
-                    action.payload.expectedTrackFrozen !== owner.frozen)
-            ) {
-                return {
-                    status: 'rejected',
-                    reason: `Device parameter state is unavailable or protected: ${action.payload.deviceId}/${action.payload.paramId}`,
-                };
+            const guarded = materializeGuardedParameter(action, tracksById, deviceIdsByTrack);
+            if (guarded.status === 'rejected') {
+                return guarded;
             }
-            const expectedDeviceIds = deviceIdsByTrack.get(owner.id);
-            if (!expectedDeviceIds) {
-                return { status: 'rejected', reason: `Track is unavailable: ${owner.id}` };
-            }
-            materialized.push({
-                type: 'setDeviceParameter',
-                payload: { ...action.payload, expectedDeviceIds: [...expectedDeviceIds] },
-            });
+            materialized.push(...guarded.actions);
             continue;
         }
         if (action.type === 'createBus' && action.payload.busId) {
@@ -687,7 +658,7 @@ export function materializeActionStateGuards(
             for (const trackId of action.payload.trackIds) {
                 const track = tracksById.get(trackId);
                 if (!track || track.kind !== 'bus') {
-                    return { status: 'rejected', reason: `Impact bus is unavailable: ${trackId}` };
+                    return { status: 'rejected', reason: `Bus is unavailable: ${trackId}` };
                 }
                 if (
                     track.frozen === true ||
@@ -704,7 +675,7 @@ export function materializeActionStateGuards(
                             (!lane.clipId && lane.trackId === trackId && lane.parameterId === 'gain')
                     )
                 ) {
-                    return { status: 'rejected', reason: `Impact bus cannot accept gain automation: ${trackId}` };
+                    return { status: 'rejected', reason: `Bus cannot accept gain automation: ${trackId}` };
                 }
                 expectedTracks.push({
                     trackId,
@@ -832,4 +803,72 @@ export function materializeActionStateGuards(
     }
 
     return { status: 'accepted', actions: stampProcessingOnlyParameterPolicy(materialized) };
+}
+
+function getNativeParameterUnit(valueUnit: unknown, descriptorUnit: string) {
+    if (valueUnit !== undefined) {
+        return {};
+    }
+    const nativeUnit = normalizeDeviceParameterValueUnit(descriptorUnit);
+    if (nativeUnit === null) {
+        return {};
+    }
+    return { valueUnit: nativeUnit };
+}
+
+function materializeGuardedParameter(
+    action: Extract<MaterializableRuntimeAction, { type: 'setDeviceParameter' }>,
+    tracksById: ReadonlyMap<string, ProjectContextTrack>,
+    deviceIdsByTrack: ReadonlyMap<string, string[]>
+): MaterializeActionStateGuardsResult {
+    const owners = [...tracksById.values()].filter((track) =>
+        track.devices.some((device) => device.id === action.payload.deviceId)
+    );
+    const owner = owners.length === 1 ? owners[0] : undefined;
+    const device = owner?.devices.find((candidate) => candidate.id === action.payload.deviceId);
+    const parameter = device?.parameters?.find((candidate) => candidate.id === action.payload.paramId);
+    const valuePresent = parameter?.valuePresent !== false;
+    if (
+        !owner ||
+        !device ||
+        !parameter ||
+        owner.frozen === true ||
+        (action.payload.expectedTrackId !== undefined && action.payload.expectedTrackId !== owner.id) ||
+        (action.payload.expectedDeviceType !== undefined && action.payload.expectedDeviceType !== device.type) ||
+        !matchesParameterBeforeValue(action, parameter.value, valuePresent) ||
+        (action.payload.expectedTrackFrozen !== undefined && action.payload.expectedTrackFrozen !== owner.frozen)
+    ) {
+        return {
+            status: 'rejected',
+            reason: `Device parameter state is unavailable or protected: ${action.payload.deviceId}/${action.payload.paramId}`,
+        };
+    }
+    const expectedDeviceIds = deviceIdsByTrack.get(owner.id);
+    if (!expectedDeviceIds) {
+        return { status: 'rejected', reason: `Track is unavailable: ${owner.id}` };
+    }
+    return {
+        status: 'accepted',
+        actions: [
+            {
+                type: 'setDeviceParameter',
+                payload: {
+                    ...action.payload,
+                    ...getNativeParameterUnit(action.payload.valueUnit, parameter.unit),
+                    expectedDeviceIds: [...expectedDeviceIds],
+                },
+            },
+        ],
+    };
+}
+
+function matchesParameterBeforeValue(
+    action: Extract<MaterializableRuntimeAction, { type: 'setDeviceParameter' }>,
+    value: number,
+    valuePresent: boolean
+): boolean {
+    if (action.payload.expectedValuePresent !== undefined && action.payload.expectedValuePresent !== valuePresent) {
+        return false;
+    }
+    return action.payload.expectedValue === undefined || (valuePresent && action.payload.expectedValue === value);
 }

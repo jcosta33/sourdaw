@@ -17,10 +17,43 @@ export const SCALE_PATTERNS: Record<string, number[]> = {
 
 export const SCALE_NAMES = Object.keys(SCALE_PATTERNS);
 
+const SCALE_PATTERNS_BY_NAME: ReadonlyMap<string, readonly number[]> = new Map(Object.entries(SCALE_PATTERNS));
+
+/** Scale names come from stored data, so read through a Map: a plain-object read resolves `__proto__` or `toString` to an Object.prototype member. */
+export function getScalePattern(scaleName: string): readonly number[] | undefined {
+    return SCALE_PATTERNS_BY_NAME.get(scaleName);
+}
+
+/** Display names for the `SCALE_PATTERNS` identifiers; option values stay the identifiers. */
+export const SCALE_LABELS: Record<string, string> = {
+    major: 'Major',
+    minor: 'Minor',
+    harmonicMinor: 'Harmonic Minor',
+    melodicMinor: 'Melodic Minor',
+    dorian: 'Dorian',
+    phrygian: 'Phrygian',
+    lydian: 'Lydian',
+    mixolydian: 'Mixolydian',
+    pentatonicMajor: 'Pentatonic Major',
+    pentatonicMinor: 'Pentatonic Minor',
+    blues: 'Blues',
+    wholeTone: 'Whole Tone',
+    diminished: 'Diminished',
+    chromatic: 'Chromatic',
+};
+
+const SCALE_LABELS_BY_NAME: ReadonlyMap<string, string> = new Map(Object.entries(SCALE_LABELS));
+
+export function getScaleLabel(scaleName: string): string {
+    return SCALE_LABELS_BY_NAME.get(scaleName) ?? scaleName;
+}
+
+const CHROMATIC_PATTERN: readonly number[] = SCALE_PATTERNS.chromatic!;
+
 export const KEY_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 
 export function quantizeCentsToScale(cents: number, root: number, scaleName: string): number {
-    const pattern = SCALE_PATTERNS[scaleName] ?? SCALE_PATTERNS.chromatic!;
+    const pattern = getScalePattern(scaleName) ?? CHROMATIC_PATTERN;
     const pc = (((Math.round(cents / 100) - root) % 12) + 12) % 12;
 
     if (pattern.includes(pc)) {
@@ -52,7 +85,7 @@ export function quantizeCentsToScale(cents: number, root: number, scaleName: str
 }
 
 export function quantizeMidiNoteToScale(note: number, root: number, scaleName: string): number {
-    const pattern = SCALE_PATTERNS[scaleName] ?? SCALE_PATTERNS.chromatic!;
+    const pattern = getScalePattern(scaleName) ?? CHROMATIC_PATTERN;
     const pc = (((note - root) % 12) + 12) % 12;
 
     if (pattern.includes(pc)) {
@@ -80,5 +113,24 @@ export function quantizeMidiNoteToScale(note: number, root: number, scaleName: s
         actualDiff = diff + 12;
     }
 
-    return Math.max(0, Math.min(127, note + actualDiff));
+    const snapped = note + actualDiff;
+    if (snapped >= MIN_MIDI_PITCH && snapped <= MAX_MIDI_PITCH) {
+        return snapped;
+    }
+    return nearestInScalePitchInRange(note, root, pattern, actualDiff > 0 ? -1 : 1);
+}
+
+const MIN_MIDI_PITCH = 0;
+const MAX_MIDI_PITCH = 127;
+
+/** Walks from `note` in `direction` to the first in-scale pitch; used when the nearest degree lies outside MIDI range. */
+function nearestInScalePitchInRange(note: number, root: number, pattern: readonly number[], direction: 1 | -1): number {
+    let pitch = note;
+    while (pitch >= MIN_MIDI_PITCH && pitch <= MAX_MIDI_PITCH) {
+        if (pattern.includes((((pitch - root) % 12) + 12) % 12)) {
+            return pitch;
+        }
+        pitch += direction;
+    }
+    return note;
 }

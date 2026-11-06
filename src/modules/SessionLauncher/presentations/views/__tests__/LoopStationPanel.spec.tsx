@@ -30,7 +30,7 @@ const mocks = vi.hoisted(() => ({
         syncToTransport: true,
         fixedLoopLength: 0,
     },
-    trackState: { tracks: [] as Array<{ id: string; name: string; color: string | null }> },
+    trackState: { tracks: [] as Array<{ id: string; name: string; color: string | null; kind?: string }> },
     transportState: { playheadPosition: 0, timeSignatureNumerator: 4 },
     toggleRecord: vi.fn(),
     stopAllSlots: vi.fn(),
@@ -150,6 +150,24 @@ describe('LoopStationPanel', () => {
         expect(screen.getByRole('grid', { name: /loop slots/i })).toBeInTheDocument();
         expect(screen.getByText('Drums')).toBeInTheDocument();
         expect(screen.getByText('Bass')).toBeInTheDocument();
+    });
+
+    it('should not offer the master or folder rows as loop columns', () => {
+        mocks.trackState.tracks = [
+            { id: 'master', name: 'Master', color: null, kind: 'master' },
+            { id: 'folder-1', name: 'Drums Folder', color: null, kind: 'folder' },
+            { id: 't1', name: 'Drums', color: '#ff0000', kind: 'audio' },
+        ];
+        renderPanel();
+        expect(screen.getByText('Drums')).toBeInTheDocument();
+        expect(screen.queryByText('Master')).not.toBeInTheDocument();
+        expect(screen.queryByText('Drums Folder')).not.toBeInTheDocument();
+    });
+
+    it('should show the empty state when only the master row exists', () => {
+        mocks.trackState.tracks = [{ id: 'master', name: 'Master', color: null, kind: 'master' }];
+        renderPanel();
+        expect(screen.getByText('No tracks to loop')).toBeInTheDocument();
     });
 
     it('should trigger toggleRecord when the record button on a slot is clicked', () => {

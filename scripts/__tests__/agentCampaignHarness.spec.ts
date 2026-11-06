@@ -84,7 +84,15 @@ describe('agent release thresholds document', () => {
     const document = readFileSync(resolve(REPOSITORY_ROOT, THRESHOLDS_DOC_PATH), 'utf8');
 
     it('declares the schema version the corpora and the scorer are written against', () => {
-        expect(document).toContain('Schema version 2.');
+        expect(document).toContain('Schema version 3.');
+        expect(document).toContain('Schema version 2 carries, per corpus file:');
+        expect(document).toContain('Schema version 1 carries:');
+    });
+
+    it('names both version-2 execute floors it supersedes', () => {
+        const supersession = sectionsOf(document).get('Supersession');
+        expect(supersession).toContain('per-prompt-class execute recall (each sealed class of twelve) 1.00');
+        expect(supersession).toContain('per-prompt-class execute precision (each sealed class of twelve) 1.00');
     });
 
     it('names every superseded version-1 value in its supersession section', () => {
@@ -98,6 +106,15 @@ describe('agent release thresholds document', () => {
 });
 
 describe('agent campaign evidence fixtures', () => {
+    it('pins the extracted acceptance fixture lifetime as AC-054 evidence', () => {
+        const path = 'src/modules/AiRuntime/__tests__/acceptanceFixtureLifetime.ts';
+        const suite = manifest.suites.find((entry) => entry.id === 'AC-054');
+        expect(suite).toBeDefined();
+        const fixture = suite?.fixtures.find((entry) => entry.path === path);
+        expect(fixture).toEqual({ path, digest: computeFixtureDigest(REPOSITORY_ROOT, path) });
+        expect(fixture?.digest).not.toBeNull();
+    });
+
     it('records each fixture as the tree actually holds it', () => {
         for (const suite of manifest.suites) {
             for (const fixture of suite.fixtures) {

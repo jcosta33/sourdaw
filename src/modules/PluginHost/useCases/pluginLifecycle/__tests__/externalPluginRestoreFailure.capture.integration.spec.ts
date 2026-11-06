@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerSupportingServicePorts } from '#/app/registerSupportingServicePorts';
 import { Container } from '#/infra/di/Container';
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
 import { createControlledLockManager } from '#/infra/testing/createControlledLockManager';
@@ -228,6 +229,8 @@ function activateInstance(instanceId: string, stateChunk: string | undefined) {
         stateChunk,
     });
 }
+
+registerSupportingServicePorts();
 
 describe('external plugin state survives a failed restore (issue 3693)', () => {
     let lockManager: ReturnType<typeof createControlledLockManager>;

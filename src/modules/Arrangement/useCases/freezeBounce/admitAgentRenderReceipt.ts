@@ -1,4 +1,4 @@
-import { projectRevisionMatchesLiveIgnoringCommandCheckpoint } from '#/modules/CrdtDocument/useCases';
+import { projectRevisionMatchesLiveIgnoringSaveWrites } from '#/modules/CrdtDocument/useCases';
 import { type AgentRenderReceipt, type AgentWorkOwnerIdentity } from '#/utils/agentRenderReceipt';
 import { type AppAction } from '#/utils/handlerContract';
 
@@ -93,7 +93,7 @@ export function admitAgentRenderReceipt(input: {
     if (isLeaseMismatch(receipt.owner, liveRun)) {
         return { status: 'rejected', reason: 'lease-mismatch' };
     }
-    if (!projectRevisionMatchesLiveIgnoringCommandCheckpoint(receipt.provenance.sourceRevision)) {
+    if (!projectRevisionMatchesLiveIgnoringSaveWrites(receipt.provenance.sourceRevision)) {
         return { status: 'rejected', reason: 'stale-revision' };
     }
     const artifact = artifacts.find((candidate) => candidate.jobId === receipt.provenance.jobId);

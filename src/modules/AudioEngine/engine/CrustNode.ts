@@ -18,7 +18,7 @@ import { STEREO_CHANNEL_COUNT } from '../models/ChannelLaw';
 import { createCrustRuntimeParameterIds } from '../models/CrustRuntimeControl';
 import { SET_FALLBACK_PARAM_COMMAND, type RuntimeDeviceControlTarget } from '../models/RuntimeDeviceControl';
 import { compileRuntimeDeviceControl } from '../services/compileRuntimeDeviceControl';
-import crustProcessorUrl from '../services/crustProcessor.ts?worker&url';
+import crustProcessorUrl from '../worklets/crustProcessor.ts?worker&url';
 
 import { requireSharedArrayBuffer } from './pluginHostingErrors';
 import { telemetryAllocator, createTelemetryReader, CRUST_IDX, type TelemetrySlot } from './telemetryAllocator';

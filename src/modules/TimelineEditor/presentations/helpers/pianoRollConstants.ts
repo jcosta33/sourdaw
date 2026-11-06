@@ -3,7 +3,7 @@
  * Shared between the main view, renderer, gestures hook, and sub-components.
  */
 
-import { SCALE_PATTERNS, KEY_NAMES } from '#/utils/Music/MusicalScale';
+import { SCALE_PATTERNS, KEY_NAMES, getScalePattern } from '#/utils/Music/MusicalScale';
 
 import { type MidiNote } from '../../models/MidiNoteViewTypes';
 
@@ -19,13 +19,43 @@ export { NOTE_NAMES } from '#/utils/noteNames';
  */
 export const EMPTY_NOTES: MidiNote[] = [];
 export const SCALES = SCALE_PATTERNS;
+const CHROMATIC_PATTERN: readonly number[] = SCALE_PATTERNS.chromatic!;
+
+/** Pitch classes of the named scale; unknown names, including Object.prototype members, read as chromatic. */
+export const getScaleIntervals = (scaleType: string): readonly number[] =>
+    getScalePattern(scaleType) ?? CHROMATIC_PATTERN;
 export const SCALE_ROOT_LABELS = KEY_NAMES;
-export const TOTAL_ROWS = 60;
-export const BASE_PITCH = 24;
+/** The editor spans the whole MIDI range, as every established DAW piano roll does. */
+export const LOWEST_PITCH = 0;
+export const HIGHEST_PITCH = 127;
+export const TOTAL_ROWS = HIGHEST_PITCH - LOWEST_PITCH + 1;
 export const ROW_HEIGHT = 16;
 /** Minimum grid span, in beats, so an empty or very short clip still opens on a usable grid. */
 export const GRID_BEATS = 32;
 export const RULER_HEIGHT = 22;
+
+/**
+ * The piano roll's one vertical geometry law, in pixels from the top of the
+ * canvas (and of the key rail beside it): the ruler band, then one
+ * `ROW_HEIGHT` row per visible pitch, row 0 being the highest pitch.
+ *
+ * The canvas sizes itself and maps a click to a row through these, and the
+ * key rail positions every label from the same `getPianoRollRowTop`, so a
+ * label sits beside the row where its pitch is drawn and where a click
+ * creates it. Never let the rail's own flex layout place labels: a column of
+ * flex-shrinkable labels compresses once the dock is shorter than the roll
+ * and drifts off the canvas rows.
+ */
+export const getPianoRollContentHeight = (rowCount: number): number => RULER_HEIGHT + rowCount * ROW_HEIGHT;
+
+/** Top edge of a note row; the row's centre is `ROW_HEIGHT / 2` below it. */
+export const getPianoRollRowTop = (row: number): number => RULER_HEIGHT + row * ROW_HEIGHT;
+
+/** The row under `y`, or `null` over the ruler or past the last row. */
+export const getPianoRollRowAtY = (y: number, rowCount: number): number | null => {
+    const row = Math.floor((y - RULER_HEIGHT) / ROW_HEIGHT);
+    return row >= 0 && row < rowCount ? row : null;
+};
 
 /**
  * Width of the sticky piano-key rail down the left edge of the editor.
@@ -165,9 +195,9 @@ export const INITIAL_DRAG_STATE: DragState = {
 
 /** Compute visible pitches based on scale filter and folding. */
 export const getVisiblePitches = (scaleType: string, scaleRoot: number, isFolded: boolean): number[] => {
-    const scaleIntervals = SCALE_PATTERNS[scaleType] ?? SCALE_PATTERNS.chromatic!;
+    const scaleIntervals = getScaleIntervals(scaleType);
     const pitches: number[] = [];
-    for (let pitch = BASE_PITCH + TOTAL_ROWS - 1; pitch >= BASE_PITCH; pitch--) {
+    for (let pitch = HIGHEST_PITCH; pitch >= LOWEST_PITCH; pitch--) {
         const relativeNote = ((pitch % 12) - scaleRoot + 12) % 12;
         if (!isFolded || scaleIntervals.includes(relativeNote)) {
             pitches.push(pitch);

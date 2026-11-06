@@ -1,6 +1,8 @@
 import { change, from, type Doc } from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerProjectLifecycle } from '#/app/registerProjectLifecycle';
+import { registerProjectSlotProjections } from '#/app/registerProjectSlotProjections';
 import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
@@ -100,6 +102,8 @@ describe('project-load MIDI hydration', () => {
 
     beforeEach(() => {
         configureAutomergeStoragePort(null);
+        registerProjectSlotProjections();
+        registerProjectLifecycle();
         flushAutomergeStorageWrites();
         midiStore.set(defaultMidiState());
         flushAutomergeStorageWrites();

@@ -44,6 +44,7 @@ const mocks = vi.hoisted(() => {
 vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Arrangement/stores')>()),
     trackStore: {
+        subscribe: () => () => undefined,
         get value() {
             return mocks.trackStoreValue.value;
         },
@@ -104,6 +105,14 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     wireSidechainRoute: vi.fn(),
 }));
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
+    compactProject: vi.fn(() => {
+        throw new Error('Unexpected directory compaction in this fixture');
+    }),
+    resetCrdtProject: vi.fn(),
+    exportSdawFile: vi.fn(),
+    prepareExternalProjectDocument: vi.fn(() => {
+        throw new Error('Unexpected directory read in this fixture');
+    }),
     commandSourcePublicationMatches: vi.fn<
         typeof import('#/modules/CrdtDocument/useCases').commandSourcePublicationMatches
     >(() => false),
@@ -130,6 +139,7 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     beginBranchSession: vi.fn(),
     projectCrdtToStores: mocks.projectCrdtToStores,
     projectRevisionMatchesLiveIgnoringCommandCheckpoint: vi.fn(() => true),
+    projectRevisionMatchesLiveIgnoringSaveWrites: vi.fn(() => true),
     removeCrdtDoc: vi.fn(),
     projectBranchSession: vi.fn(),
     replaceCrdtDoc: vi.fn(),

@@ -20,7 +20,8 @@ const mocks = vi.hoisted(() => ({
     }),
 }));
 
-vi.mock('#/modules/CrdtDocument/useCases', () => ({
+vi.mock('#/modules/CrdtDocument/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/CrdtDocument/useCases')>()),
     commandSourcePublicationMatches: vi.fn<
         typeof import('#/modules/CrdtDocument/useCases').commandSourcePublicationMatches
     >(() => false),
@@ -50,6 +51,12 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     projectActionHistoryToStore: vi.fn(),
     projectCrdtToStores: vi.fn(),
     projectRevisionMatchesLiveIgnoringCommandCheckpoint: vi.fn(() => true),
+    // The live revision is the fixed label 'revision-1' with no document behind it, so the
+    // save-insensitive question is answered as equality with it; answerAfterSave.spec.ts asks it over
+    // a real save.
+    projectRevisionMatchesLiveIgnoringSaveWrites: vi.fn(
+        (expectedRevision: string) => expectedRevision === 'revision-1'
+    ),
     removeCrdtDoc: vi.fn(),
     projectBranchSession: vi.fn(),
     replaceCrdtDoc: vi.fn(),

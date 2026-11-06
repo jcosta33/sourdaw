@@ -8,10 +8,7 @@ export const trackPresets: readonly PresetAction[] = [
         keywords: ['add audio', 'new audio', 'create audio', 'audio track'],
         commandAliases: ['new audio track', 'create audio track'],
         category: 'Track',
-        buildAction: () => ({
-            type: 'addTrack',
-            payload: { name: `Audio ${String(Date.now() % 1000)}`, kind: 'audio' },
-        }),
+        buildAction: () => ({ type: 'addTrack', payload: { kind: 'audio' } }),
     },
     {
         id: 'add-midi-track',
@@ -19,7 +16,7 @@ export const trackPresets: readonly PresetAction[] = [
         keywords: ['add midi', 'new midi', 'create midi', 'midi track', 'instrument track'],
         commandAliases: ['new midi track', 'create midi track', 'add instrument track'],
         category: 'Track',
-        buildAction: () => ({ type: 'addTrack', payload: { name: `MIDI ${String(Date.now() % 1000)}`, kind: 'midi' } }),
+        buildAction: () => ({ type: 'addTrack', payload: { kind: 'midi' } }),
     },
     {
         id: 'add-bus-track',
@@ -27,7 +24,7 @@ export const trackPresets: readonly PresetAction[] = [
         keywords: ['add bus', 'new bus', 'create bus', 'bus track', 'aux', 'return'],
         commandAliases: ['new bus track', 'create bus track'],
         category: 'Track',
-        buildAction: () => ({ type: 'addTrack', payload: { name: `Bus ${String(Date.now() % 1000)}`, kind: 'bus' } }),
+        buildAction: () => ({ type: 'addTrack', payload: { kind: 'bus' } }),
     },
     {
         id: 'add-folder',

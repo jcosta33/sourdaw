@@ -4,11 +4,11 @@ Workspace sidebar presentation container and navigation tabs (Project, Instrumen
 
 ## Public Contract Surface
 
-- `presentations/views`: `Sidebar`, `SidebarPanelActions`.
+Public surface: `presentations/views/index.ts`.
 
 ## Key Subsystems
 
-- **Sidebar Shell**: Multi-tab rail navigation container (`presentations/views/Sidebar.tsx`, `RailTabBar`, `RailBackBar`).
+- **Sidebar Shell**: Multi-tab rail navigation container (`presentations/views/Sidebar.tsx`, shared `DawTabStrip` from `#/components/daw` for its main and Library tab rows, `RailBackBar`).
 - **Browser Tabs**: Specialized tab views in `presentations/views/Sidebar/` (`ProjectTab`, `InstrumentsTab`, `EffectsTab`, `SamplesTab`, `OnlineSampleBrowser`, `MacrosPanel`).
 - **Sidebar Components**: `presentations/components/Sidebar/` (`ChoiceCard`, `PresetItem`, `InstrumentCard`, `PreviewButton`, `SearchSummary`, `SectionHeader`, `EmptyState`).
 - **Favorites Persistence**: Local storage persistence for favorited instruments, effects, and samples (`useCases/sidebar-favorites/`, `repositories/sidebar-favorites/`).
@@ -25,5 +25,5 @@ Workspace sidebar presentation container and navigation tabs (Project, Instrumen
 PR CI owns broader unit and crate suites. Locally run only the exact changed spec or filtered Rust test.
 
 ```bash
-pnpm test:run <changed-spec>
+pnpm guard --profile focused -- pnpm test:run <changed-spec>
 ```

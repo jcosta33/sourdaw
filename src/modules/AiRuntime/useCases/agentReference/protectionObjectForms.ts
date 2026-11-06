@@ -120,6 +120,16 @@ function isWrittenAsName(tokens: readonly Token[]): boolean {
     return tokens.some((token) => token.capitalized || token.quoted);
 }
 
+/**
+ * Whether the tokens write a name that must bind to a project object: written as a name and not the
+ * project's own aggregate mix or conventional routing ("the Master", "the FX return"), unless quoted.
+ */
+function writesUnboundName(named: readonly Token[]): boolean {
+    const conventional =
+        !named.some((token) => token.quoted) && named.some((token) => CONVENTIONAL_WORDS.has(token.lower));
+    return isWrittenAsName(named) && !conventional;
+}
+
 const KIND_OBJECT: Readonly<Record<string, ProtectableObjectName['kind']>> = {
     track: 'track',
     channel: 'track',
@@ -155,14 +165,8 @@ function readObjectForm(
     possessive: boolean,
     objects: readonly ProtectableObjectName[]
 ): ObjectForm {
-    const unbound = (named: readonly Token[]): ObjectForm => {
-        const conventional =
-            !named.some((token) => token.quoted) && named.some((token) => CONVENTIONAL_WORDS.has(token.lower));
-        if (!isWrittenAsName(named) || conventional) {
-            return null;
-        }
-        return { kind: 'unbound', text: named.map((t) => t.text).join(' ') };
-    };
+    const unbound = (named: readonly Token[]): ObjectForm =>
+        writesUnboundName(named) ? { kind: 'unbound', text: named.map((t) => t.text).join(' ') } : null;
     const ofIndex = tokens.findIndex((token) => token.lower === 'of' || token.lower === 'on');
     if (ofIndex > 0) {
         const before = tokens.slice(0, ofIndex).filter((token) => !CONNECTIVE_WORDS.has(token.lower));
@@ -197,4 +201,4 @@ function readObjectForm(
     return unbound(subject);
 }
 
-export const protectionObjectForms = { isControl, readTokens, readObjectForm } as const;
+export const protectionObjectForms = { isControl, readTokens, readObjectForm, writesUnboundName } as const;

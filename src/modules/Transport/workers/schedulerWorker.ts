@@ -62,6 +62,10 @@ self.onmessage = (event: MessageEvent<unknown>) => {
         nextScheduledAtMs = highResolutionEpochMs() + intervalMs;
         timerId = setInterval(() => {
             const sentAtMs = highResolutionEpochMs();
+            // Leave an early slot pending: the receiver rejects future deadlines.
+            if (sentAtMs < nextScheduledAtMs) {
+                return;
+            }
             const elapsedIntervals = Math.max(1, Math.floor((sentAtMs - nextScheduledAtMs) / intervalMs) + 1);
             tickSequence += elapsedIntervals;
             const scheduledAtMs = nextScheduledAtMs + (elapsedIntervals - 1) * intervalMs;

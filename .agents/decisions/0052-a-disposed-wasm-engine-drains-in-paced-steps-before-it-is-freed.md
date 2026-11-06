@@ -9,7 +9,7 @@ sources:
     - .agents/decisions/0051-wasm-bank-commit-retires-instead-of-releasing-off-thread.md
     - crates/daw-dsp/src/levain/engine.rs
     - crates/daw-dsp/tests/levain_bank_retirement.rs
-    - src/modules/AudioEngine/services/levainProcessor.ts
+    - src/modules/AudioEngine/worklets/levainProcessor.ts
     - src/modules/AudioEngine/engine/LevainNode.ts
     - https://github.com/jcosta33/sourdaw/issues/5125
 ---

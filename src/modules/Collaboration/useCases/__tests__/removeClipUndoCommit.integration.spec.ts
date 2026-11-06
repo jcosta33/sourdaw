@@ -2,6 +2,7 @@ import { change, clone, load, save, type Doc } from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { captureAgentProjectInspectionState } from '#/app/captureCommandBatchPreflightState';
+import { registerProjectSlotProjections } from '#/app/registerProjectSlotProjections';
 import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
@@ -41,6 +42,7 @@ import {
 } from '#/modules/CrdtDocument/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
 import { getMidiNoteTransformHandlers, restoreMidiClipData } from '#/modules/MIDI/useCases';
+import { getProjectHandlers } from '#/modules/Project/useCases';
 import { getTransportHandlers } from '#/modules/Transport/useCases';
 import { getYeastHandlers } from '#/modules/Yeast/useCases';
 import { jsonValuesEqual } from '#/utils/jsonSemanticEquality';
@@ -93,6 +95,7 @@ describe('committed clip restoration through Command and real peer sync', () => 
         removeCrdtDoc('root');
         createCrdtDoc('root');
         registerCrdtStorageRuntime();
+        registerProjectSlotProjections();
         stopProjection = setupProjectionBridge();
         projectCrdtToStores();
         clearHandlerRegistry();
@@ -794,6 +797,7 @@ describe('committed clip restoration through Command and real peer sync', () => 
                 getAutomationHandlers(),
                 getDrumPreviewBranchHandlers({ canMutateBranchMetadata: () => true }),
                 getMidiNoteTransformHandlers(),
+                getProjectHandlers(),
                 getTransportHandlers(),
                 getYeastHandlers(),
             ]);

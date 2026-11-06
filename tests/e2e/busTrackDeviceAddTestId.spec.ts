@@ -1,5 +1,4 @@
-import { expect, test } from '@playwright/test';
-
+import { expect, test } from './e2eTest';
 import { launch_new_project, setupWorkspace } from './e2eUtils';
 
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
@@ -25,7 +24,12 @@ test.describe('Bus track — device add lands on the bus chain', () => {
         // Create a bus via the inspector's Create Bus button.
         const inspector = page.getByRole('complementary', { name: 'Inspector panel' });
         await inspector.getByRole('button', { name: 'Create Bus' }).click();
-        await expect(page.getByRole('grid', { name: /Track list/i }).getByText('Bus 1', { exact: true }).first()).toBeVisible({
+        await expect(
+            page
+                .getByRole('grid', { name: /Track list/i })
+                .getByText('Bus 1', { exact: true })
+                .first()
+        ).toBeVisible({
             timeout: 5000,
         });
     });

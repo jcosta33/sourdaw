@@ -2,6 +2,9 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { createMockAudioContext, type MockAudioContext } from '#/helpers/__tests__/audioContext.mock';
 
+import { engineDeviceCollaborators } from '../../useCases/engineDeviceCollaborators';
+import { externalLatencyRegistry } from '../../useCases/latencyCompensation/compensation/externalLatencyRegistry';
+
 import {
     createAudioEngineTopologyTestHarness as createAudioEngine,
     type AudioEngineTopologyTestHarness,
@@ -89,6 +92,7 @@ describe('Knead state synced while its device is still loading', () => {
         mockCtx = createMockAudioContext();
         vi.stubGlobal('AudioWorkletNode', FakeWorkletNode);
         engine = createAudioEngine(asAudioContext(mockCtx));
+        engine.setUseCaseDeviceCollaborators(engineDeviceCollaborators);
     });
 
     afterEach(() => {
@@ -213,5 +217,44 @@ describe('Knead state synced while its device is still loading', () => {
 
         expect(knead.result.updateState).not.toHaveBeenCalled();
         expect(knead.result.destroy).toHaveBeenCalled();
+    });
+});
+
+describe('Knead latency through the wired engine', () => {
+    let engine: AudioEngineTopologyTestHarness;
+    let mockCtx: MockAudioContext;
+
+    beforeEach(() => {
+        vi.clearAllMocks();
+        externalLatencyRegistry.clear();
+        mockCtx = createMockAudioContext();
+        vi.stubGlobal('AudioWorkletNode', FakeWorkletNode);
+        engine = createAudioEngine(asAudioContext(mockCtx));
+        engine.setUseCaseDeviceCollaborators(engineDeviceCollaborators);
+    });
+
+    afterEach(() => {
+        engine.setUseCaseDeviceCollaborators(null);
+        externalLatencyRegistry.clear();
+        vi.unstubAllGlobals();
+    });
+
+    // The engine hands its device descriptors a collaborator bundle that
+    // forwards latency reports to whatever the composition root installed. A
+    // forwarder that drops them leaves the track uncompensated with no other
+    // symptom, so this reads the registry PDC itself reads.
+    it('reports the analysis latency on load and retracts it when the device is removed', async () => {
+        const knead = stubKneadNode();
+        engine.addDeviceToStrip('t1', 'knead-1', 'knead');
+
+        knead.resolveReady({ latency: 2048 });
+        await settleDeviceLoad();
+
+        expect(externalLatencyRegistry.get('knead-1')).toBe((2048 / mockCtx.sampleRate) * 1000);
+
+        engine.removeDeviceFromStrip('t1', 'knead-1');
+
+        expect(knead.result.destroy).toHaveBeenCalled();
+        expect(externalLatencyRegistry.has('knead-1')).toBe(false);
     });
 });

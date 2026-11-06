@@ -1,5 +1,6 @@
 import { getPluginById } from '#/modules/Arrangement/useCases';
 import { getAppActionExecutionPolicy } from '#/modules/Command/useCases';
+import { describeProductionBriefChange } from '#/modules/Project/useCases';
 import {
     formatGainDb,
     resolveLevelFields,
@@ -11,7 +12,6 @@ import { type AppAction } from '#/utils/handlerContract';
 
 import { type ProjectContext } from '../models/ProjectContext';
 import { type ProposalProtectionFacts } from '../models/ProposalGroundingBasis';
-import { type WholeProjectVibeMixPlan } from '../models/WholeProjectVibeMixPlan';
 import { type WorkflowCapabilityId } from '../models/WorkflowCapability';
 import { PROPOSAL_DECIBEL_FORMAT } from '../transformers/proposalDecibelFormat';
 import { unionProtectedObjects } from '../transformers/unionProtectedObjects';
@@ -24,7 +24,6 @@ type DescribePendingActionConfirmationInput = {
     actions: readonly AppAction[];
     context: ProjectContext;
     prompt: string;
-    wholeProjectVibeMixPlan?: WholeProjectVibeMixPlan;
     workflowCapabilityId?: WorkflowCapabilityId;
     /** Objects a refinement's chain protects beyond those this request's own text protects. */
     inheritedProtectedUnchanged?: ReadonlyArray<{ id: string; name: string }>;
@@ -136,21 +135,34 @@ function describeDeviceParameterAction(
     return `Set "${owner.name}" (${owner.id}) device "${deviceName}" (${device.id}, ${device.type}) parameter "${parameter.name}" (${parameter.id}) from ${formatParameterValue(previousValue, parameter.unit)} to ${formatParameterValue(action.payload.value, parameter.unit)}`;
 }
 
-function describeWholeProjectVibeMixPlan(plan: WholeProjectVibeMixPlan): string {
-    let previous = 'none';
-    if (plan.sectionMap.previous) {
-        previous = `"${plan.sectionMap.previous.name}" (${plan.sectionMap.previous.id})`;
+/**
+ * A brief write, read against the brief the request was planned on, so the card lists each entry it
+ * adds or removes rather than one opaque "set the brief".
+ */
+function describeProductionBriefAction(
+    action: Extract<AppAction, { type: 'setProductionBrief' }>,
+    context: ProjectContext
+): string {
+    const label = `Update the production brief from revision ${String(action.payload.expectedRevision)}`;
+    const lines = describeProductionBriefChange({
+        before: context.productionBrief,
+        after: action.payload.brief,
+        trackNames: Object.fromEntries(context.tracks.map((track) => [track.id, track.name])),
+        sectionNames: Object.fromEntries((context.sections ?? []).map((section) => [section.id, section.name])),
+    });
+    if (lines === null) {
+        return label;
     }
-    let next = 'none';
-    if (plan.sectionMap.next) {
-        next = `"${plan.sectionMap.next.name}" (${plan.sectionMap.next.id})`;
+    if (lines.length === 0) {
+        return `${label}: no entry changes`;
     }
-    const roles = plan.trackRoles.map((track) => `- ${track.role}: "${track.trackName}" (${track.trackId})`).join('\n');
-    const decisions = plan.acceptedDecisions.map((decision) => `- ${decision}`).join('\n');
-    return `Whole-project plan (schema ${String(plan.schemaVersion)}, revision ${plan.baseRevision}):\n\nProduction vision: ${plan.productionVision}\n\nSection map: target "${plan.sectionMap.target.name}" (${plan.sectionMap.target.id}) beats ${String(plan.sectionMap.target.startBeat)}–${String(plan.sectionMap.target.endBeat)}; previous ${previous}; next ${next}.\n\nTrack roles:\n${roles}\n\nDynamic trajectory: preserve before beat ${String(plan.dynamicTrajectory.startBeat)}, lift impact buses by ${String(plan.dynamicTrajectory.gainDb)} dB through beat ${String(plan.dynamicTrajectory.endBeat)}, then restore current gain.\n\nMix strategy: routing ${plan.strategy.routing}; devices ${plan.strategy.devices}; automation ${plan.strategy.automation}\n\nAccepted decisions:\n${decisions}`;
+    return `${label}: ${lines.join('; ')}`;
 }
 
 function describeExactAction(action: AppAction, actions: readonly AppAction[], context: ProjectContext): string {
+    if (action.type === 'setProductionBrief') {
+        return describeProductionBriefAction(action, context);
+    }
     if (action.type === 'importStemSet') {
         const stems = action.payload.stems
             .map((stem) => {
@@ -309,7 +321,6 @@ export function describePendingActionConfirmation({
     actions,
     context,
     prompt,
-    wholeProjectVibeMixPlan,
     workflowCapabilityId,
     inheritedProtectedUnchanged = [],
     requestProtectionFacts,
@@ -345,7 +356,6 @@ export function describePendingActionConfirmation({
                 actions,
                 context,
                 prompt,
-                wholeProjectVibeMixPlan,
                 workflowCapabilityId,
             }),
         inheritedProtectedUnchanged
@@ -357,10 +367,6 @@ export function describePendingActionConfirmation({
     const affectedSummary = affectedIds.join(', ');
     const riskReason = risk.reason ? ` — ${risk.reason}` : '';
     const protectedLine = protectedSummary ? `\n\nProtected unchanged: ${protectedSummary}` : '';
-    let planSummary = '';
-    if (wholeProjectVibeMixPlan) {
-        planSummary = `${describeWholeProjectVibeMixPlan(wholeProjectVibeMixPlan)}\n\n`;
-    }
-    const content = `${planSummary}This prompt requires confirmation before execution.\n\nRisk: ${risk.level}${riskReason}\n\nIntended changes:\n${intendedChanges}\n\nAffected IDs: ${affectedSummary}${protectedLine}`;
+    const content = `This prompt requires confirmation before execution.\n\nRisk: ${risk.level}${riskReason}\n\nIntended changes:\n${intendedChanges}\n\nAffected IDs: ${affectedSummary}${protectedLine}`;
     return { actionLabels, affectedIds, risk, protectedUnchanged, content };
 }

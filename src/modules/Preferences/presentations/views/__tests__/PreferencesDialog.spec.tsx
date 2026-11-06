@@ -1,4 +1,6 @@
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { useState } from 'react';
+
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { PreferencesDialog } from '../PreferencesDialog';
@@ -50,6 +52,22 @@ vi.mock('../preferences/GeneralSection', () => ({
 describe('PreferencesDialog', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+    });
+
+    it('opens on the requested section each time it opens, and keeps the last one when none is requested', () => {
+        const { rerender } = render(<PreferencesDialog open={false} onClose={vi.fn()} requestedSection="audio" />);
+        expect(screen.queryByTestId('audio-device-picker')).not.toBeInTheDocument();
+
+        rerender(<PreferencesDialog open={true} onClose={vi.fn()} requestedSection="audio" />);
+        expect(screen.getByTestId('audio-device-picker')).toBeInTheDocument();
+
+        fireEvent.click(screen.getByRole('button', { name: 'General' }));
+        expect(screen.queryByTestId('audio-device-picker')).not.toBeInTheDocument();
+
+        rerender(<PreferencesDialog open={false} onClose={vi.fn()} />);
+        rerender(<PreferencesDialog open={true} onClose={vi.fn()} />);
+        expect(screen.queryByTestId('audio-device-picker')).not.toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Change solo mode' })).toBeInTheDocument();
     });
 
     it('preserves the dialog shell and navigation layout contracts', () => {
@@ -162,5 +180,31 @@ describe('PreferencesDialog', () => {
         rerender(<PreferencesDialog open={true} onClose={onClose} />);
         fireEvent.keyDown(document, { key: 'Escape' });
         expect(onClose).toHaveBeenCalledTimes(2);
+    });
+
+    it('returns focus to the control that opened it after Escape', async () => {
+        const Host = () => {
+            const [open, setOpen] = useState(false);
+            return (
+                <>
+                    <button type="button" onClick={() => setOpen(true)}>
+                        Open Preferences
+                    </button>
+                    <PreferencesDialog open={open} onClose={() => setOpen(false)} />
+                </>
+            );
+        };
+        render(<Host />);
+        const opener = screen.getByRole('button', { name: 'Open Preferences' });
+        opener.focus();
+        fireEvent.click(opener);
+        const dialog = await screen.findByRole('dialog');
+
+        fireEvent.keyDown(dialog, { key: 'Escape' });
+
+        await waitFor(() => {
+            expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+            expect(opener).toHaveFocus();
+        });
     });
 });

@@ -22,6 +22,12 @@ import {
     type TrackNodeRuntimeGraphMutation,
 } from '../engine/TrackNode';
 import {
+    bitcrusherRateProcessorUrl,
+    meteringProcessorUrl,
+    recordingProcessorUrl,
+} from '../engine/workletProcessorUrls';
+import { type AudioPreviewIntent } from '../models/AudioPreviewIntent';
+import {
     type RuntimeGraphDelta,
     type RuntimeGraphDeviceChainDelta,
     type RuntimeGraphDeltaNode,
@@ -31,13 +37,12 @@ import {
     type RuntimeGraphTopologyValidator,
 } from '../models/RuntimeGraphDelta';
 import { createAudioPreviewIntents } from '../services/audioPreview/createAudioPreviewIntents';
-import bitcrusherRateProcessorUrl from '../services/bitcrusherRateProcessor.ts?worker&url';
 import { compileRuntimeGraphDelta } from '../services/compileRuntimeGraphDelta';
 import { matchesRuntimeDeviceChainTopology } from '../services/matchesRuntimeDeviceChainTopology';
-import meteringProcessorUrl from '../services/meteringProcessor.ts?worker&url';
-import recordingProcessorUrl from '../services/recordingProcessor.ts?worker&url';
 
+import { applyParams } from './applyParams';
 import { stopInputMonitoring } from './audioRecorder/stopInputMonitoring';
+import { createOfflineDeviceNode } from './deviceNodeFactory';
 
 import type {
     AdjustmentLayerTickInput,
@@ -56,6 +61,32 @@ import type {
     TrackChannelStrip,
 } from '../models/AudioEngineState';
 import type { BuiltinLufsMeterReading } from '../models/BuiltinLufsMeterReader';
+import type { EngineDeviceCollaborators, EngineUseCaseCollaborators } from '../models/EngineDeviceCollaborators';
+
+function refuseUnwiredDeviceCollaborator(name: string): Error {
+    return new Error(
+        `AudioEngine ${name} is not wired: the composition root installs it through initEngineDeviceCollaborators`
+    );
+}
+
+/**
+ * Parameter-write ownership, reported latency and Faust builds are AudioEngine
+ * use-case state the live graph cannot import (`engine-no-own-application-layers`).
+ * Bootstrap installs them before any project loads, so reaching one unwired is a
+ * wiring defect, and it refuses rather than silently dropping the write.
+ */
+const UNWIRED_USE_CASE_DEVICE_COLLABORATORS: EngineUseCaseCollaborators = {
+    captureParameterWriteReceipt: () => {
+        throw refuseUnwiredDeviceCollaborator('captureParameterWriteReceipt');
+    },
+    createFaustDeviceNode: () => Promise.reject(refuseUnwiredDeviceCollaborator('createFaustDeviceNode')),
+    reportLatency: () => {
+        throw refuseUnwiredDeviceCollaborator('reportLatency');
+    },
+    clearReportedLatency: () => {
+        throw refuseUnwiredDeviceCollaborator('clearReportedLatency');
+    },
+};
 
 type NoopMeterNode = {
     connect(): void;
@@ -352,6 +383,17 @@ class AudioEngineImpl implements AudioEngine {
     private monitorMonoNode!: GainNode;
     private monitorDimNode!: GainNode;
     /**
+     * The programme reaches the listening output through this edge, and its
+     * connection is the exclusive-preview gate. A gain write made now cannot
+     * reach the frame `currentTime` names when its quotient sits above that
+     * frame (Chromium clamps it to `currentTime` and applies it a sample late),
+     * whereas a disconnect or connect takes effect from the first frame of the
+     * next render quantum, suspended or running.
+     */
+    private previewProgrammeGate!: GainNode;
+    private previewProgrammeOpen = true;
+    private previewRestoration: Promise<void> | null = null;
+    /**
      * Silent (gain 0) sink the stereo tap analysers connect through to the
      * destination. Web Audio only pulls nodes with a path to the destination,
      * so a dead-end analyser branch never processes a render quantum — routing
@@ -402,6 +444,18 @@ class AudioEngineImpl implements AudioEngine {
     private runtimeGraphRevision = 0;
     private runtimeGraphProjectRevisionValidator: RuntimeGraphProjectRevisionValidator | null = null;
     private runtimeGraphTopologyValidator: RuntimeGraphTopologyValidator | null = null;
+    private useCaseDeviceCollaborators: EngineUseCaseCollaborators = UNWIRED_USE_CASE_DEVICE_COLLABORATORS;
+    /** Built-ins come straight from this repository; the rest resolve through the installed use cases per call. */
+    private readonly deviceCollaborators: EngineDeviceCollaborators = {
+        createBuiltinDeviceNode: createOfflineDeviceNode,
+        applyParams,
+        captureParameterWriteReceipt: (trackId, deviceId, paramId) =>
+            this.useCaseDeviceCollaborators.captureParameterWriteReceipt(trackId, deviceId, paramId),
+        createFaustDeviceNode: (context, pluginId) =>
+            this.useCaseDeviceCollaborators.createFaustDeviceNode(context, pluginId),
+        reportLatency: (deviceId, latencyMs) => this.useCaseDeviceCollaborators.reportLatency(deviceId, latencyMs),
+        clearReportedLatency: (deviceId) => this.useCaseDeviceCollaborators.clearReportedLatency(deviceId),
+    };
     private initPromise: Promise<void> | null = null;
     private initializationCancellation: PromiseWithResolvers<never> | null = null;
     private initializationGeneration = 0;
@@ -463,11 +517,13 @@ class AudioEngineImpl implements AudioEngine {
 
             this.monitorMonoNode = this.context.createGain();
             this.monitorDimNode = this.context.createGain();
+            this.previewProgrammeGate = this.context.createGain();
 
             this.masterGainNode.connect(this.masterAnalyser);
             // The listening leg runs through the control-room insert; the
             // programme (everything upstream of this edge) stays untouched by it.
-            this.masterAnalyser.connect(this.monitorMonoNode);
+            this.masterAnalyser.connect(this.previewProgrammeGate);
+            this.previewProgrammeGate.connect(this.monitorMonoNode);
             this.monitorMonoNode.connect(this.monitorDimNode);
             this.monitorDimNode.connect(this.context.destination);
 
@@ -504,6 +560,7 @@ class AudioEngineImpl implements AudioEngine {
             getContext: () => this.context ?? null,
             getTrackDefaultDestination: (trackId) => this.trackNodes.get(trackId)?.getDefaultDestination() ?? null,
             rerouteTrack: (trackId) => this.trackNodes.get(trackId)?.routeOutput(),
+            builtinDevices: this.deviceCollaborators,
         });
     }
 
@@ -513,6 +570,7 @@ class AudioEngineImpl implements AudioEngine {
         this.masterGainNode.gain.value = 0;
         this.monitorMonoNode = this.context.createGain();
         this.monitorDimNode = this.context.createGain();
+        this.previewProgrammeGate = this.context.createGain();
         this.masterMeterNode = {
             connect: () => {},
             disconnect: () => {},
@@ -561,16 +619,6 @@ class AudioEngineImpl implements AudioEngine {
 
     private hasRuntimeOutputDestination(outputId: string): boolean {
         return outputId === 'master' || outputId === 'hw_out' || this.trackNodes.has(outputId);
-    }
-
-    private matchesRuntimeGraphNode(node: TrackNode, expected: RuntimeGraphDeltaNode): boolean {
-        return (
-            node.strip.deviceNodes.length === expected.devices.length &&
-            node.strip.deviceNodes.every(
-                (device, index) =>
-                    device.deviceId === expected.devices[index]?.id && device.type === expected.devices[index]?.type
-            )
-        );
     }
 
     private matchesRuntimeDeviceChain(node: TrackNode, expected: RuntimeGraphDeltaNode): boolean {
@@ -1249,6 +1297,11 @@ class AudioEngineImpl implements AudioEngine {
         this.runtimeGraphTopologyValidator = validator;
     }
 
+    // null unwires the collaborators: every later use refuses instead of writing nothing.
+    public setUseCaseDeviceCollaborators(collaborators: EngineUseCaseCollaborators | null): void {
+        this.useCaseDeviceCollaborators = collaborators ?? UNWIRED_USE_CASE_DEVICE_COLLABORATORS;
+    }
+
     /**
      * The sole consumer for compiled output-topology deltas. It runs only on the
      * main/control thread, after the compiler has bounded and frozen its input;
@@ -1327,7 +1380,7 @@ class AudioEngineImpl implements AudioEngine {
             });
         }
         const source = this.trackNodes.get(edge.sourceId);
-        if (!source || !this.matchesRuntimeGraphNode(source, sourcePlan)) {
+        if (!source || !this.matchesRuntimeDeviceChain(source, sourcePlan)) {
             return Object.freeze({
                 acceptance: 'rejected' as const,
                 application: 'not-applied' as const,
@@ -1343,7 +1396,7 @@ class AudioEngineImpl implements AudioEngine {
         const targetPlan = delta.nodes[1];
         if (targetPlan) {
             const target = this.trackNodes.get(targetPlan.id);
-            if (!target || !this.matchesRuntimeGraphNode(target, targetPlan)) {
+            if (!target || !this.matchesRuntimeDeviceChain(target, targetPlan)) {
                 return Object.freeze({
                     acceptance: 'rejected' as const,
                     application: 'not-applied' as const,
@@ -1712,6 +1765,7 @@ class AudioEngineImpl implements AudioEngine {
                 getSendsForTrack: () => [],
                 pendingDevicePromises: new Set(),
                 readinessDiagnostics: this.deviceReadinessDiagnostics,
+                collaborators: this.deviceCollaborators,
                 getAdjustmentBusForTrack: (id) => this.adjustmentRuntime.getBusInputForTrack(id),
             });
         }
@@ -1724,6 +1778,7 @@ class AudioEngineImpl implements AudioEngine {
                 Array.from(this.sendNodes.values()).filter((state) => state.sourceTrackId === tId),
             pendingDevicePromises: this.pendingDevicePromises,
             readinessDiagnostics: this.deviceReadinessDiagnostics,
+            collaborators: this.deviceCollaborators,
             transportSAB: this.transportSAB ?? undefined,
             getAdjustmentBusForTrack: (id) => this.adjustmentRuntime.getBusInputForTrack(id),
             reconnectRoutingForTrack: (id) => this.reconnectRoutingForTrack(id),
@@ -1940,7 +1995,7 @@ class AudioEngineImpl implements AudioEngine {
         }
         // Read-and-reset of a single f32, deliberately without Atomics (audit
         // RT-9) — same scalar-meter exception as TrackNode.getPeakLevel.
-        // Rationale in the module header of services/meteringProcessor.ts.
+        // Rationale in the module header of worklets/meteringProcessor.ts.
         const peak = this.masterMeterBuffer[0]!;
         this.masterMeterBuffer[0] = 0;
         return peak;
@@ -2648,11 +2703,133 @@ class AudioEngineImpl implements AudioEngine {
     }
 
     public beginAudioPreviewIntent() {
-        return this.previewIntents.beginOrdinary();
+        const intent = this.previewIntents.beginOrdinary();
+        if (this.previewRestoration === null) {
+            return intent;
+        }
+        return { ...intent, ready: this.previewRestoration };
     }
 
     public beginExclusiveAudioPreviewIntent() {
+        // A suspended context must resume with programme already closed, in
+        // the gesture itself, before any asynchronous native admission.
+        this.setAudioPreviewProgrammeSuppressed(true);
         return this.previewIntents.beginExclusive();
+    }
+
+    public get audioPreviewOutput(): AudioNode {
+        return this.monitorMonoNode;
+    }
+
+    public setAudioPreviewProgrammeSuppressed(suppressed: boolean): void {
+        if (this.disposed || this.fallbackMode || (!suppressed && this.previewIntents.hasExclusive())) {
+            return;
+        }
+        const open = !suppressed;
+        if (this.previewProgrammeOpen === open) {
+            return;
+        }
+        if (open) {
+            this.previewProgrammeGate.connect(this.monitorMonoNode);
+        } else {
+            this.previewProgrammeGate.disconnect(this.monitorMonoNode);
+        }
+        this.previewProgrammeOpen = open;
+    }
+
+    /**
+     * Ordinary previews wait only while a restoration is in flight. A rejected one is not
+     * latched: its owner retries the restore, and the programme gate stays closed until then.
+     */
+    public holdAudioPreviewRestoration(restoration: Promise<void>): void {
+        this.previewRestoration = restoration;
+        const release = () => {
+            if (this.previewRestoration === restoration) {
+                this.previewRestoration = null;
+            }
+        };
+        void restoration.then(release, release);
+    }
+
+    public playAudioPreviewTone(frequency: number, durationSeconds: number, intent: AudioPreviewIntent) {
+        if (!Number.isFinite(frequency) || !Number.isFinite(durationSeconds) || durationSeconds < 0) {
+            throw new RangeError('Preview tone frequency and duration must be finite.');
+        }
+        if (!intent.isCurrent()) {
+            return null;
+        }
+        let oscillator: OscillatorNode;
+        let gain: GainNode;
+        try {
+            oscillator = this.context.createOscillator();
+            try {
+                gain = this.context.createGain();
+            } catch (error) {
+                oscillator.disconnect();
+                throw error;
+            }
+        } catch (error) {
+            intent.release();
+            throw error;
+        }
+        let ended = false;
+        let started = false;
+        const finish = (stopSource: boolean) => {
+            if (ended) {
+                return;
+            }
+            ended = true;
+            oscillator.onended = null;
+            intent.signal.removeEventListener('abort', stop);
+            runAllEffects([
+                () => gain.gain.setValueAtTime(0, this.context.currentTime),
+                () => {
+                    if (stopSource && started) {
+                        oscillator.stop();
+                    }
+                },
+                () => oscillator.disconnect(),
+                () => gain.disconnect(),
+                () => intent.release(),
+            ]);
+        };
+        const stop = () => finish(true);
+        try {
+            oscillator.type = 'sine';
+            oscillator.frequency.value = frequency;
+            oscillator.connect(gain);
+            gain.connect(this.context.destination);
+            oscillator.onended = () => finish(false);
+            intent.signal.addEventListener('abort', stop, { once: true });
+        } catch (error) {
+            finish(false);
+            throw error;
+        }
+        const start = () => {
+            if (ended || !intent.isCurrent()) {
+                return;
+            }
+            const now = this.context.currentTime;
+            gain.gain.setValueAtTime(0.4, now);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + durationSeconds);
+            started = true;
+            oscillator.start();
+            oscillator.stop(now + durationSeconds);
+        };
+        try {
+            if (intent.ready === undefined) {
+                start();
+            }
+        } catch (error) {
+            stop();
+            throw error;
+        }
+        const ready = intent.ready === undefined ? Promise.resolve() : intent.ready.then(start);
+        void ready.catch((error: unknown) => {
+            stop();
+            logger.warn(new Error('Preview tone could not restore its listening output', { cause: error }));
+        });
+        return { stop, ready };
     }
 
     public resetGraph(): void {
@@ -2787,6 +2964,7 @@ class AudioEngineImpl implements AudioEngine {
                         }
                     },
                     () => this.masterAnalyser.disconnect(),
+                    () => this.previewProgrammeGate.disconnect(),
                     () => this.monitorMonoNode.disconnect(),
                     () => this.monitorDimNode.disconnect(),
                     () => this.masterStereoSplitter.disconnect(),

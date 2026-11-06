@@ -11,7 +11,6 @@ import {
     hasForeignPendingProjectWrites,
 } from '#/modules/CrdtDocument/useCases';
 import { decodeMidiClipDataSnapshots, getMidiStoreState, removeMidiClipData } from '#/modules/MIDI/useCases';
-import { workspaceStore } from '#/modules/WorkspaceShell/stores';
 import { createHandler } from '#/utils/createHandler';
 import {
     type ActionHandler,
@@ -22,6 +21,7 @@ import {
 import { valuesEqual } from '#/utils/structuralEquality';
 
 import { readClipSatelliteEntry } from '../../stores/clipSatelliteState';
+import { timelineEditingStore } from '../../stores/timelineEditingStore';
 import { sanitizeTrackSnapshot } from '../../stores/trackStore';
 import { readClipScopedAutomationLanes } from '../../useCases/clip/readClipScopedAutomationLanes';
 import { removeClip } from '../../useCases/clip/removeClip';
@@ -433,7 +433,7 @@ export const handleRemoveClip: ActionHandler<RemoveClipAction> = createHandler<'
             pendingRedoCaptures.delete(alpha);
             return { status: 'conflict' };
         }
-        const ripple = alpha.payload.ripple ?? workspaceStore.value?.rippleEditing ?? false;
+        const ripple = alpha.payload.ripple ?? timelineEditingStore.value?.rippleEditing ?? false;
         const pendingRedo = pendingRedoCaptures.get(alpha);
         pendingRedoCaptures.delete(alpha);
         const { sourceProof, committedResult } = prepareRemovalCapturePublication(

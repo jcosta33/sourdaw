@@ -1,5 +1,24 @@
 import { type AdoptedRecipe } from './AdoptedRecipe';
 
+/** Only successful application renders can supply these artifact identities. */
+export type MetricPreviewProvenance = {
+    readonly origin: 'planner' | 'approval-preview';
+    readonly callId: string;
+    readonly turn: number;
+    readonly runId: string;
+    readonly targets: readonly {
+        readonly targetId: string;
+        readonly baseline: {
+            readonly route: 'mixdown' | 'isolated-subgraph';
+            readonly artifact: { readonly contentAddress: string };
+        };
+        readonly preview: {
+            readonly route: 'mixdown' | 'isolated-subgraph';
+            readonly artifact: { readonly contentAddress: string };
+        };
+    }[];
+};
+
 /** One objective figure as an agent measurement reports it: read from the audio, or why it could not be. */
 export type MeasuredMetricEntry =
     | {
@@ -16,6 +35,15 @@ export type MeasuredMetricDelta =
     | { readonly status: 'compared'; readonly delta: number; readonly unit: string }
     | { readonly status: 'incomparable'; readonly reason: string };
 
+type RetainedPreviewRender = {
+    readonly route: 'mixdown' | 'isolated-subgraph';
+    readonly artifact: { readonly contentAddress: string };
+    readonly sampleRate: number;
+    readonly frameCount: number;
+    readonly channelCount: number;
+    readonly durationSeconds: number;
+};
+
 /** One rendered target of a preview measurement, in both documents, keyed by metric id. */
 export type MeasuredPreviewTarget = {
     readonly targetId: string;
@@ -23,6 +51,13 @@ export type MeasuredPreviewTarget = {
     readonly baseline: Readonly<Partial<Record<string, MeasuredMetricEntry>>>;
     readonly preview: Readonly<Partial<Record<string, MeasuredMetricEntry>>>;
     readonly deltas: Readonly<Partial<Record<string, MeasuredMetricDelta>>>;
+    /** App-only exact retained render identities; absent on legacy measurements. */
+    readonly audition?: {
+        readonly baseline: RetainedPreviewRender;
+        readonly preview: RetainedPreviewRender;
+        readonly baselineIntegratedLoudness: MeasuredMetricEntry;
+        readonly previewIntegratedLoudness: MeasuredMetricEntry;
+    };
 };
 
 /**
@@ -35,6 +70,8 @@ export type MeasuredPreviewTarget = {
  * hashes the same.
  */
 export type MeasuredPreview = {
+    /** App-only source projection; legacy figures without actual renders cannot approve an acoustic goal. */
+    readonly provenance?: MetricPreviewProvenance;
     /** Application-authored identity of the retained expansion this exact preview measured. */
     readonly recipeSource?: AdoptedRecipe;
     readonly scope:

@@ -1,9 +1,8 @@
-import { takeLaneStore } from '#/modules/Arrangement/stores';
+import { takeLaneStore, timelineEditingStore } from '#/modules/Arrangement/stores';
 import { modulationStore } from '#/modules/Automation/stores';
 import { compileVersionedCommandBatchEnvelope, parseVersionedCommandEnvelope } from '#/modules/Command/useCases';
 import { captureProjectIdentity } from '#/modules/CrdtDocument/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
-import { workspaceStore } from '#/modules/WorkspaceShell/stores';
 import { type AppAction } from '#/utils/handlerContract';
 
 import { type ActionCommandGraph } from '../models/ActionCommandGraph';
@@ -265,7 +264,7 @@ function getDynamicEffects(input: CompilePlannedActionCommandBatchInput, command
             }
             affectedTrackIds.add(owner.id);
             affectedClipIds.add(clipId);
-            if (workspaceStore.value?.rippleEditing) {
+            if (timelineEditingStore.value?.rippleEditing) {
                 for (const shifted of owner.clips.filter((candidate) => candidate.startBeat >= clip.endBeat)) {
                     affectedClipIds.add(shifted.id);
                     for (const lane of input.context.automationLanes ?? []) {

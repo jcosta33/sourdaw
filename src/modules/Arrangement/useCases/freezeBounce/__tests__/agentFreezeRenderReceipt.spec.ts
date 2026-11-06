@@ -1,14 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-type RevisionMatches =
-    typeof import('#/modules/CrdtDocument/useCases').projectRevisionMatchesLiveIgnoringCommandCheckpoint;
+type RevisionMatches = typeof import('#/modules/CrdtDocument/useCases').projectRevisionMatchesLiveIgnoringSaveWrites;
 
 const mocks = vi.hoisted(() => ({
     revisionMatches: vi.fn<RevisionMatches>(),
 }));
 
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
-    projectRevisionMatchesLiveIgnoringCommandCheckpoint: mocks.revisionMatches,
+    projectRevisionMatchesLiveIgnoringSaveWrites: mocks.revisionMatches,
 }));
 
 import { type AgentRenderReceipt, type AgentWorkOwnerIdentity } from '#/utils/agentRenderReceipt';

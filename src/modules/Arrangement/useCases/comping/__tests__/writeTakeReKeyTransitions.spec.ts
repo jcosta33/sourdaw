@@ -1,6 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { ClipDummy } from '../../../__tests__/ClipDummy';
+import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { createTake, createTakeLane, type TakeLane } from '../../../models/TakeLane';
+import { type Track } from '../../../models/Track';
 import { type TakeLaneStoreState, takeLaneStore } from '../../../stores/takeLaneStore';
 import { getTrackStoreState } from '../../getTrackStoreState';
 import { applyTakeReKeyTransitions } from '../applyTakeReKeyTransitions';
@@ -32,6 +35,10 @@ vi.mock('../../../stores/takeLaneStore', () => ({
 vi.mock('../../getTrackStoreState', () => ({
     getTrackStoreState: vi.fn(() => mocks.trackState.value),
 }));
+
+function trackHolding(id: string, clipIds: readonly string[]): Track {
+    return TrackDummy.create({ id, clips: clipIds.map((clipId) => ClipDummy.create({ id: clipId, trackId: id })) });
+}
 
 /** A take split by a [2,6] delete: the left fragment keeps the id, the right mints the deterministic one. */
 function splitFixture(clipId: string, trackId: string) {
@@ -69,6 +76,44 @@ function liveLane(): TakeLane {
 }
 
 describe('writeTakeReKeyTransitions', () => {
+    it('moves only a MIDI source phase while keeping a peer row edit on that take', () => {
+        const source = {
+            sourceClipId: 'clip-1',
+            rows: {
+                notes: {
+                    present: true as const,
+                    value: [{ id: 'note-1', pitch: 60, startBeat: 1, duration: 1, velocity: 90 }],
+                },
+                controlChanges: { present: true as const, value: [] },
+                pitchBends: { present: true as const, value: [] },
+            },
+            sourceEntryBeat: 0,
+            sourceEndBeat: 4,
+            phaseHeadBeat: 0,
+            passLengthBeats: 4,
+        };
+        const before = { ...createTake('clip-1', 'Pass', 4, 8), midiSource: source };
+        const after = { ...before, startBeat: 2, endBeat: 6, midiSource: { ...source, phaseHeadBeat: -2 } };
+        const live = structuredClone(before);
+        live.midiSource.rows.notes.value[0]!.velocity = 111;
+        const lane: TakeLane = { ...createTakeLane('track-1'), takes: [live] };
+        mocks.takeLaneStoreValue.value = { lanes: [lane] };
+        const transition: TakeReKeyLaneTransition = {
+            laneId: lane.id,
+            trackId: lane.trackId,
+            takesBefore: [before],
+            takesAfter: [after],
+            regionsBefore: [],
+            regionsAfter: [],
+        };
+
+        applyTakeReKeyTransitions([transition]);
+
+        expect(liveLane().takes[0]?.startBeat).toBe(2);
+        expect(liveLane().takes[0]?.midiSource?.phaseHeadBeat).toBe(-2);
+        expect(liveLane().takes[0]?.midiSource?.rows.notes.value[0]?.velocity).toBe(111);
+    });
+
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.takeLaneStoreValue.value = null;
@@ -177,6 +222,7 @@ describe('writeTakeReKeyTransitions', () => {
     it.each([
         { field: 'anchor', moved: { passAnchorSeconds: -2 } },
         { field: 'depth', moved: { passDepthSeconds: 3 } },
+        { field: 'exclusive end', moved: { passSourceEndSeconds: 4 } },
     ])('moves a pass whose placement $field alone the transition changed, both ways', ({ moved }) => {
         // The two facets differ only in where the pass sounds against its
         // clip's media, or what it plays, so that field alone must mark the
@@ -207,8 +253,8 @@ describe('writeTakeReKeyTransitions', () => {
         mocks.takeLaneStoreValue.value = { lanes: [first.lane, second.lane] };
         mocks.trackState.value = {
             tracks: [
-                { id: 'track-1', clips: [{ id: 'clip-1' }, { id: 'clip-1-right' }] },
-                { id: 'track-2', clips: [{ id: 'clip-2' }, { id: 'clip-2-right' }] },
+                trackHolding('track-1', ['clip-1', 'clip-1-right']),
+                trackHolding('track-2', ['clip-2', 'clip-2-right']),
             ],
         };
 
@@ -227,7 +273,7 @@ describe('writeTakeReKeyTransitions', () => {
         mocks.takeLaneStoreValue.value = { lanes: [fixture.lane] };
         // clip-1-right is gone: a take whose clip is gone has no material to
         // resolve against, so the replay leaves it missing.
-        mocks.trackState.value = { tracks: [{ id: 'track-1', clips: [{ id: 'clip-1' }] }] };
+        mocks.trackState.value = { tracks: [trackHolding('track-1', ['clip-1'])] };
 
         applyTakeReKeyTransitions([splitTransition(fixture)]);
 
@@ -242,7 +288,7 @@ describe('writeTakeReKeyTransitions', () => {
         const deadTake = createTake('gone', 'Dead take', 2, 6);
         const lane: TakeLane = { ...createTakeLane('track-1'), takes: [] };
         mocks.takeLaneStoreValue.value = { lanes: [lane] };
-        mocks.trackState.value = { tracks: [{ id: 'track-1', clips: [] }] };
+        mocks.trackState.value = { tracks: [trackHolding('track-1', [])] };
 
         const transition: TakeReKeyLaneTransition = {
             laneId: lane.id,
@@ -319,7 +365,7 @@ describe('writeTakeReKeyTransitions', () => {
             const after = [{ ...first, endBeat: 2 }, { ...second, endBeat: 2 }, unchanged];
             const lane = { ...createTakeLane('track-1'), takes: [] };
             mocks.takeLaneStoreValue.value = { lanes: [lane] };
-            mocks.trackState.value = { tracks: [{ id: 'track-1', clips: [{ id: 'clip-1' }] }] };
+            mocks.trackState.value = { tracks: [trackHolding('track-1', ['clip-1'])] };
             const transition: TakeReKeyLaneTransition = {
                 laneId: lane.id,
                 trackId: lane.trackId,
@@ -348,7 +394,7 @@ describe('writeTakeReKeyTransitions', () => {
         fixture.take.selected = true;
         fixture.rightTake.selected = true;
         mocks.takeLaneStoreValue.value = { lanes: [{ ...fixture.lane, takes: [fixture.rightTake] }] };
-        mocks.trackState.value = { tracks: [{ id: 'track-1', clips: [{ id: 'clip-1' }] }] };
+        mocks.trackState.value = { tracks: [trackHolding('track-1', ['clip-1'])] };
 
         restoreTakeReKeyTransitions([splitTransition(fixture)]);
 
@@ -363,7 +409,7 @@ describe('writeTakeReKeyTransitions', () => {
         const recreatedLane: TakeLane = { ...createTakeLane('track-1'), takes: [] };
         mocks.takeLaneStoreValue.value = { lanes: [recreatedLane] };
         mocks.trackState.value = {
-            tracks: [{ id: 'track-1', clips: [{ id: 'clip-1' }, { id: 'clip-1-right' }] }],
+            tracks: [trackHolding('track-1', ['clip-1', 'clip-1-right'])],
         };
 
         restoreTakeReKeyTransitions([splitTransition(fixture)]);
@@ -381,7 +427,7 @@ describe('writeTakeReKeyTransitions', () => {
         const take = createTake('clip-1', 'The take', 0, 10);
         const lane: TakeLane = { ...createTakeLane('track-1'), takes: [] };
         mocks.takeLaneStoreValue.value = { lanes: [lane] };
-        mocks.trackState.value = { tracks: [{ id: 'track-1', clips: [{ id: 'clip-1' }] }] };
+        mocks.trackState.value = { tracks: [trackHolding('track-1', ['clip-1'])] };
 
         const transition: TakeReKeyLaneTransition = {
             laneId: lane.id,

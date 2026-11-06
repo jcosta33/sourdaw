@@ -4,11 +4,7 @@ Owns live performance setlists, song sequence items, per-song metadata (tempo/ke
 
 ## Public Contract Surface
 
-- `stores/`: `setlistStore` (`SetlistItem`, `SetlistState`).
-- `useCases/`: `addSetlistItem`, `removeSetlistItem`, `updateSetlistItem`, `reorderSetlistItems`, `renameSetlist`, `goToItem`, `nextItem`, `previousItem`, `getCurrentItem`, `getRemainingDuration`, `getSetlistProgress`, `setCountIn`, `toggleAutoAdvance`, `setSetlistEventBus`, `startSetlistItemEndObserver`, `getSetlistHandlers`.
-- `events/`: No public domain event payloads exported.
-- `presentations/views/`: `SetlistPanel`.
-- Handlers: `getSetlistHandlers()`.
+Public surface: `useCases/index.ts`, `stores/index.ts`, `presentations/views/index.ts`.
 
 ## Key Subsystems
 
@@ -27,5 +23,5 @@ Owns live performance setlists, song sequence items, per-song metadata (tempo/ke
 PR CI owns broader unit and crate suites. Locally run only the exact changed spec or filtered Rust test.
 
 ```bash
-pnpm test:run <changed-spec>
+pnpm guard --profile focused -- pnpm test:run <changed-spec>
 ```

@@ -27,6 +27,8 @@ type TrackInspectorProps = {
     allTracks: Track[];
     onSelectClip: (id: string) => void;
     onSelectDevice: (id: string) => void;
+    signalFlowExpanded: boolean;
+    onSignalFlowExpandedChange: (expanded: boolean) => void;
 };
 
 export const TrackInspector = ({
@@ -34,11 +36,13 @@ export const TrackInspector = ({
     allTracks,
     onSelectClip,
     onSelectDevice,
+    signalFlowExpanded,
+    onSignalFlowExpandedChange,
 }: TrackInspectorProps): ReactElement => {
     return (
         <Stack gap={4} className="p-3">
             <TrackHeaderSection track={track} />
-            <TrackRoleSection key={track.id} track={track} />
+            <TrackRoleSection track={track} />
             <TrackAlternativesSection track={track} />
             <TrackLevelSection track={track} />
             <TrackMidiFxSection track={track} />
@@ -52,7 +56,7 @@ export const TrackInspector = ({
             <TrackClipsSection track={track} onSelectClip={onSelectClip} />
             <TakesSection trackId={track.id} />
             {track.kind === 'master' ? <MasterVisualizationsSection /> : null}
-            <SignalFlowSection />
+            <SignalFlowSection expanded={signalFlowExpanded} onExpandedChange={onSignalFlowExpandedChange} />
             <TrackNotesSection track={track} />
         </Stack>
     );

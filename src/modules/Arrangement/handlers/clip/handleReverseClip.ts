@@ -3,9 +3,13 @@ import { captureClipPitchAnalysis } from '#/modules/Knead/useCases';
 import { readTempoAtBeat } from '#/modules/Transport/stores';
 import { createHandler } from '#/utils/createHandler';
 
+import { type Clip } from '../../models/Track';
+import { captureClipAudioSource } from '../../useCases/clipEditing/clipAudioSourceFields';
 import { reverseClip } from '../../useCases/clipEditing/reverseClip';
 import { reversedClipAudioOffsetBeats } from '../../useCases/clipEditing/reversedClipAudioOffsetBeats';
+import { reversedClipAudioSource } from '../../useCases/clipEditing/reversedClipAudioSource';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
+import { liveTempoTimeline } from '../../useCases/liveTempoTimeline';
 import { toHandlerExecutionResult } from '../toHandlerExecutionResult';
 
 function findAudioClip(clipId: string) {
@@ -18,31 +22,25 @@ function findAudioClip(clipId: string) {
     return undefined;
 }
 
-function resolveRemappedAudioOffsetBeats(clip: {
-    audioOffsetBeats?: number;
-    startBeat: number;
-    endBeat: number;
-    audioBufferId?: string;
-    stretchMode?: string;
-    stretchRatio?: number;
-}): number | undefined {
-    if (!clip.audioBufferId) {
-        return undefined;
-    }
-    const buffer = getCachedAudioBuffer({ bufferId: clip.audioBufferId });
+/** The forward run's source remap, read before it runs so redo replays it exactly. */
+function resolveReversedSource(clip: Clip) {
+    const buffer = clip.audioBufferId ? getCachedAudioBuffer({ bufferId: clip.audioBufferId }) : undefined;
     if (!buffer) {
-        return undefined;
+        return { audioOffsetBeats: undefined, audioSource: clip.audioOffsetSeconds === undefined ? undefined : null };
     }
     const clipTempo = readTempoAtBeat({ beat: clip.startBeat });
-    return reversedClipAudioOffsetBeats({
-        audioOffsetBeats: clip.audioOffsetBeats ?? 0,
-        clipLengthBeats: clip.endBeat - clip.startBeat,
-        bufferLength: buffer.length,
-        sampleRate: buffer.sampleRate,
-        tempo: clipTempo,
-        stretchMode: clip.stretchMode,
-        stretchRatio: clip.stretchRatio,
-    });
+    return {
+        audioOffsetBeats: reversedClipAudioOffsetBeats({
+            audioOffsetBeats: clip.audioOffsetBeats ?? 0,
+            clipLengthBeats: clip.endBeat - clip.startBeat,
+            bufferLength: buffer.length,
+            sampleRate: buffer.sampleRate,
+            tempo: clipTempo,
+            stretchMode: clip.stretchMode,
+            stretchRatio: clip.stretchRatio,
+        }),
+        audioSource: reversedClipAudioSource(clip, buffer.length / buffer.sampleRate, liveTempoTimeline.secondsAtBeat),
+    };
 }
 
 export const handleReverseClip = createHandler<'reverseClip'>({
@@ -60,8 +58,14 @@ export const handleReverseClip = createHandler<'reverseClip'>({
         if (!clip || clip.type !== 'audio' || !clip.audioBufferId || !reversedBufferId) {
             return { label: 'Reverse clip', inverseAction: null };
         }
+        const reversed = resolveReversedSource(clip);
+        if (reversed.audioSource === null) {
+            // The forward run refuses a canonical entry it cannot mirror.
+            return { label: 'Reverse clip', inverseAction: null };
+        }
         const analysis = captureClipPitchAnalysis(alpha.payload.clipId);
-        const remappedAudioOffsetBeats = resolveRemappedAudioOffsetBeats(clip);
+        const remappedAudioOffsetBeats = reversed.audioOffsetBeats;
+        const originalAudioSource = captureClipAudioSource(clip);
         return {
             label: 'Reverse clip',
             inverseAction: {
@@ -80,6 +84,7 @@ export const handleReverseClip = createHandler<'reverseClip'>({
                     // the restamp keeps the key absent then, so leaving it out of the
                     // payload matches the restore's untouched default.
                     ...(clip.loopOriginBeat !== undefined ? { loopOriginBeat: clip.loopOriginBeat } : {}),
+                    ...(originalAudioSource ? { audioSource: originalAudioSource } : {}),
                     ...analysis,
                 },
             },
@@ -97,6 +102,7 @@ export const handleReverseClip = createHandler<'reverseClip'>({
                     // at its start; an unanchored one stays unanchored, so no key.
                     ...(clip.loopOriginBeat !== undefined ? { loopOriginBeat: clip.startBeat } : {}),
                     ...(remappedAudioOffsetBeats === undefined ? {} : { audioOffsetBeats: remappedAudioOffsetBeats }),
+                    ...(reversed.audioSource ? { audioSource: reversed.audioSource } : {}),
                     // The forward path clears pitch analysis, so redo restores none.
                 },
             },

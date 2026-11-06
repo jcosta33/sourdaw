@@ -23,11 +23,12 @@ import {
 import { DawGridHeaderCell } from '#/components/daw/DawGridHeaderCell';
 import { DawSideRail } from '#/components/daw/DawSideRail';
 import { Row, Stack } from '#/components/layout';
+import { logger } from '#/infra/logger/appLogger';
 import { useStore } from '#/infra/store/useStore';
 import { useStoreSelector } from '#/infra/store/useStoreSelector';
-import { trackStore } from '#/modules/Arrangement/stores';
+import { takeLaneStore, trackStore, type Clip } from '#/modules/Arrangement/stores';
 import { CANVAS_EDITOR_COMMAND_EVENT, isCanvasEditorCommandRequest } from '#/modules/CommandInterface/useCases';
-import { midiStore, stepRecordStore, type MidiStoreState } from '#/modules/MIDI/stores';
+import { midiStore, stepRecordStore, type MidiNote, type MidiStoreState } from '#/modules/MIDI/stores';
 import {
     setNoteVelocity,
     setNotePressure,
@@ -39,9 +40,10 @@ import {
 import { projectStore } from '#/modules/Project/stores';
 import { setProjectKeyRoot, setProjectScaleName } from '#/modules/Project/useCases';
 import { DEFAULT_NOTE_VELOCITY, HIGH_RESOLUTION_MAX, MAX_MIDI_DATA_7BIT, PITCH_BEND_CENTER } from '#/utils/midiData';
-import { SCALE_PATTERNS, KEY_NAMES } from '#/utils/Music/MusicalScale';
+import { getScalePattern, KEY_NAMES } from '#/utils/Music/MusicalScale';
 import { cn } from '#/utils/Styles/cn';
 
+import { editPianoRollTakeNote } from '../../helpers/editPianoRollTakeNote';
 import { getMpeExpressionLanesForDeviceTypes } from '../../helpers/mpeAvailability';
 import { areOpenedClipNotesEqual } from '../../helpers/openedClipNotesEquality';
 import {
@@ -51,8 +53,12 @@ import {
     PITCH_RAIL_WIDTH,
     getVisiblePitches,
     getPianoRollExtentBeats,
+    getPianoRollContentHeight,
+    getPianoRollRowTop,
 } from '../../helpers/pianoRollConstants';
+import { projectPianoRollTakeNotes, type PianoRollTakeNotes } from '../../helpers/projectPianoRollTakeNotes';
 import { usePianoRollInteractions } from '../../hooks/usePianoRollInteractions';
+import { usePianoRollOpeningScroll } from '../../hooks/usePianoRollOpeningScroll';
 import { usePianoRollRenderer } from '../../hooks/usePianoRollRenderer';
 import { NotePropertyLane } from '../AutomationLane/NotePropertyLane';
 
@@ -204,12 +210,12 @@ export const PianoRoll = ({
     }
 
     // ── Store subscriptions ──────────────────────────────────────────
-    const notes = useStoreSelector(
+    const baseNotes = useStoreSelector(
         midiStore,
         (state: MidiStoreState | null) => state?.notesByClipId[clipId] ?? EMPTY_NOTES
     );
     // A9: build notes map for all simultaneously-open clips (excludes primary clipId)
-    const openedClipNotes = useStoreSelector(
+    const baseOpenedClipNotes = useStoreSelector(
         midiStore,
         (state: MidiStoreState | null) =>
             openedClipIds && openedClipIds.length > 0
@@ -219,6 +225,45 @@ export const PianoRoll = ({
                 : undefined,
         areOpenedClipNotesEqual
     );
+    const laneState = useStore(takeLaneStore);
+    const trackState = useStore(trackStore);
+    const ids = new Set(openedClipIds ?? []);
+    ids.add(clipId);
+    const editedClips = new Map<string, Clip>();
+    for (const track of trackState?.tracks ?? []) {
+        for (const clip of track.clips) {
+            if (ids.has(clip.id)) {
+                editedClips.set(clip.id, clip);
+            }
+        }
+    }
+    const takeProjections = new Map<string, PianoRollTakeNotes>();
+    for (const [id, clip] of editedClips) {
+        if (clip.type === 'midi') {
+            takeProjections.set(
+                id,
+                projectPianoRollTakeNotes(
+                    clip,
+                    clip.trackId,
+                    laneState,
+                    id === clipId ? baseNotes : (baseOpenedClipNotes?.[id] ?? [])
+                )
+            );
+        }
+    }
+    const visibleNotes = (id: string, original: MidiNote[]): MidiNote[] => {
+        const projection = takeProjections.get(id);
+        if (!projection) {
+            return original;
+        }
+        return [...projection.baseNotes, ...projection.notes];
+    };
+    const notes = visibleNotes(clipId, baseNotes);
+    const openedClipNotes = baseOpenedClipNotes
+        ? Object.fromEntries(
+              Object.entries(baseOpenedClipNotes).map(([id, original]) => [id, visibleNotes(id, original)])
+          )
+        : undefined;
     // Length of the primary clip plus every clip opened alongside it, read
     // from the Arrangement module's own store (foreign modules may read
     // another module's store directly — see AGENTS.md §Architecture). Drives
@@ -347,6 +392,7 @@ export const PianoRoll = ({
         trackId,
         notes,
         openedClipNotes,
+        takeProjections,
         focusedClipId,
         beatWidth,
         gridSnap,
@@ -405,10 +451,22 @@ export const PianoRoll = ({
 
     // ── Render ────────────────────────────────────────────────────────
     const visiblePitches = getVisiblePitches(scaleName, keyRoot, isFolded);
+    const openingScroll = usePianoRollOpeningScroll({ scrollRef, clipId, notes, visiblePitches, beatWidth });
     // MPE lanes the edited track's instrument actually sounds — the toolbar's
     // documented per-track truth (audit MD-2), derived from the same engine
     // registry `AutomationLane` gates its lanes on.
     const mpeExpressionLanes = getMpeExpressionLanesForDeviceTypes(trackDeviceTypes);
+    const primaryTakeProjection = takeProjections.get(clipId);
+    const hasFrozenContextSelection = [...selectedNoteIds].some((id) => primaryTakeProjection?.ownersByViewId.has(id));
+    const contextUsesFrozenRows = Boolean(
+        ctxMenu &&
+        primaryTakeProjection &&
+        (hasFrozenContextSelection ||
+            (selectedNoteIds.size === 0 && primaryTakeProjection.insertOwnerAtBeat(ctxMenu.beat) !== null))
+    );
+    const contextSelectedNoteIds = contextUsesFrozenRows
+        ? selectedNoteIds
+        : new Set(Array.from(selectedNoteIds, (id) => primaryTakeProjection?.baseOwnersByViewId.get(id)?.row.id ?? id));
 
     return (
         <Stack grow className="min-w-0 overflow-hidden">
@@ -460,6 +518,9 @@ export const PianoRoll = ({
                     className="min-h-[70px] overflow-auto"
                     ref={scrollRef}
                     onScroll={(event) => {
+                        if (!openingScroll.isOpeningScroll(event.currentTarget)) {
+                            openingScroll.settle();
+                        }
                         const sl = (event.target as HTMLElement).scrollLeft;
                         onScrollChange?.(sl);
                         if (expressionScrollRef.current) {
@@ -468,23 +529,26 @@ export const PianoRoll = ({
                     }}
                 >
                     {/* Piano keys sidebar */}
-                    <DawSideRail className="sticky left-0 z-10" style={{ width: PITCH_RAIL_WIDTH }}>
-                        <DawGridHeaderCell className="px-0" style={{ height: RULER_HEIGHT }} />
+                    <DawSideRail
+                        className="sticky left-0 z-10"
+                        style={{ width: PITCH_RAIL_WIDTH, height: getPianoRollContentHeight(visiblePitches.length) }}
+                    >
+                        <DawGridHeaderCell className="absolute inset-x-0 top-0 px-0" style={{ height: RULER_HEIGHT }} />
                         {visiblePitches.map((pitch, row) => {
                             const noteIndex = pitch % 12;
                             const isBlack = [1, 3, 6, 8, 10].includes(noteIndex);
-                            const isInScale = SCALE_PATTERNS[scaleName]?.includes((noteIndex - keyRoot + 12) % 12);
+                            const isInScale = getScalePattern(scaleName)?.includes((noteIndex - keyRoot + 12) % 12);
                             return (
                                 <div
                                     key={row}
                                     className={cn(
-                                        'flex items-center justify-end pr-1 text-[10px]',
+                                        'absolute inset-x-0 flex items-center justify-end pr-1 text-[10px]',
                                         isBlack
                                             ? 'bg-surface-base text-muted-foreground/40'
                                             : 'text-muted-foreground/60',
                                         isInScale && 'text-accent-primary/80 font-bold'
                                     )}
-                                    style={{ height: ROW_HEIGHT }}
+                                    style={{ top: getPianoRollRowTop(row), height: ROW_HEIGHT }}
                                 >
                                     {KEY_NAMES[noteIndex]}
                                     {Math.floor(pitch / 12) - 1}
@@ -515,20 +579,27 @@ export const PianoRoll = ({
                             className="sticky outline-none focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-border-focus/70"
                             style={{ left: PITCH_RAIL_WIDTH, cursor: hoverCursor }}
                             tabIndex={0}
-                            // Marks this surface as a canvas editor that owns
-                            // its destructive keys: `handleKeyDown` deletes the
-                            // selected MIDI notes on Delete/Backspace. The
-                            // global keyboard contract reads
-                            // `closest('[data-canvas-editor]')` and gates the
-                            // arrangement clip-delete shortcut here so a focused
-                            // piano roll does not also delete the clip.
+                            // Marks this surface as a canvas editor. The global
+                            // keyboard contract reads
+                            // `closest('[data-canvas-editor]')` and, while it has
+                            // focus, admits only editor-safe shortcuts
+                            // (transport, undo/redo, save, panel toggles) so
+                            // arrangement commands do not act from inside the
+                            // roll. Keys `handleKeyDown` consumes are claimed
+                            // with preventDefault and skipped globally.
                             data-canvas-editor=""
-                            onMouseDown={handleMouseDown}
+                            onMouseDown={(event) => {
+                                openingScroll.settle();
+                                handleMouseDown(event);
+                            }}
                             onMouseMove={handleMouseMove}
                             onMouseUp={handleMouseUp}
                             onMouseLeave={handleMouseUp}
                             onDoubleClick={handleDoubleClick}
-                            onKeyDown={handleKeyDown}
+                            onKeyDown={(event) => {
+                                openingScroll.settle();
+                                handleKeyDown(event);
+                            }}
                             onContextMenu={handleContextMenu}
                             aria-label="Piano roll editor"
                         />
@@ -551,6 +622,35 @@ export const PianoRoll = ({
                             <div style={{ width: contentWidth, height: '100%' }}>
                                 <NotePropertyLane
                                     clipId={clipId}
+                                    primaryClipNotes={notes}
+                                    takeProjections={takeProjections}
+                                    setFrozenValue={(viewId, value) => {
+                                        const projection = [...takeProjections.values()].find((candidate) =>
+                                            candidate.ownersByViewId.has(viewId)
+                                        );
+                                        if (!projection) {
+                                            return;
+                                        }
+                                        let change: Partial<
+                                            Pick<MidiNote, 'velocity' | 'pressure' | 'slide' | 'pitchBend'>
+                                        >;
+                                        if (activeExpressionLane === 'velocity') {
+                                            change = { velocity: value };
+                                        } else if (activeExpressionLane === 'pressure') {
+                                            change = { pressure: value };
+                                        } else if (activeExpressionLane === 'slide') {
+                                            change = { slide: value };
+                                        } else {
+                                            change = {
+                                                pitchBend:
+                                                    Math.round((value / MAX_MIDI_DATA_7BIT) * HIGH_RESOLUTION_MAX) -
+                                                    PITCH_BEND_CENTER,
+                                            };
+                                        }
+                                        void editPianoRollTakeNote(projection, viewId, change).catch((error) =>
+                                            logger.warn('Could not edit selected MIDI note property', error)
+                                        );
+                                    }}
                                     trackId={trackId}
                                     selectedNoteIds={selectedNoteIds}
                                     openedClipNotes={openedClipNotes}
@@ -611,8 +711,9 @@ export const PianoRoll = ({
                 <PianoRollContextMenu
                     menu={ctxMenu}
                     clipId={clipId}
-                    notes={notes}
-                    selectedNoteIds={selectedNoteIds}
+                    notes={contextUsesFrozenRows ? notes : baseNotes}
+                    takeProjection={takeProjections.get(clipId)}
+                    selectedNoteIds={contextSelectedNoteIds}
                     onClose={() => setCtxMenu(null)}
                     onSelectAll={() => setSelectedNoteIds(new Set(notes.map((node) => node.id)))}
                     onClearSelection={() => setSelectedNoteIds(new Set())}

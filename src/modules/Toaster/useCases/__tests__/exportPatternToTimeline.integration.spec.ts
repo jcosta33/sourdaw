@@ -150,27 +150,27 @@ describe('Toaster effective pattern batch in project truth', () => {
         expect(projectSlots()).toEqual(createdDocument);
     });
 
-    it('reports missing Undo history after a committed bake without losing clips or notes', async () => {
+    it('refuses a bake whose Undo history cannot be staged, leaving no clips, notes, or history', async () => {
         setActionHistoryMetadataPort({
             ...noActionHistoryMetadataPort,
             recordBatch: () => {
                 throw new Error('History unavailable');
             },
         });
-        const beforeDocument = projectSlots();
+        const beforeTracks = structuredClone(trackStore.value);
+        const beforeMidi = structuredClone(midiStore.value);
         const result = await exportPatternToTimeline(DEVICE_ID);
-        const committedDocument = projectSlots();
-        expect(trackStore.value?.tracks.find((track) => track.id === 'child-0')?.clips).toHaveLength(1);
-        expect(trackStore.value?.tracks.find((track) => track.id === 'child-2')?.clips).toHaveLength(1);
-        expect(Object.values(midiStore.value?.notesByClipId ?? {}).flat()).toHaveLength(2);
-        expect(committedDocument).not.toEqual(beforeDocument);
+        expect(result).toEqual({ ok: false, message: 'History unavailable' });
+        expect(trackStore.value).toEqual(beforeTracks);
+        expect(midiStore.value).toEqual(beforeMidi);
+        // The aborted batch leaves no baked clip or note in the document.
+        const document = getCrdtDoc<{
+            tracks?: { tracks: { clips: unknown[] }[] };
+            midi?: { notesByClipId: Record<string, unknown[]> };
+        }>('root');
+        expect(document?.tracks?.tracks.flatMap((track) => track.clips)).toEqual([]);
+        expect(Object.values(document?.midi?.notesByClipId ?? {}).flat()).toEqual([]);
         expect(undoStore.value?.past).toHaveLength(0);
-        await undo();
-        expect(projectSlots()).toEqual(committedDocument);
-        expect(result).toEqual({
-            ok: true,
-            warning: 'The pattern was added to the timeline, but Undo history is unavailable.',
-        });
     });
 
     it('rejects a late frozen lane with no partial document, store, or history writes', async () => {

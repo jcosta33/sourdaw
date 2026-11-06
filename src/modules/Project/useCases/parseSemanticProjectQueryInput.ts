@@ -35,7 +35,7 @@ type QueryPage = NonNullable<SemanticProjectQueryInput['page']>;
 
 const ALLOWED_INPUT_KEYS = ['type', 'filters', 'page', 'sinceRevision'];
 
-const STRING_FILTER_KEYS = [
+export const STRING_FILTER_KEYS = [
     'stableId',
     'exactName',
     'fuzzyName',
@@ -51,7 +51,7 @@ const STRING_FILTER_KEYS = [
     'assetType',
 ] as const satisfies readonly (keyof SemanticProjectQueryFilters)[];
 
-const BOOLEAN_FILTER_KEYS = [
+export const BOOLEAN_FILTER_KEYS = [
     'selected',
     'locked',
     'muted',
@@ -59,11 +59,17 @@ const BOOLEAN_FILTER_KEYS = [
     'hasAutomation',
 ] as const satisfies readonly (keyof SemanticProjectQueryFilters)[];
 
-const NUMBER_FILTER_KEYS = [
+export const NUMBER_FILTER_KEYS = [
     'startBeat',
     'endBeat',
     'minInferredConfidence',
 ] as const satisfies readonly (keyof SemanticProjectQueryFilters)[];
+
+export const CONTENT_TYPE_FILTER_VALUES = ['audio', 'midi'] as const satisfies readonly NonNullable<
+    SemanticProjectQueryFilters['contentType']
+>[];
+
+export const MIN_INFERRED_CONFIDENCE_RANGE = { minimum: 0, maximum: 1 } as const;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -118,14 +124,21 @@ function assignQueryFilter(filters: SemanticProjectQueryFilters, key: string, va
         }
         // The one filter with a stated range: a confidence outside it matches
         // nothing, so it is a malformed request rather than an empty answer.
-        if (key === 'minInferredConfidence' && (value < 0 || value > 1)) {
+        if (
+            key === 'minInferredConfidence' &&
+            (value < MIN_INFERRED_CONFIDENCE_RANGE.minimum || value > MIN_INFERRED_CONFIDENCE_RANGE.maximum)
+        ) {
             return false;
         }
         assignFilter(filters, key, value);
         return true;
     }
-    if (key === 'contentType' && (value === 'audio' || value === 'midi')) {
-        filters.contentType = value;
+    if (key === 'contentType') {
+        const contentType = CONTENT_TYPE_FILTER_VALUES.find((candidate) => candidate === value);
+        if (contentType === undefined) {
+            return false;
+        }
+        filters.contentType = contentType;
         return true;
     }
     return false;

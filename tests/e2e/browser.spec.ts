@@ -1,5 +1,4 @@
-import { test, expect } from '@playwright/test';
-
+import { test, expect } from './e2eTest';
 import { launch_new_project, setupWorkspace } from './e2eUtils';
 
 test.describe('Browser Panel', () => {
@@ -15,7 +14,7 @@ test.describe('Browser Panel', () => {
 
         // The browser panel
         const browserPanel = page.getByRole('complementary', { name: 'Browser panel' });
-        
+
         // If it's not visible, click the toggle to open it
         if (!(await browserPanel.isVisible())) {
             await toggleButton.click();
@@ -25,7 +24,7 @@ test.describe('Browser Panel', () => {
         // Test the Search input
         const searchInput = browserPanel.getByRole('searchbox', { name: /Search browser/i });
         await expect(searchInput).toBeVisible();
-        
+
         // Fill out a search query
         await searchInput.fill('Synth');
         await expect(searchInput).toHaveValue('Synth');
@@ -34,7 +33,7 @@ test.describe('Browser Panel', () => {
         const closeButton = browserPanel.getByRole('button', { name: /Close browser/i });
         await expect(closeButton).toBeVisible();
         await closeButton.click();
-        
+
         await expect(browserPanel).not.toBeVisible();
     });
 });

@@ -1,6 +1,7 @@
 import * as Automerge from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
@@ -29,6 +30,8 @@ import { grinderStore } from '../../stores/grinderStore';
 import { setGrinderPanelUiLevel } from '../setGrinderPanelUiLevel';
 
 import type { TrackStoreState } from '#/modules/Arrangement/stores';
+
+registerDeviceEnginePorts();
 
 function tracksWithTwoGrinderDevices() {
     return sanitizeTrackSnapshot({

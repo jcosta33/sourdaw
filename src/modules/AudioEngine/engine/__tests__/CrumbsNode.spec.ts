@@ -20,7 +20,7 @@ vi.mock('#/infra/audioWorklet/workletInitShared', () => ({
     })),
 }));
 
-vi.mock('../../services/crumbsProcessor.ts?worker&url', () => ({ default: 'crumbs-processor-url' }));
+vi.mock('../../worklets/crumbsProcessor.ts?worker&url', () => ({ default: 'crumbs-processor-url' }));
 
 describe('isCrumbsDevice', () => {
     // Matched exactly, not by prefix: the offline registry's `builtin-` WebAudio

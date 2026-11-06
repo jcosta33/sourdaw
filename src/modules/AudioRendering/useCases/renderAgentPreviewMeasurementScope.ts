@@ -9,7 +9,7 @@ import {
 import {
     DOC_PREFIX_ROOT,
     getCrdtDoc,
-    projectRevisionMatchesLiveIgnoringCommandCheckpoint,
+    projectRevisionMatchesLiveIgnoringSaveWrites,
 } from '#/modules/CrdtDocument/useCases';
 import { readSecondsAtBeat } from '#/modules/Transport/stores';
 import { canonicalJson } from '#/utils/canonicalDigest';
@@ -214,7 +214,7 @@ function captureComparison(
         if (input.signal?.aborted) {
             return { status: 'cancelled' };
         }
-        if (!projectRevisionMatchesLiveIgnoringCommandCheckpoint(input.sourceRevision)) {
+        if (!projectRevisionMatchesLiveIgnoringSaveWrites(input.sourceRevision)) {
             return refused('stale-revision', null);
         }
         const project = captureOfflineRenderProjectSource(input.preview.scope);

@@ -4,18 +4,16 @@ import { injectDependencies } from '#/infra/di/testing/injectDependencies';
 
 const subscribe_to_midi_store = vi.hoisted(() => vi.fn(() => () => undefined));
 
-vi.mock('#/modules/MIDI/stores', () => ({
-    midiStore: {
-        subscribe: subscribe_to_midi_store,
-    },
-}));
-
 import { type CapabilityReport } from '../../models/CapabilityReport';
 import { KOKORO_MODEL_ARTIFACT } from '../../models/KokoroArtifactManifest';
 import { type StorageStatus } from '../../models/StorageStatus';
 import { capabilityStore } from '../../stores/capabilityStore';
 import { modelRegistryStore } from '../../stores/modelRegistryStore';
 import { initBrowserAi } from '../initBrowserAi';
+import { midiNoteEditSource } from '../midiNoteEditSource';
+
+// The MIDI note edits the composition root hands BrowserAi; this spec reads none.
+midiNoteEditSource.configure({ subscribe: subscribe_to_midi_store });
 
 type DetectCapabilitiesRepo = (input?: {
     forceRefresh?: boolean;

@@ -1,5 +1,6 @@
-import { test, expect, type Page } from '@playwright/test';
+import { type Page } from '@playwright/test';
 
+import { test, expect } from './e2eTest';
 import { launch_new_project, setupWorkspace } from './e2eUtils';
 
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
@@ -9,7 +10,7 @@ async function openYeastPanel(page: Page): Promise<void> {
     // yeast.spec.ts does ('Browser'-named buttons resolve to both the toggle
     // and the closer).
     const browser = page.getByRole('complementary', { name: 'Browser panel' });
-    await browser.getByRole('button', { name: 'Effects', exact: true }).click();
+    await browser.getByRole('tab', { name: 'Effects', exact: true }).click();
     await browser.getByRole('button', { name: 'MIDI FX' }).click();
 
     const yeastCard = browser.getByRole('button', { name: 'Yeast' });
