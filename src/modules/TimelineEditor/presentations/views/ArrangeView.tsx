@@ -108,6 +108,13 @@ export const ArrangeView = (): ReactElement => {
         });
     };
 
+    const handleTrackListSetSize = (size: number): void => {
+        const next = clamp(size, MIN_TRACK_LIST_WIDTH, TRACK_LIST_MAX);
+        trackListWidthRef.current = next;
+        setLocalTrackListWidth(next);
+        setTrackListWidth(next);
+    };
+
     const handleTrackListResizeEnd = (): void => {
         setTrackListWidth(trackListWidthRef.current);
     };
@@ -118,6 +125,13 @@ export const ArrangeView = (): ReactElement => {
             sessionWidthRef.current = next;
             return next;
         });
+    };
+
+    const handleSessionSetSize = (size: number): void => {
+        const next = clamp(size, SESSION_VIEW_MIN, SESSION_VIEW_MAX);
+        sessionWidthRef.current = next;
+        setLocalSessionWidth(next);
+        setSessionViewWidth(next);
     };
 
     const handleSessionResizeEnd = (): void => {
@@ -261,7 +275,12 @@ export const ArrangeView = (): ReactElement => {
                     </Stack>
                     <ResizeHandle
                         direction="vertical"
+                        label="Resize session view"
+                        valueNow={displayedSessionWidth}
+                        valueMin={Math.min(SESSION_VIEW_MIN, Math.round(displayedSessionWidth))}
+                        valueMax={SESSION_VIEW_MAX}
                         onResize={handleSessionResize}
+                        onSetSize={handleSessionSetSize}
                         onResizeEnd={handleSessionResizeEnd}
                     />
                 </>
@@ -279,7 +298,12 @@ export const ArrangeView = (): ReactElement => {
                     />
                     <ResizeHandle
                         direction="vertical"
+                        label="Resize track list"
+                        valueNow={displayedTrackListWidth}
+                        valueMin={Math.min(MIN_TRACK_LIST_WIDTH, Math.round(displayedTrackListWidth))}
+                        valueMax={TRACK_LIST_MAX}
                         onResize={handleTrackListResize}
+                        onSetSize={handleTrackListSetSize}
                         onResizeEnd={handleTrackListResizeEnd}
                     />
                 </>

@@ -11,7 +11,7 @@ describe('DragResizeHandle', () => {
 
     it('should call onResize with signed delta for right side', () => {
         const onResize = vi.fn();
-        const { container } = render(<DragResizeHandle side="right" onResize={onResize} />);
+        const { container } = render(<DragResizeHandle aria-label="Resize panel" side="right" onResize={onResize} />);
         const handle = container.firstChild as HTMLElement;
         fireEvent.mouseDown(handle, { clientX: 100, clientY: 0 });
         fireEvent.mouseMove(document, { clientX: 110, clientY: 0 });
@@ -21,7 +21,7 @@ describe('DragResizeHandle', () => {
 
     it('should invert delta for left side', () => {
         const onResize = vi.fn();
-        const { container } = render(<DragResizeHandle side="left" onResize={onResize} />);
+        const { container } = render(<DragResizeHandle aria-label="Resize panel" side="left" onResize={onResize} />);
         const handle = container.firstChild as HTMLElement;
         fireEvent.mouseDown(handle, { clientX: 100, clientY: 0 });
         fireEvent.mouseMove(document, { clientX: 110, clientY: 0 });
@@ -31,7 +31,7 @@ describe('DragResizeHandle', () => {
 
     it('should use vertical axis for top side', () => {
         const onResize = vi.fn();
-        const { container } = render(<DragResizeHandle side="top" onResize={onResize} />);
+        const { container } = render(<DragResizeHandle aria-label="Resize panel" side="top" onResize={onResize} />);
         const handle = container.firstChild as HTMLElement;
         fireEvent.mouseDown(handle, { clientX: 0, clientY: 100 });
         fireEvent.mouseMove(document, { clientX: 0, clientY: 90 });
@@ -41,7 +41,7 @@ describe('DragResizeHandle', () => {
 
     it('should use vertical axis for bottom side', () => {
         const onResize = vi.fn();
-        const { container } = render(<DragResizeHandle side="bottom" onResize={onResize} />);
+        const { container } = render(<DragResizeHandle aria-label="Resize panel" side="bottom" onResize={onResize} />);
         const handle = container.firstChild as HTMLElement;
         fireEvent.mouseDown(handle, { clientX: 0, clientY: 100 });
         fireEvent.mouseMove(document, { clientX: 0, clientY: 110 });
@@ -51,7 +51,9 @@ describe('DragResizeHandle', () => {
 
     it('should call onResizeEnd on mouse up', () => {
         const onResizeEnd = vi.fn();
-        const { container } = render(<DragResizeHandle side="right" onResize={vi.fn()} onResizeEnd={onResizeEnd} />);
+        const { container } = render(
+            <DragResizeHandle aria-label="Resize panel" side="right" onResize={vi.fn()} onResizeEnd={onResizeEnd} />
+        );
         const handle = container.firstChild as HTMLElement;
         fireEvent.mouseDown(handle, { clientX: 100, clientY: 0 });
         fireEvent.mouseMove(document, { clientX: 110, clientY: 0 });
@@ -62,21 +64,23 @@ describe('DragResizeHandle', () => {
 
     it('should not call onResizeEnd on mouse up if no drag was active', () => {
         const onResizeEnd = vi.fn();
-        render(<DragResizeHandle side="right" onResize={vi.fn()} onResizeEnd={onResizeEnd} />);
+        render(
+            <DragResizeHandle aria-label="Resize panel" side="right" onResize={vi.fn()} onResizeEnd={onResizeEnd} />
+        );
         fireEvent.mouseUp(document);
         expect(onResizeEnd).not.toHaveBeenCalled();
     });
 
     it('forwards ref to the separator element', () => {
         const ref = { current: null as HTMLDivElement | null };
-        render(<DragResizeHandle ref={ref} onResize={vi.fn()} />);
+        render(<DragResizeHandle aria-label="Resize panel" ref={ref} onResize={vi.fn()} />);
         expect(ref.current).toBe(screen.getByRole('separator'));
     });
 
     describe('direction props', () => {
         it('supports direction="vertical" with horizontal drag', () => {
             const onResize = vi.fn();
-            render(<DragResizeHandle direction="vertical" onResize={onResize} />);
+            render(<DragResizeHandle aria-label="Resize panel" direction="vertical" onResize={onResize} />);
             const separator = screen.getByRole('separator');
             expect(separator).toHaveAttribute('aria-orientation', 'vertical');
 
@@ -89,7 +93,7 @@ describe('DragResizeHandle', () => {
 
         it('supports direction="horizontal" with vertical drag', () => {
             const onResize = vi.fn();
-            render(<DragResizeHandle direction="horizontal" onResize={onResize} />);
+            render(<DragResizeHandle aria-label="Resize panel" direction="horizontal" onResize={onResize} />);
             const separator = screen.getByRole('separator');
             expect(separator).toHaveAttribute('aria-orientation', 'horizontal');
 
@@ -105,7 +109,14 @@ describe('DragResizeHandle', () => {
         it('supports ArrowRight and ArrowLeft for vertical handles', () => {
             const onResize = vi.fn();
             const onResizeEnd = vi.fn();
-            render(<DragResizeHandle direction="vertical" onResize={onResize} onResizeEnd={onResizeEnd} />);
+            render(
+                <DragResizeHandle
+                    aria-label="Resize panel"
+                    direction="vertical"
+                    onResize={onResize}
+                    onResizeEnd={onResizeEnd}
+                />
+            );
             const separator = screen.getByRole('separator');
 
             fireEvent.keyDown(separator, { key: 'ArrowRight' });
@@ -120,7 +131,14 @@ describe('DragResizeHandle', () => {
         it('supports ArrowDown and ArrowUp for horizontal handles', () => {
             const onResize = vi.fn();
             const onResizeEnd = vi.fn();
-            render(<DragResizeHandle direction="horizontal" onResize={onResize} onResizeEnd={onResizeEnd} />);
+            render(
+                <DragResizeHandle
+                    aria-label="Resize panel"
+                    direction="horizontal"
+                    onResize={onResize}
+                    onResizeEnd={onResizeEnd}
+                />
+            );
             const separator = screen.getByRole('separator');
 
             fireEvent.keyDown(separator, { key: 'ArrowDown' });
@@ -134,7 +152,9 @@ describe('DragResizeHandle', () => {
 
         it('inverts keyboard delta for left and top sides', () => {
             const onResizeLeft = vi.fn();
-            const { unmount } = render(<DragResizeHandle side="left" onResize={onResizeLeft} />);
+            const { unmount } = render(
+                <DragResizeHandle aria-label="Resize panel" side="left" onResize={onResizeLeft} />
+            );
             const leftSeparator = screen.getByRole('separator');
 
             fireEvent.keyDown(leftSeparator, { key: 'ArrowRight' });
@@ -146,7 +166,7 @@ describe('DragResizeHandle', () => {
             unmount();
 
             const onResizeTop = vi.fn();
-            render(<DragResizeHandle side="top" onResize={onResizeTop} />);
+            render(<DragResizeHandle aria-label="Resize panel" side="top" onResize={onResizeTop} />);
             const topSeparator = screen.getByRole('separator');
 
             fireEvent.keyDown(topSeparator, { key: 'ArrowDown' });
@@ -158,7 +178,7 @@ describe('DragResizeHandle', () => {
 
         it('respects custom step prop', () => {
             const onResize = vi.fn();
-            render(<DragResizeHandle direction="vertical" step={4} onResize={onResize} />);
+            render(<DragResizeHandle aria-label="Resize panel" direction="vertical" step={4} onResize={onResize} />);
             const separator = screen.getByRole('separator');
 
             fireEvent.keyDown(separator, { key: 'ArrowRight' });
@@ -170,6 +190,7 @@ describe('DragResizeHandle', () => {
             const onResizeEnd = vi.fn();
             render(
                 <DragResizeHandle
+                    aria-label="Resize panel"
                     direction="vertical"
                     aria-valuenow={60}
                     aria-valuemin={20}
@@ -195,7 +216,9 @@ describe('DragResizeHandle', () => {
             const removeSpy = vi.spyOn(document, 'removeEventListener');
             try {
                 const onResize = vi.fn();
-                const { unmount } = render(<DragResizeHandle side="right" onResize={onResize} />);
+                const { unmount } = render(
+                    <DragResizeHandle aria-label="Resize panel" side="right" onResize={onResize} />
+                );
                 const separator = screen.getByRole('separator');
 
                 fireEvent.mouseDown(separator, { clientX: 100, clientY: 0 });
@@ -215,7 +238,7 @@ describe('DragResizeHandle', () => {
         });
 
         it('clears body cursor and user-select on unmount mid-drag', () => {
-            const { unmount } = render(<DragResizeHandle side="right" onResize={vi.fn()} />);
+            const { unmount } = render(<DragResizeHandle aria-label="Resize panel" side="right" onResize={vi.fn()} />);
             const separator = screen.getByRole('separator');
 
             fireEvent.mouseDown(separator, { clientX: 100, clientY: 0 });
@@ -229,7 +252,7 @@ describe('DragResizeHandle', () => {
 
         it('does not clear body cursor on unmount when no drag was active', () => {
             document.body.style.cursor = 'wait';
-            const { unmount } = render(<DragResizeHandle side="right" onResize={vi.fn()} />);
+            const { unmount } = render(<DragResizeHandle aria-label="Resize panel" side="right" onResize={vi.fn()} />);
 
             unmount();
             expect(document.body.style.cursor).toBe('wait');
@@ -242,7 +265,12 @@ describe('DragResizeHandle', () => {
             const onResize = vi.fn();
             const onResizeEnd = vi.fn();
             const { container } = render(
-                <DragResizeHandle side="right" onResize={onResize} onResizeEnd={onResizeEnd} />
+                <DragResizeHandle
+                    aria-label="Resize panel"
+                    side="right"
+                    onResize={onResize}
+                    onResizeEnd={onResizeEnd}
+                />
             );
             const handle = container.firstChild as HTMLElement;
             const setPointerCapture = vi.fn();
