@@ -12,7 +12,7 @@ type DawPanelSurfaceProps = HTMLAttributes<HTMLDivElement> & {
 
 const TONE_CLASS_NAMES: Record<NonNullable<DawPanelSurfaceProps['tone']>, string> = {
     base: 'h-full bg-surface-base',
-    dock: 'border-t border-black/60 bg-surface-base shadow-[inset_0_1px_4px_rgba(0,0,0,0.5)]',
+    dock: 'border-t border-border-soft bg-surface-base shadow-elevation-inset',
     tray: 'contain-strict border-l border-border-hairline bg-surface-tray shadow-[inset_1px_0_0_rgba(255,255,255,0.02),inset_0_1px_0_rgba(255,255,255,0.04)]',
 };
 
@@ -23,7 +23,12 @@ export const DawPanelSurface = ({
     children,
     ...props
 }: DawPanelSurfaceProps): ReactElement => (
-    <Stack as={as} shrink={tone === 'base'} className={cn(TONE_CLASS_NAMES[tone], className)} {...props}>
+    <Stack
+        as={as}
+        shrink={tone === 'base'}
+        className={cn('daw-panel-surface', TONE_CLASS_NAMES[tone], className)}
+        {...props}
+    >
         {children}
     </Stack>
 );

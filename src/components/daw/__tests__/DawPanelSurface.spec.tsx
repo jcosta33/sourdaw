@@ -28,9 +28,10 @@ describe('DawPanelSurface', () => {
                 'shrink-0',
                 'flex-col',
                 'border-t',
-                'border-black/60',
+                'daw-panel-surface',
+                'border-border-soft',
                 'bg-surface-base',
-                'shadow-[inset_0_1px_4px_rgba(0,0,0,0.5)]',
+                'shadow-elevation-inset',
             ],
         ],
         [
