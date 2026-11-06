@@ -1,0 +1,21 @@
+src/modules/Arrangement/models/PluginDescriptors/__tests__/catalogDisplayNames.spec.ts
+  s_7e66b0d36681e8::t_1c6c3867259fae 6-10,12
+src/modules/Arrangement/repositories/presets/__tests__/factoryPresets.spec.ts
+  s_7e66b0d36681e8::t_71829d12ac872a 52-56
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c7d82288c7f596656e50d4b20536f6bc7149c504",
+  "prompts": {},
+  "sessions": {
+    "s_7e66b0d36681e8": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_7e66b0d36681e8",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
