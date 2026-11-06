@@ -20,7 +20,7 @@ hedged findings without a concrete break ("I'd prefer if") are discarded.
    (`no-nested-ternary` is already error): name the construct and the convention sentence it breaks. Do not invent
    style.
 4. **A craft rule its own spec no longer observes.** Revert one `sourdaw-craft` rule's visitor to
-   `create() { return {}; }` and run `pnpm test:run scripts/oxlintCraft/__tests__/plugin.spec.ts`. Remaining green
+   `create() { return {}; }` and run `pnpm guard --profile focused -- pnpm test:run scripts/oxlintCraft/__tests__/plugin.spec.ts`. Remaining green
    fails test validity: the spec no longer observes that rule.
 
 ## Scope
