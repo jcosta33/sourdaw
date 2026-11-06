@@ -1,18 +1,9 @@
 import { type ResolutionTempoTimeline } from '../livePlayback/liveTempoTimeline';
 
-/** A sample at the highest rate a render runs at. */
-const SECONDS_TOLERANCE = 1 / 192_000;
-const MAX_STEPS = 32;
+const MAX_BRACKET_STEPS = 32;
+const MAX_INVERSE_STEPS = 64;
 
-/**
- * A render's tempo map as comp resolution reads it, from the two reads the
- * render already makes: its beat-to-seconds placement and the flat tempo at a
- * beat. The inverse is found by stepping from beat 0 along the local tempo:
- * across one tempo segment a step lands exactly, and each further step crosses
- * into the segment that holds the target, so a map of a few changes settles in
- * as many steps. The render's placement is whole-sample, so the inverse is
- * read to within a sample.
- */
+/** Invert the render's monotone placement without crossing a retained bracket. */
 export function renderTempoTimeline(
     secondsAtBeat: (beat: number) => number,
     tempoAtBeat: (beat: number) => number
@@ -21,15 +12,55 @@ export function renderTempoTimeline(
         secondsAtBeat,
         tempoAtBeat,
         beatAtSeconds: (seconds) => {
-            let beat = 0;
-            for (let step = 0; step < MAX_STEPS; step++) {
-                const remainingSeconds = seconds - secondsAtBeat(beat);
-                if (Math.abs(remainingSeconds) <= SECONDS_TOLERANCE) {
+            if (!Number.isFinite(seconds)) {
+                throw new TypeError('Render source time must be finite');
+            }
+            if (seconds === 0) {
+                return 0;
+            }
+            const estimate = (seconds * tempoAtBeat(0)) / 60;
+            let lower = Math.min(0, estimate);
+            let upper = Math.max(0, estimate);
+            for (let step = 0; step < MAX_BRACKET_STEPS; step++) {
+                if (secondsAtBeat(lower) <= seconds && secondsAtBeat(upper) >= seconds) {
                     break;
                 }
-                beat += (remainingSeconds * tempoAtBeat(beat)) / 60;
+                lower = lower < 0 ? lower * 2 : lower;
+                upper = upper > 0 ? upper * 2 : upper;
             }
-            return beat;
+            if (secondsAtBeat(lower) > seconds || secondsAtBeat(upper) < seconds || lower === upper) {
+                throw new Error('Render source time could not be bracketed');
+            }
+            let beat = estimate;
+            let nearestBeat = beat;
+            let nearestError = Infinity;
+            for (let step = 0; step < MAX_INVERSE_STEPS; step++) {
+                const remainingSeconds = seconds - secondsAtBeat(beat);
+                const error = Math.abs(remainingSeconds);
+                if (error < nearestError) {
+                    nearestError = error;
+                    nearestBeat = beat;
+                }
+                if (error <= Number.EPSILON * Math.max(1, Math.abs(seconds))) {
+                    return beat;
+                }
+                if (remainingSeconds > 0) {
+                    lower = beat;
+                } else {
+                    upper = beat;
+                }
+                // A local-tempo step is exact within one segment, but can
+                // oscillate across a short excursion. Bisect that step instead.
+                const proposed = beat + (remainingSeconds * tempoAtBeat(beat)) / 60;
+                const next = proposed > lower && proposed < upper ? proposed : lower + (upper - lower) / 2;
+                if (next === beat) {
+                    break;
+                }
+                beat = next;
+            }
+            // Whole-sample placement has plateaus; keep the closest real
+            // placement observed rather than return an unobserved extrapolation.
+            return nearestBeat;
         },
     };
 }

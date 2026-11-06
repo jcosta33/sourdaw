@@ -27,7 +27,11 @@ export { requestMicPermission } from './audioRecorder/requestMicPermission';
 export { playAuditionNote } from './audition';
 export { acquireCheckpointAudioRetention } from './acquireCheckpointAudioRetention';
 export { configureDurableAudioBufferOwnership } from './configureDurableAudioBufferOwnership';
+export { configureHistoryAudioBufferReferences } from './configureHistoryAudioBufferReferences';
+export { configureLiveAudioBufferReferences } from './configureLiveAudioBufferReferences';
 export { cacheAudioBuffer } from './cacheAudioBuffer';
+export { openCachedAudioBufferHold } from './openCachedAudioBufferHold';
+export { prepareCachedAudioBuffersForReplay } from './prepareCachedAudioBuffersForReplay';
 export { cancelPendingAudioBufferImport } from './cancelPendingAudioBufferImport';
 export { clearCachedAudioBuffers } from './clearCachedAudioBuffers';
 export { clearRuntimeCachedAudioBuffers } from './clearRuntimeCachedAudioBuffers';
@@ -38,10 +42,13 @@ export { garbageCollectCachedAudioBuffersBySize } from './garbageCollectCachedAu
 export { garbageCollectFreezeAudioBuffers } from './garbageCollectFreezeAudioBuffers';
 export { getCachedAudioBuffer } from './getCachedAudioBuffer';
 export { getCachedAudioBufferWaveformPeaks } from './getCachedAudioBufferWaveformPeaks';
+export { holdAudioBufferForSession } from './holdAudioBufferForSession';
 export { importCachedAudioBuffers } from './importCachedAudioBuffers';
 export { prepareCachedAudioBuffersFromIdb } from './prepareCachedAudioBuffersFromIdb';
 export { cachePreviewAudioBuffer } from './cachePreviewAudioBuffer';
 export { playCachedAudioBufferPreview } from './playCachedAudioBufferPreview';
+export { playAudioBufferPreview } from './playAudioBufferPreview';
+export { playExclusiveAudioBufferPreview } from './playExclusiveAudioBufferPreview';
 export { persistPreparedAudioBuffer } from './persistPreparedAudioBuffer';
 export { reclaimPreparedAudioBufferOrphans } from './reclaimPreparedAudioBufferOrphans';
 export { releaseCheckpointAudioRetention } from './releaseCheckpointAudioRetention';
@@ -49,6 +56,7 @@ export { releasePreparedAudioBuffer } from './releasePreparedAudioBuffer';
 export { releasePreviewAudioBuffer } from './releasePreviewAudioBuffer';
 export { reopenPreparedAudioBuffer } from './reopenPreparedAudioBuffer';
 export { restoreCachedAudioBuffersFromIdb } from './restoreCachedAudioBuffersFromIdb';
+export { restoreUnpinnedAudioBuffersFromIdb } from './restoreUnpinnedAudioBuffersFromIdb';
 
 export { scheduleFaustNote } from './faustScheduler/scheduleFaustNote';
 export { startFaustNote } from './faustScheduler/startFaustNote';
@@ -105,7 +113,7 @@ export { getMasterStereoAnalysers } from './engineAccess/getMasterStereoAnalyser
 export { getMasterPeakLevel } from './engineAccess/getMasterPeakLevel';
 export { setMasterGainValue } from './engineAccess/setMasterGainValue';
 export { setMasterComparisonTrimDb } from './engineAccess/setMasterComparisonTrimDb';
-export { syncControlRoomMonitoring } from './engineAccess/syncControlRoomMonitoring';
+export { setControlRoomMonitoring } from './engineAccess/setControlRoomMonitoring';
 export { getAudioSampleRate } from './engineAccess/getAudioSampleRate';
 export { getTrackAnalyser } from './engineAccess/getTrackAnalyser';
 export { getDeviceOutputNode } from './engineAccess/getDeviceOutputNode';
@@ -133,6 +141,13 @@ export { initializeAudioEngine } from './initializeAudioEngine';
 
 export { claimNativeSessionRearm } from './livePlayback/claimNativeSessionRearm';
 export { nativeSessionRearmClaimHolds } from './livePlayback/nativeSessionRearmClaimHolds';
+// Published because the composition root registers the body vocabularies device modules own.
+export { nativeBodyVocabularyRegistry } from './livePlayback/nativeBodyVocabularyRegistry';
+// Published because the composition root registers the device modules' engine
+// attachment record and neural model library, and Transport's graph repair
+// retracts the attachments.
+export { engineAttachmentTracking } from './livePlayback/engineAttachmentTracking';
+export { neuralModelContent } from './livePlayback/neuralModelContent';
 export { hasLiveNativeGraphSession } from './livePlayback/hasLiveNativeGraphSession';
 // Published because the project-leaving use cases own the commit point the pedal latch is scoped to.
 export { forgetProjectLatchedPedals } from './livePlayback/forgetProjectLatchedPedals';
@@ -150,6 +165,7 @@ export { nativeLiveGraphSessionSplice } from './livePlayback/nativeLiveGraphSess
 export { recordNativeChainReleases } from './livePlayback/recordNativeChainReleases';
 export { syncNativeTimelineSamples } from './livePlayback/syncNativeTimelineSamples';
 export { readNativeEnginePlayheadSeconds } from './livePlayback/readNativeEnginePlayheadSeconds';
+export { createNativeRecordingCaptureClock } from './livePlayback/nativeRecordingCaptureClock';
 export { repositionNativeLiveGraphSession } from './livePlayback/repositionNativeLiveGraphSession';
 export { sendNativeLiveMidiControl } from './livePlayback/sendNativeLiveMidiControl';
 export { sendNativeLiveMidiNote } from './livePlayback/sendNativeLiveMidiNote';
@@ -180,11 +196,14 @@ export { configureOfflineYeastMidiProcessing } from './configureOfflineYeastMidi
 export { getOfflineYeastRackReader } from './getOfflineYeastRackReader';
 export { projectOfflineYeastTrackNotes } from './offlineRender/projectOfflineYeastTrackNotes';
 export { renderTrackSubgraphOffline } from './offlineRender/renderTrackSubgraphOffline';
+export { projectOfflineAudioClipPlaybacks } from './offlineRender/projectOfflineAudioClipPlaybacks';
+export { resolveTrackClipsWithComping } from './offlineRender/resolveTrackClipsWithComping';
 // Audio encoders (audioBufferToWav/Mp3/Flac) moved to AudioRendering (ADR 0011 W4).
 
 export { scheduleAdjustmentLayers } from './adjustmentLayer/scheduleAdjustmentLayers';
 export { getSharedAdjustmentLayerApplier } from './adjustmentLayer/sharedAdjustmentLayerApplier';
 
+export { builtinSynthVoice } from './scheduling/builtinSynthVoice';
 export { scheduleClick } from './scheduling/scheduleClick';
 export { stopAllScheduled } from './scheduling/stopAllScheduled';
 export { registerScheduledSource } from './scheduling/registerScheduledSource';
@@ -212,6 +231,7 @@ export { compileAudioGraphTopology } from './compileAudioGraphTopology';
 export { compileRuntimeGraphDelta } from './compileRuntimeGraphDelta';
 export { configureRuntimeGraphProjectRevisionValidator } from './configureRuntimeGraphProjectRevisionValidator';
 export { configureRuntimeGraphTopologyValidator } from './configureRuntimeGraphTopologyValidator';
+export { initEngineDeviceCollaborators } from './initEngineDeviceCollaborators';
 export { createRuntimeGraphTopologyFingerprint } from './createRuntimeGraphTopologyFingerprint';
 export { applyRuntimeGraphDelta } from './applyRuntimeGraphDelta';
 export { getRuntimeGraphRevision } from './getRuntimeGraphRevision';

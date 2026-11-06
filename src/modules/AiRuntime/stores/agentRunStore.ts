@@ -36,8 +36,9 @@ import {
     type AgentRunTemporaryAsset,
     type AgentRunWorkLease,
 } from '../models/AgentRun';
-import { type ApplicationToolReceipt } from '../models/ApplicationOwnedTool';
+import { APPLICATION_TOOL_RECEIPT_MAX_BYTES, type ApplicationToolReceipt } from '../models/ApplicationOwnedTool';
 import { getPendingEffectRecoveryPolicy } from '../models/GetPendingEffectRecoveryPolicy';
+import { MAX_METRIC_GOAL_STATE_BYTES } from '../models/MetricGoalAdmission';
 import { type BoundRequestProtections, type ProposalProtectionFacts } from '../models/ProposalGroundingBasis';
 import {
     THREAD_COMMIT_STANDINGS,
@@ -923,11 +924,18 @@ function readApplicationToolReceipt(value: unknown): ApplicationToolReceipt | nu
     const revision = readNullableString(value.revision);
     const summary = readString(value.summary);
     const warnings = readStringArray(value.warnings);
+    const origin = value.origin;
+    if (origin !== undefined && origin !== 'application-verification') {
+        return null;
+    }
+    if (origin === 'application-verification' && toolName !== 'analysis.measure') {
+        return null;
+    }
     if (
         callId === null ||
         toolName === null ||
         turn === null ||
-        turn < 1 ||
+        (turn < 1 && !(turn === 0 && origin === 'application-verification' && toolName === 'analysis.measure')) ||
         revision === undefined ||
         summary === null ||
         warnings === null
@@ -949,7 +957,7 @@ function readApplicationToolReceipt(value: unknown): ApplicationToolReceipt | nu
     if ((value.status === 'success' && error !== null) || (value.status === 'failure' && error === null)) {
         return null;
     }
-    return {
+    const receipt: ApplicationToolReceipt = {
         schema: 'sourdaw.application-tool-receipt',
         schemaVersion: 1,
         callId,
@@ -962,6 +970,10 @@ function readApplicationToolReceipt(value: unknown): ApplicationToolReceipt | nu
         warnings,
         error,
     };
+    if (origin !== undefined) {
+        return { ...receipt, origin };
+    }
+    return receipt;
 }
 
 function isThreadCommitStanding(value: unknown): value is ThreadCommitStanding {
@@ -1303,6 +1315,11 @@ function readBoundRequestProtections(value: unknown): BoundRequestProtections | 
     return { request, facts, resolvedTrackClauses };
 }
 
+/** A schedule stored before kinds existed held bulk-set slices, the only kind there was; any other kind is unreadable. */
+function readAgentRunBatchScheduleKind(value: unknown): AgentRunBatchSchedule['kind'] | null {
+    return value === undefined || value === 'bulk-set' ? 'bulk-set' : null;
+}
+
 /**
  * A schedule is read whole or not at all: its slices must number its batches 1..total in order, and
  * its position must name one of them, or a restored run could propose a batch out of sequence.
@@ -1311,6 +1328,7 @@ function readAgentRunBatchSchedule(value: unknown): AgentRunBatchSchedule | null
     if (!isRecord(value) || value.schemaVersion !== 1) {
         return null;
     }
+    const kind = readAgentRunBatchScheduleKind(value.kind);
     const scheduleId = readString(value.scheduleId);
     const position = readNonNegativeInteger(value.position);
     const total = readNonNegativeInteger(value.total);
@@ -1329,6 +1347,7 @@ function readAgentRunBatchSchedule(value: unknown): AgentRunBatchSchedule | null
     }
     const slices = readCollection(value.slices, readAgentRunBatchScheduleSlice);
     if (
+        kind === null ||
         scheduleId === null ||
         position === null ||
         total === null ||
@@ -1347,6 +1366,7 @@ function readAgentRunBatchSchedule(value: unknown): AgentRunBatchSchedule | null
     }
     const schedule: AgentRunBatchSchedule = {
         schemaVersion: 1,
+        kind,
         scheduleId,
         position,
         total,
@@ -1358,6 +1378,12 @@ function readAgentRunBatchSchedule(value: unknown): AgentRunBatchSchedule | null
     };
     if (requestProtections !== undefined && requestProtections !== null) {
         schedule.requestProtections = requestProtections;
+    }
+    if (
+        typeof value.metricGoalState === 'string' &&
+        new TextEncoder().encode(value.metricGoalState).byteLength <= MAX_METRIC_GOAL_STATE_BYTES
+    ) {
+        schedule.metricGoalState = value.metricGoalState;
     }
     return schedule;
 }
@@ -1511,6 +1537,17 @@ function readAgentRunPlan(value: unknown, fallbackScope: AgentRun['scope']): Age
               commandIds,
               serializedBatchIdentity,
               applicationToolReceipts,
+              terminalMeasurementSettlement:
+                  typeof value.terminalMeasurementSettlement === 'string' &&
+                  new TextEncoder().encode(value.terminalMeasurementSettlement).byteLength <=
+                      APPLICATION_TOOL_RECEIPT_MAX_BYTES
+                      ? value.terminalMeasurementSettlement
+                      : undefined,
+              metricGoalState:
+                  typeof value.metricGoalState === 'string' &&
+                  new TextEncoder().encode(value.metricGoalState).byteLength <= MAX_METRIC_GOAL_STATE_BYTES
+                      ? value.metricGoalState
+                      : undefined,
               revision,
               classification,
               showPlanPanel,

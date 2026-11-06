@@ -2,13 +2,14 @@ import { type ReactElement } from 'react';
 
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { Row, Stack } from '#/components/layout';
-import { AgentRunDecisionPanel } from '#/modules/AiRuntime/presentations/views';
+import { AgentRunDecisionPanel, MeasuredPreviewAudition } from '#/modules/AiRuntime/presentations/views';
 import {
     agentRunCancellation,
     cancelPendingChatActions,
     confirmPendingChatActions,
     reproposePendingChatActions,
     notifyAiChange,
+    stopMeasuredPreviewAudition,
 } from '#/modules/AiRuntime/useCases';
 
 import { AgentApprovalSection } from '../components/agentWorkspace/AgentApprovalSection';
@@ -25,6 +26,14 @@ import { useAgentWorkspaceFocusDispatch } from '../hooks/useAgentWorkspaceFocusD
 import { useAgentWorkspaceRunSelection } from '../hooks/useAgentWorkspaceRunSelection';
 
 import { AgentReferenceControls } from './AgentReferenceControls';
+
+function renderApprovalAudition(input: Parameters<typeof MeasuredPreviewAudition>[0]): ReactElement {
+    return <MeasuredPreviewAudition {...input} />;
+}
+
+function stopApprovalAudition(confirmationId: string): void {
+    void stopMeasuredPreviewAudition({ confirmationId });
+}
 
 function cancelApproval(confirmationId: string): void {
     void cancelPendingChatActions({ confirmationId }).catch((error: unknown) => {
@@ -101,6 +110,8 @@ export const AgentWorkspace = ({ requestedRun = null }: { requestedRun?: { runId
                     <AgentRunDecisionPanel />
                     <AgentApprovalSection
                         approvals={approvals}
+                        renderAudition={renderApprovalAudition}
+                        onBeforeSelectionChange={stopApprovalAudition}
                         onConfirm={(confirmationId) => {
                             void confirmPendingChatActions({ confirmationId });
                         }}

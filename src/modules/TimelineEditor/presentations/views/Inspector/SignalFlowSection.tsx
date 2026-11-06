@@ -1,4 +1,4 @@
-import { type ReactElement, useState } from 'react';
+import { type ReactElement } from 'react';
 
 import { ChevronRight, ChevronDown } from 'lucide-react';
 
@@ -8,9 +8,12 @@ import { RoutingGraph } from '#/modules/Routing/presentations/views';
 
 import { SurfaceCard } from '../../components/Inspector/SurfaceCard';
 
-export const SignalFlowSection = (): ReactElement => {
-    const [expanded, setExpanded] = useState(false);
+type SignalFlowSectionProps = {
+    expanded: boolean;
+    onExpandedChange: (expanded: boolean) => void;
+};
 
+export const SignalFlowSection = ({ expanded, onExpandedChange }: SignalFlowSectionProps): ReactElement => {
     return (
         <div>
             <DawHeaderBand compact className="mb-2 rounded-sm">
@@ -20,7 +23,7 @@ export const SignalFlowSection = (): ReactElement => {
                     type="button"
                     className="flex w-full items-center gap-1"
                     onClick={() => {
-                        setExpanded(!expanded);
+                        onExpandedChange(!expanded);
                     }}
                     aria-expanded={expanded}
                 >

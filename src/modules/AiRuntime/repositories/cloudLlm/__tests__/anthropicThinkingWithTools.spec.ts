@@ -295,6 +295,57 @@ describe('Anthropic forced tool choice under extended thinking', () => {
     });
 });
 
+describe('single-call control with Anthropic thinking compatibility', () => {
+    it.each([
+        { model: 'claude-opus-5-5' },
+        { model: 'claude-sonnet-5-5-20261001' },
+        { model: 'claude-fable-5-1' },
+        { model: 'claude-mythos-5-1-20260901' },
+        { thinking: { type: 'enabled' as const, budgetTokens: 2048 } },
+    ])('keeps incompatible forced choice automatic with nested single-call control: %j', async (profile) => {
+        respondWith(THINKING_TURN_RESPONSE);
+        await planTurn({
+            runtime: runtimeFor(profile),
+            directive: { mode: 'required', toolNames: ['project.query'], parallelToolCalls: false },
+        });
+        const body = readBody(0);
+        expect(body.tool_choice).toEqual({ type: 'auto', disable_parallel_tool_use: true });
+        expect(body).not.toHaveProperty('disable_parallel_tool_use');
+        expect(body.tools).toEqual([expect.objectContaining({ name: 'project_query' })]);
+        if ('thinking' in profile) {
+            expect(body.thinking).toEqual({ type: 'enabled', budget_tokens: 2048 });
+        }
+    });
+
+    it('preserves native thinking blocks through a required single step and the later ordinary turn', async () => {
+        respondWith(THINKING_TURN_RESPONSE);
+        const runtime = runtimeFor({ thinking: { type: 'adaptive' } });
+        const first = await planTurn({
+            runtime,
+            directive: { mode: 'required', toolNames: ['project.query'], parallelToolCalls: false },
+        });
+        expect(first.assistantItems).toEqual(THINKING_TURN_RESPONSE.content);
+        expect(readBody(0).tool_choice).toEqual({ type: 'any', disable_parallel_tool_use: true });
+        respondWith(SECOND_TURN_RESPONSE);
+        await planTurn({
+            runtime,
+            history: [
+                {
+                    turn: 1,
+                    provider: 'anthropic',
+                    assistantItems: first.assistantItems,
+                    calls: [{ id: TOOL_USE_BLOCK.id, name: 'project.query', arguments: {} }],
+                    receipts: [RECEIPT],
+                },
+            ],
+        });
+        expect(readBody(1).messages).toEqual(
+            expect.arrayContaining([{ role: 'assistant', content: THINKING_TURN_RESPONSE.content }])
+        );
+        expect(readBody(1)).not.toHaveProperty('tool_choice');
+    });
+});
+
 describe('Anthropic thinking token usage', () => {
     it('reports the provider-billed thinking tokens as reasoning tokens', async () => {
         respondWith({

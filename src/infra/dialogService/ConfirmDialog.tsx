@@ -1,11 +1,13 @@
-import { type ReactElement } from 'react';
+import { type ReactElement, useRef } from 'react';
 
 import { Row } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '#/components/ui/dialog';
 import { cn } from '#/utils/Styles/cn';
 
+import { DIALOG_SERVICE_LAYER } from './dialogServiceLayer';
 import { useConfirmationDialog } from './useConfirmationDialog';
+import { useFocusEachRequest } from './useFocusEachRequest';
 
 /**
  * Async confirmation dialog. Subscribes to the `ui.confirm` event bus
@@ -18,6 +20,10 @@ import { useConfirmationDialog } from './useConfirmationDialog';
 export const ConfirmDialog = (): ReactElement => {
     const { pending, confirm, cancel } = useConfirmationDialog();
     const isDanger = pending?.variant === 'danger';
+    const cancelRef = useRef<HTMLButtonElement>(null);
+    const { contentRef, onOpenAutoFocus } = useFocusEachRequest(pending, () => {
+        cancelRef.current?.focus();
+    });
 
     return (
         <Dialog
@@ -34,6 +40,8 @@ export const ConfirmDialog = (): ReactElement => {
                     role="dialog"
                     aria-modal="true"
                     aria-label={pending.title ?? pending.message}
+                    ref={contentRef}
+                    onOpenAutoFocus={onOpenAutoFocus}
                     onKeyDown={(event) => {
                         // This dialog portals to <body> with a focused
                         // button, so an unstopped Delete/Backspace reaches
@@ -48,11 +56,21 @@ export const ConfirmDialog = (): ReactElement => {
                             if (event.target instanceof HTMLElement && event.target.tagName === 'BUTTON') {
                                 return;
                             }
+                            // A destructive choice is never the keyboard default
+                            // (macOS HIG, every DAW's save-on-close prompt), so
+                            // Enter answers a danger question with Cancel, the
+                            // button that holds initial focus.
+                            if (isDanger) {
+                                cancel();
+                                return;
+                            }
                             confirm();
                         }
                     }}
+                    overlayClassName={DIALOG_SERVICE_LAYER}
                     className={cn(
                         'gap-0 min-w-[320px] max-w-[480px] sm:max-w-[480px] rounded-lg border bg-surface-raised p-4 shadow-xl',
+                        DIALOG_SERVICE_LAYER,
                         isDanger ? 'border-[var(--color-state-danger)]/40' : 'border-border'
                     )}
                 >
@@ -65,15 +83,10 @@ export const ConfirmDialog = (): ReactElement => {
                         {pending.message}
                     </DialogDescription>
                     <Row align="stretch" justify="end" gap={2} className="mt-4">
-                        <Button variant="ghost" size="sm" onClick={cancel} autoFocus={!isDanger}>
+                        <Button ref={cancelRef} variant="ghost" size="sm" onClick={cancel}>
                             {pending.cancelLabel ?? 'Cancel'}
                         </Button>
-                        <Button
-                            variant={isDanger ? 'destructive' : 'default'}
-                            size="sm"
-                            onClick={confirm}
-                            autoFocus={isDanger}
-                        >
+                        <Button variant={isDanger ? 'destructive' : 'default'} size="sm" onClick={confirm}>
                             {pending.confirmLabel ?? 'OK'}
                         </Button>
                     </Row>

@@ -1,10 +1,14 @@
 import { describe, it, expect, vi, afterEach, type MockInstance } from 'vitest';
 
+import { registerProjectSlotProjections } from '#/app/registerProjectSlotProjections';
 import { type StorageHydrateOptions } from '#/infra/store/storage/types';
 
 import { projectChangedCrdtSlots } from '../projectChangedCrdtSlots';
 import { projectCrdtToStores } from '../projectProjection';
-import { projectSlotProjections } from '../projectSlotProjections';
+import { projectSlotProjectionRegistry } from '../projectSlotProjections';
+
+registerProjectSlotProjections();
+const projectSlotProjections = projectSlotProjectionRegistry.read('projectProjection.spec');
 
 /**
  * The projection registry is the single source for which document slot feeds

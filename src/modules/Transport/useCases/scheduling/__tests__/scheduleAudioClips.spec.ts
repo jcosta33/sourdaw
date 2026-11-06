@@ -10,7 +10,6 @@ import {
     getCachedAudioBuffer,
     getCurrentTime,
 } from '#/modules/AudioEngine/useCases';
-import { getAssetTransfer } from '#/modules/Collaboration/useCases';
 import {
     MICRO_FADE_SECONDS,
     clampClipFadeInDurationSeconds,
@@ -20,7 +19,7 @@ import { notifyUser } from '#/utils/Notification/notifyUser';
 import { boundStretchRatio } from '#/utils/stretchRatioBound';
 
 import { defaultTransportState } from '../../../models/TransportState';
-import { schedulerSession } from '../../playheadScheduler/schedulerSession';
+import { schedulerSession, stopActiveSources } from '../../playheadScheduler/schedulerSession';
 import { gainNodePool } from '../audioClipSchedulingState';
 import { disposeAudioClipScheduling } from '../disposeAudioClipScheduling';
 import { scheduleAudioClips } from '../scheduleAudioClips';
@@ -67,6 +66,12 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
 // real loop projection.
 vi.mock('#/modules/Arrangement/useCases', () => ({
     resolveClipsWithComping: vi.fn(() => []),
+    collaborationAssetTransfer: {
+        read: () => ({
+            isSessionActive: () => collaborationAssetState.sessionActive,
+            current: () => collaborationAssetState.transfer,
+        }),
+    },
 }));
 vi.mock('#/utils/Notification/notifyUser', () => ({
     notifyUser: vi.fn(),
@@ -74,17 +79,10 @@ vi.mock('#/utils/Notification/notifyUser', () => ({
 vi.mock('../scheduleFrozenTrack', () => ({
     scheduleFrozenTrack: vi.fn(() => false),
 }));
-const collaborationStoreState: { value: { isEnabled: boolean } | null } = { value: null };
-vi.mock('#/modules/Collaboration/stores', () => ({
-    collaborationStore: {
-        get value() {
-            return collaborationStoreState.value;
-        },
-    },
-}));
-vi.mock('#/modules/Collaboration/useCases', () => ({
-    getAssetTransfer: vi.fn(() => null),
-}));
+const collaborationAssetState: {
+    sessionActive: boolean;
+    transfer: { requestAsset: (hash: string) => void } | null;
+} = { sessionActive: false, transfer: null };
 // `TempoMap` is deliberately NOT stubbed: it is a pure leaf with its own spec,
 // and the timing these tests pin is exactly the question of which conversion the
 // scheduler asks it for. With an empty map every query falls back to
@@ -160,14 +158,14 @@ describe('scheduleAudioClips', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         trackStoreState.value = { tracks: [] };
-        collaborationStoreState.value = null;
+        collaborationAssetState.sessionActive = false;
         tempoMapStore.value = { changes: [] };
         // Reset implementations that other tests override via mockReturnValue —
         // clearAllMocks only clears call records, not per-test return values.
         vi.mocked(getCurrentTime).mockReturnValue(0);
         vi.mocked(getCompensationDelay).mockReturnValue(0);
         vi.mocked(getGainEnvelopeSeries).mockReturnValue(undefined);
-        vi.mocked(getAssetTransfer).mockReturnValue(null);
+        collaborationAssetState.transfer = null;
         mockResolveClips.mockReturnValue([]);
         // The seam records are scheduler-session singletons: a case that leaves
         // either standing would floor the next case's emissions as handovers.
@@ -502,11 +500,15 @@ describe('scheduleAudioClips', () => {
         mockCreateBufferSource.mockReturnValue(fakeSource as unknown as AudioBufferSourceNode);
         mockResolveClips.mockReturnValue([makeAudioClip()] as never);
         trackStoreState.value = { tracks: [makeAudioTrack([])] };
-        const scheduled = new Set<string>(['clip-1:0:4']);
+        mockGetCachedAudioBuffer.mockReturnValue({ duration: 100 } as AudioBuffer);
+        const scheduled = new Set<string>();
+        const active: AudioBufferSourceNode[] = [];
+        scheduleAudioClips(0, 16, 0, scheduled, new Set(), active, defaultTransportState);
+        expect(mockCreateBufferSource).toHaveBeenCalledTimes(1);
 
-        scheduleAudioClips(0, 16, 0, scheduled, new Set(), [], defaultTransportState);
+        scheduleAudioClips(0, 16, 0, scheduled, new Set(), active, defaultTransportState);
 
-        expect(mockCreateBufferSource).not.toHaveBeenCalled();
+        expect(mockCreateBufferSource).toHaveBeenCalledTimes(1);
     });
 
     it('bails when trackStore.value is null', () => {
@@ -561,8 +563,8 @@ describe('scheduleAudioClips', () => {
     // whether the request is still alive, and it re-opens the hash on abort.
     it('asks AssetTransfer for a missing asset on every tick while collaboration is enabled', () => {
         const requestAsset = vi.fn();
-        vi.mocked(getAssetTransfer).mockReturnValue({ requestAsset } as never);
-        collaborationStoreState.value = { isEnabled: true };
+        collaborationAssetState.transfer = { requestAsset };
+        collaborationAssetState.sessionActive = true;
         mockGetCachedAudioBuffer.mockReturnValue(null);
         mockResolveClips.mockReturnValue([makeAudioClip({ audioBufferId: 'buf-1', assetHash: 'hash-1' })] as never);
         trackStoreState.value = { tracks: [makeAudioTrack([])] };
@@ -995,6 +997,83 @@ describe('scheduleAudioClips', () => {
     });
 
     // ── Loop iterations ─────────────────────────────────────────────────────
+
+    it('schedules three original source parts in one cut loop window once and retires every node', () => {
+        const sources: (ReturnType<typeof makeFakeSource> & { stop: ReturnType<typeof vi.fn> })[] = [];
+        mockCreateBufferSource.mockImplementation(() => {
+            const source = { ...makeFakeSource(), stop: vi.fn() };
+            sources.push(source);
+            return source as unknown as AudioBufferSourceNode;
+        });
+        mockGetCachedAudioBuffer.mockReturnValue({ duration: 100 } as AudioBuffer);
+        mockResolveClips.mockReturnValue([
+            makeAudioClip({
+                startBeat: 2,
+                endBeat: 6,
+                loopEnabled: true,
+                loopLength: 4,
+                loopOriginBeat: 0,
+                stretchMode: 'timestretch',
+                stretchRatio: 2,
+                audioOffsetSeconds: 1.5,
+                audioLoopStartSeconds: 0,
+                audioLoopPassEntrySeconds: 0.5,
+                audioLoopPassOriginBeat: 1,
+            }),
+        ] as ReturnType<typeof resolveClipsWithComping>);
+        trackStoreState.value = { tracks: [makeAudioTrack([])] };
+        const scheduled = new Set<string>();
+        const active: AudioBufferSourceNode[] = [];
+
+        scheduleAudioClips(0, 8, 0, scheduled, new Set(), active, defaultTransportState);
+
+        expect(mockCreateBufferSource).toHaveBeenCalledTimes(3);
+        expect(sources.map((source) => source.start.mock.calls)).toEqual([[[1, 1.5, 2]], [[2, 0, 1]], [[2.5, 0.5, 1]]]);
+        expect(active).toEqual(sources);
+        scheduleAudioClips(0, 8, 0, scheduled, new Set(), active, defaultTransportState);
+        expect(mockCreateBufferSource).toHaveBeenCalledTimes(3);
+        const context = getAudioContext();
+        if (!context) {
+            throw new Error('Expected the scheduler audio context');
+        }
+        stopActiveSources(active, context);
+        for (const source of sources) {
+            expect(source.stop).toHaveBeenCalledExactlyOnceWith(0.005);
+        }
+        expect(active).toEqual([]);
+        for (const source of sources) {
+            expect(typeof source.onended).toBe('function');
+            if (typeof source.onended === 'function') {
+                source.onended();
+            }
+        }
+        expect(active).toEqual([]);
+    });
+
+    it.each([0, 1])('reads canonical source second %s after placement crosses a tempo change', (sourceSeconds) => {
+        tempoMapStore.value = {
+            changes: [
+                { id: 'a', beat: 0, tempo: 120, curve: 'instant' },
+                { id: 'b', beat: 4, tempo: 60, curve: 'instant' },
+            ],
+        };
+        const fakeSource = makeFakeSource();
+        mockCreateBufferSource.mockReturnValue(fakeSource as unknown as AudioBufferSourceNode);
+        mockGetCachedAudioBuffer.mockReturnValue({ duration: 100 } as AudioBuffer);
+        const clips = [makeAudioClip({ audioOffsetBeats: 2, audioOffsetSeconds: sourceSeconds })] as ReturnType<
+            typeof resolveClipsWithComping
+        >;
+        mockResolveClips.mockReturnValue(clips);
+        trackStoreState.value = { tracks: [makeAudioTrack([])] };
+
+        scheduleAudioClips(0, 16, 0, new Set(), new Set(), [], defaultTransportState);
+
+        expect(fakeSource.start).toHaveBeenCalledTimes(1);
+        const [when, offset, duration] = fakeSource.start.mock.calls[0]!;
+        expect(when).toBeCloseTo(6, 9);
+        expect(offset).toBe(sourceSeconds);
+        expect(duration).toBeCloseTo(4, 9);
+    });
 
     it('schedules one source per loop iteration, advancing the start time by loopLength', () => {
         const sources = [makeFakeSource(), makeFakeSource()];
@@ -1529,6 +1608,7 @@ describe('scheduleAudioClips', () => {
         // instant (10.1) is still ahead of the clock (10).
         schedulerSession.pendingSeam = {
             seamAudioTime: 10.1,
+            destinationBeat: 4,
             anchorAudioTime: 9.9,
             anchorPosition: 11.8,
         };

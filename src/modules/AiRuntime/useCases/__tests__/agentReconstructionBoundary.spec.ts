@@ -1,10 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
+
 import { type ProjectContext } from '../../models/ProjectContext';
 import { tryCompoundFastPath, tryParameterizedPath, tryPresetMatch } from '../../transformers/promptParser/parsing';
 import { runApplicationOwnedToolLoop } from '../applicationOwnedToolLoop';
 import { getAgentToolCatalogEntries } from '../getAgentToolCatalogEntries';
 import { parsePromptToActions } from '../parsePromptToActions';
+
+registerDeviceEnginePorts();
 
 const DEFERRED_RECONSTRUCTION_NAME = 'agent.project.reconstruct';
 const PROMPT = 'rebuild this song from these stems as a project';

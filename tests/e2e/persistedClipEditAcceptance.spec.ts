@@ -1,16 +1,20 @@
 import { realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
-import { expect, test, type Locator, type Page, type TestInfo } from '@playwright/test';
+import { type Locator, type Page, type TestInfo } from '@playwright/test';
 import { stringify } from 'superjson';
 
 import { type AppAction } from '../../src/utils/handlerContract';
 
+import { chooseProjectDirectory } from './chosenProjectDirectory';
+import { test } from './compiledPersistenceTest';
+import { expect } from './e2eTest';
 import { enable_direct_e2e_viewport, launch_new_project } from './e2eUtils';
 
 const ROOT = realpathSync(fileURLToPath(new URL('../../', import.meta.url)));
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
 const MIDI_NAME = 'Undo acceptance MIDI';
+const AUDIO_NAME = 'Audio 1';
 const SAMPLE_RATE = 44_100;
 const STEP_TIMEOUT = 30_000;
 
@@ -157,24 +161,16 @@ async function importIntoTrack(page: Page, trackName: string, kind: 'Audio' | 'M
 
 async function readSnapshot(page: Page): Promise<Snapshot> {
     const serializedSnapshot = await page.evaluate(async () => {
-        const arrangementPath = '/src/modules/Arrangement/stores/index.ts';
-        const midiPath = '/src/modules/MIDI/stores/index.ts';
-        const automationPath = '/src/modules/Automation/stores/index.ts';
-        const projectPath = '/src/modules/Project/stores/index.ts';
-        const crdtPath = '/src/modules/CrdtDocument/useCases/index.ts';
-        const inspectionPath = '/src/modules/CrdtDocument/useCases/agentProjectInspectionPort.ts';
-        const audioPath = '/src/modules/AudioEngine/useCases/index.ts';
-        const arrangement: typeof import('../../src/modules/Arrangement/stores') = await import(arrangementPath);
-        const midi: typeof import('../../src/modules/MIDI/stores') = await import(midiPath);
-        const automation: typeof import('../../src/modules/Automation/stores') = await import(automationPath);
-        const project: typeof import('../../src/modules/Project/stores') = await import(projectPath);
-        const crdt: typeof import('../../src/modules/CrdtDocument/useCases') = await import(crdtPath);
+        const entryPath = '/e2e/persisted-hydration.js';
         const {
-            agentProjectInspectionPort,
-        }: typeof import('../../src/modules/CrdtDocument/useCases/agentProjectInspectionPort') = await import(
-            inspectionPath
-        );
-        const audio: typeof import('../../src/modules/AudioEngine/useCases') = await import(audioPath);
+            arrangement,
+            midi,
+            automation,
+            project,
+            crdt,
+            inspection: { agentProjectInspectionPort },
+            audio,
+        }: typeof import('./persistedHydrationEntry') = await import(entryPath);
         const document = crdt.getCrdtDoc('root');
         const projectState = project.projectStore.value;
         const tracks = arrangement.trackStore.value?.tracks;
@@ -265,8 +261,10 @@ async function expectExact(page: Page, expected: Snapshot): Promise<Snapshot> {
         .poll(
             () =>
                 page.evaluate(async (projectId: string) => {
-                    const path = '/src/modules/Project/stores/index.ts';
-                    const { projectStore }: typeof import('../../src/modules/Project/stores') = await import(path);
+                    const entryPath = '/e2e/persisted-hydration.js';
+                    const {
+                        project: { projectStore },
+                    }: typeof import('./persistedHydrationEntry') = await import(entryPath);
                     const state = projectStore.value;
                     return state?.initialized === true && state.loading === false && state.projectId === projectId;
                 }, expected.projectId),
@@ -315,6 +313,7 @@ function requireMirror(
 }
 
 async function save(page: Page, requireWitness = true): Promise<void> {
+    await chooseProjectDirectory(page);
     await palette(page, 'Save Project');
     await expect(page.locator('[title="Unsaved changes"]')).toHaveCount(0, { timeout: STEP_TIMEOUT });
     if (requireWitness) {
@@ -388,8 +387,10 @@ async function clipPoint(page: Page, clip: Clip, ratio = 0.5): Promise<{ x: numb
     const header = await row.getByRole('button', { name: `Mute ${track.name}`, exact: true }).boundingBox();
     const canvas = await page.getByLabel('Timeline editor surface').boundingBox();
     const view = await page.evaluate(async () => {
-        const path = '/src/modules/Arrangement/stores/index.ts';
-        const { timelineViewStore }: typeof import('../../src/modules/Arrangement/stores') = await import(path);
+        const entryPath = '/e2e/persisted-hydration.js';
+        const {
+            arrangement: { timelineViewStore },
+        }: typeof import('./persistedHydrationEntry') = await import(entryPath);
         return timelineViewStore.value;
     });
     if (!header || !canvas || !view) {
@@ -407,7 +408,7 @@ async function clipPoint(page: Page, clip: Clip, ratio = 0.5): Promise<{ x: numb
 }
 
 async function addComp(page: Page, trackName: string): Promise<void> {
-    const toggle = trackRow(page, trackName).getByRole('button', { name: 'Toggle variation lanes' });
+    const toggle = trackRow(page, trackName).getByRole('button', { name: `Variation lanes for ${trackName}` });
     await toggle.click();
     await page.getByRole('button', { name: 'Add take', exact: true }).click();
     const promote = page.getByRole('button', { name: 'Promote Take 1 to main take', exact: true });
@@ -427,12 +428,12 @@ async function addComp(page: Page, trackName: string): Promise<void> {
 
 async function addAutomation(page: Page): Promise<void> {
     await page.evaluate(async () => {
-        const arrangementPath = '/src/modules/Arrangement/stores/index.ts';
-        const automationPath = '/src/modules/Automation/stores/index.ts';
-        const commandPath = '/src/modules/Command/useCases/index.ts';
-        const { trackStore }: typeof import('../../src/modules/Arrangement/stores') = await import(arrangementPath);
-        const { automationStore }: typeof import('../../src/modules/Automation/stores') = await import(automationPath);
-        const { executeAppAction }: typeof import('../../src/modules/Command/useCases') = await import(commandPath);
+        const entryPath = '/e2e/persisted-hydration.js';
+        const {
+            arrangement: { trackStore },
+            automation: { automationStore },
+            command: { executeAppAction },
+        }: typeof import('./persistedHydrationEntry') = await import(entryPath);
         for (const track of trackStore.value?.tracks ?? []) {
             if (track.clips.length === 0) {
                 continue;
@@ -529,8 +530,8 @@ test('persisted clip edits replay exact owners and source material through real 
     await expect.poll(() => capabilities.length, { timeout: 45_000 }).toBeGreaterThan(0);
     await launch_new_project(page);
     await palette(page, 'Add Audio Track');
-    await expect(trackRow(page, 'Audio')).toBeVisible();
-    await importIntoTrack(page, 'Audio', 'Audio');
+    await expect(trackRow(page, AUDIO_NAME)).toBeVisible();
+    await importIntoTrack(page, AUDIO_NAME, 'Audio');
     await expect
         .poll(
             async () =>
@@ -539,9 +540,9 @@ test('persisted clip edits replay exact owners and source material through real 
                     .filter((clip) => clip.type === 'audio').length
         )
         .toBe(1);
-    await importIntoTrack(page, 'Audio', 'MIDI');
+    await importIntoTrack(page, AUDIO_NAME, 'MIDI');
     await expect(trackRow(page, MIDI_NAME)).toBeVisible();
-    await addComp(page, 'Audio');
+    await addComp(page, AUDIO_NAME);
     await addComp(page, MIDI_NAME);
     await addAutomation(page);
     const seed = await readSnapshot(page);
@@ -574,14 +575,26 @@ test('persisted clip edits replay exact owners and source material through real 
     initialExact.projected.midi = { ...initialExact.projected.midi, noteCoordinateFormat: 'clip-relative' };
     const hydratedSeed = await expectExact(page, canonicalSeed);
     expect(hydratedSeed.mirror.projectId).toBe(seed.projectId);
-    expect(hydratedSeed.mirror.witness).toBe(hydratedSeed.witness);
+    // The first boot's load migrations write after the mirror is tagged, and the mirror re-stamps when
+    // autosave persists, so the witness converges rather than matching at once.
+    await expect
+        .poll(
+            async () => {
+                const snapshot = await readSnapshot(page);
+                return snapshot.mirror.projectId === seed.projectId && snapshot.mirror.witness === snapshot.witness;
+            },
+            { timeout: STEP_TIMEOUT }
+        )
+        .toBe(true);
 
     await test.step('Delete Time through the visible loop-region command', async () => {
         await replayTwice(page, info, 'delete-time', MIDI_NAME, ['deleteTime'], capabilities, async () => {
             const ruler = await page.getByLabel('Beat ruler').boundingBox();
             const view = await page.evaluate(async () => {
-                const path = '/src/modules/Arrangement/stores/index.ts';
-                const { timelineViewStore }: typeof import('../../src/modules/Arrangement/stores') = await import(path);
+                const entryPath = '/e2e/persisted-hydration.js';
+                const {
+                    arrangement: { timelineViewStore },
+                }: typeof import('./persistedHydrationEntry') = await import(entryPath);
                 return timelineViewStore.value;
             });
             if (!ruler || !view) {
@@ -646,8 +659,10 @@ test('persisted clip edits replay exact owners and source material through real 
         // Establish the real loop anchor through the registered command before
         // replayTwice captures the material that Backspace must restore.
         await page.evaluate(async (clipId) => {
-            const path = '/src/modules/Command/useCases/index.ts';
-            const { executeAppAction }: typeof import('../../src/modules/Command/useCases') = await import(path);
+            const entryPath = '/e2e/persisted-hydration.js';
+            const {
+                command: { executeAppAction },
+            }: typeof import('./persistedHydrationEntry') = await import(entryPath);
             await executeAppAction({ type: 'setClipLoop', payload: { clipId, enabled: true } }, { source: 'manual' });
         }, target.id);
         await expect
@@ -684,7 +699,7 @@ test('persisted clip edits replay exact owners and source material through real 
             page,
             info,
             'grouped-ripple',
-            'Audio',
+            AUDIO_NAME,
             ['removeClip', 'splitClip'],
             capabilities,
             async (before) => {
@@ -708,10 +723,10 @@ test('persisted clip edits replay exact owners and source material through real 
                 // Atomic forward admission is separately tracked by #5439.
                 const commits = await page.evaluate(
                     async ({ firstId, secondId, beat }) => {
-                        const path = '/src/modules/Command/useCases/index.ts';
-                        const { executeAppAction }: typeof import('../../src/modules/Command/useCases') = await import(
-                            path
-                        );
+                        const entryPath = '/e2e/persisted-hydration.js';
+                        const {
+                            command: { executeAppAction },
+                        }: typeof import('./persistedHydrationEntry') = await import(entryPath);
                         const batch: AppAction[] = [
                             { type: 'removeClip', payload: { clipId: firstId } },
                             { type: 'splitClip', payload: { clipId: secondId, beat } },

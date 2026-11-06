@@ -1,5 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
+import { registerKernelPorts } from '#/app/registerKernelPorts';
+import { registerProjectSlotProjections } from '#/app/registerProjectSlotProjections';
 import { logger } from '#/infra/logger/appLogger';
 import { createControlledLockManager } from '#/infra/testing/createControlledLockManager';
 import { defaultTransportState, playheadPositionRef, transportStore } from '#/modules/Transport/stores';
@@ -11,6 +14,8 @@ import { mutateCrdtDoc } from '../../mutateCrdtDoc';
 import { runCrdtPersistenceOperation } from '../../runCrdtPersistenceOperation';
 import { forkProjectBranch } from '../forkProjectBranch';
 import { switchBranch } from '../switchBranch';
+
+registerDeviceEnginePorts();
 
 // A branch switch replaces the root document with another branch's, so a
 // transport left running would keep recording into the incoming branch and the
@@ -42,7 +47,14 @@ vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
 }));
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
-    audioEngine: { setTransportInfo: vi.fn() },
+    audioEngine: {
+        beginAudioPreviewIntent: () => ({
+            signal: new AbortController().signal,
+            isCurrent: () => true,
+            release: vi.fn(),
+        }),
+        setTransportInfo: vi.fn(),
+    },
     getAudioContext: vi.fn(() => ({ currentTime: 1, sampleRate: 48000 })),
     stopAllScheduled: vi.fn(),
     stopAudioRecording: mocks.stopAudioRecording,
@@ -87,10 +99,13 @@ function startRecordingSession(): void {
     playheadPositionRef.current = PLAYHEAD_BEAT;
 }
 
+registerKernelPorts();
+
 describe('branch switch stops the transport', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         automergeRepository.reset();
+        registerProjectSlotProjections();
         vi.stubGlobal('navigator', { ...navigator, locks: createControlledLockManager().locks });
         automergeRepository.createProject('branch transport test');
         branchStore.set({

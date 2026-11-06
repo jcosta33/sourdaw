@@ -2,9 +2,13 @@ import { createHandler } from '#/utils/createHandler';
 
 import { getEnvelope } from '../../stores/gainEnvelopeStore';
 import { toggleClipGainEnvelope } from '../../useCases/clipGainEnvelope/toggleClipGainEnvelope';
+import { isMidiClip } from '../isMidiClip';
 
 export const handleToggleClipGainEnvelope = createHandler<'toggleClipGainEnvelope'>({
     execute: (action) => {
+        if (isMidiClip(action.payload.clipId)) {
+            return { status: 'no-write' };
+        }
         // `expectedEnabled` is the pre-toggle value the surface read: when the
         // live envelope no longer matches it the flip would land on the wrong
         // side, so it reports the conflict instead of toggling blind.

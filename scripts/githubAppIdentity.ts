@@ -79,6 +79,12 @@ export function removalLockPid(lockReason: string | undefined): number | undefin
     return Number.isSafeInteger(pid) && pid > 0 ? pid : undefined;
 }
 
+export const CLEANUP_MINT_PERMISSIONS = {
+    contents: 'read',
+    pull_requests: 'read',
+    issues: 'read',
+} as const;
+
 export const AUTHOR_MINT_PERMISSIONS = {
     contents: 'write',
     pull_requests: 'write',
@@ -152,8 +158,8 @@ export type RoleCredentials = {
 
 export type MintPermissions = {
     contents?: 'read' | 'write';
-    pull_requests?: 'write';
-    issues?: 'write';
+    pull_requests?: 'read' | 'write';
+    issues?: 'read' | 'write';
     workflows?: 'write';
     statuses?: 'write';
 };

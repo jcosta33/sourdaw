@@ -1,5 +1,4 @@
-import { expect, test } from '@playwright/test';
-
+import { expect, test } from './e2eTest';
 import { launch_from_template, setupWorkspace } from './e2eUtils';
 
 // Two Inspector/Transport controls that the final audit found uncovered:

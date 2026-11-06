@@ -3,12 +3,7 @@ import { type RefObject, useEffect, useLayoutEffect, useRef, useState } from 're
 import { useStore } from '#/infra/store/useStore';
 import { executeUserAppAction } from '#/modules/Command/useCases';
 import { playheadPositionRef, tempoMapStore, transportStore, type TransportState } from '#/modules/Transport/stores';
-import {
-    addTempoChange,
-    removeTempoChange,
-    updateTempoChange,
-    resolveTempoFieldState,
-} from '#/modules/Transport/useCases';
+import { resolveTempoFieldState } from '#/modules/Transport/useCases';
 
 import { useTransportState } from './useTransportState';
 
@@ -338,7 +333,10 @@ export const useTempoEditorState = (): TempoEditorState => {
         if (isNaN(beat) || beat < 0 || isNaN(tempo) || tempo < 20 || tempo > 999) {
             return;
         }
-        addTempoChange(beat, tempo, newCurve);
+        void executeUserAppAction({
+            type: 'editTempoMap',
+            payload: { edit: { type: 'add', beat, tempo, curve: newCurve } },
+        });
         tapTimesRef.current = [];
         setNewBeat(String(beat + 4));
     };
@@ -354,7 +352,10 @@ export const useTempoEditorState = (): TempoEditorState => {
         }
         const bpm = parseFloat(editingChangeTempo);
         if (!isNaN(bpm) && bpm >= 20 && bpm <= 999) {
-            updateTempoChange(editingChangeId, bpm);
+            void executeUserAppAction({
+                type: 'editTempoMap',
+                payload: { edit: { type: 'update', id: editingChangeId, tempo: bpm } },
+            });
             tapTimesRef.current = [];
         }
         setEditingChangeId(null);
@@ -365,7 +366,7 @@ export const useTempoEditorState = (): TempoEditorState => {
     };
 
     const removeChange = (id: string): void => {
-        removeTempoChange(id);
+        void executeUserAppAction({ type: 'editTempoMap', payload: { edit: { type: 'remove', id } } });
         tapTimesRef.current = [];
     };
 

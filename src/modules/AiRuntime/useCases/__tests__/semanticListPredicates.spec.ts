@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { getMixRecipeCatalog } from '#/modules/Arrangement/useCases';
 
 import { type SemanticCommandListRoleFamily } from '../../models/SemanticCommandList';
@@ -8,6 +9,8 @@ import { compileArbitraryCommandList } from '../compileArbitraryCommandList';
 import { validateArbitraryCommandListEvidence } from '../validateArbitraryCommandListEvidence';
 
 import type { ProjectContext } from '../../models/ProjectContext';
+
+registerDeviceEnginePorts();
 
 /** Same base track shape `compileArbitraryCommandList.spec.ts` uses, widened with the owner facts a `match` predicate reads. */
 const context: ProjectContext = {

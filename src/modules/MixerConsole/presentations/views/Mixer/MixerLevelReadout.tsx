@@ -25,6 +25,13 @@ const linearToDb = (linear: number): number => {
     return Math.max(MIN_DB, 20 * Math.log10(linear));
 };
 
+const formatPeakDb = (db: number): string => {
+    if (db === Number.POSITIVE_INFINITY) {
+        return '+∞';
+    }
+    return db <= MIN_DB ? '-∞' : db.toFixed(1);
+};
+
 export const MixerLevelReadout = ({
     trackId,
     control,
@@ -67,7 +74,7 @@ export const MixerLevelReadout = ({
             if (db > maxPeakRef.current) {
                 maxPeakRef.current = db;
                 if (peakTextRef.current) {
-                    peakTextRef.current.textContent = db <= MIN_DB ? '-∞' : db.toFixed(1);
+                    peakTextRef.current.textContent = formatPeakDb(db);
                     if (db > 0) {
                         peakTextRef.current.classList.add('text-state-error');
                         peakTextRef.current.classList.remove('text-muted-foreground/80');

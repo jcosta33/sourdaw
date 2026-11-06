@@ -12,6 +12,15 @@ const audioRuntime = vi.hoisted(() => ({
     exportCachedAudioBuffers: vi.fn(),
 }));
 
+const originalMediaRuntime = vi.hoisted(() => ({
+    captureProjectOriginalMedia: vi.fn(),
+}));
+
+vi.mock('#/modules/Collaboration/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Collaboration/useCases')>()),
+    captureProjectOriginalMedia: originalMediaRuntime.captureProjectOriginalMedia,
+}));
+
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/AudioEngine/useCases')>();
     return {
@@ -44,6 +53,8 @@ vi.mock('../../saveProject/captureExternalPluginStates', () => ({
     captureExternalPluginStates: vi.fn(() => Promise.resolve()),
 }));
 
+import { registerProjectLifecycle } from '#/app/registerProjectLifecycle';
+import { registerSupportingServicePorts } from '#/app/registerSupportingServicePorts';
 import { Container } from '#/infra/di/Container';
 import {
     configureAutomergeStoragePort,
@@ -53,19 +64,23 @@ import { createControlledLockManager } from '#/infra/testing/createControlledLoc
 import { getArrangementHandlers, setArrangementEventBus } from '#/modules/Arrangement/useCases';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 import { clearUndoHistory, executeAppAction, resetActionReplayAuthority } from '#/modules/Command/useCases';
+import { agentProjectRepairStateStore } from '#/modules/CrdtDocument/stores';
 import {
     captureProjectRevision,
     registerCrdtStorageRuntime,
     removeCrdtDoc,
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
+import { tempoMapStore } from '#/modules/Transport/stores';
 import { addTempoChange, getTransportHandlers, updateTempoChange } from '#/modules/Transport/useCases';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { deriveDeterministicProjectId, type ProjectData } from '../../../../models/ProjectData';
 import { projectStore } from '../../../../stores/projectStore';
 import { stopActiveAutoSave } from '../../helpers/stopActiveAutoSave';
 import { newProject } from '../../newProject';
 import { setProjectIdentityTransitionDependencies } from '../../projectIdentityTransitionDependencies';
+import { projectOriginalMediaPort } from '../../projectOriginalMediaPort';
 import { installMultiDatabaseIndexedDb } from '../../saveProject/__tests__/multiDatabaseIndexedDb';
 import { applyImportedProjectData } from '../applyImportedProjectData';
 import { buildProjectData } from '../buildProjectData';
@@ -159,7 +174,7 @@ async function seedProjectA(): Promise<void> {
         type: 'addMarker',
         payload: { markerId: 'marker-a', beat: 4, name: 'A Marker', color: '#aa0000' },
     });
-    addTempoChange(0, 111);
+    await addTempoChange(0, 111);
     flushAutomergeStorageWrites();
 }
 
@@ -196,7 +211,7 @@ async function switchToProjectB(data: ProjectData): Promise<void> {
         type: 'addMarker',
         payload: { markerId: 'marker-b', beat: 8, name: 'B Marker', color: '#0000aa' },
     });
-    addTempoChange(0, 222);
+    await addTempoChange(0, 222);
     flushAutomergeStorageWrites();
 }
 
@@ -222,15 +237,25 @@ describe('project export snapshot consistency integration', () => {
         configureAutomergeStoragePort(null);
         resetCrdtProjectAuthority('export snapshot bootstrap');
         registerCrdtStorageRuntime();
+        registerProjectLifecycle();
+        registerSupportingServicePorts();
         clearHandlerRegistry();
         registerHandlerMap(getArrangementHandlers());
         registerHandlerMap(getTransportHandlers());
         clearUndoHistory();
         resetActionReplayAuthority();
         setArrangementEventBus({ emit: () => Promise.resolve() });
+        projectOriginalMediaPort.configure({
+            capture: originalMediaRuntime.captureProjectOriginalMedia,
+            restore: async () => undefined,
+            activate: async () => undefined,
+        });
         setProjectIdentityTransitionDependencies({ leaveCollaborationSession: () => Promise.resolve() });
         resetProjectFileIoFixture();
         audioRuntime.exportCachedAudioBuffers.mockReset();
+        originalMediaRuntime.captureProjectOriginalMedia.mockReset();
+        vi.mocked(notifyUser).mockClear();
+        agentProjectRepairStateStore.set(null);
         await seedProjectA();
     });
 
@@ -242,6 +267,8 @@ describe('project export snapshot consistency integration', () => {
         Container.clear();
         configureAutomergeStoragePort(null);
         removeCrdtDoc('root');
+        projectOriginalMediaPort.configure(null);
+        agentProjectRepairStateStore.set(null);
         vi.unstubAllGlobals();
     });
 
@@ -270,12 +297,13 @@ describe('project export snapshot consistency integration', () => {
         if (!tempoChangeId) {
             throw new Error('Expected the seeded tempo-map entry');
         }
-        const before = captureProjectRevision();
 
         const building = buildProjectData({ includeAudioBuffers: true });
         await vi.waitFor(() => expect(audioRuntime.exportCachedAudioBuffers).toHaveBeenCalledOnce());
-        updateTempoChange(tempoChangeId, 177);
-        expect(captureProjectRevision()).not.toBe(before);
+        const beforeTempoEdit = captureProjectRevision();
+        await updateTempoChange(tempoChangeId, 177);
+        expect(tempoMapStore.value?.changes).toEqual([expect.objectContaining({ id: tempoChangeId, tempo: 177 })]);
+        expect(captureProjectRevision()).not.toBe(beforeTempoEdit);
         pcm.resolve({});
 
         await expect(building).resolves.toBeNull();
@@ -312,6 +340,72 @@ describe('project export snapshot consistency integration', () => {
         expectCoherentProjectA(built.data, projectStore.value?.projectId);
     });
 
+    it.each(['edit', 'replacement', 'repair'] as const)(
+        'refuses export when %s occurs during the final original byte read',
+        async (change) => {
+            const incoming = await projectBData();
+            const hash = 'sha256:50497fa19a4d5a1db72d6ead883f6f54572a12f6f170abc4f1932273770f4274';
+            await executeAppAction({
+                type: 'addClip',
+                payload: {
+                    id: 'original-clip',
+                    trackId: 'track-a',
+                    startBeat: 4,
+                    endBeat: 8,
+                    name: 'Original Clip',
+                    type: 'audio',
+                    audioBufferId: AUDIO_BUFFER_A,
+                    assetHash: hash,
+                },
+            });
+            flushAutomergeStorageWrites();
+            const projectIdA = projectStore.value?.projectId;
+            const bytes = deferred<ArrayBuffer>();
+            const original = new Blob(['original source bytes']);
+            const read = vi.spyOn(original, 'arrayBuffer').mockReturnValue(bytes.promise);
+            originalMediaRuntime.captureProjectOriginalMedia.mockResolvedValueOnce({
+                media: new Map([[hash, original]]),
+                unavailable: [],
+            });
+            audioRuntime.exportCachedAudioBuffers.mockResolvedValueOnce(AUDIO_PAYLOAD_A);
+            setProjectFileIoDesktopRuntime(true);
+            queueProjectFileIoSaveDialog(Promise.resolve('/tmp/project-a.sourdaw'));
+
+            const exporting = exportProjectFile();
+            await vi.waitFor(() => expect(read).toHaveBeenCalledOnce());
+            expect(originalMediaRuntime.captureProjectOriginalMedia).toHaveBeenCalledWith(
+                projectIdA,
+                [hash],
+                expect.any(Function)
+            );
+            if (change === 'replacement') {
+                await switchToProjectB(incoming);
+            } else if (change === 'edit') {
+                await executeAppAction({
+                    type: 'addMarker',
+                    payload: { markerId: 'marker-during-original-read', beat: 12, name: 'Later Marker' },
+                });
+            } else {
+                agentProjectRepairStateStore.set({
+                    audioGraphValid: true,
+                    detectedRevision: captureProjectRevision(),
+                    inspectionAvailable: true,
+                    projectInvariantsValid: false,
+                    rawProjectRetained: true,
+                    repairCandidates: [{ kind: 'repair-project-invariants', targetIds: ['@project/raw'] }],
+                    status: 'repair-required',
+                });
+            }
+            bytes.resolve(new TextEncoder().encode('original source bytes').buffer);
+            await exporting;
+
+            expect(getProjectFileIoSaveDialogCallCount()).toBe(0);
+            expect(getProjectFileIoNativeWrites()).toHaveLength(0);
+            expect(notifyUser).toHaveBeenCalledWith('Failed to export project', 'error');
+            expect(notifyUser).not.toHaveBeenCalledWith('Project exported successfully', 'info');
+        }
+    );
+
     it('writes the coherent completed snapshot through the real native serializer after a delayed dialog', async () => {
         setProjectFileIoDesktopRuntime(true);
         audioRuntime.exportCachedAudioBuffers.mockResolvedValueOnce(AUDIO_PAYLOAD_A);
@@ -330,7 +424,7 @@ describe('project export snapshot consistency integration', () => {
         if (!tempoChangeId) {
             throw new Error('Expected the seeded tempo-map entry');
         }
-        updateTempoChange(tempoChangeId, 188);
+        await updateTempoChange(tempoChangeId, 188);
         dialog.resolve('/tmp/project-a.sourdaw');
         await exporting;
 

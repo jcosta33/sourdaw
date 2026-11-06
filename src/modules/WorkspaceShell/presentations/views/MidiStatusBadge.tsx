@@ -8,7 +8,7 @@ import { useStore } from '#/infra/store/useStore';
 import { webMidiStore } from '#/modules/MIDI/stores';
 import { getPlatformCapabilities } from '#/utils/platformCapabilities';
 
-import { openPreferencesDialog } from '../../useCases/dialogs/openPreferencesDialog';
+import { openPreferencesSection } from '../../useCases/dialogs/openPreferencesSection';
 
 type WebMidiState = NonNullable<typeof webMidiStore.value>;
 
@@ -17,6 +17,8 @@ const defaultWebMidiState: WebMidiState = {
     inputs: [],
     selectedInputId: null,
     enumerationError: null,
+    accessDenied: false,
+    enumerationCompleted: false,
 };
 
 const DEVICE_NAME_MAX_LENGTH = 15;
@@ -43,6 +45,9 @@ export const MidiStatusBadge = (): ReactElement | null => {
         } else {
             tooltipText = midiDegradation?.message ?? 'MIDI access unavailable';
         }
+    } else if (state.accessDenied) {
+        label = 'MIDI blocked';
+        tooltipText = 'MIDI access was not allowed for this site';
     } else if (state.enumerationError) {
         label = 'MIDI error';
         tooltipText = `MIDI inputs could not be listed: ${state.enumerationError}`;
@@ -61,7 +66,7 @@ export const MidiStatusBadge = (): ReactElement | null => {
                     variant="ghost"
                     size="xs"
                     className="flex h-5 items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground"
-                    onClick={openPreferencesDialog}
+                    onClick={() => openPreferencesSection({ section: 'midi' })}
                     aria-label={tooltipText}
                 >
                     <span

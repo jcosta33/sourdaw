@@ -32,28 +32,36 @@ vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
     executeVersionedCommandBatchEnvelope: vi.fn(),
     generateGroupId: vi.fn((groupLabel: string) => ({ groupId: 'group-1', groupLabel })),
 }));
-vi.mock('#/modules/CrdtDocument/useCases', () => ({
-    captureProjectRevision: vi.fn(),
-    createCrdtDoc: vi.fn(),
-    DOC_BRANCHES: '__branches__',
-    DOC_PREFIX_ROOT: 'root',
-    getCrdtDoc: vi.fn(),
-    getCrdtDocIds: vi.fn(),
-    hasCrdtDoc: vi.fn(),
-    mutateCrdtDoc: vi.fn(),
-    persistCrdtProject: vi.fn(),
-    beginBranchSession: vi.fn(),
-    removeCrdtDoc: vi.fn(),
-    projectBranchSession: vi.fn(),
-    replaceCrdtDoc: vi.fn(),
-    replaceCrdtDocInLineage: vi.fn(),
-    endBranchSession: vi.fn(),
-    runCrdtPersistenceBarrier: vi.fn(),
-    sanitizeIncomingCrdtDocument: vi.fn(),
-    setupProjectionBridge: vi.fn(),
-    subscribeToCrdtChanges: vi.fn(),
-    waitForCrdtDocumentTransition: vi.fn(),
-}));
+vi.mock('#/modules/CrdtDocument/useCases', () => {
+    const captureProjectRevision = vi.fn();
+    return {
+        captureProjectRevision,
+        // Revisions here are labels with no document behind them, so the save-insensitive question is
+        // answered as equality with the live label; confirmAfterSave.spec.ts asks it over a real save.
+        projectRevisionMatchesLiveIgnoringSaveWrites: vi.fn(
+            (expectedRevision: string) => captureProjectRevision() === expectedRevision
+        ),
+        createCrdtDoc: vi.fn(),
+        DOC_BRANCHES: '__branches__',
+        DOC_PREFIX_ROOT: 'root',
+        getCrdtDoc: vi.fn(),
+        getCrdtDocIds: vi.fn(),
+        hasCrdtDoc: vi.fn(),
+        mutateCrdtDoc: vi.fn(),
+        persistCrdtProject: vi.fn(),
+        beginBranchSession: vi.fn(),
+        removeCrdtDoc: vi.fn(),
+        projectBranchSession: vi.fn(),
+        replaceCrdtDoc: vi.fn(),
+        replaceCrdtDocInLineage: vi.fn(),
+        endBranchSession: vi.fn(),
+        runCrdtPersistenceBarrier: vi.fn(),
+        sanitizeIncomingCrdtDocument: vi.fn(),
+        setupProjectionBridge: vi.fn(),
+        subscribeToCrdtChanges: vi.fn(),
+        waitForCrdtDocumentTransition: vi.fn(),
+    };
+});
 vi.mock('../notifyAiChange', () => ({ notifyAiChange: vi.fn() }));
 vi.mock('../recordAiActionGroup', () => ({ recordAiActionGroup: vi.fn() }));
 

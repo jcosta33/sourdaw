@@ -1,5 +1,6 @@
-import { expect, test, type Page } from '@playwright/test';
+import { type Page } from '@playwright/test';
 
+import { expect, test } from './e2eTest';
 import { launch_new_project, setupWorkspace } from './e2eUtils';
 
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
@@ -52,7 +53,7 @@ test.describe('Routing graph — test-id targeted', () => {
     });
 
     test('routing matrix shows the MIDI track output to Master', async ({ page }) => {
-        const output = page.getByRole('button', { name: 'MIDI output routed to Master' });
+        const output = page.getByRole('button', { name: 'MIDI 1 output routed to Master' });
         await expect(output).toBeVisible();
         await expect(output).toBeDisabled();
     });
@@ -71,7 +72,7 @@ test.describe('Routing graph — test-id targeted', () => {
         const trackList = page.getByRole('grid', { name: /Track list/i }).first();
         const midiRow = trackList
             .getByRole('row')
-            .filter({ has: page.getByText('MIDI', { exact: true }) })
+            .filter({ has: page.getByText('MIDI 1', { exact: true }) })
             .first();
 
         await page.getByRole('button', { name: 'Select Master' }).click();

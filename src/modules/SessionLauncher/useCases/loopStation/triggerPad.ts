@@ -1,6 +1,7 @@
 import { getAllTracks } from '#/modules/Arrangement/useCases';
 
 import { loopStationStore } from '../../stores/loopStationStore';
+import { getLaunchableTracks } from '../getLaunchableTracks';
 
 import { toggleRecord } from './toggleRecord';
 import { triggerSlot } from './triggerSlot';
@@ -17,11 +18,12 @@ type TriggerPadInput = {
 /**
  * Resolve the Loop Station grid pad at (row, column) → (trackId, row) and
  * dispatch to the matching slot. Plain press triggers playback of the slot;
- * shift-press routes to `toggleRecord` on that slot. No-op when the column
- * exceeds the available track count or no slot exists at that coordinate.
+ * shift-press routes to `toggleRecord` on that slot. Columns index the
+ * launchable tracks (no master, no folders), matching the grid. No-op when the
+ * column exceeds the launchable track count or no slot exists at that coordinate.
  */
 export function triggerPad({ row, column, record }: TriggerPadInput): void {
-    const tracks = getAllTracks();
+    const tracks = getLaunchableTracks(getAllTracks());
     const track = tracks[column];
     if (!track) {
         return;

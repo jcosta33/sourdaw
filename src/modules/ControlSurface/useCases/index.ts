@@ -5,6 +5,7 @@
 export { completeMidiLearn } from './midiLearn/completeMidiLearn';
 export { handleMidiMessage } from './midiLearn/handleMidiMessage';
 export { getMidiLearnState } from './getMidiLearnState';
+export { restoreMidiLearnSnapshot } from './restoreMidiLearnSnapshot';
 
 // ── Composition-root DI seam (bootstrap injects cross-module writers) ──────────
 export { setMidiLearnDependencies } from './midiLearn/midiLearnDependencies';

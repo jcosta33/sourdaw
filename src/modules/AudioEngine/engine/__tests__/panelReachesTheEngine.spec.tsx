@@ -14,6 +14,7 @@ import { showDevicePanelForType } from '#/modules/WorkspaceShell/useCases';
 import { createHandler } from '#/utils/createHandler';
 
 import { type BuiltinDeviceNode } from '../../models/AudioEngineState';
+import { engineDeviceCollaborators } from '../../useCases/engineDeviceCollaborators';
 import { createDeviceReadinessDiagnostics } from '../deviceReadinessDiagnostics';
 import { TrackNode, type TrackNodeDeps } from '../TrackNode';
 
@@ -262,6 +263,7 @@ function installStrip(deviceId: string, deviceType: string): StripHarness {
         getSendsForTrack: () => [],
         pendingDevicePromises: new Set(),
         readinessDiagnostics: createDeviceReadinessDiagnostics(),
+        collaborators: engineDeviceCollaborators,
     };
     const track = new TrackNode('track-1', deps);
 

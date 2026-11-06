@@ -1,10 +1,13 @@
-import { type ReactElement, useEffect, useRef } from 'react';
+import { type ReactElement, useRef } from 'react';
 
 import { Row } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '#/components/ui/dialog';
 import { Input } from '#/components/ui/input';
+import { cn } from '#/utils/Styles/cn';
 
+import { DIALOG_SERVICE_LAYER } from './dialogServiceLayer';
+import { useFocusEachRequest } from './useFocusEachRequest';
 import { usePromptDialog } from './usePromptDialog';
 
 /**
@@ -18,13 +21,10 @@ import { usePromptDialog } from './usePromptDialog';
 export const PromptDialog = (): ReactElement => {
     const { pending, value, setValue, submit, cancel } = usePromptDialog();
     const inputRef = useRef<HTMLInputElement>(null);
-
-    useEffect(() => {
-        if (pending) {
-            inputRef.current?.focus();
-            inputRef.current?.select();
-        }
-    }, [pending]);
+    const { contentRef, onOpenAutoFocus } = useFocusEachRequest(pending, () => {
+        inputRef.current?.focus();
+        inputRef.current?.select();
+    });
 
     return (
         <Dialog
@@ -41,6 +41,8 @@ export const PromptDialog = (): ReactElement => {
                     role="dialog"
                     aria-modal="true"
                     aria-label={pending.title ?? pending.message}
+                    ref={contentRef}
+                    onOpenAutoFocus={onOpenAutoFocus}
                     onKeyDown={(event) => {
                         if (event.key === 'Enter') {
                             if (event.target instanceof HTMLElement && event.target.tagName === 'BUTTON') {
@@ -49,7 +51,11 @@ export const PromptDialog = (): ReactElement => {
                             submit();
                         }
                     }}
-                    className="gap-0 min-w-[320px] max-w-[480px] sm:max-w-[480px] rounded-lg border border-border bg-surface-raised p-4 shadow-xl"
+                    overlayClassName={DIALOG_SERVICE_LAYER}
+                    className={cn(
+                        'gap-0 min-w-[320px] max-w-[480px] sm:max-w-[480px] rounded-lg border border-border bg-surface-raised p-4 shadow-xl',
+                        DIALOG_SERVICE_LAYER
+                    )}
                 >
                     {pending.title ? (
                         <DialogTitle className="mb-2 text-sm font-semibold text-foreground">
@@ -66,7 +72,6 @@ export const PromptDialog = (): ReactElement => {
                         placeholder={pending.placeholder}
                         aria-label={pending.title ?? pending.message}
                         className="mt-3"
-                        autoFocus
                     />
                     <Row align="stretch" justify="end" gap={2} className="mt-4">
                         <Button variant="ghost" size="sm" onClick={cancel}>

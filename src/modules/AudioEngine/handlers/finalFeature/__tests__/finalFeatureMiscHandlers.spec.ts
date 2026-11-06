@@ -1,13 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { addCvOutput } from '#/modules/CvGate/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { getLatencyReport } from '../../../useCases/latencyCompensation/compensation/getLatencyReport';
-import { handleAddCvOutput } from '../handleAddCvOutput';
 import { handleGetLatencyReport } from '../handleGetLatencyReport';
 
-vi.mock('#/modules/CvGate/useCases', () => ({ addCvOutput: vi.fn() }));
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: vi.fn() }));
 vi.mock('#/modules/Project/useCases', () => ({
     exportDawProject: vi.fn(async () => ({ bytes: new Uint8Array([0]), fileName: 'demo.dawproject' })),
@@ -17,11 +14,6 @@ vi.mock('../../../useCases/latencyCompensation/compensation/getLatencyReport', (
 describe('finalFeatureMiscHandlers', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-    });
-
-    it('handleAddCvOutput should delegate to addCvOutput', () => {
-        void handleAddCvOutput.execute({ type: 'addCvOutput', payload: { name: 'Gate 1', channel: 0, type: 'gate' } });
-        expect(addCvOutput).toHaveBeenCalledWith('Gate 1', 0, 'gate');
     });
 
     it('should notify with latency report details', () => {

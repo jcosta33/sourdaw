@@ -134,6 +134,13 @@ vi.mocked(useStore).mockImplementation((store: unknown, fallback: unknown) => {
     return fallback;
 });
 
+function queuePresetApproval(): void {
+    executionUseCaseMocks.submitAdmittedPromptRequest.mockImplementationOnce(async () => {
+        confirmationState = { confirmations: [{ id: 'confirmation-1', status: 'proposed' }] };
+        return { status: 'awaiting-approval' as const, runId: 'prompt-run-1', confirmationId: 'confirmation-1' };
+    });
+}
+
 describe('usePromptExecution', () => {
     beforeEach(() => {
         vi.clearAllMocks();
@@ -208,6 +215,9 @@ describe('usePromptExecution', () => {
         });
         executionUseCaseMocks.submitAdmittedPromptRequest.mockReset();
         executionUseCaseMocks.submitAdmittedPromptRequest.mockImplementation(async (input) => {
+            if (input.preset !== undefined) {
+                return { status: 'executed' as const, runId: 'prompt-run-1' };
+            }
             const planned =
                 input.actions === undefined
                     ? await executionUseCaseMocks.planPromptActions({ prompt: input.prompt, signal: input.signal })
@@ -340,110 +350,92 @@ describe('usePromptExecution', () => {
         expect(result.current.fuzzyResults).toEqual([]);
     });
 
-    it('previews a destructive preset, skips presets with no actions, and executes a non-destructive one through the action group', async () => {
-        const deleteAction: AppAction = { type: 'removeAllTracks' };
-        vi.mocked(resolvePresetActions).mockReturnValue([deleteAction]);
-        const { result, rerender } = renderHook(() => usePromptExecution());
-        const destructive = fuzzy(preset({ id: 'delete-track', label: 'Delete track', isDestructive: true }));
-
-        await act(async () => {
-            await result.current.executePreset(destructive);
+    it('submits the selected canonical preset ID and rendered context without resolving actions', async () => {
+        trackState = {
+            tracks: [{ id: 't1', name: 'Vocal', clips: [{ id: 'c1', name: 'Take', type: 'audio' }] }],
+            selectedTrackId: 't1',
+        };
+        clipState = { selectedClipId: 'c1', selectedClipIds: ['c1'], marqueeSelection: null };
+        const { result } = renderHook(() => usePromptExecution());
+        await act(async () => result.current.executePreset(fuzzy(preset())));
+        expect(executionUseCaseMocks.submitAdmittedPromptRequest).toHaveBeenCalledExactlyOnceWith({
+            prompt: 'Play',
+            source: 'preset',
+            preset: {
+                id: 'play',
+                expectedContext: {
+                    selectedTrackId: 't1',
+                    selectedTrackKind: undefined,
+                    selectedClipId: 'c1',
+                    selectedClipType: 'audio',
+                    trackCount: 1,
+                },
+            },
+            signal: expect.any(AbortSignal),
         });
-        expect(result.current.approval).toEqual({ runId: 'prompt-run-1', confirmationId: 'confirmation-1' });
+        expect(resolvePresetActions).not.toHaveBeenCalled();
         expect(executionUseCaseMocks.executePlannedActions).not.toHaveBeenCalled();
-
-        confirmationState = { confirmations: [{ id: 'confirmation-1', status: 'cancelled' }] };
-        rerender();
-
-        vi.mocked(resolvePresetActions).mockReturnValue([]);
-        await act(async () => {
-            await result.current.executePreset(fuzzy(preset({ id: 'no-op' })));
-        });
-        expect(executionUseCaseMocks.executePlannedActions).not.toHaveBeenCalled();
-
-        const playAction: AppAction = { type: 'togglePlayback' };
-        vi.mocked(resolvePresetActions).mockReturnValue([playAction]);
-        await act(async () => {
-            await result.current.executePreset(fuzzy(preset()));
-        });
-        expect(executionUseCaseMocks.executePlannedActions).toHaveBeenCalledWith(
-            expect.objectContaining({
-                actions: [playAction],
-                prompt: 'Play',
-                projectRevision: 'revision-1',
-                signal: expect.any(AbortSignal),
-            })
-        );
-        expect(vi.mocked(notifyAiChange)).toHaveBeenCalledWith('Executed: Play', ['togglePlayback']);
         expect(result.current.isProcessing).toBe(false);
         expect(result.current.value).toBe('');
     });
 
-    it('keeps a direct preset locked until Stop cancellation settles', async () => {
-        vi.mocked(resolvePresetActions).mockReturnValue([{ type: 'togglePlayback' }]);
-        executionUseCaseMocks.executePlannedActions.mockImplementationOnce((input) => {
-            return new Promise((resolve) => {
-                input.signal?.addEventListener('abort', () => resolve({ status: 'cancelled' }), { once: true });
-            });
+    it('retains a destructive preset preview and handles an application refusal without local execution', async () => {
+        queuePresetApproval();
+        const { result, rerender } = renderHook(() => usePromptExecution());
+        await act(async () =>
+            result.current.executePreset(
+                fuzzy(preset({ id: 'remove-track', label: 'Delete Track', isDestructive: true }))
+            )
+        );
+        expect(result.current.approval).toEqual({ runId: 'prompt-run-1', confirmationId: 'confirmation-1' });
+        expect(result.current.value).toBe('Delete Track');
+        confirmationState = { confirmations: [{ id: 'confirmation-1', status: 'cancelled' }] };
+        rerender();
+        executionUseCaseMocks.submitAdmittedPromptRequest.mockResolvedValueOnce({
+            status: 'rejected',
+            runId: 'prompt-run-2',
         });
-        const { result } = renderHook(() => usePromptExecution());
+        await act(async () => result.current.executePreset(fuzzy(preset({ id: 'unavailable' }))));
+        expect(result.current.approval).toBeNull();
+        expect(executionUseCaseMocks.executePlannedActions).not.toHaveBeenCalled();
+        expect(resolvePresetActions).not.toHaveBeenCalled();
+    });
 
+    it('keeps a direct preset locked until Stop cancellation settles', async () => {
+        executionUseCaseMocks.submitAdmittedPromptRequest.mockImplementationOnce(
+            (input) =>
+                new Promise((resolve) => {
+                    input.signal.addEventListener(
+                        'abort',
+                        () => resolve({ status: 'rejected', runId: 'prompt-run-1' }),
+                        { once: true }
+                    );
+                })
+        );
+        const { result } = renderHook(() => usePromptExecution());
         let execution = Promise.resolve();
         act(() => {
             execution = result.current.executePreset(fuzzy(preset()));
-
             void result.current.executePreset(fuzzy(preset()));
         });
-
-        expect(executionUseCaseMocks.executePlannedActions).toHaveBeenCalledTimes(1);
-        const executionSignal = executionUseCaseMocks.executePlannedActions.mock.calls[0]?.[0].signal;
+        expect(executionUseCaseMocks.submitAdmittedPromptRequest).toHaveBeenCalledOnce();
+        const signal = executionUseCaseMocks.submitAdmittedPromptRequest.mock.calls[0]?.[0].signal;
         expect(result.current.isProcessing).toBe(true);
-        expect(executionSignal?.aborted).toBe(false);
-
         act(() => result.current.cancelProcessing());
-        expect(executionSignal?.aborted).toBe(true);
+        expect(signal.aborted).toBe(true);
         expect(result.current.isProcessing).toBe(true);
-
         await act(async () => execution);
         expect(result.current.isProcessing).toBe(false);
     });
 
-    it('does not retry a failed post-commit notification or report the committed command as failed', async () => {
-        vi.mocked(resolvePresetActions).mockReturnValue([{ type: 'togglePlayback' }]);
-        executionUseCaseMocks.executePlannedActions.mockResolvedValueOnce({
-            status: 'committed',
-            actions: [{ actionType: 'togglePlayback', label: 'Toggle playback' }],
-            reportingWarning: 'notification: toast unavailable',
-        });
-        const { result } = renderHook(() => usePromptExecution());
-
-        await act(async () => {
-            await result.current.executePreset(fuzzy(preset()));
-        });
-
-        expect(vi.mocked(notifyAiChange)).not.toHaveBeenCalled();
-        expect(vi.mocked(logger.error)).not.toHaveBeenCalled();
-        expect(result.current.isProcessing).toBe(false);
-    });
-
-    it.each([undefined, 'transport follow-up unavailable'])(
-        'treats a runtime preset as successful without reporting a false no-op (warning: %s)',
-        async (executionWarning) => {
-            const action: AppAction = { type: 'setPlayback', payload: { playing: true } };
-            vi.mocked(resolvePresetActions).mockReturnValue([action]);
-            executionUseCaseMocks.executePlannedActions.mockResolvedValueOnce({
-                status: 'executed',
-                actions: [{ actionType: action.type, label: 'Start playback' }],
-                ...(executionWarning ? { executionWarning } : {}),
-            });
+    it.each(['executed', 'committed'])(
+        'accepts a successful %s preset outcome without duplicate notification',
+        async (status) => {
+            executionUseCaseMocks.submitAdmittedPromptRequest.mockResolvedValueOnce({ status, runId: 'prompt-run-1' });
             const { result } = renderHook(() => usePromptExecution());
-
-            await act(async () => {
-                await result.current.executePreset(fuzzy(preset()));
-            });
-
-            expect(vi.mocked(notifyAiChange)).not.toHaveBeenCalled();
-            expect(vi.mocked(logger.error)).not.toHaveBeenCalled();
+            await act(async () => result.current.executePreset(fuzzy(preset())));
+            expect(notifyAiChange).not.toHaveBeenCalled();
+            expect(logger.error).not.toHaveBeenCalled();
             expect(result.current.isProcessing).toBe(false);
         }
     );
@@ -607,7 +599,7 @@ describe('usePromptExecution', () => {
     it.each(['executed', 'cancelled', 'invalidated', 'failed'])(
         'clears its summary when the shared proposal becomes %s',
         async (status) => {
-            vi.mocked(resolvePresetActions).mockReturnValue([{ type: 'togglePlayback' }]);
+            queuePresetApproval();
             const { result, rerender } = renderHook(() => usePromptExecution());
             await act(async () => result.current.executePreset(fuzzy(preset({ isDestructive: true }))));
             expect(result.current.approval).toEqual({ runId: 'prompt-run-1', confirmationId: 'confirmation-1' });
@@ -665,7 +657,7 @@ describe('usePromptExecution', () => {
         });
         expect(result.current.value).toBe('play stop');
 
-        vi.mocked(resolvePresetActions).mockReturnValue([{ type: 'togglePlayback' }]);
+        queuePresetApproval();
         await act(async () => {
             await result.current.executePreset(
                 fuzzy(preset({ id: 'delete-track', label: 'Delete track', isDestructive: true }))
@@ -716,7 +708,7 @@ describe('usePromptExecution', () => {
     });
 
     it('leaves a handed-off canonical proposal intact when unmounted', async () => {
-        vi.mocked(resolvePresetActions).mockReturnValue([{ type: 'togglePlayback' }]);
+        queuePresetApproval();
         const { result, unmount } = renderHook(() => usePromptExecution());
         await act(async () => result.current.executePreset(fuzzy(preset({ isDestructive: true }))));
         expect(result.current.approval).not.toBeNull();
@@ -799,25 +791,23 @@ describe('usePromptExecution', () => {
         expect(inert.preventDefault).not.toHaveBeenCalled();
     });
 
-    it('executes the selected preset on Enter', async () => {
-        const playAction: AppAction = { type: 'togglePlayback' };
-        vi.mocked(getAvailablePresets).mockReturnValue([preset({ id: 'play', label: 'Play' })]);
-        vi.mocked(resolvePresetActions).mockReturnValue([playAction]);
+    it('submits the selected preset descriptor on Enter', async () => {
+        vi.mocked(getAvailablePresets).mockReturnValue([preset()]);
         const { result } = renderHook(() => usePromptExecution());
         act(() => result.current.setIsFocused(true));
         act(() => result.current.handleKeyDown({ key: 'ArrowDown', preventDefault: vi.fn() } as never));
-
         await act(async () => {
             result.current.handleKeyDown({ key: 'Enter', preventDefault: vi.fn() } as never);
         });
-        expect(executionUseCaseMocks.executePlannedActions).toHaveBeenCalledWith(
+        expect(executionUseCaseMocks.submitAdmittedPromptRequest).toHaveBeenCalledWith(
             expect.objectContaining({
-                actions: [playAction],
                 prompt: 'Play',
-                projectRevision: 'revision-1',
+                source: 'preset',
+                preset: { id: 'play', expectedContext: expect.any(Object) },
                 signal: expect.any(AbortSignal),
             })
         );
+        expect(resolvePresetActions).not.toHaveBeenCalled();
     });
 
     it('dismisses the fuzzy list on Escape without executing', () => {
@@ -891,8 +881,7 @@ describe('usePromptExecution', () => {
     });
 
     it('swallows errors thrown by executePreset and clears processing', async () => {
-        vi.mocked(resolvePresetActions).mockReturnValue([{ type: 'togglePlayback' }]);
-        executionUseCaseMocks.executePlannedActions.mockRejectedValueOnce(new Error('boom'));
+        executionUseCaseMocks.submitAdmittedPromptRequest.mockRejectedValueOnce(new Error('boom'));
         const { result } = renderHook(() => usePromptExecution());
 
         await act(async () => {

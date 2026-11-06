@@ -8,7 +8,7 @@
  * (`LEVAIN_ZONE_TABLE_CHUNK_ENTRIES` in `crates/daw-dsp/src/levain/mod.rs`): its
  * write window holds one LUT chunk and it refuses a longer one, so a chunk above
  * this is rejected, not trusted. A spec
- * (`AudioEngine/services/__tests__/levainProcessorZoneTables.spec.ts`) pins this
+ * (`AudioEngine/worklets/__tests__/levainProcessorZoneTables.spec.ts`) pins this
  * equal to the shipped engine's window. The chunks share the realm-wide
  * `LEVAIN_SAMPLE_CHUNKS_IN_FLIGHT` budget with the sample chunks: both land on
  * the same render thread.

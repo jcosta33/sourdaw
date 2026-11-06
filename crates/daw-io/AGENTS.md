@@ -19,5 +19,5 @@ Audio file decoding, format transcoding, and disk streaming primitives for nativ
 PR CI owns broader unit and crate suites. Locally run only the exact changed spec or filtered Rust test.
 
 ```bash
-pnpm cargo:test --package daw-io <filter>
+pnpm guard --profile focused -- pnpm cargo:test --package daw-io <filter>
 ```

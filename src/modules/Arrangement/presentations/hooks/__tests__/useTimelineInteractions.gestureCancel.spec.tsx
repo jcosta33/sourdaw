@@ -90,6 +90,15 @@ vi.mock('#/modules/WorkspaceShell/stores', async (importOriginal) => ({
         },
     },
 }));
+// One fixture carries both the active tool (workspace) and the
+// automation-visibility field (timeline editing), so each case seeds both.
+vi.mock('../../../stores/timelineEditingStore', () => ({
+    timelineEditingStore: {
+        get value() {
+            return mocks.workspaceStoreValue.value;
+        },
+    },
+}));
 vi.mock('#/modules/WorkspaceShell/useCases', () => ({
     setWorkspaceMode: mocks.setWorkspaceMode,
 }));
@@ -149,8 +158,11 @@ vi.mock('../../../useCases/timelineInteractions/snapToGrid', () => ({ snapToGrid
 vi.mock('../../../useCases/timelineInteractions/snapToGridOrClips', () => ({
     snapToGridOrClips: mocks.snapToGridOrClips,
 }));
-vi.mock('../../../useCases/timelineInteractions/snapToZeroCrossing', () => ({
+vi.mock('../../../useCases/timelineInteractions/snapToZeroCrossingBeat', () => ({
     snapToZeroCrossing: mocks.snapToZeroCrossing,
+}));
+vi.mock('../../../useCases/clipEditing/limitClipEndToSource', () => ({
+    limitClipEndToSource: (_: unknown, requestedEndBeat: number) => requestedEndBeat,
 }));
 vi.mock('../../../useCases/timelineInteractions/setPlayheadFromClick', () => ({
     setPlayheadFromClick: mocks.setPlayheadFromClick,

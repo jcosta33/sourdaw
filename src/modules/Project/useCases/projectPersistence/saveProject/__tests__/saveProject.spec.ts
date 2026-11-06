@@ -70,7 +70,20 @@ vi.mock('../../../../stores/projectStore', () => ({
     },
 }));
 
+vi.mock('#/modules/Collaboration/useCases', () => ({
+    captureProjectOriginalMedia: vi.fn(() => {
+        throw new Error('Unexpected original media capture in this fixture');
+    }),
+}));
+vi.mock('../collectProjectDirectoryPcm', () => ({
+    collectProjectDirectoryPcm: vi.fn(() => {
+        throw new Error('Unexpected directory PCM capture in this fixture');
+    }),
+}));
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
+    exportSdawFile: vi.fn(() => {
+        throw new Error('Unexpected directory document export in this fixture');
+    }),
     captureProjectMutationAuthorization: vi.fn(() => () => true),
     captureProjectRevision: mocks.captureProjectRevision,
     persistCrdtProject: mocks.persistCrdtProject,
@@ -234,6 +247,40 @@ describe('saveProject', () => {
         expect(mocks.projectStoreSet).toHaveBeenLastCalledWith(
             expect.objectContaining({ dirty: false, identityPersistencePending: false })
         );
+    });
+
+    it('clears the dirty state when an explicit save cannot open a folder picker', async () => {
+        const picker = vi.fn(() => Promise.reject(new DOMException('The user aborted a request.', 'AbortError')));
+        Object.defineProperty(window, 'showDirectoryPicker', { configurable: true, value: picker });
+        try {
+            await expect(saveProject({ requestFolderSelection: true })).resolves.toBe(true);
+
+            expect(picker).toHaveBeenCalledTimes(1);
+            expect(mocks.persistCrdtProject).toHaveBeenCalledTimes(1);
+            expect(mocks.writeNamedProjectJsonByKey).toHaveBeenCalledTimes(1);
+            expect(mocks.projectStoreSet).toHaveBeenLastCalledWith(expect.objectContaining({ dirty: false }));
+            expect(mocks.notifyUser).not.toHaveBeenCalled();
+        } finally {
+            Reflect.deleteProperty(window, 'showDirectoryPicker');
+        }
+    });
+
+    it('saves the named project when no folder is offered or bound', async () => {
+        const picker = vi.fn(() => {
+            throw new Error('Unexpected folder picker for a background save');
+        });
+        Object.defineProperty(window, 'showDirectoryPicker', { configurable: true, value: picker });
+        try {
+            await expect(saveProject()).resolves.toBe(true);
+
+            expect(picker).not.toHaveBeenCalled();
+            expect(mocks.persistCrdtProject).toHaveBeenCalledTimes(1);
+            expect(mocks.writeNamedProjectJsonByKey).toHaveBeenCalledTimes(1);
+            expect(mocks.projectStoreSet).toHaveBeenLastCalledWith(expect.objectContaining({ dirty: false }));
+            expect(mocks.notifyUser).not.toHaveBeenCalled();
+        } finally {
+            Reflect.deleteProperty(window, 'showDirectoryPicker');
+        }
     });
 
     it('finishes identity migration before building a versioned snapshot', async () => {

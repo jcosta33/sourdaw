@@ -9,6 +9,7 @@ export { commandProjectDivergencePort } from './commandProjectDivergencePort';
 export { commandBatchPreflightPort } from './commandBatchPreflightPort';
 export { commandBatchPreviewPort } from './commandBatchPreviewPort';
 export { commandRuntimeRepairPort } from './commandRuntimeRepairPort';
+export { undoReplayPreparationPort } from './undoReplayPreparationPort';
 export { configureCommandBatchIdempotency } from './configureCommandBatchIdempotency';
 export { resetCommandBatchIdempotency } from './resetCommandBatchIdempotency';
 export { canExecuteCommandBatchEffects } from './canExecuteCommandBatchEffects';
@@ -99,6 +100,7 @@ export { getUndoTreeHandlers } from './getUndoTreeHandlers';
 
 export { startMacroRecording } from './macro/recording/startMacroRecording';
 export { stopMacroRecording } from './macro/recording/stopMacroRecording';
+export { macroCoreReads } from './macro/macroCoreReads';
 
 export { undo } from './undo';
 export { readUndoEntryForInverse } from './readUndoEntryForInverse';
@@ -120,6 +122,7 @@ export { pushUndoEntry } from './pushUndoEntry';
 export { commitActionUndoEntry } from './commitActionUndoEntry';
 export { commitUndoEntry } from './commitUndoEntry';
 export { normalizeLegacyLoopAnchorInverse } from './normalizeLegacyLoopAnchorInverse';
+export { legacyInverseReplayAdmission } from './legacyInverseReplayAdmission';
 // Pitch-edit dispatch (`getPitchHandlers`) and dependency injection
 // (`setPitchEditDependencies`) now live in Knead/useCases — Knead owns the
 // pitch aggregate. See ADR 0011 Wave 3.

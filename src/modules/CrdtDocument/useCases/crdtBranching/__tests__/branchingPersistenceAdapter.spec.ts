@@ -1,6 +1,8 @@
 import { clone as cloneDoc } from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
+import { registerKernelPorts } from '#/app/registerKernelPorts';
 import { configureAutomergeStoragePort, createAutomergeStorage } from '#/infra/store/storage/createAutomergeStorage';
 import { createControlledLockManager } from '#/infra/testing/createControlledLockManager';
 
@@ -8,6 +10,8 @@ import { automergeRepository } from '../../../repositories/automergeRepository';
 import { branchStore, type BranchRecord, MAIN_BRANCH_ID } from '../../../stores/branchStore';
 import { forkProjectBranch } from '../forkProjectBranch';
 import { switchBranch } from '../switchBranch';
+
+registerDeviceEnginePorts();
 
 vi.mock('../../compactProject', () => ({
     compactProject: vi.fn().mockResolvedValue(undefined),
@@ -41,6 +45,8 @@ function configureRealStorageAdapter(): void {
         },
     });
 }
+
+registerKernelPorts();
 
 describe('CRDT branch persistence adapter interleavings', () => {
     let nextAnimationFrameId = 0;

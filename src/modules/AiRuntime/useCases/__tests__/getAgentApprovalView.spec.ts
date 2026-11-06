@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { trackStore } from '#/modules/Arrangement/stores';
 import {
     buildSemanticProjectDiff,
@@ -24,6 +25,8 @@ import { recordAgentProviderUsage } from '../recordAgentProviderUsage';
 
 import { createTrack } from './trackFixture';
 
+registerDeviceEnginePorts();
+
 const REVISION = 'revision-approval-view';
 const GAIN_COMMAND_ID = '33333333-3333-4333-8333-333333333331';
 const REMOVE_COMMAND_ID = '33333333-3333-4333-8333-333333333332';
@@ -33,7 +36,8 @@ const mocks = vi.hoisted(() => ({
     validateApproval: vi.fn(),
 }));
 
-vi.mock('#/modules/CrdtDocument/useCases', () => ({
+vi.mock('#/modules/CrdtDocument/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/CrdtDocument/useCases')>()),
     captureProjectRevision: mocks.captureRevision,
 }));
 
@@ -327,16 +331,22 @@ describe('getAgentApprovalView', () => {
         });
     });
 
-    // Red when a proposal matching the live revision is offered a re-preview anyway.
-    it('reports a matching proposal as current and withholds re-preview', () => {
+    // A matching legacy batch has no positive whole-request intent; freshness alone cannot approve it.
+    it('reports a matching legacy proposal as current but unverified and requires resubmission', () => {
         propose('confirmation-current');
 
         const view = getAgentApprovalView({ confirmationId: 'confirmation-current' });
 
         expect(view?.freshness).toEqual({ status: 'current', currentRevision: REVISION });
+        expect(view?.canConfirm).toBe(false);
+        expect(view?.metricGoals).toMatchObject({
+            status: 'blocked',
+            failure: 'missing',
+            reason: 'The whole request has no positive metric intent admission. The plan remains unverified.',
+        });
         expect(view?.rePreview).toEqual({
             available: false,
-            reason: 'The proposal still matches the current project.',
+            reason: 'Submit the request again to establish its whole-request intent.',
         });
         expect(mocks.validateApproval).toHaveBeenCalledWith(
             expect.objectContaining({ currentRevision: REVISION, approval: expect.objectContaining(AGENT_APPROVAL) })
@@ -344,7 +354,7 @@ describe('getAgentApprovalView', () => {
     });
 
     // Red when a stale validation is reported as mismatched, or stops offering a re-preview.
-    it('reports a drifted proposal as stale and offers a re-preview', () => {
+    it('reports a drifted legacy proposal as stale while requiring resubmission', () => {
         mocks.captureRevision.mockReturnValue('revision-moved');
         mocks.validateApproval.mockReturnValue({
             status: 'invalid',
@@ -360,7 +370,10 @@ describe('getAgentApprovalView', () => {
             reason: 'The approved source revision is stale.',
             currentRevision: 'revision-moved',
         });
-        expect(view?.rePreview).toEqual({ available: true, reason: null });
+        expect(view?.rePreview).toEqual({
+            available: false,
+            reason: 'Submit the request again to establish its whole-request intent.',
+        });
     });
 
     // Red when a non-stale invalidity is folded into `stale` and loses the binding-mismatch reason.
@@ -379,7 +392,10 @@ describe('getAgentApprovalView', () => {
             reason: 'The local actor no longer matches the approval.',
             currentRevision: REVISION,
         });
-        expect(view?.rePreview).toEqual({ available: true, reason: null });
+        expect(view?.rePreview).toEqual({
+            available: false,
+            reason: 'Submit the request again to establish its whole-request intent.',
+        });
     });
 
     // Red when the view runs the validator over an invalidated proposal instead of reading its recorded reason.

@@ -2,6 +2,7 @@ import {
     type TrackStoreState,
     type TakeLaneStoreState,
     type GainEnvelopeStoreState,
+    type SoloMode,
     type VcaGroupState,
 } from '#/modules/Arrangement/stores';
 import { type AutomationStoreState } from '#/modules/Automation/stores';
@@ -13,8 +14,35 @@ import {
     type TempoMapStoreState,
     type TimeSignatureMapStoreState,
 } from '#/modules/Transport/stores';
-import { type workspaceStore } from '#/modules/WorkspaceShell/stores';
-import { type YeastProcessorInfo } from '#/modules/Yeast/stores';
+
+/**
+ * One processor of a Yeast rack, in AudioEngine's own words. Capture passes
+ * racks through untouched: the composition root reads them from Yeast into
+ * `configureOfflineYeastMidiProcessing`'s reader and hands them back to Yeast's
+ * offline processor, so both crossings check this shape against Yeast's own.
+ */
+export type OfflineYeastProcessor = {
+    id: string;
+    type:
+        | 'arpeggiator'
+        | 'chord'
+        | 'chordMemory'
+        | 'scale'
+        | 'harmonizer'
+        | 'repeater'
+        | 'velocity'
+        | 'humanizer'
+        | 'filter'
+        | 'transposer'
+        | 'groove'
+        | 'ccGenerator'
+        | 'euclidean'
+        | 'markov'
+        | 'mutation';
+    name: string;
+    bypassed: boolean;
+    params?: Record<string, number>;
+};
 
 export type OfflineAudioBufferSource = Readonly<{
     get(id: string): AudioBuffer | undefined;
@@ -34,7 +62,7 @@ export type OfflineRenderProjectSource = {
     vcaGroups: VcaGroupState['groups'];
     grooveTemplates: GrooveTemplateState | null;
     chordTrack: ChordTrackState | null;
-    yeastProcessorsByDevice: Readonly<Record<string, readonly YeastProcessorInfo[]>>;
+    yeastProcessorsByDevice: Readonly<Record<string, readonly OfflineYeastProcessor[]>>;
 };
 
 /** Runtime/asset facts are separate from document truth and can be captured for a supplied document. */
@@ -44,5 +72,5 @@ export type OfflineRenderRuntimeSource = {
     loadedExternalInstanceIds: ReadonlySet<string>;
     externalPluginParameters: typeof externalPluginParameterStore.value;
     calibrationByDevice: ReadonlyMap<string, Readonly<Record<string, number>> | null>;
-    soloMode: NonNullable<typeof workspaceStore.value>['soloMode'];
+    soloMode: SoloMode;
 };

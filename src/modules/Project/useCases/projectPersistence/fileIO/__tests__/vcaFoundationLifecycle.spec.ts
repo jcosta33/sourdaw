@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import { registerSupportingServicePorts } from '#/app/registerSupportingServicePorts';
 import { markerStore, takeLaneStore, trackStore } from '#/modules/Arrangement/stores';
 import { normalizeTrack } from '#/modules/Arrangement/useCases';
 import { automationStore } from '#/modules/Automation/stores';
@@ -24,6 +25,8 @@ import { serializeArrangementTracks } from '../serializeArrangementTracks';
 function vcaMemberTrack(id: string, vcaGroupId: string) {
     return normalizeTrack({ id, name: id, kind: 'audio', clips: [], vcaGroupId });
 }
+
+registerSupportingServicePorts();
 
 describe('VCA clip-foundation lifecycle preservation', () => {
     beforeEach(() => {

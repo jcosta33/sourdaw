@@ -65,6 +65,8 @@ export type MidiNote = {
     articulation?: string;
     /** Expression changes after note-on; see `MidiNoteExpression`. */
     expression?: MidiNoteExpression;
+    /** Original recording pass; absent for legacy and manually made notes. */
+    recordingPassIndex?: number;
 };
 
 export const MIDI_NOTE_REQUIRED_KEYS = ['id', 'pitch', 'startBeat', 'duration', 'velocity'] as const;
@@ -77,6 +79,7 @@ export const MIDI_NOTE_OPTIONAL_KEYS = [
     'channel',
     'articulation',
     'expression',
+    'recordingPassIndex',
 ] as const;
 
 export type MidiCC = {
@@ -94,13 +97,23 @@ export type MidiCC = {
  * (-8192..8191) with 0 at centre — the same unit as `MidiNote.pitchBend`. Like
  * that scalar it carries no depth of its own: the semitone range is the
  * channel's, declared through RPN 0.
+ *
+ * A bend the recorder captured from a channel's wheel with MPE off moves the
+ * notes of that channel only, as the live wheel does, and says so with
+ * `channelScoped: true`. Every other row (drawn in the lane, imported, saved
+ * before rows were scoped, or the MPE zone master's, which reaches every member
+ * channel) leaves it absent and bends every note of the track.
  */
 export type MidiPitchBend = {
     id: string;
     value: number;
     beat: number;
     channel: number;
+    channelScoped?: boolean;
 };
+
+export const MIDI_PITCH_BEND_REQUIRED_KEYS = ['id', 'value', 'beat', 'channel'] as const;
+export const MIDI_PITCH_BEND_OPTIONAL_KEYS = ['channelScoped'] as const;
 
 export function isValidMidiArticulation(value: unknown): value is string {
     if (typeof value !== 'string' || value.length === 0 || value.length > 128 || value !== value.trim()) {
@@ -122,9 +135,10 @@ function isExpressionValueInRange(dimension: MidiExpressionDimension, value: num
     return value >= 0 && value <= MAX_MIDI_DATA_7BIT;
 }
 
+// String keys only: an Automerge document object also carries symbol keys for its own metadata.
 function hasExactOwnKeys(value: object, keys: readonly string[]): boolean {
-    const ownKeys = Reflect.ownKeys(value);
-    return ownKeys.length === keys.length && ownKeys.every((key) => typeof key === 'string' && keys.includes(key));
+    const ownKeys = Object.keys(value);
+    return ownKeys.length === keys.length && ownKeys.every((key) => keys.includes(key));
 }
 
 function isExpressionPoint(dimension: MidiExpressionDimension, value: unknown): value is MidiExpressionPoint {
@@ -184,17 +198,15 @@ export function isValidMidiNoteExpression(value: unknown, duration: number): val
     if (value === null || typeof value !== 'object' || Array.isArray(value)) {
         return false;
     }
-    const ownKeys = Reflect.ownKeys(value);
+    const ownKeys = Object.keys(value);
     if (ownKeys.length === 0) {
         return false;
     }
-    return ownKeys.every(
-        (key) =>
-            typeof key === 'string' &&
-            MIDI_EXPRESSION_DIMENSIONS.some(
-                (dimension) =>
-                    dimension === key && isValidMidiExpressionCurve(dimension, Reflect.get(value, dimension), duration)
-            )
+    return ownKeys.every((key) =>
+        MIDI_EXPRESSION_DIMENSIONS.some(
+            (dimension) =>
+                dimension === key && isValidMidiExpressionCurve(dimension, Reflect.get(value, dimension), duration)
+        )
     );
 }
 
@@ -225,11 +237,10 @@ export function createMidiCC(controller: number, value: number, beat: number, ch
     };
 }
 
-export function createMidiPitchBend(value: number, beat: number, channel = 0): MidiPitchBend {
-    return {
-        id: `pb-${crypto.randomUUID()}`,
-        value,
-        beat,
-        channel,
-    };
+export function createMidiPitchBend(value: number, beat: number, channel = 0, channelScoped = false): MidiPitchBend {
+    const created: MidiPitchBend = { id: `pb-${crypto.randomUUID()}`, value, beat, channel };
+    if (channelScoped) {
+        created.channelScoped = true;
+    }
+    return created;
 }

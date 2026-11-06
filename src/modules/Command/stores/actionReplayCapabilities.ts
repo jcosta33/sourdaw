@@ -155,7 +155,29 @@ export function hasCurrentActionReplayCapability({
     );
 }
 
+let action_history_staging_depth = 0;
+
+/**
+ * Stages command history inside its still-open storage transaction. The
+ * history store shows staged entries before the commit settles, and the
+ * commit may still be vetoed or refused, so metadata sync must not revoke the
+ * authority of an entry the staged write evicts. The settled history's own
+ * notification, after the commit lands or the abort restores it, syncs
+ * authority against what is actually durable.
+ */
+export function runActionHistoryStaging<Result>(stage: () => Result): Result {
+    action_history_staging_depth += 1;
+    try {
+        return stage();
+    } finally {
+        action_history_staging_depth -= 1;
+    }
+}
+
 export function syncActionReplayCapabilityMetadata(entries: readonly ActionReplayMetadata[]): void {
+    if (action_history_staging_depth > 0) {
+        return;
+    }
     const entries_by_id = new Map(entries.map((entry) => [entry.id, entry]));
     for (const [entry_id, record] of action_replay_capabilities) {
         const current = entries_by_id.get(entry_id);

@@ -4,8 +4,10 @@ import {
     describeLevelLawDb,
     FADER_GAIN_RANGE_DESCRIPTION,
     FADER_MAX_GAIN_LABEL,
+    METRONOME_LEVEL_LAW,
     SEND_LEVEL_LAW,
     TRACK_FADER_LAW,
+    VCA_LEVEL_LAW,
 } from '#/utils/audioLevelLaw';
 import { type AppAction, type AppActionType } from '#/utils/handlerContract';
 import { getMarkerColorNames } from '#/utils/markerColorPalette';
@@ -148,12 +150,20 @@ export type ExecutableAppActionDirectionalIntent = {
 
 export type ExecutableAppActionDiscoverability = 'hidden' | 'visible';
 
+export type ExecutableAppActionSessionReplay = 'forward' | 'none';
+
 type ExecutableAppActionDescriptor = {
     actionType: AppActionType;
     operationVersion?: number;
     risk: ExecutableAppActionRisk;
     description: string;
     discoverability?: ExecutableAppActionDiscoverability;
+    /**
+     * `none` keeps the command out of the forward contracts a reload replays undo entries through,
+     * so registering it leaves its undo history across a reload exactly as it was before it was
+     * executable. Absent means `forward`.
+     */
+    sessionReplay?: ExecutableAppActionSessionReplay;
     intentPhrases: readonly string[];
     /**
      * Phrases that name this action only in a clause stating a decibel figure in a form one of its
@@ -317,7 +327,11 @@ export const executableAppActionDescriptors = [
         ],
         parameters: {
             properties: {
-                name: { type: 'string', description: 'Display name (e.g. "Kick", "Vocals", "Synth Pad")' },
+                name: {
+                    type: 'string',
+                    description:
+                        'Display name (e.g. "Kick", "Vocals", "Synth Pad"). Omit it to name the track by its kind and the next free number.',
+                },
                 kind: { type: 'string', enum: ['audio', 'midi', 'folder'], description: 'Track type' },
                 binding: {
                     type: 'string',
@@ -326,7 +340,7 @@ export const executableAppActionDescriptors = [
                         'Optional plan-local name. Later calls may target this newly created track as $<binding>.',
                 },
             },
-            required: ['name', 'kind'],
+            required: ['kind'],
         },
     },
     {
@@ -1417,6 +1431,19 @@ export const executableAppActionDescriptors = [
         },
     },
     {
+        actionType: 'removeCompRegion',
+        risk: 'bounded-reversible',
+        description: "Remove one existing interval from a track's comp lane.",
+        discoverability: 'hidden',
+        intentPhrases: [],
+        targetRules: existingTrackTargetRules,
+        materializedArgumentsValidation: 'owner-required',
+        parameters: {
+            properties: { trackId: { type: 'string' }, startBeat: { type: 'number', minimum: 0 } },
+            required: ['trackId', 'startBeat'],
+        },
+    },
+    {
         actionType: 'setSoloSafe',
         risk: 'bounded-reversible',
         description: 'Enable or disable solo-safe protection for a track.',
@@ -1596,6 +1623,25 @@ export const executableAppActionDescriptors = [
                 denominator: { type: 'integer', enum: [2, 4, 8, 16], description: 'Beat unit' },
             },
             required: ['numerator', 'denominator'],
+        },
+    },
+    {
+        actionType: 'setProductionBrief',
+        risk: 'authority-sensitive',
+        description:
+            "Replace the project's production brief with the next revision the application composed from a request.",
+        // Only `brief.compile` reaches it: the application composes the whole brief, so no provider
+        // ever names this command or its arguments.
+        discoverability: 'hidden',
+        sessionReplay: 'none',
+        intentPhrases: [],
+        targetRules: [],
+        parameters: {
+            properties: {
+                expectedRevision: { type: 'integer', minimum: 0 },
+                brief: { type: 'object' },
+            },
+            required: ['expectedRevision', 'brief'],
         },
     },
     {
@@ -1919,15 +1965,39 @@ export const executableAppActionDescriptors = [
     {
         actionType: 'setMetronomeVolume',
         risk: 'bounded-reversible',
-        description: 'Set metronome volume from 0.0 through 1.0.',
-        intentPhrases: ['set metronome volume', 'set the metronome volume', 'change metronome volume'],
+        description: `Set metronome volume in decibels. Exactly one of volumeDb, deltaDb, or volume. ${describeLevelLawDb(METRONOME_LEVEL_LAW)}.`,
+        intentPhrases: [
+            'set metronome volume',
+            'set the metronome volume',
+            'change metronome volume',
+            'turn the metronome volume down',
+            'turn the metronome volume up',
+        ],
         targetRules: [],
         valueRules: [
-            { argument: 'volume', kind: 'number-if-present', requiredInPrompt: true, scale: 'percentage-only' },
+            { argument: 'volumeDb', kind: 'number-if-present', requiredInPrompt: true, levelForm: 'absolute-decibel' },
+            { argument: 'deltaDb', kind: 'number-if-present', requiredInPrompt: true, levelForm: 'relative-decibel' },
+            {
+                argument: 'volume',
+                kind: 'number-if-present',
+                requiredInPrompt: true,
+                scale: 'percentage-only',
+                levelForm: 'linear',
+            },
         ],
         parameters: {
-            properties: { volume: { type: 'number', description: '0.0 to 1.0' } },
-            required: ['volume'],
+            properties: {
+                volumeDb: {
+                    type: 'number',
+                    description: `Absolute metronome level. ${describeLevelLawDb(METRONOME_LEVEL_LAW)}`,
+                },
+                deltaDb: {
+                    type: 'number',
+                    description: 'Relative change in decibels from the current metronome level.',
+                },
+                volume: { type: 'number', description: 'Deprecated linear volume from 0.0 to 1.0; prefer decibels.' },
+            },
+            required: [],
         },
     },
     {
@@ -1998,7 +2068,7 @@ export const executableAppActionDescriptors = [
     {
         actionType: 'setVcaGain',
         risk: 'authority-sensitive',
-        description: 'Set an existing VCA group gain from 0.0 through 2.0.',
+        description: `Set an existing VCA group gain in decibels. Exactly one of gainDb, deltaDb, or gain. ${describeLevelLawDb(VCA_LEVEL_LAW)}.`,
         intentPhrases: [
             'set vca gain',
             'set the vca gain',
@@ -2007,14 +2077,28 @@ export const executableAppActionDescriptors = [
             'set the vca volume',
             'change vca volume',
         ],
+        levelIntentPhrases: [],
+        referencedLevelIntentPhrases: ['set {reference} gain to', 'set {reference} volume to'],
         targetRules: [{ argument: 'vcaGroupId', capability: 'vca-group' }],
-        valueRules: [{ argument: 'gain', kind: 'number-if-present', requiredInPrompt: true, scale: 'percentage-only' }],
+        valueRules: [
+            { argument: 'gainDb', kind: 'number-if-present', requiredInPrompt: true, levelForm: 'absolute-decibel' },
+            { argument: 'deltaDb', kind: 'number-if-present', requiredInPrompt: true, levelForm: 'relative-decibel' },
+            {
+                argument: 'gain',
+                kind: 'number-if-present',
+                requiredInPrompt: true,
+                scale: 'percentage-only',
+                levelForm: 'linear',
+            },
+        ],
         parameters: {
             properties: {
                 vcaGroupId: { type: 'string', description: 'Existing VCA group ID' },
-                gain: { type: 'number', description: '0.0 to 2.0' },
+                gainDb: { type: 'number', description: `Absolute VCA gain. ${describeLevelLawDb(VCA_LEVEL_LAW)}` },
+                deltaDb: { type: 'number', description: 'Relative change in decibels from the current VCA gain.' },
+                gain: { type: 'number', description: 'Deprecated linear gain from 0.0 to 2.0; prefer decibels.' },
             },
-            required: ['vcaGroupId', 'gain'],
+            required: ['vcaGroupId'],
         },
     },
     {
@@ -2371,17 +2455,19 @@ export const executableAppActionDescriptors = [
         actionType: 'automateTrackGainRange',
         risk: 'authority-sensitive',
         description:
-            'Lift an app-grounded set of impact buses by a bounded relative dB amount inside one arrangement section.',
-        intentPhrases: ['make the second chorus hit harder', 'second chorus hit harder'],
+            'Lift each named bus by a bounded relative dB amount as gain automation inside one named arrangement section.',
+        intentPhrases: ['lift', 'gain lift'],
         targetRules: [
             {
                 argument: 'trackIds',
                 capability: 'routable-source',
                 cardinality: 'many',
-                promptRole: 'members',
             },
         ],
-        valueRules: [],
+        valueRules: [
+            { argument: 'sectionName', kind: 'section-reference' },
+            { argument: 'gainDb', kind: 'number-if-present', requiredInPrompt: true },
+        ],
         parameters: {
             properties: {
                 trackIds: {
@@ -2389,14 +2475,14 @@ export const executableAppActionDescriptors = [
                     items: { type: 'string' },
                     minItems: 1,
                     uniqueItems: true,
-                    description: 'Exact app-grounded impact-bus IDs',
+                    description: 'The exact buses the request names',
                 },
-                sectionName: { type: 'string', description: 'Existing target chorus name' },
+                sectionName: { type: 'string', description: 'Existing arrangement section name the request names' },
                 gainDb: {
                     type: 'number',
                     exclusiveMinimum: 0,
                     maximum: 6,
-                    description: 'Bounded decibel lift selected by the planning policy',
+                    description: 'Positive number of decibels the request states to lift the gain inside the section',
                 },
             },
             required: ['trackIds', 'sectionName', 'gainDb'],
@@ -3147,6 +3233,7 @@ export const executableAppActionMutationIdentityRulesByType = {
     soloTrack: TRACK_MUTATION_IDENTITY,
     selectTake: TRACK_MUTATION_IDENTITY,
     setCompRegion: TRACK_MUTATION_IDENTITY,
+    removeCompRegion: TRACK_MUTATION_IDENTITY,
     setSoloSafe: TRACK_MUTATION_IDENTITY,
     clearSolos: SINGLETON_MUTATION_IDENTITY,
     armTrack: TRACK_MUTATION_IDENTITY,
@@ -3157,6 +3244,7 @@ export const executableAppActionMutationIdentityRulesByType = {
     reorderTrack: TRACK_MUTATION_IDENTITY,
     setTempo: SINGLETON_MUTATION_IDENTITY,
     setTimeSignature: SINGLETON_MUTATION_IDENTITY,
+    setProductionBrief: SINGLETON_MUTATION_IDENTITY,
     setPlayback: SINGLETON_MUTATION_IDENTITY,
     stopPlayback: SINGLETON_MUTATION_IDENTITY,
     seekPlayhead: SINGLETON_MUTATION_IDENTITY,
@@ -3263,6 +3351,7 @@ export const executableAppActionMutationIdempotenceByType = {
     soloTrack: true,
     selectTake: true,
     setCompRegion: false,
+    removeCompRegion: false,
     setSoloSafe: true,
     clearSolos: false,
     armTrack: true,
@@ -3273,6 +3362,7 @@ export const executableAppActionMutationIdempotenceByType = {
     reorderTrack: false,
     setTempo: true,
     setTimeSignature: true,
+    setProductionBrief: false,
     setPlayback: true,
     stopPlayback: false,
     seekPlayhead: false,

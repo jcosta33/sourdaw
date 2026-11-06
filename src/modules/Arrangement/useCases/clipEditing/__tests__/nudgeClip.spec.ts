@@ -5,6 +5,12 @@ import { nudgeClip } from '../nudgeClip';
 import type { Clip } from '#/modules/Arrangement/models/Track';
 import type { updateClip as originalUpdateClip } from '#/modules/Arrangement/repositories/track/updateClip';
 
+const { shiftClipAutomation } = vi.hoisted(() => ({
+    shiftClipAutomation: vi.fn<(clipId: string, delta: number) => void>(),
+}));
+
+vi.mock('#/modules/Automation/useCases', () => ({ shiftClipAutomation }));
+
 const mocks = vi.hoisted(() => ({
     updateClip: vi.fn<typeof originalUpdateClip>(),
     getTrackState: vi.fn<() => { tracks: unknown[] } | null>(),
@@ -47,10 +53,26 @@ describe('nudgeClip', () => {
             throw new Error('expected updateClip to have been called');
         }
         const updater = updateCall[1];
-        const result = updater({ startBeat: 4, endBeat: 8, locked: false } as Partial<Clip> as Clip);
+        const result = updater({
+            startBeat: 4,
+            endBeat: 8,
+            locked: false,
+            audioOffsetSeconds: 0.5,
+            audioUnwrappedOffsetSeconds: 0,
+            audioLoopStartSeconds: 0,
+            audioLoopPassEntrySeconds: 0.25,
+            audioLoopPassOriginBeat: 3,
+        } as Partial<Clip> as Clip);
 
         expect(result.startBeat).toBe(0);
         expect(result.endBeat).toBe(4);
+        expect(result).toMatchObject({
+            audioOffsetSeconds: 0.5,
+            audioUnwrappedOffsetSeconds: 0,
+            audioLoopStartSeconds: 0,
+            audioLoopPassEntrySeconds: 0.25,
+            audioLoopPassOriginBeat: -1,
+        });
     });
 
     it('respects lock status', () => {
@@ -74,5 +96,33 @@ describe('nudgeClip', () => {
 
         expect(nudgeClip('c1', 2)).toBe(true);
         expect(mocks.updateClip).toHaveBeenCalledWith('c1', expect.any(Function));
+    });
+
+    it('shifts clip automation by the applied clamp delta', () => {
+        mocks.updateClip.mockImplementation((_clipId, updater) => {
+            updater({ startBeat: 4, endBeat: 8, locked: false } as Partial<Clip> as Clip);
+            return true;
+        });
+
+        expect(nudgeClip('c1', -10)).toBe(true);
+        expect(shiftClipAutomation).toHaveBeenCalledExactlyOnceWith('c1', -4);
+    });
+
+    it('rejects non-finite input before the clip updater', () => {
+        expect(nudgeClip('c1', Number.NaN)).toBe(false);
+        expect(mocks.updateClip).not.toHaveBeenCalled();
+    });
+
+    it('does not mint physical source fields during a zero nudge of a legacy clip', () => {
+        const clip = { startBeat: 4, endBeat: 8, locked: false } as Partial<Clip> as Clip;
+        mocks.updateClip.mockImplementation((_clipId, updater) => {
+            const result = updater(clip);
+            expect(result).not.toHaveProperty('audioOffsetSeconds');
+            expect(result).not.toHaveProperty('audioLoopPassOriginBeat');
+            return true;
+        });
+
+        expect(nudgeClip('c1', 0)).toBe(true);
+        expect(shiftClipAutomation).not.toHaveBeenCalled();
     });
 });

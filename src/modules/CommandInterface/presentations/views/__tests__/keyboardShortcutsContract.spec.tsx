@@ -1,6 +1,7 @@
 import { render } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
+import { currentKeyboardLayoutMap } from '#/infra/keyboardLayout/keyboardLayoutMap';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 import { defaultProjectStoreState, projectLoadFailureStore, projectStore } from '#/modules/Project/stores';
 import { type ActionHandler } from '#/utils/handlerContract';
@@ -26,7 +27,7 @@ const Host = (): null => {
     return null;
 };
 
-// Reads the `isInput` flag the contract passed on the most recent keydown.
+// Reports whether the contract classified the most recent keydown as text entry.
 // jsdom returns `undefined` (not `false`) for `HTMLElement.isContentEditable`
 // on non-editable nodes, so the contract's `... || target.isContentEditable`
 // can yield `undefined` for an ungated target; that is still "not gated".
@@ -34,7 +35,13 @@ const Host = (): null => {
 function lastIsInput(): boolean {
     const calls = mocks.handleKeydown.mock.calls;
     expect(calls.length).toBeGreaterThan(0);
-    return Boolean(calls[calls.length - 1]![0].isInput);
+    return calls[calls.length - 1]![0].keyTarget === 'textEntry';
+}
+
+function lastKeyTarget(): string {
+    const calls = mocks.handleKeydown.mock.calls;
+    expect(calls.length).toBeGreaterThan(0);
+    return calls[calls.length - 1]![0].keyTarget;
 }
 
 function stubTogglePlaybackHandler(): ActionHandler {
@@ -45,7 +52,7 @@ function stubTogglePlaybackHandler(): ActionHandler {
     };
 }
 
-describe('useGlobalKeyboardShortcuts — data-canvas-editor delete gate (#21)', () => {
+describe('useGlobalKeyboardShortcuts — canvas editors claim their own keys (#21)', () => {
     let cleanupNodes: HTMLElement[] = [];
 
     beforeEach(() => {
@@ -81,6 +88,12 @@ describe('useGlobalKeyboardShortcuts — data-canvas-editor delete gate (#21)', 
             initialized: true,
         });
         registerHandlerMap({ togglePlayback: stubTogglePlaybackHandler() });
+    }
+
+    // A mouse click presses the pointer on the button, then focus follows.
+    function focusByPointer(element: HTMLElement): void {
+        element.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true }));
+        element.focus();
     }
 
     function mount(node: HTMLElement): HTMLElement {
@@ -143,18 +156,66 @@ describe('useGlobalKeyboardShortcuts — data-canvas-editor delete gate (#21)', 
         expect(mocks.handleKeydown).toHaveBeenCalledTimes(1);
     });
 
-    it('gates the global shortcut (isInput=true) when Delete fires inside a [data-canvas-editor]', () => {
+    it('routes undo to the global layer while a [data-canvas-editor] has focus', () => {
         openSessionWithCommandHandlers();
         render(<Host />);
         const editor = mount(document.createElement('div'));
         editor.setAttribute('data-canvas-editor', '');
         const canvas = editor.appendChild(document.createElement('canvas'));
 
-        canvas.dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete', bubbles: true }));
+        dispatchKey(canvas, { key: 'z', metaKey: true });
 
-        // The canvas editor owns Delete, so the contract must treat focus here
-        // like a text input and suppress the arrangement clip-delete shortcut.
-        expect(lastIsInput()).toBe(true);
+        expect(mocks.handleKeydown).toHaveBeenCalledTimes(1);
+        expect(mocks.handleKeydown.mock.calls[0]![0]).toMatchObject({ key: 'z', mod: true });
+        expect(lastKeyTarget()).toBe('noteEditor');
+    });
+
+    it('routes Space to the global layer while a [data-canvas-editor] has focus', () => {
+        openSessionWithCommandHandlers();
+        render(<Host />);
+        const editor = mount(document.createElement('div'));
+        editor.setAttribute('data-canvas-editor', '');
+        const canvas = editor.appendChild(document.createElement('canvas'));
+
+        dispatchKey(canvas, { key: ' ' });
+
+        expect(mocks.handleKeydown).toHaveBeenCalledTimes(1);
+        expect(lastKeyTarget()).toBe('noteEditor');
+    });
+
+    it('skips a key the focused canvas editor claimed with preventDefault in its React handler', () => {
+        openSessionWithCommandHandlers();
+        const claimedKeys = ['Delete', 'Enter', '5'];
+        render(
+            <>
+                <Host />
+                <div data-canvas-editor="">
+                    <canvas
+                        data-testid="claiming-canvas"
+                        tabIndex={0}
+                        onKeyDown={(event) => {
+                            if (claimedKeys.includes(event.key)) {
+                                event.preventDefault();
+                            }
+                        }}
+                    />
+                </div>
+            </>
+        );
+        const canvas = document.querySelector<HTMLElement>('[data-testid="claiming-canvas"]')!;
+
+        const claimed = dispatchKey(canvas, { key: 'Delete' });
+        expect(claimed.defaultPrevented).toBe(true);
+        expect(mocks.handleKeydown).not.toHaveBeenCalled();
+
+        for (const key of ['Enter', '5']) {
+            const claimedOther = dispatchKey(canvas, { key });
+            expect(claimedOther.defaultPrevented, key).toBe(true);
+        }
+        expect(mocks.handleKeydown).not.toHaveBeenCalled();
+
+        dispatchKey(canvas, { key: 'z', metaKey: true });
+        expect(mocks.handleKeydown).toHaveBeenCalledTimes(1);
     });
 
     it('does NOT gate the global shortcut when Delete fires on an unmarked timeline surface', () => {
@@ -184,7 +245,7 @@ describe('useGlobalKeyboardShortcuts — data-canvas-editor delete gate (#21)', 
 
     it.each(['Home', 'End', ' '])('keeps native %s navigation inside a select', (key) => {
         openSessionWithCommandHandlers();
-        mocks.handleKeydown.mockImplementation((descriptor) => !descriptor.isInput);
+        mocks.handleKeydown.mockImplementation((descriptor) => descriptor.keyTarget !== 'textEntry');
         render(<Host />);
         const select = mount(document.createElement('select'));
 
@@ -264,16 +325,46 @@ describe('useGlobalKeyboardShortcuts — data-canvas-editor delete gate (#21)', 
             expect(event.defaultPrevented).toBe(false);
         });
 
-        it('still delegates workspace-mode Tab from the body and arrangement canvas', () => {
+        it.each([
+            ['Tab', false],
+            ['Shift+Tab', true],
+        ])('leaves %s on the focused piano-roll canvas to the note-editor policy', (_label, shiftKey) => {
+            openSessionWithCommandHandlers();
+            // handleKeydown does not admit workspace-mode Tab for a note
+            // editor, so it returns false and the default is not prevented.
+            mocks.handleKeydown.mockReturnValue(false);
+            render(<Host />);
+            const editor = mount(document.createElement('div'));
+            editor.setAttribute('data-canvas-editor', '');
+            const canvas = editor.appendChild(document.createElement('canvas'));
+            canvas.tabIndex = 0;
+            canvas.focus();
+            expect(document.activeElement).toBe(canvas);
+
+            const event = dispatchKey(canvas, { key: 'Tab', shiftKey });
+
+            expect(mocks.handleKeydown).toHaveBeenCalledExactlyOnceWith(
+                expect.objectContaining({ key: 'Tab', keyTarget: 'noteEditor' })
+            );
+            expect(event.defaultPrevented).toBe(false);
+        });
+
+        it('still delegates workspace-mode Tab from the body and a focused arrangement canvas', () => {
             openSessionWithCommandHandlers();
             mocks.handleKeydown.mockReturnValue(true);
             render(<Host />);
             const canvas = mount(document.createElement('canvas'));
+            canvas.tabIndex = 0;
+            canvas.focus();
+            expect(document.activeElement).toBe(canvas);
 
             const bodyEvent = dispatchKey(document.body, { key: 'Tab' });
             const canvasEvent = dispatchKey(canvas, { key: 'Tab' });
 
             expect(mocks.handleKeydown).toHaveBeenCalledTimes(2);
+            for (const call of mocks.handleKeydown.mock.calls) {
+                expect(call[0]).toMatchObject({ key: 'Tab', keyTarget: 'workspace' });
+            }
             expect(bodyEvent.defaultPrevented).toBe(true);
             expect(canvasEvent.defaultPrevented).toBe(true);
         });
@@ -294,7 +385,7 @@ describe('useGlobalKeyboardShortcuts — data-canvas-editor delete gate (#21)', 
     });
 
     describe('native button activation', () => {
-        it.each(['Enter', ' '])('leaves unmodified %s to a focused button', (key) => {
+        it.each(['Enter', ' '])('leaves unmodified %s to a Tab-focused button', (key) => {
             openSessionWithCommandHandlers();
             mocks.handleKeydown.mockReturnValue(true);
             render(<Host />);
@@ -302,6 +393,80 @@ describe('useGlobalKeyboardShortcuts — data-canvas-editor delete gate (#21)', 
             button.focus();
 
             const event = dispatchKey(button, { key });
+
+            expect(mocks.handleKeydown).not.toHaveBeenCalled();
+            expect(event.defaultPrevented).toBe(false);
+        });
+
+        it('stops claiming a pointer-focused button once Tab is pressed', () => {
+            openSessionWithCommandHandlers();
+            mocks.handleKeydown.mockReturnValue(true);
+            render(<Host />);
+            const button = mount(document.createElement('button'));
+            focusByPointer(button);
+            dispatchKey(button, { key: 'Tab' });
+            mocks.handleKeydown.mockClear();
+
+            const event = dispatchKey(button, { key: 'Enter' });
+
+            expect(mocks.handleKeydown).not.toHaveBeenCalled();
+            expect(event.defaultPrevented).toBe(false);
+        });
+
+        it.each(['Enter', ' '])('routes %s from a button the pointer pressed and focused', (key) => {
+            openSessionWithCommandHandlers();
+            mocks.handleKeydown.mockReturnValue(true);
+            render(<Host />);
+            const button = mount(document.createElement('button'));
+            focusByPointer(button);
+
+            const event = dispatchKey(button, { key });
+
+            expect(mocks.handleKeydown).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ key }));
+            expect(event.defaultPrevented).toBe(true);
+        });
+
+        it.each(['Enter', ' '])(
+            'leaves %s to a button focused by script after the pointer pressed elsewhere',
+            (key) => {
+                openSessionWithCommandHandlers();
+                mocks.handleKeydown.mockReturnValue(true);
+                render(<Host />);
+                const button = mount(document.createElement('button'));
+                const elsewhere = mount(document.createElement('div'));
+                elsewhere.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true }));
+                button.focus();
+
+                const event = dispatchKey(button, { key });
+
+                expect(mocks.handleKeydown).not.toHaveBeenCalled();
+                expect(event.defaultPrevented).toBe(false);
+            }
+        );
+
+        it('prevents the default of Enter on a pointer-focused button even when the shortcut reports false (stop)', () => {
+            openSessionWithCommandHandlers();
+            mocks.handleKeydown.mockReturnValue(false);
+            render(<Host />);
+            const button = mount(document.createElement('button'));
+            focusByPointer(button);
+
+            const event = dispatchKey(button, { key: 'Enter' });
+
+            expect(mocks.handleKeydown).toHaveBeenCalledOnce();
+            expect(event.defaultPrevented).toBe(true);
+        });
+
+        it('forgets pointer focus when the button is refocused by script', () => {
+            openSessionWithCommandHandlers();
+            mocks.handleKeydown.mockReturnValue(true);
+            render(<Host />);
+            const button = mount(document.createElement('button'));
+            focusByPointer(button);
+            button.blur();
+            button.focus();
+
+            const event = dispatchKey(button, { key: ' ' });
 
             expect(mocks.handleKeydown).not.toHaveBeenCalled();
             expect(event.defaultPrevented).toBe(false);
@@ -317,7 +482,7 @@ describe('useGlobalKeyboardShortcuts — data-canvas-editor delete gate (#21)', 
             const event = dispatchKey(button, { key, metaKey: true });
 
             expect(mocks.handleKeydown).toHaveBeenCalledExactlyOnceWith(
-                expect.objectContaining({ key, mod: true, isInput: false })
+                expect.objectContaining({ key, mod: true, keyTarget: 'workspace' })
             );
             expect(event.defaultPrevented).toBe(true);
         });
@@ -434,6 +599,44 @@ describe('useGlobalKeyboardShortcuts — data-canvas-editor delete gate (#21)', 
             timeline.dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete', bubbles: true }));
 
             expect(lastIsInput()).toBe(false);
+        });
+    });
+
+    describe('key identity', () => {
+        afterEach(() => {
+            Reflect.deleteProperty(navigator, 'keyboard');
+        });
+
+        it('hands handleKeydown the physical key for a modifier-altered character', () => {
+            openSessionWithCommandHandlers();
+            render(<Host />);
+            const timeline = mount(document.createElement('div'));
+
+            dispatchKey(timeline, { key: '∂', code: 'KeyD', altKey: true });
+            dispatchKey(timeline, { key: '!', code: 'Digit1', shiftKey: true });
+
+            expect(mocks.handleKeydown.mock.calls.map(([desc]) => desc)).toMatchObject([
+                { key: 'd', alt: true, shift: false },
+                { key: '1', alt: false, shift: true },
+            ]);
+        });
+
+        it('resolves through the loaded keyboard layout map rather than the US table', async () => {
+            // AZERTY: the physical KeyQ key types `a`; Option+A reports `æ` there.
+            Object.defineProperty(navigator, 'keyboard', {
+                configurable: true,
+                value: { getLayoutMap: () => Promise.resolve(new Map([['KeyQ', 'a']])) },
+            });
+            openSessionWithCommandHandlers();
+            render(<Host />);
+            const timeline = mount(document.createElement('div'));
+            await vi.waitFor(() => {
+                expect(currentKeyboardLayoutMap()?.get('KeyQ')).toBe('a');
+            });
+
+            dispatchKey(timeline, { key: 'æ', code: 'KeyQ', altKey: true });
+
+            expect(mocks.handleKeydown.mock.calls.at(-1)?.[0]).toMatchObject({ key: 'a', alt: true });
         });
     });
 });

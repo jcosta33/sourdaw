@@ -3,12 +3,15 @@ import { type ReactElement, useEffect, useRef } from 'react';
 import { render, screen, fireEvent, act, cleanup } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
+import { executeUserAppAction } from '#/modules/Command/useCases';
+
 import { usePianoRollInteractions } from '../usePianoRollInteractions';
 
 const mocks = vi.hoisted(() => {
     let idCounter = 0;
     return {
         nextId: (): string => `gen-${++idCounter}`,
+        previewEngine: null as typeof import('#/modules/AudioEngine/useCases').audioEngine | null,
         playAuditionNote: vi.fn(),
         auditionStop: vi.fn(),
         pushUndoEntry: vi.fn(),
@@ -53,7 +56,8 @@ const mocks = vi.hoisted(() => {
     };
 });
 
-vi.mock('#/modules/Arrangement/stores', () => ({
+vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Arrangement/stores')>()),
     trackStore: {
         get value() {
             return mocks.trackState;
@@ -61,16 +65,36 @@ vi.mock('#/modules/Arrangement/stores', () => ({
     },
 }));
 
-vi.mock('#/modules/AudioEngine/useCases', () => ({
-    playAuditionNote: mocks.playAuditionNote,
-}));
+vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/AudioEngine/useCases')>();
+    mocks.previewEngine = actual.audioEngine;
+    return {
+        audioEngine: {
+            beginAudioPreviewIntent: () => {
+                if (mocks.previewEngine === null) {
+                    throw new Error('Missing actual hover registry.');
+                }
+                return mocks.previewEngine.beginAudioPreviewIntent();
+            },
+        },
+        playAuditionNote: mocks.playAuditionNote,
+    };
+});
 
-vi.mock('#/modules/Command/useCases', () => ({
+vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Command/useCases')>()),
     executeUserAppAction: vi.fn(),
     pushUndoEntry: mocks.pushUndoEntry,
 }));
 
-vi.mock('#/modules/MIDI/stores', () => ({
+vi.mock('#/modules/MIDI/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/MIDI/stores')>()),
+    isFrozenMidiTakeSource: vi.fn(() => {
+        throw new Error('Frozen MIDI take source is outside this piano roll fixture');
+    }),
+    projectFrozenMidiTakeWindow: vi.fn(() => {
+        throw new Error('Frozen MIDI take projection is outside this piano roll fixture');
+    }),
     stepRecordStore: {
         get value() {
             return mocks.stepRecordState;
@@ -79,6 +103,14 @@ vi.mock('#/modules/MIDI/stores', () => ({
 }));
 
 vi.mock('#/modules/MIDI/useCases', () => ({
+    projectMidiClipWindow: vi.fn(() => {
+        throw new Error('MIDI clip projection is outside this piano roll fixture');
+    }),
+    sliceMidiTakeNoteForEdit: (note: Note, extent: { fromOffset: number; duration: number }) => ({
+        ...note,
+        startBeat: note.startBeat + extent.fromOffset,
+        duration: extent.duration,
+    }),
     addMidiNote: mocks.addMidiNote,
     batchAddMidiNotes: mocks.batchAddMidiNotes,
     getNotesForClip: mocks.getNotesForClip,
@@ -128,7 +160,7 @@ type HarnessArgs = Omit<HookArgs, 'canvasRef'>;
 type Note = HookArgs['notes'][number];
 
 // ── Geometry (chromatic scale, unfolded) ─────────────────────────────────
-// getVisiblePitches yields pitches 83 → 24 top-to-bottom, ROW_HEIGHT = 16,
+// getVisiblePitches yields pitches 127 → 0 top-to-bottom, ROW_HEIGHT = 16,
 // RULER_HEIGHT = 22. Fixture beatWidth = 40, gridSnap = 1.
 const ROW = 16;
 const RULER = 22;
@@ -137,7 +169,7 @@ const BEAT_W = 40;
 const PITCH_RAIL_W = 40;
 
 /** clientY at the vertical middle of the row for a pitch. */
-const yForPitch = (pitch: number): number => RULER + (83 - pitch) * ROW + 8;
+const yForPitch = (pitch: number): number => RULER + (127 - pitch) * ROW + 8;
 
 const makeNote = (id: string, pitch: number, startBeat: number, duration: number, velocity = 100): Note => ({
     id,
@@ -249,6 +281,7 @@ describe('usePianoRollInteractions', () => {
             })
         );
         mocks.getNotesForClip.mockReturnValue([]);
+        mocks.previewEngine?.resetGraph();
         mocks.playAuditionNote.mockReturnValue(mocks.auditionStop);
         mocks.getTransportState.mockReturnValue({ playheadPosition: 2.5 });
         mocks.stepRecordState = { currentPitch: 62 };
@@ -257,6 +290,172 @@ describe('usePianoRollInteractions', () => {
 
     afterEach(() => {
         vi.useRealTimers();
+    });
+
+    describe('selected frozen take callbacks', () => {
+        const original = { ...makeNote('original-row', 60, 5.5, 2, 90), recordingPassIndex: 0 };
+        const anotherPass = { ...makeNote('other-row', 62, 9.5, 1, 85), recordingPassIndex: 1 };
+        const firstView = makeNote('view-first', 60, 2, 2, 90);
+        const repeatView = makeNote('view-repeat', 60, 6, 2, 90);
+        const otherView = makeNote('view-other', 62, 4, 1, 85);
+        const projection = {
+            notes: [firstView, repeatView, otherView],
+            baseNotes: [],
+            baseOwnersByViewId: new Map(),
+            ownersByViewId: new Map([
+                [
+                    firstView.id,
+                    {
+                        laneId: 'lane',
+                        takeId: 'first',
+                        sourceClipId: 'source',
+                        sourceEntryBeat: 5,
+                        row: original,
+                        occurrenceIndex: 0,
+                        displayedStartBeat: 2,
+                        displayedDuration: 2,
+                    },
+                ],
+                [
+                    repeatView.id,
+                    {
+                        laneId: 'lane',
+                        takeId: 'first',
+                        sourceClipId: 'source',
+                        sourceEntryBeat: 5,
+                        row: original,
+                        occurrenceIndex: 1,
+                        displayedStartBeat: 6,
+                        displayedDuration: 2,
+                    },
+                ],
+                [
+                    otherView.id,
+                    {
+                        laneId: 'lane',
+                        takeId: 'second',
+                        sourceClipId: 'source',
+                        sourceEntryBeat: 9,
+                        row: anotherPass,
+                        occurrenceIndex: 1,
+                        displayedStartBeat: 4,
+                        displayedDuration: 1,
+                    },
+                ],
+            ]),
+            coveredWindows: [{ startBeat: 0, endBeat: 8 }],
+            insertOwnerAtBeat: (beat: number) => {
+                if (beat !== 4) {
+                    return null;
+                }
+                return {
+                    laneId: 'lane',
+                    takeId: 'second',
+                    sourceClipId: 'source',
+                    sourceBeat: 9.5,
+                    recordingPassIndex: 1,
+                    slotPresent: true,
+                };
+            },
+        };
+
+        it('moves repeated views through one original row action, preserving source coordinates', () => {
+            const { canvas } = renderRoll({
+                notes: [firstView, repeatView],
+                selectedNoteIds: new Set([firstView.id, repeatView.id]),
+                takeProjections: new Map([['clip-1', projection]]),
+            });
+            fireEvent.mouseDown(canvas, { clientX: 100, clientY: yForPitch(60) });
+            fireEvent.mouseMove(canvas, { clientX: 140, clientY: yForPitch(60) });
+            fireEvent.mouseUp(canvas, { clientX: 140, clientY: yForPitch(60) });
+            expect(executeUserAppAction).toHaveBeenCalledTimes(1);
+            expect(executeUserAppAction).toHaveBeenCalledWith({
+                type: 'replaceOriginalMidiTakeRow',
+                payload: expect.objectContaining({
+                    takeId: 'first',
+                    rowId: original.id,
+                    expected: original,
+                    replacement: { ...original, startBeat: 6.5 },
+                }),
+            });
+            expect(mocks.moveMidiNote).not.toHaveBeenCalled();
+            expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
+        });
+
+        it('resizes and deletes the selected original instead of the base clip row', () => {
+            const { canvas } = renderRoll({ notes: [firstView], takeProjections: new Map([['clip-1', projection]]) });
+            fireEvent.mouseDown(canvas, { clientX: 155, clientY: yForPitch(60) });
+            fireEvent.mouseMove(canvas, { clientX: 195, clientY: yForPitch(60) });
+            fireEvent.mouseUp(canvas, { clientX: 195, clientY: yForPitch(60) });
+            expect(executeUserAppAction).toHaveBeenCalledWith({
+                type: 'replaceOriginalMidiTakeRow',
+                payload: expect.objectContaining({ rowId: original.id, replacement: { ...original, duration: 3 } }),
+            });
+            fireEvent.doubleClick(canvas, { clientX: 100, clientY: yForPitch(60) });
+            expect(executeUserAppAction).toHaveBeenLastCalledWith({
+                type: 'replaceOriginalMidiTakeRow',
+                payload: expect.objectContaining({ rowId: original.id, replacement: null }),
+            });
+            expect(mocks.resizeMidiNote).not.toHaveBeenCalled();
+            expect(mocks.removeMidiNote).not.toHaveBeenCalled();
+        });
+
+        it('inserts into the selected second pass through its original source beat', () => {
+            const { canvas } = renderRoll({ notes: [], takeProjections: new Map([['clip-1', projection]]) });
+            fireEvent.mouseDown(canvas, { clientX: 165, clientY: yForPitch(70) });
+            fireEvent.mouseUp(canvas, { clientX: 165, clientY: yForPitch(70) });
+            expect(executeUserAppAction).toHaveBeenCalledWith({
+                type: 'replaceOriginalMidiTakeRow',
+                payload: expect.objectContaining({
+                    takeId: 'second',
+                    expected: null,
+                    replacement: expect.objectContaining({ startBeat: 9.5, recordingPassIndex: 1, pitch: 70 }),
+                }),
+            });
+            expect(mocks.addMidiNote).not.toHaveBeenCalled();
+            expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
+        });
+    });
+
+    it('moves and deletes two base-gap views once through their shared original base note', () => {
+        const original = makeNote('base-original', 60, 0, 6, 80);
+        const first = makeNote('base-gap-first', 60, 0, 2, 80);
+        const second = makeNote('base-gap-second', 60, 4, 2, 80);
+        const projection = {
+            notes: [],
+            baseNotes: [first, second],
+            ownersByViewId: new Map(),
+            baseOwnersByViewId: new Map([
+                [first.id, { row: original, displayedStartBeat: 0, displayedDuration: 2 }],
+                [second.id, { row: original, displayedStartBeat: 4, displayedDuration: 2 }],
+            ]),
+            coveredWindows: [{ startBeat: 2, endBeat: 4 }],
+            insertOwnerAtBeat: () => null,
+        };
+        const { canvas, unmount } = renderRoll({
+            notes: [first, second],
+            selectedNoteIds: new Set([first.id, second.id]),
+            takeProjections: new Map([['clip-1', projection]]),
+        });
+        fireEvent.mouseDown(canvas, { clientX: 20, clientY: yForPitch(60) });
+        fireEvent.mouseMove(canvas, { clientX: 60, clientY: yForPitch(60) });
+        fireEvent.mouseUp(canvas, { clientX: 60, clientY: yForPitch(60) });
+        expect(mocks.moveMidiNote).toHaveBeenCalledTimes(1);
+        expect(mocks.moveMidiNote).toHaveBeenCalledWith('clip-1', original.id, 60, 1);
+        const undoMove = mocks.pushUndoEntry.mock.calls[0]?.[1] as () => void;
+        undoMove();
+        expect(mocks.moveMidiNote).toHaveBeenLastCalledWith('clip-1', original.id, 60, 0);
+        unmount();
+
+        mocks.removeMidiNote.mockClear();
+        const deleted = renderRoll({
+            notes: [first, second],
+            selectedNoteIds: new Set([first.id, second.id]),
+            takeProjections: new Map([['clip-1', projection]]),
+        });
+        fireEvent.keyDown(deleted.canvas, { key: 'Delete' });
+        expect(mocks.removeMidiNote).toHaveBeenCalledTimes(1);
+        expect(mocks.removeMidiNote).toHaveBeenCalledWith('clip-1', original.id);
     });
 
     // Issue #2299. The canvas covers the viewport, not the arrangement: it is
@@ -347,6 +546,75 @@ describe('usePianoRollInteractions', () => {
                 expect.any(Function)
             );
             expect(setSelectedNoteIds).toHaveBeenCalledWith(new Set());
+        });
+
+        it.each([96, 127, 21, 0])('stamps a note at pitch %i, outside the old 24..83 range', (pitch) => {
+            const { canvas } = renderRoll({ notes: [] });
+
+            fireEvent.mouseDown(canvas, { clientX: 45, clientY: yForPitch(pitch) });
+            fireEvent.mouseUp(canvas, { clientX: 45, clientY: yForPitch(pitch) });
+
+            expect(mocks.addMidiNote).toHaveBeenCalledWith('clip-1', pitch, 1, 1, PREFERRED_DEFAULT_VELOCITY);
+        });
+
+        it('stamps in the cell containing the pointer when the click lands in the right half of a cell', () => {
+            const { canvas } = renderRoll({ notes: [] });
+
+            // x = 70px is 1.75 beats: inside cell [1, 2), so the note starts at 1, not at the nearer line 2.
+            fireEvent.mouseDown(canvas, { clientX: 70, clientY: yForPitch(70) });
+            fireEvent.mouseUp(canvas, { clientX: 70, clientY: yForPitch(70) });
+
+            expect(mocks.addMidiNote).toHaveBeenCalledTimes(1);
+            expect(mocks.addMidiNote).toHaveBeenCalledWith('clip-1', 70, 1, 1, PREFERRED_DEFAULT_VELOCITY);
+        });
+
+        it('floors to the cell of a fine grid and keeps a pointer exactly on a grid line in that cell', () => {
+            const fine = renderRoll({ notes: [], gridSnap: 0.25 });
+            // 0.9 beats is inside [0.75, 1.0); 1.2 beats is inside [1.0, 1.25).
+            fireEvent.mouseDown(fine.canvas, { clientX: 36, clientY: yForPitch(70) });
+            fireEvent.mouseUp(fine.canvas, { clientX: 36, clientY: yForPitch(70) });
+            fireEvent.mouseDown(fine.canvas, { clientX: 48, clientY: yForPitch(72) });
+            fireEvent.mouseUp(fine.canvas, { clientX: 48, clientY: yForPitch(72) });
+            fine.unmount();
+
+            // 0.3 / 0.1 is 2.9999999999999996 in floating point; the pointer sits on the line at beat 0.3.
+            const boundary = renderRoll({ notes: [], gridSnap: 0.1, beatWidth: 100 });
+            fireEvent.mouseDown(boundary.canvas, { clientX: 30, clientY: yForPitch(74) });
+            fireEvent.mouseUp(boundary.canvas, { clientX: 30, clientY: yForPitch(74) });
+
+            const starts = mocks.addMidiNote.mock.calls.map((call) => [call[1], call[2]]);
+            expect(starts[0]).toEqual([70, 0.75]);
+            expect(starts[1]).toEqual([72, 1]);
+            expect(starts[2]?.[0]).toBe(74);
+            expect(starts[2]?.[1]).toBeCloseTo(0.3, 9);
+        });
+
+        it('stamps at the unsnapped pointer beat when the grid is off', () => {
+            const { canvas } = renderRoll({ notes: [], gridSnap: 0 });
+
+            fireEvent.mouseDown(canvas, { clientX: 70, clientY: yForPitch(70) });
+            fireEvent.mouseUp(canvas, { clientX: 70, clientY: yForPitch(70) });
+
+            expect(mocks.addMidiNote.mock.calls[0]?.[2]).toBe(1.75);
+        });
+
+        it('a second click at the same point hits the stamped note instead of stacking a duplicate', () => {
+            const args = buildArgs({ notes: [] });
+            const view = render(<Harness args={args} />);
+            const canvas = screen.getByLabelText('piano-roll-test-surface');
+
+            fireEvent.mouseDown(canvas, { clientX: 70, clientY: yForPitch(70) });
+            fireEvent.mouseUp(canvas, { clientX: 70, clientY: yForPitch(70) });
+            const stamped = mocks.addMidiNote.mock.results[0]?.value;
+            expect(mocks.addMidiNote).toHaveBeenCalledTimes(1);
+
+            // The store now holds the note; the hook sees it through `notes`.
+            view.rerender(<Harness args={{ ...args, notes: [stamped] }} />);
+            fireEvent.mouseDown(canvas, { clientX: 70, clientY: yForPitch(70) });
+            fireEvent.mouseUp(canvas, { clientX: 70, clientY: yForPitch(70) });
+
+            expect(mocks.addMidiNote).toHaveBeenCalledTimes(1);
+            expect(setSelectedNoteIds).toHaveBeenLastCalledWith(new Set([stamped.id]));
         });
 
         it('undo of a stamped note removes exactly the created note', () => {
@@ -612,6 +880,27 @@ describe('usePianoRollInteractions', () => {
             );
         });
 
+        it('paint mode starts in the cell under the pointer, not the nearer grid line', () => {
+            const { canvas } = renderRoll({ paintMode: true, notes: [] });
+
+            fireEvent.mouseDown(canvas, { clientX: 70, clientY: yForPitch(70) });
+            expect(mocks.addMidiNote).toHaveBeenCalledWith('clip-1', 70, 1, 1, PREFERRED_DEFAULT_VELOCITY);
+
+            // 3.75 beats is inside cell [3, 4): the brush stops at 3, not 4.
+            fireEvent.mouseMove(canvas, { clientX: 150, clientY: yForPitch(70) });
+            // The mocked store does not feed notes back, so the start cell may repeat; the set is what matters.
+            expect(new Set(mocks.addMidiNote.mock.calls.map((call) => call[2]))).toEqual(new Set([1, 2, 3]));
+        });
+
+        it('chord mode stamps in the cell under the pointer', () => {
+            mocks.stampChord.mockReturnValue([{ id: 'ch1' }]);
+            const { canvas } = renderRoll({ chordMode: true, chordType: 'min7', notes: [] });
+
+            fireEvent.mouseDown(canvas, { clientX: 70, clientY: yForPitch(70) });
+
+            expect(mocks.stampChord).toHaveBeenCalledWith('clip-1', 70, 1, 1, PREFERRED_DEFAULT_VELOCITY, 'min7');
+        });
+
         it('chord mode stamps a chord and selects the created notes', () => {
             mocks.stampChord.mockReturnValue([{ id: 'ch1' }, { id: 'ch2' }, { id: 'ch3' }]);
             const { canvas } = renderRoll({ chordMode: true, chordType: 'min7' });
@@ -751,12 +1040,25 @@ describe('usePianoRollInteractions', () => {
             act(() => {
                 vi.advanceTimersByTime(200);
             });
-            expect(mocks.playAuditionNote).toHaveBeenCalledWith('track-1', 60, 100);
+            const group = mocks.playAuditionNote.mock.calls[0]?.[3];
+            expect(group?.isCurrent()).toBe(true);
+            expect(mocks.playAuditionNote).toHaveBeenCalledWith('track-1', 60, 100, group);
 
             act(() => {
                 vi.advanceTimersByTime(500);
             });
             expect(mocks.auditionStop).toHaveBeenCalledTimes(1);
+        });
+
+        it('a newer exclusive gesture retires the armed hover before its timer can dispatch a note', () => {
+            vi.useFakeTimers();
+            const { canvas } = renderRoll({ notePreviewEnabled: true });
+            fireEvent.mouseMove(canvas, { clientX: 100, clientY: yForPitch(60) });
+            const exclusive = mocks.previewEngine?.beginExclusiveAudioPreviewIntent();
+            expect(exclusive?.isCurrent()).toBe(true);
+            act(() => vi.advanceTimersByTime(1_000));
+            expect(mocks.playAuditionNote).not.toHaveBeenCalled();
+            expect(exclusive?.isCurrent()).toBe(true);
         });
 
         it('moving off the note before the debounce fires cancels the preview', () => {
@@ -812,6 +1114,40 @@ describe('usePianoRollInteractions', () => {
     });
 
     describe('keyboard editing', () => {
+        // `fireEvent.keyDown` returns false exactly when a handler called
+        // preventDefault, which is how the global shortcut layer learns the
+        // focused piano roll consumed the key.
+        describe('claiming consumed keys from the global shortcut layer', () => {
+            it.each([
+                ['Delete with a note selected', { key: 'Delete' }, { selectedNoteIds: new Set(['n1']) }],
+                ['Backspace with a note selected', { key: 'Backspace' }, { selectedNoteIds: new Set(['n1']) }],
+                ['Delete with nothing selected', { key: 'Delete' }, {}],
+                ['Backspace with nothing selected', { key: 'Backspace' }, {}],
+                ['cmd+A', { key: 'a', metaKey: true }, {}],
+                ['cmd+D', { key: 'd', metaKey: true }, { selectedNoteIds: new Set(['n1']) }],
+                ['ArrowRight nudge with a note selected', { key: 'ArrowRight' }, { selectedNoteIds: new Set(['n1']) }],
+                ['ArrowUp transpose with a note selected', { key: 'ArrowUp' }, { selectedNoteIds: new Set(['n1']) }],
+                ['Enter in step input', { key: 'Enter' }, { stepInput: true }],
+                ['ctrl+Space in step input', { key: ' ', ctrlKey: true }, { stepInput: true }],
+                ['velocity digit in step input', { key: '5' }, { stepInput: true }],
+            ] as const)('%s is claimed', (_name, key, overrides) => {
+                const { canvas } = renderRoll(overrides);
+
+                expect(fireEvent.keyDown(canvas, key)).toBe(false);
+            });
+
+            it.each([
+                ['cmd+Z undo', { key: 'z', metaKey: true }],
+                ['cmd+shift+Z redo', { key: 'z', metaKey: true, shiftKey: true }],
+                ['Space transport toggle', { key: ' ' }],
+                ['cmd+S save', { key: 's', metaKey: true }],
+            ] as const)('%s is left to the global layer', (_name, key) => {
+                const { canvas } = renderRoll({ selectedNoteIds: new Set(['n1']) });
+
+                expect(fireEvent.keyDown(canvas, key)).toBe(true);
+            });
+        });
+
         it('Delete removes the selected notes across clips and clears the selection', () => {
             const { canvas } = renderRoll({
                 selectedNoteIds: new Set(['n1', 'n2']),
@@ -1372,7 +1708,9 @@ describe('usePianoRollInteractions', () => {
                 vi.advanceTimersByTime(200);
             });
 
-            expect(mocks.playAuditionNote).toHaveBeenCalledWith('track-2', 65, 80);
+            const group = mocks.playAuditionNote.mock.calls[0]?.[3];
+            expect(group?.isCurrent()).toBe(true);
+            expect(mocks.playAuditionNote).toHaveBeenCalledWith('track-2', 65, 80, group);
         });
     });
 
@@ -1388,6 +1726,201 @@ describe('usePianoRollInteractions', () => {
                 expect.any(Function),
                 expect.any(Function)
             );
+        });
+
+        describe('double-click on empty grid', () => {
+            // Empty cell: pitch 70, x = 45px -> beat 1. The stamp lands as a note the
+            // store then feeds back through `notes`, as it does in the app.
+            const click = (canvas: HTMLElement, detail: number): void => {
+                fireEvent.mouseDown(canvas, { clientX: 45, clientY: yForPitch(70), detail });
+                fireEvent.mouseUp(canvas, { clientX: 45, clientY: yForPitch(70), detail });
+            };
+            const stampedNote = (): Note => {
+                const call = mocks.addMidiNote.mock.results[0]?.value as Note | undefined;
+                if (!call) {
+                    throw new Error('The first click stamped no note.');
+                }
+                return call;
+            };
+
+            it('keeps the note its first click stamped, with one Draw MIDI note undo entry', () => {
+                const args = buildArgs({ notes: [] });
+                const view = render(<Harness args={args} />);
+                const canvas = screen.getByLabelText('piano-roll-test-surface');
+
+                click(canvas, 1);
+                view.rerender(<Harness args={{ ...args, notes: [stampedNote()] }} />);
+                click(canvas, 2);
+                fireEvent.doubleClick(canvas, { clientX: 45, clientY: yForPitch(70), detail: 2 });
+
+                expect(mocks.addMidiNote).toHaveBeenCalledTimes(1);
+                expect(mocks.removeMidiNote).not.toHaveBeenCalled();
+                expect(mocks.moveMidiNote).not.toHaveBeenCalled();
+                expect(mocks.pushUndoEntry).toHaveBeenCalledTimes(1);
+                expect(mocks.pushUndoEntry).toHaveBeenCalledWith(
+                    'Draw MIDI note',
+                    expect.any(Function),
+                    expect.any(Function)
+                );
+            });
+
+            it('still deletes a note that existed before the double-click began', () => {
+                const { canvas } = renderRoll({ notes: [makeNote('old', 70, 1, 1)] });
+
+                fireEvent.mouseDown(canvas, { clientX: 45, clientY: yForPitch(70), detail: 1 });
+                fireEvent.mouseUp(canvas, { clientX: 45, clientY: yForPitch(70), detail: 1 });
+                fireEvent.mouseDown(canvas, { clientX: 45, clientY: yForPitch(70), detail: 2 });
+                fireEvent.mouseUp(canvas, { clientX: 45, clientY: yForPitch(70), detail: 2 });
+                fireEvent.doubleClick(canvas, { clientX: 45, clientY: yForPitch(70), detail: 2 });
+
+                expect(mocks.addMidiNote).not.toHaveBeenCalled();
+                expect(mocks.removeMidiNote).toHaveBeenCalledWith('clip-1', 'old');
+            });
+
+            it('deletes a pre-existing note in another cell than the one the first click stamped', () => {
+                const args = buildArgs({ notes: [makeNote('old', 60, 4, 2)] });
+                const view = render(<Harness args={args} />);
+                const canvas = screen.getByLabelText('piano-roll-test-surface');
+
+                click(canvas, 1);
+                view.rerender(<Harness args={{ ...args, notes: [makeNote('old', 60, 4, 2), stampedNote()] }} />);
+                fireEvent.mouseDown(canvas, { clientX: 200, clientY: yForPitch(60), detail: 2 });
+                fireEvent.mouseUp(canvas, { clientX: 200, clientY: yForPitch(60), detail: 2 });
+                fireEvent.doubleClick(canvas, { clientX: 200, clientY: yForPitch(60), detail: 2 });
+
+                expect(mocks.removeMidiNote).toHaveBeenCalledWith('clip-1', 'old');
+            });
+
+            it('keeps the note a paint-mode first click creates', () => {
+                const args = buildArgs({ notes: [], paintMode: true });
+                const view = render(<Harness args={args} />);
+                const canvas = screen.getByLabelText('piano-roll-test-surface');
+
+                click(canvas, 1);
+                view.rerender(<Harness args={{ ...args, notes: [stampedNote()] }} />);
+                click(canvas, 2);
+                fireEvent.doubleClick(canvas, { clientX: 45, clientY: yForPitch(70), detail: 2 });
+
+                expect(mocks.addMidiNote).toHaveBeenCalledTimes(1);
+                expect(mocks.removeMidiNote).not.toHaveBeenCalled();
+            });
+
+            it('keeps the chord root a chord-mode first click creates', () => {
+                const root = makeNote('chord-root', 70, 1, 1);
+                mocks.stampChord.mockReturnValue([root, makeNote('chord-third', 74, 1, 1)]);
+                const args = buildArgs({ notes: [], chordMode: true });
+                const view = render(<Harness args={args} />);
+                const canvas = screen.getByLabelText('piano-roll-test-surface');
+
+                click(canvas, 1);
+                view.rerender(<Harness args={{ ...args, notes: [root, makeNote('chord-third', 74, 1, 1)] }} />);
+                click(canvas, 2);
+                fireEvent.doubleClick(canvas, { clientX: 45, clientY: yForPitch(70), detail: 2 });
+
+                expect(mocks.stampChord).toHaveBeenCalledTimes(1);
+                expect(mocks.removeMidiNote).not.toHaveBeenCalled();
+            });
+
+            it('deletes a same-pitch pre-existing note at a different beat than the stamped cell', () => {
+                const args = buildArgs({ notes: [makeNote('old', 70, 4, 2)] });
+                const view = render(<Harness args={args} />);
+                const canvas = screen.getByLabelText('piano-roll-test-surface');
+
+                click(canvas, 1);
+                view.rerender(<Harness args={{ ...args, notes: [makeNote('old', 70, 4, 2), stampedNote()] }} />);
+                fireEvent.mouseDown(canvas, { clientX: 200, clientY: yForPitch(70), detail: 2 });
+                fireEvent.mouseUp(canvas, { clientX: 200, clientY: yForPitch(70), detail: 2 });
+                fireEvent.doubleClick(canvas, { clientX: 200, clientY: yForPitch(70), detail: 2 });
+
+                expect(mocks.removeMidiNote).toHaveBeenCalledWith('clip-1', 'old');
+            });
+
+            it('deletes a note stamped by an earlier, separate click when it is double-clicked later', () => {
+                const args = buildArgs({ notes: [] });
+                const view = render(<Harness args={args} />);
+                const canvas = screen.getByLabelText('piano-roll-test-surface');
+
+                click(canvas, 1);
+                const stamped = stampedNote();
+                view.rerender(<Harness args={{ ...args, notes: [stamped] }} />);
+                click(canvas, 1);
+                fireEvent.doubleClick(canvas, { clientX: 45, clientY: yForPitch(70), detail: 2 });
+
+                expect(mocks.removeMidiNote).toHaveBeenCalledWith('clip-1', stamped.id);
+            });
+        });
+
+        it('keeps a frozen-take stamp whose redisplayed beat drifts from the stamped beat', () => {
+            // A frozen take stores the row at a source beat and redisplays it through the
+            // clip start, so on a non-dyadic grid the displayed beat misses the stamped one by an ulp.
+            const clipStart = 4;
+            const frozenProjection = {
+                notes: [],
+                baseNotes: [],
+                baseOwnersByViewId: new Map(),
+                ownersByViewId: new Map(),
+                coveredWindows: [{ startBeat: 0, endBeat: 8 }],
+                insertOwnerAtBeat: () => ({
+                    laneId: 'lane',
+                    takeId: 'take',
+                    sourceClipId: 'source',
+                    sourceBeat: 9.5,
+                    recordingPassIndex: 0,
+                    slotPresent: true,
+                }),
+            };
+            const args = buildArgs({
+                notes: [],
+                gridSnap: 1 / 3,
+                takeProjections: new Map([['clip-1', frozenProjection]]),
+            });
+            const view = render(<Harness args={args} />);
+            const canvas = screen.getByLabelText('piano-roll-test-surface');
+
+            fireEvent.mouseDown(canvas, { clientX: 55, clientY: yForPitch(70), detail: 1 });
+            fireEvent.mouseUp(canvas, { clientX: 55, clientY: yForPitch(70), detail: 1 });
+            expect(executeUserAppAction).toHaveBeenCalledWith({
+                type: 'replaceOriginalMidiTakeRow',
+                payload: expect.objectContaining({
+                    replacement: expect.objectContaining({ startBeat: 9.5, pitch: 70 }),
+                }),
+            });
+            const stampedBeat = 4 * (1 / 3);
+            const redisplayed = clipStart + stampedBeat - clipStart;
+            expect(redisplayed).not.toBe(stampedBeat);
+            const feedback = {
+                ...makeNote('view-stamped', 70, redisplayed, 1 / 3),
+                recordingPassIndex: 0,
+            };
+            const withStamp = {
+                ...frozenProjection,
+                notes: [feedback],
+                ownersByViewId: new Map([
+                    [
+                        feedback.id,
+                        {
+                            laneId: 'lane',
+                            takeId: 'take',
+                            sourceClipId: 'source',
+                            sourceEntryBeat: 9.5,
+                            row: feedback,
+                            occurrenceIndex: 0,
+                            displayedStartBeat: redisplayed,
+                            displayedDuration: 1 / 3,
+                        },
+                    ],
+                ]),
+            };
+            view.rerender(
+                <Harness args={{ ...args, notes: [feedback], takeProjections: new Map([['clip-1', withStamp]]) }} />
+            );
+            fireEvent.mouseDown(canvas, { clientX: 55, clientY: yForPitch(70), detail: 2 });
+            fireEvent.mouseUp(canvas, { clientX: 55, clientY: yForPitch(70), detail: 2 });
+            vi.mocked(executeUserAppAction).mockClear();
+            fireEvent.doubleClick(canvas, { clientX: 55, clientY: yForPitch(70), detail: 2 });
+
+            expect(executeUserAppAction).not.toHaveBeenCalled();
+            expect(mocks.removeMidiNote).not.toHaveBeenCalled();
         });
 
         it('context menu opens at the cursor with the beat under it', () => {

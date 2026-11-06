@@ -1,4 +1,7 @@
-import { expect, test, type BrowserContext, type Page } from '@playwright/test';
+import { type BrowserContext, type Page } from '@playwright/test';
+
+import { chooseProjectDirectory } from './chosenProjectDirectory';
+import { expect, test } from './e2eTest';
 
 import type { ConfirmPayload, NotifyPayload, PromptPayload } from '../../src/utils/Notification/notificationEventBus';
 
@@ -99,12 +102,30 @@ async function initializeProjectWithAudio(page: Page): Promise<{ bufferId: strin
                 import('/src/modules/Collaboration/useCases/index.ts'),
                 import('/src/modules/Command/stores/index.ts'),
             ]);
+            const [
+                { registerProjectSlotProjections },
+                { registerProjectLifecycle },
+                { registerDeviceEnginePorts },
+                { registerSupportingServicePorts },
+                { registerKernelPorts },
+            ] = await Promise.all([
+                import('/src/app/registerProjectSlotProjections.ts'),
+                import('/src/app/registerProjectLifecycle.ts'),
+                import('/src/app/registerDeviceEnginePorts.ts'),
+                import('/src/app/registerSupportingServicePorts.ts'),
+                import('/src/app/registerKernelPorts.ts'),
+            ]);
 
             await audio.restoreCachedAudioBuffersFromIdb({ audioContext: audio.audioEngine.context });
             arrangement.setArrangementEventBus({ emit: () => Promise.resolve() });
             command.clearHandlerRegistry();
             command.registerHandlerMap(arrangement.getArrangementHandlers());
             crdt.registerCrdtStorageRuntime();
+            registerProjectSlotProjections();
+            registerProjectLifecycle();
+            registerDeviceEnginePorts();
+            registerSupportingServicePorts();
+            registerKernelPorts();
             collaboration.configureCollaborationAssetOwner({ captureOwnerId: project.getDurableProjectOwnerId });
             project.setProjectIdentityTransitionDependencies({ leaveCollaborationSession: () => Promise.resolve() });
             crdt.resetCrdtProjectAuthority('Native audio ownership');
@@ -218,11 +239,29 @@ async function loadSavedProjectInFreshRealm(
                         import('/src/modules/Collaboration/useCases/index.ts'),
                         import('/src/modules/Command/stores/index.ts'),
                     ]);
+                const [
+                    { registerProjectSlotProjections },
+                    { registerProjectLifecycle },
+                    { registerDeviceEnginePorts },
+                    { registerSupportingServicePorts },
+                    { registerKernelPorts },
+                ] = await Promise.all([
+                    import('/src/app/registerProjectSlotProjections.ts'),
+                    import('/src/app/registerProjectLifecycle.ts'),
+                    import('/src/app/registerDeviceEnginePorts.ts'),
+                    import('/src/app/registerSupportingServicePorts.ts'),
+                    import('/src/app/registerKernelPorts.ts'),
+                ]);
 
                 arrangement.setArrangementEventBus({ emit: () => Promise.resolve() });
                 command.clearHandlerRegistry();
                 command.registerHandlerMap(arrangement.getArrangementHandlers());
                 crdt.registerCrdtStorageRuntime();
+                registerProjectSlotProjections();
+                registerProjectLifecycle();
+                registerDeviceEnginePorts();
+                registerSupportingServicePorts();
+                registerKernelPorts();
                 collaboration.configureCollaborationAssetOwner({ captureOwnerId: project.getDurableProjectOwnerId });
                 project.setProjectIdentityTransitionDependencies({
                     leaveCollaborationSession: () => Promise.resolve(),
@@ -459,6 +498,7 @@ test.describe('project audio ownership with native IndexedDB and Web Locks', () 
         await clearStorage(saver);
         const { bufferId, decodedPcm } = await initializeProjectWithAudio(saver);
         await initializeEmptyCollector(collector);
+        await chooseProjectDirectory(saver);
 
         await expect(saveProject(saver)).resolves.toBe(true);
         await expect(collectWithRealProvider(collector)).resolves.toBe(0);

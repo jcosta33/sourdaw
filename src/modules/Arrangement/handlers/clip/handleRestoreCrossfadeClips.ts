@@ -1,18 +1,15 @@
 import { createHandler } from '#/utils/createHandler';
 
+import { type Clip } from '../../models/Track';
+import { captureClipAudioSource, type ClipAudioSourceFields } from '../../useCases/clipEditing/clipAudioSourceFields';
+import { isSameClipAudioSource } from '../../useCases/clipEditing/isSameClipAudioSource';
 import { restoreCrossfadeClips } from '../../useCases/clipEditing/restoreCrossfadeClips';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { toHandlerExecutionResult } from '../toHandlerExecutionResult';
 
 type ReadCrossfadeSnapshotInput = {
     clipA: { endBeat: number; fadeOutBeats: number };
-    clipB: {
-        startBeat: number;
-        fadeInBeats: number;
-        audioOffsetBeats?: number;
-        midiOffsetBeats?: number;
-        loopOriginBeat?: number;
-    };
+    clipB: Clip;
 };
 
 function readCrossfadeSnapshot({ clipA, clipB }: ReadCrossfadeSnapshotInput) {
@@ -24,6 +21,7 @@ function readCrossfadeSnapshot({ clipA, clipB }: ReadCrossfadeSnapshotInput) {
         clipBAudioOffsetBeats?: number;
         clipBMidiOffsetBeats?: number;
         clipBLoopOriginBeat?: number;
+        clipBAudioSource?: ClipAudioSourceFields;
     } = {
         clipAEndBeat: clipA.endBeat,
         clipAFadeOutBeats: clipA.fadeOutBeats,
@@ -39,6 +37,10 @@ function readCrossfadeSnapshot({ clipA, clipB }: ReadCrossfadeSnapshotInput) {
     if (clipB.loopOriginBeat !== undefined) {
         snapshot.clipBLoopOriginBeat = clipB.loopOriginBeat;
     }
+    const audioSource = captureClipAudioSource(clipB);
+    if (audioSource) {
+        snapshot.clipBAudioSource = audioSource;
+    }
     return snapshot;
 }
 
@@ -46,6 +48,14 @@ type SnapshotsMatchInput = {
     left: ReturnType<typeof readCrossfadeSnapshot>;
     right: ReturnType<typeof readCrossfadeSnapshot>;
 };
+
+// A legacy capture names no clock; one recorded with it must find it unchanged.
+function audioSourcesMatch({ left, right }: SnapshotsMatchInput) {
+    return (
+        right.clipBAudioSource === undefined ||
+        isSameClipAudioSource(left.clipBAudioSource ?? {}, right.clipBAudioSource)
+    );
+}
 
 // The anchor is deliberately absent from the comparison: a legacy expected
 // snapshot carries no anchor field while the live clip may hold one a later
@@ -58,7 +68,8 @@ function snapshotsMatch({ left, right }: SnapshotsMatchInput) {
         left.clipBStartBeat === right.clipBStartBeat &&
         left.clipBFadeInBeats === right.clipBFadeInBeats &&
         left.clipBAudioOffsetBeats === right.clipBAudioOffsetBeats &&
-        left.clipBMidiOffsetBeats === right.clipBMidiOffsetBeats
+        left.clipBMidiOffsetBeats === right.clipBMidiOffsetBeats &&
+        audioSourcesMatch({ left, right })
     );
 }
 

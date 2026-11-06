@@ -203,6 +203,7 @@ describe('cold first-paint warmup', () => {
             goto: warmupMocks.goto,
             getByLabel: warmupMocks.getByLabel,
         });
+        warmupMocks.addInitScript.mockResolvedValue(undefined);
         // A healthy boot logs the [capabilities] marker right after the warmup
         // subscribes to the console; deliver it so the readiness gate passes.
         warmupMocks.on.mockImplementation((_event: string, handler: (message: { text: () => string }) => void) => {
@@ -218,12 +219,13 @@ describe('cold first-paint warmup', () => {
         vi.restoreAllMocks();
     });
 
-    it('shares 180 seconds between a 35-second navigation and prompt overlay', async () => {
+    it('shares 300 seconds between a 35-second navigation and prompt overlay', async () => {
         warmupMocks.goto.mockImplementation(async () => {
             clock.now += 35_000;
             return null;
         });
         const warmupLog = vi.spyOn(console, 'log').mockImplementation(() => {});
+        const warmupError = vi.spyOn(console, 'error').mockImplementation(() => {});
 
         await warmFirstPaint(config);
 
@@ -236,17 +238,18 @@ describe('cold first-paint warmup', () => {
         expect(identityCallOrder).toBeLessThan(launchCallOrder);
         expect(warmupMocks.newPage).toHaveBeenCalledWith({ baseURL: 'http://localhost:4173' });
         expect(warmupMocks.addInitScript).toHaveBeenCalledWith(expect.any(Function), 'sourdaw-e2e-direct');
-        expect(warmupMocks.goto).toHaveBeenCalledWith('/', { timeout: 180_000 });
+        expect(warmupMocks.goto).toHaveBeenCalledWith('/', { timeout: 300_000 });
         expect(warmupMocks.getByLabel).toHaveBeenCalledWith('Sourdaw — start a project');
-        expect(warmupMocks.waitFor).toHaveBeenCalledWith({ state: 'visible', timeout: 145_000 });
+        expect(warmupMocks.waitFor).toHaveBeenCalledWith({ state: 'visible', timeout: 265_000 });
         expect(warmupMocks.close).toHaveBeenCalledOnce();
         // The cold cost is reported so a slow warmup is visible in the CI log
         // instead of surfacing inside the first test's timed allowance (#4781).
         expect(warmupLog).toHaveBeenCalledWith(
             expect.stringMatching(
-                /\[first-paint warmup\] launch overlay after 35\.0s, boot capabilities after 35\.0s; 145\.0s of the 180s cold allowance remains/
+                /\[first-paint warmup\] launch overlay after 35\.0s, boot capabilities after 35\.0s; 265\.0s of the 300s cold allowance remains/
             )
         );
+        expect(warmupError).not.toHaveBeenCalled();
     });
 
     it('marks each warmup phase before a pending await and completes it only after that await', async () => {
@@ -322,9 +325,9 @@ describe('cold first-paint warmup', () => {
 
         await expect(warmFirstPaint(config)).rejects.toThrow('navigation timed out');
 
-        expect(warmupMocks.goto).toHaveBeenCalledWith('/', { timeout: 180_000 });
+        expect(warmupMocks.goto).toHaveBeenCalledWith('/', { timeout: 300_000 });
         expect(warmupMocks.waitFor).not.toHaveBeenCalled();
-        expect(clock.now).toBe(180_000);
+        expect(clock.now).toBe(300_000);
         expect(warmupMocks.close).toHaveBeenCalledOnce();
     });
 
@@ -340,14 +343,147 @@ describe('cold first-paint warmup', () => {
 
         await expect(warmFirstPaint(config)).rejects.toThrow('overlay timed out');
 
-        expect(warmupMocks.waitFor).toHaveBeenCalledWith({ state: 'visible', timeout: 145_000 });
-        expect(clock.now).toBe(180_000);
+        expect(warmupMocks.waitFor).toHaveBeenCalledWith({ state: 'visible', timeout: 265_000 });
+        expect(clock.now).toBe(300_000);
+        expect(warmupMocks.close).toHaveBeenCalledOnce();
+    });
+
+    it('logs bounded boot evidence before awaited cleanup and preserves the original overlay error', async () => {
+        const overlayError = new Error('overlay timed out');
+        const close = deferred<void>();
+        const emitted: string[] = [];
+        const onClose = warmupMocks.close.mockImplementation(() => close.promise);
+        warmupMocks.on.mockImplementation((_event: string, handler: (message: { text: () => string }) => void) => {
+            handler({ text: () => '[vite] connected.' });
+            for (let index = 0; index < 9; index += 1) {
+                handler({ text: () => `unrelated browser message ${index}` });
+            }
+            handler({ text: () => 'browser emitted boot detail' });
+        });
+        warmupMocks.goto.mockImplementation(async () => {
+            clock.now += 35_000;
+            return null;
+        });
+        warmupMocks.waitFor.mockImplementation(async (options: { timeout: number }) => {
+            clock.now += options.timeout;
+            throw overlayError;
+        });
+        vi.spyOn(console, 'error').mockImplementation((message: string) => emitted.push(message));
+
+        let settled = false;
+        const failure = warmFirstPaint(config).catch((error: unknown) => error);
+        void failure.then(() => {
+            settled = true;
+        });
+
+        await vi.waitFor(() => expect(warmupMocks.close).toHaveBeenCalledOnce());
+        expect(emitted).toHaveLength(1);
+        expect(emitted[0]).toContain('First-paint warmup failed after 300000ms');
+        expect(emitted[0]).toContain('Vite client connected +0.0s');
+        expect(emitted[0]).toContain('browser emitted boot detail');
+        expect(emitted[0]).toContain('unrelated browser message 8');
+        expect(emitted[0]).not.toContain('unrelated browser message 0');
+        expect(emitted[0]).toContain('overlay timed out');
+        expect(emitted[0]).not.toContain('did not mount within');
+        expect(settled).toBe(false);
+        expect(warmupMocks.goto).toHaveBeenCalledOnce();
+        expect(warmupMocks.waitFor).toHaveBeenCalledOnce();
+        expect(warmupMocks.waitFor).toHaveBeenCalledWith({ state: 'visible', timeout: 265_000 });
+        expect(clock.now).toBe(300_000);
+        expect(onClose).toHaveBeenCalledOnce();
+
+        close.resolve(undefined);
+        expect(await failure).toBe(overlayError);
+        expect(settled).toBe(true);
+    });
+
+    it('preserves the readiness error when browser close also fails', async () => {
+        const readinessError = new Error('overlay timed out');
+        const closeError = new Error('browser close failed');
+        const emitted: string[] = [];
+        const warmupLog = vi.spyOn(console, 'log').mockImplementation(() => {});
+        vi.spyOn(console, 'error').mockImplementation((message: string) => emitted.push(message));
+        warmupMocks.waitFor.mockRejectedValue(readinessError);
+        warmupMocks.close.mockRejectedValue(closeError);
+
+        await expect(warmFirstPaint(config)).rejects.toBe(readinessError);
+
+        expect(warmupMocks.close).toHaveBeenCalledOnce();
+        expect(emitted).toHaveLength(2);
+        expect(emitted[0]).toContain('overlay timed out');
+        expect(emitted[1]).toContain('browser close failed while preserving the original warmup failure');
+        expect(emitted[1]).toContain('browser close failed');
+        expect(warmupLog).toHaveBeenCalledWith(expect.stringMatching(/browser close: start$/));
+        expect(warmupLog).not.toHaveBeenCalledWith(expect.stringMatching(/browser close: complete$/));
+    });
+
+    it('rejects with a close-only error after readiness succeeds', async () => {
+        const closeError = new Error('browser close failed');
+        const emitted: string[] = [];
+        const warmupLog = vi.spyOn(console, 'log').mockImplementation(() => {});
+        const warmupError = vi.spyOn(console, 'error').mockImplementation((message: string) => emitted.push(message));
+        warmupMocks.close.mockRejectedValue(closeError);
+
+        await expect(warmFirstPaint(config)).rejects.toBe(closeError);
+
+        expect(warmupMocks.goto).toHaveBeenCalledOnce();
+        expect(warmupMocks.waitFor).toHaveBeenCalledOnce();
+        expect(warmupMocks.close).toHaveBeenCalledOnce();
+        expect(emitted).toEqual([]);
+        expect(warmupError).not.toHaveBeenCalled();
+        expect(warmupLog).toHaveBeenCalledWith(expect.stringMatching(/browser close: start$/));
+        expect(warmupLog).not.toHaveBeenCalledWith(expect.stringMatching(/browser close: complete$/));
+    });
+
+    it('preserves an undefined init-script rejection when browser close also fails', async () => {
+        const closeError = new Error('browser close failed');
+        const emitted: string[] = [];
+        vi.spyOn(console, 'error').mockImplementation((message: string) => emitted.push(message));
+        warmupMocks.addInitScript.mockRejectedValue(undefined);
+        warmupMocks.close.mockRejectedValue(closeError);
+
+        const outcome = await warmFirstPaint(config).then(
+            () => ({ fulfilled: true as const }),
+            (error: unknown) => ({ fulfilled: false as const, error })
+        );
+
+        expect(outcome.fulfilled).toBe(false);
+        if (outcome.fulfilled) {
+            throw new TypeError('Expected init-script failure');
+        }
+        expect(outcome.error).toBeUndefined();
+        expect(warmupMocks.newPage).toHaveBeenCalledOnce();
+        expect(warmupMocks.addInitScript).toHaveBeenCalledOnce();
+        expect(warmupMocks.goto).not.toHaveBeenCalled();
+        expect(warmupMocks.close).toHaveBeenCalledOnce();
+        expect(emitted).toHaveLength(1);
+        expect(emitted[0]).toContain('browser close failed while preserving the original warmup failure');
+        expect(emitted[0]).toContain('browser close failed');
+    });
+
+    it('reports navigation failure evidence without labeling it a timeout', async () => {
+        const navigationError = new Error('net::ERR_FAILED');
+        const emitted: string[] = [];
+        warmupMocks.on.mockImplementation((_event: string, handler: (message: { text: () => string }) => void) => {
+            handler({ text: () => 'navigation started' });
+        });
+        warmupMocks.goto.mockRejectedValue(navigationError);
+        vi.spyOn(console, 'error').mockImplementation((message: string) => emitted.push(message));
+
+        await expect(warmFirstPaint(config)).rejects.toBe(navigationError);
+
+        expect(emitted).toHaveLength(1);
+        expect(emitted[0]).toContain('net::ERR_FAILED');
+        expect(emitted[0]).toContain('navigation started');
+        expect(emitted[0]).not.toContain('did not mount within');
+        expect(warmupMocks.goto).toHaveBeenCalledOnce();
+        expect(warmupMocks.waitFor).not.toHaveBeenCalled();
         expect(warmupMocks.close).toHaveBeenCalledOnce();
     });
 
     it('refuses a depleted budget before passing timeout zero to the overlay', async () => {
         warmupMocks.goto.mockImplementation(async () => {
-            clock.now += 179_999.5;
+            clock.now += 299_999.5;
             return null;
         });
 
@@ -381,6 +517,79 @@ describe('cold first-paint warmup', () => {
         } finally {
             vi.useRealTimers();
         }
+        expect(warmupMocks.close).toHaveBeenCalledOnce();
+    });
+
+    it('gives the marker wait only the budget left after navigation and overlay', async () => {
+        // Navigation and the overlay spend 55 s, so the boot marker may wait
+        // for the 245 s that remain, not the whole 300 s allowance.
+        warmupMocks.on.mockImplementation(() => {});
+        warmupMocks.goto.mockImplementation(async () => {
+            clock.now += 35_000;
+            return null;
+        });
+        warmupMocks.waitFor.mockImplementation(async () => {
+            clock.now += 20_000;
+        });
+        vi.spyOn(console, 'log').mockImplementation(() => {});
+        vi.spyOn(console, 'error').mockImplementation(() => {});
+        vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+        try {
+            const warming = warmFirstPaint(config);
+            // Flush the navigation and overlay so the marker wait is polling,
+            // then move past both the 245 s and the 300 s bounds. The rejection
+            // expectation attaches before the timers advance.
+            await vi.advanceTimersByTimeAsync(0);
+            clock.now = 400_000;
+            const refusal = expect(warming).rejects.toThrow('never logged "[capabilities]" within 245000ms');
+            await vi.advanceTimersByTimeAsync(100);
+            await refusal;
+        } finally {
+            vi.useRealTimers();
+        }
+        expect(warmupMocks.waitFor).toHaveBeenCalledWith({ state: 'visible', timeout: 265_000 });
+        expect(warmupMocks.close).toHaveBeenCalledOnce();
+    });
+
+    it('logs the boot cost measured after the overlay, not the overlay time', async () => {
+        // The marker lands 10 s after the overlay. It is delivered from a fake
+        // timer scheduled by the overlay mock: a microtask would run before the
+        // warmup reads the clock for the overlay figure and skew it to 65 s.
+        const consoleListeners: Array<(message: { text: () => string }) => void> = [];
+        warmupMocks.on.mockImplementation((_event: string, handler: (message: { text: () => string }) => void) => {
+            consoleListeners.push(handler);
+        });
+        warmupMocks.goto.mockImplementation(async () => {
+            clock.now += 35_000;
+            return null;
+        });
+        warmupMocks.waitFor.mockImplementation(async () => {
+            clock.now += 20_000;
+            setTimeout(() => {
+                clock.now += 10_000;
+                for (const listener of consoleListeners) {
+                    listener({ text: () => '[DEV][INFO] [capabilities] {"isDesktopRuntime":false}' });
+                }
+            }, 0);
+        });
+        const warmupLog = vi.spyOn(console, 'log').mockImplementation(() => {});
+        const warmupError = vi.spyOn(console, 'error').mockImplementation(() => {});
+        vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+        try {
+            const warming = warmFirstPaint(config);
+            // The advance fires the marker timer once the overlay has been
+            // read, then lets the marker poll observe the marker.
+            await vi.advanceTimersByTimeAsync(100);
+            await warming;
+        } finally {
+            vi.useRealTimers();
+        }
+        expect(warmupLog).toHaveBeenCalledWith(
+            expect.stringMatching(
+                /\[first-paint warmup\] launch overlay after 55\.0s, boot capabilities after 65\.0s; 235\.0s of the 300s cold allowance remains/
+            )
+        );
+        expect(warmupError).not.toHaveBeenCalled();
         expect(warmupMocks.close).toHaveBeenCalledOnce();
     });
 

@@ -1,5 +1,6 @@
+import { executeAppAction } from '#/modules/Command/useCases';
+
 import { MAX_TEMPO_MAP_TEMPO, MIN_TEMPO_MAP_TEMPO } from '../../models/TempoMap';
-import { tempoMapStore } from '../../stores/tempoMapStore';
 
 type ReplaceTempoMapInput = {
     changes: Array<{
@@ -9,7 +10,7 @@ type ReplaceTempoMapInput = {
     }>;
 };
 
-export function replaceTempoMap(input: ReplaceTempoMapInput): void {
+export function replaceTempoMap(input: ReplaceTempoMapInput): Promise<void> {
     for (const change of input.changes) {
         if (!Number.isFinite(change.beat) || change.beat < 0) {
             throw new RangeError('Tempo-map beat must be finite and non-negative');
@@ -27,12 +28,5 @@ export function replaceTempoMap(input: ReplaceTempoMapInput): void {
         }
     }
 
-    const changes = input.changes.map((change) => ({
-        id: `tempo-${crypto.randomUUID().slice(0, 8)}`,
-        beat: change.beat,
-        tempo: change.tempo,
-        curve: change.curve,
-    }));
-
-    tempoMapStore.set({ changes });
+    return executeAppAction({ type: 'editTempoMap', payload: { edit: { type: 'replace', changes: input.changes } } });
 }

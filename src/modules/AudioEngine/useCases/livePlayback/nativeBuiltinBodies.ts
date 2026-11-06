@@ -33,12 +33,6 @@
  * file's own answer for what the body actually addresses.
  */
 
-import {
-    FERMENTER_PARAMS,
-    mapFermenterParamToDspParam,
-    mapFermenterPatchToDspPatch,
-} from '#/modules/Fermenter/useCases';
-
 import { getAudioDeviceRuntimeSink } from '../../engine/audioDeviceRuntimeSink';
 import { mapCrustParamToDspParam } from '../../models/CrustDspParamNames';
 import { mapGlutenParamToDspParam } from '../../models/GlutenDspParamNames';
@@ -46,6 +40,9 @@ import { mapGrandBouleParamToDspParam } from '../../models/GrandBouleDspParamNam
 import { KNEAD_ENGINE_PARAM_NAMES } from '../../models/KneadEngineParamNames';
 import { isProofNativeParameterId } from '../../models/ProofRuntimeControl';
 import { mapToasterKitParamToDspParam } from '../../models/ToasterKitParamNames';
+
+import { captureNativeGrinderNeuralPatch } from './captureNativeGrinderNeuralPatch';
+import { nativeBodyVocabularyRegistry } from './nativeBodyVocabularyRegistry';
 
 /**
  * The wire shape `BuiltinParamName::parse` admits
@@ -63,6 +60,8 @@ export const BUILTIN_PARAM_NAME_SHAPE = /^[A-Za-z0-9_]{1,40}$/;
 export type NativeBuiltinBody = Readonly<{
     /** Whether the engine registers a note store for this body (mirror of `BuiltinEffectType::sounds_notes`). */
     soundsNotes: boolean;
+    /** Explicit full-network set/clear. Ordinary scalar writes return undefined. */
+    neuralPatch?: (patch: Readonly<Record<string, unknown>>) => string | null | undefined;
     /** The engine's name for one of this body's parameters, from the id a panel or lane authors. */
     parameterName: (paramId: string) => string;
     /** The engine's flat record for this body's patch, from project truth's `parameterValues`. */
@@ -147,9 +146,36 @@ function shapedNumericParametersOnly(
  * travels, because the worklet's structured patch applies only one source at
  * a time.
  */
+function grinderNeuralPatch(patch: Readonly<Record<string, unknown>>): string | null | undefined {
+    if (patch.neuralModelMode === 'imported') {
+        if (typeof patch.modelJson === 'string') {
+            return patch.modelJson;
+        }
+        const profile =
+            typeof patch.profile === 'object' && patch.profile !== null
+                ? (patch.profile as Record<string, unknown>)
+                : null;
+        if (typeof profile?.modelDigest === 'string') {
+            throw new TypeError('Imported Grinder NAM content is unavailable');
+        }
+        return null;
+    }
+    if (typeof patch.neuralModelMode === 'number' && patch.neuralModelMode > 0.5) {
+        return captureNativeGrinderNeuralPatch(patch)?.modelJson;
+    }
+    if (
+        patch.neuralModelMode === 'builtin' ||
+        typeof patch.neuralModelSlot === 'number' ||
+        (typeof patch.neuralModelMode === 'number' && patch.neuralModelMode <= 0.5)
+    ) {
+        return null;
+    }
+    return undefined;
+}
+
 function grinderNeuralSourceOnly(patch: Readonly<Record<string, unknown>>): Readonly<Record<string, number>> {
     const shaped = shapedNumericParametersOnly(patch);
-    const importedIsLive = (shaped.neuralModelMode ?? 0) > 0.5;
+    const importedIsLive = patch.neuralModelMode === 'imported' || (shaped.neuralModelMode ?? 0) > 0.5;
     return Object.fromEntries(
         Object.entries(shaped).filter(([key]) =>
             importedIsLive ? key !== 'neuralModelSlot' : !key.startsWith('neuralCustom')
@@ -157,13 +183,30 @@ function grinderNeuralSourceOnly(patch: Readonly<Record<string, unknown>>): Read
     );
 }
 
+type DeviceModuleVocabulary = Pick<NativeBuiltinBody, 'parameterName' | 'projectPatch' | 'addressesParameter'>;
+
+function registeredVocabulary(deviceType: string): DeviceModuleVocabulary {
+    const vocabulary = nativeBodyVocabularyRegistry.read('nativeBuiltinBodies', deviceType);
+    if (vocabulary === null) {
+        throw new Error(`nativeBuiltinBodies: no native body vocabulary is registered for '${deviceType}'`);
+    }
+    return vocabulary;
+}
+
 /**
- * The ids `FERMENTER_PARAMS` authors. Macro slots (`macro0`..`macro7`) are
- * deliberately excluded: project truth stores them as one `macros` array, not
- * as individually keyed `parameterValues` entries, so no lane parameter id
- * ever resolves to one.
+ * A body whose vocabulary its device module owns, asked at call time through
+ * the registry the composition root fills: this table is built when the module
+ * loads, before the root has registered anything. The body's own entry names
+ * the type, so a missing registration is a composition fault and refuses
+ * rather than guessing at the engine's names.
  */
-const FERMENTER_PARAM_IDS: ReadonlySet<string> = new Set(FERMENTER_PARAMS.map((param) => param.id));
+function deviceModuleVocabulary(deviceType: string): DeviceModuleVocabulary {
+    return {
+        parameterName: (paramId) => registeredVocabulary(deviceType).parameterName(paramId),
+        projectPatch: (values) => registeredVocabulary(deviceType).projectPatch(values),
+        addressesParameter: (paramId) => registeredVocabulary(deviceType).addressesParameter(paramId),
+    };
+}
 
 /**
  * One body's patch, in the engine's own vocabulary, from a table that answers
@@ -298,9 +341,7 @@ const NATIVE_BUILTIN_BODIES = new Map<string, NativeBuiltinBody>([
         'fermenter',
         {
             soundsNotes: true,
-            parameterName: (paramId) => mapFermenterParamToDspParam({ paramId }),
-            projectPatch: (parameterValues) => mapFermenterPatchToDspPatch({ patch: parameterValues }),
-            addressesParameter: (paramId) => FERMENTER_PARAM_IDS.has(paramId),
+            ...deviceModuleVocabulary('fermenter'),
             // A keyboard synth: a clip note holds its key until the note ends.
             takesClipNoteReleases: true,
             latencyCompensatedByEngine: false,
@@ -367,6 +408,7 @@ const NATIVE_BUILTIN_BODIES = new Map<string, NativeBuiltinBody>([
         'grinder',
         {
             soundsNotes: false,
+            neuralPatch: grinderNeuralPatch,
             /**
              * No table: Grinder's engine spells its own parameters in
              * camelCase, and project truth authors the same camelCase ids

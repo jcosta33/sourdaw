@@ -1,5 +1,6 @@
-import { expect, test, type Locator, type Page } from '@playwright/test';
+import { type Locator, type Page } from '@playwright/test';
 
+import { expect, test } from './e2eTest';
 import { launch_new_project, setupWorkspace } from './e2eUtils';
 
 function buildSineWav(seconds = 4): Buffer {
@@ -33,7 +34,7 @@ function audioHeaderRow(page: Page): Locator {
         .getByRole('grid', { name: /Track list/i })
         .first()
         .getByRole('row')
-        .filter({ has: page.getByText('Audio', { exact: true }) })
+        .filter({ has: page.getByText('Audio 1', { exact: true }) })
         .filter({ hasNot: page.getByRole('button', { name: 'Add take' }) });
 }
 
@@ -44,7 +45,7 @@ async function addAudioTrack(page: Page): Promise<void> {
     await page.getByPlaceholder('Type a command...', { exact: true }).fill('Add Audio Track');
     await page.getByRole('option', { name: 'Add Audio Track' }).click();
     await expect.poll(() => trackList.getByRole('row').count()).toBeGreaterThan(before);
-    await audioHeaderRow(page).getByText('Audio', { exact: true }).click();
+    await audioHeaderRow(page).getByText('Audio 1', { exact: true }).click();
 }
 
 async function openBottomTab(page: Page, name: string): Promise<void> {
@@ -59,7 +60,7 @@ async function openBottomTab(page: Page, name: string): Promise<void> {
 }
 
 async function importToneClip(page: Page): Promise<void> {
-    await audioHeaderRow(page).getByText('Audio', { exact: true }).click({ button: 'right' });
+    await audioHeaderRow(page).getByText('Audio 1', { exact: true }).click({ button: 'right' });
     await expect(page.getByRole('menuitem', { name: /Import Audio/i })).toBeVisible();
     const chooser = page.waitForEvent('filechooser');
     await page.getByRole('menuitem', { name: /Import Audio/i }).click();

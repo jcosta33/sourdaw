@@ -65,6 +65,8 @@ describe('getTrackEligibility', () => {
             'master',
             {
                 ...ELIGIBLE_FOR_ALL_AUDIO_BEARING_WRITES,
+                acceptsArm: false,
+                acceptsRecording: false,
                 removesMidiFxProjectResidue: false,
                 rendersTrackContent: false,
                 createsLiveStrip: true,

@@ -4,6 +4,7 @@ import { shiftLoopOriginEntry } from '#/utils/clipLoopOrigin';
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { updateClip } from '../../repositories/track/updateClip';
 import { findClipById } from '../../services/findClipById';
+import { relocateAudioSourceTimeFields } from '../clip/relocateAudioSourceTimeFields';
 
 export function nudgeClip(clipId: string, beats: number): boolean {
     if (!Number.isFinite(beats)) {
@@ -38,6 +39,7 @@ export function nudgeClip(clipId: string, beats: number): boolean {
             startBeat: newStart,
             endBeat: newStart + duration,
             ...shiftLoopOriginEntry(context, appliedDelta),
+            ...relocateAudioSourceTimeFields(context, appliedDelta),
         };
     });
 

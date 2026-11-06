@@ -1,5 +1,6 @@
-import { expect, test, type Locator, type Page } from '@playwright/test';
+import { type Locator, type Page } from '@playwright/test';
 
+import { expect, test } from './e2eTest';
 import { launch_new_project, setupWorkspace } from './e2eUtils';
 
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
@@ -11,7 +12,7 @@ async function addMidiTrack(page: Page): Promise<void> {
     await page.getByPlaceholder('Type a command...', { exact: true }).fill('Add MIDI Track');
     await page.getByRole('option', { name: 'Add MIDI Track' }).click();
     await expect.poll(() => trackList.getByRole('row').count()).toBeGreaterThan(before);
-    await trackList.getByText('MIDI', { exact: true }).click();
+    await trackList.getByText('MIDI 1', { exact: true }).click();
 }
 
 async function midiLaneY(page: Page): Promise<number> {

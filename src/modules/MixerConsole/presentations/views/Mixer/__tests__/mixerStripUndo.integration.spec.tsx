@@ -125,16 +125,13 @@ vi.mock('#/modules/Arrangement/useCases', async () => {
         selectTrack: actual.selectTrack,
         setArrangementEventBus: actual.setArrangementEventBus,
         setMarqueeSelection: actual.setMarqueeSelection,
-        setSend: actual.setSend,
         setTrackGain: actual.setTrackGain,
-        setTrackOutput: actual.setTrackOutput,
         setTrackPan: actual.setTrackPan,
         setTrackState: vi.fn(),
         soloTrackExclusive: actual.soloTrackExclusive,
         startRecording: vi.fn(),
         stopRecording: vi.fn(),
         toggleInputMonitoring: actual.toggleInputMonitoring,
-        toggleSendPreFader: actual.toggleSendPreFader,
         toggleVcaMembership: actual.toggleVcaMembership,
         updateClip: vi.fn(),
     };
@@ -145,6 +142,10 @@ vi.mock('#/modules/Arrangement/useCases', async () => {
 vi.mock('#/modules/MIDI/useCases', async () => {
     const actual = await vi.importActual<typeof import('#/modules/MIDI/useCases')>('#/modules/MIDI/useCases');
     return {
+        captureEventPositionAt: actual.captureEventPositionAt,
+        replaceFrozenMidiTakeRow: actual.replaceFrozenMidiTakeRow,
+        sealHeldRecordedMidiNotes: actual.sealHeldRecordedMidiNotes,
+        snapshotMidiClipData: actual.snapshotMidiClipData,
         projectClipControllerEvents: vi.fn(),
         projectClipControllerRestore: vi.fn(),
         isExactMidiClipDataActionSnapshot: actual.isExactMidiClipDataActionSnapshot,
@@ -260,6 +261,7 @@ vi.mock('#/modules/Knead/useCases', async () => {
     };
 });
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    builtinSynthVoice: { read: vi.fn() },
     rearmCommittedTrackInputMonitoring: vi.fn(async () => undefined),
     reconcileAutoInputMonitoring: vi.fn(),
     suspendAutoInputMonitoring: vi.fn(() => vi.fn()),
@@ -277,6 +279,10 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     // The same census: the project session quiescer imports the disarm, and
     // this suite never reaches a session teardown.
     disarmRetrospectiveCapture: vi.fn(),
+    // The same census: the runtime graph repair reads the attachment port,
+    // and this suite never runs a repair.
+    engineAttachmentTracking: { configure: vi.fn(), read: vi.fn() },
+    openCachedAudioBufferHold: vi.fn(() => ({ retain: vi.fn(), release: vi.fn() })),
     soundsNativeNotes: vi.fn(() => false),
     updateDeviceParam: vi.fn(),
     holdWebFallbackDeviceParam: vi.fn(),
@@ -311,7 +317,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     startNoteExpression: vi.fn(),
     advanceNoteExpression: vi.fn(),
     relocateNoteExpression: vi.fn(),
-    applyRuntimeGraphDelta: vi.fn(),
+    applyRuntimeGraphDelta: vi.fn(() => ({ acceptance: 'accepted', application: 'applied' })),
     audioEngine: vi.fn(),
     cacheAudioBuffer: vi.fn(),
     cancelPendingAudioBufferImport: vi.fn(),
@@ -319,6 +325,11 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     clearReportedLatency: vi.fn(),
     clearRuntimeCachedAudioBuffers: vi.fn(),
     createBufferSource: vi.fn(),
+    createNativeRecordingCaptureClock: vi.fn(() => ({
+        admission: null,
+        last: null,
+        read: () => ({ carrier: 'browser' as const }),
+    })),
     createRuntimeGraphTopologyFingerprint: vi.fn(),
     decodeAudioFile: vi.fn(),
     discardDecodedAudioFile: vi.fn(),
@@ -328,6 +339,8 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     garbageCollectCachedAudioBuffersBySize: vi.fn(),
     garbageCollectFreezeAudioBuffers: vi.fn(),
     getCachedAudioBuffer: vi.fn(),
+    restoreUnpinnedAudioBuffersFromIdb: vi.fn(),
+    holdAudioBufferForSession: vi.fn(),
     getCompensationDelay: vi.fn(),
     getCurrentTime: vi.fn(),
     getDefaultBendRangeSemitones: vi.fn(),
@@ -574,6 +587,33 @@ function storedTrack(): { clips: unknown[]; devices: unknown[]; gain: number; pa
         return undefined;
     }
     return { clips: track.clips, devices: track.devices, gain: track.gain, pan: track.pan };
+}
+
+const BUS_ID = 'strip-bus';
+const BUS_NAME = 'Vocal Bus';
+
+function addBus(): void {
+    const leadVocal = trackStore.value!.tracks.find((track) => track.id === TRACK_ID)!;
+    trackStore.set({
+        ...trackStore.value!,
+        tracks: [
+            ...trackStore.value!.tracks,
+            {
+                ...leadVocal,
+                id: BUS_ID,
+                name: BUS_NAME,
+                kind: 'bus',
+                clips: [],
+                devices: [],
+                activeAlternativeId: 'alt-bus',
+                alternatives: [{ id: 'alt-bus', name: 'Alternative 1', clips: [] }],
+            },
+        ],
+    });
+}
+
+function storedOutputId(): string | undefined {
+    return trackStore.value?.tracks.find((candidate) => candidate.id === TRACK_ID)?.outputId;
 }
 
 function undoLabels(): string[] {
@@ -1075,5 +1115,30 @@ describe('mixer strip writes reach the project through the recorded path', () =>
 
         await undo();
         expect(trackStore.value?.tracks.find((candidate) => candidate.id === TRACK_ID)?.color).toBe('#ff0000');
+    });
+
+    it('records an output change from the Out picker and gives it back on undo and redo', async () => {
+        addBus();
+        render(<MixerStripRow />);
+
+        fireEvent.click(within(strip()).getByRole('button', { name: 'Master' }));
+        fireEvent.click(within(strip()).getByRole('option', { name: BUS_NAME }));
+
+        await vi.waitFor(() => {
+            expect(undoLabels()).toEqual(['Set track output']);
+        });
+        expect(storedOutputId()).toBe(BUS_ID);
+
+        await undo();
+        expect(storedOutputId()).toBe('master');
+        await vi.waitFor(() => {
+            expect(within(strip()).getByRole('button', { name: 'Master' })).toBeInTheDocument();
+        });
+
+        await redo();
+        expect(storedOutputId()).toBe(BUS_ID);
+        await vi.waitFor(() => {
+            expect(within(strip()).getByRole('button', { name: BUS_NAME })).toBeInTheDocument();
+        });
     });
 });

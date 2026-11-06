@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { deriveVcaMultiplier, resolveEligibleDeviceWriteTarget, trackStore } from '#/modules/Arrangement/stores';
 import {
     getCompensationDelay,
@@ -29,6 +30,8 @@ import { transportStore } from '../../../../stores/transportStore';
 import { schedulerSession } from '../../../playheadScheduler/schedulerSession';
 import { applyAutomation } from '../applyAutomation';
 import { deviceReadBeatByTrack } from '../deviceReadBeatByTrack';
+
+registerDeviceEnginePorts();
 
 vi.mock('#/modules/Arrangement/stores', async (importOriginal) => {
     const mod = await importOriginal<typeof import('#/modules/Arrangement/stores')>();

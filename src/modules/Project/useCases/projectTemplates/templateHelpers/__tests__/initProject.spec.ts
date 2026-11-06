@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { preferencesStore } from '#/modules/Preferences/stores';
 import { defaultPreferences } from '#/modules/Preferences/useCases';
+import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
 
 const mocks = vi.hoisted(() => ({
     createTrack: vi.fn(() => ({ id: 'master', name: 'Master', kind: 'master' })),
@@ -9,7 +10,6 @@ const mocks = vi.hoisted(() => ({
     getAllTracks: vi.fn(() => []),
     replaceChordTrackState: vi.fn(),
     hydrateGrooveTemplates: vi.fn(),
-    transportSet: vi.fn(),
     projectSet: vi.fn(),
 }));
 
@@ -29,15 +29,6 @@ vi.mock('#/modules/MIDI/useCases', async (importOriginal) => {
         hydrateGrooveTemplates: mocks.hydrateGrooveTemplates,
     };
 });
-// Real stores with only the write spied, so the real Transport useCases barrel —
-// and with it the real `preferencesSeededTransportState` — loads and runs below.
-vi.mock('#/modules/Transport/stores', async (importOriginal) => {
-    const actual = await importOriginal<typeof import('#/modules/Transport/stores')>();
-    return {
-        ...actual,
-        transportStore: { ...actual.transportStore, set: mocks.transportSet },
-    };
-});
 vi.mock('#/modules/Project/stores/projectStore', () => ({
     projectStore: { set: mocks.projectSet },
 }));
@@ -52,6 +43,7 @@ describe('initProject', () => {
 
     afterEach(() => {
         preferencesStore.set(defaultPreferences);
+        transportStore.set(defaultTransportState);
     });
 
     it('does not signal workspace-ready — the async template build has not settled yet', () => {
@@ -81,7 +73,7 @@ describe('initProject', () => {
 
         initProject({ name: 'EDM', bpm: 128 });
 
-        expect(mocks.transportSet).toHaveBeenCalledWith(
+        expect(transportStore.value).toEqual(
             expect.objectContaining({
                 tempo: 128,
                 timeSignatureNumerator: 4,

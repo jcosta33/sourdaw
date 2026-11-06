@@ -1,18 +1,16 @@
 import { getGainEnvelopeSeries, type Track } from '#/modules/Arrangement/stores';
 import { automationStore } from '#/modules/Automation/stores';
 import { buildOfflineModulatorPlans, getAutomationLaneCeiling } from '#/modules/Automation/useCases';
-import { type MidiStoreState } from '#/modules/MIDI/stores';
 import {
-    getDrumKitDefByIndex,
-    getSynthParamsFromDevices,
-    scheduleDrumKitNote,
-    scheduleKitNote,
-    scheduleNoteOffline,
-} from '#/modules/Synth/useCases';
+    frozenMidiTakeRepeats,
+    projectFrozenMidiTakeWindow,
+    selectMidiNotesForRecordingPass,
+    type MidiStoreState,
+} from '#/modules/MIDI/stores';
 import { defaultTransportState, type TempoMapStoreState, transportStore } from '#/modules/Transport/stores';
 import { automationSlewTickSecondsForGrain } from '#/utils/automationSlew';
 import { MICRO_FADE_SECONDS } from '#/utils/clipFadeScheduleClamp';
-import { isBeatAdmittedByAnchoredClipLoopWindow } from '#/utils/clipLoopOrigin';
+import { isBeatInEnabledClipLoopWindow, resolveClipLoopPassGrid } from '#/utils/clipLoopOrigin';
 import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
 import { resolveDrumKitBy, resolveDrumKitOutputGain } from '#/utils/deviceTypeMatching';
 import { PITCH_BEND_MAX, PITCH_BEND_MIN } from '#/utils/midiData';
@@ -47,6 +45,7 @@ import { type DeviceNodeEntry, buildDeviceChain } from '../buildDeviceChain';
 import { getCompensationDelay } from '../latencyCompensation/compensation/getCompensationDelay';
 import { getDefaultBendRangeSemitones } from '../noteExpression/getDefaultBendRangeSemitones';
 import { projectNoteExpressionCurves } from '../noteExpression/projectNoteExpressionCurves';
+import { builtinSynthVoice } from '../scheduling/builtinSynthVoice';
 
 import { type captureOfflineSchedulingInput } from './captureOfflineSchedulingInput';
 import { MIXER_AUTOMATION_PARAMETER_IDS, YIELD_EVERY_N_NOTES } from './constants';
@@ -59,6 +58,52 @@ import { scheduleOfflineClipSource } from './scheduleOfflineClipSource';
 import { selectOfflineNoteReceiver } from './selectOfflineNoteReceiver';
 import { type OfflineScheduleTally, type PendingNoteWorkletEvent, type PendingWorkletEvent } from './types';
 import { yieldToMain } from './yieldToMain';
+
+function selectedMidiWindows(clip: ResolvedClip) {
+    const source = clip.midiTakeSource;
+    if (!source) {
+        return [];
+    }
+    const windows: {
+        passStart: number;
+        passHead: number;
+        passEnd: number;
+        value: NonNullable<ReturnType<typeof projectFrozenMidiTakeWindow>>;
+    }[] = [];
+    for (const repeat of frozenMidiTakeRepeats(source, clip, clip.startBeat, clip.endBeat)) {
+        const value = projectFrozenMidiTakeWindow({
+            source,
+            fragment: clip,
+            recordingPassIndex: clip.midiTakeRecordingPassIndex,
+            absoluteOccurrenceIndex: repeat.absoluteOccurrenceIndex,
+            fromBeat: clip.startBeat,
+            toBeat: clip.endBeat,
+        });
+        if (!value) {
+            throw new Error('Invalid frozen MIDI take window');
+        }
+        windows.push({
+            passStart: repeat.startBeat,
+            passHead: repeat.passHeadBeat,
+            passEnd: Math.min(repeat.endBeat, clip.endBeat),
+            value,
+        });
+    }
+    return windows;
+}
+
+function selectedFrozenControllerRows(clip: ResolvedClip, regionStartBeat: number) {
+    const projected = selectedMidiWindows(clip).flatMap(({ value }) => [
+        ...value.controlChanges.map((row) => ({ ...row, closesClip: false })),
+        ...value.closingControlChanges.map((row) => ({ ...row, closesClip: true })),
+    ]);
+    const admitted = projected.filter((row) =>
+        row.closesClip
+            ? row.beat > regionStartBeat && row.beat <= clip.endBeat
+            : row.beat >= regionStartBeat && row.beat < clip.endBeat
+    );
+    return admitted.sort((left, right) => left.beat - right.beat);
+}
 
 /**
  * Schedule a single track's clips into the given OfflineAudioContext.
@@ -466,6 +511,7 @@ export async function scheduleTrackClips({
         startBeat: number;
         /** How far into the note `startBeat` is when a clip cut took its head off; the curves count from the note's start. */
         beatsIntoNote?: number;
+        recordedOwnBendBeat?: number;
         expression?: NonNullable<Parameters<typeof projectNoteExpressionCurves>[0]['note']['expression']>;
         clipGain: number;
     };
@@ -520,10 +566,11 @@ export async function scheduleTrackClips({
     // dedicated drum-voice definition wins for every drum device type, and the
     // factory kit voices only a device no definition covers.
     const receivesOnDrumKit = receiver?.kind === 'drum';
-    const kitDef = receivesOnDrumKit ? resolveDrumKitBy(track.devices, getDrumKitDefByIndex) : null;
+    const voice = builtinSynthVoice.read('scheduleTrackClips');
+    const kitDef = receivesOnDrumKit ? resolveDrumKitBy(track.devices, voice.getDrumKitDefByIndex) : null;
     const drumKit = receivesOnDrumKit && !kitDef ? resolveDrumKit(track.devices) : null;
     const drumKitGain = resolveDrumKitOutputGain(track.devices);
-    const synthParams = drumKit || kitDef || instrumentControls ? null : getSynthParamsFromDevices(track.devices);
+    const synthParams = drumKit || kitDef || instrumentControls ? null : voice.getSynthParamsFromDevices(track.devices);
     function projectPitch({
         pitch,
         referenceBeat,
@@ -612,13 +659,34 @@ export async function scheduleTrackClips({
         if (hasYeast || !instrumentEntry?.strategy.noteExpression || !projectChannelBend) {
             return [];
         }
-        const clips = clipsToProcess.flatMap(({ clip }) => {
-            const pitchBends = midi.pitchBendByClipId[clip.id];
-            if (clip.type !== 'midi' || clip.muted || !pitchBends?.length) {
-                return [];
+        const clips = clipsToProcess.flatMap<Parameters<OfflineChannelBendProjector>[0]['clips'][number]>(
+            ({ clip }) => {
+                if (clip.type !== 'midi' || clip.muted) {
+                    return [];
+                }
+                if (clip.midiTakeSource) {
+                    const source = clip.midiTakeSource;
+                    return selectedMidiWindows(clip).flatMap(({ passStart, passHead, passEnd, value }) =>
+                        value.pitchBends.length === 0
+                            ? []
+                            : [
+                                  {
+                                      clip: { startBeat: passStart, endBeat: passEnd, midiOffsetBeats: passStart },
+                                      controlChanges: value.controlChanges,
+                                      pitchBends: value.pitchBends,
+                                      sourceControlChanges: source.rows.controlChanges.value,
+                                      sourceBeatOffset: passHead - source.sourceEntryBeat,
+                                  },
+                              ]
+                    );
+                }
+                const pitchBends = midi.pitchBendByClipId[clip.id];
+                if (!pitchBends?.length) {
+                    return [];
+                }
+                return [{ clip, controlChanges: midi.ccByClipId[clip.id] ?? [], pitchBends }];
             }
-            return [{ clip, controlChanges: midi.ccByClipId[clip.id] ?? [], pitchBends }];
-        });
+        );
         // Frames order the moves, so a move before the region keeps the frame the timeline gives it, below
         // zero, rather than the clamp every note shares: the bend in force at the region start is then the last
         // one on the timeline, not the last one of the last clip in the track's clip list.
@@ -680,6 +748,7 @@ export async function scheduleTrackClips({
                           channelBend,
                           startBeat: note.startBeat,
                           beatsIntoNote: note.beatsIntoNote,
+                          recordedOwnBendBeat: note.recordedOwnBendBeat,
                           releaseFrame: frameAtSeconds(endTime),
                           frameAtBeat: (beat) => frameAtSeconds(secondsAtBeat(beat, toasterPadIndex)),
                           channelBendFrameAtBeat: frameOnTimelineAtBeat,
@@ -713,7 +782,7 @@ export async function scheduleTrackClips({
                     });
                 }
             } else if (kitDef) {
-                scheduleDrumKitNote(
+                voice.scheduleDrumKitNote(
                     offlineCtx,
                     trackInputNode,
                     kitDef,
@@ -724,7 +793,7 @@ export async function scheduleTrackClips({
                     drumKitGain
                 );
             } else if (drumKit) {
-                scheduleKitNote(
+                voice.scheduleKitNote(
                     offlineCtx,
                     trackInputNode,
                     drumKit,
@@ -737,7 +806,7 @@ export async function scheduleTrackClips({
                 );
             } else {
                 const mpe = resolveScheduledMpe(note);
-                scheduleNoteOffline(
+                voice.scheduleNoteOffline(
                     offlineCtx,
                     trackInputNode,
                     note.pitch,
@@ -784,7 +853,10 @@ export async function scheduleTrackClips({
             if (clip.type !== 'midi' || clip.muted || clip.endBeat <= regionStartBeat) {
                 continue;
             }
-            const sourceNotes = midi.notesByClipId[clip.id] ?? [];
+            const frozenSource = clip.midiTakeSource;
+            const sourceNotes = frozenSource
+                ? []
+                : selectMidiNotesForRecordingPass(midi.notesByClipId[clip.id] ?? [], clip.midiTakeRecordingPassIndex);
             const clipVisualLength = clip.endBeat - clip.startBeat;
             if (clipVisualLength <= 0) {
                 continue;
@@ -795,28 +867,85 @@ export async function scheduleTrackClips({
                 loopEnabled: clip.loopEnabled ?? false,
             });
             const loopLength = loopProjection.loopLengthBeats;
-            const sourceOccurrenceOffset = getSourceOccurrenceOffset({
-                sourceStartBeat: clip.sourceStartBeat,
-                segmentStartBeat: clip.startBeat,
-                loopLength,
-                loopEnabled: clip.loopEnabled ?? false,
+            // A frozen take repeats on its own grid; every other looping clip
+            // passes on the seams its loop anchor laid down.
+            const loopPassGrid = resolveClipLoopPassGrid({
+                startBeat: clip.startBeat,
+                endBeat: clip.endBeat,
+                loopOriginBeat: clip.loopOriginBeat,
+                loopEnabled: !frozenSource && (clip.loopEnabled ?? false),
+                loopLengthBeats: loopLength,
+                iterationCount: loopProjection.iterationCount,
             });
-            const iterationCount = loopProjection.iterationCount;
+            const sourceOccurrenceOffset =
+                getSourceOccurrenceOffset({
+                    sourceStartBeat: clip.sourceStartBeat,
+                    segmentStartBeat: clip.startBeat,
+                    loopLength,
+                    loopEnabled: clip.loopEnabled ?? false,
+                }) + loopPassGrid.passesAheadOfAnchor;
+            const frozenRepeats = frozenSource
+                ? frozenMidiTakeRepeats(frozenSource, clip, clip.startBeat, clip.endBeat)
+                : [];
+            const firstIteration = frozenRepeats[0]?.absoluteOccurrenceIndex ?? 0;
+            const iterationCount = frozenSource ? firstIteration + frozenRepeats.length : loopPassGrid.passCount;
             const loopEnabled = clip.loopEnabled ?? false;
             const midiOffsetBeats = clip.midiOffsetBeats ?? 0;
-            for (let iteration = 0; iteration < iterationCount; iteration++) {
+            for (let iteration = firstIteration; iteration < iterationCount; iteration++) {
                 checkCallerAbort();
+                // A frozen take counts its occurrences on its own grid, as live does.
                 const absoluteOccurrenceIndex = sourceOccurrenceOffset + iteration;
+                if (frozenSource) {
+                    const frozenRepeat = frozenRepeats[iteration - firstIteration];
+                    if (!frozenRepeat) {
+                        throw new Error('Invalid frozen MIDI take repeat');
+                    }
+                    const window = projectFrozenMidiTakeWindow({
+                        source: frozenSource,
+                        fragment: clip,
+                        recordingPassIndex: clip.midiTakeRecordingPassIndex,
+                        absoluteOccurrenceIndex: iteration,
+                        fromBeat: clip.startBeat,
+                        toBeat: clip.endBeat,
+                    });
+                    if (!window) {
+                        throw new Error('Invalid frozen MIDI take window');
+                    }
+                    const passStart = frozenRepeat.startBeat;
+                    const passEnd = frozenRepeat.endBeat;
+                    iterations.push({
+                        sourceNotes: window.notes
+                            .filter((note) =>
+                                selectMidiEventProbability({
+                                    projectProbabilitySeed: midi.probabilitySeed,
+                                    clipId: frozenSource.sourceClipId,
+                                    eventId: note.id,
+                                    absoluteOccurrenceIndex,
+                                    probabilityPercent: note.probability ?? 100,
+                                })
+                            )
+                            .map((note) => ({ ...note, startBeat: note.startBeat - passStart })),
+                        clipId: frozenSource.sourceClipId,
+                        clipStartBeat: clip.startBeat,
+                        clipEndBeat: Math.min(clip.endBeat, passEnd),
+                        iterationStartBeat: passStart,
+                        loopLengthBeats: frozenRepeat.strideBeats,
+                        midiOffsetBeats: 0,
+                        loopEnabled: false,
+                        toasterPadIndex: padIndex,
+                        clipGain: clip.gain,
+                    });
+                    continue;
+                }
                 iterations.push({
-                    // #5198 — the anchored loop window owns membership on the
-                    // row's stored figure before the rack ever sees it: a row
-                    // past the trimmed region end must stay silent, and a
-                    // generator must never be fed it as pass input. Unanchored
-                    // clips admit without the window, byte-identically to the
-                    // pre-anchor construction.
+                    // #5198 — the loop window owns membership on the row's
+                    // stored figure before the rack ever sees it: a row past
+                    // the trimmed region end, or stored at or past an
+                    // anchorless loop's length, must stay silent, and a
+                    // generator must never be fed it as pass input.
                     sourceNotes: sourceNotes.filter(
                         (note) =>
-                            isBeatAdmittedByAnchoredClipLoopWindow({
+                            isBeatInEnabledClipLoopWindow({
                                 relativeBeat: note.startBeat - midiOffsetBeats,
                                 startBeat: clip.startBeat,
                                 loopOriginBeat: clip.loopOriginBeat,
@@ -834,7 +963,7 @@ export async function scheduleTrackClips({
                     clipId: clip.id,
                     clipStartBeat: clip.startBeat,
                     clipEndBeat: clip.endBeat,
-                    iterationStartBeat: clip.startBeat + iteration * loopLength,
+                    iterationStartBeat: loopPassGrid.firstPassStartBeat + iteration * loopLength,
                     loopLengthBeats: loopLength,
                     midiOffsetBeats,
                     loopEnabled,
@@ -914,7 +1043,10 @@ export async function scheduleTrackClips({
 
         if (clip.type === 'midi') {
             // A clip with no note list plays no notes; its stored controllers still play.
-            const sourceNotes = midi.notesByClipId[clip.id] ?? [];
+            const frozenSource = clip.midiTakeSource;
+            const sourceNotes = frozenSource
+                ? []
+                : selectMidiNotesForRecordingPass(midi.notesByClipId[clip.id] ?? [], clip.midiTakeRecordingPassIndex);
             const hasYeast = sourceTrack.devices.some((device) => device.type === 'yeast');
             if (isToasterChild || (hasYeast && processYeastMidi)) {
                 continue;
@@ -926,17 +1058,20 @@ export async function scheduleTrackClips({
             // the chase a mid-song start needs belongs to the transport.
             // The clip's moves at the time its closing-line move plays apply, in its own
             // order, ahead of a clip starting there, as live playback posts them.
-            const storedControllers = dispatchControl ? midi.ccByClipId[clip.id] : undefined;
-            if (storedControllers && projectClipControllers) {
+            const storedControllers = dispatchControl && !frozenSource ? midi.ccByClipId[clip.id] : undefined;
+            if (dispatchControl && projectClipControllers && (storedControllers || frozenSource)) {
                 const regionStartSamples = regionStartSec * offlineCtx.sampleRate;
                 const clipControlEvents: { time: number; controller: number; value: number }[] = [];
                 let closingTime: number | undefined;
-                for (const controller of projectClipControllers({
-                    controlChanges: storedControllers,
-                    clip,
-                    fromBeat: regionStartBeat,
-                    toBeat: clip.endBeat,
-                })) {
+                const controllers = frozenSource
+                    ? selectedFrozenControllerRows(clip, regionStartBeat)
+                    : projectClipControllers({
+                          controlChanges: storedControllers ?? [],
+                          clip,
+                          fromBeat: regionStartBeat,
+                          toBeat: clip.endBeat,
+                      });
+                for (const controller of controllers) {
                     checkCallerAbort();
                     const { startSamples } = projectPpqEndpoints({
                         startPpq: controller.beat,
@@ -962,16 +1097,49 @@ export async function scheduleTrackClips({
                 }
             }
 
-            for (let iter = 0; iter < maxIterations; iter++) {
+            // A frozen take repeats on its own grid; every other looping clip
+            // passes on the seams its loop anchor laid down.
+            const loopPassGrid = resolveClipLoopPassGrid({
+                startBeat: clip.startBeat,
+                endBeat: clip.endBeat,
+                loopOriginBeat: clip.loopOriginBeat,
+                loopEnabled: !frozenSource && (clip.loopEnabled ?? false),
+                loopLengthBeats: loopLen,
+                iterationCount: maxIterations,
+            });
+            const frozenRepeats = frozenSource
+                ? frozenMidiTakeRepeats(frozenSource, clip, clip.startBeat, clip.endBeat)
+                : [];
+            const firstIteration = frozenRepeats[0]?.absoluteOccurrenceIndex ?? 0;
+            const lastIteration = frozenSource ? firstIteration + frozenRepeats.length : loopPassGrid.passCount;
+            for (let iter = firstIteration; iter < lastIteration; iter++) {
                 checkCallerAbort();
-                const absoluteOccurrenceIndex = sourceOccurrenceOffset + iter;
-                const iterOffset = iter * loopLen;
-                const iterationStartBeat = clip.startBeat + iterOffset;
-                const midiOffsetBeats = clip.midiOffsetBeats ?? 0;
-                const acceptedSourceNotes = sourceNotes.filter((note) =>
+                // A frozen take counts its occurrences on its own grid, as live does.
+                const absoluteOccurrenceIndex = sourceOccurrenceOffset + loopPassGrid.passesAheadOfAnchor + iter;
+                const frozenRepeat = frozenRepeats[iter - firstIteration];
+                if (frozenSource && !frozenRepeat) {
+                    throw new Error('Invalid frozen MIDI take repeat');
+                }
+                const iterationStartBeat = frozenRepeat
+                    ? frozenRepeat.startBeat
+                    : loopPassGrid.firstPassStartBeat + iter * loopLen;
+                const frozenWindow = frozenSource
+                    ? projectFrozenMidiTakeWindow({
+                          source: frozenSource,
+                          fragment: clip,
+                          recordingPassIndex: clip.midiTakeRecordingPassIndex,
+                          absoluteOccurrenceIndex: iter,
+                          fromBeat: clip.startBeat,
+                          toBeat: clip.endBeat,
+                      })
+                    : null;
+                if (frozenSource && !frozenWindow) {
+                    throw new Error('Invalid frozen MIDI take window');
+                }
+                const acceptedSourceNotes = (frozenWindow?.notes ?? sourceNotes).filter((note) =>
                     selectMidiEventProbability({
                         projectProbabilitySeed: midi.probabilitySeed,
-                        clipId: clip.id,
+                        clipId: frozenSource?.sourceClipId ?? clip.id,
                         eventId: note.id,
                         absoluteOccurrenceIndex,
                         probabilityPercent: note.probability ?? 100,
@@ -979,13 +1147,14 @@ export async function scheduleTrackClips({
                 );
                 const notes = projectMidiEvents({
                     events: acceptedSourceNotes,
-                    clipId: clip.id,
+                    clipId: frozenSource?.sourceClipId ?? clip.id,
                     clipStartBeat: clip.startBeat,
-                    clipEndBeat: clip.endBeat,
+                    clipEndBeat: frozenRepeat ? Math.min(clip.endBeat, frozenRepeat.endBeat) : clip.endBeat,
                     iterationStartBeat,
-                    loopLengthBeats: loopLen,
-                    midiOffsetBeats,
-                    loopEnabled: clip.loopEnabled ?? false,
+                    loopLengthBeats: frozenRepeat ? frozenRepeat.strideBeats : loopLen,
+                    midiOffsetBeats: frozenSource ? 0 : (clip.midiOffsetBeats ?? 0),
+                    loopEnabled: frozenSource ? false : (clip.loopEnabled ?? false),
+                    eventsAreAbsolute: frozenSource ? true : undefined,
                     loopOriginBeat: clip.loopOriginBeat,
                     phase: 'complete',
                 });
@@ -1014,6 +1183,10 @@ export async function scheduleTrackClips({
                         pitchBendRangeSemitones: note.pitchBendRangeSemitones,
                         startBeat: note.startBeat,
                         beatsIntoNote: note.beatsIntoNote,
+                        recordedOwnBendBeat:
+                            'recordedOwnBendBeat' in note && typeof note.recordedOwnBendBeat === 'number'
+                                ? note.recordedOwnBendBeat
+                                : undefined,
                         expression: note.expression,
                         clipGain: clip.gain,
                     };

@@ -17,14 +17,15 @@ describe('registerLevainDevice', () => {
         vi.clearAllMocks();
     });
 
-    it('forwards deviceId, device, and port to the bridge', async () => {
+    it('forwards deviceId, device, port, and activity callback to the bridge', async () => {
         const device: LevainDevice = { setParam: vi.fn(), handleCc: vi.fn() };
         const port = {} as MessagePort;
 
-        const outcome = await registerLevainDevice('dev-1', device, port);
+        const progress = vi.fn();
+        const outcome = await registerLevainDevice('dev-1', device, port, progress);
 
         expect(outcome).toBe('ready');
         expect(bridge.registerLevainDevice).toHaveBeenCalledTimes(1);
-        expect(bridge.registerLevainDevice).toHaveBeenCalledWith('dev-1', device, port, undefined);
+        expect(bridge.registerLevainDevice).toHaveBeenCalledWith('dev-1', device, port, progress);
     });
 });

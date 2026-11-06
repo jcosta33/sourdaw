@@ -3,7 +3,6 @@ import { clone as cloneDoc, getHeads } from '@automerge/automerge';
 import { logger } from '#/infra/logger/appLogger';
 import { flushAutomergeStorageWrites } from '#/infra/store/storage/createAutomergeStorage';
 import { captureUndoHistory, clearUndoHistory, restoreUndoHistory } from '#/modules/Command/useCases';
-import { isTransportIdle, stopPlayback } from '#/modules/Transport/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 import { valuesEqual } from '#/utils/structuralEquality';
 
@@ -13,6 +12,7 @@ import { automergeRepository } from '../../repositories/automergeRepository';
 import { branchStore, type BranchRecord, type BranchStoreState } from '../../stores/branchStore';
 import { captureActiveBranchReference } from '../captureActiveBranchReference';
 
+import { branchSwitchTransport } from './branchSwitchTransport';
 import { runBranchLineageTransition } from './runBranchLineageTransition';
 import { saveActiveBranchSnapshot } from './saveActiveBranchSnapshot';
 
@@ -56,7 +56,7 @@ function readRootHeads(): string[] {
  */
 async function stopTransportBeforeSwitchRollback(): Promise<void> {
     const headsBeforeStop = readRootHeads();
-    await stopPlayback();
+    await branchSwitchTransport.read('stopTransportBeforeSwitchRollback').stop();
     if (!valuesEqual(headsBeforeStop, readRootHeads())) {
         logger.warn(
             '[switchBranch] The branch switch failed while a recording was running; ' +
@@ -128,7 +128,7 @@ export async function switchBranch(branchId: string): Promise<void> {
         return;
     }
 
-    await stopPlayback();
+    await branchSwitchTransport.read('switchBranch').stop();
 
     // The stop awaits a recording commit, so another switch, fork or delete may
     // have moved the branch state since the first plan.
@@ -163,7 +163,7 @@ export async function switchBranch(branchId: string): Promise<void> {
     // check holds at the replace; a take or playback started now would run on
     // into the incoming branch. Refuse rather than stop again: the user's
     // newer gesture stands and the switch can be repeated.
-    if (!isTransportIdle()) {
+    if (!branchSwitchTransport.read('switchBranch').isIdle()) {
         throw createBranchError('The transport started while switching branches. Stop it and switch again.');
     }
     try {

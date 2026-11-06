@@ -2,12 +2,17 @@ import { describe, it, expect, beforeAll, beforeEach, vi } from 'vitest';
 
 import { trackStore, type Track } from '#/modules/Arrangement/stores';
 import { freezeTrack } from '#/modules/Arrangement/useCases';
+import * as synthVoices from '#/modules/Synth/useCases';
 
 import {
     createOfflineWorkletRenderHarness,
     harnessRmsBetween,
 } from '../../../../helpers/__tests__/offlineWorkletRenderHarness';
 import { audioBufferCache } from '../../stores/audioBufferCache';
+import { builtinSynthVoice } from '../../useCases/scheduling/builtinSynthVoice';
+
+// The voices this spec's notes sound through, as the composition root registers them.
+builtinSynthVoice.configure(synthVoices);
 
 /**
  * Freezing a Grand Boule track must preserve audible note output.

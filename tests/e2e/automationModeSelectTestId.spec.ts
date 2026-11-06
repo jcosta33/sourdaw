@@ -1,5 +1,6 @@
-import { expect, test, type Page } from '@playwright/test';
+import { type Page } from '@playwright/test';
 
+import { expect, test } from './e2eTest';
 import { launch_from_template, setupWorkspace } from './e2eUtils';
 
 async function openBottomTab(page: Page, name: string): Promise<void> {

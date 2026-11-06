@@ -171,10 +171,12 @@ const guardedPayloadContractCases = [
             trackId: 'track-1',
             busId: 'bus-1',
             level: 1,
+            preFader: true,
             expectedLevel: 0,
             expectedPreFader: false,
         },
         invalidPayloads: [
+            { trackId: 'track-1', busId: 'bus-1', level: 0.5, preFader: 'yes' },
             { trackId: '', busId: 'bus-1', level: 0.5 },
             { trackId: 'track-1', busId: '', level: 0.5 },
             { trackId: 'track-1', busId: 'track-1', level: 0.5 },
@@ -1633,15 +1635,17 @@ describe('validateActionPayload / PAYLOAD_VALIDATORS', () => {
     });
 
     describe('addTrack', () => {
-        it('should require name and kind strings', () => {
+        it('should require a kind string and accept a missing name but no non-string name', () => {
             const guard = PAYLOAD_VALIDATORS.addTrack;
             expect(guard).not.toBe('unchecked');
             if (guard === 'unchecked') {
                 return;
             }
             expect(guard({ name: 'A', kind: 'audio' })).toBe(true);
+            expect(guard({ kind: 'audio' })).toBe(true);
             expect(guard({ name: 'A' })).toBe(false);
-            expect(guard({ kind: 'audio' })).toBe(false);
+            expect(guard({ name: 42, kind: 'audio' })).toBe(false);
+            expect(guard({ name: null, kind: 'audio' })).toBe(false);
         });
     });
 

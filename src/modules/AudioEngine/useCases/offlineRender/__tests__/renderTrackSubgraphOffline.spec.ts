@@ -12,6 +12,7 @@ import {
 // than inside a test's time budget.
 import { getEffectiveGain } from '#/modules/Arrangement/useCases';
 import { defaultExternalPluginParameterState, externalPluginParameterStore } from '#/modules/PluginHost/stores';
+import * as synthVoices from '#/modules/Synth/useCases';
 import { defaultTransportState } from '#/modules/Transport/stores';
 import { beatAtSecondsFromAnchor, projectPpqEndpoints, resolveTempoAtBeat } from '#/modules/Transport/useCases';
 
@@ -19,8 +20,12 @@ import { setAudioDeviceRuntimeSink } from '../../../engine/audioDeviceRuntimeSin
 import { type AudioDeviceStrategy } from '../../../repositories/deviceStrategy/setupDeviceStrategies';
 import { UnsupportedDeviceTypeError } from '../../../repositories/deviceStrategy/unsupportedDeviceTypeError';
 import { type DeviceNodeEntry } from '../../buildDeviceChain';
+import { builtinSynthVoice } from '../../scheduling/builtinSynthVoice';
 import { type OfflineRenderProjectSource } from '../OfflineRenderSource';
 import { renderTrackSubgraphOffline } from '../renderTrackSubgraphOffline';
+
+// The voices this spec's notes sound through, as the composition root registers them.
+builtinSynthVoice.configure(synthVoices);
 
 const SAMPLE_RATE = 44_100;
 const TEMPO = 120;
@@ -716,7 +721,15 @@ describe('renderTrackSubgraphOffline', () => {
             createChordPitchProjector: () => (input) => input.pitch,
             evaluateAutomationValue: () => 0,
             projectChannelBend: ({ frameAtBeat }) => [
-                { beat: 0.25, frame: frameAtBeat(0.25), recordedBeat: 0.25, value: 4_096, rangeSemitones: 12 },
+                {
+                    beat: 0.25,
+                    frame: frameAtBeat(0.25),
+                    recordedBeat: 0.25,
+                    value: 4_096,
+                    rangeSemitones: 12,
+                    channel: 0,
+                    channelScoped: false,
+                },
             ],
         });
         const { midiStore } = await import('#/modules/MIDI/stores');

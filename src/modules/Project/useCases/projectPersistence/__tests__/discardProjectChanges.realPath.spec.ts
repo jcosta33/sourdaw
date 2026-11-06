@@ -45,6 +45,7 @@ vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: vi.fn() }));
 // importCachedAudioBuffers, prepareCachedAudioBuffersFromIdb, and resetAudioGraph; every other
 // AudioEngine key in this factory is an unread graph-coverage stub (`vi.fn()` and `audioEngine: {}`).
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    builtinSynthVoice: { read: vi.fn() },
     rearmCommittedTrackInputMonitoring: vi.fn(async () => undefined),
     reconcileAutoInputMonitoring: vi.fn(),
     forgetProjectLatchedPedals: vi.fn(),
@@ -77,6 +78,8 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     garbageCollectCachedAudioBuffersBySize: vi.fn(),
     garbageCollectFreezeAudioBuffers: vi.fn(),
     getCachedAudioBuffer: vi.fn(),
+    restoreUnpinnedAudioBuffersFromIdb: vi.fn(),
+    holdAudioBufferForSession: vi.fn(),
     getCompensationDelay: vi.fn(),
     getDefaultBendRangeSemitones: vi.fn(),
     getDeviceChainTailSeconds: vi.fn(),
@@ -114,6 +117,9 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     sendNativeLiveMidiNote: () => Promise.resolve(true),
 }));
 vi.mock('#/modules/Command/useCases', () => ({
+    reconcileSessionUndoForProject: vi.fn(() => {
+        throw new Error('Unexpected reconcileSessionUndoForProject in this fixture');
+    }),
     commitRedoInverseCapture: vi.fn(),
     readUndoEntryForInverse: vi.fn<typeof import('#/modules/Command/useCases').readUndoEntryForInverse>(() => null),
 
@@ -135,6 +141,7 @@ vi.mock('#/modules/CrdtDocument/useCases', async () => {
         '#/modules/CrdtDocument/useCases'
     );
     return {
+        ...actual,
         commandSourcePublicationMatches: actual.commandSourcePublicationMatches,
         stageCommandSourcePublication: actual.stageCommandSourcePublication,
         hasForeignPendingProjectWrites: actual.hasForeignPendingProjectWrites,

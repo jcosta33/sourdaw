@@ -1,5 +1,6 @@
 import { type ReactElement } from 'react';
 
+import { Row } from '#/components/layout';
 import { EFFECT_DISCLOSURE_TIERS, type EffectDisclosureTier } from '#/utils/UI/effectDisclosureTier';
 
 import { DawPluginChip } from './DawPluginChip';
@@ -7,13 +8,23 @@ import { DawPluginChip } from './DawPluginChip';
 type Props = {
     tier: EffectDisclosureTier;
     onChange: (tier: EffectDisclosureTier) => void;
-    tone?: 'copper' | 'neutral';
+    tone?: 'copper' | 'neutral' | 'amber';
+    options?: readonly EffectDisclosureTier[];
+    labels?: Partial<Record<EffectDisclosureTier, string>>;
+    groupLabel?: string;
 };
 
-export function DawEffectDisclosure({ tier, onChange, tone = 'neutral' }: Props): ReactElement {
+export function DawEffectDisclosure({
+    tier,
+    onChange,
+    tone = 'neutral',
+    options = EFFECT_DISCLOSURE_TIERS,
+    labels,
+    groupLabel = 'Effect control detail',
+}: Props): ReactElement {
     return (
-        <div role="group" aria-label="Effect control detail" className="flex flex-wrap items-stretch gap-1.5">
-            {EFFECT_DISCLOSURE_TIERS.map((option) => (
+        <Row role="group" aria-label={groupLabel} align="stretch" wrap gap={1.5}>
+            {options.map((option) => (
                 <DawPluginChip
                     key={option}
                     active={tier === option}
@@ -22,9 +33,9 @@ export function DawEffectDisclosure({ tier, onChange, tone = 'neutral' }: Props)
                     size="sm"
                     onClick={() => onChange(option)}
                 >
-                    {option}
+                    {labels?.[option] ?? option}
                 </DawPluginChip>
             ))}
-        </div>
+        </Row>
     );
 }

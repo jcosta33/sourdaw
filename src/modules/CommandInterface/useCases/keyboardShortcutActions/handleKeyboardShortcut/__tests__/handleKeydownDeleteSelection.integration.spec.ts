@@ -116,7 +116,7 @@ function trackClips(): Clip[] {
 }
 
 function deleteKeyDescriptor(): KeyDescriptor {
-    return { key: 'Delete', mod: false, shift: false, alt: false, repeat: false, isInput: false };
+    return { key: 'Delete', mod: false, shift: false, alt: false, repeat: false, keyTarget: 'workspace' };
 }
 
 /**

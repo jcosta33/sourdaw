@@ -3,6 +3,7 @@ import { notifyUser } from '#/utils/Notification/notifyUser';
 import { AppActionCommittedError, AppActionConflictError } from '../errors/AppActionExecutionError';
 import { type UndoEntry } from '../models/UndoEntry';
 import { isActionEntry } from '../models/UndoEntry';
+import { nextUndoUnit, undoEntryLabel } from '../models/UndoUnit';
 import { undoStore } from '../stores/undoStore';
 
 import { executeAppAction } from './executeAppAction';
@@ -12,15 +13,12 @@ import { recordAction } from './macro/recording/recordAction';
 import { normalizeSingletonUndoGroups } from './normalizeSingletonUndoGroups';
 import { REDO_NOT_APPLIED } from './redoResult';
 import { runUndoRedoExclusive } from './undoRedo';
+import { runPreparedUndoReplay } from './undoReplayPreparationPort';
 import { undoTreeMoveTo } from './undoTree/undoTreeMoveTo';
 
 /** The undo entry now at the top of `past`, or `null` when `past` is empty. */
 function currentEntryId(past: readonly UndoEntry[]): string | null {
     return past.length > 0 ? past[past.length - 1]!.id : null;
-}
-
-function redoEntryLabel(entry: UndoEntry): string {
-    return entry.groupLabel || entry.label || (isActionEntry(entry) ? entry.action.type : 'action');
 }
 
 function notifySkippedRedoConflict(skippedLabel: string, redoneLabel: string): void {
@@ -108,7 +106,11 @@ function recordCommittedGroupActions(entries: readonly UndoEntry[], committedAct
     }
 }
 
-async function executeActionGroupRedo(entries: readonly UndoEntry[]): Promise<RedoOutcome> {
+function executeActionGroupRedo(entries: readonly UndoEntry[]): Promise<RedoOutcome> {
+    return runPreparedUndoReplay({ entries }, () => replayActionGroupRedo(entries));
+}
+
+async function replayActionGroupRedo(entries: readonly UndoEntry[]): Promise<RedoOutcome> {
     if (!entries.every(isActionEntry)) {
         return { status: 'not-applied' };
     }
@@ -154,7 +156,11 @@ async function executeActionGroupRedo(entries: readonly UndoEntry[]): Promise<Re
     return { status: 'applied' };
 }
 
-async function executeRedo(entry: UndoEntry): Promise<RedoOutcome> {
+function executeRedo(entry: UndoEntry): Promise<RedoOutcome> {
+    return runPreparedUndoReplay({ entries: [entry] }, () => replayRedo(entry));
+}
+
+async function replayRedo(entry: UndoEntry): Promise<RedoOutcome> {
     if (entry.kind === 'callback') {
         if (entry.redo() === REDO_NOT_APPLIED) {
             return { status: 'not-applied' };
@@ -222,19 +228,11 @@ type RedoCandidate = {
 };
 
 function takeRedoCandidate(future: readonly UndoEntry[]): RedoCandidate | null {
-    if (future.length === 0) {
+    const unit = nextUndoUnit(future);
+    if (!unit) {
         return null;
     }
-    const head = future[0]!;
-    if (!head.groupId) {
-        return { head, entries: [head], behind: future.slice(1) };
-    }
-
-    let index = 0;
-    while (index < future.length && future[index]!.groupId === head.groupId) {
-        index++;
-    }
-    return { head, entries: future.slice(0, index), behind: future.slice(index) };
+    return { head: future[0]!, entries: future.slice(0, unit.last + 1), behind: future.slice(unit.last + 1) };
 }
 
 /** Nothing was redone. Conflicted entries stay exactly where they were; only a
@@ -320,14 +318,14 @@ async function stepOverConflictedRedoOrSettle({
         return;
     }
 
-    notifySkippedRedoConflict(redoEntryLabel(conflictedEntries[0]!), redoEntryLabel(next.head));
+    notifySkippedRedoConflict(undoEntryLabel(conflictedEntries[0]!), undoEntryLabel(next.head));
     commitRedoTransition(initialFuture, [...conflictedEntries, ...next.behind], next.entries);
     if (outcome.status === 'committed') {
         throw outcome.error;
     }
 }
 
-async function redoImpl(): Promise<void> {
+async function redoImpl(stepOverConflicts: boolean): Promise<void> {
     const stored = undoStore.value;
     if (!stored || stored.future.length === 0) {
         return;
@@ -359,8 +357,12 @@ async function redoImpl(): Promise<void> {
             if (groupEntries.every(isActionEntry)) {
                 const outcome = await executeActionGroupRedo(groupEntries);
                 if (outcome.status === 'conflict') {
-                    const label = redoEntryLabel(entry);
+                    const label = undoEntryLabel(entry);
                     notifyUser(`Cannot redo "${label}": project state has changed`, 'warning');
+                    if (!stepOverConflicts) {
+                        settleWithoutRedo({ initialFuture: state.future, futureAtConflict: future });
+                        return;
+                    }
                     await stepOverConflictedRedoOrSettle({
                         initialFuture: state.future,
                         futureAtConflict: future,
@@ -381,11 +383,15 @@ async function redoImpl(): Promise<void> {
         const outcome = await executeRedo(entry);
 
         if (outcome.status === 'conflict') {
-            const label = redoEntryLabel(entry);
+            const label = undoEntryLabel(entry);
             notifyUser(`Cannot redo "${label}": project state has changed`, 'warning');
             // Nothing was written, so the entry stays at the head of `future`
             // and remains redoable; #2878 steps onto the unit behind it when
             // the gate admits that replay.
+            if (!stepOverConflicts) {
+                settleWithoutRedo({ initialFuture: state.future, futureAtConflict: future });
+                return;
+            }
             await stepOverConflictedRedoOrSettle({
                 initialFuture: state.future,
                 futureAtConflict: future,
@@ -411,6 +417,19 @@ async function redoImpl(): Promise<void> {
     }
 }
 
-export function redo(): Promise<void> {
-    return runUndoRedoExclusive(redoImpl);
+export type RedoOptions = {
+    /**
+     * Whether one keystroke may step over a conflicted unit onto a
+     * conflict-capable unit behind it (#2878). Defaults to `true` — every
+     * user-driven entry point wants the step. Step-targeted history moves pass
+     * `false`: the step they target names the entry to STOP at, so stepping
+     * over a conflicted unit there would redo a unit no history row names. With
+     * `false`, a conflicted unit leaves `past` unchanged, which is how such a
+     * move tells that nothing was applied.
+     */
+    readonly stepOverConflicts?: boolean;
+};
+
+export function redo(options: RedoOptions = {}): Promise<void> {
+    return runUndoRedoExclusive(() => redoImpl(options.stepOverConflicts ?? true));
 }

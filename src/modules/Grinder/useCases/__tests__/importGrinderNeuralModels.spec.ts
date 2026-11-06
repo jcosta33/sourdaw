@@ -182,6 +182,43 @@ describe('importGrinderNeuralModels', () => {
         expect(grinderNeuralLibraryStore.value?.error).toBeTruthy();
     });
 
+    it('rejects a stacked wide LSTM without replacing or persisting the previous library', async () => {
+        pick_files_mock.mockResolvedValue([
+            make_nam_file({ file_name: 'retained.nam', display_name: 'Retained capture' }),
+        ]);
+        const retained = await importGrinderNeuralModels();
+        expect(retained).toHaveLength(1);
+        const previous_entries = grinderNeuralLibraryStore.value?.entries;
+        persist_library_mock.mockClear();
+        // Two cells carry 36 + 44 weights (including initial h/c), followed
+        // by a two-weight mono head and its bias.
+        pick_files_mock.mockResolvedValue([
+            new File(
+                [
+                    JSON.stringify({
+                        version: '0.5.4',
+                        architecture: 'LSTM',
+                        config: { num_layers: 2, input_size: 1, hidden_size: 2, out_channels: 1 },
+                        weights: Array.from({ length: 83 }, () => 0),
+                        sample_rate: 48_000,
+                    }),
+                ],
+                'stacked-wide.nam'
+            ),
+        ]);
+
+        expect(await importGrinderNeuralModels()).toEqual([]);
+
+        expect(persistGrinderNeuralLibrary).not.toHaveBeenCalled();
+        expect(grinderNeuralLibraryStore.value?.entries).toBe(previous_entries);
+        expect(grinderNeuralLibraryStore.value?.entries).toEqual(retained);
+        expect(grinderNeuralLibraryStore.value?.error).toBe(
+            'Invalid NAM model: stacked wide LSTM unsupported by current runtime'
+        );
+        expect(grinderNeuralLibraryStore.value?.importing).toBe(false);
+        expect(grinderNeuralLibraryStore.value?.loading).toBe(false);
+    });
+
     it('should settle the importing flag false and keep the entries when persistence fails', async () => {
         pick_files_mock.mockResolvedValue([
             make_nam_file({ file_name: 'tight-rhythm.nam', display_name: 'Tight Rhythm' }),

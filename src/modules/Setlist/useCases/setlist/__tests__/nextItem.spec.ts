@@ -14,7 +14,7 @@ vi.mock('../../../stores/setlistStore', () => ({
 }));
 
 vi.mock('../goToItem', () => ({
-    goToItem: vi.fn<(index: number) => void>(),
+    goToItem: vi.fn<(index: number) => Promise<void>>().mockResolvedValue(undefined),
 }));
 
 describe('nextItem', () => {
@@ -22,7 +22,7 @@ describe('nextItem', () => {
         vi.clearAllMocks();
     });
 
-    it('calls goToItem with currentIndex + 1', () => {
+    it('awaits goToItem with currentIndex + 1', async () => {
         mockSetlistStore.value = {
             name: 'S',
             items: [
@@ -46,14 +46,14 @@ describe('nextItem', () => {
             countInBars: 1,
         };
 
-        nextItem();
+        await nextItem();
         expect(goToItem).toHaveBeenCalledWith(1);
     });
 
-    it('does nothing when the store has no value', () => {
+    it('does nothing when the store has no value', async () => {
         mockSetlistStore.value = null;
 
-        nextItem();
+        await nextItem();
 
         expect(goToItem).not.toHaveBeenCalled();
     });

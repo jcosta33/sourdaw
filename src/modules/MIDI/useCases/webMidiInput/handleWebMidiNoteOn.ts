@@ -1,7 +1,7 @@
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
+import { activeRecordingRef } from '#/modules/Arrangement/stores';
 import { applyNoteExpression, audioEngine, startFaustNote } from '#/modules/AudioEngine/useCases';
-import { applyVelocityCurve, createGrandBouleStore } from '#/modules/GrandBoule/stores';
 import { isBypassedNoteReceiver, resolveDrumKitBy, resolveDrumKitOutputGain } from '#/utils/deviceTypeMatching';
 
 import { createWebMidiNoteKey, type ActiveNoteData } from '../../models/WebMidiTypes';
@@ -19,7 +19,7 @@ import { activeNotes, channelToNote } from '../../repositories/webMidi/state';
 import { handleWebMidiNoteOff } from './handleWebMidiNoteOff';
 import { midiMessageHandlerDependencies } from './midiMessageHandlerDependencies';
 import { recordHeldNoteExpression } from './recordHeldNoteExpression';
-import { resolveAdmittedEventBeat } from './resolveAdmittedEventBeat';
+import { resolveAdmittedEventPosition } from './resolveAdmittedEventPosition';
 import { resolveBendRangeSemitones } from './resolveBendRangeSemitones';
 import { resolveChannelBendAtNoteStart } from './resolveChannelBendAtNoteStart';
 import { resolveDeviceNode } from './resolveDeviceNode';
@@ -29,6 +29,7 @@ import { resolveInstrumentTrack } from './resolveInstrumentTrack';
 import { resolveLiveInputNoteReceiver } from './resolveLiveInputNoteReceiver';
 import { resolveNativeNoteSink } from './resolveNativeNoteSink';
 import { retireDrainOfRemovedYeast } from './retireDrainOfRemovedYeast';
+import { velocityCalibration } from './velocityCalibration';
 import { voiceYeastNoteOn } from './voiceYeastNoteOn';
 
 /**
@@ -59,7 +60,7 @@ export const handleWebMidiNoteOn = inject({
 
             const generation = memberExpressionGeneration.current;
             const eventTime = resolveInputEventTime({ timeStamp });
-            const admittedBeat = resolveAdmittedEventBeat({ timeStamp, eventTime });
+            const admittedPosition = resolveAdmittedEventPosition({ timeStamp, eventTime });
 
             const noteKey = createWebMidiNoteKey(channel, note);
             const mpeEnabled = getMpeEnabled();
@@ -96,6 +97,13 @@ export const handleWebMidiNoteOn = inject({
             }
 
             const transport = deps.getTransportStoreValue();
+            let recordingClipId: string | undefined;
+            if (transport?.isRecording) {
+                recordingClipId = deps
+                    .getTrackStoreState()
+                    ?.tracks.find((track) => track.id === targetTrackId)
+                    ?.clips.find((clip) => clip.type === 'midi' && activeRecordingRef.current.includes(clip.id))?.id;
+            }
             const engine = audioEngine;
             // When the key was struck, not when this handler got its turn on
             // the main thread (audit MD-1). Everything downstream — the voice
@@ -108,11 +116,15 @@ export const handleWebMidiNoteOn = inject({
 
             const noteData: ActiveNoteData = {
                 startTime: eventTime,
-                startBeat: transport ? admittedBeat : 0,
+                startBeat: transport ? admittedPosition.beat : 0,
+                recordingPassIndex: transport ? admittedPosition.passIndex : undefined,
+                recordingAdmissionId:
+                    typeof timeStamp === 'object' && timeStamp !== null ? timeStamp.recordingAdmissionId : undefined,
                 channel,
                 note,
                 velocity,
                 trackId: targetTrackId,
+                recordingClipId,
                 instrumentTrackId: targetTrackId,
                 noteInstanceId,
                 pressure: memberExpression?.pressure,
@@ -429,9 +441,9 @@ export const handleWebMidiNoteOn = inject({
                 const deviceNode = resolveDeviceNode(strip, { deviceId: grandBouleDevice.id, type: 'grand-boule' });
                 if (deviceNode?.grandBouleControls?.ready) {
                     const playedDeviceId = deviceNode.deviceId;
-                    const grandBouleStore = createGrandBouleStore(playedDeviceId);
-                    const calibration = grandBouleStore.value?.midiCalibration;
-                    const finalVelocity = calibration ? applyVelocityCurve(velocity, calibration) : velocity / 127;
+                    const finalVelocity =
+                        velocityCalibration.read('handleWebMidiNoteOn').calibratedVelocity(playedDeviceId, velocity) ??
+                        velocity / 127;
                     deviceNode.grandBouleControls.noteOn(note, finalVelocity, dispatchFrame, channel);
                     postStartBend();
                     noteData.grandBouleDeviceId = playedDeviceId;

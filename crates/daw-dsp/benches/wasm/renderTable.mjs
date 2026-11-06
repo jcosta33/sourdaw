@@ -71,6 +71,7 @@
  * @property {number} zeroFraction
  * @property {boolean} stationary
  * @property {boolean} floorMeasurable
+ * @property {boolean} medianTrustworthy
  */
 
 /**
@@ -146,6 +147,50 @@ export const GENERATED_BEGIN = BEGIN;
 export const GENERATED_END = END;
 
 /**
+ * @param {TableRow[]} rows
+ * @param {([string, number][] | undefined)} members
+ * @returns {[string, number][]}
+ */
+export function untrustworthyMembers(rows, members) {
+    return (members ?? []).filter(([id, count]) => count > 0 && !rows.find((row) => row.id === id)?.medianTrustworthy);
+}
+
+/**
+ * @param {TableRow[]} rows
+ * @param {TableReferenceProject} ref
+ * @param {number} budget
+ * @returns {string}
+ */
+export function renderConsoleReference(rows, ref, budget) {
+    /** @param {number} value */
+    const sig2 = (value) => (Number.isFinite(value) && value !== 0 ? Number(value.toPrecision(2)).toString() : '0');
+    /** @param {number} ms */
+    const pct = (ms) => `${sig2((ms / budget) * 100)}%`;
+    const audioBad = untrustworthyMembers(rows, ref.audioThread);
+    const workerBad = untrustworthyMembers(rows, ref.worker);
+    const audioLabel = audioBad.length > 0 ? 'median-based total (unreliable, not an upper bound)' : 'upper bound';
+    const worstLabel = audioBad.length > 0 ? 'median-based total (unreliable, not an upper bound)' : 'upper bound';
+    const workerLabel = workerBad.length > 0 ? 'median (unreliable, not an upper bound)' : 'upper bound';
+    let verdict;
+    if (audioBad.length > 0) {
+        verdict = `NOT DECIDED: unreliable reference audio medians (${audioBad.map(([id]) => id).join(', ')}).`;
+    } else if (ref.audioWorstQuantumUpperMs < budget) {
+        verdict = 'DECIDED: the upper bound already fits.';
+    } else if (ref.audioFloorMs > budget) {
+        verdict = 'DECIDED THE OTHER WAY: the lower bound already exceeds budget.';
+    } else {
+        verdict = 'UNDECIDED on this machine: the bounds straddle the budget.';
+    }
+    return [
+        `  AUDIO THREAD >= ${sig2(ref.audioFloorMs)} ms (${pct(ref.audioFloorMs)}) lower bound`,
+        `  AUDIO THREAD ${sig2(ref.audioUpperBoundMs)} ms (${pct(ref.audioUpperBoundMs)}) ${audioLabel}`,
+        `  worst quantum ${sig2(ref.audioWorstQuantumUpperMs)} ms (${pct(ref.audioWorstQuantumUpperMs)}) ${worstLabel}, + the largest duty spike`,
+        `  WORKER >= ${sig2(ref.workerFloorMs)} ms (${pct(ref.workerFloorMs)}) lower bound; ${sig2(ref.workerMedianMs)} ms (${pct(ref.workerMedianMs)}) ${workerLabel}`,
+        `  ${verdict}`,
+    ].join('\n');
+}
+
+/**
  * The closing prose of the reference-project section: which sentence runs depends
  * on the decisive figure, so the choice stays here rather than inline in the
  * template where the concatenation hid the sentence boundaries.
@@ -188,13 +233,14 @@ export function renderGeneratedRegion(data) {
      */
     const deviceTable = (rows) => {
         const lines = [
-            '| Device | ≥ floor | ≤ upper bound | upper as % of budget | load | clock stalls | steady? |',
+            '| Device | ≥ floor | median | median as % of budget | load | clock stalls | steady? |',
             '| --- | ---: | ---: | ---: | ---: | ---: | :---: |',
         ];
         for (const row of [...rows].sort((a, b) => b.stats.median - a.stats.median)) {
+            const medianLabel = row.medianTrustworthy ? '' : ' (unreliable median)';
             const floorCell = row.floorMeasurable ? `${us(row.stats.floor)} µs` : '—';
             lines.push(
-                `| ${row.label} | ${floorCell} | **${us(row.stats.median)} µs** | **${pct(row.stats.median)}** | ` +
+                `| ${row.label} | ${floorCell} | **${us(row.stats.median)} µs**${medianLabel} | **${pct(row.stats.median)}**${medianLabel} | ` +
                     `${row.load.mean.toFixed(0)} | ${(row.zeroFraction * 100).toFixed(1)}% | ` +
                     `${row.stationary ? 'yes' : '**no**'} |`
             );
@@ -212,7 +258,7 @@ export function renderGeneratedRegion(data) {
         for (const row of dutyRows) {
             const d = row.dutyCycle;
             lines.push(
-                `| ${row.id} | every ${d.periodQuanta} quanta | ${sig2(d.dutyPct)}% | ` +
+                `| ${row.id}${row.medianTrustworthy ? '' : ' (unreliable calibration)'} | every ${d.periodQuanta} quanta | ${sig2(d.dutyPct)}% | ` +
                     `${us(d.tickCostMs)} µs (${pct(d.tickCostMs)}) | ${us(d.idleCostMs)} µs | ` +
                     `**${us(d.amortisedMeanMs)} µs (${pct(d.amortisedMeanMs)})** | \`${row.dutyCycleSource}\` |`
             );
@@ -262,11 +308,15 @@ export function renderGeneratedRegion(data) {
         )}\n`;
     }
 
+    const untrustworthyAudio = untrustworthyMembers(data.rows, ref.audioThread);
+    const untrustworthyWorker = untrustworthyMembers(data.rows, ref.worker);
+    const audioReliable = untrustworthyAudio.length === 0;
+    const workerReliable = untrustworthyWorker.length === 0;
     const workerReference = ref.worker === undefined ? '' : `\nWorker: ${refList(ref.worker)}.`;
     const workerReferenceRow =
         ref.worker === undefined
             ? ''
-            : `| Worker — Grand Boule DSP | ${sig2(ref.workerFloorMs)} – ${sig2(ref.workerMedianMs)} | ${pct(ref.workerFloorMs)} – ${pct(ref.workerMedianMs)} | separate thread and ring |`;
+            : `| Worker — Grand Boule DSP | ${sig2(ref.workerFloorMs)} – ${sig2(ref.workerMedianMs)} | ${pct(ref.workerFloorMs)} – ${pct(ref.workerMedianMs)} | separate thread and ring${workerReliable ? '' : '; median is unreliable, not an upper bound'} |`;
 
     return `${BEGIN}
 <!-- Generated by benches/wasm/renderTable.mjs from benches/quantum-cost-table.json.
@@ -294,8 +344,8 @@ ${sourceDigestList()}
 
 ### On the audio thread — these share the one ${budget.toFixed(3)} ms deadline
 
-\`≥ floor\` is a lower bound and \`≤ upper bound\` is an upper bound; both are valid under the load shown.
-A dash means the clock stalled too often on that row for a floor to mean anything — the upper bound stands.
+\`≥ floor\` is a lower bound. A median marked unreliable is not an upper bound; the trust flag is false or missing.
+A dash means the clock stalled too often on that row for a floor to mean anything.
 
 ${deviceTable(audioRows)}
 ${nonAudioThreadSection}
@@ -310,17 +360,17 @@ Audio thread: ${refList(ref.audioThread)}.
 ${workerReference}
 
 Measured at a mean 1-minute load average of **${ref.meanLoad.toFixed(0)}** on ${data.machine.logicalCores} logical
-cores. Both bounds are valid under that load; see the note on direction above.
+cores. Floors remain valid under that load; medians marked unreliable are not upper bounds.
 
 | | ms | % of ${budget.toFixed(3)} ms | |
 | --- | ---: | ---: | --- |
 | Audio thread, lower bound | ${sig2(ref.audioFloorMs)} | ${pct(ref.audioFloorMs)} | partial — no floor from ${ref.audioFloorPartialFrom.length} rows, counted as zero |
-| **Audio thread, upper bound** | **${sig2(ref.audioUpperBoundMs)}** | **${pct(ref.audioUpperBoundMs)}** | **the decisive figure** |
-| Audio thread, worst quantum, upper bound | ${sig2(ref.audioWorstQuantumUpperMs)} | ${pct(ref.audioWorstQuantumUpperMs)} | + the largest single duty spike |
+| **Audio thread, ${audioReliable ? 'upper bound' : 'median-based total'}** | **${sig2(ref.audioUpperBoundMs)}** | **${pct(ref.audioUpperBoundMs)}** | ${audioReliable ? '**the decisive figure**' : 'unreliable, not an upper bound'} |
+| Audio thread, worst quantum, ${audioReliable ? 'upper bound' : 'median-based total'} | ${sig2(ref.audioWorstQuantumUpperMs)} | ${pct(ref.audioWorstQuantumUpperMs)} | + the largest single duty spike${audioReliable ? '' : '; unreliable, not an upper bound'} |
 ${workerReferenceRow}
 
-**${ref.audioWorstQuantumUpperMs < budget ? 'DECIDED: the upper bound already fits.' : 'NOT DECIDED by compute alone.'}**
-${decidedProse(ref, budget)}
+**${audioReliable && ref.audioWorstQuantumUpperMs < budget ? 'DECIDED: the upper bound already fits.' : 'NOT DECIDED by compute alone.'}**
+${audioReliable ? decidedProse(ref, budget) : `The audio total includes unreliable medians (${refList(untrustworthyAudio)}); it cannot establish an upper bound or a compute verdict.`}
 
 ### Occupancy, verified after each timed run
 

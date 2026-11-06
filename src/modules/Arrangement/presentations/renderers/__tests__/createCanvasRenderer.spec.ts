@@ -312,6 +312,36 @@ describe('createCanvasRenderer', () => {
         expect(strokeLog.length).toBeGreaterThan(0);
     });
 
+    it('starts the next track row below the variation lanes of the track above, and draws lanes in that gap', () => {
+        const laneClip = createTestClip({ id: 'lane-clip', startBeat: 1, endBeat: 3 });
+        const tracks = [
+            createTestTrack({
+                id: 't0',
+                index: 0,
+                height: 40,
+                variationLanes: [
+                    { id: 'lane-a', name: 'A', clips: [laneClip] },
+                    { id: 'lane-b', name: 'B', clips: [] },
+                ],
+            }),
+            createTestTrack({ id: 't1', index: 1, height: 40 }),
+        ];
+        const renderer = createCanvasRenderer(canvas);
+        renderer.resize(400, 300);
+        renderer.render(createTestModel({ tracks, selectedTrackId: 't1' }));
+
+        // Row t1 follows t0's 40px row and its two 24px lanes.
+        const rowBackgrounds = fillRectLog.filter((entry) => entry.w === 400 && entry.h === 40);
+        expect(rowBackgrounds.map((entry) => entry.y)).toEqual([0, 88]);
+        const laneBackgrounds = fillRectLog.filter((entry) => entry.fillStyle === 'rgba(0, 0, 0, 0.15)');
+        expect(laneBackgrounds.map((entry) => [entry.y, entry.h])).toEqual([
+            [40, 24],
+            [64, 24],
+        ]);
+        const laneDraw = mocks.drawClip.mock.calls.find((call) => call[1].id === 'lane-clip');
+        expect(laneDraw?.[3]).toBe(40);
+    });
+
     it('culls off-screen clips inside a variation lane', () => {
         const offscreenVar = createTestClip({ id: 'var-off', startBeat: -50, endBeat: -46 });
         const onscreenVar = createTestClip({ id: 'var-on', startBeat: 1, endBeat: 3 });

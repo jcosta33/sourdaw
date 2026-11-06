@@ -234,6 +234,49 @@ describe('projectClipControllerRestore', () => {
             expect(restore.held).toEqual(new Set([64, 11]));
         });
 
+        it('lifts a pedal an earlier clip left down where a loop cut mid-pass holds the lift of its pass before', () => {
+            // Loop [0, 4) anchored at timeline 1 with its head excised over
+            // [1, 9.5): the clip opens on content 0.5, after the lift at 3.5
+            // of the pass the uncut loop played before and ahead of this
+            // pass's press at 1, so its pedal is up until timeline 1.5.
+            const excisedLoop = {
+                startBeat: 1,
+                endBeat: 10.5,
+                midiOffsetBeats: 8.5,
+                loopEnabled: true,
+                loopLength: 4,
+                loopOriginBeat: -7.5,
+            };
+            const clips = [
+                { clip: { startBeat: 0, endBeat: 1 }, controlChanges: [controller('down', 0.25, 127)] },
+                { clip: excisedLoop, controlChanges: [controller('press', 1, 127), controller('lift', 3.5, 0)] },
+            ];
+
+            expect(placed(restoreTrackAt(clips, 1.3).moves)).toEqual([{ controller: 64, beat: 1.3, value: 0 }]);
+        });
+
+        it('restores the later of a loop cut mid-pass rows across channels, this pass ahead of the pass before', () => {
+            // The same excised loop: the lift on channel 1 is the pass before's
+            // (timeline 8.5 uncut), the press on channel 0 is this pass's (9.2
+            // uncut), so the one sustain the instrument holds is down at 1.3.
+            const excisedLoop = {
+                startBeat: 1,
+                endBeat: 10.5,
+                midiOffsetBeats: 8.5,
+                loopEnabled: true,
+                loopLength: 4,
+                loopOriginBeat: -7.5,
+            };
+            const clips = [
+                {
+                    clip: excisedLoop,
+                    controlChanges: [controller('press', 0.2, 127, 64, 0), controller('lift', 3.5, 0, 64, 1)],
+                },
+            ];
+
+            expect(placed(restoreTrackAt(clips, 1.3).moves)).toEqual([{ controller: 64, beat: 1.3, value: 127 }]);
+        });
+
         it('takes the later clip row when it falls between the earlier clip row and the destination', () => {
             const clips = [
                 { clip: clipA, controlChanges: [controller('down', 1, 127)] },

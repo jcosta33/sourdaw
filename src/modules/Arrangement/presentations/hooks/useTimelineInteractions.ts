@@ -11,14 +11,22 @@ import { clampMidiData7 } from '#/utils/midiData';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { type AutomationPoint } from '../../models/AutomationViewTypes';
+import { getRenderedTrackExtent } from '../../models/TimelineTrackExtent';
+import { type Clip } from '../../models/Track';
 import { clipDragPreviewRef, previewDirtyFlag, type ClipPreviewPosition } from '../../stores/clipDragPreviewRef';
 import { clipSelectionStore } from '../../stores/clipSelectionStore';
 import { inlineMidiNotePreviewRef } from '../../stores/inlineMidiNotePreviewRef';
+import { timelineEditingStore } from '../../stores/timelineEditingStore';
 import { timelineViewStore, zoomTimeline } from '../../stores/timelineViewStore';
 import { trackStore } from '../../stores/trackStore';
 import { buildTimelineRenderModel } from '../../useCases/buildTimelineRenderModel';
 import { acceptGhostClip } from '../../useCases/clip/acceptGhostClip';
 import { prepareDuplicateClipTargetId } from '../../useCases/clip/prepareDuplicateClipTargetId';
+import { relocateAudioSourceTimeFields } from '../../useCases/clip/relocateAudioSourceTimeFields';
+import { audioClipSlipOffsetBeats } from '../../useCases/clipEditing/audioClipSlipOffsetBeats';
+import { audioClipStartTrimState } from '../../useCases/clipEditing/audioClipStartTrimState';
+import { limitClipEndToSource } from '../../useCases/clipEditing/limitClipEndToSource';
+import { prepareAudioClipStartTrim } from '../../useCases/clipEditing/prepareAudioClipStartTrim';
 import { toggleInlineEditing } from '../../useCases/clipEditing/toggleInlineEditing';
 import { clearClipSelection } from '../../useCases/clipSelection/clearClipSelection';
 import { selectClip } from '../../useCases/clipSelection/selectClip';
@@ -39,7 +47,7 @@ import { registerTimelineGestureCanceler } from '../../useCases/timelineInteract
 import { setPlayheadFromClick } from '../../useCases/timelineInteractions/setPlayheadFromClick';
 import { snapToGrid } from '../../useCases/timelineInteractions/snapToGrid';
 import { snapToGridOrClips } from '../../useCases/timelineInteractions/snapToGridOrClips';
-import { snapToZeroCrossing } from '../../useCases/timelineInteractions/snapToZeroCrossing';
+import { snapToZeroCrossing } from '../../useCases/timelineInteractions/snapToZeroCrossingBeat';
 import { selectTrack } from '../../useCases/toggleTrackState/selectTrack';
 import { canvasXToBeat, getContentY } from '../helpers/timelineMouse';
 import {
@@ -61,6 +69,20 @@ export type ContextMenuState = ClipMenuState | EmptyMenuState | null;
 // Kept in the same range as the Ctrl+wheel pinch step (see useTimelineGestures,
 // -deltaY * 0.02) so touch and trackpad pinch feel consistent (findings #81/#17).
 const PINCH_ZOOM_FACTOR = 0.02;
+
+type PreviewAudioSource = ReturnType<typeof relocateAudioSourceTimeFields> &
+    Pick<Clip, 'loopOriginBeat' | 'loopLength'>;
+
+function previewAudioSource(clip: Clip): PreviewAudioSource {
+    const source: PreviewAudioSource = relocateAudioSourceTimeFields(clip, 0);
+    if (clip.loopOriginBeat !== undefined) {
+        source.loopOriginBeat = clip.loopOriginBeat;
+    }
+    if (clip.loopLength !== undefined) {
+        source.loopLength = clip.loopLength;
+    }
+    return source;
+}
 
 // A single-clip drag commits through the registered moveClip action (#3641):
 // the handler performs the write and mints the undo entry, so admission
@@ -137,7 +159,12 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
     const pendingCollapseClipIdRef = useRef<string | null>(null);
     // Per-drag clip metadata captured at drag start: clip types (for track-kind
     // drop compatibility) and locked membership (locked clips never preview).
-    const dragContextRef = useRef<{ types: Map<string, 'audio' | 'midi'>; locked: Set<string> } | null>(null);
+    const dragContextRef = useRef<{
+        types: Map<string, 'audio' | 'midi'>;
+        locked: Set<string>;
+        audioSources: Map<string, Clip>;
+        audioClock: ReturnType<typeof audioClipStartTrimState.captureClock>;
+    } | null>(null);
     // Drop rejection computed during the last preview pass: the reason surfaced
     // at drop time and the clips excluded from the commit.
     const dropRejectedRef = useRef<{ reason: string | null; clipIds: Set<string> }>({
@@ -303,7 +330,7 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
         const tool = getActiveTool();
 
         // Sub-lane paint when automation panel is visible (any tool)
-        if (workspaceStore.value?.automationVisibility !== 'hidden') {
+        if (timelineEditingStore.value?.automationVisibility !== 'hidden') {
             if (tryPaintSubLane(x, y, autoDragRef)) {
                 return;
             }
@@ -321,7 +348,7 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
             // Only paint when the automation lane is actually visible — otherwise
             // the tool writes points onto a hidden lane (finding #88). This mirrors
             // the sub-lane paint guard above.
-            if (workspaceStore.value?.automationVisibility !== 'hidden') {
+            if (timelineEditingStore.value?.automationVisibility !== 'hidden') {
                 handleAutomationTool(x, y, beat, getScrollY(), autoDragRef);
             }
             return;
@@ -340,7 +367,12 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
                         clipType: clip.type,
                         startX: x,
                         originalOffset:
-                            clip.type === 'audio' ? (clip.audioOffsetBeats ?? 0) : (clip.midiOffsetBeats ?? 0),
+                            clip.type === 'audio'
+                                ? audioClipSlipOffsetBeats(
+                                      clip,
+                                      audioClipStartTrimState.timeline(audioClipStartTrimState.captureClock())
+                                  )
+                                : (clip.midiOffsetBeats ?? 0),
                     };
                     return;
                 }
@@ -423,6 +455,7 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
                 const originals = new Map<string, ClipPreviewPosition>();
                 const types = new Map<string, 'audio' | 'midi'>();
                 const locked = new Set<string>();
+                const audioSources = new Map<string, Clip>();
                 for (const time of state.tracks) {
                     for (const clip of time.clips) {
                         if (allIds.includes(clip.id)) {
@@ -431,8 +464,12 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
                                 startBeat: clip.startBeat,
                                 endBeat: clip.endBeat,
                                 audioOffsetBeats: clip.audioOffsetBeats,
+                                ...previewAudioSource(clip),
                                 midiOffsetBeats: clip.midiOffsetBeats,
                             });
+                            if (clip.type === 'audio') {
+                                audioSources.set(clip.id, structuredClone(clip));
+                            }
                             types.set(clip.id, clip.type);
                             if (clip.locked) {
                                 locked.add(clip.id);
@@ -444,7 +481,12 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
                 // whole gesture rather than being silently skipped at commit.
                 const positions = new Map([...originals].filter(([id]) => !locked.has(id)));
                 clipDragPreviewRef.current = { positions, originals };
-                dragContextRef.current = { types, locked };
+                dragContextRef.current = {
+                    types,
+                    locked,
+                    audioSources,
+                    audioClock: audioClipStartTrimState.captureClock(),
+                };
                 dropRejectedRef.current = { reason: null, clipIds: new Set<string>() };
                 previewDirtyFlag.value = true;
             }
@@ -490,7 +532,9 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
             if (now - lastPresenceBroadcastRef.current > 100) {
                 lastPresenceBroadcastRef.current = now;
                 const cursorBeat = getBeatFromX(x);
-                const tracks = trackStore.value?.tracks ?? [];
+                // The rendered rows, not the raw store list: collapsed children
+                // and the master row are not laid out.
+                const tracks = buildTimelineRenderModel().tracks;
                 const contentY = getContentY(y, getScrollY());
                 const trackHit = getTrackAtYHelper(tracks, Math.max(0, contentY));
                 // §fix-9 — Cursor-only delta: omit playheadBeat so it doesn't
@@ -556,6 +600,7 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
                         preview.positions.set(clipId, {
                             ...current,
                             audioOffsetBeats: clipType === 'audio' ? newOffset : current.audioOffsetBeats,
+                            audioSlipOffsetBeats: clipType === 'audio' ? newOffset : undefined,
                             midiOffsetBeats: clipType === 'midi' ? newOffset : current.midiOffsetBeats,
                         });
                     }
@@ -598,8 +643,19 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
                     // instead of sliding with it (#4989).
                     const delta = newStart - orig.startBeat;
                     const clipType = dragContextRef.current?.types.get(dragState.clipId);
+                    const source = dragContextRef.current?.audioSources.get(dragState.clipId);
+                    const clock = dragContextRef.current?.audioClock;
+                    const trimmed =
+                        source && clock
+                            ? prepareAudioClipStartTrim(source, newStart, audioClipStartTrimState.timeline(clock))
+                            : null;
+                    if (clipType === 'audio' && !trimmed) {
+                        return;
+                    }
+                    const sourceFields = trimmed ? previewAudioSource(trimmed) : {};
                     preview.positions.set(dragState.clipId, {
                         ...orig,
+                        ...sourceFields,
                         startBeat: newStart,
                         audioOffsetBeats: (orig.audioOffsetBeats ?? 0) + delta,
                         midiOffsetBeats:
@@ -612,15 +668,16 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
         }
         if (dragState.mode === 'stretch') {
             let newEnd = Math.max(dragState.startBeat + 0.25, snapToGrid(rawBeat));
+            const trimmedClip = trackStore.value?.tracks
+                .flatMap((track) => track.clips)
+                .find((clip) => clip.id === dragState.clipId);
 
-            if (preferencesStore.value?.snapToZeroCrossing) {
-                const state = trackStore.value;
-                const clip = state?.tracks
-                    .flatMap((time) => time.clips)
-                    .find((context) => context.id === dragState.clipId);
-                if (clip && clip.type === 'audio') {
-                    newEnd = snapToZeroCrossing(clip, newEnd);
-                }
+            if (preferencesStore.value?.snapToZeroCrossing && trimmedClip?.type === 'audio') {
+                newEnd = snapToZeroCrossing(trimmedClip, newEnd);
+            }
+            // The edge stops at the end of the clip's source, and the commit writes the end previewed.
+            if (trimmedClip) {
+                newEnd = limitClipEndToSource(trimmedClip, newEnd);
             }
 
             const preview = clipDragPreviewRef.current;
@@ -753,7 +810,7 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
         const hitTrackIds: string[] = [];
         let trackYOffset = 0;
         for (const track of model.tracks) {
-            const h = track.height;
+            const h = getRenderedTrackExtent(track);
             if (!(trackYOffset + h < top || trackYOffset > bottom)) {
                 hitTrackIds.push(track.id);
                 for (const clip of track.clips) {
@@ -842,7 +899,7 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
                     endBeat: state1 + length,
                     name: `Clip ${state1}`,
                     type: drawClipType,
-                    ripple: workspaceStore.value?.rippleEditing ?? false,
+                    ripple: timelineEditingStore.value?.rippleEditing ?? false,
                 },
             });
             drawDragRef.current = null;
@@ -947,7 +1004,7 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
                         );
                     }
                 } else if (dragMode === 'move') {
-                    const rippleEnabled = workspaceStore.value?.rippleEditing ?? false;
+                    const rippleEnabled = timelineEditingStore.value?.rippleEditing ?? false;
                     // Same mousedown group test that seeded the preview: a drag
                     // that began on a multi-selection member is a group gesture
                     // even when locked or stale members leave one previewed clip.

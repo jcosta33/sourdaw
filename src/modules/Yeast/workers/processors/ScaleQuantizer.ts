@@ -26,6 +26,8 @@ const SCALE_PATTERNS: Record<string, number[]> = {
     chromatic: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
 };
 const SCALE_NAMES = Object.keys(SCALE_PATTERNS);
+const SCALE_PATTERNS_BY_NAME: ReadonlyMap<string, readonly number[]> = new Map(Object.entries(SCALE_PATTERNS));
+const MAJOR_PATTERN: readonly number[] = SCALE_PATTERNS.major!;
 
 type RemapMode = 'nearest' | 'up' | 'down';
 
@@ -50,7 +52,7 @@ export class ScaleQuantizer extends BaseMidiProcessor {
         _transport: TransportInfo,
         preview?: YeastPreviewDecisionSink
     ): void {
-        const pattern = SCALE_PATTERNS[this.scaleName] ?? SCALE_PATTERNS.major!;
+        const pattern = SCALE_PATTERNS_BY_NAME.get(this.scaleName) ?? MAJOR_PATTERN;
 
         for (const event of input) {
             if (event.kind.type === 'noteOn') {
@@ -83,7 +85,7 @@ export class ScaleQuantizer extends BaseMidiProcessor {
         }
     }
 
-    private quantizeToScale(note: number, pattern: number[]): number {
+    private quantizeToScale(note: number, pattern: readonly number[]): number {
         const pc = (((note - this.root) % 12) + 12) % 12;
         if (pattern.includes(pc)) {
             return note;
@@ -140,7 +142,7 @@ export class ScaleQuantizer extends BaseMidiProcessor {
         return note;
     }
 
-    private diatonicTranspose(note: number, degrees: number, pattern: number[]): number {
+    private diatonicTranspose(note: number, degrees: number, pattern: readonly number[]): number {
         const pc = (((note - this.root) % 12) + 12) % 12;
         const octave = Math.floor((note - this.root) / 12);
         // `note` has already passed through quantizeToScale, so its pitch-class is

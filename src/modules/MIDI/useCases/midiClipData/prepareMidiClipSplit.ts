@@ -1,5 +1,5 @@
 import { createMidiNote, type MidiCC, type MidiNote, type MidiPitchBend } from '../../models/MidiNote';
-import { transformMidiGlobalTimeState } from '../../services/transformMidiGlobalTimeState';
+import { type MidiGlobalTimeCommand, transformMidiGlobalTimeState } from '../../services/transformMidiGlobalTimeState';
 import { midiStore, type MidiStoreState } from '../../stores/midiStore';
 
 type MidiClipDataSlotSnapshot<Row> = {
@@ -18,6 +18,8 @@ type PrepareMidiClipSplitInput = {
     rightClipId: string;
     splitBeat: number;
     splitNotes: boolean;
+    /** The source loops: the right clip copies its whole loop (`copiesLoopMaterial`). */
+    copiesLoopMaterial?: boolean;
     targetNoteIds?: readonly string[];
 };
 
@@ -43,6 +45,7 @@ export function prepareMidiClipSplit({
     rightClipId,
     splitBeat,
     splitNotes,
+    copiesLoopMaterial = false,
     targetNoteIds,
 }: PrepareMidiClipSplitInput) {
     const state = midiStore.value;
@@ -63,7 +66,16 @@ export function prepareMidiClipSplit({
         };
     }
 
-    const commands = [{ type: 'split-notes' as const, sourceClipId, targetClipId: rightClipId, splitBeat }];
+    const command: Extract<MidiGlobalTimeCommand, { type: 'split-notes' }> = {
+        type: 'split-notes',
+        sourceClipId,
+        targetClipId: rightClipId,
+        splitBeat,
+    };
+    if (copiesLoopMaterial) {
+        command.copiesLoopMaterial = true;
+    }
+    const commands = [command];
     const planned = transformMidiGlobalTimeState({ state, commands });
     if (planned.status === 'rejected') {
         return null;

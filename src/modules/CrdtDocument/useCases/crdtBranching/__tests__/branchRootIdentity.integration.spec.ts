@@ -6,6 +6,7 @@ import { createControlledLockManager } from '#/infra/testing/createControlledLoc
 import { automergeRepository } from '../../../repositories/automergeRepository';
 import { branchStore, type BranchRecord } from '../../../stores/branchStore';
 import { captureProjectRootIdentity } from '../../captureProjectRootIdentity';
+import { branchSwitchTransport } from '../branchSwitchTransport';
 import { forkProjectBranch } from '../forkProjectBranch';
 import { mergeBranch } from '../mergeBranch';
 import { switchBranch } from '../switchBranch';
@@ -25,11 +26,6 @@ vi.mock('#/modules/Command/useCases', () => ({
     captureUndoHistory: vi.fn(() => ({ past: [], future: [], undoTree: null })),
     clearUndoHistory: vi.fn(),
     restoreUndoHistory: vi.fn(),
-}));
-// The switch stops the transport first; these cases pin root identity, not the stop.
-vi.mock('#/modules/Transport/useCases', () => ({
-    stopPlayback: vi.fn(() => Promise.resolve()),
-    isTransportIdle: vi.fn(() => true),
 }));
 vi.mock('../../compactProject', () => ({ compactProject: mocks.compactProject }));
 vi.mock('../../loadCrdtProject', () => ({ loadCrdtProject: mocks.loadCrdtProject }));
@@ -104,6 +100,9 @@ function installBranchFixture(): void {
         activeBranchId: 'main',
     });
 }
+
+// The switch stops the transport first; these cases pin root identity, not the stop.
+branchSwitchTransport.configure({ isIdle: () => true, stop: () => Promise.resolve() });
 
 describe('branch root identity integration', () => {
     beforeEach(() => {

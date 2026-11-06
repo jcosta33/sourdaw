@@ -1,5 +1,4 @@
-import { expect, test } from '@playwright/test';
-
+import { expect, test } from './e2eTest';
 import { launch_from_template, setupWorkspace } from './e2eUtils';
 
 // Inspector pan keyboard response. The existing pan coverage in

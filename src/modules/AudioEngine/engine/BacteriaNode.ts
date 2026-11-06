@@ -13,8 +13,8 @@ import { logger } from '#/infra/logger/appLogger';
 import { createBacteriaRuntimeParameterIds } from '../models/BacteriaRuntimeControl';
 import { STEREO_CHANNEL_COUNT } from '../models/ChannelLaw';
 import { SET_FALLBACK_PARAM_COMMAND, type RuntimeDeviceControlTarget } from '../models/RuntimeDeviceControl';
-import bacteriaProcessorUrl from '../services/bacteriaProcessor.ts?worker&url';
 import { compileRuntimeDeviceControl } from '../services/compileRuntimeDeviceControl';
+import bacteriaProcessorUrl from '../worklets/bacteriaProcessor.ts?worker&url';
 
 import { requireSharedArrayBuffer } from './pluginHostingErrors';
 import {

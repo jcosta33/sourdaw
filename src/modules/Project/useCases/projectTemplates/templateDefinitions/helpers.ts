@@ -1,4 +1,5 @@
 import { demo5_NebulaDrift } from '../../demoProjects/nebulaDrift/createNebulaDriftDemo';
+import { type OutgoingProjectDisposition } from '../../projectPersistence/helpers/resetCrdtProjectWithTransportStopped';
 import { newProject } from '../../projectPersistence/newProject';
 import { createAmbientTemplate } from '../templateFiles/ambient';
 import { createCinematicTemplate } from '../templateFiles/cinematic';
@@ -9,6 +10,7 @@ import { createPodcastTemplate } from '../templateFiles/podcast';
 import { createPopSongTemplate } from '../templateFiles/popSong';
 import { createRockBandTemplate } from '../templateFiles/rockBand';
 import { createSingerSongwriterTemplate } from '../templateFiles/singerSongwriter';
+import { createStringOrchestraTemplate } from '../templateFiles/stringOrchestra';
 
 export type TemplateCategory = 'empty' | 'music' | 'podcast' | 'film' | 'demo';
 
@@ -19,8 +21,11 @@ export type ProjectTemplate = {
     category: TemplateCategory;
     executionBoundary: 'app-action' | 'project-replacement';
     platform?: 'web' | 'native';
-    /** A project-replacement template keeps its caller's `shouldProceed` until the switch. */
-    create: (options?: { readonly shouldProceed?: () => boolean }) => Promise<boolean>;
+    /** A project-replacement template keeps its caller's `shouldProceed` and `outgoingProject` until the switch. */
+    create: (options?: {
+        readonly outgoingProject?: OutgoingProjectDisposition;
+        readonly shouldProceed?: () => boolean;
+    }) => Promise<boolean>;
 };
 
 async function createSuccessfulTemplate(create: () => Promise<void> | void): Promise<boolean> {
@@ -90,6 +95,14 @@ export const templates: ProjectTemplate[] = [
         category: 'film',
         executionBoundary: 'app-action',
         create: () => createSuccessfulTemplate(createCinematicTemplate),
+    },
+    {
+        id: 'string-orchestra',
+        name: 'String Orchestra',
+        description: 'Five Levain string sections routed to a strings bus and a shared hall reverb.',
+        category: 'film',
+        executionBoundary: 'app-action',
+        create: () => createSuccessfulTemplate(createStringOrchestraTemplate),
     },
     {
         id: 'podcast',

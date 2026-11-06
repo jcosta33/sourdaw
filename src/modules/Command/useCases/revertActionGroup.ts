@@ -4,10 +4,11 @@ import { undoStore } from '../stores/undoStore';
 
 import { commitRevertedEntries } from './commitRevertedEntries';
 import { executeAppAction, type ExecuteAppActionOptions } from './executeAppAction';
-import { getLegacyTrimInverseReplayFailure } from './getLegacyTrimInverseReplayFailure';
+import { getLegacyInverseReplayFailure } from './getLegacyInverseReplayFailure';
 import { isAppActionCommittedError } from './isAppActionCommittedError';
 import { normalizeLegacyLoopAnchorInverse } from './normalizeLegacyLoopAnchorInverse';
 import { runUndoRedoExclusive } from './undoRedo';
+import { runPreparedUndoReplay } from './undoReplayPreparationPort';
 
 /**
  * Undo a single undo entry, returning whether anything was actually undone. An
@@ -21,7 +22,11 @@ import { runUndoRedoExclusive } from './undoRedo';
  * restore anchorless — a slip's captured offset verbatim, rows unmoved — not
  * replay the fresh-action mint or wrap laws.
  */
-async function revertEntry(entry: UndoEntry, authorizeFirstHandler?: () => string | null): Promise<boolean> {
+function revertEntry(entry: UndoEntry, authorizeFirstHandler?: () => string | null): Promise<boolean> {
+    return runPreparedUndoReplay({ entries: [entry] }, () => replayEntryInverse(entry, authorizeFirstHandler));
+}
+
+async function replayEntryInverse(entry: UndoEntry, authorizeFirstHandler?: () => string | null): Promise<boolean> {
     if (entry.kind === 'callback') {
         entry.undo();
         return true;
@@ -82,7 +87,7 @@ async function revertActionGroupImpl(groupId: string): Promise<void> {
                 );
             let authorizeReplay: (() => string | null) | undefined;
             if (hasLegacyTrim) {
-                authorizeReplay = () => getLegacyTrimInverseReplayFailure(remainingInverses);
+                authorizeReplay = () => getLegacyInverseReplayFailure(remainingInverses, 'revertActionGroup');
             }
             if (await revertEntry(entry, authorizeReplay)) {
                 revertedEntries.unshift(entry);

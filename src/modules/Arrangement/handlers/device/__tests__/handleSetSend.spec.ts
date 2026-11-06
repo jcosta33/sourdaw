@@ -94,6 +94,7 @@ describe('handleSetSend', () => {
                 trackId: 't1',
                 busId: 'bus-1',
                 level: 0.2,
+                preFader: true,
                 expectedLevel: 0.9,
                 expectedPreFader: true,
             },
@@ -269,6 +270,92 @@ describe('handleSetSend', () => {
                 payload: { trackId: 't1', busId: 'bus-1', level: 0.2 },
             })
         ).toBe(false);
+    });
+
+    describe('pre-fader tap point', () => {
+        const sendState = (preFader: boolean) => ({
+            tracks: [
+                { id: 't1', kind: 'audio', sends: [{ busId: 'bus-1', level: 0.5, preFader }] },
+                { id: 'bus-1', kind: 'bus', sends: [] },
+            ],
+        });
+
+        it('writes a payload that changes only the tap point and is not a no-op', () => {
+            mocks.getTrackStoreState.mockReturnValue(sendState(false));
+            mocks.setSend.mockReturnValue({ afterCommit: vi.fn(), afterAmbiguousCommit: vi.fn() });
+            const action = {
+                type: 'setSend' as const,
+                payload: { trackId: 't1', busId: 'bus-1', level: 0.5, preFader: true },
+            };
+
+            expect(handleSetSend.isNoop?.(action)).toBe(false);
+            handleSetSend.execute(action);
+
+            expect(mocks.setSend).toHaveBeenCalledWith('t1', 'bus-1', 0.5, true, { deferRuntimeEffect: true });
+        });
+
+        it('treats a payload restating the current tap point and level as a no-op', () => {
+            mocks.getTrackStoreState.mockReturnValue(sendState(true));
+
+            expect(
+                handleSetSend.isNoop?.({
+                    type: 'setSend',
+                    payload: { trackId: 't1', busId: 'bus-1', level: 0.5, preFader: true },
+                })
+            ).toBe(true);
+        });
+
+        it('describes an inverse that restores the previous tap point and a redo that re-applies the new one', () => {
+            mocks.getTrackStoreState.mockReturnValue(sendState(false));
+
+            const desc = handleSetSend.describe({
+                type: 'setSend',
+                payload: {
+                    trackId: 't1',
+                    busId: 'bus-1',
+                    level: 0.5,
+                    preFader: true,
+                    expectedLevel: 0.5,
+                    expectedPreFader: false,
+                },
+            });
+
+            expect(desc.label).toBe('Set send pre-fader');
+            expect(desc.inverseAction).toEqual({
+                type: 'setSend',
+                payload: {
+                    trackId: 't1',
+                    busId: 'bus-1',
+                    level: 0.5,
+                    preFader: false,
+                    expectedLevel: 0.5,
+                    expectedPreFader: true,
+                },
+            });
+            expect(desc.redoAction).toEqual({
+                type: 'setSend',
+                payload: {
+                    trackId: 't1',
+                    busId: 'bus-1',
+                    level: 0.5,
+                    preFader: true,
+                    expectedLevel: 0.5,
+                    expectedPreFader: false,
+                },
+            });
+        });
+
+        it('conflicts when the stored tap point differs from expectedPreFader', () => {
+            mocks.getTrackStoreState.mockReturnValue(sendState(true));
+
+            const result = handleSetSend.execute({
+                type: 'setSend',
+                payload: { trackId: 't1', busId: 'bus-1', level: 0.5, preFader: false, expectedPreFader: false },
+            });
+
+            expect(result).toEqual({ status: 'conflict' });
+            expect(mocks.setSend).not.toHaveBeenCalled();
+        });
     });
 
     it('is undoable', () => {

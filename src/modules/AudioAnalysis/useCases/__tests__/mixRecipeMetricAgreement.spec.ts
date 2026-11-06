@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { getMixRecipeCatalog } from '#/modules/Arrangement/useCases';
 
 import { AGENT_OBJECTIVE_METRIC_IDS } from '../../models/AgentObjectiveAnalysisTypes';
 import { FREQUENCY_RANGES } from '../../models/MixComparisonTypes';
+
+registerDeviceEnginePorts();
 
 const catalog = getMixRecipeCatalog();
 

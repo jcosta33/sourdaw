@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { type captureUndoHistory } from '#/modules/Command/useCases';
 
 import { createCrdtPersistenceRootLineageConflictError } from '../../../errors/CrdtPersistenceRootLineageConflictError';
+import { branchSwitchTransport } from '../branchSwitchTransport';
 import { switchBranch } from '../switchBranch';
 
 // Derived from the public callable's own return type rather than importing
@@ -117,10 +118,6 @@ const mocks = vi.hoisted(() => ({
     isTransportIdle: vi.fn<() => boolean>(() => true),
 }));
 
-vi.mock('#/modules/Transport/useCases', () => ({
-    stopPlayback: mocks.stopPlayback,
-    isTransportIdle: mocks.isTransportIdle,
-}));
 vi.mock('@automerge/automerge', () => ({ clone: mocks.clone }));
 vi.mock('#/infra/store/storage/createAutomergeStorage', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/infra/store/storage/createAutomergeStorage')>()),
@@ -160,6 +157,8 @@ vi.mock('#/modules/Command/useCases', () => ({
     captureUndoHistory: mocks.captureUndoHistory,
     restoreUndoHistory: mocks.restoreUndoHistory,
 }));
+
+branchSwitchTransport.configure({ isIdle: mocks.isTransportIdle, stop: mocks.stopPlayback });
 
 describe('switchBranch', () => {
     beforeEach(() => {

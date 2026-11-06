@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
@@ -49,6 +50,9 @@ import {
     configureAiWorkflowCommandPreflightFixture,
     resetAiWorkflowCommandPreflightFixture,
 } from './aiWorkflowCommandPreflightFixture';
+import { configuredLiteralMetricState } from './metricGoalWorkflowFixture';
+
+registerDeviceEnginePorts();
 
 const noActionHistoryMetadataPort = {
     record: () => [],
@@ -608,6 +612,7 @@ function propose(
             )
         ),
     });
+    const metricGoalState = configuredLiteralMetricState(commandBatch);
     proposePendingActionConfirmation({
         id,
         prompt: 'color the drums red',
@@ -615,7 +620,8 @@ function propose(
         actions,
         actionLabels: actions.map((action) => action.type),
         commandBatch,
-        agentApproval: compileAgentRiskApproval({ commandBatch }),
+        metricGoalState,
+        agentApproval: compileAgentRiskApproval({ commandBatch, metricGoalState }),
         executionMode: 'atomic',
         projectRevision,
         matchSelectorPredicates,

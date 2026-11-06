@@ -237,7 +237,8 @@ describe('scheduleAutomationOnParam', () => {
 
         expect(param.setValueAtTime.mock.calls[0]?.[0]).toBeCloseTo(0.5, 10);
         expect(param.setValueAtTime.mock.calls[0]?.[1]).toBe(0);
-        expect(param.linearRampToValueAtTime).toHaveBeenCalledWith(expect.closeTo(Math.sqrt(6.5) / 4, 10), 2.5);
+        // Interior samples are inverted to a fraction of one grid step; a flat projection would give 0.625 here.
+        expect(param.linearRampToValueAtTime).toHaveBeenCalledWith(expect.closeTo(Math.sqrt(6.5) / 4, 6), 2.5);
         expect(param.linearRampToValueAtTime.mock.calls.at(-1)?.[0]).toBeCloseTo(0.75, 10);
         expect(param.linearRampToValueAtTime.mock.calls.at(-1)?.[1]).toBeCloseTo(5, 10);
     });

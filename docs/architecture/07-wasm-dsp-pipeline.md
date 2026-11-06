@@ -23,7 +23,7 @@ public/wasm/<crate>/            wasm-bindgen JS glue + *_bg.wasm
 src/modules/AudioEngine/wasm/   worklet-loadable glue (committed)
         │  initSync({ module }) with a precompiled module
         ▼
-AudioWorklet processors         services/*Processor.ts, workers/*EngineWorker.ts
+AudioWorklet processors         worklets/*Processor.ts, workers/*EngineWorker.ts
 ```
 
 The `wasm:*` scripts (`package.json`) run `wasm-pack` per crate into `public/wasm/`, then a generator script rewrites the glue for the worklet environment:

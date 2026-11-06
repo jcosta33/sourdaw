@@ -4,7 +4,11 @@ import { decodeAudioFile, discardDecodedAudioFile, getCachedAudioBuffer } from '
 import { getAssetTransfer } from '#/modules/Collaboration/useCases';
 import { executeAppActionBatch } from '#/modules/Command/useCases';
 import { captureProjectTransitionAuthority } from '#/modules/Project/useCases';
-import { rememberLibraryAssetMapping, resolveDroppedSampleFile } from '#/modules/SampleLibrary/useCases';
+import {
+    ensureFactorySampleBuffer,
+    rememberLibraryAssetMapping,
+    resolveDroppedSampleFile,
+} from '#/modules/SampleLibrary/useCases';
 import { isAudioFile } from '#/utils/audioFileExtensions';
 import { AI_RENDER_DRAG_MIME_TYPE, PLUGIN_DRAG_MIME_TYPE, SAMPLE_DRAG_MIME_TYPE } from '#/utils/dragMimeTypes';
 import { notifyUser } from '#/utils/Notification/notifyUser';
@@ -293,7 +297,21 @@ export const useTimelineFileDrop = ({
                 // Resolve the buffer id straight from the cache before attempting
                 // any file access or decode.
                 const candidateBufferId = sample.audioBufferId ?? sample.id;
-                const cachedBuffer = getCachedAudioBuffer({ bufferId: candidateBufferId });
+                let cachedBuffer = getCachedAudioBuffer({ bufferId: candidateBufferId });
+                if (!cachedBuffer) {
+                    // A factory sample's buffer may be evicted or not yet loaded
+                    // this session; the library obtains it from storage or a render.
+                    const factoryBuffer = await ensureFactorySampleBuffer({ sampleId: candidateBufferId });
+                    if (factoryBuffer.status === 'unavailable') {
+                        if (authority.isCurrent()) {
+                            notifyUser(`Could not access "${sample.name}" — audio buffer is not available.`, 'error');
+                        }
+                        return;
+                    }
+                    if (factoryBuffer.status === 'resolved') {
+                        cachedBuffer = factoryBuffer.buffer;
+                    }
+                }
                 if (cachedBuffer) {
                     audioBufferId = candidateBufferId;
                     durationBeats = Math.max(
@@ -477,10 +495,9 @@ export const useTimelineFileDrop = ({
                     notifyUser('Drop the plugin onto a track to add it.', 'warning');
                     return;
                 }
-                // The payload carries both, and the action compiler receives the stable id,
-                // id. `De-esser`, `LUFS Meter` and `Stereo Widener` each name two
-                // catalog plugins, so a name lookup returns whichever the registry
-                // lists first rather than the card that was dragged.
+                // The payload carries both, and the action compiler receives the stable
+                // id. Catalog names are unique, so a name lookup would not be ambiguous,
+                // but the id is the key a device is stored under.
                 void executeAddDeviceAction(targetTrackId, plugin.id);
             } catch {
                 notifyUser('Could not add the dropped plugin — its data was malformed.', 'error');

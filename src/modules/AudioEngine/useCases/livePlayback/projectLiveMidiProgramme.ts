@@ -51,7 +51,13 @@
  */
 
 import { type Track } from '#/modules/Arrangement/stores';
-import { type MidiStoreState } from '#/modules/MIDI/stores';
+import {
+    frozenMidiTakeRepeats,
+    projectFrozenMidiTakeWindow,
+    selectMidiNotesForRecordingPass,
+    type MidiStoreState,
+} from '#/modules/MIDI/stores';
+import { resolveClipLoopPassGrid } from '#/utils/clipLoopOrigin';
 import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
 
 import { type AudioGraphDeviceTarget, type AudioGraphMidiNoteEvent } from '../../models/AudioGraphBackend';
@@ -275,6 +281,82 @@ type ClipProjectionInput = Readonly<{
     projectBeatToSeconds: (beat: number) => number;
 }>;
 
+function projectFrozenClipNotes({
+    clip,
+    track,
+    deviceType,
+    input,
+    projectBeatToSeconds,
+}: ClipProjectionInput): ProjectedNote[] {
+    const source = clip.midiTakeSource;
+    if (!source) {
+        return [];
+    }
+    const projected: ProjectedNote[] = [];
+    // A frozen take counts its occurrences on its own grid, as live does.
+    const sourceOccurrenceOffset = getSourceOccurrenceOffset({
+        sourceStartBeat: clip.sourceStartBeat,
+        segmentStartBeat: clip.startBeat,
+        loopLength: projectClipLoopExpansion({
+            clipDurationBeats: clip.endBeat - clip.startBeat,
+            configuredLoopLengthBeats: clip.loopLength,
+            loopEnabled: clip.loopEnabled ?? false,
+        }).loopLengthBeats,
+        loopEnabled: clip.loopEnabled ?? false,
+    });
+    for (const repeat of frozenMidiTakeRepeats(source, clip, clip.startBeat, clip.endBeat)) {
+        const absoluteOccurrenceIndex = sourceOccurrenceOffset + repeat.absoluteOccurrenceIndex;
+        const window = projectFrozenMidiTakeWindow({
+            source,
+            fragment: clip,
+            recordingPassIndex: clip.midiTakeRecordingPassIndex,
+            absoluteOccurrenceIndex: repeat.absoluteOccurrenceIndex,
+            fromBeat: clip.startBeat,
+            toBeat: clip.endBeat,
+        });
+        if (!window) {
+            throw new Error('Invalid frozen MIDI take window');
+        }
+        const admitted = window.notes.filter((note) =>
+            input.selectProbability({
+                projectProbabilitySeed: input.probabilitySeed,
+                clipId: source.sourceClipId,
+                eventId: note.id,
+                absoluteOccurrenceIndex,
+                probabilityPercent: note.probability ?? 100,
+            })
+        );
+        const events = input.projectMidiEvents({
+            events: admitted,
+            clipId: source.sourceClipId,
+            clipStartBeat: clip.startBeat,
+            clipEndBeat: Math.min(clip.endBeat, repeat.endBeat),
+            iterationStartBeat: repeat.startBeat,
+            loopLengthBeats: repeat.strideBeats,
+            midiOffsetBeats: 0,
+            loopEnabled: false,
+            eventsAreAbsolute: true,
+            phase: 'complete',
+        });
+        for (const event of events) {
+            projected.push({
+                onSeconds: projectBeatToSeconds(event.startBeat),
+                offSeconds: projectBeatToSeconds(event.startBeat + event.duration),
+                note: conformPitch({
+                    projectChordPitch: track.followChordTrack ? input.projectChordPitch : null,
+                    pitch: event.pitch,
+                    referenceBeat: clip.startBeat,
+                    targetBeat: event.startBeat,
+                }),
+                channel: event.channel ?? 0,
+                velocity: event.velocity,
+                articulationId: input.resolveArticulationId?.({ deviceType, articulation: event.articulation }) ?? null,
+            });
+        }
+    }
+    return projected;
+}
+
 /** The notes one clip contributes, expanded over its loop iterations. */
 function projectClipNotes({
     clip,
@@ -283,9 +365,15 @@ function projectClipNotes({
     input,
     projectBeatToSeconds,
 }: ClipProjectionInput): ProjectedNote[] {
-    const sourceNotes = input.notesByClipId[clip.id];
+    if (clip.midiTakeSource) {
+        return projectFrozenClipNotes({ clip, track, deviceType, input, projectBeatToSeconds });
+    }
+    const sourceNotes = selectMidiNotesForRecordingPass(
+        input.notesByClipId[clip.id] ?? [],
+        clip.midiTakeRecordingPassIndex
+    );
     const clipVisualLength = clip.endBeat - clip.startBeat;
-    if (!sourceNotes || clipVisualLength <= 0) {
+    if (clipVisualLength <= 0) {
         return [];
     }
     const loopEnabled = clip.loopEnabled ?? false;
@@ -294,15 +382,24 @@ function projectClipNotes({
         configuredLoopLengthBeats: clip.loopLength,
         loopEnabled,
     });
-    const sourceOccurrenceOffset = getSourceOccurrenceOffset({
-        sourceStartBeat: clip.sourceStartBeat,
-        segmentStartBeat: clip.startBeat,
-        loopLength: loopLengthBeats,
+    const loopPassGrid = resolveClipLoopPassGrid({
+        startBeat: clip.startBeat,
+        endBeat: clip.endBeat,
+        loopOriginBeat: clip.loopOriginBeat,
         loopEnabled,
+        loopLengthBeats,
+        iterationCount,
     });
+    const sourceOccurrenceOffset =
+        getSourceOccurrenceOffset({
+            sourceStartBeat: clip.sourceStartBeat,
+            segmentStartBeat: clip.startBeat,
+            loopLength: loopLengthBeats,
+            loopEnabled,
+        }) + loopPassGrid.passesAheadOfAnchor;
 
     const projected: ProjectedNote[] = [];
-    for (let iteration = 0; iteration < iterationCount; iteration++) {
+    for (let iteration = 0; iteration < loopPassGrid.passCount; iteration++) {
         const absoluteOccurrenceIndex = sourceOccurrenceOffset + iteration;
         const admitted = sourceNotes.filter((note) =>
             input.selectProbability({
@@ -318,7 +415,7 @@ function projectClipNotes({
             clipId: clip.id,
             clipStartBeat: clip.startBeat,
             clipEndBeat: clip.endBeat,
-            iterationStartBeat: clip.startBeat + iteration * loopLengthBeats,
+            iterationStartBeat: loopPassGrid.firstPassStartBeat + iteration * loopLengthBeats,
             loopLengthBeats,
             midiOffsetBeats: clip.midiOffsetBeats ?? 0,
             loopEnabled,

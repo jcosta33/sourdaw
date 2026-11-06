@@ -1,21 +1,20 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { createTrack, type Clip } from '../../../models/Track';
+import { type TimelineEditingState } from '../../../stores/timelineEditingStore';
 import { getTrackStoreState } from '../../getTrackStoreState';
 import { planRippleMove } from '../planRippleMove';
 
-import type { WorkspaceState } from '#/modules/WorkspaceShell/stores';
-
-const { workspaceStoreMock } = vi.hoisted(() => ({
-    workspaceStoreMock: { value: null as Partial<WorkspaceState> | null },
+const { timelineEditingStoreMock } = vi.hoisted(() => ({
+    timelineEditingStoreMock: { value: null as Partial<TimelineEditingState> | null },
 }));
 
 vi.mock('../../getTrackStoreState', () => ({
     getTrackStoreState: vi.fn(),
 }));
 
-vi.mock('#/modules/WorkspaceShell/stores', () => ({
-    workspaceStore: workspaceStoreMock,
+vi.mock('../../../stores/timelineEditingStore', () => ({
+    timelineEditingStore: timelineEditingStoreMock,
 }));
 
 function makeClip(id: string, startBeat: number, endBeat: number): Clip {
@@ -41,14 +40,14 @@ describe('planRippleMove', () => {
     });
 
     it('should return null if ripple editing is disabled', () => {
-        workspaceStoreMock.value = { rippleEditing: false };
+        timelineEditingStoreMock.value = { rippleEditing: false };
         expect(
             planRippleMove({ trackId: 't1', clipId: 'c1', oldStartBeat: 0, newStartBeat: 2, clipDuration: 2 })
         ).toBeNull();
     });
 
     it('should identify gap-closed and destination-opened clips', () => {
-        workspaceStoreMock.value = { rippleEditing: true };
+        timelineEditingStoreMock.value = { rippleEditing: true };
         vi.mocked(getTrackStoreState).mockReturnValue({
             tracks: [
                 {
@@ -77,7 +76,7 @@ describe('planRippleMove', () => {
     });
 
     it('returns null when the track store is not loaded', () => {
-        workspaceStoreMock.value = { rippleEditing: true };
+        timelineEditingStoreMock.value = { rippleEditing: true };
         vi.mocked(getTrackStoreState).mockReturnValue(null);
 
         expect(
@@ -86,7 +85,7 @@ describe('planRippleMove', () => {
     });
 
     it('returns null when the target track cannot be found', () => {
-        workspaceStoreMock.value = { rippleEditing: true };
+        timelineEditingStoreMock.value = { rippleEditing: true };
         vi.mocked(getTrackStoreState).mockReturnValue({
             tracks: [
                 {

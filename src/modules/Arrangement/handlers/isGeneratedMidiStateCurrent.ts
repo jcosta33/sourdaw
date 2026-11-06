@@ -1,8 +1,8 @@
 import { modulationStore } from '#/modules/Automation/stores';
 import { getAutomationLanes } from '#/modules/Automation/useCases';
-import { type projectMidiNotesByClipIdThroughRestores, serializeMidiStateForClips } from '#/modules/MIDI/useCases';
+import { serializeMidiStateForClips } from '#/modules/MIDI/useCases';
 import { getAllSidechainRoutes } from '#/modules/Routing/useCases';
-import { type GeneratedMidiStateGuard } from '#/utils/handlerContract';
+import { type AppAction, type GeneratedMidiStateGuard } from '#/utils/handlerContract';
 import { matchesJsonFingerprint } from '#/utils/jsonSemanticEquality';
 import { valuesEqual } from '#/utils/structuralEquality';
 
@@ -22,7 +22,12 @@ type IsGeneratedMidiStateCurrentInput = {
     entityType: 'clip' | 'track';
     guard: GeneratedMidiStateGuard;
     allowedReferencingTrackIds?: readonly string[];
-    projectedMidiNotesByClipId?: ReturnType<typeof projectMidiNotesByClipIdThroughRestores>;
+    /**
+     * The batch members that run before this guard is checked. Present only in
+     * a batch preflight: the MIDI leg then reads the notes and controllers
+     * those members restore, not the live store they have not written yet.
+     */
+    priorBatchActions?: readonly AppAction[];
     /**
      * Prior batch siblings' restore projection for the clip named by `entityId`
      * (#3814). Present only when a sibling touched the clip's state; the guard
@@ -189,7 +194,7 @@ export function isGeneratedMidiStateCurrent({
     entityType,
     guard,
     allowedReferencingTrackIds = [],
-    projectedMidiNotesByClipId,
+    priorBatchActions,
     projectedClipState,
 }: IsGeneratedMidiStateCurrentInput): boolean {
     const state = getTrackStoreState();
@@ -206,10 +211,7 @@ export function isGeneratedMidiStateCurrent({
         return false;
     }
     if (
-        !serializedValuesEqual(
-            serializeMidiStateForClips(clipIds, projectedMidiNotesByClipId),
-            guard.midiByClipIdJson
-        ) ||
+        !serializedValuesEqual(serializeMidiStateForClips(clipIds, priorBatchActions), guard.midiByClipIdJson) ||
         !clipSatelliteStateMatches(clipIds, guard, projectedClipState)
     ) {
         return false;

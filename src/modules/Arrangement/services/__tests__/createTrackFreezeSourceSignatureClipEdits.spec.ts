@@ -24,4 +24,27 @@ describe('freeze source signature and audible clip edits', () => {
     ] as const)('changes when an edit is %s', (_edit, change) => {
         expect(signatureOf({ ...base, ...change })).not.toBe(signatureOf(base));
     });
+
+    it.each([
+        { audioOffsetSeconds: 0 },
+        { audioLoopStartSeconds: -1 },
+        { audioLoopPassEntrySeconds: 0 },
+        { audioLoopPassOriginBeat: 2 },
+    ])('invalidates a frozen render when a physical audio source anchor changes %j', (change) => {
+        const canonical: Clip = {
+            ...base,
+            startBeat: 2,
+            endBeat: 9,
+            loopEnabled: true,
+            loopLength: 4,
+            loopOriginBeat: 0,
+            audioOffsetSeconds: 1.5,
+            audioLoopStartSeconds: 0,
+            audioLoopPassEntrySeconds: 0.5,
+            audioLoopPassOriginBeat: 1,
+            stretchMode: 'timestretch',
+            stretchRatio: 2,
+        };
+        expect(signatureOf({ ...canonical, ...change })).not.toBe(signatureOf(canonical));
+    });
 });

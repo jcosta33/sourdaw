@@ -1,12 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
+    stop: vi.fn(async () => ({ status: 'idle' })),
     cancelAgentRun: vi.fn(),
     getPendingActionConfirmation: vi.fn(),
     settlePendingActionResourceLease: vi.fn(),
     updatePendingActionConfirmationStatus: vi.fn(),
     updateChatMessage: vi.fn(),
 }));
+
+vi.mock('../stopMeasuredPreviewAudition', () => ({ stopMeasuredPreviewAudition: mocks.stop }));
 
 vi.mock('../cancelAgentRun', () => ({
     agentRunCancellation: { cancel: mocks.cancelAgentRun },
@@ -121,6 +124,11 @@ describe('cancelPendingChatActions', () => {
             actionLabels: ['Add track', 'Set tempo'],
             approvalSnapshot: { actions: [] },
             runId: 'run-conf-2',
+        });
+
+        mocks.cancelAgentRun.mockImplementationOnce(async () => {
+            expect(mocks.stop).toHaveBeenCalledExactlyOnceWith({ confirmationId: 'conf-2' });
+            return { status: 'cancelled', phase: 'cancelled', cleanupPendingAssetIds: [] };
         });
 
         const result = await cancelPendingChatActions({ confirmationId: 'conf-2' });

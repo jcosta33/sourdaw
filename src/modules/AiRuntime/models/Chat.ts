@@ -1,4 +1,4 @@
-import { type AnswerEvidenceEntry } from './PlanningOutcome';
+import { type AnswerEvidenceEntry, type AnswerSuggestion } from './PlanningOutcome';
 
 export type ChatRole = 'user' | 'assistant' | 'system';
 
@@ -18,6 +18,10 @@ export type ChatMessage = {
     reasoning?: string;
     /** Tool receipts an answer rests on; the panel lists them in a collapsed disclosure. */
     answerEvidence?: readonly AnswerEvidenceEntry[];
+    /** The recipe change an answer offered; the panel's "Propose this" compiles it into a proposal. */
+    answerSuggestion?: AnswerSuggestion;
+    /** The project revision an answer offering a suggestion was composed against, beside its `projectId`. */
+    projectRevision?: string;
     /** Whether this message is an executable prompt-command receipt rather than ordinary chat. */
     isCommandAction?: boolean;
     /** The agent run a command message reports, so the thread can name the run it committed. */

@@ -8,6 +8,7 @@ import {
 
 import { agentRunLifecycle } from './agentRunLifecycle';
 import { agentRunCancellation } from './cancelAgentRun';
+import { stopMeasuredPreviewAudition } from './stopMeasuredPreviewAudition';
 
 type CancelPendingChatActionsInput = {
     confirmationId: string;
@@ -22,6 +23,7 @@ type CancelPendingChatActionsOutput =
 export async function cancelPendingChatActions(
     input: CancelPendingChatActionsInput
 ): Promise<CancelPendingChatActionsOutput> {
+    void stopMeasuredPreviewAudition({ confirmationId: input.confirmationId });
     const confirmation = getPendingActionConfirmation(input.confirmationId);
     if (!confirmation) {
         return { status: 'missing' };

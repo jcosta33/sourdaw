@@ -2,13 +2,9 @@ import { type EditingTool } from './EditingTool';
 
 export type WorkspaceMode = 'arrange' | 'automation' | 'clip';
 
-export type SoloMode = 'sip' | 'afl' | 'pfl';
-
 export type ChannelStripWidth = 'narrow' | 'normal' | 'wide';
 
 export type TimeDisplayMode = 'musical' | 'time';
-
-export type AutomationVisibility = 'hidden' | 'overlay' | 'panel';
 
 export type WorkspaceState = {
     mode: WorkspaceMode;
@@ -21,12 +17,10 @@ export type WorkspaceState = {
     trackListWidth: number;
     activeTool: EditingTool;
     commandPaletteOpen: boolean;
-    snapValue: number;
     sidebarWidth: number;
     inspectorWidth: number;
     mixerHeight: number;
     editorHeight: number;
-    soloMode: SoloMode;
     channelStripWidth: ChannelStripWidth;
     timeDisplayMode: TimeDisplayMode;
     undoHistoryOpen: boolean;
@@ -34,15 +28,20 @@ export type WorkspaceState = {
     branchManagerOpen: boolean;
     chatPanelOpen: boolean;
     chatPanelWidth: number;
-    rippleEditing: boolean;
     /** D1: Toggle for Session + Arrangement side-by-side view. */
     dualViewOpen: boolean;
     /** D1: Width of the Session view in dual mode. */
     sessionViewWidth: number;
-    automationVisibility: AutomationVisibility;
-    automationSubLanes: Record<string, string[]>; // trackId → parameterIds shown inline
     scratchPadOpen: boolean;
     scratchPadHeight: number;
+    /** The pad shows only its header strip. Session UI state; reset whenever the pad opens or closes. */
+    scratchPadCollapsed: boolean;
+    /**
+     * Height of the timeline minimap while its resize handle is being dragged, before the
+     * height is committed to preferences. Null when no drag is in progress. Published by
+     * the arrangement so the shell's arrangement floor follows what is rendered.
+     */
+    timelineMinimapPreviewHeight: number | null;
     aiPanelWidth: number;
     fermenterHeight: number;
     toasterHeight: number;
@@ -74,12 +73,10 @@ export const defaultWorkspaceState: WorkspaceState = {
     trackListWidth: 220,
     activeTool: 'select',
     commandPaletteOpen: false,
-    snapValue: 1,
     sidebarWidth: 224,
     inspectorWidth: 256,
     mixerHeight: 208,
     editorHeight: 360,
-    soloMode: 'sip',
     channelStripWidth: 'normal',
     timeDisplayMode: 'musical',
     undoHistoryOpen: false,
@@ -87,13 +84,12 @@ export const defaultWorkspaceState: WorkspaceState = {
     branchManagerOpen: false,
     chatPanelOpen: false,
     chatPanelWidth: 320,
-    rippleEditing: false,
     dualViewOpen: false,
     sessionViewWidth: 320,
-    automationVisibility: 'hidden',
-    automationSubLanes: {},
     scratchPadOpen: false,
     scratchPadHeight: 120,
+    scratchPadCollapsed: false,
+    timelineMinimapPreviewHeight: null,
     aiPanelWidth: 340,
     fermenterHeight: 320,
     toasterHeight: 420,

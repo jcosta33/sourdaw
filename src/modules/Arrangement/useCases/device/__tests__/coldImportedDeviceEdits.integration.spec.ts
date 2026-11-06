@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerProjectSlotProjections } from '#/app/registerProjectSlotProjections';
 import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
@@ -8,6 +9,7 @@ import {
     audioEngine,
     configureRuntimeGraphProjectRevisionValidator,
     configureRuntimeGraphTopologyValidator,
+    initEngineDeviceCollaborators,
 } from '#/modules/AudioEngine/useCases';
 import { clearHandlerRegistry, registerHandlerMap, undoHistoryStore } from '#/modules/Command/stores';
 import { clearUndoHistory, executeAppAction, executeAppActionBatch, redo, undo } from '#/modules/Command/useCases';
@@ -80,6 +82,7 @@ beforeEach(async () => {
     removeCrdtDoc('root');
     createCrdtDoc('root');
     registerCrdtStorageRuntime();
+    registerProjectSlotProjections();
     stopProjection = setupProjectionBridge();
     projectCrdtToStores();
     transportStore.set(defaultTransportState);
@@ -92,6 +95,7 @@ beforeEach(async () => {
     audioEngine.resetGraph();
     configureRuntimeGraphProjectRevisionValidator((revision) => revision === captureProjectRevision());
     configureRuntimeGraphTopologyValidator(runtimeGraphTopology.matchesCurrentProject);
+    initEngineDeviceCollaborators();
     await audioEngine.initialize();
     expect(trackStore.value?.tracks).toEqual([]);
 });
@@ -101,6 +105,7 @@ afterEach(() => {
     audioEngine.resetGraph();
     configureRuntimeGraphProjectRevisionValidator(null);
     configureRuntimeGraphTopologyValidator(null);
+    audioEngine.setUseCaseDeviceCollaborators(null);
     clearUndoHistory();
     clearHandlerRegistry();
     stopProjection?.();

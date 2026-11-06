@@ -31,6 +31,7 @@ export function getExecutableCommandRegistration<ActionType extends ExecutableAp
         materializedArgumentsValidation:
             'materializedArgumentsValidation' in descriptor ? descriptor.materializedArgumentsValidation : undefined,
         discoverability: 'discoverability' in descriptor ? (descriptor.discoverability ?? 'visible') : 'visible',
+        sessionReplay: 'sessionReplay' in descriptor ? (descriptor.sessionReplay ?? 'forward') : 'forward',
         runtimeSchema: {
             validate: (value: unknown) => validateVersionedCommandArguments(actionType, value),
         },

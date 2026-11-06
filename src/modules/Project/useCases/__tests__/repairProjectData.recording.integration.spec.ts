@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
+import { registerProjectSlotProjections } from '#/app/registerProjectSlotProjections';
 import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
@@ -20,6 +22,8 @@ import { transportStore } from '#/modules/Transport/stores';
 
 import { handleRepairProjectData } from '../../handlers/project/handleRepairProjectData';
 import { repairProjectData } from '../repairProjectData';
+
+registerDeviceEnginePorts();
 
 const TRACK_ID = 'track-recording';
 
@@ -139,6 +143,7 @@ describe('repairProjectData while a MIDI take is recording', () => {
         removeCrdtDoc('root');
         createCrdtDoc('root');
         registerCrdtStorageRuntime();
+        registerProjectSlotProjections();
         agentProjectInspectionPort.setProvider(() => ({
             audioGraphValid: true,
             projectInvariantsValid: true,

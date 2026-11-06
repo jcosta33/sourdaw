@@ -128,3 +128,10 @@ describe('getNextStepRecordPitch — pentatonic scale', () => {
         ).toBe(72);
     });
 });
+
+describe('getNextStepRecordPitch — Object.prototype scale names', () => {
+    it.each(['__proto__', 'constructor', 'toString'])('%s resolves to chromatic instead of throwing', (scaleName) => {
+        expect(getNextStepRecordPitch({ currentPitch: 60, direction: 'up', keyRoot: 0, scaleName })).toBe(61);
+        expect(getNextStepRecordPitch({ currentPitch: 60, direction: 'down', keyRoot: 0, scaleName })).toBe(59);
+    });
+});

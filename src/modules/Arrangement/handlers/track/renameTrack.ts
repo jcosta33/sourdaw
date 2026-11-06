@@ -5,6 +5,10 @@ import { renameTrack } from '../../useCases/renameTrack';
 import { getPlannedTrackState } from '../getPlannedTrackState';
 
 export const handleRenameTrack = createHandler<'renameTrack'>({
+    // Conflicts when `expectedName` no longer matches the live track. Proven by
+    // the `canReportConflict` registry honesty spec; undo step-over (#2881)
+    // relies on it.
+    canReportConflict: true,
     canReapplyAfterDivergence: (action) => action.payload.expectedName !== undefined,
     validate: (action, context) => {
         const currentName = getPlannedTrackState(context, action.payload.trackId)?.name;

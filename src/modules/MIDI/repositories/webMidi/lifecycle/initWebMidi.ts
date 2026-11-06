@@ -33,7 +33,24 @@ const MIDI_PORTS_CHANGED_EVENT = 'midi-ports-changed';
 type WebMidiMessageCallback = (event: WebMidiInputMessage) => void;
 
 function enumerationFailureMessage(error: unknown): string {
-    return error instanceof Error ? error.message : String(error);
+    if (error instanceof Error) {
+        return error.message;
+    }
+    if (typeof error === 'object' && error !== null && 'message' in error && typeof error.message === 'string') {
+        return error.message;
+    }
+    return String(error);
+}
+
+/**
+ * Chromium rejects `requestMIDIAccess` with `NotAllowedError` when the user or site settings refuse the
+ * permission; older builds used `SecurityError`. Classified by name, never by the localized message.
+ */
+function isPermissionDenial(error: unknown): boolean {
+    if (typeof error !== 'object' || error === null || !('name' in error)) {
+        return false;
+    }
+    return error.name === 'NotAllowedError' || error.name === 'SecurityError';
 }
 
 function claimInitGeneration(): number {
@@ -76,7 +93,7 @@ function onStateChange({ onMidiMessage }: OnStateChangeInput): void {
             detachActiveInput();
             attachInput({ input: preferredInput, onMidiMessage });
             setState(
-                { inputs, selectedInputId: preferredId, enumerationError: null },
+                { inputs, selectedInputId: preferredId, enumerationError: null, enumerationCompleted: true },
                 { persistSelection: true, identityScheme: WEB_MIDI_IDENTITY_SCHEME }
             );
             return;
@@ -96,7 +113,10 @@ function onStateChange({ onMidiMessage }: OnStateChangeInput): void {
             attachInput({ input, onMidiMessage });
             // Session-only stand-in: the user still prefers the device that
             // was unplugged, so leave the persisted preference alone.
-            setState({ inputs, selectedInputId: first.id, enumerationError: null }, { persistSelection: false });
+            setState(
+                { inputs, selectedInputId: first.id, enumerationError: null, enumerationCompleted: true },
+                { persistSelection: false }
+            );
             return;
         }
     }
@@ -106,6 +126,7 @@ function onStateChange({ onMidiMessage }: OnStateChangeInput): void {
             inputs,
             selectedInputId: selectedStillExists ? state.selectedInputId : null,
             enumerationError: null,
+            enumerationCompleted: true,
         },
         { persistSelection: false }
     );
@@ -191,7 +212,7 @@ async function onPortsChangedTick({ generation, onMidiMessage }: PortsChangedTic
     if (preferredId !== null && preferredId !== state.selectedInputId) {
         const preferredPort = resolveNativeMidiPort(ports, preferredId);
         if (preferredPort) {
-            setState({ inputs: toInputInfos(ports), enumerationError: null });
+            setState({ inputs: toInputInfos(ports), enumerationError: null, enumerationCompleted: true });
             try {
                 await selectMidiInputNative({
                     portIndex: preferredPort.portIndex,
@@ -211,7 +232,7 @@ async function onPortsChangedTick({ generation, onMidiMessage }: PortsChangedTic
 
     const selectedStillExists = ports.some((port) => port.id === state.selectedInputId);
     if (selectedStillExists) {
-        setState({ inputs: toInputInfos(ports), enumerationError: null });
+        setState({ inputs: toInputInfos(ports), enumerationError: null, enumerationCompleted: true });
         return;
     }
 
@@ -222,7 +243,10 @@ async function onPortsChangedTick({ generation, onMidiMessage }: PortsChangedTic
         // Native mode never sets an active input, so detaching reset nothing:
         // the lost device's wheel and pedals would stand for the on-screen keyboard.
         resetInputDeviceControllerState();
-        setState({ inputs: [], selectedInputId: null, enumerationError: null }, { persistSelection: false });
+        setState(
+            { inputs: [], selectedInputId: null, enumerationError: null, enumerationCompleted: true },
+            { persistSelection: false }
+        );
         return;
     }
 
@@ -235,13 +259,18 @@ async function onPortsChangedTick({ generation, onMidiMessage }: PortsChangedTic
         // Session-only stand-in: the user still prefers the device that was
         // unplugged, so leave the persisted preference alone.
         setState(
-            { inputs: toInputInfos(ports), selectedInputId: standIn.id, enumerationError: null },
+            {
+                inputs: toInputInfos(ports),
+                selectedInputId: standIn.id,
+                enumerationError: null,
+                enumerationCompleted: true,
+            },
             { persistSelection: false }
         );
     } catch (error) {
         // The fresh enumeration is still news the picker must show even when
         // the stand-in refused to open.
-        setState({ inputs: toInputInfos(ports), enumerationError: null });
+        setState({ inputs: toInputInfos(ports), enumerationError: null, enumerationCompleted: true });
         logger.warn('[MIDI] Failed to open stand-in MIDI input:', error);
     }
 }
@@ -290,6 +319,7 @@ export async function initWebMidi({ onMidiMessage }: InitWebMidiInput): Promise<
 
     const initGeneration = claimInitGeneration();
     let webMidiFailure: string | null = null;
+    let webMidiDenied = false;
 
     if (capabilities.webMidiApiPresent) {
         try {
@@ -301,7 +331,7 @@ export async function initWebMidi({ onMidiMessage }: InitWebMidiInput): Promise<
             access.onstatechange = () => onStateChange({ onMidiMessage });
 
             const inputs = enumerateInputs();
-            setState({ inputs, enumerationError: null });
+            setState({ inputs, enumerationError: null, enumerationCompleted: true });
 
             if (inputs.length > 0) {
                 // Always (re-)attach: covers first load AND re-init after page
@@ -332,6 +362,7 @@ export async function initWebMidi({ onMidiMessage }: InitWebMidiInput): Promise<
                 return false;
             }
             webMidiFailure = enumerationFailureMessage(error);
+            webMidiDenied = isPermissionDenial(error);
             logger.warn('[MIDI] Web MIDI failed, trying native fallback:', error);
         }
     }
@@ -343,7 +374,12 @@ export async function initWebMidi({ onMidiMessage }: InitWebMidiInput): Promise<
             if (!isCurrentInit(initGeneration)) {
                 return false;
             }
-            setState({ inputs: toInputInfos(ports), isSupported: true, enumerationError: null });
+            setState({
+                inputs: toInputInfos(ports),
+                isSupported: true,
+                enumerationError: null,
+                enumerationCompleted: true,
+            });
             void registerPortsChangedListener(onMidiMessage);
 
             if (ports.length > 0) {
@@ -399,6 +435,10 @@ export async function initWebMidi({ onMidiMessage }: InitWebMidiInput): Promise<
         }
     }
 
-    setState({ isSupported: false, enumerationError: webMidiFailure });
+    setState({
+        isSupported: capabilities.webMidiApiPresent,
+        enumerationError: webMidiFailure,
+        accessDenied: webMidiDenied,
+    });
     return false;
 }

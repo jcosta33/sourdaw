@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { act, render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { TooltipProvider } from '#/components/ui/tooltip';
@@ -10,6 +10,8 @@ import { toggleFolderCollapse } from '../../../useCases/folder/toggleFolderColla
 import { setInputMonitoring } from '../../../useCases/setTrackGainPan/setInputMonitoring';
 import { selectTrack } from '../../../useCases/toggleTrackState/selectTrack';
 import { TrackHeader } from '../TrackHeader';
+
+vi.unmock('#/components/ui/tooltip');
 
 // Mock external dependencies
 vi.mock('../../../useCases/toggleTrackState/muteTrack', () => ({
@@ -55,9 +57,15 @@ vi.mock('../TrackHeader/InlineTrackName', () => ({
     InlineTrackName: ({ track }: { track: { name: string } }) => <span>{track.name}</span>,
 }));
 
-vi.mock('../TrackHeader/ResizeHandle', () => ({
-    ResizeHandle: () => <div data-testid="resize-handle" />,
-}));
+const resizeHandle = vi.hoisted(() => ({ renderReal: false }));
+
+vi.mock('../TrackHeader/ResizeHandle', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('../TrackHeader/ResizeHandle')>();
+    return {
+        ResizeHandle: (props: Parameters<typeof actual.ResizeHandle>[0]) =>
+            resizeHandle.renderReal ? <actual.ResizeHandle {...props} /> : <div data-testid="resize-handle" />,
+    };
+});
 
 vi.mock('../TrackHeader/InputSelector', () => ({
     InputSelector: () => <div data-testid="input-selector" />,
@@ -176,6 +184,15 @@ describe('TrackHeader', () => {
         expect(screen.getByLabelText(/folder/i)).toBeInTheDocument();
     });
 
+    it('offers the track height handle on an ordinary track but not on a folder row', () => {
+        const { unmount } = renderWithTooltip(<TrackHeader track={mockTrack} isSelected={false} />);
+        expect(screen.getByTestId('resize-handle')).toBeInTheDocument();
+        unmount();
+
+        renderWithTooltip(<TrackHeader track={mockFolderTrack} isSelected={false} />);
+        expect(screen.queryByTestId('resize-handle')).not.toBeInTheDocument();
+    });
+
     it('should toggle folder collapse', () => {
         renderWithTooltip(<TrackHeader track={mockFolderTrack} isSelected={false} />);
         const collapseButton = screen.getByLabelText(/folder/i);
@@ -188,6 +205,88 @@ describe('TrackHeader', () => {
         renderWithTooltip(<TrackHeader track={frozenTrack} isSelected={false} />);
         expect(screen.getByText('FROZEN')).toBeInTheDocument();
     });
+
+    it.each(['audio', 'midi', 'bus', 'master', 'folder'] as const)(
+        'shows a stored freeze error on a %s track and clears it on transition',
+        (kind) => {
+            const track = {
+                ...mockTrack,
+                kind,
+                frozen: true,
+                freezeState: { status: 'error' as const, errorMessage: 'Renderer ran out of memory' },
+            };
+            const { rerender } = renderWithTooltip(<TrackHeader track={track} isSelected={false} />);
+            expect(screen.getByRole('button', { name: 'Freeze error: Renderer ran out of memory' })).toHaveTextContent(
+                'ERROR'
+            );
+            expect(screen.queryByTestId('track-frozen-badge')).not.toBeInTheDocument();
+
+            rerender(
+                <TooltipProvider>
+                    <TrackHeader track={{ ...track, freezeState: { status: 'unfrozen' } }} isSelected={false} />
+                </TooltipProvider>
+            );
+            expect(screen.queryByTestId('track-freeze-error-badge')).not.toBeInTheDocument();
+        }
+    );
+
+    it('uses a fallback for a freeze error without a reason', () => {
+        renderWithTooltip(
+            <TrackHeader track={{ ...mockTrack, freezeState: { status: 'error' } }} isSelected={false} />
+        );
+        expect(screen.getByRole('button', { name: 'Freeze error: Freeze failed. Try again.' })).toBeInTheDocument();
+    });
+
+    it.each(['unfrozen', 'freezing', 'frozen', 'stale'] as const)(
+        'does not show a freeze error in the %s state',
+        (status) => {
+            renderWithTooltip(<TrackHeader track={{ ...mockTrack, freezeState: { status } }} isSelected={false} />);
+            expect(screen.queryByTestId('track-freeze-error-badge')).not.toBeInTheDocument();
+        }
+    );
+
+    it.each(['focus', 'pointer'] as const)('reveals the full freeze error on %s', async (interaction) => {
+        const track = { ...mockFolderTrack, freezeState: { status: 'error' as const, errorMessage: 'Render failed' } };
+        render(
+            <TooltipProvider delayDuration={0}>
+                <TrackHeader track={track} isSelected={false} />
+            </TooltipProvider>
+        );
+        const badge = screen.getByRole('button', { name: 'Freeze error: Render failed' });
+        if (interaction === 'focus') {
+            fireEvent.focus(badge);
+        } else {
+            fireEvent.pointerMove(badge, { pointerType: 'mouse' });
+        }
+        expect(await screen.findByRole('tooltip')).toHaveTextContent('Render failed');
+    });
+
+    it.each(['audio', 'folder'] as const)(
+        'keeps the current selection when the %s freeze error is activated',
+        (kind) => {
+            const baseTrack = kind === 'folder' ? mockFolderTrack : mockTrack;
+            const track = {
+                ...baseTrack,
+                freezeState: { status: 'error' as const, errorMessage: 'Render failed' },
+            };
+            renderWithTooltip(<TrackHeader track={track} isSelected={false} />);
+            fireEvent.click(screen.getByRole('row'));
+            expect(selectTrack).toHaveBeenCalledWith(track.id);
+            vi.mocked(selectTrack).mockClear();
+
+            const badge = screen.getByRole('button', { name: 'Freeze error: Render failed' });
+            fireEvent.click(badge, { detail: 1 });
+            expect(selectTrack).not.toHaveBeenCalled();
+
+            act(() => badge.focus());
+            expect(badge).toHaveFocus();
+            fireEvent.keyDown(badge, { key: 'Enter' });
+            // jsdom does not synthesize the native click for a keyboard-activated button.
+            fireEvent.click(badge, { detail: 0 });
+            fireEvent.keyUp(badge, { key: 'Enter' });
+            expect(selectTrack).not.toHaveBeenCalled();
+        }
+    );
 
     it('should render InputSelector for selected audio track', () => {
         renderWithTooltip(<TrackHeader track={mockTrack} isSelected={true} />);
@@ -206,7 +305,7 @@ describe('TrackHeader', () => {
 
     it('should cycle input monitoring on click', () => {
         renderWithTooltip(<TrackHeader track={mockTrack} isSelected={false} />);
-        const monitorButton = screen.getByLabelText(/Input monitoring/);
+        const monitorButton = screen.getByLabelText('Input monitoring for Test Track: Auto');
         fireEvent.click(monitorButton);
         expect(setInputMonitoring).toHaveBeenCalledWith('track1', 'on');
     });
@@ -214,7 +313,7 @@ describe('TrackHeader', () => {
     it('cycles input monitoring from on to off', () => {
         const track = { ...mockTrack, inputMonitoring: 'on' as const };
         renderWithTooltip(<TrackHeader track={track} isSelected={false} />);
-        fireEvent.click(screen.getByLabelText(/Input monitoring/));
+        fireEvent.click(screen.getByLabelText('Input monitoring for Test Track: On'));
         expect(setInputMonitoring).toHaveBeenCalledWith('track1', 'off');
     });
 
@@ -262,8 +361,41 @@ describe('TrackHeader', () => {
     it('toggles variation lanes on click', async () => {
         const { toggleVariationLanes } = await import('../../../useCases/toggleTrackState/toggleVariationLanes');
         renderWithTooltip(<TrackHeader track={mockTrack} isSelected={false} />);
-        fireEvent.click(screen.getByLabelText('Toggle variation lanes'));
+        fireEvent.click(screen.getByLabelText('Variation lanes for Test Track'));
         expect(toggleVariationLanes).toHaveBeenCalledWith('track1');
+    });
+
+    it('names the variation and monitoring buttons of two tracks after their own track', () => {
+        const otherTrack = { ...mockTrack, id: 'track2', name: 'Second Track' };
+        renderWithTooltip(
+            <>
+                <TrackHeader track={mockTrack} isSelected={false} />
+                <TrackHeader track={otherTrack} isSelected={false} />
+            </>
+        );
+        expect(screen.getByRole('button', { name: 'Variation lanes for Test Track' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Variation lanes for Second Track' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Input monitoring for Test Track: Auto' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Input monitoring for Second Track: Auto' })).toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'Toggle variation lanes' })).toBeNull();
+    });
+
+    it('names each track height separator after its own track', () => {
+        const otherTrack = { ...mockTrack, id: 'track2', name: 'Second Track' };
+        resizeHandle.renderReal = true;
+        try {
+            renderWithTooltip(
+                <>
+                    <TrackHeader track={mockTrack} isSelected={false} />
+                    <TrackHeader track={otherTrack} isSelected={false} />
+                </>
+            );
+            const first = screen.getByRole('separator', { name: 'Resize Test Track height' });
+            const second = screen.getByRole('separator', { name: 'Resize Second Track height' });
+            expect(first).not.toBe(second);
+        } finally {
+            resizeHandle.renderReal = false;
+        }
     });
 
     it('renders a drum-machine folder with the drum icon and toaster device', () => {
@@ -273,13 +405,13 @@ describe('TrackHeader', () => {
         };
         renderWithTooltip(<TrackHeader track={drumFolder} isSelected={false} />);
         // collapsed=false renders the collapse (down-chevron) affordance.
-        expect(screen.getByLabelText('Collapse folder')).toBeInTheDocument();
+        expect(screen.getByLabelText('Collapse folder Folder Track')).toBeInTheDocument();
     });
 
     it('renders the expand affordance when a folder is collapsed', () => {
         const collapsedFolder = { ...mockFolderTrack, collapsed: true };
         renderWithTooltip(<TrackHeader track={collapsedFolder} isSelected={false} />);
-        expect(screen.getByLabelText('Expand folder')).toBeInTheDocument();
+        expect(screen.getByLabelText('Expand folder Folder Track')).toBeInTheDocument();
     });
 
     it('selects the folder track on row click', () => {
@@ -293,12 +425,12 @@ describe('TrackHeader', () => {
         renderWithTooltip(<TrackHeader track={midiTrack} isSelected={true} />);
         expect(screen.queryByTestId('input-selector')).not.toBeInTheDocument();
         // midi tracks still expose input monitoring.
-        expect(screen.getByLabelText(/Input monitoring/)).toBeInTheDocument();
+        expect(screen.getByLabelText('Input monitoring for Test Track: Auto')).toBeInTheDocument();
     });
 
     it('omits the input monitoring button for a bus track', () => {
         const busTrack = { ...mockTrack, kind: 'bus' as const };
         renderWithTooltip(<TrackHeader track={busTrack} isSelected={true} />);
-        expect(screen.queryByLabelText(/Input monitoring/)).not.toBeInTheDocument();
+        expect(screen.queryByLabelText('Input monitoring for Test Track: Auto')).not.toBeInTheDocument();
     });
 });

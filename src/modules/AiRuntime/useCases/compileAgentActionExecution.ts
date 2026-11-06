@@ -2,10 +2,16 @@ import { compileVersionedCommandBatchEnvelope, parseVersionedCommandBatchEnvelop
 import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
 
 import { type AgentExecutionMode, type AgentTrustCeiling } from '../models/AgentExecutionMode';
+import { type PerceptualConstraintReading } from '../models/PerceptualConstraint';
 
+import { bindMetricGoalsToBatch } from './bindMetricGoalsToBatch';
 import { compileAgentRiskApproval } from './compileAgentRiskApproval';
 import { compilePlannedActionCommandBatch } from './compilePlannedActionCommandBatch';
 import { getAgentExecutionModeFailure } from './getAgentExecutionModeFailure';
+import { metricGoalStateCodec } from './metricGoalStateCodec';
+import { findExcludedDimensionEdit } from './perceptualConstraints/findExcludedDimensionEdit';
+import { readRequestPerceptualConstraints } from './perceptualConstraints/readRequestPerceptualConstraints';
+import { withPerceptualConstraintAuthority } from './perceptualConstraints/withPerceptualConstraintAuthority';
 import { validateAgentRiskApproval } from './validateAgentRiskApproval';
 
 type CompileAgentActionExecutionInput = Omit<
@@ -14,53 +20,19 @@ type CompileAgentActionExecutionInput = Omit<
 > & {
     mode?: AgentExecutionMode;
     requiresConfirmation: boolean;
+    metricGoalState?: string;
+    schedulePosition?: number;
     trustCeiling?: AgentTrustCeiling;
+    /** The constraints the batch's grounding recorded, those of the card it refines among them. */
+    recordedConstraints?: PerceptualConstraintReading;
 };
 
-export function compileAgentActionExecution(input: CompileAgentActionExecutionInput) {
-    const { mode = 'apply', requiresConfirmation, trustCeiling = 'destructive-commit', ...commandInput } = input;
-    if (mode === 'explain' || mode === 'plan') {
-        throw new Error(`Agent execution mode ${mode} does not produce an executable command batch`);
-    }
-    const proposed = compilePlannedActionCommandBatch({
-        ...commandInput,
-        autoCommit: false,
-        mode: mode === 'preview' ? 'preview' : 'commit',
-    });
-    const agentApproval = compileAgentRiskApproval({
-        commandBatch: proposed.commandBatch,
-        requireExplicitApproval: requiresConfirmation,
-    });
-    const authorityFailure = getAgentExecutionModeFailure({
-        mode,
-        operation: mode === 'preview' ? 'preview' : 'commit',
-        requiredTrustMode: agentApproval.policy.requiredTrustMode,
-        trustCeiling,
-    });
-    if (authorityFailure) {
-        throw new Error(authorityFailure);
-    }
-
-    if (mode === 'preview') {
-        return {
-            ...proposed,
-            agentApproval,
-            allowApproval: null,
-            interactionMode: mode,
-            requiresConfirmation: false as const,
-        };
-    }
-
-    if (agentApproval.policy.decision === 'confirm') {
-        return {
-            ...proposed,
-            agentApproval,
-            allowApproval: null,
-            interactionMode: mode,
-            requiresConfirmation: true as const,
-        };
-    }
-
+function compileAutoCommitAgentBatch(
+    proposed: ReturnType<typeof compilePlannedActionCommandBatch>,
+    agentApproval: ReturnType<typeof compileAgentRiskApproval>,
+    mode: AgentExecutionMode,
+    trustCeiling: AgentTrustCeiling
+) {
     const parsed = parseVersionedCommandBatchEnvelope(
         proposed.commandBatch.serialized,
         proposed.commandBatch.authority
@@ -69,7 +41,7 @@ export function compileAgentActionExecution(input: CompileAgentActionExecutionIn
         throw new Error(parsed.reason);
     }
     const envelope = parsed.envelope;
-    const commandBatch = compileVersionedCommandBatchEnvelope({
+    return compileVersionedCommandBatchEnvelope({
         autoCommit: true,
         autoCommitApproval: () => {
             const approvalValidation = validateAgentRiskApproval({
@@ -103,12 +75,98 @@ export function compileAgentActionExecution(input: CompileAgentActionExecutionIn
         protectedTargetIds: envelope.scope.protectedTargetIds,
         runId: envelope.runId,
     });
+}
+
+export function compileAgentActionExecution(input: CompileAgentActionExecutionInput) {
+    const {
+        mode = 'apply',
+        requiresConfirmation,
+        trustCeiling = 'destructive-commit',
+        metricGoalState,
+        schedulePosition,
+        recordedConstraints,
+        ...commandInput
+    } = input;
+    if (mode === 'explain' || mode === 'plan') {
+        throw new Error(`Agent execution mode ${mode} does not produce an executable command batch`);
+    }
+    // Every proposal route compiles here, so a batch editing a dimension the request excludes is
+    // refused before it is previewed, persisted or shown for approval.
+    const constraints = readRequestPerceptualConstraints({
+        prompt: commandInput.intent,
+        context: commandInput.context,
+        recorded: recordedConstraints,
+    });
+    const excludedEdit = findExcludedDimensionEdit({
+        constraints: constraints.constraints,
+        actions: commandInput.actions,
+        context: commandInput.context,
+    });
+    if (excludedEdit !== null) {
+        throw new Error(excludedEdit.reason);
+    }
+    const proposed = compilePlannedActionCommandBatch({
+        ...commandInput,
+        autoCommit: false,
+        mode: mode === 'preview' ? 'preview' : 'commit',
+    });
+    const agentApproval = compileAgentRiskApproval({
+        commandBatch: proposed.commandBatch,
+        requireExplicitApproval: requiresConfirmation,
+        metricGoalState: JSON.stringify(
+            bindMetricGoalsToBatch({
+                state: withPerceptualConstraintAuthority({
+                    state: metricGoalStateCodec(metricGoalState),
+                    reading: constraints,
+                    prompt: commandInput.intent,
+                    context: commandInput.context,
+                    commandBatch: proposed.commandBatch,
+                }),
+                commandBatch: proposed.commandBatch,
+                schedulePosition,
+            })
+        ),
+    });
+    const authorityFailure = getAgentExecutionModeFailure({
+        mode,
+        operation: mode === 'preview' ? 'preview' : 'commit',
+        requiredTrustMode: agentApproval.policy.requiredTrustMode,
+        trustCeiling,
+    });
+    if (authorityFailure) {
+        throw new Error(authorityFailure);
+    }
+
+    if (mode === 'preview') {
+        return {
+            ...proposed,
+            metricGoalState: agentApproval.metricGoalState ?? undefined,
+            agentApproval,
+            allowApproval: null,
+            interactionMode: mode,
+            requiresConfirmation: false as const,
+        };
+    }
+
+    if (agentApproval.policy.decision === 'confirm') {
+        return {
+            ...proposed,
+            metricGoalState: agentApproval.metricGoalState ?? undefined,
+            agentApproval,
+            allowApproval: null,
+            interactionMode: mode,
+            requiresConfirmation: true as const,
+        };
+    }
+
+    const commandBatch = compileAutoCommitAgentBatch(proposed, agentApproval, mode, trustCeiling);
     // `agentApproval` keeps its confirmation-flow shape (null without a pending
     // proposal); the compiled allow-path approval is exposed separately through
     // `allowApproval` so only the immediate dispatch sites re-bind it with an
     // observer-capable approval binding, replacing the compile-minted one.
     return {
         commandBatch,
+        metricGoalState: agentApproval.metricGoalState ?? undefined,
         commandEnvelopes: proposed.commandEnvelopes,
         agentApproval: null,
         allowApproval: agentApproval,

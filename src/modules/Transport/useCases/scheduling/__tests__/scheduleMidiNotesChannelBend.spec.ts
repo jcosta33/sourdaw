@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { type Clip, trackStore } from '#/modules/Arrangement/stores';
 import { resolveClipsWithComping } from '#/modules/Arrangement/useCases';
 import {
@@ -19,6 +20,8 @@ import { disposePlayheadScheduler } from '../../playheadScheduler/disposePlayhea
 import { forgetHeldNoteExpression } from '../forgetHeldNoteExpression';
 import { heldNotesByTrack } from '../heldNoteExpressionState';
 import { scheduleMidiNotes } from '../scheduleMidiNotes';
+
+registerDeviceEnginePorts();
 
 // What a stored bend becomes at a frame is the contract under test: the engine's curve projection and
 // its dimension registry, and the MIDI module's channel bend projection, are the real ones, and only the
@@ -232,6 +235,137 @@ describe('scheduleMidiNotes with a stored channel pitch bend', () => {
         vi.mocked(getCompensationDelay).mockReturnValue(0);
     });
 
+    it('plays a selected frozen pass at the range declared before its source window and closed by Null RPN', async () => {
+        stripFor(GRAND_BOULE);
+        const controls = [
+            controller('rpn-msb', 0, 101, 0),
+            controller('rpn-lsb', 0, 100, 0),
+            controller('range', 0, 6, 12),
+            controller('cents', 0, 38, 0),
+            controller('null-msb', 0, 101, 127),
+            controller('null-lsb', 0, 100, 127),
+        ];
+        const frozenSource = {
+            sourceClipId: 'clip-1',
+            sourceEntryBeat: 4,
+            sourceEndBeat: 8,
+            phaseHeadBeat: 0,
+            passLengthBeats: 4,
+            rows: {
+                notes: { present: true, value: [{ ...note('selected', 4, 3), recordingPassIndex: 1 }] },
+                controlChanges: { present: true, value: controls },
+                pitchBends: { present: true, value: [bend('out', 4.5, 8191)] },
+            },
+        };
+        setProject({
+            track: midiTrack(GRAND_BOULE, [
+                midiClip({ endBeat: 4, midiTakeSource: frozenSource, midiTakeRecordingPassIndex: 1 }),
+            ]),
+        });
+
+        await play(0, 4);
+
+        expect(appliedBend()).toEqual([
+            { sampleFrame: 0, pitchBend: undefined, bendRangeSemitones: undefined },
+            { sampleFrame: 0.5 * FRAMES_PER_BEAT, pitchBend: 8191, bendRangeSemitones: 12 },
+        ]);
+    });
+
+    it('keeps a carried bend’s recorded range when ordinary and frozen selected windows play the same source', async () => {
+        stripFor(GRAND_BOULE);
+        const controls = [
+            controller('rpn-msb', 0, 101, 0),
+            controller('rpn-lsb', 0, 100, 0),
+            controller('range-12', 0, 6, 12),
+            controller('range-24', 3, 6, 24),
+        ];
+        const notes = [{ ...note('selected', 4, 3), recordingPassIndex: 1 }];
+        const bends = [bend('carried', 2, 8191), bend('later', 5, 4096)];
+        const frozenSource = {
+            sourceClipId: 'clip-1',
+            sourceEntryBeat: 4,
+            sourceEndBeat: 8,
+            phaseHeadBeat: 0,
+            passLengthBeats: 4,
+            rows: {
+                notes: { present: true, value: notes },
+                controlChanges: { present: true, value: controls },
+                pitchBends: { present: true, value: bends },
+            },
+        };
+        const expected = [
+            { sampleFrame: 0, pitchBend: 8191, bendRangeSemitones: 12 },
+            { sampleFrame: FRAMES_PER_BEAT, pitchBend: 4096, bendRangeSemitones: 24 },
+        ];
+
+        setProject({
+            track: midiTrack(GRAND_BOULE, [
+                midiClip({ endBeat: 4, midiOffsetBeats: 4, midiTakeRecordingPassIndex: 1 }),
+            ]),
+            notes: { 'clip-1': notes },
+            controllers: { 'clip-1': controls },
+            bends: { 'clip-1': bends },
+        });
+        await play(0, 4);
+        expect(appliedBend()).toEqual(expected);
+
+        vi.mocked(applyNoteExpression).mockClear();
+        forgetHeldNoteExpression();
+        setProject({
+            track: midiTrack(GRAND_BOULE, [
+                midiClip({ endBeat: 4, midiTakeSource: frozenSource, midiTakeRecordingPassIndex: 1 }),
+            ]),
+        });
+        await play(0, 4);
+        expect(appliedBend()).toEqual(expected);
+    });
+
+    it('keeps a later channel bend over a captured note’s scalar after cropping their frozen pass', async () => {
+        const { projectClipMidiEvents: realProject } =
+            await vi.importActual<typeof import('#/modules/MIDI/useCases')>('#/modules/MIDI/useCases');
+        vi.mocked(projectClipMidiEvents).mockImplementation(realProject);
+        stripFor(GRAND_BOULE);
+        const clip = midiClip({ startBeat: 0, endBeat: 4, trackId: 'track-1' });
+        const notes = [{ ...note('selected', 5, 3), pitchBend: 1000, recordingPassIndex: 1 }];
+        const bends = [bend('later', 5.5, 8191)];
+        const rows = {
+            notes: { present: true as const, value: notes },
+            controlChanges: { present: true as const, value: [] },
+            pitchBends: { present: true as const, value: bends },
+        };
+        const source = {
+            sourceClipId: clip.id,
+            rows,
+            sourceEntryBeat: 4,
+            sourceEndBeat: 8,
+            phaseHeadBeat: 0,
+            passLengthBeats: 4,
+        };
+
+        setProject({
+            track: midiTrack(GRAND_BOULE, [
+                midiClip({ endBeat: 4, midiOffsetBeats: 4, midiTakeRecordingPassIndex: 1 }),
+            ]),
+            notes: { 'clip-1': notes },
+            bends: { 'clip-1': bends },
+        });
+        await play(0, 4);
+        expect(appliedBend()).toEqual([
+            { sampleFrame: FRAMES_PER_BEAT, pitchBend: 1000, bendRangeSemitones: 48 },
+            { sampleFrame: 1.5 * FRAMES_PER_BEAT, pitchBend: 8191, bendRangeSemitones: 2 },
+        ]);
+
+        vi.mocked(applyNoteExpression).mockClear();
+        forgetHeldNoteExpression();
+        setProject({
+            track: midiTrack(GRAND_BOULE, [
+                midiClip({ startBeat: 2, endBeat: 4, midiTakeSource: source, midiTakeRecordingPassIndex: 1 }),
+            ]),
+        });
+        await play(2, 4);
+        expect(appliedBend()).toEqual([{ sampleFrame: 0, pitchBend: 8191, bendRangeSemitones: 2 }]);
+    });
+
     it.each([FERMENTER, LEVAIN, GRAND_BOULE])(
         'bends a sounding $type note at the frames a note at the bend beats gets, through the live input surface',
         async (instrument) => {
@@ -296,6 +430,97 @@ describe('scheduleMidiNotes with a stored channel pitch bend', () => {
             sampleFrame: FRAMES_PER_BEAT,
             pitchBend: 4096,
             bendRangeSemitones: 12,
+        });
+    });
+
+    describe('per MIDI channel, as the live input plays it', () => {
+        /** A bend the recorder captured from a channel's wheel with MPE off: it moves only that channel's notes. */
+        function recordedBend(id: string, beat: number, value: number, channel: number) {
+            return { ...bend(id, beat, value, channel), channelScoped: true };
+        }
+
+        function noteOn(id: string, startBeat: number, duration: number, channel: number, pitch: number) {
+            return { ...note(id, startBeat, duration, pitch), channel };
+        }
+
+        /** What the engine was asked to apply to the notes of one channel, in the order it was asked. */
+        function appliedOnChannel(channel: number) {
+            return vi
+                .mocked(applyNoteExpression)
+                .mock.calls.filter(([input]) => input.channel === channel)
+                .map(([input]) => ({ sampleFrame: input.sampleFrame, pitchBend: input.expression.pitchBend }));
+        }
+
+        it('bends a note only by the recorded wheel of its own channel, at its start and while it sounds', async () => {
+            stripFor(FERMENTER);
+            setProject({
+                track: midiTrack(FERMENTER, [midiClip()]),
+                notes: { 'clip-1': [noteOn('one', 2, 4, 1, 60), noteOn('two', 2, 4, 2, 67)] },
+                bends: {
+                    'clip-1': [
+                        recordedBend('two-out', 1, 8191, 2),
+                        recordedBend('two-moves', 3, 4096, 2),
+                        recordedBend('two-returns', 4, 0, 2),
+                    ],
+                },
+            });
+
+            // The note starts in the first window; the moves after its start reach it from the next.
+            await play(0, 2.5);
+            await play(2.5, 8);
+
+            // The channel-1 note gets only the unbent expression every note starts with, and no move after it.
+            expect(appliedOnChannel(1)).toEqual([{ sampleFrame: 2 * FRAMES_PER_BEAT, pitchBend: undefined }]);
+            expect(appliedOnChannel(2)).toEqual([
+                { sampleFrame: 2 * FRAMES_PER_BEAT, pitchBend: 8191 },
+                { sampleFrame: 3 * FRAMES_PER_BEAT, pitchBend: 4096 },
+                { sampleFrame: 4 * FRAMES_PER_BEAT, pitchBend: 0 },
+            ]);
+        });
+
+        it('bends a note on any channel by a drawn row, which is not scoped', async () => {
+            stripFor(FERMENTER);
+            setProject({
+                track: midiTrack(FERMENTER, [midiClip()]),
+                notes: { 'clip-1': [noteOn('one', 2, 2, 1, 60)] },
+                bends: { 'clip-1': [bend('drawn', 1, 8191, 0), bend('drawn-moves', 3, 4096, 0)] },
+            });
+
+            await play(0, 8);
+
+            expect(appliedOnChannel(1)).toEqual([
+                { sampleFrame: 2 * FRAMES_PER_BEAT, pitchBend: 8191 },
+                { sampleFrame: 3 * FRAMES_PER_BEAT, pitchBend: 4096 },
+            ]);
+        });
+
+        it('plays a note of another channel under the drawn bend whether or not the clip head is trimmed past a later recorded wheel', async () => {
+            // A drawn (unscoped) bend at content beat 1, then the channel-0 wheel recorded at beat 2. A channel-1
+            // note hears only the drawn bend, a channel-0 note the later wheel; trimming the head past both carries
+            // both rows onto it, in the order they were recorded.
+            const rows = [bend('drawn', 1, 4096, 0), recordedBend('wheel', 2, 8191, 0)];
+            const notes = [noteOn('other', 4, 1, 1, 60), noteOn('own', 4, 1, 0, 67)];
+            const heard = async (clip: Clip): Promise<{ other: unknown; own: unknown }> => {
+                vi.mocked(applyNoteExpression).mockClear();
+                forgetHeldNoteExpression();
+                stripFor(FERMENTER);
+                setProject({
+                    track: midiTrack(FERMENTER, [clip]),
+                    notes: { 'clip-1': notes },
+                    bends: { 'clip-1': rows },
+                });
+                await play(0, 8);
+                return { other: appliedOnChannel(1), own: appliedOnChannel(0) };
+            };
+
+            const untrimmed = await heard(midiClip());
+            const trimmed = await heard(midiClip({ startBeat: 3, midiOffsetBeats: 3 }));
+
+            expect(untrimmed).toEqual({
+                other: [{ sampleFrame: 4 * FRAMES_PER_BEAT, pitchBend: 4096 }],
+                own: [{ sampleFrame: 4 * FRAMES_PER_BEAT, pitchBend: 8191 }],
+            });
+            expect(trimmed).toEqual(untrimmed);
         });
     });
 

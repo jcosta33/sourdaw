@@ -6,7 +6,7 @@ export const handleToggleScratchPad = createHandler<'toggleScratchPad'>({
     execute: () => {
         const state = workspaceStore.value;
         if (state) {
-            workspaceStore.set({ ...state, scratchPadOpen: !state.scratchPadOpen });
+            workspaceStore.set({ ...state, scratchPadOpen: !state.scratchPadOpen, scratchPadCollapsed: false });
         }
     },
     describe: () => ({ label: 'Toggle Scratch Pad' }),

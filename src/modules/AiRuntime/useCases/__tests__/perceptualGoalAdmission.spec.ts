@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
 
@@ -8,9 +9,12 @@ import { runApplicationOwnedToolLoop } from '../applicationOwnedToolLoop';
 import { getProjectContext } from '../getProjectContext';
 import { generateToolPlanningOutcome } from '../llmOrchestration/inference';
 import { parsePromptToActions } from '../parsePromptToActions';
-import { prepareCreativeInterpretationCatalog } from '../prepareCreativeInterpretationCatalog';
 
+import { readCreativeInterpretationCatalog, selectCreativeInterpretationCall } from './highLevelIntentWorkflowFixture';
+import { readMetricPublication } from './metricGoalWorkflowFixture';
 import { createTrack } from './trackFixture';
+
+registerDeviceEnginePorts();
 
 vi.mock('../llmOrchestration/inference', async (importOriginal) => ({
     ...(await importOriginal<typeof import('../llmOrchestration/inference')>()),
@@ -147,34 +151,54 @@ describe('perceptual goal admission', () => {
             const revisionBefore = captureProjectRevision();
             const snapshotBefore = structuredClone(planningContext);
             const providerTurn = route === 'local' ? undefined : { provider: route, assistantItems: null };
-            const catalog = prepareCreativeInterpretationCatalog({
-                prompt,
-                context: planningContext,
-                projectRevision: 'snapshot-1',
-            });
             vi.mocked(generateToolPlanningOutcome)
                 .mockResolvedValueOnce({ status: 'complete', toolCalls: [decline], providerTurn })
-                .mockResolvedValueOnce({
-                    status: 'complete',
-                    toolCalls: [
-                        {
-                            id: 'interpret-1',
-                            name: 'selectCreativeInterpretation',
-                            arguments: {
-                                catalogId: catalog.catalogId,
-                                modeId: 'edit',
-                                targetCandidateIds: ['target-1'],
-                                editDimensionCandidateIds: ['dimension-processing'],
-                                constraintCandidateIds: [],
-                                creationSlotIds: catalog.creationSlots
-                                    .filter(
-                                        (slot) => slot.objectType === 'device' && slot.parentCandidateId === 'target-1'
-                                    )
-                                    .map((slot) => slot.candidateId),
-                                uncertainty: 'none',
+                .mockImplementationOnce(async (_system, message, schemas) => {
+                    const base = selectCreativeInterpretationCall({
+                        catalog: readCreativeInterpretationCatalog(message, schemas),
+                        modeId: 'edit',
+                        targetObjectIds: [vocals.id],
+                        dimensions: ['processing'],
+                        creationSlotObjectTypes: ['device'],
+                    });
+                    const schema = schemas.find(
+                        (candidate: Parameters<typeof generateToolPlanningOutcome>[2][number]) =>
+                            candidate.function.name === base.name
+                    );
+                    if (schema === undefined) {
+                        throw new TypeError('Expected the published joint intake schema');
+                    }
+                    const objective = readMetricPublication(schema).find(
+                        (candidate) => candidate.kind === 'unsupported'
+                    );
+                    if (objective === undefined) {
+                        throw new TypeError('Expected the published unsupported objective');
+                    }
+                    return {
+                        status: 'complete',
+                        toolCalls: [
+                            {
+                                ...base,
+                                id: 'interpret-1',
+                                arguments: {
+                                    ...base.arguments,
+                                    answer: null,
+                                    metricIntent: {
+                                        kind: 'perceptual',
+                                        uncertainty: 'none',
+                                        objectives: [
+                                            {
+                                                objectiveId: objective.id,
+                                                scopeCandidateId: null,
+                                                referenceScopeCandidateId: null,
+                                                rangeCandidateId: null,
+                                            },
+                                        ],
+                                    },
+                                },
                             },
-                        },
-                    ],
+                        ],
+                    };
                 })
                 .mockResolvedValueOnce({
                     status: 'complete',
@@ -396,6 +420,17 @@ describe('perceptual goal admission', () => {
         },
         { label: 'project scope', prompt: 'make the mix warmer', read: context },
         {
+            // An audio track with no recipe role is still served by the recipes that name no role.
+            label: 'track with an unknown role',
+            prompt: 'make Vocals warmer',
+            read: {
+                ...context,
+                tracks: [
+                    { ...vocals, canonicalRole: { role: 'unknown', source: 'name-tags', evidence: 'name-tokens' } },
+                ],
+            },
+        },
+        {
             label: 'quoted selection-like name',
             prompt: 'make "selected track" warmer',
             read: { ...context, tracks: [{ ...vocals, name: 'selected track' }], selectedTrackId: 'absent' },
@@ -530,16 +565,6 @@ describe('perceptual goal admission', () => {
             label: 'frozen track',
             prompt: 'make Vocals warmer',
             read: { ...context, tracks: [{ ...vocals, frozen: true }] },
-        },
-        {
-            label: 'unknown track role',
-            prompt: 'make Vocals warmer',
-            read: {
-                ...context,
-                tracks: [
-                    { ...vocals, canonicalRole: { role: 'unknown', source: 'name-tags', evidence: 'name-tokens' } },
-                ],
-            },
         },
         {
             label: 'quoted absent reference beside a supported role',

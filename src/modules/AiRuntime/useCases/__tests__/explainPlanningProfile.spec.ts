@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
+
 import { type PlannedIntentResult } from '../../models/IntentResult';
 import { guardReadonlyPlanningResult, READONLY_ANSWER_TOOL_NAMES } from '../../models/PlanningProfile';
 import { type ToolCallResult } from '../../models/ToolCallResult';
@@ -16,6 +18,10 @@ import * as parserModule from '../parsePromptToActions';
 import { parsePromptToActions } from '../parsePromptToActions';
 import { getPlanningProviderSchemaContract } from '../planningProviderSchema';
 import { planPromptActions } from '../planPromptActions';
+
+import { answerIntakeFromTools, structuralAnswerArguments } from './answerWireFixture';
+
+registerDeviceEnginePorts();
 
 vi.mock('../llmOrchestration/inference', async (original) => ({
     ...(await original<typeof import('../llmOrchestration/inference')>()),
@@ -87,7 +93,22 @@ function parse(prompt = 'Explain the project') {
     });
 }
 function script(toolCalls: ToolCallResult[]) {
-    vi.mocked(generateToolPlanningOutcome).mockResolvedValue({ status: 'complete', toolCalls, proposal: null });
+    const hasAnswer = toolCalls.some((call) => call.name === 'answer.respond');
+    if (hasAnswer && toolCalls.length === 1) {
+        vi.mocked(generateToolPlanningOutcome)
+            .mockImplementationOnce(async (_system, _message, tools) => ({
+                status: 'complete',
+                toolCalls: [answerIntakeFromTools(tools)],
+                proposal: null,
+            }))
+            .mockResolvedValue({
+                status: 'complete',
+                toolCalls: toolCalls.map((call) => ({ ...call, arguments: structuralAnswerArguments })),
+                proposal: null,
+            });
+    } else {
+        vi.mocked(generateToolPlanningOutcome).mockResolvedValue({ status: 'complete', toolCalls, proposal: null });
+    }
 }
 
 describe('application-selected Explain profile', () => {
@@ -138,7 +159,7 @@ describe('application-selected Explain profile', () => {
                 {
                     id: 'answer',
                     name: 'answer.respond',
-                    arguments: { text: 'Explain changes nothing.', evidenceCallIds: [] },
+                    arguments: structuralAnswerArguments,
                 },
             ]);
             expect((await parse(prompt)).planningOutcome.kind).toBe('answer');
@@ -157,7 +178,7 @@ describe('application-selected Explain profile', () => {
             {
                 id: 'answer',
                 name: 'answer.respond',
-                arguments: { text: 'The last change is described without undoing it.', evidenceCallIds: [] },
+                arguments: structuralAnswerArguments,
             },
         ]);
         const result = await parsePromptToActions({
@@ -180,7 +201,7 @@ describe('application-selected Explain profile', () => {
             },
         });
         expect(result).toMatchObject({ actions: [], planningOutcome: { kind: 'answer' } });
-        expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(1);
+        expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(2);
     });
 
     it('allows a legitimate clarification without asking for an actionable perceptual plan', async () => {

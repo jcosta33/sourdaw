@@ -153,6 +153,8 @@ vi.mock('../../../helpers/pianoRollConstants', () => ({
     SCALE_ROOT_LABELS: ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'],
     getVisiblePitches: vi.fn(() => [60, 61, 62, 63, 64]),
     getPianoRollExtentBeats: vi.fn(() => 256),
+    getPianoRollContentHeight: (rowCount: number) => 28 + rowCount * 24,
+    getPianoRollRowTop: (row: number) => 28 + row * 24,
 }));
 
 vi.mock('#/components/daw/DawGridHeaderCell', () => ({

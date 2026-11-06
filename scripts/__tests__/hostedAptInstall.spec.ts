@@ -15,7 +15,7 @@ import {
     writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { delimiter, join, resolve } from 'node:path';
+import { delimiter, dirname, join, resolve } from 'node:path';
 import { setTimeout as poll } from 'node:timers/promises';
 
 import { describe, expect, it } from 'vitest';
@@ -215,6 +215,21 @@ function ownedPidRunning(pid: number, cgroup: string): boolean {
     }
 }
 
+// A cold interpreter start on a shared runner has taken longer than Vitest's
+// default case timeout. The spawn is bounded below the case so a hung probe
+// fails with its own output instead of wedging the worker.
+const PYTHON_UNIT_PROBE_SPAWN_TIMEOUT_MS = 15_000;
+const PYTHON_UNIT_PROBE_TEST_TIMEOUT_MS = 20_000;
+
+function expectPythonUnitProbePasses(fixture: string): void {
+    const probe = spawnSync('/usr/bin/python3', [`scripts/__tests__/fixtures/hostedAptInstall/${fixture}`], {
+        encoding: 'utf8',
+        timeout: PYTHON_UNIT_PROBE_SPAWN_TIMEOUT_MS,
+    });
+    expect(probe.error, probe.stderr).toBeUndefined();
+    expect(probe.status, probe.stderr).toBe(0);
+}
+
 // A process-control stub proves workflow control flow only. It is never a
 // containment oracle; the Linux cases below use the real system manager.
 describe('hosted root installation admission', () => {
@@ -247,19 +262,21 @@ printf '{"event":"downstream"}\n' >> '${f.root}/events.jsonl'
         }
     });
 
-    it('re-observes the bound unit when its cgroup disappears during a read', () => {
-        const probe = spawnSync('/usr/bin/python3', ['scripts/__tests__/fixtures/hostedAptInstall/observation.py'], {
-            encoding: 'utf8',
-        });
-        expect(probe.status, probe.stderr).toBe(0);
-    });
+    it(
+        're-observes the bound unit when its cgroup disappears during a read',
+        () => {
+            expectPythonUnitProbePasses('observation.py');
+        },
+        PYTHON_UNIT_PROBE_TEST_TIMEOUT_MS
+    );
 
-    it('reports installer progress before terminal without replaying earlier output', () => {
-        const probe = spawnSync('/usr/bin/python3', ['scripts/__tests__/fixtures/hostedAptInstall/progress.py'], {
-            encoding: 'utf8',
-        });
-        expect(probe.status, probe.stderr).toBe(0);
-    });
+    it(
+        'reports installer progress before terminal without replaying earlier output',
+        () => {
+            expectPythonUnitProbePasses('progress.py');
+        },
+        PYTHON_UNIT_PROBE_TEST_TIMEOUT_MS
+    );
 
     it('fixture acknowledges a separate-session unpack before accepting finish', async () => {
         const f = fixture();
@@ -438,8 +455,13 @@ describe.skipIf(process.env.SOURDAW_SYSTEMD_TESTS !== '1')('real systemd fake pa
             const f = fixture();
             const run = startHelper(f, 'wait');
             try {
+                const ready = await observed(f, 'child-ready');
+                if (ready.pid === undefined || ready.cgroup === undefined) {
+                    throw new Error('fake worker did not report its process and cgroup');
+                }
                 await observed(f, 'unpack-start');
                 await observed(f, 'parent-ready');
+                expect(ownedPidRunning(ready.pid, ready.cgroup)).toBe(true);
                 if (state === 'dirty') {
                     writeFileSync(join(f.root, 'audit'), 'fake-package half-configured\n');
                 } else {
@@ -450,13 +472,39 @@ describe.skipIf(process.env.SOURDAW_SYSTEMD_TESTS !== '1')('real systemd fake pa
                 expect(result.code, result.output).toBe(2);
                 expect(result.output).toContain('containment=drained');
                 expect(result.output).toContain(`package-state=${state}`);
+                const recorded = events(f);
+                expect(recorded.filter((event) => event.event === 'installer-start')).toHaveLength(1);
+                expect(recorded.filter((event) => event.event === 'configured')).toHaveLength(1);
+                expect(existsSync(join(f.root, 'db/updates/0000'))).toBe(false);
+                expect(ownedPidRunning(ready.pid, ready.cgroup)).toBe(false);
+                expect(readFileSync(join(f.root, 'audit'), 'utf8')).toBe(
+                    state === 'dirty' ? 'fake-package half-configured\n' : ''
+                );
+                const retained: string[] = [];
+                for (const match of result.output.matchAll(/^aptWithoutMicrosoftFeed: retained evidence=(.+)$/gm)) {
+                    const journal = match[1];
+                    if (journal === undefined) {
+                        throw new Error('retained evidence announcement has no journal path');
+                    }
+                    retained.push(journal);
+                }
+                expect(retained.length).toBeLessThanOrEqual(1);
                 if (state === 'unknown') {
-                    expect(result.output).toContain('retained evidence=');
+                    expect(retained).toHaveLength(1);
+                }
+                for (const journal of retained) {
+                    expect(dirname(journal)).toBe(join(f.root, 'tmp'));
+                    const stat = spawnSync(
+                        'sudo',
+                        ['-n', 'stat', '--format=%u:%a:%F', '--', journal, join(journal, 'retain')],
+                        { encoding: 'utf8', env: { ...process.env, LC_ALL: 'C' }, timeout: 5_000, maxBuffer: 65_536 }
+                    );
+                    expect(stat.error).toBeUndefined();
+                    expect(stat.status, stat.stderr).toBe(0);
+                    expect(stat.stdout).toBe('0:700:directory\n0:600:regular empty file\n');
                 }
             } finally {
-                if (state === 'dirty') {
-                    rmSync(f.root, { recursive: true });
-                }
+                // Both failed transactions may contain protected root-owned evidence.
             }
         }
     }, 30_000);
