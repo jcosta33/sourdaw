@@ -1,0 +1,68 @@
+src/modules/Arrangement/handlers/__tests__/midiClipFadeAndEnvelopeRefusal.spec.ts
+  s_fec7059b7a251c::t_1ba7166b8fbf33 1-134
+src/modules/Arrangement/handlers/clip/handleSetClipFade.ts
+  s_fec7059b7a251c::t_014adf1cf80bdc 14-16
+  s_fec7059b7a251c::t_5334616872fff4 5
+src/modules/Arrangement/handlers/clipGainEnvelope/handleToggleClipGainEnvelope.ts
+  s_fec7059b7a251c::t_f0a3ee968294c9 9-11
+  s_fec7059b7a251c::t_36ab3aee7e8e70 5
+src/modules/TimelineEditor/presentations/views/Inspector/ClipInspector.tsx
+  s_fec7059b7a251c::t_a8efdbb25a7e0a 423-428
+  s_fec7059b7a251c::t_cb1be6b73ed51e 123
+  s_fec7059b7a251c::t_411c08ab436d1c 119-122,128-129,134,145-146
+  s_fec7059b7a251c::t_8d8075bcfe4446 312-321,323-325,327-328,330-345,347-349,351-352,354-369
+  s_fec7059b7a251c::t_e7e156819d7852 13
+  s_fec7059b7a251c::t_899b639398f9dd 130-133,135-144
+  s_fec7059b7a251c::t_a23372354dc566 322,326,329
+  s_fec7059b7a251c::t_3d2f274d851a20 48-59
+  s_fec7059b7a251c::t_bca28e433bb4e0 124-127
+  s_fec7059b7a251c::t_1760fe8823f345 346,350,353
+src/modules/Arrangement/presentations/renderers/clipDrawing.ts
+  s_fec7059b7a251c::t_3fb6bc63ff4cbf 206-207
+  s_fec7059b7a251c::t_aca2111b7b516b 205
+src/modules/Arrangement/presentations/renderers/__tests__/clipDrawing.spec.ts
+  s_fec7059b7a251c::t_85f006ec1cbcf4 322-345
+src/modules/Arrangement/handlers/clipGainEnvelope/handleResetClipGainEnvelope.ts
+  s_fec7059b7a251c::t_f99392bc00058d 9-11
+  s_fec7059b7a251c::t_75e7b01f4b2e66 5
+src/modules/Arrangement/handlers/clipGainEnvelope/handleRemoveGainEnvelopePoint.ts
+  s_fec7059b7a251c::t_cd63dac130074f 9-11
+  s_fec7059b7a251c::t_a91370a1700a6a 5
+src/modules/Arrangement/handlers/isMidiClip.ts
+  s_fec7059b7a251c::t_1223d89f68c34c 1-11,13-14
+  s_fec7059b7a251c::t_91443ebb0dbe4b 12
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/ClipInspector.spec.tsx
+  s_fec7059b7a251c::t_668f6599e55984 317-384
+  s_fec7059b7a251c::t_32aac45c985193 385-390,393-400
+  s_fec7059b7a251c::t_08197cc03a3ea3 391-392
+src/modules/Arrangement/handlers/clipGainEnvelope/handleAddGainEnvelopePoint.ts
+  s_fec7059b7a251c::t_43ee2868cea500 24-26
+  s_fec7059b7a251c::t_cfacc2b189ce03 6
+src/modules/Arrangement/handlers/clipGainEnvelope/handleSetClipGainEnvelope.ts
+  s_fec7059b7a251c::t_2116c68fefa4d4 29-31
+  s_fec7059b7a251c::t_eeb3df05f4c84c 5
+tests/e2e/clipTrimFadeKeyboardTestId.spec.ts
+  s_fec7059b7a251c::t_b97f642e1ca89c 1,3
+tests/e2e/audioClipFixture.ts
+  s_fec7059b7a251c::t_0031998cfa6a16 1-58
+tests/e2e/clipInspectorControls.spec.ts
+  s_fec7059b7a251c::t_f75bf81c950c05 1,3
+tests/e2e/clipTrimEndFadeOutTestId.spec.ts
+  s_fec7059b7a251c::t_a9dcfbf99c91cc 1,3
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "24fd6cfac2f18fc3f2b0967b8504ed3e0efa904f",
+  "prompts": {},
+  "sessions": {
+    "s_fec7059b7a251c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a7e284f4-0d83-40f5-8212-419d6ca3c2d5",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
