@@ -1,0 +1,22 @@
+src/modules/WorkspaceShell/presentations/hooks/__tests__/useAppInitialization.spec.ts
+  s_0314bb17e5dee3::t_229f477e65fc2c 367-389,394
+  s_0314bb17e5dee3::t_0ca9ee8c88ec1c 390-393
+  s_0314bb17e5dee3::t_542fc930c3c24a 395
+  s_0314bb17e5dee3::t_14eefa2a2a3d29 13
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c540b4e258da77a3ac642a96e8eadc6094064cb7",
+  "prompts": {},
+  "sessions": {
+    "s_0314bb17e5dee3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "36258af0-bda2-4189-8943-c2845697b59f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
