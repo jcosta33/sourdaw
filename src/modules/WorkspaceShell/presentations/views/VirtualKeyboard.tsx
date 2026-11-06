@@ -832,8 +832,8 @@ export const VirtualKeyboard = ({ onClose }: VirtualKeyboardProps): ReactElement
                         max={127}
                         step={1}
                         className="w-16"
-                        trackClassName="h-1 bg-control-rail shadow-[inset_0_1px_2px_rgba(0,0,0,0.45)]"
-                        rangeClassName="[background:linear-gradient(180deg,rgba(170,135,200,0.95)_0%,rgba(170,135,200,0.62)_100%)] shadow-[0_0_10px_rgba(170,135,200,0.18)]"
+                        trackClassName="h-1 border border-control-rail-edge bg-surface-inset shadow-[inset_0_1px_2px_rgba(0,0,0,0.45)]"
+                        rangeClassName="[background:linear-gradient(180deg,var(--color-control-fill-lavender-top)_0%,var(--color-control-fill-lavender-bottom)_100%)] shadow-[0_0_10px_rgba(170,135,200,0.18)]"
                         thumbClassName="size-3 rounded-[3px] hover:ring-[rgba(170,135,200,0.28)] focus-visible:ring-[rgba(170,135,200,0.38)]"
                         aria-label="Note velocity"
                         onValueChange={(values) => {

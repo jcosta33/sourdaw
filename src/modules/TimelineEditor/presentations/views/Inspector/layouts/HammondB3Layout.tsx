@@ -53,8 +53,8 @@ export const HammondB3Layout = ({ device, trackId, parameters }: DeviceLayoutPro
                                         step={1}
                                         value={[8 - val]}
                                         className="h-[120px] w-6"
-                                        trackClassName="w-2 rounded-sm bg-control-rail shadow-[inset_0_1px_2px_rgba(0,0,0,0.45)]"
-                                        rangeClassName="[background:linear-gradient(180deg,rgba(201,160,122,0.92)_0%,rgba(201,160,122,0.6)_100%)] shadow-[0_0_10px_rgba(201,160,122,0.14)]"
+                                        trackClassName="w-2 rounded-sm border border-control-rail-edge bg-surface-inset shadow-[inset_0_1px_2px_rgba(0,0,0,0.45)]"
+                                        rangeClassName="[background:linear-gradient(180deg,var(--color-control-fill-peach-top)_0%,var(--color-control-fill-peach-bottom)_100%)] shadow-[0_0_10px_rgba(201,160,122,0.14)]"
                                         thumbClassName="size-5 rounded-[4px]"
                                         aria-label={param.name}
                                         onValueChange={(values) => {

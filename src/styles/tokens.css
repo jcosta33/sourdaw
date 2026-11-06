@@ -111,8 +111,14 @@
     --color-meter-grid: rgba(255, 255, 255, 0.08);
     --color-meter-peakHold: rgba(255, 255, 255, 0.4);
 
-    /* Control rail: solid, >=3:1 (WCAG 1.4.11) on surface-base through surface-overlay */
-    --color-control-rail: #78716c;
+    /* Control rail: the dark inset interior makes the fill read; the edge is the part that identifies the control (WCAG 1.4.11, >=3:1 on every surface) */
+    --color-control-rail-edge: #78716c;
+    --color-control-fill-cyan-top: rgba(127, 184, 196, 0.92);
+    --color-control-fill-cyan-bottom: rgba(127, 184, 196, 0.62);
+    --color-control-fill-peach-top: rgba(201, 160, 122, 0.92);
+    --color-control-fill-peach-bottom: rgba(201, 160, 122, 0.6);
+    --color-control-fill-lavender-top: rgba(170, 135, 200, 0.95);
+    --color-control-fill-lavender-bottom: rgba(170, 135, 200, 0.62);
 
     /* Radii */
     --radius-micro: 2px;

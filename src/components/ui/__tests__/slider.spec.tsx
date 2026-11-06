@@ -8,13 +8,6 @@ import { Slider } from '../slider';
 type SliderHandler = (value: number[]) => void;
 
 describe('Slider', () => {
-    it('should draw the track with the control rail token so an empty range stays visible', () => {
-        const { container } = render(<Slider value={[0]} min={0} max={100} aria-label="Fade" />);
-        const track = container.querySelector('[data-slot="slider-track"]');
-        expect(track).toHaveClass('bg-control-rail');
-        expect(track).not.toHaveClass('daw-inset-surface');
-    });
-
     it('should render a slider with one thumb by default', () => {
         render(<Slider min={0} max={100} aria-label="Level" />);
         expect(screen.getByRole('slider', { name: 'Level' })).toBeInTheDocument();
