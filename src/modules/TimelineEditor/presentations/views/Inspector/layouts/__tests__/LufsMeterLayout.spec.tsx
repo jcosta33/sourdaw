@@ -24,7 +24,7 @@ const DEVICE_ID = 'dev-lufs';
 
 const makeDevice = (): Device => ({
     id: DEVICE_ID,
-    name: 'LUFS Meter',
+    name: 'Short-Term LUFS Meter',
     type: 'faust-lufs-meter',
     bypassed: false,
     parameterValues: {},

@@ -196,10 +196,10 @@ export const NavCard = ({
 // ── EffectItem ───────────────────────────────────────────────────────────────
 
 /**
- * Adds by `plugin.id`, never by `plugin.name`. `addDevice` matches on name *or*
- * id, and `De-esser`, `LUFS Meter` and `Stereo Widener` each name two catalog
- * plugins — a builtin and a Faust build — so a name lookup returns whichever the
- * registry lists first rather than the card the user clicked or dragged.
+ * Adds by `plugin.id`: the id is the stable key a device is stored under, and
+ * `addDevice` accepts a name only as a convenience. Catalog names are unique
+ * (the Faust De-esser, LUFS meter and widener carry their own names beside the
+ * builtins), so a name lookup is no longer ambiguous, but the id stays the rule.
  */
 export const EffectItem = ({
     plugin,
