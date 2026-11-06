@@ -10,6 +10,7 @@ import {
     syncAutoInputMonitoring,
     syncNativeTimelineSamples,
 } from '#/modules/AudioEngine/useCases';
+import { syncControlRoomMonitoring } from '#/modules/ControlRoom/useCases';
 import { syncKneadToEngine } from '#/modules/Knead/useCases';
 import { finishProjectLoading, loadProject, reportProjectLoadFailure, saveProject } from '#/modules/Project/useCases';
 import { syncTransportMapsToNativeSession } from '#/modules/Transport/useCases';
@@ -357,6 +358,35 @@ describe('useAppInitialization — knead engine subscription teardown', () => {
             expect(syncNativeTimelineSamples).toHaveBeenCalledTimes(1);
         });
         expect(unsubscribe).not.toHaveBeenCalled();
+
+        unmount();
+
+        expect(unsubscribe).toHaveBeenCalledTimes(1);
+    });
+
+    it('subscribes control-room monitoring exactly once at boot', async () => {
+        // Without the boot subscription the monitoring state held at boot never
+        // reaches the engine and later toggles are not forwarded.
+        const unsubscribe = vi.fn();
+        vi.mocked(syncControlRoomMonitoring).mockReturnValue(unsubscribe);
+
+        renderHook(() => useAppInitialization());
+
+        await waitFor(() => {
+            expect(syncControlRoomMonitoring).toHaveBeenCalledTimes(1);
+        });
+        expect(unsubscribe).not.toHaveBeenCalled();
+    });
+
+    it('releases the control-room monitoring subscription on unmount', async () => {
+        // Without the cleanup its subscribers accumulate on every remount and HMR.
+        const unsubscribe = vi.fn();
+        vi.mocked(syncControlRoomMonitoring).mockReturnValue(unsubscribe);
+
+        const { unmount } = renderHook(() => useAppInitialization());
+        await waitFor(() => {
+            expect(syncControlRoomMonitoring).toHaveBeenCalledTimes(1);
+        });
 
         unmount();
 

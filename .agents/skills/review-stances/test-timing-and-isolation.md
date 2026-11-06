@@ -44,7 +44,10 @@ Report a probe that cannot run with its exact mutation, named check and limitati
    a green retry as recovery, and check that the whole-case budget accommodates sequential committed
    transitions and their individual waits. Mutate a real producer to persist the wrong value and
    require the existing functional case to fail under the adjusted budget.
-   (#5191, #6011, #5964, #3270, #3356, #5459, #6000, #4775, #5798, #3222, #2976, #5337, #4228, #5115, #5924)
+   A warm-up hook that launches a browser, bundles and loads a page under one hook deadline turns a
+   stalled step into an anonymous hook timeout and a launch error into a silent skip. Bound each step
+   with its own named deadline and skip only on the exact not-installed condition.
+   (#5191, #6011, #5964, #3270, #3356, #5459, #6000, #4775, #5798, #3222, #2976, #5337, #4228, #5115, #5924, #4331, #6250)
 
 3. **Fixture state leaks across cases or depends on chance or the runner's environment.**
    Probe: hold a case past its real deadline in setup and again in its body. The successor must be

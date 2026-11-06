@@ -2346,9 +2346,20 @@ function validateGate(name, gate, cruise, rowDetails) {
     return true;
 }
 
+// The gate passes only when no row is novel and no allowance is stale; `main` exits on this verdict.
+export function moduleTiersVerdict({ rows, manifest }) {
+    const { novel, stale } = judgeModuleTierRows({ rows, manifest });
+    return { ok: novel.length === 0 && stale.length === 0, novel, stale };
+}
+
+// moduleTiers has no baseline file to rewrite: its allowances are reviewed manifest entries.
+export function refusesBaselineWrite(name) {
+    return name === 'moduleTiers';
+}
+
 function validateModuleTiers(moduleTierState, manifest, rowDetails) {
-    const { novel, stale } = judgeModuleTierRows({ rows: moduleTierState.rows, manifest });
-    if (novel.length > 0 || stale.length > 0) {
+    const { ok, novel, stale } = moduleTiersVerdict({ rows: moduleTierState.rows, manifest });
+    if (!ok) {
         printRows('NEW', novel, rowDetails);
         printRows('STALE', stale, rowDetails);
         return false;
@@ -2395,7 +2406,7 @@ function main() {
     const writeIndex = process.argv.indexOf('--write-baseline');
     if (writeIndex >= 0) {
         const name = process.argv[writeIndex + 1];
-        if (name === 'moduleTiers') {
+        if (refusesBaselineWrite(name)) {
             console.error(
                 `moduleTiers has no baseline: its allowances are reviewed entries in ${moduleTierManifestPath}`
             );
