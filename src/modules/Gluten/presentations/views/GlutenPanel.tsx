@@ -626,9 +626,13 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
     }
 
     return (
-        <div className="gluten-faceplate h-full min-h-[440px] rounded-[26px] p-3">
-            <div className="grid h-full min-h-[440px] grid-cols-[15rem_minmax(0,1fr)_19rem] gap-3">
-                <DawPluginRail className="gluten-window p-3" scrollable={false}>
+        <div className="@container gluten-faceplate h-full min-h-[440px] rounded-[26px] p-3">
+            <div className="grid min-h-[440px] grid-cols-1 gap-3 @5xl:h-full @5xl:grid-cols-[15rem_minmax(0,1fr)_19rem]">
+                <DawPluginRail
+                    aria-label="Gluten presets"
+                    className="gluten-window h-80 min-h-0 p-3 @5xl:h-auto"
+                    scrollable={false}
+                >
                     <Row align="start" justify="between" gap={3}>
                         <Stack gap={1}>
                             <div className="text-micro uppercase tracking-[0.26em] text-[var(--color-accent-lavender)]/68">
@@ -694,7 +698,12 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                     </Stack>
                 </DawPluginRail>
 
-                <Stack gap={3} className="min-h-0 min-w-0 overflow-y-auto pr-1">
+                <Stack
+                    as="section"
+                    aria-label="Gluten dynamics overview"
+                    gap={3}
+                    className="min-w-0 pr-1 @5xl:min-h-0 @5xl:overflow-y-auto"
+                >
                     <Row align="start" justify="between" wrap gap={3}>
                         <Stack gap={2}>
                             <div className="text-micro uppercase tracking-[0.26em] text-[var(--color-accent-lavender)]/68">
@@ -926,7 +935,11 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                     </Stack>
                 </Stack>
 
-                <DawPluginRail>
+                <DawPluginRail
+                    aria-label="Gluten controls"
+                    scrollable={false}
+                    className="@5xl:min-h-0 @5xl:overflow-y-auto @5xl:pr-1"
+                >
                     <ControlCard
                         title="Clamp"
                         detail={clampNotice ?? 'Threshold, ratio, and timing stay front and center.'}

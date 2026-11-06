@@ -105,6 +105,15 @@ describe('DeviceInspector', () => {
         expect(screen.getByText('Test Device')).toBeInTheDocument();
     });
 
+    it('keeps device navigation and bypass visible above scrolling parameters', () => {
+        render(<DeviceInspector device={makeDevice()} trackId="track-1" onBack={mockOnBack} />);
+        const header = screen.getByTestId('device-inspector-header');
+
+        expect(header).toHaveClass('sticky', 'top-0', 'bg-surface-tray');
+        expect(header).toContainElement(screen.getByTestId('back-btn'));
+        expect(header).toContainElement(screen.getByTestId('mechanical-switch'));
+    });
+
     it('should call onBack when back button is clicked', () => {
         render(<DeviceInspector device={makeDevice()} trackId="track-1" onBack={mockOnBack} />);
         fireEvent.click(screen.getByTestId('back-btn'));
