@@ -36,10 +36,19 @@ vi.mock('#/components/daw/DawBlockedState', () => ({
 }));
 
 vi.mock('#/components/daw/DawEmptyState', () => ({
-    DawEmptyState: ({ title, description }: { title: string; description: string }) => (
+    DawEmptyState: ({
+        title,
+        description,
+        action,
+    }: {
+        title: string;
+        description: string;
+        action?: React.ReactNode;
+    }) => (
         <div data-testid="empty-state">
             <span>{title}</span>
             <span>{description}</span>
+            {action}
         </div>
     ),
 }));
@@ -233,6 +242,19 @@ describe('AutomationBottomPanel', () => {
         render(<AutomationBottomPanel />);
         expect(screen.getByTestId('blocked-state')).toBeInTheDocument();
         expect(screen.getByText('No track selected')).toBeInTheDocument();
+    });
+
+    it('puts the add-lane action inside the empty state it explains', () => {
+        const clientWidth = vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(400);
+        try {
+            renderSelectedTrack();
+
+            const emptyState = screen.getByTestId('empty-state');
+            expect(emptyState).toHaveTextContent('No automation lanes yet');
+            expect(emptyState.querySelector('[data-testid="add-lane-control"]')).toHaveTextContent('Volume');
+        } finally {
+            clientWidth.mockRestore();
+        }
     });
 
     it('should route horizontal wheel movement through the Arrangement horizontal scroll use case', () => {

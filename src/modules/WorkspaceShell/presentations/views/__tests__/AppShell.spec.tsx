@@ -703,6 +703,11 @@ describe('AppShell', () => {
             const tabs = screen.getAllByRole('tab');
             expect(tabs.length).toBeGreaterThanOrEqual(9);
             expect(tabs.map((t) => t.textContent)).toContain('Mixer');
+            const dockHeader = screen.getByRole('button', { name: 'Close bottom dock' }).parentElement;
+            expect(dockHeader).toHaveClass('daw-header-band');
+            expect(dockHeader).not.toHaveAttribute('style');
+            expect(dockHeader).toContainElement(tablist);
+            expect(screen.getByRole('tabpanel').parentElement).toHaveClass('daw-panel-surface');
         });
 
         it('marks the active tab aria-selected and the rest unselected', () => {
