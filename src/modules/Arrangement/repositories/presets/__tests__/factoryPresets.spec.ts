@@ -48,6 +48,16 @@ describe('Factory Presets', () => {
         expect(new Set(ids).size).toBe(ids.length);
     });
 
+    it('gives every factory preset its own name, since the browsers list them side by side', () => {
+        const duplicates: string[] = [];
+        for (const [name, presets] of Map.groupBy(FACTORY_PRESETS, (preset) => preset.name)) {
+            if (presets.length > 1) {
+                duplicates.push(`${name}: ${presets.map((preset) => preset.id).join(', ')}`);
+            }
+        }
+        expect(duplicates).toEqual([]);
+    });
+
     it('every factory preset carries well-formed devices and metadata', () => {
         for (const preset of FACTORY_PRESETS) {
             expect(preset.isFactory).toBe(true);

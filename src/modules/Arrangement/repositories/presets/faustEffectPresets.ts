@@ -125,7 +125,7 @@ export const FAUST_EFFECT_PRESETS: SoundPreset[] = [
     // ─── Tape Delay ──────────────────────────────────────────────────
     {
         id: 'factory-faust-tape-slapback',
-        name: 'Slapback Delay',
+        name: 'Tape Slapback',
         category: 'fx',
         subcategory: 'delay',
         description: 'Classic short slapback echo for vocals or guitars.',

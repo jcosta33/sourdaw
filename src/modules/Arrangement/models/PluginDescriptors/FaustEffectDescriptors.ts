@@ -194,7 +194,7 @@ const FAUST_EFFECT_DESCRIPTOR_DATA: PluginDescriptor[] = [
     },
     {
         id: 'faust-lufs-meter',
-        name: 'LUFS Meter',
+        name: 'Live LUFS Meter',
         vendor: 'Sourdaw',
         format: 'builtin',
         category: 'analyzer',
@@ -203,7 +203,7 @@ const FAUST_EFFECT_DESCRIPTOR_DATA: PluginDescriptor[] = [
     },
     {
         id: 'faust-stereo-widener',
-        name: 'Stereo Widener',
+        name: 'Simple Stereo Widener',
         vendor: 'Sourdaw',
         format: 'builtin',
         category: 'utility',
@@ -220,7 +220,7 @@ const FAUST_EFFECT_DESCRIPTOR_DATA: PluginDescriptor[] = [
     },
     {
         id: 'faust-de-esser',
-        name: 'De-esser',
+        name: 'Wideband De-esser',
         vendor: 'Sourdaw',
         format: 'builtin',
         category: 'effect',
