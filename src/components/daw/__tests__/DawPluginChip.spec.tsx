@@ -16,6 +16,20 @@ describe('DawPluginChip', () => {
         expect(onClick).toHaveBeenCalled();
     });
 
+    it('exposes both selected and unselected states unless the caller overrides them', () => {
+        render(
+            <>
+                <DawPluginChip active>Selected</DawPluginChip>
+                <DawPluginChip>Unselected</DawPluginChip>
+                <DawPluginChip aria-pressed={false}>Explicitly unselected</DawPluginChip>
+            </>
+        );
+
+        expect(screen.getByRole('button', { name: 'Selected' })).toHaveAttribute('aria-pressed', 'true');
+        expect(screen.getByRole('button', { name: 'Unselected' })).toHaveAttribute('aria-pressed', 'false');
+        expect(screen.getByRole('button', { name: 'Explicitly unselected' })).toHaveAttribute('aria-pressed', 'false');
+    });
+
     /**
      * An `aria-disabled` chip has to *look* different from a live one.
      *

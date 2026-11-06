@@ -194,6 +194,7 @@ describe('EffectsTab', () => {
     });
 
     it.each([
+        { query: 'proof', deviceType: 'proof', panelAction: 'showProof' as const, cardName: /proof/i },
         { query: 'crust', deviceType: 'crust', panelAction: 'showCrust' as const, cardName: /crust/i },
         { query: 'dutch', deviceType: 'dutch-oven', panelAction: 'showDutchOven' as const, cardName: /dutch oven/i },
     ])(
@@ -205,6 +206,7 @@ describe('EffectsTab', () => {
                 <EffectsTab
                     {...defaultProps}
                     plugins={[
+                        createPlugin({ id: 'proof', name: 'Proof', category: 'effect' }),
                         createPlugin({ id: 'crust', name: 'Crust', category: 'effect' }),
                         createPlugin({ id: 'dutch-oven', name: 'Dutch Oven', category: 'effect' }),
                     ]}

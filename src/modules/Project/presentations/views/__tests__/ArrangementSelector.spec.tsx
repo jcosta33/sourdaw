@@ -156,6 +156,28 @@ describe('ArrangementSelector', () => {
         expect(switchArrangement).toHaveBeenCalledWith('arr-2');
     });
 
+    it('switches the focused arrangement with Enter or Space', () => {
+        render(<ArrangementSelector />);
+        fireEvent.click(screen.getByLabelText(/Arrangement selector/i));
+        const arrangement = screen.getByRole('menuitemradio', { name: /Arrangement 2/i });
+
+        fireEvent.keyDown(arrangement, { key: 'Enter' });
+        fireEvent.keyDown(arrangement, { key: ' ' });
+
+        expect(switchArrangement).toHaveBeenCalledTimes(2);
+        expect(switchArrangement).toHaveBeenNthCalledWith(1, 'arr-2');
+        expect(switchArrangement).toHaveBeenNthCalledWith(2, 'arr-2');
+    });
+
+    it('names each rename action after its arrangement', () => {
+        render(<ArrangementSelector />);
+        fireEvent.click(screen.getByLabelText(/Arrangement selector/i));
+
+        fireEvent.click(screen.getByRole('button', { name: 'Rename Arrangement 2' }));
+
+        expect(screen.getByTestId('compact-input')).toHaveValue('Arrangement 2');
+    });
+
     it('should surface switchArrangement failures', async () => {
         const failure = new Error('recording flush failed');
         vi.mocked(switchArrangement).mockRejectedValueOnce(failure);
