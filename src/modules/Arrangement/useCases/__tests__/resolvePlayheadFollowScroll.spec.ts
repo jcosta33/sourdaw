@@ -7,6 +7,7 @@ const base: PlayheadFollowScrollInput = {
     previousPlayheadBeat: 520,
     playheadBeat: 520,
     isPlaying: false,
+    wasPlaying: false,
     autoScrollEnabled: true,
     scrollX: 5000,
     viewportWidth: 800,
@@ -49,6 +50,26 @@ describe('resolvePlayheadFollowScroll', () => {
             name: 'stopped jump with autoScrollEnabled false still scrolls',
             input: { playheadBeat: 0, autoScrollEnabled: false },
             expected: -200,
+        },
+        {
+            name: 'pause transition with follow off and out of view returns null',
+            input: { wasPlaying: true, autoScrollEnabled: false, previousPlayheadBeat: 700, playheadBeat: 701 },
+            expected: null,
+        },
+        {
+            name: 'stop transition with follow on and the start out of view scrolls',
+            input: { wasPlaying: true, previousPlayheadBeat: 700, playheadBeat: 0 },
+            expected: -200,
+        },
+        {
+            name: 'transition with follow on and in view returns null',
+            input: { wasPlaying: true, previousPlayheadBeat: 539, playheadBeat: 540 },
+            expected: null,
+        },
+        {
+            name: 'transition with follow off returns null even when the beat changed a lot',
+            input: { wasPlaying: true, autoScrollEnabled: false, previousPlayheadBeat: 520, playheadBeat: 0 },
+            expected: null,
         },
         {
             name: 'playing past the 75% threshold scrolls',

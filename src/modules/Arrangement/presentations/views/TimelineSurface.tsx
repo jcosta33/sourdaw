@@ -231,6 +231,7 @@ export const TimelineSurface = (): ReactElement => {
         let disposed = false;
         let dirty = true;
         let lastPlayheadBeat = playheadPositionRef.current;
+        let lastFrameWasPlaying = transportStore.value?.isPlaying ?? false;
         const renderId = crypto.randomUUID();
 
         const markDirty = () => {
@@ -295,6 +296,7 @@ export const TimelineSurface = (): ReactElement => {
                             previousPlayheadBeat: lastPlayheadBeat,
                             playheadBeat,
                             isPlaying,
+                            wasPlaying: lastFrameWasPlaying,
                             autoScrollEnabled: viewState.autoScrollEnabled,
                             scrollX: viewState.scrollX,
                             viewportWidth: container.getBoundingClientRect().width,
@@ -305,6 +307,7 @@ export const TimelineSurface = (): ReactElement => {
                         }
                     }
                     lastPlayheadBeat = playheadBeat;
+                    lastFrameWasPlaying = isPlaying;
 
                     const model = buildTimelineRenderModel();
                     renderer.render(model);

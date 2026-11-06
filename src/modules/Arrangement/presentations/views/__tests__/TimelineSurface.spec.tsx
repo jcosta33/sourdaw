@@ -1119,6 +1119,67 @@ describe('TimelineSurface — stopped locate scrolls the playhead into view', ()
         expect(store.value!.scrollX).toBe(0);
     });
 
+    it('records the baseline of a located playhead that needs no scroll', async () => {
+        await mountStoppedFarRight();
+
+        // A locate that lands inside the view: no scroll, but it is the new baseline.
+        playheadPositionRef.current = 530;
+        act(() => {
+            zoomHandlers.transportStoreRef.current?.set({ isPlaying: false, playheadPosition: 530 });
+        });
+        act(() => {
+            scheduler.loop!();
+        });
+        expect(setScrollX).not.toHaveBeenCalled();
+
+        // Only the view moves; the playhead has not been located again.
+        act(() => {
+            zoomHandlers.timelineViewStoreRef.current?.set({
+                scrollX: 9000,
+                scrollY: 0,
+                pixelsPerBeat: 10,
+                autoScrollEnabled: true,
+            });
+        });
+        act(() => {
+            scheduler.loop!();
+        });
+
+        expect(setScrollX).not.toHaveBeenCalled();
+    });
+
+    it('leaves the view alone when playback pauses with follow off and the playhead off-screen', async () => {
+        zoomHandlers.timelineViewStoreRef.current?.set({
+            scrollX: 0,
+            scrollY: 0,
+            pixelsPerBeat: 10,
+            autoScrollEnabled: false,
+        });
+        zoomHandlers.transportStoreRef.current?.set({ isPlaying: true });
+        playheadPositionRef.current = 100;
+        renderWithTooltip(<TimelineSurface />);
+        await act(async () => {
+            await new Promise((resolve) => {
+                setTimeout(resolve, 0);
+            });
+        });
+        act(() => {
+            scheduler.loop!();
+        });
+        vi.mocked(setScrollX).mockClear();
+
+        // The scheduler parks a tick past the last playing frame's beat.
+        playheadPositionRef.current = 101;
+        act(() => {
+            zoomHandlers.transportStoreRef.current?.set({ isPlaying: false, playheadPosition: 101 });
+        });
+        act(() => {
+            scheduler.loop!();
+        });
+
+        expect(setScrollX).not.toHaveBeenCalled();
+    });
+
     it('does not move the view when only scrollX changes and the playhead stays still', async () => {
         await mountStoppedFarRight();
 
