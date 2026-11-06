@@ -1,4 +1,4 @@
-import { type CSSProperties, type ReactElement } from 'react';
+import { type CSSProperties, type ReactElement, useState } from 'react';
 
 import { X } from 'lucide-react';
 
@@ -56,6 +56,7 @@ const inspectorSlotMinWidth = ({ style, isDeviceView }: { style?: CSSProperties;
 
 export const InspectorPanel = ({ style }: InspectorPanelProps): ReactElement => {
     const { tracks, selectedTrackId } = useTracks();
+    const [signalFlowExpanded, setSignalFlowExpanded] = useState(false);
     const masterTrack = tracks.find((time) => time.kind === 'master');
 
     const selectedTrack =
@@ -86,22 +87,31 @@ export const InspectorPanel = ({ style }: InspectorPanelProps): ReactElement => 
             );
         }
         if (selectedTrack) {
+            // Keyed by track id: every section keeps local preview and gesture state
+            // that belongs to the track it started on, so a switch must remount them.
+            // Panel-wide view state (the Signal Flow disclosure) lives above the key.
             return (
                 <TrackInspector
+                    key={selectedTrack.id}
                     track={selectedTrack}
                     allTracks={tracks}
                     onSelectClip={selectClipWithFocus}
                     onSelectDevice={selectDevice}
+                    signalFlowExpanded={signalFlowExpanded}
+                    onSignalFlowExpandedChange={setSignalFlowExpanded}
                 />
             );
         }
         if (masterTrack) {
             return (
                 <TrackInspector
+                    key={masterTrack.id}
                     track={masterTrack}
                     allTracks={tracks}
                     onSelectClip={selectClipWithFocus}
                     onSelectDevice={selectDevice}
+                    signalFlowExpanded={signalFlowExpanded}
+                    onSignalFlowExpandedChange={setSignalFlowExpanded}
                 />
             );
         }

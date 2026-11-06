@@ -374,6 +374,17 @@ function admitRefinement(request: PromptChatRequestInput, refines: string | unde
 }
 
 /**
+ * A brief card is only ever a proposal the user confirms, so a mode that previews or plans without
+ * proposing refuses it, as it refuses a refinement. `null` admits the plan.
+ */
+function admitBriefWrite(request: PromptChatRequestInput, actions: PromptPlanResult['actions']): string | null {
+    if (proposesForApproval(request) || !actions.some((action) => action.type === 'setProductionBrief')) {
+        return null;
+    }
+    return `Writing the production brief proposes it for approval, which ${request.interactionMode} mode never proposes.`;
+}
+
+/**
  * An answer completes its run the same way on a first turn and on a decision resume: the receipts
  * it read are recorded, a resumed decision counts as settled by the replacement attempt, and the
  * reply is an ordinary assistant message.
@@ -615,6 +626,11 @@ async function dispatchPromptPlan(input: {
     const refinement = result.actions.length > 0 ? admitRefinement(request, result.refines) : null;
     if (refinement?.status === 'refused') {
         await refusePlannedRequest(request, admission, refinement.reason, refinement.category, result.actions);
+        return undefined;
+    }
+    const briefRefusal = admitBriefWrite(request, result.actions);
+    if (briefRefusal !== null) {
+        await refusePlannedRequest(request, admission, briefRefusal, 'authorization', result.actions);
         return undefined;
     }
     if (result.actions.length > 0) {

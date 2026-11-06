@@ -88,8 +88,9 @@ describe('getProductionCommandHandlerMaps', () => {
         expect(undoStore.value?.past.map((entry) => entry.label)).toEqual(['Current action']);
 
         const registrations = getExecutableCommandRegistrations();
-        expect(registrations).toHaveLength(112);
+        expect(registrations).toHaveLength(113);
         expect(registrations.map(({ actionType }) => actionType)).toContain('setCompRegion');
+        expect(registrations.map(({ actionType }) => actionType)).toContain('setProductionBrief');
         expect(registrations.map(({ actionType }) => actionType)).not.toContain('editTempoMap');
         expect(registrations.map(({ actionType }) => actionType)).not.toContain('restoreTempoMapEdit');
         expect(registrations.every((registration) => typeof registration.handler.execute === 'function')).toBe(true);

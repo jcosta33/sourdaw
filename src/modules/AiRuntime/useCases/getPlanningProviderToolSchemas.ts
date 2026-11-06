@@ -1,6 +1,6 @@
 import { getExecutableAppActionToolSchemas } from '#/modules/Command/useCases';
 
-import { ANALYSIS_COMPARE_REFERENCE_TOOL_NAME } from '../models/AgentToolCatalogNames';
+import { ANALYSIS_COMPARE_REFERENCE_TOOL_NAME, BRIEF_COMPILE_TOOL_NAME } from '../models/AgentToolCatalogNames';
 import { type PlanningProfile, READONLY_ANSWER_TOOL_NAMES } from '../models/PlanningProfile';
 import { type ToolSchema } from '../models/ToolDefinitions';
 import { WORKFLOW_ACTION_TOOL_NAMES } from '../models/WorkflowCapability';
@@ -16,8 +16,14 @@ import { projectReadonlyAnswerMeasurementToolSchema } from './projectReadonlyAns
  * `analysis.compareReference` is offered only while the user has a reference loaded. The schema
  * contract the decision-resume identity reads still lists it, so loading or clearing a reference
  * never invalidates a decision that is waiting.
+ *
+ * `brief.compile` follows the same rule: it is in the contract, and offered only when the caller
+ * says the request may write the brief (a hosted chat request that is not a decision resume).
  */
-export function getPlanningProviderToolSchemas(profile?: PlanningProfile): readonly ToolSchema[] {
+export function getPlanningProviderToolSchemas(
+    profile?: PlanningProfile,
+    { offersBrief = false }: { offersBrief?: boolean } = {}
+): readonly ToolSchema[] {
     if (profile === 'readonly-answer') {
         return getPlanningProviderSchemaContract()
             .schemas.filter((schema) => READONLY_ANSWER_TOOL_NAMES.has(schema.function.name))
@@ -33,7 +39,9 @@ export function getPlanningProviderToolSchemas(profile?: PlanningProfile): reado
     );
     const referenceLoaded = readAgentReference() !== null;
     const offeredSchemas = getPlanningProviderSchemaContract().schemas.filter(
-        (schema) => referenceLoaded || schema.function.name !== ANALYSIS_COMPARE_REFERENCE_TOOL_NAME
+        (schema) =>
+            (referenceLoaded || schema.function.name !== ANALYSIS_COMPARE_REFERENCE_TOOL_NAME) &&
+            (offersBrief || schema.function.name !== BRIEF_COMPILE_TOOL_NAME)
     );
     return [...offeredSchemas, ...workflowToolSchemas];
 }

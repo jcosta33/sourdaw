@@ -7,6 +7,9 @@ import { admitCreativeInterpretation } from './admitCreativeInterpretation';
 import { admitMetricIntent } from './admitMetricIntent';
 import { type MetricIntentCatalog } from './prepareMetricIntentCatalog';
 
+const BRIEF_REQUIRES_NON_ACOUSTIC =
+    'A brief interpretation classifies the whole request in metricIntent as non-acoustic with no objectives.';
+
 type PlanningInterpretationInput = {
     creative: CreativeInterpretationCatalog;
     answer: AnswerInterpretationCatalog;
@@ -70,6 +73,10 @@ function admitCreativeInterpretationWithMetricIntent(
     if (result.status !== 'admitted') {
         return result;
     }
+    const isBrief = result.authority.mode === 'brief';
+    if (isBrief && (metricIntent === undefined || metricIntent === null)) {
+        return { status: 'rejected' as const, reason: BRIEF_REQUIRES_NON_ACOUSTIC };
+    }
     if (metricIntent === undefined || metricIntent === null) {
         return { ...result, kind: 'creative' as const };
     }
@@ -91,6 +98,10 @@ function admitCreativeInterpretationWithMetricIntent(
             status: 'rejected' as const,
             reason: 'A literal intake must use the isolated literal control mode.',
         };
+    }
+    // A brief changes no sound, so it can carry no acoustic objective a preview would have to prove.
+    if (isBrief && admitted.authority.kind !== 'non-acoustic') {
+        return { status: 'rejected' as const, reason: BRIEF_REQUIRES_NON_ACOUSTIC };
     }
     return { ...result, kind: 'creative' as const, metricAuthority: admitted.authority };
 }

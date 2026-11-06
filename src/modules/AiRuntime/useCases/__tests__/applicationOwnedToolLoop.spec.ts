@@ -547,6 +547,7 @@ describe('application-owned tool loop', () => {
             'analysis.measure',
             'analysis.request',
             'answer.respond',
+            'brief.compile',
             'command.batch.decline',
             'command.batch.propose',
             'command.history',

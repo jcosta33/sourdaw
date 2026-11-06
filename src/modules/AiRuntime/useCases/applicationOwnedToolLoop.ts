@@ -89,6 +89,7 @@ import {
     PROJECT_QUERY_TOOL_NAME,
     PROJECT_RESOLVE_TOOL_NAME,
     RECIPE_DISCOVERY_TOOL_NAME,
+    type BRIEF_COMPILE_TOOL_NAME,
     type RECIPE_EXPANSION_TOOL_NAME,
     type TRANSFORM_COMPILE_TOOL_NAME,
 } from './agentToolCatalog';
@@ -101,6 +102,7 @@ import {
 } from './composeMeasuredAnswer';
 import { DEFERRED_AGENT_CAPABILITIES } from './deferredAgentCapabilities';
 import { discoverMixRecipes } from './discoverMixRecipes';
+import { type executeBriefCompile } from './executeBriefCompile';
 import { type executeRecipeExpansion } from './executeRecipeExpansion';
 import { type executeTransformCompile } from './executeTransformCompile';
 import { formatReceiptContext } from './formatReceiptContext';
@@ -154,6 +156,7 @@ export type ApplicationOwnedToolLoopInterpretationOutcome = 'none' | 'admitted' 
 
 type TransformCompileResult = ReturnType<typeof executeTransformCompile>;
 type RecipeExpansionResult = ReturnType<typeof executeRecipeExpansion>;
+type BriefCompileResult = ReturnType<typeof executeBriefCompile>;
 
 export type ApplicationOwnedToolLoopOutcome =
     | {
@@ -323,6 +326,15 @@ type RunApplicationOwnedToolLoopInput = {
         toolName: typeof RECIPE_EXPANSION_TOOL_NAME;
         revision: string;
         execute: (call: ToolCallResult, context: RecipeExpansionCallContext) => RecipeExpansionResult;
+    };
+    /**
+     * The production brief compiler, offered only to a request that may write the brief. It retains
+     * the one `setProductionBrief` it composes under the same `compiledCallIds` list and stale check.
+     */
+    brief?: {
+        toolName: typeof BRIEF_COMPILE_TOOL_NAME;
+        revision: string;
+        execute: (call: ToolCallResult, context: { callId: string; turn: number }) => BriefCompileResult;
     };
 };
 
@@ -1412,9 +1424,14 @@ type ExecutedRead = {
     metricRecipe?: MetricRecipeSource;
     /** Set only by a preview measurement; it is what makes the entry the loop retains a measured preview. */
     measuredPreview?: MeasuredPreview | null;
+    /** Set only by the brief compiler; it is what makes the entry the loop retains a brief. */
+    briefChangeLines?: readonly string[] | null;
 };
 
 function retainedCompilationOf(executed: ExecutedRead, retainable: RetainedCommandSet): RetainedCompilation {
+    if (executed.briefChangeLines !== undefined && executed.briefChangeLines !== null) {
+        return { kind: 'brief', ...retainable, changeLines: executed.briefChangeLines };
+    }
     if (executed.measuredPreview !== undefined && executed.measuredPreview !== null) {
         return { kind: 'preview', ...retainable, measuredPreview: executed.measuredPreview };
     }
@@ -1432,6 +1449,7 @@ function executeTurnReads(input: {
     transientOnsetRead: RunApplicationOwnedToolLoopInput['transientOnsetRead'];
     transform: RunApplicationOwnedToolLoopInput['transform'];
     recipe: RunApplicationOwnedToolLoopInput['recipe'];
+    brief: RunApplicationOwnedToolLoopInput['brief'];
     nextRecipeOrdinal: () => number;
     retainedCompilations: readonly RetainedCompilation[];
     signal?: AbortSignal;
@@ -1495,6 +1513,23 @@ function executeTurnReads(input: {
                         turn,
                         code: 'tool-execution-failed',
                         safeMessage: 'Recipe expansion failed inside the application authority.',
+                        retryable: false,
+                    }),
+                };
+            }
+        }
+        if (input.brief !== undefined && call.name === input.brief.toolName) {
+            try {
+                return input.brief.execute(call, { callId, turn });
+            } catch {
+                return {
+                    commands: null,
+                    receipt: failureReceipt({
+                        callId,
+                        toolName: call.name,
+                        turn,
+                        code: 'tool-execution-failed',
+                        safeMessage: 'Brief compilation failed inside the application authority.',
                         retryable: false,
                     }),
                 };
@@ -2046,6 +2081,7 @@ export async function runApplicationOwnedToolLoop(
                 transform: input.transform?.revision,
                 recipe: input.recipe?.revision,
                 preview: input.measurement?.revision,
+                brief: input.brief?.revision,
             },
             receipts,
             answerIntake,
@@ -2905,6 +2941,7 @@ export async function runApplicationOwnedToolLoop(
             ...(input.transientOnsetRead === undefined ? [] : [ANALYSIS_DETECT_TRANSIENTS_TOOL_NAME]),
             ...(input.transform === undefined ? [] : [input.transform.toolName]),
             ...(input.recipe === undefined ? [] : [input.recipe.toolName]),
+            ...(input.brief === undefined ? [] : [input.brief.toolName]),
         ]);
         const safeReadCalls = identifiedCalls.filter(({ call }) => safeReadToolNames.has(call.name));
         const terminalCalls: IdentifiedToolCall[] = identifiedCalls.filter(
@@ -3084,6 +3121,7 @@ export async function runApplicationOwnedToolLoop(
                 transientOnsetRead: input.transientOnsetRead,
                 transform: input.transform,
                 recipe: input.recipe,
+                brief: input.brief,
                 nextRecipeOrdinal,
                 retainedCompilations: [...retainedCompilations.values()],
                 signal: input.signal,

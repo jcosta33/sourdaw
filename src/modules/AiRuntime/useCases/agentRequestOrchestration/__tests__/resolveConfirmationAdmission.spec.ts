@@ -420,20 +420,26 @@ describe('resolveConfirmationAdmission', () => {
         expect(mocks.invalidateForProjectChange).toHaveBeenCalledWith(confirmation);
     });
 
-    it('settles a conflicted refreshed approval through the exact divergence invalidation', async () => {
-        const commandBatch = createBatch();
-        const confirmation = createConfirmation({ commandBatch });
-        const divergence = reapprovalDivergence();
-        mocks.getConfirmation.mockReturnValue(confirmation);
-        mocks.revision.mockReturnValue('revision-2');
-        mocks.revisionMatchesLive.mockReturnValue(false);
-        mocks.refreshBatch.mockReturnValue({ status: 'conflicted', divergence });
+    it.each([
+        ['no handler refusal', null],
+        ['the handler refusal', 'The production brief names a track the project no longer holds (track-a).'],
+    ])(
+        'settles a conflicted refreshed approval through the exact divergence invalidation, carrying %s',
+        async (_label, refusal) => {
+            const commandBatch = createBatch();
+            const confirmation = createConfirmation({ commandBatch });
+            const divergence = reapprovalDivergence();
+            mocks.getConfirmation.mockReturnValue(confirmation);
+            mocks.revision.mockReturnValue('revision-2');
+            mocks.revisionMatchesLive.mockReturnValue(false);
+            mocks.refreshBatch.mockReturnValue({ status: 'conflicted', divergence, refusal });
 
-        await expect(
-            confirmationAdmission.resolveConfirmationAdmission({ confirmationId: confirmation.id })
-        ).resolves.toEqual({ status: 'handled', result: { status: 'invalidated', reason: 'divergence' } });
-        expect(mocks.invalidateForDivergence).toHaveBeenCalledWith(confirmation, divergence);
-    });
+            await expect(
+                confirmationAdmission.resolveConfirmationAdmission({ confirmationId: confirmation.id })
+            ).resolves.toEqual({ status: 'handled', result: { status: 'invalidated', reason: 'divergence' } });
+            expect(mocks.invalidateForDivergence).toHaveBeenCalledWith(confirmation, divergence, refusal);
+        }
+    );
 
     it('invalidates through project-change settlement when a carried match selector no longer resolves, without refreshing or rebinding the batch', async () => {
         const commandBatch = createBatch();

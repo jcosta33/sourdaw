@@ -60,7 +60,7 @@ import {
 } from '#/modules/CrdtDocument/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
 import { decodeMidiClipDataSnapshots, getMidiNoteTransformHandlers } from '#/modules/MIDI/useCases';
-import { productionBriefActionBatchAdmission } from '#/modules/Project/useCases';
+import { getProjectHandlers, productionBriefActionBatchAdmission } from '#/modules/Project/useCases';
 import { readSecondsAtBeat, readTempoAtBeat, tempoMapStore } from '#/modules/Transport/stores';
 import { getTransportHandlers } from '#/modules/Transport/useCases';
 import { getYeastHandlers } from '#/modules/Yeast/useCases';
@@ -241,6 +241,7 @@ function hydrateProductionContracts(deferSessionRestore = false): void {
             getAutomationHandlers(),
             getDrumPreviewBranchHandlers({ canMutateBranchMetadata: () => true }),
             getMidiNoteTransformHandlers(),
+            getProjectHandlers(),
             getTransportHandlers(),
             getYeastHandlers(),
         ],

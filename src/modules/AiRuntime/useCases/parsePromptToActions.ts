@@ -58,6 +58,7 @@ import { admitProposalRefinement, validateRefinedProposalActions } from '../vali
 import { matchesJsonSchema } from '../validators/matchesJsonSchema';
 
 import { admitAnswerInterpretation } from './admitAnswerInterpretation';
+import { admitBriefProposal } from './admitBriefProposal';
 import { admitPerceptualGoalDecline } from './admitPerceptualGoalDecline';
 import { admitPlanningInterpretation } from './admitPlanningInterpretation';
 import { admitWorkflowMetricIntake } from './admitWorkflowMetricIntake';
@@ -84,6 +85,7 @@ import {
     ANALYSIS_MEASURE_TOOL_NAME,
     ANALYSIS_REQUEST_TOOL_NAME,
     ANSWER_RESPOND_TOOL_NAME,
+    BRIEF_COMPILE_TOOL_NAME,
     COMMAND_BATCH_DECLINE_TOOL_NAME,
     COMMAND_BATCH_PROPOSAL_TOOL_NAME,
     RECIPE_EXPANSION_TOOL_NAME,
@@ -99,6 +101,7 @@ import { compilePreviewMeasurementProposal } from './compilePreviewMeasurementPr
 import { createPlanningInterpretationToolSchema } from './createPlanningInterpretationToolSchema';
 import { digestCommandBatchContent } from './digestCommandBatchContent';
 import { executeAnalysisMeasure } from './executeAnalysisMeasure';
+import { executeBriefCompile } from './executeBriefCompile';
 import { executeRecipeExpansion } from './executeRecipeExpansion';
 import { executeReferenceMeasurement } from './executeReferenceMeasurement';
 import { executeTransformCompile } from './executeTransformCompile';
@@ -107,6 +110,7 @@ import { getCompiledTransformTargetIds } from './getCompiledTransformTargetIds';
 import { getPlanningProviderToolSchemas } from './getPlanningProviderToolSchemas';
 import { type ProjectContext } from './getProjectContext';
 import { groundCompiledCommandBatch } from './groundCompiledCommandBatch';
+import { getBackendChain } from './llmOrchestration/backendResolution/getBackendChain';
 import {
     generateToolPlanningOutcome,
     type ProviderAttemptAdmission,
@@ -336,6 +340,7 @@ function scheduleCompiledBatches(input: {
         },
         batchSchedule: {
             schemaVersion: 1,
+            kind: 'bulk-set',
             scheduleId: `batch-schedule-${crypto.randomUUID()}`,
             position: 1,
             total: split.slices.length,
@@ -819,12 +824,14 @@ const planPromptIntent = inject({ logger })(
                 const syncopatedArpeggioCapability =
                     syncopatedArpeggioScope?.status === 'request' ? syncopatedArpeggioScope.capability : undefined;
                 const workflowMetricScopes = prepareWorkflowMetricScopes({ sidechain: sidechainRoutingScope });
+                const offersBrief = !readonly && isBriefWritingRequest(thread, streamIdentity?.runId, projectRevision);
                 const creativeCatalog = readonly
                     ? undefined
                     : prepareCreativeInterpretationCatalog({
                           prompt,
                           context,
                           projectRevision: projectRevision ?? '',
+                          offersBrief,
                       });
                 const answerCatalog = prepareAnswerInterpretationCatalog({
                     prompt,
@@ -833,7 +840,9 @@ const planPromptIntent = inject({ logger })(
                 });
                 const providerToolSchemas = [
                     ...(readonly ? [createAnswerInterpretationToolSchema(answerCatalog)] : []),
-                    ...(readonly ? getPlanningProviderToolSchemas(profile) : getPlanningProviderToolSchemas()),
+                    ...(readonly
+                        ? getPlanningProviderToolSchemas(profile)
+                        : getPlanningProviderToolSchemas(undefined, { offersBrief })),
                     ...(creativeCatalog === undefined ? [] : [createCreativeInterpretationToolSchema(creativeCatalog)]),
                 ];
                 const terminalToolNames = readonly
@@ -1119,6 +1128,27 @@ const planPromptIntent = inject({ logger })(
                                           ordinal,
                                           context,
                                           revision: transformSnapshot.revision,
+                                      }),
+                              },
+                    // Every writing request answers `brief.compile` with a typed receipt, so a provider
+                    // that names it where it was not offered (the Prompt Bar, WebLLM) is told why.
+                    brief:
+                        transformSnapshot === null
+                            ? undefined
+                            : {
+                                  toolName: BRIEF_COMPILE_TOOL_NAME,
+                                  revision: transformSnapshot.revision,
+                                  execute: (call, { callId, turn }) =>
+                                      executeBriefCompile({
+                                          call,
+                                          callId,
+                                          turn,
+                                          revision: transformSnapshot.revision,
+                                          prompt,
+                                          context,
+                                          sourceRunId: streamIdentity?.runId ?? null,
+                                          isBriefOffered: offersBrief,
+                                          isBriefRequested: () => creativeAuthority?.mode === 'brief',
                                       }),
                               },
                     interpretation:
@@ -1576,6 +1606,55 @@ const planPromptIntent = inject({ logger })(
                         nativeLiteralUses,
                         refinedRequest: refinedCard?.prompt ?? null,
                     });
+
+                // A brief request ends at its card: the one composed brief, confirmed alone, never
+                // grounded beside other commands and never shortcut past the user by a trust ceiling.
+                if (
+                    creativeAuthority?.mode === 'brief' ||
+                    selectedCompilations.some((compiled) => compiled.kind === 'brief')
+                ) {
+                    const brief = admitBriefProposal({
+                        authorityMode: creativeAuthority?.mode,
+                        terminalCalls: planningOutcome.toolCalls,
+                        selectedCompilations,
+                        refines: refinement.status === 'refines',
+                    });
+                    if (brief.status === 'refused') {
+                        return {
+                            actions: [],
+                            rawText: prompt,
+                            requiresConfirmation: false,
+                            ...applicationToolReceiptFields,
+                            ...creativeAuthorityFields,
+                            rejectionReason: `Provider action rejected: ${brief.reason}`,
+                        };
+                    }
+                    const briefMetricGoalState = serializeMetricGoalState([brief.action]);
+                    if (metricGoalStateCodec(briefMetricGoalState) === null) {
+                        return {
+                            actions: [],
+                            rawText: prompt,
+                            requiresConfirmation: false,
+                            ...applicationToolReceiptFields,
+                            ...creativeAuthorityFields,
+                            rejectionReason: UNREADABLE_VERIFICATION_RECORD,
+                        };
+                    }
+                    return {
+                        metricGoalState: briefMetricGoalState,
+                        actions: [brief.action],
+                        rawText: prompt,
+                        requiresConfirmation: true,
+                        // The brief is the application's own singleton, never a target the provider
+                        // names, so the scope a provider can know of it holds no target.
+                        providerKnownTargetIds: [],
+                        ...applicationToolReceiptFields,
+                        ...creativeAuthorityFields,
+                        // One singleton command has nothing to compensate: it writes whole or not
+                        // at all, and its own undo entry restores the brief it replaced.
+                        ...(providerProposal === null ? {} : { providerProposal }),
+                    };
+                }
 
                 // The adopted compilations and the refined proposal are both read above, so the
                 // compiler sees only the commands the batch states.
@@ -2082,6 +2161,26 @@ const planPromptIntent = inject({ logger })(
             }
         }
 );
+
+/**
+ * Only a hosted chat request may write the production brief. WebLLM, Explain, the Prompt Bar (which
+ * passes no thread) and a decision resume keep the tools and interpretation modes they had, so no
+ * profile is offered a mode its tools cannot complete.
+ */
+function isBriefWritingRequest(
+    thread: ThreadContext | null | undefined,
+    runId: string | undefined,
+    projectRevision: string | undefined
+): boolean {
+    if (thread === undefined || projectRevision === undefined || projectRevision === '') {
+        return false;
+    }
+    if (runId !== undefined && (agentRunLifecycle.get(runId)?.resume ?? null) !== null) {
+        return false;
+    }
+    const chain = getBackendChain();
+    return chain.length > 0 && chain.every((backend) => backend === 'cloud');
+}
 
 /**
  * The planner's public entry point. It classifies every result, so a caller never has to infer from
