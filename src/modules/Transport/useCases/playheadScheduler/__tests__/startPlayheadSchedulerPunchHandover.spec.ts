@@ -189,6 +189,7 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     getSynthParamsForTrack: () => ({}),
 }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    builtinSynthVoice: { read: vi.fn() },
     createNativeRecordingCaptureClock: captureMocks.createNativeRecordingCaptureClock,
     ensureCachedAudioBuffersDurable: captureMocks.ensureCachedAudioBuffersDurable,
     analyzePitchForClip: vi.fn(),

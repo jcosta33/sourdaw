@@ -24,6 +24,7 @@ const apply_note_expression = vi.hoisted(() => vi.fn());
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     audioEngine: { context: audio_clock, ensureTrackStrip: ensure_track_strip },
     applyNoteExpression: apply_note_expression,
+    builtinSynthVoice: { read: () => synthVoices },
     getDefaultBendRangeSemitones: () => 48,
     getCompensationDelay: () => 0,
     getFactoryDrumKitByIndex: () => null,
@@ -40,7 +41,8 @@ vi.mock('#/modules/PluginHost/useCases', () => ({
     isFaustInstrumentModule: () => false,
 }));
 
-vi.mock('#/modules/Synth/useCases', () => ({
+// The built-in synth voice this spec's notes sound through, read through the AudioEngine port.
+const synthVoices = vi.hoisted(() => ({
     getSynthParamsFromDevices: () => ({ detune: 0, release: 0.3 }),
     scheduleNote: vi.fn(() => null),
     scheduleKitNote: vi.fn(() => null),

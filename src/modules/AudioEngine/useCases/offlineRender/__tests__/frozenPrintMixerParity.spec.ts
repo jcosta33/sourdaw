@@ -1,9 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { trackStore, type Track } from '#/modules/Arrangement/stores';
+import * as synthVoices from '#/modules/Synth/useCases';
 import { gainToDb } from '#/utils/audioLevelLaw';
 
+import { builtinSynthVoice } from '../../scheduling/builtinSynthVoice';
 import { renderTrackSubgraphOffline } from '../renderTrackSubgraphOffline';
+
+// The voices this spec's notes sound through, as the composition root registers them.
+builtinSynthVoice.configure(synthVoices);
 
 const SAMPLE_RATE = 44_100;
 const TEMPO = 120;

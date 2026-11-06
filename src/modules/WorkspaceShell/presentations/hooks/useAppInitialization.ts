@@ -8,9 +8,9 @@ import {
     setMasterGainValue,
     resumeEngine,
     syncAutoInputMonitoring,
-    syncControlRoomMonitoring,
     syncNativeTimelineSamples,
 } from '#/modules/AudioEngine/useCases';
+import { syncControlRoomMonitoring } from '#/modules/ControlRoom/useCases';
 import { syncKneadToEngine } from '#/modules/Knead/useCases';
 import { initWebMidi } from '#/modules/MIDI/useCases';
 import { preferencesStore } from '#/modules/Preferences/stores';

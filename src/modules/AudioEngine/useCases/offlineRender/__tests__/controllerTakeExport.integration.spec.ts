@@ -67,13 +67,18 @@ import {
     setRecordingMidiAdmissionPort,
     setWebMidiRuntimeEventBus,
 } from '#/modules/MIDI/useCases';
+import * as synthVoices from '#/modules/Synth/useCases';
 import { playheadClockRef, playheadWrapCountRef, transportStore } from '#/modules/Transport/stores';
 import { projectPpqEndpoints } from '#/modules/Transport/useCases';
 
 import { type DeviceNodeEntry } from '../../buildDeviceChain';
+import { builtinSynthVoice } from '../../scheduling/builtinSynthVoice';
 import { schedulePendingSuspends } from '../schedulePendingSuspends';
 import { scheduleTrackClips } from '../scheduleTrackClips';
 import { type PendingWorkletEvent } from '../types';
+
+// The voices this spec's notes sound through, as the composition root registers them.
+builtinSynthVoice.configure(synthVoices);
 
 registerSupportingServicePorts();
 

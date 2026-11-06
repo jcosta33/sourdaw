@@ -1475,6 +1475,7 @@ describe('bulk set commands across successive batches', () => {
             const plan = agentRunLifecycle.get(runId)!.plan!;
             const batchSchedule: AgentRunBatchSchedule = {
                 schemaVersion: 1,
+                kind: 'bulk-set',
                 scheduleId: 'schedule-1',
                 position: 1,
                 total: 2,
@@ -1904,6 +1905,38 @@ describe('a bulk request confirmed one batch at a time', () => {
         expect(chatStore.value?.messages.at(-1)?.content).toContain('Terminal measurement settlement does not match');
         expect(agentRunLifecycle.get(first.runId)?.grants).toEqual(originalGrants);
         expect(runtimeMocks.generateWebLlmCompletion).toHaveBeenCalledTimes(4);
+    });
+
+    it('reads a schedule persisted before schedules had a kind as bulk-set and proposes its next batch', async () => {
+        const layerIds = await seedLayerTracks();
+        scriptMuteLayersProposal();
+        await requestMuteLayers();
+        const first = requireOnlyProposedConfirmation();
+        const stored = structuredClone(readAgentRunState());
+        const schedule = stored.runs.find((entry) => entry.runId === first.runId)?.plan?.batchSchedule;
+        if (schedule === undefined) {
+            throw new TypeError('Expected the actual scheduled run.');
+        }
+        expect(schedule.kind).toBe('bulk-set');
+        // The shape a run stored before schedules carried a kind.
+        Reflect.deleteProperty(schedule, 'kind');
+        expect(Object.hasOwn(schedule, 'kind')).toBe(false);
+
+        const restored = sanitizeAgentRunState(stored);
+        expect(restored.runs.find((entry) => entry.runId === first.runId)?.plan?.batchSchedule).toEqual({
+            ...schedule,
+            kind: 'bulk-set',
+        });
+        persistAgentRunState(restored);
+
+        await expect(confirmPendingChatActions({ confirmationId: first.id })).resolves.toEqual({ status: 'executed' });
+        expect(mutedTrackIds()).toEqual(layerIds.slice(0, MAX_LLM_ACTIONS_PER_BATCH));
+        const second = requireOnlyProposedConfirmation();
+        expect(second.runId).toBe(first.runId);
+        expect(second.approvalSnapshot.batchPosition).toEqual({ index: 2, total: 2 });
+        await expect(confirmPendingChatActions({ confirmationId: second.id })).resolves.toEqual({ status: 'executed' });
+        expect(mutedTrackIds()).toEqual(layerIds);
+        expect(agentRunLifecycle.get(first.runId)?.phase).toBe('completed');
     });
 
     it('carries named protection facts into each scheduled card scope', async () => {

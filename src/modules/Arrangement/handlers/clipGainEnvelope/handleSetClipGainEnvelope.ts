@@ -2,6 +2,7 @@ import { createHandler } from '#/utils/createHandler';
 import { type AppAction } from '#/utils/handlerContract';
 
 import { type ClipGainEnvelope, getEnvelope, removeEnvelope, setEnvelope } from '../../stores/gainEnvelopeStore';
+import { isMidiClip } from '../isMidiClip';
 
 type SetClipGainEnvelopeAction = Extract<AppAction, { type: 'setClipGainEnvelope' }>;
 
@@ -25,6 +26,9 @@ function thawEnvelope(snapshot: Exclude<SetClipGainEnvelopeAction['payload']['en
  */
 export const handleSetClipGainEnvelope = createHandler<'setClipGainEnvelope'>({
     execute: (action) => {
+        if (isMidiClip(action.payload.clipId)) {
+            return { status: 'no-write' };
+        }
         if (action.payload.envelope === null) {
             const existed = getEnvelope(action.payload.clipId) !== undefined;
             removeEnvelope(action.payload.clipId);

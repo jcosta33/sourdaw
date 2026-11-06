@@ -13,7 +13,6 @@ import { exportCachedAudioBuffers } from '#/modules/AudioEngine/useCases';
 import { automationStore, modulationStore } from '#/modules/Automation/stores';
 import { agentProjectRepairStateStore } from '#/modules/CrdtDocument/stores';
 import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
-import { cvGateStore } from '#/modules/CvGate/stores';
 import {
     chordTrackStore,
     defaultChordTrackState,
@@ -34,6 +33,7 @@ import { arrangementStore } from '../../../stores/arrangementStore';
 import { projectStore } from '../../../stores/projectStore';
 import { syncCurrentArrangementToStore } from '../../arrangement/syncCurrentArrangementToStore';
 
+import { cvGateProjection } from './cvGateProjection';
 import { midiLearnProjection } from './midiLearnProjection';
 import { rackProcessorReader } from './rackProcessorReader';
 import { serializeArrangementTracks } from './serializeArrangementTracks';
@@ -242,7 +242,7 @@ export async function buildProjectData({
     }
 
     let cvGateState: ProjectData['cvGate'];
-    const liveCvGate = cvGateStore.value;
+    const liveCvGate = cvGateProjection.read('buildProjectData').readCvGate();
     if (liveCvGate) {
         cvGateState = structuredClone(liveCvGate);
     }

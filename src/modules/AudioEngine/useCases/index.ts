@@ -113,7 +113,7 @@ export { getMasterStereoAnalysers } from './engineAccess/getMasterStereoAnalyser
 export { getMasterPeakLevel } from './engineAccess/getMasterPeakLevel';
 export { setMasterGainValue } from './engineAccess/setMasterGainValue';
 export { setMasterComparisonTrimDb } from './engineAccess/setMasterComparisonTrimDb';
-export { syncControlRoomMonitoring } from './engineAccess/syncControlRoomMonitoring';
+export { setControlRoomMonitoring } from './engineAccess/setControlRoomMonitoring';
 export { getAudioSampleRate } from './engineAccess/getAudioSampleRate';
 export { getTrackAnalyser } from './engineAccess/getTrackAnalyser';
 export { getDeviceOutputNode } from './engineAccess/getDeviceOutputNode';
@@ -203,6 +203,7 @@ export { resolveTrackClipsWithComping } from './offlineRender/resolveTrackClipsW
 export { scheduleAdjustmentLayers } from './adjustmentLayer/scheduleAdjustmentLayers';
 export { getSharedAdjustmentLayerApplier } from './adjustmentLayer/sharedAdjustmentLayerApplier';
 
+export { builtinSynthVoice } from './scheduling/builtinSynthVoice';
 export { scheduleClick } from './scheduling/scheduleClick';
 export { stopAllScheduled } from './scheduling/stopAllScheduled';
 export { registerScheduledSource } from './scheduling/registerScheduledSource';

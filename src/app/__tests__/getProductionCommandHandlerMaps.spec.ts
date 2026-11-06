@@ -75,7 +75,7 @@ describe('getProductionCommandHandlerMaps', () => {
             Object.entries(handlerMap).map(([actionType, handler]) => ({ actionType, handler: handler as unknown }))
         );
 
-        expect(handlerMaps).toHaveLength(37);
+        expect(handlerMaps).toHaveLength(38);
         expect(new Set(actionTypes).size).toBe(actionTypes.length);
         expect(actionTypes).toContain('editTempoMap');
         expect(actionTypes).toContain('restoreTempoMapEdit');

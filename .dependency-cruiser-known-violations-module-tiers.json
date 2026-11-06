@@ -27,11 +27,6 @@
   },
   {
     "type": "module-tier",
-    "from": "Arrangement",
-    "to": "Synth"
-  },
-  {
-    "type": "module-tier",
     "from": "AudioEngine",
     "to": "Arrangement"
   },
@@ -39,16 +34,6 @@
     "type": "module-tier",
     "from": "AudioEngine",
     "to": "Automation"
-  },
-  {
-    "type": "module-tier",
-    "from": "AudioEngine",
-    "to": "ControlRoom"
-  },
-  {
-    "type": "module-tier",
-    "from": "AudioEngine",
-    "to": "CvGate"
   },
   {
     "type": "module-tier",
@@ -68,41 +53,11 @@
   {
     "type": "module-tier",
     "from": "AudioEngine",
-    "to": "Synth"
-  },
-  {
-    "type": "module-tier",
-    "from": "AudioEngine",
     "to": "Transport"
-  },
-  {
-    "type": "module-tier",
-    "from": "BrowserAi",
-    "to": "MIDI"
-  },
-  {
-    "type": "module-tier",
-    "from": "CommandInterface",
-    "to": "Onboarding"
   },
   {
     "type": "module-tier",
     "from": "CommandInterface",
     "to": "WorkspaceShell"
-  },
-  {
-    "type": "module-tier",
-    "from": "MIDI",
-    "to": "Synth"
-  },
-  {
-    "type": "module-tier",
-    "from": "Project",
-    "to": "CvGate"
-  },
-  {
-    "type": "module-tier",
-    "from": "Transport",
-    "to": "Synth"
   }
 ]
