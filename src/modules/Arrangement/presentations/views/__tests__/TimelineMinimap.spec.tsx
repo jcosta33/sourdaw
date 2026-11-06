@@ -73,8 +73,8 @@ const unobserveMock = vi.fn();
 let resizeCallback: (() => void) | null = null;
 
 class MockResizeObserver {
-    constructor(callback: () => void) {
-        resizeCallback = callback;
+    constructor(callback: ResizeObserverCallback) {
+        resizeCallback = () => callback([], this);
     }
     observe = observeMock;
     disconnect = disconnectMock;
