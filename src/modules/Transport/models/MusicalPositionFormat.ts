@@ -15,7 +15,7 @@ type MeterDefaults = {
  * within the tempo-map same-beat tolerance of a sixteenth boundary snaps onto it first, so float
  * noise just under a boundary does not drop a whole sixteenth.
  */
-function snapToSixteenthBoundary(beats: number): number {
+export function snapToSixteenthBoundary(beats: number): number {
     const nearest = Math.round(beats * SIXTEENTHS_PER_QUARTER) / SIXTEENTHS_PER_QUARTER;
     return Math.abs(beats - nearest) <= BEAT_EPSILON ? nearest : beats;
 }

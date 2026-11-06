@@ -10,7 +10,7 @@ import {
 
 import { useStore } from '#/infra/store/useStore';
 import { defaultTransportState, timeSignatureMapStore, transportStore } from '#/modules/Transport/stores';
-import { formatMusicalPosition } from '#/modules/Transport/useCases';
+import { getBarNumberAtBeat } from '#/modules/Transport/useCases';
 import {
     normalizeTimelineMinimapHeight,
     TIMELINE_MINIMAP_DEFAULT_HEIGHT,
@@ -57,11 +57,6 @@ function getMinimapTotalBeats(tracks: TrackStoreState['tracks']): number {
     return Math.max(MIN_PROJECT_BEATS, maxEndBeat * 1.1);
 }
 
-/** The bar number leading a `bar.beat.sixteenth` position. */
-function barOf(position: string): number {
-    return Number(position.split('.')[0]);
-}
-
 const EMPTY_METER_MAP = { changes: [] };
 
 const defaultTrackState: TrackStoreState = { tracks: [], selectedTrackId: null };
@@ -102,8 +97,8 @@ export const TimelineMinimap = ({ height = TIMELINE_MINIMAP_DEFAULT_HEIGHT }: Ti
     const scrollStartBeat = Math.max(0, scrollX / readoutPixelsPerBeat);
     const sliderStartBeat = Math.min(sliderMaxBeats, Math.round(scrollStartBeat));
     const visibleEndBeat = scrollStartBeat + canvasMetrics.width / readoutPixelsPerBeat;
-    const sliderStartBar = barOf(formatMusicalPosition({ ...meter, beat: scrollStartBeat }));
-    const sliderEndBar = barOf(formatMusicalPosition({ ...meter, beat: visibleEndBeat }));
+    const sliderStartBar = getBarNumberAtBeat({ ...meter, beat: scrollStartBeat });
+    const sliderEndBar = getBarNumberAtBeat({ ...meter, beat: visibleEndBeat });
 
     useLayoutEffect(() => {
         const canvas = canvasRef.current;
