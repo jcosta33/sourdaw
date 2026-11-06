@@ -1,6 +1,6 @@
 import { type ComponentProps, type ReactElement, type DragEvent, useState, useEffect, useRef } from 'react';
 
-import { LayoutTemplate, Sparkles, FolderOpen, Upload, Download, ArrowLeft, Clock } from 'lucide-react';
+import { LayoutTemplate, Sparkles, FolderOpen, FilePlus2, Upload, Download, ArrowLeft, Clock } from 'lucide-react';
 import { FocusScope } from 'radix-ui/internal';
 
 import { Grid, Row, Stack } from '#/components/layout';
@@ -119,7 +119,7 @@ const LogoBlock = (): ReactElement => (
             <h1 className="text-3xl font-bold tracking-tight bg-gradient-to-r from-[var(--color-accent-orange)] via-amber-300 to-[var(--color-accent-peach)] bg-clip-text text-transparent">
                 Sourdaw
             </h1>
-            <p className="mt-1 text-sm text-white/30 italic">{randomTagline}</p>
+            <p className="mt-1 text-sm text-white/55 italic">{randomTagline}</p>
         </div>
     </Stack>
 );
@@ -326,7 +326,7 @@ export const LaunchScreen = ({ exiting }: LaunchScreenProps): ReactElement => {
                     {view === 'home' ? (
                         <div
                             key="home"
-                            className={`animate-in fade-in zoom-in-95 duration-500 relative flex flex-col items-center gap-8 rounded-2xl border shadow-[0_24px_80px_rgba(0,0,0,0.7),inset_0_1px_0_rgba(255,255,255,0.05)] max-w-[440px] w-full p-10 transition-all duration-300 ${
+                            className={`animate-in fade-in zoom-in-95 duration-500 relative flex max-h-full flex-col items-center gap-8 overflow-y-auto overscroll-contain [&>*]:shrink-0 rounded-2xl border shadow-[0_24px_80px_rgba(0,0,0,0.7),inset_0_1px_0_rgba(255,255,255,0.05)] max-w-[440px] w-full p-10 transition-all duration-300 ${
                                 isDragOver
                                     ? 'border-[var(--color-accent-orange)]/60 bg-[var(--color-accent-orange)]/5 scale-[1.01]'
                                     : 'border-white/[0.07] bg-white/[0.03] backdrop-blur-xl'
@@ -360,32 +360,43 @@ export const LaunchScreen = ({ exiting }: LaunchScreenProps): ReactElement => {
                                 </Stack>
                             ) : null}
 
-                            <Grid cols={3} gap={3} className="w-full">
+                            <Stack gap={3} className="w-full">
+                                <div className="px-0.5">
+                                    <h2 className="text-label font-semibold text-white/65 uppercase tracking-wider">
+                                        Create a project
+                                    </h2>
+                                    <p className="mt-1 text-dense text-white/45">
+                                        Start empty, use a template, or explore a demo.
+                                    </p>
+                                </div>
                                 <ActionCard
                                     id="launch-new-project"
                                     label="New Project"
-                                    sub="Blank canvas"
-                                    icon={<FolderOpen className="size-5" aria-hidden="true" />}
+                                    sub="Start with an empty project"
+                                    icon={<FilePlus2 className="size-5" aria-hidden="true" />}
                                     colorVar="--color-accent-orange"
+                                    primary
                                     onClick={handleNewProject}
                                 />
-                                <ActionCard
-                                    id="launch-from-template"
-                                    label="Templates"
-                                    sub="Pre-baked recipes"
-                                    icon={<LayoutTemplate className="size-5" aria-hidden="true" />}
-                                    colorVar="--color-accent-lavender"
-                                    onClick={() => handleOpenGrid('all')}
-                                />
-                                <ActionCard
-                                    id="launch-demo-project"
-                                    label="Demos"
-                                    sub="Hear what's cooking"
-                                    icon={<Sparkles className="size-5" aria-hidden="true" />}
-                                    colorVar="--color-accent-mint"
-                                    onClick={() => handleOpenGrid('demo')}
-                                />
-                            </Grid>
+                                <Grid cols={2} gap={3} className="w-full">
+                                    <ActionCard
+                                        id="launch-from-template"
+                                        label="Templates"
+                                        sub="Pre-baked recipes"
+                                        icon={<LayoutTemplate className="size-5" aria-hidden="true" />}
+                                        colorVar="--color-accent-lavender"
+                                        onClick={() => handleOpenGrid('all')}
+                                    />
+                                    <ActionCard
+                                        id="launch-demo-project"
+                                        label="Demos"
+                                        sub="Hear what's cooking"
+                                        icon={<Sparkles className="size-5" aria-hidden="true" />}
+                                        colorVar="--color-accent-mint"
+                                        onClick={() => handleOpenGrid('demo')}
+                                    />
+                                </Grid>
+                            </Stack>
 
                             <div
                                 className={`flex items-center gap-2 px-4 py-2.5 rounded-lg border border-dashed transition-all w-full justify-center ${
@@ -490,7 +501,7 @@ export const LaunchScreen = ({ exiting }: LaunchScreenProps): ReactElement => {
                                 <p className="text-sm font-semibold text-white/80">
                                     {loadingName ? (
                                         <>
-                                            Baking{' '}
+                                            Preparing{' '}
                                             <span className="bg-gradient-to-r from-[var(--color-accent-orange)] to-[var(--color-accent-peach)] bg-clip-text text-transparent">
                                                 {loadingName}
                                             </span>
@@ -533,16 +544,22 @@ type ActionCardProps = {
     sub: string;
     icon: ReactElement;
     colorVar: string;
+    primary?: boolean;
     onClick: () => void;
 };
 
-const ActionCard = ({ id, label, sub, icon, colorVar, onClick }: ActionCardProps): ReactElement => (
+const ActionCard = ({ id, label, sub, icon, colorVar, primary = false, onClick }: ActionCardProps): ReactElement => (
     <Button
         variant="bare"
         size="bare"
         type="button"
         id={id}
-        className="group flex flex-col items-center gap-2.5 p-4 rounded-xl border border-white/[0.07] bg-white/[0.03] transition-all duration-200 cursor-pointer text-center"
+        className={cn(
+            'group flex w-full items-center rounded-xl border p-4 transition-all duration-200 cursor-pointer',
+            primary
+                ? 'justify-start gap-4 border-[var(--color-accent-orange)]/35 bg-[var(--color-accent-orange)]/10 text-left'
+                : 'flex-col gap-2.5 border-white/[0.07] bg-white/[0.03] text-center'
+        )}
         style={{ ['--card-color' as string]: `var(${colorVar})` }}
         onClick={onClick}
         onMouseEnter={(e) => {
@@ -557,14 +574,16 @@ const ActionCard = ({ id, label, sub, icon, colorVar, onClick }: ActionCardProps
     >
         <Row
             justify="center"
-            className="size-10 rounded-xl transition-all duration-200"
+            className="size-10 shrink-0 rounded-xl transition-all duration-200"
             style={{ background: `color-mix(in srgb, var(${colorVar}) 15%, transparent)`, color: `var(${colorVar})` }}
         >
             {icon}
         </Row>
         <div>
-            <span className="text-xs font-semibold text-white/75 block leading-tight">{label}</span>
-            <span className="text-[9px] text-white/28 mt-0.5 block">{sub}</span>
+            <span className={cn('font-semibold text-white/85 block leading-tight', primary ? 'text-sm' : 'text-xs')}>
+                {label}
+            </span>
+            <span className="text-dense text-white/50 mt-0.5 block">{sub}</span>
         </div>
     </Button>
 );
