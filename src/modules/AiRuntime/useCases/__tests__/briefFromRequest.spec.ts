@@ -7,6 +7,7 @@ import {
 } from '#/infra/store/storage/createAutomergeStorage';
 import { markerStore, trackStore } from '#/modules/Arrangement/stores';
 import { getArrangementHandlers, setArrangementEventBus } from '#/modules/Arrangement/useCases';
+import { type renderTrackSubgraphOffline } from '#/modules/AudioEngine/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import { getAutomationHandlers } from '#/modules/Automation/useCases';
 import { clearHandlerRegistry, macroStore, registerHandlerMap } from '#/modules/Command/stores';
@@ -60,7 +61,7 @@ import {
     selectCreativeInterpretationCall,
 } from './highLevelIntentWorkflowFixture';
 import { landProjectEdit } from './landProjectEdit';
-import { literalMetricIntakeTurn } from './metricGoalWorkflowFixture';
+import { literalMetricIntakeTurn, metricGoalAudioBuffer } from './metricGoalWorkflowFixture';
 import { decodeReceiptContext, readReceiptSummary } from './receiptContextFixture';
 
 registerDeviceEnginePorts();
@@ -81,6 +82,13 @@ const KEYS_ID = 'track-keys';
 const CHORUS_ID = 'section-chorus';
 
 const runtimeMocks = vi.hoisted(() => ({ backend: { value: 'cloud' } }));
+
+// Only a planned vibe-run batch renders here, for its measured preview; no other row reaches a render.
+const audio = vi.hoisted(() => ({ renderTrackSubgraphOffline: vi.fn() }));
+vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
+    ...audio,
+}));
 
 vi.mock('../llmOrchestration/backendResolution/getBackendChain', () => ({
     getBackendChain: () => [runtimeMocks.backend.value],
@@ -276,6 +284,44 @@ function seededBrief(): ProductionBrief {
     };
 }
 
+type RenderInput = Parameters<typeof renderTrackSubgraphOffline>[0];
+
+function audioClip(trackId: string): StoredTrack['clips'][number] {
+    return {
+        id: `${trackId}-clip`,
+        trackId,
+        name: 'Take',
+        type: 'audio',
+        audioBufferId: `${trackId}-buffer`,
+        startBeat: 0,
+        endBeat: 4,
+        fadeInBeats: 0,
+        fadeOutBeats: 0,
+        gain: 1,
+        color: '#ffffff',
+        locked: false,
+        muted: false,
+    };
+}
+
+/** A 100 Hz body and a 3 kHz top, each scaled by the low and high shelves of the track's EQs. */
+function renderShelvedTone(input: RenderInput): AudioBuffer {
+    const track = input.renderTracks.find((candidate) => candidate.id === input.targetTrackId);
+    if (track === undefined) {
+        throw new Error('The render target is absent.');
+    }
+    const parameter = (id: string) =>
+        track.devices.reduce((total, device) => total + (device.parameterValues[id] ?? 0), 0);
+    const low = 10 ** (parameter('eq-low-gain') / 20);
+    const high = 10 ** (parameter('eq-high-gain') / 20);
+    // The spec's project runs at 90 bpm.
+    const seconds = ((input.endBeat - input.startBeat) * 60) / 90;
+    return metricGoalAudioBuffer(
+        (time) => 0.4 * low * Math.sin(2 * Math.PI * 100 * time) + 0.2 * high * Math.sin(2 * Math.PI * 3000 * time),
+        seconds
+    );
+}
+
 function readBrief(): ProductionBrief {
     const brief = projectStore.value?.productionBrief;
     if (brief === undefined) {
@@ -307,6 +353,7 @@ describe('writing the production brief from a whole-project request (AC-001 of #
     beforeEach(() => {
         configureAiWorkflowCommandPreflightFixture();
         vi.mocked(generateToolPlanningOutcome).mockReset();
+        audio.renderTrackSubgraphOffline.mockReset();
         runtimeMocks.backend.value = 'cloud';
         configureAutomergeStoragePort(null);
         resetCrdtProjectAuthority('brief from request test');
@@ -638,6 +685,66 @@ describe('writing the production brief from a whole-project request (AC-001 of #
             heldClausesOf({ type: 'setTrackGain', payload: { trackId: VOCAL_ID, gain: 0.7, expectedGain: 0.8 } })
         ).toEqual(['keep the vocal intimate', 'keep the vocal intimate']);
         expect(heldClausesOf({ type: 'setProductionBrief', payload: { expectedRevision: 4, brief } })).toEqual([]);
+    });
+
+    it('grounds a later batch on a track whose role only the confirmed brief gives', async () => {
+        const STEM_ID = 'track-stem';
+        landProjectEdit(() => {
+            trackStore.set({
+                tracks: [{ ...createTrack(STEM_ID, 'Stem 7'), clips: [audioClip(STEM_ID)] }],
+                selectedTrackId: null,
+                ghostClips: [],
+            });
+        });
+        audio.renderTrackSubgraphOffline.mockImplementation(async (input: RenderInput) => renderShelvedTone(input));
+        const stemRole = { vision: 'A warmer low end', trackRoles: [{ trackId: STEM_ID, role: 'bass' }] };
+        scriptPlanningTurns([briefIntake, compileBrief(stemRole), proposeCompiled()]);
+
+        await sendChatMessage('make it warmer');
+
+        const brief = getPendingProposal();
+        // The stem's name gives no role; only the brief this card writes does, and the plan reads it.
+        expect(getProjectContext().tracks[0]?.canonicalRole?.source).not.toBe('authored');
+        expect(brief.message.content).toContain('- Batch 2 of 2: warm bass — Stem 7');
+        await expect(confirmPendingChatActions({ confirmationId: brief.confirmation.id })).resolves.toEqual({
+            status: 'executed',
+        });
+
+        const batch = pendingActionConfirmationStore.value.confirmations.find(
+            (card) => card.status === 'proposed' && card.runId === brief.confirmation.runId
+        );
+        expect(batch?.approvalSnapshot.batchPosition).toEqual({ index: 2, total: 2 });
+        expect(batch?.approvalSnapshot.adoptedRecipes).toEqual([
+            expect.objectContaining({ recipeId: 'bass-warm', targetId: STEM_ID }),
+        ]);
+        expect(batch?.actions.map((action) => action.type)).toContain('addDevice');
+    });
+
+    it('leaves a request whose plan holds no batch exactly the brief alone', async () => {
+        // Every track the request could warm is the locked Drums, so its plan holds no batch at all.
+        landProjectEdit(() => {
+            trackStore.set({ tracks: [createTrack(DRUMS_ID, 'Drums')], selectedTrackId: null, ghostClips: [] });
+        });
+        const visionOnly = [briefIntake, compileBrief({ vision: VISION }), proposeCompiled()];
+        scriptPlanningTurns(visionOnly);
+        await sendChatMessage(VIBE_PROMPT);
+        const briefOnly = getPendingProposal();
+        await cancelPendingChatActions({ confirmationId: briefOnly.confirmation.id });
+        const briefOnlyContent = briefOnly.message.content;
+        chatStore.set({ messages: [], isGenerating: false, enableReasoning: true, chatMode: 'prompt' });
+        clearPendingActionConfirmations();
+
+        scriptPlanningTurns(visionOnly);
+        await sendChatMessage('make it warmer');
+
+        const { message, confirmation } = getPendingProposal();
+        expect(message.content).toBe(briefOnlyContent);
+        expect(agentRunLifecycle.get(confirmation.runId)?.plan?.batchSchedule).toBeUndefined();
+        await expect(confirmPendingChatActions({ confirmationId: confirmation.id })).resolves.toEqual({
+            status: 'executed',
+        });
+        expect(countCards()).toBe(1);
+        expect(agentRunLifecycle.get(confirmation.runId)?.phase).toBe('completed');
     });
 });
 

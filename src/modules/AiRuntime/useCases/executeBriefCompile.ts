@@ -3,7 +3,7 @@ import { composeProductionBriefUpdate, describeProductionBriefChange } from '#/m
 
 import { BRIEF_COMPILE_TOOL_NAME } from '../models/AgentToolCatalogNames';
 import { type ApplicationToolReceipt } from '../models/ApplicationOwnedTool';
-import { type ProjectContext } from '../models/ProjectContext';
+import { type ProjectContext, type ProjectContextProductionBrief } from '../models/ProjectContext';
 import { type RetainedCommand } from '../models/RetainedCompilation';
 import { type ToolCallResult } from '../transformers/toolCallParser';
 
@@ -16,6 +16,8 @@ type BriefCompileResult = {
     receipt: ApplicationToolReceipt;
     commands: readonly RetainedCommand[] | null;
     briefChangeLines: readonly string[] | null;
+    /** The whole next brief the command writes, typed, for the planner that reads it before Confirm. */
+    composedBrief: ProjectContextProductionBrief | null;
 };
 
 type Parsed = { status: 'parsed'; update: BriefUpdate } | { status: 'invalid'; reason: string };
@@ -157,6 +159,31 @@ function readRequestHardConstraints(prompt: string, context: ProjectContext): Br
     });
 }
 
+/** A refused `brief.compile`: no command, and a failure receipt naming what the provider can correct. */
+function refuseBriefCompile(
+    call: { callId: string; turn: number; revision: string },
+    refusal: { code: string; reason: string; retryable: boolean }
+): BriefCompileResult {
+    return {
+        commands: null,
+        briefChangeLines: null,
+        composedBrief: null,
+        receipt: {
+            schema: 'sourdaw.application-tool-receipt',
+            schemaVersion: 1,
+            callId: call.callId,
+            toolName: BRIEF_COMPILE_TOOL_NAME,
+            turn: call.turn,
+            status: 'failure',
+            revision: call.revision,
+            data: null,
+            summary: refusal.reason,
+            warnings: [],
+            error: { code: refusal.code, safeMessage: refusal.reason, retryable: refusal.retryable },
+        },
+    };
+}
+
 /**
  * One `brief.compile` call as the loop sees it. It composes the whole next brief from the live
  * project's brief, the provider's requested additions and the request's own protective clauses, and
@@ -177,23 +204,8 @@ export function executeBriefCompile(input: {
     isBriefRequested: () => boolean;
 }): BriefCompileResult {
     const { callId, turn, revision } = input;
-    const failure = (code: string, reason: string, retryable: boolean): BriefCompileResult => ({
-        commands: null,
-        briefChangeLines: null,
-        receipt: {
-            schema: 'sourdaw.application-tool-receipt',
-            schemaVersion: 1,
-            callId,
-            toolName: BRIEF_COMPILE_TOOL_NAME,
-            turn,
-            status: 'failure',
-            revision,
-            data: null,
-            summary: reason,
-            warnings: [],
-            error: { code, safeMessage: reason, retryable },
-        },
-    });
+    const failure = (code: string, reason: string, retryable: boolean) =>
+        refuseBriefCompile({ callId, turn, revision }, { code, reason, retryable });
     if (!input.isBriefOffered) {
         return failure(
             'brief-not-requested',
@@ -249,6 +261,7 @@ export function executeBriefCompile(input: {
     return {
         commands: [command],
         briefChangeLines: changeLines,
+        composedBrief: composed.brief,
         receipt: {
             schema: 'sourdaw.application-tool-receipt',
             schemaVersion: 1,

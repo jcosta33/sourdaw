@@ -5,18 +5,31 @@ import {
     AGENT_RUN_TERMINAL_PHASES,
     type AgentRun,
     type AgentRunBatchSchedule,
+    type AgentRunBulkSetBatchSchedule,
     type AgentRunProviderProposal,
+    type AgentRunVibeRunBatchSchedule,
 } from '../../models/AgentRun';
 import { type IntentResult } from '../../models/IntentResult';
+import { type ScheduledVibeRunBatch } from '../../models/VibeRunPlan';
 import { appendChatMessage } from '../../stores/chatStore';
+import { pendingActionConfirmationStore } from '../../stores/pendingActionConfirmationStore';
 import { normalizeAgentPlanProposal } from '../../transformers/normalizeAgentPlanProposal';
+import { readScheduledVibeRunPlan } from '../../validators/readScheduledVibeRunPlan';
 import { normalizeAgentFailure } from '../agentErrorAndSaga';
 import { agentRunLifecycle } from '../agentRunLifecycle';
+import { compileAgentRiskApproval } from '../compileAgentRiskApproval';
 import { describePendingActionConfirmation } from '../describePendingActionConfirmation';
+import { evaluateMetricGoalAdmission } from '../evaluateMetricGoalAdmission';
 import { getProjectContext } from '../getProjectContext';
 import { groundCompiledCommandBatch } from '../groundCompiledCommandBatch';
+import { metricGoalStateCodec } from '../metricGoalStateCodec';
+import { prepareMetricGoalPreview } from '../prepareMetricGoalPreview';
+import { describeVibeBatchCard } from '../vibeRun/describeVibeBatchCard';
+import { type CommittedVibeBatch, describeVibeRunSummary } from '../vibeRun/describeVibeRunSummary';
 
+import { describeAppliedBatches } from './describeAppliedBatches';
 import { executeImmediatePromptCommand } from './executeImmediatePromptCommand';
+import { groundVibeRunBatch } from './groundVibeRunBatch';
 import { materializePromptCommandPlan } from './materializePromptCommandPlan';
 import { persistPromptActionConfirmation } from './persistPromptActionConfirmation';
 import { readBulkSetSliceEvidence } from './readBulkSetSliceEvidence';
@@ -26,8 +39,17 @@ type ScheduledBatchOutcome =
     { status: 'awaiting-approval' } | { status: 'executed' } | { status: 'rejected'; reason: string };
 
 type GroundedScheduledBatch =
-    | { status: 'grounded'; result: IntentResult; context: ReturnType<typeof getProjectContext>; revision: string }
+    | {
+          status: 'grounded';
+          result: IntentResult;
+          context: ReturnType<typeof getProjectContext>;
+          revision: string;
+          /** Set only on a vibe-run batch: the planned batch its card describes and its preview measures. */
+          vibeBatch?: ScheduledVibeRunBatch;
+      }
     | { status: 'rejected'; reason: string };
+
+type GroundedBatch = Extract<GroundedScheduledBatch, { status: 'grounded' }>;
 
 /**
  * The next batch is owed only while the run is live, its schedule has a later position, and the
@@ -44,7 +66,7 @@ function getOwedSchedule(run: AgentRun | null): AgentRunBatchSchedule | null {
     return settled && schedule.position < schedule.total ? schedule : null;
 }
 
-function readProviderProposal(schedule: AgentRunBatchSchedule): AgentRunProviderProposal | null | undefined {
+function readProviderProposal(schedule: AgentRunBulkSetBatchSchedule): AgentRunProviderProposal | null | undefined {
     if (schedule.serializedProviderProposal === null) {
         return null;
     }
@@ -56,7 +78,11 @@ function readProviderProposal(schedule: AgentRunBatchSchedule): AgentRunProvider
 }
 
 /** Grounds the bulk-set slice at `position` against the live project exactly as the planner grounded the first. */
-function groundBulkSetSlice(run: AgentRun, schedule: AgentRunBatchSchedule, position: number): GroundedScheduledBatch {
+function groundBulkSetSlice(
+    run: AgentRun,
+    schedule: AgentRunBulkSetBatchSchedule,
+    position: number
+): GroundedScheduledBatch {
     const requestProtections = schedule.requestProtections;
     if (requestProtections === undefined || requestProtections.request !== run.request) {
         return {
@@ -156,11 +182,109 @@ function groundScheduledSlice(
     switch (schedule.kind) {
         case 'bulk-set':
             return groundBulkSetSlice(run, schedule, position);
+        case 'vibe-run': {
+            const grounded = groundVibeRunBatch(run, schedule, position);
+            return grounded.status === 'grounded' ? { ...grounded, vibeBatch: grounded.batch } : grounded;
+        }
         default: {
-            const exhaustive: never = schedule.kind;
+            const exhaustive: never = schedule;
             throw new Error(`Unsupported batch schedule kind: ${String(exhaustive)}`);
         }
     }
+}
+
+type MaterializedBatch = Extract<ReturnType<typeof materializePromptCommandPlan>, { status: 'prepared' }>;
+
+/**
+ * A vibe-run batch always waits for approval with a measured preview: the preview renders the live
+ * project and the batch for every recipe step, under the run's own render budget, before the card
+ * appears, and the approval is rebound to that proof so Confirm admits exactly what was measured. A
+ * preview that cannot run fails the batch, which ends the run with the earlier batches applied.
+ */
+async function proposeMeasuredVibeBatch(input: {
+    run: AgentRun;
+    schedule: AgentRunBatchSchedule;
+    position: number;
+    grounded: GroundedBatch;
+    batch: ScheduledVibeRunBatch;
+    assistantMessageId: string;
+    description: ReturnType<typeof describePendingActionConfirmation>;
+    materialized: MaterializedBatch;
+}): Promise<ScheduledBatchOutcome> {
+    const { run, schedule, position, grounded, materialized } = input;
+    const { compiledActionExecution, parsedCommandBatch, commandGroup } = materialized;
+    const { commandBatch } = compiledActionExecution;
+    const batchId = parsedCommandBatch.envelope.batchId;
+    const state = metricGoalStateCodec(compiledActionExecution.metricGoalState);
+    if (!compiledActionExecution.requiresConfirmation || state === null) {
+        agentRunLifecycle.updateBatchStatus({ runId: run.runId, batchId, status: 'failed' });
+        return { status: 'rejected', reason: 'its measured preview could not be prepared' };
+    }
+    let proof: Awaited<ReturnType<typeof prepareMetricGoalPreview>>;
+    try {
+        proof = await prepareMetricGoalPreview({
+            state,
+            commandBatch,
+            context: grounded.context,
+            prompt: run.request,
+            runId: run.runId,
+        });
+    } catch (error) {
+        agentRunLifecycle.updateBatchStatus({ runId: run.runId, batchId, status: 'failed' });
+        return { status: 'rejected', reason: error instanceof Error ? error.message : String(error) };
+    }
+    const approval = compileAgentRiskApproval({
+        commandBatch,
+        requireExplicitApproval: true,
+        metricGoalState: JSON.stringify(proof.state),
+    });
+    const liveRun = agentRunLifecycle.get(run.runId);
+    if (liveRun?.plan) {
+        const priorReceipts = liveRun.plan.applicationToolReceipts ?? [];
+        agentRunLifecycle.recordPlan({
+            runId: liveRun.runId,
+            summary: liveRun.plan.summary,
+            commandIds: liveRun.plan.commandIds,
+            serializedBatchIdentity: liveRun.plan.serializedBatchIdentity,
+            revision: grounded.revision,
+            scope: liveRun.scope,
+            grants: liveRun.grants,
+            budgets: liveRun.budgets,
+            plan: {
+                ...liveRun.plan,
+                metricGoalState: approval.metricGoalState ?? undefined,
+                applicationToolReceipts: [...priorReceipts, ...proof.receipts],
+            },
+        });
+    }
+    const evaluation = evaluateMetricGoalAdmission({ state: proof.state, commandBatch });
+    const cardLines = describeVibeBatchCard({
+        batch: input.batch,
+        context: grounded.context,
+        criteria: evaluation.criteria,
+    });
+    persistPromptActionConfirmation({
+        runId: run.runId,
+        prompt: run.request,
+        assistantMessageId: input.assistantMessageId,
+        actions: grounded.result.actions,
+        actionLabels: input.description.actionLabels,
+        commandEnvelopes: compiledActionExecution.commandEnvelopes,
+        commandBatch,
+        agentApproval: approval,
+        metricGoalState: approval.metricGoalState ?? undefined,
+        affectedIds: input.description.affectedIds,
+        protectedUnchanged: input.description.protectedUnchanged,
+        protectionFacts: grounded.result.protectionFacts,
+        adoptedRecipes: grounded.result.adoptedRecipes,
+        batchPosition: { index: position, total: schedule.total },
+        executionMode: grounded.result.executionMode,
+        group: commandGroup,
+        projectRevision: grounded.revision,
+        parsedCommandBatch,
+        content: [input.description.content, ...cardLines].join('\n'),
+    });
+    return { status: 'awaiting-approval' };
 }
 
 /**
@@ -171,7 +295,7 @@ async function dispatchScheduledBatch(
     run: AgentRun,
     schedule: AgentRunBatchSchedule,
     position: number,
-    grounded: Extract<GroundedScheduledBatch, { status: 'grounded' }>
+    grounded: GroundedBatch
 ): Promise<ScheduledBatchOutcome> {
     const assistantMessageId = `msg-${crypto.randomUUID()}`;
     appendChatMessage({
@@ -210,6 +334,18 @@ async function dispatchScheduledBatch(
     }
     const { commandGroup, compiledActionExecution, parsedCommandBatch } = materialized;
     const { commandEnvelopes, commandBatch } = compiledActionExecution;
+    if (grounded.vibeBatch !== undefined) {
+        return proposeMeasuredVibeBatch({
+            run,
+            schedule,
+            position,
+            grounded,
+            batch: grounded.vibeBatch,
+            assistantMessageId,
+            description,
+            materialized,
+        });
+    }
     if (compiledActionExecution.requiresConfirmation) {
         persistPromptActionConfirmation({
             runId: run.runId,
@@ -267,10 +403,6 @@ async function proposeScheduledBatch(
     }
 }
 
-function describeAppliedBatches(position: number): string {
-    return position === 2 ? 'Batch 1 remains applied.' : `Batches 1–${String(position - 1)} remain applied.`;
-}
-
 /**
  * A later batch that cannot be proposed as compiled is refused, never shrunk to what still fits: the
  * batches already committed stay, and the run ends partially completed with the user told which
@@ -301,6 +433,65 @@ function refuseScheduledBatch(run: AgentRun, schedule: AgentRunBatchSchedule, po
     });
 }
 
+/** Each committed batch of a finished vibe run, read from its executed card and the proof it was approved on. */
+function readCommittedVibeBatches(run: AgentRun, schedule: AgentRunVibeRunBatchSchedule): CommittedVibeBatch[] | null {
+    const plan = readScheduledVibeRunPlan(schedule.serializedPlan);
+    if (plan === null) {
+        return null;
+    }
+    return pendingActionConfirmationStore.value.confirmations
+        .filter(
+            (confirmation) =>
+                confirmation.runId === run.runId &&
+                confirmation.status === 'executed' &&
+                (confirmation.approvalSnapshot.batchPosition?.index ?? 0) > 1
+        )
+        .toSorted(
+            (left, right) =>
+                (left.approvalSnapshot.batchPosition?.index ?? 0) - (right.approvalSnapshot.batchPosition?.index ?? 0)
+        )
+        .flatMap((confirmation) => {
+            const position = confirmation.approvalSnapshot.batchPosition?.index ?? 0;
+            const batch = plan.batches[position - 2];
+            const commandBatch = confirmation.approvalSnapshot.commandBatch;
+            if (batch === undefined || commandBatch === undefined) {
+                return [];
+            }
+            const evaluation = evaluateMetricGoalAdmission({
+                state: metricGoalStateCodec(confirmation.approvalSnapshot.metricGoalState),
+                commandBatch,
+            });
+            return [{ position, batch, criteria: evaluation.criteria }];
+        });
+}
+
+/**
+ * A vibe run whose last batch committed ends with one message: what each approved batch moved, as
+ * its preview measured it. A run that stopped earlier already said which batches stayed applied.
+ */
+function reportFinishedVibeRun(run: AgentRun | null): void {
+    const schedule = run?.plan?.batchSchedule;
+    if (!run || schedule?.kind !== 'vibe-run' || schedule.position < schedule.total) {
+        return;
+    }
+    if (run.batches.at(-1)?.status !== 'committed') {
+        return;
+    }
+    const batches = readCommittedVibeBatches(run, schedule);
+    if (batches === null) {
+        return;
+    }
+    appendChatMessage({
+        id: `msg-${crypto.randomUUID()}`,
+        role: 'assistant',
+        content: describeVibeRunSummary({ total: schedule.total, batches, context: getProjectContext() }),
+        timestamp: Date.now(),
+        isCommandAction: true,
+        agentRunId: run.runId,
+        projectId: captureProjectIdentity(),
+    });
+}
+
 /**
  * Proposes the batch a schedule owes next, after the batch before it settled. Each batch crosses the
  * same grounding, approval, undo and receipt path the first did and needs its own approval; a batch
@@ -311,6 +502,7 @@ export async function proposeNextScheduledBatch(input: { runId: string }): Promi
         const run = agentRunLifecycle.get(input.runId);
         const schedule = getOwedSchedule(run);
         if (run === null || schedule === null) {
+            reportFinishedVibeRun(run);
             return;
         }
         const position = schedule.position + 1;

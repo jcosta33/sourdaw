@@ -33,6 +33,8 @@ type PlanWholeProjectVibeRunInput = {
     recipes: readonly MixRecipe[];
     /** Baseline measurements, one per `analysis.measure` call already made; none is rendered here. */
     measurements: readonly VibeRunMeasurement[];
+    /** The most targets one batch may hold, beside the command cap; unbounded when omitted. */
+    maxTargetsPerBatch?: number;
 };
 
 /** A track the run may touch, with the recipes `recipe.expand` would accept for it and what they expand to. */
@@ -161,14 +163,21 @@ function readExpectedDeltas(recipes: readonly MixRecipe[]): VibeRunExpectedDelta
 
 /**
  * Fill each batch with targets in order until the next target's expanded commands would pass the
- * cap, so no batch expands to more commands than one batch may carry.
+ * cap, or the batch holds the most targets one batch may, so no batch expands to more commands than
+ * one batch may carry.
  */
-function packWithinCommandCap(targets: readonly PlannableTarget[]): PlannableTarget[][] {
+function packWithinCommandCap(
+    targets: readonly PlannableTarget[],
+    maxTargets: number = Number.POSITIVE_INFINITY
+): PlannableTarget[][] {
     const groups: PlannableTarget[][] = [];
     let current: PlannableTarget[] = [];
     let currentCommands = 0;
     for (const target of targets) {
-        if (current.length > 0 && currentCommands + target.commandCount > MAX_LLM_ACTIONS_PER_BATCH) {
+        if (
+            current.length > 0 &&
+            (currentCommands + target.commandCount > MAX_LLM_ACTIONS_PER_BATCH || current.length >= maxTargets)
+        ) {
             groups.push(current);
             current = [];
             currentCommands = 0;
@@ -316,7 +325,7 @@ export function planWholeProjectVibeRun(input: PlanWholeProjectVibeRunInput): Vi
         if (oversizedTargetIds.length > 0) {
             unplannedRoles.push({ role, reason: 'target-exceeds-batch-cap', targetIds: oversizedTargetIds });
         }
-        for (const group of packWithinCommandCap(plannable)) {
+        for (const group of packWithinCommandCap(plannable, input.maxTargetsPerBatch)) {
             const targetIds = group.map((target) => target.id);
             const ordinal = batches.length + 1;
             const { baselines, baselineConflicts } = readBatchBaselines(input.measurements, group, sections);

@@ -6,7 +6,7 @@ import { type PerceptualConstraintReading } from '../../models/PerceptualConstra
 import { type ProjectContext } from '../../models/ProjectContext';
 import { type MetricGoal, type MetricGoalState, type MetricRequestAuthority } from '../metricGoalContractTypes';
 
-import { PERCEPTUAL_CONSTRAINT_INVARIANTS } from './perceptualConstraintInvariants';
+import { readPerceptualConstraintGoals } from './readPerceptualConstraintGoals';
 
 type CommandBatch = { serialized: string; authority: Parameters<typeof parseVersionedCommandBatchEnvelope>[1] };
 
@@ -20,51 +20,6 @@ function changesNoSound(operation: string): boolean {
         (effect.creates ?? []).length === 0 &&
         (effect.removes ?? []).length === 0
     );
-}
-
-/** The whole arrangement, the extent the answer catalog's own `arrangement` range reads. */
-function readArrangementRange(context: ProjectContext): MetricGoal['range'] {
-    const endBeat = Math.max(
-        0,
-        ...context.tracks.flatMap((track) => track.clips.map((clip) => clip.endBeat)).filter(Number.isFinite)
-    );
-    return endBeat > 0 ? { startBeat: 0, endBeat, sectionId: null } : null;
-}
-
-function readConstraintGoals(reading: PerceptualConstraintReading, context: ProjectContext): MetricGoal[] {
-    const range = readArrangementRange(context);
-    const measured = reading.constraints.flatMap((constraint, constraintIndex) => {
-        const targetIds = constraint.scope.kind === 'mix' ? ['master'] : constraint.scope.trackIds;
-        return targetIds.flatMap((targetId) =>
-            PERCEPTUAL_CONSTRAINT_INVARIANTS[constraint.constraintId].map((metric): MetricGoal => ({
-                goalId: `constraint:${String(constraintIndex)}:${targetId}:${metric.metricId}:${metric.band ?? 'all'}`,
-                stepId: 'overall',
-                metricId: metric.metricId,
-                band: metric.band,
-                targetIds: [targetId],
-                referenceTargetIds: [],
-                range,
-                relation: 'hold',
-                targetValue: null,
-                tolerance: metric.tolerance,
-                source: { kind: 'constraint', constraintId: constraint.constraintId, clause: constraint.clause },
-            }))
-        );
-    });
-    const unsupported = reading.unsupported.map((constraint, index): MetricGoal => ({
-        goalId: `constraint-unsupported:${String(index)}`,
-        stepId: 'overall',
-        metricId: null,
-        band: null,
-        targetIds: [],
-        referenceTargetIds: [],
-        range: null,
-        relation: 'unsupported',
-        targetValue: null,
-        tolerance: 0,
-        source: { kind: 'constraint', constraintId: 'unsupported', clause: constraint.clause },
-    }));
-    return [...measured, ...unsupported];
 }
 
 /** What one constraint goal asks for, whichever authority or reading position states it. */
@@ -101,7 +56,9 @@ export function withPerceptualConstraintAuthority(input: {
     // A refinement inherits the card's state with the holds its constraints already joined, so only
     // a hold no authority of the state holds yet is joined, and never twice.
     const held = new Set(original.authorities.flatMap((authority) => authority.goals.map(readHoldKey)));
-    const goals = readConstraintGoals(input.reading, input.context).filter((goal) => !held.has(readHoldKey(goal)));
+    const goals = readPerceptualConstraintGoals(input.reading, input.context).filter(
+        (goal) => !held.has(readHoldKey(goal))
+    );
     if (goals.length === 0) {
         return input.state;
     }
