@@ -1,0 +1,52 @@
+src/modules/ContentBrowser/presentations/views/Sidebar/__tests__/SamplesTab.spec.tsx
+  s_fec7059b7a251c::t_abf9a845aad266 3
+  s_fec7059b7a251c::t_071216dcbc7225 9,14-15,101,132,200-201,205-206,209
+src/modules/Arrangement/useCases/__tests__/placeLibrarySample.spec.ts
+  s_fec7059b7a251c::t_729628df449d8b 1-209
+  s_fec7059b7a251c::t_a7ba4e0294451a 210-212
+  s_fec7059b7a251c::t_2894b4a50707b5 213-214
+src/modules/Arrangement/presentations/hooks/useTimelineFileDrop.ts
+  s_fec7059b7a251c::t_76621e15db608d 16,24
+  s_fec7059b7a251c::t_1d2d85f4b30256 17
+  s_fec7059b7a251c::t_bc127cb44dc3c9 21-23
+  s_fec7059b7a251c::t_9b8d2d9cdc7805 20,93,238,240,243,247-250,253-254
+src/modules/ContentBrowser/useCases/__tests__/addBrowserSample.spec.ts
+  s_fec7059b7a251c::t_6caafac9a147e2 1-46,53-152
+  s_fec7059b7a251c::t_47e09d47059f45 47-52
+  s_fec7059b7a251c::t_ace34107808456 153-155
+  s_fec7059b7a251c::t_2ee3cf9611445e 156-159
+src/modules/Arrangement/useCases/compileNewAudioTrackAction.ts
+  s_fec7059b7a251c::t_1c4ab0f7d8a688 1-20
+src/modules/Arrangement/useCases/creationBatch.ts
+  s_fec7059b7a251c::t_4d903555f46098 1-15
+src/modules/Arrangement/useCases/index.ts
+  s_fec7059b7a251c::t_a686b93ed01e5e 74-75
+src/modules/Arrangement/useCases/placeLibrarySample.ts
+  s_fec7059b7a251c::t_34cb91a3834ed7 1-337
+src/modules/ContentBrowser/presentations/views/Sidebar.tsx
+  s_fec7059b7a251c::t_616c002b24d933 16,173
+src/modules/ContentBrowser/presentations/views/Sidebar/SamplesTab.tsx
+  s_fec7059b7a251c::t_b71eac810758c9 13,25,64-71
+src/modules/ContentBrowser/useCases/addBrowserSample.ts
+  s_fec7059b7a251c::t_4d0ca043165a32 1-29
+src/modules/SampleLibrary/presentations/views/LibraryBrowser.tsx
+  s_fec7059b7a251c::t_b80699a47c960c 26,58-62,95,98-110,648
+src/modules/SampleLibrary/presentations/views/__tests__/LibraryBrowser.spec.tsx
+  s_fec7059b7a251c::t_2843521acfdaa4 154,159,164,169,186,209,221-257,270,301,327,349,363,397,401,442,484,502,505,513,567,626,681,737,792,850,913,941,962,984,1010
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "12b9c55fae0518b1eaf08bb8da854c064f119f19",
+  "prompts": {},
+  "sessions": {
+    "s_fec7059b7a251c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a7e284f4-0d83-40f5-8212-419d6ca3c2d5",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
