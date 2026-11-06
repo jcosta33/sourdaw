@@ -111,6 +111,9 @@
     --color-meter-grid: rgba(255, 255, 255, 0.08);
     --color-meter-peakHold: rgba(255, 255, 255, 0.4);
 
+    /* Control rail: solid, >=3:1 (WCAG 1.4.11) on surface-base through surface-overlay */
+    --color-control-rail: #78716c;
+
     /* Radii */
     --radius-micro: 2px;
     --radius-sm: 4px;
