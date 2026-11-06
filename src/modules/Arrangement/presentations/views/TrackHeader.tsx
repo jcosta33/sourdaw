@@ -360,7 +360,7 @@ export const TrackHeader = ({ track, isSelected }: TrackHeaderProps): ReactEleme
                     </Row>
                 </div>
 
-                <ResizeHandle trackId={track.id} height={track.height} />
+                <ResizeHandle trackId={track.id} trackName={track.name} height={track.height} />
             </div>
         </TrackContextMenu>
     );
