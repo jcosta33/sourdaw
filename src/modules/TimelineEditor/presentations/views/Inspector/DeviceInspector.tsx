@@ -103,9 +103,7 @@ function externalPluginParameters(device: Device): DeviceParameter[] | undefined
     const descriptor = getAutomationDeviceDescriptor(device.type ?? '', device.externalInstanceId);
     return descriptor?.parameters.map((parameter) => ({
         ...parameter,
-        value: Object.hasOwn(device.parameterValues, parameter.id)
-            ? device.parameterValues[parameter.id]
-            : parameter.value,
+        value: device.parameterValues[parameter.id] ?? parameter.value,
     }));
 }
 
