@@ -3,6 +3,7 @@ import { trackStore } from '#/modules/Arrangement/stores';
 import { getSynthParamsForTrack } from '#/modules/Arrangement/useCases';
 import {
     applyNoteExpression,
+    builtinSynthVoice,
     ensureTrackStrip,
     getAudioContext,
     getCompensationDelay,
@@ -30,12 +31,12 @@ import {
     shouldPlayMidiEvent,
     transposeForChordTrack,
 } from '#/modules/MIDI/useCases';
-import { scheduleDrumKitNote, scheduleKitNote, scheduleNote } from '#/modules/Synth/useCases';
 import { isBeatInClipLoopWindow, resolveClipLoopPassGrid } from '#/utils/clipLoopOrigin';
 import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
 import {
     isBypassedNoteReceiver,
     type NoteReceivingInstrumentKind,
+    resolveDrumKitBy,
     resolveDrumKitOutputGain,
 } from '#/utils/deviceTypeMatching';
 import { MAX_MIDI_DATA_7BIT, PITCH_BEND_MAX, PITCH_BEND_MIN } from '#/utils/midiData';
@@ -73,7 +74,6 @@ import { releaseUnrestoredStoredControllers } from './releaseUnrestoredStoredCon
 import { relocateHeldNoteExpression } from './relocateHeldNoteExpression';
 import { resolveChannelBendClips } from './resolveChannelBendClips';
 import { resolveDrumKit } from './resolveDrumKit';
-import { resolveDrumKitDef } from './resolveDrumKitDef';
 import { resolveFrozenMidiControllerPasses } from './resolveFrozenMidiControllerPasses';
 import { resolveMidiWindowClips } from './resolveMidiWindowClips';
 import { resolvePlaybackNoteReceiver } from './resolvePlaybackNoteReceiver';
@@ -510,6 +510,7 @@ export async function scheduleMidiNotes(
     if (!tracks || !midiState) {
         return;
     }
+    const voice = builtinSynthVoice.read('scheduleMidiNotes');
 
     // The frozen path's window floor (#4784) binds on the same emissions the
     // audio-clip twin's does — a wrap handover or a landing, where the window
@@ -817,7 +818,7 @@ export async function scheduleMidiNotes(
         // A kit voices the track only when a drum device is its receiving
         // instrument; the first drum device on the chain is then that receiver.
         const receivesOnDrumKit = findReceiverOfKind(track.devices, 'drum') !== undefined;
-        const drumKitDef = receivesOnDrumKit ? resolveDrumKitDef(track.devices) : null;
+        const drumKitDef = receivesOnDrumKit ? resolveDrumKitBy(track.devices, voice.getDrumKitDefByIndex) : null;
         const drumKit = receivesOnDrumKit && !drumKitDef ? resolveDrumKit(track.devices) : null;
         const drumKitGain = resolveDrumKitOutputGain(track.devices);
         const withheldNoteVoicingDevice = findWithheldNoteVoicingDevice(track, tracks);
@@ -1252,7 +1253,7 @@ export async function scheduleMidiNotes(
                                 toasterRoute.controls.noteOn(pad, safeVelocity, TOASTER_NEUTRAL_MIDI_NOTE, sampleFrame);
                             }
                         } else if (drumKitDef) {
-                            scheduleDrumKitNote(
+                            voice.scheduleDrumKitNote(
                                 ctx,
                                 strip.gainNode,
                                 drumKitDef,
@@ -1263,7 +1264,7 @@ export async function scheduleMidiNotes(
                                 drumKitGain
                             );
                         } else if (drumKit) {
-                            const kitVoice = scheduleKitNote(
+                            const kitVoice = voice.scheduleKitNote(
                                 ctx,
                                 strip.gainNode,
                                 drumKit,
@@ -1428,7 +1429,7 @@ export async function scheduleMidiNotes(
                             // bends by the depth the note was recorded at
                             // (audit MD-8).
                             const mpe = resolveScheduledMpeParams(note);
-                            const synthVoice = scheduleNote(
+                            const synthVoice = voice.scheduleNote(
                                 ctx,
                                 strip.gainNode,
                                 pitch,

@@ -4,7 +4,7 @@
  * Grid over the real routing read-model. Rows are signal sources (audio, MIDI,
  * and bus tracks — buses both send and output); columns are the bus tracks plus
  * the Master output. Every cell reflects and writes real routing truth through
- * the same undoable send actions the mixer strips dispatch:
+ * the same undoable send and output actions the mixer strips dispatch:
  *
  * - A bus column shows the source's PRIMARY OUTPUT edge (`track.outputId`) when
  *   the output routes there — rendered distinctly from a send and read-only, so
@@ -27,7 +27,7 @@ import { type ReactElement } from 'react';
 import { DawDiagramFrame } from '#/components/daw/DawDiagramFrame';
 import { Button } from '#/components/ui/button';
 import { logger } from '#/infra/logger/appLogger';
-import { compileSendLevelAction, setTrackOutput } from '#/modules/Arrangement/useCases';
+import { commitTrackOutput, compileSendLevelAction } from '#/modules/Arrangement/useCases';
 import { executeAppAction } from '#/modules/Command/useCases';
 import { wouldCreateRoutingCycle } from '#/utils/routingCycle';
 import { cn } from '#/utils/Styles/cn';
@@ -109,7 +109,9 @@ export const RoutingMatrix = (): ReactElement => {
                 ariaLabel: `Route ${src.name} output to Master`,
                 title: `Route ${src.name} output to Master`,
                 disabled: false,
-                onClick: () => setTrackOutput(src.id, MASTER_ID),
+                onClick: () => {
+                    void commitTrackOutput({ trackId: src.id, outputId: MASTER_ID, expectedOutputId: src.outputId });
+                },
             };
         }
 

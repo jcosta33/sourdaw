@@ -46,6 +46,7 @@ vi.mock('../recordingMidiAdmissionPort', () => ({
 }));
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    builtinSynthVoice: { read: vi.fn() },
     writeNativeBuiltinParameters: vi.fn(),
     audioEngine: {
         context: clock,

@@ -12,13 +12,18 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { asBaseAudioContext, createMockAudioContext } from '#/helpers/__tests__/audioContext.mock';
 import { type Track } from '#/modules/Arrangement/stores';
 import {
+    builtinSynthVoice,
     configureOfflineMidiEventProjection,
     configureOfflinePpqEndpointProjection,
 } from '#/modules/AudioEngine/useCases';
 import { isNativeProjectRuntimeAvailable } from '#/modules/Project/useCases';
+import * as synthVoices from '#/modules/Synth/useCases';
 
 import { ExportDialog } from '../ExportDialog';
 import { loadExportSettings } from '../exportSettings';
+
+// The voices this spec's notes sound through, as the composition root registers them.
+builtinSynthVoice.configure(synthVoices);
 
 const GC_CASE_NAME = 'observes sampled output ownership below 2B across 64 WAV/MP3/FLAC stems';
 
@@ -573,6 +578,7 @@ vi.mock('#/modules/Automation/stores', () => ({
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/AudioEngine/useCases')>();
     return {
+        builtinSynthVoice: actual.builtinSynthVoice,
         configureOfflineMidiEventProjection: actual.configureOfflineMidiEventProjection,
         configureOfflinePpqEndpointProjection: actual.configureOfflinePpqEndpointProjection,
         rearmCommittedTrackInputMonitoring: vi.fn(async () => undefined),

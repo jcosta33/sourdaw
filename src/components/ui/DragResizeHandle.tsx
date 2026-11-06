@@ -18,7 +18,7 @@ export type DragResizeHandleProps = {
     onResizeEnd?: () => void;
     className?: string;
     cursor?: string;
-    'aria-label'?: string;
+    'aria-label': string;
     'aria-valuenow'?: number;
     'aria-valuemin'?: number;
     'aria-valuemax'?: number;

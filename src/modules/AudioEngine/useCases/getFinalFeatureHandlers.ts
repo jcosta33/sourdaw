@@ -1,4 +1,3 @@
-import { handleAddCvOutput } from '../handlers/finalFeature/handleAddCvOutput';
 import { handleCloseElasticEditor } from '../handlers/finalFeature/handleCloseElasticEditor';
 import { handleDetectTransients } from '../handlers/finalFeature/handleDetectTransients';
 import { handleElasticAddMarker } from '../handlers/finalFeature/handleElasticAddMarker';
@@ -9,12 +8,10 @@ import { handleElasticToggleMarkerLock } from '../handlers/finalFeature/handleEl
 import { handleEnableWarping } from '../handlers/finalFeature/handleEnableWarping';
 import { handleGetLatencyReport } from '../handlers/finalFeature/handleGetLatencyReport';
 import { handleOpenElasticEditor } from '../handlers/finalFeature/handleOpenElasticEditor';
-import { handleRemoveCvOutput } from '../handlers/finalFeature/handleRemoveCvOutput';
 import { handleSetWarpAlgorithm } from '../handlers/finalFeature/handleSetWarpAlgorithm';
 import { handleSetWarpPitchShift } from '../handlers/finalFeature/handleSetWarpPitchShift';
 
 export type FinalFeatureHandlersMap = {
-    addCvOutput: typeof handleAddCvOutput;
     closeElasticEditor: typeof handleCloseElasticEditor;
     detectTransients: typeof handleDetectTransients;
     elasticAddMarker: typeof handleElasticAddMarker;
@@ -25,7 +22,6 @@ export type FinalFeatureHandlersMap = {
     enableWarping: typeof handleEnableWarping;
     getLatencyReport: typeof handleGetLatencyReport;
     openElasticEditor: typeof handleOpenElasticEditor;
-    removeCvOutput: typeof handleRemoveCvOutput;
     setWarpAlgorithm: typeof handleSetWarpAlgorithm;
     setWarpPitchShift: typeof handleSetWarpPitchShift;
 };
@@ -43,8 +39,6 @@ export function getFinalFeatureHandlers(): FinalFeatureHandlersMap {
         elasticRemoveMarker: handleElasticRemoveMarker,
         elasticToggleMarkerLock: handleElasticToggleMarkerLock,
         elasticSetTool: handleElasticSetTool,
-        addCvOutput: handleAddCvOutput,
-        removeCvOutput: handleRemoveCvOutput,
         enableWarping: handleEnableWarping,
         setWarpAlgorithm: handleSetWarpAlgorithm,
         setWarpPitchShift: handleSetWarpPitchShift,

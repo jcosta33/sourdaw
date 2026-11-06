@@ -6,15 +6,20 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { type Track } from '#/modules/Arrangement/stores';
 import { captureOfflineLevain, configureLevainZoneTableBuilder, prepareOfflineLevain } from '#/modules/Levain/useCases';
 import { type MidiStoreState } from '#/modules/MIDI/stores';
+import * as synthVoices from '#/modules/Synth/useCases';
 
 import { type LevainZoneTableRequest } from '../../../models/LevainZoneTables';
 import { importWorkletProcessor } from '../../../testing/importWorkletProcessor';
 import { installWorkletGlobals, makeChannels } from '../../../testing/wasmViewGrowthHarness';
 import { computeLevainZoneTables } from '../../../transformers/computeLevainZoneTables';
 import { buildDeviceChain, type DeviceNodeEntry } from '../../buildDeviceChain';
+import { builtinSynthVoice } from '../../scheduling/builtinSynthVoice';
 import { schedulePendingSuspends } from '../schedulePendingSuspends';
 import { scheduleTrackClips } from '../scheduleTrackClips';
 import { type PendingWorkletEvent } from '../types';
+
+// The voices this spec's notes sound through, as the composition root registers them.
+builtinSynthVoice.configure(synthVoices);
 
 const wasmModule = new WebAssembly.Module(readFileSync(resolve(process.cwd(), 'public/wasm/daw-dsp/daw_dsp_bg.wasm')));
 

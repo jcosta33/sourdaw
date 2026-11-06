@@ -10,6 +10,7 @@ import {
     syncAutoInputMonitoring,
     syncNativeTimelineSamples,
 } from '#/modules/AudioEngine/useCases';
+import { syncControlRoomMonitoring } from '#/modules/ControlRoom/useCases';
 import { syncKneadToEngine } from '#/modules/Knead/useCases';
 import { finishProjectLoading, loadProject, reportProjectLoadFailure, saveProject } from '#/modules/Project/useCases';
 import { syncTransportMapsToNativeSession } from '#/modules/Transport/useCases';
@@ -40,8 +41,10 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     // the whole sequence throw into the catch and every later step — including
     // `loadProject` — never runs.
     syncNativeTimelineSamples: vi.fn(() => vi.fn()),
-    syncControlRoomMonitoring: vi.fn(() => vi.fn()),
     syncAutoInputMonitoring: vi.fn(() => vi.fn()),
+}));
+vi.mock('#/modules/ControlRoom/useCases', () => ({
+    syncControlRoomMonitoring: vi.fn(() => vi.fn()),
 }));
 vi.mock('#/modules/MIDI/useCases', () => ({
     initWebMidi: vi.fn().mockResolvedValue(undefined),
@@ -355,6 +358,35 @@ describe('useAppInitialization — knead engine subscription teardown', () => {
             expect(syncNativeTimelineSamples).toHaveBeenCalledTimes(1);
         });
         expect(unsubscribe).not.toHaveBeenCalled();
+
+        unmount();
+
+        expect(unsubscribe).toHaveBeenCalledTimes(1);
+    });
+
+    it('subscribes control-room monitoring exactly once at boot', async () => {
+        // Without the boot subscription the monitoring state held at boot never
+        // reaches the engine and later toggles are not forwarded.
+        const unsubscribe = vi.fn();
+        vi.mocked(syncControlRoomMonitoring).mockReturnValue(unsubscribe);
+
+        renderHook(() => useAppInitialization());
+
+        await waitFor(() => {
+            expect(syncControlRoomMonitoring).toHaveBeenCalledTimes(1);
+        });
+        expect(unsubscribe).not.toHaveBeenCalled();
+    });
+
+    it('releases the control-room monitoring subscription on unmount', async () => {
+        // Without the cleanup its subscribers accumulate on every remount and HMR.
+        const unsubscribe = vi.fn();
+        vi.mocked(syncControlRoomMonitoring).mockReturnValue(unsubscribe);
+
+        const { unmount } = renderHook(() => useAppInitialization());
+        await waitFor(() => {
+            expect(syncControlRoomMonitoring).toHaveBeenCalledTimes(1);
+        });
 
         unmount();
 

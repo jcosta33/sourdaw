@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { logger } from '#/infra/logger/appLogger';
+import * as synthVoices from '#/modules/Synth/useCases';
 import { defaultTransportState, setGestureClockSource, transportStore } from '#/modules/Transport/stores';
 import { dbToGain } from '#/utils/audioLevelLaw';
 
@@ -52,6 +53,7 @@ vi.mock('../../../repositories/webMidi/getTargetTrackId', () => ({
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     applyNoteExpression: apply_note_expression,
+    builtinSynthVoice: { read: () => synthVoices },
     audioEngine: {
         context: audio_clock,
         ensureTrackStrip: ensure_track_strip,

@@ -3,6 +3,7 @@ import { type AppAction } from '#/utils/handlerContract';
 
 import { getEnvelope } from '../../stores/gainEnvelopeStore';
 import { addGainEnvelopePoint } from '../../useCases/clipGainEnvelope/addGainEnvelopePoint';
+import { isMidiClip } from '../isMidiClip';
 
 type AddGainEnvelopePointAction = Extract<AppAction, { type: 'addGainEnvelopePoint' }>;
 
@@ -20,6 +21,9 @@ function ensurePointId(action: AddGainEnvelopePointAction): string {
 
 export const handleAddGainEnvelopePoint = createHandler<'addGainEnvelopePoint'>({
     execute: (action) => {
+        if (isMidiClip(action.payload.clipId)) {
+            return { status: 'no-write' };
+        }
         addGainEnvelopePoint(
             action.payload.clipId,
             action.payload.beatOffset,

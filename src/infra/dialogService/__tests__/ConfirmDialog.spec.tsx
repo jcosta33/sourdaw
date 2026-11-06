@@ -249,6 +249,36 @@ describe('ConfirmDialog', () => {
         expect(screen.queryByText('First')).not.toBeInTheDocument();
     });
 
+    // A replacing confirmation keeps the dialog content mounted, so the open
+    // autofocus does not run again: focus left on the destructive button would
+    // let Enter answer the second danger question true.
+    it('moves focus back to Cancel when a second danger confirmation replaces an open one', async () => {
+        const fire = await renderAndGetHandler();
+        const secondResolve = vi.fn();
+        act(() => {
+            fire(makePayload({ id: 'confirm-1', variant: 'danger', confirmLabel: 'Delete', resolve: vi.fn() }));
+        });
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Cancel' })).toHaveFocus());
+        screen.getByRole('button', { name: 'Delete' }).focus();
+        expect(screen.getByRole('button', { name: 'Delete' })).toHaveFocus();
+
+        act(() => {
+            fire(
+                makePayload({
+                    id: 'confirm-2',
+                    message: 'Second',
+                    variant: 'danger',
+                    confirmLabel: 'Delete',
+                    resolve: secondResolve,
+                })
+            );
+        });
+
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Cancel' })).toHaveFocus());
+        fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Enter' });
+        expect(secondResolve).toHaveBeenCalledExactlyOnceWith(false);
+    });
+
     it('applies the danger border styling for a danger variant', async () => {
         const fire = await renderAndGetHandler();
         act(() => {

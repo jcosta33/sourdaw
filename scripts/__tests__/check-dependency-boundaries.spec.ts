@@ -23,11 +23,15 @@ import {
     findContractReexportFindings,
     findMixedTypeValueExports,
     findModelCasingFindings,
+    computeModuleTierRows,
     findModuleTierState,
     findStaticGuardFindings,
     findWorkerSpawnState,
     isModuleRootIndex,
     isUseCaseBarrel,
+    judgeModuleTierRows,
+    moduleTiersVerdict,
+    refusesBaselineWrite,
 } from '../check-dependency-boundaries.mjs';
 
 const require = createRequire(import.meta.url);
@@ -158,6 +162,44 @@ function withModuleTierFixture(files: Record<string, FixtureContents>, run: (rep
 function moduleTierRowsOf(repositoryRoot: string) {
     return findModuleTierState(repositoryRoot, moduleTierManifest).rows;
 }
+
+// Core and Peer form the one allowed cycle; Kernel → Third is the one accepted upward edge.
+// Fourth is a core module no allowance names, so a planted edge through it is never accepted.
+const allowanceManifest = {
+    tiers: moduleTierManifest.tiers,
+    modules: {
+        Core: { tier: 'core domain', reason: 'Owns a core aggregate.' },
+        Fourth: { tier: 'core domain', reason: 'Owns a fourth core aggregate.' },
+        Kernel: { tier: 'kernel', reason: 'Shared kernel.' },
+        Peer: { tier: 'core domain', reason: 'Owns another core aggregate.' },
+        Third: { tier: 'core domain', reason: 'Owns a third core aggregate.' },
+    },
+    allowedCycles: [
+        {
+            name: 'pair',
+            members: ['Peer', 'Core'],
+            reason: 'Core and Peer read each other.',
+            retiredBy: 'A redraw.',
+        },
+    ],
+    acceptedTierEdges: [{ from: 'Kernel', to: 'Third', reason: 'Kernel reads a Third type.' }],
+};
+
+type SyntheticEdge = { from: string; to: string };
+
+const allowedEdges: SyntheticEdge[] = [
+    { from: 'Core', to: 'Peer' },
+    { from: 'Peer', to: 'Core' },
+    { from: 'Kernel', to: 'Third' },
+];
+
+function judgeEdges(edges: SyntheticEdge[], manifest: typeof allowanceManifest = allowanceManifest) {
+    const withExamples = edges.map((edge) => ({ ...edge, example: `src/modules/${edge.from}/useCases/x.ts:1` }));
+    const { rows } = computeModuleTierRows({ edges: withExamples, manifest });
+    return judgeModuleTierRows({ rows, manifest });
+}
+
+const allowedPair = { type: 'module-cycle', members: ['Core', 'Peer'] };
 
 function withWorkerSpawnFixture(files: Record<string, FixtureContents>, run: (repositoryRoot: string) => void): void {
     const repositoryRoot = mkdtempSync(join(tmpdir(), 'check-dependency-boundaries-worker-spawns-'));
@@ -1927,6 +1969,137 @@ describe('check-dependency-boundaries', () => {
                 expect(moduleTierRowsOf(repositoryRoot)).toEqual([]);
             }
         );
+    });
+
+    it('should pass module tier rows that exactly match the manifest allowances', () => {
+        const withExamples = allowedEdges.map((edge) => ({ ...edge, example: 'src/modules/x.ts:1' }));
+        const { rows } = computeModuleTierRows({ edges: withExamples, manifest: allowanceManifest });
+
+        expect(rows).toEqual([allowedPair, { type: 'module-tier', from: 'Kernel', to: 'Third' }]);
+        expect(judgeModuleTierRows({ rows, manifest: allowanceManifest })).toEqual({ novel: [], stale: [] });
+    });
+
+    describe('gate verdict the CLI exits on', () => {
+        const exactRows = [allowedPair, { type: 'module-tier', from: 'Kernel', to: 'Third' }];
+        const novelRow = { type: 'module-tier', from: 'Fourth', to: 'Third' };
+
+        it('should be ok when the rows exactly match the manifest allowances', () => {
+            expect(moduleTiersVerdict({ rows: exactRows, manifest: allowanceManifest })).toEqual({
+                ok: true,
+                novel: [],
+                stale: [],
+            });
+        });
+
+        it('should not be ok when an allowance is stale and no row is novel', () => {
+            const verdict = moduleTiersVerdict({ rows: [allowedPair], manifest: allowanceManifest });
+
+            expect(verdict).toEqual({
+                ok: false,
+                novel: [],
+                stale: [{ type: 'module-tier', from: 'Kernel', to: 'Third' }],
+            });
+        });
+
+        it('should not be ok when a row is novel and no allowance is stale', () => {
+            const verdict = moduleTiersVerdict({ rows: [...exactRows, novelRow], manifest: allowanceManifest });
+
+            expect(verdict).toEqual({ ok: false, novel: [novelRow], stale: [] });
+        });
+    });
+
+    describe('baseline write refusal', () => {
+        it('should refuse to write a baseline for the manifest-governed moduleTiers gate', () => {
+            expect(refusesBaselineWrite('moduleTiers')).toBe(true);
+        });
+
+        it('should accept a real baseline gate name', () => {
+            expect(refusesBaselineWrite('workerSpawns')).toBe(false);
+        });
+    });
+
+    it('should fail a planted new member of an allowed cycle', () => {
+        const planted = [...allowedEdges, { from: 'Peer', to: 'Fourth' }, { from: 'Fourth', to: 'Core' }];
+
+        expect(judgeEdges(planted)).toEqual({
+            novel: [{ type: 'module-cycle', members: ['Core', 'Fourth', 'Peer'] }],
+            stale: [allowedPair],
+        });
+    });
+
+    it('should fail a planted second cycle beside the allowed one', () => {
+        const planted = [...allowedEdges, { from: 'Third', to: 'Fourth' }, { from: 'Fourth', to: 'Third' }];
+
+        expect(judgeEdges(planted)).toEqual({
+            novel: [{ type: 'module-cycle', members: ['Fourth', 'Third'] }],
+            stale: [],
+        });
+    });
+
+    it('should fail an allowed cycle whose observed cycle has lost a member', () => {
+        const manifest = {
+            ...allowanceManifest,
+            allowedCycles: [{ ...allowanceManifest.allowedCycles[0], members: ['Core', 'Fourth', 'Peer'] }],
+        };
+
+        expect(judgeEdges(allowedEdges, manifest)).toEqual({
+            novel: [allowedPair],
+            stale: [{ type: 'module-cycle', members: ['Core', 'Fourth', 'Peer'] }],
+        });
+    });
+
+    it('should fail a planted upward tier edge no allowance accepts', () => {
+        expect(judgeEdges([...allowedEdges, { from: 'Kernel', to: 'Fourth' }])).toEqual({
+            novel: [{ type: 'module-tier', from: 'Kernel', to: 'Fourth' }],
+            stale: [],
+        });
+    });
+
+    it('should fail an allowed cycle the code no longer produces as stale', () => {
+        const withoutCycle = allowedEdges.filter(({ from, to }) => !(from === 'Peer' && to === 'Core'));
+
+        expect(judgeEdges(withoutCycle)).toEqual({ novel: [], stale: [allowedPair] });
+    });
+
+    it('should fail an accepted tier edge the code no longer produces as stale', () => {
+        const withoutEdge = allowedEdges.filter(({ from }) => from !== 'Kernel');
+
+        expect(judgeEdges(withoutEdge)).toEqual({
+            novel: [],
+            stale: [{ type: 'module-tier', from: 'Kernel', to: 'Third' }],
+        });
+    });
+
+    it('should refuse an allowance whose reason is empty or missing', () => {
+        withModuleTierFixture({}, (repositoryRoot) => {
+            const reasoned = {
+                ...moduleTierManifest,
+                allowedCycles: [
+                    { name: 'pair', members: ['Core', 'Peer'], reason: 'Both read.', retiredBy: 'A redraw.' },
+                ],
+                acceptedTierEdges: [{ from: 'Kernel', to: 'Core', reason: 'Kernel reads a Core type.' }],
+            };
+            expect(findModuleTierState(repositoryRoot, reasoned).findings).toEqual([]);
+
+            const unreasoned = {
+                ...reasoned,
+                allowedCycles: [{ name: 'pair', members: ['Core', 'Peer'], reason: ' ', retiredBy: '' }],
+                acceptedTierEdges: [{ from: 'Kernel', to: 'Core' }],
+            };
+            expect(findModuleTierState(repositoryRoot, unreasoned).findings).toEqual([
+                { file: '.dependency-cruiser.module-tiers.cjs', line: 1, reason: 'allowed cycle "pair" has no reason' },
+                {
+                    file: '.dependency-cruiser.module-tiers.cjs',
+                    line: 1,
+                    reason: 'allowed cycle "pair" names no decision that would retire it',
+                },
+                {
+                    file: '.dependency-cruiser.module-tiers.cjs',
+                    line: 1,
+                    reason: 'accepted tier edge Kernel → Core has no reason',
+                },
+            ]);
+        });
     });
 
     it('should fail a Worker spawned from a file outside a workers/ folder, naming the spawn site', () => {

@@ -21,6 +21,7 @@ import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
+import { builtinSynthVoice } from '#/modules/AudioEngine/useCases';
 import { clearHandlerRegistry, macroStore, registerHandlerMap, undoHistoryStore } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
@@ -54,6 +55,7 @@ import {
     setRecordingMidiAdmissionPort,
     setWebMidiRuntimeEventBus,
 } from '#/modules/MIDI/useCases';
+import * as synthVoices from '#/modules/Synth/useCases';
 import { transportStore } from '#/modules/Transport/stores';
 
 import { TrackDummy } from '../../../__tests__/TrackDummy';
@@ -74,6 +76,7 @@ import { takeOwnsRecordingRoot } from '../../../useCases/recording/takeOwnsRecor
 import { selectTrack } from '../../../useCases/toggleTrackState/selectTrack';
 
 registerSupportingServicePorts();
+builtinSynthVoice.configure(synthVoices);
 
 const TRACK_ID = 'track-midi';
 let disposeRecordingAdmission = (): void => {};

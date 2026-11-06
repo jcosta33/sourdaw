@@ -340,6 +340,7 @@ function scheduleCompiledBatches(input: {
         },
         batchSchedule: {
             schemaVersion: 1,
+            kind: 'bulk-set',
             scheduleId: `batch-schedule-${crypto.randomUUID()}`,
             position: 1,
             total: split.slices.length,

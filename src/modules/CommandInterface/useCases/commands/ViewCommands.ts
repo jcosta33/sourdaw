@@ -1,6 +1,5 @@
 import { addMarker, zoomTimelineBy } from '#/modules/Arrangement/useCases';
 import { executeUserAppAction } from '#/modules/Command/useCases';
-import { startOnboardingTour } from '#/modules/Onboarding/useCases';
 import { transportStore, playheadPositionRef } from '#/modules/Transport/stores';
 import {
     zoomToFit,
@@ -12,6 +11,7 @@ import {
     getToolShortcutHint,
 } from '#/modules/WorkspaceShell/useCases';
 
+import { onboardingTourLauncher } from '../onboardingTourLauncher';
 import { type CallableCommandEntry } from '../searchCommandRegistry';
 import { getSelectedClipId } from '../selectionHelpers/getSelectedClipId';
 
@@ -249,7 +249,7 @@ export const viewCommands: CallableCommandEntry[] = [
         description: 'Re-run the guided onboarding tour for transport, tracks, inspector, mixer, and command palette',
         category: 'Help',
         action: () => {
-            startOnboardingTour();
+            onboardingTourLauncher.read('show-onboarding-tour').startTour();
         },
     },
 ];

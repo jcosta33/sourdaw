@@ -2,9 +2,13 @@ import { createHandler } from '#/utils/createHandler';
 
 import { getEnvelope } from '../../stores/gainEnvelopeStore';
 import { removeGainEnvelopePoint } from '../../useCases/clipGainEnvelope/removeGainEnvelopePoint';
+import { isMidiClip } from '../isMidiClip';
 
 export const handleRemoveGainEnvelopePoint = createHandler<'removeGainEnvelopePoint'>({
     execute: (action) => {
+        if (isMidiClip(action.payload.clipId)) {
+            return { status: 'no-write' };
+        }
         removeGainEnvelopePoint(action.payload.clipId, action.payload.pointId);
         return undefined;
     },

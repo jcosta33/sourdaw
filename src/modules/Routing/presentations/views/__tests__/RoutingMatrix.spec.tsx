@@ -1,16 +1,10 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { setTrackOutput } from '#/modules/Arrangement/useCases';
 import { executeAppAction } from '#/modules/Command/useCases';
 
 import { useTracks } from '../../hooks/useTracks';
 import { RoutingMatrix } from '../RoutingMatrix';
-
-vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
-    ...(await importOriginal<typeof import('#/modules/Arrangement/useCases')>()),
-    setTrackOutput: vi.fn(),
-}));
 
 vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Command/useCases')>()),
@@ -201,7 +195,7 @@ describe('RoutingMatrix', () => {
         expect(executeAppAction).not.toHaveBeenCalled();
     });
 
-    it('routes the track output to Master when a non-master output cell is clicked', () => {
+    it('dispatches one undoable setTrackOutput action when a non-master output cell is clicked', () => {
         mockTracks([
             track({ id: 'src-1', name: 'Kick', kind: 'audio', outputId: 'bus-1' }),
             track({ id: 'bus-1', name: 'Drum Bus', kind: 'bus' }),
@@ -211,8 +205,10 @@ describe('RoutingMatrix', () => {
 
         fireEvent.click(screen.getByRole('button', { name: 'Route Kick output to Master' }));
 
-        expect(setTrackOutput).toHaveBeenCalledTimes(1);
-        expect(setTrackOutput).toHaveBeenCalledWith('src-1', 'master');
+        expect(executeAppAction).toHaveBeenCalledExactlyOnceWith({
+            type: 'setTrackOutput',
+            payload: { trackId: 'src-1', outputId: 'master', expectedOutputId: 'bus-1' },
+        });
     });
 
     it('shows the Master output cell as the current output and disables it when already routed to master', () => {

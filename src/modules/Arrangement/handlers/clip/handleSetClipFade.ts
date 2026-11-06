@@ -2,6 +2,7 @@ import { createHandler } from '#/utils/createHandler';
 
 import { setClipFade } from '../../useCases/clipEditing/setClipFade';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
+import { isMidiClip } from '../isMidiClip';
 import { toHandlerExecutionResult } from '../toHandlerExecutionResult';
 
 export const handleSetClipFade = createHandler<'setClipFade'>({
@@ -10,6 +11,9 @@ export const handleSetClipFade = createHandler<'setClipFade'>({
     // `canReportConflict` registry honesty spec; undo step-over (#2881) relies on it.
     canReportConflict: true,
     execute: (action) => {
+        if (isMidiClip(action.payload.clipId)) {
+            return { status: 'no-write' };
+        }
         const clip = getTrackStoreState()
             ?.tracks.flatMap((track) => track.clips)
             .find((candidate) => candidate.id === action.payload.clipId);

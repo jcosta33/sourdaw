@@ -28,7 +28,7 @@ import {
     takeOwnsRecordingRoot,
     recordingMidiSourceBeatAt,
 } from '#/modules/Arrangement/useCases';
-import { audioEngine } from '#/modules/AudioEngine/useCases';
+import { audioEngine, builtinSynthVoice } from '#/modules/AudioEngine/useCases';
 import { clearHandlerRegistry, macroStore, registerHandlerMap, undoHistoryStore } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
@@ -60,6 +60,7 @@ import {
     setRecordingMidiAdmissionPort,
     triggerLiveNoteOn,
 } from '#/modules/MIDI/useCases';
+import * as synthVoices from '#/modules/Synth/useCases';
 import { playheadClockRef, playheadWrapCountRef, transportStore } from '#/modules/Transport/stores';
 
 import { countSettledTakes } from '../countSettledTakes';
@@ -70,6 +71,8 @@ import { stopActiveRecording } from '../stopActiveRecording';
 import { toggleRecording } from '../toggleRecording';
 
 registerSupportingServicePorts();
+// The voices this spec's live notes sound through, as the composition root registers them.
+builtinSynthVoice.configure(synthVoices);
 
 function sendMidi(...bytes: number[]): void {
     liveInput.dispatchEvent(Object.assign(new Event('midimessage'), { data: Uint8Array.from(bytes) }));

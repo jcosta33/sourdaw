@@ -25,6 +25,7 @@ vi.mock('../captureEventBeat', () => ({
 }));
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    builtinSynthVoice: { read: vi.fn() },
     audioEngine: { context: { currentTime: 2, sampleRate: 48_000, baseLatency: 0, outputLatency: 0 } },
     getCompensationDelay: () => 0,
     getFactoryDrumKitByIndex: () => null,

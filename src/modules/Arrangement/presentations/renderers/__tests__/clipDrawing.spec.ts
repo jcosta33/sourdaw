@@ -319,6 +319,30 @@ describe('drawClip (Coordinate Conventions)', () => {
         expect(() => drawClip(mockCtx, clip, model, 0, 30)).not.toThrow();
     });
 
+    describe('fade curves', () => {
+        // Clip at beat 2 on a 25 px/beat model: x = 50; a 1.5-beat fade-in is 37.5 px wide.
+        const fadeInEdgeCalls = () =>
+            mockCtx.lineTo.mock.calls.filter((args: number[]) => args[0] === 87.5 && args[1] === 2);
+
+        it('draws the fade-in edge on an audio clip', () => {
+            drawClip(mockCtx, create_audio_clip({ fadeInBeats: 1.5 }), create_test_model(), 0, 40);
+
+            expect(fadeInEdgeCalls()).toHaveLength(2);
+        });
+
+        it('draws no fade on a MIDI clip, which plays none', () => {
+            drawClip(
+                mockCtx,
+                create_audio_clip({ type: 'midi', audioBufferId: undefined, fadeInBeats: 1.5, fadeOutBeats: 1.5 }),
+                create_test_model(),
+                0,
+                40
+            );
+
+            expect(fadeInEdgeCalls()).toHaveLength(0);
+        });
+    });
+
     it('should draw cached audio waveform peaks through AudioEngine owner use cases', () => {
         const buffer = create_test_audio_buffer(48_000, 480_000);
         mocks.getCachedAudioBuffer.mockReturnValue(buffer);

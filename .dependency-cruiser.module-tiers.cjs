@@ -3,17 +3,21 @@
 
 // ----------------------------------------------------------------------------
 // Module tier manifest: the single source for where each src/modules/<Module>
-// sits and which tiers it may depend on. scripts/check-dependency-boundaries.mjs
-// reads it for the `moduleTiers` gate, which compares every non-presentation
-// cross-module edge against these rules and reports every module-level cycle
-// against an exact baseline.
+// sits, which tiers it may depend on, and which cycles and upward edges are
+// accepted. scripts/check-dependency-boundaries.mjs reads it for the
+// `moduleTiers` gate, which compares every non-presentation cross-module edge
+// against these rules and every module-level cycle against `allowedCycles`.
+// The gate has no baseline file: `allowedCycles` and `acceptedTierEdges` are
+// its only known rows, matched exactly.
 //
 // A module's tier follows its role — its ADR 0011 subdomain kind, its own
 // AGENTS.md and the aggregate it owns — never today's import graph, so an
-// upward edge shows up as a baseline row instead of being blessed here.
-// Same-tier edges are always allowed; cycles among them are caught separately.
-// A new cross-tier dependency is argued in review as a change to this file,
-// never admitted by rewriting the baseline.
+// upward edge must be accepted below with its reason instead of being blessed
+// by a tier change. Same-tier edges are always allowed; cycles among them are
+// caught separately. A new cycle member, a second cycle, an upward edge, or an
+// allowance the code no longer produces all fail the gate. A new allowance is
+// argued in review as a change to this file; one the code stops producing is
+// shrunk or deleted here.
 // ----------------------------------------------------------------------------
 
 const tiers = [
@@ -137,4 +141,111 @@ const modules = {
     WorkspaceShell: { tier: 'shell', reason: 'The composition root: layout, panels, tools and dialogs.' },
 };
 
-module.exports = { tiers, modules };
+// Each entry is one strongly connected component the gate accepts, matched
+// member for member, with the reason it stands and the decision that retires it.
+const allowedCycles = [
+    {
+        name: 'core domain',
+        members: [
+            'Arrangement',
+            'AudioEngine',
+            'Automation',
+            'ElasticAudio',
+            'Knead',
+            'MIDI',
+            'Project',
+            'Routing',
+            'Transport',
+        ],
+        reason:
+            'The core aggregates and the engine that realises them read each other densely: the engine reads ' +
+            'tracks, notes, automation, routing and the tempo map to build the live and offline graph, and the ' +
+            'aggregates schedule, record and render through the engine and read one another to plan edits. ' +
+            'Separating them is a boundary redraw, not an import fix.',
+        retiredBy:
+            'ADR 0011 (.agents/decisions/0011-ddd-module-boundary-redraw.md): its decomposition of the core ' +
+            'modules into one-aggregate contexts with one-way edges. Shrink this entry as each member leaves.',
+    },
+    {
+        name: 'kernel',
+        members: ['Command', 'CrdtDocument'],
+        reason:
+            'Command executes every action against the document, so it reads CrdtDocument stores to set the ' +
+            'semantic context, replay and revert action history, and refuse mutations during project repair. ' +
+            'The document lifecycle must reset what Command derived from the previous document: loading, ' +
+            'resetting and preparing a document reset the action replay authority, a branch switch captures, ' +
+            'clears and restores undo history, and the slot projection reads the command batch idempotency store.',
+        retiredBy:
+            'A kernel decision to route the document-lifecycle calls into Command through ports CrdtDocument ' +
+            'declares and src/app fills, as sessionUndoWitnessStampPort already does, or to merge the two kernels.',
+    },
+];
+
+// Each entry is one upward module pair the gate accepts, with the reason read
+// from the imports that produce it.
+const acceptedTierEdges = [
+    {
+        from: 'AiRuntime',
+        to: 'WorkspaceShell',
+        reason:
+            'The model context reports the active workspace mode and its cache keys on workspaceStore identity ' +
+            '(getProjectContext), and the chat actions open the shell-owned chat panel, reading chatPanelOpen ' +
+            'and calling toggleChatPanel (toggleChat, openAnswerInChat). Panel layout and mode are shell state.',
+    },
+    {
+        from: 'AudioEngine',
+        to: 'Arrangement',
+        reason:
+            'The live, offline, recording, latency-compensation and adjustment-bus paths read the track, ' +
+            'take-lane, gain-envelope, solo, VCA and adjustment-layer stores to build the graph they run. Part ' +
+            'of the core cycle that ADR 0011 redraws.',
+    },
+    {
+        from: 'AudioEngine',
+        to: 'Automation',
+        reason:
+            'Offline render and the native live automation writer read automation and modulation stores, the ' +
+            'lane ceiling and offline modulator plans to play automation. Part of the core cycle that ADR 0011 ' +
+            'redraws.',
+    },
+    {
+        from: 'AudioEngine',
+        to: 'ElasticAudio',
+        reason:
+            "AudioEngine's final-feature handler map still hosts the elastic-editor action handlers, which call " +
+            'ElasticAudio use cases and read elasticAudioStore; it retires when those handlers move to an ' +
+            'ElasticAudio handler map registered in src/app/bootstrap.ts.',
+    },
+    {
+        from: 'AudioEngine',
+        to: 'MIDI',
+        reason:
+            'Offline render and the live MIDI programme read MIDI notes, frozen MIDI takes, groove templates and ' +
+            'the chord track to schedule notes. Part of the core cycle that ADR 0011 redraws.',
+    },
+    {
+        from: 'AudioEngine',
+        to: 'Routing',
+        reason:
+            'Latency compensation, offline track subgraphs and stem export read sidechainStore to wire and delay ' +
+            'sidechain sources. Part of the core cycle that ADR 0011 redraws.',
+    },
+    {
+        from: 'AudioEngine',
+        to: 'Transport',
+        reason:
+            'Live playback, offline render, recording and deadline evidence read the transport state, tempo map ' +
+            'and time-signature map and convert beats, seconds and samples through them. Part of the core cycle ' +
+            'that ADR 0011 redraws.',
+    },
+    {
+        from: 'CommandInterface',
+        to: 'WorkspaceShell',
+        reason:
+            'The palette and keyboard shortcuts are the input surface for shell operations: they open shell ' +
+            'dialogs and panels, set and swap the editing tool, zoom to fit or selection, switch workspace mode, ' +
+            'and read workspaceStore to route Escape. Those operations are owned by the shell that mounts them.',
+    },
+];
+
+module.exports = { tiers, modules, allowedCycles, acceptedTierEdges };
