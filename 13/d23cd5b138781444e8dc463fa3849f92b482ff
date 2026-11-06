@@ -1,0 +1,32 @@
+src/modules/Arrangement/presentations/views/TrackHeader.tsx
+  s_fec7059b7a251c::t_6714cb887ba09b 135
+src/modules/TimelineEditor/presentations/components/__tests__/ResizeHandle.spec.tsx
+  s_fec7059b7a251c::t_3478d6138706db 14,29,44,62,87,109,129,146,166,188,205,230,252,271,290,310,334
+src/modules/TimelineEditor/presentations/views/ArrangeView.tsx
+  s_fec7059b7a251c::t_17a1332286fd35 306
+  s_fec7059b7a251c::t_5d2db6d65d38b1 111-117,130-136,283
+src/modules/Arrangement/presentations/views/TrackHeader/ResizeHandle.tsx
+  s_fec7059b7a251c::t_7eef63134418b5 5
+src/modules/TimelineEditor/presentations/components/ResizeHandle.tsx
+  s_fec7059b7a251c::t_daa3aa07905104 12,23,33
+src/modules/Arrangement/presentations/views/__tests__/TrackHeader.spec.tsx
+  s_fec7059b7a251c::t_6f1c981d7e4b74 181-189
+src/modules/TimelineEditor/presentations/views/__tests__/ArrangeView.spec.tsx
+  s_fec7059b7a251c::t_0d0677f444b1ce 9,150-184,916-944
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "13d23cd5b138781444e8dc463fa3849f92b482ff",
+  "prompts": {},
+  "sessions": {
+    "s_fec7059b7a251c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a7e284f4-0d83-40f5-8212-419d6ca3c2d5",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
