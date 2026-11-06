@@ -39,6 +39,11 @@ describe('resolveDevicePlugin', () => {
             expected: 'builtin-gain',
         },
         {
+            case: 'type read as a display name wins over a stored name naming another builtin',
+            device: { type: 'REVERB', name: 'Gain' },
+            expected: 'builtin-reverb',
+        },
+        {
             case: 'typed device whose stored name equals another plugin name',
             device: { type: 'synth', name: 'Reverb' },
             expected: 'builtin-synth',

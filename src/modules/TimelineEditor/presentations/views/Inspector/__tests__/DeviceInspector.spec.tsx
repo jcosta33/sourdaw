@@ -1,5 +1,7 @@
 import { render, screen, fireEvent } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+
+import { externalPluginParameterStore, defaultExternalPluginParameterState } from '#/modules/PluginHost/stores';
 
 import { DeviceInspector } from '../DeviceInspector';
 
@@ -66,11 +68,17 @@ vi.mock('#/components/daw/MechanicalSwitch', () => ({
 }));
 
 vi.mock('../GenericDeviceLayout', () => ({
-    GenericDeviceLayout: ({ parameters }: { parameters: ReadonlyArray<{ id: string }> }) => (
+    GenericDeviceLayout: ({
+        parameters,
+    }: {
+        parameters: ReadonlyArray<{ id: string; name: string; value: number }>;
+    }) => (
         <div
             data-testid="generic-layout"
             data-param-count={parameters.length}
             data-param-ids={parameters.map((parameter) => parameter.id).join(',')}
+            data-param-names={parameters.map((parameter) => parameter.name).join(',')}
+            data-param-values={parameters.map((parameter) => String(parameter.value)).join(',')}
         >
             Generic Layout
         </div>
@@ -351,6 +359,120 @@ describe('DeviceInspector', () => {
                 onBack={mockOnBack}
             />
         );
-        expect(screen.getByTestId('generic-layout').getAttribute('data-param-ids')).toBe('plugin-param');
+        expect(screen.queryByTestId('generic-layout')).not.toBeInTheDocument();
+        expect(screen.getByText('Load this plugin in the desktop app to edit its parameters.')).toBeInTheDocument();
+    });
+});
+
+describe('DeviceInspector external plugin controls', () => {
+    const mockOnBack = vi.fn();
+    const externalDevice = (overrides: Partial<Device> = {}): Device =>
+        makeDevice({
+            id: 'device-ext',
+            name: 'Scanned Plugin',
+            type: 'external-plugin',
+            parameterValues: {},
+            externalInstanceId: 'inst-1',
+            ...overrides,
+        });
+    const publishedParameter = (id: number, name: string, value: number) => ({
+        id,
+        name,
+        value,
+        defaultValue: 0.5,
+        minValue: 0,
+        maxValue: 1,
+        unit: '',
+        isAutomatable: true,
+    });
+
+    beforeEach(() => {
+        mockGetBuiltinPlugins.mockReturnValue([]);
+        mockResolveDeviceLayout.mockReturnValue(null);
+    });
+
+    afterEach(() => {
+        externalPluginParameterStore.set(defaultExternalPluginParameterState);
+    });
+
+    it('lists the parameters an attached instance publishes, with their published values', () => {
+        externalPluginParameterStore.set({
+            byInstanceId: {
+                'inst-1': {
+                    engineAttached: true,
+                    parameters: [publishedParameter(7, 'Pre Gain', 0.25), publishedParameter(9, 'Tone', 0.8)],
+                },
+            },
+        });
+        render(<DeviceInspector device={externalDevice()} trackId="track-1" onBack={mockOnBack} />);
+        const layout = screen.getByTestId('generic-layout');
+        expect(layout.getAttribute('data-param-ids')).toBe('7,9');
+        expect(layout.getAttribute('data-param-names')).toBe('Pre Gain,Tone');
+        expect(layout.getAttribute('data-param-values')).toBe('0.25,0.8');
+    });
+
+    it('shows a stored value over the published value for the same id', () => {
+        externalPluginParameterStore.set({
+            byInstanceId: {
+                'inst-1': {
+                    engineAttached: true,
+                    parameters: [publishedParameter(7, 'Pre Gain', 0.25), publishedParameter(9, 'Tone', 0.8)],
+                },
+            },
+        });
+        render(
+            <DeviceInspector
+                device={externalDevice({ parameterValues: { '9': 0.3 } })}
+                trackId="track-1"
+                onBack={mockOnBack}
+            />
+        );
+        expect(screen.getByTestId('generic-layout').getAttribute('data-param-values')).toBe('0.25,0.3');
+    });
+
+    it.each([
+        { case: 'no published snapshot', snapshot: defaultExternalPluginParameterState },
+        {
+            case: 'a snapshot not attached to the engine',
+            snapshot: {
+                byInstanceId: {
+                    'inst-1': { engineAttached: false, parameters: [publishedParameter(7, 'Pre Gain', 0.25)] },
+                },
+            },
+        },
+    ])('asks for the desktop app, not builtin controls, with $case', ({ snapshot }) => {
+        externalPluginParameterStore.set(snapshot);
+        mockGetBuiltinPlugins.mockReturnValue([
+            { id: 'builtin-reverb', name: 'Reverb', parameters: [{ id: 'mix', name: 'Mix', automatable: true }] },
+        ]);
+        render(<DeviceInspector device={externalDevice({ name: 'Reverb' })} trackId="track-1" onBack={mockOnBack} />);
+        expect(screen.getByText('Load this plugin in the desktop app to edit its parameters.')).toBeInTheDocument();
+        expect(screen.queryByText('No parameters available for this device.')).not.toBeInTheDocument();
+        expect(screen.queryByTestId('generic-layout')).not.toBeInTheDocument();
+    });
+
+    it("never shows a builtin namesake's parameters for a plugin named Reverb", () => {
+        externalPluginParameterStore.set({
+            byInstanceId: {
+                'inst-1': {
+                    engineAttached: true,
+                    parameters: [publishedParameter(7, 'Pre Gain', 0.25), publishedParameter(9, 'Tone', 0.8)],
+                },
+            },
+        });
+        mockGetBuiltinPlugins.mockReturnValue([
+            {
+                id: 'builtin-reverb',
+                name: 'Reverb',
+                parameters: [
+                    { id: 'size', name: 'Size', automatable: true },
+                    { id: 'decay', name: 'Decay', automatable: true },
+                    { id: 'mix', name: 'Mix', automatable: true },
+                ],
+            },
+        ]);
+        render(<DeviceInspector device={externalDevice({ name: 'Reverb' })} trackId="track-1" onBack={mockOnBack} />);
+        expect(screen.getByTestId('generic-layout').getAttribute('data-param-ids')).toBe('7,9');
+        expect(screen.getByTestId('generic-layout').getAttribute('data-param-names')).toBe('Pre Gain,Tone');
     });
 });

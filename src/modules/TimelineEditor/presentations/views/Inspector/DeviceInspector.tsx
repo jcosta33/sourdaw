@@ -2,7 +2,14 @@ import { type ReactElement } from 'react';
 
 import { MechanicalSwitch } from '#/components/daw/MechanicalSwitch';
 import { Stack } from '#/components/layout';
-import { getBuiltinPlugins, bypassDevice } from '#/modules/Arrangement/useCases';
+import { useStore } from '#/infra/store/useStore';
+import {
+    bypassDevice,
+    getAutomationDeviceDescriptor,
+    getBuiltinPlugins,
+    isExternalPluginDeviceType,
+} from '#/modules/Arrangement/useCases';
+import { defaultExternalPluginParameterState, externalPluginParameterStore } from '#/modules/PluginHost/stores';
 
 import { type DeviceParameterView as DeviceParameter } from '../../../models/PluginDescriptorViewTypes';
 import { type Device } from '../../../models/TrackViewTypes';
@@ -84,14 +91,44 @@ function deriveParamsFromValues(device: Device): DeviceParameter[] {
     });
 }
 
+/**
+ * The controls of an external plugin device: the parameters its attached instance publishes. A
+ * stored value for an id takes precedence over the published one. Undefined when the device names no
+ * instance or the instance is not attached to the engine, so there is nothing to edit.
+ */
+function externalPluginParameters(device: Device): DeviceParameter[] | undefined {
+    if (device.externalInstanceId === undefined) {
+        return undefined;
+    }
+    const descriptor = getAutomationDeviceDescriptor(device.type ?? '', device.externalInstanceId);
+    return descriptor?.parameters.map((parameter) => ({
+        ...parameter,
+        value: Object.hasOwn(device.parameterValues, parameter.id)
+            ? device.parameterValues[parameter.id]
+            : parameter.value,
+    }));
+}
+
 export const DeviceInspector = ({ device, trackId, onBack }: DeviceInspectorProps): ReactElement => {
+    // Subscribed so the panel follows a plugin's load, refresh and unload; the projection reads the current value.
+    useStore(externalPluginParameterStore, defaultExternalPluginParameterState);
+
+    const isExternal = isExternalPluginDeviceType(device.type);
     const plugin = resolveDevicePlugin(getBuiltinPlugins(), device);
+    const externalParameters = isExternal ? externalPluginParameters(device) : undefined;
 
     // Use static descriptor params, or derive from parameterValues for Faust/dynamic devices
-    const parameters = plugin?.parameters ?? deriveParamsFromValues(device);
+    const parameters = isExternal ? (externalParameters ?? []) : (plugin?.parameters ?? deriveParamsFromValues(device));
 
-    const LayoutComponent = resolveDeviceLayout(device.type ?? '');
+    const LayoutComponent = isExternal ? undefined : resolveDeviceLayout(device.type ?? '');
     const renderDeviceLayout = (): ReactElement => {
+        if (isExternal && externalParameters === undefined) {
+            return (
+                <div className="px-1">
+                    <MetaText>Load this plugin in the desktop app to edit its parameters.</MetaText>
+                </div>
+            );
+        }
         if (LayoutComponent) {
             return <LayoutComponent device={device} trackId={trackId} parameters={parameters} />;
         }
