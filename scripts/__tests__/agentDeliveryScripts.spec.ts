@@ -1073,7 +1073,7 @@ describe('package scripts and gitignore', () => {
         expect(Object.hasOwn(workflowStep(codeql, 'Checkout'), 'if')).toBe(false);
 
         const analyze = workflowStep(codeql, 'Analyse');
-        expect(analyze.uses).toBe('github/codeql-action/analyze@c16c0f3f2812ec4bb3750a5ed64873fe2ce0fbef');
+        expect(analyze.uses).toBe('github/codeql-action/analyze@52cf1852265d99e9bea071b03366fc777a602909');
         expect(Object.hasOwn(analyze, 'with')).toBe(false);
     });
 

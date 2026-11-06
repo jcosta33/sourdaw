@@ -563,8 +563,8 @@ writeFileSync(join(process.cwd(),'node_modules/pnpm/bin/pnpm.mjs'),${JSON.string
                 using: 'composite',
                 steps: [
                     {
-                        uses: 'actions/setup-node@820762786026740c76f36085b0efc47a31fe5020',
-                        with: { 'node-version': '24.19.0', 'package-manager-cache': false },
+                        uses: 'actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1',
+                        with: { 'node-version': '24.22.2', 'package-manager-cache': false },
                     },
                     { run: 'node "$GITHUB_ACTION_PATH/../../../scripts/setupPnpm.ts" --prepare-node' },
                     { run: 'node "$GITHUB_ACTION_PATH/../../../scripts/setupPnpm.ts"' },
