@@ -640,12 +640,13 @@ test('persisted clip edits replay exact owners and source material through real 
             const point = await clipPoint(page, clip);
             await page.mouse.click(point.x, point.y);
             const start = page.getByTestId('selected-clip-start-beat');
-            await expect(start).toHaveAttribute('aria-label', `Selected clip starts at beat ${clip.startBeat}`);
+            await expect(start).toHaveAttribute('aria-label', /^Selected clip starts at bar \d+\.\d+\.\d+$/);
+            const labelBefore = await start.getAttribute('aria-label');
             await page.mouse.move(point.x, point.y);
             await page.mouse.down();
             await page.mouse.move(point.x + 96, point.y, { steps: 8 });
             await page.mouse.up();
-            await expect(start).not.toHaveAttribute('aria-label', `Selected clip starts at beat ${clip.startBeat}`);
+            await expect(start).not.toHaveAttribute('aria-label', labelBefore ?? '');
         });
     });
 

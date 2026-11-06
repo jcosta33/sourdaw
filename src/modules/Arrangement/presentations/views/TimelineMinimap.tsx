@@ -9,7 +9,8 @@ import {
 } from 'react';
 
 import { useStore } from '#/infra/store/useStore';
-import { transportStore } from '#/modules/Transport/stores';
+import { defaultTransportState, timeSignatureMapStore, transportStore } from '#/modules/Transport/stores';
+import { formatMusicalPosition } from '#/modules/Transport/useCases';
 import {
     normalizeTimelineMinimapHeight,
     TIMELINE_MINIMAP_DEFAULT_HEIGHT,
@@ -43,6 +44,26 @@ function getDevicePixelRatio(): number {
     return dpr;
 }
 
+/** The span the minimap draws: the project's last clip end plus headroom, never under a minimum. */
+function getMinimapTotalBeats(tracks: TrackStoreState['tracks']): number {
+    let maxEndBeat = 0;
+    for (const track of tracks) {
+        for (const clip of track.clips) {
+            if (clip.endBeat > maxEndBeat) {
+                maxEndBeat = clip.endBeat;
+            }
+        }
+    }
+    return Math.max(MIN_PROJECT_BEATS, maxEndBeat * 1.1);
+}
+
+/** The bar number leading a `bar.beat.sixteenth` position. */
+function barOf(position: string): number {
+    return Number(position.split('.')[0]);
+}
+
+const EMPTY_METER_MAP = { changes: [] };
+
 const defaultTrackState: TrackStoreState = { tracks: [], selectedTrackId: null };
 const defaultTimelineView: TimelineViewState = {
     scrollX: 0,
@@ -68,6 +89,21 @@ export const TimelineMinimap = ({ height = TIMELINE_MINIMAP_DEFAULT_HEIGHT }: Ti
     const tracks = trackState.tracks;
     const pixelsPerBeat = viewState.pixelsPerBeat;
     const scrollX = viewState.scrollX;
+
+    const transport = useStore(transportStore, defaultTransportState);
+    const meterMap = useStore(timeSignatureMapStore, EMPTY_METER_MAP);
+    const meter = {
+        changes: meterMap.changes,
+        defaultNumerator: transport.timeSignatureNumerator,
+        defaultDenominator: transport.timeSignatureDenominator,
+    };
+    const sliderMaxBeats = Math.round(getMinimapTotalBeats(tracks));
+    const readoutPixelsPerBeat = pixelsPerBeat > 0 && Number.isFinite(pixelsPerBeat) ? pixelsPerBeat : 12;
+    const scrollStartBeat = Math.max(0, scrollX / readoutPixelsPerBeat);
+    const sliderStartBeat = Math.min(sliderMaxBeats, Math.round(scrollStartBeat));
+    const visibleEndBeat = scrollStartBeat + canvasMetrics.width / readoutPixelsPerBeat;
+    const sliderStartBar = barOf(formatMusicalPosition({ ...meter, beat: scrollStartBeat }));
+    const sliderEndBar = barOf(formatMusicalPosition({ ...meter, beat: visibleEndBeat }));
 
     useLayoutEffect(() => {
         const canvas = canvasRef.current;
@@ -98,15 +134,7 @@ export const TimelineMinimap = ({ height = TIMELINE_MINIMAP_DEFAULT_HEIGHT }: Ti
 
         const trackCount = tracks.length;
 
-        let maxEndBeat = 0;
-        for (const track of tracks) {
-            for (const clip of track.clips) {
-                if (clip.endBeat > maxEndBeat) {
-                    maxEndBeat = clip.endBeat;
-                }
-            }
-        }
-        const totalBeats = Math.max(MIN_PROJECT_BEATS, maxEndBeat * 1.1);
+        const totalBeats = getMinimapTotalBeats(tracks);
         const beatsToPixels = canvasWidth / totalBeats;
         const drawableHeight = Math.max(1, activeHeight - 2);
         const laneStep = trackCount > 0 ? drawableHeight / trackCount : drawableHeight;
@@ -246,15 +274,7 @@ export const TimelineMinimap = ({ height = TIMELINE_MINIMAP_DEFAULT_HEIGHT }: Ti
         const rect = container.getBoundingClientRect();
         const canvasWidth = rect.width;
 
-        let maxEndBeat = 0;
-        for (const track of tracks) {
-            for (const clip of track.clips) {
-                if (clip.endBeat > maxEndBeat) {
-                    maxEndBeat = clip.endBeat;
-                }
-            }
-        }
-        const totalBeats = Math.max(MIN_PROJECT_BEATS, maxEndBeat * 1.1);
+        const totalBeats = getMinimapTotalBeats(tracks);
         const beatsToPixels = canvasWidth / totalBeats;
         const visibleBeats = canvasWidth / pixelsPerBeat;
         const viewportWidthPx = Math.max(VIEWPORT_MIN_WIDTH, visibleBeats * beatsToPixels);
@@ -396,8 +416,9 @@ export const TimelineMinimap = ({ height = TIMELINE_MINIMAP_DEFAULT_HEIGHT }: Ti
             data-testid="timeline-minimap"
             role="slider"
             aria-valuemin={0}
-            aria-valuemax={100}
-            aria-valuenow={Math.round((scrollX / Math.max(1, pixelsPerBeat * MIN_PROJECT_BEATS)) * 100)}
+            aria-valuemax={sliderMaxBeats}
+            aria-valuenow={sliderStartBeat}
+            aria-valuetext={`Bars ${sliderStartBar} to ${sliderEndBar}`}
         >
             <canvas ref={canvasRef} className="absolute inset-0" style={{ width: '100%', height: activeHeight }} />
         </TimelineChromeSurface>

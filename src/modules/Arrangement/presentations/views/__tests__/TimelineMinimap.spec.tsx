@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { act, render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { TooltipProvider } from '#/components/ui/tooltip';
@@ -14,13 +14,28 @@ const transportStoreMock = vi.hoisted(() => ({
     value: { isPlaying: false },
 }));
 
-// Mock external dependencies
-vi.mock('#/infra/store/useStore', () => ({
-    useStore: vi.fn((_store, defaultValue) => defaultValue),
+const storeOverrides = vi.hoisted(() => ({
+    values: new Map<unknown, unknown>(),
 }));
 
-vi.mock('#/modules/Transport/stores', () => ({
+const meterMapStoreMock = vi.hoisted(() => ({ value: { changes: [] } }));
+const timelineViewStoreMock = vi.hoisted(() => ({
+    value: { scrollX: 0, scrollY: 0, pixelsPerBeat: 12, autoScrollEnabled: true },
+    subscribe: () => () => undefined,
+    set: () => undefined,
+}));
+
+// Mock external dependencies
+vi.mock('#/infra/store/useStore', () => ({
+    useStore: vi.fn((store, defaultValue) =>
+        storeOverrides.values.has(store) ? storeOverrides.values.get(store) : defaultValue
+    ),
+}));
+
+vi.mock('#/modules/Transport/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Transport/stores')>()),
     transportStore: transportStoreMock,
+    timeSignatureMapStore: meterMapStoreMock,
 }));
 
 vi.mock('../../../stores/trackStore', () => ({
@@ -32,11 +47,7 @@ vi.mock('../../../stores/trackStore', () => ({
 }));
 
 vi.mock('../../../stores/timelineViewStore', () => ({
-    timelineViewStore: {
-        value: { scrollX: 0, scrollY: 0, pixelsPerBeat: 12, autoScrollEnabled: true },
-        subscribe: vi.fn(() => vi.fn()),
-        set: vi.fn(),
-    },
+    timelineViewStore: timelineViewStoreMock,
     setScrollY: vi.fn(),
     setScrollX: vi.fn(),
     setAutoScroll: vi.fn(),
@@ -59,7 +70,12 @@ const observeMock = vi.fn();
 const disconnectMock = vi.fn();
 const unobserveMock = vi.fn();
 
+let resizeCallback: (() => void) | null = null;
+
 class MockResizeObserver {
+    constructor(callback: () => void) {
+        resizeCallback = callback;
+    }
     observe = observeMock;
     disconnect = disconnectMock;
     unobserve = unobserveMock;
@@ -73,6 +89,7 @@ describe('TimelineMinimap', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         transportStoreMock.value = { isPlaying: false };
+        storeOverrides.values.clear();
         global.ResizeObserver = MockResizeObserver;
     });
 
@@ -95,7 +112,61 @@ describe('TimelineMinimap', () => {
             'Timeline minimap — drag the viewport to scroll, click to jump, or use arrow keys'
         );
         expect(slider).toHaveAttribute('aria-valuemin', '0');
-        expect(slider).toHaveAttribute('aria-valuemax', '100');
+        expect(slider).toHaveAttribute('aria-valuemax', '64');
+        expect(slider).toHaveAttribute('aria-valuenow', '0');
+        expect(slider).toHaveAttribute('aria-valuetext', 'Bars 1 to 1');
+    });
+
+    describe('scrolled far past the minimum project span', () => {
+        const scrollTo = (beat: number, meter?: { numerator: number; denominator: number }) => {
+            storeOverrides.values.set(timelineViewStoreMock, {
+                scrollX: beat * 12,
+                scrollY: 0,
+                pixelsPerBeat: 12,
+                autoScrollEnabled: true,
+            });
+            if (meter) {
+                storeOverrides.values.set(transportStoreMock, {
+                    timeSignatureNumerator: meter.numerator,
+                    timeSignatureDenominator: meter.denominator,
+                });
+            }
+        };
+
+        // 240px at 12 px/beat shows 20 beats.
+        const measureMinimap = () => {
+            vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 240, 28));
+            act(() => resizeCallback?.());
+        };
+
+        it('keeps the value inside the range, clamped to the span the minimap draws', () => {
+            scrollTo(1000);
+            renderWithTooltip(<TimelineMinimap />);
+            const slider = screen.getByRole('slider');
+            const max = Number(slider.getAttribute('aria-valuemax'));
+            expect(max).toBe(64);
+            expect(Number(slider.getAttribute('aria-valuenow'))).toBe(max);
+        });
+
+        it('reports the scroll start beat while it lies inside the span', () => {
+            scrollTo(40);
+            renderWithTooltip(<TimelineMinimap />);
+            expect(screen.getByRole('slider')).toHaveAttribute('aria-valuenow', '40');
+        });
+
+        it('names the visible bars through the 4/4 meter', () => {
+            scrollTo(1000);
+            renderWithTooltip(<TimelineMinimap />);
+            measureMinimap();
+            expect(screen.getByRole('slider')).toHaveAttribute('aria-valuetext', 'Bars 251 to 256');
+        });
+
+        it('names the visible bars through a 3/4 meter', () => {
+            scrollTo(1000, { numerator: 3, denominator: 4 });
+            renderWithTooltip(<TimelineMinimap />);
+            measureMinimap();
+            expect(screen.getByRole('slider')).toHaveAttribute('aria-valuetext', 'Bars 334 to 341');
+        });
     });
 
     it('is keyboard-focusable so screen-reader users can reach the slider', () => {
