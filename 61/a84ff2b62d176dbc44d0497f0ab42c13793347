@@ -1,0 +1,35 @@
+src/modules/TimelineEditor/presentations/views/Inspector/DeviceInspector.tsx
+  s_fec7059b7a251c::t_87fa1155df796c 23-26,107
+  s_fec7059b7a251c::t_4078913b442d75 5,7-13,100-101,103-106,108,111-117,128
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/resolveExternalPluginEditorAccess.spec.ts
+  s_fec7059b7a251c::t_734db099152a30 1-107
+src/modules/TimelineEditor/presentations/views/Inspector/resolveDevicePlugin.ts
+  s_fec7059b7a251c::t_f7c2d59e23aa52 9-10
+src/modules/TimelineEditor/presentations/views/Inspector/TrackDevicesSection.tsx
+  s_fec7059b7a251c::t_6ca3ab5116aa99 48
+  s_fec7059b7a251c::t_4d6a21951d9dd9 130-133,135-136,143,455
+  s_fec7059b7a251c::t_87fa1155df796c 137-141
+  s_fec7059b7a251c::t_1fa8adbdcefd1b 49
+src/modules/TimelineEditor/presentations/views/Inspector/resolveExternalPluginEditorAccess.ts
+  s_fec7059b7a251c::t_c1dcbbc2813d7b 39
+  s_fec7059b7a251c::t_e534f5cb4806f5 1-38,40-42
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/DeviceInspector.spec.tsx
+  s_fec7059b7a251c::t_27e2865195d319 4-11,104,106-108,376
+  s_fec7059b7a251c::t_9bedd695fcca35 380-381,384-386,393-394,396-409,420-425,433-434,438-439,442,444-455,460,465-466,468-469,473-482
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "61a84ff2b62d176dbc44d0497f0ab42c13793347",
+  "prompts": {},
+  "sessions": {
+    "s_fec7059b7a251c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a7e284f4-0d83-40f5-8212-419d6ca3c2d5",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
