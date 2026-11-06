@@ -1,0 +1,19 @@
+src/modules/Arrangement/stores/__tests__/deviceWriteBoundaryClosure.spec.ts
+  s_5b29f2fbd04eba::t_70afd550d6c36e 895-901,903-908,918-921,926,989-996
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "fc135f0e49a0d5773574aaf92898d4e32d97d49e",
+  "prompts": {},
+  "sessions": {
+    "s_5b29f2fbd04eba": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_5b29f2fbd04eba",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
