@@ -108,7 +108,9 @@ export const TrackHeader = ({ track, isSelected }: TrackHeaderProps): ReactEleme
                             <Button
                                 variant="ghost"
                                 size="icon-xs"
-                                aria-label={track.collapsed ? 'Expand folder' : 'Collapse folder'}
+                                aria-label={
+                                    track.collapsed ? `Expand folder ${track.name}` : `Collapse folder ${track.name}`
+                                }
                                 onClick={(event) => {
                                     event.stopPropagation();
                                     toggleFolderCollapse(track.id);
@@ -241,7 +243,7 @@ export const TrackHeader = ({ track, isSelected }: TrackHeaderProps): ReactEleme
                                     variant="bare"
                                     size="bare"
                                     type="button"
-                                    aria-label="Toggle variation lanes"
+                                    aria-label={`Variation lanes for ${track.name}`}
                                     aria-pressed={track.showVariationLanes}
                                     className={cn(
                                         'size-5 rounded flex items-center justify-center transition-colors',
@@ -267,7 +269,7 @@ export const TrackHeader = ({ track, isSelected }: TrackHeaderProps): ReactEleme
                                         active={track.inputMonitoring === 'on'}
                                         variant="mint"
                                         size="icon-sm"
-                                        aria-label={`Input monitoring: ${INPUT_MONITORING_LABEL[track.inputMonitoring]}`}
+                                        aria-label={`Input monitoring for ${track.name}: ${INPUT_MONITORING_LABEL[track.inputMonitoring]}`}
                                         className="font-bold text-[10px]"
                                         onClick={(event) => {
                                             event.stopPropagation();

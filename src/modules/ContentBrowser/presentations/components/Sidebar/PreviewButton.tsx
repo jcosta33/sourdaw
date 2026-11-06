@@ -7,11 +7,13 @@ import { cn } from '#/utils/Styles/cn';
 
 type PreviewButtonProps = {
     isPlaying: boolean;
+    /** Name of the row this button previews; each row's button needs its own accessible name. */
+    itemName: string;
     onPlay: () => void;
     onStop: () => void;
 };
 
-export const PreviewButton = ({ isPlaying, onPlay, onStop }: PreviewButtonProps): ReactElement => (
+export const PreviewButton = ({ isPlaying, itemName, onPlay, onStop }: PreviewButtonProps): ReactElement => (
     <Button
         variant="bare"
         size="bare"
@@ -28,7 +30,7 @@ export const PreviewButton = ({ isPlaying, onPlay, onStop }: PreviewButtonProps)
                 onPlay();
             }
         }}
-        aria-label={isPlaying ? 'Stop preview' : 'Preview sound'}
+        aria-label={isPlaying ? `Stop previewing ${itemName}` : `Preview ${itemName}`}
     >
         {isPlaying ? <Square className="size-2.5 fill-current" /> : <Play className="size-2.5 fill-current" />}
     </Button>

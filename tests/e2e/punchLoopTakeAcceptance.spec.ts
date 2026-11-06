@@ -729,21 +729,22 @@ async function configurePunchTrack(page: Page): Promise<string> {
     }, trackId);
     expect(defaultInputId, 'the armed audio track must capture the browser default microphone').toBeNull();
     await expect(page.getByTestId(`track-arm-${trackId}`)).toHaveAttribute('aria-label', 'Disarm Punch mic');
-    const monitor = page.getByRole('button', { name: /^Input monitoring:/ });
+    // The label cycles while the loop clears it to Off, so the locator matches the track's monitor by prefix.
+    const monitor = page.getByRole('button', { name: /^Input monitoring for Punch mic:/ });
     for (
         let attempt = 0;
-        attempt < 3 && (await monitor.getAttribute('aria-label')) !== 'Input monitoring: Off';
+        attempt < 3 && (await monitor.getAttribute('aria-label')) !== 'Input monitoring for Punch mic: Off';
         attempt++
     ) {
         await monitor.click();
     }
-    await expect(monitor).toHaveAttribute('aria-label', 'Input monitoring: Off');
+    await expect(monitor).toHaveAttribute('aria-label', 'Input monitoring for Punch mic: Off');
     const trackRow = page
         .getByRole('grid', { name: /Track list/i })
         .first()
         .getByRole('row')
         .filter({ hasText: 'Punch mic' });
-    await trackRow.getByRole('button', { name: 'Toggle variation lanes' }).click();
+    await trackRow.getByRole('button', { name: 'Variation lanes for Punch mic' }).click();
     await page.getByTestId('transport-loop').click();
     await expect(page.getByTestId('transport-loop')).toHaveAttribute('aria-pressed', 'true');
     await page.getByTestId('transport-punch').click();

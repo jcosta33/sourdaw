@@ -111,13 +111,13 @@ test.describe('Sample Library favorites', () => {
 
         // The row's favorite star starts in its "Add" state; clicking flips the
         // same button to the "Remove" state.
-        const addFavorite = browserPanel.getByRole('button', { name: 'Add to favorites' });
+        const addFavorite = browserPanel.getByRole('button', { name: `Add ${SAMPLE_NAME} to favorites` });
         await expect(addFavorite).toBeVisible();
-        await expect(browserPanel.getByRole('button', { name: 'Remove from favorites' })).toHaveCount(0);
+        await expect(browserPanel.getByRole('button', { name: `Remove ${SAMPLE_NAME} from favorites` })).toHaveCount(0);
 
         await addFavorite.click();
 
-        const removeFavorite = browserPanel.getByRole('button', { name: 'Remove from favorites' });
+        const removeFavorite = browserPanel.getByRole('button', { name: `Remove ${SAMPLE_NAME} from favorites` });
         await expect(removeFavorite).toBeVisible();
         await expect(addFavorite).toHaveCount(0);
 
@@ -150,11 +150,11 @@ test.describe('Sample Library favorites', () => {
         await browserPanel.getByRole('tab', { name: 'Instruments', exact: true }).click();
         await browserPanel.getByLabel('Search browser').fill('synth');
 
-        const addFavorite = browserPanel.getByRole('button', { name: 'Add to favorites' });
+        const addFavorite = browserPanel.getByRole('button', { name: /^Add .+ to favorites$/ });
         await expect(addFavorite.first()).toBeVisible();
 
         // A fresh workspace has no favorited presets.
-        const removeFavorite = browserPanel.getByRole('button', { name: 'Remove from favorites' });
+        const removeFavorite = browserPanel.getByRole('button', { name: /^Remove .+ from favorites$/ });
         await expect(removeFavorite).toHaveCount(0);
 
         const initialAddCount = await addFavorite.count();
