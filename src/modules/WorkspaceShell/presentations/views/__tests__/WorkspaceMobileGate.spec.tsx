@@ -228,7 +228,7 @@ describe('WorkspaceMobileGate', () => {
         expect(displayScaleMocks.listeners.size).toBe(0);
     });
 
-    it('should mount its children and sync display scale on a coarse-pointer tablet in portrait', () => {
+    it('should mount its children and sync appearance on a coarse-pointer tablet in portrait', () => {
         setDevice(TABLET_PORTRAIT);
         displayScaleMocks.preferences.current = { uiScale: 1.5 };
 
@@ -241,7 +241,8 @@ describe('WorkspaceMobileGate', () => {
         expect(screen.getByTestId('shell-probe')).toBeInTheDocument();
         expect(childMounted).toHaveBeenCalledTimes(1);
         expect(applyDisplayScale).toHaveBeenCalledWith(1.5);
-        expect(displayScaleMocks.listeners.size).toBe(1);
+        expect(document.documentElement).toHaveClass('dark');
+        expect(displayScaleMocks.listeners.size).toBe(2);
 
         unmount();
         expect(displayScaleMocks.listeners.size).toBe(0);
