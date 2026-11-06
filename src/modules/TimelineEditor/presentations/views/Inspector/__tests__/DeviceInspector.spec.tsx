@@ -335,4 +335,22 @@ describe('DeviceInspector', () => {
         render(<DeviceInspector device={makeDevice({ type: 'unknown-type' })} trackId="track-1" onBack={mockOnBack} />);
         expect(screen.getByTestId('generic-layout').getAttribute('data-param-count')).toBe('1');
     });
+
+    it("should not open a third-party plugin with a namesake builtin's parameters", () => {
+        mockGetBuiltinPlugins.mockReturnValue([
+            { id: 'builtin-reverb', name: 'Reverb', parameters: [{ id: 'mix', name: 'Mix', automatable: true }] },
+        ]);
+        render(
+            <DeviceInspector
+                device={makeDevice({
+                    type: 'external-plugin',
+                    name: 'Reverb',
+                    parameterValues: { 'plugin-param': 0.4 },
+                })}
+                trackId="track-1"
+                onBack={mockOnBack}
+            />
+        );
+        expect(screen.getByTestId('generic-layout').getAttribute('data-param-ids')).toBe('plugin-param');
+    });
 });
