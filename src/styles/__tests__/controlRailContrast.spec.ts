@@ -5,8 +5,15 @@ import { describe, expect, it } from 'vitest';
 
 type Rgba = { r: number; g: number; b: number; a: number };
 
-const tokensCss = readFileSync(resolve(process.cwd(), 'src/styles/tokens.css'), 'utf8');
-const sliderSource = readFileSync(resolve(process.cwd(), 'src/components/ui/slider.tsx'), 'utf8');
+const readSource = (path: string): string => readFileSync(resolve(process.cwd(), path), 'utf8');
+
+const tokensCss = readSource('src/styles/tokens.css');
+const floatingSurfaceCss = readSource('src/styles/utilities/daw-surfaces.css');
+const sliderSource = readSource('src/components/ui/slider.tsx');
+const hammondSource = readSource(
+    'src/modules/TimelineEditor/presentations/views/Inspector/layouts/HammondB3Layout.tsx'
+);
+const keyboardSource = readSource('src/modules/WorkspaceShell/presentations/views/VirtualKeyboard.tsx');
 
 const readToken = (name: string): string => {
     const match = new RegExp(`${name}:\\s*([^;]+);`).exec(tokensCss);
@@ -50,26 +57,118 @@ const contrast = (a: Rgba, b: Rgba): number => {
 
 const color = (name: string): Rgba => parseColor(readToken(name));
 
-const surfaces = ['--surface-base', '--surface-default', '--surface-raised', '--surface-overlay'];
+const lerp = (from: number, to: number, t: number): number => from + (to - from) * t;
+
+/**
+ * Brightest point of the `daw-floating-surface` background over `base`: the cream sheen fades from its first
+ * to its second alpha down the surface while the black scrim fades out by 18%, so sample the whole height.
+ */
+const floatingSurfaceBackgrounds = (base: Rgba): Rgba[] => {
+    const block = /@utility daw-floating-surface \{([^}]*)\}/.exec(floatingSurfaceCss)?.[1];
+    const layers =
+        /linear-gradient\(180deg, (rgba\([^)]*\)), (rgba\([^)]*\))\),\s*linear-gradient\(180deg, (rgba\([^)]*\)), transparent (\d+)%\)/.exec(
+            block ?? ''
+        );
+    if (layers === null) {
+        throw new Error('daw-floating-surface background layers not found in daw-surfaces.css');
+    }
+    const sheenTop = parseColor(layers[1] ?? '');
+    const sheenBottom = parseColor(layers[2] ?? '');
+    const scrim = parseColor(layers[3] ?? '');
+    const scrimEnd = Number(layers[4]) / 100;
+    return Array.from({ length: 101 }, (_, step) => {
+        const t = step / 100;
+        const withSheen = over({ ...sheenTop, a: lerp(sheenTop.a, sheenBottom.a, t) }, base);
+        return over({ ...scrim, a: t >= scrimEnd ? 0 : lerp(scrim.a, 0, t / scrimEnd) }, withSheen);
+    });
+};
+
+const surfaceTokens = [
+    '--surface-base',
+    '--surface-default',
+    '--surface-raised',
+    '--surface-overlay',
+    '--surface-dialog',
+];
 const fills = ['cyan', 'peach', 'lavender'].flatMap((hue) => [
     `--color-control-fill-${hue}-top`,
     `--color-control-fill-${hue}-bottom`,
 ]);
 
+const classTokens = (classList: string): string[] => classList.split(/\s+/).filter((name) => name !== '');
+
+const capture = (source: string, pattern: RegExp, label: string): string => {
+    const value = pattern.exec(source)?.[1];
+    if (value === undefined) {
+        throw new Error(`${label} not found`);
+    }
+    return value;
+};
+
+type RailOwner = { name: string; track: string; range: string };
+
+const railOwners: RailOwner[] = [
+    {
+        name: 'shared slider',
+        track: capture(sliderSource, /data-slot="slider-track"\s*className=\{cn\(\s*'([^']*)'/, 'shared track classes'),
+        range: capture(
+            sliderSource,
+            /data-slot="slider-range"\s*className=\{cn\(\s*'[^']*',\s*'([^']*)'/,
+            'shared fill'
+        ),
+    },
+    {
+        name: 'Hammond drawbar',
+        track: capture(hammondSource, /trackClassName="([^"]*)"/, 'drawbar track classes'),
+        range: capture(hammondSource, /rangeClassName="([^"]*)"/, 'drawbar fill'),
+    },
+    {
+        name: 'virtual keyboard velocity',
+        track: capture(
+            keyboardSource,
+            /trackClassName="([^"]*)"\s*rangeClassName="[^"]*"\s*thumbClassName="[^"]*"\s*aria-label="Note velocity"/,
+            'velocity track classes'
+        ),
+        range: capture(
+            keyboardSource,
+            /rangeClassName="([^"]*)"\s*thumbClassName="[^"]*"\s*aria-label="Note velocity"/,
+            'velocity fill'
+        ),
+    },
+];
+
 describe('slider rail contrast (WCAG 1.4.11)', () => {
-    it.each(surfaces)('should keep the rail edge at 3:1 or more against %s', (surface) => {
+    it.each(surfaceTokens)('should keep the rail edge at 3:1 or more against %s', (surface) => {
         expect(contrast(color('--color-control-rail-edge'), color(surface))).toBeGreaterThanOrEqual(3);
     });
+
+    it.each(['--color-bg-overlay', '--surface-dialog'])(
+        'should keep the rail edge at 3:1 or more on the whole floating surface over %s',
+        (base) => {
+            const edge = color('--color-control-rail-edge');
+            const baseColor = base === '--color-bg-overlay' ? color('--surface-overlay') : color(base);
+            for (const background of floatingSurfaceBackgrounds(baseColor)) {
+                expect(contrast(edge, background)).toBeGreaterThanOrEqual(3);
+            }
+        }
+    );
 
     it.each(fills)('should keep fill %s at 3:1 or more against the dark interior', (fill) => {
         const interior = color('--color-bg-panelInset');
         expect(contrast(over(color(fill), interior), interior)).toBeGreaterThanOrEqual(3);
     });
 
-    it('should draw the shared track with the edge and interior tokens and the cyan fill tokens', () => {
-        expect(sliderSource).toContain('border-control-rail-edge');
-        expect(sliderSource).toContain('bg-surface-inset');
-        expect(sliderSource).toContain('var(--color-control-fill-cyan-top)');
-        expect(sliderSource).toContain('var(--color-control-fill-cyan-bottom)');
+    it.each(railOwners)('should give the $name track a border, the edge colour and the inset interior', (owner) => {
+        const names = new Set(classTokens(owner.track));
+        expect(names).toContain('border');
+        expect(names).toContain('border-control-rail-edge');
+        expect(names).toContain('bg-surface-inset');
+    });
+
+    it.each(railOwners)('should paint the $name fill from the fill tokens, never a colour literal', (owner) => {
+        const gradient = capture(owner.range, /\[background:([^\]]*)\]/, `${owner.name} fill gradient`);
+        expect(gradient).toMatch(/var\(--color-control-fill-[a-z]+-top\)/);
+        expect(gradient).toMatch(/var\(--color-control-fill-[a-z]+-bottom\)/);
+        expect(gradient).not.toMatch(/rgba?\(|hsla?\(|#[0-9a-f]{3,8}/i);
     });
 });
