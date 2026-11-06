@@ -25,8 +25,8 @@ describe('device palette presets', () => {
     // string it was handed as the device type. A palette entry that names a
     // plugin the catalog does not carry under that spelling therefore mints a
     // device no descriptor matches: silent in playback, absent from a render.
-    // Ids are also the only unambiguous key — `De-esser`, `LUFS Meter` and
-    // `Stereo Widener` each name two catalog plugins.
+    // Ids are also the stable key: catalog names are unique, but an id is the
+    // identity a device is stored under.
     it('asks for a catalog plugin id, so every palette entry mints a device the engine can host', () => {
         const catalogIds = new Set(getPlatformPlugins().map((plugin) => plugin.id));
 

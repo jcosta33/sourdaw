@@ -154,15 +154,8 @@ const renderSamplesTab = ({
     return { preview };
 };
 
-const clickFirstPreviewButton = () => {
-    const previewButtons = screen.getAllByRole('button', { name: 'Preview sound' });
-    const firstPreviewButton = previewButtons[0];
-
-    if (!firstPreviewButton) {
-        throw new Error('Expected at least one preview button');
-    }
-
-    fireEvent.click(firstPreviewButton);
+const clickPreviewButton = (sampleName: string) => {
+    fireEvent.click(screen.getByRole('button', { name: `Preview ${sampleName}` }));
 };
 
 const cachedBuffer: AudioBuffer = {
@@ -234,7 +227,7 @@ describe('SamplesTab', () => {
         vi.mocked(getCachedAudioBuffer).mockReturnValue(cachedBuffer);
         const { preview } = renderSamplesTab();
 
-        clickFirstPreviewButton();
+        clickPreviewButton('Kick');
 
         expect(getCachedAudioBuffer).toHaveBeenCalledWith({ bufferId: 'b1' });
         expect(preview.play).toHaveBeenCalledWith('s1', cachedBuffer);
@@ -244,11 +237,21 @@ describe('SamplesTab', () => {
     it('should play a fallback tone when the cached audio buffer is missing', () => {
         const { preview } = renderSamplesTab();
 
-        clickFirstPreviewButton();
+        clickPreviewButton('Kick');
 
         expect(getCachedAudioBuffer).toHaveBeenCalledWith({ bufferId: 'b1' });
         expect(preview.play).not.toHaveBeenCalled();
         expect(preview.playTone).toHaveBeenCalledWith('s1', 261.63, 0.5);
+    });
+
+    it('names each row preview and favorite button after its own sample', () => {
+        renderSamplesTab();
+
+        expect(screen.getByRole('button', { name: 'Preview Kick' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Preview Snare' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Add Kick to favorites' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Add Snare to favorites' })).toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'Preview sound' })).toBeNull();
     });
 
     it('creates clip with duration 4 beats when clicking a 4-second sample at 60 BPM', () => {

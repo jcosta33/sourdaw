@@ -4,7 +4,7 @@ Use the development-only [`/dev/control-gallery`](../src/routes/dev.control-gall
 
 ## Tokens and surfaces
 
-Start with the semantic custom properties in [`src/styles/tokens.css`](../src/styles/tokens.css). Apply the shared surface utilities from [`src/styles/utilities/daw-surfaces.css`](../src/styles/utilities/daw-surfaces.css) instead of introducing a new palette or one-off panel treatment.
+Start with the semantic custom properties in [`src/styles/tokens.css`](../src/styles/tokens.css). Apply the shared surface utilities from [`src/styles/main.css`](../src/styles/main.css) instead of introducing a new palette or one-off panel treatment.
 
 Build a panel from a dark base plus restrained layered gradients. A slight warm top wash and thin brighter top edge make a raised surface read as lit from the upper left; keep the highlight low enough that it does not compete with labels or signal colors. `daw-panel-surface` already applies that top-edge lighting.
 

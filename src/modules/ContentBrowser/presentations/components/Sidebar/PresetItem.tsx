@@ -60,6 +60,7 @@ export const PresetItem = ({
             <div className="relative z-10 opacity-70 group-hover:opacity-100 transition-opacity">
                 <PreviewButton
                     isPlaying={preview.playingId === preset.id}
+                    itemName={preset.name}
                     onPlay={() => preview.playTone(preset.id, 261.63, 0.5)}
                     onStop={preview.stop}
                 />
@@ -111,7 +112,11 @@ export const PresetItem = ({
                     favorites.has(preset.id) ? 'opacity-100 scale-100' : 'scale-95'
                 )}
                 onClick={() => onToggleFavorite(preset.id)}
-                aria-label={favorites.has(preset.id) ? 'Remove from favorites' : 'Add to favorites'}
+                aria-label={
+                    favorites.has(preset.id)
+                        ? `Remove ${preset.name} from favorites`
+                        : `Add ${preset.name} to favorites`
+                }
             >
                 <Star
                     className={cn(

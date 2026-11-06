@@ -79,21 +79,48 @@ describe('PresetItem — category badge', () => {
 });
 
 describe('PresetItem — favorite toggle', () => {
-    it('shows "Add to favorites" when not favorited', () => {
+    it('shows "Add Warm Pad to favorites" when not favorited', () => {
         renderItem({ favorites: new Set<string>() });
-        expect(screen.getByRole('button', { name: /add to favorites/i })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Add Warm Pad to favorites' })).toBeInTheDocument();
     });
 
-    it('shows "Remove from favorites" when favorited', () => {
+    it('shows "Remove Warm Pad from favorites" when favorited', () => {
         renderItem({ favorites: new Set(['p1']) });
-        expect(screen.getByRole('button', { name: /remove from favorites/i })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Remove Warm Pad from favorites' })).toBeInTheDocument();
     });
 
     it('calls onToggleFavorite with preset id when clicked', () => {
         const { onToggleFavorite, onClick } = renderItem();
-        fireEvent.click(screen.getByRole('button', { name: /add to favorites/i }));
+        fireEvent.click(screen.getByRole('button', { name: 'Add Warm Pad to favorites' }));
         expect(onToggleFavorite).toHaveBeenCalledWith('p1');
         expect(onClick).not.toHaveBeenCalled();
+    });
+});
+
+describe('PresetItem — per-row names', () => {
+    it('names each row preview and favorite button after its own preset', () => {
+        render(
+            <>
+                <PresetItem
+                    preset={makePreset({ id: 'p1', name: 'Warm Pad' })}
+                    selectedTrackId={null}
+                    favorites={new Set<string>()}
+                    onToggleFavorite={vi.fn()}
+                    onClick={vi.fn()}
+                    preview={makePreview()}
+                />
+                <PresetItem
+                    preset={makePreset({ id: 'p2', name: 'Bright Lead' })}
+                    selectedTrackId={null}
+                    favorites={new Set(['p2'])}
+                    onToggleFavorite={vi.fn()}
+                    onClick={vi.fn()}
+                    preview={makePreview()}
+                />
+            </>
+        );
+        expect(screen.getByRole('button', { name: 'Add Warm Pad to favorites' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Remove Bright Lead from favorites' })).toBeInTheDocument();
     });
 });
 
@@ -182,7 +209,7 @@ describe('PresetItem — keyboard reachability', () => {
         expect(buttons.map((button) => button.getAttribute('aria-label') ?? button.textContent?.trim())).toEqual([
             'Preview',
             'Warm Pad',
-            'Add to favorites',
+            'Add Warm Pad to favorites',
         ]);
         for (const button of buttons) {
             expect(button.querySelector('button')).toBeNull();
@@ -191,7 +218,7 @@ describe('PresetItem — keyboard reachability', () => {
 
     it('does not load the preset when the favorite star is activated', () => {
         const { onClick, onToggleFavorite } = renderItem();
-        const star = screen.getByRole('button', { name: /add to favorites/i });
+        const star = screen.getByRole('button', { name: 'Add Warm Pad to favorites' });
         star.focus();
         expect(star).toHaveFocus();
         star.click();

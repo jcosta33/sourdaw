@@ -609,12 +609,25 @@ test('actual TrackNode factory and shipping offline strategy render the same gai
         strip.analyserNode.connect(reentryCapture);
         reentryCapture.connect(mute);
         reentryCapture.parameters.get('capture')?.setValueAtTime(1, context.currentTime);
+        // Chromium dispatches each port message as its own task on the
+        // rendering thread and does not order it before the quantum a resumed
+        // context renders first; on CI one arrived late and the first sample
+        // kept the old gain. Hold every message until the re-entry is captured,
+        // so the case proves re-entry never depends on one.
+        if (!(device.outputNode instanceof AudioWorkletNode)) throw new Error('Shaper output is not its worklet');
+        const shaperPort = device.outputNode.port;
+        const heldMessages: unknown[] = [];
+        shaperPort.postMessage = (message: unknown) => {
+            heldMessages.push(message);
+        };
         audio.updateDeviceBypass(trackId, deviceId, true);
         audio.updateDeviceParam(trackId, deviceId, 'attackGain', 2);
         audio.updateDeviceParam(trackId, deviceId, 'sustainGain', 0.25);
         audio.updateDeviceBypass(trackId, deviceId, false);
         await context.resume();
         const fresh = await reentry;
+        Reflect.deleteProperty(shaperPort, 'postMessage');
+        for (const message of heldMessages) shaperPort.postMessage(message);
         constant.stop();
         constant.disconnect();
         reentryCapture.disconnect();
@@ -633,6 +646,7 @@ test('actual TrackNode factory and shipping offline strategy render the same gai
             resumeFrame,
             reentryAttempts,
             reentryFirstFrame: fresh.firstFrame,
+            heldPortMessages: heldMessages.length,
             actualReady: device.controller.ready,
             pendingFinalBypassed,
         };
@@ -782,7 +796,7 @@ test('real worklet export failure and terminal reset exhaustion cannot report su
                         context,
                         name,
                         name === 'transient-shaper-processor'
-                            ? { ...options, processorOptions: { wasmModule: minimal } }
+                            ? { ...options, processorOptions: { ...options?.processorOptions, wasmModule: minimal } }
                             : options
                     );
                 }
