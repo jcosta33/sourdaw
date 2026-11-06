@@ -1317,6 +1317,43 @@ describe('buildAgentContext', () => {
             expect(delta.localMessage).not.toContain('fixed_policy');
             expectHostedGrounding(delta);
         });
+
+        // A delta turn has no project context to carry the brief's intent, so the brief section
+        // states it; a full turn's project context already does, and the section leaves it out.
+        it("states the brief's intent in the brief section of a delta turn alone", () => {
+            const first = buildAgentContext(hostedInputs['a five-track first turn with capability data']);
+            const delta = buildAgentContext({
+                ...hostedInputs['a five-track first turn with capability data'],
+                context: { ...fiveTrackProject, tempo: 128 },
+                projectRevision: 'revision-2',
+                priorEvidence: first.evidence,
+            });
+            const brief = fiveTrackProject.productionBrief!;
+
+            const fullSection = parseMessageSection(first.message, 'production_brief_and_locks') as {
+                value: Record<string, unknown>;
+            };
+            const deltaSection = parseMessageSection(delta.message, 'production_brief_and_locks') as {
+                value: Record<string, unknown>;
+            };
+            expect(fullSection.value.trackRoles).toBeUndefined();
+            expect(brief.trackRoles).toHaveLength(1);
+            expect(deltaSection.value).toMatchObject({
+                hardConstraints: brief.hardConstraints.map(({ id, scope, statement }) => ({
+                    id,
+                    scope,
+                    statement: { value: statement, truncated: false },
+                })),
+                sectionGoals: brief.sectionGoals.map(({ id, sectionId, statement }) => ({
+                    id,
+                    sectionId,
+                    statement: { value: statement, truncated: false },
+                })),
+                trackRoles: brief.trackRoles.map(({ id, trackId, role }) => ({ id, trackId, role })),
+                omittedIntentCount: 0,
+            });
+            expect(parseMessageSection(delta.localMessage, 'production_brief_and_locks')).toEqual(deltaSection);
+        });
     });
 
     it('serializes under-budget capability data whole into hosted availableCapabilities', () => {

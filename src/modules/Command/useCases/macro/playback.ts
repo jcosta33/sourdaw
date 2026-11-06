@@ -1,5 +1,4 @@
 import { flushAutomergeStorageWrites } from '#/infra/store/storage/createAutomergeStorage';
-import { automationStore } from '#/modules/Automation/stores';
 import { type AppAction } from '#/utils/handlerContract';
 
 import { macroStore } from '../../stores/macroStore';
@@ -8,6 +7,7 @@ import { generateGroupId } from '../generateGroupId';
 import { materializeCommandApplicationIds } from '../materializeCommandApplicationIds';
 
 import { lowerSourceMacroAction } from './lowerSourceMacroAction';
+import { macroCoreReads } from './macroCoreReads';
 import { replayTempoMapMacroAction } from './tempoMapMacroReplay';
 
 type ReplayIdMappings = {
@@ -194,7 +194,7 @@ function getGeneratedAutomationPointId(action: AppAction): string | undefined {
  * lane at all, leaves the minted id standing.
  */
 function resolveMaterializedLaneId(generatedLaneId: string, target: { trackId: string; parameterId: string }): string {
-    const lanes = automationStore.value?.lanes;
+    const lanes = macroCoreReads.read('resolveMaterializedLaneId').readAutomationLanes();
     if (lanes?.some((lane) => lane.id === generatedLaneId)) {
         return generatedLaneId;
     }

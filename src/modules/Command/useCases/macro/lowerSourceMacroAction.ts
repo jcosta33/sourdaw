@@ -1,9 +1,10 @@
-import { readTempoAtBeat } from '#/modules/Transport/stores';
 import { resolveAudioUnwrappedOffsetSeconds } from '#/utils/audioSourceTime';
 import { type AppAction } from '#/utils/handlerContract';
 
 import { AppActionConflictError } from '../../errors/AppActionExecutionError';
 import { getCommandHandler } from '../getCommandHandler';
+
+import { macroCoreReads } from './macroCoreReads';
 
 /** Exact history captures supply intent to macros, never authority over today's source owners. */
 export function lowerSourceMacroAction(action: AppAction, tempoIds: ReadonlyMap<string, string>): AppAction {
@@ -21,7 +22,9 @@ export function lowerSourceMacroAction(action: AppAction, tempoIds: ReadonlyMap<
         }
         if (action.type === 'restoreAudioClipSlip') {
             const { before, clock, direction } = action.payload;
-            const tempo = readTempoAtBeat({ beat: before.clip.startBeat, clock });
+            const tempo = macroCoreReads
+                .read('lowerSourceMacroAction')
+                .readTempoAtBeat({ beat: before.clip.startBeat, clock });
             let offset = action.payload.offset;
             if (direction === 'restore') {
                 offset = (resolveAudioUnwrappedOffsetSeconds(before.clip, tempo) * tempo) / 60;

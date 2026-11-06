@@ -5,6 +5,7 @@ import { describe, it, expect, vi } from 'vitest';
 
 import { App } from '../App';
 import { registerDeviceEnginePorts } from '../registerDeviceEnginePorts';
+import { registerKernelPorts } from '../registerKernelPorts';
 import { registerSupportingServicePorts } from '../registerSupportingServicePorts';
 
 vi.mock('../registerDeviceEnginePorts', () => ({
@@ -13,6 +14,10 @@ vi.mock('../registerDeviceEnginePorts', () => ({
 
 vi.mock('../registerSupportingServicePorts', () => ({
     registerSupportingServicePorts: vi.fn<() => void>(),
+}));
+
+vi.mock('../registerKernelPorts', () => ({
+    registerKernelPorts: vi.fn<() => void>(),
 }));
 
 // Mock providers and components
@@ -54,6 +59,10 @@ describe('App', () => {
 
     it('registers the supporting service ports when the module loads, before any render', () => {
         expect(registerSupportingServicePorts).toHaveBeenCalledExactlyOnceWith();
+    });
+
+    it('registers the kernel ports when the module loads, before any render', () => {
+        expect(registerKernelPorts).toHaveBeenCalledExactlyOnceWith();
     });
 
     it('should render all providers and router', () => {

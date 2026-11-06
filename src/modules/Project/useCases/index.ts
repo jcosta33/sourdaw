@@ -78,3 +78,6 @@ export { agentAssetFileBoundary } from './agentAssetFileBoundary';
 export { getCanonicalTrackRole } from './getCanonicalTrackRole';
 export { getCanonicalTrackRoleOptions } from './getCanonicalTrackRoleOptions';
 export { setTrackCanonicalRole } from './setTrackCanonicalRole';
+export { composeProductionBriefUpdate } from './composeProductionBriefUpdate';
+export { describeProductionBriefChange } from './describeProductionBriefChange';
+export { getProductionBriefUpdateLimits } from './getProductionBriefUpdateLimits';

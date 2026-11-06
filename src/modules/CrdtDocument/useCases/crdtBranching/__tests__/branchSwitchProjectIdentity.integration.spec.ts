@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
+import { registerKernelPorts } from '#/app/registerKernelPorts';
 import { registerProjectSlotProjections } from '#/app/registerProjectSlotProjections';
 import { createControlledLockManager } from '#/infra/testing/createControlledLockManager';
 
@@ -16,6 +17,8 @@ vi.mock('../../compactProject', () => ({ compactProject: vi.fn(() => Promise.res
 vi.mock('../../runCrdtPersistenceOperation', () => ({
     runCrdtPersistenceOperation: vi.fn(() => Promise.resolve()),
 }));
+
+registerKernelPorts();
 
 describe('branch switch moves project identity', () => {
     beforeEach(() => {

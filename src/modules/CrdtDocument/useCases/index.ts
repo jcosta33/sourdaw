@@ -9,6 +9,7 @@ export { captureDurableDocumentWitness } from './captureDurableDocumentWitness';
 export { projectRevisionMatchesLiveIgnoringCommandCheckpoint } from './projectRevisionMatchesLiveIgnoringCommandCheckpoint';
 export { projectRevisionMatchesLiveIgnoringSaveWrites } from './projectRevisionMatchesLiveIgnoringSaveWrites';
 export { settlePendingProjectWritesAndCaptureRevision } from './settlePendingProjectWritesAndCaptureRevision';
+export { settledProjectRevisionMatchesLiveIgnoringSaveWrites } from './settledProjectRevisionMatchesLiveIgnoringSaveWrites';
 export { captureProjectMutationAuthorization } from './captureProjectMutationAuthorization';
 export { readOwnedProjectPublications } from './readOwnedProjectPublications';
 export { commandSourcePublicationMatches } from './commandSourcePublicationMatches';
@@ -31,6 +32,7 @@ export { loadCrdtProject } from './loadCrdtProject';
 export { persistCrdtProject } from './persistCrdtProject';
 export { runCrdtPersistenceBarrier } from './runCrdtPersistenceBarrier';
 export { sessionUndoWitnessStampPort } from './sessionUndoWitnessStampPort';
+export { branchSwitchTransport } from './crdtBranching/branchSwitchTransport';
 
 export { createCrdtDoc } from './createCrdtDoc';
 export { clearActionHistory } from './clearActionHistory';

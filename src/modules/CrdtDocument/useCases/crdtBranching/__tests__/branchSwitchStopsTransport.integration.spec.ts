@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
+import { registerKernelPorts } from '#/app/registerKernelPorts';
 import { registerProjectSlotProjections } from '#/app/registerProjectSlotProjections';
 import { logger } from '#/infra/logger/appLogger';
 import { createControlledLockManager } from '#/infra/testing/createControlledLockManager';
@@ -97,6 +98,8 @@ function startRecordingSession(): void {
     });
     playheadPositionRef.current = PLAYHEAD_BEAT;
 }
+
+registerKernelPorts();
 
 describe('branch switch stops the transport', () => {
     beforeEach(() => {

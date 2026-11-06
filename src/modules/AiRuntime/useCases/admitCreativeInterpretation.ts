@@ -35,6 +35,7 @@ const UNKNOWN_CANDIDATE = 'Creative interpretation selected an unknown or duplic
 const UNAVAILABLE_MODE = 'Creative interpretation selected an unavailable request mode.';
 const CLARIFY_REASON = 'The request does not identify which objects or edit dimensions it delegates.';
 const READ_ONLY_WITH_EDITS = 'A read-only interpretation cannot select edits or targets.';
+const BRIEF_WITH_EDITS = 'A brief interpretation selects no target, edit dimension, constraint or creation slot.';
 const MISSING_FOR_MODE = 'Creative interpretation is missing a target, dimension, or creation slot for its mode.';
 const CONTEXTUAL_REPLACED_EXPLICIT = 'Explicit request references cannot be replaced by contextual selection.';
 const DIMENSION_SELECTED_AND_EXCLUDED = 'Creative interpretation both selects and excludes one edit dimension.';
@@ -134,8 +135,11 @@ function findModeRuleViolation(
     selections: ResolvedSelections
 ): string | null {
     const { targets, dimensions, creationSlots } = selections;
-    if (mode === 'read-only' && (dimensions.length > 0 || creationSlots.length > 0 || targets.length > 0)) {
-        return READ_ONLY_WITH_EDITS;
+    if (
+        (mode === 'read-only' || mode === 'brief') &&
+        (dimensions.length > 0 || creationSlots.length > 0 || targets.length > 0 || selections.constraints.length > 0)
+    ) {
+        return mode === 'brief' ? BRIEF_WITH_EDITS : READ_ONLY_WITH_EDITS;
     }
     if (
         (mode === 'edit' && (targets.length === 0 || dimensions.length === 0)) ||

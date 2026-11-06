@@ -474,6 +474,7 @@ describe('agent tool catalog', () => {
             'analysis.compareReference',
             'recipe.discover',
             'recipe.expand',
+            'brief.compile',
         ]);
 
         vi.mocked(generateToolPlanningOutcome)
