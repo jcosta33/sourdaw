@@ -1,0 +1,68 @@
+src/modules/Arrangement/presentations/views/TrackHeader/ResizeHandle.tsx
+  s_fec7059b7a251c::t_12341dbc04d6ee 46-47
+  s_fec7059b7a251c::t_74767cb8c47d88 48
+  s_fec7059b7a251c::t_26a2f884e76be5 10,13,37
+  s_fec7059b7a251c::t_7eef63134418b5 5
+src/modules/TimelineEditor/presentations/views/ArrangeView.tsx
+  s_fec7059b7a251c::t_42327b077e7d6e 279
+  s_fec7059b7a251c::t_1bb5247db31500 301
+  s_fec7059b7a251c::t_ecbe483b41b61a 278
+  s_fec7059b7a251c::t_edab31605ff627 281
+  s_fec7059b7a251c::t_c66ac13a732750 302,304
+  s_fec7059b7a251c::t_17a1332286fd35 306
+  s_fec7059b7a251c::t_5d2db6d65d38b1 111-117,130-136,283
+  s_fec7059b7a251c::t_365051fe1e8ca9 280
+  s_fec7059b7a251c::t_05d81d548d78dc 303
+src/modules/Arrangement/presentations/views/TrackHeader/__tests__/ResizeHandle.spec.tsx
+  s_fec7059b7a251c::t_dcd303966713b6 34-41
+  s_fec7059b7a251c::t_eadaa9e5d01ad2 18,23,28,43,48,55,62,68,73,81,86,92,109,128,148
+src/modules/TimelineEditor/presentations/components/__tests__/ResizeHandle.spec.tsx
+  s_fec7059b7a251c::t_08fd68851f6847 8-13,16,61,65-72,105-110,112-115,127-132,134-137,147-152,154-157,164-169,171-175,184-189,191,215
+  s_fec7059b7a251c::t_82906d2a3463bd 23-28,30-33,38-42,216
+  s_fec7059b7a251c::t_922d2b87d90b75 15
+  s_fec7059b7a251c::t_d9cac0d5c83506 17-18
+  s_fec7059b7a251c::t_2e499a87213544 43,45-46
+  s_fec7059b7a251c::t_7e8d7f7bca76f9 58-60
+  s_fec7059b7a251c::t_0a87c7dcd81b09 63-64
+  s_fec7059b7a251c::t_f537296c68fbd4 192-194
+  s_fec7059b7a251c::t_f578b0fabe067e 211,213-214
+  s_fec7059b7a251c::t_2eace965416b16 47-48,53-57,206-210,223-228,230-233,248-253,255-258,270-275,277-281,289-294,296-299,308-313,315-318,328-333,335-338,352-357,359-362
+  s_fec7059b7a251c::t_3478d6138706db 14,29,44,62,111,133,153,170,190,212,229,254,276,295,314,334,358
+  s_fec7059b7a251c::t_9816fcdc5a84c1 73-96
+src/components/ui/__tests__/DragResizeHandle.spec.tsx
+  s_fec7059b7a251c::t_b075fffa4ae9b4 14,24,34,44,54
+  s_fec7059b7a251c::t_1bd41a3760979f 55-56
+  s_fec7059b7a251c::t_f7cff61294c996 67-69,76,83,96,112-119,134-141,155-157,169,181,193,219-221,241,255,268-273
+src/modules/TimelineEditor/presentations/views/__tests__/ArrangeView.spec.tsx
+  s_fec7059b7a251c::t_e24422b22645e1 921,984-1012
+  s_fec7059b7a251c::t_b772a2770a4c40 10-14
+  s_fec7059b7a251c::t_4c48ff9f8547d2 1013-1014
+  s_fec7059b7a251c::t_0d0677f444b1ce 150-184,922-948,982-983
+  s_fec7059b7a251c::t_f58c3a04eb48ce 9,380-385,949-981
+src/components/ui/DragResizeHandle.tsx
+  s_fec7059b7a251c::t_fd9c4d5f5d3515 21
+src/modules/Arrangement/presentations/views/TrackHeader.tsx
+  s_fec7059b7a251c::t_6dd438c283fc1b 361
+  s_fec7059b7a251c::t_6714cb887ba09b 135
+src/modules/TimelineEditor/presentations/components/ResizeHandle.tsx
+  s_fec7059b7a251c::t_0401fa9a99618d 7-10,16-22,24-32,34-35
+  s_fec7059b7a251c::t_daa3aa07905104 12,23,33
+src/modules/Arrangement/presentations/views/__tests__/TrackHeader.spec.tsx
+  s_fec7059b7a251c::t_6f1c981d7e4b74 181-189
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "98b9b54b6bbb9080fe71ab9cdc143a23239ddab3",
+  "prompts": {},
+  "sessions": {
+    "s_fec7059b7a251c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a7e284f4-0d83-40f5-8212-419d6ca3c2d5",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
