@@ -1,0 +1,40 @@
+src/modules/ContentBrowser/useCases/__tests__/placeLibrarySample.spec.ts
+  s_fec7059b7a251c::t_9f124921b121b1 89
+  s_fec7059b7a251c::t_12c4238ac7e688 1-83,91-223
+  s_fec7059b7a251c::t_cd2ba4f3bc5556 84-88,90
+src/modules/Arrangement/useCases/index.ts
+  s_fec7059b7a251c::t_07faa449fca23c 74-75
+src/modules/ContentBrowser/AGENTS.md
+  s_fec7059b7a251c::t_f5384021a98def 7
+src/modules/Arrangement/presentations/hooks/useTimelineFileDrop.ts
+  s_fec7059b7a251c::t_c0bc2871c12baf 6,38,252
+src/modules/Arrangement/presentations/hooks/__tests__/useTimelineFileDrop.spec.tsx
+  s_fec7059b7a251c::t_6659bbb613f00d 129-131
+src/modules/ContentBrowser/useCases/index.ts
+  s_fec7059b7a251c::t_07faa449fca23c 1
+src/modules/ContentBrowser/useCases/addBrowserSample.ts
+  s_fec7059b7a251c::t_c0bc2871c12baf 3,6-9,25,31
+src/modules/ContentBrowser/useCases/__tests__/addBrowserSample.spec.ts
+  s_fec7059b7a251c::t_a177c235c99034 10-12
+  s_fec7059b7a251c::t_12c4238ac7e688 19,29-30
+src/modules/ContentBrowser/useCases/placeLibrarySample.ts
+  s_fec7059b7a251c::t_07faa449fca23c 104-105,107,159-160,167,181-182,205,231-232,247,249,305,311
+  s_fec7059b7a251c::t_ae6d510b28484b 1-47,49-103,106,108-158,161-166,168-180,183-204,206-230,233-246,248,250-304,306-310,312-344
+  s_fec7059b7a251c::t_c0bc2871c12baf 48
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1d86ecde76062c20634416f66bbf1df613a752d5",
+  "prompts": {},
+  "sessions": {
+    "s_fec7059b7a251c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a7e284f4-0d83-40f5-8212-419d6ca3c2d5",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
