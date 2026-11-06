@@ -378,22 +378,52 @@ describe('quantizeTransients (AC-002: separate and conform an audio clip to the 
         expect(sliceOf(committedMoves().moves[1]!.sliceClipId).endBeat).toBe(4);
     });
 
-    it('never moves a hit before a range that starts inside the clip', async () => {
-        // The attack at 2.06 s is heard at beat ~4.07, inside a range starting at 4.05; its grid point 4 is not.
-        seedProject(loopClip(), drumLoopChannel([2.06, 3.15]));
+    // The attack at 2.06 s is heard at beat ~4.07 and the one at 3.15 s at ~6.25; both grid points are on beats.
+    const RANGE_START_ATTACKS = [2.06, 3.15];
 
-        await executeAppAction({
+    function quantizeFromRangeStart(startBeat: number, strength: number) {
+        seedProject(loopClip(), drumLoopChannel(RANGE_START_ATTACKS));
+        return executeAppAction({
             type: 'quantizeTransients',
-            payload: { clipId: CLIP_ID, gridSize: 1, strength: 1, startBeat: 4.05 },
+            payload: { clipId: CLIP_ID, gridSize: 1, strength, startBeat },
         });
+    }
+
+    it.each([1, 0.5])(
+        'never moves a hit before a range that starts off the grid inside the clip (strength %s)',
+        async (strength) => {
+            await quantizeFromRangeStart(4.05, strength);
+
+            // The hit at ~4.07 would move toward beat 4, before the range start: it stays where it is.
+            const outcome = committedMoves();
+            expect(outcome.skipped).toEqual([{ onsetIndex: 0, reason: 'merged' }]);
+            expect(outcome.moves.map((move) => move.onsetIndex)).toEqual([1]);
+            const [move] = outcome.moves;
+            expect(move!.toBeat).toBeCloseTo(move!.fromBeat + (6 - move!.fromBeat) * strength, 12);
+            const [head, rangeStart] = trackClips();
+            // Everything before the range start plays as it did: the head runs to 4.05, the cut there is unmoved.
+            expect(head).toMatchObject({ id: CLIP_ID, startBeat: 0, endBeat: 4.05, audioOffsetSeconds: 0 });
+            expect(rangeStart).toMatchObject({ startBeat: 4.05, audioOffsetSeconds: (4.05 * 60) / 120 });
+        }
+    );
+
+    it.each([1, 0.5])('lets a hit land on a range start on the grid (strength %s)', async (strength) => {
+        await quantizeFromRangeStart(4, strength);
 
         const outcome = committedMoves();
-        expect(outcome.skipped).toEqual([{ onsetIndex: 0, reason: 'merged' }]);
-        expect(outcome.moves.map((move) => [move.onsetIndex, move.toBeat])).toEqual([[1, 6]]);
-        const [head, rangeStart] = trackClips();
-        // Everything before the range start plays as it did: the head runs to 4.05, the cut there is unmoved.
-        expect(head).toMatchObject({ id: CLIP_ID, startBeat: 0, endBeat: 4.05, audioOffsetSeconds: 0 });
-        expect(rangeStart).toMatchObject({ startBeat: 4.05, audioOffsetSeconds: (4.05 * 60) / 120 });
+        expect(outcome.skipped).toEqual([]);
+        const [first] = outcome.moves;
+        expect(first!.onsetIndex).toBe(0);
+        expect(first!.toBeat).toBeCloseTo(first!.fromBeat + (4 - first!.fromBeat) * strength, 12);
+        expect(first!.toBeat).toBeGreaterThanOrEqual(4);
+        // The head plays unmoved up to the range start and no slice starts before it.
+        const [head, ...rest] = trackClips();
+        expect(head).toMatchObject({ id: CLIP_ID, startBeat: 0, audioOffsetSeconds: 0 });
+        expect(head!.endBeat).toBeGreaterThanOrEqual(4);
+        expect(head!.endBeat).toBeLessThanOrEqual(first!.toBeat);
+        for (const slice of rest) {
+            expect(slice.startBeat).toBeGreaterThanOrEqual(4);
+        }
     });
 
     it('cuts a stretched clip where its range ends at the source second that beat plays', async () => {
@@ -674,9 +704,11 @@ describe('quantizeTransients (AC-002: separate and conform an audio clip to the 
             await undo();
             const before = trackClips();
             const plan = recorded.payload.plan;
-            if (!plan) {
-                throw new Error('Expected a recorded plan');
+            const [head, firstSlice, ...laterSlices] = plan?.replacement.clips ?? [];
+            if (!plan || !head || !firstSlice) {
+                throw new Error('Expected a recorded plan with slices');
             }
+            // Every recorded id stays, so only the replan comparison can tell the gain was forged.
             const forged: QuantizeAction = {
                 ...recorded,
                 payload: {
@@ -684,14 +716,9 @@ describe('quantizeTransients (AC-002: separate and conform an audio clip to the 
                     plan: {
                         ...plan,
                         replacement: {
-                            trackId: TRACK_ID,
-                            clips: [{ ...loopClip(), gain: 8 }],
-                            clipOrder: [CLIP_ID],
-                            clipSatellites: [{ clipId: CLIP_ID, gainEnvelope: null, warpState: null }],
-                            clipAutomationLanes: [],
+                            ...plan.replacement,
+                            clips: [head, { ...firstSlice, gain: 8 }, ...laterSlices],
                         },
-                        moves: [],
-                        skipped: [],
                     },
                 },
             };

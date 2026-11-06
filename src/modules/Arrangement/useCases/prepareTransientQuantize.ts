@@ -250,9 +250,11 @@ function unmovedCut(beat: number, sourceClock: SourceClock): Slice {
 /**
  * Walk the onsets in order and keep a cut only where its grid point advances past the slice before
  * it by a minimum slice length and leaves room before the clip end (or the range end); any other
- * onset stays inside the slice before it rather than overlapping it. A range that starts or ends
- * inside the clip gets an unmoved cut at each such end, so no hit moves before the range start and
- * the audio outside the range stays where it was.
+ * onset stays inside the slice before it rather than overlapping it. A hit may land on or after a
+ * range start inside the clip, never before it: one whose grid point falls earlier is merged. The
+ * range start gets an unmoved cut unless the first moved slice already starts within a minimum
+ * slice length of it, where the head slice ends instead, so the audio before it stays where it
+ * was. A range that ends inside the clip gets an unmoved cut there, so the audio after it does too.
  */
 function compileSlices(
     clip: Clip,
@@ -260,17 +262,15 @@ function compileSlices(
     input: PrepareTransientQuantizeInput,
     sourceClock: SourceClock
 ) {
-    const slices: Slice[] = [
-        {
-            onset: null,
-            sourceSeconds: sourceClock.sourceStartSeconds,
-            fromBeat: clip.startBeat,
-            toBeat: clip.startBeat,
-        },
-    ];
-    if (input.startBeat !== undefined && input.startBeat > clip.startBeat + MIN_SLICE_BEATS) {
-        slices.push(unmovedCut(input.startBeat, sourceClock));
-    }
+    const head: Slice = {
+        onset: null,
+        sourceSeconds: sourceClock.sourceStartSeconds,
+        fromBeat: clip.startBeat,
+        toBeat: clip.startBeat,
+    };
+    const moved: Slice[] = [];
+    const rangeStart =
+        input.startBeat !== undefined && input.startBeat > clip.startBeat + MIN_SLICE_BEATS ? input.startBeat : null;
     const rangeEnd =
         input.endBeat !== undefined && input.endBeat < clip.endBeat - MIN_SLICE_BEATS ? input.endBeat : null;
     const lastCutBeat = rangeEnd ?? clip.endBeat;
@@ -286,16 +286,25 @@ function compileSlices(
             strength: input.strength ?? 1,
             swing: input.swing ?? 0,
         });
-        const previous = slices[slices.length - 1]!;
-        if (toBeat <= previous.toBeat + MIN_SLICE_BEATS || toBeat >= lastCutBeat - MIN_SLICE_BEATS) {
+        const previous = moved.at(-1) ?? head;
+        if (
+            (rangeStart !== null && toBeat < rangeStart) ||
+            toBeat <= previous.toBeat + MIN_SLICE_BEATS ||
+            toBeat >= lastCutBeat - MIN_SLICE_BEATS
+        ) {
             skipped.push({ onsetIndex: onset.onsetIndex, reason: 'merged' });
             continue;
         }
-        slices.push({ onset, sourceSeconds: onset.sourceSeconds, fromBeat: onset.beat, toBeat });
+        moved.push({ onset, sourceSeconds: onset.sourceSeconds, fromBeat: onset.beat, toBeat });
     }
-    if (rangeEnd !== null) {
-        slices.push(unmovedCut(rangeEnd, sourceClock));
-    }
+    const firstMoved = moved[0];
+    const cutsRangeStart = rangeStart !== null && (!firstMoved || firstMoved.toBeat > rangeStart + MIN_SLICE_BEATS);
+    const slices: Slice[] = [
+        head,
+        ...(cutsRangeStart ? [unmovedCut(rangeStart, sourceClock)] : []),
+        ...moved,
+        ...(rangeEnd === null ? [] : [unmovedCut(rangeEnd, sourceClock)]),
+    ];
     return { slices, skipped };
 }
 

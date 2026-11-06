@@ -103,11 +103,17 @@ function movesHeadTheirSlices(
 }
 
 function isTransientQuantizePlan(value: unknown, clipId: string): boolean {
-    if (!isRecord(value) || !isClipReplacementRestorePayload(value)) {
+    if (!isRecord(value)) {
         return false;
     }
+    // Read before the restore-payload predicate narrows `value` to its two snapshots alone.
     const { source, moves, skipped } = value;
-    if (!isRecord(source) || !Array.isArray(moves) || !Array.isArray(skipped)) {
+    if (
+        !isClipReplacementRestorePayload(value) ||
+        !isRecord(source) ||
+        !Array.isArray(moves) ||
+        !Array.isArray(skipped)
+    ) {
         return false;
     }
     const [expectedClip] = value.expected.clips;
