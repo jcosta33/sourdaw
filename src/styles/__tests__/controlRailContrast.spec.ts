@@ -8,7 +8,7 @@ type Rgba = { r: number; g: number; b: number; a: number };
 const readSource = (path: string): string => readFileSync(resolve(process.cwd(), path), 'utf8');
 
 const tokensCss = readSource('src/styles/tokens.css');
-const floatingSurfaceCss = readSource('src/styles/utilities/daw-surfaces.css');
+const floatingSurfaceCss = readSource('src/styles/main.css');
 const sliderSource = readSource('src/components/ui/slider.tsx');
 const hammondSource = readSource(
     'src/modules/TimelineEditor/presentations/views/Inspector/layouts/HammondB3Layout.tsx'
@@ -70,7 +70,7 @@ const floatingSurfaceBackgrounds = (base: Rgba): Rgba[] => {
             block ?? ''
         );
     if (layers === null) {
-        throw new Error('daw-floating-surface background layers not found in daw-surfaces.css');
+        throw new Error('daw-floating-surface background layers not found in main.css');
     }
     const sheenTop = parseColor(layers[1] ?? '');
     const sheenBottom = parseColor(layers[2] ?? '');
