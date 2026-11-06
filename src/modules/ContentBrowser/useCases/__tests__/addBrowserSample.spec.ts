@@ -6,17 +6,17 @@ import { defaultTransportState, transportStore } from '#/modules/Transport/store
 
 import { addBrowserSample } from '../addBrowserSample';
 
-type TrackState = { tracks: { id: string; kind: string; clips: [] }[]; selectedTrackId: string | null };
-
 const mocks = vi.hoisted(() => ({
-    trackState: { value: { tracks: [], selectedTrackId: null } as TrackState },
+    trackState: {
+        value: { tracks: [] as { id: string; kind: string; clips: [] }[], selectedTrackId: null as string | null },
+    },
     ensureFactorySampleBuffer: vi.fn(),
     stageClipAudioAsset: vi.fn(),
     getAssetTransfer: vi.fn(),
     notifyUser: vi.fn(),
 }));
 
-vi.mock('#/modules/Arrangement/stores/trackStore', async (importOriginal) => ({
+vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
     ...(await importOriginal<any>()),
     trackStore: {
         get value() {
@@ -26,7 +26,8 @@ vi.mock('#/modules/Arrangement/stores/trackStore', async (importOriginal) => ({
     },
 }));
 
-vi.mock('#/modules/Arrangement/useCases/clip/stageClipAudioAsset', () => ({
+vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
+    ...(await importOriginal<any>()),
     stageClipAudioAsset: mocks.stageClipAudioAsset,
 }));
 

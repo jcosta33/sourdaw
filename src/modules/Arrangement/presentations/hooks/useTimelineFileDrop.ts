@@ -3,6 +3,7 @@ import { type DragEvent, useState } from 'react';
 import { decodeAudioFile, discardDecodedAudioFile, getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
 import { getAssetTransfer } from '#/modules/Collaboration/useCases';
 import { executeAppActionBatch } from '#/modules/Command/useCases';
+import { LIBRARY_SAMPLE_MALFORMED_MESSAGE, placeLibrarySample } from '#/modules/ContentBrowser/useCases';
 import { captureProjectTransitionAuthority } from '#/modules/Project/useCases';
 import { isAudioFile } from '#/utils/audioFileExtensions';
 import { AI_RENDER_DRAG_MIME_TYPE, PLUGIN_DRAG_MIME_TYPE, SAMPLE_DRAG_MIME_TYPE } from '#/utils/dragMimeTypes';
@@ -17,11 +18,6 @@ import { compileNewAudioTrackAction } from '../../useCases/compileNewAudioTrackA
 import { type CreationBatchAction, type CreationBatchResult, retainedCreation } from '../../useCases/creationBatch';
 import { executeAddDeviceAction } from '../../useCases/device/executeAddDeviceAction';
 import { importMidiFile } from '../../useCases/importMidiFile';
-import {
-    LIBRARY_SAMPLE_MALFORMED_MESSAGE,
-    type LibrarySamplePayload,
-    placeLibrarySample,
-} from '../../useCases/placeLibrarySample';
 import { hitTestTrack } from '../../useCases/timelineInteractions/hitTestClip/hitTestTrack';
 
 type GetCanvasCoords = (e: DragEvent<HTMLDivElement>) => { x: number; y: number };
@@ -39,6 +35,7 @@ type UseTimelineFileDropResult = {
     isImporting: boolean;
 };
 
+type LibrarySamplePayload = Parameters<typeof placeLibrarySample>[0]['sample'];
 type AiRenderPayload = { name: string; bufferId: string; durationSeconds: number };
 type PluginPayload = { name: string; id: string };
 type AudioTargetIntent = { kind: 'existing'; trackId: string } | { kind: 'create' };
@@ -252,6 +249,7 @@ export const useTimelineFileDrop = ({
                     },
                     authority,
                     origin: 'timeline-drop',
+                    readTempo: () => buildTimelineRenderModel().tempo,
                 });
             } finally {
                 setIsImporting(false);

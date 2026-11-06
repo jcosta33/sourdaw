@@ -20,7 +20,7 @@ const mocks = vi.hoisted(() => ({
     promoteStagedAsset: vi.fn(),
 }));
 
-vi.mock('../../stores/trackStore', async (importOriginal) => ({
+vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
     ...(await importOriginal<any>()),
     trackStore: {
         get value() {
@@ -30,7 +30,10 @@ vi.mock('../../stores/trackStore', async (importOriginal) => ({
     },
 }));
 
-vi.mock('../clip/stageClipAudioAsset', () => ({ stageClipAudioAsset: mocks.stageClipAudioAsset }));
+vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
+    ...(await importOriginal<any>()),
+    stageClipAudioAsset: mocks.stageClipAudioAsset,
+}));
 
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: mocks.notifyUser }));
 
@@ -78,7 +81,13 @@ const bufferOf = (duration: number): AudioBuffer => ({
 
 const authority = { isCurrent: () => true };
 const place = (sample: Parameters<typeof placeLibrarySample>[0]['sample'], trackId?: string) =>
-    placeLibrarySample({ sample, placement: { trackId, startBeat: 8 }, authority, origin: 'browser-add' });
+    placeLibrarySample({
+        sample,
+        placement: { trackId, startBeat: 8 },
+        authority,
+        origin: 'browser-add',
+        readTempo: () => 120,
+    });
 
 describe('placeLibrarySample', () => {
     beforeEach(() => {

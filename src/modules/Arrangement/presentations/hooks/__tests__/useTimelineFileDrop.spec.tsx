@@ -126,6 +126,9 @@ vi.mock('#/modules/Command/useCases', () => ({
     pushUndoEntry: vi.fn(),
     syncActionReplayMetadata: vi.fn(),
     resetActionReplayAuthority: vi.fn(),
+    readUndoEntryForInverse: vi.fn(),
+    commitRedoInverseCapture: vi.fn(),
+    isAppActionCommittedError: vi.fn(() => false),
     REDO_NOT_APPLIED: Symbol('REDO_NOT_APPLIED'),
 }));
 

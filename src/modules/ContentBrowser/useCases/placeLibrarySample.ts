@@ -1,3 +1,10 @@
+import { trackStore } from '#/modules/Arrangement/stores';
+import {
+    compileNewAudioTrackAction,
+    createTrack,
+    retainedCreation,
+    stageClipAudioAsset,
+} from '#/modules/Arrangement/useCases';
 import { decodeAudioFile, discardDecodedAudioFile, getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
 import { getAssetTransfer } from '#/modules/Collaboration/useCases';
 import { executeAppActionBatch } from '#/modules/Command/useCases';
@@ -8,15 +15,7 @@ import {
 } from '#/modules/SampleLibrary/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
-import { createTrack } from '../models/Track';
-import { trackStore } from '../stores/trackStore';
-
-import { buildTimelineRenderModel } from './buildTimelineRenderModel';
-import { stageClipAudioAsset } from './clip/stageClipAudioAsset';
-import { compileNewAudioTrackAction } from './compileNewAudioTrackAction';
-import { type CreationBatchAction, retainedCreation } from './creationBatch';
-
-export type LibrarySamplePayload = {
+type LibrarySamplePayload = {
     name: string;
     id: string;
     path?: string;
@@ -26,7 +25,7 @@ export type LibrarySamplePayload = {
 };
 
 /** The clip lands on `trackId` when it names an audio track, else on a new audio track named after the sample. */
-export type LibrarySamplePlacement = { trackId?: string; startBeat: number };
+type LibrarySamplePlacement = { trackId?: string; startBeat: number };
 
 type PlaceLibrarySampleInput = {
     sample: LibrarySamplePayload;
@@ -35,6 +34,8 @@ type PlaceLibrarySampleInput = {
     authority: { isCurrent: () => boolean };
     /** Names the undo group of the placement after the gesture that made it. */
     origin: 'timeline-drop' | 'browser-add';
+    /** Read when the sample's length becomes known, so the clip spans it at the tempo in force then. */
+    readTempo: () => number;
 };
 
 export const LIBRARY_SAMPLE_MALFORMED_MESSAGE = 'Could not place the dropped sample — its metadata was malformed.';
@@ -44,6 +45,7 @@ const BATCH_NAMING: Record<PlaceLibrarySampleInput['origin'], { groupIdPrefix: s
     'browser-add': { groupIdPrefix: 'browser-add', groupLabelPrefix: 'Add sample' },
 };
 
+type CreationBatchAction = Parameters<typeof executeAppActionBatch>[0][number];
 type AssetTransfer = ReturnType<typeof getAssetTransfer>;
 type Authority = PlaceLibrarySampleInput['authority'];
 
@@ -73,8 +75,8 @@ function resolveAudioTarget(placement: LibrarySamplePlacement, name: string): Au
     return { trackId: track.id, newTrack: track };
 }
 
-function beatsForSeconds(seconds: number): number {
-    return Math.max(1, Math.ceil((seconds / 60) * buildTimelineRenderModel().tempo));
+function beatsForSeconds(seconds: number, readTempo: () => number): number {
+    return Math.max(1, Math.ceil((seconds / 60) * readTempo()));
 }
 
 function releasePrepared(prepared: Partial<PreparedSample>, assetTransfer: AssetTransfer): void {
@@ -99,9 +101,10 @@ async function prepareCachedSample(
     sample: LibrarySamplePayload,
     audioBufferId: string,
     buffer: AudioBuffer,
-    authority: Authority
+    authority: Authority,
+    readTempo: () => number
 ): Promise<Preparation> {
-    const durationBeats = beatsForSeconds(buffer.duration);
+    const durationBeats = beatsForSeconds(buffer.duration, readTempo);
     try {
         const staged = await stageClipAudioAsset(buffer, sample.name);
         return {
@@ -153,14 +156,15 @@ async function stageDecodedFile(
 async function decodeLibraryFile(
     sample: LibrarySamplePayload,
     file: File,
-    authority: Authority
+    authority: Authority,
+    readTempo: () => number
 ): Promise<PreparedSample | null> {
     try {
         const result = await decodeAudioFile(file);
         return {
             audioBufferId: result.id,
             decodedAudioBufferId: result.id,
-            durationBeats: beatsForSeconds(result.buffer.duration),
+            durationBeats: beatsForSeconds(result.buffer.duration, readTempo),
         };
     } catch {
         notifyIfCurrent(authority, `"${sample.name}" could not be decoded — the file may be DRM-protected or corrupt.`);
@@ -174,7 +178,8 @@ async function decodeLibraryFile(
 async function prepareLibraryFileSample(
     sample: LibrarySamplePayload,
     authority: Authority,
-    assetTransfer: AssetTransfer
+    assetTransfer: AssetTransfer,
+    readTempo: () => number
 ): Promise<Preparation> {
     if (!sample.libraryRootId || !sample.path) {
         notifyIfCurrent(authority, `Could not access "${sample.name}" — audio buffer is not available.`);
@@ -197,7 +202,7 @@ async function prepareLibraryFileSample(
             return ABANDONED;
         }
         const { file } = resolvedSampleFile;
-        const decoded = await decodeLibraryFile(sample, file, authority);
+        const decoded = await decodeLibraryFile(sample, file, authority, readTempo);
         if (!decoded) {
             return ABANDONED;
         }
@@ -223,7 +228,8 @@ async function prepareLibraryFileSample(
 async function prepareSample(
     sample: LibrarySamplePayload,
     authority: Authority,
-    assetTransfer: AssetTransfer
+    assetTransfer: AssetTransfer,
+    readTempo: () => number
 ): Promise<Preparation> {
     const candidateBufferId = sample.audioBufferId ?? sample.id;
     let cachedBuffer = getCachedAudioBuffer({ bufferId: candidateBufferId });
@@ -238,9 +244,9 @@ async function prepareSample(
         }
     }
     if (cachedBuffer) {
-        return prepareCachedSample(sample, candidateBufferId, cachedBuffer, authority);
+        return prepareCachedSample(sample, candidateBufferId, cachedBuffer, authority, readTempo);
     }
-    return prepareLibraryFileSample(sample, authority, assetTransfer);
+    return prepareLibraryFileSample(sample, authority, assetTransfer, readTempo);
 }
 
 function buildPlacementActions(
@@ -296,12 +302,13 @@ export async function placeLibrarySample({
     placement,
     authority,
     origin,
+    readTempo,
 }: PlaceLibrarySampleInput): Promise<void> {
     const assetTransfer = getAssetTransfer();
     let prepared: PreparedSample | null = null;
     let committed = false;
     try {
-        const preparation = await prepareSample(sample, authority, assetTransfer);
+        const preparation = await prepareSample(sample, authority, assetTransfer, readTempo);
         if (preparation.status === 'abandoned') {
             return;
         }
