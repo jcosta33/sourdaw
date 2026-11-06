@@ -103,6 +103,18 @@ function releaseGestureTouchAutomation(gesture: ParameterGesture): void {
     gesture.recordingAuthority.release();
 }
 
+/**
+ * The value a control shows when no gesture preview is in flight. An external plugin's published value
+ * is the host's view and follows editor edits; its stored value stays the document's record for the
+ * write guards and undo baseline, not what the control shows.
+ */
+function readShownParameterValue(device: Device, param: DeviceParameter): number {
+    if (isExternalPluginDeviceType(device.type)) {
+        return param.value;
+    }
+    return device.parameterValues[param.id] ?? param.value;
+}
+
 type GestureProps = {
     param: DeviceParameter;
     device: Device;
@@ -387,11 +399,7 @@ export function useDeviceParameterGesture({ param, device, trackId }: GesturePro
         () => readDeviceParameterPreview(previewKey)
     );
     const previewValue = preview?.isCurrent() ? preview.value : undefined;
-    // An external plugin's published value is the host's view and follows editor edits; the stored value
-    // stays the document's record for the write guards and undo baseline, not what the control shows.
-    const value = isExternalPluginDeviceType(device.type)
-        ? (previewValue ?? param.value)
-        : (previewValue ?? device.parameterValues[param.id] ?? param.value);
+    const value = previewValue ?? readShownParameterValue(device, param);
     const context: GestureContext = {
         param,
         device,
