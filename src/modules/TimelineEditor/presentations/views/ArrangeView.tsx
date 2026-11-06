@@ -261,6 +261,10 @@ export const ArrangeView = (): ReactElement => {
                     </Stack>
                     <ResizeHandle
                         direction="vertical"
+                        label="Resize session view"
+                        valueNow={displayedSessionWidth}
+                        valueMin={SESSION_VIEW_MIN}
+                        valueMax={SESSION_VIEW_MAX}
                         onResize={handleSessionResize}
                         onResizeEnd={handleSessionResizeEnd}
                     />
@@ -279,6 +283,10 @@ export const ArrangeView = (): ReactElement => {
                     />
                     <ResizeHandle
                         direction="vertical"
+                        label="Resize track list"
+                        valueNow={displayedTrackListWidth}
+                        valueMin={MIN_TRACK_LIST_WIDTH}
+                        valueMax={TRACK_LIST_MAX}
                         onResize={handleTrackListResize}
                         onResizeEnd={handleTrackListResizeEnd}
                     />

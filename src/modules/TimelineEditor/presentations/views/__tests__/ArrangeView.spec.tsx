@@ -7,7 +7,11 @@ import { decodeAudioFile, discardDecodedAudioFile } from '#/modules/AudioEngine/
 import { executeAppActionBatch } from '#/modules/Command/useCases';
 import { defaultWorkspaceState } from '#/modules/WorkspaceShell/stores';
 import { updateWorkspaceState } from '#/modules/WorkspaceShell/useCases';
-import { ARRANGE_RESIZE_HANDLE_WIDTH, MIN_TIMELINE_COLUMN_WIDTH } from '#/utils/Layout/allocateMainFirstWidths';
+import {
+    ARRANGE_RESIZE_HANDLE_WIDTH,
+    MIN_TIMELINE_COLUMN_WIDTH,
+    MIN_TRACK_LIST_WIDTH,
+} from '#/utils/Layout/allocateMainFirstWidths';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { type Clip, type Track } from '../../../models/TrackViewTypes';
@@ -146,13 +150,29 @@ vi.mock('#/modules/WorkspaceShell/useCases', () => ({
 vi.mock('../../components/ResizeHandle', () => ({
     ResizeHandle: ({
         direction,
-        onResize: _onResize,
-        onResizeEnd: _onResizeEnd,
+        label,
+        valueNow,
+        valueMin,
+        valueMax,
     }: {
         direction: string;
+        label: string;
+        valueNow: number;
+        valueMin: number;
+        valueMax: number;
         onResize: (delta: number) => void;
         onResizeEnd: () => void;
-    }) => <div data-testid="resize-handle" data-direction={direction} />,
+    }) => (
+        <div
+            role="separator"
+            aria-label={label}
+            aria-valuenow={Math.round(valueNow)}
+            aria-valuemin={valueMin}
+            aria-valuemax={valueMax}
+            data-testid="resize-handle"
+            data-direction={direction}
+        />
+    ),
 }));
 
 vi.mock('../TimelineMinimapResizeHandle', () => ({
@@ -883,5 +903,37 @@ describe('ArrangeView', () => {
         expect(trackListWidth + ARRANGE_RESIZE_HANDLE_WIDTH + MIN_TIMELINE_COLUMN_WIDTH).toBeLessThanOrEqual(150);
         expect(timelineColumn).toHaveClass('min-w-0');
         expect(timelineColumn).toHaveStyle({ minWidth: `${MIN_TIMELINE_COLUMN_WIDTH}px` });
+    });
+
+    it('names the track list and session view separators and exposes their widths', () => {
+        vi.mocked(useWorkspaceState).mockReturnValue({
+            ...defaultWorkspaceState,
+            trackListOpen: true,
+            trackListWidth: 220,
+            dualViewOpen: true,
+            sessionViewWidth: 300,
+            scratchPadOpen: false,
+            scratchPadHeight: 150,
+        });
+        vi.mocked(useTracks).mockReturnValue({
+            tracks: [makeTrack({ clipEndBeat: 32 })],
+            selectedTrackId: 'track-1',
+        });
+
+        render(<ArrangeView />);
+
+        const trackList = screen.getByRole('separator', { name: 'Resize track list' });
+        const shownTrackListWidth = Number.parseFloat(screen.getByTestId('track-list-view').style.width);
+        expect(trackList).toHaveAttribute('aria-valuenow', String(Math.round(shownTrackListWidth)));
+        expect(trackList).toHaveAttribute('aria-valuemin', String(MIN_TRACK_LIST_WIDTH));
+        expect(trackList).toHaveAttribute('aria-valuemax', '400');
+
+        const session = screen.getByRole('separator', { name: 'Resize session view' });
+        const shownSessionWidth = Number.parseFloat(
+            screen.getByTestId('session-view').parentElement?.style.width ?? ''
+        );
+        expect(session).toHaveAttribute('aria-valuenow', String(Math.round(shownSessionWidth)));
+        expect(session).toHaveAttribute('aria-valuemin', '200');
+        expect(session).toHaveAttribute('aria-valuemax', '800');
     });
 });
