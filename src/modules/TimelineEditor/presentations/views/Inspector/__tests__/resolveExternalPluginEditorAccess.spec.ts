@@ -1,11 +1,24 @@
 import { describe, expect, it } from 'vitest';
 
+import { type ExternalPluginActivationStatus } from '#/modules/PluginHost/stores';
 import { isSupportedPluginFormat } from '#/modules/PluginHost/useCases';
 
 import { type Device } from '../../../../models/TrackViewTypes';
-import { resolveExternalPluginEditorAccess, type SupportedScannedPlugin } from '../resolveExternalPluginEditorAccess';
+import {
+    type ExternalPluginEditorAccess,
+    resolveExternalPluginEditorAccess,
+    type SupportedScannedPlugin,
+} from '../resolveExternalPluginEditorAccess';
 
 type ScannedEntry = SupportedScannedPlugin & { format: string };
+type Activations = Readonly<Record<string, ExternalPluginActivationStatus>>;
+type EditorAccessRow = {
+    case: string;
+    plugins: ScannedEntry[];
+    device: Pick<Device, 'externalPluginId' | 'externalInstanceId'>;
+    activations: Activations;
+    expected: ExternalPluginEditorAccess;
+};
 
 const clap: ScannedEntry = {
     id: 'reverb-plugin',
@@ -18,12 +31,12 @@ const device = (overrides: Partial<Device> = {}): Pick<Device, 'externalPluginId
     externalInstanceId: 'instance-1',
     ...overrides,
 });
-const active = { 'instance-1': { status: 'active' as const } };
+const active: Activations = { 'instance-1': { status: 'active' } };
 const supported = (scanned: readonly ScannedEntry[]): ScannedEntry[] =>
     scanned.filter((plugin) => isSupportedPluginFormat(plugin.format));
 
 describe('resolveExternalPluginEditorAccess', () => {
-    it.each([
+    const rows: EditorAccessRow[] = [
         {
             case: 'an active plugin with an editor',
             plugins: [clap],
@@ -56,14 +69,14 @@ describe('resolveExternalPluginEditorAccess', () => {
             case: 'a plugin still loading',
             plugins: [clap],
             device: device(),
-            activations: { 'instance-1': { status: 'loading' as const } },
+            activations: { 'instance-1': { status: 'loading' } },
             expected: 'not-loaded',
         },
         {
             case: 'a plugin whose activation failed',
             plugins: [clap],
             device: device(),
-            activations: { 'instance-1': { status: 'error' as const, message: 'refused' } },
+            activations: { 'instance-1': { status: 'error', message: 'refused' } },
             expected: 'not-loaded',
         },
         {
@@ -101,7 +114,9 @@ describe('resolveExternalPluginEditorAccess', () => {
             activations: active,
             expected: 'not-loaded',
         },
-    ])('$case is $expected', ({ plugins, device: target, activations, expected }) => {
+    ];
+
+    it.each(rows)('$case is $expected', ({ plugins, device: target, activations, expected }) => {
         expect(resolveExternalPluginEditorAccess(target, supported(plugins), activations)).toBe(expected);
     });
 });
