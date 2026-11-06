@@ -244,18 +244,19 @@ test.describe('Track header — Input monitoring cycle', () => {
 
     test('Input monitoring cycles Auto → On → Off → Auto via aria-label', async ({ page }) => {
         const track_list = page.getByRole('grid', { name: /Track list/i });
-        const monitor = track_list.getByRole('button', { name: /Input monitoring/i }).first();
+        // The label cycles with each click, so the locator matches the row's monitor by prefix.
+        const monitor = track_list.getByRole('button', { name: /^Input monitoring for Audio 1:/ }).first();
 
-        await expect(monitor).toHaveAccessibleName(/Input monitoring: Auto/i);
-
-        await monitor.click();
-        await expect(monitor).toHaveAccessibleName(/Input monitoring: On/i);
+        await expect(monitor).toHaveAccessibleName('Input monitoring for Audio 1: Auto');
 
         await monitor.click();
-        await expect(monitor).toHaveAccessibleName(/Input monitoring: Off/i);
+        await expect(monitor).toHaveAccessibleName('Input monitoring for Audio 1: On');
 
         await monitor.click();
-        await expect(monitor).toHaveAccessibleName(/Input monitoring: Auto/i);
+        await expect(monitor).toHaveAccessibleName('Input monitoring for Audio 1: Off');
+
+        await monitor.click();
+        await expect(monitor).toHaveAccessibleName('Input monitoring for Audio 1: Auto');
     });
 });
 

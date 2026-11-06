@@ -495,10 +495,9 @@ export const useTimelineFileDrop = ({
                     notifyUser('Drop the plugin onto a track to add it.', 'warning');
                     return;
                 }
-                // The payload carries both, and the action compiler receives the stable id,
-                // id. `De-esser`, `LUFS Meter` and `Stereo Widener` each name two
-                // catalog plugins, so a name lookup returns whichever the registry
-                // lists first rather than the card that was dragged.
+                // The payload carries both, and the action compiler receives the stable
+                // id. Catalog names are unique, so a name lookup would not be ambiguous,
+                // but the id is the key a device is stored under.
                 void executeAddDeviceAction(targetTrackId, plugin.id);
             } catch {
                 notifyUser('Could not add the dropped plugin — its data was malformed.', 'error');

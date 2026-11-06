@@ -377,7 +377,7 @@ test.describe.serial('recorded MIDI cycle take acceptance', () => {
             .first()
             .getByRole('row')
             .filter({ hasText: 'Cycle keys' });
-        const variationToggle = row.getByRole('button', { name: 'Toggle variation lanes' });
+        const variationToggle = row.getByRole('button', { name: 'Variation lanes for Cycle keys' });
         await expect(variationToggle).toBeVisible();
         if ((await variationToggle.getAttribute('aria-pressed')) !== 'true') {
             await variationToggle.click();
@@ -511,7 +511,7 @@ test.describe.serial('recorded MIDI cycle take acceptance', () => {
             .first()
             .getByRole('row')
             .filter({ hasText: 'Cycle keys' });
-        const variationToggle = row.getByRole('button', { name: 'Toggle variation lanes' });
+        const variationToggle = row.getByRole('button', { name: 'Variation lanes for Cycle keys' });
         await expect(variationToggle).toBeVisible();
         if ((await variationToggle.getAttribute('aria-pressed')) !== 'true') {
             await variationToggle.click();

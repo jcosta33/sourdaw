@@ -937,7 +937,7 @@ describe('TrackContextMenu', () => {
                 <TrackContextMenu track={track}>
                     <button
                         type="button"
-                        aria-label="Toggle variation lanes"
+                        aria-label="Variation lanes for Test Track"
                         onClick={() => toggleVariationLanes(track.id)}
                     >
                         Toggle variation lanes
@@ -946,7 +946,7 @@ describe('TrackContextMenu', () => {
             </div>
         );
 
-        const toggleBtn = screen.getByLabelText('Toggle variation lanes');
+        const toggleBtn = screen.getByLabelText('Variation lanes for Test Track');
         toggleBtn.focus();
         fireEvent.contextMenu(toggleBtn);
         fireEvent.click(screen.getByText('Rename'));
@@ -979,7 +979,7 @@ describe('TrackContextMenu', () => {
                 <TrackContextMenu track={track}>
                     <button
                         type="button"
-                        aria-label="Toggle variation lanes"
+                        aria-label="Variation lanes for Test Track"
                         onClick={() => toggleVariationLanes(track.id)}
                     >
                         Toggle variation lanes
@@ -988,7 +988,7 @@ describe('TrackContextMenu', () => {
             </div>
         );
 
-        const toggleBtn = screen.getByLabelText('Toggle variation lanes');
+        const toggleBtn = screen.getByLabelText('Variation lanes for Test Track');
         toggleBtn.focus();
         fireEvent.contextMenu(toggleBtn);
         fireEvent.click(screen.getByText('Rename'));
@@ -1018,7 +1018,7 @@ describe('TrackContextMenu', () => {
                 <TrackContextMenu track={track}>
                     <button
                         type="button"
-                        aria-label="Toggle variation lanes"
+                        aria-label="Variation lanes for Test Track"
                         onClick={() => toggleVariationLanes(track.id)}
                     >
                         Toggle variation lanes
@@ -1027,7 +1027,7 @@ describe('TrackContextMenu', () => {
             </div>
         );
 
-        const toggleBtn = screen.getByLabelText('Toggle variation lanes');
+        const toggleBtn = screen.getByLabelText('Variation lanes for Test Track');
         toggleBtn.focus();
         fireEvent.contextMenu(toggleBtn);
         fireEvent.click(screen.getByText('Rename'));
@@ -1060,7 +1060,7 @@ describe('TrackContextMenu', () => {
                 <TrackContextMenu track={track}>
                     <button
                         type="button"
-                        aria-label="Toggle variation lanes"
+                        aria-label="Variation lanes for Test Track"
                         onClick={() => toggleVariationLanes(track.id)}
                     >
                         Toggle variation lanes
@@ -1069,7 +1069,7 @@ describe('TrackContextMenu', () => {
             </div>
         );
 
-        const toggleBtn = screen.getByLabelText('Toggle variation lanes');
+        const toggleBtn = screen.getByLabelText('Variation lanes for Test Track');
         toggleBtn.focus();
         fireEvent.contextMenu(toggleBtn);
         fireEvent.click(screen.getByText('Rename'));

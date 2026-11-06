@@ -72,7 +72,7 @@ function Slider({
             <SliderPrimitive.Track
                 data-slot="slider-track"
                 className={cn(
-                    'daw-inset-surface relative grow overflow-hidden rounded-full data-[orientation=horizontal]:h-1.5 data-[orientation=horizontal]:w-full data-[orientation=vertical]:h-full data-[orientation=vertical]:w-1.5',
+                    'relative grow overflow-hidden rounded-full border border-control-rail-edge bg-surface-inset shadow-[inset_0_1px_2px_rgba(0,0,0,0.45)] data-[orientation=horizontal]:h-1.5 data-[orientation=horizontal]:w-full data-[orientation=vertical]:h-full data-[orientation=vertical]:w-1.5',
                     trackClassName
                 )}
             >
@@ -80,7 +80,7 @@ function Slider({
                     data-slot="slider-range"
                     className={cn(
                         'absolute data-[orientation=horizontal]:h-full data-[orientation=vertical]:w-full',
-                        '[background:linear-gradient(180deg,rgba(127,184,196,0.92)_0%,rgba(127,184,196,0.62)_100%)]',
+                        '[background:linear-gradient(180deg,var(--color-control-fill-cyan-top)_0%,var(--color-control-fill-cyan-bottom)_100%)]',
                         'shadow-[0_0_10px_rgba(127,184,196,0.12)]',
                         rangeClassName
                     )}

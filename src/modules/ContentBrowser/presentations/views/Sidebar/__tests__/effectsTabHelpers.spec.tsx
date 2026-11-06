@@ -86,12 +86,10 @@ describe('effectsTabHelpers components', () => {
             expect(screen.getByText('2 params')).toBeInTheDocument();
         });
 
-        // The application compiler carries the catalog id. `De-esser`, `LUFS Meter`
-        // and `Stereo Widener` each name two catalog plugins — a builtin and a
-        // Faust one — so a name lookup returns whichever the registry lists
-        // first, which need not be the card that was clicked.
-        it('adds the clicked effect by id, so a name two plugins share cannot pick the other one', () => {
-            const mockPlugin = createPlugin({ id: 'faust-de-esser', name: 'De-esser' });
+        // The application compiler carries the catalog id, the key a device is
+        // stored under; catalog names are unique but the id stays the rule.
+        it('adds the clicked effect by id', () => {
+            const mockPlugin = createPlugin({ id: 'faust-de-esser', name: 'Wideband De-esser' });
 
             render(<EffectItem plugin={mockPlugin} selectedTrackId="t1" />);
             fireEvent.click(screen.getByRole('button'));
