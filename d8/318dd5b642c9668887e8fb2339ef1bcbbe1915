@@ -1,0 +1,24 @@
+src/modules/Arrangement/presentations/views/TrackHeader/ResizeHandle.tsx
+  s_fec7059b7a251c::t_cd8e5989cede29 46
+  s_fec7059b7a251c::t_77a6fa2521b208 10,14
+src/modules/Arrangement/presentations/views/TrackHeader.tsx
+  s_fec7059b7a251c::t_a1a487535a5022 363
+src/modules/Arrangement/presentations/views/TrackHeader/__tests__/ResizeHandle.spec.tsx
+  s_fec7059b7a251c::t_52f61f358c9e69 18,23,28,31,35-36,43,48,55,62,68,73,81,86,92,109,128,148,169-180
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d8318dd5b642c9668887e8fb2339ef1bcbbe1915",
+  "prompts": {},
+  "sessions": {
+    "s_fec7059b7a251c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a7e284f4-0d83-40f5-8212-419d6ca3c2d5",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
