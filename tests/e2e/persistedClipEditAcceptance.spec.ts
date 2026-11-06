@@ -408,7 +408,7 @@ async function clipPoint(page: Page, clip: Clip, ratio = 0.5): Promise<{ x: numb
 }
 
 async function addComp(page: Page, trackName: string): Promise<void> {
-    const toggle = trackRow(page, trackName).getByRole('button', { name: 'Toggle variation lanes' });
+    const toggle = trackRow(page, trackName).getByRole('button', { name: `Variation lanes for ${trackName}` });
     await toggle.click();
     await page.getByRole('button', { name: 'Add take', exact: true }).click();
     const promote = page.getByRole('button', { name: 'Promote Take 1 to main take', exact: true });

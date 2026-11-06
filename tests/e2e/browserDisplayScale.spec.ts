@@ -598,7 +598,7 @@ test('failed initial App graph recovers in the same child document and preserves
             .toBe(1);
     }
     // Establish nonempty comp and automation owners through their real UI and registered actions.
-    const toggle = audioTrack().getByRole('button', { name: 'Toggle variation lanes' });
+    const toggle = audioTrack().getByRole('button', { name: 'Variation lanes for Audio 1' });
     await toggle.click();
     await frame.getByRole('button', { name: 'Add take', exact: true }).click();
     const promote = frame.getByRole('button', { name: 'Promote Take 1 to main take', exact: true });
