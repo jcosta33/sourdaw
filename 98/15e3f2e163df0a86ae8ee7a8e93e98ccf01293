@@ -1,0 +1,21 @@
+src/styles/__tests__/controlRailContrast.spec.ts
+  s_eecfd044247752::t_94a24c77265734 8-16,60-92,98-139,141,145-155,161-172
+src/styles/tokens.css
+  s_eecfd044247752::t_020b9730a608eb 114-116
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9815e3f2e163df0a86ae8ee7a8e93e98ccf01293",
+  "prompts": {},
+  "sessions": {
+    "s_eecfd044247752": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_eecfd044247752",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
