@@ -1,0 +1,28 @@
+src/components/daw/DawPluginChip.tsx
+  h_beb54bf43b47b7 85
+src/components/daw/__tests__/DawPluginChip.spec.tsx
+  h_beb54bf43b47b7 19-32
+src/modules/ContentBrowser/presentations/views/Sidebar/EffectsTab.tsx
+  h_beb54bf43b47b7 136
+src/modules/ContentBrowser/presentations/views/Sidebar/__tests__/EffectsTab.spec.tsx
+  h_beb54bf43b47b7 197,209
+src/modules/Fermenter/presentations/components/SectionNav.tsx
+  h_beb54bf43b47b7 8,12-17,26-34
+src/modules/Fermenter/presentations/components/__tests__/SectionNav.spec.tsx
+  h_beb54bf43b47b7 6-11,15-24,31,35-42,44-47
+src/modules/Project/presentations/views/ArrangementSelector.tsx
+  h_beb54bf43b47b7 66-76,134-136,145-150,152-154,193
+src/modules/Project/presentations/views/__tests__/ArrangementSelector.spec.tsx
+  h_beb54bf43b47b7 159-180
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "83ae859891d787eb7e0e86d25865b28c443330e2",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
