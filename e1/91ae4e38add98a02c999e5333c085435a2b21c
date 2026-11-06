@@ -1,0 +1,82 @@
+src/modules/TimelineEditor/presentations/hooks/useMeterInput.ts
+  s_fec7059b7a251c::t_c749c9c450cd95 1-15
+tests/e2e/persistedClipEditAcceptance.spec.ts
+  s_fec7059b7a251c::t_675ca7a0d1926e 643-644,649
+src/modules/Arrangement/presentations/views/__tests__/TimelineMinimap.spec.tsx
+  s_fec7059b7a251c::t_c2a0a6b3fc1fc9 35-36
+  s_fec7059b7a251c::t_3a239e9cbb3b5b 1,75-76,80,136-137,143,186
+  s_fec7059b7a251c::t_9719af7f97dd0a 17-27,30-32,38,52,94,117-135,144-160,178,181-182,184-185,200
+  s_fec7059b7a251c::t_4d38a7a2585ec2 78-79
+  s_fec7059b7a251c::t_1ad55795b48cff 41-46,48,138-142,161-177,179-180,183,187-199
+src/modules/TimelineEditor/presentations/views/ClipView.tsx
+  s_fec7059b7a251c::t_c749c9c450cd95 14,17,167,169
+  s_fec7059b7a251c::t_1064aee7088469 38,47
+  s_fec7059b7a251c::t_780415c05ec1e2 48
+src/modules/TimelineEditor/presentations/views/__tests__/ClipView.spec.tsx
+  s_fec7059b7a251c::t_3a239e9cbb3b5b 295-296
+  s_fec7059b7a251c::t_9719af7f97dd0a 74-78,81-84,90-92,260-294,297
+  s_fec7059b7a251c::t_c2a0a6b3fc1fc9 79-80
+  s_fec7059b7a251c::t_7f81ec149b6a0e 298-299
+  s_fec7059b7a251c::t_915e03764f206c 63-64,68-69
+tests/e2e/mutationUndoRedoTestId.spec.ts
+  s_fec7059b7a251c::t_9719af7f97dd0a 192,206,214,218
+src/modules/TimelineEditor/presentations/views/Inspector/ClipInspector.tsx
+  s_fec7059b7a251c::t_c749c9c450cd95 65
+  s_fec7059b7a251c::t_c108c69fb8566b 22
+src/modules/Arrangement/presentations/views/TimelineMinimap.tsx
+  s_fec7059b7a251c::t_1064aee7088469 12,47-59,60-61,88-95,102,132,272,414-416
+  s_fec7059b7a251c::t_f849102a778d7a 96-99
+  s_e4490baba90b64::t_d3bf268845e6c8 100
+  s_fec7059b7a251c::t_be5db27ead5252 101
+  s_fec7059b7a251c::t_d48fd7959f4e07 13
+tests/e2e/clipDragMoveTestId.spec.ts
+  s_fec7059b7a251c::t_675ca7a0d1926e 78,98-99,123-124
+  s_fec7059b7a251c::t_9719af7f97dd0a 79,105
+src/modules/Transport/models/MusicalPositionFormat.ts
+  s_e4490baba90b64::t_966afc126455df 18
+  s_fec7059b7a251c::t_17d12908d2b400 5
+src/modules/Transport/useCases/index.ts
+  s_e4490baba90b64::t_2d51cb048e23a2 91
+  s_fec7059b7a251c::t_97324be1005132 92
+src/modules/Transport/useCases/transportQueries/__tests__/getBarNumberAtBeat.spec.ts
+  s_e4490baba90b64::t_1f4fab0792970e 1-26
+src/modules/Transport/useCases/transportQueries/getBarNumberAtBeat.ts
+  s_e4490baba90b64::t_b61015debfcb51 1-14
+src/modules/Arrangement/presentations/views/__tests__/TimelineMinimapCanvas.spec.tsx
+  s_fec7059b7a251c::t_e8c476d07769bd 34-35
+src/modules/Arrangement/presentations/views/__tests__/timelineMinimapHeight.spec.ts
+  s_fec7059b7a251c::t_e8c476d07769bd 12-13
+src/modules/Transport/useCases/transportQueries/getLastBarNumberBeforeBeat.ts
+  s_fec7059b7a251c::t_2cb9149c1ae549 12
+  s_fec7059b7a251c::t_1dcff7a95b36cd 9-11
+  s_fec7059b7a251c::t_cd354d56a7dcc9 13
+  s_fec7059b7a251c::t_4723776d0deb59 1-8
+src/modules/Transport/useCases/transportQueries/__tests__/getLastBarNumberBeforeBeat.spec.ts
+  s_fec7059b7a251c::t_d84aa56ad22a98 1-22
+tests/e2e/timelineNavigation.spec.ts
+  s_fec7059b7a251c::t_8ab3a21fcdfdef 30-31,33
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e191ae4e38add98a02c999e5333c085435a2b21c",
+  "prompts": {},
+  "sessions": {
+    "s_e4490baba90b64": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_e4490baba90b64",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_fec7059b7a251c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a7e284f4-0d83-40f5-8212-419d6ca3c2d5",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
