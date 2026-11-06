@@ -866,6 +866,32 @@ const guardedPayloadContractCases = [
             },
         ],
     }),
+    guardedPayloadCase({
+        actionType: 'quantizeTransients',
+        validPayload: {
+            clipId: 'clip-1',
+            gridSize: 0.25,
+            strength: 0.5,
+            swing: 0,
+            sensitivity: 1,
+            minConfidence: 0.2,
+            startBeat: 0,
+            endBeat: 8,
+        },
+        invalidPayloads: [
+            { clipId: '', gridSize: 0.25 },
+            { clipId: 'clip-1' },
+            { clipId: 'clip-1', gridSize: 0 },
+            { clipId: 'clip-1', gridSize: 1 / 64 },
+            { clipId: 'clip-1', gridSize: 8 },
+            { clipId: 'clip-1', gridSize: 0.25, strength: 1.5 },
+            { clipId: 'clip-1', gridSize: 0.25, swing: -0.1 },
+            { clipId: 'clip-1', gridSize: 0.25, sensitivity: Number.NaN },
+            { clipId: 'clip-1', gridSize: 0.25, startBeat: 4, endBeat: 4 },
+            { clipId: 'clip-1', gridSize: 0.25, endBeat: Number.POSITIVE_INFINITY },
+            { clipId: 'clip-1', gridSize: 0.25, plan: {} },
+        ],
+    }),
 ] as const;
 
 describe('validateActionPayload / PAYLOAD_VALIDATORS', () => {
