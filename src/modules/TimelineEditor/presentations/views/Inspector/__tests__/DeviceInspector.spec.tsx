@@ -304,6 +304,30 @@ describe('DeviceInspector', () => {
         );
     });
 
+    // A project saved before the Faust builds were renamed stores the builtin's
+    // name beside the Faust type; the type decides, never the shared name.
+    it.each([
+        {
+            type: 'faust-de-esser',
+            name: 'De-esser',
+            paramIds: 'threshold,frequency,bandwidth,ratio,reduction,listen',
+        },
+        { type: 'faust-stereo-widener', name: 'Stereo Widener', paramIds: 'width,mono_bass' },
+    ])('opens a stored $type named "$name" with that type\'s own parameters', async ({ type, name, paramIds }) => {
+        const actual = await vi.importActual<typeof import('#/modules/Arrangement/useCases')>(
+            '#/modules/Arrangement/useCases'
+        );
+        mockGetBuiltinPlugins.mockImplementation(actual.getBuiltinPlugins);
+        render(
+            <DeviceInspector
+                device={makeDevice({ id: 'device-stored', name, type })}
+                trackId="track-1"
+                onBack={mockOnBack}
+            />
+        );
+        expect(screen.getByTestId('generic-layout').getAttribute('data-param-ids')).toBe(paramIds);
+    });
+
     it('should match a builtin plugin by display name', () => {
         mockGetBuiltinPlugins.mockReturnValue([
             { id: 'other', name: 'Test Device', parameters: [{ id: 'p1', name: 'One', automatable: true }] },

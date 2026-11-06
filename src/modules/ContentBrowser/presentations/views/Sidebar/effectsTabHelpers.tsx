@@ -196,10 +196,10 @@ export const NavCard = ({
 // ── EffectItem ───────────────────────────────────────────────────────────────
 
 /**
- * Adds by `plugin.id`: the id is the stable key a device is stored under, and
- * `addDevice` accepts a name only as a convenience. Catalog names are unique
- * (the Faust De-esser, LUFS meter and widener carry their own names beside the
- * builtins), so a name lookup is no longer ambiguous, but the id stays the rule.
+ * Adds by `plugin.id`: the id is the key a device is stored under. Catalog names
+ * are unique for new adds, but a stored device may carry an older name (the Faust
+ * De-esser, LUFS meter and widener once shared their builtins' names), so every
+ * resolver matches a device's type before any name.
  */
 export const EffectItem = ({
     plugin,
