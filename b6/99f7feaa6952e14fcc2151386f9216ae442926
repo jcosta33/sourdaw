@@ -1,0 +1,35 @@
+src/modules/AiRuntime/models/AgentRun.ts
+  s_55244eb93b97d1::t_99e3880d311c10 105-110
+src/modules/AiRuntime/useCases/groundApplicationRecipeBatch.ts
+  s_55244eb93b97d1::t_c0ab199faf0e3d 1-149
+src/modules/AiRuntime/AGENTS.md
+  s_55244eb93b97d1::t_263d2f30fad567 28,46
+src/modules/AiRuntime/stores/agentRunStore.ts
+  s_55244eb93b97d1::t_4d0a0199707ee4 1318-1322,1331,1350,1369
+src/modules/AiRuntime/useCases/__tests__/bulkSetCommands.spec.ts
+  s_55244eb93b97d1::t_7428b654d51b4d 1478,1910-1941
+src/modules/AiRuntime/useCases/__tests__/groundApplicationRecipeBatch.spec.ts
+  s_55244eb93b97d1::t_bfb63001b7d2f2 1-114
+src/modules/AiRuntime/useCases/agentRequestOrchestration/proposeNextScheduledBatch.ts
+  s_55244eb93b97d1::t_df0b93a286ab03 58-59,118,150-165
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  s_55244eb93b97d1::t_5f3b4e75f5093b 343
+src/modules/AiRuntime/useCases/planAnswerSuggestion.ts
+  s_55244eb93b97d1::t_7d33f78087cada 1,4,7,9,20-21,25-29,38,51-60,62,65-85
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b699f7feaa6952e14fcc2151386f9216ae442926",
+  "prompts": {},
+  "sessions": {
+    "s_55244eb93b97d1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9d6a0c32-d4ba-4e24-bd13-8da974561f6e",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
