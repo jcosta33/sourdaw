@@ -1,0 +1,58 @@
+src/styles/tokens.css
+  s_b3ff7903e791a6::t_0232ca85bbbcb1 123
+  s_fec7059b7a251c::t_741f7197fb5867 118
+  s_fec7059b7a251c::t_796de2f69e0fb3 117
+  s_fec7059b7a251c::t_27e7f8e9863ba6 119-121
+  s_fec7059b7a251c::t_280a6e96a21ccf 122
+  s_eecfd044247752::t_020b9730a608eb 114-116
+src/components/ui/slider.tsx
+  s_fec7059b7a251c::t_39720c2056a373 75
+  s_fec7059b7a251c::t_660b59581a494b 83
+src/modules/TimelineEditor/presentations/views/Inspector/layouts/HammondB3Layout.tsx
+  s_fec7059b7a251c::t_1a71efc9184c1e 56-57
+src/modules/WorkspaceShell/presentations/views/VirtualKeyboard.tsx
+  s_fec7059b7a251c::t_032ffd572b357c 835-836
+src/styles/__tests__/controlRailContrast.spec.ts
+  s_fec7059b7a251c::t_8cffb923a26c86 1-7,17-59,93-97,140,142-144,156-160,173-174
+  s_eecfd044247752::t_94a24c77265734 8-10,12-16,60-72,74-92,98-139,141,145-155,161-172
+  s_fec7059b7a251c::t_2817b5373a70a9 11
+  s_fec7059b7a251c::t_a04c3093d65107 73
+docs/design-system.md
+  s_fec7059b7a251c::t_ec4973560caf54 7
+src/components/daw/__tests__/ControlGallery.spec.tsx
+  s_fec7059b7a251c::t_c78ec1da83c1f1 28
+tests/e2e/controlGallery.spec.ts
+  s_fec7059b7a251c::t_a4fae376e3db1c 14
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "65d8dd7b30152149d539e745e1c118bd8165da66",
+  "prompts": {},
+  "sessions": {
+    "s_b3ff7903e791a6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_b3ff7903e791a6",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_eecfd044247752": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_eecfd044247752",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_fec7059b7a251c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a7e284f4-0d83-40f5-8212-419d6ca3c2d5",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
