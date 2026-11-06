@@ -1,0 +1,120 @@
+docs/design-system.md
+  h_beb54bf43b47b7 7
+evidence/agent-campaign/manifest.json
+  h_beb54bf43b47b7 10,13,190
+src/components/daw/__tests__/ControlGallery.spec.tsx
+  h_beb54bf43b47b7 28
+src/components/ui/slider.tsx
+  h_beb54bf43b47b7 75,83
+src/modules/AiRuntime/models/PresetActions/Presets/Device.ts
+  h_beb54bf43b47b7 11-12
+src/modules/AiRuntime/models/PresetActions/Presets/__tests__/Device.spec.ts
+  h_beb54bf43b47b7 28-29
+src/modules/Arrangement/models/PluginDescriptors/FaustEffectDescriptors.ts
+  h_beb54bf43b47b7 197,206,223
+src/modules/Arrangement/models/PluginDescriptors/FaustEffectDescriptorsGuidance.ts
+  h_beb54bf43b47b7 415
+src/modules/Arrangement/models/PluginDescriptors/__tests__/catalogDisplayNames.spec.ts
+  h_beb54bf43b47b7 1-21
+src/modules/Arrangement/presentations/hooks/__tests__/useTimelineFileDrop.spec.tsx
+  h_beb54bf43b47b7 210-211,219
+src/modules/Arrangement/presentations/hooks/useTimelineFileDrop.ts
+  h_beb54bf43b47b7 498-500
+src/modules/Arrangement/presentations/views/TimelineSurface.tsx
+  h_beb54bf43b47b7 26,233-234,284-285,287-291,295-306,309-310
+src/modules/Arrangement/presentations/views/TrackHeader.tsx
+  h_beb54bf43b47b7 111-113,246,272,363
+src/modules/Arrangement/presentations/views/TrackHeader/ResizeHandle.tsx
+  h_beb54bf43b47b7 10,14,46
+src/modules/Arrangement/presentations/views/TrackHeader/__tests__/ResizeHandle.spec.tsx
+  h_beb54bf43b47b7 18,23,28,31,35-36,43,48,55,62,68,73,81,86,92,109,128,148,169-180
+src/modules/Arrangement/presentations/views/__tests__/TimelineSurface.spec.tsx
+  h_beb54bf43b47b7 10,1054-1274
+src/modules/Arrangement/presentations/views/__tests__/TrackContextMenu.spec.tsx
+  h_beb54bf43b47b7 940,949,982,991,1021,1030,1063,1072
+src/modules/Arrangement/presentations/views/__tests__/TrackHeader.spec.tsx
+  h_beb54bf43b47b7 60-68,308,316,364,368-400,408,414,428,434
+src/modules/Arrangement/repositories/presets/__tests__/factoryPresets.spec.ts
+  h_beb54bf43b47b7 51-60
+src/modules/Arrangement/repositories/presets/expandedPresets.ts
+  h_beb54bf43b47b7 788,869,1009,1059
+src/modules/Arrangement/repositories/presets/faustEffectPresets.ts
+  h_beb54bf43b47b7 128
+src/modules/Arrangement/repositories/presets/faustInstrumentPresets.ts
+  h_beb54bf43b47b7 912,1150
+src/modules/Arrangement/useCases/__tests__/getDeviceContractVersionForCommand.spec.ts
+  h_beb54bf43b47b7 24-31,36
+src/modules/Arrangement/useCases/__tests__/resolvePlayheadFollowScroll.spec.ts
+  h_beb54bf43b47b7 1-97
+src/modules/Arrangement/useCases/device/__tests__/addDevice.spec.ts
+  h_beb54bf43b47b7 263-266,269,272-275
+src/modules/Arrangement/useCases/resolvePlayheadFollowScroll.ts
+  h_beb54bf43b47b7 1-54
+src/modules/ContentBrowser/presentations/components/Sidebar/PresetItem.tsx
+  h_beb54bf43b47b7 63,115-119
+src/modules/ContentBrowser/presentations/components/Sidebar/PreviewButton.tsx
+  h_beb54bf43b47b7 10-11,16,33
+src/modules/ContentBrowser/presentations/components/Sidebar/__tests__/PresetItemBranches.spec.tsx
+  h_beb54bf43b47b7 82,84,87,89,94,100-126,212,221
+src/modules/ContentBrowser/presentations/components/Sidebar/__tests__/PreviewButton.spec.tsx
+  h_beb54bf43b47b7 10-11,19-20,24-35
+src/modules/ContentBrowser/presentations/views/Sidebar/SamplesTab.tsx
+  h_beb54bf43b47b7 175,207-209
+src/modules/ContentBrowser/presentations/views/Sidebar/__tests__/SamplesTab.spec.tsx
+  h_beb54bf43b47b7 157-158,230,240,247-256
+src/modules/ContentBrowser/presentations/views/Sidebar/__tests__/effectsTabHelpers.spec.tsx
+  h_beb54bf43b47b7 89-92
+src/modules/ContentBrowser/presentations/views/Sidebar/effectsTabHelpers.tsx
+  h_beb54bf43b47b7 199-202
+src/modules/TimelineEditor/presentations/views/Inspector/DeviceInspector.tsx
+  h_beb54bf43b47b7 14,88
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/DeviceInspector.spec.tsx
+  h_beb54bf43b47b7 307-330
+src/modules/TimelineEditor/presentations/views/Inspector/layouts/HammondB3Layout.tsx
+  h_beb54bf43b47b7 56-57
+src/modules/TimelineEditor/presentations/views/Inspector/layouts/__tests__/LufsMeterLayout.spec.tsx
+  h_beb54bf43b47b7 27
+src/modules/TimelineEditor/presentations/views/Inspector/resolveDevicePlugin.ts
+  h_beb54bf43b47b7 1-25
+src/modules/WorkspaceShell/presentations/views/VirtualKeyboard.tsx
+  h_beb54bf43b47b7 835-836
+src/styles/__tests__/controlRailContrast.spec.ts
+  h_beb54bf43b47b7 1-174
+src/styles/tokens.css
+  h_beb54bf43b47b7 114-123
+tests/e2e/browserDisplayScale.spec.ts
+  h_beb54bf43b47b7 601
+tests/e2e/controlGallery.spec.ts
+  h_beb54bf43b47b7 14
+tests/e2e/deepCoverage.spec.ts
+  h_beb54bf43b47b7 302
+tests/e2e/dynamicAndEdge.spec.ts
+  h_beb54bf43b47b7 25-26,28,30,32,34
+tests/e2e/inspectorAndRouting.spec.ts
+  h_beb54bf43b47b7 247-248,250,253,256,259
+tests/e2e/library.spec.ts
+  h_beb54bf43b47b7 43,46
+tests/e2e/midiCycleTakeAcceptance.spec.ts
+  h_beb54bf43b47b7 380,514
+tests/e2e/persistedClipEditAcceptance.spec.ts
+  h_beb54bf43b47b7 411
+tests/e2e/punchLoopTakeAcceptance.spec.ts
+  h_beb54bf43b47b7 732-733,736,741,747
+tests/e2e/sampleLibraryFavoritesTestId.spec.ts
+  h_beb54bf43b47b7 114,116,120,153,157
+tests/e2e/takeLanesTestId.spec.ts
+  h_beb54bf43b47b7 16
+tests/e2e/tempoSourceTimeAcceptance.spec.ts
+  h_beb54bf43b47b7 426
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "06b320fe818563990d9a6670f1a1b20d4604e282",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
