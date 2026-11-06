@@ -1315,6 +1315,11 @@ function readBoundRequestProtections(value: unknown): BoundRequestProtections | 
     return { request, facts, resolvedTrackClauses };
 }
 
+/** A schedule stored before kinds existed held bulk-set slices, the only kind there was; any other kind is unreadable. */
+function readAgentRunBatchScheduleKind(value: unknown): AgentRunBatchSchedule['kind'] | null {
+    return value === undefined || value === 'bulk-set' ? 'bulk-set' : null;
+}
+
 /**
  * A schedule is read whole or not at all: its slices must number its batches 1..total in order, and
  * its position must name one of them, or a restored run could propose a batch out of sequence.
@@ -1323,6 +1328,7 @@ function readAgentRunBatchSchedule(value: unknown): AgentRunBatchSchedule | null
     if (!isRecord(value) || value.schemaVersion !== 1) {
         return null;
     }
+    const kind = readAgentRunBatchScheduleKind(value.kind);
     const scheduleId = readString(value.scheduleId);
     const position = readNonNegativeInteger(value.position);
     const total = readNonNegativeInteger(value.total);
@@ -1341,6 +1347,7 @@ function readAgentRunBatchSchedule(value: unknown): AgentRunBatchSchedule | null
     }
     const slices = readCollection(value.slices, readAgentRunBatchScheduleSlice);
     if (
+        kind === null ||
         scheduleId === null ||
         position === null ||
         total === null ||
@@ -1359,6 +1366,7 @@ function readAgentRunBatchSchedule(value: unknown): AgentRunBatchSchedule | null
     }
     const schedule: AgentRunBatchSchedule = {
         schemaVersion: 1,
+        kind,
         scheduleId,
         position,
         total,
