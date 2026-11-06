@@ -30,6 +30,8 @@ import {
     isModuleRootIndex,
     isUseCaseBarrel,
     judgeModuleTierRows,
+    moduleTiersVerdict,
+    refusesBaselineWrite,
 } from '../check-dependency-boundaries.mjs';
 
 const require = createRequire(import.meta.url);
@@ -1975,6 +1977,45 @@ describe('check-dependency-boundaries', () => {
 
         expect(rows).toEqual([allowedPair, { type: 'module-tier', from: 'Kernel', to: 'Third' }]);
         expect(judgeModuleTierRows({ rows, manifest: allowanceManifest })).toEqual({ novel: [], stale: [] });
+    });
+
+    describe('gate verdict the CLI exits on', () => {
+        const exactRows = [allowedPair, { type: 'module-tier', from: 'Kernel', to: 'Third' }];
+        const novelRow = { type: 'module-tier', from: 'Fourth', to: 'Third' };
+
+        it('should be ok when the rows exactly match the manifest allowances', () => {
+            expect(moduleTiersVerdict({ rows: exactRows, manifest: allowanceManifest })).toEqual({
+                ok: true,
+                novel: [],
+                stale: [],
+            });
+        });
+
+        it('should not be ok when an allowance is stale and no row is novel', () => {
+            const verdict = moduleTiersVerdict({ rows: [allowedPair], manifest: allowanceManifest });
+
+            expect(verdict).toEqual({
+                ok: false,
+                novel: [],
+                stale: [{ type: 'module-tier', from: 'Kernel', to: 'Third' }],
+            });
+        });
+
+        it('should not be ok when a row is novel and no allowance is stale', () => {
+            const verdict = moduleTiersVerdict({ rows: [...exactRows, novelRow], manifest: allowanceManifest });
+
+            expect(verdict).toEqual({ ok: false, novel: [novelRow], stale: [] });
+        });
+    });
+
+    describe('baseline write refusal', () => {
+        it('should refuse to write a baseline for the manifest-governed moduleTiers gate', () => {
+            expect(refusesBaselineWrite('moduleTiers')).toBe(true);
+        });
+
+        it('should accept a real baseline gate name', () => {
+            expect(refusesBaselineWrite('workerSpawns')).toBe(false);
+        });
     });
 
     it('should fail a planted new member of an allowed cycle', () => {
