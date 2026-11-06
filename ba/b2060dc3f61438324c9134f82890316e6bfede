@@ -1,0 +1,32 @@
+src/components/daw/DawPanelSurface.tsx
+  h_beb54bf43b47b7 15,26-31
+src/components/daw/__tests__/DawPanelSurface.spec.tsx
+  h_beb54bf43b47b7 31-32,34
+src/components/ui/__tests__/dialog.spec.tsx
+  h_beb54bf43b47b7 25-42
+src/components/ui/dialog.tsx
+  h_beb54bf43b47b7 139-144,150,157,169
+src/modules/Preferences/presentations/views/PreferencesDialog.tsx
+  h_beb54bf43b47b7 90,94,104,120
+src/modules/Preferences/presentations/views/__tests__/PreferencesDialog.spec.tsx
+  h_beb54bf43b47b7 77-78,83-86
+src/modules/TimelineEditor/presentations/views/AutomationBottomPanel.tsx
+  h_beb54bf43b47b7 238-239
+src/modules/TimelineEditor/presentations/views/__tests__/AutomationBottomPanel.spec.tsx
+  h_beb54bf43b47b7 39-47,51,247-259
+src/modules/WorkspaceShell/presentations/views/AppShell.tsx
+  h_beb54bf43b47b7 15-16,1063-1065,1072,1092,1103
+src/modules/WorkspaceShell/presentations/views/__tests__/AppShell.spec.tsx
+  h_beb54bf43b47b7 706-710
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "bab2060dc3f61438324c9134f82890316e6bfede",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
