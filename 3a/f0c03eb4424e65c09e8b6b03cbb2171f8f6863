@@ -1,0 +1,207 @@
+src/modules/CommandInterface/useCases/commands/ElasticCommands.ts
+  s_55244eb93b97d1::t_70624352d0b32a 35,40
+  s_55244eb93b97d1::t_6ac86bdf0e6ada 41
+  s_55244eb93b97d1::t_70dbdca3b87579 1
+src/modules/Arrangement/useCases/prepareTransientQuantize.ts
+  s_55244eb93b97d1::t_639dde009a154c 362
+  s_55244eb93b97d1::t_673074e36b29e8 477-480
+  s_55244eb93b97d1::t_da55bc5995ccca 121
+  s_55244eb93b97d1::t_1522cc61ccd00e 160
+  s_55244eb93b97d1::t_cd8751e752db4e 274
+  s_55244eb93b97d1::t_945626f2be753c 379-414,424-425,428,434
+  s_55244eb93b97d1::t_5f56c3ccb5ceff 110,114
+  s_55244eb93b97d1::t_fc00e8ac57d156 270-271
+  s_55244eb93b97d1::t_c2a7796b5ce859 280
+  s_55244eb93b97d1::t_6aec749490f134 544
+  s_55244eb93b97d1::t_75736164674c92 487-492,495
+  s_55244eb93b97d1::t_2e58423ea46518 171-176
+  s_55244eb93b97d1::t_b3de1857f69eac 134
+  s_55244eb93b97d1::t_2f112a3ab1ff98 145
+  s_55244eb93b97d1::t_a3965d37a5e1d0 339-340
+  s_55244eb93b97d1::t_4d52fab2281727 1-53,56-93,111-113,115-120,122-133,135-144,146-159,161-165,170,177-180,182-183,207-212,214-239,243,250,257,261-269,272-273,275-278,287-290,300-304,306-307,309-338,341-355,357-361,363-369,371-378,415-423,426-427,429-433,435-476,481-486,493-494,501-511,514-527,541-543,545-552
+  s_55244eb93b97d1::t_c89fe6380ac72c 240-242,244-249,251-254,256,258-260
+  s_55244eb93b97d1::t_23650fca862df0 308
+  s_55244eb93b97d1::t_9bed644848009a 94-109
+  s_55244eb93b97d1::t_838ea3e8318017 213
+  s_55244eb93b97d1::t_f74dd011df538e 279,281-284,286
+  s_55244eb93b97d1::t_c5c876c789b116 291-299
+  s_55244eb93b97d1::t_fb3787b0716570 496-500
+  s_55244eb93b97d1::t_ca902493d88ed4 193
+  s_55244eb93b97d1::t_f04aac7993a043 370
+  s_55244eb93b97d1::t_fe67b0f93953a9 196
+  s_55244eb93b97d1::t_d3a7dad0cb5dcd 166-169
+  s_55244eb93b97d1::t_755071bbdc6dd6 512-513
+  s_55244eb93b97d1::t_f0b69acd216596 54-55
+  s_55244eb93b97d1::t_f5d347194423d6 528-540
+  s_55244eb93b97d1::t_f9a44f59a72811 305
+  s_55244eb93b97d1::t_495e1da7eadd58 356
+  s_55244eb93b97d1::t_17cb1d2e7a245c 181,184-192,194-195,197-206
+  s_0314bb17e5dee3::t_9465dfb5ca8514 255,285
+src/modules/ElasticAudio/useCases/index.ts
+  s_55244eb93b97d1::t_69740aa54578ef 17
+src/app/__tests__/getProductionCommandHandlerMaps.spec.ts
+  s_55244eb93b97d1::t_4a02a2b569f991 91,93
+src/modules/ElasticAudio/useCases/elasticAudio/detectTransients.ts
+  s_55244eb93b97d1::t_a6f5c1847b4890 1
+src/modules/ElasticAudio/workers/transientOnsetWorker.ts
+  s_55244eb93b97d1::t_185df03e3a695f 1-2
+src/modules/Command/useCases/readHandlerMintedApplicationIds.ts
+  s_55244eb93b97d1::t_300b4e2ebc6e98 82-87,91-94
+  s_55244eb93b97d1::t_47bbf4774ab6dc 88-90
+src/modules/Command/useCases/macro/__tests__/playback.spec.ts
+  s_55244eb93b97d1::t_62274a82103b41 141-170
+src/modules/ElasticAudio/workers/__tests__/transientOnsetWorker.spec.ts
+  s_55244eb93b97d1::t_3b8fd31a62e4d4 3-4,7-8
+src/modules/Command/useCases/executableAppActionRegistry.ts
+  s_55244eb93b97d1::t_84f88fc00954c6 816-873
+  s_55244eb93b97d1::t_4aba9f9c7c73f5 3270
+  s_55244eb93b97d1::t_2f8c838f7a2595 3389
+  s_55244eb93b97d1::t_52df118dd5ab21 815
+src/modules/ElasticAudio/useCases/__tests__/quantizeTransients.spec.ts
+  s_55244eb93b97d1::t_6cfa82c2b5cfa1 340,343
+  s_55244eb93b97d1::t_b92e2aecb2c2d2 178
+  s_55244eb93b97d1::t_414bad24a44d2b 438-444,452,454-461
+  s_55244eb93b97d1::t_01a4103b6bd6be 642-674
+  s_55244eb93b97d1::t_3421dc2f306e82 18
+  s_55244eb93b97d1::t_885b66c2f6731f 640
+  s_55244eb93b97d1::t_d0f348a37c5928 2-17,19-22,24-157,159-177,179-327,329-339,341-342,344-361,381-437,462-470,472-474,476-572,574-577,579-591,601-629,631-639,641,675
+  s_55244eb93b97d1::t_fcd5fdac7835da 1
+  s_55244eb93b97d1::t_2bfacd35cc4a7e 445-451,453
+  s_55244eb93b97d1::t_65a5388cb13249 23
+  s_55244eb93b97d1::t_11ee878bc6f581 158
+  s_55244eb93b97d1::t_701db3d02a1e93 362-380
+  s_55244eb93b97d1::t_35acbc57f9373d 573,578
+  s_55244eb93b97d1::t_e13b6e8c00ff7e 592-600
+  s_55244eb93b97d1::t_18b1e5f9dd5894 471,475
+  s_55244eb93b97d1::t_4fac826099267a 630
+  s_55244eb93b97d1::t_36a48a78456fb8 328
+src/modules/Arrangement/useCases/readTransientQuantizeOutcome.ts
+  s_55244eb93b97d1::t_dfc2c545236525 15
+  s_55244eb93b97d1::t_2dffdab29e98ac 1-14,16
+src/modules/AiRuntime/useCases/__tests__/digestCommandBatchContentCompileMintedIds.spec.ts
+  s_55244eb93b97d1::t_181e4baec026a9 393-468
+src/modules/Command/useCases/__tests__/executableCommandRegistry.spec.ts
+  s_55244eb93b97d1::t_fae03b94d0bf49 1939-1951
+  s_55244eb93b97d1::t_59f3ed9f681dca 369-412
+  s_55244eb93b97d1::t_bbc89b39149761 368
+  s_55244eb93b97d1::t_16c4fe5454a697 1938
+src/modules/Command/models/AgentCommandLedger.ts
+  s_55244eb93b97d1::t_7a4be3ef34394c 178
+src/modules/ElasticAudio/useCases/quantizeTransients.ts
+  s_55244eb93b97d1::t_edbcbecbe44b6d 1-12
+src/modules/Arrangement/handlers/clip/handleStripSilence.ts
+  s_55244eb93b97d1::t_6637eb9ed66d87 69
+  s_55244eb93b97d1::t_26a2ff209bff38 10-11
+src/utils/handlerContract.ts
+  s_55244eb93b97d1::t_1a78e69c5f411c 3362-3378
+  s_55244eb93b97d1::t_59e12fa22167bc 632-657
+src/utils/__tests__/transientOnsetDetection.spec.ts
+  s_55244eb93b97d1::t_206986433e7694 3
+src/modules/Command/useCases/executableAppActionEffects.ts
+  s_55244eb93b97d1::t_2d9f4d96715b95 180-184
+src/modules/ElasticAudio/presentations/views/ElasticEditorPanel.tsx
+  s_55244eb93b97d1::t_ca35a802e91455 185
+  s_55244eb93b97d1::t_7e94e23ee3626b 139
+  s_55244eb93b97d1::t_c206078eda1528 151
+  s_55244eb93b97d1::t_95fd68b15d28a6 111-112
+  s_55244eb93b97d1::t_356391c06955f7 44
+src/modules/Command/useCases/getAppActionExecutionPolicy.ts
+  s_55244eb93b97d1::t_207eb9635b9fe0 154
+src/modules/Arrangement/handlers/clip/__tests__/clipSessionMirrorRoundTrip.spec.ts
+  s_55244eb93b97d1::t_d52f7803f77cd4 1528-1580
+src/modules/Arrangement/handlers/clip/handleQuantizeTransients.ts
+  s_55244eb93b97d1::t_def113644a4268 1-13,15-73,77-107,112-134
+  s_55244eb93b97d1::t_7d2a3330860e5f 108-111
+  s_55244eb93b97d1::t_00c6ff4c178109 76
+  s_55244eb93b97d1::t_4d2f2c58f26b32 74-75
+  s_55244eb93b97d1::t_0bee1af01ded85 14
+src/modules/CommandInterface/useCases/commands/__tests__/ElasticCommands.spec.ts
+  s_55244eb93b97d1::t_4da64e465ec1aa 66-68,73
+  s_55244eb93b97d1::t_adf67121b43740 3
+src/modules/ElasticAudio/AGENTS.md
+  s_55244eb93b97d1::t_e85556498d504a 11
+  s_55244eb93b97d1::t_7ca38d6a8b9487 23-24
+  s_55244eb93b97d1::t_ccfc201b54c278 18
+src/modules/AiRuntime/useCases/__tests__/validateActionPayload.spec.ts
+  s_55244eb93b97d1::t_053bdd37d7aa1e 869-894
+src/modules/Arrangement/handlers/clip/handleRestoreStripSilenceState.ts
+  s_55244eb93b97d1::t_970cd21c60d88a 5-6,8
+src/modules/Arrangement/handlers/clip/clipHandlers.ts
+  s_55244eb93b97d1::t_7b7bcb450f4a40 26
+  s_55244eb93b97d1::t_770a2b8752bef2 99
+src/modules/Command/useCases/getInternalUndoSessionReplayContracts.ts
+  s_55244eb93b97d1::t_4108bee6e11cf8 16
+  s_55244eb93b97d1::t_80f6343466f760 77,79-83
+  s_55244eb93b97d1::t_ca90ee2de54b49 91
+  s_55244eb93b97d1::t_6ba125aa6f6bbd 78
+src/modules/ElasticAudio/presentations/views/__tests__/ElasticEditorPanel.spec.tsx
+  s_55244eb93b97d1::t_3187026f7d271f 224
+  s_55244eb93b97d1::t_a397b7a4e6964c 482-483,488-496
+  s_55244eb93b97d1::t_99207b0413502d 497-499
+src/modules/Command/useCases/getVersionedCommandBatchEffects.ts
+  s_55244eb93b97d1::t_95af29d35e98bd 27
+src/modules/Command/useCases/macro/playback.ts
+  s_55244eb93b97d1::t_1fb35e9d059767 327-333
+  s_55244eb93b97d1::t_ca978f9afaa17e 326
+src/modules/Arrangement/useCases/index.ts
+  s_55244eb93b97d1::t_26a13617234cd6 325
+src/modules/AiRuntime/useCases/validateActionPayload.ts
+  s_55244eb93b97d1::t_18f7364ae108c9 1303-1321
+  s_55244eb93b97d1::t_3007ae73cfcd13 1322-1323
+src/modules/AiRuntime/models/RuntimeAction.ts
+  s_55244eb93b97d1::t_7ce87a2f917e74 314
+  s_55244eb93b97d1::t_9b43fd8a7169d9 315-317
+  s_55244eb93b97d1::t_de8c4ee6ac63e0 318-323,403
+src/modules/Command/useCases/__tests__/agentCommandCoverage.spec.ts
+  s_55244eb93b97d1::t_842afb2f56b85a 190
+src/modules/Command/useCases/buildSemanticProjectDiff.ts
+  s_55244eb93b97d1::t_79a14813d03d9c 90
+  s_55244eb93b97d1::t_132111a6d9fcec 60
+  s_55244eb93b97d1::t_d74303c3265385 44
+src/modules/Arrangement/useCases/clipEditing/captureLiveTempoSourceClock.ts
+  s_55244eb93b97d1::t_ec2f87c583b1e7 1-2,4-11
+  s_55244eb93b97d1::t_34459132f1c418 3
+src/modules/Arrangement/handlers/clip/validateClipReplacementSessionEntries.ts
+  s_55244eb93b97d1::t_54d1b65cc13d47 2
+  s_55244eb93b97d1::t_0234459e61d1bc 98
+  s_55244eb93b97d1::t_0eddb8a0853173 1,3-35,39-81,107-108,115,117,120,122-136,138-140
+  s_55244eb93b97d1::t_aa862b7537df13 106,109-112,118-119,121
+  s_55244eb93b97d1::t_ab74c94b1d3d11 82-85,90-97,99-102
+  s_55244eb93b97d1::t_960601d80ae00e 36-38
+  s_55244eb93b97d1::t_fb4b3425891c90 86-89,103-105,113-114,116,137
+src/modules/AudioEngine/handlers/finalFeature/__tests__/transientHandlers.spec.ts
+  s_55244eb93b97d1::t_c0639a535ed915 3
+src/modules/Arrangement/handlers/clip/__tests__/clipHandlers.spec.ts
+  s_55244eb93b97d1::t_1de041f51748cc 77
+src/modules/Arrangement/useCases/transientQuantizePlanIsCurrent.ts
+  s_55244eb93b97d1::t_88158386c96de9 1-2,4-22,24-26,28-30,32-33
+  s_55244eb93b97d1::t_7d739b2ebe55d9 23
+  s_55244eb93b97d1::t_cfda5f289f7430 27
+  s_55244eb93b97d1::t_ffd05c845e474f 3,31
+src/modules/Command/useCases/versionedCommandArgumentKeys.ts
+  s_55244eb93b97d1::t_34fe22258146e3 6244-6323,6358,6363,6381,6386,6418,6423,6486,6495,6507,6519,6540,6552,6558,6564-6565,6590,6596-6597,6661,6667,6682,6684,6693,6695,6704,6752,6757,6776,6781,7135,7138-7139,7142,7144-7147,7151-7152,7154-7162,7164-7166
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3af0c03eb4424e65c09e8b6b03cbb2171f8f6863",
+  "prompts": {},
+  "sessions": {
+    "s_0314bb17e5dee3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "36258af0-bda2-4189-8943-c2845697b59f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_55244eb93b97d1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9d6a0c32-d4ba-4e24-bd13-8da974561f6e",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
