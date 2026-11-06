@@ -126,7 +126,6 @@ vi.mock('#/modules/Arrangement/useCases', async () => {
         setArrangementEventBus: actual.setArrangementEventBus,
         setMarqueeSelection: actual.setMarqueeSelection,
         setTrackGain: actual.setTrackGain,
-        setTrackOutput: actual.setTrackOutput,
         setTrackPan: actual.setTrackPan,
         setTrackState: vi.fn(),
         soloTrackExclusive: actual.soloTrackExclusive,
@@ -318,7 +317,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     startNoteExpression: vi.fn(),
     advanceNoteExpression: vi.fn(),
     relocateNoteExpression: vi.fn(),
-    applyRuntimeGraphDelta: vi.fn(),
+    applyRuntimeGraphDelta: vi.fn(() => ({ acceptance: 'accepted', application: 'applied' })),
     audioEngine: vi.fn(),
     cacheAudioBuffer: vi.fn(),
     cancelPendingAudioBufferImport: vi.fn(),
@@ -588,6 +587,33 @@ function storedTrack(): { clips: unknown[]; devices: unknown[]; gain: number; pa
         return undefined;
     }
     return { clips: track.clips, devices: track.devices, gain: track.gain, pan: track.pan };
+}
+
+const BUS_ID = 'strip-bus';
+const BUS_NAME = 'Vocal Bus';
+
+function addBus(): void {
+    const leadVocal = trackStore.value!.tracks.find((track) => track.id === TRACK_ID)!;
+    trackStore.set({
+        ...trackStore.value!,
+        tracks: [
+            ...trackStore.value!.tracks,
+            {
+                ...leadVocal,
+                id: BUS_ID,
+                name: BUS_NAME,
+                kind: 'bus',
+                clips: [],
+                devices: [],
+                activeAlternativeId: 'alt-bus',
+                alternatives: [{ id: 'alt-bus', name: 'Alternative 1', clips: [] }],
+            },
+        ],
+    });
+}
+
+function storedOutputId(): string | undefined {
+    return trackStore.value?.tracks.find((candidate) => candidate.id === TRACK_ID)?.outputId;
 }
 
 function undoLabels(): string[] {
@@ -1089,5 +1115,30 @@ describe('mixer strip writes reach the project through the recorded path', () =>
 
         await undo();
         expect(trackStore.value?.tracks.find((candidate) => candidate.id === TRACK_ID)?.color).toBe('#ff0000');
+    });
+
+    it('records an output change from the Out picker and gives it back on undo and redo', async () => {
+        addBus();
+        render(<MixerStripRow />);
+
+        fireEvent.click(within(strip()).getByRole('button', { name: 'Master' }));
+        fireEvent.click(within(strip()).getByRole('option', { name: BUS_NAME }));
+
+        await vi.waitFor(() => {
+            expect(undoLabels()).toEqual(['Set track output']);
+        });
+        expect(storedOutputId()).toBe(BUS_ID);
+
+        await undo();
+        expect(storedOutputId()).toBe('master');
+        await vi.waitFor(() => {
+            expect(within(strip()).getByRole('button', { name: 'Master' })).toBeInTheDocument();
+        });
+
+        await redo();
+        expect(storedOutputId()).toBe(BUS_ID);
+        await vi.waitFor(() => {
+            expect(within(strip()).getByRole('button', { name: BUS_NAME })).toBeInTheDocument();
+        });
     });
 });
