@@ -1,0 +1,27 @@
+src/components/ui/__tests__/slider.spec.tsx
+  s_b3ff7903e791a6::t_b2d06a1699fdc9 11-17
+src/components/ui/slider.tsx
+  s_b3ff7903e791a6::t_a5cdc440d4a0ae 75
+src/modules/TimelineEditor/presentations/views/Inspector/layouts/HammondB3Layout.tsx
+  s_b3ff7903e791a6::t_1b718e0ab9b231 56
+src/modules/WorkspaceShell/presentations/views/VirtualKeyboard.tsx
+  s_b3ff7903e791a6::t_2d13d41cca8f0b 835
+src/styles/tokens.css
+  s_b3ff7903e791a6::t_0232ca85bbbcb1 114-116
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1cddc223a71fa99b7f489215911829cf0b61eb39",
+  "prompts": {},
+  "sessions": {
+    "s_b3ff7903e791a6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_b3ff7903e791a6",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
