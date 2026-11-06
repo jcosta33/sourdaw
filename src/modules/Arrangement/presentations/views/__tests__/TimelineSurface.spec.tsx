@@ -7,7 +7,7 @@ import { playheadPositionRef } from '#/modules/Transport/stores';
 
 import { createTrack, type Clip, type Track } from '../../../models/Track';
 import { clipSelectionStore } from '../../../stores/clipSelectionStore';
-import { setAutoScroll, setTimelineViewportHeight } from '../../../stores/timelineViewStore';
+import { setAutoScroll, setScrollX, setTimelineViewportHeight } from '../../../stores/timelineViewStore';
 import { useTimelineInteractions } from '../../hooks/useTimelineInteractions';
 import { TimelineSurface } from '../TimelineSurface';
 
@@ -1050,4 +1050,91 @@ describe('TimelineSurface — follow-playhead auto-scroll is measured in CSS pix
             expect(scrollX).toBe(0);
         }
     );
+});
+
+describe('TimelineSurface — stopped locate scrolls the playhead into view', () => {
+    const VIEWPORT_CSS_WIDTH = 800;
+    const originalGetBoundingClientRect = HTMLDivElement.prototype.getBoundingClientRect;
+    const viewportRect: DOMRect = {
+        x: 0,
+        y: 0,
+        top: 0,
+        left: 0,
+        right: VIEWPORT_CSS_WIDTH,
+        bottom: 600,
+        width: VIEWPORT_CSS_WIDTH,
+        height: 600,
+        toJSON: () => ({}),
+    };
+
+    beforeEach(() => {
+        vi.clearAllMocks();
+        scheduler.loop = null;
+        HTMLDivElement.prototype.getBoundingClientRect = () => viewportRect;
+    });
+
+    afterEach(() => {
+        HTMLDivElement.prototype.getBoundingClientRect = originalGetBoundingClientRect;
+        playheadPositionRef.current = 0;
+    });
+
+    // Mounts stopped, scrolled far right (5000..5800 px at 10 px/beat) with the
+    // playhead at beat 520 (inside the view), and waits for the render loop.
+    const mountStoppedFarRight = async (): Promise<void> => {
+        zoomHandlers.timelineViewStoreRef.current?.set({
+            scrollX: 5000,
+            scrollY: 0,
+            pixelsPerBeat: 10,
+            autoScrollEnabled: true,
+        });
+        zoomHandlers.transportStoreRef.current?.set({ isPlaying: false });
+        playheadPositionRef.current = 520;
+        renderWithTooltip(<TimelineSurface />);
+        await act(async () => {
+            await new Promise((resolve) => {
+                setTimeout(resolve, 0);
+            });
+        });
+        expect(scheduler.loop).not.toBeNull();
+        act(() => {
+            scheduler.loop!();
+        });
+        vi.mocked(setScrollX).mockClear();
+    };
+
+    it('scrolls the view to a playhead located off-screen to the left', async () => {
+        await mountStoppedFarRight();
+
+        playheadPositionRef.current = 0;
+        act(() => {
+            zoomHandlers.transportStoreRef.current?.set({ isPlaying: false, playheadPosition: 0 });
+        });
+        act(() => {
+            scheduler.loop!();
+        });
+
+        expect(setScrollX).toHaveBeenCalledTimes(1);
+        // The store clamps the requested placement to 0, which brings beat 0 into view.
+        const store = zoomHandlers.timelineViewStoreRef.current as Store<{ scrollX: number }>;
+        expect(store.value!.scrollX).toBe(0);
+    });
+
+    it('does not move the view when only scrollX changes and the playhead stays still', async () => {
+        await mountStoppedFarRight();
+
+        // Manual scroll or zoom away from the playhead leaves it out of view.
+        act(() => {
+            zoomHandlers.timelineViewStoreRef.current?.set({
+                scrollX: 9000,
+                scrollY: 0,
+                pixelsPerBeat: 10,
+                autoScrollEnabled: true,
+            });
+        });
+        act(() => {
+            scheduler.loop!();
+        });
+
+        expect(setScrollX).not.toHaveBeenCalled();
+    });
 });

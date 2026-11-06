@@ -23,6 +23,7 @@ import {
 import { trackStore } from '../../stores/trackStore';
 import { buildTimelineRenderModel } from '../../useCases/buildTimelineRenderModel';
 import { getTimelineSurfaceMinimumHeight } from '../../useCases/getTimelineSurfaceMinimumHeight';
+import { resolvePlayheadFollowScroll } from '../../useCases/resolvePlayheadFollowScroll';
 import { useTimelineInteractions } from '../hooks/useTimelineInteractions';
 import { createTimelineRenderer } from '../renderers/createTimelineRenderer';
 
@@ -229,6 +230,7 @@ export const TimelineSurface = (): ReactElement => {
 
         let disposed = false;
         let dirty = true;
+        let lastPlayheadBeat = playheadPositionRef.current;
         const renderId = crypto.randomUUID();
 
         const markDirty = () => {
@@ -278,25 +280,31 @@ export const TimelineSurface = (): ReactElement => {
                     dirty = false;
 
                     const viewState = timelineViewStore.value;
-                    if (isPlaying && viewState?.autoScrollEnabled) {
-                        const playheadPx = playheadPositionRef.current * viewState.pixelsPerBeat;
+                    const playheadBeat = playheadPositionRef.current;
+                    if (viewState) {
                         // audit M-013: measure the viewport in CSS pixels, the
-                        // same unit scrollX and playheadPx use. `canvas.width`
-                        // is the DEVICE-pixel backing store (both renderers set
-                        // it to CSS width × devicePixelRatio), so reading it
-                        // here inflated the threshold by the dpr: at dpr 2 it
-                        // sat at 150% of the viewport and the playhead ran off
+                        // same unit scrollX and the playhead pixel use.
+                        // `canvas.width` is the DEVICE-pixel backing store (both
+                        // renderers set it to CSS width × devicePixelRatio), so
+                        // reading it inflated the threshold by the dpr: at dpr 2
+                        // it sat at 150% of the viewport and the playhead ran off
                         // screen before follow-playhead ever fired. Use the
                         // container's CSS box, as the zoom/scroll handlers above
                         // already do.
-                        const viewportWidth = container.getBoundingClientRect().width;
-                        const rightThreshold = viewState.scrollX + viewportWidth * 0.75;
-                        const leftEdge = viewState.scrollX;
-
-                        if (playheadPx > rightThreshold || playheadPx < leftEdge) {
-                            setScrollX(playheadPx - viewportWidth * 0.25);
+                        const nextScrollX = resolvePlayheadFollowScroll({
+                            previousPlayheadBeat: lastPlayheadBeat,
+                            playheadBeat,
+                            isPlaying,
+                            autoScrollEnabled: viewState.autoScrollEnabled,
+                            scrollX: viewState.scrollX,
+                            viewportWidth: container.getBoundingClientRect().width,
+                            pixelsPerBeat: viewState.pixelsPerBeat,
+                        });
+                        if (nextScrollX !== null) {
+                            setScrollX(nextScrollX);
                         }
                     }
+                    lastPlayheadBeat = playheadBeat;
 
                     const model = buildTimelineRenderModel();
                     renderer.render(model);
