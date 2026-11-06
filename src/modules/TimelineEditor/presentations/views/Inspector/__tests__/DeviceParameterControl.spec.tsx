@@ -192,23 +192,6 @@ describe('DeviceParameterControl', () => {
         expect(screen.getByText('0.500')).toBeInTheDocument();
     });
 
-    it('shows an external plugin the published value, not a stored value that differs from it', () => {
-        const externalDevice: Device = {
-            ...mockDevice,
-            type: 'external-plugin',
-            externalInstanceId: 'inst-1',
-            parameterValues: { gain: 0.2 },
-        };
-        render(<DeviceParameterControl param={mockParam} device={externalDevice} trackId="track-1" />);
-        expect(screen.getByTestId('rotary-knob').getAttribute('data-value')).toBe('0.5');
-    });
-
-    it('shows a builtin device its stored value over the published one', () => {
-        const builtinDevice: Device = { ...mockDevice, parameterValues: { gain: 0.2 } };
-        render(<DeviceParameterControl param={mockParam} device={builtinDevice} trackId="track-1" />);
-        expect(screen.getByTestId('rotary-knob').getAttribute('data-value')).toBe('0.2');
-    });
-
     it('should render rotary knob for float parameters', () => {
         render(<DeviceParameterControl param={mockParam} device={mockDevice} trackId="track-1" />);
         expect(screen.getByTestId('rotary-knob')).toBeInTheDocument();

@@ -2,18 +2,7 @@ import { type ReactElement } from 'react';
 
 import { MechanicalSwitch } from '#/components/daw/MechanicalSwitch';
 import { Stack } from '#/components/layout';
-import { useStore } from '#/infra/store/useStore';
-import {
-    bypassDevice,
-    getAutomationDeviceDescriptor,
-    getBuiltinPlugins,
-    isExternalPluginDeviceType,
-} from '#/modules/Arrangement/useCases';
-import {
-    defaultExternalPluginParameterState,
-    externalPluginParameterStore,
-    type ExternalPluginParameterState,
-} from '#/modules/PluginHost/stores';
+import { bypassDevice, getBuiltinPlugins, isExternalPluginDeviceType } from '#/modules/Arrangement/useCases';
 
 import { type DeviceParameterView as DeviceParameter } from '../../../models/PluginDescriptorViewTypes';
 import { type Device } from '../../../models/TrackViewTypes';
@@ -96,36 +85,24 @@ function deriveParamsFromValues(device: Device): DeviceParameter[] {
 }
 
 /**
- * The controls of an external plugin device: the parameters its attached instance publishes, as the
- * host's published view. Undefined when the device names no instance or the instance is not attached
- * to the engine, so there is nothing to edit. The state is an input so a published change re-renders.
+ * Where a third-party plugin's parameters are edited: its own editor window, opened from the device
+ * list. Its parameters are not listed here, so no builtin's controls can stand in for them.
  */
-function externalPluginParameters(device: Device, state: ExternalPluginParameterState): DeviceParameter[] | undefined {
-    const instanceId = device.externalInstanceId;
-    if (instanceId === undefined || !state.byInstanceId[instanceId]?.engineAttached) {
-        return undefined;
-    }
-    const descriptor = getAutomationDeviceDescriptor(device.type ?? '', instanceId);
-    return descriptor ? [...descriptor.parameters] : undefined;
-}
+const EXTERNAL_PLUGIN_EDITOR_HINT =
+    "Edit this plugin's parameters in its own window: use Open editor on its device in the track's device list.";
 
 export const DeviceInspector = ({ device, trackId, onBack }: DeviceInspectorProps): ReactElement => {
-    // Subscribed so the panel follows a plugin's load, refresh and unload.
-    const externalState = useStore(externalPluginParameterStore, defaultExternalPluginParameterState);
-
-    const isExternal = isExternalPluginDeviceType(device.type);
     const plugin = resolveDevicePlugin(getBuiltinPlugins(), device);
-    const externalParameters = isExternal ? externalPluginParameters(device, externalState) : undefined;
 
     // Use static descriptor params, or derive from parameterValues for Faust/dynamic devices
-    const parameters = isExternal ? (externalParameters ?? []) : (plugin?.parameters ?? deriveParamsFromValues(device));
+    const parameters = plugin?.parameters ?? deriveParamsFromValues(device);
 
-    const LayoutComponent = isExternal ? undefined : resolveDeviceLayout(device.type ?? '');
+    const LayoutComponent = resolveDeviceLayout(device.type ?? '');
     const renderDeviceLayout = (): ReactElement => {
-        if (isExternal && externalParameters === undefined) {
+        if (isExternalPluginDeviceType(device.type)) {
             return (
                 <div className="px-1">
-                    <MetaText>Load this plugin in the desktop app to edit its parameters.</MetaText>
+                    <MetaText>{EXTERNAL_PLUGIN_EDITOR_HINT}</MetaText>
                 </div>
             );
         }

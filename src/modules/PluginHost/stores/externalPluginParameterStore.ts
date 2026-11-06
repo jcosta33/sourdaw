@@ -222,25 +222,19 @@ export function markExternalPluginParameterSnapshotsAttached(instanceIds: Readon
  * put a control in the automation menu the plugin never offered.
  */
 export function patchExternalPluginParameterValue(instanceId: string, parameterId: number, value: number): void {
-    // Checked before `update`, which always notifies: a write that changes nothing must not reach subscribers.
-    const snapshot = externalPluginParameterStore.value?.byInstanceId[instanceId];
-    const parameter = snapshot?.parameters.find((candidate) => candidate.id === parameterId);
-    if (!snapshot || !parameter || parameter.value === value) {
-        return;
-    }
     externalPluginParameterStore.update((state) => {
         const current = state ?? defaultExternalPluginParameterState;
-        const currentSnapshot = current.byInstanceId[instanceId];
-        if (!currentSnapshot) {
+        const snapshot = current.byInstanceId[instanceId];
+        if (!snapshot) {
             return current;
         }
-        const parameters = currentSnapshot.parameters.map((candidate) =>
-            candidate.id === parameterId ? { ...candidate, value } : candidate
+        if (!snapshot.parameters.some((parameter) => parameter.id === parameterId)) {
+            return current;
+        }
+        const parameters = snapshot.parameters.map((parameter) =>
+            parameter.id === parameterId ? { ...parameter, value } : parameter
         );
-        return {
-            ...current,
-            byInstanceId: { ...current.byInstanceId, [instanceId]: { ...currentSnapshot, parameters } },
-        };
+        return { ...current, byInstanceId: { ...current.byInstanceId, [instanceId]: { ...snapshot, parameters } } };
     });
 }
 

@@ -10,7 +10,7 @@ import {
 
 import { useStore } from '#/infra/store/useStore';
 import { trackStore } from '#/modules/Arrangement/stores';
-import { isExternalPluginDeviceType, setDeviceParameter } from '#/modules/Arrangement/useCases';
+import { setDeviceParameter } from '#/modules/Arrangement/useCases';
 import { captureDeviceParameterRuntimeWriteAuthority } from '#/modules/AudioEngine/useCases';
 import { captureTouchAutomationRecordingAuthority } from '#/modules/Automation/useCases';
 import { executeUserAppAction } from '#/modules/Command/useCases';
@@ -101,18 +101,6 @@ function restoreGesturePreview(gesture: ParameterGesture): void {
 
 function releaseGestureTouchAutomation(gesture: ParameterGesture): void {
     gesture.recordingAuthority.release();
-}
-
-/**
- * The value a control shows when no gesture preview is in flight. An external plugin's published value
- * is the host's view and follows editor edits; its stored value stays the document's record for the
- * write guards and undo baseline, not what the control shows.
- */
-function readShownParameterValue(device: Device, param: DeviceParameter): number {
-    if (isExternalPluginDeviceType(device.type)) {
-        return param.value;
-    }
-    return device.parameterValues[param.id] ?? param.value;
 }
 
 type GestureProps = {
@@ -399,7 +387,7 @@ export function useDeviceParameterGesture({ param, device, trackId }: GesturePro
         () => readDeviceParameterPreview(previewKey)
     );
     const previewValue = preview?.isCurrent() ? preview.value : undefined;
-    const value = previewValue ?? readShownParameterValue(device, param);
+    const value = previewValue ?? device.parameterValues[param.id] ?? param.value;
     const context: GestureContext = {
         param,
         device,
