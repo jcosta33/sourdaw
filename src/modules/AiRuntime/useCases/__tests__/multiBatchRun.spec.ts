@@ -147,7 +147,7 @@ type RenderInput = Parameters<typeof renderTrackSubgraphOffline>[0];
 type ProviderRequest = { userMessage: string; schemas: readonly ToolSchema[] };
 type ScriptedPlanningTurn = (request: ProviderRequest) => ToolCallResult[];
 type ProductionBrief = NonNullable<typeof projectStore.value>['productionBrief'];
-type Confirmation = (typeof pendingActionConfirmationStore.value)['confirmations'][number];
+type Confirmation = NonNullable<typeof pendingActionConfirmationStore.value>['confirmations'][number];
 
 const briefIntake: ScriptedPlanningTurn = ({ userMessage, schemas }) => {
     const catalog = readCreativeInterpretationCatalog(userMessage, schemas);
@@ -258,13 +258,13 @@ function renderTrack(input: RenderInput): AudioBuffer {
     );
 }
 
-async function sendChatMessage(prompt: string) {
+async function sendChatMessage(prompt: string, options?: Parameters<typeof sendChatMessageWithoutDocumentFlush>[1]) {
     flushAutomergeStorageWrites();
-    await sendChatMessageWithoutDocumentFlush(prompt);
+    await sendChatMessageWithoutDocumentFlush(prompt, options);
 }
 
 function proposedCards(): Confirmation[] {
-    return pendingActionConfirmationStore.value.confirmations.filter((card) => card.status === 'proposed');
+    return (pendingActionConfirmationStore.value?.confirmations ?? []).filter((card) => card.status === 'proposed');
 }
 
 function requireOnlyProposedCard(): Confirmation {
@@ -462,11 +462,13 @@ describe('a whole-project vibe run of measured recipe batches (AC-003 of #4372)'
         // The plan was read with the Vocal open; it freezes before the brief is confirmed, so the
         // brief card asks once to be approved again and the plan still names the Vocal.
         landProjectEdit(() => {
+            const state = trackStore.value;
+            if (state === null) {
+                throw new TypeError('Expected an open project with tracks');
+            }
             trackStore.set({
-                ...trackStore.value,
-                tracks: trackStore.value.tracks.map((track) =>
-                    track.id === VOCAL_ID ? { ...track, frozen: true } : track
-                ),
+                ...state,
+                tracks: state.tracks.map((track) => (track.id === VOCAL_ID ? { ...track, frozen: true } : track)),
             });
         });
         await expect(confirmPendingChatActions({ confirmationId: brief.id })).resolves.toMatchObject({
@@ -509,6 +511,59 @@ describe('a whole-project vibe run of measured recipe batches (AC-003 of #4372)'
             reason: `production brief changed since this run was planned (rev ${String(PLANNED_BRIEF_REVISION)} → ${String(PLANNED_BRIEF_REVISION + 1)})`,
         });
         expect(trackDeviceTypes(VOCAL_ID)).toEqual([]);
+    });
+
+    it('refuses Confirm of a parked batch once the brief changed, before asking for any re-approval', async () => {
+        const brief = await confirmBrief();
+        const drums = requireOnlyProposedCard();
+        await editBrief();
+
+        const reason = `The production brief changed since this run was planned (rev ${String(PLANNED_BRIEF_REVISION)} → ${String(PLANNED_BRIEF_REVISION + 1)}).`;
+        await expect(confirmPendingChatActions({ confirmationId: drums.id })).resolves.toEqual({
+            status: 'failed',
+            reason,
+        });
+
+        expect(cardContent(drums)).toContain(reason);
+        expect(proposedCards()).toEqual([]);
+        expect(trackDeviceTypes(DRUMS_ID)).toEqual([]);
+        expect(agentRunLifecycle.get(brief.runId)?.phase).toBe('partially-completed');
+    });
+
+    it('waits for each batch’s own approval under the most permissive trust ceiling', async () => {
+        scriptPlanningTurns(BRIEF_ROUTE);
+        await sendChatMessage(PROMPT, { mode: 'apply', trustCeiling: 'destructive-commit' });
+        const brief = requireOnlyProposedCard();
+        expect(agentRunLifecycle.get(brief.runId)?.plan?.batchSchedule).toMatchObject({
+            kind: 'vibe-run',
+            trustCeiling: 'destructive-commit',
+        });
+
+        await expect(confirmPendingChatActions({ confirmationId: brief.id })).resolves.toEqual({
+            status: 'executed',
+        });
+
+        const drums = requireOnlyProposedCard();
+        expect(drums.approvalSnapshot.batchPosition).toEqual({ index: 2, total: 4 });
+        expect(trackDeviceTypes(DRUMS_ID)).toEqual([]);
+        expect(agentRunLifecycle.get(brief.runId)?.phase).toBe('waiting-for-approval');
+    });
+
+    it('plans no batch for a quality the request withholds', async () => {
+        scriptPlanningTurns(BRIEF_ROUTE);
+
+        await sendChatMessage("make this mix warmer but don't let the vocal get brighter");
+
+        const content = cardContent(requireOnlyProposedCard());
+        expect(content).toContain(
+            [
+                'After the brief, 3 batches follow, each measured, previewed and approved on its own:',
+                '- Batch 2 of 4: warm drums — Drums',
+                '- Batch 3 of 4: warm vocal — Vocal',
+                '- Batch 4 of 4: warm bass — Bass',
+            ].join('\n')
+        );
+        expect(content).not.toContain('bright');
     });
 
     it('schedules nothing when the render budget cannot preview every batch, and says why', async () => {

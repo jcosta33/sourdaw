@@ -710,7 +710,7 @@ describe('writing the production brief from a whole-project request (AC-001 of #
             status: 'executed',
         });
 
-        const batch = pendingActionConfirmationStore.value.confirmations.find(
+        const batch = pendingActionConfirmationStore.value?.confirmations.find(
             (card) => card.status === 'proposed' && card.runId === brief.confirmation.runId
         );
         expect(batch?.approvalSnapshot.batchPosition).toEqual({ index: 2, total: 2 });

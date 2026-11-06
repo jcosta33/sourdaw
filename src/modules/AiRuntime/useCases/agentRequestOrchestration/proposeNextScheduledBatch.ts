@@ -436,10 +436,11 @@ function refuseScheduledBatch(run: AgentRun, schedule: AgentRunBatchSchedule, po
 /** Each committed batch of a finished vibe run, read from its executed card and the proof it was approved on. */
 function readCommittedVibeBatches(run: AgentRun, schedule: AgentRunVibeRunBatchSchedule): CommittedVibeBatch[] | null {
     const plan = readScheduledVibeRunPlan(schedule.serializedPlan);
-    if (plan === null) {
+    const confirmations = pendingActionConfirmationStore.value?.confirmations;
+    if (plan === null || confirmations === undefined) {
         return null;
     }
-    return pendingActionConfirmationStore.value.confirmations
+    return confirmations
         .filter(
             (confirmation) =>
                 confirmation.runId === run.runId &&

@@ -849,6 +849,17 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // confirmPendingChatActions (#3147). Command settlement only; no device
         // hydration or write.
         'src/modules/AiRuntime/useCases/agentRequestOrchestration/settleConfirmedCommandExecution.ts': 2,
+        // Count provenance: new file entry, measured 3 — the
+        // `compileVibeBatchMetricState` import, its module path in that same
+        // import, and the one call that reads a vibe-run batch's measured metric
+        // state. Grounding builds immutable batch actions only; no device
+        // hydration or write.
+        'src/modules/AiRuntime/useCases/agentRequestOrchestration/groundVibeRunBatch.ts': 3,
+        // Count provenance: new file entry, measured 3 — the
+        // `compileAgentRiskApproval` import, its module path in that same import,
+        // and the one call that seals the next scheduled batch's approval
+        // snapshot. Immutable approval metadata only; no device hydration or write.
+        'src/modules/AiRuntime/useCases/agentRequestOrchestration/proposeNextScheduledBatch.ts': 3,
         // Count provenance: new file entry, measured 1 — the single
         // `providerProtocol.compileRequest` call, extracted from
         // sendChatMessage (#2975). Provider-request compilation only.
@@ -881,6 +892,17 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         'src/modules/AiRuntime/useCases/splitCompiledCommandList.ts': 1,
         'src/modules/AiRuntime/useCases/streamHostedModelText.ts': 1,
         'src/modules/AiRuntime/useCases/validateArbitraryCommandListEvidence.ts': 1,
+        // Count provenance: new file entry, measured 4 — the exported
+        // `compileVibeBatchMetricState` declaration, plus the
+        // `compilePreviewMeasurementProposal` import, its module path and one
+        // call that measures a batch preview. Measurement compiles a versioned
+        // Command envelope over an isolated projection; no device hydration or write.
+        'src/modules/AiRuntime/useCases/vibeRun/compileVibeBatchMetricState.ts': 4,
+        // Count provenance: new file entry, measured 3 — the
+        // `compilePerceptualConstraints` import, its module path and one call
+        // that reads the request's constraint clauses while planning the
+        // schedule. Pure prompt reading; no device hydration or write.
+        'src/modules/AiRuntime/useCases/vibeRun/planVibeRunSchedule.ts': 3,
         // Arrangement: compileAddDeviceAction / compileReorderDevicesAction /
         // compileLoadPresetActions / compileTrackStripInitializationSnapshot.
         // Compilers, barrel re-exports, the loadPreset handler, and
