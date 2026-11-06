@@ -9,6 +9,7 @@ type ResizeHandleProps = {
     valueMin: number;
     valueMax: number;
     onResize: (delta: number) => void;
+    onSetSize: (size: number) => void;
     onResizeEnd?: () => void;
 };
 
@@ -19,6 +20,7 @@ export const ResizeHandle = ({
     valueMin,
     valueMax,
     onResize,
+    onSetSize,
     onResizeEnd,
 }: ResizeHandleProps): ReactElement => (
     <DragResizeHandle
@@ -28,6 +30,7 @@ export const ResizeHandle = ({
         aria-valuemin={valueMin}
         aria-valuemax={valueMax}
         onResize={onResize}
+        onSetSize={onSetSize}
         onResizeEnd={onResizeEnd}
     />
 );

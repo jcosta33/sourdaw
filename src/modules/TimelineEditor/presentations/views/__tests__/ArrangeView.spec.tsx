@@ -6,7 +6,7 @@ import { importMidiFile, setTimelineHorizontalScrollbarScrollX } from '#/modules
 import { decodeAudioFile, discardDecodedAudioFile } from '#/modules/AudioEngine/useCases';
 import { executeAppActionBatch } from '#/modules/Command/useCases';
 import { defaultWorkspaceState } from '#/modules/WorkspaceShell/stores';
-import { updateWorkspaceState } from '#/modules/WorkspaceShell/useCases';
+import { setTrackListWidth, updateWorkspaceState } from '#/modules/WorkspaceShell/useCases';
 import {
     ARRANGE_RESIZE_HANDLE_WIDTH,
     MIN_TIMELINE_COLUMN_WIDTH,
@@ -147,33 +147,41 @@ vi.mock('#/modules/WorkspaceShell/useCases', () => ({
     setWorkspaceMode: vi.fn(),
 }));
 
-vi.mock('../../components/ResizeHandle', () => ({
-    ResizeHandle: ({
-        direction,
-        label,
-        valueNow,
-        valueMin,
-        valueMax,
-    }: {
-        direction: string;
-        label: string;
-        valueNow: number;
-        valueMin: number;
-        valueMax: number;
-        onResize: (delta: number) => void;
-        onResizeEnd: () => void;
-    }) => (
-        <div
-            role="separator"
-            aria-label={label}
-            aria-valuenow={Math.round(valueNow)}
-            aria-valuemin={valueMin}
-            aria-valuemax={valueMax}
-            data-testid="resize-handle"
-            data-direction={direction}
-        />
-    ),
-}));
+vi.mock('../../components/ResizeHandle', async () => {
+    const { DragResizeHandle } = await import('#/components/ui/DragResizeHandle');
+    return {
+        ResizeHandle: ({
+            direction,
+            label,
+            valueNow,
+            valueMin,
+            valueMax,
+            onResize,
+            onSetSize,
+            onResizeEnd,
+        }: {
+            direction: 'horizontal' | 'vertical';
+            label: string;
+            valueNow: number;
+            valueMin: number;
+            valueMax: number;
+            onResize: (delta: number) => void;
+            onSetSize: (size: number) => void;
+            onResizeEnd: () => void;
+        }) => (
+            <DragResizeHandle
+                direction={direction}
+                aria-label={label}
+                aria-valuenow={Math.round(valueNow)}
+                aria-valuemin={valueMin}
+                aria-valuemax={valueMax}
+                onResize={onResize}
+                onSetSize={onSetSize}
+                onResizeEnd={onResizeEnd}
+            />
+        ),
+    };
+});
 
 vi.mock('../TimelineMinimapResizeHandle', () => ({
     TimelineMinimapResizeHandle: ({
@@ -903,6 +911,35 @@ describe('ArrangeView', () => {
         expect(trackListWidth + ARRANGE_RESIZE_HANDLE_WIDTH + MIN_TIMELINE_COLUMN_WIDTH).toBeLessThanOrEqual(150);
         expect(timelineColumn).toHaveClass('min-w-0');
         expect(timelineColumn).toHaveStyle({ minWidth: `${MIN_TIMELINE_COLUMN_WIDTH}px` });
+    });
+
+    it('announces the shown width under a squeezed row and Home stores the minimum outright', () => {
+        Object.defineProperty(HTMLElement.prototype, 'clientWidth', {
+            configurable: true,
+            get: () => 150,
+        });
+        vi.mocked(useWorkspaceState).mockReturnValue({
+            ...defaultWorkspaceState,
+            trackListOpen: true,
+            trackListWidth: 220,
+            scratchPadOpen: false,
+            scratchPadHeight: 150,
+        });
+        vi.mocked(useTracks).mockReturnValue({
+            tracks: [makeTrack({ clipEndBeat: 32 })],
+            selectedTrackId: 'track-1',
+        });
+
+        render(<ArrangeView />);
+
+        const separator = screen.getByRole('separator', { name: 'Resize track list' });
+        const shownWidth = Number.parseFloat(screen.getByTestId('track-list-view').style.width);
+        expect(shownWidth).toBeLessThan(220);
+        expect(separator).toHaveAttribute('aria-valuenow', String(Math.round(shownWidth)));
+
+        fireEvent.keyDown(separator, { key: 'Home' });
+
+        expect(setTrackListWidth).toHaveBeenLastCalledWith(MIN_TRACK_LIST_WIDTH);
     });
 
     it('names the track list and session view separators and exposes their widths', () => {

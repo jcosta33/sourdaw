@@ -132,12 +132,7 @@ export const TrackHeader = ({ track, isSelected }: TrackHeaderProps): ReactEleme
                             />
                         </>
                     }
-                    endSlot={
-                        <>
-                            {freezeErrorContent}
-                            <ResizeHandle trackId={track.id} height={track.height} />
-                        </>
-                    }
+                    endSlot={freezeErrorContent}
                     style={{
                         height: 26,
                         boxShadow: isSelected

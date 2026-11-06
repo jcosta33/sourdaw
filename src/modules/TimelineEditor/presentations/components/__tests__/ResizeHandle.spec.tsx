@@ -11,6 +11,7 @@ describe('ResizeHandle — separator structure', () => {
                 valueNow={200}
                 valueMin={100}
                 valueMax={400}
+                onSetSize={vi.fn()}
                 direction="vertical"
                 onResize={vi.fn()}
             />
@@ -25,6 +26,7 @@ describe('ResizeHandle — separator structure', () => {
                 valueNow={200}
                 valueMin={100}
                 valueMax={400}
+                onSetSize={vi.fn()}
                 direction="vertical"
                 onResize={vi.fn()}
             />
@@ -39,6 +41,7 @@ describe('ResizeHandle — separator structure', () => {
                 valueNow={200}
                 valueMin={100}
                 valueMax={400}
+                onSetSize={vi.fn()}
                 direction="horizontal"
                 onResize={vi.fn()}
             />
@@ -56,6 +59,7 @@ describe('ResizeHandle — accessible name and value', () => {
                 valueNow={200.4}
                 valueMin={100}
                 valueMax={400}
+                onSetSize={vi.fn()}
                 onResize={vi.fn()}
             />
         );
@@ -80,6 +84,7 @@ describe('ResizeHandle — mouse drag interaction', () => {
                 valueNow={200}
                 valueMin={100}
                 valueMax={400}
+                onSetSize={vi.fn()}
                 direction="vertical"
                 onResize={onResize}
             />
@@ -101,6 +106,7 @@ describe('ResizeHandle — mouse drag interaction', () => {
                 valueNow={200}
                 valueMin={100}
                 valueMax={400}
+                onSetSize={vi.fn()}
                 direction="horizontal"
                 onResize={onResize}
             />
@@ -120,6 +126,7 @@ describe('ResizeHandle — mouse drag interaction', () => {
                 valueNow={200}
                 valueMin={100}
                 valueMax={400}
+                onSetSize={vi.fn()}
                 direction="vertical"
                 onResize={onResize}
             />
@@ -136,6 +143,7 @@ describe('ResizeHandle — mouse drag interaction', () => {
                 valueNow={200}
                 valueMin={100}
                 valueMax={400}
+                onSetSize={vi.fn()}
                 direction="vertical"
                 onResize={vi.fn()}
                 onResizeEnd={onResizeEnd}
@@ -155,6 +163,7 @@ describe('ResizeHandle — mouse drag interaction', () => {
                 valueNow={200}
                 valueMin={100}
                 valueMax={400}
+                onSetSize={vi.fn()}
                 direction="vertical"
                 onResize={vi.fn()}
             />
@@ -176,6 +185,7 @@ describe('ResizeHandle — mouse drag interaction', () => {
                 valueNow={200}
                 valueMin={100}
                 valueMax={400}
+                onSetSize={vi.fn()}
                 direction="horizontal"
                 onResize={vi.fn()}
             />
@@ -192,6 +202,7 @@ describe('ResizeHandle — mouse drag interaction', () => {
                 valueNow={200}
                 valueMin={100}
                 valueMax={400}
+                onSetSize={vi.fn()}
                 direction="vertical"
                 onResize={onResize}
             />
@@ -216,6 +227,7 @@ describe('ResizeHandle — mouse drag interaction', () => {
                 valueNow={200}
                 valueMin={100}
                 valueMax={400}
+                onSetSize={vi.fn()}
                 direction="vertical"
                 onResize={onResize}
             />
@@ -237,6 +249,7 @@ describe('ResizeHandle — mouse drag interaction', () => {
                 valueNow={200}
                 valueMin={100}
                 valueMax={400}
+                onSetSize={vi.fn()}
                 direction="vertical"
                 onResize={vi.fn()}
                 onResizeEnd={onResizeEnd}
@@ -255,6 +268,7 @@ describe('ResizeHandle — mouse drag interaction', () => {
                 valueNow={200}
                 valueMin={100}
                 valueMax={400}
+                onSetSize={vi.fn()}
                 direction="vertical"
                 onResize={vi.fn()}
             />
@@ -273,6 +287,7 @@ describe('ResizeHandle — mouse drag interaction', () => {
                 valueNow={200}
                 valueMin={100}
                 valueMax={400}
+                onSetSize={vi.fn()}
                 direction="vertical"
                 onResize={onResize}
             />
@@ -292,6 +307,7 @@ describe('ResizeHandle — mouse drag interaction', () => {
                 valueNow={200}
                 valueMin={100}
                 valueMax={400}
+                onSetSize={vi.fn()}
                 direction="vertical"
                 onResize={vi.fn()}
             />
@@ -315,6 +331,7 @@ describe('ResizeHandle — mouse drag interaction', () => {
                 valueNow={200}
                 valueMin={100}
                 valueMax={400}
+                onSetSize={vi.fn()}
                 direction="vertical"
                 onResize={vi.fn()}
             />

@@ -178,6 +178,15 @@ describe('TrackHeader', () => {
         expect(screen.getByLabelText(/folder/i)).toBeInTheDocument();
     });
 
+    it('offers the track height handle on an ordinary track but not on a folder row', () => {
+        const { unmount } = renderWithTooltip(<TrackHeader track={mockTrack} isSelected={false} />);
+        expect(screen.getByTestId('resize-handle')).toBeInTheDocument();
+        unmount();
+
+        renderWithTooltip(<TrackHeader track={mockFolderTrack} isSelected={false} />);
+        expect(screen.queryByTestId('resize-handle')).not.toBeInTheDocument();
+    });
+
     it('should toggle folder collapse', () => {
         renderWithTooltip(<TrackHeader track={mockFolderTrack} isSelected={false} />);
         const collapseButton = screen.getByLabelText(/folder/i);

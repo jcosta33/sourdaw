@@ -2,10 +2,8 @@ import { type ReactElement, useRef } from 'react';
 
 import { DragResizeHandle } from '#/components/ui/DragResizeHandle';
 
+import { MAX_TRACK_HEIGHT, MIN_TRACK_HEIGHT } from '../../../useCases/clampTrackHeight';
 import { setTrackHeight } from '../../../useCases/toggleTrackState/setTrackHeight';
-
-export const MIN_TRACK_HEIGHT = 30;
-export const MAX_TRACK_HEIGHT = 300;
 
 type ResizeHandleProps = {
     trackId: string;
