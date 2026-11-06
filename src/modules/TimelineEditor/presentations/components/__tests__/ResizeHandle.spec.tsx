@@ -70,6 +70,30 @@ describe('ResizeHandle — accessible name and value', () => {
     });
 });
 
+describe('ResizeHandle — Home and End', () => {
+    it('sets the size outright to the bounds through onSetSize', () => {
+        const onSetSize = vi.fn();
+        render(
+            <ResizeHandle
+                direction="vertical"
+                label="Resize panel"
+                valueNow={200}
+                valueMin={100}
+                valueMax={400}
+                onResize={vi.fn()}
+                onSetSize={onSetSize}
+            />
+        );
+        const separator = screen.getByRole('separator');
+
+        fireEvent.keyDown(separator, { key: 'Home' });
+        expect(onSetSize).toHaveBeenLastCalledWith(100);
+
+        fireEvent.keyDown(separator, { key: 'End' });
+        expect(onSetSize).toHaveBeenLastCalledWith(400);
+    });
+});
+
 describe('ResizeHandle — mouse drag interaction', () => {
     beforeEach(() => {
         document.body.style.cursor = '';

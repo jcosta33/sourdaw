@@ -277,7 +277,7 @@ export const ArrangeView = (): ReactElement => {
                         direction="vertical"
                         label="Resize session view"
                         valueNow={displayedSessionWidth}
-                        valueMin={SESSION_VIEW_MIN}
+                        valueMin={Math.min(SESSION_VIEW_MIN, Math.round(displayedSessionWidth))}
                         valueMax={SESSION_VIEW_MAX}
                         onResize={handleSessionResize}
                         onSetSize={handleSessionSetSize}
@@ -300,7 +300,7 @@ export const ArrangeView = (): ReactElement => {
                         direction="vertical"
                         label="Resize track list"
                         valueNow={displayedTrackListWidth}
-                        valueMin={MIN_TRACK_LIST_WIDTH}
+                        valueMin={Math.min(MIN_TRACK_LIST_WIDTH, Math.round(displayedTrackListWidth))}
                         valueMax={TRACK_LIST_MAX}
                         onResize={handleTrackListResize}
                         onSetSize={handleTrackListSetSize}
