@@ -1,0 +1,24 @@
+src/modules/TimelineEditor/presentations/views/ArrangeView.tsx
+  s_fec7059b7a251c::t_365051fe1e8ca9 280
+  s_fec7059b7a251c::t_05d81d548d78dc 303
+src/modules/TimelineEditor/presentations/components/__tests__/ResizeHandle.spec.tsx
+  s_fec7059b7a251c::t_9816fcdc5a84c1 73-96
+src/modules/TimelineEditor/presentations/views/__tests__/ArrangeView.spec.tsx
+  s_fec7059b7a251c::t_f58c3a04eb48ce 9,380-385,949-981
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1871807eb7df3e40e9d9d24e265b42e8546f2aa6",
+  "prompts": {},
+  "sessions": {
+    "s_fec7059b7a251c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a7e284f4-0d83-40f5-8212-419d6ca3c2d5",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
