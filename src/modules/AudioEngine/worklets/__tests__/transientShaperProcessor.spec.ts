@@ -5,6 +5,12 @@ import { afterAll, afterEach, describe, expect, it, vi } from 'vitest';
 
 import { getPluginById } from '#/modules/Arrangement/useCases';
 
+import {
+    createTransientShaperControl,
+    NO_IMMEDIATE_FRAME,
+    writeTransientShaperImmediateGain,
+    writeTransientShaperResetEpoch,
+} from '../../models/TransientShaperControl';
 import { installWorkletGlobals } from '../../testing/wasmViewGrowthHarness';
 import { TransientShaperInstance } from '../../wasm/daw_dsp.js';
 
@@ -22,11 +28,12 @@ async function processor(initialize = true) {
     if (!Constructor) {
         throw new Error('Shipping processor was not registered');
     }
-    const instance = new Constructor({ processorOptions: { wasmModule: module } });
+    const { buffer, control } = createTransientShaperControl(0);
+    const instance = new Constructor({ processorOptions: { wasmModule: module, control: buffer } });
     if (initialize) {
         instance.port.onmessage?.({ data: { type: 'init' } });
     }
-    return { instance, Constructor };
+    return { instance, Constructor, control };
 }
 function render(
     instance: Processor,
@@ -95,21 +102,20 @@ describe('shipping Transient Shaper processor with the actual compiled WASM', ()
         expect(terminal.output.map((channel) => Array.from(channel))).toEqual([Array(17).fill(0), Array(17).fill(0)]);
         expect(instance.port.postMessage).toHaveBeenCalledTimes(messages);
     });
-    it('applies a posted reset and immediate gains on the resume frame while the AudioParams still lag it', async () => {
-        const { instance } = await processor();
+    it('lands a reset and immediate gains written while suspended on the resume quantum with no port message', async () => {
+        const { instance, control } = await processor();
         for (let block = 0; block < 375; block++) {
             render(instance, 128);
         }
         vi.stubGlobal('currentFrame', 48000);
-        for (const data of [
-            { type: 'gain', name: 'attackGain', value: 2, frame: 48000 },
-            { type: 'gain', name: 'sustainGain', value: 0.25, frame: 48000 },
-            { type: 'gain', name: '_resetEpoch', value: 9, frame: 48000 },
-            { type: 'gain', name: 'attackGain', value: Number.NaN, frame: 48000 },
-            { type: 'reset', epoch: 2 },
-        ]) {
-            instance.port.onmessage?.({ data });
-        }
+        // Chromium may dispatch a port message after the quantum a resumed
+        // context renders first; nothing but shared memory carries these writes.
+        const onmessage = instance.port.onmessage;
+        instance.port.onmessage = null;
+        writeTransientShaperResetEpoch(control, 1);
+        writeTransientShaperImmediateGain(control, 'attackGain', 2, 48000);
+        writeTransientShaperImmediateGain(control, 'sustainGain', 0.25, 48000);
+        writeTransientShaperResetEpoch(control, 2);
         // Chromium's lagging events: the gains move one frame late, the k-rate epoch a quantum late.
         const attack = Float32Array.from({ length: 128 }, (_, frame) => (frame === 0 ? 1 : 2));
         const sustain = Float32Array.from({ length: 128 }, (_, frame) => (frame === 0 ? 1 : 0.25));
@@ -118,29 +124,42 @@ describe('shipping Transient Shaper processor with the actual compiled WASM', ()
         vi.stubGlobal('currentFrame', 48128);
         const caughtUp = render(instance, 128, undefined, new Float32Array([0]), new Float32Array([0]), 2).output[0];
         expect(caughtUp[0]).toBe(0);
+        instance.port.onmessage = onmessage;
         vi.stubGlobal('currentFrame', 0);
     });
-    it('applies a posted sustain change on the resume frame of a settled, non-transient input', async () => {
-        const { instance } = await processor();
+    it('keeps its last control snapshot while the host is mid-write', async () => {
+        const { instance, control } = await processor();
+        vi.stubGlobal('currentFrame', 48000);
+        writeTransientShaperImmediateGain(control, 'attackGain', 2, 48000);
+        expect(render(instance, 1).output[0][0]).toBe(1);
+        // An odd counter is a write in progress: attack 0 for frame 48128 is
+        // half-written (fields 1 and 2 are the attack value and frame).
+        Atomics.add(control.sequence, 0, 1);
+        control.fields[1] = 0;
+        control.fields[2] = 48128;
+        vi.stubGlobal('currentFrame', 48128);
+        expect(render(instance, 1, undefined, new Float32Array([0.5])).output[0][0]).toBe(0.25);
+        Atomics.add(control.sequence, 0, 1);
+        expect(render(instance, 1, undefined, new Float32Array([0.5])).output[0][0]).toBe(0);
+        vi.stubGlobal('currentFrame', 0);
+    });
+    it('applies an immediate sustain change on the resume frame of a settled, non-transient input', async () => {
+        const { instance, control } = await processor();
         for (let block = 0; block < 375; block++) {
             render(instance, 128);
         }
         vi.stubGlobal('currentFrame', 48000);
-        instance.port.onmessage?.({ data: { type: 'gain', name: 'sustainGain', value: 0.25, frame: 48000 } });
+        writeTransientShaperImmediateGain(control, 'sustainGain', 0.25, 48000);
         const sustain = Float32Array.from({ length: 128 }, (_, frame) => (frame === 0 ? 1 : 0.25));
         const resumed = render(instance, 128, undefined, new Float32Array([1]), sustain).output[0];
         expect([resumed[0], resumed[1], resumed[127]]).toEqual([0.125, 0.125, 0.125]);
         vi.stubGlobal('currentFrame', 0);
     });
-    it('lets automation scheduled after a posted gain decide that frame once the post is cleared', async () => {
-        const { instance } = await processor();
-        for (const data of [
-            { type: 'gain', name: 'attackGain', value: 0.5, frame: 0 },
-            { type: 'clear-gain', name: '_resetEpoch' },
-            { type: 'clear-gain', name: 'attackGain' },
-        ]) {
-            instance.port.onmessage?.({ data });
-        }
+    it('lets automation scheduled after an immediate gain decide that frame once the gain is cleared', async () => {
+        const { instance, control } = await processor();
+        writeTransientShaperImmediateGain(control, 'attackGain', 0.5, 0);
+        expect(render(instance, 1, undefined, new Float32Array([2])).output[0][0]).toBe(0.25);
+        writeTransientShaperImmediateGain(control, 'attackGain', 1, NO_IMMEDIATE_FRAME);
         expect(render(instance, 1, undefined, new Float32Array([2])).output[0][0]).toBe(1);
     });
     it('scrubs nonfinite PCM and gains without poisoning later audio, fills missing channels and disposes once', async () => {
@@ -180,5 +199,12 @@ describe('shipping Transient Shaper processor with the actual compiled WASM', ()
         expect(instance.port.postMessage).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'ready' }));
         expect(render(instance, 17).running).toBe(false);
         expect(render(instance, 17).output[0]).toEqual(new Float32Array(17));
+        const uncontrolled = new Constructor({ processorOptions: { wasmModule: module } });
+        uncontrolled.port.onmessage?.({ data: { type: 'init' } });
+        expect(uncontrolled.port.postMessage).toHaveBeenCalledWith({
+            type: 'error',
+            message: 'TypeError: Transient Shaper requires a shared control block',
+        });
+        expect(render(uncontrolled, 17).running).toBe(false);
     });
 });
