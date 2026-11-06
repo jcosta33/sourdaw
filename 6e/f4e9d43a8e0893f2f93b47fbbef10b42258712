@@ -1,0 +1,28 @@
+src/modules/Arrangement/handlers/clip/validateClipReplacementSessionEntries.ts
+  s_55244eb93b97d1::t_e5cf63296c68ef 106,109,111-116
+src/modules/ElasticAudio/useCases/__tests__/quantizeTransients.spec.ts
+  s_55244eb93b97d1::t_66e502f213004c 707-709,711,719-720
+  s_55244eb93b97d1::t_a898e1c535cd6d 381-382,384-386,388,390-411,414-426
+src/modules/Arrangement/useCases/prepareTransientQuantize.ts
+  s_55244eb93b97d1::t_1f7cdb53cdc80c 290-294
+  s_55244eb93b97d1::t_49e21f982f4151 271
+  s_55244eb93b97d1::t_6f51ffece60f6b 253-257,265-270,272-273
+  s_55244eb93b97d1::t_9170fdf34cb7ec 289
+  s_55244eb93b97d1::t_15c5ab2444bc03 298,300-307
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "6ef4e9d43a8e0893f2f93b47fbbef10b42258712",
+  "prompts": {},
+  "sessions": {
+    "s_55244eb93b97d1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9d6a0c32-d4ba-4e24-bd13-8da974561f6e",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
