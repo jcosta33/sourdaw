@@ -1,0 +1,38 @@
+src/components/daw/DawPluginChip.tsx
+  h_beb54bf43b47b7 42-48,82,92,99,105
+src/components/daw/__tests__/DawPluginChipBranches.spec.tsx
+  h_beb54bf43b47b7 17,19-20,48,50-51,54,56-57
+src/modules/ControlSurface/presentations/views/MidiLearnButton.tsx
+  h_beb54bf43b47b7 93
+src/modules/ControlSurface/presentations/views/__tests__/MidiLearnButton.spec.tsx
+  h_beb54bf43b47b7 81-85
+src/modules/TimelineEditor/presentations/views/Inspector/DeviceParameterControl.tsx
+  h_beb54bf43b47b7 652,668-676,691,698,709,715
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/DeviceParameterControl.spec.tsx
+  h_beb54bf43b47b7 635-642
+src/modules/WorkspaceShell/presentations/hooks/__tests__/useThemeSynchronization.spec.ts
+  h_beb54bf43b47b7 1-50
+src/modules/WorkspaceShell/presentations/hooks/useThemeSynchronization.ts
+  h_beb54bf43b47b7 1-16
+src/modules/WorkspaceShell/presentations/views/WorkspaceMobileGate.tsx
+  h_beb54bf43b47b7 5,11,13,30,32,38
+src/modules/WorkspaceShell/presentations/views/__tests__/WorkspaceMobileGate.spec.tsx
+  h_beb54bf43b47b7 231,244-245
+src/styles/__tests__/semanticThemes.spec.ts
+  h_beb54bf43b47b7 1-68
+src/styles/testing/__tests__/mainStylesheetRules.spec.ts
+  h_beb54bf43b47b7 140-149
+src/styles/tokens.css
+  h_beb54bf43b47b7 251-344
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d84873f57b2cb2bdf0bad9dafdce8487f58899d2",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
