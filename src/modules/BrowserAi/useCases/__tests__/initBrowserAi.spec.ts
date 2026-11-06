@@ -12,12 +12,6 @@ const release_gate = vi.hoisted(() => ({ ddsp: true, kokoro: true }));
 
 vi.mock('#/infra/release/modelReleaseAdmission', () => ({ MODEL_RELEASE_ADMISSION: release_gate }));
 
-vi.mock('#/modules/MIDI/stores', () => ({
-    midiStore: {
-        subscribe: subscribe_to_midi_store,
-    },
-}));
-
 import { type CapabilityReport } from '../../models/CapabilityReport';
 import { DDSP_INSTRUMENT_CATALOG } from '../../models/DdspInstrumentCatalog';
 import { KOKORO_MODEL_ARTIFACT } from '../../models/KokoroArtifactManifest';
@@ -27,6 +21,11 @@ import { modelRegistryStore } from '../../stores/modelRegistryStore';
 import { renderQueueStore } from '../../stores/renderQueueStore';
 import { detectCapabilities } from '../detectCapabilities';
 import { initBrowserAi } from '../initBrowserAi';
+import { midiNoteEditSource } from '../midiNoteEditSource';
+
+// The MIDI note edits the composition root hands BrowserAi, doubled so each
+// case drives the store's publications itself.
+midiNoteEditSource.configure({ subscribe: subscribe_to_midi_store });
 
 type DetectCapabilitiesRepo = (input?: {
     forceRefresh?: boolean;

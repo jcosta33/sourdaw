@@ -2804,21 +2804,45 @@ function getStatedDecibelFigures(
     return getFiguresInLevelForm(classifyPromptDecibelFigures(maskedScope, numbers), levelForm);
 }
 
-/** Every project track the scope text names, longest name first, one span per stretch of text. */
-function getTrackReferenceSpans(
+/**
+ * Every named project object the scope text names, longest name first, one span per stretch of text.
+ * A name is as long as the words {@link getReferenceRanges} matches, so symbols it never matches ("Chorus
+ * ***") cannot rank a shorter name above a longer one ("Chorus 2").
+ */
+function getNamedReferenceSpans(
     scopeText: string,
-    tracks: readonly { id: string; name: string }[]
+    objects: readonly { id: string; name: string }[]
 ): PromptReferenceSpan[] {
+    const matchedLength = (name: string) => normalizePromptText(name).length;
     const spans: PromptReferenceSpan[] = [];
-    for (const track of tracks.toSorted((left, right) => right.name.length - left.name.length)) {
-        for (const range of getReferenceRanges(scopeText, track.name)) {
+    for (const object of objects.toSorted((left, right) => matchedLength(right.name) - matchedLength(left.name))) {
+        for (const range of getReferenceRanges(scopeText, object.name)) {
             if (spans.some((span) => range.start < span.end && range.end > span.start)) {
                 continue;
             }
-            spans.push({ ...range, id: track.id });
+            spans.push({ ...range, id: object.id });
         }
     }
     return spans;
+}
+
+/**
+ * The name of the one section the scope text names in whole; null when it names none, several, or a
+ * name several sections share. Names are read longest first, so "Chorus Two" names that section
+ * alone and never the "Chorus" inside it, while "Chorus or Chorus Two" names both.
+ */
+function getWholeSectionReferenceName(
+    scopeText: string,
+    sections: readonly { id: string; name: string }[]
+): string | null {
+    const namedIds = new Set(getNamedReferenceSpans(scopeText, sections).map((span) => span.id));
+    const named = sections.filter((section) => namedIds.has(section.id));
+    if (named.length !== 1) {
+        return null;
+    }
+    const name = normalizePromptText(named[0]!.name);
+    const sharingName = sections.filter((section) => normalizePromptText(section.name) === name);
+    return sharingName.length === 1 ? named[0]!.name : null;
 }
 
 /**
@@ -2848,7 +2872,7 @@ function getReferenceBoundDecibelFigures(
     );
     const references =
         actionScope.coordinatedTargets?.references ??
-        getTrackReferenceSpans(
+        getNamedReferenceSpans(
             actionScope.text,
             context.tracks.filter((track) => !otherTargetIds.has(track.id))
         );
@@ -3970,10 +3994,7 @@ function validateGroundedValue(
         case 'section-reference': {
             let expectedValue = getSectionNameFromPrompt(actionScope.text);
             if (expectedValue === null && valueRule.kind === 'section-reference') {
-                const matches = (context.sections ?? []).filter((section) =>
-                    ` ${normalizePromptText(actionScope.text)} `.includes(` ${normalizePromptText(section.name)} `)
-                );
-                expectedValue = matches.length === 1 ? matches[0]!.name : null;
+                expectedValue = getWholeSectionReferenceName(actionScope.text, context.sections ?? []);
             }
             if (
                 expectedValue === null ||

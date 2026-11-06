@@ -2,12 +2,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { type Track, type TrackStoreState } from '#/modules/Arrangement/stores';
 import { LEGACY_MIDI_PROBABILITY_SEED, type MidiStoreState } from '#/modules/MIDI/stores';
+import * as synthVoices from '#/modules/Synth/useCases';
 import { type TransportState } from '#/modules/Transport/stores';
 
 import { setAudioDeviceRuntimeSink } from '../../engine/audioDeviceRuntimeSink';
 import { exportCancellationState } from '../offlineRender/exportCancellationState';
 import { type OfflineRenderContext } from '../offlineRender/resolveRenderContext';
 import { renderOffline } from '../renderOffline';
+import { builtinSynthVoice } from '../scheduling/builtinSynthVoice';
+
+// The voices this spec's notes sound through, as the composition root registers them.
+builtinSynthVoice.configure(synthVoices);
 
 const SAMPLE_RATE = 48_000;
 

@@ -7,13 +7,6 @@ import {
     selectMidiNotesForRecordingPass,
     type MidiStoreState,
 } from '#/modules/MIDI/stores';
-import {
-    getDrumKitDefByIndex,
-    getSynthParamsFromDevices,
-    scheduleDrumKitNote,
-    scheduleKitNote,
-    scheduleNoteOffline,
-} from '#/modules/Synth/useCases';
 import { defaultTransportState, type TempoMapStoreState, transportStore } from '#/modules/Transport/stores';
 import { automationSlewTickSecondsForGrain } from '#/utils/automationSlew';
 import { MICRO_FADE_SECONDS } from '#/utils/clipFadeScheduleClamp';
@@ -52,6 +45,7 @@ import { type DeviceNodeEntry, buildDeviceChain } from '../buildDeviceChain';
 import { getCompensationDelay } from '../latencyCompensation/compensation/getCompensationDelay';
 import { getDefaultBendRangeSemitones } from '../noteExpression/getDefaultBendRangeSemitones';
 import { projectNoteExpressionCurves } from '../noteExpression/projectNoteExpressionCurves';
+import { builtinSynthVoice } from '../scheduling/builtinSynthVoice';
 
 import { type captureOfflineSchedulingInput } from './captureOfflineSchedulingInput';
 import { MIXER_AUTOMATION_PARAMETER_IDS, YIELD_EVERY_N_NOTES } from './constants';
@@ -572,10 +566,11 @@ export async function scheduleTrackClips({
     // dedicated drum-voice definition wins for every drum device type, and the
     // factory kit voices only a device no definition covers.
     const receivesOnDrumKit = receiver?.kind === 'drum';
-    const kitDef = receivesOnDrumKit ? resolveDrumKitBy(track.devices, getDrumKitDefByIndex) : null;
+    const voice = builtinSynthVoice.read('scheduleTrackClips');
+    const kitDef = receivesOnDrumKit ? resolveDrumKitBy(track.devices, voice.getDrumKitDefByIndex) : null;
     const drumKit = receivesOnDrumKit && !kitDef ? resolveDrumKit(track.devices) : null;
     const drumKitGain = resolveDrumKitOutputGain(track.devices);
-    const synthParams = drumKit || kitDef || instrumentControls ? null : getSynthParamsFromDevices(track.devices);
+    const synthParams = drumKit || kitDef || instrumentControls ? null : voice.getSynthParamsFromDevices(track.devices);
     function projectPitch({
         pitch,
         referenceBeat,
@@ -787,7 +782,7 @@ export async function scheduleTrackClips({
                     });
                 }
             } else if (kitDef) {
-                scheduleDrumKitNote(
+                voice.scheduleDrumKitNote(
                     offlineCtx,
                     trackInputNode,
                     kitDef,
@@ -798,7 +793,7 @@ export async function scheduleTrackClips({
                     drumKitGain
                 );
             } else if (drumKit) {
-                scheduleKitNote(
+                voice.scheduleKitNote(
                     offlineCtx,
                     trackInputNode,
                     drumKit,
@@ -811,7 +806,7 @@ export async function scheduleTrackClips({
                 );
             } else {
                 const mpe = resolveScheduledMpe(note);
-                scheduleNoteOffline(
+                voice.scheduleNoteOffline(
                     offlineCtx,
                     trackInputNode,
                     note.pitch,

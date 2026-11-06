@@ -2,7 +2,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { addMarker, zoomTimelineBy } from '#/modules/Arrangement/useCases';
 import { executeUserAppAction } from '#/modules/Command/useCases';
-import { startOnboardingTour } from '#/modules/Onboarding/useCases';
 import {
     zoomToFit,
     zoomToSelection,
@@ -12,13 +11,19 @@ import {
     toggleAutomationPanel,
 } from '#/modules/WorkspaceShell/useCases';
 
+import { onboardingTourLauncher } from '../../onboardingTourLauncher';
 import { viewCommands } from '../ViewCommands';
 
-const mocks = vi.hoisted(() => ({ transportValue: null as { loopStart: number; loopEnd: number } | null }));
+const mocks = vi.hoisted(() => ({
+    transportValue: null as { loopStart: number; loopEnd: number } | null,
+    startTour: vi.fn(),
+}));
+
+// The tour the composition root hands the palette, doubled to observe the start.
+onboardingTourLauncher.configure({ startTour: mocks.startTour });
 
 vi.mock('#/modules/Arrangement/useCases', () => ({ addMarker: vi.fn(), zoomTimelineBy: vi.fn() }));
 vi.mock('#/modules/Command/useCases', () => ({ executeUserAppAction: vi.fn().mockResolvedValue(undefined) }));
-vi.mock('#/modules/Onboarding/useCases', () => ({ startOnboardingTour: vi.fn() }));
 vi.mock('#/modules/Transport/stores', () => ({
     transportStore: {
         get value() {
@@ -134,7 +139,7 @@ describe('viewCommands', () => {
     it('show-onboarding-tour restarts the guided tour', () => {
         runAction('show-onboarding-tour');
 
-        expect(startOnboardingTour).toHaveBeenCalledTimes(1);
+        expect(mocks.startTour).toHaveBeenCalledTimes(1);
     });
 
     it('delete-time removes the loop region, shifting everything left', () => {

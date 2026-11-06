@@ -1,3 +1,4 @@
+import { import_and_select_audio_clip } from './audioClipFixture';
 import { expect, test } from './e2eTest';
 import { launch_new_project, setupWorkspace } from './e2eUtils';
 
@@ -52,6 +53,16 @@ test.describe('Clip inspector Trim end + Fade out — keyboard response', () => 
         const after = Number(await trimEnd.getAttribute('aria-valuenow'));
         expect(after).toBeGreaterThan(before);
     });
+});
+
+// Fades apply to audio clips only (MIDI playback never reads them), so the fade slider runs on an imported clip.
+test.describe('Clip inspector Fade out — keyboard response on an audio clip', () => {
+    test.beforeEach(async ({ page }) => {
+        test.setTimeout(120000);
+        await setupWorkspace(page);
+        await launch_new_project(page);
+        await import_and_select_audio_clip(page);
+    });
 
     test('Fade out slider responds to keyboard', async ({ page }) => {
         const fadeOut = page.getByRole('slider', { name: 'Fade out duration' });
@@ -59,8 +70,7 @@ test.describe('Clip inspector Trim end + Fade out — keyboard response', () => 
         await fadeOut.focus();
         const before = Number(await fadeOut.getAttribute('aria-valuenow'));
         await page.keyboard.press('ArrowUp');
-        await page.waitForTimeout(200);
-        const after = Number(await fadeOut.getAttribute('aria-valuenow'));
-        expect(after).toBeGreaterThan(before);
+        await expect(fadeOut).not.toHaveAttribute('aria-valuenow', String(before));
+        expect(Number(await fadeOut.getAttribute('aria-valuenow'))).toBeGreaterThan(before);
     });
 });

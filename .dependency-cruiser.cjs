@@ -16,7 +16,8 @@
 //      through a registered publication — dependency edges cannot see re-exports)
 //   6) the module tier register (static module-pair edges checked against
 //      .dependency-cruiser.module-tiers.cjs, plus every module-level cycle,
-//      which file-level no-circular cannot see)
+//      which file-level no-circular cannot see), compared exactly against that
+//      manifest's reasoned allowances instead of a baseline file
 // ----------------------------------------------------------------------------
 // Sourdaw TypeScript module architecture enforcement
 //

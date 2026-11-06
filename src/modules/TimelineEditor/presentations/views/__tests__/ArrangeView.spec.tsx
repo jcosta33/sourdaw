@@ -6,8 +6,12 @@ import { importMidiFile, setTimelineHorizontalScrollbarScrollX } from '#/modules
 import { decodeAudioFile, discardDecodedAudioFile } from '#/modules/AudioEngine/useCases';
 import { executeAppActionBatch } from '#/modules/Command/useCases';
 import { defaultWorkspaceState } from '#/modules/WorkspaceShell/stores';
-import { updateWorkspaceState } from '#/modules/WorkspaceShell/useCases';
-import { ARRANGE_RESIZE_HANDLE_WIDTH, MIN_TIMELINE_COLUMN_WIDTH } from '#/utils/Layout/allocateMainFirstWidths';
+import { setSessionViewWidth, setTrackListWidth, updateWorkspaceState } from '#/modules/WorkspaceShell/useCases';
+import {
+    ARRANGE_RESIZE_HANDLE_WIDTH,
+    MIN_TIMELINE_COLUMN_WIDTH,
+    MIN_TRACK_LIST_WIDTH,
+} from '#/utils/Layout/allocateMainFirstWidths';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { type Clip, type Track } from '../../../models/TrackViewTypes';
@@ -143,17 +147,41 @@ vi.mock('#/modules/WorkspaceShell/useCases', () => ({
     setWorkspaceMode: vi.fn(),
 }));
 
-vi.mock('../../components/ResizeHandle', () => ({
-    ResizeHandle: ({
-        direction,
-        onResize: _onResize,
-        onResizeEnd: _onResizeEnd,
-    }: {
-        direction: string;
-        onResize: (delta: number) => void;
-        onResizeEnd: () => void;
-    }) => <div data-testid="resize-handle" data-direction={direction} />,
-}));
+vi.mock('../../components/ResizeHandle', async () => {
+    const { DragResizeHandle } = await import('#/components/ui/DragResizeHandle');
+    return {
+        ResizeHandle: ({
+            direction,
+            label,
+            valueNow,
+            valueMin,
+            valueMax,
+            onResize,
+            onSetSize,
+            onResizeEnd,
+        }: {
+            direction: 'horizontal' | 'vertical';
+            label: string;
+            valueNow: number;
+            valueMin: number;
+            valueMax: number;
+            onResize: (delta: number) => void;
+            onSetSize: (size: number) => void;
+            onResizeEnd: () => void;
+        }) => (
+            <DragResizeHandle
+                direction={direction}
+                aria-label={label}
+                aria-valuenow={Math.round(valueNow)}
+                aria-valuemin={valueMin}
+                aria-valuemax={valueMax}
+                onResize={onResize}
+                onSetSize={onSetSize}
+                onResizeEnd={onResizeEnd}
+            />
+        ),
+    };
+});
 
 vi.mock('../TimelineMinimapResizeHandle', () => ({
     TimelineMinimapResizeHandle: ({
@@ -347,6 +375,12 @@ const readFirstScrollbarCall = (): { scrollX: number; maxScrollX: number } => {
         throw new Error('Expected horizontal scrollbar write use case to be called');
     }
     return input;
+};
+
+const expectValueWithinAnnouncedBounds = (separator: HTMLElement): void => {
+    const now = Number(separator.getAttribute('aria-valuenow'));
+    expect(now).toBeGreaterThanOrEqual(Number(separator.getAttribute('aria-valuemin')));
+    expect(now).toBeLessThanOrEqual(Number(separator.getAttribute('aria-valuemax')));
 };
 
 describe('ArrangeView', () => {
@@ -883,5 +917,99 @@ describe('ArrangeView', () => {
         expect(trackListWidth + ARRANGE_RESIZE_HANDLE_WIDTH + MIN_TIMELINE_COLUMN_WIDTH).toBeLessThanOrEqual(150);
         expect(timelineColumn).toHaveClass('min-w-0');
         expect(timelineColumn).toHaveStyle({ minWidth: `${MIN_TIMELINE_COLUMN_WIDTH}px` });
+    });
+
+    it('announces the shown width under a squeezed row and Home stores the minimum outright', () => {
+        Object.defineProperty(HTMLElement.prototype, 'clientWidth', {
+            configurable: true,
+            get: () => 150,
+        });
+        vi.mocked(useWorkspaceState).mockReturnValue({
+            ...defaultWorkspaceState,
+            trackListOpen: true,
+            trackListWidth: 220,
+            scratchPadOpen: false,
+            scratchPadHeight: 150,
+        });
+        vi.mocked(useTracks).mockReturnValue({
+            tracks: [makeTrack({ clipEndBeat: 32 })],
+            selectedTrackId: 'track-1',
+        });
+
+        render(<ArrangeView />);
+
+        const separator = screen.getByRole('separator', { name: 'Resize track list' });
+        const shownWidth = Number.parseFloat(screen.getByTestId('track-list-view').style.width);
+        expect(shownWidth).toBeLessThan(220);
+        expect(separator).toHaveAttribute('aria-valuenow', String(Math.round(shownWidth)));
+
+        fireEvent.keyDown(separator, { key: 'Home' });
+
+        expect(setTrackListWidth).toHaveBeenLastCalledWith(MIN_TRACK_LIST_WIDTH);
+        expectValueWithinAnnouncedBounds(screen.getByRole('separator', { name: 'Resize track list' }));
+    });
+
+    it('announces the shown session width under a squeezed row and Home stores the minimum outright', () => {
+        Object.defineProperty(HTMLElement.prototype, 'clientWidth', {
+            configurable: true,
+            get: () => 150,
+        });
+        vi.mocked(useWorkspaceState).mockReturnValue({
+            ...defaultWorkspaceState,
+            trackListOpen: false,
+            dualViewOpen: true,
+            sessionViewWidth: 300,
+            scratchPadOpen: false,
+            scratchPadHeight: 150,
+        });
+        vi.mocked(useTracks).mockReturnValue({
+            tracks: [makeTrack({ clipEndBeat: 32 })],
+            selectedTrackId: 'track-1',
+        });
+
+        render(<ArrangeView />);
+
+        const separator = screen.getByRole('separator', { name: 'Resize session view' });
+        const shownWidth = Number.parseFloat(screen.getByTestId('session-view').parentElement?.style.width ?? '');
+        expect(shownWidth).toBeLessThan(300);
+        expect(separator).toHaveAttribute('aria-valuenow', String(Math.round(shownWidth)));
+        expectValueWithinAnnouncedBounds(separator);
+
+        fireEvent.keyDown(separator, { key: 'Home' });
+
+        expect(setSessionViewWidth).toHaveBeenLastCalledWith(200);
+        expectValueWithinAnnouncedBounds(screen.getByRole('separator', { name: 'Resize session view' }));
+    });
+
+    it('names the track list and session view separators and exposes their widths', () => {
+        vi.mocked(useWorkspaceState).mockReturnValue({
+            ...defaultWorkspaceState,
+            trackListOpen: true,
+            trackListWidth: 220,
+            dualViewOpen: true,
+            sessionViewWidth: 300,
+            scratchPadOpen: false,
+            scratchPadHeight: 150,
+        });
+        vi.mocked(useTracks).mockReturnValue({
+            tracks: [makeTrack({ clipEndBeat: 32 })],
+            selectedTrackId: 'track-1',
+        });
+
+        render(<ArrangeView />);
+
+        const trackList = screen.getByRole('separator', { name: 'Resize track list' });
+        const shownTrackListWidth = Number.parseFloat(screen.getByTestId('track-list-view').style.width);
+        expect(trackList).toHaveAttribute('aria-valuenow', String(Math.round(shownTrackListWidth)));
+        expect(trackList).toHaveAttribute('aria-valuemin', String(MIN_TRACK_LIST_WIDTH));
+        expect(trackList).toHaveAttribute('aria-valuemax', '400');
+
+        const session = screen.getByRole('separator', { name: 'Resize session view' });
+        const shownSessionWidth = Number.parseFloat(
+            screen.getByTestId('session-view').parentElement?.style.width ?? ''
+        );
+        expect(session).toHaveAttribute('aria-valuenow', String(Math.round(shownSessionWidth)));
+        expect(session).toHaveAttribute('aria-valuemin', '200');
+        expect(session).toHaveAttribute('aria-valuemax', '800');
     });
 });

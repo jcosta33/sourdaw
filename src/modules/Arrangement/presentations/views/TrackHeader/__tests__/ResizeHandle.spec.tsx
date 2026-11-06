@@ -15,54 +15,62 @@ describe('ResizeHandle', () => {
     });
 
     it('should render without crashing', () => {
-        const { container } = render(<ResizeHandle trackId="track1" />);
+        const { container } = render(<ResizeHandle trackId="track1" height={80} />);
         expect(container.firstChild).toBeTruthy();
     });
 
     it('should have correct role', () => {
-        render(<ResizeHandle trackId="track1" />);
+        render(<ResizeHandle trackId="track1" height={80} />);
         expect(screen.getByRole('separator')).toBeInTheDocument();
     });
 
     it('should have correct aria attributes', () => {
-        render(<ResizeHandle trackId="track1" />);
+        render(<ResizeHandle trackId="track1" height={80} />);
         const separator = screen.getByRole('separator');
         expect(separator).toHaveAttribute('aria-orientation', 'horizontal');
         expect(separator).toHaveAttribute('aria-label', 'Resize track height');
     });
 
+    it('exposes the track height with its 30..300 bounds', () => {
+        render(<ResizeHandle trackId="track1" height={120.4} />);
+        const separator = screen.getByRole('separator', { name: 'Resize track height' });
+        expect(separator).toHaveAttribute('aria-valuenow', '120');
+        expect(separator).toHaveAttribute('aria-valuemin', '30');
+        expect(separator).toHaveAttribute('aria-valuemax', '300');
+    });
+
     it('should have resize cursor', () => {
-        const { container } = render(<ResizeHandle trackId="track1" />);
+        const { container } = render(<ResizeHandle trackId="track1" height={80} />);
         expect(container.firstChild).toHaveClass('cursor-ns-resize');
     });
 
     it('should handle mouse down', () => {
-        const { container } = render(<ResizeHandle trackId="track1" />);
+        const { container } = render(<ResizeHandle trackId="track1" height={80} />);
         const handle = container.firstChild as HTMLElement;
         fireEvent.mouseDown(handle, { button: 0, clientY: 100 });
         expect(handle).toBeInTheDocument();
     });
 
     it('should set body cursor during resize', () => {
-        const { container } = render(<ResizeHandle trackId="track1" />);
+        const { container } = render(<ResizeHandle trackId="track1" height={80} />);
         const handle = container.firstChild as HTMLElement;
         fireEvent.mouseDown(handle, { button: 0, clientY: 100 });
         expect(document.body.style.cursor).toBe('ns-resize');
     });
 
     it('should have hover opacity', () => {
-        const { container } = render(<ResizeHandle trackId="track1" />);
+        const { container } = render(<ResizeHandle trackId="track1" height={80} />);
         expect(container.firstChild).toHaveClass('opacity-0');
         expect(container.firstChild).toHaveClass('hover:opacity-100');
     });
 
     it('should have transition', () => {
-        const { container } = render(<ResizeHandle trackId="track1" />);
+        const { container } = render(<ResizeHandle trackId="track1" height={80} />);
         expect(container.firstChild).toHaveClass('transition-opacity');
     });
 
     it('should have correct positioning', () => {
-        const { container } = render(<ResizeHandle trackId="track1" />);
+        const { container } = render(<ResizeHandle trackId="track1" height={80} />);
         expect(container.firstChild).toHaveClass('absolute');
         expect(container.firstChild).toHaveClass('bottom-0');
         expect(container.firstChild).toHaveClass('left-0');
@@ -70,18 +78,18 @@ describe('ResizeHandle', () => {
     });
 
     it('should have correct height', () => {
-        const { container } = render(<ResizeHandle trackId="track1" />);
+        const { container } = render(<ResizeHandle trackId="track1" height={80} />);
         expect(container.firstChild).toHaveClass('h-1');
     });
 
     it('should have focus-visible styles', () => {
-        const { container } = render(<ResizeHandle trackId="track1" />);
+        const { container } = render(<ResizeHandle trackId="track1" height={80} />);
         expect(container.firstChild).toHaveClass('focus-visible:opacity-100');
         expect(container.firstChild).toHaveClass('focus-visible:bg-ring/40');
     });
 
     it('stops event propagation on mouseDown and pointerDown', () => {
-        render(<ResizeHandle trackId="track1" />);
+        render(<ResizeHandle trackId="track1" height={80} />);
         const handle = screen.getByRole('separator');
 
         const mouseDownEvent = createEvent.mouseDown(handle);
@@ -98,7 +106,7 @@ describe('ResizeHandle', () => {
     it('invokes setTrackHeight with expected height on mouse drag', () => {
         const { container } = render(
             <div style={{ height: '80px' }}>
-                <ResizeHandle trackId="track1" />
+                <ResizeHandle trackId="track1" height={80} />
             </div>
         );
         const parent = container.firstChild as HTMLElement;
@@ -117,7 +125,7 @@ describe('ResizeHandle', () => {
     it('invokes setTrackHeight on keyboard ArrowDown and ArrowUp', () => {
         const { container } = render(
             <div style={{ height: '80px' }}>
-                <ResizeHandle trackId="track1" />
+                <ResizeHandle trackId="track1" height={80} />
             </div>
         );
         const parent = container.firstChild as HTMLElement;
@@ -137,7 +145,7 @@ describe('ResizeHandle', () => {
     it('clamps track height within bounds and prevents reversing deadzones', () => {
         const { container } = render(
             <div style={{ height: '290px' }}>
-                <ResizeHandle trackId="track1" />
+                <ResizeHandle trackId="track1" height={80} />
             </div>
         );
         const parent = container.firstChild as HTMLElement;

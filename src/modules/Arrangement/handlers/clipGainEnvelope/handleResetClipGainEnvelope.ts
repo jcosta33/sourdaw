@@ -2,9 +2,13 @@ import { createHandler } from '#/utils/createHandler';
 
 import { getEnvelope } from '../../stores/gainEnvelopeStore';
 import { resetClipGainEnvelope } from '../../useCases/clipGainEnvelope/resetClipGainEnvelope';
+import { isMidiClip } from '../isMidiClip';
 
 export const handleResetClipGainEnvelope = createHandler<'resetClipGainEnvelope'>({
     execute: (action) => {
+        if (isMidiClip(action.payload.clipId)) {
+            return { status: 'no-write' };
+        }
         resetClipGainEnvelope(action.payload.clipId);
         return undefined;
     },

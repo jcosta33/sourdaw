@@ -79,7 +79,7 @@ import {
     takeOwnsRecordingRoot,
     recordingMidiSourceBeatAt,
 } from '#/modules/Arrangement/useCases';
-import { audioEngine } from '#/modules/AudioEngine/useCases';
+import { audioEngine, builtinSynthVoice } from '#/modules/AudioEngine/useCases';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
@@ -103,6 +103,7 @@ import {
     setRecordingMidiAdmissionPort,
     setWebMidiRuntimeEventBus,
 } from '#/modules/MIDI/useCases';
+import * as synthVoices from '#/modules/Synth/useCases';
 
 import { defaultTransportState } from '../../../models/TransportState';
 import {
@@ -116,6 +117,7 @@ import { forgetHeldNoteExpression } from '../forgetHeldNoteExpression';
 import { scheduleMidiNotes } from '../scheduleMidiNotes';
 
 registerSupportingServicePorts();
+builtinSynthVoice.configure(synthVoices);
 
 const TRACK_ID = 'track-midi';
 const DEVICE_ID = 'gb-1';

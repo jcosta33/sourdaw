@@ -102,6 +102,12 @@ export type AgentRunBatchSchedule = {
     /** Original semantic obligations persist across every slice; proof is rebound per batch. */
     metricGoalState?: string;
     schemaVersion: 1;
+    /**
+     * What each slice holds, which decides how a later slice is read back and grounded: a `bulk-set`
+     * slice is the serialized evidence of one cut of a compiled set list. A schedule stored before
+     * kinds existed reads as `bulk-set`, the only kind there was.
+     */
+    kind: 'bulk-set';
     scheduleId: string;
     position: number;
     total: number;

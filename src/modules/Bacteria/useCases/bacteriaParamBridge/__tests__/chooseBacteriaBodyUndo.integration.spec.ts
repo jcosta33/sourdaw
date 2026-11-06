@@ -44,6 +44,7 @@ const engineWrites: { trackId: string; deviceId: string; paramId: string; value:
 let afterEngineWrite: (() => void) | null = null;
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    builtinSynthVoice: { read: vi.fn() },
     reconcileAutoInputMonitoring: vi.fn(),
     stopTrackInputMonitoring: vi.fn(),
     rearmCommittedTrackInputMonitoring: vi.fn(),

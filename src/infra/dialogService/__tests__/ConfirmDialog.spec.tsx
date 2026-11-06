@@ -249,6 +249,36 @@ describe('ConfirmDialog', () => {
         expect(screen.queryByText('First')).not.toBeInTheDocument();
     });
 
+    // A replacing confirmation keeps the dialog content mounted, so the open
+    // autofocus does not run again: focus left on the destructive button would
+    // let Enter answer the second danger question true.
+    it('moves focus back to Cancel when a second danger confirmation replaces an open one', async () => {
+        const fire = await renderAndGetHandler();
+        const secondResolve = vi.fn();
+        act(() => {
+            fire(makePayload({ id: 'confirm-1', variant: 'danger', confirmLabel: 'Delete', resolve: vi.fn() }));
+        });
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Cancel' })).toHaveFocus());
+        screen.getByRole('button', { name: 'Delete' }).focus();
+        expect(screen.getByRole('button', { name: 'Delete' })).toHaveFocus();
+
+        act(() => {
+            fire(
+                makePayload({
+                    id: 'confirm-2',
+                    message: 'Second',
+                    variant: 'danger',
+                    confirmLabel: 'Delete',
+                    resolve: secondResolve,
+                })
+            );
+        });
+
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Cancel' })).toHaveFocus());
+        fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Enter' });
+        expect(secondResolve).toHaveBeenCalledExactlyOnceWith(false);
+    });
+
     it('applies the danger border styling for a danger variant', async () => {
         const fire = await renderAndGetHandler();
         act(() => {
@@ -257,5 +287,21 @@ describe('ConfirmDialog', () => {
 
         const dialogPanel = screen.getByText('Danger message').closest('div');
         expect(dialogPanel?.className).toContain('border-[var(--color-state-danger)]/40');
+    });
+
+    it('pulls focus back to Cancel when something outside the open dialog takes it', async () => {
+        render(<button type="button">Outside</button>);
+        const fire = await renderAndGetHandler();
+        act(() => {
+            fire(makePayload({ variant: 'danger', confirmLabel: 'Delete' }));
+        });
+        const cancelButton = screen.getByRole('button', { name: 'Cancel' });
+        await waitFor(() => {
+            expect(cancelButton).toHaveFocus();
+        });
+
+        screen.getByRole('button', { name: 'Outside', hidden: true }).focus();
+
+        expect(document.activeElement).toBe(cancelButton);
     });
 });

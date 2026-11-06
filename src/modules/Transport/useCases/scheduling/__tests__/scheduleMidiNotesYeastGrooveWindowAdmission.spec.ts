@@ -11,7 +11,6 @@ import {
     type GrooveTemplateState,
 } from '#/modules/MIDI/stores';
 import { createGrooveMidiEventProjector, projectClipMidiEvents, projectCommittedGroove } from '#/modules/MIDI/useCases';
-import { scheduleNote } from '#/modules/Synth/useCases';
 import { toasterStore } from '#/modules/Toaster/stores';
 import { processYeastMidi } from '#/modules/Yeast/useCases';
 
@@ -145,6 +144,7 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     getSynthParamsForTrack: vi.fn(() => ({})),
 }));
 vi.mock('#/modules/AudioEngine/useCases', async () => ({
+    builtinSynthVoice: { read: () => synthVoices },
     // The bounce's own Yeast projection: what the export renders is what the
     // live windows are compared against, so the barrel serves the real one.
     projectOfflineYeastTrackNotes: (
@@ -181,7 +181,8 @@ vi.mock('#/modules/AudioEngine/useCases', async () => ({
     soundsNativeNotes: vi.fn(() => false),
     writeNativeBuiltinParameters: vi.fn(),
 }));
-vi.mock('#/modules/Synth/useCases', () => ({
+// The built-in synth voice this spec's notes sound through, read through the AudioEngine port.
+const synthVoices = vi.hoisted(() => ({
     getDrumKitDefByIndex: vi.fn(() => null),
     // Web-MIDI message-handler bundle, via the real MIDI use-case barrel.
     getSynthParamsFromDevices: vi.fn(() => ({})),
@@ -191,6 +192,7 @@ vi.mock('#/modules/Synth/useCases', () => ({
     // Read by the AudioEngine offline render (see the Arrangement stores double).
     scheduleNoteOffline: vi.fn(),
 }));
+const { scheduleNote } = synthVoices;
 vi.mock('#/modules/Yeast/useCases', () => ({
     processYeastMidi: vi.fn(),
     getYeastSchedulingLookahead: vi.fn(() => ({ earlyBeats: 0, lateBeats: 0 })),

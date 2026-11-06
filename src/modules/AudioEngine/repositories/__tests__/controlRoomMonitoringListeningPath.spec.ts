@@ -1,10 +1,9 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { controlRoomStore } from '#/modules/ControlRoom/stores';
-import { getControlRoomHandlers } from '#/modules/ControlRoom/useCases';
+import { getControlRoomHandlers, syncControlRoomMonitoring } from '#/modules/ControlRoom/useCases';
 import { dbToGain } from '#/utils/audioLevelLaw';
 
-import { syncControlRoomMonitoring } from '../../useCases/engineAccess/syncControlRoomMonitoring';
 import { createAudioEngine } from '../createWebAudioEngine';
 
 import type { AudioEngine } from '../../models/AudioEngineState';
@@ -275,9 +274,14 @@ function createDrivenEngine(): DrivenEngine {
     const engine = createAudioEngine(context as unknown as AudioContext);
     // Unity fader so observed amplitudes are exact ratios of the programme.
     (engine.masterGainNode as unknown as FixtureGainNode).gain.value = 1;
-    // The real sync, named onto this fixture engine — the app wiring passes
-    // nothing and gets the singleton; the seam is the sync's own parameter.
-    return { context, engine, unsubscribe: syncControlRoomMonitoring(engine) };
+    // The real ControlRoom sync, named onto this fixture engine — the app
+    // wiring passes nothing and gets the singleton; the seam is the sync's own
+    // parameter.
+    return {
+        context,
+        engine,
+        unsubscribe: syncControlRoomMonitoring((monitoring) => engine.setControlRoomMonitoring(monitoring)),
+    };
 }
 
 function connectProgrammeBuffer(driven: DrivenEngine, left: number, right: number): void {

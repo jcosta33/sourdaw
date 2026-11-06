@@ -202,7 +202,9 @@ export const drawClip = (
         drawClipLoopMarkers(ctx, clip, model, x, trackY, w, trackHeight, padding);
     }
 
-    drawFadeCurves(ctx, clip, model, x, trackY, w, trackHeight, padding);
+    if (clip.type === 'audio') {
+        drawFadeCurves(ctx, clip, model, x, trackY, w, trackHeight, padding);
+    }
 
     if (isSelected && w > 16) {
         drawResizeHandles(ctx, x, trackY + padding, w, trackHeight - padding * 2);

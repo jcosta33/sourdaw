@@ -402,7 +402,7 @@ A minimal `APPROVE` on the same plan:
         "claims": [
             {
                 "observable": "setTempo refuses a tempo of 0 BPM",
-                "verification": "pnpm test:run src/modules/Transport/useCases/__tests__/setTempo.spec.ts with the guard reverted",
+                "verification": "pnpm guard --profile focused -- pnpm test:run src/modules/Transport/useCases/__tests__/setTempo.spec.ts with the guard reverted",
                 "observed": "the zero-tempo case fails on revert and passes on the head"
             }
         ]

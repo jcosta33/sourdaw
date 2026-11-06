@@ -13,3 +13,4 @@ export { isWithinTransientSurface } from './isWithinTransientSurface';
 export { isWithinModalSurface } from './isWithinModalSurface';
 export { CANVAS_EDITOR_COMMAND_EVENT, dispatchCanvasEditorCommand } from './dispatchCanvasEditorCommand';
 export { isCanvasEditorCommandRequest } from './isCanvasEditorCommandRequest';
+export { onboardingTourLauncher } from './onboardingTourLauncher';

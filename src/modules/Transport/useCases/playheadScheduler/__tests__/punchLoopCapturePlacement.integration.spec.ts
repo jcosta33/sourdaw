@@ -17,6 +17,7 @@ import {
 } from '#/modules/Arrangement/useCases';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
 import {
+    builtinSynthVoice,
     configureOfflineMidiEventProjection,
     configureOfflinePpqEndpointProjection,
     renderTrackSubgraphOffline,
@@ -41,6 +42,7 @@ import {
     replaceCrdtDocInLineage,
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
+import * as synthVoices from '#/modules/Synth/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { secondsBetweenBeats } from '../../../models/TempoMap';
@@ -63,6 +65,9 @@ import { toggleRecording } from '../../transportControls/toggleRecording';
 import { disposePlayheadScheduler } from '../disposePlayheadScheduler';
 import { schedulerSession } from '../schedulerSession';
 import { startPlayheadScheduler } from '../startPlayheadScheduler';
+
+// The voices this spec's notes sound through, as the composition root registers them.
+builtinSynthVoice.configure(synthVoices);
 
 type RecordingResult = Parameters<Parameters<typeof startAudioRecording>[1]>[0];
 type InputCapture = {
