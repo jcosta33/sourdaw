@@ -150,6 +150,26 @@ describe('LaunchScreen', () => {
         expect(screen.getByRole('button', { name: /New Project/ })).toBeInTheDocument();
     });
 
+    it('makes a blank project the primary action and templates and demos secondary', () => {
+        render(<LaunchScreen exiting={false} />);
+
+        expect(screen.getByRole('heading', { name: 'Create a project' })).toBeInTheDocument();
+        const newProject = screen.getByRole('button', { name: /New Project/ });
+        const templates = screen.getByRole('button', { name: /Templates/ });
+        const demos = screen.getByRole('button', { name: /Demos/ });
+        expect(newProject).toHaveTextContent('Start with an empty project');
+        expect(newProject).toHaveClass('bg-[var(--color-accent-orange)]/10');
+        expect(templates).not.toHaveClass('bg-[var(--color-accent-orange)]/10');
+        expect(demos).not.toHaveClass('bg-[var(--color-accent-orange)]/10');
+    });
+
+    it('keeps every launch action reachable in a short viewport', () => {
+        render(<LaunchScreen exiting={false} />);
+
+        const card = screen.getByRole('button', { name: /New Project/ }).closest('.rounded-2xl');
+        expect(card).toHaveClass('max-h-full', 'overflow-y-auto', 'overscroll-contain', '[&>*]:shrink-0');
+    });
+
     it('fades out and stops taking pointer input while exiting', () => {
         const { rerender } = render(<LaunchScreen exiting={false} />);
         const dialog = screen.getByRole('dialog', { name: /Sourdaw — start a project/ });
