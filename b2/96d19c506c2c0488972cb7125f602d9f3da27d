@@ -1,0 +1,48 @@
+src/modules/Arrangement/handlers/clip/__tests__/handleCrossfadeClipsRefusal.spec.ts
+  s_c9886ff2128a1e::t_3f8dd5014701e4 1-138
+src/modules/Arrangement/handlers/clip/handleCrossfadeClips.ts
+  s_c9886ff2128a1e::t_cee412e6b8200c 8,129,147-152,155
+src/modules/Arrangement/useCases/clipEditing/__tests__/crossfadeClips.spec.ts
+  s_c9886ff2128a1e::t_9f1f15b68c7200 554-563,566-567,570-580,582-583
+src/modules/Arrangement/useCases/clipEditing/crossfadeClipBLoopOriginEntry.ts
+  s_c9886ff2128a1e::t_0cf044c5b392e2 11
+src/modules/Arrangement/useCases/clipEditing/crossfadeClips.ts
+  s_c9886ff2128a1e::t_b24dda2b57bd6a 9,39-40,43,78
+src/modules/Arrangement/useCases/clipEditing/findCrossfadePair.ts
+  s_c9886ff2128a1e::t_1e4e70d460eeb4 1-21
+src/modules/Arrangement/useCases/clipEditing/resolveCrossfadeClipB.ts
+  s_c9886ff2128a1e::t_dcae95567939ac 152,161
+src/modules/AiRuntime/transformers/llmActionStrategies/__tests__/clipStrategy.spec.ts
+  s_fec7059b7a251c::t_88a1d9d212b7da 592-629,631-633
+  s_fec7059b7a251c::t_7e97398cba8eb6 630
+src/modules/AiRuntime/transformers/llmActionStrategies/clipEditingStrategies.ts
+  s_fec7059b7a251c::t_3829b02523083a 111-115,119-120,427-431
+  s_fec7059b7a251c::t_51dad09ce54cec 117
+  s_fec7059b7a251c::t_f9b7dee6a14250 116,118,432-433
+src/modules/AiRuntime/transformers/__tests__/llmActionBridge.spec.ts
+  s_fec7059b7a251c::t_b359ea07da572d 2192-2194,2196-2197,2200,2202,2205
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b296d19c506c2c0488972cb7125f602d9f3da27d",
+  "prompts": {},
+  "sessions": {
+    "s_c9886ff2128a1e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_c9886ff2128a1e",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_fec7059b7a251c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a7e284f4-0d83-40f5-8212-419d6ca3c2d5",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
