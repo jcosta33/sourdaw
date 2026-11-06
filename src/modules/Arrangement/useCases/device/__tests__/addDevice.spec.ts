@@ -260,18 +260,19 @@ describe('writeDeviceToProject', () => {
         });
     });
 
-    // Three catalog names are carried by two plugins each — `De-esser`,
-    // `LUFS Meter` and `Stereo Widener` all exist as a builtin and as a Faust
-    // build. The name branch is a `.find()`, so it returns whichever the
-    // registry lists first no matter which one the caller meant; only the id
-    // identifies a plugin. Callers holding both must pass the id.
-    it('resolves an id to exactly that plugin where two catalog entries share a name', () => {
+    // Catalog names are unique (the Faust De-esser is `Wideband De-esser`, not
+    // the builtin's `De-esser`), so a name resolves to one plugin; the id is
+    // still the key callers pass and the type a device is stored under.
+    it('resolves an id and a name to their own plugins where a builtin and a Faust build do the same job', () => {
         mocks.getPlatformPlugins.mockReturnValue([
             { id: 'builtin-deesser', name: 'De-esser', parameters: [] },
-            { id: 'faust-de-esser', name: 'De-esser', parameters: [] },
+            { id: 'faust-de-esser', name: 'Wideband De-esser', parameters: [] },
         ]);
 
-        expect(addDevice('t1', 'faust-de-esser')).toMatchObject({ type: 'faust-de-esser' });
+        expect(addDevice('t1', 'faust-de-esser')).toMatchObject({
+            name: 'Wideband De-esser',
+            type: 'faust-de-esser',
+        });
         expect(addDevice('t1', 'De-esser')).toMatchObject({ type: 'builtin-deesser' });
     });
 
