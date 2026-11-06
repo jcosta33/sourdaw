@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { act, render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { externalPluginParameterStore, defaultExternalPluginParameterState } from '#/modules/PluginHost/stores';
@@ -411,7 +411,7 @@ describe('DeviceInspector external plugin controls', () => {
         expect(layout.getAttribute('data-param-values')).toBe('0.25,0.8');
     });
 
-    it('shows a stored value over the published value for the same id', () => {
+    it('shows the published value, not a stored value that differs from it', () => {
         externalPluginParameterStore.set({
             byInstanceId: {
                 'inst-1': {
@@ -427,7 +427,38 @@ describe('DeviceInspector external plugin controls', () => {
                 onBack={mockOnBack}
             />
         );
-        expect(screen.getByTestId('generic-layout').getAttribute('data-param-values')).toBe('0.25,0.3');
+        expect(screen.getByTestId('generic-layout').getAttribute('data-param-values')).toBe('0.25,0.8');
+    });
+
+    it('lists the controls when the snapshot is published after mount, without a rerender', () => {
+        render(<DeviceInspector device={externalDevice()} trackId="track-1" onBack={mockOnBack} />);
+        expect(screen.queryByTestId('generic-layout')).not.toBeInTheDocument();
+        act(() => {
+            externalPluginParameterStore.set({
+                byInstanceId: {
+                    'inst-1': {
+                        engineAttached: true,
+                        parameters: [publishedParameter(7, 'Pre Gain', 0.25)],
+                    },
+                },
+            });
+        });
+        expect(screen.getByTestId('generic-layout').getAttribute('data-param-ids')).toBe('7');
+    });
+
+    it('follows a published value that changes after mount, as an editor edit does', () => {
+        const snapshot = (value: number) => ({
+            byInstanceId: {
+                'inst-1': { engineAttached: true, parameters: [publishedParameter(7, 'Pre Gain', value)] },
+            },
+        });
+        externalPluginParameterStore.set(snapshot(0.25));
+        render(<DeviceInspector device={externalDevice()} trackId="track-1" onBack={mockOnBack} />);
+        expect(screen.getByTestId('generic-layout').getAttribute('data-param-values')).toBe('0.25');
+        act(() => {
+            externalPluginParameterStore.set(snapshot(0.9));
+        });
+        expect(screen.getByTestId('generic-layout').getAttribute('data-param-values')).toBe('0.9');
     });
 
     it.each([
