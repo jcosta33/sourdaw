@@ -1,0 +1,19 @@
+src/modules/Arrangement/presentations/views/__tests__/TrackHeader.spec.tsx
+  s_13c0d6e516daef::t_6f28fb34ce9319 60-68,383-400
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0c125f639c8604d63f72224149626e3f18617832",
+  "prompts": {},
+  "sessions": {
+    "s_13c0d6e516daef": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_13c0d6e516daef",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
