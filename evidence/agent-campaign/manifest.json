@@ -187,7 +187,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/Command/useCases/__tests__/agentCommandCoverage.spec.ts",
-                    "digest": "d762ecc6a847a564e8de1cc4bbbc8970ff231499ba1c3fffd94897fa7d42d3f0"
+                    "digest": "70a880454539931056056c3b8be8ee361fe14651ca4b2b8b9e3ebbe5796c4f5d"
                 }
             ]
         },
