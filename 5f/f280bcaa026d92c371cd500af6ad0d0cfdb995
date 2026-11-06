@@ -1,0 +1,31 @@
+src/modules/Arrangement/handlers/clip/__tests__/handleCrossfadeClipsRefusal.spec.ts
+  s_c9886ff2128a1e::t_3f8dd5014701e4 1-138
+src/modules/Arrangement/handlers/clip/handleCrossfadeClips.ts
+  s_c9886ff2128a1e::t_cee412e6b8200c 8,129,147-152,155
+src/modules/Arrangement/useCases/clipEditing/__tests__/crossfadeClips.spec.ts
+  s_c9886ff2128a1e::t_9f1f15b68c7200 554-563,566-567,570-580,582-583
+src/modules/Arrangement/useCases/clipEditing/crossfadeClipBLoopOriginEntry.ts
+  s_c9886ff2128a1e::t_0cf044c5b392e2 11
+src/modules/Arrangement/useCases/clipEditing/crossfadeClips.ts
+  s_c9886ff2128a1e::t_b24dda2b57bd6a 9,39-40,43,78
+src/modules/Arrangement/useCases/clipEditing/findCrossfadePair.ts
+  s_c9886ff2128a1e::t_1e4e70d460eeb4 1-21
+src/modules/Arrangement/useCases/clipEditing/resolveCrossfadeClipB.ts
+  s_c9886ff2128a1e::t_dcae95567939ac 152,161
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5ff280bcaa026d92c371cd500af6ad0d0cfdb995",
+  "prompts": {},
+  "sessions": {
+    "s_c9886ff2128a1e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_c9886ff2128a1e",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
