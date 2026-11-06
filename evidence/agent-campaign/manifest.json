@@ -7,10 +7,10 @@
     },
     "capabilityInventory": {
         "source": "src/app/getAgentProtocolManifest.ts",
-        "digest": "a39bd0b5d50b5638c389fa32fbc9f4e42a6639e3a8dea6efe0d54c8d9d674ad9"
+        "digest": "cf1456f820ec8ba3fcc1d7844d6b561063c15db41defd4aaf44f6b62e17fea12"
     },
     "census": {
-        "digest": "bfb87fb03f6b3327febae2cba50e58b4074531085dfff3587f10508a002cb217"
+        "digest": "6c4172954f16521208037568c1a09b02aa070b842b01579008ef5a7d3a4e9437"
     },
     "environment": ["package.json", "pnpm-lock.yaml", "Cargo.lock", "tsconfig.json", "vite.config.ts"],
     "tasks": [
