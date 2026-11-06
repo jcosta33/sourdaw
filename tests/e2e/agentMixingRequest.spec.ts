@@ -205,9 +205,50 @@ declare global {
             resumeFrame: () => number | null;
             gateCuts: () => { toPreviewOutput: boolean; time: number; calledAt: number; stack: string }[];
             resumeCalls: () => { time: number; frame: number; calledAt: number; stack: string }[];
-            residual: () => { residual: number; outputEnergy: number; upstreamEnergy: number; count: number } | null;
+            residual: () => {
+                residual: number;
+                outputEnergy: number;
+                upstreamEnergy: number;
+                count: number;
+                windowEndFrame: number;
+            } | null;
         };
     }
+}
+
+/**
+ * Wait until the looping programme is in the first half of a pass that is already sounding, and
+ * return the audio frame of that pass's seam. A scheduled pass is one buffer source per clip, which
+ * no main-thread stall interrupts. Only the seam needs the main-thread scheduler again: when a
+ * stall outlasts its look-ahead there, the next pass starts at the first late tick and the
+ * programme is silent until then (the late policy in startPlayheadScheduler.ts). An action taken
+ * here keeps a programme window read just after it inside audio that is already scheduled.
+ */
+async function awaitSoundingPassFirstHalf(page: Page): Promise<number> {
+    return page.evaluate(async () => {
+        const transport: typeof import('../../src/modules/Transport/stores') =
+            await import('/src/modules/Transport/stores/index.ts');
+        const audio: typeof import('../../src/modules/AudioEngine/useCases') =
+            await import('/src/modules/AudioEngine/useCases/index.ts');
+        const sampleRate = audio.audioEngine.context.sampleRate;
+        const deadline = performance.now() + 10_000;
+        for (;;) {
+            const state = transport.transportStore.value;
+            if (!state?.isPlaying || !state.isLooping || state.loopEnd <= state.loopStart) {
+                throw new Error('The programme must be looping while it is measured.');
+            }
+            // The scheduler's committed anchor: a beat and the audio instant it is for.
+            const { beat, audioTimeSeconds } = transport.playheadClockRef;
+            if (beat >= state.loopStart && beat < (state.loopStart + state.loopEnd) / 2) {
+                const secondsToSeam = ((state.loopEnd - beat) * 60) / state.tempo;
+                return Math.round((audioTimeSeconds + secondsToSeam) * sampleRate);
+            }
+            if (performance.now() > deadline) {
+                throw new Error('The looping programme never reached the first half of a pass.');
+            }
+            await new Promise((resolve) => setTimeout(resolve, 5));
+        }
+    });
 }
 
 /** Actual browser software output; this deliberately makes no physical-device claim. */
@@ -417,6 +458,8 @@ async function installOutputProbe(page: Page, confirmationId: string) {
                 return {
                     residual,
                     count: 1024,
+                    // One render quantum past the last block read.
+                    windowEndFrame: selectedBlocks.at(-1)!.frame + 128,
                     outputEnergy: selectedBlocks.reduce(
                         (sum, block) => sum + block.selected.reduce((n, x) => n + x * x, 0),
                         0
@@ -698,6 +741,7 @@ test('auditions one genuine retained measured request before Confirm without pro
             return { beat: transport.playheadPositionRef.current, wraps: transport.playheadWrapCountRef.current };
         });
         for (const side of ['Baseline', 'Proposal', 'Baseline'] as const) {
+            const seamFrame = await awaitSoundingPassFirstHalf(page);
             await page.evaluate(() => window.measuredAuditionProbe?.reset());
             await comparison.getByRole('button', { name: side, exact: true }).click();
             await expect(comparison.getByRole('status')).toHaveText(
@@ -720,6 +764,8 @@ test('auditions one genuine retained measured request before Confirm without pro
             expect(observed.starts?.[0]?.gain).toBeGreaterThan(0);
             expect(observed.starts?.[0]?.gain).toBeLessThanOrEqual(1);
             expect(observed.result?.outputEnergy).toBeGreaterThan(0);
+            // The programme window was read inside the pass already scheduled before the click.
+            expect(observed.result?.windowEndFrame).toBeLessThanOrEqual(seamFrame);
             expect(observed.result?.upstreamEnergy).toBeGreaterThan(0);
             expect(observed.result?.residual).toBeLessThan(0.00001);
             expect(await projectTruth(page)).toEqual(beforeAudition);
@@ -735,6 +781,7 @@ test('auditions one genuine retained measured request before Confirm without pro
         // Resume is genuinely invoked in the click, but its completion is held.
         // This observes the gate cut before the actual invocation and real software silence
         // while upstream programme/metronome continue, then cancels by selection.
+        const heldSeamFrame = await awaitSoundingPassFirstHalf(page);
         await page.evaluate(async () => {
             await window.measuredAuditionProbe?.holdResume();
             window.measuredAuditionProbe?.reset();
@@ -789,6 +836,7 @@ test('auditions one genuine retained measured request before Confirm without pro
             Array.from({ length: 8 }, (_, index) => firstResume.frame + index * 128)
         );
         expect(pending.blocks?.every((block) => block.selected === 0)).toBe(true);
+        expect(firstResume.frame + 8 * 128).toBeLessThanOrEqual(heldSeamFrame);
         expect(pending.blocks?.every((block) => block.upstream > 0)).toBe(true);
         await groups.nth(1).uncheck();
         await expect(comparison.getByRole('status')).toHaveText('Stopped');
