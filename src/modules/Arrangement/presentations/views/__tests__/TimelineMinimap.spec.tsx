@@ -38,12 +38,14 @@ vi.mock('#/modules/Transport/stores', async (importOriginal) => ({
     timeSignatureMapStore: meterMapStoreMock,
 }));
 
+const trackStoreMock = vi.hoisted(() => ({
+    value: { tracks: [], selectedTrackId: null },
+    subscribe: () => () => undefined,
+    set: () => undefined,
+}));
+
 vi.mock('../../../stores/trackStore', () => ({
-    trackStore: {
-        value: { tracks: [], selectedTrackId: null },
-        subscribe: vi.fn(() => vi.fn()),
-        set: vi.fn(),
-    },
+    trackStore: trackStoreMock,
 }));
 
 vi.mock('../../../stores/timelineViewStore', () => ({
@@ -133,9 +135,11 @@ describe('TimelineMinimap', () => {
             }
         };
 
-        // 240px at 12 px/beat shows 20 beats.
-        const measureMinimap = () => {
-            vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 240, 28));
+        // At 12 px/beat, 12 px of minimap width shows one beat.
+        const measureMinimap = (visibleBeats = 20) => {
+            vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue(
+                new DOMRect(0, 0, visibleBeats * 12, 28)
+            );
             act(() => resizeCallback?.());
         };
 
@@ -154,18 +158,45 @@ describe('TimelineMinimap', () => {
             expect(screen.getByRole('slider')).toHaveAttribute('aria-valuenow', '40');
         });
 
-        it('names the visible bars through the 4/4 meter', () => {
-            scrollTo(1000);
+        it.each([
+            {
+                name: '4/4 range ending on a bar line stops in the bar before it',
+                from: 1000,
+                beats: 20,
+                text: 'Bars 251 to 255',
+            },
+            {
+                name: '4/4 range ending mid-bar names the bar it ends in',
+                from: 1002,
+                beats: 20,
+                text: 'Bars 251 to 256',
+            },
+            { name: '4/4 range from the start ending on a bar line', from: 0, beats: 16, text: 'Bars 1 to 4' },
+            { name: '4/4 range shorter than a bar stays in its bar', from: 1000, beats: 2, text: 'Bars 251 to 251' },
+        ])('names the visible bars: $name', ({ from, beats, text }) => {
+            scrollTo(from);
             renderWithTooltip(<TimelineMinimap />);
-            measureMinimap();
-            expect(screen.getByRole('slider')).toHaveAttribute('aria-valuetext', 'Bars 251 to 256');
+            measureMinimap(beats);
+            expect(screen.getByRole('slider')).toHaveAttribute('aria-valuetext', text);
         });
 
-        it('names the visible bars through a 3/4 meter', () => {
+        it('names the visible bars through a 3/4 meter, ending on a bar line', () => {
             scrollTo(1000, { numerator: 3, denominator: 4 });
             renderWithTooltip(<TimelineMinimap />);
             measureMinimap();
-            expect(screen.getByRole('slider')).toHaveAttribute('aria-valuetext', 'Bars 334 to 341');
+            expect(screen.getByRole('slider')).toHaveAttribute('aria-valuetext', 'Bars 334 to 340');
+        });
+
+        it('draws the slider range over the span of the last clip end plus headroom', () => {
+            storeOverrides.values.set(trackStoreMock, {
+                tracks: [{ clips: [{ endBeat: 200 }] }],
+                selectedTrackId: null,
+            });
+            scrollTo(1000);
+            renderWithTooltip(<TimelineMinimap />);
+            const slider = screen.getByRole('slider');
+            expect(slider).toHaveAttribute('aria-valuemax', String(Math.round(200 * 1.1)));
+            expect(slider).toHaveAttribute('aria-valuenow', '220');
         });
     });
 

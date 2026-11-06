@@ -89,6 +89,7 @@ export { getTimelineRulerGrid } from './transportQueries/getTimelineRulerGrid';
 export { updateTransportState } from './transportQueries/updateTransportState';
 export { formatMusicalPosition } from './transportQueries/formatMusicalPosition';
 export { getBarNumberAtBeat } from './transportQueries/getBarNumberAtBeat';
+export { getLastBarNumberBeforeBeat } from './transportQueries/getLastBarNumberBeforeBeat';
 export { formatMusicalLength } from './transportQueries/formatMusicalLength';
 export { formatMusicalLengthParts } from './transportQueries/formatMusicalLengthParts';
 export { measureMusicalLength } from './transportQueries/measureMusicalLength';

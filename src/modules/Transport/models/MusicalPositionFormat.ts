@@ -2,7 +2,7 @@ import { BEAT_EPSILON } from './TempoMap';
 import { getBarBeatAtPosition, getTimeSignatureSegmentAtBeat, type TimeSignatureChange } from './TimeSignatureMap';
 
 /** Display resolution: a quarter note holds four sixteenths. */
-const SIXTEENTHS_PER_QUARTER = 4;
+export const SIXTEENTHS_PER_QUARTER = 4;
 
 type MeterDefaults = {
     defaultNumerator: number;

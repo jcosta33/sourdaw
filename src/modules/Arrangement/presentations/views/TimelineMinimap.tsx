@@ -10,7 +10,7 @@ import {
 
 import { useStore } from '#/infra/store/useStore';
 import { defaultTransportState, timeSignatureMapStore, transportStore } from '#/modules/Transport/stores';
-import { getBarNumberAtBeat } from '#/modules/Transport/useCases';
+import { getBarNumberAtBeat, getLastBarNumberBeforeBeat } from '#/modules/Transport/useCases';
 import {
     normalizeTimelineMinimapHeight,
     TIMELINE_MINIMAP_DEFAULT_HEIGHT,
@@ -98,7 +98,7 @@ export const TimelineMinimap = ({ height = TIMELINE_MINIMAP_DEFAULT_HEIGHT }: Ti
     const sliderStartBeat = Math.min(sliderMaxBeats, Math.round(scrollStartBeat));
     const visibleEndBeat = scrollStartBeat + canvasMetrics.width / readoutPixelsPerBeat;
     const sliderStartBar = getBarNumberAtBeat({ ...meter, beat: scrollStartBeat });
-    const sliderEndBar = getBarNumberAtBeat({ ...meter, beat: visibleEndBeat });
+    const sliderEndBar = Math.max(sliderStartBar, getLastBarNumberBeforeBeat({ ...meter, beat: visibleEndBeat }));
 
     useLayoutEffect(() => {
         const canvas = canvasRef.current;
