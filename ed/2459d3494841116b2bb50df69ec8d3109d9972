@@ -1,0 +1,19 @@
+src/modules/Arrangement/presentations/hooks/useTrackMuteToggle.ts
+  s_977061c47f01dd::t_ffe8f1cf0c5a6e 16-17,20-21,23-24,26-27,33-34,37,46,49,84-85
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ed2459d3494841116b2bb50df69ec8d3109d9972",
+  "prompts": {},
+  "sessions": {
+    "s_977061c47f01dd": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34d-123d-7452-a6e7-60608388b6d7",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
