@@ -238,7 +238,7 @@ never name the stances:
 | Class                                                                                       | Earns                                                     | Machine draw floor |
 | ------------------------------------------------------------------------------------------- | --------------------------------------------------------- | ------------------ |
 | `docs-only` (Markdown outside `public/` and `.github/`, not a test fixture)                 | correctness                                               | 1                  |
-| `test-only` (every path a test)                                                             | test-validity                                             | 1                  |
+| `test-only` (every path a test outside `.github/`)                                          | test-validity                                             | 1                  |
 | `small` (no specialist surface, within the line budget, handwritten paths all under `src/`) | correctness, test-validity                                | 2                  |
 | `small-tooling` (the same, with handwritten paths outside `src/`)                           | correctness, module-boundaries, test-validity             | 3                  |
 | `ordinary` (no specialist surface, over the budget)                                         | correctness, code-craft, module-boundaries, test-validity | 3                  |
