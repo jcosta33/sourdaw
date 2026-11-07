@@ -198,6 +198,19 @@ function groundScheduledSlice(
 
 type MaterializedBatch = Extract<ReturnType<typeof materializePromptCommandPlan>, { status: 'prepared' }>;
 
+function settleStoppedBatchPreparation(
+    assistantMessageId: string,
+    position: number,
+    total: number,
+    current: AgentRun | null
+): void {
+    const cancelled = current !== null && current.cancellation.requestedAt !== null;
+    updateChatMessage(assistantMessageId, {
+        pendingActionConfirmationStatus: cancelled ? 'cancelled' : undefined,
+        content: `${cancelled ? 'Cancelled' : 'Stopped'} preparation of batch ${String(position)} of ${String(total)}. ${describeAppliedBatches(position)}`,
+    });
+}
+
 /**
  * A vibe-run batch always waits for approval with a measured preview: the preview renders the live
  * project and the batch for every recipe step, under the run's own render budget, before the card
@@ -223,13 +236,6 @@ async function proposeMeasuredVibeBatch(input: {
         agentRunLifecycle.updateBatchStatus({ runId: run.runId, batchId, status: 'failed' });
         return { status: 'rejected', reason: 'its measured preview could not be prepared' };
     }
-    const settleStoppedPreparation = (current: AgentRun | null) => {
-        const cancelled = current !== null && current.cancellation.requestedAt !== null;
-        updateChatMessage(input.assistantMessageId, {
-            pendingActionConfirmationStatus: cancelled ? 'cancelled' : undefined,
-            content: `${cancelled ? 'Cancelled' : 'Stopped'} preparation of batch ${String(position)} of ${String(schedule.total)}. ${describeAppliedBatches(position)}`,
-        });
-    };
     let proof: Awaited<ReturnType<typeof prepareMetricGoalPreview>>;
     try {
         proof = await prepareMetricGoalPreview({
@@ -242,7 +248,7 @@ async function proposeMeasuredVibeBatch(input: {
     } catch (error) {
         const current = agentRunLifecycle.get(run.runId);
         if (current === null || AGENT_RUN_TERMINAL_PHASES.has(current.phase)) {
-            settleStoppedPreparation(current);
+            settleStoppedBatchPreparation(input.assistantMessageId, position, schedule.total, current);
             return { status: 'stopped' };
         }
         agentRunLifecycle.updateBatchStatus({ runId: run.runId, batchId, status: 'failed' });
@@ -250,7 +256,7 @@ async function proposeMeasuredVibeBatch(input: {
     }
     const liveRun = agentRunLifecycle.get(run.runId);
     if (liveRun === null || AGENT_RUN_TERMINAL_PHASES.has(liveRun.phase)) {
-        settleStoppedPreparation(liveRun);
+        settleStoppedBatchPreparation(input.assistantMessageId, position, schedule.total, liveRun);
         return { status: 'stopped' };
     }
     const approval = compileAgentRiskApproval({

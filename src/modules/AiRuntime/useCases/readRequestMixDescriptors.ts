@@ -53,13 +53,13 @@ function nextClauseEnd(text: string, start: number): RegExpExecArray | null {
 }
 
 /**
- * A complete "not only X[,] but [also] Y" adds both qualities. Read its structure in the
- * original text at the masked text's clause boundaries, retaining names as operands without
- * accepting their contents as grammar. A sentence or new instruction ends the phrase.
+ * Complete "not only/just/merely/simply X[,] but [also] Y" correlatives add both qualities.
+ * Read their structure in the original text at the masked text's clause boundaries, retaining
+ * names as operands without accepting their contents as grammar. A sentence or new instruction ends the phrase.
  */
 function readAdditiveCorrelatives(text: string, prompt: string): AdditiveCorrelative[] {
     const pairs: AdditiveCorrelative[] = [];
-    const openingPattern = /(?<![\p{L}\p{N}])not[\s-]+only(?=[\s-])/giu;
+    const openingPattern = /(?<![\p{L}\p{N}])not[\s-]+(?:only|just|merely|simply)(?=[\s-])/giu;
     const instructionPattern = new RegExp(String.raw`^${INSTRUCTION_VERBS}(?![\p{L}\p{N}])`, 'iu');
     for (const opening of text.matchAll(openingPattern)) {
         const operandStart = opening.index + opening[0].length;
@@ -67,11 +67,15 @@ function readAdditiveCorrelatives(text: string, prompt: string): AdditiveCorrela
         if (boundary === null || prompt.slice(operandStart, boundary.index).trim() === '') {
             continue;
         }
-        const connector = /^(?:,\s*)?but[\s-]+(?:also[\s-]+)?/iu.exec(prompt.slice(boundary.index));
+        const connector = /^(?:,\s*)?but[\s-]+/iu.exec(prompt.slice(boundary.index));
         if (connector === null || text.slice(boundary.index, boundary.index + connector[0].length) !== connector[0]) {
             continue;
         }
-        const secondStart = boundary.index + connector[0].length;
+        let secondStart = boundary.index + connector[0].length;
+        const also = /^also[\s-]+/iu.exec(prompt.slice(secondStart));
+        if (also !== null && text.slice(secondStart, secondStart + also[0].length) === also[0]) {
+            secondStart += also[0].length;
+        }
         const end = nextClauseEnd(text, secondStart)?.index ?? prompt.length;
         const second = text.slice(secondStart, end).trim();
         if (
