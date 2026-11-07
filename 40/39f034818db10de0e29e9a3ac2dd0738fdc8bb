@@ -1,0 +1,19 @@
+scripts/e2eSpecDurations.json
+  s_d65ed6a1d9cdda::t_7cd428ec9f1a28 2-102,104-339
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4039f034818db10de0e29e9a3ac2dd0738fdc8bb",
+  "prompts": {},
+  "sessions": {
+    "s_d65ed6a1d9cdda": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f99dfebf-61a7-4d51-a1fd-8f4f1bf8cb3e",
+        "model": "claude-haiku-4-5-20251001"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
