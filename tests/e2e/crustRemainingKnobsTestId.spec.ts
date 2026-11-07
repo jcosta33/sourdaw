@@ -31,8 +31,9 @@ async function selectEffectTier(
 //   Route multi-band + stereo chips, SC HPF switch + knob, dither select and
 //       output bit-depth chips
 //   *   the metering strip's "Reset true peak indicator" button
-// (named detail tiers are covered by crustLevelChipsTestId.spec.ts; Lab adds
-// only a read-only statistics group.)
+// (named detail tiers and their retained lower controls are covered by
+// CrustControls.integration.spec.tsx; Lab adds only a read-only statistics
+// group.)
 //
 // Same verified interaction hazards as the sibling crust specs: Space is the
 // global transport shortcut, and parts of the control zone can sit under the

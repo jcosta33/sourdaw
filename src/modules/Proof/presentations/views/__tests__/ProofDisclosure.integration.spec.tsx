@@ -5,11 +5,17 @@ import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
-import { defaultTrackState, sanitizeTrackSnapshot, trackStore } from '#/modules/Arrangement/stores';
+import {
+    defaultTrackState,
+    sanitizeTrackSnapshot,
+    trackStore,
+    type TrackStoreState,
+} from '#/modules/Arrangement/stores';
 import { getArrangementHandlers } from '#/modules/Arrangement/useCases';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 import {
     createCrdtDoc,
+    getCrdtDoc,
     registerCrdtStorageRuntime,
     removeCrdtDoc,
     resetCrdtProjectAuthority,
@@ -205,6 +211,98 @@ describe('Proof cumulative disclosure in project truth', () => {
             await selectTier(tier);
             expect(screen.getAllByRole('alert')).toHaveLength(1);
             expect(screen.getByRole('alert')).toHaveTextContent(/LUFS/);
+        }
+    });
+
+    it('keeps A/B compare runtime-only through the rendered wet/dry round-trip', async () => {
+        // Replaces tests/e2e/proofAbCompareTestId.spec.ts; the retained
+        // proofPanelTestId.spec.ts continues to exercise Proof application mount,
+        // device routing and saved disclosure integration.
+        render(<ProofPanel deviceId="a" />);
+        const compare = screen.getByRole('button', { name: 'A/B compare' });
+
+        expect(compare).toHaveAttribute('aria-pressed', 'false');
+        expect(compare).toHaveTextContent('B / wet');
+        expect(getProofState('a').abBypass).toBe(false);
+
+        fireEvent.click(compare);
+        await waitFor(() => {
+            expect(compare).toHaveAttribute('aria-pressed', 'true');
+            expect(compare).toHaveTextContent('A / dry');
+            expect(getProofState('a').abBypass).toBe(true);
+        });
+
+        fireEvent.click(compare);
+        await waitFor(() => {
+            expect(compare).toHaveAttribute('aria-pressed', 'false');
+            expect(compare).toHaveTextContent('B / wet');
+            expect(getProofState('a').abBypass).toBe(false);
+        });
+
+        expect(trackStore.value?.tracks[0]?.devices[0]?.parameterValues).toEqual({});
+        expect(
+            getCrdtDoc<{ tracks: Pick<TrackStoreState, 'tracks'> }>('root')?.tracks.tracks[0]?.devices[0]
+                ?.parameterValues
+        ).toEqual({});
+    });
+
+    it('routes every Build module toggle to its own patch and persisted parameter', async () => {
+        // Replaces the six Proof limiter/module toggle cases in
+        // tests/e2e/proofLimiterBypassTestId.spec.ts and
+        // tests/e2e/proofModuleTogglesTestId.spec.ts. The application-level
+        // add/open/state witness remains in tests/e2e/proofPanelTestId.spec.ts.
+        render(<ProofPanel deviceId="a" />);
+        await selectTier('build');
+
+        const modules = [
+            { label: 'EQ', key: 'eqBypassed', parameter: 'eq_bypass', initial: false },
+            { label: 'Dynamics', key: 'dynBypassed', parameter: 'dyn_bypass', initial: false },
+            { label: 'Imager', key: 'imgBypassed', parameter: 'img_bypass', initial: false },
+            { label: 'Exciter', key: 'excBypassed', parameter: 'exc_bypass', initial: true },
+            { label: 'Limiter', key: 'limBypassed', parameter: 'lim_bypass', initial: false },
+        ] as const;
+        const buildControls = screen.getByRole('region', { name: 'Build controls' });
+
+        for (const module of modules) {
+            const toggle = within(buildControls).getByRole('button', { name: `${module.label} module` });
+            const initialPatch = getProofState('a').patch;
+            const initialParameters = { ...trackStore.value?.tracks[0]?.devices[0]?.parameterValues };
+            expect(initialPatch[module.key]).toBe(module.initial);
+            expect(toggle).toHaveAttribute('aria-pressed', String(!module.initial));
+            expect(toggle).toHaveTextContent(module.initial ? 'OFF' : 'ON');
+
+            const bypassed = !module.initial;
+            fireEvent.click(toggle);
+            await waitFor(() => {
+                expect(getProofState('a').patch[module.key]).toBe(bypassed);
+                expect(toggle).toHaveAttribute('aria-pressed', String(!bypassed));
+                expect(toggle).toHaveTextContent(bypassed ? 'OFF' : 'ON');
+                expect(trackStore.value?.tracks[0]?.devices[0]?.parameterValues?.[module.parameter]).toBe(
+                    bypassed ? 1 : 0
+                );
+            });
+
+            const currentPatch = getProofState('a').patch;
+            for (const other of modules) {
+                expect(currentPatch[other.key]).toBe(other.key === module.key ? bypassed : initialPatch[other.key]);
+            }
+            const currentParameters = trackStore.value?.tracks[0]?.devices[0]?.parameterValues;
+            expect(currentParameters).toMatchObject({ ...initialParameters, [module.parameter]: bypassed ? 1 : 0 });
+            expect(trackStore.value?.tracks[0]?.devices[1]?.parameterValues).toEqual({});
+
+            fireEvent.click(toggle);
+            await waitFor(() => {
+                expect(getProofState('a').patch[module.key]).toBe(module.initial);
+                expect(toggle).toHaveAttribute('aria-pressed', String(!module.initial));
+                expect(toggle).toHaveTextContent(module.initial ? 'OFF' : 'ON');
+                expect(trackStore.value?.tracks[0]?.devices[0]?.parameterValues?.[module.parameter]).toBe(
+                    module.initial ? 1 : 0
+                );
+            });
+            const restoredPatch = getProofState('a').patch;
+            for (const other of modules) {
+                expect(restoredPatch[other.key]).toBe(initialPatch[other.key]);
+            }
         }
     });
 });

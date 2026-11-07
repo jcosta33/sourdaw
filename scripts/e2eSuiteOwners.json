@@ -38,12 +38,6 @@
       ]
     },
     {
-      "spec": "tests/e2e/crustAttackAutoTestId.spec.ts",
-      "owners": [
-        "Crust"
-      ]
-    },
-    {
       "spec": "tests/e2e/crustAttackTimeTestId.spec.ts",
       "owners": [
         "Crust"
@@ -68,12 +62,6 @@
       ]
     },
     {
-      "spec": "tests/e2e/crustLevelChipsTestId.spec.ts",
-      "owners": [
-        "Crust"
-      ]
-    },
-    {
       "spec": "tests/e2e/crustOversamplingTestId.spec.ts",
       "owners": [
         "Crust"
@@ -81,12 +69,6 @@
     },
     {
       "spec": "tests/e2e/crustPresetSelectTestId.spec.ts",
-      "owners": [
-        "Crust"
-      ]
-    },
-    {
-      "spec": "tests/e2e/crustReleaseAutoTestId.spec.ts",
       "owners": [
         "Crust"
       ]
@@ -308,12 +290,6 @@
       ]
     },
     {
-      "spec": "tests/e2e/proofAbCompareTestId.spec.ts",
-      "owners": [
-        "Proof"
-      ]
-    },
-    {
       "spec": "tests/e2e/proofChamberDecayMixTestId.spec.ts",
       "owners": [
         "ProofChamber"
@@ -362,12 +338,6 @@
       ]
     },
     {
-      "spec": "tests/e2e/proofLimiterBypassTestId.spec.ts",
-      "owners": [
-        "Proof"
-      ]
-    },
-    {
       "spec": "tests/e2e/proofLimiterCeilingTestId.spec.ts",
       "owners": [
         "Proof"
@@ -381,12 +351,6 @@
     },
     {
       "spec": "tests/e2e/proofMissionCeilingTestId.spec.ts",
-      "owners": [
-        "Proof"
-      ]
-    },
-    {
-      "spec": "tests/e2e/proofModuleTogglesTestId.spec.ts",
       "owners": [
         "Proof"
       ]
