@@ -1,0 +1,23 @@
+src/modules/Arrangement/presentations/__tests__/manualAudioImportResidency.integration.spec.tsx
+  s_8dd2ba9e498da7::t_62af2710e6b332 116-128
+  s_8dd2ba9e498da7::t_11e5281fd9ad18 6,22,61,112-115,129-132,149-151,156-158,163-167,288,334,383,423
+src/modules/Arrangement/useCases/__tests__/importAudioClipToTrack.residency.integration.spec.ts
+  s_8dd2ba9e498da7::t_62af2710e6b332 105-117
+  s_8dd2ba9e498da7::t_11e5281fd9ad18 3,18,55,101-104,118-121,137,146-148,153-155,160-164
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "044c5f88629e07e6ee5c35a5039f1e4d1aa5d9a2",
+  "prompts": {},
+  "sessions": {
+    "s_8dd2ba9e498da7": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34a-1f45-7430-80af-58acd6c4b831",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
