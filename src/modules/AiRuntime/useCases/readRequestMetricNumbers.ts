@@ -18,7 +18,7 @@ const canonicalUnits: readonly RequestMetricNumber['unit'][] = ['LUFS', 'dBTP', 
 
 /** A request may write a unit in any case; every reader sees its one canonical spelling. */
 function canonicalUnit(written: string): RequestMetricNumber['unit'] | undefined {
-    const lowered = written.toLowerCase().replace(/\s+/gu, '');
+    const lowered = written.toLowerCase().replaceAll(/\s+/gu, '');
     if (lowered === 'lkfs') {
         return 'LUFS';
     }
