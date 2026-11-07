@@ -251,11 +251,11 @@ describe('resumeAgentRunDecision', () => {
         let release: () => void = () => {
             throw new Error('Expected the held handoff');
         };
-        const entered = new Promise<void>((resolve) => {
+        const entered = new Promise<void>((_resolve) => {
             resumeSend.mockImplementation(async (_request, options) => {
-                await new Promise<void>((done) => {
-                    release = done;
-                    resolve();
+                await new Promise<void>((resolve) => {
+                    release = resolve;
+                    _resolve();
                 });
                 options.onResumedRunAdmitted('run-decision-resume-attempt');
                 options.onResumedPlanAccepted();
