@@ -258,8 +258,10 @@ run on such a head with fewer than three stances is not this procedure: stop and
 Stances are the mechanism, not the paperwork. One reader finds what the reader already expects; three
 blind stances with distinct failure modes find the silent ones — a check that cannot fail, a suite the
 push workflow never ran, the state a theme was never given. They are not mandatory in the
-bureaucratic sense: prose, a test-only change with no shared fixture, or a comment may honestly run
-one, because there is no second failure mode to attack. The obligation is proportional to
+bureaucratic sense: a comment, a typo, a link, a prose change that alters no rule, procedure,
+contract, or decision, or a test-only change that alters no assertion or fixture may honestly run
+one, because there is no second failure mode to attack. Prose that alters a rule — an ADR, AGENTS.md,
+this procedure — is a delivery-path change and carries three. The obligation is proportional to
 consequence, and its floor for anything real is three.
 
 A stance is a failure mode, never a file, a path, or a role: "correctness" above all is the baseline
