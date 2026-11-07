@@ -1,0 +1,25 @@
+src/modules/AiRuntime/useCases/readRequestMixDescriptors.ts
+  s_68423a2adea8d2::t_22739b67d63e2c 24,26,37-38,41
+  s_68423a2adea8d2::t_eb624aef2ed08d 142-144
+src/modules/AiRuntime/useCases/__tests__/multiBatchRun.spec.ts
+  s_68423a2adea8d2::t_321f0821ad4af6 696-726
+src/modules/AiRuntime/useCases/__tests__/readRequestMixDescriptors.spec.ts
+  s_68423a2adea8d2::t_ba6bd0f825ad5b 71-92,99-109,111-117
+  s_68423a2adea8d2::t_d28f11cf5aaef8 93-98,110
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "59c2d6333874d14904931a791da092bf17251a96",
+  "prompts": {},
+  "sessions": {
+    "s_68423a2adea8d2": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34b-f305-7c03-beb2-57afa678cda5",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
