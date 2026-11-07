@@ -46,7 +46,9 @@ that must fail the case.
    Check project/device lifetime and the actual accepted leaf after each await and synchronous subscriber, while
    ordinary edits and the accepted sample's own persistence round trip remain valid. Removing either post-await
    check must redden its corresponding case; a decode-only inverse-completion test cannot.
-6. **Analysis carries its accepted source through insertion (AudioAnalysis `5a17842492`).** A model result prepared
+6. **Analysis carries its accepted source through insertion (split insertion `fead7632ab`).** GitHub commit-to-PR
+   lookup exposes no associated PR for that historical commit; original review attribution is unavailable. The missing
+   probe is stale analysis crossing into a later insertion. A model result prepared
    before a source, tempo, arrangement or root replacement cannot acquire fresh authority merely by starting a later
    insertion. Capture the settled project revision before inference, carry that transient capture into the child batch,
    and hold both model evaluation and the real snapshot queue independently. Cancellation and same-ID, same-content

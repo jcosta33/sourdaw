@@ -99,7 +99,8 @@ boundaries.
    the group fails. When a member snapshots state an earlier one produced (comp-then-remove), inspect the real history
    entry: a correct final state does not prove the inverse composed the prefix. #6221 (`7115fe4389`) refreshed a
    created clip's guard after the whole Redo group, so a later grouped `addNotes` entered the creator's capture:
-   the second Undo removed the notes first and then falsely refused the clip. The missing probe is an actual
+   the second Undo removed the notes first and then falsely refused the clip. Its public approval describes single
+   duplicate cycles and earlier-member restores; those probes omit the later-note member. The missing probe is an actual
    `addClip` + `addNotes` group through Undo, Redo, Undo, including a serialized and hydrated future stack. Every
    current creation/duplication producer publishes its own fresh execution-prefix capture only after successful
    commit, authenticated against its pending inverse; a failed later member leaves that inverse unchanged. Keep
