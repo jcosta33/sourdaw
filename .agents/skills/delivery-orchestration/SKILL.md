@@ -235,17 +235,17 @@ Derive the stances under AGENTS.md [Review](../../../AGENTS.md#review) and the
 plan's classes name risk surfaces the stance enumeration must weigh and set the draw floor; they
 never name the stances:
 
-| Class                                                                                       | Earns                                                     | Machine draw floor |
-| ------------------------------------------------------------------------------------------- | --------------------------------------------------------- | ------------------ |
-| `docs-only` (every path Markdown outside `public/` and `.github/`)                          | correctness                                               | 1                  |
-| `test-only` (every path a test)                                                             | test-validity                                             | 1                  |
-| `small` (no specialist surface, within the line budget, handwritten paths all under `src/`) | correctness, test-validity                                | 2                  |
-| `small-tooling` (the same, with handwritten paths outside `src/`)                           | correctness, module-boundaries, test-validity             | 3                  |
-| `ordinary` (no specialist surface, over the budget)                                         | correctness, code-craft, module-boundaries, test-validity | 3                  |
-| `cross-domain`                                                                              | correctness, module-boundaries, test-validity             | 3                  |
-| `realtime-audio`                                                                            | correctness, realtime-audio, test-validity                | 3                  |
-| `native-security`                                                                           | correctness, security-platform, test-validity             | 3                  |
-| `undo`                                                                                      | correctness, project-integrity-undo, test-validity        | 3                  |
+| Class                                                                                         | Earns                                                     | Machine draw floor |
+| --------------------------------------------------------------------------------------------- | --------------------------------------------------------- | ------------------ |
+| `docs-only` (Markdown outside `public/` and `.github/`, not a test fixture or generated file) | correctness                                               | 1                  |
+| `test-only` (every path a test)                                                               | test-validity                                             | 1                  |
+| `small` (no specialist surface, within the line budget, handwritten paths all under `src/`)   | correctness, test-validity                                | 2                  |
+| `small-tooling` (the same, with handwritten paths outside `src/`)                             | correctness, module-boundaries, test-validity             | 3                  |
+| `ordinary` (no specialist surface, over the budget)                                           | correctness, code-craft, module-boundaries, test-validity | 3                  |
+| `cross-domain`                                                                                | correctness, module-boundaries, test-validity             | 3                  |
+| `realtime-audio`                                                                              | correctness, realtime-audio, test-validity                | 3                  |
+| `native-security`                                                                             | correctness, security-platform, test-validity             | 3                  |
+| `undo`                                                                                        | correctness, project-integrity-undo, test-validity        | 3                  |
 
 **The floor is what `review:publish` can prove, not the review this procedure asks for.** Any change
 that is not absolutely tiny and harmless must carry at least **three distinct stances**, whatever its
@@ -355,7 +355,7 @@ bundles or posted reviews. Keep detailed logs in the session and the concise hea
 verification record in structured bundle evidence. The public approval carries only its short
 conclusion; the structured evidence never leaves the bundle.
 
-A minimal `REQUEST_CHANGES` on a `small` plan, with one finding and one clean draw:
+A minimal `REQUEST_CHANGES` on a `small` plan, with one finding and two clean draws:
 
 ```json
 {
@@ -385,13 +385,19 @@ A minimal `REQUEST_CHANGES` on a `small` plan, with one finding and one clean dr
             "reviewerModel": "gpt-6-luna",
             "tier": "economy",
             "outcome": "clean"
+        },
+        {
+            "stance": "tempo-length-validation",
+            "reviewerModel": "gpt-6-luna",
+            "tier": "economy",
+            "outcome": "clean"
         }
     ],
     "discarded": [{ "finding": "rename tempo to bpm in setTempo", "reason": "personal style, no defect" }]
 }
 ```
 
-A minimal `APPROVE` on the same plan:
+A minimal `APPROVE` on the same plan, with three clean draws:
 
 ```json
 {
@@ -408,6 +414,12 @@ A minimal `APPROVE` on the same plan:
         },
         {
             "stance": "tempo-undo-restores-stale-map",
+            "reviewerModel": "gpt-6-luna",
+            "tier": "economy",
+            "outcome": "clean"
+        },
+        {
+            "stance": "tempo-length-validation",
             "reviewerModel": "gpt-6-luna",
             "tier": "economy",
             "outcome": "clean"
