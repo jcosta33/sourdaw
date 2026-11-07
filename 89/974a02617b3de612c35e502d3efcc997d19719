@@ -1,0 +1,30 @@
+src/modules/MIDI/useCases/webMidiInput/__tests__/handleWebMidiNoteOffAdmissionClip.spec.ts
+  s_8dd2ba9e498da7::t_23177b6f03db68 16,24
+src/modules/Transport/useCases/playheadScheduler/__tests__/punchPausePlayCommand.integration.spec.ts
+  s_8dd2ba9e498da7::t_48c7d8976c0151 168
+  s_8dd2ba9e498da7::t_23177b6f03db68 689-699,702,706-708,710-711
+src/modules/MIDI/useCases/webMidiInput/__tests__/handleWebMidiNoteOff.spec.ts
+  s_8dd2ba9e498da7::t_48c7d8976c0151 27,40
+src/modules/MIDI/useCases/webMidiInput/__tests__/handleWebMidiNoteOffTempoMap.spec.ts
+  s_8dd2ba9e498da7::t_23177b6f03db68 12,20
+src/modules/Transport/useCases/transportControls/__tests__/schedulerTerminalRealQueue.integration.spec.ts
+  s_8dd2ba9e498da7::t_23177b6f03db68 85
+src/modules/Transport/useCases/playheadScheduler/__tests__/initialPlaybackWitnessInputs.integration.spec.ts
+  s_8dd2ba9e498da7::t_48c7d8976c0151 151
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "89974a02617b3de612c35e502d3efcc997d19719",
+  "prompts": {},
+  "sessions": {
+    "s_8dd2ba9e498da7": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34a-1f45-7430-80af-58acd6c4b831",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
