@@ -1,0 +1,21 @@
+src/modules/AiRuntime/useCases/formatAnswerQueryScope.ts
+  s_68423a2adea8d2::t_c14d607100ab7d 1-71
+src/modules/AiRuntime/useCases/composeMeasuredAnswer.ts
+  s_68423a2adea8d2::t_c14d607100ab7d 22,469
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e1eff0a43ffe9d974e317bb801d7d28a995a83d8",
+  "prompts": {},
+  "sessions": {
+    "s_68423a2adea8d2": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34b-f305-7c03-beb2-57afa678cda5",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
