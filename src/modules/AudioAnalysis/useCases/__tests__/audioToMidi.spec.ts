@@ -56,6 +56,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
 vi.mock('#/modules/Command/useCases', () => ({
     executeAppActionBatch: mocks.executeAppActionBatch,
     executeUserAppAction: vi.fn(),
+    resetActionReplayAuthority: vi.fn(),
 }));
 
 vi.mock('#/modules/Transport/useCases', () => ({
