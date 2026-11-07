@@ -62,9 +62,9 @@ describe('Elastic editor tools', () => {
     it('selects Add and Remove through the real editor state', () => {
         render(<ElasticEditorPanel />);
         expect(screen.getByTestId('elastic-editor-panel')).toBeInTheDocument();
-        const select = screen.getByRole('button', { name: 'Select', exact: true });
-        const add = screen.getByRole('button', { name: 'Add', exact: true });
-        const remove = screen.getByRole('button', { name: 'Remove', exact: true });
+        const select = screen.getByRole('button', { name: 'Select' });
+        const add = screen.getByRole('button', { name: 'Add' });
+        const remove = screen.getByRole('button', { name: 'Remove' });
         expect(select).toHaveAttribute('aria-pressed', 'true');
         expect(add).toHaveAttribute('aria-pressed', 'false');
         fireEvent.click(add);

@@ -86,9 +86,9 @@ describe('Fermenter real controls', () => {
             ['Coarse', 'oscCoarse', 0, 1],
             ['Fine', 'oscFine', 0, 0.1],
         ] as const) {
-            const control = screen.getByRole('slider', { name: label, exact: true });
+            const control = screen.getByRole('slider', { name: label });
             const previousPatch = getFermenterState(DEVICE).patch;
-            const previousValues = { ...trackStore.value?.tracks[0]?.devices[0]?.parameterValues };
+            const previousValues = trackStore.value?.tracks[0]?.devices[0]?.parameterValues;
             expect(control).toHaveAttribute('aria-valuenow', String(before));
             control.focus();
             fireEvent.keyDown(control, { key: 'ArrowUp' });
@@ -108,22 +108,22 @@ describe('Fermenter real controls', () => {
     });
     it('switches Dist to Comp and back with the real controls', () => {
         renderPanel();
-        fireEvent.click(screen.getByRole('button', { name: 'Effects', exact: true }));
-        const dist = screen.getByRole('button', { name: 'Dist', exact: true });
-        const comp = screen.getByRole('button', { name: 'Comp', exact: true });
+        fireEvent.click(screen.getByRole('button', { name: 'Effects' }));
+        const dist = screen.getByRole('button', { name: 'Dist' });
+        const comp = screen.getByRole('button', { name: 'Comp' });
         expect(dist).toHaveAttribute('aria-pressed', 'true');
-        expect(screen.getByRole('slider', { name: 'Drive', exact: true })).toBeVisible();
-        expect(screen.queryByRole('slider', { name: 'Ratio', exact: true })).toBeNull();
+        expect(screen.getByRole('slider', { name: 'Drive' })).toBeVisible();
+        expect(screen.queryByRole('slider', { name: 'Ratio' })).toBeNull();
         fireEvent.click(comp);
         expect(comp).toHaveAttribute('aria-pressed', 'true');
         expect(dist).not.toHaveAttribute('aria-pressed', 'true');
-        expect(screen.queryByRole('slider', { name: 'Drive', exact: true })).toBeNull();
-        expect(screen.getByRole('slider', { name: 'Ratio', exact: true })).toBeVisible();
+        expect(screen.queryByRole('slider', { name: 'Drive' })).toBeNull();
+        expect(screen.getByRole('slider', { name: 'Ratio' })).toBeVisible();
         fireEvent.click(dist);
         expect(dist).toHaveAttribute('aria-pressed', 'true');
         expect(comp).not.toHaveAttribute('aria-pressed', 'true');
-        expect(screen.getByRole('slider', { name: 'Drive', exact: true })).toBeVisible();
-        expect(screen.queryByRole('slider', { name: 'Ratio', exact: true })).toBeNull();
+        expect(screen.getByRole('slider', { name: 'Drive' })).toBeVisible();
+        expect(screen.queryByRole('slider', { name: 'Ratio' })).toBeNull();
     });
 
     it.each([
@@ -241,13 +241,17 @@ describe('Fermenter real controls', () => {
         ],
     ] as const)('routes %s keyboard steps to their matching parameters', async (name, section, tab, controls) => {
         renderPanel();
-        if (section) fireEvent.click(screen.getAllByRole('button', { name: section, exact: true })[0]!);
-        if (tab) fireEvent.click(screen.getByRole('button', { name: tab, exact: true }));
+        if (section) {
+            fireEvent.click(screen.getAllByRole('button', { name: section })[0]!);
+        }
+        if (tab) {
+            fireEvent.click(screen.getByRole('button', { name: tab }));
+        }
         const scope = name === 'Chorus' ? within(screen.getByText('Chorus', { exact: true }).parentElement!) : screen;
         for (const [label, key, before, after] of controls) {
-            const control = scope.getByRole('slider', { name: label, exact: true });
+            const control = scope.getByRole('slider', { name: label });
             const previousPatch = getFermenterState(DEVICE).patch;
-            const previousValues = { ...trackStore.value?.tracks[0]?.devices[0]?.parameterValues };
+            const previousValues = trackStore.value?.tracks[0]?.devices[0]?.parameterValues;
             expect(control).toHaveAttribute('aria-valuenow', String(before));
             control.focus();
             fireEvent.keyDown(control, { key: 'ArrowUp' });
@@ -278,7 +282,7 @@ describe('Fermenter real controls', () => {
         ['Character', 7],
     ] as const)('routes %s to macro index %i', async (label, index) => {
         renderPanel();
-        const control = screen.getByRole('slider', { name: label, exact: true });
+        const control = screen.getByRole('slider', { name: label });
         const previous = [...getFermenterState(DEVICE).patch.macros];
         expect(control).toHaveAttribute('aria-valuenow', '0.5');
         control.focus();

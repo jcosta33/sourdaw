@@ -377,8 +377,8 @@ describe('Crust rendered project controls', () => {
         await waitFor(() =>
             expect(within(group).getByRole('button', { name: 'shape' })).toHaveAttribute('aria-pressed', 'true')
         );
-        const fourTimes = screen.getByRole('button', { name: '4×', exact: true });
-        const off = screen.getByRole('button', { name: 'OS off', exact: true });
+        const fourTimes = screen.getByRole('button', { name: '4×' });
+        const off = screen.getByRole('button', { name: 'OS off' });
         expect(fourTimes).toHaveAttribute('aria-pressed', 'true');
 
         fireEvent.click(off);
@@ -397,7 +397,7 @@ describe('Crust rendered project controls', () => {
     it('round-trips True peak without changing oversampling or another device', async () => {
         // Covers the True peak control's round-trip state and engine parameter.
         render(<CrustPanel deviceId="crust-a" />);
-        const truePeak = screen.getByRole('button', { name: 'True peak', exact: true });
+        const truePeak = screen.getByRole('button', { name: 'True peak' });
         expect(truePeak).toHaveAttribute('aria-pressed', 'true');
 
         fireEvent.click(truePeak);
@@ -434,8 +434,8 @@ describe('Crust rendered project controls', () => {
         await waitFor(() =>
             expect(within(group).getByRole('button', { name: 'build' })).toHaveAttribute('aria-pressed', 'true')
         );
-        const unity = screen.getByRole('button', { name: 'A=B', exact: true });
-        const delta = screen.getByRole('button', { name: 'Delta', exact: true });
+        const unity = screen.getByRole('button', { name: 'A=B' });
+        const delta = screen.getByRole('button', { name: 'Delta' });
         expect(unity).not.toHaveAttribute('aria-pressed', 'true');
         expect(delta).not.toHaveAttribute('aria-pressed', 'true');
 
@@ -532,7 +532,7 @@ describe('Crust rendered project controls', () => {
         await waitFor(() =>
             expect(within(group).getByRole('button', { name: 'shape' })).toHaveAttribute('aria-pressed', 'true')
         );
-        const dynamic = screen.getByRole('button', { name: 'Dynamic', exact: true });
+        const dynamic = screen.getByRole('button', { name: 'Dynamic' });
         fireEvent.click(dynamic);
         await waitFor(() => {
             expect(dynamic).toHaveAttribute('aria-pressed', 'true');
@@ -558,10 +558,10 @@ describe('Crust rendered project controls', () => {
         );
 
         const saturation = screen.getByRole('switch', { name: 'Saturation' });
-        const tape = screen.getByRole('button', { name: 'tape', exact: true });
+        const tape = screen.getByRole('button', { name: 'tape' });
         expect(saturation).toHaveAttribute('aria-checked', 'false');
         expect(tape).toBeDisabled();
-        expect(screen.getByRole('button', { name: 'soft', exact: true })).toHaveAttribute('aria-pressed', 'true');
+        expect(screen.getByRole('button', { name: 'soft' })).toHaveAttribute('aria-pressed', 'true');
         fireEvent.click(saturation);
         await waitFor(() => {
             expect(saturation).toHaveAttribute('aria-checked', 'true');
@@ -576,10 +576,7 @@ describe('Crust rendered project controls', () => {
         fireEvent.click(tape);
         await waitFor(() => {
             expect(tape).toHaveAttribute('aria-pressed', 'true');
-            expect(screen.getByRole('button', { name: 'soft', exact: true })).not.toHaveAttribute(
-                'aria-pressed',
-                'true'
-            );
+            expect(screen.getByRole('button', { name: 'soft' })).not.toHaveAttribute('aria-pressed', 'true');
             expect(screen.getByLabelText('Saturation transfer curve: tape')).toBeInTheDocument();
             expect(getCrustState('crust-a').patch).toMatchObject({ satEnabled: true, satAlgorithm: 'tape' });
         });
@@ -588,7 +585,7 @@ describe('Crust rendered project controls', () => {
             expect(audioEngine.updateDeviceParam).toHaveBeenCalledWith('master', 'crust-a', 'satAlgorithm', 2)
         );
 
-        const delta = screen.getByRole('switch', { name: 'DELTA', exact: true });
+        const delta = screen.getByRole('switch', { name: 'DELTA' });
         expect(delta).toHaveAttribute('aria-checked', 'false');
         fireEvent.click(delta);
         await waitFor(() => {
@@ -660,8 +657,8 @@ describe('Crust rendered project controls', () => {
             expect(within(group).getByRole('button', { name: 'route' })).toHaveAttribute('aria-pressed', 'true')
         );
 
-        const wide = screen.getByRole('button', { name: 'Wide', exact: true });
-        const threeBand = screen.getByRole('button', { name: '3band', exact: true });
+        const wide = screen.getByRole('button', { name: 'Wide' });
+        const threeBand = screen.getByRole('button', { name: '3band' });
         fireEvent.click(threeBand);
         await waitFor(() => {
             expect(threeBand).toHaveAttribute('aria-pressed', 'true');
@@ -673,8 +670,8 @@ describe('Crust rendered project controls', () => {
             expect(audioEngine.updateDeviceParam).toHaveBeenCalledWith('master', 'crust-a', 'multiBand', 1)
         );
 
-        const stereo = screen.getByRole('button', { name: 'STEREO', exact: true });
-        const midSide = screen.getByRole('button', { name: 'MS', exact: true });
+        const stereo = screen.getByRole('button', { name: 'STEREO' });
+        const midSide = screen.getByRole('button', { name: 'MS' });
         fireEvent.click(midSide);
         await waitFor(() => {
             expect(midSide).toHaveAttribute('aria-pressed', 'true');
@@ -722,8 +719,8 @@ describe('Crust rendered project controls', () => {
             expect(audioEngine.updateDeviceParam).toHaveBeenCalledWith('master', 'crust-a', 'dither', 2)
         );
 
-        const depth24 = screen.getByRole('button', { name: '24-bit', exact: true });
-        const depth32 = screen.getByRole('button', { name: '32-bit', exact: true });
+        const depth24 = screen.getByRole('button', { name: '24-bit' });
+        const depth32 = screen.getByRole('button', { name: '32-bit' });
         expect(depth24).toHaveAttribute('aria-pressed', 'true');
         fireEvent.click(depth32);
         await waitFor(() => {
@@ -754,7 +751,7 @@ describe('Crust rendered project controls', () => {
         });
         updateCrustMeters('crust-b', { outputDb: -6, lufsIntegrated: -15, truepeakMax: -2, truepeakExceeded: true });
         render(<CrustPanel deviceId="crust-a" />);
-        const reset = screen.getByRole('button', { name: 'Reset', exact: true });
+        const reset = screen.getByRole('button', { name: 'Reset' });
         const leftMeter = document.getElementById('crust-meter-l');
         if (!leftMeter) {
             throw new Error('Crust left output meter is missing');

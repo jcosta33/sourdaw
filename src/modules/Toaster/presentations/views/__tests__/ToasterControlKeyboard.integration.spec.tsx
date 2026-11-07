@@ -54,7 +54,9 @@ const controls = {
 };
 function state() {
     const instance = toasterStore.value?.[DEVICE];
-    if (!instance) throw new Error('Expected Toaster instance');
+    if (!instance) {
+        throw new Error('Expected Toaster instance');
+    }
     return instance;
 }
 function savedKit() {
@@ -141,7 +143,7 @@ describe('Toaster real controls', () => {
         render(<ToasterPanel deviceId={DEVICE} />);
         const other = toasterStore.value?.[OTHER];
         const previous = state().kit;
-        const control = screen.getByRole('slider', { name: label, exact: true });
+        const control = screen.getByRole('slider', { name: label });
         expect(control).toHaveAttribute('aria-valuenow', String(before));
         control.focus();
         fireEvent.keyDown(control, { key: arrow });
@@ -165,13 +167,10 @@ describe('Toaster real controls', () => {
         expect(screen.getByRole('combobox', { name: 'Toaster view' })).toBeVisible();
         fireEvent.change(screen.getByRole('combobox', { name: 'Toaster view' }), { target: { value: 'full' } });
         expect(screen.getByRole('combobox', { name: 'Toaster view' })).toHaveValue('full');
-        expect(screen.getByRole('button', { name: 'Trigger Kick', exact: true })).toHaveAttribute(
-            'aria-pressed',
-            'true'
-        );
+        expect(screen.getByRole('button', { name: 'Trigger Kick' })).toHaveAttribute('aria-pressed', 'true');
         const previous = state().kit;
         const other = toasterStore.value?.[OTHER];
-        const control = screen.getByRole('slider', { name: label, exact: true });
+        const control = screen.getByRole('slider', { name: label });
         expect(control).toHaveAttribute('aria-valuenow', String(before));
         control.focus();
         fireEvent.keyDown(control, { key: arrow });

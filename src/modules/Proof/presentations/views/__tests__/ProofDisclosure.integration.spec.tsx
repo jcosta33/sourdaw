@@ -302,7 +302,7 @@ describe('Proof cumulative disclosure in project truth', () => {
         for (const module of modules) {
             const toggle = within(buildControls).getByRole('button', { name: `${module.label} module` });
             const initialPatch = getProofState('a').patch;
-            const initialParameters = { ...trackStore.value?.tracks[0]?.devices[0]?.parameterValues };
+            const initialParameters = trackStore.value?.tracks[0]?.devices[0]?.parameterValues;
             expect(initialPatch[module.key]).toBe(module.initial);
             expect(toggle).toHaveAttribute('aria-pressed', String(!module.initial));
             expect(toggle).toHaveTextContent(module.initial ? 'OFF' : 'ON');

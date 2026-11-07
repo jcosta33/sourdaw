@@ -51,7 +51,7 @@ describe('Piano roll toolbar controls', () => {
         expect(slider).toHaveAttribute('aria-valuemax', '400');
         expect(slider).toHaveAttribute('aria-valuenow', '100');
         for (const label of ['1/4', '1/8', '1/16', '1/32']) {
-            expect(screen.getByRole('button', { name: label, exact: true })).toBeInTheDocument();
+            expect(screen.getByRole('button', { name: label })).toBeInTheDocument();
         }
         const sixteenth = screen.getByRole('button', { name: '1/16' });
         const thirtySecond = screen.getByRole('button', { name: '1/32' });
