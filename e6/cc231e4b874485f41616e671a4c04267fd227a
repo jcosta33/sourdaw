@@ -1,0 +1,19 @@
+src/modules/AiRuntime/useCases/__tests__/submitAdmittedPromptRequestSave.spec.ts
+  s_68423a2adea8d2::t_d88f58fd6c6d9f 82-84,86-88,90-92,108-110,115-117,140-142
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e6cc231e4b874485f41616e671a4c04267fd227a",
+  "prompts": {},
+  "sessions": {
+    "s_68423a2adea8d2": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34b-f305-7c03-beb2-57afa678cda5",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
