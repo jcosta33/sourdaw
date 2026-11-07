@@ -1,0 +1,21 @@
+src/modules/AiRuntime/useCases/__tests__/cancelPendingChatActions.spec.ts
+  s_68423a2adea8d2::t_3d161103fa90f5 3-4,8,33-65,154
+  s_68423a2adea8d2::t_3ee0807e3c8b08 101-109,143-150,160-168,196-204,219-226,241-248
+  s_68423a2adea8d2::t_efbc8c36a58bce 66
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1d9ccb54b274605d1cc5bafbcfefbab5bef7f935",
+  "prompts": {},
+  "sessions": {
+    "s_68423a2adea8d2": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34b-f305-7c03-beb2-57afa678cda5",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
