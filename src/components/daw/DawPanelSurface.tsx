@@ -23,12 +23,7 @@ export const DawPanelSurface = ({
     children,
     ...props
 }: DawPanelSurfaceProps): ReactElement => (
-    <Stack
-        as={as}
-        shrink={tone === 'base'}
-        className={cn('daw-panel-surface', TONE_CLASS_NAMES[tone], className)}
-        {...props}
-    >
+    <Stack as={as} shrink={tone === 'base'} className={cn(TONE_CLASS_NAMES[tone], className)} {...props}>
         {children}
     </Stack>
 );

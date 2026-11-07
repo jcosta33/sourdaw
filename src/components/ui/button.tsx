@@ -16,7 +16,7 @@ const buttonVariants = cva(
                     'border border-red-900/70 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_1px_2px_rgba(0,0,0,0.5)] hover:brightness-105 active:translate-y-px active:shadow-[inset_0_2px_4px_rgba(0,0,0,0.6)] [background:linear-gradient(180deg,rgba(196,80,64,0.92)_0%,rgba(152,72,72,0.92)_100%)]',
                 outline:
                     'border border-border-soft border-t-[var(--color-light-edge)] bg-black/10 text-text-secondary hover:bg-surface-raised/70 hover:text-text-primary active:daw-inset-surface active:translate-y-px',
-                secondary: 'daw-inset-surface text-white/92 hover:text-white',
+                secondary: 'daw-inset-surface text-text-primary',
                 ghost: 'border border-transparent text-text-secondary hover:bg-surface-raised/75 hover:text-text-primary active:daw-inset-surface active:translate-y-px',
                 link: 'text-accent-cyan underline-offset-4 hover:underline',
 

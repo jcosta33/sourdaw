@@ -161,12 +161,31 @@ describe('ArrangementSelector', () => {
         fireEvent.click(screen.getByLabelText(/Arrangement selector/i));
         const arrangement = screen.getByRole('menuitemradio', { name: /Arrangement 2/i });
 
+        expect(arrangement).toHaveAttribute('tabindex', '0');
+        arrangement.focus();
+        expect(arrangement).toHaveFocus();
+
         fireEvent.keyDown(arrangement, { key: 'Enter' });
         fireEvent.keyDown(arrangement, { key: ' ' });
 
         expect(switchArrangement).toHaveBeenCalledTimes(2);
         expect(switchArrangement).toHaveBeenNthCalledWith(1, 'arr-2');
         expect(switchArrangement).toHaveBeenNthCalledWith(2, 'arr-2');
+    });
+
+    it('leaves Enter and Space on a rename action to its own button', () => {
+        render(<ArrangementSelector />);
+        fireEvent.click(screen.getByLabelText(/Arrangement selector/i));
+        const rename = screen.getByRole('button', { name: 'Rename Arrangement 2' });
+
+        const enterNotCancelled = fireEvent.keyDown(rename, { key: 'Enter', cancelable: true });
+        const spaceNotCancelled = fireEvent.keyDown(rename, { key: ' ', cancelable: true });
+
+        // jsdom does not synthesize a click from Enter on a button, so the
+        // editor itself stays covered by the click case below.
+        expect(enterNotCancelled).toBe(true);
+        expect(spaceNotCancelled).toBe(true);
+        expect(switchArrangement).not.toHaveBeenCalled();
     });
 
     it('names each rename action after its arrangement', () => {

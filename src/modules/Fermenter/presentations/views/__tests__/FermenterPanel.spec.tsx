@@ -163,26 +163,26 @@ describe('FermenterPanel', () => {
         it('switches to the filter section header when the Filter tab is clicked', () => {
             renderPanel();
             // The SectionNav "Filter" tab — use getAllByRole since "filter" may match chips too.
-            const filterTabs = screen.getAllByRole('button', { name: /^Filter$/ });
+            const filterTabs = screen.getAllByRole('tab', { name: /^Filter$/ });
             fireEvent.click(filterTabs[0]!);
             expect(screen.getByText('Filter contour')).toBeInTheDocument();
         });
 
         it('switches to the envelopes section header when the Envelopes tab is clicked', () => {
             renderPanel();
-            fireEvent.click(screen.getByRole('button', { name: /envelopes/i }));
+            fireEvent.click(screen.getByRole('tab', { name: /envelopes/i }));
             expect(screen.getByText('Envelope and drift')).toBeInTheDocument();
         });
 
         it('switches to the modulation section header when the Modulation tab is clicked', () => {
             renderPanel();
-            fireEvent.click(screen.getByRole('button', { name: /modulation/i }));
+            fireEvent.click(screen.getByRole('tab', { name: /modulation/i }));
             expect(screen.getByText('Mod constellation')).toBeInTheDocument();
         });
 
         it('switches to the effects section header when the Effects tab is clicked', () => {
             renderPanel();
-            fireEvent.click(screen.getByRole('button', { name: /effects/i }));
+            fireEvent.click(screen.getByRole('tab', { name: /effects/i }));
             expect(screen.getByText('Effects bus')).toBeInTheDocument();
         });
     });
@@ -227,14 +227,14 @@ describe('FermenterPanel', () => {
         it('shows "Off" when portamento time is 0', () => {
             storeState.value = makeState({ portamentoTime: 0 });
             renderPanel();
-            fireEvent.click(screen.getByRole('button', { name: /modulation/i }));
+            fireEvent.click(screen.getByRole('tab', { name: /modulation/i }));
             expect(screen.getByText('Off')).toBeInTheDocument();
         });
 
         it('shows the time in milliseconds when portamento is non-zero', () => {
             storeState.value = makeState({ portamentoTime: 0.125 });
             renderPanel();
-            fireEvent.click(screen.getByRole('button', { name: /modulation/i }));
+            fireEvent.click(screen.getByRole('tab', { name: /modulation/i }));
             // 0.125 * 1000 = 125 ms
             expect(screen.getByText('125 ms')).toBeInTheDocument();
         });
@@ -418,7 +418,7 @@ describe('FermenterPanel', () => {
         it('routes the filter section knobs to their param keys', () => {
             storeState.value = makeState({ filterCutoff: 1000, filterResonance: 1, filterDrive: 0.4 });
             renderPanel();
-            fireEvent.click(screen.getAllByRole('button', { name: /^Filter$/ })[0]!);
+            fireEvent.click(screen.getAllByRole('tab', { name: /^Filter$/ })[0]!);
             for (const paramId of ['filterCutoff', 'filterResonance', 'filterDrive']) {
                 clickKnobByParamId(paramId);
             }
@@ -430,7 +430,7 @@ describe('FermenterPanel', () => {
         it('routes the LFO knobs (envelopes section) to their param keys', () => {
             storeState.value = makeState({ lfoRate: 2, lfoPitchAmount: 0.5, lfoFilterAmount: 0.3 });
             renderPanel();
-            fireEvent.click(screen.getByRole('button', { name: /envelopes/i }));
+            fireEvent.click(screen.getByRole('tab', { name: /envelopes/i }));
             for (const paramId of ['lfoRate', 'lfoPitchAmount', 'lfoFilterAmount']) {
                 clickKnobByParamId(paramId);
             }
@@ -442,7 +442,7 @@ describe('FermenterPanel', () => {
         it('renders the portamento slider and its zero-state readout', () => {
             storeState.value = makeState({ portamentoTime: 0 });
             renderPanel();
-            fireEvent.click(screen.getByRole('button', { name: /modulation/i }));
+            fireEvent.click(screen.getByRole('tab', { name: /modulation/i }));
             // The Slider has an accessible name via aria-label.
             expect(screen.getByLabelText('Portamento time')).toBeInTheDocument();
             // portamentoTime 0 → "Off" readout (the falsy branch of the ternary).
@@ -479,7 +479,7 @@ describe('FermenterPanel', () => {
 
         it('routes the filter model + mode chip selections to filterModel/filterMode', () => {
             renderPanel();
-            fireEvent.click(screen.getAllByRole('button', { name: /^Filter$/ })[0]!);
+            fireEvent.click(screen.getAllByRole('tab', { name: /^Filter$/ })[0]!);
             // FILTER_MODE_NAMES[2] = 'Band Pass' (rendered as a chip).
             fireEvent.click(screen.getByText('Band Pass'));
             // FILTER_MODEL_NAMES[1] = 'Moog (Warm)'.
@@ -494,7 +494,7 @@ describe('FermenterPanel', () => {
         it('routes the filter env-amount + keytrack knobs to their param keys', () => {
             storeState.value = makeState({ filterEnvAmount: 0.5, filterKeytrack: 0.2 });
             renderPanel();
-            fireEvent.click(screen.getAllByRole('button', { name: /^Filter$/ })[0]!);
+            fireEvent.click(screen.getAllByRole('tab', { name: /^Filter$/ })[0]!);
             clickKnobByParamId('filterEnvAmount');
             clickKnobByParamId('filterKeytrack');
             expectRouted('filterEnvAmount', 1.5);
@@ -504,7 +504,7 @@ describe('FermenterPanel', () => {
         it('routes the LFO shape chip selection to lfoShape', () => {
             storeState.value = makeState({ lfoShape: 0 });
             renderPanel();
-            fireEvent.click(screen.getByRole('button', { name: /envelopes/i }));
+            fireEvent.click(screen.getByRole('tab', { name: /envelopes/i }));
             // LFO_SHAPE_NAMES sliced to 3 chars: 'Sin','Tri','Saw','Squ'. Click 'Tri' (index 1).
             fireEvent.click(screen.getByText('Tri'));
             expectRouted('lfoShape', 1);
