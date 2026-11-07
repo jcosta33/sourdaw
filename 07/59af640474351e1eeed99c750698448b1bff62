@@ -1,0 +1,371 @@
+.agents/skills/review-stances/asset-cache-publication.md
+  s_8dd2ba9e498da7::t_f0c9bcf28a22fb 53-66
+.agents/skills/review-stances/maintained-e2e-specs.md
+  s_8dd2ba9e498da7::t_f2a74877a8f247 27-28,42-43
+.agents/skills/review-stances/startup-entry-availability.md
+  s_8dd2ba9e498da7::t_a158a66fbd8b21 15
+.agents/skills/review-stances/test-validity.md
+  s_8dd2ba9e498da7::t_ee555bdb7019cf 33-34
+.github/actions/setup-pnpm/action.yml
+  s_8dd2ba9e498da7::t_65f82cf745ebde 19,21
+.github/workflows/cargo-dependency-seed.yml
+  s_8dd2ba9e498da7::t_95746c5c58f776 41,50,57,83,90
+.github/workflows/health-gates.yml
+  s_8dd2ba9e498da7::t_e76d2311a2953c 57,59,80,101,122,124,134,169,175
+.github/workflows/heavy-gates.yml
+  s_8dd2ba9e498da7::t_851006a7bd8806 22,30,54,63,72,94,122,131,141,186,226
+.github/workflows/nightly-evidence-report.yml
+  s_8dd2ba9e498da7::t_a041784310c38c 39,41
+.github/workflows/nightly.yml
+  s_8dd2ba9e498da7::t_4f77ce623b2d0c 30,78,164,202,252,313,359,389,396,437,469,503,515,580,591,603,629,641,658,689,729,738,748,765,787,797,818,846,855,867,891,897,1124
+.github/workflows/quantum-measurements.yml
+  s_8dd2ba9e498da7::t_378ef58e63d404 78,80,239
+.github/workflows/validation.yml
+  s_8dd2ba9e498da7::t_0871dce5baa124 47,323,428,468,516,579,605,626,638,666,698,732,743,750,802,827,854,856,868,900,907,942,949,967
+.github/workflows/wasm-artifacts.yml
+  s_8dd2ba9e498da7::t_dca576488cce7f 83,85,112
+.node-version
+  s_8dd2ba9e498da7::t_a163d5bc8cd773 1
+Cargo.lock
+  s_8dd2ba9e498da7::t_6eb117b57ad526 143,145,153,155,250,252,384,386,718,739,741,745,747,759,761,777,779,783,785,878,945,947,1062,1064,1124,1126,1138,1140,1151,1153,1165,1167,1171,1173,1186,1188,1192,1194,1399,1401,1411,1413,1483,1485,1501,1503,1522,1524,1543,1545,1555,1557,1573,1575,1592,1594,1598,1600,1607,1612,1614,1620,1625,1627,1739,1741,1841,1843,1992,1994,2015,2017,2076,2078,2196,2198,2202,2204,2271,2273,2320,2322,2347,2349,2429,2434,2436,2447,2449,2492,2494,2498,2500,2808,2810,2834,2895,2900,2902,2926,2928,2947,2962,2964,2976,2978,2985,2987,2997,2999,3113,3115,3143,3145-3154,3158,3160,3205,3207,3308,3310,3648,3650,3663,3665,3674,3676,3680,3686,3688,3695,3697,3721,3727,3729,3744,3746,3755,3757,3761
+README.md
+  s_8dd2ba9e498da7::t_cccc6c6aec49ae 69
+crates/daw-dsp/benches/wasm/renderTable.mjs
+  s_8dd2ba9e498da7::t_74d147a1203597 283
+crates/daw-dsp/benches/wasm/run.mjs
+  s_8dd2ba9e498da7::t_092de0491c5cf5 1018,1052
+electron/bridge.ts
+  s_8dd2ba9e498da7::t_2a682812410d6d 100-101
+electron/preload.ts
+  s_8dd2ba9e498da7::t_fd4739d230cd8e 6-7
+package.json
+  s_8dd2ba9e498da7::t_1c0897be028bc3 8,115-116,118-119,126,128,131-133,138,141,145-147,149-151,155,161-162,165-167,169,173,176-183,188-190
+patches/vite@8.3.6.patch
+  s_8dd2ba9e498da7::t_0490cdf3174e76 4,12,24,32,44
+pnpm-lock.yaml
+  s_8dd2ba9e498da7::t_ebdbafcb38bb0e 8,24-25,27-28,33-34,36-37,57-58,61,63-64,72-73,75-76,78-79,82,85,93-94,97-98,107,109-110,112-113,115-116,119,121-122,124-125,127-128,134,137,139-140,157-158,160-161,169-170,172-173,175-176,181-182,185,188,191,193-194,197,200,202-203,205-206,208-209,211-212,214-215,217-218,220-221,223-224,238-239,241-242,244-245,255-256,261-262,267-268,274-275,281-282,287-288,293-294,299-300,315-320,327-328,339-340,345-348,361-362,365-369,375-376,383-386,391-394,412-413,415-416,455-456,650-652,660-662,670-672,680-682,690-692,700-702,710-712,740-741,828-829,831-832,835-836,842-844,846-847,852-853,858-859,864-865,870-871,876-877,882-883,888-889,895-896,902-903,909-910,916-917,923-924,930-931,937-938,944-945,950-951,956-957,962-963,968-969,971-972,1077-1078,1082-1083,1087-1088,1092-1093,1097-1098,1102-1103,1107-1108,1113-1114,1119-1120,1125-1126,1131-1132,1137-1138,1143-1144,1149-1150,1156-1157,1163-1164,1170-1171,1177-1178,1184-1185,1191-1192,1198-1199,1205-1206,1211-1212,1217-1218,1223-1224,1247-1248,1282-1283,1285-1286,1298-1299,1311-1312,1324-1325,1337-1338,1350-1351,1363-1364,1376-1377,1389-1390,1411-1412,1424-1425,1433-1434,1446-1447,1455-1456,1468-1469,1481-1482,1490-1491,1503-1504,1516-1517,1538-1539,1551-1552,1564-1565,1577-1578,1590-1591,1603-1604,1616-1617,1629-1630,1642-1643,1655-1656,1668-1669,1681-1682,1694-1695,1707-1708,1720-1721,1733-1734,1746-1747,1759-1760,1772-1773,1781-1782,1794-1795,1807-1808,1820-1821,1833-1834,1846-1847,1859-1860,1872-1873,1881-1882,1899-1900,1944-1945,1953-1954,1969-1970,1975-1976,1981-1982,1987-1988,1993-1994,1999-2000,2005-2006,2012-2013,2019-2020,2026-2027,2033-2034,2040-2041,2047-2048,2053-2054,2059-2060,2065-2066,2094-2095,2258-2259,2261-2262,2267-2268,2273-2274,2279-2280,2285-2286,2291-2292,2298-2299,2305-2306,2312-2313,2319-2321,2330-2331,2336-2337,2342-2343,2346-2347,2351-2352,2360-2361,2364-2365,2367-2368,2370,2372-2374,2376-2377,2383-2384,2389-2390,2393-2394,2397-2398,2402,2418-2419,2422-2423,2517-2518,2535-2536,2544-2546,2577-2578,2583-2585,2627-2628,2631,2635-2636,2642-2643,2648-2649,2652-2653,2658-2659,2665-2666,2669-2670,2675-2676,2682-2683,2810-2811,2813-2814,2818-2819,2823-2824,2828-2829,2833-2834,2838-2839,2843-2844,2848-2849,2854-2855,2860-2861,2866-2867,2872-2873,2878-2879,2884-2885,2890-2891,2896-2897,2902-2903,2908-2909,2913-2914,2918-2919,2923-2924,2928-2929,2932,2934,2944-2945,2947-2948,2953-2954,2957-2958,2961-2962,2964,2972-2973,3009-3010,3036-3037,3040-3041,3044-3045,3067-3070,3079-3080,3099-3100,3134-3138,3153-3154,3178-3179,3211-3212,3296-3297,3316-3317,3320-3321,3342-3344,3404-3405,3426-3427,3436-3437,3465-3466,3468-3469,3473-3474,3483-3484,3494-3495,3498-3499,3502-3503,3603-3604,3623-3625,3639-3641,3649-3651,3659-3661,3669-3671,3679-3681,3705-3706,3758-3759,3825-3827,3912-3913,3957-3958,4005-4006,4028-4029,4044-4045,4066-4067,4098-4099,4132-4133,4136,4138,4186-4187,4318-4319,4321,4323-4325,4334-4335,4337-4338,4340-4341,4351-4352,4354-4355,4363-4364,4366-4367,4378-4379,4390-4391,4400-4401,4412-4413,4430-4431,4457-4459,4481-4482,4484-4485,4556-4557,4609-4610,4616-4617,4619-4620,4626-4627,4633-4634,4637-4638,4642,4674-4675,4680-4684,4729-4730,4734-4735,4747-4748,4764-4765,4829-4830,4842-4843,4845,4886-4887,4952-4953,4973-4974,5030-5034,5039-5041,5045-5047,5070-5071,5094-5095,5111-5112,5117-5118,5152-5153,5171-5172,5178-5179,5199-5200,5203-5204,5211-5212,5215-5216,5218-5219,5236-5238,5255-5256,5269-5271,5285-5286,5302-5303,5306-5307,5316-5317,5320-5321,5336-5337,5339-5340,5350-5351,5355,5367-5368,5386-5387,5421-5422,5438-5439,5481-5482,5489-5490,5492-5494,5555-5556,5580-5581,5667-5668,5677,5680,5683,5686,5689,5692,5695,5698,5702-5708,5720,5723-5727,5729-5730,5733,5740-5747,5756,5766,5768,5773,5775-5776,5778,5782-5783,5790,5793-5797,5803,5811-5823,5831,5835-5839,5861,5863,5884,5886,5892,5898,5900,5904-5905,5907,5911,5913,5919,5922,5930,5933,5937,5941,5945,5953,5956,5967,5972,5977,6058,6061-6062,6064,6066,6071,6073-6075,6078,6082,6084-6090,6093,6097,6099-6105,6108,6112,6114-6115,6118,6122,6124-6129,6132,6136,6138-6140,6142,6144,6148,6150-6155,6158,6162,6165,6185,6187,6198,6201-6202,6208,6263,6265,6272,6276,6280,6285,6287,6290,6293,6296,6299,6302,6305,6308,6311,6314,6317,6320,6323,6326,6329,6332,6335,6338,6341,6344,6346,6400,6409,6412,6415,6418,6421,6424,6427,6430,6433,6436,6439,6442,6445,6448,6451,6454,6457,6460,6463,6466,6469,6472,6475,6478,6481,6508,6510,6534,6536,6538-6540,6545-6557,6562,6564-6570,6575,6577-6579,6584,6586-6588,6593,6595-6602,6607-6617,6622-6633,6638,6640-6646,6651,6653,6657,6659-6665,6670,6672,6676-6690,6692-6694,6699,6701,6705,6707-6713,6718-6728,6733,6735,6739,6741-6745,6750,6752-6759,6764-6777,6782,6784-6785,6789,6791-6793,6798-6815,6817-6819,6824-6837,6842-6860,6865,6868-6880,6885-6896,6901-6916,6918-6920,6925-6935,6937-6938,6943,6945-6948,6953,6955-6957,6962,6964-6966,6971,6973-6976,6981-6993,6998-7012,7017,7020-7030,7035,7038-7055,7057-7059,7064,7066-7068,7073,7076-7086,7091,7093-7094,7098,7100-7107,7112-7123,7128-7143,7148-7158,7163,7165-7169,7174-7184,7189-7206,7211,7213-7214,7218,7220-7223,7227,7229-7230,7234,7236-7237,7241,7243,7247,7249,7253,7255,7259,7262,7266,7268-7269,7273,7275-7277,7284,7287,7290,7293,7296,7299,7302,7305,7308,7311,7314,7317,7320,7323,7326,7329,7331-7332,7334,7336-7337,7343,7347,7351,7353,7444,7446-7448,7452,7458,7461,7463-7466,7468,7471,7474,7477,7480,7483,7486,7489,7492,7495,7498,7501,7504,7506-7529,7535,7537,7539,7541-7544,7546,7548-7553,7555,7557-7560,7562,7564,7566-7567,7569,7571-7573,7577-7578,7582,7584,7586-7589,7591-7592,7594-7595,7606,7608-7613,7619,7707,7717,7725,7735,7737,7739,7741-7742,7752,7754,7777,7783-7785,7816,7819,7821,7823,7825,7827,7837,7865,7868-7874,7881,7883-7888,7893,7895-7897,7902,7904-7905,7907,7911,7913-7917,7923,7925,7927-7931,7940,7942-7946,7951,7953,8020,8022,8025,8028,8031,8034,8037,8040,8043,8046,8049,8052,8055,8058,8061,8064,8067,8070,8073,8076,8079,8082,8085,8088,8090,8093,8096-8103,8105,8107,8109,8111,8114,8116,8118,8120,8134,8136,8140,8144,8146,8172,8174,8178-8184,8190-8191,8194-8195,8199-8200,8230,8240-8241,8250,8266,8270,8272-8275,8283,8295-8297,8299-8301,8317,8340,8342,8347,8350,8353,8355-8356,8399,8473,8485,8487,8506,8509,8515,8518-8519,8521,8524-8525,8561,8563-8564,8569-8570,8572,8578,8595,8604,8606-8607,8638,8640-8642,8647,8649-8651,8654,8663,8667-8668,8679,8682,8687,8691,8693-8695,8705,8710,8715,8778,8780,8783,8788,8790,8792-8794,8799,8801,8805,8807-8811,8814,8816,8818,8822,8825,8828,8833,8835-8836,8838,8840,8842,8844-8845,8847,8849-8855,8857,8860,8864,8866-8868,8870-8871,8875,8877-8883,8886,8890,8892-8899,8902,8906,8908-8914,8917,8921,8923-8930,8933,8937-8948,8950,8952,8955,8962,8972,8974,8976,8983,8986,9011-9012,9017-9018,9037,9047,9111,9114,9225,9274,9276,9283-9285,9288,9312,9314,9322,9325,9334,9337,9343,9358,9371,9373,9389,9410,9434,9436-9439,9441,9443-9445,9448,9452,9494,9496,9499,9502,9505,9507,9601,9603-9605,9611,9613,9617,9619-9621,9623,9632,9637,9639,9646,9651,9661,9664,9668-9669,9674,9677-9678,9682,9686-9690,9694,9698-9699,9703,9705,9707-9711,9715,9721-9722,9726,9734-9735,9743,9749-9750,9763,9768,9771,9778,9781-9782,9789,9795,9800,9806,9812,9818,9825,9830-9831,9836,9845,9847,9850,9853,9857,9862,9865,9872,9876,9882,9889,9891,9894,9898,9901,9905,9908,9913,9923,9928,9941-9944,9955,9968,9972,9974,9977,9980-9981,9986,9993,10015,10047,10091,10097,10099,10104,10117,10119,10121-10139,10163,10165-10172,10174-10193,10215,10227,10229-10233,10245,10271,10273,10275,10285,10302,10345,10373-10431,10436,10438,10443,10449,10452-10453,10456,10461,10463-10465,10469,10471-10476,10480,10483-10484,10488,10490,10492,10517,10528,10531,10533,10539,10542-10543,10559,10576,10579,10603,10605,10608-10622,10689-10690,10696,10698,10700,10714,10718,10736,10738,10749,10751,10753,10757,10792,10794,10796,10798,10804,10812,10814,10819,10845,10847,10851-10852,10854,10856,10858,10860,10870,10874,10890,10895,10907-10908,10922,10924-10928,10958,10960,10966,10969,10993,10998,11002,11008,11011,11016,11018,11020,11022,11024-11044,11064,11066-11067,11071,11074-11075,11079,11081,11097,11101-11102,11105,11112,11115-11116,11119-11120,11122-11124,11126-11127,11129-11131,11143,11147,11149,11169,11171-11172,11196,11277,11279,11281
+pnpm-workspace.yaml
+  s_8dd2ba9e498da7::t_b76a0d2682e994 42
+public/legal/DEPENDENCY-LICENSES.txt
+  s_8dd2ba9e498da7::t_5721f8b8cc1c5a 9-11,13,23-24,38,61-63,66,82,93,96-102,119,121,128,131,133-135,137-140,151,160,172-173,180,186-187,192,196,198,206-207,211-212,236,245,247,250-253,265,269-271,274,284,323,325-326,329,331-332,342,353-362,364-373,375-402,404,409-410,413,415-421,435-436,443,454,486-487,529,533,536,543,549-550,552-553,557-558,561,565,568-569,574,579,588,596,604-605,619-621,634,639-640,650,655,659,665-666,669,678,1315,1374-1479,1512,1535-1562,1592,1633,2395-2404,2406-2415,2417-2444,2446,2451-2452,2454,2538,2746,3101,3621,3624,3628-3632,3636,3638-3640,3642-3643,3645-3654,3657-3900,4523,4733,4741,4747,4749,4751,4756,4846-4847,4849-4851,4853-4855,4857,4859-5071,5557,5559,5615-5616,5630,6126,6129,6133-6136,6141,6155-6162,6168,6171-6175,6177-6178,6181-6182,6186-6188,6191-6197,6199-6200,6202-6283,6287,6289,6291-6292,6295-6299,6302-6303,6306-6307,6310-6318,6320-6322,6325-6326,6328-6329,6331-6333,6335-6369,6395-6397,6399,6401,6403-6406,6408-6409,6411-6415,6417,6419-6420,6422-6426,6428,6430-6435,6437-6438,6440-6446,6448-6452,6454,6456-6460,6462,6464-6474,6476-6503,6505-6521,6523-6634,6636-6638,6640-6644,6646-6650,6652-6656,6658-6661,6663-6667,6669-6670,6672-6674,6676-6678,6680-6685,6687-6690,6692,6694-6915,7359,7575,7641,7745-7752,8173-8174,8176,8178,8180,8182-8187,8189-8190,8236,8238-8239,8483,8545,8811-8915,8919,9647-9648,11335-11363,11366,11370-11373,11378,11384,11386-11389,11392-11394,11396-11400,11426-11428,11430,11432-11433,11435,11437,11439,11441,11443-11447,11449,11451-11452,11475,12797,12825,13158,13169,13171,13176,13398,14569-14575,14577-14586,14588,14590,14592-14599,14601-14605,14607-14686,14688,14721,15118,15441,15715,15985-16122,16124-16128,16130-16131,16133-16137,16139-16141,16480,16509,16764,16799,16853-17069,17071-17074,17076-17084,17086-17096,17098-17107,17109,17111,17113-17120,17122,17124-17126,17128,17130-17134,17136-17139,17141-17142,17144,17146,17862,18649,18850,19105,19678,20205-20209,20366-20367,20369,20382,20385-20386,20392,20399-20400,20406-20407,20414,20629,20987,21183,21185-21189,21191-21195,21197,21199,21201-21207,21209-21210,21212-21218,21220,21224,21684,22022,22072,22603,23212,23214,23221,23256,23547-23548,24837-24838,25265,25950,25979,25985-25987,26814-26815,26817,26819,26821,26823-26828,26830-26831,26833-26839,26841-26845,26847-26852,26854-26855,26857-26861,26863,26865,26867-26872,26874-26875,26877-26883,26885-26890,26892-26893,26895-26901,26903-26904,26906-26912,26914-26918,26920-26921,26923,26925,26927,26929,26931,26933,26935-26936,26938,26940,26942,26944,26946,26948,26950,26970-26971,26974,26976,26978-27135,27137-27140,27142-27144,27146-27148,27150-27152,27154-27156,27158-27160,27162-27164,27166-27168,27170-27172,27174-27176,27178-27180,27182-27185,27187-27189,27191-27194,27196-27198,27200-27201,27203-27204,27206-27207,27209-27210,27212-27213,27215,27217,27219-27220,27222-27224,27226-27228,27230-27235,27237-27240,27242,27244-27248,27250-27251,27253-27257,27259,27261,27501-27502,27504,27540,27748,27818-27821,27823-27824,27826-27829,27832,27841,27849-27850,27853-27854,28120-28198,28630,28862,29761,29789-29795,29798,29800-29801,29805-29806,30171
+public/legal/ELECTRON-SOURCES.json
+  s_8dd2ba9e498da7::t_2fedb7b40f47bc 4-6,9,12,14,17,19,23,30-32,37-39,44-46,51-53
+public/legal/RELINKING.md
+  s_8dd2ba9e498da7::t_42e1bccca8b8c9 26
+public/legal/THIRD-PARTY-NOTICES.md
+  s_8dd2ba9e498da7::t_5ae5099a0eb82e 5,7-8,10
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_8dd2ba9e498da7::t_7092a360e442f7 1
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_8dd2ba9e498da7::t_4b6980b512df7b 1
+public/wasm/manifest.json
+  s_8dd2ba9e498da7::t_dad5cc406fde2d 12,16-18,21,26,31-32,35,40,45-46,49,54,58
+public/wasm/proof-chamber/proof_chamber.d.ts
+  s_8dd2ba9e498da7::t_6684a51bf01325 1
+public/wasm/proof-chamber/proof_chamber_bg.wasm.d.ts
+  s_8dd2ba9e498da7::t_2a3f30f170b57b 1
+public/wasm/scoring/scoring.d.ts
+  s_8dd2ba9e498da7::t_296a89d0882db6 1
+public/wasm/scoring/scoring_bg.wasm.d.ts
+  s_8dd2ba9e498da7::t_a9d7d03df2983e 1
+release/dependency-license-proofs.json
+  s_8dd2ba9e498da7::t_8d724fbf204762 4,64,319,337,687,1224,1250,1292,1362,1778,2017,2087,2105,2123,2141,2159,2177,2195,2593,2603,2613,2645,2795,2889,2941,2959,2985,3037,3044,3050,3056,3063,3069,3075,3082,3088,3094,3101,3107,3368,3375,3381,3546,3842,3868,4079,4082,4084-4085,4090-4091,4243,4269,4407,4520,4564,4764,4790,4886,4912,5384,5602,5654,5716,5734,5740,5750,5760,5766,5776,5786,5792,5802,6042,6154,6186-6219,6222,6316,6576,7554,7590,7608,7662,7706,7724,7779-7781,7786,7794-7796,7801,7809-7811,7816,7824-7826,7831,7944-7946,7951,8519-8521,8526,8534-8536,8541,8579-8581,8584
+release/open-source-inventory.json
+  s_8dd2ba9e498da7::t_da859395df2825 171-172,223-226,231,270,277,284-285,360,407,589,799,1072,1126,1218,1349-1352,1355,1790,1825,1829,1833,1837,1845,1853
+scripts/__tests__/agentDeliveryScripts.spec.ts
+  s_8dd2ba9e498da7::t_8a56ebc25678c7 1083
+scripts/__tests__/checkElectronRuntimeProvenance.spec.ts
+  s_8dd2ba9e498da7::t_cb2fc40d7d53de 187-208
+scripts/__tests__/checkProjectLicense.spec.ts
+  s_8dd2ba9e498da7::t_929b681fb6d4db 423,670,672,678,681,689,790,796,798,803,806,849,859,865,867,872,880,888-889,895,899,905
+scripts/__tests__/checkReleaseInventory.spec.ts
+  s_8dd2ba9e498da7::t_b03ce67d79578f 123
+scripts/__tests__/deliverPullRequest.spec.ts
+  s_8dd2ba9e498da7::t_a1e548900df257 252
+scripts/__tests__/e2eAffectedGraph.spec.ts
+  s_8dd2ba9e498da7::t_da34a8ff0b1024 111
+scripts/__tests__/e2eServerIdentity.spec.ts
+  s_8dd2ba9e498da7::t_a888540c9b2420 435,470
+scripts/__tests__/fixtures/health-gate-workflows.snapshot.json
+  s_68423a2adea8d2::t_2a4627363e2174 75,77,107,132,161,163,177,219,227,284,292,325,337,346,368,404,416,429,467,496,585,664,779,823,880,942,964,989,1002,1032,1070,1086,1098,1103,1146,1154,1177,1179,1195,1223,1228,1262,1267,1285,1442,1493,1591,1637,1694,1760,1799,1820,1829,1864,1893,1927,1939,1974,1984,1999,2043,2056,2074,2109,2156,2168,2181,2196,2240,2253,2264,2300,2312,2328,2356,2364,2483,2653,2655,2792,2794,2841,2948,2950,2983,3036,3048,3053,3082,3087
+scripts/__tests__/healthGatesWorkflow.spec.ts
+  s_8dd2ba9e498da7::t_280e424dc19dda 66,528,944,1526-1527,1542,1585,1615,1638,3542,3545,4646-4647
+scripts/__tests__/pnpmModulesPreflight.spec.ts
+  s_8dd2ba9e498da7::t_27064822e8bb8b 475-491,494-509,511,514,523
+scripts/__tests__/prValidationScope.spec.ts
+  s_8dd2ba9e498da7::t_25d59d60accd7c 102,141,217,298
+scripts/__tests__/setupPnpm.spec.ts
+  s_8dd2ba9e498da7::t_0d6b4dd9ab69f9 566-567
+scripts/__tests__/verifyPlaywrightRuntime.spec.ts
+  s_8dd2ba9e498da7::t_7e76d70b5166b4 8,13,19-20,28,35,43
+scripts/buildElectronPreload.ts
+  s_8dd2ba9e498da7::t_4215e03a1da8d0 6-7
+scripts/checkElectronRuntimeProvenance.ts
+  s_8dd2ba9e498da7::t_4da94218e5d1a1 27-32,46
+scripts/deliverPullRequest.ts
+  s_8dd2ba9e498da7::t_a556f74a9ca3f4 1325
+scripts/e2eSpecDurations.json
+  s_8dd2ba9e498da7::t_0c31e1615cba34 2-48,50-89,91-103,105-129,131-174,176-178,180-201,203-253,255-260,262-285
+scripts/electronRuntimeContract.ts
+  s_8dd2ba9e498da7::t_fd180adf412d45 40-42,45,48,50,53,55,59,66-68,73-75,80-82,87-89
+scripts/hostedQuantumMeasurementWorkflowContract.ts
+  s_8dd2ba9e498da7::t_b70acb866536ec 212,215,271
+scripts/hostedWasmWorkflowContract.ts
+  s_8dd2ba9e498da7::t_95a6b6a06516fa 60
+scripts/releaseVersion.ts
+  s_8dd2ba9e498da7::t_44953842f6eab9 426
+scripts/test-health-gate-scripts.sh
+  s_8dd2ba9e498da7::t_dba1b0e219eee9 443
+scripts/testInstructions.ts
+  s_8dd2ba9e498da7::t_15b595fa2221c5 251,290,296,314,390,466,483,490,521,534,851
+server/THIRD-PARTY-NOTICES.md
+  s_8dd2ba9e498da7::t_935f33bc5390d1 3
+server/package-lock.json
+  s_8dd2ba9e498da7::t_0a2352e487fc42 10,939-941
+server/package.json
+  s_8dd2ba9e498da7::t_00fdd34fbcf550 12
+src/app/__tests__/browserDisplayScaleHost.spec.ts
+  s_8dd2ba9e498da7::t_1ae5ed1c06c795 50
+src/app/__tests__/main.spec.tsx
+  s_8dd2ba9e498da7::t_731bd98b7f18ce 534,539,576,585
+src/app/__tests__/mainAppImportRecovery.spec.tsx
+  s_8dd2ba9e498da7::t_ecc49361d41a75 130,137,289
+src/app/__tests__/mainRenderBeforeBootstrap.spec.tsx
+  s_8dd2ba9e498da7::t_80259531b0a50e 67-70,76,227,276,374
+src/components/daw/__tests__/DawContextMenuSurface.spec.tsx
+  s_8dd2ba9e498da7::t_f74e8b66f54aa4 132,142,149,156,186,202
+src/components/daw/__tests__/LatchButton.spec.tsx
+  s_8dd2ba9e498da7::t_68c5cce7fd4fb1 84,99,109,120
+src/components/ui/__tests__/bipolar-slider.spec.tsx
+  s_8dd2ba9e498da7::t_a9268d3f39bd3d 127,179
+src/components/ui/__tests__/slider.spec.tsx
+  s_8dd2ba9e498da7::t_58d4b6db77b7ff 134,232,265,310,351
+src/modules/AiGeneration/presentations/views/__tests__/PatternBrowserSearch.integration.spec.tsx
+  s_8dd2ba9e498da7::t_3e22445814018f 1-24,26-28
+src/modules/AiGeneration/repositories/nativeAIBridge/__tests__/audioDenoising.spec.ts
+  s_8dd2ba9e498da7::t_f41509c3a0689d 46
+src/modules/AiRuntime/AGENTS.md
+  s_8dd2ba9e498da7::t_fa4323cac68dbc 27
+src/modules/AiRuntime/useCases/__tests__/answerOutcome.spec.ts
+  s_8dd2ba9e498da7::t_dec0c6078e660a 4-6,8,46,49,51,134-140,153-157,165,167,205-209,257-555
+src/modules/AiRuntime/useCases/__tests__/answerQuerySaveAuthority.spec.ts
+  s_8dd2ba9e498da7::t_e381e8818b7afc 1-26,28,30-31,33-102,104-163
+src/modules/AiRuntime/useCases/__tests__/bassCompressorPromptWorkflow.spec.ts
+  s_8dd2ba9e498da7::t_e8948a17fde915 1526,1598,1603
+src/modules/AiRuntime/useCases/__tests__/measuredAnswers.spec.ts
+  s_8dd2ba9e498da7::t_fc2949bcb89065 309-350
+src/modules/AiRuntime/useCases/agentReference/__tests__/preparedStemImportResourceCleanup.spec.ts
+  s_8dd2ba9e498da7::t_b96dd31af643b3 31-33
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/executeConfirmedCommandBatch.spec.ts
+  s_8dd2ba9e498da7::t_3614a53c40b88f 1374
+src/modules/AiRuntime/useCases/applicationOwnedToolLoop.ts
+  s_8dd2ba9e498da7::t_4bc0bbaa372a2f 118,416-417,420-421,424-432,462-463,475-482,1362-1363,1367,1492,1577,3165
+src/modules/AiRuntime/useCases/composeMeasuredAnswer.ts
+  s_8dd2ba9e498da7::t_f1e84662da97e3 21,23,28,448-463,465
+src/modules/AiRuntime/useCases/formatAnswerQueryScope.ts
+  s_8dd2ba9e498da7::t_65e0d2bb4db7a2 1,3,5-30,32-38,40-49,51-71
+src/modules/AiRuntime/useCases/readAnswerProjectQuery.ts
+  s_8dd2ba9e498da7::t_7e947e97e2967d 1-28
+src/modules/Arrangement/handlers/device/__tests__/midiNodelessEffectCommands.integration.spec.ts
+  s_8dd2ba9e498da7::t_85f3c352b6439b 231
+src/modules/Arrangement/handlers/preset/__tests__/handleLoadPreset.spec.ts
+  s_8dd2ba9e498da7::t_b14f2dceb08310 734
+src/modules/Arrangement/handlers/track/__tests__/duplicateTrack.integration.spec.ts
+  s_8dd2ba9e498da7::t_59f73a1019d2e1 13-15
+src/modules/Arrangement/presentations/__tests__/manualAudioImportResidency.integration.spec.tsx
+  s_8dd2ba9e498da7::t_b24ef52348a461 1-439
+src/modules/Arrangement/presentations/hooks/__tests__/useTimelineFileDrop.spec.tsx
+  s_8dd2ba9e498da7::t_eb9bbb84cab5b1 1431-1434
+src/modules/Arrangement/presentations/hooks/useTimelineFileDrop.ts
+  s_8dd2ba9e498da7::t_5c8542ccde7571 3-8,318,320,394-395
+src/modules/Arrangement/presentations/views/TimelineEmptyMenu.tsx
+  s_8dd2ba9e498da7::t_6f9613fb7fd783 8,111,113,175-176
+src/modules/Arrangement/presentations/views/__tests__/TimelineEmptyMenu.spec.tsx
+  s_8dd2ba9e498da7::t_78c3ce6e52128f 67,474-477
+src/modules/Arrangement/presentations/views/__tests__/TimelineEmptyMenuFocus.spec.tsx
+  s_8dd2ba9e498da7::t_9276a556fdb90c 50-52
+src/modules/Arrangement/presentations/views/__tests__/trackCreateUndo.integration.spec.tsx
+  s_8dd2ba9e498da7::t_ba31b626f282b5 173-175
+src/modules/Arrangement/presentations/views/__tests__/trackDeleteUndo.integration.spec.tsx
+  s_8dd2ba9e498da7::t_d4357a2ad26301 161-163
+src/modules/Arrangement/useCases/__tests__/importAudioClipToTrack.residency.integration.spec.ts
+  s_8dd2ba9e498da7::t_59c891c6df65c0 1-84,87-90,93-95,97-99,101-117,119-120,122-127,129-134,136-142,144-155,157-165,167-197,199-220,223-316
+src/modules/Arrangement/useCases/__tests__/importAudioClipToTrack.spec.ts
+  s_8dd2ba9e498da7::t_d479a124c3fdf6 1,11,13,25,27,81-83
+src/modules/Arrangement/useCases/__tests__/importAudioFile.spec.ts
+  s_8dd2ba9e498da7::t_7b8f6a5d09ed99 1,10,21,53-55
+src/modules/Arrangement/useCases/freezeBounce/__tests__/freezeTrack.spec.ts
+  s_8dd2ba9e498da7::t_298a906686454f 493
+src/modules/Arrangement/useCases/importAudioClipToTrack.ts
+  s_8dd2ba9e498da7::t_98a493bbd80f33 1,102,104-118,120,124-128,130-146,148-153,156,160-181,185-188,191-193
+src/modules/Arrangement/useCases/importAudioFile.ts
+  s_8dd2ba9e498da7::t_c2c5690b3f005c 1,140,142-156,158,162-166,168-184,186-191,194,198,200-207,209-218,221-234,236-238
+src/modules/Arrangement/useCases/timeOperations/__tests__/globalTimeTransaction.spec.ts
+  s_8dd2ba9e498da7::t_f98e2a26e6c126 1060,1130
+src/modules/Arrangement/useCases/timeOperations/__tests__/prepareTimeOperationStateRestore.spec.ts
+  s_8dd2ba9e498da7::t_0f093fea806227 980
+src/modules/AudioEngine/engine/__tests__/TrackNodeDevices.spec.ts
+  s_8dd2ba9e498da7::t_e8cbe3dfbfb6a5 426,874,1058
+src/modules/AudioEngine/useCases/offlineRender/__tests__/nullTestRenderHarness.ts
+  s_8dd2ba9e498da7::t_70935be13bb92a 394
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_8dd2ba9e498da7::t_0e37c508248b24 1
+src/modules/AudioEngine/wasm/proof_chamber.d.ts
+  s_8dd2ba9e498da7::t_0cd5dfc8f99a59 1
+src/modules/AudioEngine/wasm/scoring.d.ts
+  s_8dd2ba9e498da7::t_b2c946a385c735 1
+src/modules/AudioRendering/presentations/views/__tests__/ExportDialog.spec.tsx
+  s_8dd2ba9e498da7::t_56593802c565d5 309-311,956
+src/modules/AudioRendering/presentations/views/__tests__/ExportDialogControls.integration.spec.tsx
+  s_8dd2ba9e498da7::t_bf3fc18817116b 1-149
+src/modules/AudioRendering/presentations/views/__tests__/exportStreamingMemory.spec.tsx
+  s_8dd2ba9e498da7::t_84a64c7685446a 581
+src/modules/AudioRendering/repositories/audioEncoders/convertFloatChannelsToPcm.ts
+  s_8dd2ba9e498da7::t_ef455eecc861f3 59,67
+src/modules/AudioRendering/repositories/audioEncoders/encodeOggAudio.ts
+  s_8dd2ba9e498da7::t_5275bbc16f4d72 40
+src/modules/AudioRendering/repositories/audioEncoders/flacEncoder.ts
+  s_8dd2ba9e498da7::t_16051c9eb356ea 444
+src/modules/AudioRendering/repositories/audioExport/__tests__/downloadAudioWav.spec.ts
+  s_8dd2ba9e498da7::t_2ed6ca71284a6e 28,32
+src/modules/Bacteria/useCases/bacteriaParamBridge/__tests__/chooseBacteriaBodyUndo.integration.spec.ts
+  s_8dd2ba9e498da7::t_9776b75bf97794 47-49
+src/modules/BrowserAi/presentations/views/__tests__/ModelManagerPanel.spec.tsx
+  s_8dd2ba9e498da7::t_e06033bdd599fc 271,294,349
+src/modules/Collaboration/useCases/__tests__/durableAssetOwnership.spec.ts
+  s_8dd2ba9e498da7::t_16673e3f4cc6ab 256
+src/modules/Command/useCases/__tests__/executeAppAction.spec.ts
+  s_8dd2ba9e498da7::t_d98db8e18e1348 869
+src/modules/CommandInterface/presentations/views/__tests__/CommandPalette.spec.tsx
+  s_8dd2ba9e498da7::t_6da0656bdf94df 134-158
+src/modules/ControlSurface/presentations/views/__tests__/HardwareMappingManager.spec.tsx
+  s_8dd2ba9e498da7::t_02933a009ca50c 41,49
+src/modules/ControlSurface/useCases/hardware/__tests__/downloadHardwareMappings.spec.ts
+  s_8dd2ba9e498da7::t_abfc84a3eeb584 71
+src/modules/CrdtDocument/repositories/__tests__/branchStateAuthority.spec.ts
+  s_8dd2ba9e498da7::t_770a0843ad16e8 1243
+src/modules/CrdtDocument/useCases/projection/__tests__/projectionAfterPartialMerge.integration.spec.ts
+  s_8dd2ba9e498da7::t_5ad893ca59de8a 351
+src/modules/Crumbs/useCases/__tests__/crumbsParameterPersistence.integration.spec.ts
+  s_8dd2ba9e498da7::t_b52144bc733f25 51-53
+src/modules/Crust/presentations/views/__tests__/CrustControls.integration.spec.tsx
+  s_8dd2ba9e498da7::t_eb27ffb4a40777 1-812
+src/modules/Crust/useCases/crustParamBridge/__tests__/loadCrustPatchWithAudio.spec.ts
+  s_8dd2ba9e498da7::t_f07fd2bcb6e142 42-44
+src/modules/DawInterchange/handlers/__tests__/handleExportDawProject.spec.ts
+  s_8dd2ba9e498da7::t_69d0c1f7543756 347
+src/modules/ElasticAudio/presentations/views/__tests__/ElasticEditorControls.integration.spec.tsx
+  s_8dd2ba9e498da7::t_cbd0f083ad4c82 1-2,4-10,12-14,16-45,47-50,52-59,61-76
+src/modules/Fermenter/presentations/components/__tests__/OutputMeter.spec.tsx
+  s_8dd2ba9e498da7::t_335b13f87cf0f7 66,77-78
+src/modules/Fermenter/presentations/views/__tests__/FermenterControlKeyboard.integration.spec.tsx
+  s_8dd2ba9e498da7::t_a4c2768961c65c 1-301
+src/modules/Gluten/presentations/views/__tests__/glutenTopologyControlGating.spec.tsx
+  s_8dd2ba9e498da7::t_f62f8bbe871e5a 84
+src/modules/Gluten/useCases/glutenParamBridge/__tests__/glutenParameterUndo.integration.spec.ts
+  s_8dd2ba9e498da7::t_b9758031a0302c 43-45
+src/modules/GrandBoule/useCases/__tests__/grandBouleParameterPersistence.integration.spec.ts
+  s_8dd2ba9e498da7::t_99daadb871e934 160-162
+src/modules/MixerConsole/presentations/views/Mixer/__tests__/SendsSection.spec.tsx
+  s_8dd2ba9e498da7::t_79a0c888b42ce4 182,231,282
+src/modules/MixerConsole/presentations/views/__tests__/MixerPanelWidthIntegration.spec.tsx
+  s_8dd2ba9e498da7::t_76719bfcbd8f89 1-2,4-11,13-22
+src/modules/Onboarding/presentations/views/__tests__/OnboardingTour.spec.tsx
+  s_8dd2ba9e498da7::t_0d0221bcc35bc6 26
+src/modules/PluginHost/useCases/faustEngine/__tests__/compileFaustDSP.spec.ts
+  s_8dd2ba9e498da7::t_e62b5daa7b9f3c 58,100
+src/modules/PluginHost/useCases/pluginLifecycle/__tests__/lifecycle.spec.ts
+  s_8dd2ba9e498da7::t_3e4b982259d986 266
+src/modules/Preferences/presentations/views/__tests__/ShortcutsSection.spec.tsx
+  s_8dd2ba9e498da7::t_9b82f159d2aebe 46
+src/modules/Preferences/presentations/views/preferences/__tests__/MidiSection.spec.tsx
+  s_8dd2ba9e498da7::t_443d62125e3663 79
+src/modules/Project/useCases/composeProductionBriefUpdate.ts
+  s_8dd2ba9e498da7::t_c957554ae91497 49
+src/modules/Project/useCases/projectPersistence/__tests__/discardProjectChanges.realPath.spec.ts
+  s_8dd2ba9e498da7::t_fac03b11f85e0c 48-50
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/exportProjectFile.roundTrip.spec.ts
+  s_8dd2ba9e498da7::t_fe73390905a493 59-61
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/interruptedProjectLoadDirtyTracking.integration.spec.ts
+  s_8dd2ba9e498da7::t_b82b0ec5577a5b 111-113
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/projectLoadDirtyTracking.integration.spec.ts
+  s_8dd2ba9e498da7::t_49f79d2dedfd56 68-70
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/saveProject.recentRoundTrip.spec.ts
+  s_8dd2ba9e498da7::t_de8667c250ca6d 120-122
+src/modules/Project/useCases/projectTemplates/templateHelpers/__tests__/finalizeTemplate.spec.ts
+  s_8dd2ba9e498da7::t_0ebbc294ce26cf 34-36
+src/modules/Project/useCases/recentProjects/__tests__/loadRecentProject.spec.ts
+  s_8dd2ba9e498da7::t_f4d9e9ebd3b36e 53-55
+src/modules/Proof/presentations/views/__tests__/ProofDisclosure.integration.spec.tsx
+  s_8dd2ba9e498da7::t_2a554c445d1889 2,8-13,18,27-63,81,254-414
+src/modules/Proof/presentations/views/__tests__/ProofPanel.spec.tsx
+  s_8dd2ba9e498da7::t_9c2f7353d429f6 39-41
+src/modules/ProofChamber/presentations/views/__tests__/proofChamberPresetUndo.integration.spec.tsx
+  s_8dd2ba9e498da7::t_5e908ef88af726 45-47
+src/modules/TimelineEditor/presentations/views/AutomationView/__tests__/AutomationControlsIntegration.spec.tsx
+  s_8dd2ba9e498da7::t_62d8c8e178de01 1-2,4,6-17,19-20
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/PianoRollKeyRailGeometry.spec.tsx
+  s_8dd2ba9e498da7::t_9b4dc0c58c041d 115,162
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/PianoRollOpeningScroll.spec.tsx
+  s_8dd2ba9e498da7::t_3fba73236e21f4 102
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/PianoRollToolbarIntegration.spec.tsx
+  s_8dd2ba9e498da7::t_e7a1646241128f 1,3-4,6,8-42,44-54,56-65,68-78
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/deviceParameterGestureUndo.integration.spec.tsx
+  s_8dd2ba9e498da7::t_f347b90ca4d438 279
+src/modules/TimelineEditor/presentations/views/Inspector/layouts/__tests__/compressorCurveGestureUndo.integration.spec.tsx
+  s_8dd2ba9e498da7::t_4968a1f4f4be05 227
+src/modules/TimelineEditor/presentations/views/Inspector/layouts/__tests__/distortionCurveGestureUndo.integration.spec.tsx
+  s_8dd2ba9e498da7::t_7f11acaa55a0f2 195
+src/modules/TimelineEditor/presentations/views/Inspector/layouts/__tests__/synthEnvelopeGestureUndo.integration.spec.tsx
+  s_8dd2ba9e498da7::t_aa1dbba733d79c 255
+src/modules/TimelineEditor/presentations/views/__tests__/InspectorPanel.trackSwitch.spec.tsx
+  s_8dd2ba9e498da7::t_9f8f13831f74e2 109
+src/modules/Toaster/presentations/views/__tests__/ToasterControlKeyboard.integration.spec.tsx
+  s_8dd2ba9e498da7::t_caac55db0c338a 1-199
+src/modules/Transport/useCases/__tests__/ensureTrackStrips.spec.ts
+  s_8dd2ba9e498da7::t_f4100ea8218b71 75-77
+src/modules/Transport/useCases/__tests__/playheadScheduler.spec.ts
+  s_8dd2ba9e498da7::t_bd8bcddb8fa9b8 837
+src/modules/Transport/useCases/tempoMap/__tests__/prepareTimelineMapTimeOperation.spec.ts
+  s_8dd2ba9e498da7::t_47f136c0c0c556 1804,1813
+src/modules/WorkspaceShell/presentations/views/Transport/__tests__/SoloModeSelectorIntegration.spec.tsx
+  s_8dd2ba9e498da7::t_a55f8860d4adb5 1-2,4-7,9,11-18,20-23,25-43
+tests/e2e/audioToMidiCommitAcceptance.spec.ts
+  s_8dd2ba9e498da7::t_f59a1c1eefc2a0 60-66,68-78
+tests/e2e/crustAttackTimeTestId.spec.ts
+  s_8dd2ba9e498da7::t_5a12739367a2c9 14-16
+tests/e2e/fermenterPanelDeepTestId.spec.ts
+  s_8dd2ba9e498da7::t_557699b1da4845 30-35,47-50
+tests/e2e/importErrorPathsTestId.spec.ts
+  s_8dd2ba9e498da7::t_5cefddbc1bcbb3 6-7,56-57
+tests/e2e/mixerAiHealthTestId.spec.ts
+  s_8dd2ba9e498da7::t_03cb9e82915c5b 25,30-32
+tests/e2e/pianoRollZoomTestId.spec.ts
+  s_8dd2ba9e498da7::t_85cc3856bf86e3 13,33-38
+tests/e2e/proofMissionCeilingTestId.spec.ts
+  s_8dd2ba9e498da7::t_fe7dec1c7b0565 16-17
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0759af640474351e1eeed99c750698448b1bff62",
+  "prompts": {},
+  "sessions": {
+    "s_68423a2adea8d2": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34b-f305-7c03-beb2-57afa678cda5",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_8dd2ba9e498da7": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34a-1f45-7430-80af-58acd6c4b831",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
