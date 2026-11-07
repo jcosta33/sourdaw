@@ -1045,9 +1045,10 @@ describe('reverseClip', () => {
             // The visible [0,2) could mirror at E6 in D8, but preserving L4
             // would extend that fresh source window to10, past the material.
             expect(8 - 2 + 4).toBeGreaterThan(8);
+            const extendedClip: CanonicalClip = { ...clip, endBeat: 4 };
             expect(
                 projectAudioLoopPassSegments({
-                    clip: { ...clip, endBeat: 4 },
+                    clip: extendedClip,
                     loopLengthBeats: 4,
                     iterationStartBeat: 0,
                     iterationEndBeat: 4,

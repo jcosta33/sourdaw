@@ -22,6 +22,7 @@ type RenderTrackOffline = (
 ) => Promise<AudioBuffer | null>;
 
 type PushUndoEntry = (label: string, undoFn: () => void, redoFn: () => void) => void;
+type FixtureClock = NonNullable<Parameters<typeof readSecondsAtBeat>[0]['clock']>;
 
 const mocks = vi.hoisted(() => {
     type TestTrackStore = {
@@ -29,6 +30,7 @@ const mocks = vi.hoisted(() => {
         set: ReturnType<typeof vi.fn<(state: TrackStoreState) => void>>;
     };
 
+    const tempoChanges: FixtureClock['changes'] = [];
     const trackStore: TestTrackStore = {
         value: null,
         set: vi.fn<(state: TrackStoreState) => void>(),
@@ -36,7 +38,7 @@ const mocks = vi.hoisted(() => {
 
     return {
         tempo: 60,
-        tempoChanges: [] as { beat: number; tempo: number; curve: 'instant' }[],
+        tempoChanges,
         cacheAudioBuffer: vi.fn<(input: CacheAudioBufferInput) => string>(),
         pushUndoEntry: vi.fn<PushUndoEntry>(),
         renderTrackOffline: vi.fn<RenderTrackOffline>(),
@@ -827,6 +829,7 @@ describe('bounceSelection', () => {
     });
 
     function sourceAt(clip: Clip, beat: number): number | undefined {
+        const clock: FixtureClock = { tempo: mocks.tempo, changes: mocks.tempoChanges };
         return projectAudioLoopPassSegments({
             clip,
             loopLengthBeats: clip.loopLength ?? clip.endBeat - clip.startBeat,
@@ -835,10 +838,9 @@ describe('bounceSelection', () => {
             stretchRatio: clip.stretchMode && clip.stretchMode !== 'off' ? (clip.stretchRatio ?? 1) : 1,
             tempoAtClipStart: readTempoAtBeat({
                 beat: clip.startBeat,
-                clock: { tempo: mocks.tempo, changes: mocks.tempoChanges },
+                clock,
             }),
-            secondsAtBeat: (position) =>
-                readSecondsAtBeat({ beat: position, clock: { tempo: mocks.tempo, changes: mocks.tempoChanges } }),
+            secondsAtBeat: (position) => readSecondsAtBeat({ beat: position, clock }),
         })[0]?.sourceStartSeconds;
     }
 
@@ -883,8 +885,8 @@ describe('bounceSelection', () => {
         async (startBeat) => {
             mocks.tempo = 120;
             mocks.tempoChanges = [
-                { beat: 0, tempo: 120, curve: 'instant' },
-                { beat: 4, tempo: 60, curve: 'instant' },
+                { id: 'fixture-initial-tempo', beat: 0, tempo: 120, curve: 'instant' },
+                { id: 'fixture-slow-tempo', beat: 4, tempo: 60, curve: 'instant' },
             ];
             const clip = createAudioClip({
                 id: 'stretched-loop',
