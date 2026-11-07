@@ -2,6 +2,7 @@ import { open, type FileHandle } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { NATIVE_ADDON_FILE, NATIVE_SCAN_HELPER_FILE } from '../electron/native.ts';
+
 import { electronReleaseTarget, type ElectronReleaseTarget } from './electronRuntimeContract.ts';
 
 type ImageReader = {
