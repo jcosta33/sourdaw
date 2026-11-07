@@ -9,6 +9,8 @@ import { withMinimumRecordingLength } from '../../useCases/recording/withMinimum
 import { updateTrack } from '../../useCases/updateTrack';
 import { toHandlerExecutionResult } from '../toHandlerExecutionResult';
 
+import { isRecordingSessionEntry } from './recordingSessionEntry';
+
 type CommitRecordingAction = Extract<AppAction, { type: 'commitRecording' }>;
 const preparedControllers = new WeakMap<CommitRecordingAction, ReturnType<typeof prepareRecordedControllersCommit>>();
 
@@ -76,6 +78,7 @@ function snapshotRows<TRow>(stored: readonly TRow[] | undefined, planned: readon
  */
 export const handleCommitRecording = createHandler<'commitRecording'>({
     previewExecution: 'unsupported-external',
+    validateSessionEntry: isRecordingSessionEntry,
     // Runtime consumption is deferred; every execute write belongs to the CRDT transaction.
     requiresAbortCompensation: false,
     validate: owningTrackExists,

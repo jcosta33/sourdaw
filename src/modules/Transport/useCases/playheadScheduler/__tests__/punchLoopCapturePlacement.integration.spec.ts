@@ -555,7 +555,8 @@ function expectProjectProjection(): void {
     expect(raw.takeLanes.lanes).toEqual(takeLaneStore.value!.lanes);
 }
 
-function reloadSavedRecordingProject(): void {
+/** Reloads Automerge geometry while retaining live Undo objects; this is not a session-mirror hydration oracle. */
+function reloadSavedRecordingGeometryWithLiveHistory(): void {
     flushAutomergeStorageWrites();
     const current = getCrdtDoc<Project>('root');
     if (!current) {
@@ -761,14 +762,14 @@ describe('punch audio capture loop placement', () => {
         expect(hardware.sourceStarts[0]!.durationSeconds).toBeCloseTo(0.2, 10);
         expect(undoHistoryStore.value?.past).toHaveLength(1);
         expectProjectProjection();
-        reloadSavedRecordingProject();
+        reloadSavedRecordingGeometryWithLiveHistory();
         expect(recordedClips()).toEqual(clips);
         expect(lane().takes).toEqual(takes);
         await undo();
         expect(recordedClips()).toEqual([]);
         expect(takeLaneStore.value?.lanes).toEqual([]);
         expectProjectProjection();
-        reloadSavedRecordingProject();
+        reloadSavedRecordingGeometryWithLiveHistory();
         await redo();
         expect(recordedClips()).toEqual(clips);
         expect(lane().takes).toEqual(takes);
@@ -864,7 +865,7 @@ describe('punch audio capture loop placement', () => {
         expect(second.buffer!.getChannelData(0)[9600]).toBeUndefined();
         expect(undoHistoryStore.value?.past).toHaveLength(2);
         expectProjectProjection();
-        reloadSavedRecordingProject();
+        reloadSavedRecordingGeometryWithLiveHistory();
         expect(trackStore.value!.tracks).toEqual(tracks);
         expect(takeLaneStore.value!.lanes).toEqual(lanes);
         await undo();
@@ -874,7 +875,7 @@ describe('punch audio capture loop placement', () => {
         expect(trackStore.value!.tracks.every((track) => track.clips.length === 0)).toBe(true);
         expect(takeLaneStore.value!.lanes).toEqual([]);
         expectProjectProjection();
-        reloadSavedRecordingProject();
+        reloadSavedRecordingGeometryWithLiveHistory();
         await redo();
         expect(recordedClips()).toEqual([firstClip]);
         expectProjectProjection();
@@ -4561,7 +4562,7 @@ describe('punch audio capture loop placement', () => {
                 }
                 expectProjectProjection();
                 if (foreignEntryId) {
-                    reloadSavedRecordingProject();
+                    reloadSavedRecordingGeometryWithLiveHistory();
                     await undo();
                     expect(recordedClips()).toEqual([]);
                     expect(trackStore.value!.tracks.find((track) => track.id === midiId)!.clips).toEqual([]);

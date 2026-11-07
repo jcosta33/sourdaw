@@ -157,65 +157,34 @@ recording first frame, rings, stop fence and artifact identity in `input-monitor
     already-applied host response. Native output peaks supplement; they cannot count all attacks/releases or prove
     zero callback refusals when the wire omits those counters.
 
-## Automatic punch owns its ending and actual producer boundary
-
-#4564 moved automatic finalization before the audio flush; #4897's last-look-ahead seam arm could still fire before
-the physical out, and #5891's held-note sealing used the later tick's input position. Live punch-marker reads also
-moved an admitted ending after an edit. Scheduler counters and synthesized terminal buffers missed both endpoints;
-the unpublished #5381 repairs exposed the same gap. Historical private reviewer prompts and tiers are unestablished.
-
-Admit an off-tick punch, then edit its markers and loop. Read retained frame-coded PCM from the real processor/ring,
-the stored held-note end, selected-pass source windows and one Undo/Redo group. A planned seam is not sounded output,
-and a future receipt cannot restore PCM after stopping its producer early. Pair the browser scheduler with a deliberately
-different native input cursor: onset, exclusive-out admission, late key-up and Stop must use the accepted carrier/pass,
-while audio waits for its own audible native target and each input's latency-adjusted frontier. Keep pending first
-publication and forecast-only non-forward timing open; a true refused ending or proven history gap alone permits the
-existing full-PCM muted recovery and visible diagnostic. Never certify native placement with browser time.
-
-A valid start with an ending not yet reachable is an admitted open take, not an unavailable clock. Strike and
-release real MIDI through its loop, then prove manual Stop/pass replay and the later first qualifying original
-out. Keep unresolved/future start and native-unavailable input excluded. A refused audio projection may recover at
-its due terminal but cannot certify surviving unsounded native MIDI. Hold that accepted MIDI cursor before out
-while context time passes, require no flush, then release actual native audible progress. Root/provider/target raw
-incarnations decide MIDI debt, including genuine existing-overdub candidates; optimistic removal cannot retire it,
-and a recreated or newly armed unrelated row cannot inherit it. A real manual Stop in that unsounded state uses
-its accepted input position/pass, rather than clamping to a future native out from browser context time alone.
-
-Cover an original out beyond the loop: marker edits cannot close it, but an authorized loop change that first reaches
-that original out must close its first qualifying occurrence. Preserve late-wrap, cancelled seam, seek, failed input,
-root replacement and teardown routes; staging audio and MIDI separately must not count one occurrence twice. Removing
-only the producer-frontier wait, frozen-out ownership or explicit accepted MIDI ending must fail its connected case.
-These are maintained controlled producer/storage oracles, not physical MIDI or listening proof; an unrun mutation is
-a review prescription, never completed evidence. The actual recorder endpoint companion lives in
-`input-monitoring-ownership.md`.
-
-#5891's source-position helper also subtracted the timeline clip start despite its existing MIDI latency lead-in.
-Require a 30ms compensated downbeat and held/late-release end against the actual startBeat−midiOffsetBeats media
-origin, for onset, expression, off and Stop, while retaining fixed pass origins and manual zero-offset controls.
-The independent media-origin probe is in `audio-timing-format-laws.md`; offset adjustment after a clamp still loses
-the downbeat and must fail.
-
-Automatic mixed recording must hold sibling publication until their actual terminals settle. Two independently
-awaited commits from #4564 can straddle a foreign edit; a shared group ID alone cannot join noncontiguous Undo
-entries. Hold the real audio terminal while MIDI submits, publish an unrelated color edit, then require one Undo
-to remove all recording rows/takes while preserving the color, the next Undo to remove color, and Redo/reload to
-restore them in that order. Pair missing/failed/unstarted input and muted recovery with a valid MIDI sibling.
-
-#5338 consumed buffered controllers inside the recording handler before the storage transaction committed. A real
-second-child failure or cancellation after the first controller write must roll back raw rows/history and preserve
-the exact runtime owner for retry. Describe and execute must share one stable full-current-buffer plan; preserve the
-existing delayed-overdub closing lift, and consume only that planned prefix after publication. Later rows survive;
-if their falling edge already ran, completion must await their existing serialized overdub landing after primary
-history. A genuinely published observer failure preserves data and reports ambiguity instead of discarding or
-retrying; confirmed history and potentially published state are separate observations. Replacement root, buffer,
-carried owner and seed controls must reject stale completion without consuming a foreign suffix.
-
-Commit `341896bf4b` introduced active-recording ref filtering in optimistic clip satellite cleanup (its introducing
-PR is unestablished). Cancel a real typed removal after its first write: the restored raw incarnation must still
-admit subsequent MIDI and settle at Stop. Restore only the current automatic gesture's exact unsubmitted owner at
-its shared admission/Stop boundary; optimistic absence cannot retire it, and same-ID new rows cannot inherit old
-notes, expression or controllers. A committed removal before/after submission and all-slots-removed Stop are
-separate positives. Historical private reviewer stances and tiers for these escapes are unestablished.
+12. **An admitted punch keeps its original ending (#4564, #4897, #5891; unpublished #5381).** Edit markers/loop
+    after admission: require the same first qualifying original out, not its opening seam tick or an extra lap.
+    Out14 beyond loop8..12 is an admitted OPEN take: real MIDI through wraps/manual Stop survives; later authorized
+    geometry first reaches original14, while marker edits cannot retarget it. Pending/future start and native
+    unavailability still exclude input. Pair browser scheduling with a deliberately different native input cursor:
+    onset, out exclusion, held/late release and Stop use one accepted carrier/pass. Refused audio recovery cannot
+    certify surviving unsounded MIDI; hold native before out while browser time passes, require waiting, then sound
+    it. Provider/root/original raw target incarnations decide debt, including genuine overdub candidates; a removed,
+    recreated or freshly armed target cannot inherit it. Early manual Stop uses accepted position, not future out.
+    Preserve cancellation, late wrap, seek, failed input, root replacement and teardown; staging cannot count twice.
+    Removing frozen ownership/accepted MIDI ending must fail. Producer PCM: `input-monitoring-ownership.md` probe14;
+    tempo/media law: `audio-timing-format-laws.md` probes1/12. Historical private prompts/tiers are unestablished.
+13. **Sibling terminals publish one contiguous recording gesture (#4564).** Hold real audio while MIDI submits,
+    interleave foreign color, then require one Undo to remove every new clip/row/take but preserve color, next Undo
+    color, and reverse Redo order. Group ID alone cannot join noncontiguous history. Pair failed/missing/unstarted
+    inputs and full muted recovery with a valid sibling. Actual production serialization and both past/future
+    hydration, not retained live Undo objects, must preserve the group (`replay-authority.md` probe7).
+14. **Pending controller consumption waits for publication (#5338).** Fail/cancel a real second child after first
+    CRDT controller writes: raw/history roll back and exact runtime owner survives. Describe/execute share one full
+    current-buffer plan, including the delayed-overdub closing lift; publication consumes that prefix only. Later
+    suffix survives root/buffer/carry/seed replacement and, if already stopped, lands through existing serialized
+    overdub AFTER primary history. Published observer failure keeps data/ambiguity, never discard/retry or confirmed
+    history claims. Moving consumption back before commit must fail these controls.
+15. **Optimistic removal cannot retire active input (`341896bf4b`, introducing PR unestablished).** Cancel typed
+    removal after its first write, then drive actual MIDI and Stop. Reattach only this automatic gesture's exact
+    unsubmitted root/raw-row/buffer owner at admission/Stop; no projection sweep or successor attachment. Same-ID
+    replacements cannot receive old note/expression/controller input. Committed removal before/after submission
+    and all-slots-removed Stop remain separate positives. Historical private prompts/tiers are unestablished.
 
 ## Browser MIDI denial must remain retryable through teardown
 

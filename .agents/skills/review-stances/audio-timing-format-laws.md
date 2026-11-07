@@ -7,25 +7,6 @@ of it. Audio source offsets and every source reader belong to `audio-source-time
 failure mode, the input, state or mutation to run, and the check that must go red. Report the concrete break or
 none.
 
-## Recording MIDI source positions include the admitted media lead-in
-
-#5891 introduced recordingMidiSourceBeatAt with the clip's timeline start as its source origin. A punched clip
-already carried midiOffsetBeats for latency lead-in, so a 30ms capture at 120 BPM stored a held end at 1.03 while
-playback required 1.09, ending 0.06 beat before its sounded out. Zero-offset fixtures missed the source-basis
-distinction. Historical private review prompts and tiers are unestablished.
-
-Drive a real punch with 30ms latency and inspect its actual media offset. The compensated downbeat remains
-representable at source 0: subtract startBeat−midiOffsetBeats before the existing nonnegative clamp. Use that
-same owner conversion for onset, expression, release and Stop, with captured pass origins across loop edits.
-Require the stored source end to map back to the sounded exclusive out, a late key-up to remain bounded and
-one Undo/Redo group to restore the same rows. Keep zero-offset and ordinary manual/non-punch controls.
-Removing only the media-origin adjustment must fail the real lead-in endpoint and downbeat cases; adding
-the offset after clamping must fail the compensated downbeat. These are input/source laws, not a general
-gesture-clock redesign or physical MIDI proof. Strike another valid note only0.01 beat before automatic out,
-release once before out and once after it, and repeat with real media lead-in. The ordinary minimum duration may
-never extend an automatic-owned source end; manual/no-cap minimum behavior remains a control. Invalid/nonpositive
-available intervals must emit no zero or malformed note, through both key-up and held sealing. Automatic owner lifetime is in `session-lifecycle.md`.
-
 ## Standing probes
 
 1. **Tempo projection in both directions to every terminal binding.** Trace seconds to beats and beats to
@@ -35,7 +16,10 @@ available intervals must emit no zero or malformed note, through both key-up and
    step-only inverse or lost anchor must fail the terminal-output case (#5209/#5243): include both
    moving-layer schedulers and stem branches, quantisation, slew and the compensated write clock, and a
    layer whose beat-zero value differs from its requested-start value under a tempo ramp. Source offsets
-   converted at the clip-start tempo are `audio-source-time.md` probe 1.
+   converted at the clip-start tempo are `audio-source-time.md` probe 1. Re-date an admitted punch's SAME original out/occurrence
+   after accepted120→60 adoption: browser uses the effective adoption instant; native compares old/new durations
+   from the SAME epoch beat to original out, only at a newly authorized sounded epoch. Loop/locate geometry,
+   cancelled/planned/future epochs cannot retarget it. Ignoring adoption must fail the connected out/producer case.
 2. **Musical law against DAW convention.** State the law an established DAW applies and evaluate at
    two grids (1/16 and 1/4); quantize the output again and require it unchanged; a result no reference
    DAW reproduces is a finding unless a decision record names the difference (#4788). Mapped ruler
@@ -102,3 +86,12 @@ available intervals must emit no zero or malformed note, through both key-up and
     the new one (same commit). Schedule, edit (comp, take swap, mute, and a part scheduled ahead), run the next
     pass, and assert `stop` on every superseded source before its start and exactly one `start` for the new
     content; an unchanged pass must call neither.
+
+12. **Recorded MIDI shares its admitted media origin (#5891).** At120BPM with30ms latency, require the real
+    compensated downbeat at source0 and held out1.09 rather than1.03: onset, expression, off and Stop subtract
+    startBeat−midiOffsetBeats BEFORE clamping, preserving captured pass origins across loop edits. Removing the
+    media-origin adjustment must fail the endpoint; adding it after clamping must fail the downbeat. Strike at
+    11.02 for out11.03, release before out and hold after out, with zero and nonzero lead-in: the ordinary0.0625
+    minimum cannot extend the automatic-owned source cap. Both key-up and sealing emit no zero/malformed note
+    when no positive interval remains; ordinary manual/no-cap minimum stays a control. Historical private review
+    prompts and tiers are unestablished. Owner lifetime: `session-lifecycle.md` probe12; no hardware MIDI claim.

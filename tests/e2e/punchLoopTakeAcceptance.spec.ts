@@ -1916,7 +1916,12 @@ test('finishes an edited automatic mixed punch at its original sounded out and r
         await expect
             .poll(async () => {
                 const owner = await automaticPunchProjectOwner(page);
-                return owner.projectId === owner.mirrorProjectId && owner.witness === owner.mirrorWitness;
+                return (
+                    owner.projectId === owner.mirrorProjectId &&
+                    owner.witness === owner.mirrorWitness &&
+                    owner.pastLength === 2 &&
+                    owner.futureLength === 0
+                );
             })
             .toBe(true);
         await reloadAutomaticPunchSession(page, projectId, projectName);
