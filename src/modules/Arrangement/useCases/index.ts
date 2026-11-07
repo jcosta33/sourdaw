@@ -175,6 +175,7 @@ export { getLayerCount } from './adjustmentLayer/getLayerCount';
 // ── Device ────────────────────────────────────────────────────────────────────
 
 export { executeAddDeviceAction } from './device/executeAddDeviceAction';
+export { isExternalPluginDeviceType } from './device/externalPluginDeviceType';
 export { getAddedDeviceParameterValues } from './device/getAddedDeviceParameterValues';
 export { executeRemoveDeviceAction } from './device/executeRemoveDeviceAction';
 export { addMidiFx } from './device/addMidiFx';

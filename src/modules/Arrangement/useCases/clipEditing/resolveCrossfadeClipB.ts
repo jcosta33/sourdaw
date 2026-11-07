@@ -18,9 +18,6 @@ import { consumedStretchFactor } from './consumedStretchFactor';
  * (recorded leading silence) allows none, so the start holds.
  */
 function crossfadeClipBEarliestStart(clipB: Clip, stretchFactor: number, timeline: TempoTimeline): number {
-    if (clipB.type === 'midi') {
-        return Math.max(0, clipB.startBeat - Math.max(0, clipB.midiOffsetBeats ?? 0));
-    }
     if (clipB.audioOffsetSeconds === undefined) {
         return Math.max(0, clipB.startBeat - Math.max(0, clipB.audioOffsetBeats ?? 0) / stretchFactor);
     }
@@ -152,7 +149,7 @@ function planCanonicalClipBStart(
 /**
  * Clip B's start and, for a canonical audio clip B, its clock after the
  * crossfade retreats it by up to `halfLen`. `audioSource` is absent for a
- * beat-only or MIDI clip B; `null` when a canonical clock cannot be read.
+ * beat-only clip B; `null` when a canonical clock cannot be read.
  */
 export function resolveCrossfadeClipB(
     clipB: Clip,
@@ -161,7 +158,7 @@ export function resolveCrossfadeClipB(
 ): { startBeat: number; audioSource?: ClipAudioSourceFields } | null {
     const bound = crossfadeClipBEarliestStart(clipB, consumedStretchFactor(clipB), timeline);
     const requestedStartBeat = Math.max(clipB.startBeat - halfLen, bound);
-    if (clipB.type !== 'audio' || clipB.audioOffsetSeconds === undefined) {
+    if (clipB.audioOffsetSeconds === undefined) {
         return { startBeat: requestedStartBeat };
     }
     return planCanonicalClipBStart(clipB, requestedStartBeat, timeline);

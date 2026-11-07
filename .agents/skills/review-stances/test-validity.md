@@ -72,6 +72,10 @@ release and provenance drift in `release-provenance-drift.md`.
    An upstream already-projected integration delta cannot discriminate TrackNode's direct loops
    (#5387/#5805): add direct writer fixtures with full scheduled-instrument after-chains; reverting
    the reorder and replacement loops must fail their named direct cases.
+   Guard output collection and mocked emission do not prove delivery through the CLI pipe (#3057):
+   send output larger than pipe capacity through the real CLI and require the complete byte-exact
+   body and markers for success and failure, correct channels and exit codes, and prompt exit.
+   Check the bounded default failure tail and signal cleanup; restoring forced exit must lose output.
    (#3905, #2648, #1049, #5277, #5339, #4128, #2811, #2083, #5643, #5254, #5247, #5215, #474, #5798, #5565, #5387, #5805)
 
 4. **The oracle is computed by the code under test.**

@@ -589,6 +589,48 @@ describe('clipStrategy', () => {
         ).toEqual({ type: 'crossfadeClips', payload: { clipAId: 'clip-audio-a', clipBId: 'clip-audio-b' } });
     });
 
+    describe('crossfadeClips pairs the action refuses', () => {
+        const reason =
+            'Expected two audio clips on the same audio track; MIDI clips take no fades and a crossfade cannot span tracks';
+        const audioTrack = projectContext.tracks[1]!;
+        const audioOnTwoTracks: ProjectContext = {
+            ...projectContext,
+            tracks: [
+                { ...audioTrack, clips: [audioTrack.clips[0]!], clipCount: 1 },
+                { ...audioTrack, id: 'track-audio-2', clips: [audioTrack.clips[1]!], clipCount: 1 },
+            ],
+        };
+
+        it.each([
+            {
+                name: 'two MIDI clips on one track',
+                clipAId: 'clip-midi-a',
+                clipBId: 'clip-midi-b',
+                context: projectContext,
+            },
+            {
+                name: 'audio clip A with MIDI clip B',
+                clipAId: 'clip-audio-a',
+                clipBId: 'clip-midi-b',
+                context: projectContext,
+            },
+            {
+                name: 'two audio clips on different tracks',
+                clipAId: 'clip-audio-a',
+                clipBId: 'clip-audio-b',
+                context: audioOnTwoTracks,
+            },
+        ])('rejects $name with a reason', ({ clipAId, clipBId, context }) => {
+            expect(
+                bridgeClipToolCall({
+                    call: { name: 'crossfadeClips', arguments: { clipAId, clipBId } },
+                    context,
+                    index: 22,
+                })
+            ).toMatchObject({ index: 22, name: 'crossfadeClips', reason });
+        });
+    });
+
     it('lockClip changes the locked state of an available clip', () => {
         expect(
             bridgeClipToolCall({
