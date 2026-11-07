@@ -1,0 +1,102 @@
+scripts/__tests__/fetchE2eCoverageMap.spec.ts
+  s_6584878ed83d04::t_953737c802c573 132
+scripts/approvalGatedWorkflowContract.ts
+  s_6584878ed83d04::t_a3d75e3cbe6655 2-5,9-10,14-16,57-59,61-63,65-68,70-75,77-92,97-100,103-105,109,114
+AGENTS.md
+  s_6584878ed83d04::t_46a59597d8c42d 521-528,530-531,535
+.github/workflows/health-gates.yml
+  s_6584878ed83d04::t_af4f40ab219189 17-20
+  s_6584878ed83d04::t_6ad913a3ff3d19 98
+  s_6584878ed83d04::t_fd14811b3d3e2c 146-148
+  s_6584878ed83d04::t_60b300a4d2b807 28
+  s_6584878ed83d04::t_a97ed03b5f7df2 197,200-203,210
+  s_6584878ed83d04::t_a1cadf7f1ce43f 6-8,11
+scripts/workflowSecuritySurfaceContract.ts
+  s_6584878ed83d04::t_645e68ebb8c68b 42
+  s_6584878ed83d04::t_108b8c9f5e8e40 63
+scripts/__tests__/publishReview.spec.ts
+  s_6584878ed83d04::t_04c6eb8d1fb4b4 250
+  s_6584878ed83d04::t_d5005362a9e23d 6010-6012
+.github/workflows/validation.yml
+  s_6584878ed83d04::t_d1d0d153daf9aa 482,648,680,786,888,930
+  s_6584878ed83d04::t_5f0255578d7d92 1210,1220,1222-1226
+  s_6584878ed83d04::t_0c04185863e132 3-5
+docs/06-testing.md
+  s_6584878ed83d04::t_db4f0a2e1b1546 917-919
+.agents/skills/delivery-orchestration/SKILL.md
+  s_6584878ed83d04::t_d74395304ea546 414
+  s_6584878ed83d04::t_9d68d10a4460f4 201-203
+  s_6584878ed83d04::t_75e805926301f9 440-441
+  s_6584878ed83d04::t_8c4947991f175d 466
+scripts/publishReview.ts
+  s_6584878ed83d04::t_00da6ea996ec8f 555
+scripts/test-health-gate-scripts.sh
+  s_6584878ed83d04::t_80ce3b9e48e7a9 693
+  s_6584878ed83d04::t_1b614c8a06d371 462-464
+  s_6584878ed83d04::t_c01e6285fde077 419
+  s_6584878ed83d04::t_a266e4b69b527d 685
+  s_6584878ed83d04::t_12efca8218a5a1 572
+  s_6584878ed83d04::t_ff56cb3783762a 1372
+  s_6584878ed83d04::t_5a7effdae8b2c9 1397-1403,1406,1411-1414
+  s_6584878ed83d04::t_b1ef4198646813 579-580
+  s_6584878ed83d04::t_c946b1c05d932f 455-456
+  s_6584878ed83d04::t_1860bafa5e5ef7 697
+  s_6584878ed83d04::t_a357fec890089e 689
+  s_6584878ed83d04::t_5e65e308488f88 585
+scripts/__tests__/healthGatesWorkflow.spec.ts
+  s_6584878ed83d04::t_e95542b953f6ed 4334,5221
+  s_6584878ed83d04::t_f08772342893c5 2077
+  s_6584878ed83d04::t_57ac4f036206be 337,348-351
+  s_6584878ed83d04::t_96d757e9418dfb 4355
+  s_6584878ed83d04::t_a75705d0392593 5078-5079,5082,5087,5094,5096-5099
+  s_6584878ed83d04::t_6abe870efbf2a5 2818-2819,2822,2826-2827,2831,2838-2841,2845,2848-2852,2858,2862,2864
+  s_6584878ed83d04::t_78ac74dd1a6457 3024-3034
+  s_6584878ed83d04::t_e3979dca73898b 5256-5257
+  s_6584878ed83d04::t_f99a70be012f86 198
+  s_6584878ed83d04::t_ca7588a00fe2e7 2796-2799
+  s_6584878ed83d04::t_49190c830aaef4 17
+  s_6584878ed83d04::t_4a820538734b16 710,3575-3578,3581-3584,3590,3595-3598,3612,3617-3619
+  s_6584878ed83d04::t_84de7aba168fcf 651
+  s_6584878ed83d04::t_7c44d45551e80e 2064,2092-2093
+  s_6584878ed83d04::t_0cf0c8fe3f6384 3524-3525
+  s_6584878ed83d04::t_f2f195ab0177cb 3721-3722
+  s_6584878ed83d04::t_c0f063ceb9833a 84
+  s_6584878ed83d04::t_e628250844c29b 650
+  s_6584878ed83d04::t_14bc335bc5e25a 2076
+  s_6584878ed83d04::t_9e2042b631daad 3526
+  s_6584878ed83d04::t_78750fbce332da 3620
+  s_6584878ed83d04::t_c3e1e6e49fb6b3 3723
+  s_6584878ed83d04::t_4d00112ba6155d 4335
+  s_6584878ed83d04::t_cc928e55ec1b1d 4356
+  s_6584878ed83d04::t_e7dc14a42060f9 5100
+  s_6584878ed83d04::t_a722eca5db30fe 5258
+  s_6584878ed83d04::t_3e5377fe191295 106,2069,4304,4306,4337,4434,5067,5205
+scripts/__tests__/fixtures/health-gate-workflows.snapshot.json
+  s_1052c2a2231ded::t_89fed1ef4e372f 17-21,36,129,194,252-253,255,635,842,1013,1051,1127,1208,1247,1416,1418
+scripts/__tests__/agentDeliveryScripts.spec.ts
+  s_6584878ed83d04::t_a69ac46e519afb 1043,1049
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c7170489c4626b83d9f9f0752b41aad89a036780",
+  "prompts": {},
+  "sessions": {
+    "s_1052c2a2231ded": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b349-24b6-7622-8534-09f171c780d5",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_6584878ed83d04": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "eb8dc258-27ed-45aa-b77a-54b7a029172e",
+        "model": "grok-4.7"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
