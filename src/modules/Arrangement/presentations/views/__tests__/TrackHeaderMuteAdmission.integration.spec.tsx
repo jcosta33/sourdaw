@@ -207,7 +207,7 @@ describe('track header mute admission', () => {
         await waitFor(() => {
             expect(rawRoot().tracks.tracks[0]?.muted).toBe(muted);
             expect(trackStore.value?.tracks[0]?.muted).toBe(muted);
-            expect(engine.mute.mock.calls.filter(([id]) => id === 'target').at(-1)).toEqual(['target', muted]);
+            expect(engine.mute.mock.calls.findLast(([id]) => id === 'target')).toEqual(['target', muted]);
             expect(notices).toEqual([]);
         });
         expect(rawRoot().tracks.tracks[1]).toEqual(other);
@@ -225,7 +225,7 @@ describe('track header mute admission', () => {
         await Promise.all(requests);
         expect(rawRoot().tracks.tracks[0]?.muted).toBe(muted);
         expect(trackStore.value?.tracks[0]?.muted).toBe(muted);
-        expect(engine.mute.mock.calls.filter(([id]) => id === 'target').at(-1)).toEqual(['target', muted]);
+        expect(engine.mute.mock.calls.findLast(([id]) => id === 'target')).toEqual(['target', muted]);
         expect(captureUndoHistory()).toEqual(history);
         expect(rawRoot().actionHistory).toEqual(sharedHistory);
         expect(notices).toEqual([]);

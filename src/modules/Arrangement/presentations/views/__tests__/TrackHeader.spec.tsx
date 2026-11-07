@@ -31,6 +31,7 @@ vi.mock('#/modules/Command/useCases', () => ({
     executeAppAction: vi.fn(),
     executeUserAppAction: vi.fn(),
     pushUndoEntry: vi.fn(),
+    resetActionReplayAuthority: vi.fn<() => void>(),
 }));
 
 vi.mock('../../../useCases/folder/toggleFolderCollapse', () => ({
