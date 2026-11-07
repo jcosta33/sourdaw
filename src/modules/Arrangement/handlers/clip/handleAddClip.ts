@@ -6,12 +6,14 @@ import { getNextAppActionClipId } from '../../useCases/clip/getNextAppActionClip
 import { getPlannedTrackState } from '../getPlannedTrackState';
 import { toHandlerExecutionResult } from '../toHandlerExecutionResult';
 import { isAddClipSessionEntry } from '../validateCreationSessionEntries';
+import { prepareCreatedClipRedoGuard } from './prepareCreatedClipRedoGuard';
 
 type AddClipAction = { payload: { id?: string } };
 
 type AddClipState = {
     clipId: string;
     generatedMidiStateGuard: { entityJson: string; midiByClipIdJson: string };
+    publishRedoGuard?: () => void;
 };
 
 const addClipStates = new WeakMap<object, AddClipState>();
@@ -50,10 +52,17 @@ export const handleAddClip = createHandler<'addClip'>({
         }
         state.generatedMidiStateGuard.entityJson = JSON.stringify(clip);
         state.generatedMidiStateGuard.midiByClipIdJson = serializeMidiStateForClips([clip.id]);
-        return toHandlerExecutionResult(true);
+        return state.publishRedoGuard
+            ? { status: 'written', afterCommit: state.publishRedoGuard }
+            : toHandlerExecutionResult(true);
     },
-    describe: (alpha) => {
+    describe: (alpha, context) => {
         const state = getAddClipState(alpha);
+        state.publishRedoGuard = prepareCreatedClipRedoGuard({
+            recordedRedo: context?.recordedRedo,
+            clipId: state.clipId,
+            guard: state.generatedMidiStateGuard,
+        });
         return {
             label: `Add clip "${alpha.payload.name}"`,
             inverseAction: {

@@ -9,12 +9,14 @@ import { isDuplicateClipAtSessionEntry } from '../validateCreationSessionEntries
 
 import { createdClipMidiCapture } from './createdClipMidiCapture';
 import { stampCreatedClipStateGuard } from './stampCreatedClipStateGuard';
+import { prepareCreatedClipRedoGuard } from './prepareCreatedClipRedoGuard';
 
 type DuplicateClipAtAction = Extract<AppAction, { type: 'duplicateClipAt' }>;
 
 type DuplicateClipAtState = {
     targetClipId: string;
     generatedMidiStateGuard: GeneratedMidiStateGuard;
+    publishRedoGuard?: () => void;
 };
 
 const duplicateClipAtStates = new WeakMap<object, DuplicateClipAtState>();
@@ -113,14 +115,26 @@ export const handleDuplicateClipAt = createHandler<'duplicateClipAt'>({
             capture?.complete();
             stampCreatedClipStateGuard(state.generatedMidiStateGuard, state.targetClipId);
             const discard = () => createdClipMidiCapture({ phase: 'discard', action });
-            return { status: 'written', afterCommit: discard, afterAmbiguousCommit: discard };
+            return {
+                status: 'written',
+                afterCommit: () => {
+                    discard();
+                    state.publishRedoGuard?.();
+                },
+                afterAmbiguousCommit: discard,
+            };
         } catch (error) {
             capture?.discard();
             throw error;
         }
     },
-    describe: (action) => {
+    describe: (action, context) => {
         const state = getDuplicateClipAtState(action);
+        state.publishRedoGuard = prepareCreatedClipRedoGuard({
+            recordedRedo: context?.recordedRedo,
+            clipId: state.targetClipId,
+            guard: state.generatedMidiStateGuard,
+        });
         return {
             label: 'Duplicate clip at destination',
             inverseAction: {

@@ -97,7 +97,14 @@ boundaries.
    `executeAppActionBatch` describes members before executing, so later inverses capture pre-batch state. Probe: real
    grouped Undo/Redo against raw CRDT and projection; swap the earlier-sibling projection for live pre-batch state and
    the group fails. When a member snapshots state an earlier one produced (comp-then-remove), inspect the real history
-   entry: a correct final state does not prove the inverse composed the prefix.
+   entry: a correct final state does not prove the inverse composed the prefix. #6221 (`7115fe4389`) refreshed a
+   created clip's guard after the whole Redo group, so a later grouped `addNotes` entered the creator's capture:
+   the second Undo removed the notes first and then falsely refused the clip. The missing probe is an actual
+   `addClip` + `addNotes` group through Undo, Redo, Undo, including a serialized and hydrated future stack. Every
+   current creation/duplication producer publishes its own fresh execution-prefix capture only after successful
+   commit, authenticated against its pending inverse; a failed later member leaves that inverse unchanged. Keep
+   duplicate MIDI/satellite and retired-take round trips, plus peer additions after Redo that still refuse Undo.
+   Restamping from final group state must fail the composed case; weakening the guard must fail the peer case.
 
 ## Retired lessons
 

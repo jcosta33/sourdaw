@@ -1,83 +1,111 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { type AppAction } from '#/utils/handlerContract';
 import { insertPolyphonicMidiNotes } from '../insertPolyphonicMidiNotes';
 
 const mocks = vi.hoisted(() => ({
     getTransportState: vi.fn(),
     getAllTracks: vi.fn(),
-    addClip: vi.fn(),
-    batchAddMidiNotes: vi.fn(),
-    executeAppAction: vi.fn(),
+    executeAppActionBatch: vi.fn(async (_actions: AppAction[], _options?: unknown) => ({ status: 'committed' })),
 }));
-
-vi.mock('#/modules/Arrangement/useCases', () => ({
-    getAllTracks: mocks.getAllTracks,
-    addClip: mocks.addClip,
+vi.mock('#/modules/Arrangement/useCases', () => ({ getAllTracks: mocks.getAllTracks }));
+vi.mock('#/modules/Command/useCases', () => ({ executeAppActionBatch: mocks.executeAppActionBatch }));
+vi.mock('#/modules/Transport/useCases', () => ({ getTransportState: mocks.getTransportState }));
+vi.mock('#/modules/CrdtDocument/useCases', () => ({
+    projectRevisionMatchesLiveIgnoringSaveWrites: (revision: string) => revision === 'source-revision',
 }));
-
-vi.mock('#/modules/Command/useCases', () => ({
-    executeAppAction: mocks.executeAppAction,
-    executeUserAppAction: vi.fn(),
-}));
-
-vi.mock('#/modules/MIDI/useCases', () => ({
-    batchAddMidiNotes: mocks.batchAddMidiNotes,
-}));
-
-vi.mock('#/modules/Transport/useCases', () => ({
-    preferencesSeededTransportState: vi.fn(),
-    getTransportState: mocks.getTransportState,
-}));
-
-const sourceClip = { startBeat: 0, endBeat: 4, name: 'Vocal' };
+const sourceClip = { startBeat: 4, endBeat: 8, name: 'Vocal', projectRevision: 'source-revision' };
 
 describe('insertPolyphonicMidiNotes', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.getAllTracks.mockReturnValue([]);
         mocks.getTransportState.mockReturnValue({ tempo: 120 });
-        mocks.addClip.mockReturnValue({ id: 'midi-clip' });
     });
 
-    it('dispatches an addTrack AppAction (instead of mutating the store) when target is not MIDI', () => {
-        const createdTrack = { id: 'midi-created', kind: 'midi', clips: [] };
-        // Before dispatch: empty / no matching MIDI track. After dispatch: the new track
-        // appears (the addTrack handler mutates the store synchronously inside the dispatch).
-        mocks.getAllTracks
-            .mockReturnValueOnce([]) // existing-track check
-            .mockReturnValueOnce([]) // idsBefore snapshot
-            .mockReturnValue([createdTrack]); // post-dispatch reads
+    it('keeps empty-note blank-clip creation in one compensated batch', async () => {
+        const result = await insertPolyphonicMidiNotes([], sourceClip, 'audio');
+        expect(result).not.toBeNull();
+        const [actions, options] = mocks.executeAppActionBatch.mock.calls[0]!;
+        expect(actions).toEqual([
+            { type: 'addTrack', payload: { id: result!.trackId, kind: 'midi', name: 'Vocal (MIDI)' } },
+            {
+                type: 'addClip',
+                payload: {
+                    id: result!.clipId,
+                    trackId: result!.trackId,
+                    startBeat: 4,
+                    endBeat: 8,
+                    name: 'Vocal → MIDI (poly)',
+                    type: 'midi',
+                },
+            },
+        ]);
+        expect(options).toMatchObject({ requireCompensation: true, groupId: expect.any(String) });
+    });
 
-        const result = insertPolyphonicMidiNotes([], sourceClip, 'audio-track');
+    it('reuses MIDI destinations and preserves note conversion laws across 128-note chunks', async () => {
+        mocks.getAllTracks.mockReturnValue([{ id: 'midi', kind: 'midi' }]);
+        const notes = Array.from({ length: 129 }, (_, index) => ({
+            pitchMidi: 60 + (index % 12),
+            startTimeSeconds: index * 0.1,
+            durationSeconds: 0.01,
+            amplitude: 0.5,
+        }));
+        const result = await insertPolyphonicMidiNotes(notes, sourceClip, 'midi');
+        expect(result?.trackId).toBe('midi');
+        const actions = mocks.executeAppActionBatch.mock.calls[0]![0];
+        expect(actions.map((action) => action.type)).toEqual(['addClip', 'addNotes', 'addNotes']);
+        const chunks = actions.flatMap((action) => (action.type === 'addNotes' ? [action.payload.notes] : []));
+        expect(chunks.map((chunk) => chunk.length)).toEqual([128, 1]);
+        expect(chunks.flat()).toEqual(
+            notes.map((note) => ({
+                pitch: note.pitchMidi,
+                startBeat: note.startTimeSeconds * 2,
+                duration: 0.0625,
+                velocity: 64,
+            }))
+        );
+    });
 
-        expect(mocks.executeAppAction).toHaveBeenCalledWith({
-            type: 'addTrack',
-            payload: { name: 'Vocal (MIDI)', kind: 'midi' },
+    it('waits for actual commit before returning the prepared output', async () => {
+        let release!: (value: { status: string }) => void;
+        mocks.executeAppActionBatch.mockReturnValueOnce(
+            new Promise((resolve) => {
+                release = resolve;
+            })
+        );
+        let settled = false;
+        const insertion = insertPolyphonicMidiNotes([], sourceClip, 'audio').then((result) => {
+            settled = true;
+            return result;
         });
-        // The clip is attached to the dispatched track's id — proving the resolved id flows
-        // through the command boundary rather than a hidden direct store mutation.
-        expect(mocks.addClip).toHaveBeenCalledWith(expect.objectContaining({ trackId: 'midi-created' }));
-        expect(result).toEqual({ clipId: 'midi-clip', trackId: 'midi-created' });
+        expect(settled).toBe(false);
+        release({ status: 'committed' });
+        expect(await insertion).not.toBeNull();
     });
 
-    it('does not dispatch addTrack when the target already is a MIDI track', () => {
-        mocks.getAllTracks.mockReturnValue([{ id: 'midi-track', kind: 'midi', clips: [] }]);
-
-        const result = insertPolyphonicMidiNotes([], sourceClip, 'midi-track');
-
-        expect(mocks.executeAppAction).not.toHaveBeenCalled();
-        expect(mocks.addClip).toHaveBeenCalledWith(expect.objectContaining({ trackId: 'midi-track' }));
-        expect(result).toEqual({ clipId: 'midi-clip', trackId: 'midi-track' });
+    it.each(['rejected', 'failed', 'conflicted', 'ambiguous'])('returns null for %s', async (status) => {
+        mocks.executeAppActionBatch.mockResolvedValueOnce({ status });
+        expect(await insertPolyphonicMidiNotes([], sourceClip, 'audio')).toBeNull();
     });
 
-    it('returns null when a new MIDI track cannot be created', () => {
-        // Dispatch is a no-op (e.g. uninitialised store): no new MIDI track ever appears.
-        mocks.getAllTracks.mockReturnValue([]);
+    it('refuses output from another source revision without dispatch', async () => {
+        expect(
+            await insertPolyphonicMidiNotes([], { ...sourceClip, projectRevision: 'old-revision' }, 'audio')
+        ).toBeNull();
+        expect(mocks.executeAppActionBatch).not.toHaveBeenCalled();
+    });
 
-        const result = insertPolyphonicMidiNotes([], sourceClip, 'missing-track');
-
-        expect(result).toBeNull();
-        expect(mocks.addClip).not.toHaveBeenCalled();
-        expect(mocks.batchAddMidiNotes).not.toHaveBeenCalled();
+    it('keeps cancellation and the original revision live through batch admission', async () => {
+        const controller = new AbortController();
+        await insertPolyphonicMidiNotes([], { ...sourceClip, signal: controller.signal }, 'audio');
+        const options = mocks.executeAppActionBatch.mock.calls[0]![1] as {
+            shouldExecute: () => boolean;
+            signal: AbortSignal;
+        };
+        expect(options.signal).toBe(controller.signal);
+        expect(options.shouldExecute()).toBe(true);
+        controller.abort();
+        expect(options.shouldExecute()).toBe(false);
     });
 });

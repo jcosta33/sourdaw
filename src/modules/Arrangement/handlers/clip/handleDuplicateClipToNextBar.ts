@@ -7,12 +7,14 @@ import { prepareDuplicateClipTargetId } from '../../useCases/clip/prepareDuplica
 import { toHandlerExecutionResult } from '../toHandlerExecutionResult';
 
 import { stampCreatedClipStateGuard } from './stampCreatedClipStateGuard';
+import { prepareCreatedClipRedoGuard } from './prepareCreatedClipRedoGuard';
 
 type DuplicateClipToNextBarAction = { payload: { clipId: string; targetClipId?: string } };
 
 type DuplicateClipToNextBarState = {
     targetClipId: string;
     generatedMidiStateGuard: GeneratedMidiStateGuard;
+    publishRedoGuard?: () => void;
 };
 
 const duplicateClipToNextBarStates = new WeakMap<object, DuplicateClipToNextBarState>();
@@ -75,10 +77,17 @@ export const handleDuplicateClipToNextBar = createHandler<'duplicateClipToNextBa
             return toHandlerExecutionResult(false);
         }
         stampCreatedClipStateGuard(state.generatedMidiStateGuard, state.targetClipId);
-        return toHandlerExecutionResult(true);
+        return state.publishRedoGuard
+            ? { status: 'written', afterCommit: state.publishRedoGuard }
+            : toHandlerExecutionResult(true);
     },
-    describe: (alpha) => {
+    describe: (alpha, context) => {
         const state = getDuplicateClipToNextBarState(alpha);
+        state.publishRedoGuard = prepareCreatedClipRedoGuard({
+            recordedRedo: context?.recordedRedo,
+            clipId: state.targetClipId,
+            guard: state.generatedMidiStateGuard,
+        });
         return {
             label: 'Duplicate clip to next bar',
             inverseAction: {

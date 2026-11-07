@@ -46,3 +46,10 @@ that must fail the case.
    Check project/device lifetime and the actual accepted leaf after each await and synchronous subscriber, while
    ordinary edits and the accepted sample's own persistence round trip remain valid. Removing either post-await
    check must redden its corresponding case; a decode-only inverse-completion test cannot.
+6. **Analysis carries its accepted source through insertion (AudioAnalysis `5a17842492`).** A model result prepared
+   before a source, tempo, arrangement or root replacement cannot acquire fresh authority merely by starting a later
+   insertion. Capture the settled project revision before inference, carry that transient capture into the child batch,
+   and hold both model evaluation and the real snapshot queue independently. Cancellation and same-ID, same-content
+   root replacement refuse without output; ordinary save metadata remains admissible. Compare unchanged source PCM,
+   raw CRDT, owner projections and history. Dropping the carried revision or capturing it at insertion must fail the
+   stale-source case; a mocked revision predicate alone does not prove queued admission.
