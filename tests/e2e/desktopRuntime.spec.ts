@@ -1,5 +1,5 @@
 import { expect, test } from './e2eTest';
-import { launch_new_project, setupWorkspace } from './e2eUtils';
+import { launch_new_project_via_ui, setupWorkspace } from './e2eUtils';
 
 const ALLOWED_WARNING_FRAGMENTS = [
     'using deprecated parameters for `initSync()`',
@@ -162,7 +162,7 @@ test('launches a project through the window.sourdaw desktop-runtime contract', a
 
     await setupWorkspace(page);
     expect(await page.evaluate(() => 'sourdaw' in window)).toBe(true);
-    await launch_new_project(page);
+    await launch_new_project_via_ui(page);
     await expect(page.getByRole('group', { name: 'Playback controls' })).toBeVisible();
     expect(await page.evaluate(() => Reflect.get(window, '__SOURDAW_LAUNCH_NEW_PROJECT_CLICKS__')())).toBe(1);
 
