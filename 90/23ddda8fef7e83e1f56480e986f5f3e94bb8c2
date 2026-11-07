@@ -1,0 +1,25 @@
+src/modules/AiGeneration/presentations/views/__tests__/PatternBrowserSearch.integration.spec.tsx
+  s_eb3cd86b0cee6e::t_94d8e283ad2375 1-18,20-22,24,26-28
+src/modules/AudioRendering/presentations/views/__tests__/ExportDialogControls.integration.spec.tsx
+  s_eb3cd86b0cee6e::t_ed8084da4e070b 1-12,15-31,33,35-52,55-56,58-60,62-65,68-69,71-72,74-76,79-80,82-86,89-123,125-130,132-133,135-145,147-149
+  s_eb3cd86b0cee6e::t_14c4e64ebc3d5b 124
+  s_eb3cd86b0cee6e::t_72423e08c367d8 131,134
+src/modules/CommandInterface/presentations/views/__tests__/CommandPalette.spec.tsx
+  s_eb3cd86b0cee6e::t_202036bb1f604b 134-158
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9023ddda8fef7e83e1f56480e986f5f3e94bb8c2",
+  "prompts": {},
+  "sessions": {
+    "s_eb3cd86b0cee6e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34c-a4d8-7523-838e-1cd1a0a25d78",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
