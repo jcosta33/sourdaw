@@ -1,0 +1,294 @@
+.agents/skills/review-stances/closure-authority-proof.md
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 127-136
+src/modules/ElasticAudio/useCases/elasticAudio/detectTransients.ts
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 1
+.agents/skills/review-stances/replay-authority.md
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 100-118
+scripts/supersedePullRequest.ts
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 4,36,275,373,379,382,384-385,389-395,412,1027,1091-1103,1358,1362,1429,1444,1449,1456,1464,1482-1483,1488,1720-1721,1726
+scripts/__tests__/deliverPullRequest.spec.ts
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 6837-6841
+src/modules/AiRuntime/useCases/validateActionPayload.ts
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 1303-1323
+src/modules/AudioAnalysis/useCases/polyphonicAudioToMidi.ts
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 23-26,43,49,96,105-110,134-136,157-159,180-182,211-217
+scripts/__tests__/e2eServerIdentity.spec.ts
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 301-320
+src/modules/Command/useCases/resetActionReplayAuthority.ts
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 3-4,7-8
+.agents/skills/review-stances/async-file-imports.md
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 49-57
+src/modules/Command/useCases/readHandlerMintedApplicationIds.ts
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 82-94
+scripts/laneStackForkMarkers.ts
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 353-382
+src/modules/Command/useCases/__tests__/executableCommandRegistry.spec.ts
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 369-412,1938-1950
+  s_8dd2ba9e498da7::t_9edb19fd6441dd 368,1951
+src/modules/AudioAnalysis/useCases/__tests__/polyphonicAudioToMidi.spec.ts
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 1,7-12,51,69-71,130-183
+scripts/__tests__/fixtures/health-gate-workflows.snapshot.json
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 173-233,238-239,241,287,299-300,302,470-474,497-504,514-515
+src/modules/Arrangement/handlers/clip/handleAddClip.ts
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 1,4,12-13,19,58-69,72,74-78
+src/modules/ElasticAudio/workers/transientOnsetWorker.ts
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 1-2
+scripts/test-health-gate-scripts.sh
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 420,455-457,582-588,1352,1365-1381,1383-1386,1388,1391,1393-1405,1419-1420,1424,1426-1441
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/WaveformEditor.spec.tsx
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 1,965-971,996-1005
+src/modules/AudioAnalysis/useCases/__tests__/resolveMidiTrackId.spec.ts
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 1,3-4,7-8,10-12,15-24
+src/modules/Command/useCases/macro/__tests__/playback.spec.ts
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 141-170
+src/modules/Arrangement/useCases/prepareTransientQuantize.ts
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 1-620
+src/modules/Arrangement/handlers/clip/prepareCreatedClipRedoGuard.ts
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 1-41
+src/modules/Arrangement/handlers/clip/handleStripSilence.ts
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 10-11,69
+tests/e2e/audioToMidiCommitAcceptance.spec.ts
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 1-330
+tests/e2e/applicationModuleRecovery.spec.ts
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 134
+src/modules/CommandInterface/useCases/commands/__tests__/ElasticCommands.spec.ts
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 3,66-68,73
+scripts/healthGateWorkflowContract.ts
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 177,243
+src/modules/Arrangement/handlers/clip/handleQuantizeTransients.ts
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 1-141
+src/modules/AudioAnalysis/useCases/resolveMidiTrackId.ts
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 2,4-8,11,14-15
+src/modules/TimelineEditor/presentations/views/Inspector/ClipAudioAiSection.tsx
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 93-97,192-193
+release/open-source-inventory.json
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 1216
+scripts/__tests__/agentDeliveryScripts.spec.ts
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 1044-1051,1054-1061
+scripts/supersedePullRequestGh.ts
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 22,56,89-90
+scripts/workflowSecuritySurfaceContract.ts
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 65-66
+src/modules/Command/useCases/__tests__/commitRedoInverseCapture.spec.ts
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 121,155-157
+src/modules/Arrangement/handlers/clip/handleRemoveClip.ts
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 33,337
+src/modules/Command/useCases/executableAppActionEffects.ts
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 180-184
+src/modules/Command/useCases/getAppActionExecutionPolicy.ts
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 154
+src/modules/ElasticAudio/useCases/index.ts
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 17
+evidence/agent-campaign/manifest.json
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 10,13,190
+scripts/sharedE2eBuild.ts
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 1-108
+src/modules/Bacteria/useCases/__tests__/initBacteriaModAssignmentsPersistence.spec.ts
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 13-15,19
+src/modules/Arrangement/handlers/clip/__tests__/clipHandlers.spec.ts
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 77
+.agents/skills/review-stances/test-observation-scope.md
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 79-80
+playwright.config.ts
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 81-84,87-88
+src/modules/Arrangement/handlers/clip/handleDuplicateClipToNextBar.ts
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 1,3,10,18,81-92,95,97-101
+src/modules/Arrangement/handlers/clip/handleDiscardDuplicatedClip.ts
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 69-71
+src/modules/Arrangement/useCases/index.ts
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 331
+tests/e2e/browserAiAdmittedPresentation.spec.ts
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 9,41,76
+src/modules/Arrangement/useCases/readTransientQuantizeOutcome.ts
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 1-16
+scripts/__tests__/sharedE2eBuild.spec.ts
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 1-135
+src/modules/Command/useCases/commitRedoInverseCapture.ts
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 23,26,111-112,142,145
+src/modules/Command/useCases/executableAppActionRegistry.ts
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 808-865,3261,3380
+  s_8dd2ba9e498da7::t_07fb74f3cd8df4 807
+src/utils/handlerContract.ts
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 632-657,3362-3378
+src/modules/AudioAnalysis/useCases/__tests__/audioToMidiCommand.integration.spec.ts
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 1-483
+src/modules/Arrangement/handlers/clip/clipHandlers.ts
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 26,99
+src/modules/AudioAnalysis/useCases/insertPolyphonicMidiNotes.ts
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 3-4,7-8,16-17,25,29-35,37-53,58-81
+src/modules/Command/useCases/buildSemanticProjectDiff.ts
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 44,60,90
+src/modules/ElasticAudio/useCases/quantizeTransients.ts
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 1-12
+tests/e2e/smoke.spec.ts
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 195,200,601
+src/modules/AudioAnalysis/handlers/analysis/__tests__/handleAudioToMidi.spec.ts
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 5-6,9,11-26,33,35-37,40-43,50,54-59,62-64,66-68
+src/modules/ElasticAudio/useCases/__tests__/quantizeTransients.spec.ts
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 1-871
+scripts/__tests__/viteE2ePersistenceEntry.spec.ts
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 16,38-59,78-83
+src/modules/AiRuntime/validators/__tests__/refinementCommandObjects.spec.ts
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 1-114
+src/modules/Command/useCases/__tests__/agentCommandCoverage.spec.ts
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 190
+src/modules/AiRuntime/models/RuntimeAction.ts
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 314-323,403
+src/modules/Arrangement/handlers/clip/__tests__/stampCreatedClipStateGuard.spec.ts
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 5
+src/modules/ElasticAudio/workers/__tests__/transientOnsetWorker.spec.ts
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 3-4,7-8
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/ClipAudioAiSection.spec.tsx
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 1,6,238-244,248,250-261,264-275,277-280,282-295
+tests/e2e/launchFlows.spec.ts
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 5,119,131
+src/modules/Command/useCases/macro/playback.ts
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 326-333
+tests/e2e/directProjectSetupEntry.ts
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 1-6
+src/modules/Arrangement/handlers/clip/__tests__/createdClipGroupedReplay.integration.spec.ts
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 1-472
+.agents/skills/review-stances/test-timing-and-isolation.md
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 33-38
+src/modules/Command/useCases/executeAppAction.ts
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 34,170,202
+src/modules/Command/useCases/executeAppActionBatch.ts
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 33,789
+src/modules/Arrangement/useCases/device/sendManagement/__tests__/commitSendEdit.spec.ts
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 14-15,18
+src/modules/Arrangement/handlers/clip/__tests__/prepareCreatedClipRedoGuard.spec.ts
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 1-109
+tests/e2e/directProjectSetup.spec.ts
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 1-35
+.github/workflows/health-gates.yml
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 135-180,183-188,226,237,243-249,252
+src/modules/Arrangement/stores/__tests__/deviceWriteBoundaryClosure.spec.ts
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 641-646
+.github/workflows/heavy-gates.yml
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 42-44,62-67,78
+scripts/__tests__/prValidationScope.spec.ts
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 988-990
+src/modules/AiRuntime/useCases/agentReference/__tests__/refinementGrammar.spec.ts
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 1-203
+src/modules/AudioAnalysis/useCases/audioToMidi.ts
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 1,3-7,11-12,26,225-226,228-237,240-243,292-293,296-309,318,327,329-344
+src/modules/Command/useCases/findPendingRedoEntry.ts
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 6-7,12-16
+src/modules/Command/useCases/versionedCommandArgumentKeys.ts
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 6244-6323,6358,6363,6381,6386,6418,6423,6486,6495,6507,6519,6540,6552,6558,6564-6565,6590,6596-6597,6661,6667,6682,6684,6693,6695,6704,6752,6757,6776,6781,7135,7138-7139,7142,7144-7147,7151-7152,7154-7162,7164-7166
+src/modules/ElasticAudio/AGENTS.md
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 11,18,23-24
+tests/e2e/browserAiWebGpuAdmission.spec.ts
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 9,213,223
+scripts/stackedLanes.ts
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 11,189,193,198,215-226,230-250
+  s_8dd2ba9e498da7::t_883e19ffef6dbd 251
+src/modules/AiRuntime/useCases/__tests__/readRequestMetricNumbers.spec.ts
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 1-159
+src/modules/Command/useCases/bindCanonicalRedoAction.ts
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 1-25
+src/modules/Command/useCases/getVersionedCommandBatchEffects.ts
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 27
+src/modules/Arrangement/handlers/clip/handleRestoreStripSilenceState.ts
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 5-6,8
+.agents/skills/delivery-orchestration/references/closure-and-retirement.md
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 62-73
+src/modules/AudioAnalysis/useCases/__tests__/audioToMidi.spec.ts
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 3-5,10,57,59,69-87,116,120,123-133,135-145,149-156,177,180,194,204-227,229,263,272,285,297,314,316,318-319,326,330-333,336-339,342-348,350-353,356-358,389,392,411-412,420,430,444,450,461-462,465,485,500,519,529,571-573,575-577
+src/modules/Command/useCases/captureRecordedRedoContext.ts
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 6,15,18,23-25
+src/modules/Arrangement/handlers/clip/__tests__/clipSessionMirrorRoundTrip.spec.ts
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 1528-1580
+src/modules/TimelineEditor/presentations/views/ClipView/WaveformEditor.tsx
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 430-431,594,599-602
+src/modules/Arrangement/handlers/clip/__tests__/handleDiscardDuplicatedClip.spec.ts
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 115,129
+scripts/__tests__/supersedePullRequest.spec.ts
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 2,22,1415-1419,1446-1461,3781-4063,4368-4371,4374
+src/modules/AiRuntime/useCases/readRequestMetricNumbers.ts
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 21-27,34-35
+src/modules/Command/models/AgentCommandLedger.ts
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 178
+tests/e2e/devServerOnlySpecs.ts
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 16
+vite.config.ts
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 109-116,120-132,141,149-150
+  s_8dd2ba9e498da7::t_c4d9e52d1fea17 151
+src/modules/AiRuntime/useCases/__tests__/digestCommandBatchContentCompileMintedIds.spec.ts
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 393-468
+src/modules/Arrangement/handlers/clip/handleDuplicateClip.ts
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 1,3,11,19,115-126,129,131-135
+src/modules/AudioEngine/handlers/finalFeature/__tests__/transientHandlers.spec.ts
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 3
+src/modules/AiRuntime/useCases/__tests__/validateActionPayload.spec.ts
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 869-894
+tests/e2e/e2eUtils.ts
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 6,133-136,139,158-176,178-185
+src/modules/Arrangement/presentations/views/ClipContextMenu.tsx
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 12-16,166-190
+src/modules/ElasticAudio/presentations/views/__tests__/ElasticEditorPanel.spec.tsx
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 224,482-483,488-499
+src/modules/Arrangement/handlers/clip/handleDuplicateClipAt.ts
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 1,12,20,118,120-127,133,135-139
+src/modules/AudioAnalysis/handlers/analysis/handleAudioToMidi.ts
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 14-17,22,24,27-28
+src/modules/Arrangement/presentations/views/__tests__/ClipContextMenu.spec.tsx
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 7,158,437-438,444-448,452-504
+  s_8dd2ba9e498da7::t_33b3318308b436 505
+src/modules/Arrangement/handlers/clip/captureClipReplayPublication.ts
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 1-27
+tests/e2e/directProjectSetupContract.ts
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 1-8
+src/utils/__tests__/transientOnsetDetection.spec.ts
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 1-45
+src/modules/Command/useCases/recordedRedoBindings.ts
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 1-15
+src/utils/transientOnsetDetection.ts
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 1-160
+src/modules/ElasticAudio/presentations/views/ElasticEditorPanel.tsx
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 44,111-112,139,151,185
+.agents/skills/review-stances/command-entry-and-state-oracles.md
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 67-75
+src/app/__tests__/getProductionCommandHandlerMaps.spec.ts
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 91,93
+scripts/__tests__/e2eLaunchOverlayBound.spec.ts
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 352-355,371,373-380,391
+src/modules/Arrangement/handlers/clip/validateClipReplacementSessionEntries.ts
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 1-146
+src/modules/Arrangement/presentations/views/__tests__/TimelineMinimap.spec.tsx
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 303-358
+src/modules/AudioAnalysis/useCases/__tests__/insertPolyphonicMidiNotes.spec.ts
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 1-3,10,12-16,18,27-46,48-70,72-82,84-86,89-91,94-99,101-111
+src/modules/Command/useCases/getInternalUndoSessionReplayContracts.ts
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 16,77-83,91
+src/modules/Command/useCases/__tests__/bindCanonicalRedoAction.spec.ts
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 1-136
+src/modules/CommandInterface/useCases/commands/ElasticCommands.ts
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 1,35,40-41
+scripts/__tests__/healthGatesWorkflow.spec.ts
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 83-84,199,334,344,875-883,2083-2089,2113,2116-2117,2119,3609-3702,3764-3788,4510,5142,5155,5157,5162-5165,5167,5177,5182,5187-5190
+src/modules/Arrangement/presentations/hooks/__tests__/useTimelineInteractions.selectionDrag.spec.tsx
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 146
+src/modules/Arrangement/useCases/clipEditing/captureLiveTempoSourceClock.ts
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 1-11
+tests/e2e/desktopRuntime.spec.ts
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 2,62-72,159,165,167
+src/modules/Arrangement/presentations/views/TimelineMinimap.tsx
+  s_8dd2ba9e498da7::t_cc0046eabb3ab3 357,360,365,369,372,375,378,380-381,383-390,392
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ff0c5b9e5d203c86e7614f3a8cd7b616a4c4cf6f",
+  "prompts": {},
+  "sessions": {
+    "s_8dd2ba9e498da7": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34a-1f45-7430-80af-58acd6c4b831",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
