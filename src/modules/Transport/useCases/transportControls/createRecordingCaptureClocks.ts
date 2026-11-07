@@ -151,7 +151,7 @@ class RecordingCaptureClocks {
         outBeat: number,
         ownedEnding: NonNullable<CaptureEnding>,
         carrier: ReturnType<RecordingCaptureClocks['readAutomaticCarrier']>
-    ): CaptureEnding | 'refused' {
+    ): CaptureEnding | 'refused' | null {
         if (!clock.nativeOwned) {
             return ownedEnding;
         }
