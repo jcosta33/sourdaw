@@ -1,0 +1,57 @@
+src/modules/Arrangement/handlers/recording/__tests__/recordingSessionMirrorRoundTrip.integration.spec.ts
+  s_8dd2ba9e498da7::t_bc5db361368ebc 1,39,78,214,216-238,416-418
+  s_8dd2ba9e498da7::t_3942dba1ade231 47
+  s_8dd2ba9e498da7::t_a760560e3c53b0 8,14-24,26-27,66,72,74,79-82,84-204,206-211,213,244-339,344-348,362-373,376-383,385-404,408,424,428,430-431,437,441-442,451,453,459
+  s_8dd2ba9e498da7::t_5203b3883435e1 2-7,9-13,25,28-38,40-46,48-65,67-71,73,75-77,83,205,212,215,239-243,340-343,349-361,374-375,384,405-407,409-415,419-423,425-427,429,432-436,438-440,443-450,452,454-458,460
+src/modules/Arrangement/handlers/isRetiredTakeLanes.ts
+  s_8dd2ba9e498da7::t_3942dba1ade231 5
+  s_8dd2ba9e498da7::t_cd33f48a85915c 1-4,6-62
+.agents/skills/review-stances/input-monitoring-ownership.md
+  s_8dd2ba9e498da7::t_85ece2b532b098 165-166
+  s_8dd2ba9e498da7::t_9353961e15a8a5 162-164
+  s_8dd2ba9e498da7::t_f9461780177540 167-169
+src/modules/Arrangement/handlers/recording/recordingSessionEntry.ts
+  s_8dd2ba9e498da7::t_bc5db361368ebc 18,26,34,50,58,62-102,104
+  s_8dd2ba9e498da7::t_6383b0fc9137ad 15-17
+  s_8dd2ba9e498da7::t_229ad1015ab4c0 19-21,23-25
+  s_8dd2ba9e498da7::t_3542e398f919ac 27-29,31-33
+  s_8dd2ba9e498da7::t_d4bbd550d8c4ea 35-37,47-49
+  s_8dd2ba9e498da7::t_946c17db4c3e75 51-53,55-57
+  s_8dd2ba9e498da7::t_58f8200f7cb6d4 59-61
+  s_8dd2ba9e498da7::t_712d79770be0a9 103
+  s_8dd2ba9e498da7::t_c993f738ac5e32 105
+.agents/skills/review-stances/audio-timing-format-laws.md
+  s_8dd2ba9e498da7::t_5a3763b5e06944 19-22,89-97
+.agents/skills/review-stances/replay-authority.md
+  s_8dd2ba9e498da7::t_9f9042e6ad82c1 119-127
+.agents/skills/review-stances/session-lifecycle.md
+  s_8dd2ba9e498da7::t_603c8956f992b2 160-187
+src/modules/Arrangement/handlers/clip/validateClipEditSessionEntries.ts
+  s_8dd2ba9e498da7::t_0c18ce3fa690ae 19
+src/modules/Arrangement/handlers/recording/handleCommitRecording.ts
+  s_8dd2ba9e498da7::t_0d74fd03ed75c8 12-13,81
+src/modules/Arrangement/handlers/recording/handleRestoreRecording.ts
+  s_8dd2ba9e498da7::t_751686fdc26684 9,20
+src/modules/Command/useCases/getInternalUndoSessionReplayContracts.ts
+  s_8dd2ba9e498da7::t_636ec338623410 9-10,41,66-74
+src/modules/Transport/useCases/playheadScheduler/__tests__/punchLoopCapturePlacement.integration.spec.ts
+  s_8dd2ba9e498da7::t_c97c1db132347d 558-559,765,772,868,878,4565
+tests/e2e/punchLoopTakeAcceptance.spec.ts
+  s_8dd2ba9e498da7::t_64727d4e8a88f4 1919-1924
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2f2d65bf57053cac732329329a0b02aafb927024",
+  "prompts": {},
+  "sessions": {
+    "s_8dd2ba9e498da7": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34a-1f45-7430-80af-58acd6c4b831",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
