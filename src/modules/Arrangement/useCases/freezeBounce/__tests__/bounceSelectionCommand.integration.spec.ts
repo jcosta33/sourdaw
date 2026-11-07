@@ -494,21 +494,31 @@ describe('selection render admission through typed commands', () => {
         expect(undoStore.value?.past).toHaveLength(0);
     });
 
-    it.each([false, true])(
-        'reverses and replays a lawful complete period with canonical authority=%s',
-        async (canonical) => {
+    it.each([
+        { canonical: false, alias: undefined },
+        { canonical: false, alias: 0 },
+        { canonical: false, alias: 1 },
+        { canonical: true, alias: undefined },
+        { canonical: true, alias: 0 },
+        { canonical: true, alias: 1 },
+    ])(
+        'reverses and replays a lawful complete period with canonical=$canonical alias=$alias',
+        async ({ canonical, alias }) => {
             const state = trackStore.value!;
             const clip = ClipDummy.create({
                 id: 'source',
                 startBeat: 0,
                 endBeat: 4,
-                audioOffsetBeats: 1,
+                audioOffsetBeats: alias,
                 loopEnabled: true,
                 loopLength: 4,
                 loopOriginBeat: 0,
                 fadeInBeats: 0.25,
                 fadeOutBeats: 0.5,
             });
+            if (alias === undefined) {
+                delete clip.audioOffsetBeats;
+            }
             if (canonical) {
                 clip.audioOffsetSeconds = 1;
                 clip.audioUnwrappedOffsetSeconds = 1;
@@ -544,8 +554,11 @@ describe('selection render admission through typed commands', () => {
                 });
             }
             const reversed = getCachedAudioBuffer({ bufferId: 'lawful-reversed' })!.getChannelData(0);
+            const sourceEntry = canonical ? 1 : (alias ?? 0);
+            const mirroredEntryFrame = (8 - sourceEntry - 4) * 48000;
+            const originalLastFrame = (sourceEntry + 4) * 48000 - 1;
             for (let frame = 0; frame < 192000; frame++) {
-                if (reversed[144000 + frame] !== originalPcm[239999 - frame]) {
+                if (reversed[mirroredEntryFrame + frame] !== originalPcm[originalLastFrame - frame]) {
                     throw new Error(`Reverse PCM differs at frame ${frame}`);
                 }
             }

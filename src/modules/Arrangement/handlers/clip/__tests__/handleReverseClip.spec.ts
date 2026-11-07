@@ -128,7 +128,7 @@ describe('handleReverseClip', () => {
                 name: 'Verse',
                 fadeInBeats: 0.25,
                 fadeOutBeats: 1.5,
-                audioOffsetBeats: 1,
+                audioOffsetBeatsCapture: { present: true, value: 1 },
                 blobs: [{ id: 'b1', pitchCurveCents: [1, 2] }],
                 contour: { points: [{ time: 0 }], sample_rate: 48000, hop_size: 256 },
             },
@@ -142,12 +142,12 @@ describe('handleReverseClip', () => {
                 name: 'Verse (reversed)',
                 fadeInBeats: 1.5,
                 fadeOutBeats: 0.25,
-                audioOffsetBeats: 2,
+                audioOffsetBeatsCapture: { present: true, value: 2 },
             },
         });
     });
 
-    it('restores audioOffsetBeats 0 when the clip never stored the field', () => {
+    it('restores the absent audioOffsetBeats key when the modern capture recorded absence', () => {
         mocks.getTrackStoreState.mockReturnValue({
             tracks: [
                 {
@@ -178,7 +178,7 @@ describe('handleReverseClip', () => {
         }
         expect(inverse).toMatchObject({
             type: 'restoreReversedClip',
-            payload: { audioOffsetBeats: 0 },
+            payload: { audioOffsetBeatsCapture: { present: false } },
         });
 
         mocks.getTrackStoreState.mockReturnValue({
@@ -221,7 +221,7 @@ describe('handleReverseClip', () => {
             fadeInBeats: 1.5,
             fadeOutBeats: 0.25,
         });
-        expect(restored).toMatchObject({ audioOffsetBeats: 0 });
+        expect(restored).not.toHaveProperty('audioOffsetBeats');
     });
 
     it('restores the original audioOffsetBeats when undo applies the inverse restore', () => {
@@ -531,7 +531,7 @@ describe('handleReverseClip', () => {
 
         expect(description.redoAction).toMatchObject({
             type: 'restoreReversedClip',
-            payload: { audioOffsetBeats: 4 },
+            payload: { audioOffsetBeatsCapture: { present: true, value: 4 } },
         });
     });
 

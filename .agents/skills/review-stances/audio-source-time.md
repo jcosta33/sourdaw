@@ -142,3 +142,11 @@ red and the mutation that must fail it. Report the concrete break or none.
     The standing source probe does not establish audible DSP, browser acceptance or generic callback-history
     concurrency safety. Published project/source and decoded-material admission does not certify transient
     per-device preview/fallback state; that separate current-renderer obligation is #6305.
+14. **Reverse captures optional beat-alias presence without rewriting older replay (#3288).** #3288's
+    inverse producer used `audioOffsetBeats ?? 0`; its public approval explicitly accepted unset→0, so its
+    probe did not require exact raw optional-field restoration. A real canonical WAV import can carry source
+    seconds with no beat alias. Reverse it, then use actual Command Undo/Redo twice: absent must return absent,
+    explicit0 must remain present0, and nonzero must restore exactly alongside source, fades and analysis.
+    Modern inverses need an explicit present/value capture; an older restore payload that omits the alias
+    still means leave live, not delete. Reject malformed capture unions at serialized argument admission.
+    A default-zero fixture or equality that drops absent keys cannot prove this contract.
