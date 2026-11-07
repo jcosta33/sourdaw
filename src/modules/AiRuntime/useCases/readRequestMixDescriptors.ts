@@ -21,9 +21,9 @@ function maskConstraintClauses(text: string, prompt: string, reading: Perceptual
     return masked.join('');
 }
 
-/** A word that negates what follows it in its clause: "don't", "not", "without", "avoid", "never", "no more". */
+/** A negation or contrastive exclusion owns what follows it in its clause. */
 const NEGATION_PATTERN =
-    /(?<![\p{L}\p{N}])(?:\p{L}+n['’]t|cannot|not|never|without|avoid(?:s|ing)?|no(?:[\s-]+more)?|nor)(?![\p{L}\p{N}])/giu;
+    /(?<![\p{L}\p{N}])(?:\p{L}+n['’]t|cannot|not|never|without|avoid(?:s|ing)?|no(?:[\s-]+more)?|nor|rather[\s-]+than|instead[\s-]+of|as[\s-]+opposed[\s-]+to)(?![\p{L}\p{N}])/giu;
 
 /** A word that keeps what follows it in its clause as it is: "keep the drums punchy", "leave it warm". */
 const KEEP_PATTERN =
@@ -34,10 +34,11 @@ const INSTRUCTION_VERBS = String.raw`(?:make|add|give|get|turn|bring|push|boost|
 /**
  * Where a negated or kept clause ends: a clause mark, a conjunction that turns to another clause, or
  * an `and` that opens a new instruction. A bare `and` joins another conjunct to the same clause, so
- * "keep the drums punchy and the vocal warm" keeps both.
+ * "keep the drums punchy and the vocal warm" keeps both. "Instead of" opens an exclusion within
+ * the same clause; only a standalone "instead" turns to another clause.
  */
 const CLAUSE_END_PATTERN = new RegExp(
-    String.raw`[,.;:!?]|(?<![\p{L}\p{N}])(?:but|yet|then|though|although|however|instead|while|and[\s-]+${INSTRUCTION_VERBS})(?![\p{L}\p{N}])`,
+    String.raw`[,.;:!?]|(?<![\p{L}\p{N}])(?:but|yet|then|though|although|however|instead(?![\s-]+of(?![\p{L}\p{N}]))|while|and[\s-]+${INSTRUCTION_VERBS})(?![\p{L}\p{N}])`,
     'giu'
 );
 
@@ -138,9 +139,9 @@ function resolveTermDescriptor(catalog: MixRecipeCatalog, matched: string): MixR
  * The characters a whole-project request asks for, read from the request's own words in the recipe
  * catalog's descriptor vocabulary, first named first. Track names, quoted text and the request's
  * perceptual constraint clauses are blanked first: "Warm Pad" names a track, and "keep the vocal
- * intimate" keeps a quality rather than asking for one. So is every clause a negation or a keep
- * heads, through each conjunct it joins, and a term "less" reduces where the catalog has no term for
- * that phrase ("less punchy"; "less muddy" is the catalog's own): a quality the request withholds,
+ * intimate" keeps a quality rather than asking for one. So is every clause a negation, keep or
+ * contrastive exclusion heads, through each conjunct it joins, and a term "less" reduces where the
+ * catalog has no term for that phrase ("less punchy"; "less muddy" is the catalog's own): a quality the request withholds,
  * reduces or keeps is left out, never planned as an increase nor read as another character.
  */
 export function readRequestMixDescriptors(input: {

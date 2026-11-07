@@ -68,6 +68,53 @@ describe('reading the characters a whole-project request asks for', () => {
         expect(readDescriptors(prompt)).toEqual(expected);
     });
 
+    describe.each(['rather than', 'instead of', 'as opposed to'])('%s exclusions', (opening) => {
+        it.each([
+            [`make this mix warmer ${opening} wider`, ['warm']],
+            [`${opening} making it wider, make this mix warmer`, ['warm']],
+            [`make this mix warmer ${opening} wider and brighter`, ['warm']],
+            [`make this mix warmer ${opening} wider and make it brighter`, ['warm', 'bright']],
+            [`make this mix warmer ${opening} wider; make it punchier`, ['warm', 'punchy']],
+            [`make this mix warmer ${opening} wider but punchier`, ['warm', 'punchy']],
+            [`make this mix warmer ${opening}`, ['warm']],
+            [`${opening}. Make it wider`, ['wide']],
+            [`make this mix warmer. ${opening} wider`, ['warm']],
+            [`do not make this mix warmer ${opening} wider`, []],
+            [`keep this mix warmer ${opening} wider`, []],
+            [`make this mix less warm ${opening} wider`, []],
+            [`make this mix warmer ${opening.toUpperCase().replaceAll(' ', '  ')} wider`, ['warm']],
+        ])('preserves the polarity and clause boundaries of "%s"', (prompt, expected) => {
+            expect(readDescriptors(prompt)).toEqual(expected);
+        });
+
+        it.each(['only', 'just', 'merely', 'simply', 'solely', 'exclusively'])(
+            'keeps a complete not %s correlative additive beside an exclusion',
+            (focus) => {
+                expect(readDescriptors(`make this mix not ${focus} warmer but also punchier ${opening} wider`)).toEqual(
+                    ['warm', 'punchy']
+                );
+                expect(readDescriptors(`make this mix not ${focus} warmer ${opening} wider but also punchier`)).toEqual(
+                    ['warm', 'punchy']
+                );
+            }
+        );
+
+        it('does not read an exclusion inside a track name or quotation as grammar', () => {
+            trackStore.set({
+                tracks: [createTrack({ id: 'named', name: `Warmer ${opening} wider` })],
+                selectedTrackId: null,
+                ghostClips: [],
+            });
+            expect(readDescriptors(`make Warmer ${opening} wider punchier`)).toEqual(['punchy']);
+            expect(readDescriptors(`make "warmer ${opening} wider" punchier`)).toEqual(['punchy']);
+            expect(readDescriptors(`make this mix warmer ${opening} "wider and make it brighter"`)).toEqual(['warm']);
+        });
+    });
+
+    it.each(['over', 'versus'])("does not treat the ambiguous comparison '%s' as an exclusion", (comparison) => {
+        expect(readDescriptors(`make this mix warmer ${comparison} wider`)).toEqual(['warm', 'wide']);
+    });
+
     describe.each(['not only', 'not just', 'not merely', 'not simply', 'not solely', 'not exclusively'])(
         '%s correlatives',
         (opening) => {

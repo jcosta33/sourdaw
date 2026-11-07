@@ -693,6 +693,37 @@ describe('a whole-project vibe run of measured recipe batches (AC-003 of #4372)'
         expect(content).not.toContain('bright');
     });
 
+    it('proposes warmth without widening for a contrastive request, with each batch still awaiting approval', async () => {
+        scriptPlanningTurns(BRIEF_ROUTE);
+
+        await sendChatMessage('make this mix warmer rather than wider');
+
+        const brief = requireOnlyProposedCard();
+        expect(cardContent(brief)).toContain(
+            [
+                'After the brief, 3 batches follow, each measured, previewed and approved on its own:',
+                '- Batch 2 of 4: warm drums — Drums',
+                '- Batch 3 of 4: warm vocal — Vocal',
+                '- Batch 4 of 4: warm bass — Bass',
+            ].join('\n')
+        );
+        await expect(confirmPendingChatActions({ confirmationId: brief.id })).resolves.toEqual({
+            status: 'executed',
+        });
+
+        const drums = requireOnlyProposedCard();
+        expect(drums.approvalSnapshot.batchPosition).toEqual({ index: 2, total: 4 });
+        expect(trackDeviceTypes(DRUMS_ID)).toEqual([]);
+        await expect(confirmPendingChatActions({ confirmationId: drums.id })).resolves.toEqual({
+            status: 'executed',
+        });
+        expect(trackDeviceTypes(DRUMS_ID)).toEqual(['builtin-eq']);
+        const vocal = requireOnlyProposedCard();
+        expect(vocal.approvalSnapshot.batchPosition).toEqual({ index: 3, total: 4 });
+        expect(trackDeviceTypes(VOCAL_ID)).toEqual([]);
+        expect(agentRunLifecycle.get(brief.runId)?.phase).toBe('waiting-for-approval');
+    });
+
     it('schedules nothing when the render budget cannot preview every batch, and says why', async () => {
         agentResourceLimitsStore.set({ ...readAgentResourceLimits(), maxRenderJobs: 4 });
         scriptPlanningTurns(BRIEF_ROUTE);
