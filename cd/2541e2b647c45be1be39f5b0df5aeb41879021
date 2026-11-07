@@ -1,0 +1,91 @@
+src/modules/AudioRendering/presentations/views/ExportDialog.tsx
+  s_8dd2ba9e498da7::t_15b28a5ab4c68b 507,620,623,710,1015
+src/modules/AudioRendering/presentations/views/__tests__/ExportDialog.spec.tsx
+  s_977061c47f01dd::t_905e37e0eb9fc8 839-900
+tests/e2e/bakeryControlGeometry.spec.ts
+  s_8dd2ba9e498da7::t_d316e670532a25 7,19,42
+tests/e2e/browserDisplayScale.spec.ts
+  s_8dd2ba9e498da7::t_0b42db04924efe 381
+tests/e2e/crossFeatureWorkflowTestId.spec.ts
+  s_8dd2ba9e498da7::t_f1d0e040d259fc 120
+tests/e2e/deepInteractions.spec.ts
+  s_68423a2adea8d2::t_fc0397d910916e 39,41
+tests/e2e/export.spec.ts
+  s_8dd2ba9e498da7::t_1b79f09897f9df 15,17,32-33
+tests/e2e/exportAudioEvidence.spec.ts
+  s_68423a2adea8d2::t_8e97b462bb3214 87,117-118,120-121,131
+tests/e2e/exportAudioEvidenceFullLength.spec.ts
+  s_8dd2ba9e498da7::t_ab007a82ee2129 45,66-67,72
+tests/e2e/exportFidelityTestId.spec.ts
+  s_68423a2adea8d2::t_492cd6f41cb79c 7,23,51,54,59
+tests/e2e/exportFormatsTestId.spec.ts
+  s_8dd2ba9e498da7::t_87e47a473caefe 7
+tests/e2e/exportOggCodecs.spec.ts
+  s_68423a2adea8d2::t_5640bf9ae513a1 105,174-175,276-277,303-304,595,600-601,608-609,612
+tests/e2e/exportRangeSelection.spec.ts
+  s_8dd2ba9e498da7::t_67291dc94defc9 42
+tests/e2e/exportRangeTailTestId.spec.ts
+  s_8dd2ba9e498da7::t_f9f70fd6662b16 7
+tests/e2e/exportStemsModeTestId.spec.ts
+  s_8dd2ba9e498da7::t_7e6e13b87eb903 12,104,110-111,114,156-157,161
+tests/e2e/exportTailInputTestId.spec.ts
+  s_8dd2ba9e498da7::t_67977763d3ea40 15
+tests/e2e/exportTestId.spec.ts
+  s_68423a2adea8d2::t_aa8d692d09bcf9 8,49-50,53,58
+tests/e2e/finalE2EGaps.spec.ts
+  s_68423a2adea8d2::t_e35f0e660a709e 13,24,26
+tests/e2e/fullWorkflowTestId.spec.ts
+  s_8dd2ba9e498da7::t_888404bc553bde 79,92
+tests/e2e/launchFlows.spec.ts
+  s_1052c2a2231ded::t_0c8c1aa1ce88fa 69-106
+tests/e2e/projectMenuTestId.spec.ts
+  s_68423a2adea8d2::t_3b72bbf09858ee 56,60
+tests/e2e/punchLoopTakeAcceptance.spec.ts
+  s_8dd2ba9e498da7::t_41b21957c2c962 399,403-404,407,412
+tests/e2e/tempoSourceTimeAcceptance.spec.ts
+  s_8dd2ba9e498da7::t_5e6496e8bed8d7 566,574-575,578,583
+tests/production-e2e/productionFaustExport.e2e.spec.ts
+  s_68423a2adea8d2::t_230a176f124ca1 132,179,183,191-192,374,378,387-388,407-408
+tests/production-e2e/productionFaustProbe.ts
+  s_68423a2adea8d2::t_65dc38ad9e92a9 232
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "cd2541e2b647c45be1be39f5b0df5aeb41879021",
+  "prompts": {},
+  "sessions": {
+    "s_1052c2a2231ded": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b349-24b6-7622-8534-09f171c780d5",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_68423a2adea8d2": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34b-f305-7c03-beb2-57afa678cda5",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_8dd2ba9e498da7": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34a-1f45-7430-80af-58acd6c4b831",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_977061c47f01dd": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34d-123d-7452-a6e7-60608388b6d7",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
