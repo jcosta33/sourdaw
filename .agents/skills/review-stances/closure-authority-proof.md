@@ -130,5 +130,7 @@ unestablished unless a probe says otherwise.
     covered malformed evidence and changed authority but missed a single valid fork with its descriptor absent.
     Drive the native reader over real Git config and history. A contained final parent can close while the fork
     survives unchanged; a shared fork without final-parent containment must refuse. Change a valid fork during
-    the last core read or after a marker write; verify no close on OPEN, verified compensation, and retained
-    evidence after an ambiguous close. Exercise a completed nested parent and CLOSED replay as well.
+    the last core read or after a marker write. Also install a descriptor naming a different parent while the final
+    OPEN witness returns; checking only the orphan collapses registered evidence into absence and permits a close.
+    Require no close on OPEN, verified compensation, and retained evidence after an ambiguous close. Exercise
+    changes to registered fields, disappearance, a completed nested parent and CLOSED replay as well.

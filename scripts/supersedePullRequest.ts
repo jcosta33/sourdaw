@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { readFileSync, realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { isDeepStrictEqual } from 'node:util';
 
 import { canonicalJson, parseMarkerPayload } from './canonicalRecord.ts';
 import { assertPublicationSafeEvidence } from './evidenceSafety.ts';
@@ -271,7 +272,7 @@ type StackedParentProof = {
     childBaseRef: SupersededPullRequest['baseRef'];
     child: Omit<PullRequestProof, 'state' | 'closedAt'>;
     provenance: ParentProvenance;
-    orphanForkHead?: string;
+    localEvidence: SupersessionLaneStack | undefined;
     historicalBase: string | null;
     completion?: { marker: ProofMarker; binding: CompletedParentBinding; proof: StackedParentProof };
 };
@@ -369,7 +370,7 @@ function historicalParentProvenance(
     parent: SupersededPullRequest,
     port: SupersedePullRequestPort,
     replay?: CompletedParentBinding
-): Pick<StackedParentProof, 'provenance' | 'orphanForkHead'> {
+): Pick<StackedParentProof, 'provenance' | 'localEvidence'> {
     assertFullCommit(parent.head, 'old parent head');
     assertFullCommit(child.head, 'old child head');
     if (replay !== undefined && replay.child.sourceRepository !== child.headRepository) {
@@ -378,7 +379,7 @@ function historicalParentProvenance(
     let evidence: SupersessionLaneStack | undefined;
     // A protected-primary branch ledger only attests children published from that repository.
     if (child.headRepository === REQUIRED_REPOSITORY) {
-        evidence = port.readSupersessionLaneStack?.(child.headRefName);
+        evidence = structuredClone(port.readSupersessionLaneStack?.(child.headRefName));
     }
     const stack = evidence?.kind === 'registered' ? evidence.stack : undefined;
     const orphanForkHead = evidence?.kind === 'orphan-fork' ? evidence.forkHead : undefined;
@@ -408,7 +409,7 @@ function historicalParentProvenance(
         requireAncestor(port, cachedBase, parent.head, 'cached child base to final parent');
         requireAncestor(port, cachedBase, child.head, 'cached child base to old child');
     }
-    return { provenance, orphanForkHead };
+    return { provenance, localEvidence: evidence };
 }
 
 function replacementBinding(value: PullRequestProof) {
@@ -1087,16 +1088,15 @@ function assertStackedParentProofUnchanged(
     }
 }
 
-// Local fork evidence can change while GitHub answers the final authority reads.
-function assertOrphanForksCurrent(proof: StackedParentProof | undefined, port: SupersedePullRequestPort): void {
+// Registration, including its absence, can change while GitHub answers the final authority reads.
+function assertLocalStackEvidenceCurrent(proof: StackedParentProof | undefined, port: SupersedePullRequestPort): void {
     for (let level = proof; level !== undefined; level = level.completion?.proof) {
         if (level.child.headRepository !== REQUIRED_REPOSITORY) {
             continue;
         }
         const evidence = port.readSupersessionLaneStack?.(level.child.headRefName);
-        const currentFork = evidence?.kind === 'orphan-fork' ? evidence.forkHead : undefined;
-        if (currentFork !== level.orphanForkHead) {
-            fail(`PR #${level.child.number} orphan fork changed during supersession`);
+        if (!isDeepStrictEqual(evidence, level.localEvidence)) {
+            fail(`PR #${level.child.number} local stack evidence changed during supersession`);
         }
     }
 }
@@ -1355,11 +1355,11 @@ export function supersedePullRequest(
         }
         assertSupersessionAuthoritiesCurrent(replacement, stackedParentProof, port);
         port.assertCurrentPullRequest(oldNumber, before);
-        assertOrphanForksCurrent(stackedParentProof, port);
+        assertLocalStackEvidenceCurrent(stackedParentProof, port);
         return logSupersessionSuccess(oldNumber, replacementNumber, port);
     }
     closePullRequestWithMarkers(oldNumber, expectedHead, before, markers, port, {
-        assertLocalProof: () => assertOrphanForksCurrent(stackedParentProof, port),
+        assertLocalProof: () => assertLocalStackEvidenceCurrent(stackedParentProof, port),
         beforeMarkers: () => {
             if (stackedParentProof !== undefined) {
                 assertStackedParentProofUnchanged(stackedParentProof, before, port);
