@@ -8,7 +8,7 @@ test.describe('Fermenter FX Comp knobs', () => {
         await launch_new_project(page);
         await open_browser_instrument({ page, instrument: 'Fermenter' });
         const panel = page.locator('.fermenter-faceplate');
-        await panel.getByRole('button', { name: 'Effects', exact: true }).click();
+        await panel.getByRole('tab', { name: 'Effects', exact: true }).click();
         await panel.getByRole('button', { name: 'Comp', exact: true }).dispatchEvent('click');
     });
 

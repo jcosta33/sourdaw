@@ -7,7 +7,7 @@ test.describe('Fermenter envelope Attack and Sustain', () => {
         await setupWorkspace(page);
         await launch_new_project(page);
         await open_browser_instrument({ page, instrument: 'Fermenter' });
-        await page.locator('.fermenter-faceplate').getByRole('button', { name: 'Envelopes', exact: true }).click();
+        await page.locator('.fermenter-faceplate').getByRole('tab', { name: 'Envelopes', exact: true }).click();
     });
 
     test('ArrowUp steps amp Attack 0.01 to 0.016 and Sustain 0.7 to 0.71', async ({ page }) => {

@@ -8,7 +8,7 @@ test.describe('Fermenter FX Reverb knobs', () => {
         await launch_new_project(page);
         await open_browser_instrument({ page, instrument: 'Fermenter' });
         const panel = page.locator('.fermenter-faceplate');
-        await panel.getByRole('button', { name: 'Effects', exact: true }).dispatchEvent('click');
+        await panel.getByRole('tab', { name: 'Effects', exact: true }).dispatchEvent('click');
         await panel.getByRole('button', { name: 'Reverb', exact: true }).dispatchEvent('click');
     });
 

@@ -7,7 +7,7 @@ test.describe('Fermenter Filter Reso Drive and Key', () => {
         await setupWorkspace(page);
         await launch_new_project(page);
         await open_browser_instrument({ page, instrument: 'Fermenter' });
-        await page.locator('.fermenter-faceplate').getByRole('button', { name: 'Filter', exact: true }).first().click();
+        await page.locator('.fermenter-faceplate').getByRole('tab', { name: 'Filter', exact: true }).first().click();
     });
 
     test('ArrowUp steps Reso 1 to 1.1, Drive 0 to 0.1, and Key 0 to 0.01', async ({ page }) => {

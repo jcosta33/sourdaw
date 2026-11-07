@@ -9,7 +9,7 @@ test.describe('Fermenter FX Dist knobs', () => {
         await open_browser_instrument({ page, instrument: 'Fermenter' });
         await page
             .locator('.fermenter-faceplate')
-            .getByRole('button', { name: 'Effects', exact: true })
+            .getByRole('tab', { name: 'Effects', exact: true })
             .dispatchEvent('click');
     });
 

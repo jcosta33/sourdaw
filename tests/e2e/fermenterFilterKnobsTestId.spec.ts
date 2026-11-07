@@ -7,7 +7,7 @@ test.describe('Fermenter Filter Cutoff and Env', () => {
         await setupWorkspace(page);
         await launch_new_project(page);
         await open_browser_instrument({ page, instrument: 'Fermenter' });
-        await page.locator('.fermenter-faceplate').getByRole('button', { name: 'Filter', exact: true }).first().click();
+        await page.locator('.fermenter-faceplate').getByRole('tab', { name: 'Filter', exact: true }).first().click();
     });
 
     test('ArrowUp steps Cutoff 5000 to 5010 and Env 0.5 to 0.51', async ({ page }) => {

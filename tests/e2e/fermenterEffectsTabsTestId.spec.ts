@@ -11,7 +11,7 @@ test.describe('Fermenter Effects sub-tabs', () => {
 
     test('Comp swaps Dist Drive for Ratio and Dist restores Drive', async ({ page }) => {
         const panel = page.locator('.fermenter-faceplate');
-        await panel.getByRole('button', { name: 'Effects', exact: true }).click();
+        await panel.getByRole('tab', { name: 'Effects', exact: true }).click();
 
         const distChip = panel.getByRole('button', { name: 'Dist', exact: true });
         const compChip = panel.getByRole('button', { name: 'Comp', exact: true });

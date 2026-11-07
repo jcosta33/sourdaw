@@ -7,7 +7,7 @@ test.describe('Fermenter LFO routing', () => {
         await setupWorkspace(page);
         await launch_new_project(page);
         await open_browser_instrument({ page, instrument: 'Fermenter' });
-        await page.locator('.fermenter-faceplate').getByRole('button', { name: 'Envelopes', exact: true }).click();
+        await page.locator('.fermenter-faceplate').getByRole('tab', { name: 'Envelopes', exact: true }).click();
     });
 
     test('ArrowUp steps LFO Pitch and Filter amounts 0 to 0.01', async ({ page }) => {

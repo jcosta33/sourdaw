@@ -168,6 +168,16 @@ describe('FermenterPanel', () => {
             expect(screen.getByText('Filter contour')).toBeInTheDocument();
         });
 
+        it('connects the selected tab to its named section panel', () => {
+            renderPanel();
+            const filterTab = screen.getAllByRole('tab', { name: /^Filter$/ })[0]!;
+            fireEvent.click(filterTab);
+
+            const panel = screen.getByRole('tabpanel', { name: 'Filter' });
+            expect(panel).toHaveAttribute('id', 'fermenter-section-panel');
+            expect(filterTab).toHaveAttribute('aria-controls', panel.id);
+        });
+
         it('switches to the envelopes section header when the Envelopes tab is clicked', () => {
             renderPanel();
             fireEvent.click(screen.getByRole('tab', { name: /envelopes/i }));

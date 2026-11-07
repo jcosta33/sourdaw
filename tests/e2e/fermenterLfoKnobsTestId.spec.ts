@@ -7,7 +7,7 @@ test.describe('Fermenter LFO Rate', () => {
         await setupWorkspace(page);
         await launch_new_project(page);
         await open_browser_instrument({ page, instrument: 'Fermenter' });
-        await page.locator('.fermenter-faceplate').getByRole('button', { name: 'Envelopes', exact: true }).click();
+        await page.locator('.fermenter-faceplate').getByRole('tab', { name: 'Envelopes', exact: true }).click();
     });
 
     test('ArrowUp steps LFO Rate 0 to 0.1', async ({ page }) => {
