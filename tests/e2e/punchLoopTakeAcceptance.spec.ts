@@ -2014,18 +2014,30 @@ test('finishes an edited automatic mixed punch at its original sounded out and r
         expect(await recordingOwners(page, midiTrackId)).toEqual(midiOwners);
         expect((await automaticPunchMidiState(page, midiTrackId)).rows).toEqual(midi.rows);
         expect(await pcmFingerprint(page, audio.bufferId)).toEqual(pcm);
-        await expect(page.getByTestId(`track-arm-${audioTrackId}`)).toHaveAttribute('aria-label', 'Arm Punch mic');
-        await expect(page.getByTestId(`track-arm-${midiTrackId}`)).toHaveAttribute('aria-label', 'Arm Punch keys');
+        const audioArm = page.getByTestId(`track-arm-${audioTrackId}`);
+        const midiArm = page.getByTestId(`track-arm-${midiTrackId}`);
+        await expect(audioArm).toHaveAttribute('aria-label', 'Disarm Punch mic');
+        await expect(midiArm).toHaveAttribute('aria-label', 'Disarm Punch keys');
+        await audioArm.click();
+        await midiArm.click();
+        await expect(audioArm).toHaveAttribute('aria-label', 'Arm Punch mic');
+        await expect(midiArm).toHaveAttribute('aria-label', 'Arm Punch keys');
+        const originalTakeIds = audio.takes.map((take) => take.id);
+        await expectNoAuditionRecording(page, audioTrackId, originalTakeIds);
         // A fresh tab has no prior sessionStorage mirror; prove persisted audio playback instead.
         await prepareRecordedBufferObserver(page, audio.bufferId);
         await seek(page, audio.clipStartBeat);
         await page.getByTestId('transport-play').click();
+        await expectNoAuditionRecording(page, audioTrackId, originalTakeIds);
         await expect
             .poll(async () => (await browserStarts(page)).filter((entry) => entry.recordedBuffer).length)
             .toBeGreaterThan(0);
         await page.getByTestId('transport-stop').click();
+        await expectNoAuditionRecording(page, audioTrackId, originalTakeIds);
         expect(await recordingOwners(page, audioTrackId)).toEqual(owners);
+        expect(await recordingOwners(page, midiTrackId)).toEqual(midiOwners);
         expect((await automaticPunchMidiState(page, midiTrackId)).rows).toEqual(midi.rows);
+        expect(await pcmFingerprint(page, audio.bufferId)).toEqual(pcm);
         completed = true;
     } finally {
         if (!completed) {
