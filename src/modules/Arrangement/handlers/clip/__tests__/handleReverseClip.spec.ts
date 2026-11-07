@@ -283,14 +283,11 @@ describe('handleReverseClip', () => {
         });
     });
 
-    it('captures the pre-reverse loop anchor in the inverse and restores it exactly', () => {
-        // Folded reviewer probe (round 5, persistence-roundtrip-fidelity):
-        // looped clip L=4 anchored at 0, trimmed one beat — start 1, offset 1,
-        // advance 1. The forward run restamps the anchor at the start, so the
-        // inverse payload must carry the pre-reverse anchor or undo leaves the
-        // clip reading region [1,5) where the original read [0,4). An
-        // unanchored source stays pinned key-absent by the snapshot-restore
-        // case above: its exact payload equality fails if the key appears.
+    it('captures the lawful advanced loop source and restores its original anchor exactly', () => {
+        // E1/H1 with W4 and a pass origin at1 makes [1,5) a
+        // continuous complete period despite the original loop anchor at0.
+        // The inverse preserves that exact clock and anchor; anchor presence
+        // alone must never classify a current source window as cyclic.
         mocks.getCachedAudioBuffer.mockReturnValue({ length: 64, sampleRate: 8 });
         mocks.getTrackStoreState.mockReturnValue({
             tracks: [
@@ -305,6 +302,10 @@ describe('handleReverseClip', () => {
                             startBeat: 1,
                             endBeat: 5,
                             audioOffsetBeats: 1,
+                            audioOffsetSeconds: 1,
+                            audioLoopStartSeconds: 4,
+                            audioLoopPassEntrySeconds: 1,
+                            audioLoopPassOriginBeat: 1,
                             fadeInBeats: 0.25,
                             fadeOutBeats: 1.5,
                             loopEnabled: true,
@@ -340,6 +341,10 @@ describe('handleReverseClip', () => {
             startBeat: 1,
             endBeat: 5,
             audioOffsetBeats: 3,
+            audioOffsetSeconds: 3,
+            audioLoopStartSeconds: 3,
+            audioLoopPassEntrySeconds: 3,
+            audioLoopPassOriginBeat: 1,
             fadeInBeats: 1.5,
             fadeOutBeats: 0.25,
             loopEnabled: true,
@@ -373,14 +378,9 @@ describe('handleReverseClip', () => {
     });
 
     it('restores the original anchor and read when a double reverse is undone stepwise', () => {
-        // Reverse×reverse: the offset remap is an involution, so buffer, fades
-        // and offset return to their originals — but the forward restamp is
-        // forced (the loop window must open at the mirrored head) and not
-        // injective in the anchor, so a direct second reverse collapses a
-        // nonzero advance to zero and reads [1,5) where the original read
-        // [0,4). That corner is accepted; the anchor round-trips through the
-        // inverse payloads, proven here on the finding's exact figures
-        // (start 1, offset 1, anchor 0, L=4, 8-beat source).
+        // Each forward mirror creates a fresh linear period. Stepwise Undo
+        // restores the exact captured source clock, including the original
+        // advanced-but-continuous reset, rather than deriving it from another reverse.
         mocks.getCachedAudioBuffer.mockReturnValue({ length: 64, sampleRate: 8 });
         const originalClip = {
             id: 'c1',
@@ -390,6 +390,10 @@ describe('handleReverseClip', () => {
             startBeat: 1,
             endBeat: 5,
             audioOffsetBeats: 1,
+            audioOffsetSeconds: 1,
+            audioLoopStartSeconds: 4,
+            audioLoopPassEntrySeconds: 1,
+            audioLoopPassOriginBeat: 1,
             fadeInBeats: 0.25,
             fadeOutBeats: 1.5,
             loopEnabled: true,
@@ -403,6 +407,10 @@ describe('handleReverseClip', () => {
             fadeInBeats: 1.5,
             fadeOutBeats: 0.25,
             audioOffsetBeats: 3,
+            audioOffsetSeconds: 3,
+            audioLoopStartSeconds: 3,
+            audioLoopPassEntrySeconds: 3,
+            audioLoopPassOriginBeat: 1,
             loopOriginBeat: 1,
         };
         const postSecondReverse = {
@@ -412,6 +420,10 @@ describe('handleReverseClip', () => {
             fadeInBeats: 0.25,
             fadeOutBeats: 1.5,
             audioOffsetBeats: 1,
+            audioOffsetSeconds: 1,
+            audioLoopStartSeconds: 1,
+            audioLoopPassEntrySeconds: 1,
+            audioLoopPassOriginBeat: 1,
             loopOriginBeat: 1,
         };
 
@@ -699,15 +711,15 @@ describe('handleReverseClip', () => {
         });
 
         it('restores every provenance field of a looped clip exactly through undo then redo', () => {
-            // 60 BPM, an 10 s buffer: [4, 6) enters at 2 s and reads to 4 s, so
-            // the mirrored head is 6 s and the fresh grid opens there at beat 4.
+            // The advanced grid is continuous: E2/H2, wrap3 and pass origin4
+            // traverse source[2,4). The exact full clock still round-trips.
             mocks.getCachedAudioBuffer.mockReturnValue({ length: 80, sampleRate: 8 });
             const clock = {
                 audioOffsetSeconds: 2,
                 audioUnwrappedOffsetSeconds: 1.5,
-                audioLoopStartSeconds: 0.5,
-                audioLoopPassEntrySeconds: 1,
-                audioLoopPassOriginBeat: 3,
+                audioLoopStartSeconds: 3,
+                audioLoopPassEntrySeconds: 2,
+                audioLoopPassOriginBeat: 4,
             };
             const mirrored = {
                 audioOffsetSeconds: 6,

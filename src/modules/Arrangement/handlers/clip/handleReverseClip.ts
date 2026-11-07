@@ -39,7 +39,12 @@ function resolveReversedSource(clip: Clip) {
             stretchMode: clip.stretchMode,
             stretchRatio: clip.stretchRatio,
         }),
-        audioSource: reversedClipAudioSource(clip, buffer.length / buffer.sampleRate, liveTempoTimeline.secondsAtBeat),
+        audioSource: reversedClipAudioSource(
+            clip,
+            buffer.length / buffer.sampleRate,
+            liveTempoTimeline.secondsAtBeat,
+            clipTempo
+        ),
     };
 }
 
