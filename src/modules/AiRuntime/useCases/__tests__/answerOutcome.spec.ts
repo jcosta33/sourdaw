@@ -298,15 +298,17 @@ describe('answer.respond ends a run as an answer outcome', () => {
             mutationEpoch: 1,
             documents: [{ docId: 'x'.repeat(2200), heads: [] }],
         });
+        const previousRevision = captureProjectRevision();
         vi.mocked(captureProjectRevision).mockReturnValue(revision);
-        const result = await runScriptedLoop([
-            readTurn,
-            answerTurn({ intakeCallId: 'intake', statements: [{ kind: 'query-page', callId: 'query' }] }),
-        ]);
-        expect(result.status).toBe('rejected');
-        vi.mocked(captureProjectRevision).mockReturnValue(
-            JSON.stringify({ documentIdentityEpoch: 1, mutationEpoch: 1, documents: [] })
-        );
+        try {
+            const result = await runScriptedLoop([
+                readTurn,
+                answerTurn({ intakeCallId: 'intake', statements: [{ kind: 'query-page', callId: 'query' }] }),
+            ]);
+            expect(result.status).toBe('rejected');
+        } finally {
+            vi.mocked(captureProjectRevision).mockReturnValue(previousRevision);
+        }
     });
 
     it('names the retained baseline of a diff query', async () => {
