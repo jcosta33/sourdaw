@@ -756,4 +756,172 @@ describe('usePreviewAudio', () => {
             }
         }
     );
+
+    it('keeps newer B audio, row and error ownership when rejected A cleanup reenters', async () => {
+        const warn = vi.spyOn(logger, 'warn');
+        const engine = engineApi.audioEngine;
+        const beginOriginal = engine.beginAudioPreviewIntent.bind(engine);
+        let original: ReturnType<Engine['beginAudioPreviewIntent']> | undefined;
+        vi.spyOn(engine, 'beginAudioPreviewIntent').mockImplementationOnce(() => {
+            original = beginOriginal();
+            return original;
+        });
+        const held = Promise.withResolvers<Awaited<ReturnType<typeof preset.render>>>();
+        preset.render.mockReturnValueOnce(held.promise);
+        const { result } = renderHook(() => usePreviewAudio());
+        act(() => result.current.play('a', { kind: 'preset', presetId: 'a' }));
+        await waitFor(() => expect(preset.render).toHaveBeenCalledTimes(1));
+        if (!original) {
+            throw new Error('Missing actual original gesture');
+        }
+        const newer = previewBuffer();
+        original.signal.addEventListener('abort', () => result.current.play('b', newer), { once: true });
+        await act(async () => {
+            held.reject(new Error('Current A render failed before reentrant cleanup'));
+            await held.promise.catch(() => undefined);
+        });
+        expect(mockContext.source.buffer).toBe(newer);
+        expect(mockContext.source.start).toHaveBeenCalledTimes(1);
+        expect(result.current.playingId).toBe('b');
+        expect(warn).not.toHaveBeenCalled();
+        expect(preset.notify).not.toHaveBeenCalled();
+    });
+
+    it('keeps newer pending B through null A retirement and later starts only B', async () => {
+        const warn = vi.spyOn(logger, 'warn');
+        const engine = engineApi.audioEngine;
+        const beginOriginal = engine.beginAudioPreviewIntent.bind(engine);
+        let original: ReturnType<Engine['beginAudioPreviewIntent']> | undefined;
+        vi.spyOn(engine, 'beginAudioPreviewIntent').mockImplementationOnce(() => {
+            original = beginOriginal();
+            return original;
+        });
+        const a = Promise.withResolvers<Awaited<ReturnType<typeof preset.render>>>();
+        const b = Promise.withResolvers<Awaited<ReturnType<typeof preset.render>>>();
+        preset.render.mockReturnValueOnce(a.promise).mockReturnValueOnce(b.promise);
+        const { result } = renderHook(() => usePreviewAudio());
+        act(() => result.current.play('a', { kind: 'preset', presetId: 'a' }));
+        await waitFor(() => expect(preset.render).toHaveBeenCalledTimes(1));
+        if (!original) {
+            throw new Error('Missing actual original gesture');
+        }
+        original.signal.addEventListener('abort', () => result.current.play('b', { kind: 'preset', presetId: 'b' }), {
+            once: true,
+        });
+        await act(async () => {
+            a.resolve(null);
+            await a.promise;
+        });
+        await waitFor(() => expect(preset.render).toHaveBeenCalledTimes(2));
+        const pendingRow = result.current.playingId;
+        const newer = previewBuffer();
+        await act(async () => {
+            b.resolve({ buffer: newer, isCurrent: () => true });
+            await b.promise;
+        });
+        expect(pendingRow).toBe('b');
+        expect(result.current.playingId).toBe('b');
+        expect(mockContext.source.buffer).toBe(newer);
+        expect(mockContext.source.start).toHaveBeenCalledTimes(1);
+        expect(warn).not.toHaveBeenCalled();
+        expect(preset.notify).not.toHaveBeenCalled();
+    });
+
+    it('keeps reentrant B when outer C retires A before admission', () => {
+        const engine = engineApi.audioEngine;
+        const beginOriginal = engine.beginAudioPreviewIntent.bind(engine);
+        let original: ReturnType<Engine['beginAudioPreviewIntent']> | undefined;
+        vi.spyOn(engine, 'beginAudioPreviewIntent').mockImplementationOnce(() => {
+            original = beginOriginal();
+            return original;
+        });
+        const { result } = renderHook(() => usePreviewAudio());
+        act(() => result.current.play('a', previewBuffer()));
+        if (!original) {
+            throw new Error('Missing actual original gesture');
+        }
+        const newer = previewBuffer();
+        const outer = previewBuffer();
+        original.signal.addEventListener('abort', () => result.current.play('b', newer), { once: true });
+        act(() => result.current.play('c', outer));
+        expect(mockContext.source.stop).toHaveBeenCalledTimes(1);
+        expect(mockContext.sources[1]?.buffer).toBe(newer);
+        expect(mockContext.sources[1]?.start).toHaveBeenCalledTimes(1);
+        expect(mockContext.sources.some((source) => source.buffer === outer)).toBe(false);
+        expect(result.current.playingId).toBe('b');
+        expect(preset.notify).not.toHaveBeenCalled();
+    });
+
+    it('keeps reentrant B when real engine admission aborts an exclusive gesture', () => {
+        const engine = engineApi.audioEngine;
+        const exclusive = engine.beginExclusiveAudioPreviewIntent();
+        const { result } = renderHook(() => usePreviewAudio());
+        const newer = previewBuffer();
+        const outer = previewBuffer();
+        exclusive.signal.addEventListener('abort', () => result.current.play('b', newer), { once: true });
+        act(() => result.current.play('c', outer));
+        expect(exclusive.signal.aborted).toBe(true);
+        expect(mockContext.source.buffer).toBe(newer);
+        expect(mockContext.source.start).toHaveBeenCalledTimes(1);
+        expect(mockContext.sources.some((source) => source.buffer === outer)).toBe(false);
+        expect(result.current.playingId).toBe('b');
+    });
+
+    it('Stop clears only its own row when actual release starts newer B', () => {
+        const engine = engineApi.audioEngine;
+        const beginOriginal = engine.beginAudioPreviewIntent.bind(engine);
+        let original: ReturnType<Engine['beginAudioPreviewIntent']> | undefined;
+        vi.spyOn(engine, 'beginAudioPreviewIntent').mockImplementationOnce(() => {
+            original = beginOriginal();
+            return original;
+        });
+        const { result } = renderHook(() => usePreviewAudio());
+        act(() => result.current.play('a', previewBuffer()));
+        if (!original) {
+            throw new Error('Missing actual original gesture');
+        }
+        const newer = previewBuffer();
+        original.signal.addEventListener('abort', () => result.current.play('b', newer), { once: true });
+        act(() => result.current.stop());
+        expect(mockContext.source.stop).toHaveBeenCalledTimes(1);
+        expect(mockContext.sources[1]?.buffer).toBe(newer);
+        expect(mockContext.sources[1]?.start).toHaveBeenCalledTimes(1);
+        expect(result.current.playingId).toBe('b');
+    });
+
+    it('unmount rejects reentrant admissions from the outgoing real gesture', () => {
+        const engine = engineApi.audioEngine;
+        const beginOriginal = engine.beginAudioPreviewIntent.bind(engine);
+        let original: ReturnType<Engine['beginAudioPreviewIntent']> | undefined;
+        vi.spyOn(engine, 'beginAudioPreviewIntent').mockImplementationOnce(() => {
+            original = beginOriginal();
+            return original;
+        });
+        const { result, unmount } = renderHook(() => usePreviewAudio());
+        act(() => result.current.play('a', previewBuffer()));
+        if (!original) {
+            throw new Error('Missing actual original gesture');
+        }
+        const newer = previewBuffer();
+        original.signal.addEventListener('abort', () => result.current.play('b', newer), { once: true });
+        unmount();
+        expect(mockContext.source.stop).toHaveBeenCalledTimes(1);
+        expect(mockContext.sources.some((source) => source.buffer === newer)).toBe(false);
+        expect(preset.notify).not.toHaveBeenCalled();
+    });
+
+    it('delegates each original release authority at most once through repeated Stop', () => {
+        const engine = engineApi.audioEngine;
+        const beginOriginal = engine.beginAudioPreviewIntent.bind(engine);
+        const original = beginOriginal();
+        const release = vi.fn(original.release);
+        vi.spyOn(engine, 'beginAudioPreviewIntent').mockReturnValueOnce({ ...original, release });
+        const { result } = renderHook(() => usePreviewAudio());
+        act(() => result.current.play('a', previewBuffer()));
+        act(() => result.current.stop());
+        act(() => result.current.stop());
+        expect(mockContext.source.stop).toHaveBeenCalledTimes(1);
+        expect(release).toHaveBeenCalledTimes(1);
+        expect(original.signal.aborted).toBe(true);
+    });
 });

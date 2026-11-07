@@ -255,7 +255,9 @@ describe('renderPresetPreview owner composition and completed PCM admission', ()
             .slice(0, 9)
             .map((entry) => entry.id);
         expect(ids).toHaveLength(9);
-        for (const id of ids.slice(0, 8)) await renderPresetPreview(request(id));
+        for (const id of ids.slice(0, 8)) {
+            await renderPresetPreview(request(id));
+        }
         await renderPresetPreview(request(ids[0]));
         await renderPresetPreview(request(ids[8]));
         expect(render).toHaveBeenCalledTimes(9);
@@ -268,7 +270,9 @@ describe('renderPresetPreview owner composition and completed PCM admission', ()
     it('evicts by PCM byte budget before the entry limit', async () => {
         sampleRate = 192_000;
         const ids = ['factory-bass-acid', 'factory-pad-warm', 'fx-rev-plate', 'fx-eq-vocal-presence'];
-        for (const id of ids) await renderPresetPreview(request(id));
+        for (const id of ids) {
+            await renderPresetPreview(request(id));
+        }
         expect(render).toHaveBeenCalledTimes(4);
         await renderPresetPreview(request(ids[0]));
         expect(render).toHaveBeenCalledTimes(5);
