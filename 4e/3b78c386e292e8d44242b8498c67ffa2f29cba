@@ -1,0 +1,23 @@
+src/modules/Arrangement/presentations/views/__tests__/TimelineMinimap.spec.tsx
+  s_977061c47f01dd::t_d3c0fdd59f9bb2 303-358
+src/modules/Arrangement/presentations/views/TimelineMinimap.tsx
+  s_977061c47f01dd::t_f3ba80e8cf0672 357,360,365,369,372,375,378,380-381,383-390,392
+.agents/skills/review-stances/test-observation-scope.md
+  s_977061c47f01dd::t_f3ba80e8cf0672 79-80
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4e3b78c386e292e8d44242b8498c67ffa2f29cba",
+  "prompts": {},
+  "sessions": {
+    "s_977061c47f01dd": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34d-123d-7452-a6e7-60608388b6d7",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
