@@ -33,7 +33,7 @@ import {
 } from '#/modules/CrdtDocument/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
 import { getMidiNoteTransformHandlers } from '#/modules/MIDI/useCases';
-import { type AppAction } from '#/utils/handlerContract';
+import { type AppAction, type HandlerExecutionResult } from '#/utils/handlerContract';
 
 import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
@@ -291,24 +291,38 @@ describe('created clip replay preserves its own action prefix', () => {
         });
         const rename = getArrangementHandlers().renameTrack;
         const originalExecute = rename.execute;
-        const observer = vi.spyOn(rename, 'execute').mockImplementation(async (action, context) => {
-            const effect = await originalExecute(action, context);
-            return {
-                ...effect,
-                status: 'written',
-                afterCommit: async () => {
-                    await effect?.afterCommit?.();
-                    type Root = { midi: NonNullable<typeof midiStore.value> };
-                    replaceCrdtDoc({
-                        id: 'root',
-                        doc: change(clone(getCrdtDoc<Root>('root')!), (document) => {
-                            document.midi.notesByClipId.source![0]!.velocity = 42;
-                        }),
-                    });
-                    projectCrdtToStores();
-                },
-            };
-        });
+        const observer = vi
+            .spyOn(rename, 'execute')
+            .mockImplementation((action, context): void | HandlerExecutionResult => {
+                const effect = originalExecute(action, context);
+                if (effect instanceof Promise) {
+                    throw new TypeError('Expected a synchronous rename handler');
+                }
+                if (!effect || effect.status !== 'written') {
+                    return effect;
+                }
+                if (effect.afterRuntimeExecution !== undefined) {
+                    throw new TypeError('Expected project commit effects from rename');
+                }
+                return {
+                    ...effect,
+                    status: 'written',
+                    afterCommit: async () => {
+                        await effect.afterCommit?.();
+                        type Root = { midi: NonNullable<typeof midiStore.value> };
+                        replaceCrdtDoc({
+                            id: 'root',
+                            doc: change(clone(getCrdtDoc<Root>('root')!), (document) => {
+                                document.midi.notesByClipId.source![0]!.velocity = 42;
+                            }),
+                        });
+                        projectCrdtToStores();
+                    },
+                    afterAmbiguousCommit: async () => {
+                        await effect.afterAmbiguousCommit?.();
+                    },
+                };
+            });
         let result;
         try {
             result = await executeAppActionBatch(actions, { skipUndo: true });
