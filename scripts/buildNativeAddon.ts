@@ -66,10 +66,11 @@ function nativeCargoHost(repoRoot: string, env: NodeJS.ProcessEnv, runCargo: Car
         throw new Error('cargo -Vv host query failed');
     }
     const hostLines = (version.stdout ?? '').split(/\r?\n/).filter((line) => line.startsWith('host:'));
-    if (hostLines.length !== 1 || !/^host: [a-z0-9_]+(?:-[a-z0-9_]+){2,}$/.test(hostLines[0])) {
+    const hostLine = hostLines[0];
+    if (hostLines.length !== 1 || hostLine === undefined || !/^host: [a-z0-9_]+(?:-[a-z0-9_]+){2,}$/.test(hostLine)) {
         throw new Error('cargo -Vv must report exactly one well-formed native host');
     }
-    return hostLines[0].slice('host: '.length);
+    return hostLine.slice('host: '.length);
 }
 
 function nativePlatform(host: string): NodeJS.Platform {

@@ -147,8 +147,8 @@ describe('native addon build', () => {
                     join(targetDir, 'scan-helper'),
                 ],
             ]);
-            expect(runCargo.mock.calls[1][1]).toEqual({ cwd: repoRoot, env, captureOutput: false });
-            expect(runCargo.mock.calls[2][1]).toEqual({
+            expect(runCargo.mock.calls[1]?.[1]).toEqual({ cwd: repoRoot, env, captureOutput: false });
+            expect(runCargo.mock.calls[2]?.[1]).toEqual({
                 cwd: repoRoot,
                 env: { ...env, CARGO_PROFILE_RELEASE_LTO: 'false' },
                 captureOutput: false,
@@ -253,9 +253,9 @@ describe('native addon build', () => {
         const repoRoot = createFixture();
         const targetDir = join(repoRoot, 'target');
         // Stale outputs in the old guessed directories must never be staged.
-        for (const [root, name] of [
-            [targetDir, 'libsourdaw_native.dylib'],
-            [join(targetDir, 'scan-helper'), 'sourdaw-plugin-scan-helper'],
+        for (const { root, name } of [
+            { root: targetDir, name: 'libsourdaw_native.dylib' },
+            { root: join(targetDir, 'scan-helper'), name: 'sourdaw-plugin-scan-helper' },
         ]) {
             mkdirSync(join(root, 'release'), { recursive: true });
             writeFileSync(join(root, 'release', name), 'stale guessed artifact');
