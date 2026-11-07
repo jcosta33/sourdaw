@@ -1,0 +1,47 @@
+src/modules/Bacteria/presentations/views/BacteriaPanel.tsx
+  s_68423a2adea8d2::t_577dd06910ba27 292,482-486
+src/modules/Fermenter/presentations/components/SectionNav.tsx
+  s_68423a2adea8d2::t_f5141237535a41 12-14,31-32
+tests/e2e/fermenterEffectsTabsTestId.spec.ts
+  s_68423a2adea8d2::t_17605c15baad45 14
+tests/e2e/fermenterEnvDecayReleaseTestId.spec.ts
+  s_68423a2adea8d2::t_0e9b1a8980a4d5 10
+tests/e2e/fermenterEnvelopeKnobsTestId.spec.ts
+  s_68423a2adea8d2::t_d44d3d0f5004dc 10
+tests/e2e/fermenterFilterKnobsTestId.spec.ts
+  s_68423a2adea8d2::t_17d8408721bf20 10
+tests/e2e/fermenterFilterResoDriveTestId.spec.ts
+  s_68423a2adea8d2::t_3680f20038849c 10
+tests/e2e/fermenterFxCompKnobsTestId.spec.ts
+  s_68423a2adea8d2::t_0571cd2b9323cc 11
+tests/e2e/fermenterFxDelayKnobsTestId.spec.ts
+  s_68423a2adea8d2::t_7d823ae079b987 11
+tests/e2e/fermenterFxDistKnobsDepthTestId.spec.ts
+  s_68423a2adea8d2::t_29ac6c763e66e8 12
+tests/e2e/fermenterFxMasterKnobsTestId.spec.ts
+  s_68423a2adea8d2::t_e92745838cd2a5 11
+tests/e2e/fermenterFxModKnobsTestId.spec.ts
+  s_68423a2adea8d2::t_24ca078d57fd53 11
+tests/e2e/fermenterFxReverbKnobsTestId.spec.ts
+  s_68423a2adea8d2::t_5bdba6becea912 11
+tests/e2e/fermenterLfoKnobsTestId.spec.ts
+  s_68423a2adea8d2::t_8780b5fa232d17 10
+tests/e2e/fermenterLfoRoutingTestId.spec.ts
+  s_68423a2adea8d2::t_5689c5409f01fd 10
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "28ab99d1c76e86fb9342b26779df3ed4da5b29cd",
+  "prompts": {},
+  "sessions": {
+    "s_68423a2adea8d2": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34b-f305-7c03-beb2-57afa678cda5",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
