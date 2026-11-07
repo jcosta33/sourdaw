@@ -1,0 +1,42 @@
+src/modules/AiRuntime/useCases/planWholeProjectVibeRun.ts
+  s_68423a2adea8d2::t_bff680b2969de9 339-340
+  s_68423a2adea8d2::t_1a79639d47df4c 337-338
+src/modules/AiRuntime/useCases/planMetricMeasurementRequests.ts
+  s_68423a2adea8d2::t_bff680b2969de9 60
+src/modules/AiRuntime/validators/readScheduledVibeRunPlan.ts
+  s_68423a2adea8d2::t_bff680b2969de9 124,126-139,166-169
+  s_68423a2adea8d2::t_1a79639d47df4c 102-103,109-110,117,125,140,263-277,305
+  s_68423a2adea8d2::t_76e425c4c47418 118-123,141-142
+src/modules/AiRuntime/useCases/vibeRun/readVibeRunFitRefusals.ts
+  s_68423a2adea8d2::t_9f9639fb832e72 1-138
+src/modules/AiRuntime/useCases/__tests__/vibeRunInitialBaselines.spec.ts
+  s_68423a2adea8d2::t_1a79639d47df4c 46
+  s_68423a2adea8d2::t_bff680b2969de9 686-687,820-825,844-849
+src/modules/AiRuntime/useCases/vibeRun/collectVibeRunInitialBaselines.ts
+  s_68423a2adea8d2::t_bff680b2969de9 63-68
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  s_68423a2adea8d2::t_bff680b2969de9 2236-2238
+src/modules/AiRuntime/useCases/__tests__/planAgentRunInitialBaselines.spec.ts
+  s_68423a2adea8d2::t_bff680b2969de9 100,215-216
+src/modules/AiRuntime/useCases/vibeRun/planVibeRunSchedule.ts
+  s_68423a2adea8d2::t_9f9639fb832e72 40,406
+  s_68423a2adea8d2::t_bff680b2969de9 468-473
+src/modules/AiRuntime/useCases/vibeRun/readVibeRunInitialRefusal.ts
+  s_68423a2adea8d2::t_bff680b2969de9 59
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "683f9793af686b159e9b4c0ab8eb6c280da5ca97",
+  "prompts": {},
+  "sessions": {
+    "s_68423a2adea8d2": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34b-f305-7c03-beb2-57afa678cda5",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
