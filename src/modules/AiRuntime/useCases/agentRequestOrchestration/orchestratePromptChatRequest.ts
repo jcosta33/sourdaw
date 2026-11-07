@@ -619,7 +619,13 @@ async function dispatchPromptPlan(input: {
         });
         return undefined;
     }
-    if (result.actions.length > 0 && result.batchSchedule !== undefined && !runsScheduledBatches(request)) {
+    // A vibe run rides a production brief, which these modes refuse on its own below.
+    if (
+        result.actions.length > 0 &&
+        result.batchSchedule !== undefined &&
+        result.batchSchedule.kind !== 'vibe-run' &&
+        !runsScheduledBatches(request)
+    ) {
         await refuseScheduledPlanInMode(request, admission, result.batchSchedule.total, result.actions);
         return undefined;
     }
@@ -746,7 +752,10 @@ async function dispatchPromptPlan(input: {
                 group: commandGroup,
                 projectRevision,
                 parsedCommandBatch,
-                content: confirmationDescription.content,
+                content:
+                    result.plannedRunLines === undefined
+                        ? confirmationDescription.content
+                        : [confirmationDescription.content, '', ...result.plannedRunLines].join('\n'),
                 supersedes: refinedProposal?.id ?? null,
             });
             if (confirmationId !== null && refinedProposal !== null) {
