@@ -103,6 +103,7 @@ describe('selected preset planned across project writes', () => {
                 expect(captureProjectRevision()).toBe(projectRevision);
             } else if (write === 'save' || write === 'saved edit') {
                 await writeProjectSave();
+                if (write === 'save') expect(captureProjectRevision()).not.toBe(projectRevision);
             }
             return {
                 actions: [{ type: 'setTrackColor', payload: { trackId: 'track-1', color: '#ff5500' } }],
