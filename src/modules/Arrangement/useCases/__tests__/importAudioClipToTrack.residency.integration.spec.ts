@@ -1,6 +1,6 @@
 import { Buffer } from 'node:buffer';
 
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 
 import { withProjectAudioStorageLock } from '#/infra/storage/withProjectAudioStorageLock';
 import {
@@ -15,6 +15,7 @@ import {
     clearRuntimeCachedAudioBuffers,
     configureDurableAudioBufferOwnership,
     configureLiveAudioBufferReferences,
+    getAudioContext,
     getCachedAudioBuffer,
 } from '#/modules/AudioEngine/useCases';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
@@ -51,8 +52,7 @@ import { getArrangementHandlers } from '../getArrangementHandlers';
 import { importAudioClipToTrack } from '../importAudioClipToTrack';
 import { importAudioFile } from '../importAudioFile';
 
-const decoding = vi.hoisted(() => ({ decode: vi.fn<(file: File) => Promise<AudioBuffer>>() }));
-vi.mock('#/modules/AudioEngine/useCases/decodeAudioFileBuffer', () => ({ decodeAudioFileBuffer: decoding.decode }));
+const decoding = { decode: vi.fn<AudioContext['decodeAudioData']>() };
 
 const assets = {
     stageLocalAsset: vi.fn<(blob: Blob, name: string) => Promise<{ hash: string; leaseId: string }>>(),
@@ -98,6 +98,27 @@ function settleAudioPersistence(): Promise<void> {
     return withProjectAudioStorageLock(() => Promise.resolve());
 }
 
+function sourceFile(): File {
+    const file = new File([new Uint8Array(8)], 'source.wav');
+    // jsdom's File lacks arrayBuffer; read the actual Blob through its FileReader.
+    Object.defineProperty(file, 'arrayBuffer', {
+        value: () =>
+            new Promise<ArrayBuffer>((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => {
+                    if (reader.result instanceof ArrayBuffer) {
+                        resolve(reader.result);
+                    } else {
+                        reject(new Error('The fixture file did not produce binary data'));
+                    }
+                };
+                reader.onerror = () => reject(reader.error ?? new Error('Fixture file read failed'));
+                reader.readAsArrayBuffer(file);
+            }),
+    });
+    return file;
+}
+
 function holdAssetStaging() {
     const entered = Promise.withResolvers<void>();
     const release = Promise.withResolvers<{ hash: string; leaseId: string }>();
@@ -113,7 +134,7 @@ function holdAssetStaging() {
 }
 
 function importFile(route: 'existing' | 'new', shouldContinue = () => true) {
-    const file = new File([new Uint8Array(8)], 'source.wav');
+    const file = sourceFile();
     if (route === 'existing') {
         return importAudioClipToTrack('target', file, { shouldContinue });
     }
@@ -122,15 +143,25 @@ function importFile(route: 'existing' | 'new', shouldContinue = () => true) {
 
 describe('manual imported audio residency through typed placement', () => {
     let installation: ReturnType<typeof installTransactionalIndexedDb>;
-    let cacheWrites: ReturnType<typeof vi.spyOn<typeof audioBufferCache, 'set'>>;
+    let cacheWrites: MockInstance<typeof audioBufferCache.set>;
+    let context: ReturnType<typeof getAudioContext>;
+    let originalDecode: PropertyDescriptor | undefined;
 
     beforeAll(() => {
         vi.stubGlobal('navigator', { ...navigator, locks: createControlledLockManager().locks });
         installation = installTransactionalIndexedDb();
+        context = getAudioContext();
+        originalDecode = Object.getOwnPropertyDescriptor(context, 'decodeAudioData');
+        Object.defineProperty(context, 'decodeAudioData', { configurable: true, value: decoding.decode });
     });
     afterAll(async () => {
         await settleAudioPersistence();
         await installation.dispose();
+        if (originalDecode) {
+            Object.defineProperty(context, 'decodeAudioData', originalDecode);
+        } else {
+            Reflect.deleteProperty(context, 'decodeAudioData');
+        }
         vi.unstubAllGlobals();
     });
     beforeEach(async () => {

@@ -3,7 +3,7 @@ import { Buffer } from 'node:buffer';
 import { type ReactElement } from 'react';
 
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 
 import { TooltipProvider } from '#/components/ui/tooltip';
 import { withProjectAudioStorageLock } from '#/infra/storage/withProjectAudioStorageLock';
@@ -19,6 +19,7 @@ import {
     clearRuntimeCachedAudioBuffers,
     configureDurableAudioBufferOwnership,
     configureLiveAudioBufferReferences,
+    getAudioContext,
     getCachedAudioBuffer,
 } from '#/modules/AudioEngine/useCases';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
@@ -57,8 +58,7 @@ import { getArrangementHandlers } from '../../useCases/getArrangementHandlers';
 import { useTimelineFileDrop } from '../hooks/useTimelineFileDrop';
 import { TimelineEmptyMenu } from '../views/TimelineEmptyMenu';
 
-const decoding = vi.hoisted(() => ({ decode: vi.fn<(file: File) => Promise<AudioBuffer>>() }));
-vi.mock('#/modules/AudioEngine/useCases/decodeAudioFileBuffer', () => ({ decodeAudioFileBuffer: decoding.decode }));
+const decoding = { decode: vi.fn<AudioContext['decodeAudioData']>() };
 
 const assets = {
     stageLocalAsset: vi.fn<(blob: Blob, name: string) => Promise<{ hash: string; leaseId: string }>>(),
@@ -109,6 +109,27 @@ function settleAudioPersistence(): Promise<void> {
     return withProjectAudioStorageLock(() => Promise.resolve());
 }
 
+function sourceFile(type = ''): File {
+    const file = new File([new Uint8Array(8)], 'source.wav', { type });
+    // jsdom's File lacks arrayBuffer; read the actual Blob through its FileReader.
+    Object.defineProperty(file, 'arrayBuffer', {
+        value: () =>
+            new Promise<ArrayBuffer>((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => {
+                    if (reader.result instanceof ArrayBuffer) {
+                        resolve(reader.result);
+                    } else {
+                        reject(new Error('The fixture file did not produce binary data'));
+                    }
+                };
+                reader.onerror = () => reject(reader.error ?? new Error('Fixture file read failed'));
+                reader.readAsArrayBuffer(file);
+            }),
+    });
+    return file;
+}
+
 function holdAssetStaging() {
     const entered = Promise.withResolvers<void>();
     const release = Promise.withResolvers<{ hash: string; leaseId: string }>();
@@ -125,15 +146,25 @@ function holdAssetStaging() {
 
 describe('manual timeline import residency through real placement', () => {
     let installation: ReturnType<typeof installTransactionalIndexedDb>;
-    let cacheWrites: ReturnType<typeof vi.spyOn<typeof audioBufferCache, 'set'>>;
+    let cacheWrites: MockInstance<typeof audioBufferCache.set>;
+    let context: ReturnType<typeof getAudioContext>;
+    let originalDecode: PropertyDescriptor | undefined;
 
     beforeAll(() => {
         vi.stubGlobal('navigator', { ...navigator, locks: createControlledLockManager().locks });
         installation = installTransactionalIndexedDb();
+        context = getAudioContext();
+        originalDecode = Object.getOwnPropertyDescriptor(context, 'decodeAudioData');
+        Object.defineProperty(context, 'decodeAudioData', { configurable: true, value: decoding.decode });
     });
     afterAll(async () => {
         await settleAudioPersistence();
         await installation.dispose();
+        if (originalDecode) {
+            Object.defineProperty(context, 'decodeAudioData', originalDecode);
+        } else {
+            Reflect.deleteProperty(context, 'decodeAudioData');
+        }
         vi.unstubAllGlobals();
     });
     beforeEach(async () => {
@@ -254,7 +285,7 @@ describe('manual timeline import residency through real placement', () => {
         render(<DropTarget />);
         fireEvent.drop(screen.getByTestId('drop-target'), {
             dataTransfer: {
-                files: [new File([new Uint8Array(8)], 'source.wav', { type: 'audio/wav' })],
+                files: [sourceFile('audio/wav')],
                 getData: () => '',
             },
         });
@@ -300,7 +331,7 @@ describe('manual timeline import residency through real placement', () => {
         if (!(input instanceof HTMLInputElement) || !input.onchange) {
             throw new Error('The real Import Audio menu did not install a chooser handler');
         }
-        Object.defineProperty(input, 'files', { value: [new File([new Uint8Array(8)], 'source.wav')] });
+        Object.defineProperty(input, 'files', { value: [sourceFile()] });
         const pending = input.onchange.call(input, new Event('change'));
         try {
             await vi.waitFor(() => expect(cacheWrites).toHaveBeenCalledTimes(1));
@@ -349,7 +380,7 @@ describe('manual timeline import residency through real placement', () => {
         render(<DropTarget />);
         fireEvent.drop(screen.getByTestId('drop-target'), {
             dataTransfer: {
-                files: [new File([new Uint8Array(8)], 'source.wav', { type: 'audio/wav' })],
+                files: [sourceFile('audio/wav')],
                 getData: () => '',
             },
         });
@@ -389,7 +420,7 @@ describe('manual timeline import residency through real placement', () => {
         if (!(input instanceof HTMLInputElement) || !input.onchange) {
             throw new Error('The real Import Audio menu did not install a chooser handler');
         }
-        Object.defineProperty(input, 'files', { value: [new File([new Uint8Array(8)], 'source.wav')] });
+        Object.defineProperty(input, 'files', { value: [sourceFile()] });
         const pending = input.onchange.call(input, new Event('change'));
         try {
             await vi.waitFor(() => expect(cacheWrites).toHaveBeenCalledTimes(1));
