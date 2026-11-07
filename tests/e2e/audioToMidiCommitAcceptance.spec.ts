@@ -94,7 +94,9 @@ async function capture(page: Page): Promise<Snapshot> {
             ),
         ]) {
             const buffer = getCachedAudioBuffer({ bufferId });
-            if (!buffer) throw new Error(`Source PCM missing: ${bufferId}`);
+            if (!buffer) {
+                throw new Error(`Source PCM missing: ${bufferId}`);
+            }
             const channels = [];
             for (let channel = 0; channel < buffer.numberOfChannels; channel += 1) {
                 const data = buffer.getChannelData(channel).slice();
@@ -105,7 +107,9 @@ async function capture(page: Page): Promise<Snapshot> {
             }
             pcm.push({ bufferId, frames: buffer.length, sampleRate: buffer.sampleRate, channels });
         }
-        if (crdt.captureDurableDocumentWitness() !== witness) throw new Error('Project changed while reading evidence');
+        if (crdt.captureDurableDocumentWitness() !== witness) {
+            throw new Error('Project changed while reading evidence');
+        }
         const history = captureUndoHistory();
         return JSON.stringify({
             projectId: project.projectId,
@@ -130,7 +134,9 @@ async function capture(page: Page): Promise<Snapshot> {
 async function sourcePoint(page: Page, snapshot: Snapshot): Promise<{ x: number; y: number }> {
     const track = snapshot.tracks.find((entry) => entry.clips.some((clip) => clip.type === 'audio'));
     const clip = track?.clips.find((entry) => entry.type === 'audio');
-    if (!track || !clip) throw new Error('Imported audio source is absent');
+    if (!track || !clip) {
+        throw new Error('Imported audio source is absent');
+    }
     const row = page
         .getByRole('grid', { name: /Track list/i })
         .first()
@@ -142,7 +148,9 @@ async function sourcePoint(page: Page, snapshot: Snapshot): Promise<{ x: number;
     const view = await page.evaluate(
         async () => (await import('/src/modules/Arrangement/stores/index.ts')).timelineViewStore.value
     );
-    if (!header || !canvas || !view) throw new Error('Live timeline geometry is unavailable');
+    if (!header || !canvas || !view) {
+        throw new Error('Live timeline geometry is unavailable');
+    }
     const point = {
         x: canvas.x + (clip.startBeat + (clip.endBeat - clip.startBeat) / 2) * view.pixelsPerBeat - view.scrollX,
         y: header.y + header.height / 2,
@@ -168,8 +176,12 @@ async function reloadSaved(page: Page, expected: Pick<Snapshot, 'projectId' | 'n
         page.evaluate(async (projectId) => {
             const { projectStore } = await import('/src/modules/Project/stores/index.ts');
             const project = projectStore.value;
-            if (!project || project.loading) return 'pending';
-            if (project.initialized) return project.projectId === projectId ? 'saved-active' : 'wrong-active';
+            if (!project || project.loading) {
+                return 'pending';
+            }
+            if (project.initialized) {
+                return project.projectId === projectId ? 'saved-active' : 'wrong-active';
+            }
             return 'launch-ready';
         }, expected.projectId);
     await expect.poll(mode, { timeout: STEP_TIMEOUT }).toMatch(/^(saved-active|launch-ready)$/);
@@ -207,7 +219,9 @@ for (const route of ['inspector', 'waveform', 'context-menu'] as const) {
         const errors: string[] = [];
         page.on('pageerror', (error) => errors.push(error.message));
         page.on('console', (message) => {
-            if (message.type() === 'error') errors.push(message.text());
+            if (message.type() === 'error') {
+                errors.push(message.text());
+            }
         });
         await setupWorkspace(page, { clearLocalStorage: false });
         await launch_new_project(page);
@@ -244,7 +258,9 @@ for (const route of ['inspector', 'waveform', 'context-menu'] as const) {
             await inspector.getByRole('button', { name: 'MIDI (Basic)', exact: true }).click();
         } else if (route === 'waveform') {
             const dock = page.getByTestId('toggle-bottom-dock');
-            if ((await dock.getAttribute('aria-pressed')) !== 'true') await dock.click();
+            if ((await dock.getAttribute('aria-pressed')) !== 'true') {
+                await dock.click();
+            }
             await page
                 .getByRole('tablist', { name: 'Bottom dock' })
                 .getByRole('tab', { name: 'Editor', exact: true })
@@ -265,14 +281,12 @@ for (const route of ['inspector', 'waveform', 'context-menu'] as const) {
         const created = await capture(page);
         const output = created.tracks.find((track) => track.kind === 'midi');
         expect(output?.clips).toHaveLength(1);
-        expect(created.notes[output!.clips[0]!.id]!.length).toBeGreaterThan(0);
+        expect(created.notes[output!.clips[0].id].length).toBeGreaterThan(0);
         expect(created.exact.raw).toEqual(created.exact.projected);
         expect(created.pcm).toEqual(before.pcm);
         const group = requireGroup(created, 'past');
         expect(created.history.slice(-CHILDREN.length).map((entry) => entry.actionKind)).toEqual(CHILDREN);
-        expect(created.history.slice(-CHILDREN.length).every((entry) => entry.groupId === group[0]!.groupId)).toBe(
-            true
-        );
+        expect(created.history.slice(-CHILDREN.length).every((entry) => entry.groupId === group[0].groupId)).toBe(true);
         await info.attach(`${route}-created`, {
             body: JSON.stringify({ before, created }, null, 2),
             contentType: 'application/json',
