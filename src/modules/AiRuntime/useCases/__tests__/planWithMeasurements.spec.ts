@@ -15,6 +15,7 @@ import {
 import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
 import { transportStore } from '#/modules/Transport/stores';
 
+import { AiProposalInvalidatedError } from '../../errors/AiProposalInvalidatedError';
 import { readAgentRunState, sanitizeAgentRunState } from '../../stores/agentRunStore';
 import { aiBackendPreferenceStore } from '../../stores/aiBackendPreferenceStore';
 import { chatStore } from '../../stores/chatStore';
@@ -33,6 +34,7 @@ import { getProjectContext } from '../getProjectContext';
 import { generateToolPlanningOutcome } from '../llmOrchestration/inference';
 import { metricGoalStateCodec } from '../metricGoalStateCodec';
 import { parsePromptToActions } from '../parsePromptToActions';
+import { planPromptActions } from '../planPromptActions';
 import { prepareMetricGoalPreview } from '../prepareMetricGoalPreview';
 import { reproposePendingChatActions } from '../reproposePendingChatActions';
 
@@ -49,7 +51,7 @@ import {
     readMetricPublication,
     resetMetricGoalProject,
 } from './metricGoalWorkflowFixture';
-import { seedSavableProject, writeProjectSave } from './projectSaveFixture';
+import { moveTrackFader, seedSavableProject, writeProjectSave } from './projectSaveFixture';
 import { decodeReceiptContext, readReceiptSummary } from './receiptContextFixture';
 
 registerDeviceEnginePorts();
@@ -104,6 +106,205 @@ afterEach(() => {
 });
 
 describe('configured mixing plan with actual measurements', () => {
+    it.each(['save', 'unflushed edit', 'flushed edit', 'saved edit', 'edit and revert'] as const)(
+        'handles %s during a required measurement intake',
+        async (write) => {
+            const prompt = 'Make Lead Vocal warmer over Chorus and set its fader to 70%';
+            seedSavableProject();
+            flushAutomergeStorageWrites();
+            const revision = captureProjectRevision();
+            const before = { tracks: structuredClone(trackStore.value), undo: structuredClone(undoHistoryStore.value) };
+            expect(
+                agentRunLifecycle.create({ runId: RUN_ID, request: prompt, mode: 'apply', createdRevision: revision })
+            ).toEqual({ status: 'created' });
+            agentRunLifecycle.transitionPhase({ runId: RUN_ID, phase: 'planning' });
+            audio.renderTrackSubgraphOffline.mockImplementation(
+                async (input: Parameters<typeof renderTrackSubgraphOffline>[0]) =>
+                    metricGoalAudioBuffer(
+                        (seconds) => 0.2 * Math.sin(2 * Math.PI * 150 * seconds),
+                        (input.endBeat - input.startBeat) / 2
+                    )
+            );
+            const entered = Promise.withResolvers<void>();
+            const resume = Promise.withResolvers<void>();
+            const turns: string[] = [];
+            vi.mocked(generateToolPlanningOutcome).mockImplementation(
+                async (_system, message, schemas, _signal, _prompt, _result, _identity, _attempt, directive) => {
+                    turns.push(message);
+                    const turn = turns.length;
+                    if (turn === 1) {
+                        entered.resolve();
+                        await resume.promise;
+                        const catalog = readCreativeInterpretationCatalog(message, schemas);
+                        const base = selectCreativeInterpretationCall({
+                            catalog,
+                            modeId: 'edit',
+                            targetObjectIds: ['vocal'],
+                            dimensions: ['processing'],
+                            creationSlotObjectTypes: ['device'],
+                        });
+                        const schema = schemas.find((candidate) => candidate.function.name === base.name);
+                        if (schema === undefined) throw new Error('Missing intake schema');
+                        const objective = readMetricPublication(schema).find(
+                            (candidate) => candidate.recipeId === 'vocal-warm'
+                        );
+                        if (objective === undefined) throw new Error('Missing warm objective');
+                        const call = {
+                            ...base,
+                            id: 'warm-intake',
+                            arguments: {
+                                ...base.arguments,
+                                answer: null,
+                                metricIntent: {
+                                    kind: 'perceptual',
+                                    uncertainty: 'none',
+                                    objectives: [
+                                        {
+                                            objectiveId: objective.id,
+                                            scopeCandidateId: advertisedAnswerCandidateId([schemas, message], 'vocal'),
+                                            referenceScopeCandidateId: null,
+                                            rangeCandidateId: advertisedAnswerCandidateId(
+                                                [schemas, message],
+                                                'Chorus',
+                                                'ranges'
+                                            ),
+                                        },
+                                    ],
+                                },
+                            },
+                        };
+                        expect(matchesJsonSchema(call.arguments, schema.function.parameters)).toBe(true);
+                        return { status: 'complete', toolCalls: [call] };
+                    }
+                    if (turn === 2)
+                        return {
+                            status: 'complete',
+                            toolCalls: [
+                                {
+                                    id: 'discovery',
+                                    name: 'agent.catalog.discover',
+                                    arguments: { category: 'command', names: ['setTrackGain'] },
+                                },
+                            ],
+                        };
+                    if (turn === 3) {
+                        const receipt = decodeReceiptContext(readReceiptSummary(message).value).find(
+                            (entry) => isRecord(entry) && entry.callId === 'discovery'
+                        );
+                        expect(receipt).toMatchObject({ status: 'success' });
+                        const call = {
+                            id: 'proposal',
+                            name: 'command.batch.propose',
+                            arguments: {
+                                commands: [{ name: 'setTrackGain', arguments: { trackId: 'vocal', gain: 0.7 } }],
+                                plan: metricGoalProviderPlan(prompt, ['vocal']),
+                            },
+                        };
+                        const schema = schemas.find((candidate) => candidate.function.name === call.name);
+                        if (schema === undefined) throw new Error('Missing proposal schema');
+                        expect(matchesJsonSchema(call.arguments, schema.function.parameters)).toBe(true);
+                        return { status: 'complete', toolCalls: [call] };
+                    }
+                    if (turn === 4) {
+                        expect(directive).toMatchObject({
+                            mode: 'required',
+                            toolNames: ['analysis.measure'],
+                            parallelToolCalls: false,
+                        });
+                        const receipts = decodeReceiptContext(readReceiptSummary(message).value);
+                        expect(receipts).toEqual(
+                            expect.arrayContaining([
+                                expect.objectContaining({
+                                    callId: 'proposal',
+                                    error: expect.objectContaining({ code: 'measurement-required' }),
+                                }),
+                            ])
+                        );
+                        const call = {
+                            id: 'measurement',
+                            name: 'analysis.measure',
+                            arguments: {
+                                scope: { kind: 'tracks', ids: ['vocal'] },
+                                range: { startBeat: 0, endBeat: 4 },
+                                metrics: ['frequencyBandEnergy', 'spectralCentroid'],
+                            },
+                        };
+                        const schema = schemas.find((candidate) => candidate.function.name === call.name);
+                        if (schema === undefined) throw new Error('Missing measurement schema');
+                        expect(matchesJsonSchema(call.arguments, schema.function.parameters)).toBe(true);
+                        return { status: 'complete', toolCalls: [call] };
+                    }
+                    throw new Error('Unexpected additional provider turn');
+                }
+            );
+            const planning = planPromptActions({
+                prompt,
+                streamIdentity: { runId: RUN_ID, requestId: 'save-request', cancellationGeneration: 0 },
+            });
+            await entered.promise;
+            const initialGain = trackStore.value?.tracks.find((track) => track.id === 'vocal')?.gain;
+            if (initialGain === undefined) throw new Error('Missing vocal gain');
+            if (write === 'unflushed edit') {
+                const state = trackStore.value;
+                if (state === null) throw new Error('Missing tracks');
+                trackStore.set({
+                    ...state,
+                    tracks: state.tracks.map((track) => (track.id === 'vocal' ? { ...track, gain: 0.5 } : track)),
+                });
+                expect(captureProjectRevision()).toBe(revision);
+            } else if (write !== 'save') {
+                moveTrackFader('vocal', 0.5);
+                if (write === 'edit and revert') moveTrackFader('vocal', initialGain);
+            }
+            if (write === 'save' || write === 'saved edit') await writeProjectSave();
+            if (write !== 'unflushed edit') expect(captureProjectRevision()).not.toBe(revision);
+            const afterWrite = {
+                tracks: structuredClone(trackStore.value),
+                undo: structuredClone(undoHistoryStore.value),
+            };
+            resume.resolve();
+            if (write !== 'save') {
+                await expect(planning).rejects.toThrow(AiProposalInvalidatedError);
+                expect(turns).toHaveLength(3);
+                expect(audio.renderTrackSubgraphOffline).not.toHaveBeenCalled();
+                expect(trackStore.value).toEqual(afterWrite.tracks);
+                expect(undoHistoryStore.value).toEqual(afterWrite.undo);
+                return;
+            }
+            const outer = await planning;
+            expect(outer.projectRevision).toBe(revision);
+            const planned = outer.result;
+            expect(planned.rejectionReason, JSON.stringify(planned.applicationToolReceipts)).toBeUndefined();
+            expect(planned.actions, JSON.stringify(planned.applicationToolReceipts)).toMatchObject([
+                { type: 'setTrackGain', payload: { trackId: 'vocal', gain: 0.7 } },
+            ]);
+            expect(turns, JSON.stringify(planned.applicationToolReceipts)).toHaveLength(4);
+            expect(planned.applicationToolReceipts).toEqual(
+                expect.arrayContaining([
+                    expect.objectContaining({
+                        callId: 'measurement',
+                        status: 'success',
+                        turn: 4,
+                        revision,
+                        data: expect.objectContaining({
+                            kind: 'analysis-measurement',
+                            scope: { kind: 'tracks', ids: ['vocal'] },
+                            range: expect.objectContaining({ startBeat: 0, endBeat: 4 }),
+                            metrics: ['spectralCentroid', 'frequencyBandEnergy'],
+                            targets: expect.arrayContaining([expect.objectContaining({ targetId: 'vocal' })]),
+                        }),
+                    }),
+                ])
+            );
+            expect(audio.renderTrackSubgraphOffline).toHaveBeenCalledTimes(1);
+            expect(
+                agentRunLifecycle.get(RUN_ID)?.budgetAttempts.filter((attempt) => attempt.category === 'localAnalysis')
+            ).toHaveLength(1);
+            expect(trackStore.value).toEqual(before.tracks);
+            expect(undoHistoryStore.value).toEqual(before.undo);
+        }
+    );
+
     it.each([
         'matched',
         'contradicted',
