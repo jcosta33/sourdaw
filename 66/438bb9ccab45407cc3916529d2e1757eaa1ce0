@@ -1,0 +1,25 @@
+src/modules/Arrangement/useCases/getArrangementHandlers.ts
+  s_1052c2a2231ded::t_c1c73794ff92af 15,221
+src/modules/Arrangement/handlers/clipStretch/handleEnableWarping.ts
+  s_1052c2a2231ded::t_c1c73794ff92af 4-7,28,30
+  s_1052c2a2231ded::t_b026e80c048c3c 35
+src/modules/AudioEngine/handlers/finalFeature/__tests__/publicWarpActionsAuthority.integration.spec.ts
+  s_1052c2a2231ded::t_b026e80c048c3c 176-178
+  s_1052c2a2231ded::t_c1c73794ff92af 99-101,154,250
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "66438bb9ccab45407cc3916529d2e1757eaa1ce0",
+  "prompts": {},
+  "sessions": {
+    "s_1052c2a2231ded": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b349-24b6-7622-8534-09f171c780d5",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
