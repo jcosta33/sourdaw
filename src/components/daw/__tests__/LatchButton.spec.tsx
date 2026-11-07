@@ -117,7 +117,7 @@ describe('LatchButton — variant glow', () => {
         );
         const btn = screen.getByRole('button', { name: 'OK' });
         // Neutral has no glow — boxShadow ends after the inset shadows.
-        expect(btn.style.boxShadow).not.toContain('0 0 8px');
+        expect(btn.style.boxShadow).not.toContain('0px 0px 8px');
     });
 
     it('applies the active text color class for the variant when active', () => {
