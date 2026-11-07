@@ -75,11 +75,12 @@ describe('GlutenPanel', () => {
         const workspace = faceplate?.firstElementChild;
 
         expect(faceplate).toHaveClass('@container');
+        expect(faceplate).not.toHaveClass('h-full');
         expect(workspace).not.toHaveClass('h-full');
-        expect(workspace).toHaveClass('grid-cols-1', '@5xl:h-full', '@5xl:grid-cols-[15rem_minmax(0,1fr)_19rem]');
-        expect(screen.getByLabelText('Gluten presets')).toHaveClass('h-80', '@5xl:h-auto');
-        expect(screen.getByLabelText('Gluten dynamics overview')).toHaveClass('@5xl:overflow-y-auto');
-        expect(screen.getByLabelText('Gluten controls')).toHaveClass('@5xl:overflow-y-auto');
+        expect(workspace).toHaveClass('grid-cols-1', '@4xl:h-full', '@4xl:grid-cols-[15rem_minmax(0,1fr)_19rem]');
+        expect(screen.getByLabelText('Gluten presets')).toHaveClass('h-80', '@4xl:h-auto');
+        expect(screen.getByLabelText('Gluten dynamics overview')).toHaveClass('@4xl:overflow-y-auto');
+        expect(screen.getByLabelText('Gluten controls')).toHaveClass('@4xl:overflow-y-auto');
     });
 
     it('renders topology buttons with stacked icon-led header and labels to prevent horizontal squashing', () => {

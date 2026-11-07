@@ -84,4 +84,39 @@ test.describe('Gluten panel — preset search filtering', () => {
         await expect.poll(() => readyCount(page)).toBe(baseline);
         await expect(page.getByRole('button', { name: /Bus Glue/ })).toBeVisible();
     });
+
+    test('uses the wide layout by default and contains stacked content at narrow widths', async ({ page }) => {
+        await page.setViewportSize({ width: 1440, height: 900 });
+        const faceplate = page.locator('.gluten-faceplate');
+        const workspace = faceplate.locator(':scope > div').first();
+        const defaultGeometry = await faceplate.evaluate((element) => ({
+            width: element.getBoundingClientRect().width,
+            columns: getComputedStyle(element.firstElementChild as Element).gridTemplateColumns,
+            viewport: window.innerWidth,
+        }));
+        expect(defaultGeometry.width, JSON.stringify(defaultGeometry)).toBeGreaterThanOrEqual(896);
+        await expect
+            .poll(() =>
+                workspace.evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(' ').length)
+            )
+            .toBe(3);
+
+        await page.setViewportSize({ width: 900, height: 700 });
+        await expect
+            .poll(() =>
+                workspace.evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(' ').length)
+            )
+            .toBe(1);
+        await expect
+            .poll(() =>
+                faceplate.evaluate((element) => {
+                    const content = element.firstElementChild;
+                    if (!content) {
+                        throw new Error('Expected the Gluten workspace grid');
+                    }
+                    return element.getBoundingClientRect().bottom - content.getBoundingClientRect().bottom;
+                })
+            )
+            .toBeGreaterThanOrEqual(-1);
+    });
 });
