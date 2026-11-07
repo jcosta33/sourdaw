@@ -46,6 +46,7 @@ import { compileAgentActionExecution } from '../compileAgentActionExecution';
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
 import { executeBriefCompile } from '../executeBriefCompile';
 import { getAgentApprovalView } from '../getAgentApprovalView';
+import { getBriefMixIntentCatalog } from '../getBriefMixIntentCatalog';
 import { getProjectContext } from '../getProjectContext';
 import { generateToolPlanningOutcome } from '../llmOrchestration/inference';
 import { metricGoalStateCodec } from '../metricGoalStateCodec';
@@ -72,7 +73,7 @@ registerDeviceEnginePorts();
  * alone; the user confirms one `setProductionBrief` card.
  */
 const VIBE_PROMPT = 'Make this record feel like a rainy late-night drive.';
-const CONSTRAINED_VIBE_PROMPT = 'make this a late-night lo-fi record but keep the vocal intimate';
+const CONSTRAINED_VIBE_PROMPT = 'make this a late-night record but keep the vocal intimate';
 const LITERAL_PROMPT = 'turn the vocal down 2 dB';
 const VISION = 'A rainy late-night drive';
 
@@ -159,8 +160,17 @@ const briefIntake: ScriptedPlanningTurn = ({ userMessage, schemas }) => {
 const literalIntake: ScriptedPlanningTurn = ({ userMessage, schemas }) =>
     literalMetricIntakeTurn(userMessage, schemas).map((call) => ({ ...call, id: 'literal-intake' }));
 
-function compileBrief(update: Record<string, unknown>): ScriptedPlanningTurn {
-    return () => [{ id: 'brief-compile', name: 'brief.compile', arguments: update }];
+function compileBrief(update: Record<string, unknown>, requestedDescriptors: readonly string[]): ScriptedPlanningTurn {
+    return () => [
+        {
+            id: 'brief-compile',
+            name: 'brief.compile',
+            arguments: {
+                ...update,
+                mixIntent: { catalogId: getBriefMixIntentCatalog().catalogId, requestedDescriptors },
+            },
+        },
+    ];
 }
 
 const VIBE_UPDATE = {
@@ -201,7 +211,7 @@ const decline: ScriptedPlanningTurn = () => [
     },
 ];
 
-const BRIEF_ROUTE = [briefIntake, compileBrief(VIBE_UPDATE), proposeCompiled()];
+const BRIEF_ROUTE = [briefIntake, compileBrief(VIBE_UPDATE, []), proposeCompiled()];
 
 function readReceipt(userMessage: string, callId: string): Record<string, unknown> {
     const receipt = decodeReceiptContext(readReceiptSummary(userMessage).value).find(
@@ -483,7 +493,7 @@ describe('writing the production brief from a whole-project request (AC-001 of #
     });
 
     it('answers brief.compile on a literal request with brief-not-requested and writes nothing', async () => {
-        const requests = scriptPlanningTurns([literalIntake, compileBrief(VIBE_UPDATE), decline]);
+        const requests = scriptPlanningTurns([literalIntake, compileBrief(VIBE_UPDATE, []), decline]);
         const before = readBrief();
 
         await sendChatMessage(LITERAL_PROMPT);
@@ -583,7 +593,7 @@ describe('writing the production brief from a whole-project request (AC-001 of #
     );
 
     it('refuses a pending card at Confirm once the track its hard constraint names is removed', async () => {
-        scriptPlanningTurns([briefIntake, compileBrief({ vision: 'A late-night lo-fi record' }), proposeCompiled()]);
+        scriptPlanningTurns([briefIntake, compileBrief({ vision: 'A late-night record' }, []), proposeCompiled()]);
         await sendChatMessage(CONSTRAINED_VIBE_PROMPT);
         const { confirmation } = getPendingProposal();
         await executeAppAction({ type: 'removeTrack', payload: { trackId: VOCAL_ID } });
@@ -635,7 +645,7 @@ describe('writing the production brief from a whole-project request (AC-001 of #
     });
 
     it('proposes a brief card for a constrained vibe that is confirmable with no measurement', async () => {
-        scriptPlanningTurns([briefIntake, compileBrief({ vision: 'A late-night lo-fi record' }), proposeCompiled()]);
+        scriptPlanningTurns([briefIntake, compileBrief({ vision: 'A late-night record' }, []), proposeCompiled()]);
 
         await sendChatMessage(CONSTRAINED_VIBE_PROMPT);
 
@@ -679,7 +689,7 @@ describe('writing the production brief from a whole-project request (AC-001 of #
                 authority.goals.flatMap((goal) => (goal.source.kind === 'constraint' ? [goal.source.clause] : []))
             );
         };
-        const brief = { ...seededBrief(), revision: 5, vision: 'A late-night lo-fi record' };
+        const brief = { ...seededBrief(), revision: 5, vision: 'A late-night record' };
 
         expect(
             heldClausesOf({ type: 'setTrackGain', payload: { trackId: VOCAL_ID, gain: 0.7, expectedGain: 0.8 } })
@@ -698,7 +708,7 @@ describe('writing the production brief from a whole-project request (AC-001 of #
         });
         audio.renderTrackSubgraphOffline.mockImplementation(async (input: RenderInput) => renderShelvedTone(input));
         const stemRole = { vision: 'A warmer low end', trackRoles: [{ trackId: STEM_ID, role: 'bass' }] };
-        scriptPlanningTurns([briefIntake, compileBrief(stemRole), proposeCompiled()]);
+        scriptPlanningTurns([briefIntake, compileBrief(stemRole, ['warm']), proposeCompiled()]);
 
         await sendChatMessage('make it warmer');
 
@@ -725,7 +735,7 @@ describe('writing the production brief from a whole-project request (AC-001 of #
         landProjectEdit(() => {
             trackStore.set({ tracks: [createTrack(DRUMS_ID, 'Drums')], selectedTrackId: null, ghostClips: [] });
         });
-        const visionOnly = [briefIntake, compileBrief({ vision: VISION }), proposeCompiled()];
+        const visionOnly = [briefIntake, compileBrief({ vision: VISION }, []), proposeCompiled()];
         scriptPlanningTurns(visionOnly);
         await sendChatMessage(VIBE_PROMPT);
         const briefOnly = getPendingProposal();
@@ -734,7 +744,7 @@ describe('writing the production brief from a whole-project request (AC-001 of #
         chatStore.set({ messages: [], isGenerating: false, enableReasoning: true, chatMode: 'prompt' });
         clearPendingActionConfirmations();
 
-        scriptPlanningTurns(visionOnly);
+        scriptPlanningTurns([briefIntake, compileBrief({ vision: VISION }, ['warm']), proposeCompiled()]);
         await sendChatMessage('make it warmer');
 
         const { message, confirmation } = getPendingProposal();
@@ -800,7 +810,10 @@ describe('brief.compile refusals', () => {
     ])('refuses %s with a receipt naming %s', (_label, field, update) => {
         const before = readBrief();
 
-        const result = compileWith(update);
+        const result = compileWith({
+            ...update,
+            mixIntent: { catalogId: getBriefMixIntentCatalog().catalogId, requestedDescriptors: [] },
+        });
 
         expect(result.commands).toBeNull();
         expect(result.receipt).toMatchObject({ status: 'failure', error: { code: 'invalid-tool-arguments' } });
@@ -808,9 +821,50 @@ describe('brief.compile refusals', () => {
         expect(readBrief()).toEqual(before);
     });
 
+    it('refuses malformed mix selections without composing a brief', () => {
+        const catalog = getBriefMixIntentCatalog();
+        const valid = { catalogId: catalog.catalogId, requestedDescriptors: ['warm'] };
+        const invalid: unknown[] = [
+            null,
+            {},
+            { ...valid, catalogId: 'foreign' },
+            { ...valid, extra: true },
+            { ...valid, requestedDescriptors: ['unknown'] },
+            { ...valid, requestedDescriptors: ['warm', 'warm'] },
+            { ...valid, requestedDescriptors: [...catalog.descriptors, 'warm'] },
+        ];
+        for (const mixIntent of invalid) {
+            const result = compileWith({ vision: VISION, mixIntent });
+            expect(result.commands).toBeNull();
+            expect(result.receipt).toMatchObject({
+                status: 'failure',
+                error: { code: 'invalid-tool-arguments', retryable: true },
+            });
+        }
+        expect(compileWith({ vision: VISION, mixIntent: valid }).receipt.status).toBe('success');
+        expect(compileWith({ vision: VISION, mixIntent: { ...valid, requestedDescriptors: [] } }).receipt.status).toBe(
+            'success'
+        );
+    });
+
+    it('refuses an omitted mix intent as invalid tool arguments', () => {
+        const result = compileWith({ vision: VISION });
+        expect(result.receipt).toMatchObject({
+            status: 'failure',
+            error: { code: 'invalid-tool-arguments', retryable: true },
+        });
+    });
+
     it('refuses a request the brief was not offered to, as the Prompt Bar is', () => {
         const result = executeBriefCompile({
-            call: { id: 'brief-compile', name: 'brief.compile', arguments: { vision: VISION } },
+            call: {
+                id: 'brief-compile',
+                name: 'brief.compile',
+                arguments: {
+                    vision: VISION,
+                    mixIntent: { catalogId: getBriefMixIntentCatalog().catalogId, requestedDescriptors: [] },
+                },
+            },
             callId: 'brief-compile',
             turn: 2,
             revision: captureProjectRevision(),

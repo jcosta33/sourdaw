@@ -4,7 +4,7 @@ import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { registerSupportingServicePorts } from '#/app/registerSupportingServicePorts';
 import { flushAutomergeStorageWrites } from '#/infra/store/storage/createAutomergeStorage';
 import { trackStore } from '#/modules/Arrangement/stores';
-import { createTrack } from '#/modules/Arrangement/useCases';
+import { createTrack, getMixRecipeCatalog } from '#/modules/Arrangement/useCases';
 import {
     audioEngine,
     initEngineDeviceCollaborators,
@@ -16,6 +16,7 @@ import { executeAppAction, setActionHistoryMetadataPort } from '#/modules/Comman
 import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
 import { defaultProjectStoreState, projectStore } from '#/modules/Project/stores';
 import { getProjectHandlers } from '#/modules/Project/useCases';
+import { digest } from '#/utils/canonicalDigest';
 import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
 import { DEFAULT_AGENT_RESOURCE_LIMITS } from '../../models/AgentResourceLimits';
@@ -26,13 +27,16 @@ import { readAgentRunState, sanitizeAgentRunState } from '../../stores/agentRunS
 import { clearAiHistory } from '../../stores/aiActionHistoryStore';
 import { chatStore, clearChatMessages } from '../../stores/chatStore';
 import { pendingActionConfirmationStore } from '../../stores/pendingActionConfirmationStore';
+import { readScheduledVibeRunPlan } from '../../validators/readScheduledVibeRunPlan';
 import { normalizeAgentFailure } from '../agentErrorAndSaga';
 import { groundVibeRunBatch } from '../agentRequestOrchestration/groundVibeRunBatch';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { agentRunCancellation } from '../cancelAgentRun';
 import { cancelPendingChatActions } from '../cancelPendingChatActions';
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
+import * as briefCompiler from '../executeBriefCompile';
 import { getAgentApprovalView } from '../getAgentApprovalView';
+import { getBriefMixIntentCatalog } from '../getBriefMixIntentCatalog';
 import { generateToolPlanningOutcome } from '../llmOrchestration/inference';
 import { metricGoalStateCodec } from '../metricGoalStateCodec';
 import { reproposePendingChatActions } from '../reproposePendingChatActions';
@@ -41,6 +45,7 @@ import { sendChatMessage as sendChatMessageWithoutDocumentFlush } from '../sendC
 import { readCreativeInterpretationCatalog, selectCreativeInterpretationCall } from './highLevelIntentWorkflowFixture';
 import { landProjectEdit } from './landProjectEdit';
 import { configureMetricGoalProject, metricGoalAudioBuffer, resetMetricGoalProject } from './metricGoalWorkflowFixture';
+import { decodeReceiptContext, readReceiptSummary } from './receiptContextFixture';
 
 registerDeviceEnginePorts();
 registerSupportingServicePorts();
@@ -169,7 +174,14 @@ const briefIntake: ScriptedPlanningTurn = ({ userMessage, schemas }) => {
 };
 
 const compileBrief: ScriptedPlanningTurn = () => [
-    { id: 'brief-compile', name: 'brief.compile', arguments: { vision: 'A warmer, more open mix' } },
+    {
+        id: 'brief-compile',
+        name: 'brief.compile',
+        arguments: {
+            vision: 'A warmer, more open mix',
+            mixIntent: { catalogId: getBriefMixIntentCatalog().catalogId, requestedDescriptors: ['warm'] },
+        },
+    },
 ];
 
 const proposeBrief: ScriptedPlanningTurn = () => [
@@ -362,6 +374,181 @@ afterEach(() => {
 });
 
 describe('a whole-project vibe run of measured recipe batches (AC-003 of #4372)', () => {
+    it('schedules the selected width for a contrast request', async () => {
+        const catalog = getMixRecipeCatalog();
+        const mixIntent = {
+            catalogId: digest({ version: catalog.version, descriptors: [...catalog.descriptors].sort() }),
+            requestedDescriptors: ['wide'],
+        };
+        scriptPlanningTurns([
+            briefIntake,
+            () => [{ id: 'brief-compile', name: 'brief.compile', arguments: { vision: 'A wider mix', mixIntent } }],
+            proposeBrief,
+        ]);
+        await sendChatMessage('make this mix not so much warmer as wider');
+        const brief = requireOnlyProposedCard();
+        expect(cardContent(brief)).toContain('wide drums');
+        expect(cardContent(brief)).not.toContain('warm drums');
+    });
+
+    it.each([
+        ...['only', 'just', 'merely', 'simply', 'solely', 'exclusively'].map(
+            (focus): readonly [string, readonly string[]] => [
+                `make this mix not ${focus} warmer but also wider`,
+                ['warm', 'wide'],
+            ]
+        ),
+        ['make this mix not only warmer, but wider', ['warm', 'wide']],
+        ['make this mix warmer rather than wider', ['warm']],
+        ['make this mix warmer instead of wider', ['warm']],
+        ['make this mix warmer as opposed to wider', ['warm']],
+        ['make this mix not so much warmer as wider', ['wide']],
+        ['make it warmer but not brighter', ['warm']],
+        ['keep the drums punchy and make the vocal warmer', ['warm']],
+        ['make it warmer and less muddy', ['warm', 'muddy']],
+        ['make the whole mix warmer around the track called Wider', ['warm']],
+        ['make the whole mix warmer around \"Wider\"', ['warm']],
+        ['make this mix warmer and more open', ['wide']],
+        ['make this mix not so much warmer as wider', ['warm']],
+    ] satisfies readonly (readonly [string, readonly string[]])[])(
+        'uses the explicit selection for %s',
+        async (prompt, requestedDescriptors) => {
+            if (prompt.includes('Wider')) {
+                landProjectEdit(() => {
+                    const state = trackStore.value;
+                    if (state === null) throw new Error('Expected project tracks');
+                    trackStore.set({
+                        ...state,
+                        tracks: state.tracks.map((track) =>
+                            track.id === DRUMS_ID ? { ...track, name: 'Wider' } : track
+                        ),
+                    });
+                });
+            }
+            scriptPlanningTurns([
+                briefIntake,
+                () => [
+                    {
+                        id: 'brief-compile',
+                        name: 'brief.compile',
+                        arguments: {
+                            vision: 'A chosen sound',
+                            mixIntent: { catalogId: getBriefMixIntentCatalog().catalogId, requestedDescriptors },
+                        },
+                    },
+                ],
+                proposeBrief,
+            ]);
+            await sendChatMessage(prompt);
+            const brief = requireOnlyProposedCard();
+            const schedule = agentRunLifecycle.get(brief.runId)?.plan?.batchSchedule;
+            if (schedule?.kind !== 'vibe-run') throw new Error('Expected a scheduled vibe run');
+            const plan = readScheduledVibeRunPlan(schedule.serializedPlan);
+            expect(plan).not.toBeNull();
+            expect([...new Set(plan?.batches.flatMap((batch) => batch.objective.descriptors))].sort()).toEqual(
+                [...requestedDescriptors].sort()
+            );
+            const vocalRecipes =
+                plan?.batches.flatMap((batch) =>
+                    batch.targets.filter((target) => target.targetId === VOCAL_ID).flatMap((target) => target.recipeIds)
+                ) ?? [];
+            for (const descriptor of requestedDescriptors) {
+                expect(vocalRecipes).toContain(`vocal-${descriptor}`);
+            }
+            expect(audio.renderTrackSubgraphOffline).not.toHaveBeenCalled();
+        }
+    );
+
+    it('refuses a successful compilation whose retained intent is missing', async () => {
+        const compile = briefCompiler.executeBriefCompile;
+        vi.spyOn(briefCompiler, 'executeBriefCompile').mockImplementation((input) => {
+            const result = compile(input);
+            Reflect.deleteProperty(result, 'mixIntent');
+            return result;
+        });
+        const requests = scriptPlanningTurns(BRIEF_ROUTE);
+        await sendChatMessage(PROMPT);
+        expect(proposedCards()).toEqual([]);
+        expect(requests).toHaveLength(3);
+        expect(vi.mocked(briefCompiler.executeBriefCompile).mock.results[0]?.value.receipt.status).toBe('success');
+        expect(lastMessage()).toContain('Provider referenced an unknown, duplicate, or failed transform compilation');
+    });
+
+    it('refuses a brief compilation with a stale retained revision', async () => {
+        const compile = briefCompiler.executeBriefCompile;
+        vi.spyOn(briefCompiler, 'executeBriefCompile').mockImplementation((input) => {
+            const result = compile(input);
+            return { ...result, receipt: { ...result.receipt, revision: 'stale-revision' } };
+        });
+        scriptPlanningTurns(BRIEF_ROUTE);
+        await sendChatMessage(PROMPT);
+        expect(proposedCards()).toEqual([]);
+        expect(lastMessage()).toContain('Provider referenced a stale transform compilation');
+    });
+
+    it('does not schedule a reduced quality when the typed selection is empty', async () => {
+        scriptPlanningTurns([
+            briefIntake,
+            () => [
+                {
+                    id: 'brief-compile',
+                    name: 'brief.compile',
+                    arguments: {
+                        vision: 'Less punch',
+                        mixIntent: { catalogId: getBriefMixIntentCatalog().catalogId, requestedDescriptors: [] },
+                    },
+                },
+            ],
+            proposeBrief,
+        ]);
+        await sendChatMessage('make the drums less punchy');
+        const brief = requireOnlyProposedCard();
+        expect(agentRunLifecycle.get(brief.runId)?.plan?.batchSchedule).toBeUndefined();
+        expect(audio.renderTrackSubgraphOffline).not.toHaveBeenCalled();
+    });
+
+    it('adopts the earlier successful compilation and its own mix selection', async () => {
+        const intent = (requestedDescriptors: readonly string[]) => ({
+            catalogId: getBriefMixIntentCatalog().catalogId,
+            requestedDescriptors,
+        });
+        const requests = scriptPlanningTurns([
+            briefIntake,
+            () => [
+                {
+                    id: 'brief-compile',
+                    name: 'brief.compile',
+                    arguments: { vision: 'First vision', mixIntent: intent(['wide']) },
+                },
+            ],
+            () => [
+                {
+                    id: 'later-compile',
+                    name: 'brief.compile',
+                    arguments: { vision: 'Later vision', mixIntent: intent(['warm']) },
+                },
+            ],
+            proposeBrief,
+        ]);
+        await sendChatMessage('make this mix warmer');
+        for (const [index, callId] of [
+            [2, 'brief-compile'],
+            [3, 'later-compile'],
+        ] as const) {
+            const request = requests[index];
+            if (request === undefined) throw new Error('Expected the compiler receipt turn');
+            expect(decodeReceiptContext(readReceiptSummary(request.userMessage).value)).toEqual(
+                expect.arrayContaining([expect.objectContaining({ callId, status: 'success' })])
+            );
+        }
+        const brief = requireOnlyProposedCard();
+        expect(brief.actions).toMatchObject([
+            { type: 'setProductionBrief', payload: { brief: { vision: 'First vision' } } },
+        ]);
+        expect(cardContent(brief)).toContain('wide drums');
+        expect(cardContent(brief)).not.toContain('warm drums');
+    });
+
     it('lists the planned batches on the brief card and applies nothing before Confirm', async () => {
         scriptPlanningTurns(BRIEF_ROUTE);
 

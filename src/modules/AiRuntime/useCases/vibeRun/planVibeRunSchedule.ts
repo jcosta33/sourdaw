@@ -3,6 +3,7 @@ import { readSecondsAtBeat } from '#/modules/Transport/stores';
 
 import { type AgentRunBudgets } from '../../models/AgentRun';
 import { ANALYSIS_MEASURE_MAX_TARGETS } from '../../models/AnalysisMeasureLimits';
+import { type BriefMixIntent } from '../../models/BriefMixIntent';
 import { type IntentResult } from '../../models/IntentResult';
 import { type PerceptualConstraintReading } from '../../models/PerceptualConstraint';
 import { type ProjectContext, type ProjectContextProductionBrief } from '../../models/ProjectContext';
@@ -22,7 +23,6 @@ import { readPerceptualConstraintGoals } from '../perceptualConstraints/readPerc
 import { planWholeProjectVibeRun } from '../planWholeProjectVibeRun';
 import { readArrangementRange } from '../readArrangementRange';
 import { readMeasurementRenderedSeconds } from '../readMeasurementRenderedSeconds';
-import { readRequestMixDescriptors } from '../readRequestMixDescriptors';
 
 import { describeVibeRunObjective } from './describeVibeRunObjective';
 import { type VibeBatchPair } from './readVibeBatchPairs';
@@ -225,8 +225,7 @@ function describePlannedRun(input: {
 
 /**
  * Plans the run of recipe batches a whole-project request asks for, from the brief the user is about
- * to confirm and the project as it is now, asking no provider. The characters are the request's own
- * descriptor words, the recipes the authored ones, and the batches hold at most as many targets as one
+ * to confirm and the project as it is now, asking no provider. The characters are the validated selection from the brief compilation, the recipes the authored ones, and the batches hold at most as many targets as one
  * measurement reads. A request naming no character, or one whose plan holds no batch, is the brief
  * alone. A plan that does not fit its run is not scheduled, and the card says why.
  */
@@ -235,10 +234,11 @@ export function planVibeRunSchedule(input: {
     context: ProjectContext;
     brief: ProjectContextProductionBrief;
     budgets: AgentRunBudgets;
+    mixIntent: BriefMixIntent;
 }): PlannedVibeRunSchedule {
     const catalog = getMixRecipeCatalog();
     const reading = compilePerceptualConstraints(input.prompt, input.context);
-    const descriptors = readRequestMixDescriptors({ prompt: input.prompt, catalog, context: input.context, reading });
+    const descriptors = input.mixIntent.requestedDescriptors;
     if (descriptors.length === 0) {
         return { status: 'none' };
     }

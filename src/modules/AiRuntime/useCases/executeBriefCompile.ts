@@ -3,11 +3,13 @@ import { composeProductionBriefUpdate, describeProductionBriefChange } from '#/m
 
 import { BRIEF_COMPILE_TOOL_NAME } from '../models/AgentToolCatalogNames';
 import { type ApplicationToolReceipt } from '../models/ApplicationOwnedTool';
+import { type BriefMixIntent } from '../models/BriefMixIntent';
 import { type ProjectContext, type ProjectContextProductionBrief } from '../models/ProjectContext';
 import { type RetainedCommand } from '../models/RetainedCompilation';
 import { type ToolCallResult } from '../transformers/toolCallParser';
 
 import { compilePerceptualConstraints } from './perceptualConstraints/compilePerceptualConstraints';
+import { readBriefMixIntent } from './readBriefMixIntent';
 
 type BriefUpdate = Parameters<typeof composeProductionBriefUpdate>[0]['update'];
 type BriefStatement = NonNullable<BriefUpdate['preferences']>[number];
@@ -18,6 +20,7 @@ type BriefCompileResult = {
     briefChangeLines: readonly string[] | null;
     /** The whole next brief the command writes, typed, for the planner that reads it before Confirm. */
     composedBrief: ProjectContextProductionBrief | null;
+    mixIntent: BriefMixIntent | null;
 };
 
 type Parsed = { status: 'parsed'; update: BriefUpdate } | { status: 'invalid'; reason: string };
@@ -168,6 +171,7 @@ function refuseBriefCompile(
         commands: null,
         briefChangeLines: null,
         composedBrief: null,
+        mixIntent: null,
         receipt: {
             schema: 'sourdaw.application-tool-receipt',
             schemaVersion: 1,
@@ -220,7 +224,16 @@ export function executeBriefCompile(input: {
             false
         );
     }
-    const parsed = parseBriefUpdate(input.call.arguments);
+    const { mixIntent: providedIntent, ...update } = input.call.arguments;
+    const mixIntent = readBriefMixIntent(providedIntent);
+    if (mixIntent === null) {
+        return failure(
+            'invalid-tool-arguments',
+            'mixIntent: provide a valid selection from the current catalog.',
+            true
+        );
+    }
+    const parsed = parseBriefUpdate(update);
     if (parsed.status === 'invalid') {
         return failure('invalid-tool-arguments', parsed.reason, true);
     }
@@ -262,6 +275,7 @@ export function executeBriefCompile(input: {
         commands: [command],
         briefChangeLines: changeLines,
         composedBrief: composed.brief,
+        mixIntent,
         receipt: {
             schema: 'sourdaw.application-tool-receipt',
             schemaVersion: 1,

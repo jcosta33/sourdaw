@@ -130,6 +130,7 @@ import { prepareWorkflowMetricScopes } from './prepareWorkflowMetricScopes';
 import { projectDeclarativeTransformSnapshot } from './projectDeclarativeTransformSnapshot';
 import { projectPlanningProviderToolSchemas, type PlanningAnswerPhase } from './projectPlanningProviderToolSchemas';
 import { projectWorkflowMetricToolSchemas } from './projectWorkflowMetricToolSchemas';
+import { readBriefMixIntent } from './readBriefMixIntent';
 import { splitCompiledCommandList } from './splitCompiledCommandList';
 import { validateActions } from './validateActions';
 import { planVibeRunSchedule } from './vibeRun/planVibeRunSchedule';
@@ -1632,6 +1633,17 @@ const planPromptIntent = inject({ logger })(
                             rejectionReason: `Provider action rejected: ${brief.reason}`,
                         };
                     }
+                    const selectedBrief = selectedCompilations[0];
+                    if (selectedBrief?.kind !== 'brief' || readBriefMixIntent(selectedBrief.mixIntent) === null) {
+                        return {
+                            actions: [],
+                            rawText: prompt,
+                            requiresConfirmation: false,
+                            ...applicationToolReceiptFields,
+                            ...creativeAuthorityFields,
+                            rejectionReason: 'Provider action rejected: the adopted brief has no valid mix intent.',
+                        };
+                    }
                     const briefMetricGoalState = serializeMetricGoalState([brief.action]);
                     if (metricGoalStateCodec(briefMetricGoalState) === null) {
                         return {
@@ -2199,6 +2211,7 @@ function planBriefVibeRun(input: {
         prompt: input.prompt,
         context: input.context,
         brief: compiled.brief,
+        mixIntent: compiled.mixIntent,
         budgets: run?.budgets ?? { limits: readAgentResourceLimits(), consumed: {} },
     });
     if (planned.status === 'none') {
