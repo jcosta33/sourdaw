@@ -1,0 +1,42 @@
+tests/e2e/mixerAiHealthTestId.spec.ts
+  s_eb3cd86b0cee6e::t_8d1bafddff9be4 25
+  s_eb3cd86b0cee6e::t_df4266136cc419 30-32
+src/modules/TimelineEditor/presentations/views/AutomationView/__tests__/AutomationControlsIntegration.spec.tsx
+  s_eb3cd86b0cee6e::t_8d1bafddff9be4 1-12,14-22
+  s_eb3cd86b0cee6e::t_7e9046db5659cb 13
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/PianoRollToolbarIntegration.spec.tsx
+  s_eb3cd86b0cee6e::t_8d1bafddff9be4 1-2,4-11,42-47,50-80
+  s_eb3cd86b0cee6e::t_08abda34fa6ec6 3,48-49
+  s_eb3cd86b0cee6e::t_df4266136cc419 12-41
+src/modules/MixerConsole/presentations/views/__tests__/MixerPanelWidthIntegration.spec.tsx
+  s_eb3cd86b0cee6e::t_9cbcf1aeec7aa5 1-24
+src/modules/WorkspaceShell/presentations/views/Transport/__tests__/SoloModeSelectorIntegration.spec.tsx
+  s_eb3cd86b0cee6e::t_df4266136cc419 1,13-17,20-23
+  s_eb3cd86b0cee6e::t_481d7d39361fe6 2-12,18-19,24-45
+tests/e2e/pianoRollZoomTestId.spec.ts
+  s_eb3cd86b0cee6e::t_df4266136cc419 13
+  s_eb3cd86b0cee6e::t_538896838a1833 33-38
+.agents/skills/review-stances/test-validity.md
+  s_eb3cd86b0cee6e::t_8d1bafddff9be4 33-34
+src/modules/ElasticAudio/presentations/views/__tests__/ElasticEditorControls.integration.spec.tsx
+  s_eb3cd86b0cee6e::t_4ee11e0b03962d 1-3,8-21,47-78
+  s_eb3cd86b0cee6e::t_df4266136cc419 4-7,22-46
+.agents/skills/review-stances/maintained-e2e-specs.md
+  s_eb3cd86b0cee6e::t_57b343ff41859c 27-28,42-43
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e047f5fedc68f7c1265edc8c3832a58318ce3c58",
+  "prompts": {},
+  "sessions": {
+    "s_eb3cd86b0cee6e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34c-a4d8-7523-838e-1cd1a0a25d78",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
