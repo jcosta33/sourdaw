@@ -300,6 +300,62 @@ describe('TimelineMinimap', () => {
         }
     );
 
+    it.each(['Tab', 'Shift', 'Control', 'Meta', 'Alt', 'Escape', 'a'])(
+        'leaves %s and Follow untouched during playback',
+        (key) => {
+            transportStoreMock.value = { isPlaying: true };
+            renderWithTooltip(<TimelineMinimap />);
+            const slider = screen.getByRole('slider');
+            const windowListener = vi.fn();
+            window.addEventListener('keydown', windowListener);
+            try {
+                const event = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true });
+                slider.dispatchEvent(event);
+
+                expect(timelineMinimapUseCaseMocks.setTimelineMinimapScrollX).not.toHaveBeenCalled();
+                expect(timelineMinimapUseCaseMocks.setTimelineMinimapAutoScroll).not.toHaveBeenCalled();
+                expect(event.defaultPrevented).toBe(false);
+                expect(windowListener).toHaveBeenCalledOnce();
+            } finally {
+                window.removeEventListener('keydown', windowListener);
+            }
+        }
+    );
+
+    it.each([true, false])('moves End to the advertised maximum while playing is %s', (isPlaying) => {
+        transportStoreMock.value = { isPlaying };
+        storeOverrides.values.set(timelineViewStoreMock, {
+            scrollX: 70,
+            scrollY: 0,
+            pixelsPerBeat: 7,
+            autoScrollEnabled: true,
+        });
+        storeOverrides.values.set(trackStoreMock, {
+            tracks: [{ clips: [{ endBeat: 200 }] }],
+            selectedTrackId: null,
+        });
+        renderWithTooltip(<TimelineMinimap />);
+        const slider = screen.getByRole('slider');
+        expect(slider).toHaveAttribute('aria-valuemax', '220');
+        const windowListener = vi.fn();
+        window.addEventListener('keydown', windowListener);
+        try {
+            const event = new KeyboardEvent('keydown', { key: 'End', bubbles: true, cancelable: true });
+            slider.dispatchEvent(event);
+
+            expect(timelineMinimapUseCaseMocks.setTimelineMinimapScrollX).toHaveBeenCalledExactlyOnceWith(220 * 7);
+            if (isPlaying) {
+                expect(timelineMinimapUseCaseMocks.setTimelineMinimapAutoScroll).toHaveBeenCalledExactlyOnceWith(false);
+            } else {
+                expect(timelineMinimapUseCaseMocks.setTimelineMinimapAutoScroll).not.toHaveBeenCalled();
+            }
+            expect(event.defaultPrevented).toBe(true);
+            expect(windowListener).not.toHaveBeenCalled();
+        } finally {
+            window.removeEventListener('keydown', windowListener);
+        }
+    });
+
     it('should route playback auto-scroll disabling through the minimap auto-scroll use case', () => {
         transportStoreMock.value = { isPlaying: true };
         renderWithTooltip(<TimelineMinimap />);
