@@ -1,0 +1,19 @@
+src/modules/AiRuntime/useCases/__tests__/collectMetricGoalProof.spec.ts
+  s_68423a2adea8d2::t_0be0e66a2d38b5 36-37,110,118,143-145,151
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d7ad35342faa77c8bad489407c71df729ed07d94",
+  "prompts": {},
+  "sessions": {
+    "s_68423a2adea8d2": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34b-f305-7c03-beb2-57afa678cda5",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
