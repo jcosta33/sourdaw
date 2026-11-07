@@ -1,0 +1,52 @@
+src/modules/Arrangement/handlers/clip/handleDuplicateClipToNextBar.ts
+  s_8dd2ba9e498da7::t_be2d8995fde49c 10,81-87
+  s_8dd2ba9e498da7::t_dfe8675d3bb8aa 80,88-89
+src/modules/Arrangement/handlers/clip/prepareCreatedClipRedoGuard.ts
+  s_8dd2ba9e498da7::t_dfe8675d3bb8aa 17
+src/modules/Arrangement/presentations/views/__tests__/ClipContextMenu.spec.tsx
+  s_8dd2ba9e498da7::t_dfe8675d3bb8aa 455-460,496-500
+src/modules/Arrangement/handlers/clip/__tests__/createdClipGroupedReplay.integration.spec.ts
+  s_8dd2ba9e498da7::t_be2d8995fde49c 41,295-299
+  s_8dd2ba9e498da7::t_85e44483d5632a 1,26,247-294,300-305
+  s_8dd2ba9e498da7::t_dfe8675d3bb8aa 67,72-73,78
+src/modules/AudioAnalysis/useCases/__tests__/audioToMidiCommand.integration.spec.ts
+  s_8dd2ba9e498da7::t_dfe8675d3bb8aa 34-38,76-78,250-259,269-271,286-297
+  s_8dd2ba9e498da7::t_be2d8995fde49c 2,6,47
+src/modules/Arrangement/presentations/views/ClipContextMenu.tsx
+  s_8dd2ba9e498da7::t_dfe8675d3bb8aa 176-182
+src/modules/AudioAnalysis/useCases/__tests__/audioToMidi.spec.ts
+  s_8dd2ba9e498da7::t_be2d8995fde49c 2-3
+  s_8dd2ba9e498da7::t_dfe8675d3bb8aa 68-70,72-83,136,138,176,318,388,575-576
+src/modules/Arrangement/handlers/clip/handleDuplicateClip.ts
+  s_8dd2ba9e498da7::t_be2d8995fde49c 11,115-121
+  s_8dd2ba9e498da7::t_dfe8675d3bb8aa 114,122-123
+src/modules/Arrangement/handlers/clip/handleAddClip.ts
+  s_8dd2ba9e498da7::t_be2d8995fde49c 9,57-63
+  s_8dd2ba9e498da7::t_dfe8675d3bb8aa 56,64-65
+src/modules/Arrangement/handlers/clip/handleDuplicateClipAt.ts
+  s_8dd2ba9e498da7::t_be2d8995fde49c 12
+src/modules/TimelineEditor/presentations/views/ClipView/WaveformEditor.tsx
+  s_8dd2ba9e498da7::t_dfe8675d3bb8aa 430-431
+src/modules/AudioAnalysis/useCases/__tests__/polyphonicAudioToMidi.spec.ts
+  s_8dd2ba9e498da7::t_be2d8995fde49c 2
+  s_8dd2ba9e498da7::t_dfe8675d3bb8aa 160-165
+src/modules/AudioAnalysis/handlers/analysis/__tests__/handleAudioToMidi.spec.ts
+  s_8dd2ba9e498da7::t_be2d8995fde49c 2
+  s_8dd2ba9e498da7::t_dfe8675d3bb8aa 4
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "cf23b809d06a0f846d153f0ae206fad0f447b8bf",
+  "prompts": {},
+  "sessions": {
+    "s_8dd2ba9e498da7": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34a-1f45-7430-80af-58acd6c4b831",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
