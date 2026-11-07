@@ -412,7 +412,7 @@ describe('serving-checkout identity', () => {
             throw new Error('expected the identity assertion to reject on a foreign marker');
         }
         if (!(failure instanceof Error)) {
-            throw new Error('expected the identity assertion to reject with an Error');
+            throw new TypeError('expected the identity assertion to reject with an Error');
         }
         expect(failure.message).toContain(accentedRoot);
         expect(failure.message).toContain(expectedRoot);
@@ -447,7 +447,7 @@ describe('serving-checkout identity', () => {
             throw new Error('expected the identity assertion to reject on a foreign marker');
         }
         if (!(failure instanceof Error)) {
-            throw new Error('expected the identity assertion to reject with an Error');
+            throw new TypeError('expected the identity assertion to reject with an Error');
         }
         expect(failure.message).toContain(servingRoot);
         expect(failure.message).toContain(expectedRoot);

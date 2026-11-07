@@ -3,8 +3,8 @@
  *
  * Unlike every other file here, this one is not run by `tsc`'s output. The
  * window uses `sandbox: true`, and Electron's sandboxed preload gets a
- * polyfilled `require` that resolves only `electron`, `events`, `timers` and
- * `url` — a relative import of a sibling file is not resolvable, so a sandboxed
+ * polyfilled `require` that resolves only `electron`. A relative import of a
+ * sibling file is not resolvable, so a sandboxed
  * preload has to be a single bundled CommonJS file. `scripts/buildElectronPreload.ts`
  * produces it, and `main.ts` loads that artifact by name.
  *

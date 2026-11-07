@@ -866,7 +866,7 @@ describe('executeAppAction', () => {
         const reportedCause = reportedError?.cause;
         expect(reportedCause).toBeInstanceOf(AggregateError);
         if (!(reportedCause instanceof AggregateError)) {
-            throw new Error('Expected an AggregateError cause');
+            throw new TypeError('Expected an AggregateError cause');
         }
         expect(reportedCause.errors).toEqual([effectFailure, reconciliationFailure]);
     });

@@ -977,7 +977,7 @@ describe('prepareTimeOperationStateRestore', () => {
 
         expect(thrown).toBeInstanceOf(UnrecoveredTimeOperationStateError);
         if (!(thrown instanceof UnrecoveredTimeOperationStateError)) {
-            throw new Error('Expected explicit unrecovered restore state');
+            throw new TypeError('Expected explicit unrecovered restore state');
         }
         expect(thrown.compensationFailures).toHaveLength(2);
         expect(thrown.compensationFailures).toContain(timelineFailure);
