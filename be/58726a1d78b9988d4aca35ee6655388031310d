@@ -1,0 +1,58 @@
+src/modules/Proof/presentations/views/__tests__/ProofDisclosure.integration.spec.tsx
+  s_eb3cd86b0cee6e::t_1bb09dbe107e25 81
+  s_eb3cd86b0cee6e::t_1c8a476e29d1f6 52
+  s_eb3cd86b0cee6e::t_d4cb47ccea9ed3 56-60,403,408,412
+  s_eb3cd86b0cee6e::t_2344cb23a7493a 346-347,364-365,381-382,398-399
+  s_eb3cd86b0cee6e::t_5c86ddc3c59746 344-345,348-363,366-380,383-396,400-402,404-407,409-411,413-414
+  s_eb3cd86b0cee6e::t_929fbfb4c5e256 2,27-39,42-51,53-55,61-62
+  s_eb3cd86b0cee6e::t_e6160297c72c49 40-41
+  s_eb3cd86b0cee6e::t_d9405a941a8889 256-258,288-289
+  s_eb3cd86b0cee6e::t_5e027cae02b3b9 397
+  s_68423a2adea8d2::t_c2131bd75ce722 63
+src/modules/Crust/presentations/views/__tests__/CrustControls.integration.spec.tsx
+  s_eb3cd86b0cee6e::t_199c6c2fed7293 245-246,250-268,270-286,289-296,298-304,312-320,323-352
+  s_eb3cd86b0cee6e::t_da90615863f7d4 269,287-288,305-311,363,389,424
+  s_eb3cd86b0cee6e::t_c5989fabc5d305 108-109,173-174
+  s_eb3cd86b0cee6e::t_4fcb03fc1a0d51 353-354,356-362,364-372,374-386,388,390-397,399-404,406-423,425
+  s_eb3cd86b0cee6e::t_d2c80435870fa1 2,26,29-35,49,70-77,89-90,97
+  s_eb3cd86b0cee6e::t_9b125117b55f5f 18-25
+  s_eb3cd86b0cee6e::t_4778839b3bd85a 144-145,187-188,195,197,209,211,222,224,236,238
+  s_eb3cd86b0cee6e::t_191d4eb15cb14d 426,431-438,441-454,456-472,474-480,483-497,505-509
+  s_eb3cd86b0cee6e::t_a9291ad6dc74a5 427,430
+  s_eb3cd86b0cee6e::t_e7ecff09a83a17 387,405,439-440,455,473,499,668,681,731,758-761,764,772-773,810
+  s_eb3cd86b0cee6e::t_dec702516c3d0a 239,244,498,510-512,514-550,553-578,583-606,608-654,656-667,669-680,682-730,732-742,744-757,762-763,765-771,774-781,783-809,812-813
+  s_eb3cd86b0cee6e::t_3e594943edd0f5 199-202,213-216,226-229,240-243
+  s_eb3cd86b0cee6e::t_e5897f4e1a9754 247-249,297,321-322,355,373,398,428-429,481-482,513,551-552,607,655,743,782
+  s_eb3cd86b0cee6e::t_495b3871e5b531 579-582
+  s_eb3cd86b0cee6e::t_e6160297c72c49 500-504
+tests/e2e/proofMissionCeilingTestId.spec.ts
+  s_eb3cd86b0cee6e::t_0e090b96872576 16-17
+scripts/__tests__/e2eAffectedGraph.spec.ts
+  s_eb3cd86b0cee6e::t_5ad45f4de2d7fe 111
+scripts/__tests__/prValidationScope.spec.ts
+  s_eb3cd86b0cee6e::t_9fc14a9ccadb9e 102,141,217,298
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "be58726a1d78b9988d4aca35ee6655388031310d",
+  "prompts": {},
+  "sessions": {
+    "s_68423a2adea8d2": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34b-f305-7c03-beb2-57afa678cda5",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_eb3cd86b0cee6e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34c-a4d8-7523-838e-1cd1a0a25d78",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
