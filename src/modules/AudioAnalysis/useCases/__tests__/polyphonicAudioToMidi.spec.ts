@@ -36,11 +36,12 @@ vi.mock('#/infra/logger/appLogger', () => ({
 // Count BasicPitch constructions so we can prove concurrent callers share a
 // single model load instead of each building their own (the OOM/duplicate-
 // load hazard the in-flight-promise memoization guards against).
-const basicPitchCtor = vi.fn<(modelPath: string) => void>();
+const basicPitchCtor = vi.fn<(model: string | Promise<unknown>) => void>();
+vi.mock('@tensorflow/tfjs', () => ({ loadGraphModel: vi.fn().mockResolvedValue({}) }));
 vi.mock('@spotify/basic-pitch', () => ({
     BasicPitch: class {
-        constructor(modelPath: string) {
-            basicPitchCtor(modelPath);
+        constructor(model: string | Promise<unknown>) {
+            basicPitchCtor(model);
         }
         // No notes detected — keeps the use case's later stages trivial.
         evaluateModel(
