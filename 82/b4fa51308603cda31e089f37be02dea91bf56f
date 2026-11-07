@@ -1,0 +1,19 @@
+scripts/test-health-gate-scripts.sh
+  s_78b2b3b67c73ae::t_ad95496f8b7069 444
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "82b4fa51308603cda31e089f37be02dea91bf56f",
+  "prompts": {},
+  "sessions": {
+    "s_78b2b3b67c73ae": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "f193e2c8-7176-4f60-8134-03128fe7841b",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
