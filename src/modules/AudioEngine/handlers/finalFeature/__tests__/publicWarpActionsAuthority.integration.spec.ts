@@ -33,7 +33,6 @@ import {
 } from '#/modules/CrdtDocument/useCases';
 
 import { projectOfflineAudioClipPlaybacks } from '../../../useCases/offlineRender/projectOfflineAudioClipPlaybacks';
-import { handleEnableWarping } from '../handleEnableWarping';
 
 type Root = {
     tracks: Pick<TrackStoreState, 'tracks'>;
@@ -90,7 +89,6 @@ function seed(mode: 'off' | undefined): void {
         endBeat: 6,
         audioOffsetSeconds: 0.25,
         stretchRatio: 2,
-        ...(mode === undefined ? {} : { stretchMode: mode }),
         fadeInBeats: 0,
         fadeOutBeats: 0,
         gain: 0.75,
@@ -98,6 +96,9 @@ function seed(mode: 'off' | undefined): void {
         locked: false,
         muted: false,
     };
+    if (mode !== undefined) {
+        clip.stretchMode = mode;
+    }
     const track = createTrack({ id: 'track', name: 'Audio', kind: 'audio', withoutDefaultDevice: true });
     trackStore.set({
         tracks: [
@@ -150,7 +151,7 @@ describe('public Enable Audio Warping project authority', () => {
         registerCrdtStorageRuntime();
         registerProjectSlotProjections();
         clearHandlerRegistry();
-        registerHandlerMap({ ...getArrangementHandlers(), enableWarping: handleEnableWarping });
+        registerHandlerMap(getArrangementHandlers());
         setActionHistoryMetadataPort(metadataPort);
         clearUndoHistory();
         resetActionReplayAuthority();
@@ -172,6 +173,9 @@ describe('public Enable Audio Warping project authority', () => {
         'enables repitch from %s with exact undo/redo and durable history',
         async (mode) => {
             seed(mode);
+            const handler = getArrangementHandlers().enableWarping;
+            expect(handler.batchExecution).toBe('singleton');
+            expect(handler.undoable).toBe(true);
             await executeAppAction({ type: 'setTrackColor', payload: { trackId: 'track', color: '#abcdef' } });
             const before = structuredClone(trackStore.value);
             const rawBefore = structuredClone(root().tracks.tracks);
@@ -243,7 +247,7 @@ describe('public Enable Audio Warping project authority', () => {
         const action = { type: 'enableWarping', payload: { clipId } } as const;
 
         await expect(executeAppAction(action)).rejects.toThrow(/audio clip/i);
-        expect(await handleEnableWarping.execute(action)).toEqual({
+        expect(await getArrangementHandlers().enableWarping.execute(action)).toEqual({
             status: 'conflict',
             reason: 'Audio warping requires an existing audio clip.',
         });

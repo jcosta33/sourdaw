@@ -1,6 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { handleEnableWarping } from '../handleEnableWarping';
 import { handleSetWarpAlgorithm } from '../handleSetWarpAlgorithm';
 import { handleSetWarpPitchShift } from '../handleSetWarpPitchShift';
 
@@ -16,12 +15,6 @@ vi.mock('#/modules/ElasticAudio/useCases', () => ({
 
 describe('Warping Handlers', () => {
     beforeEach(() => vi.clearAllMocks());
-
-    it('keeps public repitch enablement singleton and undoable', () => {
-        // Actual project writes, inverse replay and refusals belong to publicWarpActionsAuthority.integration.spec.ts.
-        expect(handleEnableWarping.batchExecution).toBe('singleton');
-        expect(handleEnableWarping.undoable).toBe(true);
-    });
 
     it('handleSetWarpAlgorithm delegates to use case', () => {
         void handleSetWarpAlgorithm.execute({
