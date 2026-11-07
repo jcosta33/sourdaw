@@ -1,0 +1,20 @@
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/TrackClipsSection.spec.tsx
+  s_977061c47f01dd::t_9ba562349257bd 6
+  s_977061c47f01dd::t_65c649a035e58d 7
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3dc7419815ae10f1e52a781a51727f63f6395af8",
+  "prompts": {},
+  "sessions": {
+    "s_977061c47f01dd": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34d-123d-7452-a6e7-60608388b6d7",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
