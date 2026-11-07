@@ -10,6 +10,7 @@ import { pendingMemberAdmission } from '../../repositories/webMidi/pendingMember
 import { activeNotes, channelToNote } from '../../repositories/webMidi/state';
 
 import { midiMessageHandlerDependencies } from './midiMessageHandlerDependencies';
+import { recordChannelEvent } from './recordChannelEvent';
 import { recordHeldNoteExpression } from './recordHeldNoteExpression';
 import { resolveBendRangeSemitones } from './resolveBendRangeSemitones';
 import { resolveInputDispatchFrame } from './resolveInputDispatchFrame';
@@ -89,6 +90,16 @@ export const handleWebMidiPitchBend = inject(midiMessageHandlerDependencies)(
                 }
                 return;
             }
+
+            // A bend on a non-member channel moves the whole channel, so it is a
+            // channel event of the take. Member-channel bend is per-note data,
+            // recorded on the note it bends.
+            recordChannelEvent(deps, {
+                trackId: targetTrackId,
+                channel,
+                event: { kind: 'pitchBend', value: bendValue },
+                timeStamp,
+            });
 
             for (const noteData of activeNotes.values()) {
                 // A channel-wide bend is not MPE, but it reaches the instrument

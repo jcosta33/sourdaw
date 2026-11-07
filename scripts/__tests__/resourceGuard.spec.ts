@@ -105,6 +105,10 @@ async function waitForClose(child: ChildProcess, timeoutMs = 2_000): Promise<num
     ]);
 }
 
+// Each real guarded command ends in a storage file proof that can spend its whole
+// five-second deadline retaking catalogs on a busy host.
+const GUARDED_CASE_TIMEOUT_MS = 20_000;
+
 describe('resource admission', () => {
     it('serializes admission updates', () => {
         const root = fixtureRoot('collision');
@@ -387,7 +391,7 @@ describe('process table sampling', () => {
     });
 });
 
-describe('resource enforcement', () => {
+describe('resource enforcement', { timeout: GUARDED_CASE_TIMEOUT_MS }, () => {
     it('rechecks capacity before spawning', async () => {
         let samples = 0;
         const result = await runIsolatedGuardedCommand({
@@ -876,7 +880,7 @@ describe('resource CLI', () => {
     });
 });
 
-describe('default budgets', () => {
+describe('default budgets', { timeout: GUARDED_CASE_TIMEOUT_MS }, () => {
     it.each([
         { profile: 'broad' as const, command: 'pnpm', args: ['typecheck:test'], expected: 6 * 1024 ** 3 },
         {
@@ -1176,7 +1180,7 @@ describe('pnpm modules preflight', () => {
     });
 });
 
-describe('guard failure stop enforcement', () => {
+describe('guard failure stop enforcement', { timeout: GUARDED_CASE_TIMEOUT_MS }, () => {
     function fakeResult(overrides: Partial<GuardedCommandResult> = {}): GuardedCommandResult {
         return {
             code: 0,

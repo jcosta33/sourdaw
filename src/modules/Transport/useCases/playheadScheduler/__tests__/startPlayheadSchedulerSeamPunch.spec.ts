@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
+import { activeRecordingRef } from '#/modules/Arrangement/stores';
 import { startRecording, stopRecording } from '#/modules/Arrangement/useCases';
 
 import { defaultTransportState } from '../../../models/TransportState';
@@ -110,6 +111,7 @@ vi.mock('#/modules/Automation/useCases', () => ({
  * barrel the scheduler calls through and read through `vi.mocked` below.
  */
 vi.mock('#/modules/Arrangement/useCases', () => ({
+    observeRecordingPassEntry: vi.fn(),
     discardRecording: vi.fn(),
     startRecording: vi.fn(() => {
         punchClock.start.push(ctxTime.now);
@@ -276,6 +278,7 @@ function resetPunchHarness(): void {
     evaluateFollowActionsMock.mockImplementation(() => ({ jumpToPosition: null, shouldStop: false }));
     tempoMapStoreState.value = { changes: [] };
     midiStoreState.value = null;
+    activeRecordingRef.current = [];
     // Module-global metronome dedup state; carried between tests otherwise.
     metronomeSchedulingState.lastBeat = -1;
     metronomeSchedulingState.firedClickTimes.clear();
@@ -344,6 +347,8 @@ describe('startPlayheadScheduler punch across the loop seam', () => {
             .mocked(stopRecording)
             .mock.calls.filter(([atBeat]) => atBeat !== undefined && Math.abs(atBeat - PUNCH_OUT_BEAT) < 1e-6);
         expect(punchOuts).toHaveLength(PASSES);
+        expect(punchClock.stop[0]).toBeCloseTo(TICK_SECONDS * 28, 3);
+        expect(vi.mocked(stopRecording).mock.calls[0]?.[1]?.contextSeconds).toBeCloseTo(1.95, 3);
         // The recording is closed for good: no unbounded punch left running.
         expect(schedulerSession.punchRecordingActive).toBe(false);
     });
@@ -351,14 +356,9 @@ describe('startPlayheadScheduler punch across the loop seam', () => {
     // The punch-in crossing lands ON the seam tick itself: the punch-in gate
     // scans the dying pass's position, which first sits inside the region on
     // that very tick, so the recording opens on the seam tick. The seam-tick
-    // punch-out shortcut (`punchOutDueAtSeam`) only asked whether a seam exists
-    // and the punch-out beat sits inside the dying band — always true — so the
-    // same tick that opened the recording also finalized it: an empty take, and
-    // the exact failure the punch-in gate's upper bound names for the non-seam
-    // path. The shortcut must only be due for a recording that was already open
-    // when the tick began; a punch-in opened on the seam tick captures across
-    // the seam and finalizes on a later scan crossing — here the next pass's
-    // seam tick, giving a real capture span of one pass instead of zero.
+    // old punch-out shortcut treated the planned seam as terminal for the
+    // opening tick, although the interval's own exclusive out has not sounded.
+    // The dated interval ends just after this tick, before the physical wrap.
     it('does not finalize the recording in the same tick its punch-in opened on the seam tick', async () => {
         trackStoreState.value = { tracks: [armedAudioTrack()] };
         transportStoreState.value = playingState({
@@ -369,6 +369,11 @@ describe('startPlayheadScheduler punch across the loop seam', () => {
             punchInEnabled: true,
             punchInBeat: PUNCH_IN_ON_SEAM_BEAT,
             punchOutBeat: PUNCH_OUT_ON_SEAM_BEAT,
+        });
+        vi.mocked(startRecording).mockImplementationOnce(() => {
+            punchClock.start.push(ctxTime.now);
+            activeRecordingRef.current = ['rec-clip-1'];
+            return [];
         });
 
         startPlayheadScheduler();
@@ -385,22 +390,110 @@ describe('startPlayheadScheduler punch across the loop seam', () => {
         expect(punchIns).toHaveLength(1);
         expect(punchClock.start).toHaveLength(1);
         expect(punchClock.start[0]).toBeCloseTo(TICK_SECONDS * 28, 3);
-        // The recording is still open: the seam-tick punch-out shortcut must not
-        // swallow the take it just opened. On the unfixed head this is already
-        // length 1 — the same tick's empty finalization.
+        // Its out beat sounds at 1.975 s; this tick is still at 1.96 s.
         expect(punchClock.stop).toHaveLength(0);
+        expect(schedulerSession.punchRecordingOwner?.terminal).toBe(true);
 
-        // Pass 2 runs out: the punch-out crossing of the dying band is behind
-        // the seam now, so the recording captures across the wrap and finalizes
-        // on pass 2's own seam tick — a real span, one full pass long.
-        await runUntilWraps(worker, 1);
-        // Let the last seam tick's scheduling work settle.
+        // The next tick observes the first exclusive out, rather than extending
+        // this gesture into another lap after its MIDI journal stopped admission.
+        // A loop edit now shortens future passes to [0,3.9); the already-staged
+        // first pass still owns out 3.95 at 1.975 s.
+        transportStoreState.value = { ...transportStoreState.value, loopEnd: 3.9 };
         await runTick(worker);
         expect(punchClock.start).toHaveLength(1);
         expect(punchClock.stop).toHaveLength(1);
-        expect(punchClock.stop[0]).toBeCloseTo(TICK_SECONDS * 56, 3);
-        expect(punchClock.stop[0]! - punchClock.start[0]!).toBeCloseTo(TICK_SECONDS * 28, 3);
+        expect(punchClock.stop[0]).toBeCloseTo(TICK_SECONDS * 29, 3);
+        const ending = vi.mocked(stopRecording).mock.calls[0]?.[1];
+        expect(ending?.contextSeconds).toBeCloseTo(1.975, 3);
+        expect(ending?.beatAtContextSeconds(1.975)).toBeCloseTo(PUNCH_OUT_ON_SEAM_BEAT, 3);
         expect(schedulerSession.punchRecordingActive).toBe(false);
+    });
+
+    it('waits when a loop pass cannot reach out, then ends on the first pass that can', async () => {
+        trackStoreState.value = { tracks: [armedAudioTrack()] };
+        transportStoreState.value = playingState({
+            isLooping: true,
+            loopStart: 0,
+            loopEnd: LOOP_BEATS,
+            punchInEnabled: true,
+            punchInBeat: PUNCH_IN_BEAT,
+            punchOutBeat: 4.5,
+        });
+
+        startPlayheadScheduler();
+        const worker = schedulerWorker();
+        for (let tick = 0; tick < 30 && punchClock.start.length === 0; tick++) {
+            await runTick(worker);
+        }
+        expect(punchClock.start).toHaveLength(1);
+        // The mock startRecording does not publish its clip ref. The real
+        // pass-boundary route advances the MIDI journal only while one exists.
+        activeRecordingRef.current = ['rec-clip-1'];
+        await runUntilWraps(worker, 1);
+        await runTick(worker);
+
+        expect(punchClock.start).toHaveLength(1);
+        expect(punchClock.stop).toHaveLength(0);
+        expect(schedulerSession.punchRecordingActive).toBe(true);
+
+        // The first pass ended at beat 4 before the admitted out at 4.5.
+        // Extending the next pass makes it the journal's first qualifying pass.
+        transportStoreState.value = { ...transportStoreState.value, loopEnd: 5 };
+        for (let tick = 0; tick < 40 && punchClock.stop.length === 0; tick++) {
+            await runTick(worker);
+        }
+        expect(punchClock.stop).toHaveLength(1);
+        expect(vi.mocked(stopRecording).mock.calls[0]?.[0]).toBe(4.5);
+        expect(vi.mocked(stopRecording).mock.calls[0]?.[1]?.contextSeconds).toBeCloseTo(4.25, 3);
+    });
+
+    it('retains the admitted out beat when the punch region is edited during capture', async () => {
+        trackStoreState.value = { tracks: [armedAudioTrack()] };
+        transportStoreState.value = playingState({
+            isLooping: true,
+            loopStart: 0,
+            loopEnd: LOOP_BEATS,
+            punchInEnabled: true,
+            punchInBeat: PUNCH_IN_BEAT,
+            punchOutBeat: PUNCH_OUT_BEAT,
+        });
+
+        startPlayheadScheduler();
+        const worker = schedulerWorker();
+        for (let tick = 0; tick < 30 && punchClock.start.length === 0; tick++) {
+            await runTick(worker);
+        }
+        expect(punchClock.start).toHaveLength(1);
+        transportStoreState.value = { ...transportStoreState.value, punchOutBeat: 4.5 };
+        await runUntilWraps(worker, 1);
+
+        expect(punchClock.start).toHaveLength(1);
+        expect(punchClock.stop).toHaveLength(1);
+        expect(vi.mocked(stopRecording).mock.calls[0]?.[0]).toBe(PUNCH_OUT_BEAT);
+        expect(vi.mocked(stopRecording).mock.calls[0]?.[1]?.contextSeconds).toBeCloseTo(1.95, 3);
+    });
+
+    it('reaches an out beyond loopEnd after playback locates past loopEnd', async () => {
+        trackStoreState.value = { tracks: [armedAudioTrack()] };
+        transportStoreState.value = playingState({
+            playheadPosition: 4.2,
+            isLooping: true,
+            loopStart: 0,
+            loopEnd: LOOP_BEATS,
+            punchInEnabled: true,
+            punchInBeat: 4.3,
+            punchOutBeat: 4.5,
+        });
+
+        startPlayheadScheduler();
+        const worker = schedulerWorker();
+        await runTick(worker);
+        expect(punchClock.start).toHaveLength(1);
+        await runTick(worker);
+        await runTick(worker);
+
+        expect(punchClock.stop).toHaveLength(1);
+        expect(vi.mocked(stopRecording).mock.calls[0]?.[0]).toBe(4.5);
     });
 });
 
@@ -486,6 +579,7 @@ describe('startPlayheadScheduler punch at the late wrap on a sub-look-ahead regi
         // The first punch-out is due at the very next wrap after the punch-in:
         // tick 1 opens, tick 2 wraps and must fire it.
         expect(punchClock.stop[0]).toBeCloseTo(TICK_SECONDS * 2, 3);
+        expect(vi.mocked(stopRecording).mock.calls[0]?.[1]?.contextSeconds).toBeCloseTo(0.1, 3);
         expect(schedulerSession.punchRecordingActive).toBe(false);
     });
 
@@ -521,6 +615,7 @@ describe('startPlayheadScheduler punch at the late wrap on a sub-look-ahead regi
         // The first punch-out is due at the first wrap after the punch-in, not
         // at a later scan landing.
         expect(punchClock.stop[0]).toBeCloseTo(TICK_SECONDS * 2, 3);
+        expect(vi.mocked(stopRecording).mock.calls[0]?.[1]?.contextSeconds).toBeCloseTo(0.095, 3);
         expect(schedulerSession.punchRecordingActive).toBe(false);
     });
 });

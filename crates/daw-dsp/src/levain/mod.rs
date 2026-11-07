@@ -48,12 +48,29 @@ pub const LEVAIN_BLOCK_FRAMES: usize = 4096;
 /// equal.
 pub const LEVAIN_SAMPLE_CHUNK_FLOATS: usize = 16_384;
 
+/// Entries one zone-table chunk carries at most, and so the most one host
+/// message appends to a staged LUT or arena on the render thread. A LUT entry
+/// travels as two words (offset, count), so a full LUT chunk is 64 KiB.
+///
+/// `ZoneTableStaging` refuses a larger chunk, and the instance's write window
+/// holds exactly one, so the figure is enforced here rather than trusted to
+/// the host. The loader restates it in
+/// `src/infra/audioWorklet/levainZoneTableChunk.ts`, and a spec pins the two
+/// equal.
+pub const LEVAIN_ZONE_TABLE_CHUNK_ENTRIES: usize = 8_192;
+
+/// Words of the instance's zone-table write window: one full LUT chunk.
+const ZONE_TABLE_WINDOW_WORDS: usize = 2 * LEVAIN_ZONE_TABLE_CHUNK_ENTRIES;
+
 /// WASM-exported Levain instance for AudioWorklet.
 #[wasm_bindgen]
 pub struct LevainInstance {
     engine: LevainEngine,
     left_buf: Vec<f32>,
     right_buf: Vec<f32>,
+    /// Where the host writes one zone-table chunk before committing it.
+    /// Allocated once with the instance, so staging a chunk allocates nothing.
+    zone_table_window: Vec<u32>,
     nan_flush_count: u64,
 }
 
@@ -65,6 +82,7 @@ impl LevainInstance {
             engine: LevainEngine::new(sample_rate, max_voices as usize),
             left_buf: vec![0.0; LEVAIN_BLOCK_FRAMES],
             right_buf: vec![0.0; LEVAIN_BLOCK_FRAMES],
+            zone_table_window: vec![0; ZONE_TABLE_WINDOW_WORDS],
             nan_flush_count: 0,
         }
     }
@@ -424,10 +442,85 @@ impl LevainInstance {
     }
 
     /// Build the zone lookup table after all zones and samples are loaded.
+    ///
+    /// Not what the worklet calls: building the tables allocates and walks
+    /// every zone, a cost that scales with the bank, so the browser host
+    /// computes them off the render thread (`LevainZoneTableBuilder`) and
+    /// stages them with `reserve_zone_tables`, the chunk commits and
+    /// `seal_zone_tables`. The native host (which builds banks on a control
+    /// thread) and the pinned wasm measurement recipes
+    /// (`benches/wasm/deviceRecipes.js`) still use this one.
     pub fn build_zone_map(&mut self, num_articulations: u32, num_mics: u32) -> bool {
         self.engine
             .build_zone_map(num_articulations as usize, num_mics as usize)
             .is_ok()
+    }
+
+    /// Reserve the staged bank's zone tables: `lut_entries` LUT slots, which
+    /// must be the size the dimensions imply, and `arena_entries` arena
+    /// entries. The staging's only allocation. Refuses (false), reserving
+    /// nothing, with no staged bank, a sample open, tables already reserved or
+    /// built, or sizes past the DSP limits.
+    pub fn reserve_zone_tables(
+        &mut self,
+        num_articulations: u32,
+        num_mics: u32,
+        lut_entries: u32,
+        arena_entries: u32,
+    ) -> bool {
+        self.engine.reserve_zone_tables(
+            num_articulations as usize,
+            num_mics as usize,
+            lut_entries as usize,
+            arena_entries as usize,
+        )
+    }
+
+    /// Address in this module's linear memory where the host writes the next
+    /// zone-table chunk: a LUT chunk as interleaved (offset, count) words, an
+    /// arena chunk as zone ids. At most `zone_table_write_words` words. Read
+    /// the module's `memory.buffer` after this call: growing it elsewhere
+    /// detaches earlier buffers.
+    pub fn zone_table_write_ptr(&mut self) -> *mut u32 {
+        self.zone_table_window.as_mut_ptr()
+    }
+
+    /// Words the zone-table write window holds: one full LUT chunk.
+    pub fn zone_table_write_words(&self) -> u32 {
+        self.zone_table_window.len() as u32
+    }
+
+    /// Append the `entries` LUT entries the host wrote at
+    /// `zone_table_write_ptr` to the reserved LUT, starting at slot `start`.
+    /// Allocates nothing. Refuses (false), appending nothing, for a chunk out
+    /// of order, past the LUT or longer than one chunk, or an entry that would
+    /// reach past the declared arena.
+    pub fn commit_zone_lut_chunk(&mut self, start: u32, entries: u32) -> bool {
+        let Some(words) = (entries as usize)
+            .checked_mul(2)
+            .and_then(|words| self.zone_table_window.get(..words))
+        else {
+            return false;
+        };
+        self.engine.write_zone_lut_chunk(start as usize, words)
+    }
+
+    /// Append the `entries` zone ids the host wrote at `zone_table_write_ptr`
+    /// to the reserved arena, starting at `start`. Allocates nothing. Refuses
+    /// (false), appending nothing, for a chunk out of order, past the arena or
+    /// longer than one chunk, or an id the staged bank holds no zone for.
+    pub fn commit_zone_arena_chunk(&mut self, start: u32, entries: u32) -> bool {
+        let Some(ids) = self.zone_table_window.get(..entries as usize) else {
+            return false;
+        };
+        self.engine.write_zone_arena_chunk(start as usize, ids)
+    }
+
+    /// Install the staged zone tables once every entry is written, as
+    /// `build_zone_map` would have built them. O(1); allocates and frees
+    /// nothing. Refuses (false) while any entry is missing.
+    pub fn seal_zone_tables(&mut self) -> bool {
+        self.engine.seal_zone_tables()
     }
 
     /// Clear all loaded zones and samples from the engine.
@@ -468,5 +561,94 @@ impl LevainInstance {
     /// Get number of currently sounding voices.
     pub fn active_voices(&self) -> u32 {
         self.engine.active_voice_count() as u32
+    }
+}
+
+/// Computes a bank's zone tables away from the render thread.
+///
+/// The browser host runs this in a Worker on its own module instance, then
+/// stages the result into the worklet's `LevainInstance` in bounded chunks.
+/// It runs the same `zone::build_zone_tables` the engine's own
+/// `build_zone_map` runs, so there is one table algorithm.
+#[wasm_bindgen]
+pub struct LevainZoneTableBuilder {
+    zones: Vec<zone::ZoneSpan>,
+    tables: Option<zone::ZoneTables>,
+}
+
+impl Default for LevainZoneTableBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[wasm_bindgen]
+impl LevainZoneTableBuilder {
+    #[wasm_bindgen(constructor)]
+    pub fn new() -> Self {
+        Self {
+            zones: Vec::new(),
+            tables: None,
+        }
+    }
+
+    /// Add one zone's place in the map, with the fields `LevainInstance::add_zone`
+    /// takes for it.
+    #[allow(clippy::too_many_arguments)]
+    pub fn add_zone(
+        &mut self,
+        zone_id: u32,
+        articulation_id: u16,
+        mic_id: u8,
+        lo_key: u8,
+        hi_key: u8,
+        lo_vel: u8,
+        hi_vel: u8,
+    ) {
+        use self::types::{KeyRange, VelRange};
+        self.zones.push(zone::ZoneSpan {
+            id: zone_id,
+            articulation: articulation_id,
+            mic: mic_id,
+            key: KeyRange {
+                lo: lo_key,
+                hi: hi_key,
+            },
+            vel: VelRange {
+                lo: lo_vel,
+                hi: hi_vel,
+            },
+        });
+    }
+
+    /// Compute the tables for the zones added so far. Returns false, keeping
+    /// no tables, for the dimensions or capacities `build_zone_map` refuses.
+    pub fn build(&mut self, num_articulations: u32, num_mics: u32) -> bool {
+        self.tables = zone::build_zone_tables(
+            self.zones.iter().copied(),
+            num_articulations as usize,
+            num_mics as usize,
+        )
+        .ok();
+        self.tables.is_some()
+    }
+
+    /// The built LUT as interleaved (offset, count) words, the layout a LUT
+    /// chunk travels in. Empty before a successful `build`.
+    pub fn lut(&self) -> Vec<u32> {
+        self.tables.as_ref().map_or_else(Vec::new, |tables| {
+            tables
+                .lut
+                .iter()
+                .flat_map(|entry| [entry.offset, u32::from(entry.count)])
+                .collect()
+        })
+    }
+
+    /// The built arena of zone ids. Empty before a successful `build`.
+    pub fn arena(&self) -> Vec<u32> {
+        self.tables
+            .as_ref()
+            .map_or_else(Vec::new, |tables| tables.arena.clone())
     }
 }

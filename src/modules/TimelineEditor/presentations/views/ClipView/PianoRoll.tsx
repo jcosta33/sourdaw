@@ -25,7 +25,7 @@ import { DawSideRail } from '#/components/daw/DawSideRail';
 import { Row, Stack } from '#/components/layout';
 import { useStore } from '#/infra/store/useStore';
 import { useStoreSelector } from '#/infra/store/useStoreSelector';
-import { trackStore } from '#/modules/Arrangement/stores';
+import { takeLaneStore, trackStore } from '#/modules/Arrangement/stores';
 import { CANVAS_EDITOR_COMMAND_EVENT, isCanvasEditorCommandRequest } from '#/modules/CommandInterface/useCases';
 import { midiStore, stepRecordStore, type MidiStoreState } from '#/modules/MIDI/stores';
 import {
@@ -52,6 +52,7 @@ import {
     getVisiblePitches,
     getPianoRollExtentBeats,
 } from '../../helpers/pianoRollConstants';
+import { projectPianoRollRecordingPassNotes } from '../../helpers/pianoRollRecordingPass';
 import { usePianoRollInteractions } from '../../hooks/usePianoRollInteractions';
 import { usePianoRollRenderer } from '../../hooks/usePianoRollRenderer';
 import { NotePropertyLane } from '../AutomationLane/NotePropertyLane';
@@ -204,12 +205,14 @@ export const PianoRoll = ({
     }
 
     // ── Store subscriptions ──────────────────────────────────────────
-    const notes = useStoreSelector(
+    useStore(takeLaneStore);
+    const sourceNotes = useStoreSelector(
         midiStore,
         (state: MidiStoreState | null) => state?.notesByClipId[clipId] ?? EMPTY_NOTES
     );
+    const notes = projectPianoRollRecordingPassNotes(clipId, sourceNotes);
     // A9: build notes map for all simultaneously-open clips (excludes primary clipId)
-    const openedClipNotes = useStoreSelector(
+    const openedSourceNotes = useStoreSelector(
         midiStore,
         (state: MidiStoreState | null) =>
             openedClipIds && openedClipIds.length > 0
@@ -219,6 +222,14 @@ export const PianoRoll = ({
                 : undefined,
         areOpenedClipNotesEqual
     );
+    const projectedOpenedNotes =
+        openedSourceNotes &&
+        Object.entries(openedSourceNotes).map(
+            ([id, openedNotes]) => [id, projectPianoRollRecordingPassNotes(id, openedNotes)] as const
+        );
+    const openedClipNotes = projectedOpenedNotes?.some(([id, projected]) => projected !== openedSourceNotes?.[id])
+        ? Object.fromEntries(projectedOpenedNotes)
+        : openedSourceNotes;
     // Length of the primary clip plus every clip opened alongside it, read
     // from the Arrangement module's own store (foreign modules may read
     // another module's store directly — see AGENTS.md §Architecture). Drives
@@ -550,6 +561,7 @@ export const PianoRoll = ({
                         >
                             <div style={{ width: contentWidth, height: '100%' }}>
                                 <NotePropertyLane
+                                    primaryNotes={notes}
                                     clipId={clipId}
                                     trackId={trackId}
                                     selectedNoteIds={selectedNoteIds}

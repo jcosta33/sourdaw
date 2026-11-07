@@ -17,7 +17,7 @@
  * carries a position fresher than any of them.
  */
 
-import { trackStore } from '#/modules/Arrangement/stores';
+import { takeLaneStore, trackStore } from '#/modules/Arrangement/stores';
 import { midiStore } from '#/modules/MIDI/stores';
 
 import { nativeLiveMidiWriter } from './nativeLiveMidiWriterState';
@@ -37,6 +37,7 @@ export function watchNativeLiveMidiEdits(): void {
     const unsubscribes = [
         midiStore.subscribe(requestNativeLiveMidiWriterRearm),
         trackStore.subscribe(requestNativeLiveMidiWriterRearm),
+        takeLaneStore.subscribe(requestNativeLiveMidiWriterRearm),
     ];
     nativeLiveMidiWriter.unwatch = () => {
         for (const unsubscribe of unsubscribes) {

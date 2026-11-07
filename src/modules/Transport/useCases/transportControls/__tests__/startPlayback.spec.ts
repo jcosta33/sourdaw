@@ -10,6 +10,7 @@ import { notifyUser } from '#/utils/Notification/notifyUser';
 import { defaultTransportState, type TransportState } from '../../../models/TransportState';
 import { getTransportState } from '../../../repositories/transport/getTransportState';
 import { updateTransportState } from '../../../repositories/transport/updateTransportState';
+import { playheadClockRef } from '../../../stores/playheadClockRef';
 import { playheadPositionRef } from '../../../stores/playheadPositionRef';
 import { playheadWrapCountRef } from '../../../stores/playheadWrapCountRef';
 import { ensureTrackStrips } from '../../ensureTrackStrips';
@@ -353,6 +354,26 @@ describe('startPlayback', () => {
             vi.mocked(updateTransportState).mockImplementation((patch) => {
                 transportState = { ...transportState, ...patch };
             });
+        });
+
+        it('receipts the actual admitted roll beat after a position changes during the hold', async () => {
+            let settle!: (result: Awaited<ReturnType<typeof startNativeLiveGraphSession>>) => void;
+            vi.mocked(startNativeLiveGraphSession).mockReturnValue(
+                new Promise((resolve) => {
+                    settle = resolve;
+                })
+            );
+            const onRoll = vi.fn();
+            const starting = startPlayback(onRoll);
+            transportState = { ...transportState, playheadPosition: 12 };
+            audioClock.currentTime = 51;
+            vi.mocked(startPlayheadScheduler).mockImplementationOnce(() => {
+                playheadClockRef.beat = transportState.playheadPosition;
+                playheadClockRef.audioTimeSeconds = audioClock.currentTime;
+            });
+            settle({ outcome: 'started', runtimeRevision: 1, reports: [] });
+            await starting;
+            expect(onRoll).toHaveBeenCalledExactlyOnceWith(51, 12);
         });
 
         it('does not start the scheduler until the native session has answered', async () => {

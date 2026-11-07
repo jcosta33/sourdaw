@@ -131,7 +131,8 @@ pub struct ExpressionState {
     pub cc7: u8,
     /// CC2 vibrato depth (0-127).
     pub cc2: u8,
-    /// CC64 sustain pedal.
+    /// CC64 sustain pedal — a boolean render of the continuous position:
+    /// any nonzero value holds, only 0 lifts.
     pub sustain_pedal: bool,
     /// Smoothed CC11 as gain multiplier.
     pub cc11_gain: OnePoleSmoother,
@@ -171,7 +172,12 @@ impl ExpressionState {
                 self.cc11 = value;
                 self.cc11_gain.set_target(value as f32 / 127.0);
             }
-            64 => self.sustain_pedal = value >= 64,
+            // Sustain (CC64) is a continuous position, not a halfway latch:
+            // any nonzero value holds the pedal partly down and only 0 lifts
+            // it — the app's pedal law, which keeps a stored CC64 row engaged
+            // while its value is > 0. A `>= 64` threshold here released
+            // positions that law keeps held.
+            64 => self.sustain_pedal = value > 0,
             _ => {}
         }
     }

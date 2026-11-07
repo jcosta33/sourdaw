@@ -1,3 +1,6 @@
+import { admitMidiRecordingEvent } from './midiRecordingSession';
+import { captureEventBeatAt } from './webMidiInput/captureEventBeat';
+import { resolveInputEventTime, type CapturedInputEventTime } from './webMidiInput/resolveInputEventTime';
 /**
  * Trigger a live noteOff event on the currently selected track.
  * Routes through the AudioEngine message handler pipeline —
@@ -11,5 +14,13 @@
 import { handleWebMidiNoteOff } from './webMidiInput/handleWebMidiNoteOff';
 
 export function triggerLiveNoteOff(channel: number, note: number, releaseVelocity = 0): Promise<void> {
-    return handleWebMidiNoteOff(channel, note, releaseVelocity);
+    const time = { audioTime: resolveInputEventTime({ timeStamp: undefined }) };
+    const eventTime = { ...time, recordingBeat: captureEventBeatAt(time) };
+    const admission = admitMidiRecordingEvent({ event: { type: 'noteOff', channel, note }, time: eventTime });
+    const admittedTime: CapturedInputEventTime = {
+        ...eventTime,
+        ...(admission.disposition === 'captured' ? { recordingWitness: admission.witness } : {}),
+        ...(admission.disposition === 'inactive' ? {} : { recordingAdmitted: true }),
+    };
+    return handleWebMidiNoteOff(channel, note, releaseVelocity, admittedTime);
 }

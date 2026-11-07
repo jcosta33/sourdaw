@@ -119,6 +119,7 @@ const mockResolveTempoFieldState = vi.fn((input: ResolveTempoFieldStateInput): T
     mockResolveImplementation(input)
 );
 vi.mock('#/modules/Transport/useCases', () => ({
+    preferencesSeededTransportState: vi.fn(),
     resolveTempoFieldState: (input: ResolveTempoFieldStateInput): TempoFieldState => {
         return mockResolveTempoFieldState(input);
     },

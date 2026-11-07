@@ -57,6 +57,7 @@ import { type RefObject, useRef, useEffect, useLayoutEffect } from 'react';
 
 import { trackStore } from '#/modules/Arrangement/stores';
 import { midiStore } from '#/modules/MIDI/stores';
+import { projectPianoRollRecordingPassNotes } from '../helpers/pianoRollRecordingPass';
 import { clampMidiData7 } from '#/utils/midiData';
 import { resolveToken } from '#/utils/UI/resolveToken';
 
@@ -220,7 +221,7 @@ export const usePianoRollRenderer = (deps: RendererDeps): (() => void) => {
             // Read store state
             const midiState = midiStore.value;
             const trackState = trackStore.value;
-            const notes = midiState?.notesByClipId[cId] ?? EMPTY_NOTES;
+            const notes = projectPianoRollRecordingPassNotes(cId, midiState?.notesByClipId[cId] ?? EMPTY_NOTES);
             const tracks = trackState?.tracks ?? null;
             const openedIds = openedClipIdsRef.current;
 
@@ -673,7 +674,8 @@ function drawOpenedClipNotes(
         if (openedId === primaryClipId) {
             continue;
         }
-        const openedNotes = notesByClipId[openedId];
+        const openedNotes =
+            notesByClipId[openedId] && projectPianoRollRecordingPassNotes(openedId, notesByClipId[openedId]);
         if (!openedNotes) {
             continue;
         }

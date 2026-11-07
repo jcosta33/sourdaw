@@ -668,6 +668,8 @@ export type GuardFailureReceipt = {
     command: string;
     args: string[];
     cwd?: string;
+    // The final storage census of a leak, so a stopped lane can be triaged from its receipt.
+    census?: string;
     profile: string;
     peakRssBytes: number;
     maxRssBytes: number;
@@ -718,6 +720,9 @@ export function parseGuardFailureReceipt(raw: string, label = 'guard-failure rec
     if (candidate.cwd !== undefined && (typeof candidate.cwd !== 'string' || !isAbsolute(candidate.cwd))) {
         fail(`${label} cwd must be an absolute path`);
     }
+    if (candidate.census !== undefined && typeof candidate.census !== 'string') {
+        fail(`${label} census must be a string`);
+    }
     if (typeof candidate.profile !== 'string' || candidate.profile.trim() === '') {
         fail(`${label} profile is invalid`);
     }
@@ -752,6 +757,7 @@ export function parseGuardFailureReceipt(raw: string, label = 'guard-failure rec
         command: candidate.command,
         args: candidate.args,
         ...(candidate.cwd === undefined ? {} : { cwd: candidate.cwd }),
+        ...(candidate.census === undefined ? {} : { census: candidate.census }),
         profile: candidate.profile,
         peakRssBytes: candidate.peakRssBytes,
         maxRssBytes: candidate.maxRssBytes,

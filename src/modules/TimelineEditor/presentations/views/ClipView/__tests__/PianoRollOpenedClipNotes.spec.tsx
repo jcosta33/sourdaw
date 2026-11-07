@@ -8,6 +8,9 @@
 import { render, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { takeLaneStore, trackStore } from '#/modules/Arrangement/stores';
+import { createTrack } from '#/modules/Arrangement/useCases';
+
 import { PianoRoll } from '../PianoRoll';
 
 type ProbeNote = Record<string, unknown>;
@@ -18,9 +21,10 @@ type ProbeMidiState = {
     pitchBendByClipId: Record<string, unknown[]>;
 };
 
-const { midiSnapshotRef, midiListeners, capturedOpenedClipNotes } = vi.hoisted(() => ({
+const { midiSnapshotRef, midiListeners, capturedOpenedClipNotes, capturedPrimaryNotes } = vi.hoisted(() => ({
     midiSnapshotRef: { current: null as ProbeMidiState | null },
     midiListeners: new Set<() => void>(),
+    capturedPrimaryNotes: [] as ProbeNote[][],
     capturedOpenedClipNotes: [] as (Record<string, ProbeNote[]> | undefined)[],
 }));
 
@@ -69,8 +73,9 @@ vi.mock('../../../hooks/usePianoRollRenderer', () => ({
 }));
 
 vi.mock('../../../hooks/usePianoRollInteractions', () => ({
-    usePianoRollInteractions: vi.fn((args: { openedClipNotes?: Record<string, ProbeNote[]> }) => {
+    usePianoRollInteractions: vi.fn((args: { notes: ProbeNote[]; openedClipNotes?: Record<string, ProbeNote[]> }) => {
         capturedOpenedClipNotes.push(args.openedClipNotes);
+        capturedPrimaryNotes.push(args.notes);
         return {
             handleMouseDown: vi.fn(),
             handleMouseMove: vi.fn(),
@@ -223,4 +228,56 @@ describe('PianoRoll openedClipNotes equality', () => {
         expect(latest).not.toBe(first);
         expect(latest?.['clip-2']?.[0]?.channel).toBe(3);
     });
+});
+
+it('PianoRoll supplies only selected recorded IDs at wrapped display beats', () => {
+    const track = createTrack({ id: 'track-1', name: 'Cycle', kind: 'midi' });
+    track.clips.push({
+        id: 'clip-1',
+        trackId: track.id,
+        name: 'Cycle',
+        type: 'midi',
+        startBeat: 0,
+        endBeat: 4,
+        fadeInBeats: 0,
+        fadeOutBeats: 0,
+        gain: 1,
+        color: '#fff',
+        locked: false,
+        muted: false,
+    });
+    trackStore.set({ tracks: [track], selectedTrackId: track.id });
+    takeLaneStore.set({
+        lanes: [
+            {
+                id: 'lane',
+                trackId: track.id,
+                activeCompRegions: [],
+                takes: [
+                    {
+                        id: 't2',
+                        clipId: 'clip-1',
+                        name: 'Lap 2',
+                        startBeat: 0,
+                        endBeat: 4,
+                        selected: true,
+                        sourceOffsetBeats: 4,
+                        recordingPassId: 'pass-2',
+                    },
+                ],
+            },
+        ],
+    });
+    midiSnapshotRef.current = buildState([]);
+    midiSnapshotRef.current.notesByClipId['clip-1'] = [
+        { id: 'lap1', pitch: 60, startBeat: 1, duration: 1, velocity: 100, recordingPassId: 'pass-1' },
+        { id: 'lap2', pitch: 72, startBeat: 5, duration: 1, velocity: 100, recordingPassId: 'pass-2' },
+    ];
+    try {
+        renderPianoRoll();
+        expect(capturedPrimaryNotes.at(-1)?.map((note) => [note.id, note.startBeat])).toEqual([['lap2', 1]]);
+    } finally {
+        takeLaneStore.set({ lanes: [] });
+        trackStore.set({ tracks: [], selectedTrackId: null });
+    }
 });

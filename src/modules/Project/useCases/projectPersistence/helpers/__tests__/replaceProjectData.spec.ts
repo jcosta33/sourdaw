@@ -108,6 +108,7 @@ vi.mock('#/modules/PluginHost/useCases', () => ({
     unloadPlugin: mockUnloadLoadedExternalPlugins,
 }));
 vi.mock('#/modules/Transport/useCases', () => ({
+    preferencesSeededTransportState: vi.fn(),
     ensureTrackStrips: mockEnsureTrackStrips,
     stopPlayback: mockStopPlayback,
 }));

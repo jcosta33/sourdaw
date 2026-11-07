@@ -79,17 +79,14 @@ vi.mock('#/infra/store/useStore', () => ({
     useStore: vi.fn(<TData,>(store: { value: TData | null }, fallback?: TData) => store.value ?? fallback),
 }));
 
-vi.mock('../../../helpers/laneConstants', () => ({
-    PITCH_BEND_CENTER: 64,
-}));
-
 // Mirrors PitchBendLane's private coordinate math so expected draw positions are derived,
-// never hand-computed magic numbers.
+// never hand-computed magic numbers. The values are the signed 14-bit wire delta:
+// -8192 at the bottom, 0 at the vertical centre, 8191 at the top.
 const beatToX = (beat: number, beatWidth: number): number => beat * beatWidth + 8;
-const valueToY = (value: number, height: number): number => height - (value / 127) * (height - 8) - 4;
+const valueToY = (value: number, height: number): number => height / 2 - (value / 8192) * ((height - 8) / 2);
 const beatFromX = (x: number, beatWidth: number): number => Math.max(0, (x - 8) / beatWidth);
 const valueFromY = (y: number, height: number): number =>
-    Math.round(Math.max(0, Math.min(127, ((height - y - 4) / (height - 8)) * 127)));
+    Math.max(-8192, Math.min(8191, Math.round(((height / 2 - y) / ((height - 8) / 2)) * 8192)));
 
 describe('PitchBendLane', () => {
     const defaultProps = {
@@ -133,29 +130,29 @@ describe('PitchBendLane', () => {
             const { container } = render(<PitchBendLane {...defaultProps} />);
             const points = container.querySelectorAll('[data-pb-point="true"]');
             expect(points).toHaveLength(2);
-            expect(points[0]).toHaveAttribute('title', 'Beat 1.00: 20 (center: 64)');
-            expect(points[1]).toHaveAttribute('title', 'Beat 3.00: 90 (center: 64)');
+            expect(points[0]).toHaveAttribute('title', 'Beat 1.00: 20 (center: 0)');
+            expect(points[1]).toHaveAttribute('title', 'Beat 3.00: 90 (center: 0)');
         });
 
-        it('should always draw the center reference line at the pitch-bend-center value', () => {
+        it('should always draw the center reference line at the vertical middle of the lane', () => {
             const { container } = render(<PitchBendLane {...defaultProps} />);
             const centerLine = container.querySelector('svg line');
             expect(centerLine).not.toBeNull();
             // containerRef.current is still null during the render that produces this JSX (refs
             // attach after commit), so the `?? 80` fallback governs the height on every fresh mount.
-            expect(centerLine).toHaveAttribute('y1', String(valueToY(64, 80)));
-            expect(centerLine).toHaveAttribute('y2', String(valueToY(64, 80)));
+            expect(centerLine).toHaveAttribute('y1', '40');
+            expect(centerLine).toHaveAttribute('y2', '40');
         });
 
         it('should draw a connecting polyline once more than one point exists', () => {
             laneMocks.midiState.pitchBendByClipId['clip-1'] = [
-                { id: 'pb-a', value: 0, beat: 0, channel: 0 },
-                { id: 'pb-b', value: 127, beat: 2, channel: 0 },
+                { id: 'pb-a', value: -8192, beat: 0, channel: 0 },
+                { id: 'pb-b', value: 8191, beat: 2, channel: 0 },
             ];
             const { container } = render(<PitchBendLane {...defaultProps} />);
             const polyline = container.querySelector('polyline');
             expect(polyline).not.toBeNull();
-            const expectedPoints = `${beatToX(0, 40)},${valueToY(0, 80)} ${beatToX(2, 40)},${valueToY(127, 80)}`;
+            const expectedPoints = `${beatToX(0, 40)},${valueToY(-8192, 80)} ${beatToX(2, 40)},${valueToY(8191, 80)}`;
             expect(polyline).toHaveAttribute('points', expectedPoints);
         });
 
@@ -188,6 +185,18 @@ describe('PitchBendLane', () => {
                 expect.any(Function),
                 expect.any(Function)
             );
+        });
+
+        it.each([
+            { where: 'vertical centre', clientY: 40, expected: 0 },
+            { where: 'top edge', clientY: 0, expected: 8191 },
+            { where: 'bottom edge', clientY: 80, expected: -8192 },
+        ])('should write the signed wire delta $expected for a click at the $where', ({ clientY, expected }) => {
+            render(<PitchBendLane {...defaultProps} />);
+
+            fireEvent.click(screen.getByRole('group'), { clientX: 48, clientY });
+
+            expect(addPitchBend).toHaveBeenCalledWith('clip-1', expected, 1);
         });
 
         it('should wire undo/redo for an added point to remove/re-add it', () => {

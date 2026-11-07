@@ -64,3 +64,46 @@ describe('projectMidiClipWindow controller rows at the window end', () => {
         expect(projected.pitchBends.map((row) => row.id)).toEqual(['head', 'inside']);
     });
 });
+
+describe('recorded pass note ownership', () => {
+    it('rejects an earlier-pass held tail and slices matching expression to the selected boundary', () => {
+        const selected = {
+            id: 'lap2',
+            recordingPassId: 'pass-2',
+            pitch: 72,
+            startBeat: 5,
+            duration: 5,
+            velocity: 100,
+            pressure: 10,
+            expression: {
+                pressure: [
+                    { offsetBeats: 0.5, value: 30 },
+                    { offsetBeats: 2, value: 80 },
+                ],
+            },
+        };
+        const projected = projectMidiClipWindow({
+            notes: [
+                { id: 'lap1', recordingPassId: 'pass-1', pitch: 60, startBeat: 3, duration: 10, velocity: 100 },
+                selected,
+                { id: 'lap3', recordingPassId: 'pass-3', pitch: 84, startBeat: 9, duration: 1, velocity: 100 },
+            ],
+            controlChanges: [],
+            pitchBends: [],
+            window: { recordingPassId: 'pass-2', visibleStartBeat: 4, visibleEndBeat: 6, beatOffset: -4 },
+        });
+        expect(projected.notes).toEqual([
+            { ...selected, startBeat: 1, duration: 1, expression: { pressure: [{ offsetBeats: 0.5, value: 30 }] } },
+        ]);
+    });
+
+    it('retains legacy overlap admission when the window has no pass identity', () => {
+        const projected = projectMidiClipWindow({
+            notes: [{ id: 'legacy', pitch: 60, startBeat: 3, duration: 4, velocity: 100 }],
+            controlChanges: [],
+            pitchBends: [],
+            window: { visibleStartBeat: 4, visibleEndBeat: 6, beatOffset: -4 },
+        });
+        expect(projected.notes).toEqual([{ id: 'legacy', pitch: 60, startBeat: 0, duration: 2, velocity: 100 }]);
+    });
+});

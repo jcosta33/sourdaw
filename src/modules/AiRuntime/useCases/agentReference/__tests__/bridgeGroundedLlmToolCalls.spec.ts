@@ -5816,7 +5816,8 @@ describe('bridgeGroundedLlmToolCalls', () => {
         ]);
     });
 
-    it('rejects a single removeTrack when a slash-collapsed nested name and a hyphenated literal id are both cited', () => {
+    // No Guitar track is named past the slash, so "Lead/Guitar" states Lead Guitar beside the cited id.
+    it('rejects a single removeTrack when a slash-joined nested name and a hyphenated literal id are both cited', () => {
         const slashNestedNameContext = {
             ...projectContext,
             tracks: [
@@ -5825,36 +5826,19 @@ describe('bridgeGroundedLlmToolCalls', () => {
                 master,
             ],
         };
-        const named = bridge(
-            [{ name: 'removeTrack', arguments: { trackId: 'track-aux' } }],
-            'delete Lead/Guitar and track-lead-guitar',
-            slashNestedNameContext
-        );
-        const literal = bridge(
-            [{ name: 'removeTrack', arguments: { trackId: 'track-lead-guitar' } }],
-            'delete Lead/Guitar and track-lead-guitar',
-            slashNestedNameContext
-        );
+        const prompt = 'delete Lead/Guitar and track-lead-guitar';
 
-        expect(named.actions).toEqual([]);
-        expect(literal.actions).toEqual([]);
-        expect(named.rejections).toEqual([
-            {
-                index: 0,
-                name: 'removeTrack',
-                reason: 'Target trackId is ambiguous in the user request',
-            },
-        ]);
-        expect(literal.rejections).toEqual([
-            {
-                index: 0,
-                name: 'removeTrack',
-                reason: 'Target trackId is ambiguous in the user request',
-            },
-        ]);
+        for (const trackId of ['track-aux', 'track-lead-guitar']) {
+            expect(bridge([{ name: 'removeTrack', arguments: { trackId } }], prompt, slashNestedNameContext)).toEqual({
+                actions: [],
+                rejections: [
+                    { index: 0, name: 'removeTrack', reason: 'Target trackId is ambiguous in the user request' },
+                ],
+            });
+        }
     });
 
-    it('rejects muteTrack and soloTrack when a slash or spaced nested name and a hyphenated literal id are both cited', () => {
+    it('rejects muteTrack and soloTrack when a slash-joined or spaced nested name and a hyphenated literal id are both cited', () => {
         const dualCitationContext = {
             ...projectContext,
             tracks: [
@@ -5983,7 +5967,7 @@ describe('bridgeGroundedLlmToolCalls', () => {
         }
     });
 
-    it('rejects compiler-expanded muteTrack and soloTrack when a slash or spaced nested name and a hyphenated literal id are both cited', () => {
+    it('rejects compiler-expanded muteTrack and soloTrack when a slash-joined or spaced nested name and a hyphenated literal id are both cited', () => {
         const dualCitationContext = {
             ...projectContext,
             tracks: [

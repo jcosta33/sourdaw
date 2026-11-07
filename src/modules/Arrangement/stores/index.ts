@@ -11,7 +11,7 @@ export { readMusicalRangeInputs } from './readMusicalRangeInputs';
 export { scratchPadStore } from './scratchPadStore';
 export type { ScratchPadStoreState } from './scratchPadStore';
 
-export { takeLaneStore } from './takeLaneStore';
+export { decodeExactTakeLaneSnapshots, sanitize_take_lane_store_state, takeLaneStore } from './takeLaneStore';
 export type { TakeLaneStoreState } from './takeLaneStore';
 export { resolveTakeMedia } from './resolveTakeMedia';
 

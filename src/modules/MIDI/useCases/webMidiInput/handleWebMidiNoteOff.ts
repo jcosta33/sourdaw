@@ -1,13 +1,7 @@
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
 import { audioEngine } from '#/modules/AudioEngine/useCases';
-import {
-    readBeatAtSamples,
-    readSecondsAtBeat,
-    tempoMapStore,
-    transportStore,
-    DEFAULT_TEMPO_BPM,
-} from '#/modules/Transport/stores';
+import { readBeatAtSamples } from '#/modules/Transport/stores';
 import { DEFAULT_NOTE_VELOCITY } from '#/utils/midiData';
 
 import { createWebMidiNoteKey, type ActiveNoteData } from '../../models/WebMidiTypes';
@@ -25,25 +19,10 @@ import { resolveInputDispatchFrame } from './resolveInputDispatchFrame';
 import { resolveInputEventTime, type CapturedInputEventTime } from './resolveInputEventTime';
 import { resolveInstrumentTrack } from './resolveInstrumentTrack';
 import { resolveLiveInputNoteReceiver } from './resolveLiveInputNoteReceiver';
+import { resolveRecordingPlacement } from './resolveRecordingPlacement';
 import { retireDrainOfRemovedYeast } from './retireDrainOfRemovedYeast';
 import { voiceYeastNoteOn } from './voiceYeastNoteOn';
 import { withRecordedNoteExpression } from './withRecordedNoteExpression';
-
-type RecordedClip = { id: string; startBeat: number; endBeat: number };
-
-/**
- * Distance from a beat to a half-open [startBeat, endBeat) clip: zero inside,
- * otherwise the beats to the nearer edge. The onset reaching this helper is
- * outside every candidate, so one of the two terms is always positive.
- */
-function clipDistance(clip: RecordedClip, beat: number): number {
-    return Math.max(clip.startBeat - beat, beat - clip.endBeat);
-}
-
-/** The clip whose span sits nearest the beat, earlier clip winning a tie. */
-function nearestClip(clips: RecordedClip[], beat: number): RecordedClip {
-    return clips.reduce((best, clip) => (clipDistance(clip, beat) < clipDistance(best, beat) ? clip : best));
-}
 
 /** Whether a key still held went through this Yeast on this instrument track. */
 function isYeastRouteHeld(instrumentTrackId: string, yeastDeviceId: string): boolean {
@@ -95,65 +74,6 @@ function releaseVoicesWithoutYeast(
 }
 
 export const handleWebMidiNoteOff = inject(midiMessageHandlerDependencies)((deps) => {
-    function findActiveRecordingClip(
-        trackId: string,
-        compensatedOnsetBeat: number,
-        rawOnsetBeat: number
-    ): string | null {
-        const trackState = deps.getTrackStoreState();
-        const transport = deps.getTransportStoreValue();
-        if (!trackState || !transport) {
-            return null;
-        }
-
-        const track = trackState.tracks.find((candidate) => candidate.id === trackId);
-        if (!track) {
-            return null;
-        }
-
-        const midiClips = track.clips.filter((clip) => clip.type === 'midi');
-        if (midiClips.length === 0) {
-            return null;
-        }
-
-        if (!(transport.isRecording && transport.overdubEnabled)) {
-            return midiClips[midiClips.length - 1]!.id;
-        }
-
-        // Half-open [startBeat, endBeat), matching every other clip range
-        // test in this module. An inclusive end makes the seam beat of two
-        // abutting clips satisfy both, so `find` files the note into
-        // whichever clip happens to come first in array order.
-        const intersecting = midiClips.find(
-            (clip) => compensatedOnsetBeat >= clip.startBeat && compensatedOnsetBeat < clip.endBeat
-        );
-        if (intersecting) {
-            return intersecting.id;
-        }
-
-        // The loop rescue keys on the region either coordinate puts the onset
-        // in (#4869): a latency-rewound onset can sit before loopStart while
-        // the musician's raw onset was inside the region, and the wrap must
-        // not cost the note its loop clip.
-        const insideLoopRegion = (beat: number): boolean =>
-            transport.isLooping && beat >= transport.loopStart && beat <= transport.loopEnd;
-        if (insideLoopRegion(compensatedOnsetBeat) || insideLoopRegion(rawOnsetBeat)) {
-            const loopClips = midiClips.filter(
-                (clip) => clip.startBeat >= transport.loopStart && clip.endBeat <= transport.loopEnd
-            );
-            if (loopClips.length > 0) {
-                return nearestClip(loopClips, compensatedOnsetBeat).id;
-            }
-        }
-
-        // An onset outside every clip still belongs to the clip it played
-        // against: the nearest one in time (#4869). Before-all onsets take
-        // the first clip and in-gap onsets the nearer neighbor; the old
-        // last-clip fallback filed a seam-rewound onset into the track's
-        // last clip, half the arrangement away.
-        return nearestClip(midiClips, compensatedOnsetBeat).id;
-    }
-
     return async function handleWebMidiNoteOff(
         channel: number,
         note: number,
@@ -458,95 +378,70 @@ export const handleWebMidiNoteOff = inject(midiMessageHandlerDependencies)((deps
             }
         }
 
-        const transport = deps.getTransportStoreValue();
-        const trackState = deps.getTrackStoreState();
-        const track = trackState?.tracks.find((candidate) => candidate.id === targetTrackId);
-        const isArmed = track?.armed ?? false;
-        const isRecording = transport?.isRecording ?? false;
-
-        if (isRecording && isArmed) {
-            const trackLatencySec = deps.getCompensationDelay(targetTrackId);
-            const context = audioEngine.context;
-            const totalLatencySec = (context.baseLatency || 0) + (context.outputLatency || 0) + trackLatencySec;
-
-            // With a tempo map `transport.tempo` is inert (setTempo), so the
-            // held length and the latency compensation convert through the
-            // map's own placement reads — the same conversion audio recording
-            // applies to a take (#3650, #4668). A flat timeline integrates as
-            // the straight base-tempo line, where the closed form is exact.
-            const tempoChanges = tempoMapStore.value?.changes ?? [];
-            const defaultTempo = transportStore.value?.tempo ?? DEFAULT_TEMPO_BPM;
-            const flatTimeline = tempoChanges.length === 0;
-            const onsetSeconds = readSecondsAtBeat({ beat: noteData.startBeat });
-            // The latency-rewound anchor: the timeline instant the musician
-            // heard the onset at — the take conversion's `originSeconds`
-            // (#3650). Start, end, and every expression offset integrate from
-            // this one coordinate, so the recorded span equals the beats the
-            // tempo map assigns the heard seconds (#4668).
-            const originSeconds = onsetSeconds - totalLatencySec;
-            let latencyAdjustedOnsetBeat = noteData.startBeat - (totalLatencySec * defaultTempo) / 60;
-            if (!flatTimeline) {
-                latencyAdjustedOnsetBeat = readBeatAtSamples({ samples: originSeconds, sampleRate: 1 });
-            }
-
-            // The note belongs to the clip holding its admitted onset: a
-            // release processed after the playhead crossed a clip seam or a
-            // loop wrap must not move it (#4869). Selection and storage share
-            // the compensated coordinate: resolving on the raw onset would
-            // file the note into the clip past the seam and clamp it to that
-            // clip's origin — a heard 3.92 whose raw read is 4.02 (#4668).
-            const clipId = findActiveRecordingClip(targetTrackId, latencyAdjustedOnsetBeat, noteData.startBeat);
-            if (!clipId) {
-                return;
-            }
-
-            // noteData.startBeat is timeline-absolute (playhead at note-on);
-            // the store is clip-relative, so subtract the recording clip's
-            // media origin or notes land clip.startBeat late (M-143).
-            const recordingClip = track?.clips.find((candidate) => candidate.id === clipId);
-            const clipMediaOrigin = recordingClip ? recordingClip.startBeat - (recordingClip.midiOffsetBeats ?? 0) : 0;
-
-            const compensatedStartBeat = Math.max(0, latencyAdjustedOnsetBeat - clipMediaOrigin);
-
-            // The end is read at the heard seconds from the SAME rewound
-            // origin the start was placed with — the take conversion's
-            // `originSeconds + buffer.duration` (#3650). Integrating from the
-            // raw onset misplaces the end of a hold across a tempo change by
-            // `latency × Δtempo`. The flat timeline keeps its closed form,
-            // which already composes: start − L·t/60 … start + (D−L)·t/60.
-            const durationSeconds = eventTime - noteData.startTime;
-            let durationBeats = (durationSeconds * defaultTempo) / 60;
-            if (!flatTimeline) {
-                durationBeats =
-                    readBeatAtSamples({ samples: originSeconds + durationSeconds, sampleRate: 1 }) -
-                    latencyAdjustedOnsetBeat;
-            }
-
-            // Expression offsets share the compensated origin, so a curve
-            // point lands on the beat its own heard instant maps to.
-            const secondsToBeats = (seconds: number): number => {
-                if (flatTimeline) {
-                    return (seconds * defaultTempo) / 60;
-                }
-                return (
-                    readBeatAtSamples({ samples: originSeconds + seconds, sampleRate: 1 }) - latencyAdjustedOnsetBeat
-                );
-            };
-
-            // Preserve the played velocity (was hardcoded 100, M-143).
-            const midiNote = deps.createMidiNote(
-                note,
-                compensatedStartBeat,
-                Math.max(durationBeats, 0.0625),
-                noteData.velocity ?? DEFAULT_NOTE_VELOCITY
-            );
-
-            if (!getMpeEnabled()) {
-                deps.appendRecordedMidiNote({ clipId, note: midiNote });
-                return;
-            }
-            const recordedNote = withRecordedNoteExpression(midiNote, noteData, secondsToBeats);
-            deps.appendRecordedMidiNote({ clipId, note: recordedNote });
+        // The session journal already captured this release before instrument work.
+        // A sealed witness remains a fence even if another recording has started.
+        if (
+            noteData.recordingWitness !== undefined ||
+            (typeof timeStamp === 'object' && timeStamp.recordingAdmitted === true)
+        ) {
+            return;
         }
+
+        // The note belongs to the clip holding its admitted onset and is stored
+        // at the beat its heard instant maps to, exactly as controller events
+        // of the same take are.
+        const placement = resolveRecordingPlacement(deps, {
+            trackId: targetTrackId,
+            admittedBeat: noteData.startBeat,
+        });
+        if (!placement) {
+            return;
+        }
+        const {
+            clipId,
+            clipBeat: compensatedStartBeat,
+            latencyAdjustedBeat: latencyAdjustedOnsetBeat,
+            originSeconds,
+            defaultTempo,
+            flatTimeline,
+        } = placement;
+
+        // The end is read at the heard seconds from the SAME rewound
+        // origin the start was placed with — the take conversion's
+        // `originSeconds + buffer.duration` (#3650). Integrating from the
+        // raw onset misplaces the end of a hold across a tempo change by
+        // `latency × Δtempo`. The flat timeline keeps its closed form,
+        // which already composes: start − L·t/60 … start + (D−L)·t/60.
+        const durationSeconds = eventTime - noteData.startTime;
+        let durationBeats = (durationSeconds * defaultTempo) / 60;
+        if (!flatTimeline) {
+            durationBeats =
+                readBeatAtSamples({ samples: originSeconds + durationSeconds, sampleRate: 1 }) -
+                latencyAdjustedOnsetBeat;
+        }
+
+        // Expression offsets share the compensated origin, so a curve
+        // point lands on the beat its own heard instant maps to.
+        const secondsToBeats = (seconds: number): number => {
+            if (flatTimeline) {
+                return (seconds * defaultTempo) / 60;
+            }
+            return readBeatAtSamples({ samples: originSeconds + seconds, sampleRate: 1 }) - latencyAdjustedOnsetBeat;
+        };
+
+        // Preserve the played velocity (was hardcoded 100, M-143).
+        const midiNote = deps.createMidiNote(
+            note,
+            compensatedStartBeat,
+            Math.max(durationBeats, 0.0625),
+            noteData.velocity ?? DEFAULT_NOTE_VELOCITY
+        );
+
+        if (!getMpeEnabled()) {
+            deps.appendRecordedMidiNote({ clipId, note: midiNote });
+            return;
+        }
+        const recordedNote = withRecordedNoteExpression(midiNote, noteData, secondsToBeats);
+        deps.appendRecordedMidiNote({ clipId, note: recordedNote });
     };
 });

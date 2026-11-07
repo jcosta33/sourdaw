@@ -599,6 +599,107 @@ describe('scheduleTrackClips — legacy instrument parity', () => {
 });
 
 describe('scheduleTrackClips — MIDI plugin-delay compensation', () => {
+    it('exports only a selected partial pass through the comp resolver and instrument sink', async () => {
+        const track = makeMidiTrack();
+        track.clips[0]!.loopEnabled = true;
+        track.clips[0]!.loopLength = 4;
+        mocks.takeLaneValue.value = {
+            lanes: [
+                {
+                    id: 'lane-1',
+                    trackId: track.id,
+                    takes: [
+                        {
+                            id: 'take-1',
+                            clipId: 'clip-1',
+                            name: 'Lap 1',
+                            selected: false,
+                            startBeat: 0,
+                            endBeat: 4,
+                            sourceOffsetBeats: 0,
+                            recordingPassId: 'pass-1',
+                        },
+                        {
+                            id: 'take-2',
+                            clipId: 'clip-1',
+                            name: 'Lap 2',
+                            selected: true,
+                            startBeat: 0,
+                            endBeat: 2,
+                            sourceOffsetBeats: 4,
+                            recordingPassId: 'pass-2',
+                        },
+                    ],
+                    activeCompRegions: [{ startBeat: 0, endBeat: 4, takeId: 'take-2' }],
+                },
+            ],
+        };
+        const midi = makeMidi();
+        midi.notesByClipId['clip-1'] = [
+            { id: 'lap1-held', pitch: 60, startBeat: 3, duration: 8, velocity: 100, recordingPassId: 'pass-1' },
+            { id: 'lap1-late', pitch: 64, startBeat: 3, duration: 1, velocity: 100, recordingPassId: 'pass-1' },
+            {
+                id: 'lap2',
+                pitch: 72,
+                startBeat: 5,
+                duration: 4,
+                velocity: 100,
+                recordingPassId: 'pass-2',
+                pressure: 30,
+                expression: {
+                    pressure: [
+                        { offsetBeats: 0.5, value: 60 },
+                        { offsetBeats: 2, value: 90 },
+                    ],
+                },
+            },
+        ];
+        const pendingWorkletEvents: PendingWorkletEvent[] = [];
+        await scheduleTrackClips({
+            offlineCtx: makeOfflineCtx(),
+            track,
+            midi,
+            trackInputNode: {} as GainNode,
+            trackGainNode: {} as GainNode,
+            trackPanNode: {} as StereoPannerNode,
+            destination: {} as AudioNode,
+            durationSeconds: 60,
+            defaultTempo: 120,
+            changes: [],
+            projections: {
+                projectMidiEvents,
+                projectPpqEndpoints,
+                processYeastMidi,
+                resolveTempoAtBeat: ({ defaultTempo: tempo }) => tempo,
+                selectMidiEventProbability: mocks.shouldPlayMidiEvent,
+                projectChordPitch: mocks.projectChordPitch,
+                evaluateAutomationValue: mocks.evaluateAutomationValue,
+            },
+            pendingWorkletEvents,
+            allTracks: [track],
+            deviceEntriesByTrack: new Map([[track.id, [makeInstrumentEntry()]]]),
+            regionStartBeat: 0,
+        });
+        const sounded = voiceEvents(pendingWorkletEvents).filter(
+            (event) => event.type === 'on' || event.type === 'off'
+        );
+        expect(sounded).toEqual([
+            expect.objectContaining({ type: 'on', pitch: 72, time: 0.5 }),
+            expect.objectContaining({ type: 'off', pitch: 72, time: 1 }),
+        ]);
+        expect(mocks.shouldPlayMidiEvent.mock.calls.map(([input]) => input.eventId)).toEqual(['lap2']);
+        expect(mocks.projectMidiEvents).toHaveBeenCalledWith(
+            expect.objectContaining({
+                events: [
+                    expect.objectContaining({
+                        id: 'lap2',
+                        duration: 1,
+                        expression: { pressure: [{ offsetBeats: 0.5, value: 60 }] },
+                    }),
+                ],
+            })
+        );
+    });
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.takeLaneValue.value = null;

@@ -49,7 +49,7 @@ describe('midiTimeStateCodec — round-trip fidelity', () => {
     it('round-trips a state with CC and pitch bend data', () => {
         const state = makeState({
             ccByClipId: { clip1: [{ id: 'cc1', controller: 1, value: 64, beat: 0, channel: 0 }] },
-            pitchBendByClipId: { clip1: [{ id: 'pb1', value: 0.5, beat: 2, channel: 0 }] },
+            pitchBendByClipId: { clip1: [{ id: 'pb1', value: 4096, beat: 2, channel: 0 }] },
         });
         const encoded = encodeState(state);
         const decoded = decodeState(encoded);

@@ -36,6 +36,11 @@ const clickBeat = beatFromX(CLICK.clientX, 40);
 const clickValue = valueFromY(CLICK.clientY, 80);
 const draggedBeat = beatFromX(DRAGGED.clientX, 40);
 const draggedValue = valueFromY(DRAGGED.clientY, 80);
+// The pitch-bend lane writes the signed wire delta, 0 at the vertical centre.
+const pitchBendFromY = (y: number, height: number): number =>
+    Math.max(-8192, Math.min(8191, Math.round(((height / 2 - y) / ((height - 8) / 2)) * 8192)));
+const clickPitchBend = pitchBendFromY(CLICK.clientY, 80);
+const draggedPitchBend = pitchBendFromY(DRAGGED.clientY, 80);
 
 const storedCCs = (): MidiCC[] => midiStore.value?.ccByClipId['clip-1'] ?? [];
 const storedPBs = (): MidiPitchBend[] => midiStore.value?.pitchBendByClipId['clip-1'] ?? [];
@@ -234,20 +239,20 @@ describe('lane undo round-trips (#4795)', () => {
             fireEvent.click(screen.getByRole('group'), CLICK);
 
             const addedId = storedPBs()[0]?.id;
-            expect(storedPBs()).toEqual([{ id: addedId, value: clickValue, beat: clickBeat, channel: 0 }]);
+            expect(storedPBs()).toEqual([{ id: addedId, value: clickPitchBend, beat: clickBeat, channel: 0 }]);
             const entry = lastEntry();
 
             entry.undo();
             expect(storedPBs()).toEqual([]);
 
             entry.redo();
-            expect(storedPBs()).toEqual([{ id: addedId, value: clickValue, beat: clickBeat, channel: 0 }]);
+            expect(storedPBs()).toEqual([{ id: addedId, value: clickPitchBend, beat: clickBeat, channel: 0 }]);
 
             entry.undo();
             expect(storedPBs()).toEqual([]);
 
             entry.redo();
-            expect(storedPBs()).toEqual([{ id: addedId, value: clickValue, beat: clickBeat, channel: 0 }]);
+            expect(storedPBs()).toEqual([{ id: addedId, value: clickPitchBend, beat: clickBeat, channel: 0 }]);
         });
 
         it('remove: undo re-creates the removed point under its own id, and redo still removes it', () => {
@@ -291,20 +296,20 @@ describe('lane undo round-trips (#4795)', () => {
             fireEvent.pointerMove(point!, { pointerId: 2, clientX: DRAGGED.clientX, clientY: DRAGGED.clientY });
             fireEvent.pointerUp(point!, { pointerId: 2, clientX: DRAGGED.clientX, clientY: DRAGGED.clientY });
 
-            expect(storedPBs()).toEqual([{ id: 'pb-a', value: draggedValue, beat: draggedBeat, channel: 0 }]);
+            expect(storedPBs()).toEqual([{ id: 'pb-a', value: draggedPitchBend, beat: draggedBeat, channel: 0 }]);
             const entry = lastEntry();
 
             entry.undo();
             expect(storedPBs()).toEqual([{ id: 'pb-a', value: 20, beat: 0, channel: 0 }]);
 
             entry.redo();
-            expect(storedPBs()).toEqual([{ id: 'pb-a', value: draggedValue, beat: draggedBeat, channel: 0 }]);
+            expect(storedPBs()).toEqual([{ id: 'pb-a', value: draggedPitchBend, beat: draggedBeat, channel: 0 }]);
 
             entry.undo();
             expect(storedPBs()).toEqual([{ id: 'pb-a', value: 20, beat: 0, channel: 0 }]);
 
             entry.redo();
-            expect(storedPBs()).toEqual([{ id: 'pb-a', value: draggedValue, beat: draggedBeat, channel: 0 }]);
+            expect(storedPBs()).toEqual([{ id: 'pb-a', value: draggedPitchBend, beat: draggedBeat, channel: 0 }]);
         });
     });
 });

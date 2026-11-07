@@ -2,6 +2,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { defaultTransportState } from '../../../models/TransportState';
 import { getTransportState } from '../../../repositories/transport/getTransportState';
+import { playheadClockRef } from '../../../stores/playheadClockRef';
+import { playheadPositionRef } from '../../../stores/playheadPositionRef';
 import { recordingLifecycle } from '../recordingLifecycle';
 import { toggleRecording } from '../toggleRecording';
 
@@ -28,7 +30,9 @@ type TestTrackState = {
     tracks: TestTrack[];
 };
 
-type TestRecordingResult = { kind: 'completed'; buffer: TestRecordingBuffer } | { kind: 'failed'; reason: string };
+type TestRecordingResult =
+    | { kind: 'completed'; buffer: TestRecordingBuffer; sampleZeroContextFrame: number; sampleRate: number }
+    | { kind: 'failed'; reason: string };
 
 type StartAudioRecording = (trackId: string, callback: (result: TestRecordingResult) => void) => Promise<boolean>;
 
@@ -122,6 +126,12 @@ describe('toggleRecording — take recorded from the top of the song', () => {
     // advance `currentTime` alongside the fake wall timers.
     const audioClock = { currentTime: 0, baseLatency: 0, outputLatency: 0 };
 
+    function publishPlaybackClock(beat: number): void {
+        playheadClockRef.beat = beat;
+        playheadClockRef.audioTimeSeconds = audioClock.currentTime;
+        playheadPositionRef.current = beat;
+    }
+
     beforeEach(() => {
         vi.clearAllMocks();
         vi.useFakeTimers();
@@ -148,6 +158,7 @@ describe('toggleRecording — take recorded from the top of the song', () => {
         audioClock.currentTime = 0;
         audioClock.baseLatency = 0;
         audioClock.outputLatency = 0;
+        publishPlaybackClock(0);
         mocks.getAudioContext.mockReturnValue(audioClock);
         // clearAllMocks keeps return values, so a track snapshot an earlier test
         // installed would otherwise leak into every later one through the
@@ -173,6 +184,7 @@ describe('toggleRecording — take recorded from the top of the song', () => {
         audioClock.currentTime = 10;
         audioClock.baseLatency = 0.01;
         audioClock.outputLatency = 0.03;
+        publishPlaybackClock(0);
         vi.mocked(getTransportState).mockReturnValue({
             ...defaultTransportState,
             isPlaying: true,
@@ -193,8 +205,8 @@ describe('toggleRecording — take recorded from the top of the song', () => {
         if (!captured) {
             throw new Error('Expected recording callback to be registered');
         }
-        captured({ kind: 'completed', buffer: { duration: 2 } });
-        await Promise.resolve();
+        captured({ kind: 'completed', buffer: { duration: 2 }, sampleZeroContextFrame: 480000, sampleRate: 48000 });
+        await vi.waitFor(() => expect(mocks.commitRecording).toHaveBeenCalledOnce());
 
         const clipUpdate = mocks.commitRecording.mock.calls[0]?.[0];
         if (!clipUpdate) {
@@ -217,6 +229,7 @@ describe('toggleRecording — take recorded from the top of the song', () => {
         audioClock.currentTime = 10;
         audioClock.baseLatency = 0.01;
         audioClock.outputLatency = 0.03;
+        publishPlaybackClock(0);
         vi.mocked(getTransportState).mockReturnValue({
             ...defaultTransportState,
             isPlaying: true,
@@ -245,8 +258,8 @@ describe('toggleRecording — take recorded from the top of the song', () => {
         // no cached buffer, the provisional clip (and with it the staged take
         // and its lane) discarded, and the user told — never an inverted
         // `endBeat < startBeat` clip committed.
-        captured({ kind: 'completed', buffer: { duration: 0.1 } });
-        await Promise.resolve();
+        captured({ kind: 'completed', buffer: { duration: 0.1 }, sampleZeroContextFrame: 480000, sampleRate: 48000 });
+        await vi.waitFor(() => expect(mocks.discardRecording).toHaveBeenCalledWith('clip-recording'));
 
         expect(mocks.commitRecording).not.toHaveBeenCalled();
         expect(mocks.cacheAudioBuffer).not.toHaveBeenCalled();

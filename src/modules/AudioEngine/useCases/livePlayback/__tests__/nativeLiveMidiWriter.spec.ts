@@ -16,6 +16,8 @@
  * delivered.
  */
 
+import { takeLaneStore } from '#/modules/Arrangement/stores';
+
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
@@ -209,6 +211,55 @@ beforeEach(() => {
 });
 
 describe('the live MIDI writer', () => {
+    it('coalesces selected-take, Undo and peer publications into one rolling rewrite', async () => {
+        mocks.events = lane(80);
+        await arm(0);
+        takeLaneStore.set({
+            lanes: [
+                {
+                    id: 'lane',
+                    trackId: 'midi-1',
+                    activeCompRegions: [],
+                    takes: [
+                        {
+                            id: 't1',
+                            clipId: 'clip',
+                            name: 'Lap 1',
+                            selected: true,
+                            startBeat: 0,
+                            endBeat: 4,
+                            recordingPassId: 'p1',
+                        },
+                        {
+                            id: 't2',
+                            clipId: 'clip',
+                            name: 'Lap 2',
+                            selected: false,
+                            startBeat: 0,
+                            endBeat: 4,
+                            recordingPassId: 'p2',
+                        },
+                    ],
+                },
+            ],
+        });
+        const previous = takeLaneStore.value!;
+        takeLaneStore.set({
+            lanes: previous.lanes.map((lane) => ({
+                ...lane,
+                takes: lane.takes.map((take) => ({ ...take, selected: take.id === 't2' })),
+            })),
+        });
+        takeLaneStore.set(previous);
+        expect(nativeLiveMidiWriter.pendingRearm).toBe(true);
+        await poll(1);
+        expect(nativeLiveMidiWriter.pendingRearm).toBe(false);
+        expect(batches()).toHaveLength(2);
+        expect(clearsIn(1)).toEqual([{ kind: 'clear-midi', target: TARGET, fromTime: 0, toTime: null }]);
+        disarmNativeLiveMidiWriter();
+        takeLaneStore.set({ lanes: [] });
+        expect(nativeLiveMidiWriter.pendingRearm).toBe(false);
+    });
     // One batch, because a clear and the notes that replace it are one
     // visibility: split in two, the clear lands alone and releases a key the
     // rewrite only meant to move.

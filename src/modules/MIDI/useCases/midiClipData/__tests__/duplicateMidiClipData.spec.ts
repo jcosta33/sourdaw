@@ -84,6 +84,19 @@ describe('duplicateMidiClipData', () => {
         vi.restoreAllMocks();
     });
 
+    it('does not copy a recorded pass identity without its matching take lane', () => {
+        mocks.state.value = {
+            notesByClipId: { source: [{ ...createNote('recorded'), recordingPassId: 'pass-1' }] },
+            ccByClipId: {},
+            pitchBendByClipId: {},
+        };
+
+        duplicate([{ sourceClipId: 'source', targetClipId: 'target' }]);
+
+        expect(requireMidiState().notesByClipId.source?.[0]).toHaveProperty('recordingPassId', 'pass-1');
+        expect(requireMidiState().notesByClipId.target?.[0]).not.toHaveProperty('recordingPassId');
+    });
+
     it('does not read empty work and reads a nonempty unavailable store once', () => {
         const rollbackEmptyWork = duplicate([]);
 

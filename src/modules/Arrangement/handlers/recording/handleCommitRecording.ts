@@ -1,7 +1,9 @@
-import { getMidiStoreState } from '#/modules/MIDI/useCases';
+import { getMidiStoreState, restoreMidiClipData } from '#/modules/MIDI/useCases';
 import { createHandler } from '#/utils/createHandler';
+import { isRecordingPassId } from '#/utils/recordingPassId';
 import { type AppAction } from '#/utils/handlerContract';
 
+import { takeLaneStore } from '../../stores/takeLaneStore';
 import { type Clip } from '../../stores/trackStore';
 import { captureRetiredTakeLanes } from '../../useCases/comping/captureRetiredTakeLanes';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
@@ -11,7 +13,56 @@ import { toHandlerExecutionResult } from '../toHandlerExecutionResult';
 type CommitRecordingAction = Extract<AppAction, { type: 'commitRecording' }>;
 
 function owningTrackExists(action: CommitRecordingAction): boolean {
-    return getTrackStoreState()?.tracks.some((candidate) => candidate.id === action.payload.clip.trackId) === true;
+    const { clip, midiRecording } = action.payload;
+    if (getTrackStoreState()?.tracks.some((candidate) => candidate.id === clip.trackId) !== true) return false;
+    if (midiRecording === undefined) return true;
+    if (clip.type !== 'midi') return false;
+    const takes = midiRecording.takeLanes.flatMap(({ lane }) => lane.takes.filter((take) => take.clipId === clip.id));
+    const passIds = new Set<string>();
+    for (const take of takes) {
+        if (take.endBeat <= take.startBeat) return false;
+        if (take.recordingPassId !== undefined) {
+            if (!isRecordingPassId(take.recordingPassId) || passIds.has(take.recordingPassId)) return false;
+            passIds.add(take.recordingPassId);
+        }
+    }
+    return (
+        midiRecording.takeLanes.every(({ lane }) => lane.trackId === clip.trackId) &&
+        midiRecording.data.notes.value.every(
+            (note) =>
+                note.recordingPassId === undefined ||
+                (isRecordingPassId(note.recordingPassId) && passIds.has(note.recordingPassId))
+        )
+    );
+}
+
+function writeMidiRecording(action: CommitRecordingAction): void {
+    const { clip, midiRecording } = action.payload;
+    if (midiRecording === undefined) return;
+    const state = takeLaneStore.value;
+    if (!state) throw new Error('Recording take-lane owner is unavailable');
+    const lanes = state.lanes.map((lane) => ({
+        ...lane,
+        takes: lane.takes.filter((take) => take.clipId !== clip.id),
+        activeCompRegions: lane.activeCompRegions.filter(
+            (region) => !lane.takes.some((take) => take.clipId === clip.id && take.id === region.takeId)
+        ),
+    }));
+    for (const snapshot of midiRecording.takeLanes) {
+        const takes = snapshot.lane.takes.filter((take) => take.clipId === clip.id);
+        const index = lanes.findIndex((lane) => lane.trackId === clip.trackId);
+        if (index < 0)
+            lanes.push({ ...structuredClone(snapshot.lane), takes: structuredClone(takes), activeCompRegions: [] });
+        else lanes[index] = { ...lanes[index]!, takes: [...lanes[index]!.takes, ...structuredClone(takes)] };
+    }
+    takeLaneStore.set({ lanes });
+    const { data } = midiRecording;
+    restoreMidiClipData({
+        clipId: clip.id,
+        notesSnapshot: data.notes.present ? data.notes.value : null,
+        controlChangeSnapshot: data.controlChanges.present ? data.controlChanges.value : null,
+        pitchBendSnapshot: data.pitchBends.present ? data.pitchBends.value : null,
+    });
 }
 
 /**
@@ -33,15 +84,10 @@ function withMinimumRecordingLength<TClip extends { startBeat: number; endBeat: 
  * Materialize one completed recording gesture into its track, updating the
  * provisional clip the recorder opened under the same id.
  *
- * The forward write is the clip alone: the take lane and the takes were staged
- * while capture ran, and `describe` — which runs before this write, against the
- * live staged state — captures them into the entry's explicit redo, together
- * with the clip's MIDI data, which the removal inverse deletes. That is what
- * makes one undo remove the recorded clip, its take-lane membership, and its
- * notes together, and one redo put the same clip id, placement, takes, and notes
- * back. The write updates the live clip rather than replacing it, so a field the
- * payload does not carry survives — the base finalizer's updater could not lose
- * one either.
+ * New MIDI captures carry a sealed gesture: the forward transaction writes its
+ * notes and take identities together with the clip, and redo reads that frozen
+ * payload. Audio and older callers retain the staged-state snapshot path.
+ * Updating the provisional clip preserves fields omitted from the payload.
  */
 export const handleCommitRecording = createHandler<'commitRecording'>({
     validate: owningTrackExists,
@@ -62,6 +108,7 @@ export const handleCommitRecording = createHandler<'commitRecording'>({
                 ),
             };
         });
+        writeMidiRecording(action);
         return toHandlerExecutionResult(true);
     },
     describe: (action) => {
@@ -71,9 +118,10 @@ export const handleCommitRecording = createHandler<'commitRecording'>({
         // clip-restore route does, so undoing and redoing a recorded MIDI take
         // does not hand back an empty clip.
         const midiState = getMidiStoreState();
-        const notes = midiState?.notesByClipId[clip.id];
-        const cc = midiState?.ccByClipId[clip.id];
-        const pitchBend = midiState?.pitchBendByClipId[clip.id];
+        const frozen = action.payload.midiRecording;
+        const notes = frozen?.data.notes.value ?? midiState?.notesByClipId[clip.id];
+        const cc = frozen?.data.controlChanges.value ?? midiState?.ccByClipId[clip.id];
+        const pitchBend = frozen?.data.pitchBends.value ?? midiState?.pitchBendByClipId[clip.id];
         return {
             label: `Record clip "${clip.name}"`,
             inverseAction: { type: 'discardRecording', payload: { clipId: clip.id } },
@@ -81,7 +129,7 @@ export const handleCommitRecording = createHandler<'commitRecording'>({
                 type: 'restoreRecording',
                 payload: {
                     clip: withMinimumRecordingLength(clip),
-                    retiredTakeLanes: captureRetiredTakeLanes([clip.id]),
+                    retiredTakeLanes: frozen?.takeLanes ?? captureRetiredTakeLanes([clip.id]),
                     midiNotesSnapshot: notes ? structuredClone(notes) : null,
                     midiCcSnapshot: cc ? structuredClone(cc) : null,
                     midiPitchBendSnapshot: pitchBend ? structuredClone(pitchBend) : null,

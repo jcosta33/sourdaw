@@ -36,8 +36,8 @@ function createMidiState(): MidiStoreStateInput {
         },
         pitchBendByClipId: {
             source: [
-                { id: 'bend-early', value: 0.2, beat: 1, channel: 0 },
-                { id: 'bend-late', value: 0.8, beat: 6, channel: 0 },
+                { id: 'bend-early', value: 1600, beat: 1, channel: 0 },
+                { id: 'bend-late', value: 6500, beat: 6, channel: 0 },
             ],
         },
     };
@@ -76,10 +76,10 @@ describe('prepareMidiClipSplit controllers and pitch bends', () => {
                 { id: 'cc-split:right:2', controller: 64, value: 127, beat: 1, channel: 0 },
             ],
         });
-        expect(plan.nextSource.pitchBends.value).toEqual([{ id: 'bend-early', value: 0.2, beat: 1, channel: 0 }]);
+        expect(plan.nextSource.pitchBends.value).toEqual([{ id: 'bend-early', value: 1600, beat: 1, channel: 0 }]);
         expect(plan.nextRight.pitchBends.value).toEqual([
-            { id: 'pb-split:right:0', value: 0.2, beat: 0, channel: 0 },
-            { id: 'pb-split:right:1', value: 0.8, beat: 2, channel: 0 },
+            { id: 'pb-split:right:0', value: 1600, beat: 0, channel: 0 },
+            { id: 'pb-split:right:1', value: 6500, beat: 2, channel: 0 },
         ]);
         expect(plan.previousSource.controlChanges.value).toHaveLength(3);
         expect(plan.previousRight.controlChanges).toEqual({ present: false, value: [] });

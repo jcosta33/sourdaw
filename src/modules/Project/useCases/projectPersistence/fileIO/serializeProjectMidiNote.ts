@@ -1,4 +1,5 @@
 import { type MidiStoreState } from '#/modules/MIDI/stores';
+import { isRecordingPassId } from '#/utils/recordingPassId';
 
 import { type ProjectMidiNote, type ProjectMidiNoteExpression } from '../../../models/ProjectData';
 
@@ -45,6 +46,10 @@ export function serializeProjectMidiNote(note: RuntimeNote): ProjectMidiNote {
         pressure: note.pressure ?? 0,
         pitchBend: note.pitchBend ?? 0,
     };
+
+    if (isRecordingPassId(note.recordingPassId)) {
+        serialized.recordingPassId = note.recordingPassId;
+    }
 
     if (note.slide !== undefined) {
         serialized.slide = note.slide;

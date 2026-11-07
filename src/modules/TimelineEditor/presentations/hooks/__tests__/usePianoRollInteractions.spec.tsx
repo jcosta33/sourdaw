@@ -54,6 +54,7 @@ const mocks = vi.hoisted(() => {
 });
 
 vi.mock('#/modules/Arrangement/stores', () => ({
+    takeLaneStore: { value: null },
     trackStore: {
         get value() {
             return mocks.trackState;
@@ -118,6 +119,7 @@ vi.mock('#/modules/Preferences/stores', () => ({
 const PREFERRED_DEFAULT_VELOCITY = 87;
 
 vi.mock('#/modules/Transport/useCases', () => ({
+    preferencesSeededTransportState: vi.fn(),
     getTransportState: mocks.getTransportState,
 }));
 
@@ -1227,6 +1229,7 @@ describe('usePianoRollInteractions', () => {
             // real component sees — so both a pre-existing note and the notes
             // created mid-gesture must stop the brush from re-adding a cell.
             const focusedNotes: Note[] = [makeNote('existing-2', 70, 2, 1)];
+            mocks.getNotesForClip.mockImplementation((id: string) => (id === 'clip-2' ? focusedNotes : []));
             const { canvas } = renderRoll({
                 focusedClipId: 'clip-2',
                 openedClipNotes: { 'clip-2': focusedNotes },

@@ -111,7 +111,7 @@ describe('exportMidiClip', () => {
                 ccByClipId: {
                     'clip-s': [...hiddenControllers, controller('inside-up', 3, 20)],
                 },
-                pitchBendByClipId: { 'clip-s': [{ id: 'bend', value: 0.5, beat: 3, channel: 0 }] },
+                pitchBendByClipId: { 'clip-s': [{ id: 'bend', value: 4096, beat: 3, channel: 0 }] },
             } as any);
 
             exportMidiClip('clip-s');

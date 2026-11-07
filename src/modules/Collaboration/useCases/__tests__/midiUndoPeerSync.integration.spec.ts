@@ -27,6 +27,7 @@ import { createPeerSyncMessages } from './peerSyncHandshake';
 // peer's concurrent edit to a different note (or a different field).
 
 type RootDocumentNote = {
+    recordingPassId?: string;
     id: string;
     pitch: number;
     startBeat: number;
@@ -139,6 +140,34 @@ describe('MIDI callback undo against a concurrent peer note edit (#4858)', () =>
         vi.unstubAllGlobals();
         configureAutomergeStoragePort(null);
         removeCrdtDoc('root');
+    });
+
+    it('keeps recorded pass identities and advancing source positions through peer sync', async () => {
+        setNotesForClip(CLIP_ID, [
+            { id: EDITED_NOTE_ID, pitch: 60, startBeat: 1, duration: 1, velocity: 100, recordingPassId: 'pass-1' },
+            { id: PEER_NOTE_ID, pitch: 72, startBeat: 5, duration: 1, velocity: 100, recordingPassId: 'pass-2' },
+        ]);
+        drain_frame();
+
+        const peer = change(peer_fork(), (draft) => {
+            const note = draft.midi?.notesByClipId?.[CLIP_ID]?.find((candidate) => candidate.id === PEER_NOTE_ID);
+            if (!note) {
+                throw new Error('Expected second pass note in the peer fork');
+            }
+            note.velocity = 88;
+        });
+        const sync = deliver_peer_sync(peer);
+        await sync.flushPersistence();
+
+        expect(document_notes().map(({ startBeat, recordingPassId }) => [startBeat, recordingPassId])).toEqual([
+            [1, 'pass-1'],
+            [5, 'pass-2'],
+        ]);
+        expect(getNotesForClip(CLIP_ID).map(({ startBeat, recordingPassId }) => [startBeat, recordingPassId])).toEqual([
+            [1, 'pass-1'],
+            [5, 'pass-2'],
+        ]);
+        expect(store_note(PEER_NOTE_ID).velocity).toBe(88);
     });
 
     it('restores the edited note without reverting a peer edit to a different note', async () => {

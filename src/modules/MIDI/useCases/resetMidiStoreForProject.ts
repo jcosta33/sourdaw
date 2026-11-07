@@ -1,3 +1,4 @@
+import { cancelMidiRecordingSession } from './midiRecordingSession';
 import { chordTrackStore } from '../stores/chordTrackStore';
 import { LEGACY_MIDI_PROBABILITY_SEED, midiStore } from '../stores/midiStore';
 
@@ -14,6 +15,7 @@ function generateProbabilitySeed(): number {
 export function resetMidiStoreForProject({
     generateProbabilitySeed: shouldGenerateProbabilitySeed = false,
 }: ResetMidiStoreForProjectInput = {}): void {
+    cancelMidiRecordingSession();
     let probabilitySeed = LEGACY_MIDI_PROBABILITY_SEED;
     if (shouldGenerateProbabilitySeed) {
         probabilitySeed = generateProbabilitySeed();

@@ -25,7 +25,7 @@ use super::release::{PedalDeferredRelease, ReleaseTracker};
 use super::tone::ToneTilt;
 use super::types::*;
 use super::voice::{NoteZones, VoicePool};
-use super::zone::{SamplePool, ZoneMap, ZoneMapBuildError};
+use super::zone::{SamplePool, ZoneMap, ZoneMapBuildError, ZoneTableStaging};
 use super::LEVAIN_SAMPLE_CHUNK_FLOATS;
 use crate::params::{ATTACK, MASTER_GAIN, RELEASE, TONE};
 
@@ -70,6 +70,11 @@ struct PendingSampleBank {
     /// The sample being uploaded in chunks, if any. It lives with the staged
     /// bank so an abort retires it together with the bank.
     open_sample: Option<OpenSample>,
+    /// Zone tables arriving in chunks, from their reservation on. They live
+    /// with the staged bank so an abort retires the reservation with it, and
+    /// once installed this keeps the zone map's previous (empty) tables so a
+    /// commit frees nothing.
+    zone_tables: Option<ZoneTableStaging>,
     instrument_id: String,
     num_articulations: usize,
     num_mics: usize,
@@ -88,6 +93,7 @@ impl PendingSampleBank {
             zone_map: ZoneMap::new(),
             sample_pool: Arc::new(SamplePool::new()),
             open_sample: None,
+            zone_tables: None,
             instrument_id: instrument_id.to_owned(),
             num_articulations: 0,
             num_mics: 0,
@@ -109,6 +115,9 @@ struct RetiredBank {
     _zone_map: ZoneMap,
     /// A sample an abort caught mid-upload; the first release step frees it.
     open_sample: Option<OpenSample>,
+    /// Zone-table storage an abort caught mid-staging, or what installing
+    /// staged tables left behind; freed when the slot empties.
+    _zone_tables: Option<ZoneTableStaging>,
     /// `None` once the pool has been taken for release.
     sample_pool: Option<Arc<SamplePool>>,
     /// A uniquely owned pool being drained a bounded number of entries at a time.
@@ -128,6 +137,7 @@ impl RetiredBank {
         Self {
             _zone_map: zone_map,
             open_sample: None,
+            _zone_tables: None,
             sample_pool: Some(sample_pool),
             draining: None,
             _legato_transitions: legato_transitions,
@@ -140,6 +150,7 @@ impl RetiredBank {
         Self {
             _zone_map: pending.zone_map,
             open_sample: pending.open_sample,
+            _zone_tables: pending.zone_tables,
             sample_pool: Some(pending.sample_pool),
             draining: None,
             _legato_transitions: pending.legato_transitions,
@@ -696,8 +707,75 @@ impl LevainEngine {
         }
     }
 
+    /// Reserve storage for the staged bank's zone tables, which an off-thread
+    /// builder computed: the staging's only allocation. Refuses (false),
+    /// reserving nothing, with no staged bank, a sample open, tables already
+    /// reserved or built, or sizes `ZoneTableStaging::reserve` refuses.
+    pub fn reserve_zone_tables(
+        &mut self,
+        num_articulations: usize,
+        num_mics: usize,
+        lut_entries: usize,
+        arena_entries: usize,
+    ) -> bool {
+        let Some(pending) = self.pending_sample_bank.as_mut() else {
+            return false;
+        };
+        if pending.open_sample.is_some() || pending.zone_tables.is_some() || pending.built {
+            return false;
+        }
+        pending.zone_tables =
+            ZoneTableStaging::reserve(num_articulations, num_mics, lut_entries, arena_entries);
+        pending.zone_tables.is_some()
+    }
+
+    /// Append one chunk of interleaved (offset, count) LUT words to the
+    /// reserved tables. Allocates nothing; see `ZoneTableStaging::write_lut_chunk`.
+    pub fn write_zone_lut_chunk(&mut self, start: usize, words: &[u32]) -> bool {
+        self.pending_sample_bank
+            .as_mut()
+            .and_then(|pending| pending.zone_tables.as_mut())
+            .is_some_and(|staging| staging.write_lut_chunk(start, words))
+    }
+
+    /// Append one chunk of zone ids to the reserved arena, each checked
+    /// against the zones the staged bank holds. Allocates nothing.
+    pub fn write_zone_arena_chunk(&mut self, start: usize, ids: &[ZoneId]) -> bool {
+        let Some(pending) = self.pending_sample_bank.as_mut() else {
+            return false;
+        };
+        let zone_count = pending.zone_map.zone_count();
+        pending
+            .zone_tables
+            .as_mut()
+            .is_some_and(|staging| staging.write_arena_chunk(start, ids, zone_count))
+    }
+
+    /// Install the staged zone tables into the staged bank's zone map once
+    /// every entry is written, and mark the bank built, as `build_zone_map`
+    /// does. O(1); allocates and frees nothing. Refuses (false) while any
+    /// entry is missing.
+    pub fn seal_zone_tables(&mut self) -> bool {
+        let Some(pending) = self.pending_sample_bank.as_mut() else {
+            return false;
+        };
+        let Some(staging) = pending.zone_tables.as_mut() else {
+            return false;
+        };
+        if pending.built || !staging.install_into(&mut pending.zone_map) {
+            return false;
+        }
+        pending.num_articulations = staging.num_articulations();
+        pending.num_mics = staging.num_mics();
+        pending.built = true;
+        true
+    }
+
     /// Build the zone lookup table. Must be called after all zones and samples are loaded.
     /// Disables the fallback tone since real samples are now available.
+    ///
+    /// Allocates and walks every zone; the worklet stages tables built off
+    /// the render thread instead (`reserve_zone_tables`).
     pub fn build_zone_map(
         &mut self,
         num_articulations: usize,
@@ -2259,6 +2337,7 @@ mod tests {
         engine.retired_bank = Some(RetiredBank {
             _zone_map: ZoneMap::new(),
             open_sample: None,
+            _zone_tables: None,
             sample_pool: None,
             draining: None,
             _legato_transitions: LegatoTransitionStore::new(),
@@ -2332,6 +2411,7 @@ mod tests {
         engine.retired_bank = Some(RetiredBank {
             _zone_map: ZoneMap::new(),
             open_sample: None,
+            _zone_tables: None,
             sample_pool: None,
             draining: None,
             _legato_transitions: LegatoTransitionStore::new(),
@@ -3157,6 +3237,108 @@ mod tests {
         render(&mut engine, 20);
         assert!(is_releasing(&engine, 62));
         assert!(is_releasing(&engine, 64));
+    }
+
+    fn is_note_releasing(engine: &LevainEngine, note: u8) -> bool {
+        engine
+            .voice_pool
+            .voices
+            .iter()
+            .any(|v| v.active && v.note == note && v.amp_env.is_releasing())
+    }
+
+    /// Sustain is a continuous position, not a halfway latch: a note-off
+    /// under CC64=63 defers, CC64=1 still holds, and only 0 lifts — firing
+    /// the deferred note-offs through the same staggered release path a
+    /// full-pedal lift uses.
+    #[test]
+    fn partial_sustain_position_holds_until_zero_then_releases_with_stagger() {
+        let mut engine = engine_with_sawtooth_zone_voices(4);
+        // Disable legato so three overlapping notes keep one voice each
+        // (as in `pedal_release_staggers_deferred_note_offs`).
+        engine.set_param("legato_enabled", 0.0);
+
+        engine.handle_cc(64, 63); // a partial pedal position
+        engine.note_on(60, 100);
+        engine.note_on(62, 100);
+        engine.note_on(64, 100);
+        engine.note_off(60);
+        engine.note_off(62);
+        engine.note_off(64);
+        render(&mut engine, 1);
+
+        assert!(
+            engine.expression.sustain_pedal,
+            "a partial CC64 position must hold the pedal"
+        );
+        assert!(
+            !is_note_releasing(&engine, 60) && !is_note_releasing(&engine, 62),
+            "a note-off under a partial pedal position must defer"
+        );
+
+        engine.handle_cc(64, 1); // near-zero but still nonzero: still held
+        render(&mut engine, 1);
+        assert!(
+            engine.expression.sustain_pedal,
+            "CC64=1 is still a nonzero position and must hold the pedal"
+        );
+        assert!(
+            !is_note_releasing(&engine, 60) && !is_note_releasing(&engine, 62),
+            "the note-offs must stay deferred while any nonzero value holds"
+        );
+
+        engine.handle_cc(64, 0); // only 0 lifts the pedal
+
+        assert!(
+            !engine.expression.sustain_pedal,
+            "only CC64=0 releases the pedal"
+        );
+        assert!(
+            is_note_releasing(&engine, 60),
+            "the first deferred note-off must fire immediately on the lift"
+        );
+        assert!(
+            !is_note_releasing(&engine, 62) || !is_note_releasing(&engine, 64),
+            "later deferred note-offs must be staggered rather than releasing \
+             in the same instant as the first"
+        );
+
+        // The largest computed stagger is well under 30 ms; render past it.
+        render(&mut engine, 20);
+        assert!(is_note_releasing(&engine, 62));
+        assert!(is_note_releasing(&engine, 64));
+    }
+
+    /// The pedal's falling edge fires exactly on a nonzero → 0 transition.
+    /// A descent between nonzero positions (127 → 63 → 1) crosses the old
+    /// `>= 64` latch threshold on the way and must not release anything.
+    #[test]
+    fn sustain_release_fires_only_on_the_nonzero_to_zero_edge() {
+        let mut engine = engine_with_sawtooth_zone_voices(2);
+        engine.set_param("legato_enabled", 0.0);
+        engine.handle_cc(64, 127);
+        engine.note_on(60, 100);
+        engine.note_off(60);
+        render(&mut engine, 1);
+        assert!(
+            !is_note_releasing(&engine, 60),
+            "the pedal defers the note-off"
+        );
+
+        for value in [63, 1, 127] {
+            engine.handle_cc(64, value);
+            assert!(
+                !is_note_releasing(&engine, 60),
+                "CC64={value} is still a held position; the falling edge must \
+                 not fire between nonzero values"
+            );
+        }
+
+        engine.handle_cc(64, 0);
+        assert!(
+            is_note_releasing(&engine, 60),
+            "the deferred note-off must fire exactly when the value reaches 0"
+        );
     }
 
     // ── #1848: modelled release and crossfade legato, for banks that ship

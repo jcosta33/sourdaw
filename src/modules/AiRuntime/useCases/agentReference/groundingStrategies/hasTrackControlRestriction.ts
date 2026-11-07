@@ -1,4 +1,4 @@
-const trackControlRestrictionPatterns: readonly RegExp[] = [
+export const trackControlRestrictionPatterns: readonly RegExp[] = [
     /\b(?:except|excluding|besides|minus)\b/u,
     /\b(?:other|rather)\s+than\b/u,
     /\bapart\s+from\b/u,

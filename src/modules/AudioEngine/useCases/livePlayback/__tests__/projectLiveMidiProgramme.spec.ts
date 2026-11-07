@@ -18,9 +18,9 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { type Device, type Track } from '#/modules/Arrangement/stores';
+import { takeLaneStore, type Device, type Track } from '#/modules/Arrangement/stores';
 import { type MidiStoreState } from '#/modules/MIDI/stores';
-import { resolveMidiNoteArticulationId, shouldPlayMidiEvent } from '#/modules/MIDI/useCases';
+import { projectClipMidiEvents, resolveMidiNoteArticulationId, shouldPlayMidiEvent } from '#/modules/MIDI/useCases';
 
 import {
     type OfflineMidiEventProjector,
@@ -613,5 +613,81 @@ describe('projectLiveMidiProgramme', () => {
         expect(programme.targets).toEqual([]);
         expect(programme.nativeVoicedStripIds).toEqual(new Set());
         expect(programme.exclusions).toEqual([]);
+    });
+});
+
+describe('native recorded take projection', () => {
+    it('plays only the selected partial lap and never borrows an earlier tail or late attack', () => {
+        const clip = midiClip({ id: 'clip-1', trackId: 'midi-1', loopEnabled: true, loopLength: 4 });
+        takeLaneStore.set({
+            lanes: [
+                {
+                    id: 'lane-1',
+                    trackId: 'midi-1',
+                    takes: [
+                        {
+                            id: 'take-1',
+                            clipId: clip.id,
+                            name: 'Lap 1',
+                            selected: false,
+                            startBeat: 0,
+                            endBeat: 4,
+                            sourceOffsetBeats: 0,
+                            recordingPassId: 'pass-1',
+                        },
+                        {
+                            id: 'take-2',
+                            clipId: clip.id,
+                            name: 'Lap 2',
+                            selected: true,
+                            startBeat: 0,
+                            endBeat: 2,
+                            sourceOffsetBeats: 4,
+                            recordingPassId: 'pass-2',
+                        },
+                    ],
+                    activeCompRegions: [{ takeId: 'take-2', startBeat: 0, endBeat: 4 }],
+                },
+            ],
+        });
+        try {
+            const programme = projectProgramme({
+                stripTracks: [voicedTrack([clip])],
+                projectMidiEvents: projectClipMidiEvents,
+                notesByClipId: {
+                    [clip.id]: [
+                        note({ id: 'lap1-hold', pitch: 60, startBeat: 3, duration: 8, recordingPassId: 'pass-1' }),
+                        note({ id: 'lap1-late', pitch: 64, startBeat: 3, recordingPassId: 'pass-1' }),
+                        note({ id: 'lap2', pitch: 72, startBeat: 5, duration: 4, recordingPassId: 'pass-2' }),
+                    ],
+                },
+            });
+            expect(programme.targets[0]?.events).toEqual([
+                { time: seconds(1), note: 72, velocity: 100, channel: 0, isNoteOn: true },
+                { time: seconds(2), note: 72, velocity: 0, channel: 0, isNoteOn: false },
+            ]);
+            // An explicit user comp continues to win while lap 2 stays selected.
+            takeLaneStore.set({
+                lanes: takeLaneStore.value!.lanes.map((lane) => ({
+                    ...lane,
+                    activeCompRegions: [{ takeId: 'take-1', startBeat: 0, endBeat: 4 }],
+                })),
+            });
+            const explicit = projectProgramme({
+                stripTracks: [voicedTrack([clip])],
+                projectMidiEvents: projectClipMidiEvents,
+                notesByClipId: {
+                    [clip.id]: [
+                        note({ id: 'lap1', pitch: 60, startBeat: 1, recordingPassId: 'pass-1' }),
+                        note({ id: 'lap2', pitch: 72, startBeat: 5, recordingPassId: 'pass-2' }),
+                    ],
+                },
+            });
+            expect(explicit.targets[0]?.events.filter((event) => event.isNoteOn).map((event) => event.note)).toEqual([
+                60,
+            ]);
+        } finally {
+            takeLaneStore.set({ lanes: [] });
+        }
     });
 });

@@ -22,6 +22,7 @@ import { createDefaultPatch, type MicPositionType } from '../../models/LevainPat
 import { decodedBankResource } from '../../repositories/sampleLoader/decodedBankResource';
 import { defaultLevainState, levainStore } from '../../stores/levainStore';
 import { autoLoadLevainSamples } from '../autoLoadSamples';
+import { configureLevainZoneTableBuilder } from '../configureLevainZoneTableBuilder';
 import { createLevainBridge } from '../levainParamBridge/helpers';
 
 // ---------------------------------------------------------------------------
@@ -29,7 +30,7 @@ import { createLevainBridge } from '../levainParamBridge/helpers';
 // `loadInstrumentFromManifest` against a fake port modelled on the
 // processor's own commit/reply timing — proving the bridge's
 // last-committed-wins ordering (`recordCommittedBank` in
-// `levainParamBridge/helpers.ts`) survives the abort-after-buildZoneMap
+// `levainParamBridge/helpers.ts`) survives the abort-after-commitSampleBank
 // repair in `loadInstrumentFromManifest.ts`: a load whose worklet commit is
 // still in flight when a newer load supersedes it must still have its commit
 // recorded before a later rejection reads it back.
@@ -114,7 +115,7 @@ type ReplyMode = 'auto' | 'defer' | 'fail';
  * (~:178, ~:285-343, ~:513-517): one `_bankLoadToken`-equivalent shared across
  * every load on this device's port, cleared synchronously on commit. `replies`
  * assigns one behaviour per `beginSampleBank` call in start order: `'auto'`
- * commits and answers `buildZoneMap` on the next microtask; `'defer'` commits
+ * commits and answers `commitSampleBank` on the next microtask; `'defer'` commits
  * (clearing the token, so a later abort finds no match) but leaves the test to
  * deliver the terminal `sampleBankLoaded` itself; `'fail'` answers with
  * `sampleBankError` instead of committing.
@@ -137,6 +138,18 @@ function makeSequencedPort(replies: ReplyMode[]): {
         if (!isRecord(message) || typeof message.loadToken !== 'number') {
             return;
         }
+        if (message.type === 'sampleChunk' || message.type === 'zoneTableChunk') {
+            // The real processor answers each chunk it writes; the loader's
+            // realm-wide chunk budget waits for these.
+            queueMicrotask(() => {
+                emit({
+                    type: message.type === 'sampleChunk' ? 'sampleChunkWritten' : 'zoneTableChunkWritten',
+                    loadToken: message.loadToken,
+                    sampleId: message.sampleId,
+                });
+            });
+            return;
+        }
         if (message.type === 'beginSampleBank') {
             callIndex += 1;
             pendingToken = message.loadToken;
@@ -145,7 +158,7 @@ function makeSequencedPort(replies: ReplyMode[]): {
             });
             return;
         }
-        if (message.type === 'buildZoneMap') {
+        if (message.type === 'commitSampleBank') {
             const mode = replies[callIndex] ?? 'auto';
             if (mode === 'defer') {
                 // Mirrors the real processor clearing `_bankLoadToken`
@@ -206,7 +219,7 @@ function makeSequencedPort(replies: ReplyMode[]): {
         deferredToken: (index: number): number => {
             const token = deferredTokens.get(index);
             if (token === undefined) {
-                throw new Error(`Expected a deferred buildZoneMap reply for call ${index}`);
+                throw new Error(`Expected a deferred commitSampleBank reply for call ${index}`);
             }
             return token;
         },
@@ -242,8 +255,21 @@ function makeDeps(autoLoad: typeof autoLoadLevainSamples) {
     };
 }
 
+// The zone-table Worker does not exist under Node; build the tables in place.
+function buildZoneTablesInPlace(request: {
+    zones: readonly { zoneId: number }[];
+    numArticulations: number;
+    numMics: number;
+}) {
+    return Promise.resolve({
+        lut: new Uint32Array(request.numArticulations * request.numMics * 128 * 16 * 2),
+        arena: Uint32Array.from(request.zones, (zone) => zone.zoneId),
+    });
+}
+
 describe('loadSamplesForInstrument — real autoLoadLevainSamples + real loader, commit order across a supersession', () => {
     beforeEach(() => {
+        configureLevainZoneTableBuilder(buildZoneTablesInPlace);
         decodedBankResource.clear();
         levainStore.set({});
         vi.stubGlobal(
@@ -277,7 +303,9 @@ describe('loadSamplesForInstrument — real autoLoadLevainSamples + real loader,
         await expect(bridge.loadSamplesForInstrument(deviceId, 'trumpet')).resolves.toBe('ready');
         expect(levainStore.value?.[deviceId]?.loadedMicPositions).toEqual([null, 'room']);
         expect(port.postMessage).toHaveBeenCalledWith(expect.objectContaining({ type: 'addZone', micId: 1 }));
-        expect(port.postMessage).toHaveBeenCalledWith(expect.objectContaining({ type: 'buildZoneMap', numMics: 2 }));
+        expect(port.postMessage).toHaveBeenCalledWith(
+            expect.objectContaining({ type: 'reserveZoneTables', numMics: 2 })
+        );
 
         device.setParam.mockClear();
         bridge.setMacroWithAudio(deviceId, 4, 0.6);
@@ -286,6 +314,7 @@ describe('loadSamplesForInstrument — real autoLoadLevainSamples + real loader,
     });
 
     afterEach(() => {
+        configureLevainZoneTableBuilder(null);
         decodedBankResource.clear();
         vi.unstubAllGlobals();
         vi.clearAllMocks();
@@ -316,15 +345,15 @@ describe('loadSamplesForInstrument — real autoLoadLevainSamples + real loader,
         await bridge.loadSamplesForInstrument(deviceId, 'cello');
         expect(levainStore.value?.[deviceId]?.loadedMicPositions).toEqual(['close']);
 
-        // B: the worklet commits (buildZoneMap posted; the fake port's
+        // B: the worklet commits (commitSampleBank posted; the fake port's
         // `_bankLoadToken`-equivalent is already cleared) but its reply is
         // held back — modelling the exact race the repair targets. Cleared
-        // first so the wait below observes only B's own `buildZoneMap`, not
+        // first so the wait below observes only B's own `commitSampleBank`, not
         // A's already-posted one.
         port.postMessage.mockClear();
         void bridge.loadSamplesForInstrument(deviceId, 'viola');
         await vi.waitFor(() => {
-            expect(port.postMessage.mock.calls.some(([m]) => isRecord(m) && m.type === 'buildZoneMap')).toBe(true);
+            expect(port.postMessage.mock.calls.some(([m]) => isRecord(m) && m.type === 'commitSampleBank')).toBe(true);
         });
         const bLoadPromise = autoLoadSpy.mock.results[1]?.value as ReturnType<typeof autoLoadLevainSamples>;
         expect(bLoadPromise).toBeDefined();
@@ -354,7 +383,7 @@ describe('loadSamplesForInstrument — real autoLoadLevainSamples + real loader,
         it('still shows the superseded load’s bank once the fake port finally answers it', async () => {
             const deviceId = 'device-1';
             seedDevice(deviceId);
-            // Only A ever posts `buildZoneMap` — B's own manifest fetch fails
+            // Only A ever posts `commitSampleBank` — B's own manifest fetch fails
             // before it reaches the port (see the `beforeEach` fetch mock's
             // fallback for any unmocked instrument), so the sequenced port's
             // call-index bookkeeping only needs an entry for A.
@@ -368,10 +397,12 @@ describe('loadSamplesForInstrument — real autoLoadLevainSamples + real loader,
             autoLoadSpy.mockClear();
             port.postMessage.mockClear();
 
-            // A: worklet commit staged (`buildZoneMap` posted) but held back.
+            // A: worklet commit staged (`commitSampleBank` posted) but held back.
             const loadA = bridge.loadSamplesForInstrument(deviceId, 'cello');
             await vi.waitFor(() => {
-                expect(port.postMessage.mock.calls.some(([m]) => isRecord(m) && m.type === 'buildZoneMap')).toBe(true);
+                expect(port.postMessage.mock.calls.some(([m]) => isRecord(m) && m.type === 'commitSampleBank')).toBe(
+                    true
+                );
             });
             const aLoadPromise = autoLoadSpy.mock.results[0]?.value as ReturnType<typeof autoLoadLevainSamples>;
             expect(aLoadPromise).toBeDefined();

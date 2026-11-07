@@ -4,6 +4,7 @@ import { applyNoteExpression, audioEngine } from '#/modules/AudioEngine/useCases
 import {
     CC_ALL_NOTES_OFF,
     CC_ALL_SOUND_OFF,
+    isControllerCc,
     isDataEntryCc,
     MPE_FIRST_MEMBER_CHANNEL,
 } from '../../models/MidiControllerState';
@@ -16,12 +17,20 @@ import { pendingMemberAdmission } from '../../repositories/webMidi/pendingMember
 import { activeNotes, channelToNote } from '../../repositories/webMidi/state';
 
 import { midiMessageHandlerDependencies } from './midiMessageHandlerDependencies';
+import { recordChannelEvent } from './recordChannelEvent';
 import { recordHeldNoteExpression } from './recordHeldNoteExpression';
 import { resolveBendRangeSemitones } from './resolveBendRangeSemitones';
 import { resolveDeviceNode } from './resolveDeviceNode';
 import { resolveInputDispatchFrame } from './resolveInputDispatchFrame';
 import { resolveInputEventTime, type CapturedInputEventTime } from './resolveInputEventTime';
 import { routePedalToBodies } from './routePedalToBodies';
+
+type MidiLearnState = ReturnType<(typeof midiMessageHandlerDependencies)['getMidiLearnState']>;
+
+/** Whether a learned mapping owns the controller, matching what `applyMidiMappings` dispatches to. */
+function hasMapping(learnState: MidiLearnState, channel: number, cc: number): boolean {
+    return learnState?.mappings.some((mapping) => mapping.channel === channel && mapping.cc === cc) === true;
+}
 
 const CC_CHANNEL_VOLUME = 7;
 const CC_PAN = 10;
@@ -87,6 +96,21 @@ export const handleWebMidiCC = inject(midiMessageHandlerDependencies)(
                         });
                     }
                 }
+            }
+
+            // The raw controller and byte, before anything below consumes them:
+            // a replayed RPN/NRPN sequence or pedal needs the wire messages, not
+            // the decoded meaning. A controller a mapping owns is parameter
+            // automation, and the MPE slide is already per-note expression.
+            const isMapped = !controlChange.consumed && hasMapping(learnState, channel, controlChange.cc);
+            const isMpeSlide = mpeEnabled && cc === MPE_SLIDE_CC && channel >= MPE_FIRST_MEMBER_CHANNEL;
+            if (isControllerCc(cc) && !isMapped && !isMpeSlide) {
+                recordChannelEvent(deps, {
+                    trackId: getTargetTrackId(),
+                    channel,
+                    event: { kind: 'controlChange', controller: cc, value },
+                    timeStamp,
+                });
             }
             if (controlChange.consumed) {
                 return;

@@ -7,6 +7,8 @@ import {
     stopNativeLiveGraphSession,
     updateNativeLiveGraphSessionTransportMaps,
 } from '#/modules/AudioEngine/useCases';
+import { preferencesStore } from '#/modules/Preferences/stores';
+import { defaultPreferences } from '#/modules/Preferences/useCases';
 
 import { playheadPositionRef } from '../../stores/playheadPositionRef';
 import { tempoMapStore } from '../../stores/tempoMapStore';
@@ -60,6 +62,7 @@ describe('restoreTransportSnapshot', () => {
 
     afterEach(() => {
         configureAutomergeStoragePort(null);
+        preferencesStore.set(defaultPreferences);
     });
 
     it('restores durable fields while resetting runtime fields from a legacy full transport state', () => {
@@ -114,6 +117,18 @@ describe('restoreTransportSnapshot', () => {
 
     it('sanitizes a fully malformed durable snapshot to the default transport state', () => {
         restoreTransportSnapshot({ tempo: 19 });
+
+        expect(transportStore.value).toEqual(defaultTransportState);
+        expect(setMasterGainValue).toHaveBeenCalledWith(defaultTransportState.masterGain / 100);
+    });
+
+    it('lands an absent snapshot block on the model defaults, never the Recording-preference seeds', () => {
+        // The load path calls this unconditionally for every project file; a
+        // transport-less import must reach the model defaults even while the
+        // Recording preferences would seed a count-in for a NEW project.
+        preferencesStore.set({ ...defaultPreferences, recordCountIn: 2, preRollEnabled: true, preRollBars: 1 });
+
+        restoreTransportSnapshot(undefined);
 
         expect(transportStore.value).toEqual(defaultTransportState);
         expect(setMasterGainValue).toHaveBeenCalledWith(defaultTransportState.masterGain / 100);

@@ -58,6 +58,7 @@ export { getDefaultBendRangeSemitones } from './noteExpression/getDefaultBendRan
 export { getNoteExpressionDimensions } from './noteExpression/getNoteExpressionDimensions';
 
 export { buildDeviceChain } from './buildDeviceChain';
+export { buildLevainZoneTables } from './buildLevainZoneTables';
 export { getAgentBuiltinDeviceRuntimeManifest } from './getAgentBuiltinDeviceRuntimeManifest';
 export { resolveToasterPadBinding } from './resolveToasterPadBinding';
 

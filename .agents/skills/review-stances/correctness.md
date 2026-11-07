@@ -641,3 +641,13 @@ download. Exercise grouped stem strips and auxiliary detector keys; a refusal mu
 whole requested set after strategy teardown. Preserve bypass, withheld and non-contributing cases
 and degradable agent/freeze callers. A bundled constructor success does not prove refusal after a
 later runtime load failure.
+
+## Genuine base-tempo edits beside equal map projections
+
+PR #5165 commit `c40642a9b82666865f4ae00016e086547f7ee62a` filtered
+value-equal tempo-map projections but checked only map entries and loop
+geometry. A genuine base-tempo edit on an empty map therefore kept the stale
+pending seam. Pair the unchanged projection control with a real base-tempo
+Command while a seam remains future: a 120-to-60 BPM edit must postpone its
+sounding time, even when the map is a fresh equal-valued empty array. A
+sounded seam still survives semantically unchanged deferred projection.

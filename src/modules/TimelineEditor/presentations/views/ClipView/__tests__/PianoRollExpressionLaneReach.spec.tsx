@@ -23,6 +23,9 @@
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { takeLaneStore } from '#/modules/Arrangement/stores';
+import { pushUndoEntry } from '#/modules/Command/useCases';
+
 import { setNoteVelocity } from '#/modules/MIDI/useCases';
 
 import { PianoRoll } from '../PianoRoll';
@@ -33,6 +36,7 @@ const ctx2d = document.createElement('canvas').getContext('2d')!;
 
 type ProbeNote = {
     id: string;
+    recordingPassId?: string;
     pitch: number;
     startBeat: number;
     duration: number;
@@ -337,6 +341,91 @@ describe('PianoRoll expression lane reachability (real NotePropertyLane)', () =>
         // And painting it addresses clip-2, not the primary clip.
         fireEvent.pointerDown(laneCanvas, { pointerId: 1, clientX: 90, clientY: 2 });
         expect(setNoteVelocity).toHaveBeenCalledWith('clip-2', 'n2', 127);
+    });
+
+    it('shows only the selected pass in the real expression lane and edits its canonical ID with exact velocity Undo/Redo', () => {
+        const notes: ProbeNote[] = [
+            { id: 'lap1', pitch: 60, startBeat: 1, duration: 1, velocity: 30, recordingPassId: 'pass-1' },
+            {
+                id: 'lap2',
+                pitch: 64,
+                startBeat: 5,
+                duration: 1,
+                velocity: 80,
+                recordingPassId: 'pass-2',
+                pressure: 10,
+                expression: {
+                    pressure: [
+                        { offsetBeats: 0.25, value: 90 },
+                        { offsetBeats: 0.75, value: 20 },
+                    ],
+                },
+            },
+            { id: 'lap3', pitch: 67, startBeat: 9, duration: 1, velocity: 90, recordingPassId: 'pass-3' },
+        ];
+        midiState.notesByClipId = { 'clip-1': notes };
+        const original = structuredClone(notes);
+        trackState.tracks[0]!.clips[0]!.endBeat = 4;
+        trackState.tracks[0]!.devices = [{ type: 'fermenter' }];
+        takeLaneStore.set({
+            lanes: [
+                {
+                    id: 'lane',
+                    trackId: 'track-1',
+                    activeCompRegions: [],
+                    takes: [
+                        {
+                            id: 'take2',
+                            clipId: 'clip-1',
+                            name: 'Lap2',
+                            startBeat: 0,
+                            endBeat: 4,
+                            selected: true,
+                            sourceOffsetBeats: 4,
+                            recordingPassId: 'pass-2',
+                        },
+                    ],
+                },
+            ],
+        });
+        vi.mocked(setNoteVelocity).mockImplementation((clipId, noteId, value) => {
+            const note = midiState.notesByClipId[clipId]?.find((candidate) => candidate.id === noteId);
+            if (note) note.velocity = value;
+        });
+        vi.spyOn(Element.prototype, 'clientWidth', 'get').mockReturnValue(500);
+        const roundRect = vi.spyOn(ctx2d, 'roundRect');
+        roundRect.mockClear();
+        const lineTo = vi.spyOn(ctx2d, 'lineTo');
+        try {
+            render(<PianoRoll {...defaultProps} selectedNoteIds={new Set(['lap1', 'lap2', 'lap3'])} />);
+            act(() => invokeToolbarHandler('onToggleExpressionView'));
+            expect(roundRect).toHaveBeenCalledTimes(1);
+            expect(roundRect).toHaveBeenCalledWith(41, 49, 38, 80, [2, 2, 0, 0]);
+            const canvas = screen.getByLabelText('velocity lane').querySelector('canvas')!;
+            fireEvent.pointerDown(canvas, { pointerId: 1, clientX: 50, clientY: 2 });
+            fireEvent.pointerUp(canvas, { pointerId: 1, clientX: 50, clientY: 2 });
+            expect(setNoteVelocity).toHaveBeenCalledWith('clip-1', 'lap2', 127);
+            expect(setNoteVelocity).not.toHaveBeenCalledWith('clip-1', 'lap1', expect.anything());
+            expect(notes).toEqual([original[0], { ...original[1], velocity: 127 }, original[2]]);
+            const [, undoValue, redoValue] = vi.mocked(pushUndoEntry).mock.lastCall!;
+            undoValue();
+            expect(notes).toEqual(original);
+            redoValue();
+            expect(notes).toEqual([original[0], { ...original[1], velocity: 127 }, original[2]]);
+            lineTo.mockClear();
+            act(() => invokeToolbarHandler('onActiveExpressionLaneChange', 'pressure'));
+            expect(lineTo.mock.calls).toEqual([
+                [50, 119],
+                [50, 39],
+                [70, 39],
+                [70, 109],
+                [80, 109],
+            ]);
+            expect(notes[1]?.expression).toEqual(original[1]?.expression);
+        } finally {
+            takeLaneStore.set({ lanes: [] });
+            vi.mocked(setNoteVelocity).mockReset();
+        }
     });
 
     it('draws recorded pressure and slide curves through the direct PianoRoll expression selector', () => {

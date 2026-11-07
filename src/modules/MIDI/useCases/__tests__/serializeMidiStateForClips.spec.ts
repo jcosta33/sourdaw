@@ -21,7 +21,7 @@ describe('serializeMidiStateForClips', () => {
                 generated: [{ id: 'cc-1', controller: 1, value: 0.5, beat: 0, channel: 0 }],
             },
             pitchBendByClipId: {
-                generated: [{ id: 'bend-1', value: 0.25, beat: 0, channel: 0 }],
+                generated: [{ id: 'bend-1', value: 2048, beat: 0, channel: 0 }],
             },
             migratedAbsoluteNoteClipIds: ['generated'],
         });
@@ -38,7 +38,7 @@ describe('serializeMidiStateForClips', () => {
                 },
                 pitchBends: {
                     present: true,
-                    value: [{ id: 'bend-1', value: 0.25, beat: 0, channel: 0 }],
+                    value: [{ id: 'bend-1', value: 2048, beat: 0, channel: 0 }],
                 },
                 migrated: true,
             },

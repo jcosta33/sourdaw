@@ -15,11 +15,19 @@ const midi: MidiStoreState = {
         'clip-1': [{ id: 'cc-x', controller: 1, value: 64, beat: 0, channel: 0 }],
     },
     pitchBendByClipId: {
-        'clip-1': [{ id: 'pb-x', value: 8192, beat: 0, channel: 0 }],
+        'clip-1': [{ id: 'pb-x', value: 8191, beat: 0, channel: 0 }],
     },
 };
 
 describe('hydrateProjectMidi', () => {
+    it('discards a malformed optional pass identity during direct hydration', () => {
+        const source = serializeProjectMidi(midi);
+        source.notesByClipId['clip-1']![0]!.recordingPassId = ' pass-1 ';
+
+        const hydrated = hydrateProjectMidi(source);
+        expect(hydrated.notesByClipId['clip-1']?.[0]).not.toHaveProperty('recordingPassId');
+    });
+
     it('preserves absent slide and explicit minimum as distinct saved note states', () => {
         const saved = serializeProjectMidi({
             notesByClipId: {
@@ -123,7 +131,7 @@ describe('hydrateProjectMidi', () => {
         const roundTripped = hydrateProjectMidi(serializeProjectMidi(midi));
         const pb = roundTripped.pitchBendByClipId['clip-1']?.[0];
 
-        expect(pb?.value).toBe(8192);
+        expect(pb?.value).toBe(8191);
         expect(pb?.beat).toBe(0);
         expect(pb?.channel).toBe(0);
     });

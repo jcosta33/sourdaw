@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
 
+import { resolveClipsWithComping } from '../../useCases/resolveComping';
 import {
     decodeExactTakeLaneSnapshots,
     defaultTakeLaneStoreState,
@@ -48,6 +49,36 @@ async function flush_pending_frame(): Promise<void> {
 }
 
 describe('sanitize_take_lane_store_state', () => {
+    it('keeps valid pass identities, leaves legacy takes absent, and rejects malformed take identities', () => {
+        const take = {
+            id: 'take-1',
+            clipId: 'clip-1',
+            name: 'First lap',
+            startBeat: 0,
+            endBeat: 4,
+            selected: true,
+            sourceOffsetBeats: 0,
+        };
+        const lane = {
+            id: 'lane-1',
+            trackId: 'track-1',
+            takes: [
+                { ...take, recordingPassId: 'pass-1' },
+                { ...take, id: 'take-2', name: 'Legacy', selected: false },
+                { ...take, id: 'take-3', recordingPassId: ' pass-3 ' },
+            ],
+            activeCompRegions: [{ startBeat: 0, endBeat: 4, takeId: 'take-1' }],
+        };
+
+        const sanitized = sanitize_take_lane_store_state({ lanes: [lane] });
+        expect(sanitized.lanes[0]?.takes.map(({ id, recordingPassId }) => [id, recordingPassId])).toEqual([
+            ['take-1', 'pass-1'],
+            ['take-2', undefined],
+        ]);
+        expect(sanitized.lanes[0]?.takes[1]).not.toHaveProperty('recordingPassId');
+        expect(decodeExactTakeLaneSnapshots([lane])).toBeNull();
+    });
+
     it('should reset malformed persisted take-lane state', () => {
         expect(sanitize_take_lane_store_state('corrupt')).toEqual(defaultTakeLaneStoreState);
     });
@@ -490,6 +521,7 @@ describe('sanitize_take_lane_store_state', () => {
                     sourceOffsetBeats: 4,
                     passAnchorSeconds: -2,
                     passDepthSeconds: 2,
+                    passSourceEndSeconds: 6,
                 },
             ],
             activeCompRegions: [{ startBeat: 8, endBeat: 16, takeId: 'pass-2' }],
@@ -510,7 +542,12 @@ describe('sanitize_take_lane_store_state', () => {
             selected: false,
             ...fields,
         });
-        const placed = take('ahead-of-media', { sourceOffsetBeats: 4, passAnchorSeconds: -2, passDepthSeconds: 2 });
+        const placed = take('ahead-of-media', {
+            sourceOffsetBeats: 4,
+            passAnchorSeconds: -2,
+            passDepthSeconds: 2,
+            passSourceEndSeconds: 6,
+        });
 
         expect(
             sanitize_take_lane_store_state({
@@ -520,6 +557,19 @@ describe('sanitize_take_lane_store_state', () => {
                         trackId: 'track-1',
                         takes: [
                             placed,
+                            take('end-before-start', {
+                                sourceOffsetBeats: 4,
+                                passAnchorSeconds: -2,
+                                passDepthSeconds: 2,
+                                passSourceEndSeconds: 1,
+                            }),
+                            take('end-alone', { passSourceEndSeconds: 6 }),
+                            take('infinite-end', {
+                                sourceOffsetBeats: 4,
+                                passAnchorSeconds: -2,
+                                passDepthSeconds: 2,
+                                passSourceEndSeconds: Infinity,
+                            }),
                             take('non-numeric-anchor', {
                                 sourceOffsetBeats: 4,
                                 passAnchorSeconds: '-2',
@@ -579,7 +629,20 @@ describe('takeLaneStore', () => {
                 {
                     id: 'lane-1',
                     trackId: 'track-1',
-                    takes: [],
+                    takes: [
+                        {
+                            id: 'captured',
+                            clipId: 'clip',
+                            name: 'Captured',
+                            startBeat: 8,
+                            endBeat: 8.8,
+                            selected: false,
+                            sourceOffsetBeats: 0,
+                            passAnchorSeconds: 0,
+                            passDepthSeconds: 0.1,
+                            passSourceEndSeconds: 0.5,
+                        },
+                    ],
                     activeCompRegions: [],
                 },
             ],
@@ -591,5 +654,56 @@ describe('takeLaneStore', () => {
 
         expect(takeLaneStore.value).toEqual(valid_state);
         expect(mutation_count).toBe(0);
+    });
+
+    it('rejects an empty saved source interval and its comp without suppressing the carrier', async () => {
+        const emptyLane = {
+            id: 'lane-1',
+            trackId: 'track-1',
+            takes: [
+                {
+                    id: 'empty',
+                    clipId: 'clip-1',
+                    name: 'Empty',
+                    startBeat: 0,
+                    endBeat: 8,
+                    selected: true,
+                    sourceOffsetBeats: 0,
+                    passAnchorSeconds: 0,
+                    passDepthSeconds: 2,
+                    passSourceEndSeconds: 2,
+                },
+            ],
+            activeCompRegions: [{ startBeat: 0, endBeat: 8, takeId: 'empty' }],
+        };
+        expect(decodeExactTakeLaneSnapshots([emptyLane])).toBeNull();
+        const sanitized = { lanes: [{ ...emptyLane, takes: [], activeCompRegions: [] }] };
+        expect(sanitize_take_lane_store_state({ lanes: [emptyLane] })).toEqual(sanitized);
+        fake_doc.takeLanes = { lanes: [emptyLane] };
+        takeLaneStore.hydrate();
+        await flush_pending_frame();
+        expect(takeLaneStore.value).toEqual(sanitized);
+        expect(mutation_count).toBe(0);
+        const carrier = {
+            id: 'clip-1',
+            trackId: 'track-1',
+            name: 'Carrier',
+            type: 'audio' as const,
+            startBeat: 0,
+            endBeat: 8,
+            audioBufferId: 'pcm',
+            gain: 1,
+            color: '#000000',
+            locked: false,
+            muted: false,
+            fadeInBeats: 0,
+            fadeOutBeats: 0,
+        };
+        expect(resolveClipsWithComping('track-1', [carrier])).toEqual([
+            { ...carrier, regionStartBeat: 0, regionEndBeat: 8, sourceStartBeat: 0 },
+        ]);
+        const { passSourceEndSeconds: _endpoint, ...legacyTake } = emptyLane.takes[0]!;
+        const legacyLane = { ...emptyLane, takes: [legacyTake] };
+        expect(decodeExactTakeLaneSnapshots([legacyLane])).toEqual([legacyLane]);
     });
 });

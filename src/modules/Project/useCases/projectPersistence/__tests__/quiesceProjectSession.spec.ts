@@ -12,6 +12,7 @@ const runtime = vi.hoisted(() => ({
 }));
 
 vi.mock('#/modules/Transport/useCases', () => ({
+    preferencesSeededTransportState: vi.fn(),
     stopPlayback: runtime.stopPlayback,
     repairRuntimeGraphFromProject: runtime.repairRuntimeGraphFromProject,
 }));

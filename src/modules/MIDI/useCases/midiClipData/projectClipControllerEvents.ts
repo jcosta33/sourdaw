@@ -33,8 +33,10 @@ type IterationRange = { startIndex: number; endIndex: number };
 /** A controller move a clip plays, at its absolute beat. */
 export type ProjectedClipControllerMove = MidiCC & {
     /**
-     * Whether the move is a switch-controller release on the clip's closing line, at exactly
-     * `clip.endBeat`. Such a move is owned by the window `[fromBeat, toBeat)` with
+     * Whether the move is a pedal lift on the clip's closing line, at exactly
+     * `clip.endBeat` — sustain only at value 0 (a continuous position, so a partial
+     * value there is no lift), and the other switch controllers below the latch
+     * threshold. Such a move is owned by the window `[fromBeat, toBeat)` with
      * `fromBeat < endBeat <= toBeat` (the last window the clip plays in). At its sample frame the
      * clip's moves apply, in the clip's own order, before the moves of a clip that starts there,
      * so the clip that follows has the last word.
@@ -122,10 +124,12 @@ function ownsMove(move: ProjectedClipControllerMove, fromBeat: number, toBeat: n
  * names what a relocation must send, and the window that opens at the
  * destination still emits the rows sitting on it.
  *
- * A switch-controller release (a pedal lift) on the clip's closing line plays at the
+ * A pedal lift on the clip's closing line plays at the
  * clip end, as the last thing the clip does, so a lift drawn on the final bar line ends
  * the sustain there before the next clip starts (Cubase's own reset events after a
- * recording sit on a part's end). Any other row there stays dropped: a press would
+ * recording sit on a part's end). A lift is sustain only at value 0 — sustain is a
+ * continuous position, so a partial value there lifts nothing — and the other switch
+ * controllers below the latch threshold. Any other row there stays dropped: a press would
  * hold past the clip end with nothing of the clip left to hold (a comp cut or a trim
  * landing on a press would leave the pedal down until stop), and a continuous
  * controller would set a value for whatever follows. Only the last pass has that line: an inner loop seam stays half-open, so a row on the

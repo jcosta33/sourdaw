@@ -29,8 +29,8 @@ describe('createMidiCC', () => {
 
 describe('createMidiPitchBend', () => {
     it('creates pitch bend events', () => {
-        const ev = createMidiPitchBend(0.5, 1, 2);
-        expect(ev.value).toBe(0.5);
+        const ev = createMidiPitchBend(4096, 1, 2);
+        expect(ev.value).toBe(4096);
         expect(ev.beat).toBe(1);
         expect(ev.channel).toBe(2);
         expect(ev.id).toMatch(/^pb-[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i);

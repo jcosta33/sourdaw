@@ -8,6 +8,34 @@ import { hydrateProjectMidi } from '../hydrateProjectMidi';
 import { serializeProjectMidi } from '../serializeProjectMidi';
 
 describe('serializeProjectMidi', () => {
+    it('saves exact pass identities with advancing source positions and leaves legacy notes untagged', () => {
+        const note = { id: 'lap-1', pitch: 60, startBeat: 1, duration: 1, velocity: 100 };
+        const recorded: MidiStoreState = {
+            probabilitySeed: 1,
+            notesByClipId: {
+                'clip-1': [
+                    { ...note, recordingPassId: 'pass-1' },
+                    { ...note, id: 'lap-2', pitch: 72, startBeat: 5, recordingPassId: 'pass-2' },
+                    { ...note, id: 'legacy', startBeat: 9 },
+                ],
+            },
+            ccByClipId: {},
+            pitchBendByClipId: {},
+        };
+
+        const saved = serializeProjectMidi(recorded);
+        const reopened = hydrateProjectMidi(saved);
+        expect(
+            reopened.notesByClipId['clip-1']?.map(({ startBeat, recordingPassId }) => [startBeat, recordingPassId])
+        ).toEqual([
+            [1, 'pass-1'],
+            [5, 'pass-2'],
+            [9, undefined],
+        ]);
+        expect(saved.notesByClipId['clip-1']?.[2]).not.toHaveProperty('recordingPassId');
+        expect(reopened.notesByClipId['clip-1']?.[2]).not.toHaveProperty('recordingPassId');
+    });
+
     it('keeps an absent recorded slide onset distinct from explicit minimum through save and join', () => {
         const recorded: MidiStoreState = {
             probabilitySeed: 1,
@@ -75,7 +103,7 @@ describe('serializeProjectMidi', () => {
                 'clip-1': [{ id: 'cc-x', controller: 1, value: 64, beat: 0, channel: 0 }],
             },
             pitchBendByClipId: {
-                'clip-1': [{ id: 'pb-x', value: 8192, beat: 0, channel: 0 }],
+                'clip-1': [{ id: 'pb-x', value: 8191, beat: 0, channel: 0 }],
             },
         };
 
@@ -118,7 +146,7 @@ describe('serializeProjectMidi', () => {
                 'clip-1': [{ beat: 0, controller: 1, value: 64, channel: 0 }],
             },
             pitchBendByClipId: {
-                'clip-1': [{ beat: 0, value: 8192, channel: 0 }],
+                'clip-1': [{ beat: 0, value: 8191, channel: 0 }],
             },
         });
     });

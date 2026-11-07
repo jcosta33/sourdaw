@@ -43,6 +43,7 @@ export function disposePlayheadScheduler(): void {
     playheadClockRef.audioTimeSeconds = 0;
     schedulerSession.lastScheduledBeat = -1;
     schedulerSession.punchRecordingActive = false;
+    schedulerSession.punchRecordingOwner = null;
     schedulerSession.tickInFlight = false;
     schedulerSession.scheduledAudioClips.clear();
     schedulerSession.scheduledFrozenTracks.clear();

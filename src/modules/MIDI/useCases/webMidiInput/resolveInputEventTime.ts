@@ -1,5 +1,7 @@
 import { audioEngine } from '#/modules/AudioEngine/useCases';
 
+import { type MidiRecordingWitness } from '../../models/MidiRecordingSession';
+
 import { MAX_CREDIBLE_INPUT_WAIT_SECONDS } from '../../models/InputTiming';
 
 type ResolveInputEventTimeInput = {
@@ -14,7 +16,7 @@ type ResolveInputEventTimeInput = {
 };
 
 /** An audio-clock instant authenticated at message admission, before any worker wait. */
-export type CapturedInputEventTime = Readonly<{ audioTime: number; recordingBeat?: number }>;
+export type CapturedInputEventTime = Readonly<{ audioTime: number; recordingBeat?: number; recordingWitness?: MidiRecordingWitness; recordingAdmitted?: true }>;
 
 /**
  * Instant, on the AudioContext clock, at which a live MIDI event arrived.

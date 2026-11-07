@@ -159,6 +159,16 @@ before releasing either temporary run assets or confirmation resources, and must
 while cleanup remains pending. Repeat without temporary assets: an already-terminal no-op cannot
 prove persistence. A mocked cancellation helper misses the live-store-before-storage failure seam.
 
+### Recording observers must precede every producer
+
+PR #5165 waited for every armed input before registering manual capture clocks.
+A ready input could publish PCM and cross a sounded seam while another keyed
+input still awaited permission. Hold that second grant and publish the first
+through the real worklet reader; require the first epoch to survive admission,
+a seam and a tempo edit. Bind readers before enabling producers and retain them
+while admission waits. Stop, denied admission and stale callbacks detach only
+their captured owners and cannot install clips or consume successor captures.
+
 ### 2026-10-08 — deleting a track left its input capture alive
 
 PR #312 added `removeTrackStrip` and `removeBusStrip` calls to `removeTrack`; bulk removal already

@@ -113,6 +113,7 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     addTakeLane: vi.fn(),
     addTake: vi.fn(),
     stageRecordingTake: vi.fn(),
+    observeRecordingPassEntry: vi.fn(),
     commitRecording: vi.fn(),
     updateClip: vi.fn(),
     resolveClipsWithComping: (_trackId: string, clips: { startBeat: number; endBeat: number }[]) =>
@@ -411,7 +412,7 @@ describe('startPlayheadScheduler seam vs mid-playback edit', () => {
  * inside the arm.
  */
 const arrangementEvents = vi.hoisted(
-    () => [] as Array<{ kind: 'punch-in' | 'punch-out' | 'stage-take'; at: number; beat?: number }>
+    () => [] as Array<{ kind: 'punch-in' | 'punch-out' | 'stage-take'; at: number; beat?: number; end?: number }>
 );
 
 describe('startPlayheadScheduler punch at the seam-edit wrap', () => {
@@ -480,8 +481,8 @@ describe('startPlayheadScheduler punch at the seam-edit wrap', () => {
             arrangementEvents.push({ kind: 'punch-in', at: ctxTime.now, beat: atBeat });
             return [];
         });
-        vi.mocked(stopRecording).mockImplementation(async (atBeat) => {
-            arrangementEvents.push({ kind: 'punch-out', at: ctxTime.now, beat: atBeat });
+        vi.mocked(stopRecording).mockImplementation(async (atBeat, ending) => {
+            arrangementEvents.push({ kind: 'punch-out', at: ctxTime.now, beat: atBeat, end: ending?.contextSeconds });
         });
         vi.mocked(stageRecordingTake).mockImplementation(() => {
             arrangementEvents.push({ kind: 'stage-take', at: ctxTime.now });
@@ -559,6 +560,7 @@ describe('startPlayheadScheduler punch at the seam-edit wrap', () => {
             (event) => event.kind === 'punch-out' && Math.abs((event.beat ?? -1) - PUNCH_OUT_BEAT) < 1e-6
         );
         expect(editTickPunchOuts).toHaveLength(1);
+        expect(editTickPunchOuts[0]?.end).toBeCloseTo(1.925 + ((PUNCH_OUT_BEAT - PUNCH_IN_BEAT) * 60) / EDITED_BPM, 3);
         expect(schedulerSession.punchRecordingActive).toBe(false);
         // The pass-span take stages after the punch checks, on the same law as
         // the seam path: a take staged before the finalization would name the

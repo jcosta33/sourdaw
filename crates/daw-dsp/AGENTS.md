@@ -72,6 +72,21 @@ pins), but the worklet never calls it: copying a whole sample is exactly the mes
 chunks remove. `tests/levain_sample_upload.rs` counts allocations, `device_process_rt.rs` guards the chunk path with
 `assert_no_alloc`.
 
+A Levain bank's zone tables reach the worklet's engine the same way, computed elsewhere.
+`LevainZoneTableBuilder` runs `zone::build_zone_tables`, the function `ZoneMap::build_lut` calls, so
+there is one table algorithm; the browser host runs it in a Worker on its own instance.
+`reserve_zone_tables` reserves the LUT, arena and round-robin counters (the staging's only
+allocation; the instance's write window is allocated once with it), each
+`commit_zone_lut_chunk`/`commit_zone_arena_chunk` appends at most `LEVAIN_ZONE_TABLE_CHUNK_ENTRIES`
+entries after checking every one (order, bounds, a LUT run inside the declared arena, an arena id
+below the zone count) and allocates nothing, and `seal_zone_tables` swaps the tables in O(1). These
+checks are what keep `ZoneMap::lookup` sound with tables it did not build; do not drop one. An abort
+retires an open reservation with the staged bank, and installed staging keeps the zone map's previous
+tables so a commit frees nothing. `build_zone_map` stays for the native host and the pinned wasm
+measurement recipes, but the worklet never calls it. `tests/levain_zone_table_staging.rs` counts
+allocations and pins the tables equal to `build_lut`'s; `device_process_rt.rs` guards the chunk path
+and the seal with `assert_no_alloc`.
+
 A disposed instance drains the same way. `retire_sample_bank` moves the sounding bank into the
 retired slot and silences the voices; it frees nothing and allocates only the empty replacement
 pool's `Arc`, and it refuses while the slot is occupied or no PCM sounds. The host releases the slot

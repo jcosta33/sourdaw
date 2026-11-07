@@ -304,8 +304,30 @@ export const TakeLanePanel = ({ trackId, trackName, trackColor }: TakeLanePanelP
         flattenComp(trackId);
     };
 
-    const handlePromote = (take: Take): void => {
-        void selectTake(trackId, take.id);
+    const handlePromote = async (take: Take): Promise<void> => {
+        if (await selectTake(trackId, take.id)) {
+            setCompRegion(trackId, {
+                takeId: take.id,
+                startBeat:
+                    take.recordingPassId === undefined
+                        ? take.startBeat
+                        : Math.min(
+                              take.startBeat,
+                              ...takes
+                                  .filter((candidate) => candidate.clipId === take.clipId)
+                                  .map((candidate) => candidate.startBeat)
+                          ),
+                endBeat:
+                    take.recordingPassId === undefined
+                        ? take.endBeat
+                        : Math.max(
+                              take.endBeat,
+                              ...takes
+                                  .filter((candidate) => candidate.clipId === take.clipId)
+                                  .map((candidate) => candidate.endBeat)
+                          ),
+            });
+        }
     };
 
     return (

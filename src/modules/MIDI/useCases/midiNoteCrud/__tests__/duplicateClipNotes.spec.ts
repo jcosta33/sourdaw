@@ -110,7 +110,7 @@ describe('duplicateClipNotes', () => {
             { id: 'cc-b', controller: 64, value: 0, beat: 1, channel: 0 },
             { id: 'cc-c', controller: 64, value: 90, beat: 2, channel: 5 },
         ];
-        const bends = [{ id: 'pb-a', value: 0.5, beat: 1, channel: 0 }];
+        const bends = [{ id: 'pb-a', value: 4096, beat: 1, channel: 0 }];
 
         it('copies controller and pitch bend rows to the destination in source order', () => {
             midiStore.set({

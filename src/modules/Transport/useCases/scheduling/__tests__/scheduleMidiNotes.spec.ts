@@ -61,6 +61,9 @@ const engineStub = vi.hoisted(() => ({
 
 vi.mock('#/modules/Arrangement/stores', () => ({
     trackStore: { value: { tracks: [] } },
+    get takeLaneStore() {
+        return realArrangementStores.takeLaneStore;
+    },
     // Read at module scope by the MIDI barrel's device-write wiring, which the
     // tests that load the real projections past the barrel double evaluate.
     persistDeviceParam: vi.fn(),
@@ -68,6 +71,9 @@ vi.mock('#/modules/Arrangement/stores', () => ({
 }));
 vi.mock('#/modules/MIDI/stores', () => ({
     midiStore: { value: null },
+    selectMidiRecordingPassNotes: (
+        ...args: Parameters<(typeof import('#/modules/MIDI/stores'))['selectMidiRecordingPassNotes']>
+    ) => realMidiRecordingPass.selectMidiRecordingPassNotes(...args),
 }));
 vi.mock('#/modules/Automation/stores', () => ({
     automationStore: { value: null },
@@ -146,10 +152,29 @@ vi.mock('../scheduleFrozenTrack', () => ({
 
 /**
  * The real MIDI projections, behind this file's barrel double. Loaded here, at
- * collection, so the cost of evaluating the real barrel never lands inside a case's
- * own time limit.
+ * collection through their defining modules, so capture-session wiring is outside
+ * this scheduler double's graph and no case's own time limit pays import cost.
  */
-const realMidiUseCases = await vi.importActual<typeof import('#/modules/MIDI/useCases')>('#/modules/MIDI/useCases');
+const realArrangementUseCases = await vi.importActual<typeof import('#/modules/Arrangement/useCases/resolveComping')>(
+    '#/modules/Arrangement/useCases/resolveComping'
+);
+const realArrangementStores = await vi.importActual<typeof import('#/modules/Arrangement/stores/takeLaneStore')>(
+    '#/modules/Arrangement/stores/takeLaneStore'
+);
+const realMidiRecordingPass = await vi.importActual<typeof import('#/modules/MIDI/stores/selectMidiRecordingPassNotes')>(
+    '#/modules/MIDI/stores/selectMidiRecordingPassNotes'
+);
+const realMidiUseCases = {
+    ...(await vi.importActual<typeof import('#/modules/MIDI/useCases/grooveTemplates/projectClipMidiEvents')>(
+        '#/modules/MIDI/useCases/grooveTemplates/projectClipMidiEvents'
+    )),
+    ...(await vi.importActual<typeof import('#/modules/MIDI/useCases/midiClipData/projectClipControllerEvents')>(
+        '#/modules/MIDI/useCases/midiClipData/projectClipControllerEvents'
+    )),
+    ...(await vi.importActual<typeof import('#/modules/MIDI/useCases/midiClipData/projectClipControllerRestore')>(
+        '#/modules/MIDI/useCases/midiClipData/projectClipControllerRestore'
+    )),
+};
 
 function midiTrack(overrides: Record<string, unknown> = {}) {
     return {
@@ -345,7 +370,12 @@ describe('scheduleMidiNotes', () => {
         (midiStore as { value: unknown }).value = { notesByClipId: {} };
 
         const previousPendingSeam = schedulerSession.pendingSeam;
-        schedulerSession.pendingSeam = { seamAudioTime: 10.1, anchorAudioTime: 10, anchorPosition: 11.9 };
+        schedulerSession.pendingSeam = {
+            seamAudioTime: 10.1,
+            destinationBeat: 8,
+            anchorAudioTime: 10,
+            anchorPosition: 11.9,
+        };
         try {
             await scheduleMidiNotes(
                 4.05,
@@ -362,6 +392,111 @@ describe('scheduleMidiNotes', () => {
 
         expect(vi.mocked(scheduleFrozenTrack).mock.calls[0]?.[4]).toBe(4.05);
     });
+
+    it.each([
+        { carrierStart: 0, explicit: true },
+        { carrierStart: 2, explicit: true },
+        { carrierStart: 2, explicit: false },
+    ])(
+        'sounds only the selected partial cycle pass after actual comp and loop projection ($carrierStart/$explicit)',
+        async ({ carrierStart, explicit }) => {
+            const track = midiTrack({
+                clips: [midiClip({ startBeat: carrierStart, loopEnabled: true, loopLength: 4 })],
+            });
+            (trackStore as { value: unknown }).value = { tracks: [track] };
+            realArrangementStores.takeLaneStore.set({
+                lanes: [
+                    {
+                        id: 'lane',
+                        trackId: 'track-1',
+                        takes: [
+                            {
+                                id: 't1',
+                                clipId: 'clip-1',
+                                name: 'Lap 1',
+                                startBeat: carrierStart,
+                                endBeat: 4,
+                                selected: explicit,
+                                sourceOffsetBeats: 0,
+                                recordingPassId: 'pass-1',
+                            },
+                            {
+                                id: 't2',
+                                clipId: 'clip-1',
+                                name: 'Lap 2',
+                                startBeat: 0,
+                                endBeat: 2,
+                                selected: !explicit,
+                                sourceOffsetBeats: 4,
+                                recordingPassId: 'pass-2',
+                            },
+                        ],
+                        activeCompRegions: explicit ? [{ startBeat: 0, endBeat: 4, takeId: 't2' }] : [],
+                    },
+                ],
+            });
+            (midiStore as { value: unknown }).value = {
+                probabilitySeed: 7,
+                notesByClipId: {
+                    'clip-1': [
+                        {
+                            id: 'lap1-held',
+                            pitch: 60,
+                            startBeat: 3,
+                            duration: 8,
+                            velocity: 100,
+                            recordingPassId: 'pass-1',
+                        },
+                        {
+                            id: 'lap1-late',
+                            pitch: 64,
+                            startBeat: 3,
+                            duration: 1,
+                            velocity: 100,
+                            recordingPassId: 'pass-1',
+                        },
+                        {
+                            id: 'lap2',
+                            pitch: 72,
+                            startBeat: 5 - carrierStart,
+                            duration: 4,
+                            velocity: 100,
+                            recordingPassId: 'pass-2',
+                            pressure: 30,
+                            expression: {
+                                pressure: [
+                                    { offsetBeats: 0.5, value: 60 },
+                                    { offsetBeats: 2, value: 90 },
+                                ],
+                            },
+                        },
+                    ],
+                },
+            };
+            vi.mocked(resolveClipsWithComping).mockImplementation(realArrangementUseCases.resolveClipsWithComping);
+            vi.mocked(projectClipMidiEvents).mockImplementation(realMidiUseCases.projectClipMidiEvents);
+            try {
+                await scheduleMidiNotes(0, 2, 0, new Set<string>(), [], defaultTransportState, 120);
+                expect(vi.mocked(scheduleNote).mock.calls.map((call) => call[2])).toEqual([72]);
+                expect(vi.mocked(scheduleNote).mock.calls[0]?.[3]).toBe(0.5);
+                expect(vi.mocked(scheduleNote).mock.calls[0]?.[4]).toBe(0.5);
+                expect(shouldPlayProbability.mock.calls.map(([input]) => input.eventId)).toEqual(['lap2']);
+                expect(projectClipMidiEvents).toHaveBeenCalledWith(
+                    expect.objectContaining({
+                        events: [
+                            expect.objectContaining({
+                                id: 'lap2',
+                                duration: 1,
+                                expression: { pressure: [{ offsetBeats: 0.5, value: 60 }] },
+                            }),
+                        ],
+                    })
+                );
+            } finally {
+                realArrangementStores.takeLaneStore.set({ lanes: [] });
+            }
+        }
+    );
 
     // audit MD-6 — the built-in synth voice is a bare oscillator written into
     // the strip. Its handle used to be discarded, so neither transport stop nor
@@ -3134,6 +3269,35 @@ describe('scheduleMidiNotes', () => {
                     expect(posted.filter((entry) => entry.startsWith('sustain'))).toEqual([
                         'sustain 1 @0',
                         `sustain 0 @${1.5 * BEAT_FRAMES}`,
+                    ]);
+                });
+
+                it('drops a partial sustain stored on the closing line, leaving the pedal at the boundary to the next clip', async () => {
+                    const posted: string[] = [];
+                    useRealProjections();
+                    stripWith({
+                        type: 'grand-boule',
+                        deviceId: 'gb-1',
+                        grandBouleControls: recordingGrandBoule(posted),
+                    });
+                    // Sustain is a continuous position, so a half-pedal row on the closing line is
+                    // no lift: the boundary posts nothing for it, and clip B's own press decides.
+                    loadAbuttingClips(
+                        [clipA(), clipB()],
+                        [storedController('press', 64, 127, 0)],
+                        [storedController('down', 64, 127, 0), storedController('half', 64, 63, 2)]
+                    );
+
+                    await scheduleMidiNotes(0, 4, 0, new Set<string>(), [], defaultTransportState, 120);
+
+                    expect(postedAt(posted, 2 * BEAT_FRAMES)).toEqual([
+                        `off 60 @${2 * BEAT_FRAMES}`,
+                        `sustain 1 @${2 * BEAT_FRAMES}`,
+                        `on 60 @${2 * BEAT_FRAMES}`,
+                    ]);
+                    expect(posted.filter((entry) => entry.startsWith('sustain'))).toEqual([
+                        'sustain 1 @0',
+                        `sustain 1 @${2 * BEAT_FRAMES}`,
                     ]);
                 });
             });

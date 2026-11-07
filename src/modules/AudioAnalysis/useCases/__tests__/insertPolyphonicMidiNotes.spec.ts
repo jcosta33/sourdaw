@@ -4,7 +4,10 @@ import { insertPolyphonicMidiNotes } from '../insertPolyphonicMidiNotes';
 const mocks = vi.hoisted(() => ({ getTransportState: vi.fn(), getAllTracks: vi.fn(), executeAppActionBatch: vi.fn() }));
 vi.mock('#/modules/Arrangement/useCases', () => ({ getAllTracks: mocks.getAllTracks }));
 vi.mock('#/modules/Command/useCases', () => ({ executeAppActionBatch: mocks.executeAppActionBatch }));
-vi.mock('#/modules/Transport/useCases', () => ({ getTransportState: mocks.getTransportState }));
+vi.mock('#/modules/Transport/useCases', () => ({
+    preferencesSeededTransportState: vi.fn(),
+    getTransportState: mocks.getTransportState,
+}));
 const sourceClip = { startBeat: 0, endBeat: 4, name: 'Vocal' };
 const notes = [{ pitchMidi: 60, startTimeSeconds: 0.5, durationSeconds: 0.25, amplitude: 0.8 }];
 

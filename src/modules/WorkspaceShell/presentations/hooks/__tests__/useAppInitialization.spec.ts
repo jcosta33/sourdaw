@@ -91,6 +91,7 @@ vi.mock('#/modules/SampleLibrary/useCases', () => ({
 }));
 vi.mock('#/modules/Synth/useCases', () => ({ registerProSynthInstruments: vi.fn() }));
 vi.mock('#/modules/Transport/useCases', () => ({
+    preferencesSeededTransportState: vi.fn(),
     ensureTrackStrips: vi.fn(),
     getTransportState: vi.fn(() => transportStateMock.current),
     rearmNativeSessionAfterEngineRetire: vi.fn(() => vi.fn()),

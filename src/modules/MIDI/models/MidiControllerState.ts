@@ -143,6 +143,11 @@ export function isParameterSelectCc(cc: number): boolean {
     return cc === CC_NRPN_LSB || cc === CC_NRPN_MSB || cc === CC_RPN_LSB || cc === CC_RPN_MSB;
 }
 
+/** True for a controller number below the channel-mode range (0..119). */
+export function isControllerCc(cc: number): boolean {
+    return cc >= 0 && cc < CC_ALL_SOUND_OFF;
+}
+
 /** True for the four controllers that write the selected parameter's value. */
 export function isDataEntryCc(cc: number): boolean {
     return cc === CC_DATA_ENTRY_MSB || cc === CC_DATA_ENTRY_LSB || cc === CC_DATA_INCREMENT || cc === CC_DATA_DECREMENT;

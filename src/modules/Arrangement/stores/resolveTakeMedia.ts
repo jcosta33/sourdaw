@@ -15,6 +15,7 @@ import { type Clip } from '../models/Track';
 
 type TakeMedia = {
     earliestBeat: number;
+    latestBeatAt?: (fragmentStartBeat: number) => number;
     /** Carries the loop-occurrence count for probability rolls, never an audio seek. */
     sourceStartBeat: number;
     /** Compatibility offset, read at the fragment's start tempo. */
@@ -31,7 +32,16 @@ type TakeMedia = {
  * MIDI retains its beat-domain offsets and loop-occurrence origin.
  */
 export function resolveTakeMedia(
-    take: Pick<Take, 'sourceOffsetBeats' | 'sourceOffsetSeconds' | 'passAnchorSeconds' | 'passDepthSeconds'>,
+    take: Pick<
+        Take,
+        | 'sourceOffsetBeats'
+        | 'sourceOffsetSeconds'
+        | 'passAnchorSeconds'
+        | 'passDepthSeconds'
+        | 'passSourceEndSeconds'
+        | 'recordingPassId'
+    > &
+        Partial<Pick<Take, 'startBeat' | 'endBeat'>>,
     clip: Clip,
     timeline: TempoTimeline
 ): TakeMedia {
@@ -39,7 +49,8 @@ export function resolveTakeMedia(
     if (clip.type !== 'audio') {
         const offsetAt = (beat: number) => (clip.midiOffsetBeats ?? 0) + (beat - (clip.startBeat - depthBeats));
         return {
-            earliestBeat: clip.startBeat,
+            earliestBeat: take.recordingPassId === undefined ? clip.startBeat : (take.startBeat ?? clip.startBeat),
+            ...(take.recordingPassId === undefined ? {} : { latestBeatAt: () => take.endBeat ?? clip.endBeat }),
             sourceStartBeat:
                 resolveLoopAnchoredStartBeat({
                     startBeat: clip.startBeat,
@@ -49,7 +60,14 @@ export function resolveTakeMedia(
             offsetAt,
             clipAt: (beat) => {
                 const offset = offsetAt(beat);
-                return offset === (clip.midiOffsetBeats ?? 0) ? clip : { ...clip, midiOffsetBeats: offset };
+                if (take.recordingPassId === undefined) {
+                    return offset === (clip.midiOffsetBeats ?? 0) ? clip : { ...clip, midiOffsetBeats: offset };
+                }
+                const fragment = { ...clip, midiOffsetBeats: offset };
+                // A selected pass enters its own source window at relative zero.
+                // Keeping the carrier anchor would apply its trim advance twice.
+                delete fragment.loopOriginBeat;
+                return fragment;
             },
         };
     }
@@ -121,6 +139,16 @@ export function resolveTakeMedia(
     return {
         earliestBeat: Math.max(clip.startBeat, passStartBeat),
         sourceStartBeat,
+        ...(take.passSourceEndSeconds === undefined
+            ? {}
+            : {
+                  latestBeatAt: (beat: number) => {
+                      const remaining = take.passSourceEndSeconds! - sourceAt(beat);
+                      return remaining <= 0
+                          ? beat
+                          : timeline.beatAtSeconds(timeline.secondsAtBeat(beat) + remaining / rate);
+                  },
+              }),
         offsetAt,
         clipAt: (beat) => {
             const offsetSeconds = sourceAt(beat);
