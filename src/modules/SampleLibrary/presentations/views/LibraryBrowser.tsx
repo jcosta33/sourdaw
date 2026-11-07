@@ -23,7 +23,7 @@ import { SAMPLE_DRAG_MIME_TYPE } from '#/utils/dragMimeTypes';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 import { basename_from_path } from '#/utils/path-basename';
 
-import { type FolderNode, isBrowserDecodeRisky } from '../../models/LibraryTypes';
+import { type FolderNode, type SampleRecord, isBrowserDecodeRisky } from '../../models/LibraryTypes';
 import {
     defaultLibraryState,
     libraryStore,
@@ -55,7 +55,11 @@ type LibraryPreview = {
 
 type LibraryBrowserProps = {
     preview: LibraryPreview;
-    selectedTrackId: string | null;
+    /**
+     * Places a sample on the timeline. The embedding surface owns placement
+     * (target track, position), so rows show their add control only when given.
+     */
+    onAddSample?: (sample: { id: string; name: string; path: string; libraryRootId: string }) => void;
 };
 
 // Numeric-aware collator so file lists order "Kick 1, Kick 2, … Kick 10" rather
@@ -88,8 +92,21 @@ function buildFileCountIndex(tree: FolderNode | undefined): Map<string, number> 
     return index;
 }
 
-export const LibraryBrowser = ({ preview, selectedTrackId: _selectedTrackId }: LibraryBrowserProps): ReactElement => {
+export const LibraryBrowser = ({ preview, onAddSample }: LibraryBrowserProps): ReactElement => {
     const state = useStore(libraryStore, defaultLibraryState);
+
+    const addToTrackHandler = (sample: SampleRecord): (() => void) | undefined => {
+        if (!onAddSample) {
+            return undefined;
+        }
+        return () =>
+            onAddSample({
+                id: sample.id,
+                name: sample.displayName,
+                path: sample.relativePath,
+                libraryRootId: sample.libraryRootId,
+            });
+    };
 
     const [showSearch, setShowSearch] = useState(false);
     const [showMap, setShowMap] = useState(false);
@@ -628,6 +645,7 @@ export const LibraryBrowser = ({ preview, selectedTrackId: _selectedTrackId }: L
                                     onStop={handleStopPreview}
                                     onToggleFavorite={() => void toggleFavorite(sample.id)}
                                     onFindSimilar={() => handleFindSimilar(sample)}
+                                    onAddToTrack={addToTrackHandler(sample)}
                                     onDragStart={(e) => {
                                         e.dataTransfer.setData(
                                             SAMPLE_DRAG_MIME_TYPE,
