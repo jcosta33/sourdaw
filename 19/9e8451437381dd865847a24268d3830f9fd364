@@ -1,0 +1,72 @@
+playwright.config.ts
+  s_eb3cd86b0cee6e::t_8b5e6ab30e03d1 81-84,87-88
+scripts/healthGateWorkflowContract.ts
+  s_eb3cd86b0cee6e::t_8b5e6ab30e03d1 177,243
+scripts/workflowSecuritySurfaceContract.ts
+  s_eb3cd86b0cee6e::t_8b5e6ab30e03d1 65-66
+scripts/__tests__/agentDeliveryScripts.spec.ts
+  s_eb3cd86b0cee6e::t_8b5e6ab30e03d1 1044-1051,1054-1061
+scripts/__tests__/healthGatesWorkflow.spec.ts
+  s_eb3cd86b0cee6e::t_8b5e6ab30e03d1 83-84,199,334,344,875-883,2083-2089,2113,2116-2117,2119,3609-3702,3764-3788,4510,5142,5155,5157,5162-5165,5167,5177,5182,5187-5190
+tests/e2e/applicationModuleRecovery.spec.ts
+  s_eb3cd86b0cee6e::t_8b5e6ab30e03d1 134
+tests/e2e/browserAiWebGpuAdmission.spec.ts
+  s_eb3cd86b0cee6e::t_8b5e6ab30e03d1 9,213,223
+.github/workflows/heavy-gates.yml
+  s_eb3cd86b0cee6e::t_8b5e6ab30e03d1 42-44,62-67,78
+scripts/test-health-gate-scripts.sh
+  s_eb3cd86b0cee6e::t_8b5e6ab30e03d1 420,455-457,582-588,1352,1365-1381,1383-1386,1388,1391,1393-1405,1419-1420,1424,1426-1441
+tests/e2e/desktopRuntime.spec.ts
+  s_eb3cd86b0cee6e::t_8b5e6ab30e03d1 2,62-72,159,165,167
+tests/e2e/directProjectSetupContract.ts
+  s_eb3cd86b0cee6e::t_8b5e6ab30e03d1 1-8
+scripts/__tests__/prValidationScope.spec.ts
+  s_eb3cd86b0cee6e::t_8b5e6ab30e03d1 988-990
+tests/e2e/directProjectSetupEntry.ts
+  s_eb3cd86b0cee6e::t_8b5e6ab30e03d1 1-6
+vite.config.ts
+  s_eb3cd86b0cee6e::t_8b5e6ab30e03d1 109-116,120-132,141,149-150
+  s_eb3cd86b0cee6e::t_0bcf13b3379397 151
+tests/e2e/smoke.spec.ts
+  s_eb3cd86b0cee6e::t_8b5e6ab30e03d1 195,200,601
+scripts/__tests__/deliverPullRequest.spec.ts
+  s_eb3cd86b0cee6e::t_8b5e6ab30e03d1 6837-6841
+scripts/__tests__/viteE2ePersistenceEntry.spec.ts
+  s_eb3cd86b0cee6e::t_8b5e6ab30e03d1 16,38-59,78-83
+tests/e2e/launchFlows.spec.ts
+  s_eb3cd86b0cee6e::t_8b5e6ab30e03d1 5,119,131
+scripts/__tests__/sharedE2eBuild.spec.ts
+  s_eb3cd86b0cee6e::t_8b5e6ab30e03d1 1-135
+tests/e2e/e2eUtils.ts
+  s_eb3cd86b0cee6e::t_8b5e6ab30e03d1 6,133-136,139,158-176,178-185
+.github/workflows/health-gates.yml
+  s_eb3cd86b0cee6e::t_8b5e6ab30e03d1 135-180,183-188,226,237,243-249,252
+scripts/__tests__/e2eServerIdentity.spec.ts
+  s_eb3cd86b0cee6e::t_8b5e6ab30e03d1 301-320
+scripts/__tests__/e2eLaunchOverlayBound.spec.ts
+  s_eb3cd86b0cee6e::t_8b5e6ab30e03d1 352-355,371,373-380,391
+scripts/__tests__/fixtures/health-gate-workflows.snapshot.json
+  s_eb3cd86b0cee6e::t_8b5e6ab30e03d1 173-233,238-239,241,287,299-300,302,470-474,497-504,514-515
+scripts/sharedE2eBuild.ts
+  s_eb3cd86b0cee6e::t_8b5e6ab30e03d1 1-108
+tests/e2e/browserAiAdmittedPresentation.spec.ts
+  s_eb3cd86b0cee6e::t_8b5e6ab30e03d1 9,41,76
+tests/e2e/directProjectSetup.spec.ts
+  s_eb3cd86b0cee6e::t_8b5e6ab30e03d1 1-35
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "199e8451437381dd865847a24268d3830f9fd364",
+  "prompts": {},
+  "sessions": {
+    "s_eb3cd86b0cee6e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34c-a4d8-7523-838e-1cd1a0a25d78",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
