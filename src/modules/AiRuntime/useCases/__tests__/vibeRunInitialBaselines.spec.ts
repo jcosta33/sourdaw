@@ -569,6 +569,10 @@ describe('initial role and exact-section baselines through the brief pipeline', 
         const entered = Promise.withResolvers<void>();
         const release = Promise.withResolvers<void>();
         const initialRevision = captureProjectRevision();
+        const originalGain = trackStore.value?.tracks.find((track) => track.id === DRUMS_ID)?.gain;
+        if (originalGain === undefined) {
+            throw new Error('Missing drums track gain.');
+        }
         audio.renderTrackSubgraphOffline.mockImplementationOnce(async (input: RenderInput) => {
             entered.resolve();
             await release.promise;
@@ -618,7 +622,10 @@ describe('initial role and exact-section baselines through the brief pipeline', 
         } else {
             moveTrackFader(DRUMS_ID, 0.5);
             if (change === 'edit and revert') {
-                moveTrackFader(DRUMS_ID, 1);
+                expect(captureProjectRevision()).not.toBe(initialRevision);
+                moveTrackFader(DRUMS_ID, originalGain);
+                expect(trackStore.value?.tracks.find((track) => track.id === DRUMS_ID)?.gain).toBe(originalGain);
+                expect(captureProjectRevision()).not.toBe(initialRevision);
             }
             if (change === 'saved edit') {
                 await writeProjectSave();
