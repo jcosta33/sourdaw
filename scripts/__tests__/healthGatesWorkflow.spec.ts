@@ -331,7 +331,7 @@ const RELEASE_SIDE_EFFECTS = [
     /release:cut/u,
 ] as const;
 // Unit and selected E2E both reach the required Gate through reusable callers.
-const SUITE_JOB_WIRING = {
+const SUITE_JOB_WIRING: Record<string, Readonly<{ workflow: 'validation' | 'heavy'; needs?: string; if: string }>> = {
     unit: {
         workflow: 'validation',
         needs: 'decide',
@@ -341,7 +341,7 @@ const SUITE_JOB_WIRING = {
         workflow: 'heavy',
         if: 'fromJSON(inputs.matrix).include[0] != null',
     },
-} satisfies Record<string, Readonly<{ workflow: 'validation' | 'heavy'; needs?: string; if: string }>>;
+};
 // The four scope conditions no other pin reads. Each is the whole definition
 // of when its job may legitimately skip: widening one runs the leg where it
 // proves nothing, and narrowing or dropping one retires the proof while every
@@ -3640,7 +3640,7 @@ describe('health gates workflow contract', () => {
         const script = assertGateContract(workflow, 'gate', 'Gate', GATE_CONDITION);
         const selected = JSON.stringify({ include: [{ id: 1, specs: ['tests/e2e/export.spec.ts'] }] });
         const empty = JSON.stringify({ include: [] });
-        expect(stepNamed(jobAt(workflow, 'gate'), 'Require selected checks to succeed').env.MATRIX).toBe(
+        expect(recordAt(stepNamed(jobAt(workflow, 'gate'), 'Require selected checks to succeed'), 'env').MATRIX).toBe(
             '${{ needs.scope.outputs.matrix }}'
         );
         const results = (
