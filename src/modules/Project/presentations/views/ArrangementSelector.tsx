@@ -146,6 +146,12 @@ export const ArrangementSelector = (): ReactElement | null => {
                                         }
                                     }}
                                     onKeyDown={(event) => {
+                                        // The rename action inside the row owns
+                                        // its own Enter/Space; only a key pressed
+                                        // on the row itself switches.
+                                        if (event.target !== event.currentTarget) {
+                                            return;
+                                        }
                                         if (isEditing || (event.key !== 'Enter' && event.key !== ' ')) {
                                             return;
                                         }

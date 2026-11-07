@@ -68,4 +68,45 @@ test.describe('Crust streaming preset — selection changes aria-selected + LUFS
         const lufsAfter = (await targetButton.innerText()).trim();
         expect(lufsAfter).not.toBe(lufsBefore);
     });
+
+    test('keeps the widest integrated target readout inside its card', async ({ page }) => {
+        const targetButton = page
+            .locator('button[aria-haspopup="listbox"]')
+            .filter({ hasText: /Target/i })
+            .first();
+        await targetButton.click();
+        const listbox = page.getByRole('listbox', { name: 'Streaming loudness targets' });
+        await listbox.getByRole('option').first().click();
+
+        const integrated = page.locator('[aria-label^="Integrated LUFS:"]');
+        await expect(integrated).toBeVisible();
+        const line = integrated.locator('..');
+        await line.evaluate((element) => {
+            const [value, unit, delta] = [...element.querySelectorAll('span')];
+            if (!value || !unit || !delta) {
+                throw new Error('Expected integrated value, unit and target delta');
+            }
+            value.textContent = '-100.0';
+            delta.textContent = '(+100.0)';
+        });
+
+        const geometry = await line.evaluate((element) => {
+            const card = element.closest('section');
+            if (!card) {
+                throw new Error('Expected the loudness card');
+            }
+            const cardStyle = getComputedStyle(card);
+            const contentRight = card.getBoundingClientRect().right - Number.parseFloat(cardStyle.paddingRight);
+            const children = [...element.querySelectorAll('span')].map((child) => {
+                const rect = child.getBoundingClientRect();
+                return { left: rect.left, right: rect.right };
+            });
+            return { contentRight, contentLeft: element.getBoundingClientRect().left, children };
+        });
+
+        for (const child of geometry.children) {
+            expect(child.left).toBeGreaterThanOrEqual(geometry.contentLeft - 1);
+            expect(child.right).toBeLessThanOrEqual(geometry.contentRight + 1);
+        }
+    });
 });

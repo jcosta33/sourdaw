@@ -93,7 +93,7 @@ function renderPanel(): void {
             <FermenterPanel deviceId={DEVICE_ID} />
         </QueryClientProvider>
     );
-    fireEvent.click(screen.getAllByRole('button', { name: /^Filter$/ })[0]!);
+    fireEvent.click(screen.getAllByRole('tab', { name: /^Filter$/ })[0]!);
 }
 
 function replaceTrack(track: Track): void {
@@ -656,12 +656,12 @@ describe('Fermenter Filter selection through Command', () => {
 
     it('keeps an ordinary panel control and runtime filter automation outside manual history', async () => {
         renderPanel();
-        fireEvent.click(screen.getByRole('button', { name: /^Oscillator$/ }));
+        fireEvent.click(screen.getByRole('tab', { name: 'Oscillator' }));
         fireEvent.click(screen.getByRole('button', { name: 'Square' }));
         await waitFor(() => expect(rawValues().oscWaveform).toBe(2));
         expect(depth()).toBe(0);
         expect(audio.updateDeviceParam).toHaveBeenLastCalledWith(TRACK_ID, DEVICE_ID, 'osc_waveform', 2);
-        fireEvent.click(screen.getAllByRole('button', { name: /^Filter$/ })[0]!);
+        fireEvent.click(screen.getAllByRole('tab', { name: /^Filter$/ })[0]!);
         await chooseModel(1, 1);
         act(() => applyFermenterRuntimeParam({ deviceId: DEVICE_ID, paramId: 'filterModel', value: 4 }));
         await expectModel(1, 1);

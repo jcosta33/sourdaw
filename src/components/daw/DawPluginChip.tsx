@@ -3,6 +3,11 @@ import { type ButtonHTMLAttributes, type ReactElement } from 'react';
 import { cn } from '#/utils/Styles/cn';
 
 type DawPluginChipProps = ButtonHTMLAttributes<HTMLButtonElement> & {
+    /**
+     * Declares a selection state: both `true` and `false` render
+     * `aria-pressed`. Omit it for a one-shot action so the chip stays a plain
+     * button; an explicit caller `aria-pressed` still wins.
+     */
     active?: boolean;
     tone?:
         | 'neutral'
@@ -23,7 +28,7 @@ type DawPluginChipProps = ButtonHTMLAttributes<HTMLButtonElement> & {
 };
 
 const ACTIVE_TONE_CLASS_NAMES: Record<NonNullable<DawPluginChipProps['tone']>, string> = {
-    neutral: 'border-white/18 bg-white/6 text-white/88',
+    neutral: 'border-border-active bg-surface-raised/60 text-text-primary',
     amber: 'border-[var(--color-accent-amber)]/60 bg-[var(--color-accent-amber)]/14 text-[var(--color-accent-amber)]',
     cyan: 'border-[var(--color-accent-cyan)]/60 bg-[var(--color-accent-cyan)]/12 text-[var(--color-accent-cyan)]',
     peach: 'border-[var(--color-accent-peach)]/60 bg-[var(--color-accent-peach)]/12 text-[var(--color-accent-peach)]',
@@ -73,7 +78,7 @@ function isAriaDisabled(value: DawPluginChipProps['aria-disabled']): boolean {
 }
 
 export const DawPluginChip = ({
-    active = false,
+    active,
     tone = 'neutral',
     size = 'xs',
     shape = 'pill',

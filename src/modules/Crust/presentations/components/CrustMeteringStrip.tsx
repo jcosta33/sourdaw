@@ -159,7 +159,7 @@ export const CrustMeteringStrip = ({
             </MeterSection>
 
             <MeterSection title="Loudness" className="flex-1">
-                <div className="mb-1">
+                <div className="mb-1 flex flex-wrap items-baseline gap-x-1">
                     <span
                         className="font-mono font-bold tabular-nums"
                         style={{ fontSize: 20, color: intColor, letterSpacing: '-0.02em' }}
@@ -167,10 +167,10 @@ export const CrustMeteringStrip = ({
                     >
                         {lufsIntegrated > -99 ? lufsIntegrated.toFixed(1) : '—'}
                     </span>
-                    <span className="text-micro text-muted-foreground/50 ml-1">LUFS</span>
+                    <span className="text-micro text-muted-foreground/50">LUFS</span>
                     {targetDiff !== null ? (
                         <span
-                            className="text-micro font-mono ml-1"
+                            className="text-micro font-mono"
                             style={{
                                 color: targetDiffColor,
                             }}

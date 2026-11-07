@@ -45,6 +45,18 @@ describe('Button', () => {
         expect(screen.getByRole('menuitem', { name: /New Project/i })).toBeTruthy();
     });
 
+    it('uses a theme-aware foreground for secondary buttons', () => {
+        render(
+            <Button type="button" variant="secondary">
+                Selected
+            </Button>
+        );
+
+        const button = screen.getByRole('button', { name: 'Selected' });
+        expect(button).toHaveClass('text-text-primary');
+        expect(button.className).not.toContain('text-white');
+    });
+
     it('should forward click handlers', () => {
         const onClick = vi.fn();
         render(
