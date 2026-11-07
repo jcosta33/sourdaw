@@ -30,7 +30,8 @@ boundaries.
    root: raw group/member IDs, projection, one history and Undo entry, exact Undo/Redo, locked/frozen refusal
    preserving raw, history and engine writes; reverting the component dispatch to the direct call fails.
    For deliberately performative controls, prove the same transaction and refusal with unchanged full history,
-   while an ordinary action remains undoable; the direct-route mutation must fail the real refused click. Discrete
+   while an ordinary action remains undoable; the direct-route mutation must fail the real refused click. Exercise rapid
+   repeated controls through real commits, and hold project replacement and teardown across admission and publication. Discrete
    choices (filter type/model) restore an absent leaf on first-selection Undo, a hidden non-SVF Type stays stored,
    Model and Type each own pending authority by device and parameter, and an old queued direct parameter frame
    cannot overwrite the newer choice.

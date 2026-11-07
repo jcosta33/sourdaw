@@ -1,6 +1,6 @@
 import { type ReactNode } from 'react';
 
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { TooltipProvider } from '#/components/ui/tooltip';
@@ -30,6 +30,7 @@ import {
     registerCrdtStorageRuntime,
     removeCrdtDoc,
     resetCrdtProjectAuthority,
+    transactSnapshot,
 } from '#/modules/CrdtDocument/useCases';
 import { defaultProjectStoreState, projectStore } from '#/modules/Project/stores';
 import {
@@ -43,6 +44,7 @@ import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { type Track } from '../../../models/Track';
 import { trackStore } from '../../../stores/trackStore';
 import { getArrangementHandlers } from '../../../useCases/getArrangementHandlers';
+import { useTrackMuteToggle } from '../../hooks/useTrackMuteToggle';
 import { useTracks } from '../../hooks/useTracks';
 import { TrackHeader } from '../TrackHeader';
 
@@ -68,13 +70,17 @@ vi.mock('../TrackHeader/LevainLoadingSpinner', () => ({ LevainLoadingSpinner: ()
 
 function rawRoot() {
     const root = getCrdtDoc<{ tracks: { tracks: Track[] }; actionHistory: { entries: unknown[] } }>('root');
-    if (!root) throw new Error('Expected seeded project');
+    if (!root) {
+        throw new Error('Expected seeded project');
+    }
     return root;
 }
 function Header() {
     const { tracks } = useTracks();
     const track = tracks.find((item) => item.id === 'target');
-    if (!track) throw new Error('Expected target track');
+    if (!track) {
+        throw new Error('Expected target track');
+    }
     return (
         <TooltipProvider delayDuration={0}>
             <TrackHeader track={track} isSelected={false} />
@@ -91,7 +97,9 @@ describe('track header mute admission', () => {
             'ui.confirm': ConfirmPayload;
             'ui.prompt': PromptPayload;
         }>();
-        bus.on('ui.notify', (notice) => notices.push(notice));
+        bus.on('ui.notify', (notice) => {
+            notices.push(notice);
+        });
         setNotificationEventBus(bus);
         configureAutomergeStoragePort(null);
         resetCrdtProjectAuthority('Header mute admission');
@@ -120,7 +128,6 @@ describe('track header mute admission', () => {
         engine.mute.mockClear();
         engine.gain.mockClear();
         engine.soloGate.mockClear();
-        render(<Header />);
     });
     afterEach(() => {
         cleanup();
@@ -135,6 +142,8 @@ describe('track header mute admission', () => {
         clearHandlerRegistry();
     });
     it('admits both button targets without changing either history', async () => {
+        render(<Header />);
+        expect(screen.getByRole('button', { name: 'Mute Target' })).toBeInTheDocument();
         await act(async () => {
             await executeAppAction({
                 type: 'muteTrack',
@@ -182,7 +191,169 @@ describe('track header mute admission', () => {
         expect(rawRoot().tracks.tracks[0]?.muted).toBe(true);
         expect(trackStore.value?.tracks[0]?.muted).toBe(true);
     });
+    it.each([
+        { clicks: 2, muted: false },
+        { clicks: 3, muted: true },
+    ])('preserves $clicks rapid toggle intents', async ({ clicks, muted }) => {
+        render(<Header />);
+        expect(screen.getByRole('button', { name: 'Mute Target' })).toBeInTheDocument();
+        const history = captureUndoHistory();
+        const sharedHistory = structuredClone(rawRoot().actionHistory);
+        const other = structuredClone(rawRoot().tracks.tracks[1]);
+        const button = screen.getByRole('button', { name: 'Mute Target' });
+        for (let index = 0; index < clicks; index += 1) {
+            fireEvent.click(button);
+        }
+        await waitFor(() => {
+            expect(rawRoot().tracks.tracks[0]?.muted).toBe(muted);
+            expect(trackStore.value?.tracks[0]?.muted).toBe(muted);
+            expect(engine.mute.mock.calls.filter(([id]) => id === 'target').at(-1)).toEqual(['target', muted]);
+            expect(notices).toEqual([]);
+        });
+        expect(rawRoot().tracks.tracks[1]).toEqual(other);
+        expect(captureUndoHistory()).toEqual(history);
+        expect(rawRoot().actionHistory).toEqual(sharedHistory);
+    });
+    it('commits queued hook requests in the same project', async () => {
+        const hook = renderHook(() => useTrackMuteToggle('target', false));
+        const history = captureUndoHistory();
+        const sharedHistory = structuredClone(rawRoot().actionHistory);
+        const first = hook.result.current();
+        const second = hook.result.current();
+        await first;
+        await second;
+        expect(rawRoot().tracks.tracks[0]?.muted).toBe(false);
+        expect(trackStore.value?.tracks[0]?.muted).toBe(false);
+        expect(engine.mute.mock.calls.filter(([id]) => id === 'target').map(([, muted]) => muted)).toContain(true);
+        expect(engine.mute.mock.calls.filter(([id]) => id === 'target').at(-1)).toEqual(['target', false]);
+        expect(captureUndoHistory()).toEqual(history);
+        expect(rawRoot().actionHistory).toEqual(sharedHistory);
+        hook.unmount();
+    });
+    it('retires a held request when its target changes', async () => {
+        const entered = Promise.withResolvers<void>();
+        const held = Promise.withResolvers<void>();
+        const snapshot = transactSnapshot(async () => {
+            entered.resolve();
+            await held.promise;
+        });
+        await entered.promise;
+        const hook = renderHook(({ id }) => useTrackMuteToggle(id, false), { initialProps: { id: 'target' } });
+        const root = structuredClone(rawRoot());
+        const history = captureUndoHistory();
+        const pending = hook.result.current();
+        hook.rerender({ id: 'other' });
+        held.resolve();
+        await snapshot;
+        await pending;
+        expect(rawRoot()).toEqual(root);
+        expect(captureUndoHistory()).toEqual(history);
+        expect(engine.mute).not.toHaveBeenCalled();
+        expect(engine.gain).not.toHaveBeenCalled();
+        expect(engine.soloGate).not.toHaveBeenCalled();
+        hook.unmount();
+    });
+    it('does not overwrite a peer mute change while a second toggle is queued', async () => {
+        let peer: Promise<void> | undefined;
+        engine.mute.mockImplementationOnce(() => {
+            peer = executeAppAction({
+                type: 'muteTrack',
+                payload: { trackId: 'target', muted: false, expectedMuted: true },
+            });
+        });
+        const hook = renderHook(() => useTrackMuteToggle('target', false));
+        const first = hook.result.current();
+        const second = hook.result.current();
+        await first;
+        if (!peer) {
+            throw new Error('Expected peer action to enter during the first toggle');
+        }
+        await peer;
+        await second;
+        expect(rawRoot().tracks.tracks[0]?.muted).toBe(false);
+        expect(trackStore.value?.tracks[0]?.muted).toBe(false);
+        expect(captureUndoHistory().past).toHaveLength(1);
+        hook.unmount();
+    });
+    it('refuses publication when the header unmounts after staging the handler', async () => {
+        const staged = Promise.withResolvers<void>();
+        engine.mute.mockImplementationOnce(() => {
+            staged.resolve();
+        });
+        const hook = renderHook(() => useTrackMuteToggle('target', false));
+        const root = structuredClone(rawRoot());
+        const revision = captureProjectRevision();
+        const history = captureUndoHistory();
+        const pending = hook.result.current();
+        await staged.promise;
+        hook.unmount();
+        await pending;
+        expect(rawRoot()).toEqual(root);
+        expect(captureProjectRevision()).toBe(revision);
+        expect(trackStore.value?.tracks[0]?.muted).toBe(false);
+        expect(captureUndoHistory()).toEqual(history);
+    });
+    it('retires a held action on unmount after the real snapshot boundary settles', async () => {
+        const entered = Promise.withResolvers<void>();
+        const held = Promise.withResolvers<void>();
+        const snapshot = transactSnapshot(async () => {
+            entered.resolve();
+            await held.promise;
+        });
+        await entered.promise;
+        const hook = renderHook(() => useTrackMuteToggle('target', false));
+        const root = structuredClone(rawRoot());
+        const history = captureUndoHistory();
+        const revision = captureProjectRevision();
+        const pending = hook.result.current();
+        hook.unmount();
+        held.resolve();
+        await snapshot;
+        await pending;
+        expect(rawRoot()).toEqual(root);
+        expect(captureProjectRevision()).toBe(revision);
+        expect(trackStore.value?.tracks[0]?.muted).toBe(false);
+        expect(captureUndoHistory()).toEqual(history);
+        expect(engine.mute).not.toHaveBeenCalled();
+        expect(engine.gain).not.toHaveBeenCalled();
+        expect(engine.soloGate).not.toHaveBeenCalled();
+    });
+    it('retires a held action after replacing the project with the same track IDs', async () => {
+        const entered = Promise.withResolvers<void>();
+        const held = Promise.withResolvers<void>();
+        const snapshot = transactSnapshot(async () => {
+            entered.resolve();
+            await held.promise;
+        });
+        await entered.promise;
+        const hook = renderHook(() => useTrackMuteToggle('target', false));
+        const oldRoot = getCrdtDoc('root');
+        if (!oldRoot) {
+            throw new Error('Expected original root');
+        }
+        const pending = hook.result.current();
+        resetCrdtProjectAuthority('Replacement with same tracks');
+        removeCrdtDoc('root');
+        createCrdtDoc('root', oldRoot);
+        const replacement = structuredClone(rawRoot());
+        const revision = captureProjectRevision();
+        const tracks = structuredClone(trackStore.value);
+        const history = captureUndoHistory();
+        held.resolve();
+        await snapshot;
+        await pending;
+        expect(rawRoot()).toEqual(replacement);
+        expect(captureProjectRevision()).toBe(revision);
+        expect(trackStore.value).toEqual(tracks);
+        expect(captureUndoHistory()).toEqual(history);
+        expect(engine.mute).not.toHaveBeenCalled();
+        expect(engine.gain).not.toHaveBeenCalled();
+        expect(engine.soloGate).not.toHaveBeenCalled();
+        hook.unmount();
+    });
     it('refuses a real click when project repair is required without changing project or engine', async () => {
+        render(<Header />);
+        expect(screen.getByRole('button', { name: 'Mute Target' })).toBeInTheDocument();
         await act(async () => {
             await executeAppAction({
                 type: 'muteTrack',

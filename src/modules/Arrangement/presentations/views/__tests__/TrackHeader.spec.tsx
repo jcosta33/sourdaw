@@ -318,7 +318,12 @@ describe('TrackHeader', () => {
         fireEvent.click(screen.getByLabelText(/Mute/));
         expect(executeUserAppAction).toHaveBeenCalledWith(
             { type: 'muteTrack', payload: { trackId: 'track1', muted: true, expectedMuted: false } },
-            { skipUndo: true }
+            expect.objectContaining({
+                skipUndo: true,
+                shouldExecute: expect.any(Function),
+                shouldCommit: expect.any(Function),
+                onCommitted: expect.any(Function),
+            })
         );
     });
 

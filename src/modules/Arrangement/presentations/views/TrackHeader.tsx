@@ -33,6 +33,8 @@ import { soloTrackExclusive } from '../../useCases/toggleTrackState/soloTrackExc
 import { INPUT_MONITORING_CYCLE } from '../../useCases/toggleTrackState/toggleInputMonitoring';
 import { toggleVariationLanes } from '../../useCases/toggleTrackState/toggleVariationLanes';
 
+import { useTrackMuteToggle } from '../hooks/useTrackMuteToggle';
+
 import { TrackContextMenu } from './TrackContextMenu';
 import { InlineTrackName } from './TrackHeader/InlineTrackName';
 import { InputSelector } from './TrackHeader/InputSelector';
@@ -59,6 +61,7 @@ type TrackHeaderProps = {
 };
 
 export const TrackHeader = ({ track, isSelected }: TrackHeaderProps): ReactElement => {
+    const toggleMute = useTrackMuteToggle(track.id, track.muted);
     const trackHeight = track.height;
     const isFreezing = track.freezeState.status === 'freezing';
     const isStale = track.freezeState.status === 'stale';
@@ -322,17 +325,7 @@ export const TrackHeader = ({ track, isSelected }: TrackHeaderProps): ReactEleme
                                     className="font-bold text-[9px]"
                                     onClick={(event) => {
                                         event.stopPropagation();
-                                        void executeUserAppAction(
-                                            {
-                                                type: 'muteTrack',
-                                                payload: {
-                                                    trackId: track.id,
-                                                    muted: !track.muted,
-                                                    expectedMuted: track.muted,
-                                                },
-                                            },
-                                            { skipUndo: true }
-                                        );
+                                        void toggleMute();
                                     }}
                                 >
                                     M
