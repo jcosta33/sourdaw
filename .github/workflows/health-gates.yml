@@ -183,7 +183,7 @@ jobs:
     # The producer overlaps validation. Admit consumers only after both required predecessors complete.
     needs: [scope, validation, e2e-build]
     if: >-
-      ${{ always() && needs.scope.result == 'success' && needs.validation.result == 'success' &&
+      ${{ !cancelled() && needs.scope.result == 'success' && needs.validation.result == 'success' &&
           ((fromJSON(needs.scope.outputs.matrix).include[0] != null && needs.e2e-build.result == 'success') ||
            (fromJSON(needs.scope.outputs.matrix).include[0] == null && needs.e2e-build.result == 'skipped')) }}
     uses: ./.github/workflows/heavy-gates.yml

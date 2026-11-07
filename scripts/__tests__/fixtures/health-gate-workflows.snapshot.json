@@ -238,7 +238,7 @@
           "validation",
           "e2e-build"
         ],
-        "if": "${{ always() && needs.scope.result == 'success' && needs.validation.result == 'success' &&\n    ((fromJSON(needs.scope.outputs.matrix).include[0] != null && needs.e2e-build.result == 'success') ||\n     (fromJSON(needs.scope.outputs.matrix).include[0] == null && needs.e2e-build.result == 'skipped')) }}",
+        "if": "${{ !cancelled() && needs.scope.result == 'success' && needs.validation.result == 'success' &&\n    ((fromJSON(needs.scope.outputs.matrix).include[0] != null && needs.e2e-build.result == 'success') ||\n     (fromJSON(needs.scope.outputs.matrix).include[0] == null && needs.e2e-build.result == 'skipped')) }}",
         "uses": "./.github/workflows/heavy-gates.yml",
         "with": {
           "matrix": "${{ needs.scope.outputs.matrix }}",

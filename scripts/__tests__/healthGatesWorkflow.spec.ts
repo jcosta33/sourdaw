@@ -81,7 +81,7 @@ const PULL_REQUEST_CONCURRENCY_CANCELLATION = true;
 const GATE_CONDITION = '${{ always() }}';
 const HEAVY_GATE_CONDITION = '${{ always() }}';
 const AFFECTED_ADMISSION =
-    "${{ always() && needs.scope.result == 'success' && needs.validation.result == 'success' && ((fromJSON(needs.scope.outputs.matrix).include[0] != null && needs.e2e-build.result == 'success') || (fromJSON(needs.scope.outputs.matrix).include[0] == null && needs.e2e-build.result == 'skipped')) }}";
+    "${{ !cancelled() && needs.scope.result == 'success' && needs.validation.result == 'success' && ((fromJSON(needs.scope.outputs.matrix).include[0] != null && needs.e2e-build.result == 'success') || (fromJSON(needs.scope.outputs.matrix).include[0] == null && needs.e2e-build.result == 'skipped')) }}";
 const HEALTH_GATES_TRIGGERS = ['pull_request'] as const;
 const HEAVY_GATES_TRIGGERS = ['workflow_call'] as const;
 const NIGHTLY_TRIGGERS = ['schedule', 'workflow_dispatch'] as const;
@@ -3767,6 +3767,18 @@ describe('health gates workflow contract', () => {
         const permissiveAffected = cloneWorkflows('permissive affected admission');
         jobAt(permissiveAffected.health, 'affected').if = '${{ always() }}';
         expect(() => assertJobGraph(permissiveAffected)).toThrow(
+            'required affected E2E must wait for successful validation and the selected shared build'
+        );
+
+        // When workflow cancellation is true while all predecessors succeeded, always() admits the
+        // expensive caller but !cancelled() rejects it. This source-bound mutation must fail the guard.
+        const cancellationAdmissionBypass = cloneWorkflows('cancelled affected admission bypass');
+        const affectedIf = jobAt(cancellationAdmissionBypass.health, 'affected').if;
+        if (typeof affectedIf !== 'string') {
+            throw new TypeError('affected admission must be an expression');
+        }
+        jobAt(cancellationAdmissionBypass.health, 'affected').if = affectedIf.replace('!cancelled()', 'always()');
+        expect(() => assertJobGraph(cancellationAdmissionBypass)).toThrow(
             'required affected E2E must wait for successful validation and the selected shared build'
         );
 

@@ -584,7 +584,7 @@ expect(JSON.stringify(workflow.jobs?.affected?.needs) === JSON.stringify(['scope
 const affectedAdmission = typeof workflow.jobs?.affected?.if === 'string'
     ? workflow.jobs.affected.if.replace(/\s+/gu, ' ')
     : '';
-expect(affectedAdmission === "${{ always() && needs.scope.result == 'success' && needs.validation.result == 'success' && ((fromJSON(needs.scope.outputs.matrix).include[0] != null && needs.e2e-build.result == 'success') || (fromJSON(needs.scope.outputs.matrix).include[0] == null && needs.e2e-build.result == 'skipped')) }}",
+expect(affectedAdmission === "${{ !cancelled() && needs.scope.result == 'success' && needs.validation.result == 'success' && ((fromJSON(needs.scope.outputs.matrix).include[0] != null && needs.e2e-build.result == 'success') || (fromJSON(needs.scope.outputs.matrix).include[0] == null && needs.e2e-build.result == 'skipped')) }}",
     'selected browser checks must admit matching producer results, including the empty-matrix hardware route');
 expect(workflow.jobs?.affected?.with?.matrix === '${{ needs.scope.outputs.matrix }}', 'selected browser checks must use scope matrix');
 expect(workflow.jobs?.affected?.with?.['browser-ai'] === "${{ needs.scope.outputs.browser-ai == 'true' }}", 'hardware proof must use selected scope');
