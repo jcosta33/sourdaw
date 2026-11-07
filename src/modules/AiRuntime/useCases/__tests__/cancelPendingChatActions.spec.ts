@@ -1,9 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { type PendingAppActionConfirmation } from '../../stores/pendingActionConfirmationStore';
+import { agentRunLifecycle } from '../agentRunLifecycle';
+import { cancelPendingChatActions } from '../cancelPendingChatActions';
+
 const mocks = vi.hoisted(() => ({
     stop: vi.fn(async () => ({ status: 'idle' })),
     cancelAgentRun: vi.fn(),
-    getPendingActionConfirmation: vi.fn(),
+    getPendingActionConfirmation: vi.fn<(id: string) => PendingAppActionConfirmation | null>(),
     settlePendingActionResourceLease: vi.fn(),
     updatePendingActionConfirmationStatus: vi.fn(),
     updateChatMessage: vi.fn(),
@@ -25,8 +29,39 @@ vi.mock('../../stores/chatStore', () => ({
     updateChatMessage: mocks.updateChatMessage,
 }));
 
-import { agentRunLifecycle } from '../agentRunLifecycle';
-import { cancelPendingChatActions } from '../cancelPendingChatActions';
+function confirmation(input: {
+    id: string;
+    assistantMessageId: string;
+    actionLabels: string[];
+    runId?: string;
+    status?: PendingAppActionConfirmation['status'];
+}): PendingAppActionConfirmation {
+    const { id, assistantMessageId, actionLabels } = input;
+    return {
+        id,
+        runId: input.runId ?? assistantMessageId,
+        prompt: 'Cancel proposal',
+        assistantMessageId,
+        actionLabels,
+        affectedIds: [],
+        protectedUnchanged: [],
+        risk: null,
+        executedActions: [],
+        status: input.status ?? 'proposed',
+        error: null,
+        followUpProjectRevision: null,
+        followUpStatus: null,
+        supersedes: null,
+        supersededBy: null,
+        createdAt: 1,
+        resolvedAt: null,
+        kind: 'app_actions',
+        projectRevision: 'revision-1',
+        actions: [],
+        approvalSnapshot: { actions: [], actionLabels: [...actionLabels], protectedUnchanged: [] },
+        executionMode: undefined,
+    };
+}
 
 describe('cancelPendingChatActions', () => {
     beforeEach(() => {
@@ -62,13 +97,15 @@ describe('cancelPendingChatActions', () => {
                 cleanup,
             });
         }
-        mocks.getPendingActionConfirmation.mockReturnValue({
-            id: 'durable-confirmation',
-            runId: 'durable-cancel',
-            status: 'proposed',
-            assistantMessageId: 'message',
-            actionLabels: ['Cancel proposal'],
-        });
+        mocks.getPendingActionConfirmation.mockReturnValue(
+            confirmation({
+                id: 'durable-confirmation',
+                runId: 'durable-cancel',
+                status: 'proposed',
+                assistantMessageId: 'message',
+                actionLabels: ['Cancel proposal'],
+            })
+        );
         mocks.cancelAgentRun.mockImplementation(agentRunCancellation.cancel);
         const durableBefore = window.localStorage.getItem('sourdaw-agent-runs');
         const storage = vi.spyOn(Storage.prototype, 'setItem').mockImplementationOnce(() => {
@@ -102,29 +139,32 @@ describe('cancelPendingChatActions', () => {
     });
 
     it('returns {status: "not_pending"} when the confirmation is not in the proposed state', async () => {
-        mocks.getPendingActionConfirmation.mockReturnValue({
-            id: 'conf-1',
-            status: 'confirmed',
-            assistantMessageId: 'msg-1',
-            actionLabels: ['Add track'],
-        });
+        mocks.getPendingActionConfirmation.mockReturnValue(
+            confirmation({
+                id: 'conf-1',
+                status: 'accepted',
+                assistantMessageId: 'msg-1',
+                actionLabels: ['Add track'],
+            })
+        );
 
         const result = await cancelPendingChatActions({ confirmationId: 'conf-1' });
 
-        expect(result).toEqual({ status: 'not_pending', currentStatus: 'confirmed' });
+        expect(result).toEqual({ status: 'not_pending', currentStatus: 'accepted' });
         expect(mocks.updatePendingActionConfirmationStatus).not.toHaveBeenCalled();
         expect(mocks.updateChatMessage).not.toHaveBeenCalled();
     });
 
     it('cancels a proposed confirmation through the run controller before releasing retained resources', async () => {
-        mocks.getPendingActionConfirmation.mockReturnValue({
-            id: 'conf-2',
-            status: 'proposed',
-            assistantMessageId: 'msg-2',
-            actionLabels: ['Add track', 'Set tempo'],
-            approvalSnapshot: { actions: [] },
-            runId: 'run-conf-2',
-        });
+        mocks.getPendingActionConfirmation.mockReturnValue(
+            confirmation({
+                id: 'conf-2',
+                status: 'proposed',
+                assistantMessageId: 'msg-2',
+                actionLabels: ['Add track', 'Set tempo'],
+                runId: 'run-conf-2',
+            })
+        );
 
         mocks.cancelAgentRun.mockImplementationOnce(async () => {
             expect(mocks.stop).toHaveBeenCalledExactlyOnceWith({ confirmationId: 'conf-2' });
@@ -152,13 +192,15 @@ describe('cancelPendingChatActions', () => {
     });
 
     it('does not report cancellation settled before retained-resource cleanup succeeds', async () => {
-        mocks.getPendingActionConfirmation.mockReturnValue({
-            id: 'cleanup-confirmation',
-            status: 'proposed',
-            runId: 'run-cleanup',
-            assistantMessageId: 'message',
-            actionLabels: [],
-        });
+        mocks.getPendingActionConfirmation.mockReturnValue(
+            confirmation({
+                id: 'cleanup-confirmation',
+                status: 'proposed',
+                runId: 'run-cleanup',
+                assistantMessageId: 'message',
+                actionLabels: [],
+            })
+        );
         mocks.settlePendingActionResourceLease
             .mockRejectedValueOnce(new Error('Lease cleanup unavailable'))
             .mockResolvedValueOnce(undefined);
@@ -173,13 +215,14 @@ describe('cancelPendingChatActions', () => {
     });
 
     it('updates the chat message with a formatted cancellation summary', async () => {
-        mocks.getPendingActionConfirmation.mockReturnValue({
-            id: 'conf-3',
-            status: 'proposed',
-            assistantMessageId: 'msg-3',
-            actionLabels: ['Add track', 'Set tempo to 120'],
-            approvalSnapshot: { actions: [] },
-        });
+        mocks.getPendingActionConfirmation.mockReturnValue(
+            confirmation({
+                id: 'conf-3',
+                status: 'proposed',
+                assistantMessageId: 'msg-3',
+                actionLabels: ['Add track', 'Set tempo to 120'],
+            })
+        );
 
         await cancelPendingChatActions({ confirmationId: 'conf-3' });
 
@@ -194,13 +237,14 @@ describe('cancelPendingChatActions', () => {
     });
 
     it('handles a single action label in the cancellation message', async () => {
-        mocks.getPendingActionConfirmation.mockReturnValue({
-            id: 'conf-4',
-            status: 'proposed',
-            assistantMessageId: 'msg-4',
-            actionLabels: ['Solo track 1'],
-            approvalSnapshot: { actions: [] },
-        });
+        mocks.getPendingActionConfirmation.mockReturnValue(
+            confirmation({
+                id: 'conf-4',
+                status: 'proposed',
+                assistantMessageId: 'msg-4',
+                actionLabels: ['Solo track 1'],
+            })
+        );
 
         await cancelPendingChatActions({ confirmationId: 'conf-4' });
 

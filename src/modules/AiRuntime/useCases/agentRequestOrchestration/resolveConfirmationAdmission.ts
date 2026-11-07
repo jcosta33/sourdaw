@@ -3,6 +3,7 @@ import {
     refreshVersionedCommandBatchForApproval,
 } from '#/modules/Command/useCases';
 import { settlePendingProjectWritesAndCaptureRevision } from '#/modules/CrdtDocument/useCases';
+import { projectStore } from '#/modules/Project/stores';
 
 import { type ChatActionConfirmationStatus } from '../../models/Chat';
 import { chatStore, updateChatMessage } from '../../stores/chatStore';
@@ -22,6 +23,7 @@ import { admitCommittedSectionRenderRetry } from './admitCommittedSectionRenderR
 import { confirmationTerminalSettlement } from './confirmationTerminalSettlement';
 import { type CommandVerifiedBatchReceipt } from './confirmedBatchOutcomeSupport';
 import { readApprovedProtectionFailure } from './readApprovedProtectionFailure';
+import { readVibeRunBriefDrift } from './readVibeRunBriefDrift';
 import { revalidateApprovedMatchSelectors } from './revalidateApprovedMatchSelectors';
 
 type ApprovalDivergence = Extract<
@@ -89,6 +91,23 @@ function getRetainedRenderCapacityFailure(
         return null;
     }
     return { status: 'failed', reason: confirmation.error };
+}
+
+/**
+ * A parked later batch of a vibe run was grounded from the brief its run was planned against; once
+ * that brief changes, Confirm refuses it with that reason before any re-approval, since a rebind
+ * would only re-measure a plan the brief no longer states.
+ */
+function readParkedVibeBatchBriefDrift(confirmation: PendingAppActionConfirmation): string | null {
+    if ((confirmation.approvalSnapshot.batchPosition?.index ?? 1) <= 1) {
+        return null;
+    }
+    const schedule = agentRunLifecycle.get(confirmation.runId)?.plan?.batchSchedule;
+    if (schedule?.kind !== 'vibe-run') {
+        return null;
+    }
+    const drift = readVibeRunBriefDrift(schedule, projectStore.value?.productionBrief.revision ?? null);
+    return drift === null ? null : `The ${drift}.`;
 }
 
 function consumeConfirmationAdmission(
@@ -251,6 +270,17 @@ async function resolveConfirmationAdmission(input: {
         priorVerifiedBatchReceipt?.outcome === 'partially-committed' &&
         priorVerifiedBatchReceipt.pendingEffects.length > 0;
     if (!hasPriorVerifiedBatchReceipt) {
+        const briefDrift = readParkedVibeBatchBriefDrift(confirmation);
+        if (briefDrift !== null) {
+            return {
+                status: 'handled',
+                result: await confirmationTerminalSettlement.failApprovalPreflight(
+                    confirmation,
+                    briefDrift,
+                    'conflict'
+                ),
+            };
+        }
         const protectionFailure = readApprovedProtectionFailure(confirmation);
         if (protectionFailure !== null) {
             return {
