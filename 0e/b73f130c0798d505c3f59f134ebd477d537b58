@@ -1,0 +1,51 @@
+scripts/__tests__/supersedePullRequest.spec.ts
+  s_2cd8190f26088f::t_c47941e07bc335 2,3781-3788,3794-3795,3799-3804,3808-3809
+  s_2cd8190f26088f::t_7155505685b126 4368-4371,4374
+  s_8dd2ba9e498da7::t_6783669062dd9a 1415-1419,3789-3793,3796-3798,3805-3807,3825,3831-3834,3842-3858,3861-3869,3951-3958,3960-3986,3988-4025,4027-4062
+  s_8dd2ba9e498da7::t_caa982541a254d 22,3810-3824,3826-3830,3835-3841,3859-3860,4063
+  s_8dd2ba9e498da7::t_5b264688b7b383 1446-1461,3870-3950,3959,3987,4026
+scripts/stackedLanes.ts
+  s_8dd2ba9e498da7::t_6783669062dd9a 231
+  s_2cd8190f26088f::t_e83972ea510cf6 189,193,198,215-226,230,232-250
+  s_8dd2ba9e498da7::t_0f4d1b186fd59e 251
+  s_8dd2ba9e498da7::t_dc7c1958f6ac6c 11
+scripts/supersedePullRequestGh.ts
+  s_2cd8190f26088f::t_e83972ea510cf6 22,56,89-90
+.agents/skills/delivery-orchestration/references/closure-and-retirement.md
+  s_8dd2ba9e498da7::t_6783669062dd9a 62-64,71-73
+  s_8dd2ba9e498da7::t_008abdd1063118 68-69
+  s_8dd2ba9e498da7::t_4a49f3784a4aa6 65-67,70
+.agents/skills/review-stances/closure-authority-proof.md
+  s_8dd2ba9e498da7::t_6783669062dd9a 127-132
+  s_8dd2ba9e498da7::t_2f88e60ca95cac 133-136
+scripts/supersedePullRequest.ts
+  s_2cd8190f26088f::t_e83972ea510cf6 36,379,384-385,389-395,1027,1096,1100-1101
+  s_8dd2ba9e498da7::t_2300cc9592a228 1093-1095,1097,1102-1103,1429,1444,1449,1456,1464,1482-1483,1488,1720-1721,1726
+  s_8dd2ba9e498da7::t_e767b5a683d646 4,275,373,382,412,1091-1092,1098-1099,1358,1362
+scripts/laneStackForkMarkers.ts
+  s_8dd2ba9e498da7::t_dc7c1958f6ac6c 353-382
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0eb73f130c0798d505c3f59f134ebd477d537b58",
+  "prompts": {},
+  "sessions": {
+    "s_2cd8190f26088f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b286-ad65-7a12-9510-2d3604006235",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_8dd2ba9e498da7": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34a-1f45-7430-80af-58acd6c4b831",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
