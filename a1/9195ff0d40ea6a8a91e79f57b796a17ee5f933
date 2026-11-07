@@ -1,0 +1,20 @@
+scripts/__tests__/e2eLaunchOverlayBound.spec.ts
+  s_1052c2a2231ded::t_0e85bb7d1e9639 352-355,370-376,389
+  s_1052c2a2231ded::t_0d1fce1c06d87b 378
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a19195ff0d40ea6a8a91e79f57b796a17ee5f933",
+  "prompts": {},
+  "sessions": {
+    "s_1052c2a2231ded": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b349-24b6-7622-8534-09f171c780d5",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
