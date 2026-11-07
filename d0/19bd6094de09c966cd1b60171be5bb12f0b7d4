@@ -1,0 +1,77 @@
+src/modules/SampleLibrary/presentations/views/LibraryBrowser.tsx
+  s_8080a84b4851b9::t_3dd615af7aab81 26,58-62,95,98-110,648
+src/modules/ContentBrowser/useCases/index.ts
+  s_8080a84b4851b9::t_3dd615af7aab81 1
+src/modules/Arrangement/presentations/hooks/__tests__/useTimelineFileDrop.spec.tsx
+  s_8080a84b4851b9::t_3dd615af7aab81 129-131
+src/modules/ContentBrowser/presentations/views/Sidebar/SamplesTab.tsx
+  s_8080a84b4851b9::t_3dd615af7aab81 13,25,64-71
+tests/e2e/e2eStartupDiagnostics.spec.ts
+  s_8080a84b4851b9::t_3dd615af7aab81 1-37
+vite.config.ts
+  s_8080a84b4851b9::t_3dd615af7aab81 14,168
+src/modules/Arrangement/presentations/hooks/useTimelineFileDrop.ts
+  s_8080a84b4851b9::t_3dd615af7aab81 6,17-18,38,90,235,237,240,244-247,250-252
+release/open-source-inventory.json
+  s_8080a84b4851b9::t_3dd615af7aab81 1216
+scripts/flipElectronFuses.ts
+  s_8080a84b4851b9::t_3dd615af7aab81 69,230-233,235-265
+src/modules/Arrangement/useCases/index.ts
+  s_8080a84b4851b9::t_3dd615af7aab81 74-75
+src/modules/ContentBrowser/useCases/addBrowserSample.ts
+  s_8080a84b4851b9::t_3dd615af7aab81 1-33
+src/modules/ContentBrowser/useCases/__tests__/placeLibrarySample.spec.ts
+  s_8080a84b4851b9::t_3dd615af7aab81 1-223
+src/modules/SampleLibrary/presentations/views/__tests__/LibraryBrowser.spec.tsx
+  s_8080a84b4851b9::t_3dd615af7aab81 154,159,164,169,186,209,221-257,270,301,327,349,363,397,401,442,484,502,505,513,567,626,681,737,792,850,913,941,962,984,1010
+src/modules/Arrangement/useCases/compileNewAudioTrackAction.ts
+  s_8080a84b4851b9::t_3dd615af7aab81 1-20
+docs/architecture/10-desktop-packaging.md
+  s_8080a84b4851b9::t_3dd615af7aab81 7-56
+src/modules/Arrangement/useCases/creationBatch.ts
+  s_8080a84b4851b9::t_3dd615af7aab81 1-15
+scripts/verifyPackagedNativeArtifacts.ts
+  s_8080a84b4851b9::t_3dd615af7aab81 1-205
+scripts/e2eSpecDurations.json
+  s_8080a84b4851b9::t_3dd615af7aab81 2-102,104-339
+src/modules/ContentBrowser/useCases/placeLibrarySample.ts
+  s_8080a84b4851b9::t_3dd615af7aab81 1-344
+scripts/__tests__/verifyPackagedNativeArtifacts.spec.ts
+  s_8080a84b4851b9::t_3dd615af7aab81 1-193
+src/modules/ContentBrowser/useCases/__tests__/addBrowserSample.spec.ts
+  s_8080a84b4851b9::t_3dd615af7aab81 1-160
+scripts/__tests__/fixtures/e2eStartupDiagnostics.ts
+  s_8080a84b4851b9::t_3dd615af7aab81 1-98
+src/modules/Arrangement/stores/__tests__/deviceWriteBoundaryClosure.spec.ts
+  s_8080a84b4851b9::t_3dd615af7aab81 895-901,903-908,918-921,926,989-996
+.agents/skills/review-stances/security-and-platform.md
+  s_8080a84b4851b9::t_3dd615af7aab81 125-135
+scripts/__tests__/desktopPackaging.spec.ts
+  s_8080a84b4851b9::t_3dd615af7aab81 1-133
+src/modules/ContentBrowser/presentations/views/Sidebar/__tests__/SamplesTab.spec.tsx
+  s_8080a84b4851b9::t_3dd615af7aab81 3,9,14-15,101,132,200-201,205-206,209
+src/modules/ContentBrowser/presentations/views/Sidebar.tsx
+  s_8080a84b4851b9::t_3dd615af7aab81 16,173
+src/modules/ContentBrowser/AGENTS.md
+  s_8080a84b4851b9::t_3dd615af7aab81 7
+scripts/__tests__/e2eStartupDiagnostics.spec.ts
+  s_8080a84b4851b9::t_3dd615af7aab81 1-138
+scripts/e2eStartupDiagnostics.ts
+  s_8080a84b4851b9::t_3dd615af7aab81 1-353
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d019bd6094de09c966cd1b60171be5bb12f0b7d4",
+  "prompts": {},
+  "sessions": {
+    "s_8080a84b4851b9": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "50b84897-d749-4de6-8243-2f31afa6bef9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
