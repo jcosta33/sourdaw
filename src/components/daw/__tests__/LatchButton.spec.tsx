@@ -81,7 +81,7 @@ describe('LatchButton — active vs inactive styling', () => {
             last: 'var(--surface-default) 100%',
         });
         // Inactive has a drop shadow (not inset-only).
-        expect(style.boxShadow).toContain('0 2px 4px');
+        expect(style.boxShadow).toContain('0px 2px 4px');
         // Inactive does not translate.
         expect(style.transform).toBe('');
     });
@@ -96,7 +96,7 @@ describe('LatchButton — variant glow', () => {
         );
         const btn = screen.getByRole('button', { name: 'Rec' });
         // The red variant adds a red-tinted glow.
-        expect(btn.style.boxShadow).toContain('rgba(255,64,50');
+        expect(btn.style.boxShadow).toContain('rgba(255, 64, 50');
     });
 
     it('applies the cyan variant glow shadow when active', () => {
@@ -106,7 +106,7 @@ describe('LatchButton — variant glow', () => {
             </LatchButton>
         );
         const btn = screen.getByRole('button', { name: 'Sync' });
-        expect(btn.style.boxShadow).toContain('rgba(127,184,196');
+        expect(btn.style.boxShadow).toContain('rgba(127, 184, 196');
     });
 
     it('applies no extra glow for the neutral variant when active', () => {
