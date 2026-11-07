@@ -1,0 +1,73 @@
+src/modules/Arrangement/handlers/track/__tests__/duplicateTrack.integration.spec.ts
+  s_8dd2ba9e498da7::t_feb7883dbc507a 13-18
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/exportProjectFile.roundTrip.spec.ts
+  s_8dd2ba9e498da7::t_9a329bf79024b6 59-64
+src/modules/Project/useCases/__tests__/arrangement.spec.ts
+  s_8dd2ba9e498da7::t_9a329bf79024b6 21-26
+src/modules/Arrangement/presentations/views/__tests__/trackDeleteUndo.integration.spec.tsx
+  s_8dd2ba9e498da7::t_feb7883dbc507a 161-166
+src/modules/Bacteria/useCases/bacteriaParamBridge/__tests__/chooseBacteriaBodyUndo.integration.spec.ts
+  s_8dd2ba9e498da7::t_feb7883dbc507a 47-52
+src/modules/Proof/presentations/views/__tests__/ProofPanel.spec.tsx
+  s_8dd2ba9e498da7::t_87e7a7d4912276 39-44
+src/modules/Arrangement/handlers/track/__tests__/trackStateUndo.integration.spec.ts
+  s_8dd2ba9e498da7::t_feb7883dbc507a 48-53
+src/modules/AudioRendering/presentations/views/__tests__/ExportDialog.spec.tsx
+  s_8dd2ba9e498da7::t_feb7883dbc507a 309-314
+src/modules/Project/useCases/recentProjects/__tests__/loadRecentProject.spec.ts
+  s_8dd2ba9e498da7::t_87e7a7d4912276 53-58
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/executeImmediatePromptCommand.spec.ts
+  s_8dd2ba9e498da7::t_feb7883dbc507a 64-69
+src/modules/Arrangement/presentations/views/__tests__/trackCreateUndo.integration.spec.tsx
+  s_8dd2ba9e498da7::t_feb7883dbc507a 173-178
+src/modules/GrandBoule/useCases/__tests__/grandBouleParameterPersistence.integration.spec.ts
+  s_8dd2ba9e498da7::t_9a329bf79024b6 160-165
+src/modules/Project/useCases/projectPersistence/__tests__/missingMediaOnLoad.spec.ts
+  s_8dd2ba9e498da7::t_9a329bf79024b6 108-113
+src/modules/AiRuntime/useCases/__tests__/executePromptActionGroup.spec.ts
+  s_8dd2ba9e498da7::t_feb7883dbc507a 68-73
+src/modules/MixerConsole/presentations/views/Mixer/__tests__/mixerStripUndo.integration.spec.tsx
+  s_8dd2ba9e498da7::t_9a329bf79024b6 264-269
+src/modules/Gluten/useCases/glutenParamBridge/__tests__/glutenParameterUndo.integration.spec.ts
+  s_8dd2ba9e498da7::t_9a329bf79024b6 43-48
+src/modules/AudioRendering/presentations/views/__tests__/exportStreamingMemory.spec.tsx
+  s_8dd2ba9e498da7::t_feb7883dbc507a 581-586
+src/modules/Project/useCases/projectPersistence/__tests__/discardProjectChanges.realPath.spec.ts
+  s_8dd2ba9e498da7::t_9a329bf79024b6 48-53
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/applyImportedProjectData.roundTrip.spec.ts
+  s_8dd2ba9e498da7::t_9a329bf79024b6 159-164
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/interruptedProjectLoadDirtyTracking.integration.spec.ts
+  s_8dd2ba9e498da7::t_87e7a7d4912276 111-116,206-211
+src/modules/Crust/useCases/crustParamBridge/__tests__/loadCrustPatchWithAudio.spec.ts
+  s_8dd2ba9e498da7::t_9a329bf79024b6 42-47
+src/modules/Crumbs/useCases/__tests__/crumbsParameterPersistence.integration.spec.ts
+  s_8dd2ba9e498da7::t_9a329bf79024b6 51-56
+src/modules/AiRuntime/useCases/agentReference/__tests__/preparedStemImportResourceCleanup.spec.ts
+  s_8dd2ba9e498da7::t_feb7883dbc507a 31-36
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/projectLoadDirtyTracking.integration.spec.ts
+  s_8dd2ba9e498da7::t_87e7a7d4912276 68-73,162-167
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/saveProject.recentRoundTrip.spec.ts
+  s_8dd2ba9e498da7::t_87e7a7d4912276 120-125
+src/modules/Project/useCases/projectTemplates/templateHelpers/__tests__/finalizeTemplate.spec.ts
+  s_8dd2ba9e498da7::t_87e7a7d4912276 34-39
+src/modules/ProofChamber/presentations/views/__tests__/proofChamberPresetUndo.integration.spec.tsx
+  s_8dd2ba9e498da7::t_87e7a7d4912276 45-50
+src/modules/Transport/useCases/__tests__/ensureTrackStrips.spec.ts
+  s_8dd2ba9e498da7::t_87e7a7d4912276 75-80
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5d510d3625f70b531c520613db8f95bd8ec8d8f1",
+  "prompts": {},
+  "sessions": {
+    "s_8dd2ba9e498da7": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34a-1f45-7430-80af-58acd6c4b831",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
