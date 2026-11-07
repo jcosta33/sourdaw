@@ -74,6 +74,7 @@ describe('clipHandlers', () => {
             'exportMidi',
             'stripSilence',
             'restoreStripSilenceState',
+            'quantizeTransients',
             'arpeggiate',
         ];
 

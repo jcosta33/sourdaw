@@ -323,6 +323,14 @@ async function executeMacroAction(
         return;
     }
 
+    if (replayAction.type === 'quantizeTransients') {
+        // As above: the recorded plan names the recorded slices and the source it detected; a
+        // replay plans again against the project as it now is.
+        delete replayAction.payload.plan;
+        await executeAppAction(replayAction, options);
+        return;
+    }
+
     if (replayAction.type === 'addAdjustmentRegion') {
         replayAction.payload.layerId = remapLayerId(replayAction.payload.layerId, mappings);
         const recordedRegionId = replayAction.payload.regionId;

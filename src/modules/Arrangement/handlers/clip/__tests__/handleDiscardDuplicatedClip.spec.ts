@@ -7,11 +7,6 @@ const mocks = vi.hoisted(() => ({
     removeClip: vi.fn(),
     resolveEligibleClipWriteTarget: vi.fn(),
     restoreTakesForClip: vi.fn(),
-    refreshCreatedClipStateGuard: vi.fn(),
-}));
-
-vi.mock('../stampCreatedClipStateGuard', () => ({
-    refreshCreatedClipStateGuard: mocks.refreshCreatedClipStateGuard,
 }));
 
 vi.mock('../../../useCases/getTrackStoreState', () => ({
@@ -117,10 +112,8 @@ describe('handleDiscardDuplicatedClip', () => {
         expect(mocks.restoreTakesForClip).toHaveBeenCalledExactlyOnceWith(retiredTakeLanes);
     });
 
-    it('re-pins the guard to the clip the redo re-created', () => {
+    it('preserves the creator prefix guard when the whole group has replayed', () => {
         const recorded = { entityJson: '{"id":"clip-copy","v":1}', midiByClipIdJson: '{"v":1}' };
-        const refreshed = { entityJson: '{"id":"clip-copy","v":2}', midiByClipIdJson: '{"v":2}' };
-        mocks.refreshCreatedClipStateGuard.mockReturnValue(refreshed);
         mocks.resolveEligibleClipWriteTarget.mockReturnValue({
             status: 'eligible',
             trackId: 'track-1',
@@ -133,8 +126,7 @@ describe('handleDiscardDuplicatedClip', () => {
 
         handleDiscardDuplicatedClip.afterRedoReplay?.(inverse);
 
-        expect(mocks.refreshCreatedClipStateGuard).toHaveBeenCalledExactlyOnceWith(recorded, 'clip-copy');
-        expect(inverse.payload.generatedMidiStateGuard).toBe(refreshed);
+        expect(inverse.payload.generatedMidiStateGuard).toBe(recorded);
     });
 
     it('leaves an unguarded inverse unguarded after a redo', () => {
@@ -150,7 +142,6 @@ describe('handleDiscardDuplicatedClip', () => {
 
         handleDiscardDuplicatedClip.afterRedoReplay?.(inverse);
 
-        expect(mocks.refreshCreatedClipStateGuard).not.toHaveBeenCalled();
         expect(inverse.payload).toEqual({ clipId: 'clip-copy' });
     });
 
@@ -164,7 +155,6 @@ describe('handleDiscardDuplicatedClip', () => {
 
         handleDiscardDuplicatedClip.afterRedoReplay?.(inverse);
 
-        expect(mocks.refreshCreatedClipStateGuard).not.toHaveBeenCalled();
         expect(inverse.payload.generatedMidiStateGuard).toBe(recorded);
     });
 });

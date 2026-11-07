@@ -64,3 +64,12 @@ boundaries.
    state. Probe: public command entry, then raw document, owner projection, control state and engine projection
    agree. Replace the aggregate reusing IDs and exercise an empty prior state; create history through the real
    producer, persist, reload, hydrate, replay (an injected entry proves neither producer nor saved contract).
+8. **Transcription completes only after every generated entity commits (`4f410257b2`, retained by
+   resolver consolidation `5a17842492`).** GitHub commit-to-PR lookup exposes no associated PR for either historical
+   commit; original review attribution is unavailable. The missing probe is source-owned atomic completion. Direct clip/note writes and a dispatched but unawaited destination cannot
+   witness one completed conversion. Drive the registered runtime command and each rendered caller with real decoded
+   PCM: a held snapshot queue keeps completion pending, one compensated child batch creates track, clip and all
+   128-note chunks, and a failure in the final chunk leaves raw CRDT, projections and history unchanged. Require one
+   grouped Undo/Redo/Undo, and macro playback of the committed children without another transcription. Replace the
+   awaited batch with fire-and-forget dispatch or a direct note write: the completion, atomicity or history case must
+   fail. Caller tests must reject cancelled, refused and no-op outcomes without a success notice.

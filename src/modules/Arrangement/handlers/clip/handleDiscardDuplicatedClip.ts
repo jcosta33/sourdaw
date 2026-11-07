@@ -8,8 +8,6 @@ import { restoreTakesForClip } from '../../useCases/comping/restoreTakesForClip'
 import { isGeneratedMidiStateCurrent } from '../isGeneratedMidiStateCurrent';
 import { projectClipThroughPriorBatchActions, type ProjectedClipState } from '../projectClipThroughPriorBatchActions';
 
-import { refreshCreatedClipStateGuard } from './stampCreatedClipStateGuard';
-
 type DiscardDuplicatedClipAction = Extract<AppAction, { type: 'discardDuplicatedClip' }>;
 
 /**
@@ -68,9 +66,9 @@ export const handleDiscardDuplicatedClip = createHandler<'discardDuplicatedClip'
     describe: () => ({ label: 'Discard duplicated clip' }),
     /**
      * The entry's redo re-created the clip this discard removed, so put back the
-     * takes the discard captured, then re-pin the guard to the clip the redo made:
-     * the guard always describes what the most recent execute or redo produced,
-     * so the next undo refuses only on a change made after it. A redo that
+     * takes the discard captured. Its forward creator publishes the fresh guard
+     * at that action's prefix; later group members must not enter that capture.
+     * A redo that
      * re-created nothing — a no-op replay, or a route that mints a fresh id
      * instead of reusing the captured one — leaves the named clip absent, and
      * re-attaching a lane to a clip identity nothing carries would leave the
@@ -81,10 +79,6 @@ export const handleDiscardDuplicatedClip = createHandler<'discardDuplicatedClip'
             return;
         }
         restoreTakesForClip(action.payload.retiredTakeLanes ?? []);
-        const guard = action.payload.generatedMidiStateGuard;
-        if (guard) {
-            action.payload.generatedMidiStateGuard = refreshCreatedClipStateGuard(guard, action.payload.clipId);
-        }
     },
     undoable: false,
 });

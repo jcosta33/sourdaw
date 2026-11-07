@@ -23,6 +23,7 @@ import { handleMuteClip } from './handleMuteClip';
 import { handleNormalizeClip } from './handleNormalizeClip';
 import { handleNudgeClip } from './handleNudgeClip';
 import { handlePasteClip } from './handlePasteClip';
+import { handleQuantizeTransients } from './handleQuantizeTransients';
 import { handleRemoveClip } from './handleRemoveClip';
 import { handleRenameClip } from './handleRenameClip';
 import { handleRestoreClipGlueState } from './handleRestoreClipGlueState';
@@ -95,5 +96,6 @@ export const clipHandlers = {
     exportMidi: handleExportMidi,
     stripSilence: handleStripSilence,
     restoreStripSilenceState: handleRestoreStripSilenceState,
+    quantizeTransients: handleQuantizeTransients,
     arpeggiate: handleArpeggiate,
 };

@@ -76,6 +76,8 @@ Report a probe that cannot run with its exact mutation, named check and limitati
    runtime behavior, object availability, upload or comparison coverage: paginate every main analysis
    configuration, drive checkout depth through a real fetch topology, and prove a reload by a changed
    `performance.timeOrigin`. Confirm the run checked the integration that lands.
+   For keyboard controls, assert owned effects and that unowned keys during playback cause no state change or
+   default prevention. In the live app, verify Follow survives Tab and focus moves.
    (#5243, #3548, #3170)
 
 8. **The evidence claims more than its scope.**

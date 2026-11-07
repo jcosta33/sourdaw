@@ -62,7 +62,8 @@ export const CREDENTIALLESS_CHECKOUTS: JobPins<readonly string[]> = {
         validate: ['Checkout trusted default-branch reporter'],
         publish: ['Checkout trusted default-branch repository context'],
     },
-    'health-gates.yml': { admission: ['Checkout trusted admission'], scope: ['Checkout'] },
+    'health-gates.yml': { admission: ['Checkout trusted admission'], scope: ['Checkout'], 'e2e-build': ['Checkout'] },
+    'heavy-gates.yml': { e2e: ['Checkout'] },
     'nightly.yml': {
         unit: ['Checkout'],
         secrets: ['Checkout trusted scanner', 'Checkout scan target'],

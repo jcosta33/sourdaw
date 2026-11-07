@@ -366,6 +366,51 @@ const EXPECTED_COMMANDS = [
         true
     ),
     expectedCommand(
+        'quantizeTransients',
+        'Cut one unlocked, unlooped audio clip at its detected transients and move each slice so its hit lands on an explicit beat grid, as one reversible edit; gaps left behind stay silent.',
+        {
+            clipId: { type: 'string', description: 'Existing unlocked, unlooped audio clip ID' },
+            gridSize: {
+                type: 'number',
+                minimum: 0.03125,
+                maximum: 4,
+                description: 'Quantize grid in beats, from 1/32 through 4 (0.25 is a sixteenth note)',
+            },
+            strength: {
+                type: 'number',
+                minimum: 0,
+                maximum: 1,
+                description: 'How far each hit moves toward its grid point, 0 through 1; defaults to 1',
+            },
+            swing: {
+                type: 'number',
+                minimum: 0,
+                maximum: 1,
+                description: 'Swing applied to off-beat grid points, 0 through 1; defaults to 0',
+            },
+            sensitivity: {
+                type: 'number',
+                minimum: 0,
+                maximum: 1,
+                description: 'Transient detection sensitivity, 0 through 1; defaults to 0.5',
+            },
+            minConfidence: {
+                type: 'number',
+                minimum: 0,
+                maximum: 1,
+                description: 'Lowest detection confidence a hit needs to be cut, 0 through 1; defaults to 0',
+            },
+            startBeat: { type: 'number', description: 'Optional song beat the quantized range starts at' },
+            endBeat: {
+                type: 'number',
+                description: 'Optional song beat the quantized range ends at; later audio stays where it is',
+            },
+        },
+        ['clipId', 'gridSize'],
+        'destructive-reversible',
+        true
+    ),
+    expectedCommand(
         'crossfadeClips',
         'Create a crossfade between two distinct unlocked clips.',
         {
@@ -1889,6 +1934,20 @@ const EXPECTED_GROUNDING = [
             },
         ],
         valueRules: [],
+    },
+    {
+        actionType: 'quantizeTransients',
+        intentPhrases: [
+            'quantize transients',
+            'quantize the transients',
+            'quantize audio',
+            'quantize the audio',
+            'quantize audio clip',
+            'quantize the audio clip',
+            'beat detective',
+        ],
+        targetRules: [{ argument: 'clipId', capability: 'editable-audio-clip' }],
+        valueRules: [{ argument: 'gridSize', kind: 'number-if-present', requiredInPrompt: true, match: 'exact' }],
     },
     {
         actionType: 'crossfadeClips',
