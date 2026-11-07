@@ -47,7 +47,7 @@ function compilePreviewDevices(entry: Discovery): Device[] {
     ) {
         throw new Error('Preset chain is incomplete');
     }
-    return structuredClone(load.payload.devices).map((device) => ({ ...device }));
+    return Array.from(structuredClone(load.payload.devices));
 }
 
 function supportedDescriptor(descriptors: readonly Descriptor[], type: string): Descriptor {
@@ -116,7 +116,7 @@ function validatePcm(buffer: AudioBuffer | null, sampleRate: number, durationSec
         }
         for (const sample of samples) {
             if (!Number.isFinite(sample)) {
-                throw new Error('Preset render has invalid audio');
+                throw new TypeError('Preset render has invalid audio');
             }
             energy += sample * sample;
         }
