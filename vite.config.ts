@@ -126,7 +126,9 @@ function sourdawE2ePersistenceEntryPlugin(): Plugin {
             });
         },
         config(_config, { command }) {
-            if (command !== 'build') return;
+            if (command !== 'build') {
+                return;
+            }
             return {
                 build: {
                     rolldownOptions: {
