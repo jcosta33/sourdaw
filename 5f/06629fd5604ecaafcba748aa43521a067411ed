@@ -1,0 +1,29 @@
+src/modules/AiRuntime/models/BriefMixIntent.ts
+  s_68423a2adea8d2::t_080cde71e253e2 3
+src/modules/AiRuntime/useCases/vibeRun/planVibeRunSchedule.ts
+  s_68423a2adea8d2::t_080cde71e253e2 24,237
+src/modules/AiRuntime/useCases/readBriefMixIntent.ts
+  s_68423a2adea8d2::t_080cde71e253e2 3-10,12,14,17-19,21,23-24,27-29
+src/modules/AiRuntime/useCases/__tests__/briefMixIntent.spec.ts
+  s_68423a2adea8d2::t_080cde71e253e2 16-18
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  s_68423a2adea8d2::t_080cde71e253e2 1637-1639,1664,2204,2218
+src/modules/AiRuntime/useCases/__tests__/multiBatchRun.spec.ts
+  s_68423a2adea8d2::t_080cde71e253e2 410,419-421,447-449,550-552,562-564
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5f06629fd5604ecaafcba748aa43521a067411ed",
+  "prompts": {},
+  "sessions": {
+    "s_68423a2adea8d2": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34b-f305-7c03-beb2-57afa678cda5",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
