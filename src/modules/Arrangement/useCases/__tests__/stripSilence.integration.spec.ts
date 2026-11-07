@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import { load, save } from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -64,18 +66,23 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     getCachedAudioBuffer: mocks.getCachedAudioBuffer,
 }));
 
-function createTestAudioBuffer(channelData: Float32Array<ArrayBuffer>, sampleRate = 50): AudioBuffer {
+function createTestAudioBuffer(
+    data: Float32Array<ArrayBuffer> | readonly Float32Array<ArrayBuffer>[],
+    sampleRate = 50
+): AudioBuffer {
+    const channels = data instanceof Float32Array ? [data] : data;
+    const channelData = channels[0]!;
     return {
-        copyFromChannel: (destination, _channelNumber, startInChannel = 0) => {
-            destination.set(channelData.subarray(startInChannel, startInChannel + destination.length));
+        copyFromChannel: (destination, channelNumber, startInChannel = 0) => {
+            destination.set(channels[channelNumber]!.subarray(startInChannel, startInChannel + destination.length));
         },
-        copyToChannel: (source, _channelNumber, startInChannel = 0) => {
-            channelData.set(source, startInChannel);
+        copyToChannel: (source, channelNumber, startInChannel = 0) => {
+            channels[channelNumber]!.set(source, startInChannel);
         },
         duration: channelData.length / sampleRate,
-        getChannelData: () => channelData,
+        getChannelData: (channel) => channels[channel]!,
         length: channelData.length,
-        numberOfChannels: 1,
+        numberOfChannels: channels.length,
         sampleRate,
     };
 }
@@ -196,6 +203,132 @@ describe('stripSilence satellite migration (ledger #2108)', () => {
         flushAutomergeStorageWrites();
         configureAutomergeStoragePort(null);
         removeCrdtDoc('root');
+    });
+
+    it('preserves both source channels, exact satellites and stable children through registered Strip Silence UndoRedo', async () => {
+        transportStore.set({ ...defaultTransportState, tempo: 120 });
+        const source = ClipDummy.create({
+            id: 'clip-1',
+            trackId: 'track-1',
+            audioBufferId: 'buf-1',
+            startBeat: 0,
+            endBeat: 10,
+            audioOffsetSeconds: 0,
+            audioUnwrappedOffsetSeconds: 0,
+            audioOffsetBeats: 0,
+        });
+        trackStore.set({
+            tracks: [TrackDummy.create({ id: 'track-1', clips: [source] })],
+            selectedTrackId: 'track-1',
+            ghostClips: [],
+        });
+        const left = new Float32Array(240_000);
+        const right = new Float32Array(240_000);
+        left.fill(0.5, 0, 48_000);
+        left.fill(0.5, 192_000, 240_000);
+        right.fill(0.5, 96_000, 144_000);
+        const channels = [left, right];
+        const pcmDigests = () =>
+            channels.map((channel) => createHash('sha256').update(new Uint8Array(channel.buffer)).digest('hex'));
+        const originalDigests = pcmDigests();
+        mocks.getCachedAudioBuffer.mockReturnValue(createTestAudioBuffer(channels, 48_000));
+        setEnvelope('clip-1', { clipId: 'clip-1', enabled: true, points: [{ id: 'gain', beatOffset: 5, gainDb: -6 }] });
+        const warp = {
+            enabled: true,
+            markers: [{ id: 'warp', originalBeat: 1, warpedBeat: 1.2 }],
+            stretchMode: 'repitch' as const,
+            originalTempo: 120,
+        };
+        setWarpState('clip-1', warp);
+        const points: AutomationLanePoints = [1, 5, 9].map((beat) => ({
+            id: `point-${beat}`,
+            beat,
+            value: beat / 10,
+            curve: 'linear',
+            tension: 0,
+        }));
+        setClipAutomationLane('stereo-lane', points);
+        const capture = () =>
+            structuredClone({
+                tracks: trackStore.value!.tracks,
+                gain: gainEnvelopeStore.value,
+                warp: warpStateStore.value,
+                automation: automationStore.value,
+                takes: takeLaneStore.value,
+            });
+        const rawCapture = () => {
+            const document = getCrdtDoc<{
+                tracks: { tracks: NonNullable<typeof trackStore.value>['tracks'] };
+                gainEnvelopes: typeof gainEnvelopeStore.value;
+                warpStates: typeof warpStateStore.value;
+                automation: typeof automationStore.value;
+                takeLanes: typeof takeLaneStore.value;
+            }>('root')!;
+            return JSON.parse(
+                JSON.stringify({
+                    tracks: document.tracks.tracks,
+                    gain: document.gainEnvelopes,
+                    warp: document.warpStates,
+                    automation: document.automation,
+                    takes: document.takeLanes,
+                })
+            );
+        };
+        flushAutomergeStorageWrites();
+        const before = capture();
+        expect(rawCapture()).toEqual(before);
+
+        await executeAppAction({
+            type: 'stripSilence',
+            payload: { clipId: 'clip-1', threshold: -40, minDuration: 0.5 },
+        });
+        flushAutomergeStorageWrites();
+        const committed = capture();
+        const children = committed.tracks[0]!.clips;
+        expect(
+            children.map(({ startBeat, endBeat, audioOffsetSeconds, audioUnwrappedOffsetSeconds, audioBufferId }) => ({
+                startBeat,
+                endBeat,
+                audioOffsetSeconds,
+                audioUnwrappedOffsetSeconds,
+                audioBufferId,
+            }))
+        ).toEqual([
+            { startBeat: 0, endBeat: 2, audioOffsetSeconds: 0, audioUnwrappedOffsetSeconds: 0, audioBufferId: 'buf-1' },
+            { startBeat: 4, endBeat: 6, audioOffsetSeconds: 2, audioUnwrappedOffsetSeconds: 2, audioBufferId: 'buf-1' },
+            {
+                startBeat: 8,
+                endBeat: 10,
+                audioOffsetSeconds: 4,
+                audioUnwrappedOffsetSeconds: 4,
+                audioBufferId: 'buf-1',
+            },
+        ]);
+        expect(new Set(children.map((child) => child.id)).size).toBe(3);
+        expect(children.map((child) => child.id)).not.toContain(source.id);
+        expect(committed.gain!.envelopes[source.id]).toBeUndefined();
+        expect(committed.warp!.states[source.id]).toBeUndefined();
+        for (const [index, child] of children.entries()) {
+            expect(committed.gain!.envelopes[child.id]).toEqual({
+                clipId: child.id,
+                enabled: true,
+                points: [{ id: 'gain', beatOffset: 5 - child.startBeat, gainDb: -6 }],
+            });
+            expect(committed.warp!.states[child.id]).toEqual(warp);
+            expect(committed.automation!.lanes[index]).toMatchObject({ clipId: child.id, points: [points[index]] });
+        }
+        expect(rawCapture()).toEqual(committed);
+        expect(pcmDigests()).toEqual(originalDigests);
+        expect(await undo()).toEqual({ headConsumed: true });
+        flushAutomergeStorageWrites();
+        expect(capture()).toEqual(before);
+        expect(rawCapture()).toEqual(before);
+        expect(pcmDigests()).toEqual(originalDigests);
+        await redo();
+        flushAutomergeStorageWrites();
+        expect(capture()).toEqual(committed);
+        expect(rawCapture()).toEqual(committed);
+        expect(pcmDigests()).toEqual(originalDigests);
     });
 
     it('places every segment on the audio it already played (regression #2108)', () => {
