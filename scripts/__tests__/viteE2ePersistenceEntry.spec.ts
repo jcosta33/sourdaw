@@ -41,9 +41,19 @@ describe('same-build persistence inspection entry', () => {
         if (Array.isArray(output) || typeof output?.entryFileNames !== 'function') {
             throw new TypeError('The persistence entry requires its own deterministic filename');
         }
-        expect(output.entryFileNames({ name: 'direct-project-setup' })).toBe('e2e/direct-project-setup.js');
+        expect(
+            output.entryFileNames({
+                name: 'direct-project-setup',
+                isEntry: true,
+                isDynamicEntry: false,
+                facadeModuleId: null,
+                moduleIds: [],
+                exports: [],
+            })
+        ).toBe('e2e/direct-project-setup.js');
         const entry = readFileSync(resolve(root, 'tests/e2e/directProjectSetupEntry.ts'), 'utf8');
-        expect(entry).toContain("export { newProject } from '../../src/modules/Project/useCases'");
+        expect(entry).toContain("from '../../src/modules/Project/useCases'");
+        expect(entry).toMatch(/export\s+const\s+newProject\b/);
         expect(entry).not.toMatch(/import\s*\(|new\s+\w+\(\)|createProject|projectStore\.set/);
     });
 

@@ -1,5 +1,6 @@
-// E2E-only same-build module for direct project creation.
-// Shares the App module graph with index.html so newProject runs with the same
-// singleton store and lifecycle instances as the application.
-// Never creates a project on import — exports only the callable surface.
-export { newProject } from '../../src/modules/Project/useCases';
+import type { DirectProjectSetupModule } from './directProjectSetupContract';
+import { newProject as _newProject } from '../../src/modules/Project/useCases';
+
+// Checked against the pure contract so both Node tooling and browser tsconfigs
+// agree on the callable surface without crossing module-graph boundaries.
+export const newProject: DirectProjectSetupModule['newProject'] = _newProject;
