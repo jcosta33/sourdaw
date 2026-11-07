@@ -950,7 +950,7 @@ describe('ExportDialog', () => {
                 expect(createUrl).toHaveBeenCalledTimes(1);
                 const blob = createUrl.mock.calls[0]![0];
                 if (!(blob instanceof Blob)) {
-                    throw new Error('Expected downloadable MP3 Blob');
+                    throw new TypeError('Expected downloadable MP3 Blob');
                 }
                 expect(blob.type).toBe('audio/mpeg');
                 const downloadedBytes = new Uint8Array(await blob.arrayBuffer());

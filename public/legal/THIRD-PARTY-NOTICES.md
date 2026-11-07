@@ -2,12 +2,12 @@
 
 ## Desktop runtime
 
-Desktop builds bundle [Electron 44.9.1](https://github.com/electron/electron/tree/e02265be96c5e13ae43644ef482b718e1e800499)
+Desktop builds bundle [Electron 45.2.3](https://github.com/electron/electron/tree/d0a18d02058b21ff292e25d5f53f00bd120f2f61)
 under the MIT license. That release embeds
-[Chromium 152.0.7977.167](https://chromium.googlesource.com/chromium/src/+/dd78960ccd8a03a2fe1f629543d27783885b78e9)
-and [Node v24.22.0](https://github.com/nodejs/node/tree/f14cd3aa7bf9ca8df2cc5b8bb14beb0f335b1d93).
+[Chromium 156.0.8078.80](https://chromium.googlesource.com/chromium/src/+/fb096c0011f9d50f0a264a9376420cdea9c421e3)
+and [Node v24.22.2](https://github.com/nodejs/node/tree/f7f273a9bb6445f6f7fb6349105e7532972045fb).
 Its media runtime includes
-[FFmpeg](https://chromium.googlesource.com/chromium/third_party/ffmpeg/+/2b68d2babae73714846961fb0ee47e3b3d2e39a9)
+[FFmpeg](https://chromium.googlesource.com/chromium/third_party/ffmpeg/+/9db86ce5b5b454dfc96c435f9f0723012980c37f)
 under LGPL-2.1-or-later.
 
 Every desktop package includes Electron's exact `LICENSE` as `electron-LICENSE.txt` and its complete

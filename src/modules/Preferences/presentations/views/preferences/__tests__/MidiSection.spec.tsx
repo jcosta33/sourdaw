@@ -76,7 +76,7 @@ describe('MidiSection', () => {
             fireEvent.click(screen.getByRole('button', { name: 'Export mappings' }));
             const blob = vi.mocked(URL.createObjectURL).mock.lastCall?.[0];
             if (!(blob instanceof Blob)) {
-                throw new Error('Expected the real mapping file download');
+                throw new TypeError('Expected the real mapping file download');
             }
             const original = await new Promise<string>((resolve, reject) => {
                 const reader = new FileReader();
