@@ -884,6 +884,17 @@ anything a running process holds, report what was freed), which AGENTS.md delibe
 Unavailable or invalid disk sampling fails closed with `monitor`. Cleanup uncertainty never turns a
 stopped run into success.
 
+A stopped `pnpm dev` command cannot prove recovery by exiting zero on its own. Supply an explicit
+finite proof after `--`, for example `pnpm guard --recover --profile broad -- pnpm test:e2e
+tests/e2e/launchFlows.spec.ts`. The guard runs that proof instead of replaying the server, from the
+receipt's canonical in-lane directory and under the receipt's resource limits unless explicitly
+overridden. A Playwright-managed proof owns server readiness and orderly shutdown; the guard still
+owns resource enforcement and process-tree cleanup. Only a zero exit without a guard-failure reason
+clears the unchanged original receipt. A failed proof, signal, timeout, resource stop, cleanup leak,
+or concurrently replaced receipt preserves the stop. Explicit proofs are refused for finite-command
+receipts and cannot be combined with lint-target replacement; ordinary `--recover` replay is
+unchanged.
+
 Existing running commands and old lane copies keep their original guard. After this change lands,
 their next verification must invoke the updated guard, or merge the fix into the owned lane when
 needed. Do not rewrite or clean another agent's lane to upgrade it.

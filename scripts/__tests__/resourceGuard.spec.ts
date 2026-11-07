@@ -2160,6 +2160,191 @@ describe('guard failure stop enforcement', { timeout: GUARDED_CASE_TIMEOUT_MS },
             };
         }
 
+        function createStoppedDevServerFixture(label: string) {
+            const fixture = createStoppedLaneFixture(label);
+            const receipt: GuardFailureReceipt = {
+                ...fixture.receipt,
+                args: ['dev', '--host', '127.0.0.1', '--port', '5387'],
+            };
+            writeGuardFailureReceipt(fixture.repoRoot, receipt);
+            return { ...fixture, receipt };
+        }
+
+        it('runs an explicit finite dev-server recovery proof instead of replaying the server', async () => {
+            const fixture = createStoppedDevServerFixture('recover-dev-proof');
+            let replayInput: Parameters<typeof runGuardedCommand>[0] | undefined;
+
+            try {
+                const code = await runGuardCli(
+                    ['--recover', '--', 'pnpm', 'test:e2e', 'tests/e2e/launchFlows.spec.ts'],
+                    {
+                        cwd: fixture.lane.worktreePath,
+                        detectLane: () => fixture.lane,
+                        runCommand: async (input) => {
+                            replayInput = input;
+                            return fakeResult({ code: 0 });
+                        },
+                    }
+                );
+
+                expect(code).toBe(0);
+                expect(replayInput?.command).toBe('pnpm');
+                expect(replayInput?.args).toEqual(['test:e2e', 'tests/e2e/launchFlows.spec.ts']);
+                expect(replayInput?.cwd).toBe(realpathSync(fixture.lane.worktreePath));
+                expect(readGuardFailureReceipt(fixture.repoRoot, fixture.laneName)).toBeUndefined();
+            } finally {
+                rmSync(fixture.repoRoot, { recursive: true, force: true });
+            }
+        });
+
+        it('rejects an explicit recovery proof for a finite command receipt', async () => {
+            const fixture = createStoppedLaneFixture('recover-finite-proof-refused');
+            writeGuardFailureReceipt(fixture.repoRoot, fixture.receipt);
+            const originalBytes = readFileSync(fixture.receiptPath, 'utf8');
+            const errors: string[] = [];
+            let commandRan = false;
+
+            try {
+                const code = await runGuardCli(['--recover', '--', 'pnpm', 'test:run', 'light.spec.ts'], {
+                    cwd: fixture.lane.worktreePath,
+                    detectLane: () => fixture.lane,
+                    runCommand: async () => {
+                        commandRan = true;
+                        return fakeResult({ code: 0 });
+                    },
+                    error: (message) => errors.push(message),
+                });
+
+                expect(code).toBe(1);
+                expect(commandRan).toBe(false);
+                expect(errors[0]).toContain('explicit recovery proof is only valid for a recorded pnpm dev command');
+                expect(readFileSync(fixture.receiptPath, 'utf8')).toBe(originalBytes);
+            } finally {
+                rmSync(fixture.repoRoot, { recursive: true, force: true });
+            }
+        });
+
+        it('keeps the original dev-server stop when its explicit recovery proof fails', async () => {
+            const fixture = createStoppedDevServerFixture('recover-dev-proof-failed');
+            let replayInput: Parameters<typeof runGuardedCommand>[0] | undefined;
+            const errors: string[] = [];
+
+            try {
+                const code = await runGuardCli(['--recover', '--', 'pnpm', 'test:e2e', 'failing.spec.ts'], {
+                    cwd: fixture.lane.worktreePath,
+                    detectLane: () => fixture.lane,
+                    runCommand: async (input) => {
+                        replayInput = input;
+                        return fakeResult({ code: 1 });
+                    },
+                    error: (message) => errors.push(message),
+                });
+
+                expect(code).toBe(1);
+                expect(replayInput?.args).toEqual(['test:e2e', 'failing.spec.ts']);
+                expect(readGuardFailureReceipt(fixture.repoRoot, fixture.laneName)).toEqual(fixture.receipt);
+                expect(errors).toContain(`guard: recovery failed; lane ${fixture.laneName} remains stopped`);
+            } finally {
+                rmSync(fixture.repoRoot, { recursive: true, force: true });
+            }
+        });
+
+        it('discharges a stopped dev server through a real finite guarded proof', async () => {
+            const fixture = createStoppedDevServerFixture('recover-dev-real-proof');
+            writeFileSync(
+                join(fixture.lane.worktreePath, 'package.json'),
+                JSON.stringify({
+                    name: 'guard-dev-real-proof',
+                    private: true,
+                    scripts: { 'test:e2e': 'node proof.cjs' },
+                })
+            );
+            writeFileSync(
+                join(fixture.lane.worktreePath, 'proof.cjs'),
+                [
+                    "const { writeFileSync } = require('node:fs');",
+                    "writeFileSync('observed.json', JSON.stringify({ cwd: process.cwd(), args: process.argv.slice(2) }));",
+                ].join('\n')
+            );
+
+            try {
+                const code = await runGuardCli(['--recover', '--', 'pnpm', 'test:e2e', 'launch.spec.ts'], {
+                    cwd: fixture.lane.worktreePath,
+                    detectLane: () => fixture.lane,
+                    runCommand: async (input) =>
+                        runIsolatedGuardedCommand({
+                            ...input,
+                            availableMemoryBytes: abundantMemoryBytes,
+                            maxRssBytes: 512 * 1024 ** 2,
+                        }),
+                    assertModulesPreflight: () => undefined,
+                });
+
+                expect(code).toBe(0);
+                expect(JSON.parse(readFileSync(join(fixture.lane.worktreePath, 'observed.json'), 'utf8'))).toEqual({
+                    cwd: realpathSync(fixture.lane.worktreePath),
+                    args: ['launch.spec.ts'],
+                });
+                expect(readGuardFailureReceipt(fixture.repoRoot, fixture.laneName)).toBeUndefined();
+            } finally {
+                rmSync(fixture.repoRoot, { recursive: true, force: true });
+            }
+        });
+
+        it('requires an active receipt before running an explicit recovery proof', async () => {
+            const fixture = createStoppedLaneFixture('recover-dev-proof-no-receipt');
+            const errors: string[] = [];
+            let commandRan = false;
+
+            try {
+                const code = await runGuardCli(['--recover', '--', 'pnpm', 'test:e2e', 'launch.spec.ts'], {
+                    cwd: fixture.lane.worktreePath,
+                    detectLane: () => fixture.lane,
+                    runCommand: async () => {
+                        commandRan = true;
+                        return fakeResult({ code: 0 });
+                    },
+                    error: (message) => errors.push(message),
+                });
+
+                expect(code).toBe(1);
+                expect(commandRan).toBe(false);
+                expect(errors).toEqual(['explicit recovery proof requires an active guard-failure receipt']);
+            } finally {
+                rmSync(fixture.repoRoot, { recursive: true, force: true });
+            }
+        });
+
+        it('records an explicit proof resource stop against the original dev-server command', async () => {
+            const fixture = createStoppedDevServerFixture('recover-dev-proof-resource-stop');
+            let replayInput: Parameters<typeof runGuardedCommand>[0] | undefined;
+
+            try {
+                const code = await runGuardCli(['--recover', '--', 'pnpm', 'test:e2e', 'heavy.spec.ts'], {
+                    cwd: fixture.lane.worktreePath,
+                    detectLane: () => fixture.lane,
+                    runCommand: async (input) => {
+                        replayInput = input;
+                        return fakeResult({
+                            code: null,
+                            reason: 'memory',
+                            peakRssBytes: 5 * 1024 ** 3,
+                        });
+                    },
+                });
+
+                expect(code).toBe(1);
+                expect(replayInput?.args).toEqual(['test:e2e', 'heavy.spec.ts']);
+                const updated = readGuardFailureReceipt(fixture.repoRoot, fixture.laneName);
+                expect(updated?.command).toBe('pnpm');
+                expect(updated?.args).toEqual(fixture.receipt.args);
+                expect(updated?.reason).toBe('memory');
+                expect(updated?.peakRssBytes).toBe(5 * 1024 ** 3);
+            } finally {
+                rmSync(fixture.repoRoot, { recursive: true, force: true });
+            }
+        });
+
         it('refuses a mapping that leaves the package-root lint target present', async () => {
             const fixture = createLintRecoveryFixture('package-root-target-present');
             const nestedCwd = join(fixture.worktreePath, 'nested');

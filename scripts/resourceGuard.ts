@@ -3164,6 +3164,9 @@ export async function main(
             }
             const receipt = recoveredReceipt.receipt;
             if (receipt === undefined) {
+                if (input.command !== '') {
+                    throw new Error('explicit recovery proof requires an active guard-failure receipt');
+                }
                 if (input.lintTargetReplacements.length > 0) {
                     throw new Error('--replace-lint-target requires an active pnpm lint guard-failure receipt');
                 }
@@ -3180,20 +3183,33 @@ export async function main(
                 laneRoot: lane.worktreePath,
             });
             assertModulesPreflight(recoveryCwd);
-            const recoveryArgs = resolveRecoveryLintArgs({
-                receipt,
-                replacements: input.lintTargetReplacements,
-                cwd: recoveryCwd,
-                laneRoot: lane.worktreePath,
-            });
+            const hasExplicitProof = input.command !== '';
+            if (hasExplicitProof && pnpmScriptName(receipt.command, receipt.args) !== 'dev') {
+                throw new Error('explicit recovery proof is only valid for a recorded pnpm dev command');
+            }
+            if (hasExplicitProof && input.lintTargetReplacements.length > 0) {
+                throw new Error('--replace-lint-target cannot be combined with an explicit recovery proof');
+            }
+            const recoveryCommand = hasExplicitProof ? input.command : receipt.command;
+            const recoveryArgs = hasExplicitProof
+                ? input.args
+                : resolveRecoveryLintArgs({
+                      receipt,
+                      replacements: input.lintTargetReplacements,
+                      cwd: recoveryCwd,
+                      laneRoot: lane.worktreePath,
+                  });
             for (const replacement of input.lintTargetReplacements) {
                 log(`guard: recovery lint target '${replacement.oldTarget}' -> '${replacement.newTarget}'`);
             }
             log(
                 `guard: executing recovery for lane ${lane.laneName} (${receipt.reason} at ${receipt.headSha.slice(0, 9)} during '${receipt.command} ${receipt.args.join(' ')}'${receipt.census === undefined ? '' : `; census: ${receipt.census}`})`
             );
+            if (hasExplicitProof) {
+                log(`guard: using explicit recovery proof '${recoveryCommand} ${recoveryArgs.join(' ')}'`);
+            }
             const result = await runCommand({
-                command: receipt.command,
+                command: recoveryCommand,
                 args: recoveryArgs,
                 profile: input.explicitProfile
                     ? input.profile
@@ -3204,7 +3220,7 @@ export async function main(
                 cwd: recoveryCwd,
             });
             if (result.code === 0 && result.reason === undefined) {
-                emitGuardedResult(receipt.command, result, input.showOutput);
+                emitGuardedResult(recoveryCommand, result, input.showOutput);
                 const cleared = clearGuardFailureReceiptIfUnchanged(
                     lane.primaryRoot,
                     lane.laneName,
@@ -3243,7 +3259,7 @@ export async function main(
                         durationMs: result.durationMs,
                     });
                 }
-                emitGuardedResult(receipt.command, result, input.showOutput);
+                emitGuardedResult(recoveryCommand, result, input.showOutput);
                 error(`guard: recovery failed; lane ${lane.laneName} remains stopped`);
                 return 1;
             }
