@@ -1,4 +1,4 @@
-import { captureProjectIdentity, captureProjectRevision } from '#/modules/CrdtDocument/useCases';
+import { captureProjectIdentity } from '#/modules/CrdtDocument/useCases';
 
 import { getCreativeSelectionSnapshot } from '../models/CreativeInterpretation';
 import { type ToolCallResult } from '../models/ToolCallResult';
@@ -7,6 +7,7 @@ import { admitMetricIntent } from './admitMetricIntent';
 import { getProjectContext } from './getProjectContext';
 import { type MetricIntentCatalog } from './prepareMetricIntentCatalog';
 import { type prepareWorkflowMetricScopes } from './prepareWorkflowMetricScopes';
+import { settledProjectContentMatches } from './settledProjectContentMatches';
 
 /** A selected finite workflow supplies subjects, never an acoustic exemption or a command permit. */
 export function admitWorkflowMetricIntake(input: {
@@ -32,7 +33,7 @@ export function admitWorkflowMetricIntake(input: {
     }
     if (
         captureProjectIdentity() !== input.catalog.projectId ||
-        captureProjectRevision() !== input.catalog.revision ||
+        !settledProjectContentMatches(input.catalog.revision) ||
         JSON.stringify(getCreativeSelectionSnapshot(getProjectContext())) !== JSON.stringify(input.catalog.selection)
     ) {
         return { status: 'rejected' as const, reason: 'Workflow metric intake belongs to a stale project snapshot.' };
