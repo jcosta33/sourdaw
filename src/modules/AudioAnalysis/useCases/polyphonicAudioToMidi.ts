@@ -134,9 +134,9 @@ export async function polyphonicAudioToMidi(
     if (!sourceIsCurrent()) {
         return null;
     }
-    let frames: number[][] = [];
-    let onsets: number[][] = [];
-    let contours: number[][] = [];
+    const frames: number[][] = [];
+    const onsets: number[][] = [];
+    const contours: number[][] = [];
 
     let evaluationBuffer = buffer;
 
@@ -163,9 +163,17 @@ export async function polyphonicAudioToMidi(
         await model.evaluateModel(
             evaluationBuffer,
             (freq, output, context) => {
-                frames = freq;
-                onsets = output;
-                contours = context;
+                // Each callback contains the next unwrapped model window.
+                // Keep one ordered frame timeline for notes and pitch bends.
+                for (const frame of freq) {
+                    frames.push(frame);
+                }
+                for (const onset of output) {
+                    onsets.push(onset);
+                }
+                for (const contour of context) {
+                    contours.push(contour);
+                }
             },
             (percent) => {
                 onProgress?.(percent);

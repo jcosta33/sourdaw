@@ -28,7 +28,7 @@ const packageRoot = dirname(createRequire(import.meta.url).resolve('@spotify/bas
 afterEach(() => vi.unstubAllGlobals());
 
 describe('bundled Basic Pitch real-model inference', () => {
-    it('loads the emitted weights and transcribes simultaneous pitches without changing source PCM', async () => {
+    it('loads emitted weights and retains simultaneous pitches across the full four-second source', async () => {
         await setBackend('cpu');
         const requests: string[] = [];
         let weightsUnavailable = true;
@@ -50,11 +50,12 @@ describe('bundled Basic Pitch real-model inference', () => {
         });
 
         const sampleRate = 22_050;
-        const buffer = new MockAudioBuffer({ length: sampleRate, numberOfChannels: 1, sampleRate });
+        const durationSeconds = 4;
+        const buffer = new MockAudioBuffer({ length: sampleRate * durationSeconds, numberOfChannels: 1, sampleRate });
         const pcm = buffer.getChannelData(0);
         for (let frame = 0; frame < pcm.length; frame++) {
             const seconds = frame / sampleRate;
-            const envelope = Math.min(1, seconds / 0.025, (1 - seconds) / 0.05);
+            const envelope = Math.min(1, seconds / 0.025, (durationSeconds - seconds) / 0.05);
             for (const frequency of [261.625565, 329.627557]) {
                 for (let harmonic = 1; harmonic <= 5; harmonic++) {
                     pcm[frame] += (0.12 * envelope * Math.sin(2 * Math.PI * frequency * harmonic * seconds)) / harmonic;
@@ -75,12 +76,26 @@ describe('bundled Basic Pitch real-model inference', () => {
         expect(requests).not.toContain('/assets/group1-shard1of1.bin');
         expect(result).not.toBeNull();
         for (const pitch of [60, 64]) {
-            const note = result?.notes.find((candidate) => candidate.pitchMidi === pitch);
-            expect(note, `Missing independently specified MIDI pitch ${pitch}`).toBeDefined();
-            expect(note?.startTimeSeconds).toBeGreaterThanOrEqual(0);
-            expect(note?.startTimeSeconds).toBeLessThan(0.3);
-            expect(note?.durationSeconds).toBeGreaterThan(0.35);
-            expect(note?.durationSeconds).toBeLessThan(1.3);
+            const notes = result?.notes.filter((candidate) => candidate.pitchMidi === pitch) ?? [];
+            expect(notes.length, `Missing independently specified MIDI pitch ${pitch}`).toBeGreaterThan(0);
+            const spans = notes
+                .map((note) => ({ start: note.startTimeSeconds, end: note.startTimeSeconds + note.durationSeconds }))
+                .sort((left, right) => left.start - right.start);
+            expect(spans[0]?.start).toBeGreaterThanOrEqual(0);
+            expect(spans[0]?.start).toBeLessThan(0.3);
+            expect(Math.max(...spans.map((span) => span.end))).toBeGreaterThan(3.5);
+            expect(Math.max(...spans.map((span) => span.end))).toBeLessThan(4.35);
+            // The network may retrigger a held tone. Measure the union of its
+            // intervals, so duplicate notes cannot counterfeit retained audio.
+            let coveredSeconds = 0;
+            let coveredThrough = 0.15;
+            for (const span of spans) {
+                const start = Math.max(0.15, span.start, coveredThrough);
+                const end = Math.min(3.85, span.end);
+                coveredSeconds += Math.max(0, end - start);
+                coveredThrough = Math.max(coveredThrough, end);
+            }
+            expect(coveredSeconds, `Incomplete four-second coverage for MIDI pitch ${pitch}`).toBeGreaterThan(3);
         }
         expect(result?.sourceClip).toMatchObject({ startBeat: 8, endBeat: 12, projectRevision: 'source-revision' });
         expect(pcm).toEqual(original);

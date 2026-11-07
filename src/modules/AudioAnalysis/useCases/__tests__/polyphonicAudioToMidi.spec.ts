@@ -1,4 +1,4 @@
-import { noteFramesToTime } from '@spotify/basic-pitch';
+import { addPitchBendsToNoteEvents, noteFramesToTime, outputToNotesPoly } from '@spotify/basic-pitch';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { polyphonicAudioToMidi } from '../polyphonicAudioToMidi';
@@ -10,6 +10,9 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     projectRevisionMatchesLiveIgnoringSaveWrites: (revision: string) => revision === sourceAuthority.revision,
 }));
 const evaluate = vi.fn<() => Promise<void>>();
+const evaluationChunks = vi.hoisted(() => ({
+    value: [] as Array<{ frames: number[][]; onsets: number[][]; contours: number[][] }>,
+}));
 
 vi.mock('#/infra/release/modelReleaseAdmission', () => ({ MODEL_RELEASE_ADMISSION: releaseGate }));
 
@@ -43,13 +46,16 @@ vi.mock('@spotify/basic-pitch', () => ({
         constructor(model: string | Promise<unknown>) {
             basicPitchCtor(model);
         }
-        // No notes detected — keeps the use case's later stages trivial.
         evaluateModel(
             _buffer: unknown,
             onComplete: (f: number[][], o: number[][], c: number[][]) => void,
             _onProgress: (p: number) => void
         ): Promise<void> {
-            return evaluate().then(() => onComplete([], [], []));
+            return evaluate().then(() => {
+                for (const chunk of evaluationChunks.value) {
+                    onComplete(chunk.frames, chunk.onsets, chunk.contours);
+                }
+            });
         }
     },
     outputToNotesPoly: vi.fn(() => []),
@@ -69,6 +75,9 @@ describe('polyphonicAudioToMidi', () => {
         releaseGate.basicPitch = true;
         sourceAuthority.revision = 'source-revision';
         evaluate.mockReset().mockResolvedValue(undefined);
+        evaluationChunks.value = [];
+        vi.mocked(outputToNotesPoly).mockClear();
+        vi.mocked(addPitchBendsToNoteEvents).mockClear();
         vi.mocked(noteFramesToTime).mockReturnValue([]);
     });
 
@@ -182,4 +191,32 @@ describe('polyphonicAudioToMidi', () => {
             }
         }
     );
+
+    it('retains each ordered callback chunk exactly once in all three model output streams', async () => {
+        getAllTracksMock.mockReturnValue([
+            { clips: [{ id: 'clip-1', audioBufferId: 'buf-1', name: 'Take', startBeat: 0, endBeat: 8 }] },
+        ]);
+        getCachedAudioBufferMock.mockReturnValue({ sampleRate: 22050, duration: 4 } as AudioBuffer);
+        evaluationChunks.value = [
+            { frames: [[7], [2]], onsets: [[17], [12]], contours: [[27], [22]] },
+            { frames: [[5]], onsets: [[15]], contours: [[25]] },
+            { frames: [[9], [1], [6]], onsets: [[19], [11], [16]], contours: [[29], [21], [26]] },
+        ];
+
+        await polyphonicAudioToMidi({ clipId: 'clip-1' });
+
+        expect(outputToNotesPoly).toHaveBeenCalledExactlyOnceWith(
+            [[7], [2], [5], [9], [1], [6]],
+            [[17], [12], [15], [19], [11], [16]],
+            0.5,
+            0.3,
+            11,
+            true,
+            null,
+            null,
+            true,
+            5
+        );
+        expect(addPitchBendsToNoteEvents).toHaveBeenCalledExactlyOnceWith([[27], [22], [25], [29], [21], [26]], []);
+    });
 });
