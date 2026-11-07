@@ -6,6 +6,7 @@ import { reverseClip } from '../reverseClip';
 
 const mocks = vi.hoisted(() => ({
     getTrackState: vi.fn(),
+    notifyUser: vi.fn(),
     updateClip: vi.fn(),
     getCachedAudioBuffer: vi.fn(),
     cacheAudioBuffer: vi.fn(),
@@ -48,6 +49,8 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     getCachedAudioBuffer: mocks.getCachedAudioBuffer,
     cacheAudioBuffer: mocks.cacheAudioBuffer,
 }));
+
+vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: mocks.notifyUser }));
 
 vi.mock('#/modules/Knead/useCases', () => ({
     clearClipPitchAnalysis: mocks.clearClipPitchAnalysis,
@@ -330,7 +333,7 @@ describe('reverseClip', () => {
         expect(publishedClip?.fadeOutBeats).toBe(0.5);
     });
 
-    it('restamps the loop anchor at the clip own start because the reversed buffer is a fresh media basis', () => {
+    it('refuses the advanced beat-only window whose wrap is not a linear source passage', () => {
         // An 8-beat buffer at 60 BPM (sampleRate 8), looped clip L=4 trimmed by
         // one beat: start 1, offset 1, anchor 0. Carrying the anchor would mix
         // the old basis's advance into the new one (region [2,6) over the
@@ -373,16 +376,29 @@ describe('reverseClip', () => {
 
         reverseClip('c1');
 
-        expect(publishedClip?.audioOffsetBeats).toBe(3);
-        // The anchor reads the fresh basis: the clip's own start, advance zero,
-        // so the loop window opens at the mirrored window head.
-        expect(publishedClip?.loopOriginBeat).toBe(1);
+        const segments = projectAudioLoopPassSegments({
+            clip: mockClip,
+            loopLengthBeats: 4,
+            iterationStartBeat: 1,
+            iterationEndBeat: 5,
+            stretchRatio: 1,
+            tempoAtClipStart: 60,
+            secondsAtBeat: (beat) => beat,
+        });
+        expect(segments.map((segment) => segment.sourceStartSeconds)).toEqual([1, 0]);
+        // The last visible source frame is 7; the old linear exit read 39.
+        expect((segments.at(-1)!.sourceStartSeconds + 1) * sampleRate - 1).toBe(7);
+        expect((1 + 4) * sampleRate - 1).toBe(39);
+        expect(publishedClip).toBeUndefined();
+        expect(mockCtx.createBuffer).not.toHaveBeenCalled();
+        expect(mocks.cacheAudioBuffer).not.toHaveBeenCalled();
+        expect(mocks.clearClipPitchAnalysis).not.toHaveBeenCalled();
     });
 
     it('restamps an untrimmed anchored clip to its unchanged start, advance zero before and after', () => {
         // Untrimmed, the anchor derives advance zero before and after — the
-        // pre/post agreement the anchor law promises. The clip spans [0,5)
-        // with L=4: the mirrored window head is S − 0 − 5 = 3, and the
+        // pre/post agreement the anchor law promises. The clip spans [0,4)
+        // with L=4: the mirrored window head is S − 0 − 4 = 4, and the
         // restamped anchor is the clip's own start, 0.
         const sampleRate = 8;
         const sourceSamples = 64;
@@ -392,7 +408,7 @@ describe('reverseClip', () => {
             audioBufferId: 'buf1',
             name: 'Sample',
             startBeat: 0,
-            endBeat: 5,
+            endBeat: 4,
             audioOffsetBeats: 0,
             loopEnabled: true,
             loopLength: 4,
@@ -422,7 +438,7 @@ describe('reverseClip', () => {
 
         reverseClip('c1');
 
-        expect(publishedClip?.audioOffsetBeats).toBe(3);
+        expect(publishedClip?.audioOffsetBeats).toBe(4);
         expect(publishedClip?.loopOriginBeat).toBe(0);
     });
 
@@ -903,7 +919,7 @@ describe('reverseClip', () => {
         function reverseWithBuffer(clip: CanonicalClip, sourceSamples: number, sampleRate = 8) {
             const originalData = new Float32Array(sourceSamples);
             for (let index = 0; index < sourceSamples; index++) {
-                originalData[index] = index;
+                originalData[index] = index / sourceSamples;
             }
             const reversedData = new Float32Array(sourceSamples);
             let publishedClip: CanonicalClip | undefined;
@@ -937,6 +953,113 @@ describe('reverseClip', () => {
             fadeInBeats: 0,
             fadeOutBeats: 0,
         };
+
+        it('refuses a nonperiodic cyclic window before allocating or publishing reversed material', () => {
+            const clip: CanonicalClip = {
+                ...baseClip,
+                startBeat: 0,
+                endBeat: 5,
+                audioOffsetSeconds: 0,
+                loopEnabled: true,
+                loopLength: 4,
+                loopOriginBeat: 0,
+            };
+
+            const { didWrite, originalData } = reverseWithBuffer(clip, 384000, 48000);
+
+            // The last audible frame is 47999 after the wrap at beat 4. A
+            // whole-buffer mirror opening at second 3 instead reads 239999.
+            expect(originalData[47999]).not.toBe(originalData[239999]);
+            expect(didWrite).toBe(false);
+            expect(mockCtx.createBuffer).not.toHaveBeenCalled();
+            expect(mocks.cacheAudioBuffer).not.toHaveBeenCalled();
+            expect(mocks.updateClip).not.toHaveBeenCalled();
+            expect(mocks.clearClipPitchAnalysis).not.toHaveBeenCalled();
+            expect(originalData[0]).toBe(0);
+            expect(originalData[383999]).toBe(Math.fround(383999 / 384000));
+        });
+
+        it('reverses one complete unadvanced loop period at the actual PCM frame boundary', () => {
+            const clip: CanonicalClip = {
+                ...baseClip,
+                startBeat: 0,
+                endBeat: 4,
+                audioOffsetSeconds: 1,
+                audioUnwrappedOffsetSeconds: 1,
+                audioLoopStartSeconds: 1,
+                audioLoopPassEntrySeconds: 1,
+                audioLoopPassOriginBeat: 0,
+                loopEnabled: true,
+                loopLength: 4,
+                loopOriginBeat: 0,
+            };
+            const { didWrite, publishedClip, originalData, reversedData } = reverseWithBuffer(clip, 384000, 48000);
+            expect(didWrite).toBe(true);
+            expect(publishedClip).toMatchObject({
+                audioOffsetSeconds: 3,
+                audioUnwrappedOffsetSeconds: 3,
+                audioLoopStartSeconds: 3,
+                audioLoopPassEntrySeconds: 3,
+                audioLoopPassOriginBeat: 0,
+                loopOriginBeat: 0,
+            });
+            expect(readerEntrySeconds(publishedClip!)).toBe(3);
+            for (let frame = 0; frame < 192000; frame++) {
+                if (reversedData[144000 + frame] !== originalData[239999 - frame]) {
+                    throw new Error(`The reversed complete period diverged at frame ${frame}`);
+                }
+            }
+            expect(originalData[48000]).toBe(48000 / 384000);
+            expect(originalData[239999]).toBe(Math.fround(239999 / 384000));
+        });
+
+        it('preserves a full advanced but continuous period instead of rejecting an anchor alone', () => {
+            const clip: CanonicalClip = {
+                ...baseClip,
+                startBeat: 1,
+                endBeat: 5,
+                loopEnabled: true,
+                loopLength: 4,
+                loopOriginBeat: 0,
+                audioOffsetSeconds: 1,
+                audioLoopPassOriginBeat: 1,
+                audioLoopPassEntrySeconds: 1,
+                audioLoopStartSeconds: 4,
+            };
+            const result = reverseWithBuffer(clip, 384000, 48000);
+            expect(result.didWrite).toBe(true);
+            expect(result.publishedClip?.audioOffsetSeconds).toBe(3);
+            expect(result.reversedData[144000]).toBe(result.originalData[239999]);
+            expect(result.reversedData[335999]).toBe(result.originalData[48000]);
+        });
+
+        it('refuses a currently linear partial period whose mirrored repeat would exceed the buffer', () => {
+            const clip: CanonicalClip = {
+                ...baseClip,
+                startBeat: 0,
+                endBeat: 2,
+                loopEnabled: true,
+                loopLength: 4,
+                audioOffsetSeconds: 0,
+            };
+            // The visible [0,2) could mirror at E6 in D8, but preserving L4
+            // would extend that fresh source window to10, past the material.
+            expect(8 - 2 + 4).toBeGreaterThan(8);
+            const extendedClip: CanonicalClip = { ...clip, endBeat: 4 };
+            expect(
+                projectAudioLoopPassSegments({
+                    clip: extendedClip,
+                    loopLengthBeats: 4,
+                    iterationStartBeat: 0,
+                    iterationEndBeat: 4,
+                    stretchRatio: 1,
+                    tempoAtClipStart: 60,
+                    secondsAtBeat: integratedSecondsAtBeat,
+                })
+            ).toEqual([{ startOffsetBeats: 0, endOffsetBeats: 4, sourceStartSeconds: 0 }]);
+            expect(reverseWithBuffer(clip, 384000, 48000).didWrite).toBe(false);
+            expect(mocks.cacheAudioBuffer).not.toHaveBeenCalled();
+        });
 
         it('mirrors the entry across a tempo change so the readers play the original window backwards', () => {
             // 120 BPM to beat 2, then 60: the span [1, 3) is 0.5 s + 1 s of song
@@ -992,7 +1115,7 @@ describe('reverseClip', () => {
             expect(readerEntrySeconds(publishedClip!)).toBeCloseTo(2.5, 12);
         });
 
-        it('restamps every present provenance field at the mirrored head of the fresh basis', () => {
+        it('refuses the original independent head and reset whose visible traversal is discontinuous', () => {
             // A looped clip [2, 6) entering at 1 s reads to 5 s; the 8 s buffer
             // mirrors that passage to open at 3 s, and the loop grid opens there.
             const clip: CanonicalClip = {
@@ -1011,15 +1134,19 @@ describe('reverseClip', () => {
 
             const { publishedClip } = reverseWithBuffer(clip, 64);
 
-            expect(publishedClip).toMatchObject({
-                audioOffsetSeconds: 3,
-                audioUnwrappedOffsetSeconds: 3,
-                audioLoopStartSeconds: 3,
-                audioLoopPassEntrySeconds: 3,
-                audioLoopPassOriginBeat: 2,
-                loopOriginBeat: 2,
+            expect(publishedClip).toBeUndefined();
+            const segments = projectAudioLoopPassSegments({
+                clip,
+                loopLengthBeats: 4,
+                iterationStartBeat: 2,
+                iterationEndBeat: 6,
+                stretchRatio: 1,
+                tempoAtClipStart: 60,
+                secondsAtBeat: integratedSecondsAtBeat,
             });
-            expect(readerEntrySeconds(publishedClip!)).toBeCloseTo(3, 12);
+            expect(segments.map((segment) => segment.sourceStartSeconds)).toEqual([1, 0.9]);
+            expect(mocks.cacheAudioBuffer).not.toHaveBeenCalled();
+            expect(mocks.clearClipPitchAnalysis).not.toHaveBeenCalled();
         });
 
         it('restores the original entry when the mirrored clip is reversed again', () => {

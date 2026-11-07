@@ -35,6 +35,7 @@ import {
     type ApplicationToolReceipt,
     type TerminalMeasurementSettlement,
 } from '../models/ApplicationOwnedTool';
+import { type BriefMixIntent } from '../models/BriefMixIntent';
 import { type CommandBatchDecline } from '../models/CommandBatchDecline';
 import { DEVICE_MANIFEST_PARAMETER_PAGE_LIMIT } from '../models/DeviceManifestPageLimits';
 import {
@@ -46,6 +47,7 @@ import {
 import { MAX_LLM_ACTIONS_PER_BATCH } from '../models/LlmActionLimits';
 import { type MeasuredPreview } from '../models/MeasuredPreview';
 import { type MetricRecipeSource } from '../models/MetricGoalAdmission';
+import { type ProjectContextProductionBrief } from '../models/ProjectContext';
 import {
     type AdoptedRecipe,
     type RetainedCommand,
@@ -1426,11 +1428,26 @@ type ExecutedRead = {
     measuredPreview?: MeasuredPreview | null;
     /** Set only by the brief compiler; it is what makes the entry the loop retains a brief. */
     briefChangeLines?: readonly string[] | null;
+    composedBrief?: ProjectContextProductionBrief | null;
+    mixIntent?: BriefMixIntent | null;
 };
 
 function retainedCompilationOf(executed: ExecutedRead, retainable: RetainedCommandSet): RetainedCompilation {
-    if (executed.briefChangeLines !== undefined && executed.briefChangeLines !== null) {
-        return { kind: 'brief', ...retainable, changeLines: executed.briefChangeLines };
+    if (
+        executed.briefChangeLines !== undefined &&
+        executed.briefChangeLines !== null &&
+        executed.composedBrief !== undefined &&
+        executed.composedBrief !== null &&
+        executed.mixIntent !== undefined &&
+        executed.mixIntent !== null
+    ) {
+        return {
+            kind: 'brief',
+            ...retainable,
+            changeLines: executed.briefChangeLines,
+            brief: executed.composedBrief,
+            mixIntent: executed.mixIntent,
+        };
     }
     if (executed.measuredPreview !== undefined && executed.measuredPreview !== null) {
         return { kind: 'preview', ...retainable, measuredPreview: executed.measuredPreview };
@@ -3190,7 +3207,10 @@ export async function runApplicationOwnedToolLoop(
                 executed.commands === undefined ||
                 admitted?.status !== 'success' ||
                 admitted.revision === null ||
-                admitted.callId !== executed.receipt.callId
+                admitted.callId !== executed.receipt.callId ||
+                (executed.composedBrief !== undefined &&
+                    executed.composedBrief !== null &&
+                    (executed.mixIntent === undefined || executed.mixIntent === null))
             ) {
                 continue;
             }

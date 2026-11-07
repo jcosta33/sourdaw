@@ -13,8 +13,8 @@ async function add_track(page: import('@playwright/test').Page, kind: string): P
 // view, which is the default uiLevel when the panel mounts. Uncovered by no
 // prior E2E — this asserts the knob mounts as a role="slider" and responds to
 // ArrowUp by raising aria-valuenow, the same contract deviceKnobKeyboardTestId
-// asserts for Gluten and proofLimiterCeilingTestId asserts for the Check
-// SideCard's "Master limiter ceiling".
+// asserts for Gluten. The Check SideCard's distinct "Master limiter ceiling"
+// control is covered by the real Proof panel component integration test.
 test.describe('Proof mission limiter ceiling — keyboard response', () => {
     test.beforeEach(async ({ page }) => {
         test.setTimeout(120000);

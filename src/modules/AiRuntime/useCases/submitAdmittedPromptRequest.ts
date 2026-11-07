@@ -2,7 +2,6 @@ import { logger } from '#/infra/logger/appLogger';
 import { parseVersionedCommandBatchEnvelope } from '#/modules/Command/useCases';
 import {
     captureProjectIdentity,
-    captureProjectMutationAuthorization,
     captureProjectRootIdentity,
     settlePendingProjectWritesAndCaptureRevision,
 } from '#/modules/CrdtDocument/useCases';
@@ -80,11 +79,10 @@ async function planSelectedPresetRequest(
     projectRevision: string
 ): Promise<PlannedPromptActions> {
     const projectRoot = captureProjectRootIdentity();
-    const mutationIsCurrent = captureProjectMutationAuthorization();
     const context = getProjectContext();
     const selection = canonicalJson(getCreativeSelectionSnapshot(context));
     const presetContext = canonicalJson(buildPresetContext(context));
-    if (!mutationIsCurrent() || settlePendingProjectWritesAndCaptureRevision() !== projectRevision) {
+    if (!settledProjectContentMatches(projectRevision)) {
         throw new AiProposalInvalidatedError();
     }
     const result = await parsePromptToActions({
@@ -98,9 +96,8 @@ async function planSelectedPresetRequest(
     if (!input.signal?.aborted) {
         const currentContext = getProjectContext();
         if (
-            !mutationIsCurrent() ||
             captureProjectRootIdentity() !== projectRoot ||
-            settlePendingProjectWritesAndCaptureRevision() !== projectRevision ||
+            !settledProjectContentMatches(projectRevision) ||
             canonicalJson(getCreativeSelectionSnapshot(currentContext)) !== selection ||
             canonicalJson(buildPresetContext(currentContext)) !== presetContext
         ) {
