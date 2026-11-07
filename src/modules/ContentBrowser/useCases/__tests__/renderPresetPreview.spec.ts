@@ -26,7 +26,7 @@ const render = vi.mocked(renderTrackSubgraphOffline);
 let generation = 0;
 let sampleRate = 48_000;
 
-// A controlled renderer result exercises admission/cache only; browser library.spec owns real PCM proof.
+// A controlled renderer result exercises admission/cache only; browser presetPreview.spec.ts owns real PCM proof.
 function pcm(rate = sampleRate, seconds = 6): AudioBuffer {
     const channels = [
         new Float32Array(Math.round(rate * seconds)).fill(0.1),
