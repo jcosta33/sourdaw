@@ -49,11 +49,7 @@ const EXPECTED_NOTES = NOTES.map((note) => ({
 }));
 
 function deferred<T>() {
-    let resolve!: (value: T) => void;
-    const promise = new Promise<T>((complete) => {
-        resolve = complete;
-    });
-    return { promise, resolve };
+    return Promise.withResolvers<T>();
 }
 
 function providerResponse(finishReason: 'stop' | 'length' = 'stop'): Response {
@@ -63,8 +59,7 @@ function providerResponse(finishReason: 'stop' | 'length' = 'stop'): Response {
         choices: [{ delta: { content }, finish_reason: null }],
     }));
     const terminal = { id: 'midi-response', choices: [{ delta: {}, finish_reason: finishReason }] };
-    const wire =
-        [...frames, terminal].map((frame) => `data: ${JSON.stringify(frame)}\n\n`).join('') + 'data: [DONE]\n\n';
+    const wire = `${[...frames, terminal].map((frame) => `data: ${JSON.stringify(frame)}\n\n`).join('')}data: [DONE]\n\n`;
     const bytes = new TextEncoder().encode(wire);
     return new Response(
         new ReadableStream<Uint8Array>({
@@ -167,8 +162,16 @@ describe('free-text MIDI generation project authority', () => {
         // Only the external provider's HTTP transport is replaced. Routing, protocol,
         // SSE parsing, tasks, project authority, dispatch and history stay real.
         vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
-            if (String(input) !== ENDPOINT || init?.method !== 'POST' || typeof init.body !== 'string') {
-                throw new Error(`Unexpected provider request: ${String(input)}`);
+            let requestUrl: string;
+            if (typeof input === 'string') {
+                requestUrl = input;
+            } else if (input instanceof URL) {
+                requestUrl = input.href;
+            } else {
+                requestUrl = input.url;
+            }
+            if (requestUrl !== ENDPOINT || init?.method !== 'POST' || typeof init.body !== 'string') {
+                throw new Error(`Unexpected provider request: ${requestUrl}`);
             }
             requests.push(init.body);
             requestStarted.resolve();
@@ -221,7 +224,9 @@ describe('free-text MIDI generation project authority', () => {
         const clips = arrangementStores.trackStore.value?.tracks.find((track) => track.id === 'target')?.clips ?? [];
         expect(clips).toHaveLength(1);
         const clip = clips[0];
-        if (!clip) throw new Error('Expected the generated clip');
+        if (!clip) {
+            throw new Error('Expected the generated clip');
+        }
         const notes = midiStores.midiStore.value?.notesByClipId[clip.id] ?? [];
         const root = crdt.getCrdtDoc<{
             tracks?: typeof arrangementStores.trackStore.value;
