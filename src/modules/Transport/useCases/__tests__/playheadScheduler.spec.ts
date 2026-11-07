@@ -841,7 +841,7 @@ describe('playhead scheduler tick', () => {
             .map((call): unknown => call[0])
             .find((arg): arg is Error => arg instanceof Error && arg.cause === recordingError);
         if (!(loggedError instanceof Error)) {
-            throw new Error('Expected the punch-in failure to be logged as an Error');
+            throw new TypeError('Expected the punch-in failure to be logged as an Error');
         }
         expect(loggedError.message).toBe('Punch-in audio recording failed to start');
         expect(loggedError.cause).toBe(recordingError);

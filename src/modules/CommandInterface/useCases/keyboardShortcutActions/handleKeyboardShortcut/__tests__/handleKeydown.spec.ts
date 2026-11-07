@@ -41,7 +41,7 @@ import { beginDragGesture } from '#/utils/UI/activeDragGesture';
 import { parseLoopStationPadCallbackId, type ShortcutAction } from '../../../../stores/shortcutStore';
 import { resolveShortcutKey } from '../../../resolveShortcutKey';
 import { getAllClipIds } from '../../../selectionHelpers/getAllClipIds';
-import { duplicateSelectedClipsForward } from '../../clipShortcuts/duplicateSelectedClipsForward';
+import { enqueueClipDuplicate } from '../../clipShortcuts/enqueueClipDuplicate';
 import { duplicateTrack } from '../../trackShortcuts/duplicateTrack';
 import { handleKeydown, type KeyDescriptor } from '../handleKeydown';
 
@@ -182,11 +182,15 @@ vi.mock('#/modules/Command/useCases', async (importOriginal) => {
 vi.mock('../../../selectionHelpers/getAllClipIds', () => ({ getAllClipIds: vi.fn(() => []) }));
 vi.mock('../../../selectionHelpers/goToNextMarker', () => ({ goToNextMarker: goToNextMarkerMock }));
 vi.mock('../../../selectionHelpers/goToPreviousMarker', () => ({ goToPreviousMarker: goToPreviousMarkerMock }));
-vi.mock('../../clipShortcuts/duplicateSelectedClipsForward', () => ({ duplicateSelectedClipsForward: vi.fn() }));
+vi.mock('../../clipShortcuts/enqueueClipDuplicate', () => ({ enqueueClipDuplicate: vi.fn(() => Promise.resolve()) }));
 vi.mock('../../trackShortcuts/duplicateTrack', () => ({ duplicateTrack: vi.fn() }));
 
 // The refusal test drives the real wrapper over the real admission gate, so it
 // observes what the user gets rather than the mocked dispatch seam.
+const realDuplicateIntents = await vi.importActual<typeof import('../../clipShortcuts/enqueueClipDuplicate')>(
+    '../../clipShortcuts/enqueueClipDuplicate'
+);
+
 const realCommandUseCases =
     await vi.importActual<typeof import('#/modules/Command/useCases')>('#/modules/Command/useCases');
 
@@ -747,10 +751,7 @@ describe('handleKeydown', () => {
             const prevent = handleKeydown(pressed({ key: '∂', code: 'KeyD', alt: true }));
 
             expect(prevent).toBe(true);
-            expect(executeUserAppAction).toHaveBeenCalledWith({
-                type: 'duplicateClipToNextBar',
-                payload: { clipId: 'clip-3', targetClipId: 'copy-1' },
-            });
+            expect(enqueueClipDuplicate).toHaveBeenCalledExactlyOnceWith('duplicateClipToNextBar');
         });
 
         it('records Loop Station pad r0c0 from Shift+1, which reports !', () => {
@@ -893,9 +894,10 @@ describe('handleKeydown', () => {
 
             expect(executeUndoableDuplicateTimeRange).toHaveBeenCalledWith(2, 6);
             expect(executeUserAppAction).not.toHaveBeenCalled();
+            expect(enqueueClipDuplicate).not.toHaveBeenCalled();
         });
 
-        it('forwards multi-clip duplication to duplicateSelectedClipsForward', () => {
+        it('submits multi-clip duplication as an ordered intent', () => {
             shortcutStoreMock.value.definitions = [
                 {
                     id: 'test.dup-clip',
@@ -907,11 +909,11 @@ describe('handleKeydown', () => {
 
             handleKeydown(descriptor({ key: 'F1' }));
 
-            expect(duplicateSelectedClipsForward).toHaveBeenCalledWith(['clip-1', 'clip-2']);
+            expect(enqueueClipDuplicate).toHaveBeenCalledExactlyOnceWith('duplicateClip');
             expect(executeUserAppAction).not.toHaveBeenCalled();
         });
 
-        it('dispatches duplicateClip with the resolved clip id for a single selection', () => {
+        it('submits single-clip duplication as an ordered intent', () => {
             shortcutStoreMock.value.definitions = [
                 {
                     id: 'test.dup-clip',
@@ -923,90 +925,12 @@ describe('handleKeydown', () => {
 
             handleKeydown(descriptor({ key: 'F1' }));
 
-            expect(executeUserAppAction).toHaveBeenCalledWith({
-                type: 'duplicateClip',
-                payload: { clipId: 'clip-9', targetClipId: 'copy-1' },
-            });
+            expect(enqueueClipDuplicate).toHaveBeenCalledExactlyOnceWith('duplicateClip');
         });
 
-        describe('selecting the copy', () => {
-            const dupDefinition = (type: 'duplicateClip' | 'duplicateClipToNextBar'): MinimalDefinition => ({
-                id: 'test.dup',
-                defaultKeys: ['F1'],
-                action: { type: 'appAction', action: { type, payload: { clipId: 'selected' } } },
-            });
-
-            /** The dispatched action lands the copy in the track store, as a committed duplicate does. */
-            function commitCopyOnDispatch(): void {
-                vi.mocked(executeUserAppAction).mockImplementationOnce((action) => {
-                    if (action.type !== 'duplicateClip' && action.type !== 'duplicateClipToNextBar') {
-                        return Promise.resolve();
-                    }
-                    const copyId = action.payload.targetClipId ?? '';
-                    trackStoreMock.value.tracks = [
-                        { id: 't1', clips: [{ id: action.payload.clipId, startBeat: 0, endBeat: 4 }] },
-                        { id: 't2', clips: [{ id: copyId, startBeat: 4, endBeat: 8 }] },
-                    ];
-                    return Promise.resolve();
-                });
-            }
-
-            it.each(['duplicateClip', 'duplicateClipToNextBar'] as const)(
-                'selects the copy a committed %s creates',
-                async (type) => {
-                    shortcutStoreMock.value.definitions = [dupDefinition(type)];
-                    clipSelectionStoreMock.value.selectedClipId = 'clip-9';
-                    clipSelectionStoreMock.value.selectedClipIds = ['clip-9'];
-                    commitCopyOnDispatch();
-
-                    handleKeydown(descriptor({ key: 'F1' }));
-
-                    await vi.waitFor(() => {
-                        expect(selectClipWithFocus).toHaveBeenCalledExactlyOnceWith('copy-1');
-                    });
-                }
-            );
-
-            it.each(['duplicateClip', 'duplicateClipToNextBar'] as const)(
-                'leaves the source selected when %s leaves no copy behind',
-                async (type) => {
-                    shortcutStoreMock.value.definitions = [dupDefinition(type)];
-                    clipSelectionStoreMock.value.selectedClipId = 'clip-9';
-                    vi.mocked(executeUserAppAction).mockResolvedValueOnce(undefined);
-
-                    handleKeydown(descriptor({ key: 'F1' }));
-
-                    await vi.waitFor(() => {
-                        expect(executeUserAppAction).toHaveBeenCalledTimes(1);
-                    });
-                    await Promise.resolve();
-                    expect(selectClipWithFocus).not.toHaveBeenCalled();
-                }
-            );
-
-            it('chains a second press from the copy the first press selected', async () => {
-                shortcutStoreMock.value.definitions = [dupDefinition('duplicateClip')];
-                clipSelectionStoreMock.value.selectedClipId = 'clip-9';
-                vi.mocked(selectClipWithFocus).mockImplementationOnce((clipId) => {
-                    clipSelectionStoreMock.value.selectedClipId = clipId;
-                    clipSelectionStoreMock.value.selectedClipIds = [clipId];
-                });
-                commitCopyOnDispatch();
-
-                handleKeydown(descriptor({ key: 'F1' }));
-                await vi.waitFor(() => {
-                    expect(clipSelectionStoreMock.value.selectedClipId).toBe('copy-1');
-                });
-                handleKeydown(descriptor({ key: 'F1' }));
-
-                expect(executeUserAppAction).toHaveBeenLastCalledWith({
-                    type: 'duplicateClip',
-                    payload: expect.objectContaining({ clipId: 'copy-1' }),
-                });
-            });
-        });
-
-        it('dispatches duplicateClipToNextBar only when a clip is selected', () => {
+        // Source resolution, committed-copy selection and overlap belong to enqueueClipDuplicate.
+        // The real handler integration covers them through Command and the CRDT stores.
+        it('submits the next-bar intent through a rebound key', () => {
             shortcutStoreMock.value.definitions = [
                 {
                     id: 'test.dup-next-bar',
@@ -1017,43 +941,9 @@ describe('handleKeydown', () => {
                     },
                 },
             ];
-
             handleKeydown(descriptor({ key: 'F1' }));
+            expect(enqueueClipDuplicate).toHaveBeenCalledExactlyOnceWith('duplicateClipToNextBar');
             expect(executeUserAppAction).not.toHaveBeenCalled();
-
-            clipSelectionStoreMock.value.selectedClipId = 'clip-7';
-            handleKeydown(descriptor({ key: 'F1' }));
-            expect(executeUserAppAction).toHaveBeenCalledWith({
-                type: 'duplicateClipToNextBar',
-                payload: { clipId: 'clip-7', targetClipId: 'copy-1' },
-            });
-        });
-
-        it('keeps duplicateClipToNextBar to a one-clip selection, like the clip context menu', () => {
-            shortcutStoreMock.value.definitions = [
-                {
-                    id: 'test.dup-next-bar',
-                    defaultKeys: ['F1'],
-                    action: {
-                        type: 'appAction',
-                        action: { type: 'duplicateClipToNextBar', payload: { clipId: 'selected' } },
-                    },
-                },
-            ];
-            // Two clips is the smallest selection the context menu hides the command for.
-            clipSelectionStoreMock.value.selectedClipIds = ['clip-a', 'clip-b'];
-            clipSelectionStoreMock.value.selectedClipId = 'clip-b';
-
-            expect(handleKeydown(descriptor({ key: 'F1' }))).toBe(true);
-            expect(executeUserAppAction).not.toHaveBeenCalled();
-
-            clipSelectionStoreMock.value.selectedClipIds = ['clip-b'];
-            expect(handleKeydown(descriptor({ key: 'F1' }))).toBe(true);
-            expect(executeUserAppAction).toHaveBeenCalledTimes(1);
-            expect(executeUserAppAction).toHaveBeenCalledWith({
-                type: 'duplicateClipToNextBar',
-                payload: { clipId: 'clip-b', targetClipId: 'copy-1' },
-            });
         });
     });
 
@@ -1581,6 +1471,7 @@ describe('handleKeydown', () => {
 
     describe('mutation refusal reaches the user', () => {
         it('notifies the user instead of silently dropping a refused duplicate-clip shortcut', async () => {
+            vi.mocked(enqueueClipDuplicate).mockImplementationOnce(realDuplicateIntents.enqueueClipDuplicate);
             registerHandlerMap({
                 duplicateClip: {
                     describe: () => ({ label: 'Duplicate Clip' }),

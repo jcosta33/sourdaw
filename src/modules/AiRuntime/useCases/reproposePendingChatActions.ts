@@ -15,6 +15,7 @@ import {
 } from '../stores/pendingActionConfirmationStore';
 
 import { persistPromptActionConfirmation } from './agentRequestOrchestration/persistPromptActionConfirmation';
+import { readVibeRunBriefDrift } from './agentRequestOrchestration/readVibeRunBriefDrift';
 import { retireSupersededConfirmation } from './agentRequestOrchestration/retireSupersededConfirmation';
 import { revalidateApprovedMatchSelectors } from './agentRequestOrchestration/revalidateApprovedMatchSelectors';
 import { agentRunLifecycle } from './agentRunLifecycle';
@@ -85,6 +86,15 @@ function admitReproposal(
     }
     if (TERMINAL_RUN_PHASES.has(run.phase)) {
         return { status: 'rejected', reason: `The run this proposal belongs to is already ${run.phase}.` };
+    }
+    // A later vibe-run batch was planned against one brief; re-proposing it under another would
+    // ground a plan the brief no longer states.
+    const schedule = run.plan?.batchSchedule;
+    if (schedule?.kind === 'vibe-run' && (confirmation.approvalSnapshot.batchPosition?.index ?? 1) > 1) {
+        const drift = readVibeRunBriefDrift(schedule, getProjectContext().productionBrief?.revision ?? null);
+        if (drift !== null) {
+            return { status: 'rejected', reason: `The ${drift}.` };
+        }
     }
     if (holdsPreparedStemResources(confirmation.actions)) {
         return { status: 'rejected', reason: PREPARED_STEM_RESOURCES_REASON };

@@ -263,7 +263,7 @@ describe('pluginLifecycleScheduler', () => {
 
         const secondFailure = await second.catch((error: unknown) => error);
         if (!(secondFailure instanceof Error)) {
-            throw new Error('Expected the queued sync throw to reject as a wrapped Error');
+            throw new TypeError('Expected the queued sync throw to reject as a wrapped Error');
         }
         expect(secondFailure.message).toBe('Plugin lifecycle operation failed');
         expect(secondFailure.cause).toBe(thrownValue);

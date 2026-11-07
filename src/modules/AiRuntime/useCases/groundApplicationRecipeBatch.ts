@@ -1,6 +1,7 @@
 import { digest } from '#/utils/canonicalDigest';
 
 import { type CreativeRequestAuthority, getCreativeSelectionSnapshot } from '../models/CreativeInterpretation';
+import { type PerceptualConstraintReading } from '../models/PerceptualConstraint';
 import { type ProjectContext } from '../models/ProjectContext';
 import { type AdoptedRecipe, type RetainedCompilation } from '../models/RetainedCompilation';
 
@@ -11,6 +12,8 @@ import { materializeTransformToolCalls } from './materializeTransformToolCalls';
 
 /** One recipe the application chose to expand on one track; `role` is a role argued for that track, if any. */
 type ApplicationRecipePair = { recipeId: string; targetId: string; role: string | null };
+
+type RecipeCompilation = Extract<RetainedCompilation, { kind: 'recipe' }>;
 
 type GroundedBatch = Extract<ReturnType<typeof groundCompiledCommandBatch>, { status: 'grounded' }>;
 
@@ -23,9 +26,11 @@ type GroundApplicationRecipeBatchResult =
           grounded: GroundedBatch;
           adoptedRecipes: AdoptedRecipe[];
           creativeAuthority: CreativeRequestAuthority;
+          /** Each pair's expansion, in pair order, as the batch adopted it. */
+          compilations: RecipeCompilation[];
       };
 
-type ExpandedPair = { pair: ApplicationRecipePair; compilation: Extract<RetainedCompilation, { kind: 'recipe' }> };
+type ExpandedPair = { pair: ApplicationRecipePair; compilation: RecipeCompilation };
 
 /** The devices each listed target gains, in the order the targets are first listed. */
 function countAddedDevicesByTarget(expansions: readonly ExpandedPair[]): Map<string, number> {
@@ -95,6 +100,8 @@ export function groundApplicationRecipeBatch(input: {
     context: ProjectContext;
     projectRevision: string;
     prompt: string;
+    /** The request's perceptual constraints as its run recorded them; omitted, the prompt is read now. */
+    recordedConstraints?: PerceptualConstraintReading;
 }): GroundApplicationRecipeBatchResult {
     const { context, projectRevision } = input;
     const expansions: ExpandedPair[] = [];
@@ -133,6 +140,7 @@ export function groundApplicationRecipeBatch(input: {
         transformTargetIds: getCompiledTransformTargetIds(transformCommands, context),
         creativeAuthority,
         providerProposal: null,
+        recordedConstraints: input.recordedConstraints,
     });
     if (grounded.status === 'rejected') {
         return { status: 'rejected', reason: grounded.rejectionReason };
@@ -145,5 +153,6 @@ export function groundApplicationRecipeBatch(input: {
         grounded,
         adoptedRecipes: compilations.map((compilation) => compilation.recipe),
         creativeAuthority,
+        compilations,
     };
 }

@@ -47,7 +47,7 @@ describe('mountBrowserDisplayScaleHost', () => {
         expect(frame!.style.width).toBe(width);
         expect(frame!.style.height).toBe(height);
         expect(frame!.style.transform).toBe(`scale(${String(scale)})`);
-        expect(frame!.style.transformOrigin).toBe('top left');
+        expect(frame!.style.transformOrigin).toBe('left top');
         expect(document.documentElement.style.overflow).toBe('hidden');
         expect(document.body.style.margin).toBe('0px');
         expect(document.body.style.overflow).toBe('hidden');

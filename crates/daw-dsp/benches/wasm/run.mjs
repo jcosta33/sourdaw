@@ -1015,7 +1015,7 @@ async function main() {
             const st = row.stats;
             const floorCell = row.floorMeasurable ? `${us(st.floor)}us` : 'n/a';
             console.log(
-                `  ${row.label.padEnd(48)} ${floorCell.padStart(8)} | ${(us(st.median) + 'us').padStart(11)} | ` +
+                `  ${row.label.padEnd(48)} ${floorCell.padStart(8)} | ${`${us(st.median)}us`.padStart(11)} | ` +
                     `${pct(st.median).padStart(7)} | ${row.load.mean.toFixed(0).padStart(4)} | ` +
                     `${(row.zeroFraction * 100).toFixed(1)}%` +
                     `${row.stationary ? '' : '  <-- NOT STATIONARY'}${row.medianTrustworthy ? '' : '  <-- UNRELIABLE MEDIAN'}`
@@ -1049,7 +1049,7 @@ async function main() {
     for (const row of rows) {
         console.log(
             `    ${row.id.padEnd(28)} min ${us(row.stats.min).padStart(7)}us  floor(p1) ${us(row.stats.floor).padStart(7)}us` +
-                `${row.floorMeasurable ? '' : '   [floor withheld: clock stalled on ' + (row.zeroFraction * 100).toFixed(1) + '% of samples]'}`
+                `${row.floorMeasurable ? '' : `   [floor withheld: clock stalled on ${(row.zeroFraction * 100).toFixed(1)}% of samples]`}`
         );
     }
     console.log('');

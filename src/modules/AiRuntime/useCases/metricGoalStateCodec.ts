@@ -199,6 +199,7 @@ function authorityIdentity(entry: Record<string, unknown>): boolean {
             'admitted-workflow',
             'answer-suggestion',
             'perceptual-constraint-reader',
+            'vibe-run-plan',
         ]) &&
         (entry.callId === null || text(entry.callId)) &&
         (entry.turn === null || integer(entry.turn)) &&

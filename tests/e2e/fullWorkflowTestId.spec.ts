@@ -11,7 +11,7 @@ test.describe('Full workflow integration — EDM template', () => {
         await wait_for_workspace_ready(page);
     });
 
-    test('play → mute a track → hear it mute → unmute → stop', async ({ page }) => {
+    test('play → mute a track → unmute → stop at the start', async ({ page }) => {
         const play = page.getByTestId('transport-play');
         const stop = page.getByTestId('transport-stop');
         await expect(play).toBeVisible({ timeout: 15_000 });

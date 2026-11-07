@@ -50,3 +50,17 @@ from the `state-and-write-paths` skill.
    insufficient: reinstating the timestamp producer must fail the restored first-PCM comparison. Use the
    platform's unique identity producer and retain unrelated source PCM. This is runtime/history material proof,
    not a durability receipt or saved-session replay claim.
+
+8. **Decoded imports stay resident until their clip owner commits (#6038 missed manual import lifetimes).**
+   #6038 introduced scoped holds for decoded buffers awaiting placement, but its manual import callers still
+   decoded without a hold. Its public review describes the takes and stem-import protections; the missing probe
+   is manual import under competing cache writes while original-asset staging or the actual snapshot transaction
+   queue holds placement. Staging yields were already present in #3895 and #4255; #4962 routed creation through
+   awaited typed batches. Retain before the decoder's cache write, through the awaited retained batch outcome,
+   and release in `finally` after transfer or terminal cleanup. Exercise existing-track import, new-track import,
+   file drop and the empty-timeline menu through their real producers. Require exact PCM and matching raw/projected
+   clip identity plus actual typed history and grouped Undo. Removing only the lifetime hold must lose the pending
+   source under cache pressure. Cancellation and staging failure must release leases, decoded material and holds;
+   re-cache the now-unowned ID and pressure it to prove a leaked hold cannot hide behind deletion. For a committed
+   source, retire the real clip and history owners before proving the temporary hold ended. Mere residency while
+   the live clip still protects it proves no release, and a readiness wait cannot repair an evicted source.

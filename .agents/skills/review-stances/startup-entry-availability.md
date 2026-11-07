@@ -12,7 +12,7 @@ causes stay unknown unless direct lifecycle or network-initiator evidence distin
 ## Standing probes
 
 1. **The editor connection must not own the acceptance document lifetime (`0ef2e91d94`, #5363, #5738; Vite 8.3.5
-   pinned by #5748; #5595).** Vite 8.3.5 still reloads after a socket disconnect even with `server.hmr: false`, so
+   pinned by #5748; #5595).** Vite 8.3.6 still reloads after a socket disconnect even with `server.hmr: false`, so
    editor WebSocket loss was never separated from healthy application HTTP and pending module ownership. Hold a real
    dynamic App module while the owned HTTP server stays healthy and the transport starts connected; await both server
    and browser socket readiness, then terminate only the fixture's established socket. Require the immutable E2E
