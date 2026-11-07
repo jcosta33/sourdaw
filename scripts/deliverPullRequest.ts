@@ -1322,7 +1322,7 @@ function substituteMatrixValues(
     combination: MatrixCombination,
     workflowPath: string
 ): string {
-    return declared.replace(MATRIX_REFERENCE, (_reference, key: string) => {
+    return declared.replaceAll(MATRIX_REFERENCE, (_reference, key: string) => {
         const value = combination.get(key);
         if (value === undefined) {
             fail(

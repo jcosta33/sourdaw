@@ -89,6 +89,11 @@ boundaries.
    A same-lineage replacement or snapshot restore whose new active heads drop a prior head records a discard epoch
    that rejects earlier approvals. Checkpoint-only descendants of two captured heads stay eligible, compared at their
    own dependency frontier; an unresolved whole-map checkpoint conflict refuses at confirmation.
+   Hold a paused decision or read-only preset plan across a real save timestamp and active-arrangement copy:
+   the captured revision and authority survive. Saved and unflushed fader edits, edit then revert, child-document
+   changes and root replacement refuse before handoff (#1989, #5852, #6240). Raw-head equality fails the save
+   control; comparing only the final content fails the reverted edit. Read-only content admission does not grant
+   storage-owner write authority, and execution retains its own guards.
 6. **Identity-scoped undo must survive peer edits (#3757).** Failure: whole-aggregate snapshot restore erases peer
    work an isolated round trip never sees. Probe: peer edit after the operation and again after Undo, then real
    Undo/Redo through Command, reading raw CRDT and projection. Field order alone never conflicts; changed values,

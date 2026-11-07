@@ -1801,7 +1801,7 @@ describe('prepareTimelineMapTimeOperation', () => {
 
         expect(thrown).toBeInstanceOf(Error);
         if (!(thrown instanceof Error)) {
-            throw new Error('Expected an Error instance');
+            throw new TypeError('Expected an Error instance');
         }
         expect(thrown).toMatchObject({
             name: 'UnrecoveredTimelineMapStateError',
@@ -1810,7 +1810,7 @@ describe('prepareTimelineMapTimeOperation', () => {
         });
         expect(thrown.cause).toBeInstanceOf(AggregateError);
         if (!(thrown.cause instanceof AggregateError)) {
-            throw new Error('Expected an AggregateError cause');
+            throw new TypeError('Expected an AggregateError cause');
         }
         expect(thrown.cause.errors).toEqual([publicationFailure, compensationFailure]);
         expect(tempoMapStore.value).not.toBe(capturedTempo);

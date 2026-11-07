@@ -441,7 +441,7 @@ const scopePlan = stepNamed(scope, 'Plan affected checks');
 const scopeCheckout = stepNamed(scope, 'Checkout');
 expect(scopeCheckout?.with?.['fetch-depth'] === 0 && scopeCheckout?.with?.['persist-credentials'] === false,
     'required scope must read complete history without persisting credentials');
-expect(stepNamed(scope, 'Set up Node')?.with?.['node-version'] === '24.19.0',
+expect(stepNamed(scope, 'Set up Node')?.with?.['node-version'] === '24.22.2',
     'required scope must use pinned Node');
 expect(scopePlan?.id === 'plan' && scopePlan?.run === 'node scripts/prValidationScope.ts plan' &&
     scopePlan?.env?.BASE_SHA === '${{ github.event.pull_request.base.sha }}' &&

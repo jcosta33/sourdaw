@@ -1,7 +1,7 @@
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
 import { requiresAppActionConfirmation } from '#/modules/Command/useCases';
-import { captureProjectIdentity, captureProjectRevision } from '#/modules/CrdtDocument/useCases';
+import { captureProjectIdentity } from '#/modules/CrdtDocument/useCases';
 import { doesProductionBriefAllowActionBatch } from '#/modules/Project/useCases';
 import { canonicalJson, digest } from '#/utils/canonicalDigest';
 
@@ -131,6 +131,7 @@ import { projectDeclarativeTransformSnapshot } from './projectDeclarativeTransfo
 import { projectPlanningProviderToolSchemas, type PlanningAnswerPhase } from './projectPlanningProviderToolSchemas';
 import { projectWorkflowMetricToolSchemas } from './projectWorkflowMetricToolSchemas';
 import { readBriefMixIntent } from './readBriefMixIntent';
+import { settledProjectContentMatches } from './settledProjectContentMatches';
 import { splitCompiledCommandList } from './splitCompiledCommandList';
 import { validateActions } from './validateActions';
 import { planVibeRunSchedule } from './vibeRun/planVibeRunSchedule';
@@ -1079,7 +1080,7 @@ const planPromptIntent = inject({ logger })(
                             turn: metricAuthority.turn,
                             revision: metricAuthority.revision,
                             required: metricAuthority.kind === 'perceptual' || metricAuthority.kind === 'comparative',
-                            available: metricAuthority.revision === captureProjectRevision(),
+                            available: settledProjectContentMatches(metricAuthority.revision),
                         };
                     },
                     transientOnsetRead: transientRead,

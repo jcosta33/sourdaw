@@ -81,7 +81,7 @@ function knobFor(label: string): HTMLElement {
     const cell = leaf.parentElement?.parentElement;
     const slider = cell?.querySelector('[role="slider"]');
     if (!(slider instanceof HTMLElement)) {
-        throw new Error(`The knob labelled "${label}" has no slider element.`);
+        throw new TypeError(`The knob labelled "${label}" has no slider element.`);
     }
     return slider;
 }

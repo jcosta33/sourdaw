@@ -127,14 +127,14 @@ function expectTerminalReport(firstReason: unknown, secondReason: unknown): void
     const reported: unknown = logged.cause;
     expect(reported).toBeInstanceOf(AggregateError);
     if (!(reported instanceof AggregateError)) {
-        throw new Error('Terminal App causes were not retained in the log');
+        throw new TypeError('Terminal App causes were not retained in the log');
     }
     expect(reported.message).toBe('Sourdaw App import failed after its single retry');
     expect(reported.errors).toHaveLength(2);
     expect(mocks.importRejections).toHaveLength(2);
     const [firstImportRejection, secondImportRejection] = mocks.importRejections;
     if (!(firstImportRejection instanceof Error) || !(secondImportRejection instanceof Error)) {
-        throw new Error('The mock import did not expose both rejection objects');
+        throw new TypeError('The mock import did not expose both rejection objects');
     }
     expect(firstImportRejection).not.toBe(secondImportRejection);
     expect(firstImportRejection.cause).toBe(firstReason);
@@ -286,7 +286,7 @@ describe('initial App import recovery through main', () => {
         const rejected: unknown = mocks.rejectBootstrap.mock.calls[0]?.[0];
         expect(rejected).toBeInstanceOf(Error);
         if (!(rejected instanceof Error)) {
-            throw new Error('Bootstrap failure identity is absent');
+            throw new TypeError('Bootstrap failure identity is absent');
         }
         expect(rejected.cause).toBe(failure);
         expect(mocks.reportError).not.toHaveBeenCalled();

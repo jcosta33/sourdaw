@@ -41,6 +41,7 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
 }));
 vi.mock('#/modules/Command/useCases', () => ({ executeAppActionBatch: mockExecuteAppActionBatch }));
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: mockNotifyUser }));
+vi.mock('#/infra/logger/appLogger', () => ({ logger: { error: vi.fn() } }));
 
 import { duplicateSelectedClipsForward } from '../duplicateSelectedClipsForward';
 

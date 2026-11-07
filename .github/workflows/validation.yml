@@ -49,7 +49,7 @@ permissions:
   pull-requests: read
 
 env:
-  NODE_VERSION: 24.19.0
+  NODE_VERSION: 24.22.2
 
 jobs:
   decide:
@@ -330,7 +330,7 @@ jobs:
       - name: Set up Node
         timeout-minutes: 3
         continue-on-error: true
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
@@ -435,7 +435,7 @@ jobs:
       - name: Set up Node
         timeout-minutes: 3
         continue-on-error: true
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
@@ -475,7 +475,7 @@ jobs:
       - name: Set up Node
         timeout-minutes: 3
         continue-on-error: true
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
@@ -523,7 +523,7 @@ jobs:
           package_json_file: package.json
 
       - name: Set up Node
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: ${{ env.NODE_VERSION }}
 
@@ -586,7 +586,7 @@ jobs:
       - name: Set up Node
         timeout-minutes: 3
         continue-on-error: true
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
@@ -612,7 +612,7 @@ jobs:
     if: github.event.pull_request != null && needs.decide.outputs.e2e == 'true'
     runs-on: ubuntu-latest
     container:
-      image: mcr.microsoft.com/playwright:v1.64.1-noble@sha256:47b510dd9230bf0b9bfc9b20102241e577ea7a99334ab4c3ca19f19770e9b8ea
+      image: mcr.microsoft.com/playwright:v1.65.0-noble@sha256:6e3fb709361521eb27161606e6da6d2674e5e89fa16516cb37d6fdd91372273d
       options: --init --ipc=host
     defaults:
       run:
@@ -633,7 +633,7 @@ jobs:
       - name: Set up Node
         timeout-minutes: 3
         continue-on-error: true
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
@@ -645,7 +645,7 @@ jobs:
       # resolved package can launch them without per-job apt or binary downloads.
       - name: Verify preinstalled browser runtime
         timeout-minutes: 2
-        run: node scripts/verifyPlaywrightRuntime.ts 1.64.1
+        run: node scripts/verifyPlaywrightRuntime.ts 1.65.0
 
       # No retries: a smoke set that needs a second attempt is not the fast
       # deterministic signal this job exists to give.
@@ -673,7 +673,7 @@ jobs:
       - name: Set up Node
         timeout-minutes: 3
         continue-on-error: true
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
@@ -705,7 +705,7 @@ jobs:
       - name: Set up Node
         timeout-minutes: 3
         continue-on-error: true
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
@@ -739,7 +739,7 @@ jobs:
       # TOML identity. A pull request only restores an exact host match.
       - name: Restore pinned Rust toolchain
         id: pinned-toolchain
-        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.rustup/toolchains
           key: pinned-rust-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}
@@ -750,14 +750,14 @@ jobs:
         run: bash scripts/ensurePinnedRustToolchain.sh "${{ steps.pinned-toolchain.outputs.cache-hit }}"
 
       - name: Cache cargo build
-        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
 
       # Main's seed archives the actual Linux Rust graph after rust-cache
       # restores. An exact dependency hit can run offline even when the
       # compiled-target cache misses; a miss or partial restore stays online.
       - name: Cache Cargo dependencies
         id: cargo-deps
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/.cargo/registry
@@ -809,7 +809,7 @@ jobs:
 
       - name: Cache cargo build
         id: rust-cache
-        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           # The trusted main seed saves the graph. A candidate probe never
           # saves its temporary compiled mutations, including on interruption.
@@ -834,7 +834,7 @@ jobs:
       # archived index for both, starving the other under a complete hit.
       - name: Cache the cargo registry index
         id: cargo-index
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cargo/registry/index
           key: cargo-index-v2-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-${{ hashFiles('Cargo.lock', '**/Cargo.toml', '.cargo/config.toml', 'rust-toolchain.toml') }}
@@ -861,9 +861,9 @@ jobs:
       # Reuse only this job's warmed graph. The helper probes the immutable
       # candidate head in a detached tree, then restores its source and tests.
       - name: Set up Node for native mutation proof
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 24.19.0
+          node-version: 24.22.2
 
       - name: Verify native transport mutation sensitivity
         id: native-mutations
@@ -875,7 +875,7 @@ jobs:
 
       - name: Upload native transport mutation evidence
         if: ${{ always() }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: native-transport-mutations-${{ github.event.pull_request.head.sha }}
           path: .agents/artifacts/native-transport-mutations/
@@ -907,14 +907,14 @@ jobs:
 
       - name: Cache cargo build
         id: rust-cache
-        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
 
       # The same index-cache layer and offline gate `native-macos` records
       # above: its full-match restore fetched the index too and only passed
       # because the runner's network happened to hold (#5094).
       - name: Cache the cargo registry index
         id: cargo-index
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cargo/registry/index
           key: cargo-index-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-${{ hashFiles('Cargo.lock') }}
@@ -949,14 +949,14 @@ jobs:
 
       - name: Cache cargo build
         id: rust-cache
-        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
 
       # Same registry-index layer `native-macos` records above: the addon
       # build's cargo must not depend on runner connectivity to fetch index
       # entries a restored cache should already cover (#5094).
       - name: Cache the cargo registry index
         id: cargo-index
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cargo/registry/index
           key: cargo-index-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-${{ hashFiles('Cargo.lock') }}
@@ -974,7 +974,7 @@ jobs:
       - name: Set up Node
         timeout-minutes: 3
         continue-on-error: true
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
