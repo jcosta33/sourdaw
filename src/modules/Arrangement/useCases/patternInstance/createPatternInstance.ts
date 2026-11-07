@@ -44,7 +44,7 @@ export function createPatternInstance(
 
     const sourceTrack = state.tracks.find((track) => track.id === sourceTarget.trackId);
     const sourceClip = sourceTrack?.clips.find((clip) => clip.id === sourceTarget.clipId);
-    if (!sourceClip) {
+    if (!sourceClip || sourceClip.type !== 'midi') {
         return null;
     }
 

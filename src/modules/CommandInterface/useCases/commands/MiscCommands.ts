@@ -1,6 +1,9 @@
+import { logger } from '#/infra/logger/appLogger';
+import { trackStore } from '#/modules/Arrangement/stores';
 import { executeUserAppAction } from '#/modules/Command/useCases';
 import { openPreferencesDialog } from '#/modules/WorkspaceShell/useCases';
 
+import { createPatternInstanceFromSelection } from '../patternInstance/createPatternInstanceFromSelection';
 import { type CallableCommandEntry } from '../searchCommandRegistry';
 import { getSelectedClipId } from '../selectionHelpers/getSelectedClipId';
 
@@ -78,16 +81,32 @@ export const miscCommands: CallableCommandEntry[] = [
     {
         id: 'create-pattern-instance',
         label: 'Create Pattern Instance',
-        description: 'Create a linked copy of the selected clip (Figma-style)',
+        description: 'Create a linked copy of the selected MIDI clip',
         category: 'Clips',
-        action: { type: 'createPatternInstance', payload: { sourceClipId: '', targetTrackId: '', startBeat: 0 } },
+        action: () => {
+            void createPatternInstanceFromSelection().catch((error) => {
+                logger.error(error);
+            });
+        },
     },
     {
         id: 'detach-pattern-instance',
         label: 'Detach Pattern Instance',
         description: 'Break the link between this clip and its parent pattern',
         category: 'Clips',
-        action: { type: 'detachPatternInstance', payload: { clipId: '' } },
+        action: () => {
+            const clipId = getSelectedClipId();
+            if (!clipId) {
+                return;
+            }
+            const clip = trackStore.value?.tracks
+                .flatMap((track) => track.clips)
+                .find((candidate) => candidate.id === clipId);
+            if (clip?.type !== 'midi') {
+                return;
+            }
+            void executeUserAppAction({ type: 'detachPatternInstance', payload: { clipId } });
+        },
     },
 
     // ── Macros ─────────────────────────────────────────────────

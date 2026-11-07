@@ -3,7 +3,23 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { executeUserAppAction } from '#/modules/Command/useCases';
 import { openPreferencesDialog } from '#/modules/WorkspaceShell/useCases';
 
+import { createPatternInstanceFromSelection } from '../../patternInstance/createPatternInstanceFromSelection';
 import { miscCommands } from '../MiscCommands';
+
+const patternState = vi.hoisted(() => {
+    const clip: { id: string; type: 'midi' | 'audio' } = { id: 'clip-1', type: 'midi' };
+    return { clip };
+});
+vi.mock('#/modules/Arrangement/stores', () => ({
+    trackStore: {
+        get value() {
+            return { tracks: [{ clips: [patternState.clip] }] };
+        },
+    },
+}));
+vi.mock('../../patternInstance/createPatternInstanceFromSelection', () => ({
+    createPatternInstanceFromSelection: vi.fn().mockResolvedValue(false),
+}));
 
 vi.mock('#/modules/Command/useCases', () => ({ executeUserAppAction: vi.fn().mockResolvedValue(undefined) }));
 vi.mock('#/modules/WorkspaceShell/useCases', () => ({ openPreferencesDialog: vi.fn() }));
@@ -20,6 +36,7 @@ function runAction(id: string): void {
 describe('miscCommands', () => {
     beforeEach(async () => {
         vi.clearAllMocks();
+        patternState.clip.type = 'midi';
         const { getSelectedClipId } = await import('../../selectionHelpers/getSelectedClipId');
         vi.mocked(getSelectedClipId).mockReturnValue('clip-1');
     });
@@ -83,14 +100,6 @@ describe('miscCommands', () => {
             { id: 'capture-scratch-pad', action: { type: 'captureScratchPad' } },
             { id: 'commit-scratch-pad', action: { type: 'commitScratchPad' } },
             { id: 'clear-scratch-pad', action: { type: 'clearScratchPad' } },
-            {
-                id: 'create-pattern-instance',
-                action: {
-                    type: 'createPatternInstance',
-                    payload: { sourceClipId: '', targetTrackId: '', startBeat: 0 },
-                },
-            },
-            { id: 'detach-pattern-instance', action: { type: 'detachPatternInstance', payload: { clipId: '' } } },
             { id: 'start-macro-recording', action: { type: 'startMacroRecording' } },
             { id: 'stop-macro-recording', action: { type: 'stopMacroRecording', payload: { name: 'New Macro' } } },
             { id: 'toggle-undo-tree', action: { type: 'toggleUndoTree' } },
@@ -167,6 +176,22 @@ describe('miscCommands', () => {
         expect(openPreferencesDialog).toHaveBeenCalledTimes(1);
     });
 
+    it('creates from selection through the committed-copy helper and detaches the current MIDI clip', () => {
+        runAction('create-pattern-instance');
+        expect(createPatternInstanceFromSelection).toHaveBeenCalledOnce();
+        runAction('detach-pattern-instance');
+        expect(executeUserAppAction).toHaveBeenCalledWith({
+            type: 'detachPatternInstance',
+            payload: { clipId: 'clip-1' },
+        });
+    });
+
+    it('does not dispatch detach for a selected audio clip', () => {
+        patternState.clip.type = 'audio';
+        runAction('detach-pattern-instance');
+        expect(executeUserAppAction).not.toHaveBeenCalled();
+    });
+
     it('quantize-to-grid-elastic dispatches detectTransients for the selected clip', () => {
         runAction('quantize-to-grid-elastic');
 
@@ -185,6 +210,7 @@ describe('miscCommands', () => {
 
         runAction('quantize-to-grid-elastic');
         runAction('enable-warping');
+        runAction('detach-pattern-instance');
 
         expect(executeUserAppAction).not.toHaveBeenCalled();
     });

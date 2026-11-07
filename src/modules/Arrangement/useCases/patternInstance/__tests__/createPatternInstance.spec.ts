@@ -154,10 +154,7 @@ describe('createPatternInstance', () => {
         }
     );
 
-    it.each([
-        { sourceKind: 'audio' as const, destinationKind: 'midi', sourceType: 'audio' as const },
-        { sourceKind: 'midi' as const, destinationKind: 'audio', sourceType: 'midi' as const },
-    ])(
+    it.each([{ sourceKind: 'midi' as const, destinationKind: 'audio', sourceType: 'midi' as const }])(
         'preserves valid $sourceKind-to-$destinationKind behavior, identity, timing, inherited properties, and notes',
         ({ sourceKind, destinationKind, sourceType }) => {
             const sourceClip = makeClip({
@@ -224,6 +221,12 @@ describe('createPatternInstance', () => {
             expect(appendOrder).toBeLessThan(notePublicationOrder ?? Number.POSITIVE_INFINITY);
         }
     );
+
+    it('refuses an audio source before appending a clip or reading MIDI notes', () => {
+        setEligibleProject(makeClip({ type: 'audio' }), 'midi', 'audio');
+        expect(createPatternInstance('source-clip', 'destination-track', 16, 'audio-copy')).toBeNull();
+        expectNoCreationEffects(randomUuid);
+    });
 
     it('returns null without publishing notes when the Arrangement append gateway rejects the instance', () => {
         setEligibleProject();

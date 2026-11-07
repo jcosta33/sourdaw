@@ -473,4 +473,75 @@ describe('pattern instance project and replay authority', () => {
         expect(commandStores.undoHistoryStore.value?.past).toEqual([]);
         expect(crdtStores.actionHistoryStore.value?.entries).toEqual([]);
     });
+
+    it('refuses an audio source through the actual typed creator without any project or history effects', async () => {
+        await command.executeAppAction({
+            type: 'addClip',
+            payload: {
+                id: 'audio-source',
+                trackId: 'destination-track',
+                type: 'audio',
+                name: 'Audio source',
+                startBeat: 12,
+                endBeat: 16,
+                audioBufferId: 'audio-source-buffer',
+                audioOffsetSeconds: 1.75,
+            },
+        });
+        command.clearUndoHistory();
+        crdt.clearActionHistory();
+        const before = material();
+        await command.executeAppAction({
+            type: 'createPatternInstance',
+            payload: {
+                sourceClipId: 'audio-source',
+                targetTrackId: 'source-track',
+                startBeat: 24,
+                targetClipId: 'refused-audio-instance',
+            },
+        });
+        expect(material()).toEqual(before);
+        expect(commandStores.undoHistoryStore.value?.past).toEqual([]);
+        expect(crdtStores.actionHistoryStore.value?.entries).toEqual([]);
+    });
+
+    it('keeps MIDI pattern placement on an eligible audio track with exact notes and same-ID replay', async () => {
+        await command.executeAppAction({
+            type: 'addTrack',
+            payload: {
+                id: 'audio-destination',
+                name: 'Eligible audio track',
+                kind: 'audio',
+                withoutDefaultDevice: true,
+            },
+        });
+        command.clearUndoHistory();
+        crdt.clearActionHistory();
+        const before = material();
+        await command.executeAppAction({
+            type: 'createPatternInstance',
+            payload: {
+                sourceClipId: 'source',
+                targetTrackId: 'audio-destination',
+                startBeat: 21,
+                targetClipId: 'midi-on-audio',
+            },
+        });
+        expect(clip('midi-on-audio')).toMatchObject({
+            trackId: 'audio-destination',
+            type: 'midi',
+            startBeat: 21,
+            endBeat: 27,
+            midiOffsetBeats: 1.5,
+            parentClipId: 'source',
+        });
+        expect(notes('midi-on-audio')).toEqual(
+            notes('source').map((note) => ({ ...note, id: `note-inst-midi-on-audio-${note.id}` }))
+        );
+        const forward = material();
+        await command.undo();
+        expect(material()).toEqual(before);
+        await command.redo();
+        expect(material()).toEqual(forward);
+    });
 });
