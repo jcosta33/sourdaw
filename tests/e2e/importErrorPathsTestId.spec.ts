@@ -26,14 +26,13 @@ test.describe('Import error paths — corrupt MIDI rejected', () => {
         await page.keyboard.press(`${MOD}+K`);
         const palette = page.getByTestId('command-palette-input');
         await palette.fill('Add Audio Track');
-        await page.waitForTimeout(300);
-        await palette.press('Enter');
-        await page.waitForTimeout(800);
+        await page.getByRole('option', { name: /^Add Audio Track/ }).click();
+        await expect(trackList.getByRole('row').first()).toBeVisible();
         const tracksAfterAdd = await trackList.getByRole('row').count();
         expect(tracksAfterAdd).toBeGreaterThanOrEqual(1);
 
         // Feed garbage bytes as a .mid — not a valid MIDI file.
-        trackList.getByRole('row').first().click({ button: 'right' });
+        await trackList.getByRole('row').first().click({ button: 'right' });
         await page.getByRole('menu').waitFor({ state: 'visible' });
         const chooser = page.waitForEvent('filechooser');
         await page.getByRole('menuitem', { name: /Import MIDI/i }).click();
@@ -52,8 +51,6 @@ test.describe('Import error paths — corrupt MIDI rejected', () => {
         await expect(toast).toContainText(/invalid or corrupt MIDI file/i);
 
         // No track was added by the failed import — the count is unchanged.
-        await page.waitForTimeout(500);
-        const tracksAfterImport = await trackList.getByRole('row').count();
-        expect(tracksAfterImport).toBe(tracksAfterAdd);
+        await expect(trackList.getByRole('row')).toHaveCount(tracksAfterAdd);
     });
 });

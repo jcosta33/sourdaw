@@ -5,10 +5,9 @@ async function openFermenter(page: import('@playwright/test').Page): Promise<voi
     const search = page.getByTestId('browser-search');
     if (!(await search.isVisible().catch(() => false))) {
         await page.getByTestId('toggle-browser').click();
-        await page.waitForTimeout(500);
     }
+    await expect(search).toBeVisible();
     await search.fill('fermenter');
-    await page.waitForTimeout(500);
     // The Fermenter card must be reachable; if it is not, the panel-open
     // contract is broken and the test must fail rather than silently skip.
     const card = page.getByRole('button', { name: /^Fermenter/i }).first();
@@ -25,20 +24,20 @@ test.describe('Fermenter panel deep — knobs, macros', () => {
         await launch_new_project(page);
     });
 
-    test('Fermenter knob responds to keyboard — aria-valuenow changes on ArrowUp', async ({ page }) => {
+    test('Fermenter Brightness macro responds to keyboard at both bounds', async ({ page }) => {
         await openFermenter(page);
 
-        const firstSlider = page.getByRole('slider').first();
-        await expect(firstSlider).toBeVisible({ timeout: 5000 });
-        await firstSlider.focus();
-        const before = Number(await firstSlider.getAttribute('aria-valuenow'));
+        const brightness = page
+            .getByTestId('instrument-bottom-panel-body')
+            .getByRole('slider', { name: 'Brightness', exact: true });
+        await expect(brightness).toBeVisible();
+        await brightness.focus();
+        await page.keyboard.press('End');
+        await expect(brightness).toHaveAttribute('aria-valuenow', '1');
+        await page.keyboard.press('Home');
+        await expect(brightness).toHaveAttribute('aria-valuenow', '0');
         await page.keyboard.press('ArrowUp');
-        await page.waitForTimeout(200);
-        const after = Number(await firstSlider.getAttribute('aria-valuenow'));
-        // The knob reports a new value unless it was already at its maximum.
-        if (before < 1) {
-            expect(after).toBeGreaterThan(before);
-        }
+        await expect(brightness).toHaveAttribute('aria-valuenow', '0.01');
     });
 
     test('Fermenter panel close button hides the panel', async ({ page }) => {
