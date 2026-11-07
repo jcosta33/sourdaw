@@ -1,0 +1,21 @@
+scripts/buildNativeAddon.ts
+  s_939911bea2ef3b::t_13e444b6e9b5cf 69-70,73
+scripts/__tests__/buildNativeAddon.spec.ts
+  s_939911bea2ef3b::t_13e444b6e9b5cf 150-151,256-258
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "51f985bcf4e3ab1ffd226f76b49b67d196057dbf",
+  "prompts": {},
+  "sessions": {
+    "s_939911bea2ef3b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34a-952d-7121-902e-cafc5e44b0f7",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
