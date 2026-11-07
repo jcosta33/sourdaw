@@ -1,7 +1,7 @@
 import { type Page } from '@playwright/test';
 
 import { expect, test } from './e2eTest';
-import { launch_new_project_via_ui, setupWorkspace } from './e2eUtils';
+import { launch_new_project, setupWorkspace } from './e2eUtils';
 
 type VoiceTerminalPayload = { session_id: string; text: string; duration_ms: number };
 type VoiceBoundaryProbe = {
@@ -29,10 +29,18 @@ async function readTruth(page: Page) {
         const { agentRunStore, pendingActionConfirmationStore } =
             await import('/src/modules/AiRuntime/stores/index.ts');
         const revision = settlePendingProjectWritesAndCaptureRevision();
+        const root = getCrdtDoc<{
+            tracks: { tracks: Array<{ id: string; name: string; kind: string }> };
+        }>('root');
+        if (!root?.tracks) throw new Error('The voice workflow requires real project track authority');
+        const tracks = trackStore.value?.tracks ?? [];
         return {
             revision,
-            document: JSON.stringify(getCrdtDoc('root')),
-            tracks: (trackStore.value?.tracks ?? []).map((track) => ({ id: track.id, name: track.name })),
+            document: JSON.stringify(root),
+            tracks: tracks.map((track) => ({ id: track.id, name: track.name, kind: track.kind })),
+            rawTracks: root.tracks.tracks.map((track) => ({ id: track.id, name: track.name, kind: track.kind })),
+            master: JSON.stringify(tracks.filter((track) => track.kind === 'master')),
+            rawMaster: JSON.stringify(root.tracks.tracks.filter((track) => track.kind === 'master')),
             undo: JSON.stringify(undoHistoryStore.value),
             history: JSON.stringify(actionHistoryStore.value),
             runs: JSON.stringify(agentRunStore.value),
@@ -150,14 +158,16 @@ test('native transcript stays a draft until explicit submission and confirmation
     });
 
     await setupWorkspace(page);
-    await launch_new_project_via_ui(page);
+    await launch_new_project(page);
     const input = page.getByRole('textbox', { name: 'Prompt command input', exact: true });
     const mic = page.getByTestId('voice-command-button');
     await expect(input).toHaveValue('');
     await expect(mic).toBeVisible();
     await expect(mic).toHaveAttribute('aria-pressed', 'false');
     const baseline = await readTruth(page);
-    expect(baseline.tracks).toEqual([]);
+    expect(baseline.tracks).toEqual([{ id: expect.any(String), name: 'Master', kind: 'master' }]);
+    expect(baseline.rawTracks).toEqual(baseline.tracks);
+    expect(baseline.rawMaster).toBe(baseline.master);
 
     // Playwright produces a trusted native event; no forged gesture or direct
     // draft injection can bypass the application's voice-control admission.
@@ -211,7 +221,14 @@ test('native transcript stays a draft until explicit submission and confirmation
         .getByRole('button', { name: /^Arm / });
     await expect(armButtons).toHaveCount(3, { timeout: 20_000 });
     const committed = await readTruth(page);
-    expect(committed.tracks).toHaveLength(3);
+    const createdAudioTracks = committed.tracks.filter((track) => track.kind === 'audio');
+    expect(createdAudioTracks).toHaveLength(3);
+    expect(new Set(createdAudioTracks.map((track) => track.id)).size).toBe(3);
+    expect(createdAudioTracks.every((track) => !baseline.tracks.some((prior) => prior.id === track.id))).toBe(true);
+    expect(committed.tracks).toHaveLength(baseline.tracks.length + 3);
+    expect(committed.rawTracks).toEqual(committed.tracks);
+    expect(committed.master).toBe(baseline.master);
+    expect(committed.rawMaster).toBe(baseline.rawMaster);
     expect(committed.document).not.toBe(baseline.document);
     expect(committed.history).not.toBe(baseline.history);
     const undoEntries = await page.evaluate(async () => {
@@ -223,7 +240,11 @@ test('native transcript stays a draft until explicit submission and confirmation
     expect(undoEntries[0]?.groupId).toBeTruthy();
     await page.getByTestId('transport-undo').click();
     await expect(armButtons).toHaveCount(0);
-    expect((await readTruth(page)).tracks).toEqual(baseline.tracks);
+    const undone = await readTruth(page);
+    expect(undone.tracks).toEqual(baseline.tracks);
+    expect(undone.rawTracks).toEqual(baseline.rawTracks);
+    expect(undone.master).toBe(baseline.master);
+    expect(undone.rawMaster).toBe(baseline.rawMaster);
     expect(externalRequests).toEqual([]);
     const native = await page.evaluate(() => ({
         starts: window.__SOURDAW_VOICE_BOUNDARY__?.starts,
@@ -232,7 +253,7 @@ test('native transcript stays a draft until explicit submission and confirmation
     }));
     expect(native).toEqual({ starts: [sessionId], stops: [sessionId], unexpected: [] });
     await testInfo.attach('voice-draft-boundary', {
-        body: JSON.stringify({ baseline, proposed, committed, undoEntries, native, externalRequests }, null, 2),
+        body: JSON.stringify({ baseline, proposed, committed, undone, undoEntries, native, externalRequests }, null, 2),
         contentType: 'application/json',
     });
 });
