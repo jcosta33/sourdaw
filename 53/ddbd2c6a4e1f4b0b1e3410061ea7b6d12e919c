@@ -1,0 +1,23 @@
+src/modules/AiRuntime/useCases/__tests__/answerOutcome.spec.ts
+  s_68423a2adea8d2::t_2c438801888096 153-155,262-264,324-326,408-410,435-437,479-481
+src/modules/AiRuntime/useCases/__tests__/measuredAnswers.spec.ts
+  s_68423a2adea8d2::t_2c438801888096 339-343
+src/modules/AiRuntime/useCases/composeMeasuredAnswer.ts
+  s_68423a2adea8d2::t_0930208786c8ce 3,479-481,483-485,488-490,493-495,498-500,503-505,507-509,533,535,537-539
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "53ddbd2c6a4e1f4b0b1e3410061ea7b6d12e919c",
+  "prompts": {},
+  "sessions": {
+    "s_68423a2adea8d2": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34b-f305-7c03-beb2-57afa678cda5",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
