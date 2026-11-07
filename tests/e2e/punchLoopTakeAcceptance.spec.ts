@@ -1623,18 +1623,52 @@ test('keeps a live take when Pause is immediately followed by New Project', asyn
 
 async function automaticPunchProjectOwner(page: Page) {
     return page.evaluate(async () => {
-        const [{ projectStore }, { captureDurableDocumentWitness }] = await Promise.all([
+        const [{ projectStore }, { captureDurableDocumentWitness }, { isRecord }] = await Promise.all([
             import('/src/modules/Project/stores/projectStore.ts'),
             import('/src/modules/CrdtDocument/useCases/index.ts'),
+            import('/src/utils/structuralEquality.ts'),
         ]);
-        const mirror = JSON.parse(sessionStorage.getItem('sourdaw-undo-session') ?? '{}');
+        const stored: unknown = JSON.parse(sessionStorage.getItem('sourdaw-undo-session') ?? '{}');
+        if (!isRecord(stored)) {
+            throw new Error('Automatic punch mirror must be a stored object');
+        }
+        const metadata = (entry: unknown) => {
+            if (!isRecord(entry) || !isRecord(entry.action)) {
+                throw new Error('Automatic punch mirror contains a malformed action entry');
+            }
+            const action = entry.action;
+            const inverse = isRecord(entry.inverseAction) ? entry.inverseAction : null;
+            const redo = isRecord(entry.redoAction) ? entry.redoAction : null;
+            const clip = isRecord(action.payload) && isRecord(action.payload.clip) ? action.payload.clip : null;
+            const inversePayload = inverse && isRecord(inverse.payload) ? inverse.payload : null;
+            const redoClip = redo && isRecord(redo.payload) && isRecord(redo.payload.clip) ? redo.payload.clip : null;
+            return {
+                snapshot: entry,
+                family: {
+                    type: action.type,
+                    clipId: clip?.id ?? null,
+                    inverseType: inverse?.type ?? null,
+                    inverseClipId: inversePayload?.clipId ?? null,
+                    redoType: redo?.type ?? null,
+                    redoClipId: redoClip?.id ?? null,
+                    groupId: entry.groupId ?? null,
+                    actionVersion: entry.actionOperationVersion ?? null,
+                    inverseVersion: entry.inverseActionOperationVersion ?? null,
+                    redoVersion: entry.redoActionOperationVersion ?? null,
+                },
+            };
+        };
+        const past = Array.isArray(stored.past) ? stored.past.map(metadata) : [];
+        const future = Array.isArray(stored.future) ? stored.future.map(metadata) : [];
         return {
             projectId: projectStore.value?.projectId,
             witness: captureDurableDocumentWitness(),
-            mirrorProjectId: mirror.projectId,
-            mirrorWitness: mirror.witness,
-            pastLength: mirror.past?.length,
-            futureLength: mirror.future?.length,
+            mirrorProjectId: stored.projectId,
+            mirrorWitness: stored.witness,
+            pastLength: past.length,
+            futureLength: future.length,
+            past,
+            future,
         };
     });
 }
@@ -1793,6 +1827,9 @@ test('finishes an edited automatic mixed punch at its original sounded out and r
         await page.getByTestId('toggle-virtual-keyboard').click();
         await expect(page.getByRole('region', { name: 'Virtual Piano Keyboard' })).toBeVisible();
         await bindPunchRecordingClockWitness(page, audioTrackId);
+        const setupMirror = await automaticPunchProjectOwner(page);
+        expect(setupMirror.past.every((entry) => entry.family.type !== 'commitRecording')).toBe(true);
+        expect(setupMirror.future).toEqual([]);
         await page.getByTestId('transport-record').click();
         await expect
             .poll(
@@ -1900,6 +1937,42 @@ test('finishes an edited automatic mixed punch at its original sounded out and r
             ),
             contentType: 'application/json',
         });
+        const expectedRecordingFamily = [audio.clipId, midiClip.id].sort().map((clipId) => ({
+            type: 'commitRecording',
+            clipId,
+            inverseType: 'discardRecording',
+            inverseClipId: clipId,
+            redoType: 'restoreRecording',
+            redoClipId: clipId,
+            groupId: midi.recordingHistory[0]!.groupId,
+            actionVersion: 1,
+            inverseVersion: 1,
+            redoVersion: 1,
+        }));
+        const expectMirroredGesture = async (target: Page, undone = false) => {
+            await expect
+                .poll(async () => {
+                    const owner = await automaticPunchProjectOwner(target);
+                    const family = (entries: typeof owner.past) =>
+                        entries
+                            .map((entry) => entry.family)
+                            .sort((left, right) => String(left.clipId).localeCompare(String(right.clipId)));
+                    const recordings = owner.past.filter((entry) => entry.family.type === 'commitRecording');
+                    return {
+                        owned: owner.projectId === owner.mirrorProjectId && owner.witness === owner.mirrorWitness,
+                        baseline: owner.past.filter((entry) => entry.family.type !== 'commitRecording'),
+                        recordings: family(recordings),
+                        future: family(owner.future),
+                    };
+                })
+                .toEqual({
+                    owned: true,
+                    baseline: setupMirror.past,
+                    recordings: undone ? [] : expectedRecordingFamily,
+                    future: undone ? expectedRecordingFamily : [],
+                });
+        };
+        await expectMirroredGesture(page);
         const expectOneGestureReplay = async (target: Page) => {
             await target.getByTestId('transport-undo').click();
             await expect.poll(async () => (await recordingOwners(target, audioTrackId)).raw.clips.length).toBe(0);
@@ -1909,6 +1982,7 @@ test('finishes an edited automatic mixed punch at its original sounded out and r
             expect(empty.rows).toEqual({ notes: [], cc: [], bend: [] });
             expect((await recordingOwners(target, audioTrackId)).raw.lanes).toEqual([]);
             expect((await recordingOwners(target, midiTrackId)).raw.lanes).toEqual([]);
+            await expectMirroredGesture(target, true);
             await target.getByTestId('transport-redo').click();
             await expect
                 .poll(async () => (await recordingSnapshot(target, audioTrackId))?.bufferId)
@@ -1917,6 +1991,7 @@ test('finishes an edited automatic mixed punch at its original sounded out and r
             expect(await recordingOwners(target, midiTrackId)).toEqual(midiOwners);
             expect((await automaticPunchMidiState(target, midiTrackId)).rows).toEqual(midi.rows);
             expect(await pcmFingerprint(target, audio.bufferId)).toEqual(pcm);
+            await expectMirroredGesture(target);
         };
         await expectOneGestureReplay(page);
         const projectId = await readyProjectId(page);
@@ -1925,20 +2000,11 @@ test('finishes an edited automatic mixed punch at its original sounded out and r
         }
         await page.keyboard.press(`${MODIFIER}+s`);
         await expect(page.getByTitle('Unsaved changes')).toHaveCount(0, { timeout: 30_000 });
-        await expect
-            .poll(async () => {
-                const owner = await automaticPunchProjectOwner(page);
-                return (
-                    owner.projectId === owner.mirrorProjectId &&
-                    owner.witness === owner.mirrorWitness &&
-                    owner.pastLength === 2 &&
-                    owner.futureLength === 0
-                );
-            })
-            .toBe(true);
+        await expectMirroredGesture(page);
         await reloadAutomaticPunchSession(page, projectId, projectName);
         expect(await recordingOwners(page, audioTrackId)).toEqual(owners);
         expect(await recordingOwners(page, midiTrackId)).toEqual(midiOwners);
+        await expectMirroredGesture(page);
         await expectOneGestureReplay(page);
         await page.close();
         page = await context.newPage();
