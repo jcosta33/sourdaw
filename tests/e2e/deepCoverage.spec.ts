@@ -299,7 +299,7 @@ test.describe('Arrangement take lane — flatten comp state', () => {
         await add_track(page, 'Audio');
         // Variation lanes toggle reveals the take-lane panel.
         const track_list = page.getByRole('grid', { name: /Track list/i });
-        await track_list.getByRole('button', { name: 'Toggle variation lanes' }).first().click();
+        await track_list.getByRole('button', { name: 'Variation lanes for Audio 1' }).first().click();
     });
 
     test('Flatten comp is disabled until a take lane is initialized, then enabled', async ({ page }) => {

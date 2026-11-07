@@ -423,7 +423,7 @@ async function addTempoEvent(page: Page, beat: number, bpm: number, before: Snap
 }
 
 async function createComp(page: Page, snapshot: Snapshot): Promise<Snapshot> {
-    await trackRow(page).getByRole('button', { name: 'Toggle variation lanes' }).click();
+    await trackRow(page).getByRole('button', { name: 'Variation lanes for Audio 1' }).click();
     await page.getByRole('button', { name: 'Add take', exact: true }).click();
     const promote = page.getByRole('button', { name: 'Promote Take 1 to main take', exact: true });
     await expect(promote).toBeVisible();

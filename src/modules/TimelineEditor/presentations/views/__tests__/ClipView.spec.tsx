@@ -60,19 +60,35 @@ vi.mock('#/modules/WorkspaceShell/useCases', () => ({
     setWorkspaceMode: vi.fn(),
 }));
 
-vi.mock('#/modules/Arrangement/useCases', () => ({
+vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Arrangement/useCases')>()),
     selectClip: vi.fn(),
 }));
 
-vi.mock('#/modules/Arrangement/stores', () => ({
+vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Arrangement/stores')>()),
     clipSelectionStore: clipSelectionMocks.store,
     defaultClipSelectionState: { selectedClipId: null, selectedClipIds: [], marqueeSelection: null },
+}));
+
+const meterMocks = vi.hoisted(() => ({
+    transport: { value: { timeSignatureNumerator: 4, timeSignatureDenominator: 4 } },
+    changes: { value: { changes: [] as { beat: number; numerator: number; denominator: number }[] } },
+}));
+
+vi.mock('#/modules/Transport/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Transport/stores')>()),
+    transportStore: meterMocks.transport,
+    timeSignatureMapStore: meterMocks.changes,
 }));
 
 vi.mock('#/infra/store/useStore', () => ({
     useStore: vi.fn((store: { value: unknown }, fallback?: unknown) => {
         if (store === clipSelectionMocks.store) {
             return clipSelectionMocks.store.value;
+        }
+        if (store === meterMocks.transport || store === meterMocks.changes) {
+            return store.value;
         }
         return fallback ?? store.value;
     }),
@@ -239,6 +255,46 @@ describe('ClipView', () => {
         const noteCount = screen.getByTestId('selected-clip-note-count');
         expect(noteCount).toHaveTextContent('0 notes');
         expect(noteCount).toHaveAttribute('aria-label', '0 notes in Midi Clip');
+    });
+
+    describe('selected clip start readout', () => {
+        const showClipAt = (startBeat: number): void => {
+            const clip = { ...makeClip({ id: 'clip-midi', name: 'Midi Clip', type: 'midi' }), startBeat };
+            vi.mocked(useTracks).mockReturnValue({
+                tracks: [makeTrack({ id: 'track-1', kind: 'midi', clips: [clip] })],
+                selectedTrackId: 'track-1',
+            });
+        };
+
+        beforeEach(() => {
+            meterMocks.transport.value = { timeSignatureNumerator: 4, timeSignatureDenominator: 4 };
+            meterMocks.changes.value = { changes: [] };
+        });
+
+        it('reads a clip at beat 0 as bar 1.1.1', () => {
+            showClipAt(0);
+            renderWithTooltip(<ClipView />);
+            const readout = screen.getByTestId('selected-clip-start-beat');
+            expect(readout).toHaveTextContent('@ 1.1.1');
+            expect(readout).toHaveAttribute('aria-label', 'Selected clip starts at bar 1.1.1');
+        });
+
+        it('counts bars through a 3/4 meter rather than assuming 4/4', () => {
+            meterMocks.transport.value = { timeSignatureNumerator: 3, timeSignatureDenominator: 4 };
+            showClipAt(9);
+            renderWithTooltip(<ClipView />);
+            const readout = screen.getByTestId('selected-clip-start-beat');
+            expect(readout).toHaveTextContent('@ 4.1.1');
+            expect(readout).toHaveAttribute('aria-label', 'Selected clip starts at bar 4.1.1');
+        });
+
+        it('counts bars through a meter change on the map', () => {
+            meterMocks.changes.value = { changes: [{ beat: 8, numerator: 3, denominator: 4 }] };
+            showClipAt(14);
+            renderWithTooltip(<ClipView />);
+            // Two 4/4 bars, then 3/4 bars from beat 8 open on beats 8, 11 and 14.
+            expect(screen.getByTestId('selected-clip-start-beat')).toHaveTextContent('@ 5.1.1');
+        });
     });
 
     it('should render the waveform editor by default for an audio track with a clip', () => {

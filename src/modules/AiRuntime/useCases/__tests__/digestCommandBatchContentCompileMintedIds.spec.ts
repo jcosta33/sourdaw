@@ -390,6 +390,82 @@ describe('digestCommandBatchContent over ids a command draws while it compiles',
         });
     });
 
+    describe('quantizeTransients', () => {
+        const SAMPLE_RATE = 48_000;
+
+        beforeEach(() => {
+            // Four decaying hits in four seconds of source, each off the beat grid.
+            const channelData = new Float32Array(4 * SAMPLE_RATE);
+            for (const attackSeconds of [0.6, 1.45, 2.4, 3.15]) {
+                const start = Math.round(attackSeconds * SAMPLE_RATE);
+                for (let index = 0; index < 400; index++) {
+                    channelData[start + index] = Math.cos(index * 1.723) * Math.exp(-index / 60);
+                }
+            }
+            mocks.getCachedAudioBuffer.mockReturnValue({
+                duration: channelData.length / SAMPLE_RATE,
+                getChannelData: () => channelData,
+                length: channelData.length,
+                numberOfChannels: 1,
+                sampleRate: SAMPLE_RATE,
+            });
+            transportStore.set({ ...defaultTransportState, tempo: 120 });
+            const clip = createClip({ id: 'clip-loop', trackId: 'track-1', endBeat: 8, audioOffsetSeconds: 0 });
+            trackStore.set({
+                tracks: [createTrack({ id: 'track-1', clips: [clip] })],
+                selectedTrackId: 'track-1',
+                ghostClips: [],
+            });
+            automationStore.set({
+                lanes: [
+                    {
+                        id: 'lane-gain',
+                        trackId: 'track-1',
+                        clipId: 'clip-loop',
+                        parameterId: 'gain',
+                        parameterName: 'Gain',
+                        points: [{ id: 'point-late', beat: 6.5, value: 0.8, curve: 'linear', tension: 0 }],
+                        objects: [],
+                        visible: true,
+                        enabled: true,
+                        collapsed: false,
+                        minValue: 0,
+                        maxValue: 1,
+                    },
+                ],
+            });
+        });
+
+        // Red when a slice's clip id or a migrated lane's id leaves the assigned-id record (the hash
+        // would then carry it verbatim), or when the head slice's id, the clip the command targets,
+        // joins it.
+        it('hashes two compilations alike though each draws its own slice and lane ids', () => {
+            const compilations = compileTwice(() => [
+                { type: 'quantizeTransients', payload: { clipId: 'clip-loop', gridSize: 1 } },
+            ]);
+
+            expectStableHashOverFreshIds(compilations, [
+                '0.quantizeTransients.plan.replacement.clips[1].id',
+                '0.quantizeTransients.plan.replacement.clips[2].id',
+                '0.quantizeTransients.plan.replacement.clips[3].id',
+                '0.quantizeTransients.plan.replacement.clips[4].id',
+                '0.quantizeTransients.plan.replacement.clipAutomationLanes[0].id',
+            ]);
+            expect(Object.keys(compilations.first.assignedIds)).not.toContain(
+                '0.quantizeTransients.plan.replacement.clips[0].id'
+            );
+            expect(Object.values(compilations.first.assignedIds)).not.toContain('clip-loop');
+        });
+
+        it('tells apart quantizes to different grids', () => {
+            const quantizeTo = (gridSize: number): AppAction[] => [
+                { type: 'quantizeTransients', payload: { clipId: 'clip-loop', gridSize } },
+            ];
+
+            expect(compileOnce(quantizeTo(1)).digest).not.toBe(compileOnce(quantizeTo(2)).digest);
+        });
+    });
+
     // Red when the arpeggio's added note ids leave the record, or the section render jobs' ids leave
     // the digest: the state guards draw them while a proposal is admitted, and the batch hashes them
     // verbatim.

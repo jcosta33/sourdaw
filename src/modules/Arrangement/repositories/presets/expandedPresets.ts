@@ -785,7 +785,7 @@ export const EXPANDED_FX_PRESETS: SoundPreset[] = [
     // ── Creative FX Presets ──────────────────────────────────────────────
     {
         id: 'fx-creative-space-echo',
-        name: 'Space Echo',
+        name: 'Echo Wash',
         category: 'fx',
         subcategory: 'creative',
         description: 'Modulated delay with reverb tail creating expansive space textures.',
@@ -866,7 +866,7 @@ export const EXPANDED_SYNTH_PRESETS: SoundPreset[] = [
     },
     {
         id: 'synth-pad-ethereal',
-        name: 'Ethereal Pad',
+        name: 'Ethereal Shimmer Pad',
         category: 'pad',
         subcategory: 'atmospheric',
         description: 'Shimmering, high-frequency pad with long release for ambient soundscapes.',
@@ -1006,7 +1006,7 @@ export const EXPANDED_SYNTH_PRESETS: SoundPreset[] = [
     // ── Bass ────────────────────────────────────────────────────────────
     {
         id: 'synth-bass-reese',
-        name: 'Reese Bass',
+        name: 'Phased Reese',
         category: 'bass',
         subcategory: 'electronic',
         description: 'Detuned saw bass with phaser movement — classic D&B and dubstep foundation.',
@@ -1056,7 +1056,7 @@ export const EXPANDED_SYNTH_PRESETS: SoundPreset[] = [
     },
     {
         id: 'synth-bass-acid',
-        name: 'Acid Bass',
+        name: 'Acid Sweep Bass',
         category: 'bass',
         subcategory: 'electronic',
         description: 'Classic 303-style acid bass with resonant filter sweep and short decay.',

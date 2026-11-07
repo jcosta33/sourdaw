@@ -638,6 +638,12 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // evaluator's AU-1 delegation note (#747). The transformer computes
         // curve values only, holds no device writes.
         // 'src/modules/Arrangement/transformers/automationTransformers.ts': removed (0),
+        // Count provenance: new file entry, measured 2 — the declaration and the
+        // one call of `compileSlices`, the pure planner that turns detected
+        // onsets into slice positions for a transient quantize. It returns plain
+        // data; the plan is applied through `restoreStripSilenceState` as a clip
+        // replacement and touches no device, parameter or engine state.
+        'src/modules/Arrangement/useCases/prepareTransientQuantize.ts': 2,
         // Count provenance: 0 in code, was 1 lexical — a doc-comment
         // cross-reference to `compileAutomationEvents` in the live evaluator's
         // AU-1 delegation note (#747) — not a sink.
@@ -914,13 +920,20 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // step; the hook no longer names a compiler.
         // 'src/modules/Arrangement/presentations/hooks/useTimelineFileDrop.ts': removed (0),
         // Count provenance: measured 4 after the creation-route conversion
-        // (#4618) — the drop path compiles its batches through
-        // `compileNewAudioTrackAction` (the family-patterned `compile[A-Z]…`
-        // identifier), whose declaration, the barrel path in its import line,
-        // the type-level `CreationBatchAction` reference, and the single call
-        // site each count one. The hook still writes no store directly: every
-        // mutation lands through `executeAppActionBatch`.
+        // (#4618), and still 4 after the sample branch moved into
+        // `placeLibrarySample`: the hook now names `compileNewAudioTrackAction`
+        // (the family-patterned `compile[A-Z]…` identifier) as an import
+        // identifier, the module path in that import line, and two calls (the
+        // AI-render and file-import branches). The declaration it used to hold
+        // moved to its own file, censused below. The hook writes no store
+        // directly: every mutation lands through `executeAppActionBatch`.
         'src/modules/Arrangement/presentations/hooks/useTimelineFileDrop.ts': 4,
+        // Count provenance: new file entry, measured 1 — the declaration of
+        // `compileNewAudioTrackAction`, moved out of useTimelineFileDrop.ts
+        // unchanged so the drop hook and `placeLibrarySample` share it. It
+        // returns an `addTrack` action for executeAppActionBatch to commit; it
+        // reads and writes no store or device.
+        'src/modules/Arrangement/useCases/compileNewAudioTrackAction.ts': 1,
         'src/modules/Arrangement/useCases/compileTrackStripInitializationSnapshot.ts': 1,
         'src/modules/Arrangement/useCases/device/compileAddDeviceAction.ts': 1,
         'src/modules/Arrangement/useCases/device/compileReorderDevicesAction.ts': 1,
@@ -930,12 +943,15 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // one compile call in the dispatch door. The compiled action commits
         // through `executeAppAction`; the file holds no store or engine write.
         'src/modules/Arrangement/useCases/device/executeAddDeviceAction.ts': 3,
-        // Count provenance: was 4, measured 8 — the compileReorderDevicesAction and
+        // Count provenance: was 8, measured 10 — the `compileNewAudioTrackAction`
+        // re-export adds an identifier and a module path, so the shared
+        // add-track builder reaches ContentBrowser's `placeLibrarySample`
+        // through the barrel. Earlier: was 4, measured 8 — the compileReorderDevicesAction and
         // compileLoadPresetActions re-exports remain (identifier + module path
         // each), and the compileSendLevelAction and compileSendPreFaderAction
         // re-exports add an identifier and a module path apiece. The send
         // builders return a send action; the barrel writes nothing.
-        'src/modules/Arrangement/useCases/index.ts': 8,
+        'src/modules/Arrangement/useCases/index.ts': 10,
         // Count provenance: new file entry, measured 1 — the declaration of
         // `compileSendLevelAction`. It returns a setSend/addSend action for
         // executeAppAction to commit; it reads and writes no store or device.
@@ -998,6 +1014,14 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // import and call moved into the dispatch door (#2980); the
         // compileLoadPresetActions import + call remain.
         'src/modules/ContentBrowser/presentations/views/Sidebar/EffectsTab.tsx': 2,
+        // Count provenance: new file entry, measured 2 — the
+        // `compileNewAudioTrackAction` named import and its single call, which
+        // lands the new audio track in the same batch as the sample's clip. The
+        // call moved here from useTimelineFileDrop.ts's sample branch (the
+        // sidebar add used to build the same `addTrack` action inline). The
+        // compiled action commits through `executeAppActionBatch`; the file
+        // writes no store or device.
+        'src/modules/ContentBrowser/useCases/placeLibrarySample.ts': 2,
         'src/modules/ContentBrowser/presentations/views/Sidebar/InstrumentsTab.tsx': 4,
         // Count provenance: 0 in code, was 2 — addDeviceThroughAction now
         // delegates to `executeAddDeviceAction`; no compiler named.

@@ -126,6 +126,9 @@ vi.mock('#/modules/Command/useCases', () => ({
     pushUndoEntry: vi.fn(),
     syncActionReplayMetadata: vi.fn(),
     resetActionReplayAuthority: vi.fn(),
+    readUndoEntryForInverse: vi.fn(),
+    commitRedoInverseCapture: vi.fn(),
+    isAppActionCommittedError: vi.fn(() => false),
     REDO_NOT_APPLIED: Symbol('REDO_NOT_APPLIED'),
 }));
 
@@ -207,10 +210,8 @@ describe('useTimelineFileDrop', () => {
     });
 
     // The drag payload carries both, and the command receives the stable id.
-    // `De-esser`, `LUFS Meter` and `Stereo Widener` each name two catalog
-    // plugins — a builtin and a Faust one — so a name lookup returns whichever
-    // the registry lists first, not the card the user actually dragged.
-    it('adds the dropped plugin by id, so a name two plugins share cannot pick the other one', async () => {
+    // Catalog names are unique, but the id is the key a device is stored under.
+    it('adds the dropped plugin by id', async () => {
         const { result } = renderHook(() => useTimelineFileDrop({ getCanvasCoords, getBeatFromX }));
 
         const mockEvent = {
@@ -218,7 +219,7 @@ describe('useTimelineFileDrop', () => {
             dataTransfer: {
                 getData: (type: string) => {
                     if (type === 'application/x-sourdaw-plugin') {
-                        return JSON.stringify({ name: 'De-esser', id: 'faust-de-esser' });
+                        return JSON.stringify({ name: 'Wideband De-esser', id: 'faust-de-esser' });
                     }
                     return '';
                 },

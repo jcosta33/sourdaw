@@ -3,12 +3,8 @@ import { type DragEvent, useState } from 'react';
 import { decodeAudioFile, discardDecodedAudioFile, getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
 import { getAssetTransfer } from '#/modules/Collaboration/useCases';
 import { executeAppActionBatch } from '#/modules/Command/useCases';
+import { LIBRARY_SAMPLE_MALFORMED_MESSAGE, placeLibrarySample } from '#/modules/ContentBrowser/useCases';
 import { captureProjectTransitionAuthority } from '#/modules/Project/useCases';
-import {
-    ensureFactorySampleBuffer,
-    rememberLibraryAssetMapping,
-    resolveDroppedSampleFile,
-} from '#/modules/SampleLibrary/useCases';
 import { isAudioFile } from '#/utils/audioFileExtensions';
 import { AI_RENDER_DRAG_MIME_TYPE, PLUGIN_DRAG_MIME_TYPE, SAMPLE_DRAG_MIME_TYPE } from '#/utils/dragMimeTypes';
 import { notifyUser } from '#/utils/Notification/notifyUser';
@@ -18,6 +14,8 @@ import { trackStore } from '../../stores/trackStore';
 import { buildTimelineRenderModel } from '../../useCases/buildTimelineRenderModel';
 import { type ClipAudioAssetStaging } from '../../useCases/clip/clipAudioAssetStagingState';
 import { stageClipAudioAsset } from '../../useCases/clip/stageClipAudioAsset';
+import { compileNewAudioTrackAction } from '../../useCases/compileNewAudioTrackAction';
+import { type CreationBatchAction, type CreationBatchResult, retainedCreation } from '../../useCases/creationBatch';
 import { executeAddDeviceAction } from '../../useCases/device/executeAddDeviceAction';
 import { importMidiFile } from '../../useCases/importMidiFile';
 import { hitTestTrack } from '../../useCases/timelineInteractions/hitTestClip/hitTestTrack';
@@ -37,49 +35,15 @@ type UseTimelineFileDropResult = {
     isImporting: boolean;
 };
 
+type LibrarySamplePayload = Parameters<typeof placeLibrarySample>[0]['sample'];
 type AiRenderPayload = { name: string; bufferId: string; durationSeconds: number };
-type SamplePayload = {
-    name: string;
-    id: string;
-    path?: string;
-    libraryRootId?: string;
-    audioBufferId?: string;
-    durationSeconds?: number;
-};
 type PluginPayload = { name: string; id: string };
 type AudioTargetIntent = { kind: 'existing'; trackId: string } | { kind: 'create' };
-
-type CreationBatchAction = Parameters<typeof executeAppActionBatch>[0][number];
-type CreationBatchResult = Awaited<ReturnType<typeof executeAppActionBatch>>;
 
 /** A resolved drop target: the clip's track id, plus the track model to land
  *  in the same batch (as a compiled `addTrack` action) when the drop must
  *  create its own audio track. */
 type AudioTargetPlan = { trackId: string; newTrack: ReturnType<typeof createTrack> | undefined };
-
-// The batch statuses that leave the created media in the project; everything
-// else (refusal, cancellation, rollback) releases the caller's audio assets.
-function retainedCreation(result: CreationBatchResult | null): boolean {
-    return (
-        result !== null &&
-        (result.status === 'committed' || result.status === 'committed-with-warning' || result.status === 'ambiguous')
-    );
-}
-
-/** Pins the creation inputs a batched `addTrack` would otherwise mint at
- *  describe time onto the payload, the way the audio-import use case does. */
-function compileNewAudioTrackAction(track: ReturnType<typeof createTrack>): CreationBatchAction {
-    return {
-        type: 'addTrack',
-        payload: {
-            id: track.id,
-            name: track.name,
-            kind: track.kind,
-            color: track.color,
-            initialAlternativeId: track.activeAlternativeId,
-        },
-    };
-}
 
 function asRecord(raw: string): Record<string, unknown> {
     const parsed: unknown = JSON.parse(raw);
@@ -123,7 +87,7 @@ function parseAiRender(raw: string): AiRenderPayload {
     };
 }
 
-function parseSample(raw: string): SamplePayload {
+function parseSample(raw: string): LibrarySamplePayload {
     const obj = asRecord(raw);
     let durationSeconds: number | undefined;
     if (obj.durationSeconds !== undefined) {
@@ -267,219 +231,26 @@ export const useTimelineFileDrop = ({
         const sampleData = event.dataTransfer.getData(SAMPLE_DRAG_MIME_TYPE);
         if (sampleData) {
             setIsImporting(true);
-            let sampleCommitted = false;
-            let discardPreparedSampleResources = () => {};
             try {
-                const sample = parseSample(sampleData);
-                let audioBufferId: string | undefined;
-                let decodedAudioBufferId: string | undefined;
-                let assetHash: string | undefined;
-                let assetLeaseId: string | undefined;
-                let rememberRawFileBinding: (() => Promise<boolean>) | undefined;
-                let durationBeats = sample.durationSeconds
-                    ? Math.max(1, Math.ceil((sample.durationSeconds / 60) * buildTimelineRenderModel().tempo))
-                    : 4;
-                const assetTransfer = getAssetTransfer();
-
-                discardPreparedSampleResources = () => {
-                    if (assetLeaseId) {
-                        assetTransfer?.releaseStagedAsset(assetLeaseId);
-                    }
-                    if (decodedAudioBufferId) {
-                        discardDecodedAudioFile(decodedAudioBufferId);
-                    }
-                };
-
-                // Factory (and any already-decoded) samples keep their AudioBuffer
-                // in the cache under the sample id — there is no file to re-read and
-                // the factory root is handle-less ('browser' shim, empty rootRef),
-                // so the SampleLibrary file resolver would have nothing to resolve.
-                // Resolve the buffer id straight from the cache before attempting
-                // any file access or decode.
-                const candidateBufferId = sample.audioBufferId ?? sample.id;
-                let cachedBuffer = getCachedAudioBuffer({ bufferId: candidateBufferId });
-                if (!cachedBuffer) {
-                    // A factory sample's buffer may be evicted or not yet loaded
-                    // this session; the library obtains it from storage or a render.
-                    const factoryBuffer = await ensureFactorySampleBuffer({ sampleId: candidateBufferId });
-                    if (factoryBuffer.status === 'unavailable') {
-                        if (authority.isCurrent()) {
-                            notifyUser(`Could not access "${sample.name}" — audio buffer is not available.`, 'error');
-                        }
-                        return;
-                    }
-                    if (factoryBuffer.status === 'resolved') {
-                        cachedBuffer = factoryBuffer.buffer;
-                    }
-                }
-                if (cachedBuffer) {
-                    audioBufferId = candidateBufferId;
-                    durationBeats = Math.max(
-                        1,
-                        Math.ceil((cachedBuffer.duration / 60) * buildTimelineRenderModel().tempo)
-                    );
-                    // Cached samples — factory content and already-decoded imports —
-                    // have no file to re-read, so their PCM is encoded and staged
-                    // here: the hash a receiving peer requests and verifies the
-                    // bytes against (#3759).
-                    try {
-                        const staged = await stageClipAudioAsset(cachedBuffer, sample.name);
-                        assetHash = staged?.hash;
-                        assetLeaseId = staged?.leaseId;
-                    } catch {
-                        discardPreparedSampleResources();
-                        if (authority.isCurrent()) {
-                            notifyUser(`Failed to import "${sample.name}" — asset registration failed`, 'error');
-                        }
-                        return;
-                    }
-                }
-
-                // The sample must survive read → decode → stage before anything is
-                // written to the project (#3756): any failure here explains itself
-                // and leaves the timeline untouched instead of placing a clip with
-                // no audio behind it.
+                let sample: LibrarySamplePayload;
                 try {
-                    if (!audioBufferId) {
-                        if (!sample.libraryRootId || !sample.path) {
-                            if (authority.isCurrent()) {
-                                notifyUser(
-                                    `Could not access "${sample.name}" — audio buffer is not available.`,
-                                    'error'
-                                );
-                            }
-                            return;
-                        }
-                        const resolvedSampleFile = await resolveDroppedSampleFile({
-                            libraryRootId: sample.libraryRootId,
-                            relativePath: sample.path,
-                            fallbackName: sample.name,
-                        });
-                        if (resolvedSampleFile.status !== 'resolved') {
-                            if (authority.isCurrent()) {
-                                notifyUser(
-                                    `Could not access "${sample.name}" — its library folder is no longer available.`,
-                                    'error'
-                                );
-                            }
-                            return;
-                        }
-                        if (!authority.isCurrent()) {
-                            return;
-                        }
-                        const { file } = resolvedSampleFile;
-                        try {
-                            const result = await decodeAudioFile(file);
-                            audioBufferId = result.id;
-                            decodedAudioBufferId = result.id;
-                            durationBeats = Math.max(
-                                1,
-                                Math.ceil((result.buffer.duration / 60) * buildTimelineRenderModel().tempo)
-                            );
-                        } catch {
-                            if (!authority.isCurrent()) {
-                                return;
-                            }
-                            notifyUser(
-                                `"${sample.name}" could not be decoded — the file may be DRM-protected or corrupt.`,
-                                'error'
-                            );
-                            return;
-                        }
-                        if (!authority.isCurrent()) {
-                            discardPreparedSampleResources();
-                            return;
-                        }
-                        try {
-                            const stagedAsset = await assetTransfer?.stageLocalAsset(file, file.name);
-                            assetHash = stagedAsset?.hash;
-                            assetLeaseId = stagedAsset?.leaseId;
-                            if (stagedAsset) {
-                                const hash = stagedAsset.hash;
-                                const sampleId = sample.id;
-                                const libraryRootId = sample.libraryRootId;
-                                const relativePath = sample.path;
-                                rememberRawFileBinding = () =>
-                                    rememberLibraryAssetMapping({
-                                        hash,
-                                        sampleId,
-                                        libraryRootId,
-                                        relativePath,
-                                        isCurrent: () => authority.isCurrent(),
-                                    });
-                            }
-                        } catch {
-                            discardPreparedSampleResources();
-                            if (authority.isCurrent()) {
-                                notifyUser(`Failed to import "${sample.name}" — asset registration failed`, 'error');
-                            }
-                            return;
-                        }
-                    }
+                    sample = parseSample(sampleData);
                 } catch {
                     if (authority.isCurrent()) {
-                        notifyUser(
-                            `Could not access "${sample.name}" — the file may have moved or folder permissions were revoked.`,
-                            'error'
-                        );
+                        notifyUser(LIBRARY_SAMPLE_MALFORMED_MESSAGE, 'error');
                     }
                     return;
                 }
-
-                if (!authority.isCurrent()) {
-                    discardPreparedSampleResources();
-                    return;
-                }
-
-                const targetPlan = resolveAudioTarget(sample.name);
-                if (!targetPlan) {
-                    discardPreparedSampleResources();
-                    return;
-                }
-
-                const actions: CreationBatchAction[] = [];
-                if (targetPlan.newTrack) {
-                    actions.push(compileNewAudioTrackAction(targetPlan.newTrack));
-                }
-                actions.push({
-                    type: 'addClip',
-                    payload: {
-                        trackId: targetPlan.trackId,
+                await placeLibrarySample({
+                    sample,
+                    placement: {
+                        trackId: audioTargetIntent.kind === 'existing' ? audioTargetIntent.trackId : undefined,
                         startBeat: beat,
-                        endBeat: beat + durationBeats,
-                        name: sample.name,
-                        type: 'audio',
-                        audioBufferId,
-                        assetHash,
                     },
+                    authority,
+                    origin: 'timeline-drop',
+                    readTempo: () => buildTimelineRenderModel().tempo,
                 });
-                const batchResult = await runCreationBatch(actions, `Drop sample: ${sample.name}`);
-                if (!retainedCreation(batchResult)) {
-                    discardPreparedSampleResources();
-                    return;
-                }
-                sampleCommitted = true;
-                if (assetLeaseId) {
-                    const promoted = assetTransfer?.promoteStagedAsset(assetLeaseId) === true;
-                    if (
-                        promoted &&
-                        rememberRawFileBinding &&
-                        (batchResult?.status === 'committed' || batchResult?.status === 'committed-with-warning') &&
-                        authority.isCurrent()
-                    ) {
-                        await rememberRawFileBinding().catch(() => false);
-                        if (!authority.isCurrent()) {
-                            return;
-                        }
-                    }
-                }
-            } catch {
-                if (!sampleCommitted) {
-                    discardPreparedSampleResources();
-                }
-                if (authority.isCurrent()) {
-                    notifyUser('Could not place the dropped sample — its metadata was malformed.', 'error');
-                }
             } finally {
                 setIsImporting(false);
             }
@@ -495,10 +266,9 @@ export const useTimelineFileDrop = ({
                     notifyUser('Drop the plugin onto a track to add it.', 'warning');
                     return;
                 }
-                // The payload carries both, and the action compiler receives the stable id,
-                // id. `De-esser`, `LUFS Meter` and `Stereo Widener` each name two
-                // catalog plugins, so a name lookup returns whichever the registry
-                // lists first rather than the card that was dragged.
+                // The payload carries both, and the action compiler receives the stable
+                // id. Catalog names are unique, so a name lookup would not be ambiguous,
+                // but the id is the key a device is stored under.
                 void executeAddDeviceAction(targetTrackId, plugin.id);
             } catch {
                 notifyUser('Could not add the dropped plugin — its data was malformed.', 'error');

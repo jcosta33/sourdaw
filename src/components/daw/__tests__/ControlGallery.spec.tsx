@@ -25,7 +25,7 @@ describe('ControlGallery', () => {
         const tokenList = screen.getByRole('list', { name: 'Design tokens' });
         const rows = within(tokenList).getAllByRole('listitem');
         expect(rows.map((row) => row.getAttribute('data-token-name'))).toEqual(tokenNamesFromSource(tokenSource));
-        expect(rows).toHaveLength(193);
+        expect(rows).toHaveLength(200);
     });
 
     it('renders the six real shared control categories in supported states', () => {

@@ -40,10 +40,10 @@ test.describe('Sample Library', () => {
         await expect(sampleRow).toBeVisible();
 
         // Preview the sample — the preview control flips to its "Stop" state.
-        const previewButton = browserPanel.getByRole('button', { name: 'Preview sound' }).first();
+        const previewButton = browserPanel.getByRole('button', { name: `Preview ${SAMPLE_NAME}` }).first();
         await expect(previewButton).toBeVisible();
         await previewButton.click();
-        await expect(browserPanel.getByRole('button', { name: 'Stop preview' })).toBeVisible();
+        await expect(browserPanel.getByRole('button', { name: `Stop previewing ${SAMPLE_NAME}` })).toBeVisible();
 
         // Initiate a drag of the sample toward the timeline. HTML5 drag-and-drop
         // is driven through real dragstart/dragover events sharing one

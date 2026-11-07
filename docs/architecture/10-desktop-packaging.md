@@ -4,15 +4,56 @@ Desktop packaging is an Electron shell around the browser build and the Rust
 native addon. The package layout must leave the renderer in the archive and the
 native addon and sample library as real files beside it.
 
-## Current status
+## Native artifact admission
 
-- `pnpm desktop:build` is configured for a local macOS arm64 DMG and ZIP.
-- `identity: '-'` is ad-hoc signing. It is not distribution signing.
-- There is no updater, notarization flow, signing identity, or publish pipeline.
-- Linux AppImage configuration is defined with transparent icon sets in `build/icons/`.
-- Windows x64 NSIS configuration exists, but it is not shippable until the native
-  addon is built for Windows and included in the package.
-- ASIO is not supported. The Windows configuration does not enable it.
+The electron-builder `afterPack` hook validates the files the shell actually loads:
+`Resources/sourdaw-native.node` and `Resources/sourdaw-plugin-scan-helper`
+(`.exe` on Windows). Other platforms use the package's `resources` directory.
+The expected OS and CPU come from electron-builder's target, never the build host
+or the fixed artifact filenames. A host-native Cargo build alone cannot satisfy
+a different packaging target.
+
+Before mutating Electron fuses or signing, the hook requires matching thin arm64
+macOS Mach-O, x64 Windows PE32+, or x64/arm64 Linux ELF64 artifacts. It checks the
+addon/shared-library and helper/executable kinds, inspected header and table bounds,
+file-backed extents, and Unix helper execute permissions when the packaging host
+exposes Unix mode bits. ELF System V ABI is
+accepted for Linux, including position-independent executable helpers. Fat/universal
+Mach-O and targets outside the pinned Electron runtime contract are refused.
+The subsequent legal-file digest checks, fuse mutation, and fuse readback remain
+mandatory. Header reads have a bounded metadata budget; the complete binaries are
+not materialized in memory.
+
+This guard establishes target identity and inspected structure. It does not prove
+loadability, native ABI compatibility, linked-library availability, complete binary
+integrity, signing, installation, or runtime behavior. Its fixture coverage does not
+establish that Windows or Linux packages have been built or tested, and admitting
+Linux arm64 identity does not add a distribution target.
+
+## Distribution prerequisites
+
+Each offered platform needs native addon and helper builds from the same source
+revision on its corresponding native runner, followed by packaging and verification
+of the final artifacts. Portable build-entry-point work is tracked in
+[#6288](https://github.com/jcosta33/sourdaw/issues/6288).
+
+- macOS distribution requires a Developer ID signing setup, notarization and
+  verification of the downloaded app. `identity: '-'` provides ad-hoc signing only.
+  Public macOS release assets are tracked in
+  [#2854](https://github.com/jcosta33/sourdaw/issues/2854) and
+  [#2860](https://github.com/jcosta33/sourdaw/issues/2860).
+- Windows requires its signing setup and an installed-package smoke test on the
+  supported Windows baseline. ASIO is not supported by this configuration.
+- Linux requires a declared dependency baseline and actual package/install smoke
+  testing on the offered distributions.
+
+Release proof must bind the exact final artifacts and checksums to their source
+revision, native build evidence, legal material, and runtime verification. On every
+offered platform, exercise record → edit → undo/redo → save → reopen → export,
+audible output, and native plugin loading/scanning, including failure recovery.
+Packaging configuration and header fixtures cannot substitute for those observations.
+Signing accounts or services must be chosen separately; this contract chooses or
+purchases none. Initial manual downloads are valid; an updater is optional.
 
 ## Runtime boundaries
 

@@ -1,5 +1,14 @@
 import { render, screen, fireEvent } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+
+import {
+    defaultExternalPluginActivationState,
+    defaultExternalPluginParameterState,
+    defaultPluginScanState,
+    externalPluginActivationStore,
+    externalPluginParameterStore,
+    pluginScanStore,
+} from '#/modules/PluginHost/stores';
 
 import { DeviceInspector } from '../DeviceInspector';
 
@@ -66,11 +75,17 @@ vi.mock('#/components/daw/MechanicalSwitch', () => ({
 }));
 
 vi.mock('../GenericDeviceLayout', () => ({
-    GenericDeviceLayout: ({ parameters }: { parameters: ReadonlyArray<{ id: string }> }) => (
+    GenericDeviceLayout: ({
+        parameters,
+    }: {
+        parameters: ReadonlyArray<{ id: string; name: string; value: number }>;
+    }) => (
         <div
             data-testid="generic-layout"
             data-param-count={parameters.length}
             data-param-ids={parameters.map((parameter) => parameter.id).join(',')}
+            data-param-names={parameters.map((parameter) => parameter.name).join(',')}
+            data-param-values={parameters.map((parameter) => String(parameter.value)).join(',')}
         >
             Generic Layout
         </div>
@@ -85,6 +100,12 @@ const makeDevice = (overrides: Partial<Device> = {}): Device => ({
     parameterValues: { gain: 0.5, cutoff: 1000 },
     ...overrides,
 });
+
+const EXTERNAL_OPENABLE =
+    "Edit this plugin's parameters in its own window: use Open editor on its device in the track's device list.";
+const EXTERNAL_NO_EDITOR = 'This plugin has no editor window of its own, and its parameters are not listed here.';
+const EXTERNAL_NOT_LOADED =
+    "Its editor can be opened from its device in the track's device list once the plugin is loaded.";
 
 describe('DeviceInspector', () => {
     const mockOnBack = vi.fn();
@@ -304,11 +325,169 @@ describe('DeviceInspector', () => {
         );
     });
 
+    // A project saved before the Faust builds were renamed stores the builtin's
+    // name beside the Faust type; the type decides, never the shared name.
+    it.each([
+        {
+            type: 'faust-de-esser',
+            name: 'De-esser',
+            paramIds: 'threshold,frequency,bandwidth,ratio,reduction,listen',
+        },
+        { type: 'faust-stereo-widener', name: 'Stereo Widener', paramIds: 'width,mono_bass' },
+    ])('opens a stored $type named "$name" with that type\'s own parameters', async ({ type, name, paramIds }) => {
+        const actual = await vi.importActual<typeof import('#/modules/Arrangement/useCases')>(
+            '#/modules/Arrangement/useCases'
+        );
+        mockGetBuiltinPlugins.mockImplementation(actual.getBuiltinPlugins);
+        render(
+            <DeviceInspector
+                device={makeDevice({ id: 'device-stored', name, type })}
+                trackId="track-1"
+                onBack={mockOnBack}
+            />
+        );
+        expect(screen.getByTestId('generic-layout').getAttribute('data-param-ids')).toBe(paramIds);
+    });
+
     it('should match a builtin plugin by display name', () => {
         mockGetBuiltinPlugins.mockReturnValue([
             { id: 'other', name: 'Test Device', parameters: [{ id: 'p1', name: 'One', automatable: true }] },
         ]);
         render(<DeviceInspector device={makeDevice({ type: 'unknown-type' })} trackId="track-1" onBack={mockOnBack} />);
         expect(screen.getByTestId('generic-layout').getAttribute('data-param-count')).toBe('1');
+    });
+
+    it("should not open a third-party plugin with a namesake builtin's parameters", () => {
+        mockGetBuiltinPlugins.mockReturnValue([
+            { id: 'builtin-reverb', name: 'Reverb', parameters: [{ id: 'mix', name: 'Mix', automatable: true }] },
+        ]);
+        render(
+            <DeviceInspector
+                device={makeDevice({
+                    type: 'external-plugin',
+                    name: 'Reverb',
+                    parameterValues: { 'plugin-param': 0.4 },
+                })}
+                trackId="track-1"
+                onBack={mockOnBack}
+            />
+        );
+        expect(screen.queryByTestId('generic-layout')).not.toBeInTheDocument();
+        expect(screen.getByText(EXTERNAL_NOT_LOADED)).toBeInTheDocument();
+    });
+});
+
+type ScannedPlugin = (typeof defaultPluginScanState)['scannedPlugins'][number];
+
+describe('DeviceInspector external plugin', () => {
+    const mockOnBack = vi.fn();
+    const REVERB_ID = 'reverb-plugin';
+    const INSTANCE_ID = 'plugin-reverb-instance';
+    // Shaped as addExternalDevice creates it: the scanned plugin name, an empty parameter record, and ids.
+    const addedPluginDevice = (): Device =>
+        makeDevice({
+            id: 'device-ext',
+            name: 'Reverb',
+            type: 'external-plugin',
+            parameterValues: {},
+            externalPluginId: REVERB_ID,
+            externalInstanceId: INSTANCE_ID,
+        });
+    const scannedReverb = (overrides: Partial<ScannedPlugin>): ScannedPlugin => ({
+        id: REVERB_ID,
+        name: 'Reverb',
+        vendor: 'Vendor',
+        format: 'clap',
+        category: 'effect',
+        path: '/plugins/reverb.clap',
+        version: '1.0',
+        descriptor_id: 'com.vendor.reverb',
+        num_inputs: 2,
+        num_outputs: 2,
+        num_parameters: 0,
+        has_custom_ui: true,
+        ...overrides,
+    });
+    const builtinReverb = {
+        id: 'builtin-reverb',
+        name: 'Reverb',
+        parameters: [
+            { id: 'size', name: 'Size', automatable: true },
+            { id: 'decay', name: 'Decay', automatable: true },
+            { id: 'mix', name: 'Mix', automatable: true },
+        ],
+    };
+    const seedPlugin = (plugin: ScannedPlugin, status: 'loading' | 'active' | 'error' | undefined): void => {
+        pluginScanStore.set({ ...defaultPluginScanState, scannedPlugins: [plugin] });
+        externalPluginActivationStore.set({
+            byInstanceId: status === undefined ? {} : { [INSTANCE_ID]: { status } },
+        });
+    };
+
+    beforeEach(() => {
+        mockGetBuiltinPlugins.mockReturnValue([builtinReverb]);
+        mockResolveDeviceLayout.mockReturnValue(null);
+    });
+
+    afterEach(() => {
+        pluginScanStore.set(defaultPluginScanState);
+        externalPluginActivationStore.set(defaultExternalPluginActivationState);
+        externalPluginParameterStore.set(defaultExternalPluginParameterState);
+    });
+
+    it('points at the Open editor control, and shows no published parameter, when the plugin has an editor and is active', () => {
+        seedPlugin(scannedReverb({ has_custom_ui: true }), 'active');
+        externalPluginParameterStore.set({
+            byInstanceId: {
+                [INSTANCE_ID]: {
+                    engineAttached: true,
+                    parameters: [
+                        {
+                            id: 7,
+                            name: 'Pre Gain',
+                            value: 0.25,
+                            defaultValue: 0.5,
+                            minValue: 0,
+                            maxValue: 1,
+                            unit: '',
+                            isAutomatable: true,
+                        },
+                    ],
+                },
+            },
+        });
+        render(<DeviceInspector device={addedPluginDevice()} trackId="track-1" onBack={mockOnBack} />);
+        expect(screen.getByText(EXTERNAL_OPENABLE)).toBeInTheDocument();
+        expect(screen.queryByTestId('generic-layout')).not.toBeInTheDocument();
+        expect(screen.queryByText('Pre Gain')).not.toBeInTheDocument();
+    });
+
+    it('says the plugin has no editor window, not that Open editor exists, when the scan reports none', () => {
+        seedPlugin(scannedReverb({ has_custom_ui: false }), 'active');
+        render(<DeviceInspector device={addedPluginDevice()} trackId="track-1" onBack={mockOnBack} />);
+        expect(screen.getByText(EXTERNAL_NO_EDITOR)).toBeInTheDocument();
+        expect(screen.queryByText(EXTERNAL_OPENABLE)).not.toBeInTheDocument();
+        expect(screen.queryByTestId('generic-layout')).not.toBeInTheDocument();
+    });
+
+    it.each(['loading', 'error'] as const)(
+        'says the editor opens once the plugin is loaded, while it is %s',
+        (status) => {
+            seedPlugin(scannedReverb({ has_custom_ui: true }), status);
+            render(<DeviceInspector device={addedPluginDevice()} trackId="track-1" onBack={mockOnBack} />);
+            expect(screen.getByText(EXTERNAL_NOT_LOADED)).toBeInTheDocument();
+            expect(screen.queryByText(EXTERNAL_OPENABLE)).not.toBeInTheDocument();
+        }
+    );
+
+    it('still shows a builtin Reverb its own controls', () => {
+        render(
+            <DeviceInspector
+                device={makeDevice({ type: 'builtin-reverb', name: 'Reverb', parameterValues: {} })}
+                trackId="track-1"
+                onBack={mockOnBack}
+            />
+        );
+        expect(screen.getByTestId('generic-layout').getAttribute('data-param-ids')).toBe('size,decay,mix');
     });
 });

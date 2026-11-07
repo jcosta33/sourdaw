@@ -7,10 +7,11 @@ import { setTrackHeight } from '../../../useCases/toggleTrackState/setTrackHeigh
 
 type ResizeHandleProps = {
     trackId: string;
+    trackName: string;
     height: number;
 };
 
-export const ResizeHandle = ({ trackId, height }: ResizeHandleProps): ReactElement => {
+export const ResizeHandle = ({ trackId, trackName, height }: ResizeHandleProps): ReactElement => {
     const handleRef = useRef<HTMLDivElement | null>(null);
     const heightRef = useRef<number | null>(null);
 
@@ -42,7 +43,7 @@ export const ResizeHandle = ({ trackId, height }: ResizeHandleProps): ReactEleme
                 heightRef.current = null;
             }}
             className="absolute bottom-0 left-0 right-0 h-1 cursor-ns-resize opacity-0 hover:opacity-100 hover:bg-ring/40 focus-visible:opacity-100 focus-visible:bg-ring/40 transition-opacity"
-            aria-label="Resize track height"
+            aria-label={`Resize ${trackName} height`}
             aria-valuenow={Math.round(height)}
             aria-valuemin={MIN_TRACK_HEIGHT}
             aria-valuemax={MAX_TRACK_HEIGHT}

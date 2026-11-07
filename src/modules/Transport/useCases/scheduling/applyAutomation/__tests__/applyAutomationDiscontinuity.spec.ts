@@ -96,6 +96,7 @@ function seedDeviceLane(deviceId: string, laneId: string): void {
 
 describe('applyAutomation transport discontinuity (AU-4)', () => {
     beforeEach(() => {
+        schedulerSession.generation += 1;
         vi.clearAllMocks();
         vi.mocked(isRecordingAutomation).mockReturnValue(false);
     });

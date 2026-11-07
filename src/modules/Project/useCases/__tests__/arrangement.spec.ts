@@ -188,6 +188,7 @@ vi.mock('#/modules/Arrangement/useCases', async () => {
         applySoloLogic: vi.fn(),
         clampDeviceParameterValue: vi.fn(),
         clampExternalPluginAutomationValue: vi.fn(),
+        getAutomationDeviceDescriptor: actual.getAutomationDeviceDescriptor,
         getEffectiveGain: vi.fn(),
         getGainAtBeat: vi.fn(),
         getLastClipEndBeat: vi.fn(() => 0),

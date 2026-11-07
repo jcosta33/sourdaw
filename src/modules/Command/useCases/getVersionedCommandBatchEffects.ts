@@ -24,6 +24,7 @@ export const CREATE_OPERATIONS = new Set([
     'duplicateClipToNextBar',
     'splitClip',
     'glueClips',
+    'quantizeTransients',
     'drawClip',
     'duplicateClipAt',
     'addNotes',

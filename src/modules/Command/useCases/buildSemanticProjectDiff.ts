@@ -41,6 +41,7 @@ const CREATED_OPERATIONS = new Set<AppAction['type']>([
     'duplicateClip',
     'duplicateClipToNextBar',
     'splitClip',
+    'quantizeTransients',
     'createVcaGroup',
     'addDevice',
     'addSend',
@@ -56,6 +57,7 @@ const MOVED_OPERATIONS = new Set<AppAction['type']>([
     'moveChordEvent',
     'moveClip',
     'nudgeClip',
+    'quantizeTransients',
     'reorderTrack',
     'trimClipEnd',
     'trimClipStart',
@@ -85,6 +87,7 @@ const REPLACEMENT_OPERATIONS = new Set<AppAction['type']>([
     'freezeTrack',
     'loadPreset',
     'loadTrackTemplate',
+    'quantizeTransients',
     'restoreProjectVersion',
 ]);
 const CONSOLIDATION_OPERATIONS = new Set<AppAction['type']>([

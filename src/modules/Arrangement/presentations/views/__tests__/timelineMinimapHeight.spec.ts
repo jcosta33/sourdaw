@@ -9,7 +9,8 @@ vi.mock('#/infra/store/useStore', () => ({
     useStore: vi.fn((_store: unknown, fallback: unknown) => fallback),
 }));
 
-vi.mock('#/modules/Transport/stores', () => ({
+vi.mock('#/modules/Transport/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Transport/stores')>()),
     transportStore: { value: { isPlaying: false } },
 }));
 

@@ -909,7 +909,7 @@ export const FAUST_INSTRUMENT_PRESETS: SoundPreset[] = [
 
     {
         id: 'factory-faust-supersaw-trance',
-        name: 'Trance Lead',
+        name: 'Supersaw Trance Lead',
         category: 'lead',
         subcategory: 'digital',
         description: 'Classic trance supersaw. 7 detuned saws with open filter.',
@@ -1147,7 +1147,7 @@ export const FAUST_INSTRUMENT_PRESETS: SoundPreset[] = [
 
     {
         id: 'factory-faust-pm-pluck',
-        name: 'Plucked String',
+        name: 'Karplus Pluck',
         category: 'strings',
         subcategory: 'acoustic',
         description: 'Karplus-Strong plucked string. Natural guitar-like pluck.',
