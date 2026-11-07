@@ -28,17 +28,14 @@ test.describe('Fermenter panel deep — knobs, macros', () => {
     test('Fermenter knob responds to keyboard — aria-valuenow changes on ArrowUp', async ({ page }) => {
         await openFermenter(page);
 
-        const firstSlider = page.getByRole('slider').first();
-        await expect(firstSlider).toBeVisible({ timeout: 5000 });
-        await firstSlider.focus();
-        const before = Number(await firstSlider.getAttribute('aria-valuenow'));
-        await page.keyboard.press('ArrowUp');
-        await page.waitForTimeout(200);
-        const after = Number(await firstSlider.getAttribute('aria-valuenow'));
-        // The knob reports a new value unless it was already at its maximum.
-        if (before < 1) {
-            expect(after).toBeGreaterThan(before);
-        }
+        const level = page.locator('.fermenter-faceplate').getByRole('slider', { name: 'Level', exact: true });
+        await expect(level).toHaveAttribute('aria-valuenow', '0.8');
+        await level.scrollIntoViewIfNeeded();
+        await level.press('ArrowUp');
+        await expect(level).toHaveAttribute('aria-valuenow', '0.81');
+        const panel = page.locator('.fermenter-faceplate');
+        await panel.getByRole('button', { name: 'Effects', exact: true }).click();
+        await expect(panel.getByRole('button', { name: 'Dist', exact: true })).toHaveAttribute('aria-pressed', 'true');
     });
 
     test('Fermenter panel close button hides the panel', async ({ page }) => {
