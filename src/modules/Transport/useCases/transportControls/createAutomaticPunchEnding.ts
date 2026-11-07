@@ -6,12 +6,13 @@ import { beatAtSecondsFromAnchor, secondsBetweenBeats } from '../../models/Tempo
 import { tempoMapStore } from '../../stores/tempoMapStore';
 import { transportStore } from '../../stores/transportStore';
 import { nativeRecordingEntry } from '../playheadScheduler/nativeRecordingEntry';
-import { schedulerSession } from '../playheadScheduler/schedulerSession';
+import { type AutomaticPunchCapture, schedulerSession } from '../playheadScheduler/schedulerSession';
 
 import { type createRecordingCaptureClocks } from './createRecordingCaptureClocks';
-import { type NativeCaptureSnapshot } from './nativeRecordingCaptureHistory';
 import { recordingLifecycle } from './recordingLifecycle';
 import { redateNativePunchEnding } from './redateNativePunchEnding';
+
+type NativeCaptureSnapshot = Parameters<typeof nativeRecordingEntry>[0];
 
 type NativeGeometry = {
     secondsAtBeat: (beat: number) => number;
@@ -81,7 +82,7 @@ function datePunchEnding(
     };
 }
 
-class AutomaticPunchEnding {
+class AutomaticPunchEnding implements AutomaticPunchCapture {
     private readonly root = captureProjectRootIdentity();
     private readonly generation = schedulerSession.generation;
     private ending: NonNullable<ReturnType<typeof datePunchEnding>>['ending'] | null = null;
@@ -250,6 +251,6 @@ export function createAutomaticPunchEnding(
     outBeat: number,
     anchor: () => { beat: number; contextSeconds: number } | null,
     captureClocks: ReturnType<typeof createRecordingCaptureClocks>
-) {
+): AutomaticPunchCapture {
     return new AutomaticPunchEnding(outBeat, anchor, captureClocks);
 }

@@ -1,8 +1,26 @@
 import { type SourceWithFade } from '../../models/SourceWithFade';
 import { type TempoChange } from '../../stores/tempoMapStore';
-import { type createAutomaticPunchEnding } from '../transportControls/createAutomaticPunchEnding';
 
 import { cutSource } from './cutSource';
+
+/** The scheduler retains this capture's lifecycle, never its implementation state. */
+export type AutomaticPunchCapture = {
+    readonly outBeat: number;
+    readonly read: () =>
+        | { status: 'retired' | 'pending' }
+        | { status: 'open'; startContextSeconds: number }
+        | {
+              status: 'bounded';
+              startContextSeconds: number;
+              ending: {
+                  contextSeconds: number;
+                  beatAtContextSeconds: (seconds: number) => number;
+                  midiPosition: { beat: number; passIndex: number };
+              };
+          };
+    readonly ready: () => boolean;
+    readonly dispose: () => void;
+};
 
 /**
  * Stop every source in the pool through its optional fade, and drop the
@@ -74,7 +92,7 @@ export const schedulerSession = {
     // instant passes and the sources have stopped themselves.
     pendingFences: [] as Array<{ source: SourceWithFade; stopAt: number }>,
     punchRecordingActive: false,
-    automaticPunch: null as ReturnType<typeof createAutomaticPunchEnding> | null,
+    automaticPunch: null as AutomaticPunchCapture | null,
     onStopRequested: null as (() => void) | null,
     /** Observe a terminal audio pass on the audible carrier before capture readers detach. */
     observeNativeRecordingClock: null as (() => boolean) | null,

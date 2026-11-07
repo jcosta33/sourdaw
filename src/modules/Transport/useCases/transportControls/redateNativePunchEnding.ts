@@ -1,6 +1,6 @@
 import { nativeRecordingEntry } from '../playheadScheduler/nativeRecordingEntry';
 
-import { type NativeCaptureSnapshot } from './nativeRecordingCaptureHistory';
+type NativeCaptureSnapshot = Parameters<typeof nativeRecordingEntry>[0];
 
 /** Only a sounded tempo epoch may change the date within the same owned occurrence. */
 export function redateNativePunchEnding(
