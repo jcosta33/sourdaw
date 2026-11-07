@@ -1,0 +1,19 @@
+tests/e2e/audioToMidiCommitAcceptance.spec.ts
+  s_aae425c0b6b077::t_cf5444092822d7 62-66,71
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4e80ff0000920d3d44fc5214999cc83bf1e0ee84",
+  "prompts": {},
+  "sessions": {
+    "s_aae425c0b6b077": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "s_aae425c0b6b077",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
