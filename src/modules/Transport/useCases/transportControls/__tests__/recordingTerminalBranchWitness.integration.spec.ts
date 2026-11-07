@@ -589,7 +589,14 @@ describe('recording terminal publishes only under its captured root (issue #5289
         const successorBefore = recordingSnapshot();
         const ended = vi.fn();
         const successor = createRecordingCaptureClocks(mocks.audioClock, (beat) => beat / 2, ended);
-        successor.create(TRACK_ID).setReader(() => ({ status: 'captured', contextSeconds: 33 }));
+        const successorCapture = completedAudioRecording(33);
+        successor.create(TRACK_ID).setReader(() => ({
+            status: 'captured',
+            contextSeconds: successorCapture.sampleZeroContextFrame / successorCapture.sampleRate,
+            capturedThroughContextSeconds:
+                (successorCapture.sampleZeroContextFrame + successorCapture.buffer.length) /
+                successorCapture.sampleRate,
+        }));
         successor.register();
 
         observeRecordingPassEntry(6, 11, true, true);

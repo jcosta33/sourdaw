@@ -316,6 +316,9 @@ describe('recorded controller take commit', () => {
                 const plans = [firstId, secondId].map((id) => planRecordedControllers({ clip: spanOf(id) }));
                 const handlers = getArrangementHandlers();
                 const original = handlers.commitRecording;
+                if (original.previewExecution !== 'unsupported-external') {
+                    throw new Error('Recording abort fixture requires its actual external handler contract');
+                }
                 let writes = 0;
                 let firstRowsObserved = false;
                 clearHandlerRegistry();
@@ -376,6 +379,9 @@ describe('recorded controller take commit', () => {
                 flushAutomergeStorageWrites();
                 const handlers = getArrangementHandlers();
                 const original = handlers.commitRecording;
+                if (original.previewExecution !== 'unsupported-external') {
+                    throw new Error('Held recording fixture requires its actual external handler contract');
+                }
                 const entered = Promise.withResolvers<void>();
                 const release = Promise.withResolvers<void>();
                 clearHandlerRegistry();
