@@ -108,6 +108,16 @@ function isValidCrossfadeSetup(
     );
 }
 
+/**
+ * Mirrors the Arrangement `findCrossfadePair` rule: fades are audio-only (MIDI playback reads none) and a
+ * crossfade joins clips on one track, so the core never receives a pair it would refuse with a silent no-write.
+ */
+function isCrossfadeKindAndTrackPair(source: ClipTarget, destination: ClipTarget): boolean {
+    return (
+        source.clip.type === 'audio' && destination.clip.type === 'audio' && source.track.id === destination.track.id
+    );
+}
+
 /** The recomputed crossfade bounds are non-finite, overlap negatively, or restate the existing fades. */
 function isRejectedCrossfadeOverlap(
     source: ClipTarget,
@@ -412,6 +422,13 @@ export const clipEditingStrategyDefinitions = [
                     index,
                     call.name,
                     'Expected two distinct unlocked clips in timeline order and an optional finite non-negative duration'
+                );
+            }
+            if (!isCrossfadeKindAndTrackPair(source, destination)) {
+                return rejection(
+                    index,
+                    call.name,
+                    'Expected two audio clips on the same audio track; MIDI clips take no fades and a crossfade cannot span tracks'
                 );
             }
             const halfDuration = durationBeats / 2;
