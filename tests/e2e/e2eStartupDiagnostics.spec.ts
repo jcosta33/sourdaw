@@ -1,8 +1,7 @@
 import { rm } from 'node:fs/promises';
 
-import { test, expect } from '@playwright/test';
-
 import { createFixture, deferred, event } from '../../scripts/__tests__/fixtures/e2eStartupDiagnostics.ts';
+import { test, expect } from './e2eTest';
 
 test('receives independent renderer heartbeats while the real entry module remains held', async ({ page }) => {
     const gate = deferred<string>();
