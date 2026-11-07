@@ -3031,7 +3031,11 @@ describe('health gates workflow contract', () => {
         expect(() => assertRepositoryIndependentScope(validationWorkflow, unreadable)).toThrow(
             'changed-files API read permission'
         );
-        const newCaller = { ...workflows, 'another.yml': structuredClone(workflows['health-gates.yml']) };
+        const healthGates = workflows['health-gates.yml'];
+        if (healthGates === undefined) {
+            throw new Error('health-gates.yml missing from the workflow directory');
+        }
+        const newCaller = { ...workflows, 'another.yml': structuredClone(healthGates) };
         expect(() => assertRepositoryIndependentScope(validationWorkflow, newCaller)).toThrow(
             'account for every validation caller'
         );
