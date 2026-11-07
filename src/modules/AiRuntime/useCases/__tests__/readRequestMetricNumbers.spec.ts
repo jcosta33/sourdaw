@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { type parseVersionedCommandBatchEnvelope } from '#/modules/Command/useCases';
+import { digest } from '#/utils/canonicalDigest';
 
 import { unaccountedNumericRefusal } from '../evaluateRequestNumericLiterals';
 import { type MetricGoal, type MetricGoalState } from '../metricGoalContractTypes';
@@ -49,7 +50,7 @@ function envelope(intent: string): Envelope {
     };
 }
 
-function state(goals: MetricGoal[]): MetricGoalState {
+function state(prompt: string, goals: MetricGoal[]): MetricGoalState {
     return {
         schemaVersion: 1,
         steps: [],
@@ -63,7 +64,7 @@ function state(goals: MetricGoal[]): MetricGoalState {
                 callId: 'call',
                 turn: 1,
                 catalogId: 'catalog',
-                requestDigest: 'digest',
+                requestDigest: digest(prompt.trim()),
                 revision: 'revision',
                 projectId: 'project',
                 selection: { trackId: null, clipId: null, clipIds: [], activeView: 'arrange' },
@@ -145,13 +146,13 @@ describe('readRequestMetricNumbers', () => {
                 tolerance: 0,
                 source: { kind: 'request-number', candidateId: `number:${start}`, token },
             };
-            expect(unaccountedNumericRefusal(state([]), envelope(prompt))).toEqual({
+            expect(unaccountedNumericRefusal(state(prompt, []), envelope(prompt))).toEqual({
                 failure: 'missing',
                 reason: `The request's ${token} candidate has no selected metric goal or grounded literal use.`,
             });
-            expect(unaccountedNumericRefusal(state([goal]), envelope(prompt))).toBeNull();
+            expect(unaccountedNumericRefusal(state(prompt, [goal]), envelope(prompt))).toBeNull();
             expect(
-                unaccountedNumericRefusal(state([{ ...goal, targetValue: value + 1 }]), envelope(prompt))
+                unaccountedNumericRefusal(state(prompt, [{ ...goal, targetValue: value + 1 }]), envelope(prompt))
             ).toMatchObject({ failure: 'missing' });
         }
     );
