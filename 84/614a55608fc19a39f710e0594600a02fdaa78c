@@ -1,0 +1,19 @@
+scripts/e2eSpecDurations.json
+  s_eb3cd86b0cee6e::t_5afdc8f97c3dc5 2-48,50-89,91-103,105-129,131-174,176-178,180-201,203-254,256-261,263-286
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "84614a55608fc19a39f710e0594600a02fdaa78c",
+  "prompts": {},
+  "sessions": {
+    "s_eb3cd86b0cee6e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34c-a4d8-7523-838e-1cd1a0a25d78",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
