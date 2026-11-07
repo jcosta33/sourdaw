@@ -29,43 +29,73 @@ const NEGATION_PATTERN =
 const KEEP_PATTERN =
     /(?<![\p{L}\p{N}])(?:keep(?:s|ing)?|preserv(?:e|es|ing)|retain(?:s|ing)?|maintain(?:s|ing)?|leav(?:e|es|ing)|stay(?:s|ing)?)(?![\p{L}\p{N}])/giu;
 
+const INSTRUCTION_VERBS = String.raw`(?:make|add|give|get|turn|bring|push|boost|raise|let|put|set)`;
+
 /**
  * Where a negated or kept clause ends: a clause mark, a conjunction that turns to another clause, or
  * an `and` that opens a new instruction. A bare `and` joins another conjunct to the same clause, so
  * "keep the drums punchy and the vocal warm" keeps both.
  */
-const CLAUSE_END_PATTERN =
-    /[,.;:!?]|(?<![\p{L}\p{N}])(?:but|yet|then|though|although|however|instead|while|and[\s-]+(?:make|add|give|get|turn|bring|push|boost|raise|let|put|set))(?![\p{L}\p{N}])/giu;
+const CLAUSE_END_PATTERN = new RegExp(
+    String.raw`[,.;:!?]|(?<![\p{L}\p{N}])(?:but|yet|then|though|although|however|instead|while|and[\s-]+${INSTRUCTION_VERBS})(?![\p{L}\p{N}])`,
+    'giu'
+);
 
 /** A reduction word directly before a term, as in "less punchy", which no term of its own covers. */
 const REDUCTION_BEFORE_PATTERN = /(?<![\p{L}\p{N}])less[\s-]+$/iu;
 
-/** A complete "not only X but also Y" adds both clauses; its opening is not a prohibition. */
-const ADDITIVE_NOT_ONLY_PATTERN = /^not[\s-]+only[\s-]+[^,.;:!?]+?\s+but[\s-]+also[\s-]+[^,.;:!?\s]+/iu;
+type AdditiveCorrelative = { start: number; connectorStart: number; end: number };
+
+function nextClauseEnd(text: string, start: number): RegExpExecArray | null {
+    const clauseEnd = new RegExp(CLAUSE_END_PATTERN.source, CLAUSE_END_PATTERN.flags);
+    clauseEnd.lastIndex = start;
+    return clauseEnd.exec(text);
+}
 
 /**
- * Each clause an opener heads blanked in place from the opener to the clause's end, offsets kept, so
- * "don't let the vocal get brighter" or "keep the drums punchy and the vocal warm" names a quality
- * the request withholds or keeps rather than one it asks for.
+ * A complete "not only X[,] but [also] Y" adds both qualities. Read its structure in the
+ * original text at the masked text's clause boundaries, retaining names as operands without
+ * accepting their contents as grammar. A sentence or new instruction ends the phrase.
  */
-function maskOpenedClauses(text: string, opener: RegExp): string {
-    const masked = text.split('');
-    for (const match of text.matchAll(opener)) {
-        if (opener === NEGATION_PATTERN && ADDITIVE_NOT_ONLY_PATTERN.test(text.slice(match.index))) {
+function readAdditiveCorrelatives(text: string, prompt: string): AdditiveCorrelative[] {
+    const pairs: AdditiveCorrelative[] = [];
+    const openingPattern = /(?<![\p{L}\p{N}])not[\s-]+only(?=[\s-])/giu;
+    const instructionPattern = new RegExp(String.raw`^${INSTRUCTION_VERBS}(?![\p{L}\p{N}])`, 'iu');
+    for (const opening of text.matchAll(openingPattern)) {
+        const operandStart = opening.index + opening[0].length;
+        const boundary = nextClauseEnd(text, operandStart);
+        if (boundary === null || prompt.slice(operandStart, boundary.index).trim() === '') {
             continue;
         }
-        const clauseEnd = new RegExp(CLAUSE_END_PATTERN.source, CLAUSE_END_PATTERN.flags);
-        clauseEnd.lastIndex = match.index + match[0].length;
-        let end = clauseEnd.exec(text)?.index ?? text.length;
-        // A correlative inside this prohibition is one qualified phrase: its "but" does not
-        // release the second quality as a new instruction.
-        const innerNotOnly = text.slice(match.index + match[0].length, end).search(/\bnot[\s-]+only\b/iu);
-        if (innerNotOnly !== -1) {
-            const start = match.index + match[0].length + innerNotOnly;
-            const additive = ADDITIVE_NOT_ONLY_PATTERN.exec(text.slice(start));
-            if (additive !== null && start + additive[0].length > end) {
-                clauseEnd.lastIndex = start + additive[0].length;
-                end = clauseEnd.exec(text)?.index ?? text.length;
+        const connector = /^(?:,\s*)?but[\s-]+(?:also[\s-]+)?/iu.exec(prompt.slice(boundary.index));
+        if (connector === null || text.slice(boundary.index, boundary.index + connector[0].length) !== connector[0]) {
+            continue;
+        }
+        const secondStart = boundary.index + connector[0].length;
+        const end = nextClauseEnd(text, secondStart)?.index ?? prompt.length;
+        const second = prompt.slice(secondStart, end).trim();
+        if (second === '' || /^also$/iu.test(second) || instructionPattern.test(second)) {
+            continue;
+        }
+        pairs.push({ start: opening.index, connectorStart: boundary.index, end });
+    }
+    return pairs;
+}
+
+/**
+ * Blank each negated or kept clause in place. An outer prohibition or keep owns a whole
+ * correlative pair; a prohibition inside either operand still owns only that operand's clause.
+ */
+function maskOpenedClauses(text: string, opener: RegExp, pairs: AdditiveCorrelative[]): string {
+    const masked = text.split('');
+    for (const match of text.matchAll(opener)) {
+        if (opener === NEGATION_PATTERN && pairs.some((pair) => pair.start === match.index)) {
+            continue;
+        }
+        let end = nextClauseEnd(text, match.index + match[0].length)?.index ?? text.length;
+        for (const pair of pairs) {
+            if (match.index < pair.start && pair.start < end && end === pair.connectorStart) {
+                end = pair.end;
             }
         }
         masked.fill(' ', match.index, end);
@@ -114,7 +144,8 @@ export function readRequestMixDescriptors(input: {
     const unmasked = maskTrackReferences(input.prompt, input.context, ' ');
     // The opened clauses are read before the constraint clauses are blanked, which would take a
     // keep's own verb with them and leave its later conjuncts ("and the vocal warm") unopened.
-    const opened = maskOpenedClauses(maskOpenedClauses(unmasked, NEGATION_PATTERN), KEEP_PATTERN);
+    const pairs = readAdditiveCorrelatives(unmasked, input.prompt);
+    const opened = maskOpenedClauses(maskOpenedClauses(unmasked, NEGATION_PATTERN, pairs), KEEP_PATTERN, pairs);
     const masked = maskConstraintClauses(opened, input.prompt, input.reading);
     const descriptors: MixRecipeDescriptor[] = [];
     for (const match of masked.matchAll(readTermPattern(input.catalog))) {

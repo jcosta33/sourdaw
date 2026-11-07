@@ -67,4 +67,55 @@ describe('reading the characters a whole-project request asks for', () => {
     ])('leaves out what "%s" withholds, reduces or keeps', (prompt, expected) => {
         expect(readDescriptors(prompt)).toEqual(expected);
     });
+
+    describe.each(['but', 'but also', ', but', ', but also'])('the correlative connector %s', (connector) => {
+        const pair = `not only warmer ${connector} wider`;
+
+        it.each([
+            [`make this mix ${pair}`, ['warm', 'wide']],
+            [`MAKE this mix NOT  ONLY warmer ${connector.toUpperCase()} wider`, ['warm', 'wide']],
+            [`do not make this mix ${pair}`, []],
+            [`without making this mix ${pair}`, []],
+            [`keep this mix ${pair}`, []],
+            [`make this mix not only warmer ${connector} not wider`, ['warm']],
+            [`make this mix not only not warmer ${connector} wider`, ['wide']],
+            [`make this mix not only warmer ${connector} keep it wide`, ['warm']],
+            [`do not make this mix ${pair}; make it punchier`, ['punchy']],
+            [`keep this mix ${pair} and make it punchier`, ['punchy']],
+        ])('preserves the polarity of "%s"', (prompt, expected) => {
+            expect(readDescriptors(prompt)).toEqual(expected);
+        });
+
+        it('keeps name and quotation masking ahead of descriptor discovery', () => {
+            trackStore.set({
+                tracks: [createTrack({ id: 'named', name: 'Warmer' })],
+                selectedTrackId: null,
+                ghostClips: [],
+            });
+            expect(readDescriptors(`make this mix not only Warmer ${connector} wider`)).toEqual(['wide']);
+            expect(readDescriptors(`do not make this mix not only Warmer ${connector} wider`)).toEqual([]);
+            expect(readDescriptors(`make this mix not only "warmer" ${connector} wider`)).toEqual(['wide']);
+            expect(readDescriptors(`do not make this mix not only "warmer" ${connector} wider`)).toEqual([]);
+            expect(readDescriptors(`do not make this mix not only "warmer, not darker" ${connector} wider`)).toEqual(
+                []
+            );
+            trackStore.set({
+                tracks: [createTrack({ id: 'named', name: 'Warmer but darker' })],
+                selectedTrackId: null,
+                ghostClips: [],
+            });
+            expect(readDescriptors(`do not make this mix not only Warmer but darker ${connector} wider`)).toEqual([]);
+        });
+    });
+
+    it.each([
+        ['make it not only warmer but also', []],
+        ['make it not only warmer, but', []],
+        ['make it not only warmer. But wider', ['wide']],
+        ['make it not only warmer and make it wider', ['wide']],
+        ['do not make it warmer, but make it wider', ['wide']],
+        ['make it not only warmer but make it wider', ['wide']],
+    ])('does not join incomplete or independent clauses in "%s"', (prompt, expected) => {
+        expect(readDescriptors(prompt)).toEqual(expected);
+    });
 });

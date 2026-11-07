@@ -24,7 +24,7 @@ import { type ToolSchema } from '../../models/ToolDefinitions';
 import { agentResourceLimitsStore, readAgentResourceLimits } from '../../stores/agentResourceLimitsStore';
 import { readAgentRunState, sanitizeAgentRunState } from '../../stores/agentRunStore';
 import { clearAiHistory } from '../../stores/aiActionHistoryStore';
-import { chatStore } from '../../stores/chatStore';
+import { chatStore, clearChatMessages } from '../../stores/chatStore';
 import { pendingActionConfirmationStore } from '../../stores/pendingActionConfirmationStore';
 import { groundVibeRunBatch } from '../agentRequestOrchestration/groundVibeRunBatch';
 import { agentRunLifecycle } from '../agentRunLifecycle';
@@ -444,9 +444,14 @@ describe('a whole-project vibe run of measured recipe batches (AC-003 of #4372)'
         expect(agentRunLifecycle.get(brief.runId)?.phase).toBe('partially-completed');
     });
 
-    it.each(['reject', 'resolve'] as const)(
-        'keeps a cancelled later batch cancelled when its held preview settles with %s',
-        async (settlement) => {
+    it.each([
+        { settlement: 'reject', cleared: false },
+        { settlement: 'resolve', cleared: false },
+        { settlement: 'reject', cleared: true },
+        { settlement: 'resolve', cleared: true },
+    ] as const)(
+        'settles a cancelled later preview with $settlement (chat cleared: $cleared)',
+        async ({ settlement, cleared }) => {
             const brief = await confirmBrief();
             const drums = requireOnlyProposedCard();
             let admitted!: () => void;
@@ -479,7 +484,14 @@ describe('a whole-project vibe run of measured recipe batches (AC-003 of #4372)'
             const revision = captureProjectRevision();
             const tracks = structuredClone(trackStore.value);
             const history = structuredClone(undoHistoryStore.value);
-            const messages = structuredClone(chatStore.value?.messages);
+            const preparing = chatStore.value?.messages.find(
+                (message) => message.content === 'Preparing batch 3 of 4...'
+            );
+            expect(preparing).toBeDefined();
+            const otherMessages = chatStore.value?.messages.filter((message) => message.id !== preparing?.id);
+            if (cleared) {
+                clearChatMessages();
+            }
             release();
             await expect(confirmation).resolves.toEqual({ status: 'executed' });
             const settled = agentRunLifecycle.get(brief.runId);
@@ -489,7 +501,20 @@ describe('a whole-project vibe run of measured recipe batches (AC-003 of #4372)'
             expect(captureProjectRevision()).toBe(revision);
             expect(trackStore.value).toEqual(tracks);
             expect(undoHistoryStore.value).toEqual(history);
-            expect(chatStore.value?.messages).toEqual(messages);
+            if (cleared) {
+                expect(chatStore.value?.messages).toEqual([]);
+            } else {
+                expect(chatStore.value?.messages.find((message) => message.id === preparing?.id)).toMatchObject({
+                    content: 'Cancelled preparation of batch 3 of 4. Batches 1–2 remain applied.',
+                    pendingActionConfirmationStatus: 'cancelled',
+                });
+                expect(chatStore.value?.messages.filter((message) => message.id !== preparing?.id)).toEqual(
+                    otherMessages
+                );
+            }
+            expect(chatStore.value?.messages.some((message) => message.content.startsWith('Preparing batch'))).toBe(
+                false
+            );
             expect(proposedCards()).toEqual([]);
             expect(trackDeviceTypes(DRUMS_ID)).toEqual(['builtin-eq']);
             expect(trackDeviceTypes(VOCAL_ID)).toEqual([]);

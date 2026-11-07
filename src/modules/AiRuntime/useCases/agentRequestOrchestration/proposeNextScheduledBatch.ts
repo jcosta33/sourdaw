@@ -11,7 +11,7 @@ import {
 } from '../../models/AgentRun';
 import { type IntentResult } from '../../models/IntentResult';
 import { type ScheduledVibeRunBatch } from '../../models/VibeRunPlan';
-import { appendChatMessage } from '../../stores/chatStore';
+import { appendChatMessage, updateChatMessage } from '../../stores/chatStore';
 import { pendingActionConfirmationStore } from '../../stores/pendingActionConfirmationStore';
 import { normalizeAgentPlanProposal } from '../../transformers/normalizeAgentPlanProposal';
 import { readScheduledVibeRunPlan } from '../../validators/readScheduledVibeRunPlan';
@@ -223,6 +223,12 @@ async function proposeMeasuredVibeBatch(input: {
         agentRunLifecycle.updateBatchStatus({ runId: run.runId, batchId, status: 'failed' });
         return { status: 'rejected', reason: 'its measured preview could not be prepared' };
     }
+    const settleStoppedPreparation = () => {
+        updateChatMessage(input.assistantMessageId, {
+            pendingActionConfirmationStatus: 'cancelled',
+            content: `Cancelled preparation of batch ${String(position)} of ${String(schedule.total)}. ${describeAppliedBatches(position)}`,
+        });
+    };
     let proof: Awaited<ReturnType<typeof prepareMetricGoalPreview>>;
     try {
         proof = await prepareMetricGoalPreview({
@@ -235,6 +241,7 @@ async function proposeMeasuredVibeBatch(input: {
     } catch (error) {
         const current = agentRunLifecycle.get(run.runId);
         if (current === null || AGENT_RUN_TERMINAL_PHASES.has(current.phase)) {
+            settleStoppedPreparation();
             return { status: 'stopped' };
         }
         agentRunLifecycle.updateBatchStatus({ runId: run.runId, batchId, status: 'failed' });
@@ -242,6 +249,7 @@ async function proposeMeasuredVibeBatch(input: {
     }
     const liveRun = agentRunLifecycle.get(run.runId);
     if (liveRun === null || AGENT_RUN_TERMINAL_PHASES.has(liveRun.phase)) {
+        settleStoppedPreparation();
         return { status: 'stopped' };
     }
     const approval = compileAgentRiskApproval({
