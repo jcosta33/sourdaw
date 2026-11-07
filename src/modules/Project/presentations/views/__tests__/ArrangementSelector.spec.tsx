@@ -178,12 +178,13 @@ describe('ArrangementSelector', () => {
         fireEvent.click(screen.getByLabelText(/Arrangement selector/i));
         const rename = screen.getByRole('button', { name: 'Rename Arrangement 2' });
 
-        fireEvent.keyDown(rename, { key: 'Enter' });
-        fireEvent.keyDown(rename, { key: ' ' });
+        const enterNotCancelled = fireEvent.keyDown(rename, { key: 'Enter', cancelable: true });
+        const spaceNotCancelled = fireEvent.keyDown(rename, { key: ' ', cancelable: true });
 
         // jsdom does not synthesize a click from Enter on a button, so the
-        // editor itself stays covered by the click case below. What this case
-        // proves is that the row does not cancel the key or switch instead.
+        // editor itself stays covered by the click case below.
+        expect(enterNotCancelled).toBe(true);
+        expect(spaceNotCancelled).toBe(true);
         expect(switchArrangement).not.toHaveBeenCalled();
     });
 
