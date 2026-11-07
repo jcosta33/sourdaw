@@ -1,0 +1,27 @@
+src/modules/Arrangement/handlers/clip/handleDuplicateClipToNextBar.ts
+  s_8dd2ba9e498da7::t_a27b106b524e62 85-87
+src/modules/Command/useCases/findPendingRedoEntry.ts
+  s_8dd2ba9e498da7::t_5603753aab3975 12-16
+src/modules/Arrangement/handlers/clip/handleDuplicateClip.ts
+  s_8dd2ba9e498da7::t_a27b106b524e62 119-121
+src/modules/Command/useCases/__tests__/bindCanonicalRedoAction.spec.ts
+  s_8dd2ba9e498da7::t_92e6f8520dd35d 79-89
+src/modules/Arrangement/handlers/clip/handleAddClip.ts
+  s_8dd2ba9e498da7::t_a27b106b524e62 62-64
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "28c985e198651578b1869af221dde6cf57d90e37",
+  "prompts": {},
+  "sessions": {
+    "s_8dd2ba9e498da7": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34a-1f45-7430-80af-58acd6c4b831",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
