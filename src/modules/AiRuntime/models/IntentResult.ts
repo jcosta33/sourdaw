@@ -1,5 +1,5 @@
 import { type ActionCommandGraph } from './ActionCommandGraph';
-import { type AgentRunBatchSchedule, type AgentRunProviderProposal } from './AgentRun';
+import { type AgentRunProviderProposal, type PlannedAgentRunBatchSchedule } from './AgentRun';
 import { type ApplicationToolReceipt } from './ApplicationOwnedTool';
 import { type CreativeRequestAuthority } from './CreativeInterpretation';
 import { type ExecutableRuntimeAction } from './ExecutableRuntimeAction';
@@ -58,9 +58,15 @@ export type IntentResult = {
     /**
      * Present when the compiled list expanded past one batch: these actions are batch `position` of
      * the schedule, and the run proposes each later batch only after this one commits. The run's
-     * interaction mode and trust ceiling are bound to it when the plan is recorded.
+     * interaction mode and trust ceiling are bound to it when the plan is recorded. A production brief
+     * whose run the application planned carries a `vibe-run` schedule, of which it is batch 1.
      */
-    batchSchedule?: Omit<AgentRunBatchSchedule, 'interactionMode' | 'trustCeiling'>;
+    batchSchedule?: PlannedAgentRunBatchSchedule;
+    /**
+     * The card lines a brief carrying a vibe run adds: the batches planned after it, or why none was
+     * scheduled. The planned run itself rides `batchSchedule`.
+     */
+    plannedRunLines?: string[];
     /**
      * The confirmation id of the thread's pending proposal this batch replaces, admitted against the
      * thread the request was planned in. Present only on a refinement, which always asks for

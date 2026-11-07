@@ -5,10 +5,9 @@ async function openFermenter(page: import('@playwright/test').Page): Promise<voi
     const search = page.getByTestId('browser-search');
     if (!(await search.isVisible().catch(() => false))) {
         await page.getByTestId('toggle-browser').click();
-        await page.waitForTimeout(500);
     }
+    await expect(search).toBeVisible();
     await search.fill('fermenter');
-    await page.waitForTimeout(500);
     // The Fermenter card must be reachable; if it is not, the panel-open
     // contract is broken and the test must fail rather than silently skip.
     const card = page.getByRole('button', { name: /^Fermenter/i }).first();
@@ -25,7 +24,7 @@ test.describe('Fermenter panel deep — knobs, macros', () => {
         await launch_new_project(page);
     });
 
-    test('Fermenter knob responds to keyboard — aria-valuenow changes on ArrowUp', async ({ page }) => {
+    test('Fermenter Brightness macro responds to keyboard at both bounds', async ({ page }) => {
         await openFermenter(page);
 
         const level = page.locator('.fermenter-faceplate').getByRole('slider', { name: 'Level', exact: true });
@@ -33,6 +32,19 @@ test.describe('Fermenter panel deep — knobs, macros', () => {
         await level.scrollIntoViewIfNeeded();
         await level.press('ArrowUp');
         await expect(level).toHaveAttribute('aria-valuenow', '0.81');
+
+        const brightness = page
+            .getByTestId('instrument-bottom-panel-body')
+            .getByRole('slider', { name: 'Brightness', exact: true });
+        await expect(brightness).toBeVisible();
+        await brightness.focus();
+        await page.keyboard.press('End');
+        await expect(brightness).toHaveAttribute('aria-valuenow', '1');
+        await page.keyboard.press('Home');
+        await expect(brightness).toHaveAttribute('aria-valuenow', '0');
+        await page.keyboard.press('ArrowUp');
+        await expect(brightness).toHaveAttribute('aria-valuenow', '0.01');
+
         const panel = page.locator('.fermenter-faceplate');
         await panel.getByRole('button', { name: 'Effects', exact: true }).click();
         await expect(panel.getByRole('button', { name: 'Dist', exact: true })).toHaveAttribute('aria-pressed', 'true');

@@ -44,6 +44,12 @@ const engineWrites: { trackId: string; deviceId: string; paramId: string; value:
 let afterEngineWrite: (() => void) | null = null;
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    captureOfflineRenderProjectSource: vi.fn(() => {
+        throw new Error('Unexpected selection render capture in this fixture');
+    }),
+    captureOfflineRenderRuntimeInput: vi.fn(() => {
+        throw new Error('Unexpected selection render capture in this fixture');
+    }),
     builtinSynthVoice: { read: vi.fn() },
     reconcileAutoInputMonitoring: vi.fn(),
     stopTrackInputMonitoring: vi.fn(),
