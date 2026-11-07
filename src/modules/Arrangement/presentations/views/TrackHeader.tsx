@@ -32,7 +32,6 @@ import { soloTrack } from '../../useCases/toggleTrackState/soloTrack';
 import { soloTrackExclusive } from '../../useCases/toggleTrackState/soloTrackExclusive';
 import { INPUT_MONITORING_CYCLE } from '../../useCases/toggleTrackState/toggleInputMonitoring';
 import { toggleVariationLanes } from '../../useCases/toggleTrackState/toggleVariationLanes';
-
 import { useTrackMuteToggle } from '../hooks/useTrackMuteToggle';
 
 import { TrackContextMenu } from './TrackContextMenu';

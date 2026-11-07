@@ -17,18 +17,22 @@ type Scope = { id: string; active: boolean; sequence: Sequence | null };
 
 export function useTrackMuteToggle(trackId: string, muted: boolean): () => Promise<void> {
     const current = useRef<Scope | null>(null);
-    if (!current.current || current.current.id !== trackId) {
-        current.current = { id: trackId, active: true, sequence: null };
-    }
-    const scope = current.current;
     useEffect(() => {
-        scope.active = true;
+        const scope: Scope = { id: trackId, active: true, sequence: null };
+        current.current = scope;
         return () => {
             scope.active = false;
+            if (current.current === scope) {
+                current.current = null;
+            }
         };
-    }, [scope]);
+    }, [trackId]);
 
     return () => {
+        const scope = current.current;
+        if (!scope || !scope.active || scope.id !== trackId) {
+            return Promise.resolve();
+        }
         let sequence = scope.sequence;
         if (!sequence) {
             sequence = {
