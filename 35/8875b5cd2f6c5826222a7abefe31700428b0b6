@@ -1,0 +1,20 @@
+src/app/__tests__/mainRenderBeforeBootstrap.spec.tsx
+  s_78b2b3b67c73ae::t_5891d276ae9d9c 67-70,76
+  s_78b2b3b67c73ae::t_e80416aba4b713 276
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "358875b5cd2f6c5826222a7abefe31700428b0b6",
+  "prompts": {},
+  "sessions": {
+    "s_78b2b3b67c73ae": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "f193e2c8-7176-4f60-8134-03128fe7841b",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
