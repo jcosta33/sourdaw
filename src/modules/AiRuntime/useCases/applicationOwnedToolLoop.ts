@@ -418,7 +418,14 @@ function executeSemanticProjectQuery(
         const receipt = querySemanticProject(input);
         answerSources?.set(callId, {
             kind: 'query-page',
-            value: { queryType: receipt.queryType, itemCount: receipt.items.length, total: receipt.page.total },
+            value: {
+                queryType: receipt.queryType,
+                itemCount: receipt.items.length,
+                total: receipt.page.total,
+                input: structuredClone(input),
+                sourceRevision: JSON.stringify(receipt.revision),
+                warnings: [...receipt.warnings],
+            },
         });
         return {
             schema: 'sourdaw.application-tool-receipt',

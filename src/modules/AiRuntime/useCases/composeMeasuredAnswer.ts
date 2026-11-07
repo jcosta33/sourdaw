@@ -1,4 +1,5 @@
 import { getAgentBuiltinDeviceFactoryManifest } from '#/modules/Arrangement/useCases';
+import { querySemanticProject } from '#/modules/Project/useCases';
 import { compareAgentScopeMeasurements } from '#/modules/AudioAnalysis/useCases';
 import { digest } from '#/utils/canonicalDigest';
 
@@ -23,7 +24,17 @@ import { objectiveMetricProjection, OBJECTIVE_METRIC_LABELS } from './objectiveM
 export type AnswerReadSource =
     | { kind: 'measurement'; value: AnswerMeasurement }
     | { kind: 'recipe'; value: RecipeDiscoveryReceiptData }
-    | { kind: 'query-page'; value: { queryType: string; itemCount: number; total: number } }
+    | {
+          kind: 'query-page';
+          value: {
+              queryType: string;
+              itemCount: number;
+              total: number;
+              input: Parameters<typeof querySemanticProject>[0];
+              sourceRevision: string;
+              warnings: string[];
+          };
+      }
     | { kind: 'source-onsets'; value: AnswerOnsets };
 export type AdmittedAnswerRead = { receipt: ApplicationToolReceipt; source: AnswerReadSource };
 export type AdmittedAnswerIntake = { callId: string; turn: number; authority: AnswerRequestAuthority };
@@ -433,6 +444,60 @@ function composeSourceOnsets(
     return `Source-buffer onsets for ${formatSubjectLabel(authority, source.clipId)}: this page has ${String(source.hits.length)} hit(s), offsets ${String(source.coverage.offset)}–${String(source.coverage.endOffset)}, of ${String(source.totalHitCount)} total. Source-buffer times: ${source.hits.map((hit) => `${formatAnswerNumber(hit.sourceSeconds)} seconds (confidence ${formatAnswerNumber(hit.confidence)})`).join(', ')}. These are source-buffer times, not arrangement beats or track alignment.`;
 }
 
+type QueryInput = Parameters<typeof querySemanticProject>[0];
+type QueryFilterKey = keyof NonNullable<QueryInput['filters']>;
+const QUERY_FILTER_KEYS = {
+    stableId: true,
+    exactName: true,
+    fuzzyName: true,
+    kind: true,
+    tag: true,
+    role: true,
+    parentId: true,
+    startBeat: true,
+    endBeat: true,
+    sectionId: true,
+    selected: true,
+    locked: true,
+    muted: true,
+    soloed: true,
+    deviceType: true,
+    deviceCategory: true,
+    routeFromId: true,
+    routeToId: true,
+    hasAutomation: true,
+    contentType: true,
+    assetType: true,
+    minInferredConfidence: true,
+} satisfies Record<QueryFilterKey, true>;
+
+function queryScope(input: QueryInput): string | null {
+    const filters = input.filters;
+    const keys = Object.keys(QUERY_FILTER_KEYS) as QueryFilterKey[];
+    const entries = keys.flatMap((key) => {
+        const value = filters?.[key];
+        if (value === undefined) return [];
+        if (typeof value === 'string') {
+            if (/[\r\n]/.test(value)) return [null];
+            return [`${key}: ${quoteSourceData(value)}`];
+        }
+        if (typeof value === 'number' && !Number.isFinite(value)) return [null];
+        return [`${key}: ${String(value)}`];
+    });
+    if (entries.includes(null) || (input.type === 'project-summary' && entries.length > 0)) return null;
+    const scope = entries.length ? [`filters (${entries.join(', ')})`] : [];
+    if (input.type === 'diff') {
+        if (input.sinceRevision === undefined || /[\r\n]/.test(input.sinceRevision)) return null;
+        scope.push(`sinceRevision: ${quoteSourceData(input.sinceRevision)}`);
+    }
+    if (input.page?.limit !== undefined) scope.push(`limit: ${String(input.page.limit)}`);
+    if (input.page?.cursor !== undefined) {
+        if (/[\r\n]/.test(input.page.cursor)) return null;
+        scope.push(`cursor: ${quoteSourceData(input.page.cursor)}`);
+    }
+    return scope.length ? ` with ${scope.join('; ')}` : '';
+}
+
 function composeReadStatement(
     statement: Extract<AnswerStatement, { callId: string }>,
     intake: AdmittedAnswerIntake,
@@ -443,8 +508,20 @@ function composeReadStatement(
         return null;
     }
     if (statement.kind === 'query-page' && read.source.kind === 'query-page') {
+        const source = read.source.value;
+        // Project's receipt revision token is a semantic-index hash; the bounded revision
+        // object preserves the captured CRDT revision and refuses truncated identities.
+        if (
+            read.receipt.turn <= intake.turn ||
+            source.sourceRevision !== intake.authority.revision ||
+            (source.input.type === 'diff' &&
+                source.warnings.some((warning) => warning.includes('outside the retained semantic diff window')))
+        )
+            return null;
+        const scope = queryScope(source.input);
+        if (scope === null) return null;
         return {
-            text: `The ${quoteSourceData(read.source.value.queryType)} query returned ${String(read.source.value.itemCount)} item(s) on this page out of ${String(read.source.value.total)} matching item(s).`,
+            text: `The ${quoteSourceData(read.source.value.queryType)} query${scope} returned ${String(read.source.value.itemCount)} item(s) on this page out of ${String(read.source.value.total)} matching item(s).`,
             callIds: [statement.callId],
         };
     }

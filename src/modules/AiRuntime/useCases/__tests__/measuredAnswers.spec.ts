@@ -306,6 +306,45 @@ describe('AC002 measured answers use actual successful audio reductions', () => 
         }
     });
 
+    it('rejects an earlier metric beside a compatible later measurement', async () => {
+        const { intake, measure, run } = setup();
+        const later = { ...measure, id: 'later' };
+        const laterReference = { ...reference, callId: 'later' };
+        const result = await run([
+            [measure],
+            [intake],
+            [later],
+            [terminal([{ kind: 'difference', left: reference, right: laterReference }])],
+        ]);
+        expect(result.status).toBe('rejected');
+        const control = await run([[intake], [later], [terminal([{ kind: 'metric', reference: laterReference }])]]);
+        expect(control.status).toBe('complete');
+    });
+    it.each(['receipt', 'measurement'] as const)(
+        'rejects a %s revision mismatch beside a compatible read',
+        async (mismatch) => {
+            const { intake, measure, run } = setup();
+            const later = { ...measure, id: 'later' };
+            const laterReference = { ...reference, callId: 'later' };
+            const result = await run(
+                [
+                    [intake],
+                    [measure],
+                    [later],
+                    [terminal([{ kind: 'difference', left: reference, right: laterReference }])],
+                ],
+                (produced) => {
+                    const copy = structuredClone(produced);
+                    if (copy.receipt.callId === 'measure') {
+                        if (mismatch === 'receipt') copy.receipt.revision = 'different';
+                        else if (copy.answerMeasurement) copy.answerMeasurement.revision = 'different';
+                    }
+                    return copy;
+                }
+            );
+            expect(result.status).toBe('rejected');
+        }
+    );
     it('does not reuse a successful pre-intake measurement', async () => {
         const { intake, measure, run } = setup();
         const result = await run([[measure], [intake], [terminal([{ kind: 'metric', reference }])]]);
