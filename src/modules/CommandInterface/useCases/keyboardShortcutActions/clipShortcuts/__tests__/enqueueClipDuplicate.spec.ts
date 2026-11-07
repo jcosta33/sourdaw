@@ -132,6 +132,43 @@ describe('ordered duplicate intent controlled outcomes', () => {
         }
     );
 
+    it('ignores next-bar input between queued multi-clip duplicates without retiring their chain', async () => {
+        setClipSelection(['source', 'other']);
+        const held = Promise.withResolvers<void>();
+        dispatchBatch.mockImplementationOnce(async (actions) => {
+            await held.promise;
+            createNamedCopies(actions);
+            return { status: 'committed', actions: [] };
+        });
+        const first = enqueueClipDuplicate('duplicateClip');
+        const ignored = enqueueClipDuplicate('duplicateClipToNextBar');
+        const second = enqueueClipDuplicate('duplicateClip');
+        expect(dispatchBatch).toHaveBeenCalledTimes(1);
+        held.resolve();
+        await Promise.all([first, ignored, second]);
+        expect(dispatchSingle).not.toHaveBeenCalled();
+        expect(dispatchBatch).toHaveBeenCalledTimes(2);
+        expect(clips().map(({ startBeat, endBeat }) => [startBeat, endBeat])).toEqual([
+            [1, 3],
+            [4, 9],
+            [9, 11],
+            [12, 17],
+            [17, 19],
+            [20, 25],
+        ]);
+        expect(dispatchBatch.mock.calls[1]?.[0]).toMatchObject([
+            { type: 'duplicateClipAt', payload: { clipId: clips()[2]?.id, startBeat: 17 } },
+            { type: 'duplicateClipAt', payload: { clipId: clips()[3]?.id, startBeat: 20 } },
+        ]);
+        expect(clipSelectionStore.value?.selectedClipIds).toEqual(
+            clips()
+                .slice(4)
+                .map((clip) => clip.id)
+        );
+        expect(logger.error).not.toHaveBeenCalled();
+        expect(notifyUser).not.toHaveBeenCalled();
+    });
+
     it.each(['refused', 'thrown'] as const)(
         'retires a %s single chain and lets fresh input recover',
         async (outcome) => {

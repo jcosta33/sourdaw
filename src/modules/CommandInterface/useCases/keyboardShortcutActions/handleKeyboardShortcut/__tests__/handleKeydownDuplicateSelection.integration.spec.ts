@@ -23,7 +23,7 @@ import {
     setCommandEventBus,
     undo,
 } from '#/modules/Command/useCases';
-import { agentProjectRepairStateStore } from '#/modules/CrdtDocument/stores';
+import { agentProjectRepairStateStore, captureProjectIdentity } from '#/modules/CrdtDocument/stores';
 import {
     createCrdtDoc,
     getCrdtDoc,
@@ -300,64 +300,70 @@ describe('overlapping duplicate shortcut selection through real Command', () => 
         }
     );
 
-    it('chains unequal multi-clip spans and keeps notes and one undo group per press', async () => {
-        addSecondClip();
-        setClipSelection(['source', 'other']);
-        const originalMidi = structuredClone(midiStore.value);
-        await duringSnapshotWait(() => {
-            pressDuplicate();
-            pressDuplicate();
-        });
-        expect(clips().map(({ startBeat, endBeat }) => [startBeat, endBeat])).toEqual([
-            [1, 3],
-            [4, 9],
-            [9, 11],
-            [12, 17],
-            [17, 19],
-            [20, 25],
-        ]);
-        expect(clipSelectionStore.value?.selectedClipIds).toEqual(
-            clips()
-                .slice(4)
-                .map((clip) => clip.id)
-        );
-        const entries = captureUndoHistory().past;
-        expect(entries).toHaveLength(4);
-        expect(entries[0]?.groupId).toBe(entries[1]?.groupId);
-        expect(entries[2]?.groupId).toBe(entries[3]?.groupId);
-        expect(entries[0]?.groupId).not.toBe(entries[2]?.groupId);
-        const finalGeometry = geometry();
-        const finalMidi = musicalContent();
-        expectRawMatchesProjection();
-        expectOriginalRows(originalMidi);
-        expectSurvivingMidi(['source', 'other'], originalMidi);
-        expect(clips().map((clip) => midiStore.value?.notesByClipId[clip.id]?.[0]?.pitch)).toEqual([
-            60, 72, 60, 72, 60, 72,
-        ]);
-        await undo();
-        expect(geometry()).toEqual(finalGeometry.slice(0, 4));
-        expectRawMatchesProjection();
-        expectOriginalRows(originalMidi);
-        expectSurvivingMidi(['source', 'other'], originalMidi);
-        await undo();
-        expect(geometry()).toEqual(finalGeometry.slice(0, 2));
-        expectRawMatchesProjection();
-        expectOriginalRows(originalMidi);
-        expectSurvivingMidi(['source', 'other'], originalMidi);
-        await redo();
-        expect(geometry()).toEqual(finalGeometry.slice(0, 4));
-        await redo();
-        expect(geometry()).toEqual(finalGeometry);
-        expect(musicalContent()).toEqual(finalMidi);
-        expectRawMatchesProjection();
-        expectOriginalRows(originalMidi);
-        expectSurvivingMidi(['source', 'other'], originalMidi);
-        await undo();
-        expect(geometry()).toEqual(finalGeometry.slice(0, 4));
-        expectRawMatchesProjection();
-        expectOriginalRows(originalMidi);
-        expectSurvivingMidi(['source', 'other'], originalMidi);
-    });
+    it.each([false, true])(
+        'chains unequal multi-clip spans and keeps notes and one undo group per press (ignored next-bar: %s)',
+        async (ignoredNextBar) => {
+            addSecondClip();
+            setClipSelection(['source', 'other']);
+            const originalMidi = structuredClone(midiStore.value);
+            await duringSnapshotWait(() => {
+                pressDuplicate();
+                if (ignoredNextBar) {
+                    pressDuplicate(true);
+                }
+                pressDuplicate();
+            });
+            expect(clips().map(({ startBeat, endBeat }) => [startBeat, endBeat])).toEqual([
+                [1, 3],
+                [4, 9],
+                [9, 11],
+                [12, 17],
+                [17, 19],
+                [20, 25],
+            ]);
+            expect(clipSelectionStore.value?.selectedClipIds).toEqual(
+                clips()
+                    .slice(4)
+                    .map((clip) => clip.id)
+            );
+            const entries = captureUndoHistory().past;
+            expect(entries).toHaveLength(4);
+            expect(entries[0]?.groupId).toBe(entries[1]?.groupId);
+            expect(entries[2]?.groupId).toBe(entries[3]?.groupId);
+            expect(entries[0]?.groupId).not.toBe(entries[2]?.groupId);
+            const finalGeometry = geometry();
+            const finalMidi = musicalContent();
+            expectRawMatchesProjection();
+            expectOriginalRows(originalMidi);
+            expectSurvivingMidi(['source', 'other'], originalMidi);
+            expect(clips().map((clip) => midiStore.value?.notesByClipId[clip.id]?.[0]?.pitch)).toEqual([
+                60, 72, 60, 72, 60, 72,
+            ]);
+            await undo();
+            expect(geometry()).toEqual(finalGeometry.slice(0, 4));
+            expectRawMatchesProjection();
+            expectOriginalRows(originalMidi);
+            expectSurvivingMidi(['source', 'other'], originalMidi);
+            await undo();
+            expect(geometry()).toEqual(finalGeometry.slice(0, 2));
+            expectRawMatchesProjection();
+            expectOriginalRows(originalMidi);
+            expectSurvivingMidi(['source', 'other'], originalMidi);
+            await redo();
+            expect(geometry()).toEqual(finalGeometry.slice(0, 4));
+            await redo();
+            expect(geometry()).toEqual(finalGeometry);
+            expect(musicalContent()).toEqual(finalMidi);
+            expectRawMatchesProjection();
+            expectOriginalRows(originalMidi);
+            expectSurvivingMidi(['source', 'other'], originalMidi);
+            await undo();
+            expect(geometry()).toEqual(finalGeometry.slice(0, 4));
+            expectRawMatchesProjection();
+            expectOriginalRows(originalMidi);
+            expectSurvivingMidi(['source', 'other'], originalMidi);
+        }
+    );
 
     it.each([false, true])(
         'retires work after an explicit selection change, including coalesced away-and-back (%s)',
@@ -499,6 +505,144 @@ describe('overlapping duplicate shortcut selection through real Command', () => 
             expect(clips()).toHaveLength(2);
             expect(clips()[1]).toMatchObject({ startBeat: 23, endBeat: 26 });
             expect(midiStore.value?.notesByClipId[clips()[1]!.id]?.[0]?.pitch).toBe(81);
+            expectRawMatchesProjection();
+        }
+    );
+
+    it.each([false, true])(
+        'retires old work on a real replacement retaining the same selection reference (multi: %s)',
+        async (multi) => {
+            if (multi) {
+                addSecondClip();
+                setClipSelection(['source', 'other']);
+            }
+            const selection = clipSelectionStore.value;
+            const projectIdentity = captureProjectIdentity();
+            let replacement:
+                | {
+                      raw: string | undefined;
+                      geometry: ReturnType<typeof geometry>;
+                      midi: typeof midiStore.value;
+                  }
+                | undefined;
+            await duringSnapshotWait(
+                () => {
+                    pressDuplicate();
+                    pressDuplicate();
+                },
+                () => {
+                    removeCrdtDoc('root');
+                    createCrdtDoc('root');
+                    setTrackStoreState({
+                        ...defaultTrackState,
+                        tracks: [createTrack({ id: 'track', name: 'Replacement', kind: 'midi' })],
+                        selectedTrackId: 'track',
+                    });
+                    addClip({
+                        id: 'source',
+                        trackId: 'track',
+                        startBeat: 20,
+                        endBeat: 23,
+                        name: 'New source',
+                        type: 'midi',
+                    });
+                    midiStore.set({
+                        notesByClipId: {
+                            source: [
+                                {
+                                    id: 'new-note',
+                                    pitch: 81,
+                                    startBeat: 0.25,
+                                    duration: 1.5,
+                                    velocity: 99,
+                                    probability: 63,
+                                },
+                            ],
+                        },
+                        ccByClipId: { source: [{ id: 'new-cc', controller: 74, value: 92, beat: 0.5, channel: 1 }] },
+                        pitchBendByClipId: { source: [{ id: 'new-bend', value: 900, beat: 1, channel: 1 }] },
+                    });
+                    if (multi) {
+                        addClip({
+                            id: 'other',
+                            trackId: 'track',
+                            startBeat: 27,
+                            endBeat: 32,
+                            name: 'New other',
+                            type: 'midi',
+                        });
+                        midiStore.set({
+                            ...midiStore.value,
+                            notesByClipId: {
+                                ...midiStore.value?.notesByClipId,
+                                other: [
+                                    {
+                                        id: 'new-other-note',
+                                        pitch: 54,
+                                        startBeat: 1,
+                                        duration: 2,
+                                        velocity: 86,
+                                        probability: 78,
+                                    },
+                                ],
+                            },
+                            ccByClipId: {
+                                ...midiStore.value?.ccByClipId,
+                                other: [{ id: 'new-other-cc', controller: 11, value: 41, beat: 1.5, channel: 4 }],
+                            },
+                            pitchBendByClipId: {
+                                ...midiStore.value?.pitchBendByClipId,
+                                other: [{ id: 'new-other-bend', value: -2400, beat: 2, channel: 4 }],
+                            },
+                        });
+                    }
+                    automergeStorage.flushAutomergeStorageWrites();
+                    expect(captureProjectIdentity()).not.toBe(projectIdentity);
+                    expect(clipSelectionStore.value).toBe(selection);
+                    const existingIds = clips().map((clip) => clip.id);
+                    expect(selection?.selectedClipIds.every((id) => existingIds.includes(id))).toBe(true);
+                    replacement = {
+                        raw: projectSnapshot(),
+                        geometry: geometry(),
+                        midi: structuredClone(midiStore.value),
+                    };
+                }
+            );
+            if (!replacement) {
+                throw new Error('Expected the real replacement fixture to complete before releasing queued work');
+            }
+            expect(projectSnapshot()).toBe(replacement.raw);
+            expect(geometry()).toEqual(replacement.geometry);
+            expect(midiStore.value).toEqual(replacement.midi);
+            expect(clipSelectionStore.value).toBe(selection);
+            expect(captureUndoHistory()).toMatchObject({ past: [], future: [] });
+            expectRawMatchesProjection();
+
+            pressDuplicate();
+            await settleIntents();
+            const sourceIds = ['source'];
+            let expectedGeometry = [
+                [20, 23],
+                [23, 26],
+            ];
+            if (multi) {
+                sourceIds.push('other');
+                expectedGeometry = [
+                    [20, 23],
+                    [27, 32],
+                    [32, 35],
+                    [39, 44],
+                ];
+            }
+            expect(clips().map(({ startBeat, endBeat }) => [startBeat, endBeat])).toEqual(expectedGeometry);
+            expect(clipSelectionStore.value?.selectedClipIds).toEqual(
+                clips()
+                    .slice(sourceIds.length)
+                    .map((clip) => clip.id)
+            );
+            expect(captureUndoHistory().past).toHaveLength(sourceIds.length);
+            expectOriginalRows(replacement.midi);
+            expectSurvivingMidi(sourceIds, replacement.midi);
             expectRawMatchesProjection();
         }
     );

@@ -94,3 +94,6 @@ Report a probe that cannot run with its exact mutation, named check and limitati
    selection before its second press proves completed serial input only. Observe settlement through the actual
    returned intent promises; a fixed microtask count proves no scheduling boundary. Use controlled Command outcomes
    only for error interpretation, and label them as such; they cannot prove kernel admission or publication fences.
+   Test each independent authority predicate while the others remain valid: replacing the root and reselecting a
+   clip changes both project and selection, so it cannot detect removal of the project-identity check alone. Retain
+   the existing selection reference naturally, with all selected IDs present, then remove only that identity check.

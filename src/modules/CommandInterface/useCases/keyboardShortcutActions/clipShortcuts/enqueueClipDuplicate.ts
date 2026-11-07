@@ -31,6 +31,10 @@ async function runDuplicate(chain: DuplicateChain, type: DuplicateType): Promise
         return;
     }
     const selection = chain.selection;
+    // Next Bar is single-clip only; ignoring it must preserve surrounding queued duplicate intents.
+    if (type === 'duplicateClipToNextBar' && selection && selection.selectedClipIds.length > 1) {
+        return;
+    }
     const authority = {
         shouldExecute: () => ownsSelection(chain),
         // Advance the token in the same synchronous turn as our selection write, before another input.

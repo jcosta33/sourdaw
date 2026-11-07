@@ -79,7 +79,10 @@ boundaries.
    two presses before releasing that wait: single, next-bar and unequal-span multi selection must chain geometry,
    copy content and select the last copies, with one Undo/Redo group per press. Change selection away and back
    inside one store batch, or replace the project reusing IDs, while admission or a staged handler waits: no old
-   publication or completion may overwrite newer truth or selection; fresh input must recover. Revert ordering or
+   publication or completion may overwrite newer truth or selection; fresh input must recover. Keep every selected
+   ID alive and retain the same selection reference in a separate real replacement case so project identity is
+   independently necessary. Insert an inapplicable next-bar input between valid multi-clip duplicates: ignoring that
+   input must preserve both valid groups, while actual refusal still retires its failed chain. Revert ordering or
    remove the route's execution/publication authority predicate and the corresponding integration must fail.
    A committed-error or ambiguous result uses preallocated live copy IDs as witnesses, reports the error and never
    replays the mutation. The introducing helper's completed-press test missed overlap; prior review stances are not
