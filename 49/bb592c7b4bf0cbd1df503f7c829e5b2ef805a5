@@ -1,0 +1,31 @@
+src/modules/Crust/presentations/views/__tests__/CrustControls.integration.spec.tsx
+  s_eb3cd86b0cee6e::t_72ccaa091ca323 90-93,106-107,109,111
+  s_eb3cd86b0cee6e::t_ba95a40c0c8642 1-88,94-95,99-103,105,108,110,112-130,135-153,157-168,175-178,185-187,194-197,204-205
+  s_eb3cd86b0cee6e::t_77e97237cebbe6 89,104
+  s_eb3cd86b0cee6e::t_4eed205fda2ff4 96-98,131-134,154-156,169-174,179-184,188-193,198-203
+tests/e2e/crustAttackTimeTestId.spec.ts
+  s_eb3cd86b0cee6e::t_2a274a603794eb 14-16
+src/modules/Proof/presentations/views/__tests__/ProofDisclosure.integration.spec.tsx
+  s_eb3cd86b0cee6e::t_265e77ad8f0f43 18
+  s_eb3cd86b0cee6e::t_61a9aad70e8cf9 216,223-227,229,233-234,236,271-272,306
+  s_eb3cd86b0cee6e::t_4eed205fda2ff4 217-222,228,230-232,235,237-242,247-270,273-305,307
+  s_eb3cd86b0cee6e::t_323a49547fa2c8 8-13,243-246
+tests/e2e/crustRemainingKnobsTestId.spec.ts
+  s_eb3cd86b0cee6e::t_2a274a603794eb 34-36
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "49bb592c7b4bf0cbd1df503f7c829e5b2ef805a5",
+  "prompts": {},
+  "sessions": {
+    "s_eb3cd86b0cee6e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34c-a4d8-7523-838e-1cd1a0a25d78",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
