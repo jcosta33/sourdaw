@@ -1,0 +1,20 @@
+src/modules/ContentBrowser/useCases/renderPresetPreview.ts
+  s_977061c47f01dd::t_9ff8a2bfd0ee92 119
+  s_977061c47f01dd::t_ec3c4055470dde 50
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5e427cba15a6ab6f7aeb576630574880c324e5e5",
+  "prompts": {},
+  "sessions": {
+    "s_977061c47f01dd": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34d-123d-7452-a6e7-60608388b6d7",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
