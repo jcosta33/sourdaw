@@ -1774,6 +1774,28 @@ test('retains stereo-only Strip Silence islands through menu export and saved Un
         }
         return { frames: pcm.frames, digest: createHash('sha256').update(body).digest('hex') };
     };
+    const unrelatedTracks = () =>
+        page.evaluate(async (audioTrackId) => {
+            const [{ getCrdtDoc }, { trackStore }] = await Promise.all([
+                import('/src/modules/CrdtDocument/useCases/index.ts'),
+                import('/src/modules/Arrangement/stores/index.ts'),
+            ]);
+            const document = getCrdtDoc<{
+                tracks?: Pick<NonNullable<typeof trackStore.value>, 'tracks'>;
+            }>('root');
+            if (!document?.tracks || !trackStore.value) {
+                throw new Error('The unrelated-track owners are absent');
+            }
+            return {
+                raw: document.tracks.tracks.filter((track) => track.id !== audioTrackId),
+                projected: trackStore.value.tracks.filter((track) => track.id !== audioTrackId),
+            };
+        }, state.trackId);
+    await palette(page, 'Add MIDI Track');
+    const unrelatedBefore = await unrelatedTracks();
+    expect(unrelatedBefore.raw.length, 'the replay control requires an actual unrelated track').toBeGreaterThan(0);
+    expect(unrelatedBefore.raw.filter((track) => track.kind === 'midi')).toHaveLength(1);
+    expect(unrelatedBefore.raw).toEqual(unrelatedBefore.projected);
     const before = await readSnapshot(page);
     const beforeSatellites = await satellites();
     expect(beforeSatellites.raw).toEqual(beforeSatellites.projected);
@@ -1787,6 +1809,7 @@ test('retains stereo-only Strip Silence islands through menu export and saved Un
     await strip.click();
     await expect.poll(async () => (await readSnapshot(page)).raw.clips.length).toBe(3);
     state = await readSnapshot(page);
+    expect(await unrelatedTracks()).toEqual(unrelatedBefore);
     expect(state.raw).toEqual(state.projected);
     const children = [...state.raw.clips].sort((a, b) => a.startBeat - b.startBeat);
     expect(children.map((clip) => [clip.startBeat, clip.endBeat, clip.audioOffsetSeconds, clip.audioBufferId])).toEqual(
@@ -1833,6 +1856,7 @@ test('retains stereo-only Strip Silence islands through menu export and saved Un
         const actual = await readSnapshot(page);
         expect(actual.raw).toEqual(expected.raw);
         expect(actual.projected).toEqual(expected.projected);
+        expect(await unrelatedTracks()).toEqual(unrelatedBefore);
         expect(await satellites()).toEqual(expectedSatellites);
         expect(await sourcePcm()).toEqual(originalPcm);
         expect(await exported()).toEqual(expectedPcm);
@@ -1845,10 +1869,12 @@ test('retains stereo-only Strip Silence islands through menu export and saved Un
     await expect.poll(async () => (await readSnapshot(page)).raw.clips.length).toBe(3);
     state = await assertReplay(committed, committedSatellites, committedExport);
     page = await saveAndReopen(page, info, state);
+    expect(await unrelatedTracks()).toEqual(unrelatedBefore);
     await page.getByRole('button', { name: 'Undo', exact: true }).click();
     await expect.poll(async () => (await readSnapshot(page)).raw.clips.length).toBe(1);
     state = await assertReplay(before, beforeSatellites, beforeExport);
     page = await saveAndReopen(page, info, state);
+    expect(await unrelatedTracks()).toEqual(unrelatedBefore);
     await page.getByRole('button', { name: 'Redo', exact: true }).click();
     await expect.poll(async () => (await readSnapshot(page)).raw.clips.length).toBe(3);
     state = await assertReplay(committed, committedSatellites, committedExport);
@@ -1862,6 +1888,8 @@ test('retains stereo-only Strip Silence islands through menu export and saved Un
                 beforeExport,
                 committedExport,
                 committedSatellites,
+                unrelatedBefore,
+                unrelatedReplayed: await unrelatedTracks(),
                 replayObligation:
                     'Saved same-tab Strip Silence Undo then another Save/reload Redo; distinct from all-channel detection.',
                 carrier: 'Chromium source starts and Bakery PCM; no physical listening or native device-clock claim.',
