@@ -144,6 +144,7 @@ vi.mock('#/modules/MIDI/useCases', async () => {
     return {
         captureEventPositionAt: actual.captureEventPositionAt,
         prepareRecordedControllersCommit: actual.prepareRecordedControllersCommit,
+        captureRecordedControllerRetirement: actual.captureRecordedControllerRetirement,
         replaceFrozenMidiTakeRow: actual.replaceFrozenMidiTakeRow,
         sealHeldRecordedMidiNotes: actual.sealHeldRecordedMidiNotes,
         snapshotMidiClipData: actual.snapshotMidiClipData,

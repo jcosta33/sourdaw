@@ -149,6 +149,12 @@ vi.mock('#/modules/AiRuntime/useCases', () => ({
 }));
 
 vi.mock('#/modules/MIDI/useCases', () => ({
+    prepareRecordedControllersCommit: () => {
+        throw new Error('Startup fixture must not prepare recorded controller commits');
+    },
+    captureRecordedControllerRetirement: () => {
+        throw new Error('Startup fixture must not capture recorded controller retirement');
+    },
     snapshotMidiClipData: vi.fn<typeof import('#/modules/MIDI/useCases').snapshotMidiClipData>(),
     sealHeldRecordedMidiNotes: vi.fn<typeof import('#/modules/MIDI/useCases').sealHeldRecordedMidiNotes>(),
     replaceFrozenMidiTakeRow: vi.fn<typeof import('#/modules/MIDI/useCases').replaceFrozenMidiTakeRow>(),

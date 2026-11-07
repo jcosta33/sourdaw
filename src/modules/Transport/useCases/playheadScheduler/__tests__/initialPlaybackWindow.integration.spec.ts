@@ -145,6 +145,9 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     prepareRecoveredRecording: vi.fn(),
     discardRecording: vi.fn(),
     startRecording: vi.fn(() => []),
+    // Provisional rows are modeled without an Arrangement commit group or MIDI admission owner.
+    captureRecordingCommitRetirement: () => () => undefined,
+    hasAutomaticRecordingMidiCapture: () => false,
     stopRecording: vi.fn(),
     addTakeLane: vi.fn(),
     addTake: vi.fn(),
@@ -797,8 +800,16 @@ describe('initial browser playback window', () => {
             const playback = startPlayback();
             try {
                 await vi.waitFor(() => expect(processYeastMidi).toHaveBeenCalled());
-                expect(startRecording).toHaveBeenCalledExactlyOnceWith(1.5, expect.any(Function));
-                expect(vi.mocked(startRecording).mock.calls[0]?.[1]?.()).toBeNull();
+                const call = vi.mocked(startRecording).mock.calls[0];
+                const owner = schedulerSession.automaticPunch;
+                if (!owner || typeof call?.[1] !== 'function' || typeof call[3] !== 'function') {
+                    throw new Error('Initial punch did not supply its actual owner and anchor readers');
+                }
+                const initialAnchor = call[1];
+                const ownedRead = call[3];
+                expect(startRecording).toHaveBeenCalledExactlyOnceWith(1.5, initialAnchor, undefined, owner.read);
+                expect(initialAnchor()).toBeNull();
+                expect(ownedRead()).toEqual({ status: 'pending' });
                 expect(transportStoreState.value?.isRecording).toBe(true);
                 expect(notes).toEqual([]);
                 if (change === 'source edited') {
@@ -819,7 +830,18 @@ describe('initial browser playback window', () => {
                         pendingLoopSeam: null,
                         hold: null,
                     });
-                    expect(vi.mocked(startRecording).mock.calls[0]?.[1]?.()).toBe(10.1);
+                    expect(initialAnchor()).toBe(10.1);
+                    const bound = ownedRead();
+                    if (bound.status !== 'bounded') {
+                        throw new Error('The admitted initial punch did not date its original out');
+                    }
+                    expect(bound.startContextSeconds).toBe(10.1);
+                    const expectedOutSeconds = 10.1 + ((2 - 1.5) * 60) / 120;
+                    expect(bound.ending.contextSeconds).toBeCloseTo(expectedOutSeconds, 10);
+                    expect(bound.ending.beatAtContextSeconds(expectedOutSeconds)).toBeCloseTo(2, 10);
+                    expect(bound.ending.midiPosition).toEqual({ beat: 2, passIndex: 0 });
+                } else {
+                    expect(ownedRead()).toEqual({ status: 'retired' });
                 }
             } finally {
                 ready.resolve();

@@ -24,6 +24,9 @@ const { executeUserAppActionMock, pushUndoEntryMock, takeLaneStoreMock } = vi.ho
 }));
 
 vi.mock('#/modules/Command/useCases', () => ({
+    resetActionReplayAuthority: () => {
+        throw new Error('Unexpected replay-authority reset in this comping fixture');
+    },
     getExecutableAppActionEffect: vi.fn(() => null),
     executeAppAction: vi.fn(),
     executeUserAppAction: executeUserAppActionMock,
