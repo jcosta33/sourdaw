@@ -86,6 +86,11 @@ function createPendingDecision(input?: {
 
 describe('resumeAgentRunDecision', () => {
     beforeEach(() => {
+        resumeSend.mockReset();
+        resumeSend.mockImplementation(async (_request, options) => {
+            options.onResumedRunAdmitted('run-decision-resume-attempt');
+            options.onResumedPlanAccepted();
+        });
         configureAutomergeStoragePort(null);
         resetCrdtProjectAuthority('decision resume after save');
         removeCrdtDoc('root');
