@@ -1,0 +1,23 @@
+src/modules/AiRuntime/useCases/__tests__/admitWorkflowMetricIntake.spec.ts
+  s_68423a2adea8d2::t_df0625e3f72fdf 3,27
+  s_68423a2adea8d2::t_4aae1eafddca41 40-48,68-70,80-91,108-121,125-132,147-150,159-164,173-176
+  s_68423a2adea8d2::t_7bdebcdc0a7e23 1-2,4-26,28-39,49-67,71-79,92-107,122-124,133-146,151-158,165-172,177-178
+src/modules/AiRuntime/useCases/admitWorkflowMetricIntake.ts
+  s_68423a2adea8d2::t_346af493ba324d 1,10,36
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "abf6e9ff09d979c53e1720e1e74d0a6ea19c4ab0",
+  "prompts": {},
+  "sessions": {
+    "s_68423a2adea8d2": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34b-f305-7c03-beb2-57afa678cda5",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
