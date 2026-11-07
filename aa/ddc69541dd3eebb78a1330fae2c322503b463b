@@ -1,0 +1,74 @@
+src/modules/Command/useCases/registerHandlerCommitValidation.ts
+  s_68423a2adea8d2::t_44b0d28abb8d08 7-8,14
+src/modules/Command/useCases/commandProjectRevisionPort.ts
+  s_68423a2adea8d2::t_f71067c32fad02 36-38,49-52
+  s_68423a2adea8d2::t_962f98734335d0 3-6,17-18,27-35,39-48,53-57,69,77
+src/modules/Command/useCases/executeAppActionBatch.ts
+  s_68423a2adea8d2::t_44b0d28abb8d08 35-38,1050,1053-1056,1071,1078,1085
+  s_68423a2adea8d2::t_fd014a951fff06 1072-1077
+  s_68423a2adea8d2::t_8c531b3d3e05bb 972-991,1009-1011,1017,1052
+src/app/__tests__/registerKernelPorts.spec.ts
+  s_68423a2adea8d2::t_33fafcd6da5073 110,112-116,123,137-144,146-148,163-167
+  s_68423a2adea8d2::t_eb4aebab982d30 13-24,111,117-122,124-136,145,149-162,168-204
+  s_68423a2adea8d2::t_1ebace6d435622 205
+src/modules/Command/useCases/prepareCommandBatchPreflight.ts
+  s_68423a2adea8d2::t_fd014a951fff06 326
+  s_68423a2adea8d2::t_f71067c32fad02 251-254,258-261,264-267,272-323
+  s_68423a2adea8d2::t_44b0d28abb8d08 219,237-238,240-242,327-328
+  s_68423a2adea8d2::t_8c531b3d3e05bb 215-218,220-225,227-228,230-232,234-235,239,243-250,255-257,262-263,268-271,324-325
+src/modules/Command/useCases/__tests__/handlerCommitValidation.integration.spec.ts
+  s_68423a2adea8d2::t_6580feb7b6872b 114-115,117-120,143-146,164,171-190,195-201
+  s_68423a2adea8d2::t_f71067c32fad02 150-160,191-194
+  s_68423a2adea8d2::t_fd014a951fff06 148-149,161
+  s_68423a2adea8d2::t_3ff9be74983edc 202-203
+src/app/registerKernelPorts.ts
+  s_68423a2adea8d2::t_962f98734335d0 3,16,51
+  s_68423a2adea8d2::t_f71067c32fad02 4-8,30-33
+src/modules/Command/useCases/__tests__/commandBatchPreflightSave.spec.ts
+  s_68423a2adea8d2::t_fd014a951fff06 6-7,85-87,92,94-99,103,107,120,122,141,220,229-246,250-273,285-288,293,295-311,387,389,414,450-451
+  s_68423a2adea8d2::t_eb4aebab982d30 18-19,24-26,42,312-386,388,390-413,415-449
+  s_68423a2adea8d2::t_25e4eba087783a 191-199,206-213
+  s_68423a2adea8d2::t_f71067c32fad02 11,35-39,88-91,93,121,123,247-249,274-284,289-292,294
+src/modules/AiRuntime/useCases/__tests__/promptStemImportRecovery.spec.ts
+  s_68423a2adea8d2::t_8c531b3d3e05bb 19,506-508
+  s_68423a2adea8d2::t_0c89885f7751b2 509
+src/modules/AiRuntime/useCases/__tests__/commandCommitAfterSaveFinalization.spec.ts
+  s_68423a2adea8d2::t_fd014a951fff06 6-274
+  s_68423a2adea8d2::t_b8daf8e26629e9 1-5,275
+src/modules/Command/useCases/commandBatchValidation.ts
+  s_68423a2adea8d2::t_f71067c32fad02 18
+  s_68423a2adea8d2::t_44b0d28abb8d08 1
+  s_68423a2adea8d2::t_962f98734335d0 6-11,16-17
+src/modules/Command/useCases/previewVersionedCommandBatchEnvelope.ts
+  s_68423a2adea8d2::t_8c531b3d3e05bb 158-163,222
+  s_68423a2adea8d2::t_44b0d28abb8d08 223-226,228
+src/modules/AiRuntime/useCases/__tests__/confirmPendingChatActions.spec.ts
+  s_68423a2adea8d2::t_bd8c3dfcd4792a 3911,3913
+  s_68423a2adea8d2::t_fd014a951fff06 14,3943
+  s_68423a2adea8d2::t_b06e186d73928b 3893-3910,3912,3914-3942,3944-3953,3956-3975,3977-3990,3993-4026
+src/modules/AiRuntime/useCases/__tests__/aiWorkflowCommandCheckpointRuntime.ts
+  s_68423a2adea8d2::t_8c531b3d3e05bb 9,37-40
+src/modules/Arrangement/handlers/track/__tests__/handleRemoveAllTracks.modulation.integration.spec.ts
+  s_68423a2adea8d2::t_b06e186d73928b 452,459
+  s_68423a2adea8d2::t_f71067c32fad02 451,453-458
+src/modules/Command/useCases/__tests__/commandProjectRevisionPort.spec.ts
+  s_68423a2adea8d2::t_eb4aebab982d30 53-55,75-77,100-102
+  s_68423a2adea8d2::t_33fafcd6da5073 1,38-52,56-74,78-99,103
+  s_68423a2adea8d2::t_3141f5d2a93452 104
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "aaddc69541dd3eebb78a1330fae2c322503b463b",
+  "prompts": {},
+  "sessions": {
+    "s_68423a2adea8d2": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34b-f305-7c03-beb2-57afa678cda5",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
