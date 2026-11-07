@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { batchStoreUpdates } from '#/infra/store/createStore';
 import { Container } from '#/infra/di/Container';
 import { createEventBus } from '#/infra/events/createEventBus';
+import { batchStoreUpdates } from '#/infra/store/createStore';
 import * as automergeStorage from '#/infra/store/storage/createAutomergeStorage';
 import { clipSelectionStore, defaultTrackState, trackStore, type TrackStoreState } from '#/modules/Arrangement/stores';
 import {
@@ -23,6 +23,7 @@ import {
     setCommandEventBus,
     undo,
 } from '#/modules/Command/useCases';
+import { agentProjectRepairStateStore } from '#/modules/CrdtDocument/stores';
 import {
     createCrdtDoc,
     getCrdtDoc,
@@ -31,7 +32,6 @@ import {
     resetCrdtProjectAuthority,
     transactSnapshot,
 } from '#/modules/CrdtDocument/useCases';
-import { agentProjectRepairStateStore } from '#/modules/CrdtDocument/stores';
 import { midiStore } from '#/modules/MIDI/stores';
 import { type ActionHandler, type AppAction } from '#/utils/handlerContract';
 import {
@@ -42,7 +42,6 @@ import {
 } from '#/utils/Notification/notificationEventBus';
 
 import * as duplicateIntents from '../../clipShortcuts/enqueueClipDuplicate';
-
 import { handleKeydown } from '../handleKeydown';
 
 type NotificationEvents = {

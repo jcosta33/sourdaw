@@ -5,6 +5,9 @@ import { executeAppActionBatch } from '#/modules/Command/useCases';
 import { type AppAction, type ExecuteOptions } from '#/utils/handlerContract';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
+type ClipDuplicateAuthority = { shouldExecute: () => boolean; onSelected: () => void };
+type ClipDuplicateBatchResult = Awaited<ReturnType<typeof executeAppActionBatch>>;
+
 type ClipPlacement = {
     clipId: string;
     trackId: string;
@@ -26,6 +29,44 @@ function collectSelectedClips(tracks: readonly Track[], selectedClipIds: readonl
     return selected;
 }
 
+function finishClipDuplicateBatch(
+    result: ClipDuplicateBatchResult,
+    copyIds: string[],
+    authority?: ClipDuplicateAuthority
+): boolean {
+    // A refusal is the user's to see; a handler failure is a defect and propagates.
+    if (result.status === 'rejected' || result.status === 'conflicted') {
+        notifyUser(`Duplicate clips forward was refused: ${result.reason}`, 'warning');
+        return false;
+    }
+    if (result.status === 'cancelled' && authority && !authority.shouldExecute()) {
+        return false;
+    }
+    if (result.status === 'failed' || result.status === 'cancelled') {
+        throw new Error(`Duplicate clips forward failed: ${result.reason}`);
+    }
+    if (result.status === 'ambiguous') {
+        logger.error(new Error(`Duplicate clips forward has an uncertain committed outcome: ${result.reason}`));
+    }
+    if (result.status === 'no-op' || (authority && !authority.shouldExecute())) {
+        return false;
+    }
+    if (result.status === 'ambiguous') {
+        const existingIds = new Set(trackStore.value?.tracks.flatMap((track) => track.clips.map((clip) => clip.id)));
+        const committedCopyIds = copyIds.filter((id) => existingIds.has(id));
+        if (committedCopyIds.length === 0) {
+            return false;
+        }
+        setClipSelection(committedCopyIds);
+        authority?.onSelected();
+        // An incomplete witness can select known copies, but cannot continue the older chain.
+        return committedCopyIds.length === copyIds.length;
+    }
+    setClipSelection(copyIds);
+    authority?.onSelected();
+    return true;
+}
+
 /**
  * Duplicates all selected clips forward by the selection's total time span (R-B2).
  *
@@ -39,7 +80,7 @@ function collectSelectedClips(tracks: readonly Track[], selectedClipIds: readonl
  */
 export async function duplicateSelectedClipsForward(
     selectedClipIds: readonly string[],
-    authority?: { shouldExecute: () => boolean; onSelected: () => void }
+    authority?: ClipDuplicateAuthority
 ): Promise<boolean> {
     if (selectedClipIds.length === 0) {
         return false;
@@ -84,35 +125,5 @@ export async function duplicateSelectedClipsForward(
     }
     const result = await executeAppActionBatch(actions, options);
 
-    // A refusal is the user's to see; a handler failure is a defect and propagates.
-    if (result.status === 'rejected' || result.status === 'conflicted') {
-        notifyUser(`Duplicate clips forward was refused: ${result.reason}`, 'warning');
-        return false;
-    }
-    if (result.status === 'cancelled' && authority && !authority.shouldExecute()) {
-        return false;
-    }
-    if (result.status === 'failed' || result.status === 'cancelled') {
-        throw new Error(`Duplicate clips forward failed: ${result.reason}`);
-    }
-    if (result.status === 'ambiguous') {
-        logger.error(new Error(`Duplicate clips forward has an uncertain committed outcome: ${result.reason}`));
-    }
-    if (result.status === 'no-op' || (authority && !authority.shouldExecute())) {
-        return false;
-    }
-    if (result.status === 'ambiguous') {
-        const existingIds = new Set(trackStore.value?.tracks.flatMap((track) => track.clips.map((clip) => clip.id)));
-        const committedCopyIds = copyIds.filter((id) => existingIds.has(id));
-        if (committedCopyIds.length === 0) {
-            return false;
-        }
-        setClipSelection(committedCopyIds);
-        authority?.onSelected();
-        // An incomplete witness can select known copies, but cannot continue the older chain.
-        return committedCopyIds.length === copyIds.length;
-    }
-    setClipSelection(copyIds);
-    authority?.onSelected();
-    return true;
+    return finishClipDuplicateBatch(result, copyIds, authority);
 }
