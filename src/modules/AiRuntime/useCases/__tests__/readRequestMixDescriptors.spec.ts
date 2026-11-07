@@ -42,6 +42,7 @@ describe('reading the characters a whole-project request asks for', () => {
     it.each([
         ['make this mix warmer and more open', ['warm']],
         ['add more punch and width', ['punchy', 'wide']],
+        ['make this mix not only warmer but also wider', ['warm', 'wide']],
         // The catalog's own "less muddy" term names the de-mudding character, so it stays read.
         ['make it warmer and less muddy', ['warm', 'muddy']],
         // An `and` that opens a new instruction ends the kept clause before it.
@@ -58,6 +59,9 @@ describe('reading the characters a whole-project request asks for', () => {
         ['keep the drums punchy and the vocal warm', []],
         ['make it darker, not brighter', ['dark']],
         ['warm it up without making it any wider', ['warm']],
+        ['make it not only warmer', []],
+        ['make it not only warmer but also not wider', ['warm']],
+        ['do not make it not only warmer but also wider', ['wide']],
     ])('leaves out what "%s" withholds, reduces or keeps', (prompt, expected) => {
         expect(readDescriptors(prompt)).toEqual(expected);
     });

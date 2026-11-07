@@ -40,6 +40,9 @@ const CLAUSE_END_PATTERN =
 /** A reduction word directly before a term, as in "less punchy", which no term of its own covers. */
 const REDUCTION_BEFORE_PATTERN = /(?<![\p{L}\p{N}])less[\s-]+$/iu;
 
+/** A complete "not only X but also Y" adds both clauses; its opening is not a prohibition. */
+const ADDITIVE_NOT_ONLY_PATTERN = /^not[\s-]+only[\s-]+[^,.;:!?]+?\s+but[\s-]+also[\s-]+[^,.;:!?\s]+/iu;
+
 /**
  * Each clause an opener heads blanked in place from the opener to the clause's end, offsets kept, so
  * "don't let the vocal get brighter" or "keep the drums punchy and the vocal warm" names a quality
@@ -48,6 +51,9 @@ const REDUCTION_BEFORE_PATTERN = /(?<![\p{L}\p{N}])less[\s-]+$/iu;
 function maskOpenedClauses(text: string, opener: RegExp): string {
     const masked = text.split('');
     for (const match of text.matchAll(opener)) {
+        if (opener === NEGATION_PATTERN && ADDITIVE_NOT_ONLY_PATTERN.test(text.slice(match.index))) {
+            continue;
+        }
         const clauseEnd = new RegExp(CLAUSE_END_PATTERN.source, CLAUSE_END_PATTERN.flags);
         clauseEnd.lastIndex = match.index + match[0].length;
         const end = clauseEnd.exec(text)?.index ?? text.length;

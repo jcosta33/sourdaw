@@ -11,7 +11,7 @@ import {
     removeTrackStrip,
     type renderTrackSubgraphOffline,
 } from '#/modules/AudioEngine/useCases';
-import { registerHandlerMap } from '#/modules/Command/stores';
+import { registerHandlerMap, undoHistoryStore } from '#/modules/Command/stores';
 import { executeAppAction, setActionHistoryMetadataPort } from '#/modules/Command/useCases';
 import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
 import { defaultProjectStoreState, projectStore } from '#/modules/Project/stores';
@@ -28,8 +28,10 @@ import { chatStore } from '../../stores/chatStore';
 import { pendingActionConfirmationStore } from '../../stores/pendingActionConfirmationStore';
 import { groundVibeRunBatch } from '../agentRequestOrchestration/groundVibeRunBatch';
 import { agentRunLifecycle } from '../agentRunLifecycle';
+import { agentRunCancellation } from '../cancelAgentRun';
 import { cancelPendingChatActions } from '../cancelPendingChatActions';
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
+import { getAgentApprovalView } from '../getAgentApprovalView';
 import { generateToolPlanningOutcome } from '../llmOrchestration/inference';
 import { metricGoalStateCodec } from '../metricGoalStateCodec';
 import { reproposePendingChatActions } from '../reproposePendingChatActions';
@@ -440,6 +442,84 @@ describe('a whole-project vibe run of measured recipe batches (AC-003 of #4372)'
         expect(liveBriefRevision()).toBe(PLANNED_BRIEF_REVISION);
         // The run committed the brief and one batch, so it ends partially completed, not cancelled whole.
         expect(agentRunLifecycle.get(brief.runId)?.phase).toBe('partially-completed');
+    });
+
+    it.each(['reject', 'resolve'] as const)(
+        'keeps a cancelled later batch cancelled when its held preview settles with %s',
+        async (settlement) => {
+            const brief = await confirmBrief();
+            const drums = requireOnlyProposedCard();
+            let admitted!: () => void;
+            const admission = new Promise<void>((resolve) => {
+                admitted = resolve;
+            });
+            let release!: () => void;
+            const held = new Promise<void>((resolve) => {
+                release = resolve;
+            });
+            audio.renderTrackSubgraphOffline.mockImplementationOnce(async (input: RenderInput) => {
+                admitted();
+                await held;
+                if (settlement === 'reject') {
+                    throw new Error('held preview failed');
+                }
+                return renderTrack(input);
+            });
+            const confirmation = confirmPendingChatActions({ confirmationId: drums.id });
+            await admission;
+            await expect(
+                agentRunCancellation.cancel({ runId: brief.runId, reason: 'Cancelled by user' })
+            ).resolves.toMatchObject({
+                status: 'cancelled',
+                phase: 'partially-completed',
+            });
+            const cancelled = agentRunLifecycle.get(brief.runId);
+            expect(cancelled?.batches.at(-1)?.status).toBe('cancelled');
+            const errors = structuredClone(cancelled?.errors);
+            const revision = captureProjectRevision();
+            const tracks = structuredClone(trackStore.value);
+            const history = structuredClone(undoHistoryStore.value);
+            const messages = structuredClone(chatStore.value?.messages);
+            release();
+            await expect(confirmation).resolves.toEqual({ status: 'executed' });
+            const settled = agentRunLifecycle.get(brief.runId);
+            expect(settled?.phase).toBe('partially-completed');
+            expect(settled?.batches.at(-1)?.status).toBe('cancelled');
+            expect(settled?.errors).toEqual(errors);
+            expect(captureProjectRevision()).toBe(revision);
+            expect(trackStore.value).toEqual(tracks);
+            expect(undoHistoryStore.value).toEqual(history);
+            expect(chatStore.value?.messages).toEqual(messages);
+            expect(proposedCards()).toEqual([]);
+            expect(trackDeviceTypes(DRUMS_ID)).toEqual(['builtin-eq']);
+            expect(trackDeviceTypes(VOCAL_ID)).toEqual([]);
+            expect(trackDeviceTypes(BASS_ID)).toEqual([]);
+        }
+    );
+
+    it('blocks approval and retains the failure receipt when a later preview render fails', async () => {
+        const brief = await confirmBrief();
+        const drums = requireOnlyProposedCard();
+        audio.renderTrackSubgraphOffline.mockRejectedValueOnce(new Error('preview failed'));
+
+        await expect(confirmPendingChatActions({ confirmationId: drums.id })).resolves.toEqual({ status: 'executed' });
+
+        const card = requireOnlyProposedCard();
+        expect(getAgentApprovalView({ confirmationId: card.id })).toMatchObject({
+            canConfirm: false,
+            metricGoals: { status: 'blocked' },
+        });
+        const run = agentRunLifecycle.get(brief.runId);
+        expect(run?.phase).toBe('waiting-for-approval');
+        expect(run?.plan?.applicationToolReceipts).toContainEqual(
+            expect.objectContaining({
+                status: 'failure',
+                error: expect.objectContaining({ code: 'render-failed', retryable: false }),
+            })
+        );
+        expect(trackDeviceTypes(DRUMS_ID)).toEqual(['builtin-eq']);
+        expect(trackDeviceTypes(VOCAL_ID)).toEqual([]);
+        expect(trackDeviceTypes(BASS_ID)).toEqual([]);
     });
 
     it('stops on the first batch rejected, saying the brief alone stayed applied', async () => {

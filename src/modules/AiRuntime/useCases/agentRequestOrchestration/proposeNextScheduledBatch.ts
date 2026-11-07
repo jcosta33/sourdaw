@@ -36,7 +36,10 @@ import { readBulkSetSliceEvidence } from './readBulkSetSliceEvidence';
 import { rebaseBulkSetSliceEvidence } from './rebaseBulkSetSliceEvidence';
 
 type ScheduledBatchOutcome =
-    { status: 'awaiting-approval' } | { status: 'executed' } | { status: 'rejected'; reason: string };
+    | { status: 'awaiting-approval' }
+    | { status: 'executed' }
+    | { status: 'stopped' }
+    | { status: 'rejected'; reason: string };
 
 type GroundedScheduledBatch =
     | {
@@ -230,15 +233,22 @@ async function proposeMeasuredVibeBatch(input: {
             runId: run.runId,
         });
     } catch (error) {
+        const current = agentRunLifecycle.get(run.runId);
+        if (current === null || AGENT_RUN_TERMINAL_PHASES.has(current.phase)) {
+            return { status: 'stopped' };
+        }
         agentRunLifecycle.updateBatchStatus({ runId: run.runId, batchId, status: 'failed' });
         return { status: 'rejected', reason: error instanceof Error ? error.message : String(error) };
+    }
+    const liveRun = agentRunLifecycle.get(run.runId);
+    if (liveRun === null || AGENT_RUN_TERMINAL_PHASES.has(liveRun.phase)) {
+        return { status: 'stopped' };
     }
     const approval = compileAgentRiskApproval({
         commandBatch,
         requireExplicitApproval: true,
         metricGoalState: JSON.stringify(proof.state),
     });
-    const liveRun = agentRunLifecycle.get(run.runId);
     if (liveRun?.plan) {
         const priorReceipts = liveRun.plan.applicationToolReceipts ?? [];
         agentRunLifecycle.recordPlan({
@@ -512,7 +522,7 @@ export async function proposeNextScheduledBatch(input: { runId: string }): Promi
             refuseScheduledBatch(run, schedule, position, outcome.reason);
             return;
         }
-        if (outcome.status === 'awaiting-approval') {
+        if (outcome.status === 'awaiting-approval' || outcome.status === 'stopped') {
             return;
         }
     }
