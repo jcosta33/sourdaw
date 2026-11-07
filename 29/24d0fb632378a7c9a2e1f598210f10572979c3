@@ -1,0 +1,27 @@
+tests/e2e/devServerOnlySpecs.ts
+  s_8dd2ba9e498da7::t_d7d008916ac568 16
+tests/e2e/audioToMidiCommitAcceptance.spec.ts
+  s_8dd2ba9e498da7::t_e3bd2bb33644a8 163,167-179,182,233,287,303
+  s_8dd2ba9e498da7::t_d7d008916ac568 1-29,31-53,58-136,138-162,164-166,180-181,183-196,198-208,212-232,234,236-237,239-256,261-268,270-275,280,282,284-286,288,290-302,304-305,307,309-316
+  s_8dd2ba9e498da7::t_4d1d771c39abff 257-260
+  s_8dd2ba9e498da7::t_5d468ee05b49f1 30,197,209-211,235,269
+  s_8dd2ba9e498da7::t_3847607dcf99de 54-57,238
+  s_8dd2ba9e498da7::t_e0e6efdeb612ed 137
+  s_8dd2ba9e498da7::t_220bc7bed4fe98 276-279,281,283,289,306,308
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2924d0fb632378a7c9a2e1f598210f10572979c3",
+  "prompts": {},
+  "sessions": {
+    "s_8dd2ba9e498da7": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34a-1f45-7430-80af-58acd6c4b831",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
