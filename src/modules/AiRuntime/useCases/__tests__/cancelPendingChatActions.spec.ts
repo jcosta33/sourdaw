@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { type PendingAppActionConfirmation } from '../../stores/pendingActionConfirmationStore';
+import { agentRunLifecycle } from '../agentRunLifecycle';
+import { cancelPendingChatActions } from '../cancelPendingChatActions';
 
 const mocks = vi.hoisted(() => ({
     stop: vi.fn(async () => ({ status: 'idle' })),
@@ -26,9 +28,6 @@ vi.mock('../../stores/pendingActionConfirmationStore', () => ({
 vi.mock('../../stores/chatStore', () => ({
     updateChatMessage: mocks.updateChatMessage,
 }));
-
-import { agentRunLifecycle } from '../agentRunLifecycle';
-import { cancelPendingChatActions } from '../cancelPendingChatActions';
 
 function confirmation(input: {
     id: string;

@@ -68,82 +68,97 @@ describe('reading the characters a whole-project request asks for', () => {
         expect(readDescriptors(prompt)).toEqual(expected);
     });
 
-    describe.each(['not only', 'not just', 'not merely', 'not simply'])('%s correlatives', (opening) => {
-        describe.each([' but', ' but also', ', but', ', but also'])('the correlative connector %s', (connector) => {
-            const pair = `${opening} warmer${connector} wider`;
+    describe.each(['not only', 'not just', 'not merely', 'not simply', 'not solely', 'not exclusively'])(
+        '%s correlatives',
+        (opening) => {
+            describe.each([' but', ' but also', ', but', ', but also'])('the correlative connector %s', (connector) => {
+                const pair = `${opening} warmer${connector} wider`;
+
+                it.each([
+                    [`make this mix ${pair}`, ['warm', 'wide']],
+                    [`make this mix ${opening} less warm${connector} wider`, ['wide']],
+                    [`make this mix ${opening} warmer${connector} less wide`, ['warm']],
+                    [
+                        `MAKE this mix ${opening.toUpperCase().replace(' ', '  ')} warmer ${connector.toUpperCase()} wider`,
+                        ['warm', 'wide'],
+                    ],
+                    [`do not make this mix ${pair}`, []],
+                    [`without making this mix ${pair}`, []],
+                    [`keep this mix ${pair}`, []],
+                    [`make this mix ${opening} warmer${connector} not wider`, ['warm']],
+                    [`make this mix ${opening} not warmer${connector} wider`, ['wide']],
+                    [`make this mix ${opening} warmer${connector} keep it wide`, ['warm']],
+                    [`do not make this mix ${pair}; make it punchier`, ['punchy']],
+                    [`keep this mix ${pair} and make it punchier`, ['punchy']],
+                ])('preserves the polarity of "%s"', (prompt, expected) => {
+                    expect(readDescriptors(prompt)).toEqual(expected);
+                });
+
+                it('keeps name and quotation masking ahead of descriptor discovery', () => {
+                    trackStore.set({
+                        tracks: [createTrack({ id: 'named', name: 'Warmer' })],
+                        selectedTrackId: null,
+                        ghostClips: [],
+                    });
+                    expect(readDescriptors(`make this mix ${opening} Warmer${connector} wider`)).toEqual(['wide']);
+                    expect(readDescriptors(`do not make this mix ${opening} Warmer${connector} wider`)).toEqual([]);
+                    expect(readDescriptors(`make this mix ${opening} "warmer"${connector} wider`)).toEqual(['wide']);
+                    expect(readDescriptors(`do not make this mix ${opening} "warmer"${connector} wider`)).toEqual([]);
+                    expect(
+                        readDescriptors(`do not make this mix ${opening} "warmer, not darker"${connector} wider`)
+                    ).toEqual([]);
+                    trackStore.set({
+                        tracks: [createTrack({ id: 'named', name: 'Warmer but darker' })],
+                        selectedTrackId: null,
+                        ghostClips: [],
+                    });
+                    expect(
+                        readDescriptors(`do not make this mix ${opening} Warmer but darker${connector} wider`)
+                    ).toEqual([]);
+                });
+
+                it('does not read the second named operand as a new instruction', () => {
+                    trackStore.set({
+                        tracks: [createTrack({ id: 'named', name: 'Make Warmer' })],
+                        selectedTrackId: null,
+                        ghostClips: [],
+                    });
+                    expect(readDescriptors(`make this mix ${opening} darker${connector} Make Warmer`)).toEqual([
+                        'dark',
+                    ]);
+                    expect(readDescriptors(`do not make this mix ${opening} darker${connector} Make Warmer`)).toEqual(
+                        []
+                    );
+                    expect(readDescriptors(`make this mix ${opening} darker${connector} "make warmer"`)).toEqual([
+                        'dark',
+                    ]);
+                    expect(readDescriptors(`do not make this mix ${opening} darker${connector} "make warmer"`)).toEqual(
+                        []
+                    );
+                    trackStore.set({
+                        tracks: [createTrack({ id: 'named', name: 'Also Warmer' })],
+                        selectedTrackId: null,
+                        ghostClips: [],
+                    });
+                    expect(readDescriptors(`make this mix ${opening} darker${connector} Also Warmer`)).toEqual([
+                        'dark',
+                    ]);
+                    expect(readDescriptors(`do not make this mix ${opening} darker${connector} Also Warmer`)).toEqual(
+                        []
+                    );
+                });
+            });
 
             it.each([
-                [`make this mix ${pair}`, ['warm', 'wide']],
-                [`make this mix ${opening} less warm${connector} wider`, ['wide']],
-                [`make this mix ${opening} warmer${connector} less wide`, ['warm']],
-                [
-                    `MAKE this mix ${opening.toUpperCase().replace(' ', '  ')} warmer ${connector.toUpperCase()} wider`,
-                    ['warm', 'wide'],
-                ],
-                [`do not make this mix ${pair}`, []],
-                [`without making this mix ${pair}`, []],
-                [`keep this mix ${pair}`, []],
-                [`make this mix ${opening} warmer${connector} not wider`, ['warm']],
-                [`make this mix ${opening} not warmer${connector} wider`, ['wide']],
-                [`make this mix ${opening} warmer${connector} keep it wide`, ['warm']],
-                [`do not make this mix ${pair}; make it punchier`, ['punchy']],
-                [`keep this mix ${pair} and make it punchier`, ['punchy']],
-            ])('preserves the polarity of "%s"', (prompt, expected) => {
+                [`make it ${opening} warmer but also`, []],
+                [`make it ${opening} warmer, but`, []],
+                [`make it ${opening} warmer. But wider`, ['wide']],
+                [`make it ${opening} warmer and make it wider`, ['wide']],
+                ['do not make it warmer, but make it wider', ['wide']],
+                [`make it ${opening} warmer but make it wider`, ['wide']],
+            ])('does not join incomplete or independent clauses in "%s"', (prompt, expected) => {
                 expect(readDescriptors(prompt)).toEqual(expected);
             });
-
-            it('keeps name and quotation masking ahead of descriptor discovery', () => {
-                trackStore.set({
-                    tracks: [createTrack({ id: 'named', name: 'Warmer' })],
-                    selectedTrackId: null,
-                    ghostClips: [],
-                });
-                expect(readDescriptors(`make this mix ${opening} Warmer${connector} wider`)).toEqual(['wide']);
-                expect(readDescriptors(`do not make this mix ${opening} Warmer${connector} wider`)).toEqual([]);
-                expect(readDescriptors(`make this mix ${opening} "warmer"${connector} wider`)).toEqual(['wide']);
-                expect(readDescriptors(`do not make this mix ${opening} "warmer"${connector} wider`)).toEqual([]);
-                expect(
-                    readDescriptors(`do not make this mix ${opening} "warmer, not darker"${connector} wider`)
-                ).toEqual([]);
-                trackStore.set({
-                    tracks: [createTrack({ id: 'named', name: 'Warmer but darker' })],
-                    selectedTrackId: null,
-                    ghostClips: [],
-                });
-                expect(readDescriptors(`do not make this mix ${opening} Warmer but darker${connector} wider`)).toEqual(
-                    []
-                );
-            });
-
-            it('does not read the second named operand as a new instruction', () => {
-                trackStore.set({
-                    tracks: [createTrack({ id: 'named', name: 'Make Warmer' })],
-                    selectedTrackId: null,
-                    ghostClips: [],
-                });
-                expect(readDescriptors(`make this mix ${opening} darker${connector} Make Warmer`)).toEqual(['dark']);
-                expect(readDescriptors(`do not make this mix ${opening} darker${connector} Make Warmer`)).toEqual([]);
-                expect(readDescriptors(`make this mix ${opening} darker${connector} "make warmer"`)).toEqual(['dark']);
-                expect(readDescriptors(`do not make this mix ${opening} darker${connector} "make warmer"`)).toEqual([]);
-                trackStore.set({
-                    tracks: [createTrack({ id: 'named', name: 'Also Warmer' })],
-                    selectedTrackId: null,
-                    ghostClips: [],
-                });
-                expect(readDescriptors(`make this mix ${opening} darker${connector} Also Warmer`)).toEqual(['dark']);
-                expect(readDescriptors(`do not make this mix ${opening} darker${connector} Also Warmer`)).toEqual([]);
-            });
-        });
-
-        it.each([
-            [`make it ${opening} warmer but also`, []],
-            [`make it ${opening} warmer, but`, []],
-            [`make it ${opening} warmer. But wider`, ['wide']],
-            [`make it ${opening} warmer and make it wider`, ['wide']],
-            ['do not make it warmer, but make it wider', ['wide']],
-            [`make it ${opening} warmer but make it wider`, ['wide']],
-        ])('does not join incomplete or independent clauses in "%s"', (prompt, expected) => {
-            expect(readDescriptors(prompt)).toEqual(expected);
-        });
-    });
+        }
+    );
 });

@@ -53,13 +53,13 @@ function nextClauseEnd(text: string, start: number): RegExpExecArray | null {
 }
 
 /**
- * Complete "not only/just/merely/simply X[,] but [also] Y" correlatives add both qualities.
+ * Complete "not only/just/merely/simply/solely/exclusively X[,] but [also] Y" correlatives add both qualities.
  * Read their structure in the original text at the masked text's clause boundaries, retaining
  * names as operands without accepting their contents as grammar. A sentence or new instruction ends the phrase.
  */
 function readAdditiveCorrelatives(text: string, prompt: string): AdditiveCorrelative[] {
     const pairs: AdditiveCorrelative[] = [];
-    const openingPattern = /(?<![\p{L}\p{N}])not[\s-]+(?:only|just|merely|simply)(?=[\s-])/giu;
+    const openingPattern = /(?<![\p{L}\p{N}])not[\s-]+(?:only|just|merely|simply|solely|exclusively)(?=[\s-])/giu;
     const instructionPattern = new RegExp(String.raw`^${INSTRUCTION_VERBS}(?![\p{L}\p{N}])`, 'iu');
     for (const opening of text.matchAll(openingPattern)) {
         const operandStart = opening.index + opening[0].length;
