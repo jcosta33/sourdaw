@@ -1,0 +1,28 @@
+src/infra/dialogService/__tests__/NotificationToast.spec.tsx
+  s_1052c2a2231ded::t_c7f697cc65ddf7 58-61,63-65
+  s_1052c2a2231ded::t_d53cef8b8fa73d 51
+tests/e2e/fermenterPanelDeepTestId.spec.ts
+  s_1052c2a2231ded::t_d53cef8b8fa73d 9,27,33-38,40
+  s_1052c2a2231ded::t_c7f697cc65ddf7 30-32
+tests/e2e/fullWorkflowTestId.spec.ts
+  s_1052c2a2231ded::t_d53cef8b8fa73d 14
+tests/e2e/importErrorPathsTestId.spec.ts
+  s_1052c2a2231ded::t_d53cef8b8fa73d 30,35,54
+  s_1052c2a2231ded::t_9d37e6082b4c28 29
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "90970f25888c574be756ecd9a0fd2a17856a709b",
+  "prompts": {},
+  "sessions": {
+    "s_1052c2a2231ded": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b349-24b6-7622-8534-09f171c780d5",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
