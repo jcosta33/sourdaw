@@ -176,7 +176,7 @@
         "if": "${{ fromJSON(needs.scope.outputs.matrix).include[0] != null }}",
         "runs-on": "ubuntu-latest",
         "container": {
-          "image": "mcr.microsoft.com/playwright:v1.64.1-noble@sha256:47b510dd9230bf0b9bfc9b20102241e577ea7a99334ab4c3ca19f19770e9b8ea",
+          "image": "mcr.microsoft.com/playwright:v1.65.0-noble@sha256:6e3fb709361521eb27161606e6da6d2674e5e89fa16516cb37d6fdd91372273d",
           "options": "--init --ipc=host"
         },
         "defaults": {
@@ -205,9 +205,9 @@
             "name": "Set up Node",
             "timeout-minutes": 3,
             "continue-on-error": true,
-            "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+            "uses": "actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
             "with": {
-              "node-version": "24.19.0",
+              "node-version": "24.22.2",
               "cache": "pnpm"
             }
           },
