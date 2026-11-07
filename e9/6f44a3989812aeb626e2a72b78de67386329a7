@@ -1,0 +1,19 @@
+src/components/daw/__tests__/LatchButton.spec.tsx
+  s_dccc978e555676::t_568acd3282c1d8 120
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e96f44a3989812aeb626e2a72b78de67386329a7",
+  "prompts": {},
+  "sessions": {
+    "s_dccc978e555676": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "s_dccc978e555676",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
