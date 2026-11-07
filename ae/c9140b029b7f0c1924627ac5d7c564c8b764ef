@@ -1,0 +1,20 @@
+tests/e2e/punchLoopTakeAcceptance.spec.ts
+  s_8dd2ba9e498da7::t_aebda4305b4258 1626,1629,1631-1643,1645-1662,1666-1671,1830-1832,1940-1956,1960-1975,1985,1994,2003,2007
+  s_8dd2ba9e498da7::t_c2983f306889c5 1644,1957-1959
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "aec9140b029b7f0c1924627ac5d7c564c8b764ef",
+  "prompts": {},
+  "sessions": {
+    "s_8dd2ba9e498da7": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34a-1f45-7430-80af-58acd6c4b831",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
