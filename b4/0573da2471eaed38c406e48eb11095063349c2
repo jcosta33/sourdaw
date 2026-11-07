@@ -1,0 +1,31 @@
+docs/06-testing.md
+  s_1052c2a2231ded::t_54e4c99e7cdc37 887-897
+scripts/__tests__/resourceGuard.spec.ts
+  s_68423a2adea8d2::t_0dee38ed8d49eb 2163-2347
+scripts/resourceGuard.ts
+  s_68423a2adea8d2::t_24301a30539841 3167-3169,3186-3201,3208-3210,3212,3223,3262
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b40573da2471eaed38c406e48eb11095063349c2",
+  "prompts": {},
+  "sessions": {
+    "s_1052c2a2231ded": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b349-24b6-7622-8534-09f171c780d5",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_68423a2adea8d2": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34b-f305-7c03-beb2-57afa678cda5",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
