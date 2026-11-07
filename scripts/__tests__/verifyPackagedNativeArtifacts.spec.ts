@@ -71,8 +71,23 @@ function fixture(target: Target): { root: string; addon: string; helper: string 
     return { root, addon, helper };
 }
 
+function alternateCpu(target: Target): number {
+    if (target.platform === 'darwin') {
+        return 0x01000007;
+    }
+    if (target.platform === 'win32') {
+        return 0xaa64;
+    }
+    if (target.cpu === 62) {
+        return 183;
+    }
+    return 62;
+}
+
 afterEach(() => {
-    for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
+    for (const root of roots.splice(0)) {
+        rmSync(root, { recursive: true, force: true });
+    }
 });
 
 describe('packaged native target validation', () => {
@@ -111,14 +126,7 @@ describe('packaged native target validation', () => {
             });
             it(`rejects wrong ${artifact} CPU for ${label}`, async () => {
                 const files = fixture(target);
-                const cpu =
-                    target.platform === 'darwin'
-                        ? 0x01000007
-                        : target.platform === 'win32'
-                          ? 0xaa64
-                          : target.cpu === 62
-                            ? 183
-                            : 62;
+                const cpu = alternateCpu(target);
                 writeFileSync(files[artifact], image({ ...target, cpu }, artifact === 'addon'));
                 await expect(verifyPackagedNativeArtifacts(files.root, target.platform, target.arch)).rejects.toThrow();
             });

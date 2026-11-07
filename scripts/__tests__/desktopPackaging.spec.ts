@@ -68,7 +68,7 @@ beforeEach(() => {
     const wire = {
         version: FuseVersion.V1 as const,
         ...Object.fromEntries(
-            [...REQUIRED_FUSES].map(([fuse, enabled]) => [fuse, enabled ? FuseState.ENABLE : FuseState.DISABLE])
+            Array.from(REQUIRED_FUSES, ([fuse, enabled]) => [fuse, enabled ? FuseState.ENABLE : FuseState.DISABLE])
         ),
     };
     vi.mocked(getCurrentFuseWire).mockResolvedValue(wire);
@@ -76,7 +76,9 @@ beforeEach(() => {
 
 afterEach(() => {
     vi.clearAllMocks();
-    for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
+    for (const root of roots.splice(0)) {
+        rmSync(root, { recursive: true, force: true });
+    }
 });
 
 describe('desktop afterPack native admission and hardening', () => {

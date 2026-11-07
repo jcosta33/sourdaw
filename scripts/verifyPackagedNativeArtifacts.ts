@@ -10,7 +10,9 @@ type ImageReader = {
 };
 
 function requireImage(condition: boolean, reason: string): asserts condition {
-    if (!condition) throw new Error(reason);
+    if (!condition) {
+        throw new Error(reason);
+    }
 }
 
 function imageReader(file: FileHandle, size: number): ImageReader {
@@ -114,7 +116,9 @@ async function verifyElf(
         const length = program.readBigUInt64LE(32);
         reader.range(program.readBigUInt64LE(8), length);
         requireImage(!addon || type !== 3, 'ELF addon has an executable interpreter');
-        if (type === 1 && length > 0n) hasLoad = true;
+        if (type === 1 && length > 0n) {
+            hasLoad = true;
+        }
     }
     const sections = header.readUInt16LE(60);
     if (sections > 0) {
@@ -167,16 +171,20 @@ async function verifyArtifact(path: string, target: ElectronReleaseTarget, addon
             );
             const reader = imageReader(file, stat.size);
             const header = await reader.read(0, 64);
-            if (target.platform === 'darwin') await verifyMachO(reader, header, addon);
-            else if (target.platform === 'linux') await verifyElf(reader, header, target, addon);
-            else await verifyPe(reader, header, addon);
+            if (target.platform === 'darwin') {
+                await verifyMachO(reader, header, addon);
+            } else if (target.platform === 'linux') {
+                await verifyElf(reader, header, target, addon);
+            } else {
+                await verifyPe(reader, header, addon);
+            }
         } finally {
             await file.close();
         }
-    } catch (cause) {
+    } catch (error) {
         throw new Error(
-            `Native artifact ${path} does not match ${target.platform}/${target.arch}: ${cause instanceof Error ? cause.message : String(cause)}`,
-            { cause }
+            `Native artifact ${path} does not match ${target.platform}/${target.arch}: ${error instanceof Error ? error.message : String(error)}`,
+            { cause: error }
         );
     }
 }
@@ -188,7 +196,9 @@ export async function verifyPackagedNativeArtifacts(
     arch: number
 ): Promise<void> {
     const target = electronReleaseTarget(platform, arch);
-    if (target === undefined) throw new Error(`Unsupported packaged native target ${platform}/${String(arch)}`);
+    if (target === undefined) {
+        throw new Error(`Unsupported packaged native target ${platform}/${String(arch)}`);
+    }
     await verifyArtifact(join(resourcesPath, NATIVE_ADDON_FILE), target, true);
     await verifyArtifact(join(resourcesPath, NATIVE_SCAN_HELPER_FILE(target.platform)), target, false);
 }
