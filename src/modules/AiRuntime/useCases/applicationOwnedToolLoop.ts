@@ -115,6 +115,7 @@ import {
     WHOLE_REQUEST_PREPARATION_TOOL_NAMES,
     type WholeRequestIntakePhase,
 } from './projectPlanningProviderToolSchemas';
+import { readAnswerProjectQuery } from './readAnswerProjectQuery';
 
 export const APPLICATION_OWNED_TOOL_LOOP_LIMITS = {
     maxTurns: 4,
@@ -412,13 +413,23 @@ function executeSemanticProjectQuery(
     toolName: string,
     callId: string,
     turn: number,
-    answerSources?: Map<string, AnswerReadSource>
+    answerSources?: Map<string, AnswerReadSource>,
+    frozenAnswerRevision?: string
 ): ApplicationToolReceipt {
     try {
-        const receipt = querySemanticProject(input);
+        const bound = frozenAnswerRevision === undefined ? null : readAnswerProjectQuery(input, frozenAnswerRevision);
+        const receipt = bound?.receipt ?? querySemanticProject(input);
         answerSources?.set(callId, {
             kind: 'query-page',
-            value: { queryType: receipt.queryType, itemCount: receipt.items.length, total: receipt.page.total },
+            value: {
+                queryType: receipt.queryType,
+                itemCount: receipt.items.length,
+                total: receipt.page.total,
+                input: structuredClone(input),
+                sourceRevision: bound?.sourceRevision ?? JSON.stringify(receipt.revision),
+                equivalentRevision: bound?.equivalentRevision ?? null,
+                warnings: [...receipt.warnings],
+            },
         });
         return {
             schema: 'sourdaw.application-tool-receipt',
@@ -448,7 +459,8 @@ function executeProjectQuery(
     call: ToolCallResult,
     callId: string,
     turn: number,
-    answerSources?: Map<string, AnswerReadSource>
+    answerSources?: Map<string, AnswerReadSource>,
+    frozenAnswerRevision?: string
 ): ApplicationToolReceipt {
     const parsed = parseProjectQueryArguments(call.arguments);
     if (parsed.status === 'invalid') {
@@ -460,7 +472,14 @@ function executeProjectQuery(
             retryable: true,
         });
     }
-    return executeSemanticProjectQuery(parsed.input, PROJECT_QUERY_TOOL_NAME, callId, turn, answerSources);
+    return executeSemanticProjectQuery(
+        parsed.input,
+        PROJECT_QUERY_TOOL_NAME,
+        callId,
+        turn,
+        answerSources,
+        frozenAnswerRevision
+    );
 }
 
 /**
@@ -1340,11 +1359,12 @@ function executeSafeRead(
     call: ToolCallResult,
     callId: string,
     turn: number,
-    answerSources?: Map<string, AnswerReadSource>
+    answerSources?: Map<string, AnswerReadSource>,
+    frozenAnswerRevision?: string
 ): ApplicationToolReceipt {
     switch (call.name) {
         case PROJECT_QUERY_TOOL_NAME:
-            return executeProjectQuery(call, callId, turn, answerSources);
+            return executeProjectQuery(call, callId, turn, answerSources, frozenAnswerRevision);
         case PROJECT_DISCOVERY_TOOL_NAME:
             return executeProjectDiscovery(call, callId, turn);
         case PROJECT_RESOLVE_TOOL_NAME:
@@ -1469,6 +1489,7 @@ function executeTurnReads(input: {
     brief: RunApplicationOwnedToolLoopInput['brief'];
     nextRecipeOrdinal: () => number;
     retainedCompilations: readonly RetainedCompilation[];
+    frozenAnswerRevision?: string;
     signal?: AbortSignal;
 }): Promise<ExecutedRead>[] {
     const { measurement, turn } = input;
@@ -1553,7 +1574,7 @@ function executeTurnReads(input: {
             }
         }
         if (measurement === undefined || !measurementToolNames.includes(call.name)) {
-            const receipt = executeSafeRead(call, callId, turn, producedSources);
+            const receipt = executeSafeRead(call, callId, turn, producedSources, input.frozenAnswerRevision);
             return { receipt, commands: null, answerSource: producedSources.get(callId) };
         }
         if (index !== firstMeasurementIndex) {
@@ -3141,6 +3162,7 @@ export async function runApplicationOwnedToolLoop(
                 brief: input.brief,
                 nextRecipeOrdinal,
                 retainedCompilations: [...retainedCompilations.values()],
+                frozenAnswerRevision: answerIntake?.authority.revision,
                 signal: input.signal,
             })
         );
