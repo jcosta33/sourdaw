@@ -103,6 +103,32 @@ describe('handleRestoreReversedClip', () => {
         expect(publishedUpdate(reversedClip)).toMatchObject({ audioOffsetBeats: 0.5 });
     });
 
+    it.each([{ present: false }, { present: true, value: 0 }, { present: true, value: 1.25 }] as const)(
+        'restores modern optional alias capture $present/$value',
+        (audioOffsetBeatsCapture) => {
+            const reversedClip = makeClip({ audioOffsetBeats: 2 });
+            setClip(reversedClip);
+            expect(
+                handleRestoreReversedClip.execute({
+                    type: 'restoreReversedClip',
+                    payload: {
+                        clipId: 'c1',
+                        expectedAudioBufferId: 'reversed-1',
+                        audioBufferId: 'buffer-1',
+                        name: 'Verse',
+                        audioOffsetBeatsCapture,
+                    },
+                })
+            ).toEqual({ status: 'written' });
+            const restored = publishedUpdate(reversedClip);
+            if (audioOffsetBeatsCapture.present) {
+                expect(restored).toHaveProperty('audioOffsetBeats', audioOffsetBeatsCapture.value);
+            } else {
+                expect(restored).not.toHaveProperty('audioOffsetBeats');
+            }
+        }
+    );
+
     it('leaves audioOffsetBeats untouched on a legacy payload that predates the offset field', () => {
         const reversedClip = makeClip({ audioOffsetBeats: 2 });
         setClip(reversedClip);

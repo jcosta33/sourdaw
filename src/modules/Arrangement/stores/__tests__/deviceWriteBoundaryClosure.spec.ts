@@ -1126,6 +1126,11 @@ const DEVICE_DATA_COUNTS = {
         // device chain from `track.devices`, it only measures how long that
         // chain rings. Read, not write; no live device is touched.
         'src/modules/Arrangement/useCases/freezeBounce/freezeTrack.ts': 1,
+        // Count provenance: measured 1 — `devices:` in trackRows retains
+        // device topology as read-only source identity for selection-render
+        // admission and global compensation. The projection reaches canonicalJson,
+        // not a store, CRDT or runtime device write.
+        'src/modules/Arrangement/useCases/freezeBounce/selectionBounceSourceProjection.ts': 1,
         // MD-4 (#716) retired the two sinks this file used to carry: the freeze/
         // bounce renderer no longer reads `track.devices` to build its own device
         // chain — it hands the render subgraph to the AudioEngine offline graph,

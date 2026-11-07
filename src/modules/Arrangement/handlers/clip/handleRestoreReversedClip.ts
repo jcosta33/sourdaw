@@ -1,5 +1,6 @@
 import { restoreClipPitchAnalysis } from '#/modules/Knead/useCases';
 import { createHandler } from '#/utils/createHandler';
+import { type AppAction } from '#/utils/handlerContract';
 
 import { type Clip } from '../../models/Track';
 import { updateClipInStore } from '../../stores/updateClipInStore';
@@ -22,6 +23,20 @@ function restoreAudioSource(clip: Clip, audioSource: ClipAudioSourceFields | und
     return audioSource ? replaceClipAudioSource(clip, audioSource) : clip;
 }
 
+function restoreBeatAlias(
+    clip: Clip,
+    capture: Extract<AppAction, { type: 'restoreReversedClip' }>['payload']['audioOffsetBeatsCapture']
+): Clip {
+    if (capture === undefined) {
+        return clip;
+    }
+    if (capture.present) {
+        return { ...clip, audioOffsetBeats: capture.value };
+    }
+    const { audioOffsetBeats: _alias, ...rest } = clip;
+    return rest;
+}
+
 /**
  * Inverse and redo of `reverseClip`, guarded on the buffer the forward run produced.
  * Only ever dispatched from the undo engine (with `skipUndo`), so it is not itself
@@ -37,17 +52,24 @@ export const handleRestoreReversedClip = createHandler<'restoreReversedClip'>({
         if (!restoreAudioSource(clip, audioSource)) {
             return { status: 'no-write' };
         }
-        updateClipInStore(action.payload.clipId, (candidate) => ({
-            ...(restoreAudioSource(candidate, audioSource) ?? candidate),
-            audioBufferId: action.payload.audioBufferId,
-            name: action.payload.name,
-            ...(action.payload.fadeInBeats !== undefined ? { fadeInBeats: action.payload.fadeInBeats } : {}),
-            ...(action.payload.fadeOutBeats !== undefined ? { fadeOutBeats: action.payload.fadeOutBeats } : {}),
-            ...(action.payload.audioOffsetBeats !== undefined
-                ? { audioOffsetBeats: action.payload.audioOffsetBeats }
-                : {}),
-            ...(action.payload.loopOriginBeat !== undefined ? { loopOriginBeat: action.payload.loopOriginBeat } : {}),
-        }));
+        updateClipInStore(action.payload.clipId, (candidate) =>
+            restoreBeatAlias(
+                {
+                    ...(restoreAudioSource(candidate, audioSource) ?? candidate),
+                    audioBufferId: action.payload.audioBufferId,
+                    name: action.payload.name,
+                    ...(action.payload.fadeInBeats !== undefined ? { fadeInBeats: action.payload.fadeInBeats } : {}),
+                    ...(action.payload.fadeOutBeats !== undefined ? { fadeOutBeats: action.payload.fadeOutBeats } : {}),
+                    ...(action.payload.audioOffsetBeats !== undefined
+                        ? { audioOffsetBeats: action.payload.audioOffsetBeats }
+                        : {}),
+                    ...(action.payload.loopOriginBeat !== undefined
+                        ? { loopOriginBeat: action.payload.loopOriginBeat }
+                        : {}),
+                },
+                action.payload.audioOffsetBeatsCapture
+            )
+        );
         // The pointer and the analysis fall together, for the same reason the forward
         // path drops them together: blobs are the live shift the Knead worklet applies,
         // so leaving them over restored audio is a second, unasked-for pitch change.
