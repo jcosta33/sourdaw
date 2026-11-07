@@ -1,0 +1,23 @@
+scripts/__tests__/desktopPackaging.spec.ts
+  s_939911bea2ef3b::t_8028b369bd08ed 71,79-81
+scripts/__tests__/verifyPackagedNativeArtifacts.spec.ts
+  s_939911bea2ef3b::t_8028b369bd08ed 74-86,88-90,129
+scripts/verifyPackagedNativeArtifacts.ts
+  s_939911bea2ef3b::t_8028b369bd08ed 13-15,119-121,174-180,184,186-187,199-201
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "13e4958af30e9147fdc074fd6860db06ee32a820",
+  "prompts": {},
+  "sessions": {
+    "s_939911bea2ef3b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34a-952d-7121-902e-cafc5e44b0f7",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
