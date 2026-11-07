@@ -1,0 +1,31 @@
+.agents/skills/review-stances/test-observation-scope.md
+  s_977061c47f01dd::t_b26942b3a5b7c4 97-99
+src/modules/CommandInterface/useCases/keyboardShortcutActions/handleKeyboardShortcut/__tests__/handleKeydownDuplicateSelection.integration.spec.ts
+  s_977061c47f01dd::t_3f475b21298b45 303-366,647-648
+  s_977061c47f01dd::t_b96af62a2aeb6b 521-527,541-548,550-561,566-573,576-596,604-608,624-627,630-635,638-642
+  s_977061c47f01dd::t_2205ae679df1f2 26,512-520,528-540,549,562-565,574-575,597-603,609-623,628-629,636-637,643-646
+  s_977061c47f01dd::t_5caea8aa2fbc47 649
+src/modules/CommandInterface/useCases/keyboardShortcutActions/clipShortcuts/enqueueClipDuplicate.ts
+  s_977061c47f01dd::t_2205ae679df1f2 34-37
+src/modules/CommandInterface/useCases/keyboardShortcutActions/clipShortcuts/__tests__/enqueueClipDuplicate.spec.ts
+  s_977061c47f01dd::t_2205ae679df1f2 135-151,158-162,168-171
+  s_977061c47f01dd::t_b96af62a2aeb6b 152-157,163-167
+.agents/skills/review-stances/command-entry-and-state-oracles.md
+  s_977061c47f01dd::t_b26942b3a5b7c4 82-85
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1620251b61aa6f3b6f9f1c9913485ab8872dfce4",
+  "prompts": {},
+  "sessions": {
+    "s_977061c47f01dd": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34d-123d-7452-a6e7-60608388b6d7",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
