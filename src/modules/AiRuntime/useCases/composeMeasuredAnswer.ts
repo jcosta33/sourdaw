@@ -1,6 +1,5 @@
 import { getAgentBuiltinDeviceFactoryManifest } from '#/modules/Arrangement/useCases';
 import { compareAgentScopeMeasurements } from '#/modules/AudioAnalysis/useCases';
-import { type querySemanticProject } from '#/modules/Project/useCases';
 import { digest } from '#/utils/canonicalDigest';
 
 import { type AnswerOnsets } from '../models/AnswerEvidence';
@@ -21,21 +20,12 @@ import { CANONICAL_ROLE_OPTIONS, CANONICAL_ROLE_TO_RECIPE_ROLE } from './canonic
 import { type RecipeDiscoveryReceiptData } from './discoverMixRecipes';
 import { formatAnswerQueryScope } from './formatAnswerQueryScope';
 import { objectiveMetricProjection, OBJECTIVE_METRIC_LABELS } from './objectiveMetricProjection';
+import { type AnswerQueryPageSource } from './readAnswerProjectQuery';
 
 export type AnswerReadSource =
     | { kind: 'measurement'; value: AnswerMeasurement }
     | { kind: 'recipe'; value: RecipeDiscoveryReceiptData }
-    | {
-          kind: 'query-page';
-          value: {
-              queryType: string;
-              itemCount: number;
-              total: number;
-              input: Parameters<typeof querySemanticProject>[0];
-              sourceRevision: string;
-              warnings: string[];
-          };
-      }
+    | { kind: 'query-page'; value: AnswerQueryPageSource }
     | { kind: 'source-onsets'; value: AnswerOnsets };
 export type AdmittedAnswerRead = { receipt: ApplicationToolReceipt; source: AnswerReadSource };
 export type AdmittedAnswerIntake = { callId: string; turn: number; authority: AnswerRequestAuthority };
@@ -460,7 +450,8 @@ function composeReadStatement(
         // object preserves the captured CRDT revision and refuses truncated identities.
         if (
             read.receipt.turn <= intake.turn ||
-            source.sourceRevision !== intake.authority.revision ||
+            (source.sourceRevision !== intake.authority.revision &&
+                source.equivalentRevision !== intake.authority.revision) ||
             (source.input.type === 'diff' &&
                 source.warnings.some((warning) => warning.includes('outside the retained semantic diff window')))
         ) {

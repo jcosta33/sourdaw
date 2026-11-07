@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { defaultTrackState } from '#/modules/Arrangement/stores';
 import { createTrack, setTrackStoreState } from '#/modules/Arrangement/useCases';
-import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
+import { captureProjectRevision, projectRevisionMatchesLiveIgnoringSaveWrites } from '#/modules/CrdtDocument/useCases';
 import { projectStore, defaultProjectStoreState } from '#/modules/Project/stores';
 import { querySemanticProject } from '#/modules/Project/useCases';
 
@@ -43,11 +43,12 @@ const mocks = vi.hoisted(() => ({
 // fixed revision does not describe.
 vi.mock('#/modules/CrdtDocument/useCases', async (importOriginal) => {
     const revision = JSON.stringify({ documentIdentityEpoch: 1, mutationEpoch: 1, documents: [] });
+    const capture = vi.fn(() => revision);
     return {
         ...(await importOriginal<typeof import('#/modules/CrdtDocument/useCases')>()),
-        captureProjectRevision: vi.fn(() => revision),
+        captureProjectRevision: capture,
         settlePendingProjectWritesAndCaptureRevision: vi.fn(() => revision),
-        projectRevisionMatchesLiveIgnoringSaveWrites: vi.fn((expected: string) => expected === revision),
+        projectRevisionMatchesLiveIgnoringSaveWrites: vi.fn((expected: string) => expected === capture()),
     };
 });
 
@@ -301,6 +302,7 @@ describe('answer.respond ends a run as an answer outcome', () => {
         const previousRevision = captureProjectRevision();
         vi.mocked(captureProjectRevision).mockReturnValue(revision);
         try {
+            expect(projectRevisionMatchesLiveIgnoringSaveWrites(revision)).toBe(true);
             const result = await runScriptedLoop([
                 readTurn,
                 answerTurn({ intakeCallId: 'intake', statements: [{ kind: 'query-page', callId: 'query' }] }),
