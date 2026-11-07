@@ -507,7 +507,10 @@ describe('a whole-project vibe run of measured recipe batches (AC-003 of #4372)'
         expect(audio.renderTrackSubgraphOffline).not.toHaveBeenCalled();
     });
 
-    it('adopts the earlier successful compilation and its own mix selection', async () => {
+    it.each([
+        { callId: 'brief-compile', vision: 'First vision', descriptor: 'wide', excluded: 'warm' },
+        { callId: 'later-compile', vision: 'Later vision', descriptor: 'warm', excluded: 'wide' },
+    ])('adopts $callId with its own brief and mix selection', async ({ callId, vision, descriptor, excluded }) => {
         const intent = (requestedDescriptors: readonly string[]) => ({
             catalogId: getBriefMixIntentCatalog().catalogId,
             requestedDescriptors,
@@ -528,9 +531,13 @@ describe('a whole-project vibe run of measured recipe batches (AC-003 of #4372)'
                     arguments: { vision: 'Later vision', mixIntent: intent(['warm']) },
                 },
             ],
-            proposeBrief,
+            (request) =>
+                proposeBrief(request).map((call) => ({
+                    ...call,
+                    arguments: { ...call.arguments, compiledCallIds: [callId] },
+                })),
         ]);
-        await sendChatMessage('make this mix warmer');
+        await sendChatMessage('make this mix warmer or wider');
         for (const [index, callId] of [
             [2, 'brief-compile'],
             [3, 'later-compile'],
@@ -542,11 +549,17 @@ describe('a whole-project vibe run of measured recipe batches (AC-003 of #4372)'
             );
         }
         const brief = requireOnlyProposedCard();
-        expect(brief.actions).toMatchObject([
-            { type: 'setProductionBrief', payload: { brief: { vision: 'First vision' } } },
-        ]);
-        expect(cardContent(brief)).toContain('wide drums');
-        expect(cardContent(brief)).not.toContain('warm drums');
+        expect(brief.actions).toMatchObject([{ type: 'setProductionBrief', payload: { brief: { vision } } }]);
+        expect(cardContent(brief)).toContain(`${descriptor} drums`);
+        expect(cardContent(brief)).not.toContain(`${excluded} drums`);
+        const schedule = agentRunLifecycle.get(brief.runId)?.plan?.batchSchedule;
+        if (schedule?.kind !== 'vibe-run') throw new Error('Expected a scheduled vibe run');
+        const plan = readScheduledVibeRunPlan(schedule.serializedPlan);
+        expect(plan).not.toBeNull();
+        expect([...new Set(plan?.batches.flatMap((batch) => batch.objective.descriptors))]).toEqual([descriptor]);
+        expect(plan?.batches.flatMap((batch) => batch.targets.flatMap((target) => target.recipeIds))).toContain(
+            `drums-${descriptor}`
+        );
     });
 
     it('lists the planned batches on the brief card and applies nothing before Confirm', async () => {
