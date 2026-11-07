@@ -275,7 +275,11 @@ describe('pruneRemoteBranches', () => {
                 pullRequestsFor: (names) => mapFor(master, names),
             });
             const { log, lines } = collectingLog();
-            const args = parsePruneRemoteBranchesArgs([...(apply ? ['--apply'] : []), '--branch', 'fix/one']);
+            const argv = ['--branch', 'fix/one'];
+            if (apply) {
+                argv.push('--apply');
+            }
+            const args = parsePruneRemoteBranchesArgs(argv);
 
             expect(pruneRemoteBranches(args, port, log)).toBe(0);
             expect(deleteCalls).toEqual(apply ? ['fix/one'] : []);
@@ -317,13 +321,11 @@ describe('pruneRemoteBranches', () => {
             pullRequestsFor: (names) => mapFor(master, names),
         });
         const { log, lines } = collectingLog();
-        const args = parsePruneRemoteBranchesArgs([
-            ...(apply ? ['--apply'] : []),
-            '--branch',
-            'alpha',
-            '--branch',
-            'typo',
-        ]);
+        const argv = ['--branch', 'alpha', '--branch', 'typo'];
+        if (apply) {
+            argv.push('--apply');
+        }
+        const args = parsePruneRemoteBranchesArgs(argv);
 
         expect(() => pruneRemoteBranches(args, port, log)).toThrow('unknown remote branch: typo');
         expect(deleteCalls).toEqual([]);

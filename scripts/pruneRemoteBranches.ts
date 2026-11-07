@@ -385,7 +385,7 @@ export function pruneRemoteBranches(
     retainMeasurementRevisionHolders(branches, classes, port, log);
     const selectedBranches = branches.filter((branch) => selectedNames === undefined || selectedNames.has(branch.name));
     const selectedClasses = new Map(
-        [...classes].filter(([name]) => selectedNames === undefined || selectedNames.has(name))
+        Array.from(classes).filter(([name]) => selectedNames === undefined || selectedNames.has(name))
     );
     printPlan(selectedBranches, selectedClasses, prMap, log);
     const spent = selectedBranches
