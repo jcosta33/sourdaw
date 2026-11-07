@@ -1,0 +1,19 @@
+src/modules/AiRuntime/useCases/__tests__/answerOutcome.spec.ts
+  s_68423a2adea8d2::t_4880414919090f 301,303-311
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "55483e52a02460cde032a42b595bb4ec268afbf4",
+  "prompts": {},
+  "sessions": {
+    "s_68423a2adea8d2": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34b-f305-7c03-beb2-57afa678cda5",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
