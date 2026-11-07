@@ -1,0 +1,26 @@
+src/modules/AudioAnalysis/useCases/__tests__/polyphonicAudioToMidi.spec.ts
+  s_1052c2a2231ded::t_b9e072ecdb2b76 1,13-15,54-58,78-80,194-198,200-221
+  s_1052c2a2231ded::t_1d3d831b8283f7 199
+.agents/skills/review-stances/bundled-model-assets.md
+  s_1052c2a2231ded::t_8d8a539dcfc1ed 22-41
+src/modules/AudioAnalysis/useCases/__tests__/polyphonicAudioToMidi.realModel.integration.spec.ts
+  s_1052c2a2231ded::t_b9e072ecdb2b76 31,53-54,58,79-98
+src/modules/AudioAnalysis/useCases/polyphonicAudioToMidi.ts
+  s_1052c2a2231ded::t_8d8a539dcfc1ed 137-139,166-176
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ebca1496edfb81c76c26ea15c658594fd603ae60",
+  "prompts": {},
+  "sessions": {
+    "s_1052c2a2231ded": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b349-24b6-7622-8534-09f171c780d5",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
