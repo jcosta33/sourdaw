@@ -116,6 +116,9 @@ export const handleDuplicateClip = createHandler<'duplicateClip'>({
             state.stageRedoGuard(alpha);
             return {
                 status: 'written',
+                afterCommit: () => {
+                    // Command settles every staged inverse together after these effects complete.
+                },
                 afterAmbiguousCommit: () => {
                     commitRedoInverseCapture({ phase: 'discard', actions: [alpha] });
                 },

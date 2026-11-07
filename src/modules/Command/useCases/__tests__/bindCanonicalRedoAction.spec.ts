@@ -76,6 +76,17 @@ describe('canonical Redo action identity', () => {
         }
     );
 
+    it('prefers a new genuine pending request over its retired canonical alias', () => {
+        const { action } = pending();
+        const canonical = structuredClone(action);
+        const context = captureRecordedRedoContext(action);
+        bindCanonicalRedoAction(action, canonical, context);
+        const replacement = createUndoEntry('New request', canonical, rename('New before'));
+        undoStore.set({ past: [], future: [replacement] });
+        expect(context?.isCurrent()).toBe(false);
+        expect(findPendingRedoEntry(canonical)).toBe(replacement);
+    });
+
     it('rejects caller-created contexts and a real context borrowed for another request', () => {
         const { action, entry } = pending();
         const canonical = structuredClone(action);
