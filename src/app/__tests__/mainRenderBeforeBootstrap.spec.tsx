@@ -221,7 +221,7 @@ function expectAppShellMarkerInRoot(): void {
     const shell = root.querySelector('[data-testid="app-shell"]');
     expect(shell).not.toBeNull();
     if (!(shell instanceof HTMLElement)) {
-        throw new Error('app-shell marker was not an HTMLElement');
+        throw new TypeError('app-shell marker was not an HTMLElement');
     }
     expect(document.documentElement.style.overflow).toBe('hidden');
     expect(document.body.style.margin).toBe('0px');
@@ -367,7 +367,7 @@ describe('app main first paint', () => {
             await vi.waitFor(() => expect(mocks.reportError).toHaveBeenCalledOnce());
             const reported = mocks.reportError.mock.calls[0]?.[0];
             if (!(reported instanceof Error)) {
-                throw new Error('Critical import failure was not reported');
+                throw new TypeError('Critical import failure was not reported');
             }
             expect(reported.cause).toBe(failure);
 

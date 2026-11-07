@@ -423,7 +423,7 @@ describe('TrackNode — metering, devices, sends, and teardown', () => {
 
             expect(failure).toBeInstanceOf(RuntimeGraphMutationFailure);
             if (!(failure instanceof RuntimeGraphMutationFailure)) {
-                throw new Error('Expected a runtime graph mutation failure');
+                throw new TypeError('Expected a runtime graph mutation failure');
             }
             expect(failure.mutation).toMatchObject({
                 application: 'needs-reconcile',
@@ -871,7 +871,7 @@ describe('TrackNode — metering, devices, sends, and teardown', () => {
 
             expect(failure).toBeInstanceOf(RuntimeGraphMutationFailure);
             if (!(failure instanceof RuntimeGraphMutationFailure)) {
-                throw new Error('Expected a runtime graph mutation failure');
+                throw new TypeError('Expected a runtime graph mutation failure');
             }
             expect(failure.cause).toBe(rebuildError);
             expect(failure.rollbackError).toBe(rollbackError);
@@ -1055,7 +1055,7 @@ describe('TrackNode — metering, devices, sends, and teardown', () => {
 
             expect(failure).toBeInstanceOf(RuntimeGraphMutationFailure);
             if (!(failure instanceof RuntimeGraphMutationFailure)) {
-                throw new Error('Expected a runtime graph mutation failure');
+                throw new TypeError('Expected a runtime graph mutation failure');
             }
             expect(failure.cause).toBe(rebuildError);
             expect(failure.rollbackError).toBe(rollbackError);

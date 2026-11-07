@@ -23,7 +23,7 @@ const getTourChrome = (): { header: HTMLElement; footer: HTMLElement } => {
     const header = screen.getByText('Step 1 of 10').parentElement;
     const footer = screen.getByRole('button', { name: 'Back' }).parentElement;
     if (!(header instanceof HTMLElement) || !(footer instanceof HTMLElement)) {
-        throw new Error('Expected OnboardingTour header and footer chrome');
+        throw new TypeError('Expected OnboardingTour header and footer chrome');
     }
     return { header, footer };
 };

@@ -249,7 +249,7 @@ function parserMatrixNames(template: string, strategy: unknown): string[] {
             continue;
         }
         const reference = new RegExp(`\\$\\{\\{\\s*matrix\\.${dimension}\\s*\\}\\}`, 'g');
-        resolved = resolved.flatMap((name) => values.map((value) => name.replace(reference, () => String(value))));
+        resolved = resolved.flatMap((name) => values.map((value) => name.replaceAll(reference, () => String(value))));
     }
     return resolved;
 }
