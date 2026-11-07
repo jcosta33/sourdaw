@@ -59,6 +59,15 @@ and the recorded fork commit retained in both old child and final parent. This
 uses the existing same-account native provenance boundary, not cryptographic
 ownership. A missing descriptor is never reconstructed from shared ancestry,
 reviews, workflow associations or prose. A reused branch name is insufficient.
+When a sole branch fork marker survives without its descriptor or a historical
+admission receipt, supersession still requires the final parent head in the
+old child. The marker must be a full lowercase commit SHA belonging to both
+histories. The command checks that local observation through marker writes,
+closure and replay, including for a completed parent in a nested proof. It
+preserves the config and records the usual final-parent-head public binding.
+An absent final parent still requires registered provenance. Ordinary lane
+publication, review and sync retain their existing descriptor requirement.
+
 Any observed cached child `baseRefOid` must belong to both histories during fresh
 admission; that cached commit alone is not parent provenance. The command
 snapshots the live ref's repository, name

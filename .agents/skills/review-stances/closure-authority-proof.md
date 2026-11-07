@@ -124,3 +124,11 @@ unestablished unless a probe says otherwise.
     only on the slash Git emits and never convert backslashes before applying disposable rules. Keep direct
     cases for backslash-only lookalikes and slash-delimited controls, plus a real Git fixture with the literal
     backslash leaf: removal and stranding refuse before mutation, and pruning preserves the file.
+
+13. **A surviving fork marker blocked proof from the actual final parent (#5682 `e86b83e3c6`, #6143).**
+    Supersession read the strict publication ledger before testing final-parent ancestry. The public #5682 review
+    covered malformed evidence and changed authority but missed a single valid fork with its descriptor absent.
+    Drive the native reader over real Git config and history. A contained final parent can close while the fork
+    survives unchanged; a shared fork without final-parent containment must refuse. Change a valid fork during
+    the last core read or after a marker write; verify no close on OPEN, verified compensation, and retained
+    evidence after an ambiguous close. Exercise a completed nested parent and CLOSED replay as well.

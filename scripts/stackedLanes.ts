@@ -215,16 +215,16 @@ export function writeLaneStack(primaryRoot: string, descriptor: LaneStack): void
     renameSync(temporary, path);
 }
 
-export function readRegisteredLaneStack(
+function readLaneStackEvidence(
     primaryRoot: string,
     branch: string,
     git: GitConfigReader
-): LaneStack | undefined {
+): { descriptor: LaneStack | undefined; forkMarker: string | undefined } {
     const forkMarkers = readLaneStackForkMarkers(branch, git);
     if (forkMarkers.length > 1) {
         fail('branch lineage marker must have exactly one value');
     }
-    const forkMarker = forkMarkers[0] ?? '';
+    const forkMarker = forkMarkers[0];
     const descriptor = readLaneStack(primaryRoot, branch);
     const receipt = readHistoricalAdmissionReceipt(primaryRoot, branch);
     if (
@@ -238,13 +238,44 @@ export function readRegisteredLaneStack(
             'historical admission is incomplete or conflicts with registered lineage; resume the exact native admission'
         );
     }
-    if (forkMarker !== '' && descriptor === undefined) {
-        fail('stack descriptor missing; restore the recorded descriptor before publication');
-    }
     if (descriptor !== undefined && descriptor.forkHead !== forkMarker) {
         fail('stack descriptor does not match the branch lineage marker');
     }
+    return { descriptor, forkMarker };
+}
+
+export function readRegisteredLaneStack(
+    primaryRoot: string,
+    branch: string,
+    git: GitConfigReader
+): LaneStack | undefined {
+    const { descriptor, forkMarker } = readLaneStackEvidence(primaryRoot, branch, git);
+    if (forkMarker !== undefined && forkMarker !== '' && descriptor === undefined) {
+        fail('stack descriptor missing; restore the recorded descriptor before publication');
+    }
     return descriptor;
+}
+
+export type SupersessionLaneStack =
+    { kind: 'registered'; stack: LaneStack } | { kind: 'orphan-fork'; forkHead: string };
+
+/** Closure can check an orphan for contradictions without treating it as registered history. */
+export function readSupersessionLaneStack(
+    primaryRoot: string,
+    branch: string,
+    git: GitConfigReader
+): SupersessionLaneStack | undefined {
+    const { descriptor, forkMarker } = readLaneStackEvidence(primaryRoot, branch, git);
+    if (descriptor !== undefined) {
+        return { kind: 'registered', stack: descriptor };
+    }
+    if (forkMarker === undefined) {
+        return undefined;
+    }
+    if (!/^[0-9a-f]{40}$/.test(forkMarker)) {
+        fail('orphan stack fork must be a full commit SHA');
+    }
+    return { kind: 'orphan-fork', forkHead: forkMarker };
 }
 
 export function assertStackAcyclic(descriptor: LaneStack, read: (branch: string) => LaneStack | undefined): void {

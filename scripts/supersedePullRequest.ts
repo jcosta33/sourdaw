@@ -32,7 +32,7 @@ import {
     TRUSTED_ORIGIN_COMMIT_ENV,
 } from './prContract.ts';
 import { withPullRequestMutationLock, type PullRequestMutationSerialization } from './pullRequestMutationLock.ts';
-import { type LaneStack } from './stackedLanes.ts';
+import { type LaneStack, type SupersessionLaneStack } from './stackedLanes.ts';
 import {
     commentClientMutationId,
     isDecimalId,
@@ -271,6 +271,7 @@ type StackedParentProof = {
     childBaseRef: SupersededPullRequest['baseRef'];
     child: Omit<PullRequestProof, 'state' | 'closedAt'>;
     provenance: ParentProvenance;
+    orphanForkHead?: string;
     historicalBase: string | null;
     completion?: { marker: ProofMarker; binding: CompletedParentBinding; proof: StackedParentProof };
 };
@@ -368,19 +369,28 @@ function historicalParentProvenance(
     parent: SupersededPullRequest,
     port: SupersedePullRequestPort,
     replay?: CompletedParentBinding
-): StackedParentProof['provenance'] {
+): Pick<StackedParentProof, 'provenance' | 'orphanForkHead'> {
     assertFullCommit(parent.head, 'old parent head');
     assertFullCommit(child.head, 'old child head');
     if (replay !== undefined && replay.child.sourceRepository !== child.headRepository) {
         fail(`PR #${child.number} completed parent binding child source repository changed`);
     }
-    let stack: LaneStack | undefined;
+    let evidence: SupersessionLaneStack | undefined;
     // A protected-primary branch ledger only attests children published from that repository.
     if (child.headRepository === REQUIRED_REPOSITORY) {
-        stack = port.readRegisteredLaneStack?.(child.headRefName);
+        evidence = port.readSupersessionLaneStack?.(child.headRefName);
     }
+    const stack = evidence?.kind === 'registered' ? evidence.stack : undefined;
+    const orphanForkHead = evidence?.kind === 'orphan-fork' ? evidence.forkHead : undefined;
     if (stack !== undefined) {
         assertRegisteredParentBinding(stack, child, parent, port);
+    }
+    if (orphanForkHead !== undefined) {
+        if (replay?.provenance.kind === 'registered-lane-stack') {
+            fail('stack descriptor missing; restore the recorded descriptor before registered replay');
+        }
+        requireAncestor(port, orphanForkHead, parent.head, 'orphan fork to final parent');
+        requireAncestor(port, orphanForkHead, child.head, 'orphan fork to old child');
     }
     let provenance: StackedParentProof['provenance'];
     if (replay?.provenance.kind === 'registered-lane-stack') {
@@ -398,7 +408,7 @@ function historicalParentProvenance(
         requireAncestor(port, cachedBase, parent.head, 'cached child base to final parent');
         requireAncestor(port, cachedBase, child.head, 'cached child base to old child');
     }
-    return provenance;
+    return { provenance, orphanForkHead };
 }
 
 function replacementBinding(value: PullRequestProof) {
@@ -1013,7 +1023,7 @@ function inspectStackedParentProof(
         dependency,
         childBaseRef,
         child: oldDependencyIdentity(child),
-        provenance,
+        ...provenance,
         historicalBase: replayBinding === undefined ? (child.baseRefOid ?? null) : replayBinding.child.cachedBase,
     };
     if (completion !== undefined) {
@@ -1074,6 +1084,20 @@ function assertStackedParentProofUnchanged(
     );
     if (JSON.stringify(current) !== JSON.stringify(initial)) {
         fail(`superseded parent PR #${initial.parent.number} proof changed during supersession; compensating`);
+    }
+}
+
+// Local fork evidence can change while GitHub answers the final authority reads.
+function assertOrphanForksCurrent(proof: StackedParentProof | undefined, port: SupersedePullRequestPort): void {
+    for (let level = proof; level !== undefined; level = level.completion?.proof) {
+        if (level.child.headRepository !== REQUIRED_REPOSITORY) {
+            continue;
+        }
+        const evidence = port.readSupersessionLaneStack?.(level.child.headRefName);
+        const currentFork = evidence?.kind === 'orphan-fork' ? evidence.forkHead : undefined;
+        if (currentFork !== level.orphanForkHead) {
+            fail(`PR #${level.child.number} orphan fork changed during supersession`);
+        }
     }
 }
 
@@ -1331,9 +1355,11 @@ export function supersedePullRequest(
         }
         assertSupersessionAuthoritiesCurrent(replacement, stackedParentProof, port);
         port.assertCurrentPullRequest(oldNumber, before);
+        assertOrphanForksCurrent(stackedParentProof, port);
         return logSupersessionSuccess(oldNumber, replacementNumber, port);
     }
     closePullRequestWithMarkers(oldNumber, expectedHead, before, markers, port, {
+        assertLocalProof: () => assertOrphanForksCurrent(stackedParentProof, port),
         beforeMarkers: () => {
             if (stackedParentProof !== undefined) {
                 assertStackedParentProofUnchanged(stackedParentProof, before, port);
@@ -1400,6 +1426,7 @@ export function closePullRequestWithMarkers(
     markers: readonly MarkerSpec[],
     port: SupersedePullRequestPort,
     checks: {
+        assertLocalProof?: () => void;
         beforeMarkers?: () => void;
         beforeClose: (markerIds: string[]) => void;
         afterClose: (verified: SupersededPullRequest, markerIds: string[], receipt: PullRequestCloseReceipt) => void;
@@ -1414,18 +1441,19 @@ export function closePullRequestWithMarkers(
     try {
         checks.beforeMarkers?.();
         for (const marker of markers) {
-            ensureMarker(number, marker, before.comments, transaction, port);
+            ensureMarker(number, marker, before.comments, transaction, port, checks.assertLocalProof);
         }
         const afterMarkers = port.inspect(number);
         assertStableOpen(afterMarkers, number, expectedHead, before.base);
         for (const marker of markers) {
-            convergeCommentMarkers(number, marker, afterMarkers, markers, port);
+            convergeCommentMarkers(number, marker, afterMarkers, markers, port, checks.assertLocalProof);
         }
         const converged = port.inspect(number);
         assertStableOpen(converged, number, expectedHead, before.base);
         const markerIds = closureMarkerIds(converged, number, markers);
         checks.beforeClose(markerIds);
         port.assertCurrentPullRequest(number, before);
+        checks.assertLocalProof?.();
         closeAttempted = true;
         const closeResult = port.close(number);
         assertCloseReceipt(closeResult);
@@ -1433,6 +1461,7 @@ export function closePullRequestWithMarkers(
         const verified = port.inspect(number);
         checks.afterClose(verified, markerIds, closeReceipt);
         port.assertCurrentPullRequest(number, verified);
+        checks.assertLocalProof?.();
     } catch (error) {
         compensateSupersession(number, before, transaction, closeAttempted, closeReceipt, port, error);
     }
@@ -1450,11 +1479,13 @@ function ensureMarker(
     spec: MarkerSpec,
     comments: IssueComment[],
     transaction: CommentTransaction,
-    port: SupersedePullRequestPort
+    port: SupersedePullRequestPort,
+    assertLocalProof?: () => void
 ): void {
     if (findReusableComment(comments, spec, transaction.markers) !== undefined) {
         return;
     }
+    assertLocalProof?.();
     transaction.attempts += 1;
     const added = port.comment(number, spec.body);
     const id = assertCommentReceipt(added, commentClientMutationId(number, spec.body));
@@ -1686,11 +1717,13 @@ function convergeCommentMarkers(
     spec: MarkerSpec,
     value: SupersededPullRequest,
     markers: readonly MarkerSpec[],
-    port: SupersedePullRequestPort
+    port: SupersedePullRequestPort,
+    assertLocalProof?: () => void
 ): void {
     const canonical = requireOneOrMoreCommentMarker(value.comments, spec, markers, number);
     for (const marker of markerComments(value.comments, spec, markers)) {
         if (marker.id !== canonical.id) {
+            assertLocalProof?.();
             port.deleteComment(marker.id);
         }
     }
