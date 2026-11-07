@@ -2,10 +2,13 @@ import { type RefObject, useState, useRef, useEffect } from 'react';
 
 import { logger } from '#/infra/logger/appLogger';
 import { audioEngine, getAudioContext, playAudioBufferPreview } from '#/modules/AudioEngine/useCases';
+import { notifyUser } from '#/utils/Notification/notifyUser';
+
+import { renderPresetPreview } from '../../useCases/renderPresetPreview';
 
 export type PreviewHandle = {
     playingId: string | null;
-    play: (id: string, buffer: AudioBuffer) => void;
+    play: (id: string, source: AudioBuffer | { kind: 'preset'; presetId: string }) => void;
     playTone: (id: string, frequency: number, durationSec: number) => void;
     playFile: (id: string, file: File) => Promise<void>;
     stop: () => void;
@@ -15,6 +18,29 @@ type Owner = {
     intent: ReturnType<typeof audioEngine.beginAudioPreviewIntent>;
     stop: () => void;
 };
+
+type PresetReadyOutcome = { status: 'ready' } | { status: 'failed'; error: unknown };
+
+type PresetTerminal = {
+    owner: Owner;
+    readyOutcome: Promise<PresetReadyOutcome>;
+    phase: 'pending' | 'cleanup-current' | 'cleanup-retired' | 'settled' | 'revoked';
+};
+
+function observePresetReady(intent: Owner['intent']): Promise<PresetReadyOutcome> {
+    return (intent.ready ?? Promise.resolve()).then(
+        (): PresetReadyOutcome => ({ status: 'ready' }),
+        (error: unknown): PresetReadyOutcome => ({ status: 'failed', error })
+    );
+}
+
+function revokePresetTerminal(terminalRef: RefObject<PresetTerminal | null>): void {
+    const terminal = terminalRef.current;
+    terminalRef.current = null;
+    if (terminal) {
+        terminal.phase = 'revoked';
+    }
+}
 
 function releaseOwner(ownerRef: RefObject<Owner | null>): void {
     const owner = ownerRef.current;
@@ -37,15 +63,16 @@ function startPreviewBuffer(
     { ownerRef, isCurrent, report, setPlayingId }: BufferPreviewState,
     owner: Owner,
     id: string,
-    buffer: AudioBuffer
-): void {
+    buffer: AudioBuffer,
+    playbackIntent = owner.intent
+): ReturnType<typeof playAudioBufferPreview> {
     if (!isCurrent(owner)) {
-        return;
+        return null;
     }
     const playback = playAudioBufferPreview({
         buffer,
         gain: 0.7,
-        intent: owner.intent,
+        intent: playbackIntent,
         onEnded: () => {
             if (ownerRef.current === owner) {
                 ownerRef.current = null;
@@ -54,21 +81,24 @@ function startPreviewBuffer(
         },
     });
     if (playback === null) {
-        return;
+        return null;
     }
     owner.stop = playback.stop;
     if (isCurrent(owner)) {
         setPlayingId(id);
     }
     void playback.ready.catch((error: unknown) => report(owner, error));
+    return playback;
 }
 
 export const usePreviewAudio = (): PreviewHandle => {
     const ownerRef = useRef<Owner | null>(null);
+    const terminalRef = useRef<PresetTerminal | null>(null);
     const [playingId, setPlayingId] = useState<string | null>(null);
 
     const release = () => releaseOwner(ownerRef);
     const stop = () => {
+        revokePresetTerminal(terminalRef);
         release();
         setPlayingId(null);
     };
@@ -83,6 +113,10 @@ export const usePreviewAudio = (): PreviewHandle => {
         intent.signal.addEventListener(
             'abort',
             () => {
+                const terminal = terminalRef.current;
+                if (terminal?.owner === owner && terminal.phase === 'pending') {
+                    revokePresetTerminal(terminalRef);
+                }
                 owner.stop();
                 if (ownerRef.current === owner) {
                     ownerRef.current = null;
@@ -100,22 +134,125 @@ export const usePreviewAudio = (): PreviewHandle => {
             logger.warn(new Error('Browser audio preview failed', { cause: error }));
         }
     };
-    const resume = (owner: Owner): Promise<void> => {
+    const settlePreset = (terminal: PresetTerminal) => {
+        if (terminalRef.current !== terminal) {
+            return;
+        }
+        terminalRef.current = null;
+        terminal.phase = 'settled';
+    };
+    const reportPreset = (terminal: PresetTerminal, error: unknown) => {
+        if (terminalRef.current !== terminal) {
+            return;
+        }
+        const eligible = isCurrent(terminal.owner) || terminal.phase === 'cleanup-current';
+        settlePreset(terminal);
+        if (ownerRef.current === terminal.owner) {
+            release();
+            setPlayingId(null);
+        }
+        if (eligible) {
+            logger.warn(new Error('Browser audio preview failed', { cause: error }));
+            notifyUser('Could not preview this preset. Try another sound.', 'error');
+        }
+    };
+    const resume = (owner: Owner, onFailure = report): Promise<void> => {
         const context = getAudioContext();
         const resuming = context.state === 'suspended' ? context.resume() : Promise.resolve();
-        void resuming.catch((error: unknown) => report(owner, error));
+        void resuming.catch((error: unknown) => onFailure(owner, error));
         return resuming;
     };
-    const startBuffer = (owner: Owner, id: string, buffer: AudioBuffer) => {
-        startPreviewBuffer({ ownerRef, isCurrent, report, setPlayingId }, owner, id, buffer);
+    const startBuffer = (
+        owner: Owner,
+        id: string,
+        buffer: AudioBuffer,
+        playbackIntent = owner.intent,
+        onFailure = report
+    ) => {
+        return startPreviewBuffer(
+            { ownerRef, isCurrent, report: onFailure, setPlayingId },
+            owner,
+            id,
+            buffer,
+            playbackIntent
+        );
     };
-    const play = (id: string, buffer: AudioBuffer) => {
+    const preparePreset = async (terminal: PresetTerminal, id: string, presetId: string): Promise<void> => {
+        const { owner } = terminal;
+        const onFailure = (_owner: Owner, error: unknown) => reportPreset(terminal, error);
+        try {
+            await resume(owner, onFailure);
+            if (!isCurrent(owner)) {
+                return;
+            }
+            const prepared = await renderPresetPreview({
+                presetId,
+                sampleRate: getAudioContext().sampleRate,
+                signal: owner.intent.signal,
+                isCurrent: () => isCurrent(owner),
+            });
+            if (!isCurrent(owner)) {
+                return;
+            }
+            if (prepared === null || !prepared.isCurrent()) {
+                stop();
+                return;
+            }
+            void terminal.readyOutcome.then((outcome) => {
+                if (outcome.status !== 'failed' || terminalRef.current !== terminal) {
+                    return;
+                }
+                if (!isCurrent(owner) || !prepared.isCurrent()) {
+                    if (ownerRef.current === owner) {
+                        stop();
+                    }
+                    return;
+                }
+                reportPreset(terminal, outcome.error);
+            });
+            const playbackIntent: Owner['intent'] = {
+                ...owner.intent,
+                isCurrent: () => isCurrent(owner) && prepared.isCurrent(),
+                release: () => {
+                    if (terminalRef.current === terminal && terminal.phase === 'pending') {
+                        terminal.phase =
+                            isCurrent(owner) && prepared.isCurrent() ? 'cleanup-current' : 'cleanup-retired';
+                    }
+                    owner.intent.release();
+                },
+            };
+            const playback = startBuffer(owner, id, prepared.buffer, playbackIntent, onFailure);
+            if (playback === null) {
+                if (ownerRef.current === owner) {
+                    stop();
+                }
+                settlePreset(terminal);
+                return;
+            }
+            await playback.ready;
+            settlePreset(terminal);
+        } catch (error: unknown) {
+            reportPreset(terminal, error);
+        }
+    };
+    const play: PreviewHandle['play'] = (id, source) => {
         const owner = begin();
         if (owner === null) {
             return;
         }
+        if ('kind' in source) {
+            const terminal: PresetTerminal = {
+                owner,
+                readyOutcome: observePresetReady(owner.intent),
+                phase: 'pending',
+            };
+            terminalRef.current = terminal;
+            setPlayingId(id);
+            void preparePreset(terminal, id, source.presetId);
+            return;
+        }
         void resume(owner);
-        startBuffer(owner, id, buffer);
+        startBuffer(owner, id, source);
     };
     const playTone = (id: string, frequency: number, durationSec: number) => {
         const owner = begin();
@@ -160,6 +297,12 @@ export const usePreviewAudio = (): PreviewHandle => {
             }
         }
     };
-    useEffect(() => () => releaseOwner(ownerRef), []);
+    useEffect(
+        () => () => {
+            revokePresetTerminal(terminalRef);
+            releaseOwner(ownerRef);
+        },
+        []
+    );
     return { playingId, play, playTone, playFile, stop };
 };

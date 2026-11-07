@@ -152,11 +152,15 @@ describe('PresetItem — title tooltip', () => {
 });
 
 describe('PresetItem — preview button', () => {
-    it('calls preview.playTone with preset id when preview clicked', () => {
+    it('passes the preset identity to preview.play without loading or favoriting', () => {
+        const play = vi.fn();
         const playTone = vi.fn();
-        renderItem({ preview: makePreview({ playTone }) });
+        const { onClick, onToggleFavorite } = renderItem({ preview: makePreview({ play, playTone }) });
         fireEvent.click(screen.getByTestId('preview-btn'));
-        expect(playTone).toHaveBeenCalledWith('p1', 261.63, 0.5);
+        expect(play).toHaveBeenCalledWith('p1', { kind: 'preset', presetId: 'p1' });
+        expect(playTone).not.toHaveBeenCalled();
+        expect(onClick).not.toHaveBeenCalled();
+        expect(onToggleFavorite).not.toHaveBeenCalled();
     });
 });
 
