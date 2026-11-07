@@ -460,7 +460,10 @@ describe('a whole-project vibe run of measured recipe batches (AC-003 of #4372)'
             for (const descriptor of requestedDescriptors) {
                 expect(vocalRecipes).toContain(`vocal-${descriptor}`);
             }
-            expect(audio.renderTrackSubgraphOffline).not.toHaveBeenCalled();
+            expect(audio.renderTrackSubgraphOffline).toHaveBeenCalledTimes(
+                plan?.batches.reduce((total, batch) => total + batch.targetIds.length, 0) ?? 0
+            );
+            expect(plan?.schemaVersion).toBe(2);
         }
     );
 
@@ -644,7 +647,7 @@ describe('a whole-project vibe run of measured recipe batches (AC-003 of #4372)'
             total: 4,
             briefRevision: PLANNED_BRIEF_REVISION,
         });
-        expect(audio.renderTrackSubgraphOffline).not.toHaveBeenCalled();
+        expect(audio.renderTrackSubgraphOffline).toHaveBeenCalledTimes(3);
         expect(trackDeviceTypes(DRUMS_ID)).toEqual([]);
     });
 
@@ -662,7 +665,7 @@ describe('a whole-project vibe run of measured recipe batches (AC-003 of #4372)'
             expect(card.projectRevision).toBe(captureProjectRevision());
             expect(card.approvalSnapshot.adoptedRecipes?.map((recipe) => recipe.targetId)).toEqual([targetId]);
             expect(cardContent(card)).toMatch(new RegExp(`^Batch ${String(position)} of 4: `, 'u'));
-            expect(cardContent(card)).toContain('Measured on ');
+            expect(cardContent(card)).toContain('Fresh approval preview on ');
             expect(cardContent(card)).not.toContain('(blocked)');
             const state = metricGoalStateCodec(card.approvalSnapshot.metricGoalState);
             expect(state?.authorities.map((authority) => authority.origin)).toEqual(['vibe-run-plan']);
@@ -993,7 +996,7 @@ describe('a whole-project vibe run of measured recipe batches (AC-003 of #4372)'
 
         const brief = requireOnlyProposedCard();
         expect(cardContent(brief)).toContain(
-            "No batches were scheduled after the brief: previewing every batch needs 6 renders, more than the 4 this run's maxRenderJobs budget has left."
+            "No batches were scheduled after the brief: initial measurements and previewing every batch need 9 renders, more than the 4 this run's maxRenderJobs budget has left."
         );
         expect(agentRunLifecycle.get(brief.runId)?.plan?.batchSchedule).toBeUndefined();
         await expect(confirmPendingChatActions({ confirmationId: brief.id })).resolves.toEqual({

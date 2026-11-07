@@ -33,7 +33,7 @@ export function describeVibeRunSummary(input: {
             .filter((criterion) => criterion.source.kind === 'recipe')
             .map(
                 (criterion) =>
-                    `${readVibeMetricLabel(criterion.metricId, criterion.band)} on ${criterion.targetIds.map((id) => readVibeTargetName(input.context, id)).join(', ')} ${formatVibeFigure(criterion.baseline[0], criterion.unit)} → ${formatVibeFigure(criterion.observed[0], criterion.unit)}`
+                    `${readVibeMetricLabel(criterion.metricId, criterion.band)} on ${criterion.targetIds.map((id) => readVibeTargetName(input.context, id)).join(', ')} approval preview, ${criterion.range?.sectionId ?? 'arrangement'} [${String(criterion.range?.startBeat)}, ${String(criterion.range?.endBeat)}], ${formatVibeFigure(criterion.baseline[0], criterion.unit)} → ${formatVibeFigure(criterion.observed[0], criterion.unit)}`
             );
         const measured = deltas.length === 0 ? 'no measured change recorded' : deltas.join('; ');
         lines.push(

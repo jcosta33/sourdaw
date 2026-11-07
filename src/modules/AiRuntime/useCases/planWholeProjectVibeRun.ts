@@ -17,10 +17,12 @@ import {
     type VibeRunPlan,
     type VibeRunSectionScope,
     type VibeRunUnplannedRole,
+    type VibeRunVerificationRange,
 } from '../models/VibeRunPlan';
 
 import { resolveRoleFamily } from './canonicalRoleFamilies';
 import { countRecipeExpansionCommands } from './countRecipeExpansionCommands';
+import { objectiveMetricProjection } from './objectiveMetricProjection';
 
 type MixRecipeCatalog = ReturnType<typeof getMixRecipeCatalog>;
 type MixRecipe = MixRecipeCatalog['recipes'][number];
@@ -35,6 +37,10 @@ type PlanWholeProjectVibeRunInput = {
     measurements: readonly VibeRunMeasurement[];
     /** The most targets one batch may hold, beside the command cap; unbounded when omitted. */
     maxTargetsPerBatch?: number;
+    /** Production scheduling requires each exact range; an inventory pass leaves this absent. */
+    requiredRanges?: readonly VibeRunVerificationRange[];
+    /** Whole targets the original request explicitly preserves, resolved by its owning reader. */
+    protectedTargetIds?: readonly string[];
 };
 
 /** A track the run may touch, with the recipes `recipe.expand` would accept for it and what they expand to. */
@@ -261,6 +267,58 @@ function readBatchBaselines(
     return { baselines, baselineConflicts };
 }
 
+function readRangeRefusals(
+    input: PlanWholeProjectVibeRunInput,
+    target: VibeRunBatch['targets'][number],
+    role: SemanticCommandListRoleFamily,
+    range: VibeRunVerificationRange
+): VibeRunPlan['coverageRefusals'] {
+    const candidates = input.measurements
+        .filter(
+            (measurement) =>
+                measurement.range.startBeat === range.startBeat &&
+                measurement.range.endBeat === range.endBeat &&
+                measurement.range.sectionId === range.sectionId
+        )
+        .flatMap((measurement) => measurement.targets.filter((candidate) => candidate.targetId === target.targetId));
+    const refusals: VibeRunPlan['coverageRefusals'][number][] = [];
+    for (const delta of target.expectedDeltas) {
+        const metric = getAgentMeasurementMetricIds().find((metric) => metric === delta.metric);
+        if (
+            candidates.length !== 1 ||
+            metric === undefined ||
+            objectiveMetricProjection(metric, candidates[0]?.measurements[delta.metric], delta.band) === null
+        ) {
+            refusals.push({
+                targetId: target.targetId,
+                role,
+                range,
+                metric: delta.metric,
+                band: delta.band,
+                reason:
+                    candidates.length > 1
+                        ? 'ambiguous exact-range measurements'
+                        : 'missing or unsupported exact-range metric',
+            });
+        }
+    }
+    return refusals;
+}
+function readCoverageRefusals(
+    input: PlanWholeProjectVibeRunInput,
+    batches: readonly VibeRunBatch[]
+): VibeRunPlan['coverageRefusals'] {
+    const refusals: VibeRunPlan['coverageRefusals'][number][] = [];
+    for (const batch of batches) {
+        for (const target of batch.targets) {
+            for (const range of input.requiredRanges ?? []) {
+                refusals.push(...readRangeRefusals(input, target, batch.objective.role, range));
+            }
+        }
+    }
+    return refusals;
+}
+
 /**
  * Decompose a whole-project vibe request into an ordered run of bounded batches, from project truth
  * alone. Nothing here hardcodes a section name or an output-group name: a batch's scope is a role
@@ -276,7 +334,7 @@ function readBatchBaselines(
  * the caller already measured; it renders nothing and writes nothing.
  */
 export function planWholeProjectVibeRun(input: PlanWholeProjectVibeRunInput): VibeRunPlan {
-    const protectedIds = readProtectedTrackIds(input.context);
+    const protectedIds = new Set([...readProtectedTrackIds(input.context), ...(input.protectedTargetIds ?? [])]);
     const excludedTargets: VibeRunExcludedTarget[] = [];
     const tracksByRole = new Map<SemanticCommandListRoleFamily, ProjectContextTrack[]>();
     for (const track of input.context.tracks) {
@@ -356,9 +414,11 @@ export function planWholeProjectVibeRun(input: PlanWholeProjectVibeRunInput): Vi
         }
     }
 
+    const coverageRefusals = readCoverageRefusals(input, batches);
     return {
         schemaVersion: 1,
         briefRevision: input.context.productionBrief?.revision ?? null,
+        coverageRefusals,
         batches,
         excludedTargets,
         unplannedRoles,

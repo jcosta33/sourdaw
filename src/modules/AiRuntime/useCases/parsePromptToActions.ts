@@ -43,7 +43,6 @@ import {
     type WorkflowCapabilityId,
 } from '../models/WorkflowCapability';
 import { getAvailablePresets } from '../services/fuzzySearch';
-import { readAgentResourceLimits } from '../stores/agentResourceLimitsStore';
 import { getPendingActionConfirmation } from '../stores/pendingActionConfirmationStore';
 import { buildPlanningSystemPrompt } from '../transformers/buildPlanningSystemPrompt';
 import { extractAgentPlanProposal, normalizeAgentPlanProposal } from '../transformers/normalizeAgentPlanProposal';
@@ -1658,12 +1657,16 @@ const planPromptIntent = inject({ logger })(
                             rejectionReason: UNREADABLE_VERIFICATION_RECORD,
                         };
                     }
-                    const vibeRun = planBriefVibeRun({
+                    const vibeRun = await planBriefVibeRun({
                         prompt,
                         context,
                         compilations: selectedCompilations,
                         mixIntent,
                         runId: streamIdentity?.runId,
+                        sourceRevision: projectRevision,
+                        signal,
+                        admit: onMeasurementAttempt,
+                        priorReceipts: planningOutcome.receipts,
                     });
                     return {
                         metricGoalState: briefMetricGoalState,
@@ -2198,34 +2201,66 @@ const planPromptIntent = inject({ logger })(
  * call, and scheduled behind it only when it fits the run. A request that plans no batch adds nothing,
  * so its brief result is exactly what it was before runs were planned.
  */
-function planBriefVibeRun(input: {
+async function planBriefVibeRun(input: {
     prompt: string;
     context: ProjectContext;
     compilations: readonly RetainedCompilation[];
     mixIntent: NonNullable<ReturnType<typeof readBriefMixIntent>>;
     runId: string | undefined;
-}): Pick<IntentResult, 'batchSchedule' | 'plannedRunLines'> {
+    sourceRevision: string | undefined;
+    signal: AbortSignal | undefined;
+    admit: MeasurementAdmitter | undefined;
+    priorReceipts: readonly ApplicationToolReceipt[];
+}): Promise<
+    Pick<IntentResult, 'batchSchedule' | 'plannedRunLines' | 'applicationToolReceipts' | 'initialBaselineRefusal'>
+> {
     const compiled = input.compilations.find(
         (compilation): compilation is Extract<RetainedCompilation, { kind: 'brief' }> => compilation.kind === 'brief'
     );
     if (compiled === undefined) {
         return {};
     }
-    const run = input.runId === undefined ? null : agentRunLifecycle.get(input.runId);
-    const planned = planVibeRunSchedule({
+    if (
+        input.runId === undefined ||
+        input.sourceRevision === undefined ||
+        input.signal === undefined ||
+        input.admit === undefined
+    ) {
+        return {
+            plannedRunLines: [
+                'No batches were scheduled after the brief: initial measurements require a live run, original revision, cancellation signal and budget admission.',
+            ],
+        };
+    }
+    const run = agentRunLifecycle.get(input.runId);
+    if (run === null) return {};
+    const planned = await planVibeRunSchedule({
         prompt: input.prompt,
         context: input.context,
         brief: compiled.brief,
         mixIntent: input.mixIntent,
-        budgets: run?.budgets ?? { limits: readAgentResourceLimits(), consumed: {} },
+        budgets: run.budgets,
+        runId: input.runId,
+        sourceRevision: input.sourceRevision,
+        signal: input.signal,
+        admit: input.admit,
+        priorReceipts: input.priorReceipts,
     });
     if (planned.status === 'none') {
         return {};
     }
     if (planned.status === 'unscheduled') {
-        return { plannedRunLines: planned.lines };
+        return {
+            plannedRunLines: planned.lines,
+            applicationToolReceipts: [...input.priorReceipts, ...(planned.receipts ?? [])],
+            initialBaselineRefusal: planned.refusal,
+        };
     }
-    return { batchSchedule: planned.schedule, plannedRunLines: planned.lines };
+    return {
+        batchSchedule: planned.schedule,
+        plannedRunLines: planned.lines,
+        applicationToolReceipts: [...input.priorReceipts, ...planned.receipts],
+    };
 }
 
 function isBriefWritingRequest(

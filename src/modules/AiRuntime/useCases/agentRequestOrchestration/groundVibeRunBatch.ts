@@ -1,13 +1,18 @@
+import { getMixRecipeCatalog } from '#/modules/Arrangement/useCases';
 import { settlePendingProjectWritesAndCaptureRevision } from '#/modules/CrdtDocument/useCases';
+import { digest } from '#/utils/canonicalDigest';
 
 import { type AgentRun, type AgentRunVibeRunBatchSchedule } from '../../models/AgentRun';
 import { type IntentResult } from '../../models/IntentResult';
 import { type ScheduledVibeRunBatch } from '../../models/VibeRunPlan';
 import { readScheduledVibeRunPlan } from '../../validators/readScheduledVibeRunPlan';
+import { readVibeRunInitialReceipt } from '../../validators/readVibeRunInitialReceipt';
 import { getProjectContext } from '../getProjectContext';
 import { groundApplicationRecipeBatch } from '../groundApplicationRecipeBatch';
+import { objectiveMetricProjection } from '../objectiveMetricProjection';
 import { compileVibeBatchMetricState } from '../vibeRun/compileVibeBatchMetricState';
 import { readVibeBatchPairs } from '../vibeRun/readVibeBatchPairs';
+import { readVibeBatchRecipeGoals } from '../vibeRun/readVibeBatchRecipeGoals';
 
 import { readVibeRunBriefDrift } from './readVibeRunBriefDrift';
 
@@ -60,6 +65,46 @@ export function groundVibeRunBatch(
     const drift = readVibeRunBriefDrift(schedule, context.productionBrief?.revision ?? null);
     if (drift !== null) {
         return { status: 'rejected', reason: drift };
+    }
+    if (plan.schemaVersion === 1) {
+        return { status: 'rejected', reason: 'its legacy plan is unmeasured; request a new measured run' };
+    }
+    const catalog = getMixRecipeCatalog();
+    if (plan.initial.runId !== run.runId) {
+        return { status: 'rejected', reason: 'its initial measurement belongs to another run' };
+    }
+    if (catalog.version !== plan.initial.catalogVersion) {
+        return { status: 'rejected', reason: 'its recipe catalog changed since initial measurement' };
+    }
+    const initialGoals = readVibeBatchRecipeGoals({ batch, catalog, range: plan.initial.arrangementRange });
+    if (initialGoals.status === 'refused') {
+        return { status: 'rejected', reason: initialGoals.reason };
+    }
+    for (const goal of initialGoals.goals) {
+        if (goal.source.kind !== 'recipe' || goal.metricId === null || goal.range === null) {
+            continue;
+        }
+        const source = goal.source;
+        const witness = plan.initial.witnesses.find((witness) => witness.id === goal.goalId);
+        const receipt = readVibeRunInitialReceipt(
+            plan.initial.receipts.find((receipt) => receipt.callId === witness?.receiptCallId)
+        );
+        const entry = receipt?.data.targets.find((target) => goal.targetIds.includes(target.targetId))?.measurements[
+            goal.metricId
+        ];
+        if (
+            witness === undefined ||
+            witness.recipeDigest !== source.recipeDigest ||
+            witness.recipeId !== source.recipeId ||
+            witness.expectationIndex !== source.expectationIndex ||
+            witness.metric !== goal.metricId ||
+            witness.band !== goal.band ||
+            digest(witness.range) !== digest(goal.range) ||
+            receipt?.revision !== plan.initial.sourceRevision ||
+            objectiveMetricProjection(goal.metricId, entry, goal.band) === null
+        ) {
+            return { status: 'rejected', reason: 'its initial exact-range recipe witness no longer validates' };
+        }
     }
     const targetRefusal = readTargetRefusal(batch, context);
     if (targetRefusal !== null) {
