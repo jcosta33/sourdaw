@@ -1,0 +1,34 @@
+scripts/__tests__/fixtures/health-gate-workflows.snapshot.json
+  s_eb3cd86b0cee6e::t_845fa5ed874f4d 384-443,445,466-470,493-500,510-511,668,684
+.github/workflows/heavy-gates.yml
+  s_eb3cd86b0cee6e::t_845fa5ed874f4d 25-69,71,88-90,108-113,124,287,313-314
+scripts/workflowSecuritySurfaceContract.ts
+  s_eb3cd86b0cee6e::t_845fa5ed874f4d 66
+scripts/healthGateWorkflowContract.ts
+  s_eb3cd86b0cee6e::t_845fa5ed874f4d 242-243
+scripts/__tests__/sharedE2eBuild.spec.ts
+  s_eb3cd86b0cee6e::t_845fa5ed874f4d 6,8
+scripts/__tests__/healthGatesWorkflow.spec.ts
+  s_eb3cd86b0cee6e::t_edf1ccb028cf52 340,877-880,4447
+  s_eb3cd86b0cee6e::t_ccdcbe90535768 874-876,881-882,3632-3644,3646-3657,3659-3661
+  s_eb3cd86b0cee6e::t_751b823f6848c8 3599-3631,3645,3658,3662-3663
+  s_eb3cd86b0cee6e::t_845fa5ed874f4d 217,5152
+scripts/sharedE2eBuild.ts
+  s_eb3cd86b0cee6e::t_845fa5ed874f4d 6
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d9314c4d9e59e46879fae62aab99c5e3cbaae253",
+  "prompts": {},
+  "sessions": {
+    "s_eb3cd86b0cee6e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34c-a4d8-7523-838e-1cd1a0a25d78",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
