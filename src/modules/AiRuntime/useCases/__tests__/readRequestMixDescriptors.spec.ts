@@ -61,7 +61,9 @@ describe('reading the characters a whole-project request asks for', () => {
         ['warm it up without making it any wider', ['warm']],
         ['make it not only warmer', []],
         ['make it not only warmer but also not wider', ['warm']],
-        ['do not make it not only warmer but also wider', ['wide']],
+        ['do not make it not only warmer but also wider', []],
+        ['without making it not only warmer but also wider', []],
+        ['do not make it warmer but make it wider', ['wide']],
     ])('leaves out what "%s" withholds, reduces or keeps', (prompt, expected) => {
         expect(readDescriptors(prompt)).toEqual(expected);
     });

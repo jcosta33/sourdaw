@@ -56,7 +56,18 @@ function maskOpenedClauses(text: string, opener: RegExp): string {
         }
         const clauseEnd = new RegExp(CLAUSE_END_PATTERN.source, CLAUSE_END_PATTERN.flags);
         clauseEnd.lastIndex = match.index + match[0].length;
-        const end = clauseEnd.exec(text)?.index ?? text.length;
+        let end = clauseEnd.exec(text)?.index ?? text.length;
+        // A correlative inside this prohibition is one qualified phrase: its "but" does not
+        // release the second quality as a new instruction.
+        const innerNotOnly = text.slice(match.index + match[0].length, end).search(/\bnot[\s-]+only\b/iu);
+        if (innerNotOnly !== -1) {
+            const start = match.index + match[0].length + innerNotOnly;
+            const additive = ADDITIVE_NOT_ONLY_PATTERN.exec(text.slice(start));
+            if (additive !== null && start + additive[0].length > end) {
+                clauseEnd.lastIndex = start + additive[0].length;
+                end = clauseEnd.exec(text)?.index ?? text.length;
+            }
+        }
         masked.fill(' ', match.index, end);
     }
     return masked.join('');
