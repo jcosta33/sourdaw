@@ -10,6 +10,8 @@ import {
 } from '../../stores/productionBriefReplayAuthority';
 import { projectStore } from '../../stores/projectStore';
 
+import { isProductionBriefSessionEntry, restoreProductionBriefSessionEntry } from './productionBriefSessionEntry';
+
 function isSameIntent(left: unknown, right: unknown): boolean {
     return jsonValuesEqual(left, right);
 }
@@ -190,6 +192,8 @@ export const handleSetProductionBrief = createHandler<'setProductionBrief'>({
             }),
         };
     },
+    validateSessionEntry: isProductionBriefSessionEntry,
+    restoreSessionEntry: restoreProductionBriefSessionEntry,
     batchExecution: 'singleton',
     undoable: true,
 });
