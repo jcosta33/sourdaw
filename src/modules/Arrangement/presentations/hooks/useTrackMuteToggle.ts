@@ -13,27 +13,28 @@ type Sequence = {
     committed: boolean;
 };
 
-type Scope = { id: string; active: boolean; sequence: Sequence | null };
+type Scope = { id: string };
+type ScopedSequence = { scope: Scope; sequence: Sequence };
 
 export function useTrackMuteToggle(trackId: string, muted: boolean): () => Promise<void> {
-    const current = useRef<Scope | null>(null);
+    const scopeRef = useRef<Scope | null>(null);
+    const sequenceRef = useRef<ScopedSequence | null>(null);
     useEffect(() => {
-        const scope: Scope = { id: trackId, active: true, sequence: null };
-        current.current = scope;
+        const scope: Scope = { id: trackId };
+        scopeRef.current = scope;
         return () => {
-            scope.active = false;
-            if (current.current === scope) {
-                current.current = null;
+            if (scopeRef.current === scope) {
+                scopeRef.current = null;
             }
         };
     }, [trackId]);
 
     return () => {
-        const scope = current.current;
-        if (!scope || !scope.active || scope.id !== trackId) {
+        const scope = scopeRef.current;
+        if (!scope || scope.id !== trackId) {
             return Promise.resolve();
         }
-        let sequence = scope.sequence;
+        let sequence = sequenceRef.current?.scope === scope ? sequenceRef.current.sequence : null;
         if (!sequence) {
             sequence = {
                 identity: captureProjectIdentity(),
@@ -42,10 +43,10 @@ export function useTrackMuteToggle(trackId: string, muted: boolean): () => Promi
                 valid: true,
                 committed: false,
             };
-            scope.sequence = sequence;
+            sequenceRef.current = { scope, sequence };
         }
         const owned = sequence;
-        const live = () => scope.active && current.current === scope && captureProjectIdentity() === owned.identity;
+        const live = () => scopeRef.current === scope && captureProjectIdentity() === owned.identity;
         const execute = async () => {
             if (!owned.valid || !live()) {
                 return;
@@ -80,8 +81,8 @@ export function useTrackMuteToggle(trackId: string, muted: boolean): () => Promi
         const run = owned.tail ? owned.tail.then(execute) : execute();
         owned.tail = run;
         return run.finally(() => {
-            if (owned.tail === run && scope.sequence === owned) {
-                scope.sequence = null;
+            if (owned.tail === run && sequenceRef.current?.sequence === owned) {
+                sequenceRef.current = null;
             }
         });
     };
