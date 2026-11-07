@@ -6244,6 +6244,86 @@ const schemaDefinitions = [
     {
         type: 'object',
         properties: {
+            audioBufferId: 0,
+            sampleRate: 1,
+            length: 1,
+        },
+        required: ['audioBufferId', 'sampleRate', 'length'],
+        additionalProperties: false,
+    },
+    {
+        type: 'object',
+        properties: {
+            onsetIndex: 1,
+            sliceClipId: 0,
+            sourceSeconds: 1,
+            confidence: 1,
+            fromBeat: 1,
+            toBeat: 1,
+        },
+        required: ['onsetIndex', 'sliceClipId', 'sourceSeconds', 'confidence', 'fromBeat', 'toBeat'],
+        additionalProperties: false,
+    },
+    {
+        type: 'array',
+        items: 753,
+    },
+    {
+        type: 'literal',
+        value: 'merged',
+    },
+    {
+        type: 'literal',
+        value: 'limit',
+    },
+    {
+        anyOf: [755, 756],
+    },
+    {
+        type: 'object',
+        properties: {
+            onsetIndex: 1,
+            reason: 757,
+        },
+        required: ['onsetIndex', 'reason'],
+        additionalProperties: false,
+    },
+    {
+        type: 'array',
+        items: 758,
+    },
+    {
+        type: 'object',
+        properties: {
+            source: 752,
+            clock: 288,
+            expected: 619,
+            replacement: 619,
+            moves: 754,
+            skipped: 759,
+        },
+        required: ['source', 'clock', 'expected', 'replacement', 'moves', 'skipped'],
+        additionalProperties: false,
+    },
+    {
+        type: 'object',
+        properties: {
+            clipId: 0,
+            gridSize: 1,
+            strength: 1,
+            swing: 1,
+            sensitivity: 1,
+            minConfidence: 1,
+            startBeat: 1,
+            endBeat: 1,
+            plan: 760,
+        },
+        required: ['clipId', 'gridSize'],
+        additionalProperties: false,
+    },
+    {
+        type: 'object',
+        properties: {
             sensitivity: 1,
         },
         required: ['sensitivity'],
@@ -6275,12 +6355,12 @@ const schemaDefinitions = [
         value: 'lock-marker',
     },
     {
-        anyOf: [754, 755, 756, 757],
+        anyOf: [764, 765, 766, 767],
     },
     {
         type: 'object',
         properties: {
-            tool: 758,
+            tool: 768,
         },
         required: ['tool'],
         additionalProperties: false,
@@ -6298,12 +6378,12 @@ const schemaDefinitions = [
         value: 'hui',
     },
     {
-        anyOf: [35, 760, 761, 762],
+        anyOf: [35, 770, 771, 772],
     },
     {
         type: 'object',
         properties: {
-            protocol: 763,
+            protocol: 773,
         },
         required: ['protocol'],
         additionalProperties: false,
@@ -6335,12 +6415,12 @@ const schemaDefinitions = [
         value: 'push3',
     },
     {
-        anyOf: [767, 768],
+        anyOf: [777, 778],
     },
     {
         type: 'object',
         properties: {
-            model: 769,
+            model: 779,
         },
         required: ['model'],
         additionalProperties: false,
@@ -6403,7 +6483,7 @@ const schemaDefinitions = [
         value: 'chord',
     },
     {
-        anyOf: [86, 162, 776, 777, 778],
+        anyOf: [86, 162, 786, 787, 788],
     },
     {
         type: 'literal',
@@ -6412,7 +6492,7 @@ const schemaDefinitions = [
     {
         type: 'object',
         properties: {
-            type: 780,
+            type: 790,
         },
         required: ['type'],
         additionalProperties: false,
@@ -6424,7 +6504,7 @@ const schemaDefinitions = [
     {
         type: 'object',
         properties: {
-            type: 782,
+            type: 792,
         },
         required: ['type'],
         additionalProperties: false,
@@ -6436,7 +6516,7 @@ const schemaDefinitions = [
     {
         type: 'object',
         properties: {
-            type: 784,
+            type: 794,
             index: 1,
         },
         required: ['type', 'index'],
@@ -6457,7 +6537,7 @@ const schemaDefinitions = [
     {
         type: 'object',
         properties: {
-            type: 787,
+            type: 797,
         },
         required: ['type'],
         additionalProperties: false,
@@ -6469,20 +6549,20 @@ const schemaDefinitions = [
     {
         type: 'object',
         properties: {
-            type: 789,
+            type: 799,
         },
         required: ['type'],
         additionalProperties: false,
     },
     {
-        anyOf: [781, 783, 785, 786, 788, 790],
+        anyOf: [791, 793, 795, 796, 798, 800],
     },
     {
         type: 'object',
         properties: {
             active: 42,
-            stepType: 779,
-            noteSelector: 791,
+            stepType: 789,
+            noteSelector: 801,
             velocity: 1,
             velocityOverride: 42,
             gateMul: 1,
@@ -6507,14 +6587,14 @@ const schemaDefinitions = [
     },
     {
         type: 'array',
-        items: 792,
+        items: 802,
     },
     {
         type: 'object',
         properties: {
             processorId: 0,
-            steps: 793,
-            expectedSteps: 793,
+            steps: 803,
+            expectedSteps: 803,
         },
         required: ['processorId', 'steps'],
         additionalProperties: false,
@@ -6578,13 +6658,13 @@ const schemaDefinitions = [
         value: 'mutation',
     },
     {
-        anyOf: [562, 729, 778, 796, 797, 798, 799, 800, 801, 802, 803, 804, 805, 806, 807],
+        anyOf: [562, 729, 788, 806, 807, 808, 809, 810, 811, 812, 813, 814, 815, 816, 817],
     },
     {
         type: 'object',
         properties: {
             id: 0,
-            type: 808,
+            type: 818,
             name: 0,
             bypassed: 42,
             params: 308,
@@ -6599,9 +6679,9 @@ const schemaDefinitions = [
     {
         type: 'object',
         properties: {
-            processor: 809,
+            processor: 819,
             atIndex: 1,
-            grooveAssignments: 810,
+            grooveAssignments: 820,
         },
         required: ['processor', 'atIndex'],
         additionalProperties: false,
@@ -6610,9 +6690,9 @@ const schemaDefinitions = [
         type: 'object',
         properties: {
             processorId: 0,
-            type: 808,
+            type: 818,
             name: 0,
-            restore: 811,
+            restore: 821,
         },
         required: ['processorId', 'type', 'name'],
         additionalProperties: false,
@@ -6621,7 +6701,7 @@ const schemaDefinitions = [
         type: 'object',
         properties: {
             processorId: 0,
-            expectedProcessor: 809,
+            expectedProcessor: 819,
             expectedIndex: 1,
         },
         required: ['processorId', 'expectedProcessor', 'expectedIndex'],
@@ -6669,12 +6749,12 @@ const schemaDefinitions = [
     },
     {
         type: 'array',
-        items: 817,
+        items: 827,
     },
     {
         type: 'object',
         properties: {
-            clips: 818,
+            clips: 828,
         },
         required: ['clips'],
         additionalProperties: false,
@@ -6693,12 +6773,12 @@ const schemaDefinitions = [
     },
     {
         type: 'array',
-        items: 820,
+        items: 830,
     },
     {
         type: 'object',
         properties: {
-            clips: 821,
+            clips: 831,
         },
         required: ['clips'],
         additionalProperties: false,
@@ -7052,38 +7132,38 @@ const schemaIdByActionType = {
     setLayerInsertionIndex: 746,
     restoreAdjustmentLayerMutation: 750,
     detectTransients: 751,
-    quantizeTransients: 375,
+    quantizeTransients: 761,
     openElasticEditor: 375,
     closeElasticEditor: 147,
-    elasticSetSensitivity: 752,
-    elasticAddMarker: 753,
+    elasticSetSensitivity: 762,
+    elasticAddMarker: 763,
     elasticRemoveMarker: 354,
     elasticToggleMarkerLock: 354,
-    elasticSetTool: 759,
+    elasticSetTool: 769,
     toggleNodeView: 147,
-    setControlSurface: 764,
-    addCvOutput: 765,
-    removeCvOutput: 766,
-    connectPush: 770,
+    setControlSurface: 774,
+    addCvOutput: 775,
+    removeCvOutput: 776,
+    connectPush: 780,
     disconnectPush: 147,
     exportDawProject: 147,
     importDawProject: 147,
-    loadRaveModel: 771,
-    setRaveBlend: 772,
+    loadRaveModel: 781,
+    setRaveBlend: 782,
     enableWarping: 375,
-    setWarpAlgorithm: 773,
-    setWarpPitchShift: 774,
-    setYeastProcessorParam: 775,
-    setYeastArpPattern: 794,
-    setYeastProcessorBypass: 795,
-    addYeastProcessor: 812,
-    removeYeastProcessor: 813,
-    reorderYeastProcessor: 814,
-    commitRecording: 815,
+    setWarpAlgorithm: 783,
+    setWarpPitchShift: 784,
+    setYeastProcessorParam: 785,
+    setYeastArpPattern: 804,
+    setYeastProcessorBypass: 805,
+    addYeastProcessor: 822,
+    removeYeastProcessor: 823,
+    reorderYeastProcessor: 824,
+    commitRecording: 825,
     discardRecording: 375,
-    restoreRecording: 816,
-    appendOverdubControllers: 819,
-    removeOverdubControllers: 822,
+    restoreRecording: 826,
+    appendOverdubControllers: 829,
+    removeOverdubControllers: 832,
 } as const satisfies Readonly<Record<AppActionType, number>>;
 
 function isRecord(value: unknown): value is Record<string, unknown> {

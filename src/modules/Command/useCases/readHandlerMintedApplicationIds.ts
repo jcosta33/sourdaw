@@ -79,6 +79,19 @@ const HANDLER_MINTED_ID_READERS: ReadonlyMap<string, HandlerMintedIdReader> = ne
             ...readListedIds(argumentsValue.replacement, 'replacement.', 'clipAutomationLanes', 'id'),
         ],
     ],
+    [
+        'quantizeTransients',
+        // The head slice keeps the target's own id, which the command targets rather than mints.
+        (argumentsValue) => {
+            const replacement = isRecord(argumentsValue.plan) ? argumentsValue.plan.replacement : undefined;
+            return [
+                ...readListedIds(replacement, 'plan.replacement.', 'clips', 'id').filter(
+                    (assigned) => assigned.value !== argumentsValue.clipId
+                ),
+                ...readListedIds(replacement, 'plan.replacement.', 'clipAutomationLanes', 'id'),
+            ];
+        },
+    ],
     ['arpeggiate', (argumentsValue) => readListedIds(argumentsValue, '', 'addedNotes', 'id')],
     ['duplicateClipAt', (argumentsValue) => readStringId(argumentsValue, 'targetClipId', 'targetClipId')],
     ['splitClip', (argumentsValue) => readIdList(argumentsValue, 'targetNoteIds')],

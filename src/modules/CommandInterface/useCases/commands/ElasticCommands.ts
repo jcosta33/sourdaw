@@ -1,3 +1,4 @@
+import { defaultTimelineEditingState, timelineEditingStore } from '#/modules/Arrangement/stores';
 import { executeUserAppAction } from '#/modules/Command/useCases';
 
 import { type CallableCommandEntry } from '../searchCommandRegistry';
@@ -31,12 +32,13 @@ export const elasticCommands: CallableCommandEntry[] = [
     {
         id: 'elastic-quantize',
         label: 'Elastic: Quantize Selected Clip',
-        description: 'Snap detected transients on the selected clip to the grid',
+        description: 'Cut the selected clip at its transients and move each hit onto the snap grid',
         category: 'Editing',
         action: () => {
             const clipId = getSelectedClipId();
             if (clipId) {
-                void executeUserAppAction({ type: 'quantizeTransients', payload: { clipId } });
+                const gridSize = (timelineEditingStore.value ?? defaultTimelineEditingState).snapValue;
+                void executeUserAppAction({ type: 'quantizeTransients', payload: { clipId, gridSize } });
             }
         },
     },

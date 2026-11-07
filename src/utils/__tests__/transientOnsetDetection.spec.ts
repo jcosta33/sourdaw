@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { detectTransients } from '../TransientDetection';
+import { detectTransients } from '../transientOnsetDetection';
 
 function impulses() {
     const samples = new Float32Array(65_536);
