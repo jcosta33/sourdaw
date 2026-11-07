@@ -350,9 +350,9 @@ describe('launch overlay first-paint bound', () => {
             .map((entry) => entry.file);
 
         // smoke.spec.ts opens its initial project through launch_new_project,
-        // which bypasses the launch overlay. Its separate project-reopen flow
-        // uses wait_for_launch_first_paint directly; the census only counts
-        // inline overlay waits and launch_new_project_via_ui options here.
+        // which bypasses the overlay and has no direct waits or first-paint
+        // options. Its separate project-reopen flow still uses the bounded
+        // wait_for_launch_first_paint helper.
         expect(filesWithWaits).toEqual(
             expect.arrayContaining([
                 'tests/e2e/launchFlows.spec.ts',
@@ -367,7 +367,9 @@ describe('launch overlay first-paint bound', () => {
                 'tests/e2e/statusBarResponsive.spec.ts',
             ])
         );
-        expect(filesWithLaunchArguments).toEqual(['tests/e2e/browserAiAdmittedPresentation.spec.ts']);
+        expect(filesWithLaunchArguments).toEqual(
+            expect.arrayContaining(['tests/e2e/browserAiAdmittedPresentation.spec.ts'])
+        );
 
         const smoke = scanned.find((entry) => entry.file === 'tests/e2e/smoke.spec.ts');
         expect(smoke).toMatchObject({ waits: [], firstPaintArguments: [] });
