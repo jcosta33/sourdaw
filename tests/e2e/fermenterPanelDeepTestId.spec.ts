@@ -27,6 +27,12 @@ test.describe('Fermenter panel deep — knobs, macros', () => {
     test('Fermenter Brightness macro responds to keyboard at both bounds', async ({ page }) => {
         await openFermenter(page);
 
+        const level = page.locator('.fermenter-faceplate').getByRole('slider', { name: 'Level', exact: true });
+        await expect(level).toHaveAttribute('aria-valuenow', '0.8');
+        await level.scrollIntoViewIfNeeded();
+        await level.press('ArrowUp');
+        await expect(level).toHaveAttribute('aria-valuenow', '0.81');
+
         const brightness = page
             .getByTestId('instrument-bottom-panel-body')
             .getByRole('slider', { name: 'Brightness', exact: true });
@@ -38,6 +44,10 @@ test.describe('Fermenter panel deep — knobs, macros', () => {
         await expect(brightness).toHaveAttribute('aria-valuenow', '0');
         await page.keyboard.press('ArrowUp');
         await expect(brightness).toHaveAttribute('aria-valuenow', '0.01');
+
+        const panel = page.locator('.fermenter-faceplate');
+        await panel.getByRole('button', { name: 'Effects', exact: true }).click();
+        await expect(panel.getByRole('button', { name: 'Dist', exact: true })).toHaveAttribute('aria-pressed', 'true');
     });
 
     test('Fermenter panel close button hides the panel', async ({ page }) => {
