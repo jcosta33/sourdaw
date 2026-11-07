@@ -1,0 +1,18 @@
+src/components/daw/DawPanelSurface.tsx
+  h_beb54bf43b47b7 26
+src/components/daw/__tests__/DawPanelSurface.spec.tsx
+  h_beb54bf43b47b7 56-58
+src/modules/WorkspaceShell/presentations/views/__tests__/AppShell.spec.tsx
+  h_beb54bf43b47b7 710
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "28f631e0baaf79c9eaa5ca25ef093a6c230c9653",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
