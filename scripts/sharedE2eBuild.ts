@@ -3,6 +3,7 @@ import { constants } from 'node:fs';
 import { copyFile, lstat, mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
+
 import { build, type InlineConfig } from 'vite';
 
 const manifestName = 'shared-e2e-manifest.json';

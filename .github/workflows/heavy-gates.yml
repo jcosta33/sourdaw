@@ -22,8 +22,8 @@ env:
   NODE_VERSION: 24.19.0
 
 jobs:
-  e2e:
-    name: Affected end-to-end ${{ matrix.id }}
+  e2e-build:
+    name: Shared E2E build
     if: fromJSON(inputs.matrix).include[0] != null
     runs-on: ubuntu-latest
     container:
@@ -33,12 +33,12 @@ jobs:
       run:
         shell: bash
     timeout-minutes: 75
-    strategy:
-      fail-fast: false
-      matrix: ${{ fromJSON(inputs.matrix) }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
 
       - name: Set up pnpm
         uses: ./.github/actions/setup-pnpm
@@ -56,6 +56,61 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Build shared E2E app
+        run: node scripts/sharedE2eBuild.ts build
+
+      - name: Upload shared E2E build
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: e2e-build-${{ github.run_id }}-${{ github.run_attempt }}
+          path: dist/
+          if-no-files-found: error
+          retention-days: 7
+
+  e2e:
+    needs: e2e-build
+    name: Affected end-to-end ${{ matrix.id }}
+    if: fromJSON(inputs.matrix).include[0] != null
+    runs-on: ubuntu-latest
+    container:
+      image: mcr.microsoft.com/playwright:v1.64.1-noble@sha256:47b510dd9230bf0b9bfc9b20102241e577ea7a99334ab4c3ca19f19770e9b8ea
+      options: --init --ipc=host
+    defaults:
+      run:
+        shell: bash
+    timeout-minutes: 75
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(inputs.matrix) }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Set up pnpm
+        uses: ./.github/actions/setup-pnpm
+        with:
+          package_json_file: package.json
+
+      - name: Set up Node
+        timeout-minutes: 3
+        continue-on-error: true
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Download shared E2E build
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: e2e-build-${{ github.run_id }}-${{ github.run_attempt }}
+          path: dist/
+
       # The immutable image contains browsers and their OS libraries. Verify the
       # resolved package can launch them without per-job apt or binary downloads.
       - name: Verify preinstalled browser runtime
@@ -66,6 +121,7 @@ jobs:
         id: run_shard
         env:
           E2E_SPECS: ${{ toJSON(matrix.specs) }}
+          SOURDAW_SHARED_E2E_BUILD: '1'
         run: node scripts/prValidationScope.ts run
 
       # As in the unit matrix: the failure is already fatal, and this names the
@@ -228,6 +284,7 @@ jobs:
     name: HeavyGate
     if: ${{ always() }}
     needs:
+      - e2e-build
       - e2e
       - e2e-report
       - browser-ai-webgpu
@@ -253,6 +310,6 @@ jobs:
             *) printf 'missing Browser AI scope\n' >&2; exit 1 ;;
           esac
           printf '%s' "$RESULTS" | jq -e --arg selected "$selected" --arg hardware "$hardware" '
-            (keys | sort) == ["browser-ai-webgpu", "e2e", "e2e-report"] and
-            .e2e.result == $selected and .["e2e-report"].result == $selected and
+            (keys | sort) == ["browser-ai-webgpu", "e2e", "e2e-build", "e2e-report"] and
+            .["e2e-build"].result == $selected and .e2e.result == $selected and .["e2e-report"].result == $selected and
             .["browser-ai-webgpu"].result == $hardware'

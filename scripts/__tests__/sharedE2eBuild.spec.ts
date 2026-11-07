@@ -3,7 +3,9 @@ import { spawnSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+
 import { afterEach, describe, expect, it, vi } from 'vitest';
+
 import { buildSharedE2e, prepareSharedE2e } from '../sharedE2eBuild.ts';
 
 const roots: string[] = [];

@@ -214,7 +214,7 @@ const VALIDATION_JOBS = [
     'pr-secrets',
     'validation-gate',
 ] as const;
-const HEAVY_GATE_MEMBERS = ['e2e', 'e2e-report', 'browser-ai-webgpu'] as const;
+const HEAVY_GATE_MEMBERS = ['e2e-build', 'e2e', 'e2e-report', 'browser-ai-webgpu'] as const;
 const DEPLOY_WEB_JOB = 'deploy-web';
 const DEPLOY_WEB_JOB_NAME = 'Daily web deploy';
 // A dispatch runs on whichever ref the person firing it chose, so the branch
@@ -337,7 +337,7 @@ const SUITE_JOB_WIRING = {
     },
     e2e: {
         workflow: 'heavy',
-        needs: undefined,
+        needs: 'e2e-build',
         if: 'fromJSON(inputs.matrix).include[0] != null',
     },
 } satisfies Record<string, Readonly<{ workflow: 'validation' | 'heavy'; needs?: string; if: string }>>;
@@ -871,7 +871,15 @@ function assertContainerBrowserRuntime(job: UnknownRecord, label: string, jobMin
     }
     const run = stepNamed(job, label === 'the offline smoke job' ? 'Run offline smoke set' : 'Run shard');
     if (
-        steps.indexOf(proof) !== steps.findIndex((step) => step.name === 'Install dependencies') + 1 ||
+        steps.indexOf(proof) !==
+            steps.findIndex(
+                (step) =>
+                    step.name ===
+                    (label === 'the offline smoke job' || label === 'the nightly end-to-end job'
+                        ? 'Install dependencies'
+                        : 'Download shared E2E build')
+            ) +
+                1 ||
         steps.indexOf(run) !== steps.indexOf(proof) + 1 ||
         run.if !== undefined ||
         run['continue-on-error'] !== undefined ||
@@ -3588,6 +3596,71 @@ describe('health gates workflow contract', () => {
         expect(() => assertBoundedHeavyE2eInstall(bypassed.heavy)).toThrow('without conditional admission');
     });
 
+    it('transports the integration build once to each selected shard', () => {
+        const producer = jobAt(heavyWorkflow, 'e2e-build');
+        const shard = jobAt(heavyWorkflow, 'e2e');
+        const artifact = 'e2e-build-${{ github.run_id }}-${{ github.run_attempt }}';
+        expect(producer.name).toBe('Shared E2E build');
+        expect(producer.if).toBe(shard.if);
+        expect(producer.container).toEqual(shard.container);
+        expect(producer.defaults).toEqual(shard.defaults);
+        expect(shard.needs).toBe('e2e-build');
+        for (const job of [producer, shard]) {
+            expect(recordAt(stepNamed(job, 'Checkout'), 'with')).toMatchObject({
+                ref: '${{ github.sha }}',
+                'persist-credentials': false,
+            });
+        }
+        expect(stepNamed(producer, 'Build shared E2E app').run).toBe('node scripts/sharedE2eBuild.ts build');
+        const upload = stepNamed(producer, 'Upload shared E2E build');
+        expect(upload.uses).toBe('actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a');
+        expect(recordAt(upload, 'with')).toMatchObject({ name: artifact, path: 'dist/', 'if-no-files-found': 'error' });
+        const download = stepNamed(shard, 'Download shared E2E build');
+        expect(download.uses).toBe('actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c');
+        expect(recordAt(download, 'with')).toMatchObject({ name: artifact, path: 'dist/' });
+        expect(recordAt(stepNamed(shard, 'Run shard'), 'env')).toMatchObject({
+            E2E_SPECS: '${{ toJSON(matrix.specs) }}',
+            SOURDAW_SHARED_E2E_BUILD: '1',
+        });
+        expect(stepNamed(shard, 'Run shard').run).toBe('node scripts/prValidationScope.ts run');
+    });
+
+    it('requires the selected shared build in HeavyGate', () => {
+        const script = assertGateContract(heavyWorkflow, 'heavy-gate', 'HeavyGate', HEAVY_GATE_CONDITION);
+        const selected = JSON.stringify({ include: [{ id: 1, specs: ['tests/e2e/export.spec.ts'] }] });
+        const empty = JSON.stringify({ include: [] });
+        const results = (build: JobResult, shard: JobResult, report: JobResult) =>
+            JSON.stringify({
+                'e2e-build': { result: build },
+                e2e: { result: shard },
+                'e2e-report': { result: report },
+                'browser-ai-webgpu': { result: 'skipped' },
+            });
+        expect(
+            runResultsGuard(script, results('success', 'success', 'success'), { MATRIX: selected, BROWSER_AI: 'false' })
+        ).toBe(0);
+        expect(
+            runResultsGuard(script, results('skipped', 'skipped', 'skipped'), { MATRIX: empty, BROWSER_AI: 'false' })
+        ).toBe(0);
+        for (const result of ['failure', 'cancelled', 'skipped'] as const) {
+            expect(
+                runResultsGuard(script, results(result, 'skipped', 'skipped'), {
+                    MATRIX: selected,
+                    BROWSER_AI: 'false',
+                })
+            ).not.toBe(0);
+            expect(
+                runResultsGuard(script, results(result, 'success', 'success'), {
+                    MATRIX: selected,
+                    BROWSER_AI: 'false',
+                })
+            ).not.toBe(0);
+        }
+        expect(
+            runResultsGuard(script, results('success', 'skipped', 'skipped'), { MATRIX: empty, BROWSER_AI: 'false' })
+        ).not.toBe(0);
+    });
+
     it('makes selected validation, E2E and CodeQL decisive for the required Gate', () => {
         expect(() => assertJobGraph(workflowSet())).not.toThrow();
 
@@ -4371,7 +4444,7 @@ describe('health gates workflow contract', () => {
             const candidate = loadWorkflow(file).parsed;
             callers += assertVerifiedPnpmCallers(candidate, file === 'wasm-artifacts.yml');
         }
-        expect(callers).toBe(28);
+        expect(callers).toBe(29);
 
         const oldBootstrap = structuredClone(validationWorkflow);
         stepNamed(jobAt(oldBootstrap, 'lint'), PNPM_SETUP_STEP).uses =
@@ -5076,6 +5149,7 @@ describe('health gates workflow contract', () => {
         const heavyGateScript = assertGateContract(heavyWorkflow, 'heavy-gate', 'HeavyGate', HEAVY_GATE_CONDITION);
         const browserResults = (e2e: JobResult, report: JobResult, hardware: JobResult) =>
             JSON.stringify({
+                'e2e-build': { result: e2e === 'skipped' ? 'skipped' : 'success' },
                 e2e: { result: e2e },
                 'e2e-report': { result: report },
                 'browser-ai-webgpu': { result: hardware },
