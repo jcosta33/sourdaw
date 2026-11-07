@@ -1,0 +1,19 @@
+src/modules/AiRuntime/useCases/agentReference/__tests__/refinementGrammar.spec.ts
+  s_68423a2adea8d2::t_59b7d5db14dba5 69,131-134
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "bd3dbb24fef85e58dde364d1609d7cb4cfef7688",
+  "prompts": {},
+  "sessions": {
+    "s_68423a2adea8d2": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34b-f305-7c03-beb2-57afa678cda5",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
