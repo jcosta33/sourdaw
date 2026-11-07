@@ -1,0 +1,173 @@
+tests/e2e/launchFlows.spec.ts
+  s_fdddfa6a468c89::t_b386605f8b29a5 119,131
+  s_fdddfa6a468c89::t_74be2b09bf64eb 5
+  s_eb3cd86b0cee6e::t_8b5e6ab30e03d1 5,119,131
+vite.config.ts
+  s_fdddfa6a468c89::t_d2f8ea7341715c 110-116,120-129,141,149-150
+  s_fdddfa6a468c89::t_15c86da4a42f07 109
+  s_fdddfa6a468c89::t_e53200ea00355a 151
+  s_eb3cd86b0cee6e::t_8b5e6ab30e03d1 109-116,120-132,141,149-150
+  s_eb3cd86b0cee6e::t_0bcf13b3379397 151
+tests/e2e/applicationModuleRecovery.spec.ts
+  s_fdddfa6a468c89::t_5a8d5e7a239c7c 134
+  s_eb3cd86b0cee6e::t_8b5e6ab30e03d1 134
+tests/e2e/directProjectSetup.spec.ts
+  s_fdddfa6a468c89::t_dd14f947910e97 1,3-8,9-17,25-26,34-35
+  s_fdddfa6a468c89::t_761779370bf263 2,18-24,27-33
+  s_eb3cd86b0cee6e::t_8b5e6ab30e03d1 1-35
+tests/e2e/e2eUtils.ts
+  s_fdddfa6a468c89::t_1d0db753e19d03 158-168,170-176,178-183,185
+  s_fdddfa6a468c89::t_ddf8fc8e5ccc63 133-136,139
+  s_fdddfa6a468c89::t_15c86da4a42f07 184
+  s_fdddfa6a468c89::t_a4c09acd9c77f8 169
+  s_fdddfa6a468c89::t_55672dc541bfbf 6
+  s_eb3cd86b0cee6e::t_8b5e6ab30e03d1 6,133-136,139,158-176,178-185
+scripts/__tests__/viteE2ePersistenceEntry.spec.ts
+  s_fdddfa6a468c89::t_388178044fe34a 16,38-43,54,57-59,78-83
+  s_fdddfa6a468c89::t_88d1e5d0ccce84 44-53,55-56
+  s_eb3cd86b0cee6e::t_8b5e6ab30e03d1 16,38-59,78-83
+tests/e2e/smoke.spec.ts
+  s_fdddfa6a468c89::t_cc391fd7f60ae0 195,200
+  s_fdddfa6a468c89::t_89ef3a67a7fb9d 601
+  s_eb3cd86b0cee6e::t_8b5e6ab30e03d1 195,200,601
+tests/e2e/browserAiWebGpuAdmission.spec.ts
+  s_fdddfa6a468c89::t_3f09a071bc99b9 223
+  s_fdddfa6a468c89::t_658edf450e00ea 9
+  s_fdddfa6a468c89::t_b1f613489e032e 213
+  s_eb3cd86b0cee6e::t_8b5e6ab30e03d1 9,213,223
+tests/e2e/browserAiAdmittedPresentation.spec.ts
+  s_fdddfa6a468c89::t_c0d41d07f83ebd 76
+  s_fdddfa6a468c89::t_9b815b402e2619 9
+  s_fdddfa6a468c89::t_8ec5a438e52105 41
+  s_eb3cd86b0cee6e::t_8b5e6ab30e03d1 9,41,76
+scripts/__tests__/sharedE2eBuild.spec.ts
+  s_eb3cd86b0cee6e::t_f62465c5a2fc95 1,3-5,7,9-23,29,53-60,65-75,123-135
+  s_eb3cd86b0cee6e::t_5598776e2e84f9 2,98,115-116,118-122
+  s_eb3cd86b0cee6e::t_7b90bdcdaf4b49 24,28,61-64,76-80,94-97
+  s_eb3cd86b0cee6e::t_2f6739a9f42cd5 25-27,81,90-93
+  s_eb3cd86b0cee6e::t_616c190a39cb18 82-89
+  s_eb3cd86b0cee6e::t_845fa5ed874f4d 6,8
+  s_eb3cd86b0cee6e::t_6309739a69ac48 99,102,108
+  s_eb3cd86b0cee6e::t_fdf62b9111dfb1 30-43,49-52,100-101,103-107,109-114,117
+  s_eb3cd86b0cee6e::t_94c162e3c5244f 44-48
+  s_eb3cd86b0cee6e::t_8b5e6ab30e03d1 1-135
+playwright.config.ts
+  s_eb3cd86b0cee6e::t_7b90bdcdaf4b49 87
+  s_eb3cd86b0cee6e::t_2f6739a9f42cd5 81-84,88
+  s_eb3cd86b0cee6e::t_8b5e6ab30e03d1 81-84,87-88
+scripts/sharedE2eBuild.ts
+  s_eb3cd86b0cee6e::t_7b90bdcdaf4b49 1-5,7-13,17-20,24-37,41-44,51,52,59-69,73-93,98-100,108
+  s_eb3cd86b0cee6e::t_2f6739a9f42cd5 14-16,21-23,38-40,45-50,53-58,70-72,101-107
+  s_eb3cd86b0cee6e::t_845fa5ed874f4d 6
+  s_eb3cd86b0cee6e::t_f328621ac6935b 94-97
+  s_eb3cd86b0cee6e::t_8b5e6ab30e03d1 1-108
+scripts/__tests__/e2eServerIdentity.spec.ts
+  s_eb3cd86b0cee6e::t_f62465c5a2fc95 301-320
+  s_eb3cd86b0cee6e::t_8b5e6ab30e03d1 301-320
+tests/e2e/directProjectSetupContract.ts
+  s_fdddfa6a468c89::t_795a07e85dffdc 1-8
+  s_eb3cd86b0cee6e::t_8b5e6ab30e03d1 1-8
+tests/e2e/directProjectSetupEntry.ts
+  s_fdddfa6a468c89::t_4ae62f100def62 1-6
+  s_eb3cd86b0cee6e::t_8b5e6ab30e03d1 1-6
+scripts/__tests__/e2eLaunchOverlayBound.spec.ts
+  s_1052c2a2231ded::t_0e85bb7d1e9639 352,373-378,391
+  s_1052c2a2231ded::t_0d1fce1c06d87b 380
+  s_1052c2a2231ded::t_b82495242f4e6d 353-355,370-372
+  s_eb3cd86b0cee6e::t_8b5e6ab30e03d1 352-355,371,373-380,391
+scripts/__tests__/fixtures/health-gate-workflows.snapshot.json
+  s_eb3cd86b0cee6e::t_845fa5ed874f4d 470-474,497-504,514-515
+  s_eb3cd86b0cee6e::t_915ffa48e5a01a 173-233,238-239,287,299-300,302,687
+  s_eb3cd86b0cee6e::t_550d3ea74d5064 241
+  s_eb3cd86b0cee6e::t_8b5e6ab30e03d1 173-233,238-239,241,287,299-300,302,470-474,497-504,514-515
+.github/workflows/heavy-gates.yml
+  s_eb3cd86b0cee6e::t_845fa5ed874f4d 42-44,62-67,78
+  s_eb3cd86b0cee6e::t_8789cbf4695b34 266-267
+  s_eb3cd86b0cee6e::t_8b5e6ab30e03d1 42-44,62-67,78
+scripts/healthGateWorkflowContract.ts
+  s_eb3cd86b0cee6e::t_845fa5ed874f4d 243
+  s_eb3cd86b0cee6e::t_4116a882f9f040 177
+  s_eb3cd86b0cee6e::t_8b5e6ab30e03d1 177,243
+scripts/__tests__/healthGatesWorkflow.spec.ts
+  s_eb3cd86b0cee6e::t_edf1ccb028cf52 878-881,4510
+  s_eb3cd86b0cee6e::t_ccdcbe90535768 875-877,882-883,3653,3659,3663-3664,3666-3667,3669,3671,3673,3674-3675,3677,3695
+  s_eb3cd86b0cee6e::t_751b823f6848c8 3609,3611-3613,3616-3617,3619-3638,3641-3642,3670,3676,3701-3702
+  s_eb3cd86b0cee6e::t_1812cc23cd505a 3639,3657,3668,3678-3680,3696,3700
+  s_eb3cd86b0cee6e::t_d4df9ae3b35dc5 3646-3652,3665,3672,3681-3694,3697-3699
+  s_eb3cd86b0cee6e::t_e3485ab6a99214 199,219,3610,3614,3618,3640,3654,3660-3662
+  s_eb3cd86b0cee6e::t_cd1d8fa18579dd 2083-2085,2087-2089,2116,2119,3770,3783-3788
+  s_eb3cd86b0cee6e::t_6969441326e0a9 3644-3645
+  s_eb3cd86b0cee6e::t_ee79e62bbfcbac 2086,3615,3655-3656,3658
+  s_eb3cd86b0cee6e::t_896e9806abbbe3 3764-3769
+  s_eb3cd86b0cee6e::t_bc155431636900 5142,5155,5157,5163-5165,5167,5177,5182,5187-5188,5190
+  s_eb3cd86b0cee6e::t_7769e2d654d78a 5162,5189
+  s_eb3cd86b0cee6e::t_f1e1d8e482f396 83,2113,2117
+  s_eb3cd86b0cee6e::t_a9b31368250de4 84,3771-3781
+  s_eb3cd86b0cee6e::t_e9bb50e3422835 3782
+  s_eb3cd86b0cee6e::t_c5203df7d2d9f4 334,344
+  s_eb3cd86b0cee6e::t_7f558587feb01c 3643
+  s_eb3cd86b0cee6e::t_8b5e6ab30e03d1 83-84,199,334,344,875-883,2083-2089,2113,2116-2117,2119,3609-3702,3764-3788,4510,5142,5155,5157,5162-5165,5167,5177,5182,5187-5190
+scripts/test-health-gate-scripts.sh
+  s_eb3cd86b0cee6e::t_1ece090175caba 1420,1428-1429,1431-1435,1437-1438,1440-1441
+  s_eb3cd86b0cee6e::t_990d7deea6f567 1418-1419,1422,1424,1430,1436,1439
+  s_eb3cd86b0cee6e::t_c76a7f8ff4c684 455-457,582-583,588
+  s_eb3cd86b0cee6e::t_d38836a58122bc 420,438
+  s_eb3cd86b0cee6e::t_d8887579f1004f 584-586
+  s_eb3cd86b0cee6e::t_80333d582103f1 1352,1365-1381,1383-1386,1388,1391,1393-1405
+  s_eb3cd86b0cee6e::t_e0b547525f968b 1426-1427
+  s_eb3cd86b0cee6e::t_796fc7b3c8319b 587
+  s_eb3cd86b0cee6e::t_8b5e6ab30e03d1 420,455-457,582-588,1352,1365-1381,1383-1386,1388,1391,1393-1405,1419-1420,1424,1426-1441
+tests/e2e/desktopRuntime.spec.ts
+  s_eb3cd86b0cee6e::t_d3bc0d2c4e4ced 62-72,159,167
+  s_eb3cd86b0cee6e::t_3c60a4c596ffe9 2,165
+  s_eb3cd86b0cee6e::t_8b5e6ab30e03d1 2,62-72,159,165,167
+scripts/__tests__/deliverPullRequest.spec.ts
+  s_eb3cd86b0cee6e::t_01b26d6d63ff82 6837-6841
+  s_eb3cd86b0cee6e::t_8b5e6ab30e03d1 6837-6841
+scripts/workflowSecuritySurfaceContract.ts
+  s_eb3cd86b0cee6e::t_6cc933957695b1 65-66
+  s_eb3cd86b0cee6e::t_8b5e6ab30e03d1 65-66
+scripts/__tests__/prValidationScope.spec.ts
+  s_eb3cd86b0cee6e::t_8f050524442382 988-990
+  s_eb3cd86b0cee6e::t_8b5e6ab30e03d1 988-990
+.github/workflows/health-gates.yml
+  s_eb3cd86b0cee6e::t_dafb58a48bc338 135-180,183-185,187-188,226,237,243-249,252
+  s_eb3cd86b0cee6e::t_98853b181f9e91 186
+  s_eb3cd86b0cee6e::t_8b5e6ab30e03d1 135-180,183-188,226,237,243-249,252
+scripts/__tests__/agentDeliveryScripts.spec.ts
+  s_eb3cd86b0cee6e::t_a6c5a24a5f96d7 1058-1060
+  s_eb3cd86b0cee6e::t_a03929be2a501a 1044-1051,1054-1057,1061
+  s_eb3cd86b0cee6e::t_8b5e6ab30e03d1 1044-1051,1054-1061
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d0f659957a32f98076000cb954a215f867262fca",
+  "prompts": {},
+  "sessions": {
+    "s_1052c2a2231ded": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b349-24b6-7622-8534-09f171c780d5",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_eb3cd86b0cee6e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34c-a4d8-7523-838e-1cd1a0a25d78",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_fdddfa6a468c89": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8a8aad0b-494a-4b52-8941-3a8cc43c46a4",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
