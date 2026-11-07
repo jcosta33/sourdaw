@@ -1,0 +1,63 @@
+src/modules/AiRuntime/useCases/__tests__/multiBatchRun.spec.ts
+  s_68423a2adea8d2::t_ac28af64620efe 389-394,402-408,411-412,475,505,507-510,533-544,548-550
+  s_68423a2adea8d2::t_72ec703d8f06b1 177-184,377-387,413-450,458-460,463-465,468,477-482,484-485,487-503,511-514,516-532,545-547
+  s_68423a2adea8d2::t_2e9ea0f77685ae 469-472,474,483,486
+  s_68423a2adea8d2::t_58cebe96b3183d 19,30,395-400,452,454-455,457
+  s_68423a2adea8d2::t_5f5eba922fc8ba 473
+  s_68423a2adea8d2::t_0cf6809b1799e4 7,37,39,48,388,401,409-410,451,453,456,461-462,466-467,476,504,506,515,551
+src/modules/AiRuntime/useCases/vibeRun/planVibeRunSchedule.ts
+  s_68423a2adea8d2::t_2e9ea0f77685ae 6
+  s_68423a2adea8d2::t_1f321ff5f1362f 228,237,241
+src/modules/AiRuntime/useCases/agentToolCatalog.ts
+  s_68423a2adea8d2::t_2e9ea0f77685ae 545
+  s_68423a2adea8d2::t_1f321ff5f1362f 56,532,543-544,546-547,554-557,589-590
+  s_68423a2adea8d2::t_72ec703d8f06b1 548-553
+src/modules/AiRuntime/useCases/readBriefMixIntent.ts
+  s_68423a2adea8d2::t_72ec703d8f06b1 8-9,14-15
+  s_68423a2adea8d2::t_1f321ff5f1362f 1-7,10-13,16-23
+src/modules/AiRuntime/models/RetainedCompilation.ts
+  s_68423a2adea8d2::t_72ec703d8f06b1 51-56
+  s_68423a2adea8d2::t_58cebe96b3183d 2
+src/modules/AiRuntime/useCases/__tests__/briefFromRequest.spec.ts
+  s_68423a2adea8d2::t_5f5eba922fc8ba 76,596,648,692
+  s_68423a2adea8d2::t_72ec703d8f06b1 164-173,813-816,827-835,839-842,845-847,852-857,860-867
+  s_68423a2adea8d2::t_1f08174e991ed7 824-826,836-838,843-844,848-849
+  s_68423a2adea8d2::t_5ec35688728d6f 49,163,214,496,711,738,747,850-851
+src/modules/AiRuntime/models/BriefMixIntent.ts
+  s_68423a2adea8d2::t_1f321ff5f1362f 1-6
+src/modules/AiRuntime/useCases/applicationOwnedToolLoop.ts
+  s_68423a2adea8d2::t_1f321ff5f1362f 1432,1440-1442
+  s_68423a2adea8d2::t_2e9ea0f77685ae 38,3211-3213
+  s_68423a2adea8d2::t_5f5eba922fc8ba 3210
+  s_68423a2adea8d2::t_72ec703d8f06b1 1444-1450
+src/modules/AiRuntime/useCases/getBriefMixIntentCatalog.ts
+  s_68423a2adea8d2::t_2e9ea0f77685ae 7-11
+  s_68423a2adea8d2::t_1f321ff5f1362f 1-6,12
+src/modules/AiRuntime/useCases/executeBriefCompile.ts
+  s_68423a2adea8d2::t_2e9ea0f77685ae 6,12
+  s_68423a2adea8d2::t_1f321ff5f1362f 23,174,227-229,235-236,278
+  s_68423a2adea8d2::t_72ec703d8f06b1 230-234
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  s_68423a2adea8d2::t_2e9ea0f77685ae 133
+  s_68423a2adea8d2::t_1f321ff5f1362f 1636-1637,1646,2214
+  s_68423a2adea8d2::t_72ec703d8f06b1 1638-1645
+src/modules/AiRuntime/useCases/__tests__/briefMixIntent.spec.ts
+  s_68423a2adea8d2::t_840e05310aeb15 5-9,13-28,30-33
+  s_68423a2adea8d2::t_afd0d5a793c0e6 1,34
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c67559f2adb8b708ba6fee431ad81e387ec1d683",
+  "prompts": {},
+  "sessions": {
+    "s_68423a2adea8d2": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34b-f305-7c03-beb2-57afa678cda5",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
