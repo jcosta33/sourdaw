@@ -19,6 +19,7 @@ import {
 } from './answerContractTypes';
 import { CANONICAL_ROLE_OPTIONS, CANONICAL_ROLE_TO_RECIPE_ROLE } from './canonicalRoleFamilies';
 import { type RecipeDiscoveryReceiptData } from './discoverMixRecipes';
+import { formatAnswerQueryScope } from './formatAnswerQueryScope';
 import { objectiveMetricProjection, OBJECTIVE_METRIC_LABELS } from './objectiveMetricProjection';
 
 export type AnswerReadSource =
@@ -444,74 +445,6 @@ function composeSourceOnsets(
     return `Source-buffer onsets for ${formatSubjectLabel(authority, source.clipId)}: this page has ${String(source.hits.length)} hit(s), offsets ${String(source.coverage.offset)}–${String(source.coverage.endOffset)}, of ${String(source.totalHitCount)} total. Source-buffer times: ${source.hits.map((hit) => `${formatAnswerNumber(hit.sourceSeconds)} seconds (confidence ${formatAnswerNumber(hit.confidence)})`).join(', ')}. These are source-buffer times, not arrangement beats or track alignment.`;
 }
 
-type QueryInput = Parameters<typeof querySemanticProject>[0];
-type QueryFilterKey = keyof NonNullable<QueryInput['filters']>;
-const QUERY_FILTER_KEYS = {
-    stableId: true,
-    exactName: true,
-    fuzzyName: true,
-    kind: true,
-    tag: true,
-    role: true,
-    parentId: true,
-    startBeat: true,
-    endBeat: true,
-    sectionId: true,
-    selected: true,
-    locked: true,
-    muted: true,
-    soloed: true,
-    deviceType: true,
-    deviceCategory: true,
-    routeFromId: true,
-    routeToId: true,
-    hasAutomation: true,
-    contentType: true,
-    assetType: true,
-    minInferredConfidence: true,
-} satisfies Record<QueryFilterKey, true>;
-
-function queryScope(input: QueryInput): string | null {
-    const filters = input.filters;
-    const keys = Object.keys(QUERY_FILTER_KEYS) as QueryFilterKey[];
-    const entries = keys.flatMap((key) => {
-        const value = filters?.[key];
-        if (value === undefined) {
-            return [];
-        }
-        if (typeof value === 'string') {
-            if (/[\r\n]/.test(value)) {
-                return [null];
-            }
-            return [`${key}: ${quoteSourceData(value)}`];
-        }
-        if (typeof value === 'number' && !Number.isFinite(value)) {
-            return [null];
-        }
-        return [`${key}: ${String(value)}`];
-    });
-    if (entries.includes(null) || (input.type === 'project-summary' && entries.length > 0)) {
-        return null;
-    }
-    const scope = entries.length > 0 ? [`filters (${entries.join(', ')})`] : [];
-    if (input.type === 'diff') {
-        if (input.sinceRevision === undefined || /[\r\n]/.test(input.sinceRevision)) {
-            return null;
-        }
-        scope.push(`sinceRevision: ${quoteSourceData(input.sinceRevision)}`);
-    }
-    if (input.page?.limit !== undefined) {
-        scope.push(`limit: ${String(input.page.limit)}`);
-    }
-    if (input.page?.cursor !== undefined) {
-        if (/[\r\n]/.test(input.page.cursor)) {
-            return null;
-        }
-        scope.push(`cursor: ${quoteSourceData(input.page.cursor)}`);
-    }
-    return scope.length > 0 ? ` with ${scope.join('; ')}` : '';
-}
-
 function composeReadStatement(
     statement: Extract<AnswerStatement, { callId: string }>,
     intake: AdmittedAnswerIntake,
@@ -533,7 +466,7 @@ function composeReadStatement(
         ) {
             return null;
         }
-        const scope = queryScope(source.input);
+        const scope = formatAnswerQueryScope(source.input);
         if (scope === null) {
             return null;
         }
