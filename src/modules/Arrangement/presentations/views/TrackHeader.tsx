@@ -27,7 +27,6 @@ import { cn } from '#/utils/Styles/cn';
 import { type Track, type InputMonitoring } from '../../models/Track';
 import { toggleFolderCollapse } from '../../useCases/folder/toggleFolderCollapse';
 import { setInputMonitoring } from '../../useCases/setTrackGainPan/setInputMonitoring';
-import { muteTrack } from '../../useCases/toggleTrackState/muteTrack';
 import { selectTrack } from '../../useCases/toggleTrackState/selectTrack';
 import { soloTrack } from '../../useCases/toggleTrackState/soloTrack';
 import { soloTrackExclusive } from '../../useCases/toggleTrackState/soloTrackExclusive';
@@ -323,7 +322,17 @@ export const TrackHeader = ({ track, isSelected }: TrackHeaderProps): ReactEleme
                                     className="font-bold text-[9px]"
                                     onClick={(event) => {
                                         event.stopPropagation();
-                                        muteTrack(track.id, !track.muted);
+                                        void executeUserAppAction(
+                                            {
+                                                type: 'muteTrack',
+                                                payload: {
+                                                    trackId: track.id,
+                                                    muted: !track.muted,
+                                                    expectedMuted: track.muted,
+                                                },
+                                            },
+                                            { skipUndo: true }
+                                        );
                                     }}
                                 >
                                     M
