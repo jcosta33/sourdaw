@@ -27,6 +27,29 @@ afterEach(() => {
     }
 });
 
+function foreignOwnerEnvironment(): NodeJS.ProcessEnv {
+    const configRoot = mkdtempSync(join(tmpdir(), 'shared-e2e-git-config-'));
+    roots.push(configRoot);
+    const globalConfig = join(configRoot, 'gitconfig');
+    writeFileSync(globalConfig, '');
+    return {
+        ...process.env,
+        GIT_TEST_ASSUME_DIFFERENT_OWNER: '1',
+        GIT_CONFIG_NOSYSTEM: '1',
+        GIT_CONFIG_GLOBAL: globalConfig,
+    };
+}
+
+function checkedOutSha(env: NodeJS.ProcessEnv): string {
+    const result = spawnSync('git', ['-c', `safe.directory=${process.cwd()}`, 'rev-parse', 'HEAD'], {
+        cwd: process.cwd(),
+        env,
+        encoding: 'utf8',
+    });
+    expect(result.status, result.stderr).toBe(0);
+    return result.stdout.trim();
+}
+
 describe('shared e2e build', () => {
     it('builds in e2e mode without public copy before writing identity', async () => {
         const root = fixture();
@@ -73,10 +96,25 @@ describe('shared e2e build', () => {
         }
     );
 
-    it('refuses a checkout that differs from GITHUB_SHA before preparing', () => {
+    it('dispatches an invalid CLI mode after admitting the matching checked-out SHA without touching dist', () => {
+        const env = foreignOwnerEnvironment();
+        const sha = checkedOutSha(env);
+        const result = spawnSync(process.execPath, ['scripts/sharedE2eBuild.ts', 'invalid'], {
+            cwd: process.cwd(),
+            env: { ...env, GITHUB_SHA: sha },
+            encoding: 'utf8',
+        });
+        expect(result.status).not.toBe(0);
+        expect(result.stderr).toContain('Expected build or prepare');
+    });
+
+    it('rejects a mismatched GITHUB_SHA in a foreign-owned checkout before preparing', () => {
+        const env = foreignOwnerEnvironment();
+        const sha = checkedOutSha(env);
+        const mismatch = sha === '0'.repeat(40) ? '1'.repeat(40) : '0'.repeat(40);
         const result = spawnSync(process.execPath, ['scripts/sharedE2eBuild.ts', 'prepare'], {
             cwd: process.cwd(),
-            env: { ...process.env, GITHUB_SHA: '0'.repeat(40) },
+            env: { ...env, GITHUB_SHA: mismatch },
             encoding: 'utf8',
         });
         expect(result.status).not.toBe(0);
