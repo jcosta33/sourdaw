@@ -1,0 +1,19 @@
+scripts/verifyPackagedNativeArtifacts.ts
+  s_939911bea2ef3b::t_ad095c9231b82e 5
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "37ef6da14af150c8e30d5ad6a43d11de1ee49b60",
+  "prompts": {},
+  "sessions": {
+    "s_939911bea2ef3b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34a-952d-7121-902e-cafc5e44b0f7",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
