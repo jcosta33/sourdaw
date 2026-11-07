@@ -10,6 +10,63 @@ import {
 
 import { validateVersionedCommandArguments } from '../versionedCommandArgumentKeys';
 
+describe('versioned linked pattern replay arguments', () => {
+    it('admits the canonical creation identity and rejects a non-string identity', () => {
+        const payload = {
+            sourceClipId: 'source',
+            targetTrackId: 'destination',
+            startBeat: 19,
+            targetClipId: 'instance',
+        };
+        expect(validateVersionedCommandArguments('createPatternInstance', payload)).toBe(true);
+        expect(validateVersionedCommandArguments('createPatternInstance', { ...payload, targetClipId: 4 })).toBe(false);
+    });
+
+    it('round trips exact absent, empty and false-valued link fields and rejects malformed presence claims', () => {
+        const expected = { parentClipId: { present: false }, overrides: { present: false } };
+        for (const overrides of [
+            { present: false },
+            { present: true, value: {} },
+            { present: true, value: { notes: true, gain: false } },
+        ]) {
+            const payload = {
+                clipId: 'instance',
+                trackId: 'destination',
+                expected,
+                replacement: { parentClipId: { present: true, value: 'source' }, overrides },
+            };
+            expect(
+                validateVersionedCommandArguments('restorePatternInstanceLink', JSON.parse(JSON.stringify(payload)))
+            ).toBe(true);
+        }
+        const payload = { clipId: 'instance', trackId: 'destination', expected, replacement: expected };
+        expect(
+            validateVersionedCommandArguments('restorePatternInstanceLink', {
+                ...payload,
+                replacement: { ...expected, overrides: { present: true } },
+            })
+        ).toBe(false);
+        expect(
+            validateVersionedCommandArguments('restorePatternInstanceLink', {
+                ...payload,
+                expected: { ...expected, parentClipId: { present: false, value: 'smuggled' } },
+            })
+        ).toBe(false);
+        expect(
+            validateVersionedCommandArguments('restorePatternInstanceLink', {
+                ...payload,
+                replacement: { ...expected, overrides: { present: true, value: { notes: 'yes' } } },
+            })
+        ).toBe(false);
+        expect(
+            validateVersionedCommandArguments('restorePatternInstanceLink', {
+                ...payload,
+                replacement: { ...expected, gain: 0 },
+            })
+        ).toBe(false);
+    });
+});
+
 // The fixtures mirror the producer shapes `prepareClipSplit` writes — the undo's
 // `replacement` carries `rightClip: null`, the right clip always carries the
 // offset fields, and every snapshot carries both satellite entries and the

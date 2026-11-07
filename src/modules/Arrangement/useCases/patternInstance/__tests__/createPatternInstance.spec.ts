@@ -44,21 +44,21 @@ const mocks = vi.hoisted(() => {
     };
 });
 
-vi.mock('#/modules/Arrangement/stores', () => ({
+vi.mock('../../../stores/trackStore', () => ({
     trackStore: {
         get value() {
             return mocks.trackStoreValue.current;
         },
     },
+}));
+vi.mock('../../../stores/resolveEligibleClipWriteTarget', () => ({
     resolveEligibleClipWriteTarget: mocks.resolveEligibleClipWriteTarget,
+}));
+vi.mock('../../../stores/appendClipToTrack', () => ({
     appendClipToTrack: mocks.appendClipToTrack,
 }));
-
-vi.mock('../../../useCases/midiNoteCrud/getNotesForClip', () => ({
+vi.mock('#/modules/MIDI/useCases', () => ({
     getNotesForClip: mocks.getNotesForClip,
-}));
-
-vi.mock('../../../useCases/midiNoteCrud/setNotesForClip', () => ({
     setNotesForClip: mocks.setNotesForClip,
 }));
 
@@ -81,7 +81,7 @@ function makeClip(overrides: Partial<ClipFixture> = {}): ClipFixture {
 }
 
 function setTracks(tracks: TrackFixture[]): void {
-    mocks.trackStoreValue.current = { tracks };
+    mocks.trackStoreValue.current = { tracks: tracks.map((track) => ({ ...track, alternatives: [] })) };
 }
 
 function setEligibleProject(sourceClip = makeClip(), destinationKind = 'midi', sourceKind = sourceClip.type): void {
@@ -123,6 +123,38 @@ describe('createPatternInstance', () => {
     });
 
     it.each([
+        { targetClipId: '', startBeat: 16 },
+        { targetClipId: 'new-instance', startBeat: -1 },
+        { targetClipId: 'new-instance', startBeat: Number.NaN },
+    ])('rejects invalid canonical identity or placement before project effects', ({ targetClipId, startBeat }) => {
+        setEligibleProject();
+        expect(createPatternInstance('source-clip', 'destination-track', startBeat, targetClipId)).toBeNull();
+        expectNoCreationEffects(randomUuid);
+    });
+
+    it.each(['active', 'inactive', 'ghost'] as const)(
+        'does not reuse a canonical identity held by an %s clip',
+        (location) => {
+            setEligibleProject();
+            const held = makeClip({ id: 'occupied', trackId: 'destination-track' });
+            mocks.trackStoreValue.current = {
+                ghostClips: location === 'ghost' ? [held] : [],
+                tracks: [
+                    { id: 'source-track', kind: 'midi', clips: [makeClip()], alternatives: [] },
+                    {
+                        id: 'destination-track',
+                        kind: 'midi',
+                        clips: location === 'active' ? [held] : [],
+                        alternatives: location === 'inactive' ? [{ id: 'other', clips: [held] }] : [],
+                    },
+                ],
+            };
+            expect(createPatternInstance('source-clip', 'destination-track', 16, 'occupied')).toBeNull();
+            expectNoCreationEffects(randomUuid);
+        }
+    );
+
+    it.each([
         { sourceKind: 'audio' as const, destinationKind: 'midi', sourceType: 'audio' as const },
         { sourceKind: 'midi' as const, destinationKind: 'audio', sourceType: 'midi' as const },
     ])(
@@ -139,7 +171,12 @@ describe('createPatternInstance', () => {
                 { id: 'note-1', startBeat: 1, duration: 1, pitch: 60, velocity: 0.8 },
             ]);
 
-            const instanceId = createPatternInstance(sourceClip.id, 'destination-track', 16);
+            const instanceId = createPatternInstance(
+                sourceClip.id,
+                'destination-track',
+                16,
+                'clip-inst-00000000-0000-4000-8000-000000000001'
+            );
 
             expect(instanceId).toBe('clip-inst-00000000-0000-4000-8000-000000000001');
             if (instanceId === null) {
@@ -193,7 +230,12 @@ describe('createPatternInstance', () => {
         mocks.getNotesForClip.mockReturnValue([{ id: 'note-1', startBeat: 5, duration: 1, pitch: 60 }]);
         mocks.appendClipToTrack.mockReturnValue(false);
 
-        const result = createPatternInstance('source-clip', 'destination-track', 16);
+        const result = createPatternInstance(
+            'source-clip',
+            'destination-track',
+            16,
+            'clip-inst-00000000-0000-4000-8000-000000000001'
+        );
 
         expect(result).toBeNull();
         expect(mocks.appendClipToTrack).toHaveBeenCalledOnce();
@@ -263,7 +305,12 @@ describe('createPatternInstance', () => {
         setTracks(scenario.tracks);
         mocks.resolveEligibleClipWriteTarget.mockReturnValue(scenario.sourceResolution);
 
-        const result = createPatternInstance(scenario.sourceClipId, 'destination-track', 16);
+        const result = createPatternInstance(
+            scenario.sourceClipId,
+            'destination-track',
+            16,
+            'clip-inst-00000000-0000-4000-8000-000000000001'
+        );
 
         expect(result).toBeNull();
         expect(mocks.resolveEligibleClipWriteTarget).toHaveBeenCalledWith({ clipId: scenario.sourceClipId });
@@ -319,7 +366,12 @@ describe('createPatternInstance', () => {
             return scenario.targetResolution;
         });
 
-        const result = createPatternInstance(sourceClip.id, scenario.targetTrackId, 16);
+        const result = createPatternInstance(
+            sourceClip.id,
+            scenario.targetTrackId,
+            16,
+            'clip-inst-00000000-0000-4000-8000-000000000001'
+        );
 
         expect(result).toBeNull();
         expect(mocks.resolveEligibleClipWriteTarget.mock.calls).toEqual([

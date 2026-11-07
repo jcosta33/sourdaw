@@ -1,4 +1,6 @@
-import { resolveEligibleClipWriteTarget, trackStore, updateClipInStore } from '#/modules/Arrangement/stores';
+import { resolveEligibleClipWriteTarget } from '../../stores/resolveEligibleClipWriteTarget';
+import { trackStore } from '../../stores/trackStore';
+import { updateClipInStore } from '../../stores/updateClipInStore';
 
 /**
  * Detach a pattern instance — break the link, making it independent.

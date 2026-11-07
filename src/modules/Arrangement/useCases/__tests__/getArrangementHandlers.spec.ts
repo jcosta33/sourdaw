@@ -3,8 +3,17 @@ import { describe, it, expect } from 'vitest';
 import { handleReorderDevices } from '../../handlers/device/handleReorderDevices';
 import { handleDiscardCreatedTrack } from '../../handlers/track/discardCreatedTrack';
 import * as subject from '../getArrangementHandlers';
+import { handleCreatePatternInstance } from '../../handlers/patternInstance/handleCreatePatternInstance';
+import { handleDetachPatternInstance } from '../../handlers/patternInstance/handleDetachPatternInstance';
+import { handleRestorePatternInstanceLink } from '../../handlers/patternInstance/handleRestorePatternInstanceLink';
 
 describe('getArrangementHandlers', () => {
+    it('owns linked clip creation, detachment and guarded link replay', () => {
+        const handlers = subject.getArrangementHandlers();
+        expect(handlers.createPatternInstance).toBe(handleCreatePatternInstance);
+        expect(handlers.detachPatternInstance).toBe(handleDetachPatternInstance);
+        expect(handlers.restorePatternInstanceLink).toBe(handleRestorePatternInstanceLink);
+    });
     it('should export getArrangementHandlers', () => {
         expect(subject.getArrangementHandlers).toBeDefined();
         const time = typeof subject.getArrangementHandlers;

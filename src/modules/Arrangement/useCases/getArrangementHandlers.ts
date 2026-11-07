@@ -2,6 +2,9 @@ import { adjustmentLayerHandlers } from '../handlers/batchFeature/adjustmentLaye
 import { handleDiscardCreatedCompGroup } from '../handlers/batchFeature/discardCreatedCompGroup';
 import { handleCreateCompGroup } from '../handlers/batchFeature/handleCreateCompGroup';
 import { clipHandlers } from '../handlers/clip/clipHandlers';
+import { handleCreatePatternInstance } from '../handlers/patternInstance/handleCreatePatternInstance';
+import { handleDetachPatternInstance } from '../handlers/patternInstance/handleDetachPatternInstance';
+import { handleRestorePatternInstanceLink } from '../handlers/patternInstance/handleRestorePatternInstanceLink';
 import { handleRestoreAudioClipSlip } from '../handlers/clip/handleRestoreAudioClipSlip';
 import { handleRestoreAudioClipStartTrim } from '../handlers/clip/handleRestoreAudioClipStartTrim';
 import { handleRestoreTimeOperationState } from '../handlers/clip/handleRestoreTimeOperationState';
@@ -128,6 +131,9 @@ import { handleSetVcaGain } from '../handlers/vca/handleSetVcaGain';
  */
 export function getArrangementHandlers() {
     return {
+        createPatternInstance: handleCreatePatternInstance,
+        detachPatternInstance: handleDetachPatternInstance,
+        restorePatternInstanceLink: handleRestorePatternInstanceLink,
         importStemSet: handleImportStemSet,
         discardImportedStemSet: handleDiscardImportedStemSet,
         addTrack: handleAddTrack,

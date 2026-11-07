@@ -3272,8 +3272,27 @@ export type AppAction =
     | { type: 'captureScratchPad'; payload?: undefined }
     | { type: 'commitScratchPad'; payload?: undefined }
     | { type: 'clearScratchPad'; payload?: undefined }
-    | { type: 'createPatternInstance'; payload: { sourceClipId: string; targetTrackId: string; startBeat: number } }
+    | {
+          type: 'createPatternInstance';
+          payload: { sourceClipId: string; targetTrackId: string; startBeat: number; targetClipId?: string };
+      }
     | { type: 'detachPatternInstance'; payload: { clipId: string } }
+    | {
+          /** Exact link-field replay; never replaces clip content or MIDI material. */
+          type: 'restorePatternInstanceLink';
+          payload: {
+              clipId: string;
+              trackId: string;
+              expected: {
+                  parentClipId: { present: false } | { present: true; value: string };
+                  overrides: { present: false } | { present: true; value: Record<string, boolean> };
+              };
+              replacement: {
+                  parentClipId: { present: false } | { present: true; value: string };
+                  overrides: { present: false } | { present: true; value: Record<string, boolean> };
+              };
+          };
+      }
     | { type: 'startMacroRecording'; payload?: undefined }
     | { type: 'stopMacroRecording'; payload: { name: string } }
     | { type: 'playMacro'; payload: { macroId: string } }

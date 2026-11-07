@@ -98,6 +98,15 @@ boundaries.
    work an isolated round trip never sees. Probe: peer edit after the operation and again after Undo, then real
    Undo/Redo through Command, reading raw CRDT and projection. Field order alone never conflicts; changed values,
    array order, missing fields, bad captures refuse.
+   Linked pattern creation and detachment also wrote project truth while their registered handlers described only
+   a label: Command recorded a null inverse, so Undo dropped that row and reversed the prior musician edit.
+   Probe both real registered actions with a shifted source offset, distinct expression notes, a destination keeper
+   and a prior edit: require a nonnull typed inverse before Undo, exact raw/projected material after Undo, and
+   same-identity Redo through another Undo. A forward-state equality after Redo alone passes when Undo did nothing.
+   After Redo, merge a peer note into the created clip and require discard refusal; an unrelated keeper edit must
+   survive a valid discard. Detach replay owns only link fields: absent and present-empty overrides differ,
+   false-valued keys survive, non-link peer edits remain, and a peer relink refuses the stale inverse. No introducing
+   PR or historical review stance was established for this escape.
 7. **Grouped inverse capture must read the owning action prefix (#4083, #4073, #4071).** Failure:
    `executeAppActionBatch` describes members before executing, so later inverses capture pre-batch state. Probe: real
    grouped Undo/Redo against raw CRDT and projection; swap the earlier-sibling projection for live pre-batch state and
