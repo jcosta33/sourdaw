@@ -1,0 +1,43 @@
+scripts/__tests__/supersedePullRequest.spec.ts
+  s_2cd8190f26088f::t_c47941e07bc335 2,3766-3773,3779-3780,3784-3789,3793-3794
+  s_2cd8190f26088f::t_7155505685b126 4286-4289,4292
+  s_8dd2ba9e498da7::t_6783669062dd9a 1415-1419,3774-3778,3781-3783,3790-3792,3810,3816-3819,3827-3843,3846-3980
+  s_8dd2ba9e498da7::t_caa982541a254d 22,3795-3809,3811-3815,3820-3826,3844-3845,3981
+scripts/stackedLanes.ts
+  s_8dd2ba9e498da7::t_6783669062dd9a 260
+  s_2cd8190f26088f::t_e83972ea510cf6 218,222,227,244-255,259,261-279
+  s_8dd2ba9e498da7::t_0f4d1b186fd59e 280
+scripts/supersedePullRequestGh.ts
+  s_2cd8190f26088f::t_e83972ea510cf6 22,56,89-90
+.agents/skills/delivery-orchestration/references/closure-and-retirement.md
+  s_8dd2ba9e498da7::t_6783669062dd9a 62-70
+.agents/skills/review-stances/closure-authority-proof.md
+  s_8dd2ba9e498da7::t_6783669062dd9a 127-134
+scripts/supersedePullRequest.ts
+  s_2cd8190f26088f::t_e83972ea510cf6 35,274,372,378,381,383-384,388-394,411,1026,1095,1100-1101
+  s_8dd2ba9e498da7::t_2300cc9592a228 1090-1094,1096-1099,1102-1103,1358,1362,1429,1444,1449,1456,1464,1482-1483,1488,1720-1721,1726
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a89c24279abeb7ae71635490a3e231b33336ea12",
+  "prompts": {},
+  "sessions": {
+    "s_2cd8190f26088f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b286-ad65-7a12-9510-2d3604006235",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_8dd2ba9e498da7": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34a-1f45-7430-80af-58acd6c4b831",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
