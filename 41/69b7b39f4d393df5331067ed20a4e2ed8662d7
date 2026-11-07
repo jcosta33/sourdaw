@@ -1,0 +1,20 @@
+src/modules/Arrangement/presentations/views/__tests__/TrackHeaderMuteAdmission.integration.spec.tsx
+  s_977061c47f01dd::t_f2f21cacdd7ce8 195-197,217-220,224-228,231
+  s_977061c47f01dd::t_02bf9636855a9f 24,322,331-333,335-348,355,363-365
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4169b7b39f4d393df5331067ed20a4e2ed8662d7",
+  "prompts": {},
+  "sessions": {
+    "s_977061c47f01dd": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34d-123d-7452-a6e7-60608388b6d7",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
