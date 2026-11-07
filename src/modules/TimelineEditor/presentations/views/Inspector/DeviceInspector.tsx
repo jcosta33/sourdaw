@@ -2,7 +2,15 @@ import { type ReactElement } from 'react';
 
 import { MechanicalSwitch } from '#/components/daw/MechanicalSwitch';
 import { Stack } from '#/components/layout';
-import { getBuiltinPlugins, bypassDevice } from '#/modules/Arrangement/useCases';
+import { useStore } from '#/infra/store/useStore';
+import { bypassDevice, getBuiltinPlugins, isExternalPluginDeviceType } from '#/modules/Arrangement/useCases';
+import {
+    defaultExternalPluginActivationState,
+    defaultPluginScanState,
+    externalPluginActivationStore,
+    pluginScanStore,
+} from '#/modules/PluginHost/stores';
+import { isSupportedPluginFormat } from '#/modules/PluginHost/useCases';
 
 import { type DeviceParameterView as DeviceParameter } from '../../../models/PluginDescriptorViewTypes';
 import { type Device } from '../../../models/TrackViewTypes';
@@ -12,6 +20,10 @@ import { MetaText } from '../../components/Inspector/MetaText';
 import { resolveDeviceLayout } from './deviceLayoutRegistry';
 import { GenericDeviceLayout } from './GenericDeviceLayout';
 import { resolveDevicePlugin } from './resolveDevicePlugin';
+import {
+    type ExternalPluginEditorAccess,
+    resolveExternalPluginEditorAccess,
+} from './resolveExternalPluginEditorAccess';
 
 import './layouts/BuiltinSynthLayout';
 import './layouts/BuiltinLufsMeterLayout';
@@ -84,7 +96,25 @@ function deriveParamsFromValues(device: Device): DeviceParameter[] {
     });
 }
 
+/**
+ * Where a third-party plugin's parameters are edited, per the state of its editor. A plugin's parameters
+ * are never listed here, so no builtin's controls can stand in for them.
+ */
+const EXTERNAL_PLUGIN_EDITOR_HINTS: Record<ExternalPluginEditorAccess, string> = {
+    openable:
+        "Edit this plugin's parameters in its own window: use Open editor on its device in the track's device list.",
+    'no-editor': 'This plugin has no editor window of its own, and its parameters are not listed here.',
+    'not-loaded': "Its editor can be opened from its device in the track's device list once the plugin is loaded.",
+};
+
 export const DeviceInspector = ({ device, trackId, onBack }: DeviceInspectorProps): ReactElement => {
+    const pluginScanState = useStore(pluginScanStore, defaultPluginScanState);
+    const activationState = useStore(externalPluginActivationStore, defaultExternalPluginActivationState);
+    const editorAccess = resolveExternalPluginEditorAccess(
+        device,
+        pluginScanState.scannedPlugins.filter((plugin) => isSupportedPluginFormat(plugin.format)),
+        activationState.byInstanceId
+    );
     const plugin = resolveDevicePlugin(getBuiltinPlugins(), device);
 
     // Use static descriptor params, or derive from parameterValues for Faust/dynamic devices
@@ -92,6 +122,13 @@ export const DeviceInspector = ({ device, trackId, onBack }: DeviceInspectorProp
 
     const LayoutComponent = resolveDeviceLayout(device.type ?? '');
     const renderDeviceLayout = (): ReactElement => {
+        if (isExternalPluginDeviceType(device.type)) {
+            return (
+                <div className="px-1">
+                    <MetaText>{EXTERNAL_PLUGIN_EDITOR_HINTS[editorAccess]}</MetaText>
+                </div>
+            );
+        }
         if (LayoutComponent) {
             return <LayoutComponent device={device} trackId={trackId} parameters={parameters} />;
         }

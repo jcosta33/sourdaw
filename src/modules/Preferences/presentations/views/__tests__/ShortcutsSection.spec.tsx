@@ -43,7 +43,7 @@ function setCustomMappings(customMappings: Record<string, string[]>): void {
 function bindingButton(label: string): HTMLElement {
     const button = screen.getByText(label).nextElementSibling;
     if (!(button instanceof HTMLElement)) {
-        throw new Error(`expected a binding button beside ${label}`);
+        throw new TypeError(`expected a binding button beside ${label}`);
     }
     return button;
 }

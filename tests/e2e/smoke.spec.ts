@@ -192,19 +192,12 @@ async function observeAudioContext(page: Page): Promise<AudioContextTestControl>
     };
 }
 
-type OpenNewProjectOptions = {
-    firstPaintTimeoutMs?: number;
-};
-
-async function openNewProject(
-    page: Page,
-    { firstPaintTimeoutMs }: OpenNewProjectOptions = {}
-): Promise<() => Promise<void>> {
+async function openNewProject(page: Page): Promise<() => Promise<void>> {
     const assertOffline = await blockExternalRequests(page);
     await setupWorkspace(page, {
         localStorage: [{ name: PREFERENCES_STORAGE_KEY, value: MANUAL_SAVE_PREFERENCES }],
     });
-    await launch_new_project(page, { firstPaintTimeoutMs });
+    await launch_new_project(page);
     return assertOffline;
 }
 
@@ -605,7 +598,7 @@ test.describe('Offline project smoke', () => {
     test('launches a new project into the workspace', async ({ page }) => {
         // This first offline leg pays the cold first-run application transform.
         test.setTimeout(150_000);
-        const assertOffline = await openNewProject(page, { firstPaintTimeoutMs: 90_000 });
+        const assertOffline = await openNewProject(page);
 
         await expect(page.getByRole('group', { name: 'Playback controls' })).toBeVisible();
         await expect(page.getByText('Add your first track')).toBeVisible();

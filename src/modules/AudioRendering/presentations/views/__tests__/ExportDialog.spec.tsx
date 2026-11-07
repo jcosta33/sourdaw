@@ -306,6 +306,15 @@ vi.mock('#/modules/Automation/stores', () => ({
 // AudioEngine key in this factory is an unread graph-coverage stub (`vi.fn()`
 // and `audioEngine: {}`).
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    openCachedAudioBufferHold: vi.fn(() => {
+        throw new Error('Unexpected audio buffer residency hold in this fixture');
+    }),
+    captureOfflineRenderProjectSource: vi.fn(() => {
+        throw new Error('Unexpected selection render capture in this fixture');
+    }),
+    captureOfflineRenderRuntimeInput: vi.fn(() => {
+        throw new Error('Unexpected selection render capture in this fixture');
+    }),
     builtinSynthVoice: { read: vi.fn() },
     rearmCommittedTrackInputMonitoring: vi.fn(async () => undefined),
     reconcileAutoInputMonitoring: vi.fn(),
@@ -944,7 +953,7 @@ describe('ExportDialog', () => {
                 expect(createUrl).toHaveBeenCalledTimes(1);
                 const blob = createUrl.mock.calls[0]![0];
                 if (!(blob instanceof Blob)) {
-                    throw new Error('Expected downloadable MP3 Blob');
+                    throw new TypeError('Expected downloadable MP3 Blob');
                 }
                 expect(blob.type).toBe('audio/mpeg');
                 const downloadedBytes = new Uint8Array(await blob.arrayBuffer());

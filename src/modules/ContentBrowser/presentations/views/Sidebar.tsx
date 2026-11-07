@@ -13,6 +13,7 @@ import { LibraryBrowser } from '#/modules/SampleLibrary/presentations/views';
 import { AUDIO_ACCEPT_ATTRIBUTE, isAudioFile } from '#/utils/audioFileExtensions';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
+import { addBrowserSample } from '../../useCases/addBrowserSample';
 import { loadSidebarFavorites } from '../../useCases/sidebar-favorites/load-sidebar-favorites';
 import { saveSidebarFavorites } from '../../useCases/sidebar-favorites/save-sidebar-favorites';
 import { RailBackBar } from '../components/Sidebar/RailBackBar';
@@ -169,7 +170,7 @@ export const Sidebar = ({ style, onClose, panelActions }: SidebarProps): ReactEl
         if (libSubTab === 'folders') {
             return (
                 <div className="px-1 flex-1 min-h-0">
-                    <LibraryBrowser preview={preview} selectedTrackId={selectedTrackId} />
+                    <LibraryBrowser preview={preview} onAddSample={(sample) => void addBrowserSample(sample)} />
                 </div>
             );
         }
@@ -203,7 +204,6 @@ export const Sidebar = ({ style, onClose, panelActions }: SidebarProps): ReactEl
                         samples={filteredSamples}
                         favorites={favorites}
                         onToggleFavorite={toggleFavorite}
-                        selectedTrackId={selectedTrackId}
                         preview={preview}
                     />
                 </div>

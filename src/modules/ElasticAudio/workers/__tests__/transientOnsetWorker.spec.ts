@@ -1,10 +1,11 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { detectTransients } from '../../models/TransientDetection';
+import { detectTransients } from '#/utils/transientOnsetDetection';
+
 import { type TransientOnsetWorkerRequest } from '../../models/TransientOnsetWorker';
 
-vi.mock('../../models/TransientDetection', async (importOriginal) => {
-    const original = await importOriginal<typeof import('../../models/TransientDetection')>();
+vi.mock('#/utils/transientOnsetDetection', async (importOriginal) => {
+    const original = await importOriginal<typeof import('#/utils/transientOnsetDetection')>();
     return { ...original, detectTransients: vi.fn(original.detectTransients) };
 });
 

@@ -1,8 +1,15 @@
+import { noteFramesToTime } from '@spotify/basic-pitch';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { polyphonicAudioToMidi } from '../polyphonicAudioToMidi';
 
 const releaseGate = vi.hoisted(() => ({ basicPitch: true }));
+const sourceAuthority = vi.hoisted(() => ({ revision: 'source-revision' }));
+vi.mock('#/modules/CrdtDocument/useCases', () => ({
+    settlePendingProjectWritesAndCaptureRevision: () => sourceAuthority.revision,
+    projectRevisionMatchesLiveIgnoringSaveWrites: (revision: string) => revision === sourceAuthority.revision,
+}));
+const evaluate = vi.fn<() => Promise<void>>();
 
 vi.mock('#/infra/release/modelReleaseAdmission', () => ({ MODEL_RELEASE_ADMISSION: releaseGate }));
 
@@ -41,8 +48,7 @@ vi.mock('@spotify/basic-pitch', () => ({
             onComplete: (f: number[][], o: number[][], c: number[][]) => void,
             _onProgress: (p: number) => void
         ): Promise<void> {
-            onComplete([], [], []);
-            return Promise.resolve();
+            return evaluate().then(() => onComplete([], [], []));
         }
     },
     outputToNotesPoly: vi.fn(() => []),
@@ -60,6 +66,9 @@ describe('polyphonicAudioToMidi', () => {
         loggerWarnMock.mockReset();
         basicPitchCtor.mockReset();
         releaseGate.basicPitch = true;
+        sourceAuthority.revision = 'source-revision';
+        evaluate.mockReset().mockResolvedValue(undefined);
+        vi.mocked(noteFramesToTime).mockReturnValue([]);
     });
 
     it('rejects conversion while Basic Pitch artifacts are withheld', async () => {
@@ -118,4 +127,58 @@ describe('polyphonicAudioToMidi', () => {
         expect(getCachedAudioBufferMock).toHaveBeenCalledWith({ bufferId: 'buf-1' });
         expect(basicPitchCtor).toHaveBeenCalledTimes(1);
     });
+
+    it.each(['changed-source', 'cancelled', 'unchanged'] as const)(
+        'retains its original owner through %s inference',
+        async (transition) => {
+            getAllTracksMock.mockReturnValue([
+                { clips: [{ id: 'clip-1', audioBufferId: 'buf-1', name: 'Take', startBeat: 0, endBeat: 4 }] },
+            ]);
+            getCachedAudioBufferMock.mockReturnValue({
+                sampleRate: 22050,
+                length: 22050,
+                duration: 1,
+                numberOfChannels: 1,
+            } as AudioBuffer);
+            const notes = [{ pitchMidi: 60, startTimeSeconds: 0.2, durationSeconds: 0.3, amplitude: 0.8 }];
+            vi.mocked(noteFramesToTime).mockReturnValue(notes);
+            let enter!: () => void;
+            let release!: () => void;
+            const entered = new Promise<void>((resolve) => {
+                enter = resolve;
+            });
+            const pending = new Promise<void>((resolve) => {
+                release = resolve;
+            });
+            evaluate.mockImplementationOnce(() => {
+                enter();
+                return pending;
+            });
+            const controller = new AbortController();
+            const analysis = polyphonicAudioToMidi({ clipId: 'clip-1', signal: controller.signal });
+            await entered;
+            if (transition === 'changed-source') {
+                sourceAuthority.revision = 'replacement-revision';
+            }
+            if (transition === 'cancelled') {
+                controller.abort();
+            }
+            release();
+            const result = await analysis;
+            if (transition !== 'unchanged') {
+                expect(result).toBeNull();
+            } else {
+                expect(result).toEqual({
+                    notes,
+                    sourceClip: {
+                        startBeat: 0,
+                        endBeat: 4,
+                        name: 'Take',
+                        projectRevision: 'source-revision',
+                        signal: controller.signal,
+                    },
+                });
+            }
+        }
+    );
 });

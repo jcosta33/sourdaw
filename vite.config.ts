@@ -11,6 +11,7 @@ import react, { reactCompilerPreset } from '@vitejs/plugin-react';
 import { configDefaults, defineConfig, type Plugin } from 'vitest/config';
 
 import { createSourdawRootHeaderMiddleware, isSourdawE2eServeMode } from './scripts/e2eServerIdentity';
+import { sourdawE2eStartupDiagnosticsPlugin } from './scripts/e2eStartupDiagnostics.ts';
 import { sourdawE2eUncachedResponsesPlugin } from './scripts/e2eUncachedResponses';
 
 const { version } = JSON.parse(readFileSync('./package.json', 'utf-8')) as { version: string };
@@ -105,12 +106,30 @@ function sourdawAutomergeStreamingEntryPlugin(): Plugin {
     };
 }
 
-/** The inspection exports and App must share one emitted module graph. */
+const DIRECT_PROJECT_SETUP_ENTRY = fileURLToPath(new URL('./tests/e2e/directProjectSetupEntry.ts', import.meta.url));
+
+/**
+ * The inspection exports and App must share one emitted module graph.
+ * In e2e build mode: emits both entries alongside index.html.
+ * In e2e serve mode: rewrites /e2e/direct-project-setup.js to the source TS
+ * file so the deterministic URL resolves in both dev and built mode.
+ */
 function sourdawE2ePersistenceEntryPlugin(): Plugin {
     return {
         name: 'sourdaw-e2e-persistence-entry',
-        apply: (_config, { command, mode }) => command === 'build' && mode === 'e2e',
-        config() {
+        apply: (_config, { mode }) => mode === 'e2e',
+        configureServer(server) {
+            server.middlewares.use((req, _res, next) => {
+                if (req.url?.split('?')[0] === '/e2e/direct-project-setup.js') {
+                    req.url = '/tests/e2e/directProjectSetupEntry.ts';
+                }
+                next();
+            });
+        },
+        config(_config, { command }) {
+            if (command !== 'build') {
+                return;
+            }
             return {
                 build: {
                     rolldownOptions: {
@@ -119,12 +138,16 @@ function sourdawE2ePersistenceEntryPlugin(): Plugin {
                             'persisted-hydration': fileURLToPath(
                                 new URL('./tests/e2e/persistedHydrationEntry.ts', import.meta.url)
                             ),
+                            'direct-project-setup': DIRECT_PROJECT_SETUP_ENTRY,
                         },
                         preserveEntrySignatures: 'strict',
                         output: {
                             entryFileNames: (chunk: { name: string }) => {
                                 if (chunk.name === 'persisted-hydration') {
                                     return 'e2e/persisted-hydration.js';
+                                }
+                                if (chunk.name === 'direct-project-setup') {
+                                    return 'e2e/direct-project-setup.js';
                                 }
                                 return 'assets/[name]-[hash].js';
                             },
@@ -164,6 +187,7 @@ export default defineConfig({
         react(),
         tailwindcss(),
         sourdawE2eServingCheckoutPlugin(),
+        sourdawE2eStartupDiagnosticsPlugin(),
         sourdawE2eUncachedResponsesPlugin(),
         sourdawE2ePersistenceEntryPlugin(),
         sourdawAutomergeStreamingEntryPlugin(),

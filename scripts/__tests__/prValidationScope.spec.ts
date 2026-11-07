@@ -99,7 +99,7 @@ const INVENTORY = [SMOKE_SPEC, ...TUNER_SPECS, 'tests/e2e/undo.spec.ts'];
 
 describe('graph-backed browser selection', () => {
     it('selects an affected feature plus unowned specs and leaves unrelated hardware out', () => {
-        const crust = 'tests/e2e/crustCeilingTestId.spec.ts';
+        const crust = 'tests/e2e/crustAttackTimeTestId.spec.ts';
         const ai = 'tests/e2e/browserAiWebGpuAdmission.spec.ts';
         const inventory = [...INVENTORY, crust, ai];
         const selected = selectAffectedE2e(
@@ -138,7 +138,7 @@ describe('graph-backed browser selection', () => {
         (_name, change) => {
             const root = temporaryRoot();
             const source = 'src/modules/Tuner/presentations/views/TunerPanel.tsx';
-            const crust = 'tests/e2e/crustCeilingTestId.spec.ts';
+            const crust = 'tests/e2e/crustAttackTimeTestId.spec.ts';
             const specs = [SMOKE_SPEC, TUNER_SPECS[0], crust];
             for (const path of [
                 source,
@@ -214,7 +214,7 @@ describe('graph-backed browser selection', () => {
             const source = 'src/modules/Tuner/presentations/views/TunerPanel.tsx';
             const barrel = 'src/modules/Tuner/presentations/views/index.ts';
             const shell = 'src/modules/WorkspaceShell/presentations/views/AppShell.tsx';
-            const crust = 'tests/e2e/crustCeilingTestId.spec.ts';
+            const crust = 'tests/e2e/crustAttackTimeTestId.spec.ts';
             const mixed = 'tests/e2e/devicePanelAllTestId.spec.ts';
             const ai = 'tests/e2e/browserAiWebGpuAdmission.spec.ts';
             const specs = [SMOKE_SPEC, TUNER_SPECS[0], crust, mixed, ai];
@@ -295,7 +295,7 @@ describe('graph-backed browser selection', () => {
             expect(playwright.status, playwright.stderr).toBe(0);
             expect(playwright.stdout).toContain('tuner.spec.ts:');
             expect(playwright.stdout).toContain('devicePanelAllTestId.spec.ts:');
-            expect(playwright.stdout).not.toContain('crustCeilingTestId.spec.ts:');
+            expect(playwright.stdout).not.toContain('crustAttackTimeTestId.spec.ts:');
             expect(playwright.stdout).not.toContain('browserAiWebGpuAdmission.spec.ts:');
 
             writeFileSync(join(root, source), 'export const TunerPanel = "dirty";\n');
@@ -985,6 +985,9 @@ describe('required affected verification', () => {
         const heavy = parse(readFileSync('.github/workflows/heavy-gates.yml', 'utf8'));
         expect(Object.keys(heavy.on)).toEqual(['workflow_call']);
         expect(health.jobs.gate.needs).toContain('affected');
+        expect(health.jobs.gate.needs).toContain('e2e-build');
+        expect(health.jobs.affected.needs).toContain('e2e-build');
+        expect(heavy.jobs).not.toHaveProperty('e2e-build');
     });
 
     it('does not start browser or security analysis for documentation', () => {

@@ -1300,7 +1300,27 @@ const validators = {
     enableWarping: 'unchecked',
     setWarpAlgorithm: 'unchecked',
     setWarpPitchShift: 'unchecked',
-    quantizeTransients: 'unchecked',
+    // A provider names the edit; the plan is application-materialized and never accepted from it.
+    quantizeTransients: (param): param is PayloadOf<'quantizeTransients'> =>
+        isObj(param) &&
+        hasOnlyKeys(param, [
+            'clipId',
+            'gridSize',
+            'strength',
+            'swing',
+            'sensitivity',
+            'minConfidence',
+            'startBeat',
+            'endBeat',
+        ]) &&
+        isNonEmptyString(param.clipId) &&
+        isInRange(param.gridSize, 1 / 32, 4) &&
+        ['strength', 'swing', 'sensitivity', 'minConfidence'].every((key) =>
+            isOptionalOwn(param, key, (value): value is number => isInRange(value, 0, 1))
+        ) &&
+        isOptionalOwn(param, 'startBeat', isNumber) &&
+        isOptionalOwn(param, 'endBeat', isNumber) &&
+        (!isNumber(param.startBeat) || !isNumber(param.endBeat) || param.endBeat > param.startBeat),
 
     // Comping
     createCompGroup: 'unchecked',

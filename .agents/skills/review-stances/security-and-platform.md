@@ -122,6 +122,17 @@ or none.
     "publishes complete semantic intake and safe reads before restoring exact effectful contracts after success"
     are partial coverage: none asserts the compacted-carrier input.
 
+14. **Packaged native identity must follow the builder target (#2203 `426e286410`, helper extended by #3499).**
+    The build used Cargo's host target and copied fixed artifact names; string/script-presence checks did not
+    establish the packed OS, CPU or binary kind. Historical stance omission or misprompting is unestablished;
+    the surviving gap implies a missing host/target mismatch probe. Replace either actual packaged addon or
+    helper with another OS/CPU image, an executable in place of the addon, a shared library in place of the
+    helper, or a truncated header/table. Require a named artifact/target refusal before fuse mutation, while
+    matching images retain legal-file and fuse readback checks. Removing native admission from `afterPack`
+    must redden `scripts/__tests__/desktopPackaging.spec.ts`; removing identity/kind/bounds checks must redden
+    `scripts/__tests__/verifyPackagedNativeArtifacts.spec.ts`. Header fixtures prove neither platform build
+    provenance nor installed-package/native-ABI compatibility.
+
 ## MIDI API present but permission refused
 
 The earliest observed unsupported-state guard and failure transition are in `8b0050b90f`; the picker that hides refresh when unsupported appears in `4f410257b2`. No associated introducing PR or historical reviewer stance was established. Capability to request access and permission to enumerate are distinct: treating a denial as absent capability removes the recovery route.

@@ -143,6 +143,7 @@ vi.mock('#/modules/Command/useCases', () => ({
     generateGroupId: mocks.generateGroupId,
     pushUndoEntry: mocks.pushUndoEntry,
     resetActionReplayAuthority: mocks.unrelatedService,
+    commitRedoInverseCapture: mocks.unrelatedService,
 }));
 vi.mock('#/modules/Automation/useCases', () => ({
     shiftClipAutomation: mocks.shiftClipAutomation,

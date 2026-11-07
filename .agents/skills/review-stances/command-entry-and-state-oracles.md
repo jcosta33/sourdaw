@@ -64,3 +64,26 @@ boundaries.
    state. Probe: public command entry, then raw document, owner projection, control state and engine projection
    agree. Replace the aggregate reusing IDs and exercise an empty prior state; create history through the real
    producer, persist, reload, hydrate, replay (an injected entry proves neither producer nor saved contract).
+8. **Transcription completes only after every generated entity commits (`4f410257b2`, retained by
+   resolver consolidation `5a17842492`).** GitHub commit-to-PR lookup exposes no associated PR for either historical
+   commit; original review attribution is unavailable. The missing probe is source-owned atomic completion. Direct clip/note writes and a dispatched but unawaited destination cannot
+   witness one completed conversion. Drive the registered runtime command and each rendered caller with real decoded
+   PCM: a held snapshot queue keeps completion pending, one compensated child batch creates track, clip and all
+   128-note chunks, and a failure in the final chunk leaves raw CRDT, projections and history unchanged. Require one
+   grouped Undo/Redo/Undo, and macro playback of the committed children without another transcription. Replace the
+   awaited batch with fire-and-forget dispatch or a direct note write: the completion, atomicity or history case must
+   fail. Caller tests must reject cancelled, refused and no-op outcomes without a success notice.
+
+9. **Overlapping duplicate presses capture one stale source (#6218).** Failure: both presses finish after a held
+   snapshot transaction and copy the original interval. Probe the real shortcut handler, Command and CRDT with
+   two presses before releasing that wait: single, next-bar and unequal-span multi selection must chain geometry,
+   copy content and select the last copies, with one Undo/Redo group per press. Change selection away and back
+   inside one store batch, or replace the project reusing IDs, while admission or a staged handler waits: no old
+   publication or completion may overwrite newer truth or selection; fresh input must recover. Keep every selected
+   ID alive and retain the same selection reference in a separate real replacement case so project identity is
+   independently necessary. Insert an inapplicable next-bar input between valid multi-clip duplicates: ignoring that
+   input must preserve both valid groups, while actual refusal still retires its failed chain. Revert ordering or
+   remove the route's execution/publication authority predicate and the corresponding integration must fail.
+   A committed-error or ambiguous result uses preallocated live copy IDs as witnesses, reports the error and never
+   replays the mutation. The introducing helper's completed-press test missed overlap; prior review stances are not
+   established by that test.

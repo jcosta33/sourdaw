@@ -71,6 +71,8 @@ export { acceptGhostClip } from './clip/acceptGhostClip';
 export { dismissGhostClip } from './clip/dismissGhostClip';
 export { setClipAudioAssetStager } from './clip/setClipAudioAssetStager';
 export { stageClipAudioAsset } from './clip/stageClipAudioAsset';
+export { compileNewAudioTrackAction } from './compileNewAudioTrackAction';
+export { retainedCreation } from './creationBatch';
 export { updateClip } from './updateClip';
 export { replaceClipAudioBuffer } from './replaceClipAudioBuffer';
 export { relinkClipAudioSource } from './relinkClipAudioSource';
@@ -173,6 +175,7 @@ export { getLayerCount } from './adjustmentLayer/getLayerCount';
 // ── Device ────────────────────────────────────────────────────────────────────
 
 export { executeAddDeviceAction } from './device/executeAddDeviceAction';
+export { isExternalPluginDeviceType } from './device/externalPluginDeviceType';
 export { getAddedDeviceParameterValues } from './device/getAddedDeviceParameterValues';
 export { executeRemoveDeviceAction } from './device/executeRemoveDeviceAction';
 export { addMidiFx } from './device/addMidiFx';
@@ -323,6 +326,7 @@ export { getFactoryPresets } from './soundPresetLibrary';
 // Published because the composition root registers the factory presets device modules ship.
 export { deviceFactoryPresetSources } from './deviceFactoryPresetSources';
 export { stripSilence } from './stripSilence';
+export { readTransientQuantizeOutcome } from './readTransientQuantizeOutcome';
 export { getBuiltinPlugins } from './getBuiltinPlugins';
 export { getPlatformPlugins } from './getPlatformPlugins';
 export { getPluginById } from './getPluginById';

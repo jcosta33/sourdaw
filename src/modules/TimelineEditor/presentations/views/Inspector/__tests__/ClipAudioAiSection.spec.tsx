@@ -1,9 +1,9 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, act, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { handleAiDenoiseClip } from '#/modules/AiGeneration/useCases';
 import { notifyAiChange } from '#/modules/AiRuntime/useCases';
-import { audioToMidi } from '#/modules/AudioAnalysis/useCases';
+import { audioToMidi, insertPolyphonicMidiNotes, polyphonicAudioToMidi } from '#/modules/AudioAnalysis/useCases';
 import { getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
@@ -235,30 +235,64 @@ describe('ClipAudioAiSection', () => {
         expect(screen.getByText('MIDI (Basic)')).toBeInTheDocument();
     });
 
-    it('notifies success only when audioToMidi actually produced a clip', () => {
-        vi.mocked(audioToMidi).mockReturnValue(true);
-
+    it.each([true, false])('waits for Basic commit before notifying outcome %s', async (converted) => {
+        let release!: (result: boolean) => void;
+        vi.mocked(audioToMidi).mockReturnValueOnce(
+            new Promise((resolve) => {
+                release = resolve;
+            })
+        );
         render(<ClipAudioAiSection {...defaultProps} />);
         fireEvent.click(screen.getByText('MIDI (Basic)'));
-
         expect(audioToMidi).toHaveBeenCalledWith({ clipId: 'clip-1', trackId: 'track-1' });
-        expect(notifyAiChange).toHaveBeenCalledWith('Audio converted to MIDI', [
-            'New MIDI clip created from detected onsets',
-        ]);
+        expect(notifyAiChange).not.toHaveBeenCalled();
         expect(notifyUser).not.toHaveBeenCalled();
+        await act(async () => {
+            release(converted);
+        });
+        if (converted) {
+            expect(notifyAiChange).toHaveBeenCalledWith('Audio converted to MIDI', [
+                'New MIDI clip created from detected onsets',
+            ]);
+            expect(notifyUser).not.toHaveBeenCalled();
+        } else {
+            expect(notifyAiChange).not.toHaveBeenCalled();
+            expect(notifyUser).toHaveBeenCalledWith('Audio to MIDI conversion failed', 'error');
+        }
     });
 
-    it('does not report success when audioToMidi silently finds nothing to convert', () => {
-        // audioToMidi returns `false` (never throws) when the clip, buffer, onsets, or
-        // MIDI-track resolution come up empty. Without gating on that result, this click
-        // would always show "Audio converted to MIDI" regardless of outcome.
-        vi.mocked(audioToMidi).mockReturnValue(false);
-
+    it.each([true, false])('waits for polyphonic insertion before notifying outcome %s', async (converted) => {
+        const analysis = {
+            notes: [{ pitchMidi: 60, startTimeSeconds: 0.2, durationSeconds: 0.3, amplitude: 0.8 }],
+            sourceClip: { startBeat: 0, endBeat: 4, name: 'Clip', projectRevision: 'source-revision' },
+        };
+        vi.mocked(polyphonicAudioToMidi).mockResolvedValueOnce(analysis);
+        let release!: (result: Awaited<ReturnType<typeof insertPolyphonicMidiNotes>>) => void;
+        vi.mocked(insertPolyphonicMidiNotes).mockReturnValueOnce(
+            new Promise((resolve) => {
+                release = resolve;
+            })
+        );
         render(<ClipAudioAiSection {...defaultProps} />);
-        fireEvent.click(screen.getByText('MIDI (Basic)'));
-
+        fireEvent.click(screen.getByRole('button', { name: /Audio → MIDI \(Poly\)/ }));
+        await waitFor(() =>
+            expect(insertPolyphonicMidiNotes).toHaveBeenCalledWith(analysis.notes, analysis.sourceClip, 'track-1')
+        );
         expect(notifyAiChange).not.toHaveBeenCalled();
-        expect(notifyUser).toHaveBeenCalledWith('Audio to MIDI conversion failed', 'error');
+        expect(notifyUser).not.toHaveBeenCalled();
+        await act(async () => {
+            release(converted ? { clipId: 'created', trackId: 'created-track' } : null);
+        });
+        if (converted) {
+            expect(notifyAiChange).toHaveBeenCalledWith('Polyphonic MIDI conversion complete', [
+                'Detected 1 polyphonic notes',
+                'New MIDI track and clip created',
+            ]);
+            expect(notifyUser).not.toHaveBeenCalled();
+        } else {
+            expect(notifyAiChange).not.toHaveBeenCalled();
+            expect(notifyUser).toHaveBeenCalledWith('Polyphonic conversion failed', 'error');
+        }
     });
 
     it('should render Polyphonic MIDI section', () => {

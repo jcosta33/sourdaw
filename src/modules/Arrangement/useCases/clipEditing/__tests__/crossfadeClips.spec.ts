@@ -551,43 +551,36 @@ describe('crossfadeClips', () => {
         expect(clipA).toMatchObject({ endBeat: 4.5, fadeOutBeats: 0.5 });
     });
 
-    it('clamps MIDI clip B extension to available pre-roll handle when handle is smaller than halfDuration', () => {
-        const clips = [
-            makeClip('a', 0, 4, { type: 'midi' }),
-            makeClip('b', 4, 8, { type: 'midi', midiOffsetBeats: 0.1 }),
-        ];
+    it.each([
+        { name: 'MIDI clip A and audio clip B', a: { type: 'midi' as const }, b: {} },
+        { name: 'audio clip A and MIDI clip B', a: {}, b: { type: 'midi' as const, midiOffsetBeats: 2 } },
+        {
+            name: 'two MIDI clips',
+            a: { type: 'midi' as const },
+            b: { type: 'midi' as const, midiOffsetBeats: 2 },
+        },
+    ])('refuses $name: MIDI playback reads no fades', ({ a, b }) => {
+        const clips = [makeClip('a', 0, 4, a), makeClip('b', 4, 8, b)];
         mocks.getTrackState.mockReturnValue({ tracks: [makeTrack(clips)], selectedTrackId: 't1' });
 
-        expect(crossfadeClips('a', 'b', 1.0)).toBe(true);
-
-        const result = capturedMapper()(makeTrack(clips));
-        const clipA = result.clips.find((context) => context.id === 'a');
-        const clipB = result.clips.find((context) => context.id === 'b');
-        // Pre-roll handle is 0.1 beats -> clipB start clamps to 3.9, midiOffsetBeats clamps to 0.0
-        // clipA ends at 4.5 -> actualOverlap is 4.5 - 3.9 = 0.6
-        expect(clipB?.startBeat).toBeCloseTo(3.9);
-        expect(clipB?.fadeInBeats).toBeCloseTo(0.6);
-        expect(clipB?.midiOffsetBeats).toBeCloseTo(0);
-        expect(clipA?.endBeat).toBeCloseTo(4.5);
-        expect(clipA?.fadeOutBeats).toBeCloseTo(0.6);
+        expect(crossfadeClips('a', 'b', 0.5)).toBe(false);
+        expect(mocks.mapAllTracks).not.toHaveBeenCalled();
     });
 
-    it('clamps MIDI clip B start at its original start when midiOffsetBeats is 0 (zero pre-roll handle)', () => {
-        const clips = [
-            makeClip('a', 0, 4, { type: 'midi' }),
-            makeClip('b', 4, 8, { type: 'midi', midiOffsetBeats: 0 }),
-        ];
-        mocks.getTrackState.mockReturnValue({ tracks: [makeTrack(clips)], selectedTrackId: 't1' });
+    it('refuses audio clips on different tracks', () => {
+        const trackB = TrackDummy.create({ id: 't2', clips: [makeClip('b', 4, 8, { audioOffsetBeats: 2 })] });
+        mocks.getTrackState.mockReturnValue({
+            tracks: [makeTrack([makeClip('a', 0, 4)]), trackB],
+            selectedTrackId: 't1',
+        });
+        mocks.resolveEligibleClipWriteTarget.mockImplementation(({ clipId }) => ({
+            status: 'eligible',
+            trackId: clipId === 'a' ? 't1' : 't2',
+            clipId,
+        }));
 
-        expect(crossfadeClips('a', 'b', 1.0)).toBe(true);
-
-        const result = capturedMapper()(makeTrack(clips));
-        const clipA = result.clips.find((context) => context.id === 'a');
-        const clipB = result.clips.find((context) => context.id === 'b');
-        // Cannot extend earlier than 4 -> startBeat remains 4, midiOffsetBeats remains 0
-        // clipA ends at 4.5 -> actualOverlap is 4.5 - 4.0 = 0.5
-        expect(clipB).toMatchObject({ startBeat: 4, fadeInBeats: 0.5, midiOffsetBeats: 0 });
-        expect(clipA).toMatchObject({ endBeat: 4.5, fadeOutBeats: 0.5 });
+        expect(crossfadeClips('a', 'b', 0.5)).toBe(false);
+        expect(mocks.mapAllTracks).not.toHaveBeenCalled();
     });
 
     it('clamps clip B start at beat zero when source offset allows extending past 0', () => {
@@ -604,20 +597,6 @@ describe('crossfadeClips', () => {
         // clipA ends at 0.25 + 0.5 = 0.75 -> overlap is 0.75 - 0 = 0.75
         expect(clipB).toMatchObject({ startBeat: 0, fadeInBeats: 0.75, audioOffsetBeats: 0.75 });
         expect(clipA).toMatchObject({ endBeat: 0.75, fadeOutBeats: 0.75 });
-    });
-
-    it('updates midiOffsetBeats when extending a MIDI clip B', () => {
-        const clips = [
-            makeClip('a', 0, 4, { type: 'midi' }),
-            makeClip('b', 4, 8, { type: 'midi', midiOffsetBeats: 2 }),
-        ];
-        mocks.getTrackState.mockReturnValue({ tracks: [makeTrack(clips)], selectedTrackId: 't1' });
-
-        expect(crossfadeClips('a', 'b', 0.5)).toBe(true);
-
-        const result = capturedMapper()(makeTrack(clips));
-        const clipB = result.clips.find((context) => context.id === 'b');
-        expect(clipB).toMatchObject({ startBeat: 3.75, fadeInBeats: 0.5, midiOffsetBeats: 1.75 });
     });
 
     it('does not extend untrimmed clip B earlier when audioOffsetBeats is undefined', () => {
@@ -716,29 +695,6 @@ describe('crossfadeClips', () => {
         expect(clipB.loopOriginBeat).toBe(8);
         const advance = clipB.startBeat - (clipB.loopOriginBeat ?? clipB.startBeat);
         expect((clipB.audioOffsetBeats ?? 0) - advance).toBe(4);
-    });
-
-    it('leaves a looped MIDI clip B anchor untouched as its offset retreats by the raw delta', () => {
-        // The MIDI offset retreats by the raw clipBDelta, so the carried
-        // anchor derives the same advance as before the crossfade: shifting
-        // it would slide the region. The anchor rides unchanged.
-        const clips = [
-            makeClip('a', 0, 8, { type: 'midi' }),
-            makeClip('b', 8, 16, {
-                type: 'midi',
-                midiOffsetBeats: 4,
-                loopEnabled: true,
-                loopLength: 4,
-                loopOriginBeat: 8,
-            }),
-        ];
-        mocks.getTrackState.mockReturnValue({ tracks: [makeTrack(clips)], selectedTrackId: 't1' });
-
-        expect(crossfadeClips('a', 'b', 1.0)).toBe(true);
-
-        const result = capturedMapper()(makeTrack(clips));
-        const clipB = result.clips.find((context) => context.id === 'b');
-        expect(clipB).toMatchObject({ startBeat: 7.5, midiOffsetBeats: 3.5, loopOriginBeat: 8 });
     });
 });
 

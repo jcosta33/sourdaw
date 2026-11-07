@@ -20,8 +20,10 @@ type Publication = {
 };
 
 type StagedCapture = {
+    action: AppAction;
     entry: ActionUndoEntry;
     inverseAction: AppAction;
+    recordedInverseAction: AppAction;
     owner: object;
     identity: string;
     before: string;
@@ -106,7 +108,8 @@ function settleStagedCaptures(actions: readonly AppAction[], captures: readonly 
             (capture) =>
                 capture.publication === publication &&
                 undoStore.value?.future.includes(capture.entry) === true &&
-                capture.entry.inverseAction?.type === capture.inverseAction.type
+                capture.entry.inverseAction === capture.recordedInverseAction &&
+                findPendingRedoEntry(capture.action) === capture.entry
         )
     ) {
         return;
@@ -136,8 +139,10 @@ export function commitRedoInverseCapture(input: AppAction | CaptureLifecycle, in
             return;
         }
         stagedCaptures.set(input.action, {
+            action: input.action,
             entry,
             inverseAction: input.inverseAction,
+            recordedInverseAction: entry.inverseAction,
             owner,
             identity: input.publicationAuthority.captureIdentity(),
             before: input.publicationAuthority.captureWitness(),

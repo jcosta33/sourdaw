@@ -24,6 +24,8 @@ carries no browser evidence for these probes.
    (#4464, #4479)
 
 2. **A new sibling makes a text locator ambiguous.**
+   The Fermenter slider case selected the first slider regardless of subject (#1515, #1647).
+   Add a wrong-subject decoy first and require the intended control assertion to fail if its subject is absent.
    Probe: search `getByText`, `getByRole(..., { name })` and `getByLabel` arguments case-insensitively
    for the added element's text; keep each locator whose argument is a substring of the new text and
    whose role can select the new element. Each must stay unambiguous or move to a stable handle; a
@@ -37,6 +39,8 @@ carries no browser evidence for these probes.
    (#4568)
 
 4. **A step's precondition is never produced, or its outcome cannot fail.**
+   The Mix Health case accepted the first dialog instead of the named outcome (#1871).
+   Add an unrelated dialog and require the case to fail when the named dialog does not open.
    Probe: name the state each added Playwright step's locator needs and trace it to the helper that
    produces it (`launch_new_project` yields zero tracks). Create the asserted track and clip
    deterministically, require editor admission before interacting, and give each advertised outcome a

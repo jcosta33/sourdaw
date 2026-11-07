@@ -490,7 +490,7 @@ describe('freezeTrack', () => {
             const aggregate = log.mock.calls[0]?.[0];
             expect(aggregate).toBeInstanceOf(AggregateError);
             if (!(aggregate instanceof AggregateError)) {
-                throw new Error('Expected the combined Freeze failure');
+                throw new TypeError('Expected the combined Freeze failure');
             }
             expect(aggregate.errors).toEqual([renderFailure, settlementFailure]);
             expect(aggregate.errors[0]).toBe(renderFailure);

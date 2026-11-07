@@ -105,6 +105,12 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     wireSidechainRoute: vi.fn(),
 }));
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
+    projectRevisionMatchesLiveWithinProjection: vi.fn(() => {
+        throw new Error('Unexpected selection render admission in this fixture');
+    }),
+    settlePendingProjectWritesAndCaptureRevision: vi.fn(() => {
+        throw new Error('Unexpected selection render admission in this fixture');
+    }),
     compactProject: vi.fn(() => {
         throw new Error('Unexpected directory compaction in this fixture');
     }),

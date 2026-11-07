@@ -261,6 +261,12 @@ vi.mock('#/modules/Knead/useCases', async () => {
     };
 });
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    captureOfflineRenderProjectSource: vi.fn(() => {
+        throw new Error('Unexpected selection render capture in this fixture');
+    }),
+    captureOfflineRenderRuntimeInput: vi.fn(() => {
+        throw new Error('Unexpected selection render capture in this fixture');
+    }),
     builtinSynthVoice: { read: vi.fn() },
     rearmCommittedTrackInputMonitoring: vi.fn(async () => undefined),
     reconcileAutoInputMonitoring: vi.fn(),

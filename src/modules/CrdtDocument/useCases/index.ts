@@ -1,3 +1,4 @@
+export { projectRevisionMatchesLiveWithinProjection } from './projectRevisionMatchesLiveWithinProjection';
 export { DOC_PREFIX_ROOT, DOC_BRANCHES } from './crdtDocumentTypes';
 
 export { compactProject } from './compactProject';

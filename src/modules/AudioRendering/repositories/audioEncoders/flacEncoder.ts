@@ -441,7 +441,7 @@ export async function audioBufferToFlac(
         const bw = new BitWriter(out, pos);
         for (const channel of block.channels) {
             if (!(channel instanceof Int32Array)) {
-                throw new Error('FLAC requires integer PCM.');
+                throw new TypeError('FLAC requires integer PCM.');
             }
             encodeSubframe(bw, channel, 0, block.length, bitsPerSample);
         }

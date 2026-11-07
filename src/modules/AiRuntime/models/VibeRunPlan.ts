@@ -117,3 +117,19 @@ export type VibeRunPlan = {
     readonly excludedTargets: readonly VibeRunExcludedTarget[];
     readonly unplannedRoles: readonly VibeRunUnplannedRole[];
 };
+
+/**
+ * What a vibe run's schedule keeps of one planned batch: enough to ground it again later, and to say
+ * on its card what it is for. Its baselines are not kept, because a run planned at brief admission has
+ * measured nothing yet; each batch's figures are read when it is previewed.
+ */
+export type ScheduledVibeRunBatch = Pick<VibeRunBatch, 'id' | 'ordinal' | 'targetIds' | 'targets' | 'commandCount'> & {
+    readonly objective: Pick<VibeRunBatchObjective, 'descriptors' | 'role'>;
+};
+
+/** The plan a `vibe-run` schedule stores, serialized, against the brief revision it was read from. */
+export type ScheduledVibeRunPlan = {
+    readonly schemaVersion: 1;
+    readonly briefRevision: number;
+    readonly batches: readonly ScheduledVibeRunBatch[];
+};

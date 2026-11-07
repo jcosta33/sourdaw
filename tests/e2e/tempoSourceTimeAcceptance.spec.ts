@@ -1,6 +1,6 @@
 // A browser-carrier check: Web Audio starts and exported PCM are observable here; a native device clock is not.
-import { realpathSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
+import { realpathSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 
@@ -15,8 +15,8 @@ import {
     wait_for_launch_first_paint,
     wait_for_workspace_ready,
 } from './e2eUtils';
-import { attach_first_paint_console, CAPABILITIES_MARKER, wait_for_console_marker } from './firstPaintDiagnostics';
 import { installFilePickerCapture } from './exportFilePickerCapture';
+import { attach_first_paint_console, CAPABILITIES_MARKER, wait_for_console_marker } from './firstPaintDiagnostics';
 import { interiorTempoSeconds, physicalSourceFixture } from './tempoSourcePhysicalFixtures';
 
 const ROOT = realpathSync(fileURLToPath(new URL('../../', import.meta.url)));
@@ -1741,6 +1741,473 @@ test('left trims rate2 across an interior tempo event with exact source ending a
             null,
             2
         ),
+        contentType: 'application/json',
+    });
+});
+
+// These cases exercise the maintained dev carrier, not native audio or listening acceptance.
+function renderAdmissionWav(): Buffer {
+    const frames = SAMPLE_RATE * 8;
+    const wav = Buffer.alloc(44 + frames * 2);
+    wav.write('RIFF', 0);
+    wav.writeUInt32LE(wav.length - 8, 4);
+    wav.write('WAVEfmt ', 8);
+    wav.writeUInt32LE(16, 16);
+    wav.writeUInt16LE(1, 20);
+    wav.writeUInt16LE(1, 22);
+    wav.writeUInt32LE(SAMPLE_RATE, 24);
+    wav.writeUInt32LE(SAMPLE_RATE * 2, 28);
+    wav.writeUInt16LE(2, 32);
+    wav.writeUInt16LE(16, 34);
+    wav.write('data', 36);
+    wav.writeUInt32LE(frames * 2, 40);
+    for (let frame = 0; frame < frames; frame += 1) {
+        wav.writeInt16LE(((frame * 17 + Math.floor(frame / 997) * 31) % 40_001) - 20_000, 44 + frame * 2);
+    }
+    return wav;
+}
+
+async function readRenderAdmission(page: Page) {
+    const serialized = await page.evaluate(async () => {
+        const [{ getCrdtDoc }, { trackStore }, { undoStore }] = await Promise.all([
+            import('/src/modules/CrdtDocument/useCases/index.ts'),
+            import('/src/modules/Arrangement/stores/trackStore.ts'),
+            import('/src/modules/Command/stores/undoStore.ts'),
+        ]);
+        const raw = getCrdtDoc<{ tracks?: NonNullable<typeof trackStore.value> }>('root');
+        const track = trackStore.value?.tracks.find((entry) => entry.name === 'Audio 1');
+        const rawTrack = raw?.tracks?.tracks.find((entry) => entry.id === track?.id);
+        if (!track || !rawTrack || !undoStore.value) {
+            throw new Error('Render acceptance requires actual raw, projected and history owners');
+        }
+        return JSON.stringify({
+            raw: rawTrack.clips,
+            projected: track.clips,
+            past: undoStore.value.past.map((entry) => ({ kind: entry.kind, label: entry.label })),
+            future: undoStore.value.future.map((entry) => ({ kind: entry.kind, label: entry.label })),
+            publications: Reflect.get(window, '__renderAdmissionPublications') ?? [],
+        });
+    });
+    return JSON.parse(serialized) as {
+        raw: (SourceClip & {
+            loopEnabled?: boolean;
+            loopLength?: number;
+            audioLoopStartSeconds?: number;
+            audioLoopPassEntrySeconds?: number;
+            audioLoopPassOriginBeat?: number;
+            fadeInBeats?: number;
+            fadeOutBeats?: number;
+        })[];
+        projected: unknown[];
+        past: { kind: string; label?: string }[];
+        future: { kind: string; label?: string }[];
+        publications: string[];
+    };
+}
+
+async function observeRenderPublications(page: Page): Promise<void> {
+    await page.evaluate(async () => {
+        const { audioBufferCache } = await import('/src/modules/AudioEngine/stores/audioBufferCache.ts');
+        const original = audioBufferCache.set;
+        const publications: string[] = [];
+        Reflect.set(window, '__renderAdmissionPublications', publications);
+        audioBufferCache.set = (...args) => {
+            publications.push(args[0]);
+            return original(...args);
+        };
+    });
+}
+
+async function renderPcmHash(page: Page, bufferId: string, startFrame = 0, frames = SAMPLE_RATE * 8) {
+    return page.evaluate(
+        async ({ bufferId, startFrame, frames }) => {
+            const { audioBufferCache } = await import('/src/modules/AudioEngine/stores/audioBufferCache.ts');
+            const buffer = audioBufferCache.get(bufferId);
+            if (!buffer || buffer.sampleRate !== 48_000 || buffer.length < startFrame + frames) {
+                throw new Error('Expected complete 48k decoded material is absent');
+            }
+            const samples = buffer.getChannelData(0).slice(startFrame, startFrame + frames);
+            const hash = await crypto.subtle.digest('SHA-256', samples.buffer);
+            return Array.from(new Uint8Array(hash), (byte) => byte.toString(16).padStart(2, '0')).join('');
+        },
+        { bufferId, startFrame, frames }
+    );
+}
+
+async function expectedRenderHash(page: Page, reversed: boolean, frames = SAMPLE_RATE * 8) {
+    return page.evaluate(
+        async ({ reversed, frames, wav }) => {
+            // Authenticate every decoded frame against an independent genuine browser WAV decode.
+            // Chromium's signed PCM16 normalization is not a bitwise division by32768.
+            const bytes = Uint8Array.from(atob(wav), (character) => character.charCodeAt(0));
+            const decoded = await new OfflineAudioContext(1, 1, 48_000).decodeAudioData(bytes.buffer);
+            const samples = decoded.getChannelData(0).slice(0, frames);
+            if (reversed) {
+                samples.reverse();
+            }
+            const hash = await crypto.subtle.digest('SHA-256', samples.buffer);
+            return Array.from(new Uint8Array(hash), (byte) => byte.toString(16).padStart(2, '0')).join('');
+        },
+        { reversed, frames, wav: renderAdmissionWav().toString('base64') }
+    );
+}
+
+async function selectAdmissionClip(page: Page): Promise<void> {
+    const snapshot = await readSnapshot(page);
+    expect(snapshot.raw).toEqual(snapshot.projected);
+    const clip = snapshot.raw.clips[0];
+    if (!clip) {
+        throw new Error('Keyboard focus requires an actual visible audio clip');
+    }
+    const beat = Math.min(clip.startBeat + 0.5, (clip.startBeat + clip.endBeat) / 2);
+    const point = await canvasPoint(page, clip, beat);
+    await page.mouse.click(point.x, point.y);
+}
+
+async function trimAdmissionEnd(page: Page, beat: number): Promise<void> {
+    const slider = page.getByRole('slider', { name: 'Trim clip end', exact: true });
+    await expect(slider).toBeVisible();
+    await slider.press('Home');
+    for (let step = 0; step < (beat - 1) * 4; step += 1) {
+        await slider.press('ArrowRight');
+    }
+    await slider.press('Tab');
+    await expect.poll(async () => (await readRenderAdmission(page)).raw[0]?.endBeat).toBe(beat);
+}
+
+async function bootRenderAdmission(page: Page, info: TestInfo): Promise<{ page: Page; id: string; trackId: string }> {
+    page = await bootOwnedSourceProject(page, info);
+    const imported = await importSourceFixture(page, renderAdmissionWav(), 'nonperiodic-eight-seconds.wav');
+    const id = onlyClip(imported).id;
+    await page.evaluate(async () => {
+        const { executeUserAppAction } = await import('/src/modules/Command/useCases/index.ts');
+        await executeUserAppAction({ type: 'setTempo', payload: { bpm: 60 } });
+    });
+    await expect.poll(async () => onlyClip(await readSnapshot(page)).endBeat).toBe(16);
+    await selectAdmissionClip(page);
+    await observeRenderPublications(page);
+    const original = (await readRenderAdmission(page)).raw[0];
+    if (!original.audioBufferId) {
+        throw new Error('UI import did not publish decoded source material');
+    }
+    expect(await renderPcmHash(page, original.audioBufferId)).toBe(await expectedRenderHash(page, false));
+    return { page, id, trackId: imported.trackId };
+}
+
+async function reverseAdmissionMenu(page: Page): Promise<void> {
+    const snapshot = await readSnapshot(page);
+    const point = await canvasPoint(page, onlyClip(snapshot), 0.5);
+    await page.mouse.click(point.x, point.y, { button: 'right' });
+    await page.getByRole('menuitem', { name: 'Reverse', exact: true }).click();
+}
+
+async function holdGenuineOfflineRender(page: Page): Promise<void> {
+    await page.evaluate(() => {
+        const startRendering = OfflineAudioContext.prototype.startRendering;
+        let release: () => void = () => {
+            throw new Error('The render release is not installed');
+        };
+        const gate = new Promise<void>((resolve) => {
+            release = resolve;
+        });
+        Reflect.set(window, '__renderAdmissionRelease', release);
+        Reflect.set(window, '__renderAdmissionEntered', false);
+        OfflineAudioContext.prototype.startRendering = async function () {
+            const result = await startRendering.call(this);
+            Reflect.set(window, '__renderAdmissionEntered', true);
+            await gate;
+            return result;
+        };
+    });
+}
+
+async function releaseGenuineOfflineRender(page: Page): Promise<void> {
+    await page.evaluate(() => {
+        const release = Reflect.get(window, '__renderAdmissionRelease') as () => void;
+        release();
+    });
+}
+
+async function admissionKeyboardReplay(page: Page, direction: 'undo' | 'redo', expected: unknown[]): Promise<void> {
+    await selectAdmissionClip(page);
+    await page.keyboard.press(direction === 'undo' ? `${MOD}+z` : `${MOD}+Shift+z`);
+    await expect.poll(async () => (await readRenderAdmission(page)).raw).toEqual(expected);
+    expect((await readRenderAdmission(page)).projected).toEqual(expected);
+}
+
+async function setupCanonicalAdmissionLoop(page: Page, id: string): Promise<void> {
+    await page.evaluate(async (clipId) => {
+        const { executeUserAppAction } = await import('/src/modules/Command/useCases/index.ts');
+        await executeUserAppAction({ type: 'trimClipEnd', payload: { clipId, newEndBeat: 10 } });
+        await executeUserAppAction({ type: 'slipClipContent', payload: { clipId, clipType: 'audio', offset: 1 } });
+        await executeUserAppAction({ type: 'setClipLoop', payload: { clipId, enabled: true } });
+        await executeUserAppAction({ type: 'setClipLoopLength', payload: { clipId, loopLength: 4 } });
+    }, id);
+    const state = await readRenderAdmission(page);
+    expect(state.raw[0]).toMatchObject({ startBeat: 0, endBeat: 10, audioOffsetSeconds: 1, loopLength: 4 });
+    expect(state.projected).toEqual(state.raw);
+}
+
+async function outsideAdmissionHash(page: Page, startBeat: number, endBeat: number) {
+    return page.evaluate(
+        async ({ startBeat, endBeat }) => {
+            const [
+                { trackStore },
+                { audioBufferCache },
+                { projectAudioLoopPassSegments },
+                { projectClipLoopExpansion },
+            ] = await Promise.all([
+                import('/src/modules/Arrangement/stores/trackStore.ts'),
+                import('/src/modules/AudioEngine/stores/audioBufferCache.ts'),
+                import('/src/utils/audioSourceTime.ts'),
+                import('/src/utils/clipLoopProjection.ts'),
+            ]);
+            const track = trackStore.value?.tracks.find((entry) => entry.name === 'Audio 1');
+            if (!track) {
+                throw new Error('The imported track is absent');
+            }
+            const pcm = new Float32Array((10 - endBeat + startBeat) * 48_000);
+            let index = 0;
+            for (const [from, to] of [
+                [0, startBeat],
+                [endBeat, 10],
+            ]) {
+                for (const clip of track.clips) {
+                    if (clip.endBeat <= from || clip.startBeat >= to) {
+                        continue;
+                    }
+                    const buffer = clip.audioBufferId && audioBufferCache.get(clip.audioBufferId);
+                    if (!buffer) {
+                        throw new Error('Outside source PCM is absent');
+                    }
+                    const loop = projectClipLoopExpansion({
+                        clipDurationBeats: clip.endBeat - clip.startBeat,
+                        configuredLoopLengthBeats: clip.loopLength,
+                        loopEnabled: clip.loopEnabled ?? false,
+                    });
+                    const passes = projectAudioLoopPassSegments({
+                        clip,
+                        loopLengthBeats: loop.loopLengthBeats,
+                        iterationStartBeat: Math.max(from, clip.startBeat),
+                        iterationEndBeat: Math.min(to, clip.endBeat),
+                        stretchRatio: 1,
+                        tempoAtClipStart: 60,
+                        secondsAtBeat: (beat) => beat,
+                    });
+                    for (const pass of passes) {
+                        const count = Math.round((pass.endOffsetBeats - pass.startOffsetBeats) * 48_000);
+                        const offset = Math.round(pass.sourceStartSeconds * 48_000);
+                        pcm.set(buffer.getChannelData(0).subarray(offset, offset + count), index);
+                        index += count;
+                    }
+                }
+            }
+            if (index !== pcm.length) {
+                throw new Error(`Outside material incomplete: ${index}/${pcm.length}`);
+            }
+            const hash = await crypto.subtle.digest('SHA-256', pcm.buffer);
+            return Array.from(new Uint8Array(hash), (byte) => byte.toString(16).padStart(2, '0')).join('');
+        },
+        { startBeat, endBeat }
+    );
+}
+
+test('source-render UI Reverse refuses cyclic material and preserves lawful replay and saved PCM', async ({
+    page: initialPage,
+}, info) => {
+    test.setTimeout(480_000);
+    const { page, id } = await bootRenderAdmission(initialPage, info);
+    await trimAdmissionEnd(page, 4);
+    await palette(page, 'Toggle Clip Loop');
+    // No loop-period editor is exposed here; configure that fixture through its public typed action.
+    // Admission and both Reverse attempts below remain unconditional musician UI routes.
+    await page.evaluate(async (clipId) => {
+        const { executeUserAppAction } = await import('/src/modules/Command/useCases/index.ts');
+        await executeUserAppAction({ type: 'setClipLoopLength', payload: { clipId, loopLength: 4 } });
+    }, id);
+    await trimAdmissionEnd(page, 5);
+    const refused = await readRenderAdmission(page);
+    expect(refused.raw[0]).toMatchObject({ loopEnabled: true, loopLength: 4, endBeat: 5 });
+    await reverseAdmissionMenu(page);
+    await expect(page.getByText('Bounce this looped clip to audio before reversing.', { exact: true })).toBeVisible();
+    expect(await readRenderAdmission(page)).toEqual(refused);
+    await trimAdmissionEnd(page, 4);
+    await page.evaluate(async (clipId) => {
+        const { executeUserAppAction } = await import('/src/modules/Command/useCases/index.ts');
+        await executeUserAppAction({ type: 'setClipFade', payload: { clipId, fadeInBeats: 0.25, fadeOutBeats: 0.5 } });
+    }, id);
+    const before = await readRenderAdmission(page);
+    await reverseAdmissionMenu(page);
+    await expect.poll(async () => (await readRenderAdmission(page)).past.length).toBe(before.past.length + 1);
+    const reversed = await readRenderAdmission(page);
+    expect(reversed.projected).toEqual(reversed.raw);
+    expect(reversed.raw[0]).toMatchObject({ audioOffsetSeconds: 4, fadeInBeats: 0.5, fadeOutBeats: 0.25 });
+    const reversedId = reversed.raw[0].audioBufferId;
+    const sourceId = before.raw[0].audioBufferId;
+    if (!reversedId || !sourceId) {
+        throw new Error('Reverse material identities are absent');
+    }
+    expect(reversedId).not.toBe(sourceId);
+
+    expect(await renderPcmHash(page, reversedId, 4 * SAMPLE_RATE, 4 * SAMPLE_RATE)).toBe(
+        await expectedRenderHash(page, true, 4 * SAMPLE_RATE)
+    );
+    await observeStarts(page, reversedId, 0, [[4, 4]]);
+    for (let cycle = 0; cycle < 2; cycle += 1) {
+        await admissionKeyboardReplay(page, 'undo', before.raw);
+        await admissionKeyboardReplay(page, 'redo', reversed.raw);
+    }
+    expect(await renderPcmHash(page, sourceId)).toBe(await expectedRenderHash(page, false));
+    // Reverse's internal restore is not currently registered for session replay.
+    // Save/reopen proves durable source/provenance/PCM, not saved Undo (separate follow-up).
+    const sessionBeforeSave = (await readSnapshot(page)).mirror;
+    expect(reversed.past.at(-1)?.label).toBe('Reverse clip');
+    expect(sessionBeforeSave.past.filter((entry) => entry.action?.type === 'reverseClip')).toHaveLength(0);
+    await saveAndReopen(page, info, await readSnapshot(page));
+    expect((await readRenderAdmission(page)).raw).toEqual(reversed.raw);
+    expect((await readRenderAdmission(page)).projected).toEqual(reversed.raw);
+    expect(await renderPcmHash(page, reversedId, 4 * SAMPLE_RATE, 4 * SAMPLE_RATE)).toBe(
+        await expectedRenderHash(page, true, 4 * SAMPLE_RATE)
+    );
+    await info.attach('source-render-reverse-receipt', {
+        body: JSON.stringify({ before, reversed, sessionBeforeSave, reopened: await readRenderAdmission(page) }),
+        contentType: 'application/json',
+    });
+});
+
+test('source-render UI Consolidate refuses a newer Inspector source edit after a genuine held render', async ({
+    page: initialPage,
+}, info) => {
+    test.setTimeout(480_000);
+    const { page } = await bootRenderAdmission(initialPage, info);
+    await trimAdmissionEnd(page, 4);
+    const before = await readRenderAdmission(page);
+    await holdGenuineOfflineRender(page);
+    await palette(page, 'Consolidate Selection');
+    await expect.poll(() => page.evaluate(() => Reflect.get(window, '__renderAdmissionEntered'))).toBe(true);
+    await trimAdmissionEnd(page, 3);
+    const edited = await readRenderAdmission(page);
+    expect(edited.past.length).toBeGreaterThan(before.past.length);
+    await releaseGenuineOfflineRender(page);
+    await expect(
+        page.getByText('Bounce cancelled because its source changed during rendering.', { exact: true })
+    ).toBeVisible();
+    expect(await readRenderAdmission(page)).toEqual(edited);
+    const sourceId = edited.raw[0].audioBufferId;
+    if (!sourceId) {
+        throw new Error('The edited source is absent');
+    }
+    expect(await renderPcmHash(page, sourceId)).toBe(await expectedRenderHash(page, false));
+    await info.attach('source-render-held-refusal-receipt', {
+        body: JSON.stringify({ before, edited, after: await readRenderAdmission(page) }),
+        contentType: 'application/json',
+    });
+});
+
+for (const startBeat of [2, 0]) {
+    test(`source-render typed range Bounce [${startBeat},6) preserves canonical outside PCM and current-session replay`, async ({
+        page: initialPage,
+    }, info) => {
+        test.setTimeout(480_000);
+        const { page, id, trackId } = await bootRenderAdmission(initialPage, info);
+        await setupCanonicalAdmissionLoop(page, id);
+        const before = await readRenderAdmission(page);
+        const outside = await outsideAdmissionHash(page, startBeat, 6);
+        await page.evaluate(
+            async ({ trackId, startBeat }) => {
+                const { executeUserAppAction } = await import('/src/modules/Command/useCases/index.ts');
+                await executeUserAppAction({ type: 'bounceSelection', payload: { trackId, startBeat, endBeat: 6 } });
+            },
+            { trackId, startBeat }
+        );
+        await expect.poll(async () => (await readRenderAdmission(page)).past.length).toBe(before.past.length + 1);
+        const bounced = await readRenderAdmission(page);
+        expect(bounced.projected).toEqual(bounced.raw);
+        const right = bounced.raw.find((clip) => clip.startBeat === 6);
+        expect(right).toMatchObject({
+            startBeat: 6,
+            endBeat: 10,
+            audioOffsetSeconds: 3,
+            audioLoopStartSeconds: 1,
+            loopLength: 4,
+        });
+        expect(await outsideAdmissionHash(page, startBeat, 6)).toBe(outside);
+        if (!right?.audioBufferId) {
+            throw new Error('The right survivor source is absent');
+        }
+        await observeStarts(page, right.audioBufferId, 6, [
+            [3, 2],
+            [1, 2],
+        ]);
+        await admissionKeyboardReplay(page, 'undo', before.raw);
+        expect(await outsideAdmissionHash(page, startBeat, 6)).toBe(outside);
+        await admissionKeyboardReplay(page, 'redo', bounced.raw);
+        expect(await outsideAdmissionHash(page, startBeat, 6)).toBe(outside);
+        await info.attach('source-render-typed-range-receipt', {
+            body: JSON.stringify({ startBeat, before, bounced, outsidePcmSha256: outside }),
+            contentType: 'application/json',
+        });
+    });
+}
+
+test('source-render UI Consolidate admits unchanged source with an unrelated track rename and selection', async ({
+    page: initialPage,
+}, info) => {
+    test.setTimeout(480_000);
+    const { page } = await bootRenderAdmission(initialPage, info);
+    await trimAdmissionEnd(page, 4);
+    await palette(page, 'Add Audio Track');
+    const peer = page
+        .getByRole('grid', { name: 'Track list' })
+        .locator('[role="row"][draggable="true"]')
+        .filter({ has: page.getByText('Audio 2', { exact: true }) });
+    await expect(peer).toBeVisible();
+    await selectAdmissionClip(page);
+    const before = await readRenderAdmission(page);
+    await holdGenuineOfflineRender(page);
+    await palette(page, 'Consolidate Selection');
+    await expect.poll(() => page.evaluate(() => Reflect.get(window, '__renderAdmissionEntered'))).toBe(true);
+    await peer.getByText('Audio 2', { exact: true }).dblclick();
+    const rename = page.getByRole('textbox', { name: 'Rename track Audio 2', exact: true });
+    await rename.fill('Unrelated renamed peer');
+    await rename.press('Enter');
+    const renamedPeer = page
+        .getByRole('grid', { name: 'Track list' })
+        .locator('[role="row"][draggable="true"]')
+        .filter({ has: page.getByText('Unrelated renamed peer', { exact: true }) });
+    await renamedPeer.click({ position: { x: 8, y: 8 } });
+    const edited = await readRenderAdmission(page);
+    expect(edited.raw).toEqual(before.raw);
+    await releaseGenuineOfflineRender(page);
+    await expect
+        .poll(async () => (await readRenderAdmission(page)).raw[0]?.audioBufferId)
+        .not.toBe(before.raw[0].audioBufferId);
+    const after = await readRenderAdmission(page);
+    expect(after.projected).toEqual(after.raw);
+    expect(after.past).toHaveLength(edited.past.length + 1);
+    expect(after.past.at(-1)?.kind).toBe('callback');
+    const peerNames = await page.evaluate(async () => {
+        const [{ getCrdtDoc }, { trackStore }] = await Promise.all([
+            import('/src/modules/CrdtDocument/useCases/index.ts'),
+            import('/src/modules/Arrangement/stores/trackStore.ts'),
+        ]);
+        const raw = getCrdtDoc<{ tracks?: NonNullable<typeof trackStore.value> }>('root');
+        return {
+            raw: raw?.tracks?.tracks.map((track) => track.name),
+            projected: trackStore.value?.tracks.map((track) => track.name),
+            rawSelectedTrackId: raw?.tracks?.selectedTrackId,
+            selectedTrackId: trackStore.value?.selectedTrackId,
+            peerId: trackStore.value?.tracks.find((track) => track.name === 'Unrelated renamed peer')?.id,
+        };
+    });
+    expect(peerNames.raw).toContain('Unrelated renamed peer');
+    expect(peerNames.projected).toEqual(peerNames.raw);
+    expect(peerNames.peerId).toBeTruthy();
+    expect(peerNames.selectedTrackId).toBe(peerNames.peerId);
+    // Selection is owned local runtime state; the CRDT slot deliberately serializes tracks only.
+    expect(peerNames.rawSelectedTrackId).toBeUndefined();
+    await info.attach('source-render-unrelated-edit-receipt', {
+        body: JSON.stringify({ before, edited, after, peerNames }),
         contentType: 'application/json',
     });
 });
