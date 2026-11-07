@@ -1,0 +1,58 @@
+src/modules/AiRuntime/useCases/__tests__/measuredAnswers.spec.ts
+  s_68423a2adea8d2::t_d6acee101468e5 309-312,319-322
+  s_68423a2adea8d2::t_50fc0db90a3510 313-318
+  s_68423a2adea8d2::t_561038a167bd90 323-338,344-350
+  s_68423a2adea8d2::t_2c438801888096 339-343
+src/modules/AiRuntime/useCases/applicationOwnedToolLoop.ts
+  s_68423a2adea8d2::t_50fc0db90a3510 424-428,431-432
+  s_68423a2adea8d2::t_73e15fb153b483 416-417,420-421,430,462-463,475-482,1362-1363,1367,1492,1577,3165
+  s_68423a2adea8d2::t_855e75e7ff2081 118
+  s_68423a2adea8d2::t_653284debb02ff 429
+src/modules/AiRuntime/useCases/composeMeasuredAnswer.ts
+  s_68423a2adea8d2::t_50fc0db90a3510 451-452,455-456,458
+  s_68423a2adea8d2::t_73a155f305ba2e 448-450,465
+  s_68423a2adea8d2::t_0930208786c8ce 457,459,461-463
+  s_68423a2adea8d2::t_c14d607100ab7d 21,460
+  s_68423a2adea8d2::t_855e75e7ff2081 23,28
+  s_68423a2adea8d2::t_73e15fb153b483 453-454
+src/modules/AiRuntime/useCases/__tests__/answerOutcome.spec.ts
+  s_68423a2adea8d2::t_54c763a75ba7a0 300
+  s_68423a2adea8d2::t_a8dcec22dd17b0 137-138,165,268,360-386,489
+  s_68423a2adea8d2::t_d6acee101468e5 153,157,272,346,357,425-426,540
+  s_68423a2adea8d2::t_230b5e487246e2 8,262,314-327,331-342,438,482
+  s_68423a2adea8d2::t_14f1b85890467e 260,270,436,448,451,474,478,480,491,493-522,535,538,554
+  s_68423a2adea8d2::t_ca9a255721f850 4-5,387-411,415-424,490
+  s_68423a2adea8d2::t_50fc0db90a3510 134-136,139-140,167,205-209,258-259,261,273-299,301,303,343-345,347-356,358-359,429-435,437,475-477,479,481,524-534,536-537,541-553
+  s_68423a2adea8d2::t_9c0618be2b1fd1 257,266-267,269,271,427-428,442-447,449-450,452-473,486-488,492,523,539,555
+  s_68423a2adea8d2::t_2c438801888096 154-156,263-265,328-330,412-414,439-441,483-485
+  s_68423a2adea8d2::t_4880414919090f 302,304,306-313
+  s_68423a2adea8d2::t_73e15fb153b483 46,49,51
+  s_68423a2adea8d2::t_5018a69389fa3a 6,305
+src/modules/AiRuntime/useCases/formatAnswerQueryScope.ts
+  s_68423a2adea8d2::t_c14d607100ab7d 1-71
+src/modules/AiRuntime/useCases/readAnswerProjectQuery.ts
+  s_68423a2adea8d2::t_855e75e7ff2081 6-15
+  s_68423a2adea8d2::t_3c580a7e824b4e 1-5,16-25,27-28
+  s_68423a2adea8d2::t_73e15fb153b483 26
+src/modules/AiRuntime/useCases/__tests__/answerQuerySaveAuthority.spec.ts
+  s_68423a2adea8d2::t_1e68438f871b03 1-4,9-62,66,70-73,75,83-87,91-119,121-136,142,146,150-164
+  s_68423a2adea8d2::t_0ed58ec940f8ce 5-8,63-65,67-69,74,76-82,88-90,120,137-141,143-145,147-149
+src/modules/AiRuntime/AGENTS.md
+  s_68423a2adea8d2::t_653284debb02ff 27
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9aa88bdec6137a603b19d614e8dc818d35bb09ab",
+  "prompts": {},
+  "sessions": {
+    "s_68423a2adea8d2": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34b-f305-7c03-beb2-57afa678cda5",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
