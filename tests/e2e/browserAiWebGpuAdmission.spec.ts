@@ -6,7 +6,7 @@ import {
     requireBrowserWebGpuHardware,
 } from './browserAiHardware';
 import { expect, test } from './e2eTest';
-import { launch_new_project, setupWorkspace } from './e2eUtils';
+import { launch_new_project_via_ui, setupWorkspace } from './e2eUtils';
 
 const CAPABILITY_STORAGE_KEY = 'sourdaw-browser-ai-capability';
 
@@ -210,7 +210,7 @@ test('proves the live Chromium Browser AI admission boundary without skipping', 
     // transform before the launch-screen readiness gate can observe the app.
     test.setTimeout(180_000);
     await setupWorkspace(page);
-    await launch_new_project(page);
+    await launch_new_project_via_ui(page, { firstPaintTimeoutMs: 90_000 });
 
     await assertBrowserAiCapabilityBoundary({ page, testInfo });
 });
@@ -220,7 +220,7 @@ test('renders an exact-duration DDSP preview from verified OPFS artifacts with h
 }, testInfo) => {
     test.setTimeout(180_000);
     await setupWorkspace(page);
-    await launch_new_project(page);
+    await launch_new_project_via_ui(page);
     const admission = await assertBrowserAiCapabilityBoundary({ page, testInfo });
     if (!admission.supportsHardwareWebGpu) {
         return;
