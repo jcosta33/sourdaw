@@ -985,6 +985,9 @@ describe('required affected verification', () => {
         const heavy = parse(readFileSync('.github/workflows/heavy-gates.yml', 'utf8'));
         expect(Object.keys(heavy.on)).toEqual(['workflow_call']);
         expect(health.jobs.gate.needs).toContain('affected');
+        expect(health.jobs.gate.needs).toContain('e2e-build');
+        expect(health.jobs.affected.needs).toContain('e2e-build');
+        expect(heavy.jobs).not.toHaveProperty('e2e-build');
     });
 
     it('does not start browser or security analysis for documentation', () => {
