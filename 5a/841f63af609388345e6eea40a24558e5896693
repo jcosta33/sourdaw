@@ -1,0 +1,23 @@
+release/open-source-inventory.json
+  s_1052c2a2231ded::t_a8e0edbf703aeb 171-172,284,1825,1837
+release/dependency-license-proofs.json
+  s_1052c2a2231ded::t_a8e0edbf703aeb 64
+public/legal/DEPENDENCY-LICENSES.txt
+  s_1052c2a2231ded::t_166aa921564e5a 10
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5a841f63af609388345e6eea40a24558e5896693",
+  "prompts": {},
+  "sessions": {
+    "s_1052c2a2231ded": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b349-24b6-7622-8534-09f171c780d5",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
