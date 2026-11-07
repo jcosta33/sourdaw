@@ -235,21 +235,38 @@ Derive the stances under AGENTS.md [Review](../../../AGENTS.md#review) and the
 plan's classes name risk surfaces the stance enumeration must weigh and set the draw floor; they
 never name the stances:
 
-| Class                                                                                       | Earns                                                     | Draw floor |
-| ------------------------------------------------------------------------------------------- | --------------------------------------------------------- | ---------- |
-| `docs-only` (every path Markdown outside `public/`)                                         | correctness                                               | 1          |
-| `test-only` (every path a test)                                                             | test-validity                                             | 1          |
-| `small` (no specialist surface, within the line budget, handwritten paths all under `src/`) | correctness, test-validity                                | 2          |
-| `small-tooling` (the same, with handwritten paths outside `src/`)                           | correctness, module-boundaries, test-validity             | 3          |
-| `ordinary` (no specialist surface, over the budget)                                         | correctness, code-craft, module-boundaries, test-validity | 3          |
-| `cross-domain`                                                                              | correctness, module-boundaries, test-validity             | 3          |
-| `realtime-audio`                                                                            | correctness, realtime-audio, test-validity                | 3          |
-| `native-security`                                                                           | correctness, security-platform, test-validity             | 3          |
-| `undo`                                                                                      | correctness, project-integrity-undo, test-validity        | 3          |
+| Class                                                                                       | Earns                                                     | Machine draw floor |
+| ------------------------------------------------------------------------------------------- | --------------------------------------------------------- | ------------------ |
+| `docs-only` (every path Markdown outside `public/`)                                         | correctness                                               | 1                  |
+| `test-only` (every path a test)                                                             | test-validity                                             | 1                  |
+| `small` (no specialist surface, within the line budget, handwritten paths all under `src/`) | correctness, test-validity                                | 2                  |
+| `small-tooling` (the same, with handwritten paths outside `src/`)                           | correctness, module-boundaries, test-validity             | 3                  |
+| `ordinary` (no specialist surface, over the budget)                                         | correctness, code-craft, module-boundaries, test-validity | 3                  |
+| `cross-domain`                                                                              | correctness, module-boundaries, test-validity             | 3                  |
+| `realtime-audio`                                                                            | correctness, realtime-audio, test-validity                | 3                  |
+| `native-security`                                                                           | correctness, security-platform, test-validity             | 3                  |
+| `undo`                                                                                      | correctness, project-integrity-undo, test-validity        | 3                  |
 
-A plan of several classes needs three distinct stances, or every stance its classes earn when they
-earn fewer. Specialist classes keep those stance and evidence obligations within the same reviewer
-cost ceiling.
+**The floor is what `review:publish` can prove, not the review this procedure asks for.** Any change
+that is not absolutely tiny and harmless must carry at least **three distinct stances**, whatever its
+size class says. `small`'s floor of two is a tolerance for a genuinely trivial edit — a comment, a
+single literal, a spec-only rename — never a licence to review a behavior change through two lenses.
+A change is not tiny when it touches product behavior, a shared component, a persisted value, a
+generated artifact, a build, test or delivery path, or any surface a user can reach. A round about to
+run on such a head with fewer than three stances is not this procedure: stop and dispatch the third.
+
+Stances are the mechanism, not the paperwork. One reader finds what the reader already expects; three
+blind stances with distinct failure modes find the silent ones — a check that cannot fail, a suite the
+push workflow never ran, the state a theme was never given. They are not mandatory in the
+bureaucratic sense: prose, a test-only change with no shared fixture, or a comment may honestly run
+one, because there is no second failure mode to attack. The obligation is proportional to
+consequence, and its floor for anything real is three.
+
+A stance is a failure mode, never a file, a path, or a role: "correctness" above all is the baseline
+every reviewer already holds, not a stance. Three stance _names_ satisfy `review:publish` even when
+they describe one failure mode; the script counts names and cannot check independence, so
+independence is the orchestrator's judgement. Do not spend the floor on synonyms. Specialist classes
+keep those stance and evidence obligations within the same reviewer cost ceiling.
 
 Before reading any stance report, review the whole head yourself under AGENTS.md
 [Review](../../../AGENTS.md#review): no stance, against the request and the author brief. Read the
@@ -422,6 +439,9 @@ A minimal `APPROVE` on the same plan:
   [repair](#k-repair), never by approving over them.
 - Your [global review](#f-review-round) of this exact head holds, and you would merge it; never
   approve a head you judge unfit, whatever the draws say.
+- The round carried at least three distinct stances on this head unless the change is absolutely tiny
+  and harmless under [review round](#f-review-round); a thinner round is a review defect, not a
+  shortcut.
 - The document carries no inline comments and its body fits 600 Unicode code points; observations go
   in the body as `Nit:` or `Optional:`, or are filed.
 
