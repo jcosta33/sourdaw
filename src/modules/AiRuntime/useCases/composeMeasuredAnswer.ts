@@ -493,7 +493,7 @@ function queryScope(input: QueryInput): string | null {
     if (entries.includes(null) || (input.type === 'project-summary' && entries.length > 0)) {
         return null;
     }
-    const scope = entries.length ? [`filters (${entries.join(', ')})`] : [];
+    const scope = entries.length > 0 ? [`filters (${entries.join(', ')})`] : [];
     if (input.type === 'diff') {
         if (input.sinceRevision === undefined || /[\r\n]/.test(input.sinceRevision)) {
             return null;
@@ -509,7 +509,7 @@ function queryScope(input: QueryInput): string | null {
         }
         scope.push(`cursor: ${quoteSourceData(input.page.cursor)}`);
     }
-    return scope.length ? ` with ${scope.join('; ')}` : '';
+    return scope.length > 0 ? ` with ${scope.join('; ')}` : '';
 }
 
 function composeReadStatement(
