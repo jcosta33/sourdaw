@@ -145,7 +145,10 @@ describe('configured mixing plan with actual measurements', () => {
                             dimensions: ['processing'],
                             creationSlotObjectTypes: ['device'],
                         });
-                        const schema = schemas.find((candidate) => candidate.function.name === base.name);
+                        const schema = schemas.find(
+                            (candidate: Parameters<typeof generateToolPlanningOutcome>[2][number]) =>
+                                candidate.function.name === base.name
+                        );
                         if (schema === undefined) {
                             throw new Error('Missing intake schema');
                         }
@@ -207,7 +210,10 @@ describe('configured mixing plan with actual measurements', () => {
                                 plan: metricGoalProviderPlan(prompt, ['vocal']),
                             },
                         };
-                        const schema = schemas.find((candidate) => candidate.function.name === call.name);
+                        const schema = schemas.find(
+                            (candidate: Parameters<typeof generateToolPlanningOutcome>[2][number]) =>
+                                candidate.function.name === call.name
+                        );
                         if (schema === undefined) {
                             throw new Error('Missing proposal schema');
                         }
@@ -238,7 +244,10 @@ describe('configured mixing plan with actual measurements', () => {
                                 metrics: ['frequencyBandEnergy', 'spectralCentroid'],
                             },
                         };
-                        const schema = schemas.find((candidate) => candidate.function.name === call.name);
+                        const schema = schemas.find(
+                            (candidate: Parameters<typeof generateToolPlanningOutcome>[2][number]) =>
+                                candidate.function.name === call.name
+                        );
                         if (schema === undefined) {
                             throw new Error('Missing measurement schema');
                         }
