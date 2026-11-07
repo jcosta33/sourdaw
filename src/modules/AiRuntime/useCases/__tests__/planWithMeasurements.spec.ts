@@ -144,11 +144,15 @@ describe('configured mixing plan with actual measurements', () => {
                             creationSlotObjectTypes: ['device'],
                         });
                         const schema = schemas.find((candidate) => candidate.function.name === base.name);
-                        if (schema === undefined) throw new Error('Missing intake schema');
+                        if (schema === undefined) {
+                            throw new Error('Missing intake schema');
+                        }
                         const objective = readMetricPublication(schema).find(
                             (candidate) => candidate.recipeId === 'vocal-warm'
                         );
-                        if (objective === undefined) throw new Error('Missing warm objective');
+                        if (objective === undefined) {
+                            throw new Error('Missing warm objective');
+                        }
                         const call = {
                             ...base,
                             id: 'warm-intake',
@@ -176,7 +180,7 @@ describe('configured mixing plan with actual measurements', () => {
                         expect(matchesJsonSchema(call.arguments, schema.function.parameters)).toBe(true);
                         return { status: 'complete', toolCalls: [call] };
                     }
-                    if (turn === 2)
+                    if (turn === 2) {
                         return {
                             status: 'complete',
                             toolCalls: [
@@ -187,6 +191,7 @@ describe('configured mixing plan with actual measurements', () => {
                                 },
                             ],
                         };
+                    }
                     if (turn === 3) {
                         const receipt = decodeReceiptContext(readReceiptSummary(message).value).find(
                             (entry) => isRecord(entry) && entry.callId === 'discovery'
@@ -201,7 +206,9 @@ describe('configured mixing plan with actual measurements', () => {
                             },
                         };
                         const schema = schemas.find((candidate) => candidate.function.name === call.name);
-                        if (schema === undefined) throw new Error('Missing proposal schema');
+                        if (schema === undefined) {
+                            throw new Error('Missing proposal schema');
+                        }
                         expect(matchesJsonSchema(call.arguments, schema.function.parameters)).toBe(true);
                         return { status: 'complete', toolCalls: [call] };
                     }
@@ -230,7 +237,9 @@ describe('configured mixing plan with actual measurements', () => {
                             },
                         };
                         const schema = schemas.find((candidate) => candidate.function.name === call.name);
-                        if (schema === undefined) throw new Error('Missing measurement schema');
+                        if (schema === undefined) {
+                            throw new Error('Missing measurement schema');
+                        }
                         expect(matchesJsonSchema(call.arguments, schema.function.parameters)).toBe(true);
                         return { status: 'complete', toolCalls: [call] };
                     }
@@ -243,10 +252,14 @@ describe('configured mixing plan with actual measurements', () => {
             });
             await entered.promise;
             const initialGain = trackStore.value?.tracks.find((track) => track.id === 'vocal')?.gain;
-            if (initialGain === undefined) throw new Error('Missing vocal gain');
+            if (initialGain === undefined) {
+                throw new Error('Missing vocal gain');
+            }
             if (write === 'unflushed edit') {
                 const state = trackStore.value;
-                if (state === null) throw new Error('Missing tracks');
+                if (state === null) {
+                    throw new Error('Missing tracks');
+                }
                 trackStore.set({
                     ...state,
                     tracks: state.tracks.map((track) => (track.id === 'vocal' ? { ...track, gain: 0.5 } : track)),
@@ -254,10 +267,16 @@ describe('configured mixing plan with actual measurements', () => {
                 expect(captureProjectRevision()).toBe(revision);
             } else if (write !== 'save') {
                 moveTrackFader('vocal', 0.5);
-                if (write === 'edit and revert') moveTrackFader('vocal', initialGain);
+                if (write === 'edit and revert') {
+                    moveTrackFader('vocal', initialGain);
+                }
             }
-            if (write === 'save' || write === 'saved edit') await writeProjectSave();
-            if (write !== 'unflushed edit') expect(captureProjectRevision()).not.toBe(revision);
+            if (write === 'save' || write === 'saved edit') {
+                await writeProjectSave();
+            }
+            if (write !== 'unflushed edit') {
+                expect(captureProjectRevision()).not.toBe(revision);
+            }
             const afterWrite = {
                 tracks: structuredClone(trackStore.value),
                 undo: structuredClone(undoHistoryStore.value),
