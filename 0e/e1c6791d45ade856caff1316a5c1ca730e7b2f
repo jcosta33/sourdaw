@@ -1,0 +1,44 @@
+scripts/buildNativeAddon.ts
+  s_939911bea2ef3b::t_b455148de8e968 223
+  s_939911bea2ef3b::t_5e67b5f3f3b174 135-137
+  s_939911bea2ef3b::t_87c72b8cf7f872 51-58,92-93,95,107-111,157-159,198-199,226
+  s_939911bea2ef3b::t_96f0199f67741b 123-127,143-155
+  s_939911bea2ef3b::t_10a9738a76030d 35-38,42-49,59-85,112-122,128-134,165,191-192,205,210
+  s_68423a2adea8d2::t_17bc062d6c9998 50
+scripts/__tests__/buildNativeAddon.spec.ts
+  s_939911bea2ef3b::t_628b2913d5d548 1,16,20,23-25,27-30,48,156,158,169-173,177-178,190,202,228,234-255,260-268,276-288,290-293,300-305,307-308,314,318-324,326-332,335-336,342-344,347-348,355-356,360
+  s_939911bea2ef3b::t_f4101179d3cee8 14,18,22,26,31-45,92,113,294-295
+  s_939911bea2ef3b::t_b455148de8e968 269-275,289,306,325,345-346,349,353-354
+  s_939911bea2ef3b::t_64f96cea8fbdc7 337-341,350-352
+  s_939911bea2ef3b::t_5e67b5f3f3b174 191-201,309-313
+  s_939911bea2ef3b::t_96f0199f67741b 2-13,49-91,93-112,114-155,157,159-168,174-176,179-189,203-227,229-233,256-259,315-317,333-334,357-359
+  s_939911bea2ef3b::t_c193f249084c21 21
+docs/architecture/10-desktop-packaging.md
+  s_939911bea2ef3b::t_b455148de8e968 7-50
+.agents/skills/review-stances/security-and-platform.md
+  s_939911bea2ef3b::t_b455148de8e968 135-142
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0ee1c6791d45ade856caff1316a5c1ca730e7b2f",
+  "prompts": {},
+  "sessions": {
+    "s_68423a2adea8d2": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34b-f305-7c03-beb2-57afa678cda5",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_939911bea2ef3b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34a-952d-7121-902e-cafc5e44b0f7",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
