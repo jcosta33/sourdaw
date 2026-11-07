@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+
 import { type AppAction } from '#/utils/handlerContract';
+
 import { insertPolyphonicMidiNotes } from '../insertPolyphonicMidiNotes';
 
 const mocks = vi.hoisted(() => ({

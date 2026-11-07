@@ -8,9 +8,9 @@ import {
 import { readBeatAtSamples, readSecondsAtBeat, readTempoAtBeat } from '#/modules/Transport/stores';
 import { projectAudioLoopPassSegments } from '#/utils/audioSourceTime';
 import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
-import { frequencyToMidiNote } from '#/utils/pitch';
 import { type AppAction } from '#/utils/handlerContract';
 import { ADD_NOTES_MAX_NOTES_PER_COMMAND } from '#/utils/midiNoteBatchLimits';
+import { frequencyToMidiNote } from '#/utils/pitch';
 import { boundStretchRatio } from '#/utils/stretchRatioBound';
 
 import { detectOnsets, type DetectedOnset, type OnsetDetectionSource } from './detectOnsets';
