@@ -131,7 +131,7 @@ describe('Slider', () => {
             const thumb = screen.getByRole('slider', { name: 'Level' });
             const root = thumb.closest('[data-slot="slider"]');
             if (!(root instanceof HTMLElement)) {
-                throw new Error('Missing Slider root');
+                throw new TypeError('Missing Slider root');
             }
             // jsdom has no pointer capture; hold it as a browser does, so Radix
             // commits a pointerup only while capture is still held.
@@ -229,7 +229,7 @@ describe('Slider', () => {
             const view = render(renderTarget(first));
             const root = screen.getByRole('slider').closest('[data-slot="slider"]');
             if (!(root instanceof HTMLElement)) {
-                throw new Error('Missing Slider root');
+                throw new TypeError('Missing Slider root');
             }
             Object.defineProperties(root, {
                 setPointerCapture: { configurable: true, value: vi.fn() },
@@ -262,7 +262,7 @@ describe('Slider', () => {
             const view = render(renderTarget(first));
             const root = screen.getByRole('slider').closest('[data-slot="slider"]');
             if (!(root instanceof HTMLElement)) {
-                throw new Error('Missing Slider root');
+                throw new TypeError('Missing Slider root');
             }
             Object.defineProperties(root, {
                 setPointerCapture: { configurable: true, value: vi.fn() },
@@ -307,7 +307,7 @@ describe('Slider', () => {
             );
             const root = screen.getByRole('slider', { name: 'Level' }).closest('[data-slot="slider"]');
             if (!(root instanceof HTMLElement)) {
-                throw new Error('Missing Slider root');
+                throw new TypeError('Missing Slider root');
             }
             let held = false;
             Object.defineProperties(root, {
@@ -348,7 +348,7 @@ describe('Slider', () => {
             const thumb = screen.getByRole('slider', { name: 'Level' });
             const root = thumb.closest('[data-slot="slider"]');
             if (!(root instanceof HTMLElement)) {
-                throw new Error('Missing Slider root');
+                throw new TypeError('Missing Slider root');
             }
             let held = false;
             Object.defineProperties(root, {

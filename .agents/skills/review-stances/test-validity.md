@@ -30,6 +30,8 @@ release and provenance drift in `release-provenance-drift.md`.
    same defect (#5749, #5809): assert the real control while the dirty state holds, before waiting for Save or
    autosave, by its stable identity and a separate expected-name assertion, then make that control unavailable
    (rename its test id) and require the named case to fail at admission.
+   The piano roll numeric zoom assertion was conditional on the slider appearing (#1452): remove
+   the required slider and require the numeric case to fail.
    (#4441, #1531, #1536, #1590, #5370, #2606, #4356, #4933, #5111, #4987, #5144, #5749)
 
 2. **A negative case passes on the wrong refusal.**

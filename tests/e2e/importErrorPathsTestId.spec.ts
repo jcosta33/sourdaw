@@ -3,8 +3,8 @@ import { launch_new_project, setupWorkspace } from './e2eUtils';
 
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
 
-// This browser case owns the corrupt import-to-notification path and verifies
-// that rejection adds no track. NotificationToast.spec.tsx owns dismissal.
+// This browser case owns notification routing and real dismiss hit-testing.
+// NotificationToast.spec.tsx owns local queue and dismissal behavior.
 //
 // importMidiFile (Arrangement use case) catches a parse failure from
 // readMidiFile and calls notifyUser(`Failed to import "${file.name}" -
@@ -53,5 +53,7 @@ test.describe('Import error paths — corrupt MIDI rejected', () => {
 
         // No track was added by the failed import — the count is unchanged.
         await expect(trackList.getByRole('row')).toHaveCount(tracksAfterAdd);
+        await toast.getByRole('button', { name: 'Dismiss notification' }).click();
+        await expect(toast).toHaveCount(0);
     });
 });

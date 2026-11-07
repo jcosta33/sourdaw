@@ -37,7 +37,7 @@ export async function encodeOggAudio(input: {
             const block = pcm.read(OGG_CODEC_BLOCK_FRAMES);
             const channels = block.channels.map((channel) => {
                 if (!(channel instanceof Float32Array)) {
-                    throw new Error('Ogg requires float PCM');
+                    throw new TypeError('Ogg requires float PCM');
                 }
                 return channel;
             });

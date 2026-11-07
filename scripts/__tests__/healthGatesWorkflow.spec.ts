@@ -63,7 +63,7 @@ const SMOKE_COMMAND = 'pnpm test:e2e tests/e2e/smoke.spec.ts --retries=0';
 const INSTALL_DRAIN_SECONDS = 15;
 // Every remaining root apt route must retain the signed-source filter.
 const APT_FEED_FILTER = 'bash scripts/aptWithoutMicrosoftFeed.sh';
-const PLAYWRIGHT_IMAGE_DIGEST = 'sha256:47b510dd9230bf0b9bfc9b20102241e577ea7a99334ab4c3ca19f19770e9b8ea';
+const PLAYWRIGHT_IMAGE_DIGEST = 'sha256:6e3fb709361521eb27161606e6da6d2674e5e89fa16516cb37d6fdd91372273d';
 const BROWSER_RUNTIME_STEP = 'Verify preinstalled browser runtime';
 // The ALSA headers are one small apt install, but `apt-get update` is the slow
 // part on a slow mirror, so the single transaction carries the same 8 minute
@@ -525,7 +525,7 @@ function assertRequiredScopePlan(candidate: UnknownRecord): void {
         throw new Error('required scope must install the repository package manager');
     }
     const node = recordAt(stepNamed(scope, 'Set up Node'), 'with');
-    if (node['node-version'] !== '24.19.0' || node.cache !== 'pnpm') {
+    if (node['node-version'] !== '24.22.2' || node.cache !== 'pnpm') {
         throw new Error('required scope must use the pinned Node version');
     }
     if (stepNamed(scope, 'Install dependencies').run !== 'pnpm install --frozen-lockfile --ignore-scripts') {
@@ -941,7 +941,7 @@ function assertVerifiedPnpmCallers(candidate: UnknownRecord, control: boolean): 
             const nodeVersion = recordAt(node, 'with')['node-version'];
             const selectedVersion =
                 nodeVersion === '${{ env.NODE_VERSION }}' ? recordAt(candidate, 'env').NODE_VERSION : nodeVersion;
-            if (selectedVersion !== '24.19.0') {
+            if (selectedVersion !== '24.22.2') {
                 throw new Error(`${jobName} later Node must match the verified bootstrap runtime`);
             }
             const checkout = steps
@@ -1523,8 +1523,8 @@ function assertNativeTransportMutationProof(candidate: UnknownRecord): void {
     });
     expect(recordAt(stepNamed(job, 'Cache cargo build'), 'with')).toEqual({ 'save-if': 'false' });
     const setup = stepNamed(job, 'Set up Node for native mutation proof');
-    expect(setup.uses).toBe('actions/setup-node@820762786026740c76f36085b0efc47a31fe5020');
-    expect(recordAt(setup, 'with')).toEqual({ 'node-version': '24.19.0' });
+    expect(setup.uses).toBe('actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1');
+    expect(recordAt(setup, 'with')).toEqual({ 'node-version': '24.22.2' });
     const probe = stepNamed(job, 'Verify native transport mutation sensitivity');
     expect(probe.run).toBe('node scripts/verifyNativeTransportMutations.ts');
     expect(probe.id).toBe('native-mutations');
@@ -1539,7 +1539,7 @@ function assertNativeTransportMutationProof(candidate: UnknownRecord): void {
     const upload = stepNamed(job, 'Upload native transport mutation evidence');
     expect(upload.if).toBe('${{ always() }}');
     expect(upload['continue-on-error']).toBeUndefined();
-    expect(upload.uses).toBe('actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a');
+    expect(upload.uses).toBe('actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9');
     expect(recordAt(upload, 'with')).toEqual({
         name: 'native-transport-mutations-${{ github.event.pull_request.head.sha }}',
         path: '.agents/artifacts/native-transport-mutations/',
@@ -1582,7 +1582,7 @@ function assertCargoDependencySeed(seed: UnknownRecord, consumer: UnknownRecord)
         expect(job['timeout-minutes']).toBe(60);
         expect(stepNamed(job, 'Checkout').uses).toBe('actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1');
         expect(stepNamed(job, 'Cache cargo build').uses).toBe(
-            'Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6'
+            'Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0'
         );
     }
     const linuxSeedNames = arrayAt(linuxSeed, 'steps').map((step) => asRecord(step, 'step').name);
@@ -1612,7 +1612,7 @@ function assertCargoDependencySeed(seed: UnknownRecord, consumer: UnknownRecord)
 
     for (const job of [linuxSeed, linuxConsumer]) {
         const cache = stepNamed(job, 'Cache Cargo dependencies');
-        expect(cache.uses).toBe('actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830');
+        expect(cache.uses).toBe('actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9');
         const options = recordAt(cache, 'with');
         expect(options.path).toBe(CARGO_DEPENDENCY_PATH);
         expect(options.key).toBe(CARGO_DEPENDENCY_KEY);
@@ -1635,7 +1635,7 @@ function assertCargoDependencySeed(seed: UnknownRecord, consumer: UnknownRecord)
     for (const job of [nativeSeed, nativeConsumer]) {
         const cache = stepNamed(job, 'Cache the cargo registry index');
         expect(cache.id).toBe('cargo-index');
-        expect(cache.uses).toBe('actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830');
+        expect(cache.uses).toBe('actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9');
         expect(recordAt(cache, 'with')).toEqual({
             path: '~/.cargo/registry/index',
             key: CARGO_INDEX_KEY,
@@ -3539,10 +3539,10 @@ describe('health gates workflow contract', () => {
         }
         expect(stepNamed(producer, 'Build shared E2E app').run).toBe('node scripts/sharedE2eBuild.ts build');
         const upload = stepNamed(producer, 'Upload shared E2E build');
-        expect(upload.uses).toBe('actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a');
+        expect(upload.uses).toBe('actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9');
         expect(recordAt(upload, 'with')).toMatchObject({ name: artifact, path: 'dist/', 'if-no-files-found': 'error' });
         const download = stepNamed(shard, 'Download shared E2E build');
-        expect(download.uses).toBe('actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c');
+        expect(download.uses).toBe('actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333');
         expect(recordAt(download, 'with')).toMatchObject({ name: artifact, path: 'dist/' });
         expect(recordAt(stepNamed(shard, 'Run shard'), 'env')).toMatchObject({
             E2E_SPECS: '${{ toJSON(matrix.specs) }}',
@@ -4643,8 +4643,8 @@ describe('health gates workflow contract', () => {
         const expectedRun =
             'bash scripts/ensurePinnedRustToolchain.sh "${{ steps.pinned-toolchain.outputs.cache-hit }}"';
         for (const [workflow, jobName, cacheAction] of [
-            [validationWorkflow, 'rust', 'actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830'],
-            [seed, 'rust', 'actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830'],
+            [validationWorkflow, 'rust', 'actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9'],
+            [seed, 'rust', 'actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9'],
         ] as const) {
             const job = jobAt(workflow, jobName);
             const steps = arrayAt(job, 'steps').map((step) => asRecord(step, 'step'));

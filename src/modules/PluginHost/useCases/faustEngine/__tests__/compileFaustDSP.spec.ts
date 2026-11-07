@@ -55,7 +55,7 @@ describe('compileFaustDSP effect-free instrument', () => {
         const generator = module?.generator;
         expect(generator).toBeInstanceOf(FaustPolyDspGenerator);
         if (!(generator instanceof FaustPolyDspGenerator)) {
-            throw new Error('Supersaw must use a polyphonic generator');
+            throw new TypeError('Supersaw must use a polyphonic generator');
         }
         expect(generator.effectFactory).toBeNull();
 
@@ -97,7 +97,7 @@ describe('compileFaustDSP effect-free instrument', () => {
         expect(factoryInputs[0]).toContain('process = dsp_code.effect;');
         expect(module.generator).toBeInstanceOf(FaustPolyDspGenerator);
         if (!(module.generator instanceof FaustPolyDspGenerator)) {
-            throw new Error('Effectful source must use a polyphonic generator');
+            throw new TypeError('Effectful source must use a polyphonic generator');
         }
         expect(module.generator.effectFactory).not.toBeNull();
     }, 120_000);

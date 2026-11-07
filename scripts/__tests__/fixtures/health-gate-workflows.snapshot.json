@@ -72,9 +72,9 @@
             "name": "Set up Node",
             "timeout-minutes": 3,
             "continue-on-error": true,
-            "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+            "uses": "actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
             "with": {
-              "node-version": "24.19.0",
+              "node-version": "24.22.2",
               "cache": "pnpm"
             }
           },
@@ -104,7 +104,7 @@
           },
           {
             "name": "Upload scope manifest",
-            "uses": "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
+            "uses": "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9",
             "with": {
               "name": "pr-validation-scope",
               "path": "pr-validation-scope.json",
@@ -129,7 +129,7 @@
         "if": "${{ github.event.pull_request.draft == false && needs.scope.result == 'success' && fromJSON(needs.scope.outputs.matrix || '{\"include\":[]}').include[0] != null }}",
         "runs-on": "ubuntu-latest",
         "container": {
-          "image": "mcr.microsoft.com/playwright:v1.64.1-noble@sha256:47b510dd9230bf0b9bfc9b20102241e577ea7a99334ab4c3ca19f19770e9b8ea",
+          "image": "mcr.microsoft.com/playwright:v1.65.0-noble@sha256:6e3fb709361521eb27161606e6da6d2674e5e89fa16516cb37d6fdd91372273d",
           "options": "--init --ipc=host"
         },
         "defaults": {
@@ -158,9 +158,9 @@
             "name": "Set up Node",
             "timeout-minutes": 3,
             "continue-on-error": true,
-            "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+            "uses": "actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
             "with": {
-              "node-version": "24.19.0",
+              "node-version": "24.22.2",
               "cache": "pnpm"
             }
           },
@@ -174,7 +174,7 @@
           },
           {
             "name": "Upload shared E2E build",
-            "uses": "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
+            "uses": "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9",
             "with": {
               "name": "e2e-build-${{ github.run_id }}-${{ github.run_attempt }}",
               "path": "dist/",
@@ -216,7 +216,7 @@
           },
           {
             "name": "Initialise CodeQL",
-            "uses": "github/codeql-action/init@c16c0f3f2812ec4bb3750a5ed64873fe2ce0fbef",
+            "uses": "github/codeql-action/init@52cf1852265d99e9bea071b03366fc777a602909",
             "with": {
               "languages": "javascript-typescript",
               "queries": "security-extended"
@@ -224,7 +224,7 @@
           },
           {
             "name": "Analyse",
-            "uses": "github/codeql-action/analyze@c16c0f3f2812ec4bb3750a5ed64873fe2ce0fbef",
+            "uses": "github/codeql-action/analyze@52cf1852265d99e9bea071b03366fc777a602909",
             "with": {
               "category": ".github/workflows/nightly.yml:codeql"
             }
@@ -281,7 +281,7 @@
       "pull-requests": "read"
     },
     "env": {
-      "NODE_VERSION": "24.19.0"
+      "NODE_VERSION": "24.22.2"
     },
     "jobs": {
       "e2e": {
@@ -289,7 +289,7 @@
         "if": "fromJSON(inputs.matrix).include[0] != null",
         "runs-on": "ubuntu-latest",
         "container": {
-          "image": "mcr.microsoft.com/playwright:v1.64.1-noble@sha256:47b510dd9230bf0b9bfc9b20102241e577ea7a99334ab4c3ca19f19770e9b8ea",
+          "image": "mcr.microsoft.com/playwright:v1.65.0-noble@sha256:6e3fb709361521eb27161606e6da6d2674e5e89fa16516cb37d6fdd91372273d",
           "options": "--init --ipc=host"
         },
         "defaults": {
@@ -322,7 +322,7 @@
             "name": "Set up Node",
             "timeout-minutes": 3,
             "continue-on-error": true,
-            "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+            "uses": "actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
             "with": {
               "node-version": "${{ env.NODE_VERSION }}",
               "cache": "pnpm"
@@ -334,7 +334,7 @@
           },
           {
             "name": "Download shared E2E build",
-            "uses": "actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c",
+            "uses": "actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333",
             "with": {
               "name": "e2e-build-${{ github.run_id }}-${{ github.run_attempt }}",
               "path": "dist/"
@@ -343,7 +343,7 @@
           {
             "name": "Verify preinstalled browser runtime",
             "timeout-minutes": 2,
-            "run": "node scripts/verifyPlaywrightRuntime.ts 1.64.1"
+            "run": "node scripts/verifyPlaywrightRuntime.ts 1.65.0"
           },
           {
             "name": "Run shard",
@@ -365,7 +365,7 @@
           {
             "name": "Upload blob report",
             "if": "${{ !cancelled() }}",
-            "uses": "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
+            "uses": "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9",
             "with": {
               "name": "e2e-blob-${{ matrix.id }}",
               "path": "blob-report/",
@@ -401,7 +401,7 @@
             "name": "Set up Node",
             "timeout-minutes": 3,
             "continue-on-error": true,
-            "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+            "uses": "actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
             "with": {
               "node-version": "${{ env.NODE_VERSION }}",
               "cache": "pnpm"
@@ -413,7 +413,7 @@
           },
           {
             "name": "Download blob reports",
-            "uses": "actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c",
+            "uses": "actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333",
             "with": {
               "pattern": "e2e-blob-*",
               "path": "all-blob-reports",
@@ -426,7 +426,7 @@
           },
           {
             "name": "Upload report",
-            "uses": "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
+            "uses": "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9",
             "with": {
               "name": "playwright-report",
               "path": "playwright-report/",
@@ -464,7 +464,7 @@
             "name": "Set up Node",
             "timeout-minutes": 3,
             "continue-on-error": true,
-            "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+            "uses": "actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
             "with": {
               "node-version": "${{ env.NODE_VERSION }}",
               "cache": "pnpm"
@@ -493,7 +493,7 @@
             "name": "Upload Browser AI WebGPU diagnostics",
             "if": "${{ always() }}",
             "timeout-minutes": 2,
-            "uses": "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
+            "uses": "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9",
             "with": {
               "name": "browser-ai-webgpu-diagnostics",
               "path": "browser-ai-webgpu-admission.log\ntest-results/**/trace.zip\ntest-results/**/error-context.md\ntest-results/.last-run.json\n",
@@ -582,7 +582,7 @@
       "pull-requests": "read"
     },
     "env": {
-      "NODE_VERSION": "24.19.0"
+      "NODE_VERSION": "24.22.2"
     },
     "jobs": {
       "decide": {
@@ -661,7 +661,7 @@
             "name": "Set up Node",
             "timeout-minutes": 3,
             "continue-on-error": true,
-            "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+            "uses": "actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
             "with": {
               "node-version": "${{ env.NODE_VERSION }}",
               "cache": "pnpm"
@@ -776,7 +776,7 @@
             "name": "Set up Node",
             "timeout-minutes": 3,
             "continue-on-error": true,
-            "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+            "uses": "actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
             "with": {
               "node-version": "${{ env.NODE_VERSION }}",
               "cache": "pnpm"
@@ -820,7 +820,7 @@
             "name": "Set up Node",
             "timeout-minutes": 3,
             "continue-on-error": true,
-            "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+            "uses": "actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
             "with": {
               "node-version": "${{ env.NODE_VERSION }}",
               "cache": "pnpm"
@@ -877,7 +877,7 @@
           },
           {
             "name": "Set up Node",
-            "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+            "uses": "actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
             "with": {
               "node-version": "${{ env.NODE_VERSION }}"
             }
@@ -939,7 +939,7 @@
             "name": "Set up Node",
             "timeout-minutes": 3,
             "continue-on-error": true,
-            "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+            "uses": "actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
             "with": {
               "node-version": "${{ env.NODE_VERSION }}",
               "cache": "pnpm"
@@ -961,7 +961,7 @@
         "if": "github.event.pull_request != null && needs.decide.outputs.e2e == 'true'",
         "runs-on": "ubuntu-latest",
         "container": {
-          "image": "mcr.microsoft.com/playwright:v1.64.1-noble@sha256:47b510dd9230bf0b9bfc9b20102241e577ea7a99334ab4c3ca19f19770e9b8ea",
+          "image": "mcr.microsoft.com/playwright:v1.65.0-noble@sha256:6e3fb709361521eb27161606e6da6d2674e5e89fa16516cb37d6fdd91372273d",
           "options": "--init --ipc=host"
         },
         "defaults": {
@@ -986,7 +986,7 @@
             "name": "Set up Node",
             "timeout-minutes": 3,
             "continue-on-error": true,
-            "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+            "uses": "actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
             "with": {
               "node-version": "${{ env.NODE_VERSION }}",
               "cache": "pnpm"
@@ -999,7 +999,7 @@
           {
             "name": "Verify preinstalled browser runtime",
             "timeout-minutes": 2,
-            "run": "node scripts/verifyPlaywrightRuntime.ts 1.64.1"
+            "run": "node scripts/verifyPlaywrightRuntime.ts 1.65.0"
           },
           {
             "name": "Run offline smoke set",
@@ -1029,7 +1029,7 @@
             "name": "Set up Node",
             "timeout-minutes": 3,
             "continue-on-error": true,
-            "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+            "uses": "actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
             "with": {
               "node-version": "${{ env.NODE_VERSION }}",
               "cache": "pnpm"
@@ -1067,7 +1067,7 @@
             "name": "Set up Node",
             "timeout-minutes": 3,
             "continue-on-error": true,
-            "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+            "uses": "actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
             "with": {
               "node-version": "${{ env.NODE_VERSION }}",
               "cache": "npm",
@@ -1083,7 +1083,7 @@
           {
             "name": "Restore pinned Rust toolchain",
             "id": "pinned-toolchain",
-            "uses": "actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830",
+            "uses": "actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9",
             "with": {
               "path": "~/.rustup/toolchains",
               "key": "pinned-rust-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}"
@@ -1095,12 +1095,12 @@
           },
           {
             "name": "Cache cargo build",
-            "uses": "Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6"
+            "uses": "Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0"
           },
           {
             "name": "Cache Cargo dependencies",
             "id": "cargo-deps",
-            "uses": "actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830",
+            "uses": "actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9",
             "with": {
               "path": "~/.cargo/registry\n~/.cargo/git\n",
               "key": "cargo-deps-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.lock', '**/Cargo.toml', '.cargo/config.toml', 'rust-toolchain.toml') }}"
@@ -1143,7 +1143,7 @@
           {
             "name": "Cache cargo build",
             "id": "rust-cache",
-            "uses": "Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6",
+            "uses": "Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0",
             "with": {
               "save-if": "false"
             }
@@ -1151,7 +1151,7 @@
           {
             "name": "Cache the cargo registry index",
             "id": "cargo-index",
-            "uses": "actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830",
+            "uses": "actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9",
             "with": {
               "path": "~/.cargo/registry/index",
               "key": "cargo-index-v2-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-${{ hashFiles('Cargo.lock', '**/Cargo.toml', '.cargo/config.toml', 'rust-toolchain.toml') }}",
@@ -1174,9 +1174,9 @@
           },
           {
             "name": "Set up Node for native mutation proof",
-            "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+            "uses": "actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
             "with": {
-              "node-version": "24.19.0"
+              "node-version": "24.22.2"
             }
           },
           {
@@ -1192,7 +1192,7 @@
           {
             "name": "Upload native transport mutation evidence",
             "if": "${{ always() }}",
-            "uses": "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
+            "uses": "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9",
             "with": {
               "name": "native-transport-mutations-${{ github.event.pull_request.head.sha }}",
               "path": ".agents/artifacts/native-transport-mutations/",
@@ -1220,12 +1220,12 @@
           {
             "name": "Cache cargo build",
             "id": "rust-cache",
-            "uses": "Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6"
+            "uses": "Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0"
           },
           {
             "name": "Cache the cargo registry index",
             "id": "cargo-index",
-            "uses": "actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830",
+            "uses": "actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9",
             "with": {
               "path": "~/.cargo/registry/index",
               "key": "cargo-index-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-${{ hashFiles('Cargo.lock') }}",
@@ -1259,12 +1259,12 @@
           {
             "name": "Cache cargo build",
             "id": "rust-cache",
-            "uses": "Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6"
+            "uses": "Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0"
           },
           {
             "name": "Cache the cargo registry index",
             "id": "cargo-index",
-            "uses": "actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830",
+            "uses": "actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9",
             "with": {
               "path": "~/.cargo/registry/index",
               "key": "cargo-index-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-${{ hashFiles('Cargo.lock') }}",
@@ -1282,7 +1282,7 @@
             "name": "Set up Node",
             "timeout-minutes": 3,
             "continue-on-error": true,
-            "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+            "uses": "actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
             "with": {
               "node-version": "${{ env.NODE_VERSION }}",
               "cache": "pnpm"
@@ -1439,7 +1439,7 @@
       "cancel-in-progress": false
     },
     "env": {
-      "NODE_VERSION": "24.19.0"
+      "NODE_VERSION": "24.22.2"
     },
     "jobs": {
       "decide": {
@@ -1490,7 +1490,7 @@
             "name": "Set up Node",
             "timeout-minutes": 3,
             "continue-on-error": true,
-            "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+            "uses": "actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
             "with": {
               "node-version": "${{ env.NODE_VERSION }}",
               "cache": "pnpm"
@@ -1588,7 +1588,7 @@
             "name": "Set up Node",
             "timeout-minutes": 3,
             "continue-on-error": true,
-            "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+            "uses": "actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
             "with": {
               "node-version": "${{ env.NODE_VERSION }}",
               "cache": "pnpm"
@@ -1634,7 +1634,7 @@
             "name": "Set up Node",
             "timeout-minutes": 3,
             "continue-on-error": true,
-            "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+            "uses": "actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
             "with": {
               "node-version": "${{ env.NODE_VERSION }}",
               "cache": "pnpm"
@@ -1691,7 +1691,7 @@
           },
           {
             "name": "Set up Node",
-            "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+            "uses": "actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
             "with": {
               "node-version": "${{ env.NODE_VERSION }}"
             }
@@ -1757,7 +1757,7 @@
             "name": "Set up Node",
             "timeout-minutes": 3,
             "continue-on-error": true,
-            "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+            "uses": "actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
             "with": {
               "node-version": "${{ env.NODE_VERSION }}",
               "cache": "pnpm"
@@ -1796,7 +1796,7 @@
           },
           {
             "name": "Cache cargo build",
-            "uses": "Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6"
+            "uses": "Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0"
           },
           {
             "name": "Rust workspace health gates",
@@ -1817,7 +1817,7 @@
           },
           {
             "name": "Install Node",
-            "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+            "uses": "actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
             "with": {
               "node-version": "${{ env.NODE_VERSION }}"
             }
@@ -1826,7 +1826,7 @@
             "name": "Set up Node",
             "timeout-minutes": 3,
             "continue-on-error": true,
-            "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+            "uses": "actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
             "with": {
               "node-version": "${{ env.NODE_VERSION }}",
               "cache": "npm",
@@ -1861,7 +1861,7 @@
           },
           {
             "name": "Cache cargo build",
-            "uses": "Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6"
+            "uses": "Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0"
           },
           {
             "name": "Test the audio crates",
@@ -1890,7 +1890,7 @@
           },
           {
             "name": "Cache cargo build",
-            "uses": "Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6"
+            "uses": "Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0"
           },
           {
             "name": "Test the audio crates",
@@ -1924,7 +1924,7 @@
             "name": "Set up Node",
             "timeout-minutes": 3,
             "continue-on-error": true,
-            "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+            "uses": "actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
             "with": {
               "node-version": "${{ env.NODE_VERSION }}",
               "cache": "pnpm"
@@ -1936,7 +1936,7 @@
           },
           {
             "name": "Cache cargo build",
-            "uses": "Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6"
+            "uses": "Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0"
           },
           {
             "name": "Install dependencies",
@@ -1971,7 +1971,7 @@
           {
             "name": "Upload the measurement record",
             "if": "always()",
-            "uses": "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
+            "uses": "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9",
             "with": {
               "name": "desktop-latency-${{ github.sha }}",
               "path": "measurements/desktop-latency/nightly-${{ github.sha }}.json",
@@ -1981,7 +1981,7 @@
           {
             "name": "Upload the agent workspace proof record",
             "if": "always()",
-            "uses": "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
+            "uses": "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9",
             "with": {
               "name": "desktop-agent-workspace-${{ github.sha }}",
               "path": "measurements/desktop-agent-workspace/nightly-${{ github.sha }}.json",
@@ -1996,7 +1996,7 @@
         "if": "needs.decide.outputs.heavy == 'true' && needs.decide.outputs.e2e == 'true'",
         "runs-on": "ubuntu-latest",
         "container": {
-          "image": "mcr.microsoft.com/playwright:v1.64.1-noble@sha256:47b510dd9230bf0b9bfc9b20102241e577ea7a99334ab4c3ca19f19770e9b8ea",
+          "image": "mcr.microsoft.com/playwright:v1.65.0-noble@sha256:6e3fb709361521eb27161606e6da6d2674e5e89fa16516cb37d6fdd91372273d",
           "options": "--init --ipc=host"
         },
         "defaults": {
@@ -2040,7 +2040,7 @@
             "name": "Set up Node",
             "timeout-minutes": 3,
             "continue-on-error": true,
-            "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+            "uses": "actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
             "with": {
               "node-version": "${{ env.NODE_VERSION }}",
               "cache": "pnpm"
@@ -2053,7 +2053,7 @@
           {
             "name": "Verify preinstalled browser runtime",
             "timeout-minutes": 2,
-            "run": "node scripts/verifyPlaywrightRuntime.ts 1.64.1"
+            "run": "node scripts/verifyPlaywrightRuntime.ts 1.65.0"
           },
           {
             "name": "Run shard",
@@ -2071,7 +2071,7 @@
           {
             "name": "Upload blob report",
             "if": "${{ !cancelled() }}",
-            "uses": "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
+            "uses": "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9",
             "with": {
               "name": "e2e-blob-${{ matrix.shard }}",
               "path": "blob-report/",
@@ -2106,7 +2106,7 @@
             "name": "Set up Node",
             "timeout-minutes": 3,
             "continue-on-error": true,
-            "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+            "uses": "actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
             "with": {
               "node-version": "${{ env.NODE_VERSION }}",
               "cache": "pnpm"
@@ -2153,7 +2153,7 @@
             "name": "Set up Node",
             "timeout-minutes": 3,
             "continue-on-error": true,
-            "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+            "uses": "actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
             "with": {
               "node-version": "${{ env.NODE_VERSION }}",
               "cache": "pnpm"
@@ -2165,7 +2165,7 @@
           },
           {
             "name": "Download blob reports",
-            "uses": "actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c",
+            "uses": "actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333",
             "with": {
               "pattern": "e2e-blob-*",
               "path": "all-blob-reports",
@@ -2178,7 +2178,7 @@
           },
           {
             "name": "Upload report",
-            "uses": "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
+            "uses": "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9",
             "with": {
               "name": "playwright-report",
               "path": "playwright-report/",
@@ -2193,7 +2193,7 @@
         "if": "needs.decide.outputs.heavy == 'true' && needs.decide.outputs.e2e == 'true'",
         "runs-on": "ubuntu-latest",
         "container": {
-          "image": "mcr.microsoft.com/playwright:v1.64.1-noble@sha256:47b510dd9230bf0b9bfc9b20102241e577ea7a99334ab4c3ca19f19770e9b8ea",
+          "image": "mcr.microsoft.com/playwright:v1.65.0-noble@sha256:6e3fb709361521eb27161606e6da6d2674e5e89fa16516cb37d6fdd91372273d",
           "options": "--init --ipc=host"
         },
         "defaults": {
@@ -2237,7 +2237,7 @@
             "name": "Set up Node",
             "timeout-minutes": 3,
             "continue-on-error": true,
-            "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+            "uses": "actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
             "with": {
               "node-version": "${{ env.NODE_VERSION }}",
               "cache": "pnpm"
@@ -2250,7 +2250,7 @@
           {
             "name": "Verify preinstalled browser runtime",
             "timeout-minutes": 2,
-            "run": "node scripts/verifyPlaywrightRuntime.ts 1.64.1"
+            "run": "node scripts/verifyPlaywrightRuntime.ts 1.65.0"
           },
           {
             "name": "Run shard with coverage",
@@ -2261,7 +2261,7 @@
           },
           {
             "name": "Upload coverage records",
-            "uses": "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
+            "uses": "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9",
             "with": {
               "name": "e2e-coverage-${{ matrix.shard }}",
               "path": "e2e-coverage/",
@@ -2297,7 +2297,7 @@
             "name": "Set up Node",
             "timeout-minutes": 3,
             "continue-on-error": true,
-            "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+            "uses": "actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
             "with": {
               "node-version": "${{ env.NODE_VERSION }}",
               "cache": "pnpm"
@@ -2309,7 +2309,7 @@
           },
           {
             "name": "Download coverage records",
-            "uses": "actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c",
+            "uses": "actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333",
             "with": {
               "pattern": "e2e-coverage-*",
               "path": "all-e2e-coverage",
@@ -2325,7 +2325,7 @@
           },
           {
             "name": "Upload the coverage map",
-            "uses": "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
+            "uses": "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9",
             "with": {
               "name": "e2e-coverage-map",
               "path": "e2e-coverage-map.json",
@@ -2353,7 +2353,7 @@
           },
           {
             "name": "Initialise CodeQL",
-            "uses": "github/codeql-action/init@c16c0f3f2812ec4bb3750a5ed64873fe2ce0fbef",
+            "uses": "github/codeql-action/init@52cf1852265d99e9bea071b03366fc777a602909",
             "with": {
               "languages": "javascript-typescript",
               "queries": "security-extended"
@@ -2361,7 +2361,7 @@
           },
           {
             "name": "Analyse",
-            "uses": "github/codeql-action/analyze@c16c0f3f2812ec4bb3750a5ed64873fe2ce0fbef"
+            "uses": "github/codeql-action/analyze@52cf1852265d99e9bea071b03366fc777a602909"
           }
         ]
       },
@@ -2480,7 +2480,7 @@
             "if": "env.DEPLOY_CREDENTIAL_PRESENT == 'true'",
             "timeout-minutes": 3,
             "continue-on-error": true,
-            "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+            "uses": "actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
             "with": {
               "node-version": "${{ env.NODE_VERSION }}",
               "cache": "pnpm"
@@ -2650,9 +2650,9 @@
           },
           {
             "name": "Set up Node",
-            "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+            "uses": "actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
             "with": {
-              "node-version": "24.19.0"
+              "node-version": "24.22.2"
             }
           },
           {
@@ -2789,9 +2789,9 @@
           },
           {
             "name": "Set up Node",
-            "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+            "uses": "actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
             "with": {
-              "node-version": "24.19.0"
+              "node-version": "24.22.2"
             }
           },
           {
@@ -2838,7 +2838,7 @@
           },
           {
             "name": "Upload qualified artifact",
-            "uses": "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
+            "uses": "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9",
             "with": {
               "name": "quantum-measurement-${{ github.event.pull_request.head.sha }}-${{ github.run_id }}-${{ github.run_attempt }}",
               "path": "${{ runner.temp }}/qualified-quantum-measurement",
@@ -2945,9 +2945,9 @@
           },
           {
             "name": "Set up Node",
-            "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+            "uses": "actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
             "with": {
-              "node-version": "24.19.0"
+              "node-version": "24.22.2"
             }
           },
           {
@@ -2980,7 +2980,7 @@
           {
             "name": "Upload qualified artifact",
             "if": "steps.plan.outputs.selected == 'true'",
-            "uses": "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
+            "uses": "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9",
             "with": {
               "name": "wasm-${{ github.event.pull_request.head.sha }}-${{ github.run_id }}-${{ github.run_attempt }}",
               "path": "${{ runner.temp }}/qualified-wasm-artifacts",
@@ -3033,7 +3033,7 @@
           {
             "name": "Restore pinned Rust toolchain",
             "id": "pinned-toolchain",
-            "uses": "actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830",
+            "uses": "actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9",
             "with": {
               "path": "~/.rustup/toolchains",
               "key": "pinned-rust-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}"
@@ -3045,12 +3045,12 @@
           },
           {
             "name": "Cache cargo build",
-            "uses": "Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6"
+            "uses": "Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0"
           },
           {
             "name": "Cache Cargo dependencies",
             "id": "cargo-deps",
-            "uses": "actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830",
+            "uses": "actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9",
             "with": {
               "path": "~/.cargo/registry\n~/.cargo/git\n",
               "key": "cargo-deps-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.lock', '**/Cargo.toml', '.cargo/config.toml', 'rust-toolchain.toml') }}"
@@ -3079,12 +3079,12 @@
           {
             "name": "Cache cargo build",
             "id": "rust-cache",
-            "uses": "Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6"
+            "uses": "Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0"
           },
           {
             "name": "Cache the cargo registry index",
             "id": "cargo-index",
-            "uses": "actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830",
+            "uses": "actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9",
             "with": {
               "path": "~/.cargo/registry/index",
               "key": "cargo-index-v2-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-${{ hashFiles('Cargo.lock', '**/Cargo.toml', '.cargo/config.toml', 'rust-toolchain.toml') }}",
