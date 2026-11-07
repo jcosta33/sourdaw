@@ -3,7 +3,6 @@ import { readSecondsAtBeat } from '#/modules/Transport/stores';
 
 import { type AgentRunBudgets } from '../../models/AgentRun';
 import { ANALYSIS_MEASURE_MAX_TARGETS } from '../../models/AnalysisMeasureLimits';
-import { type BriefMixIntent } from '../../models/BriefMixIntent';
 import { type IntentResult } from '../../models/IntentResult';
 import { type PerceptualConstraintReading } from '../../models/PerceptualConstraint';
 import { type ProjectContext, type ProjectContextProductionBrief } from '../../models/ProjectContext';
@@ -22,6 +21,7 @@ import { compilePerceptualConstraints } from '../perceptualConstraints/compilePe
 import { readPerceptualConstraintGoals } from '../perceptualConstraints/readPerceptualConstraintGoals';
 import { planWholeProjectVibeRun } from '../planWholeProjectVibeRun';
 import { readArrangementRange } from '../readArrangementRange';
+import { type readBriefMixIntent } from '../readBriefMixIntent';
 import { readMeasurementRenderedSeconds } from '../readMeasurementRenderedSeconds';
 
 import { describeVibeRunObjective } from './describeVibeRunObjective';
@@ -234,7 +234,7 @@ export function planVibeRunSchedule(input: {
     context: ProjectContext;
     brief: ProjectContextProductionBrief;
     budgets: AgentRunBudgets;
-    mixIntent: BriefMixIntent;
+    mixIntent: NonNullable<ReturnType<typeof readBriefMixIntent>>;
 }): PlannedVibeRunSchedule {
     const catalog = getMixRecipeCatalog();
     const reading = compilePerceptualConstraints(input.prompt, input.context);

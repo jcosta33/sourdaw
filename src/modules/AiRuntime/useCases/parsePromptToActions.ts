@@ -1634,7 +1634,9 @@ const planPromptIntent = inject({ logger })(
                         };
                     }
                     const selectedBrief = selectedCompilations[0];
-                    if (selectedBrief?.kind !== 'brief' || readBriefMixIntent(selectedBrief.mixIntent) === null) {
+                    const mixIntent =
+                        selectedBrief?.kind === 'brief' ? readBriefMixIntent(selectedBrief.mixIntent) : null;
+                    if (mixIntent === null) {
                         return {
                             actions: [],
                             rawText: prompt,
@@ -1659,6 +1661,7 @@ const planPromptIntent = inject({ logger })(
                         prompt,
                         context,
                         compilations: selectedCompilations,
+                        mixIntent,
                         runId: streamIdentity?.runId,
                     });
                     return {
@@ -2198,6 +2201,7 @@ function planBriefVibeRun(input: {
     prompt: string;
     context: ProjectContext;
     compilations: readonly RetainedCompilation[];
+    mixIntent: NonNullable<ReturnType<typeof readBriefMixIntent>>;
     runId: string | undefined;
 }): Pick<IntentResult, 'batchSchedule' | 'plannedRunLines'> {
     const compiled = input.compilations.find(
@@ -2211,7 +2215,7 @@ function planBriefVibeRun(input: {
         prompt: input.prompt,
         context: input.context,
         brief: compiled.brief,
-        mixIntent: compiled.mixIntent,
+        mixIntent: input.mixIntent,
         budgets: run?.budgets ?? { limits: readAgentResourceLimits(), consumed: {} },
     });
     if (planned.status === 'none') {

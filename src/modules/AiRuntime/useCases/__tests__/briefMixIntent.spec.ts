@@ -13,7 +13,9 @@ registerDeviceEnginePorts();
 describe('brief mix intent', () => {
     it('publishes a required closed selection in canonical and strict hosted schemas', () => {
         const schema = getApplicationOwnedToolSchemas().find((entry) => entry.function.name === 'brief.compile');
-        if (schema === undefined) throw new Error('brief.compile is not published');
+        if (schema === undefined) {
+            throw new Error('brief.compile is not published');
+        }
         expect(schema.function.parameters.required).toContain('mixIntent');
         const strict = projectOpenAiStrictToolSchema(schema);
         const canonicalIntent = schema.function.parameters.properties.mixIntent;

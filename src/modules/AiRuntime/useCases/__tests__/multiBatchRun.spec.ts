@@ -407,7 +407,7 @@ describe('a whole-project vibe run of measured recipe batches (AC-003 of #4372)'
         ['keep the drums punchy and make the vocal warmer', ['warm']],
         ['make it warmer and less muddy', ['warm', 'muddy']],
         ['make the whole mix warmer around the track called Wider', ['warm']],
-        ['make the whole mix warmer around \"Wider\"', ['warm']],
+        ['make the whole mix warmer around "Wider"', ['warm']],
         ['make this mix warmer and more open', ['wide']],
         ['make this mix not so much warmer as wider', ['warm']],
     ] satisfies readonly (readonly [string, readonly string[]])[])(
@@ -416,7 +416,9 @@ describe('a whole-project vibe run of measured recipe batches (AC-003 of #4372)'
             if (prompt.includes('Wider')) {
                 landProjectEdit(() => {
                     const state = trackStore.value;
-                    if (state === null) throw new Error('Expected project tracks');
+                    if (state === null) {
+                        throw new Error('Expected project tracks');
+                    }
                     trackStore.set({
                         ...state,
                         tracks: state.tracks.map((track) =>
@@ -442,7 +444,9 @@ describe('a whole-project vibe run of measured recipe batches (AC-003 of #4372)'
             await sendChatMessage(prompt);
             const brief = requireOnlyProposedCard();
             const schedule = agentRunLifecycle.get(brief.runId)?.plan?.batchSchedule;
-            if (schedule?.kind !== 'vibe-run') throw new Error('Expected a scheduled vibe run');
+            if (schedule?.kind !== 'vibe-run') {
+                throw new Error('Expected a scheduled vibe run');
+            }
             const plan = readScheduledVibeRunPlan(schedule.serializedPlan);
             expect(plan).not.toBeNull();
             expect([...new Set(plan?.batches.flatMap((batch) => batch.objective.descriptors))].sort()).toEqual(
@@ -543,7 +547,9 @@ describe('a whole-project vibe run of measured recipe batches (AC-003 of #4372)'
             [3, 'later-compile'],
         ] as const) {
             const request = requests[index];
-            if (request === undefined) throw new Error('Expected the compiler receipt turn');
+            if (request === undefined) {
+                throw new Error('Expected the compiler receipt turn');
+            }
             expect(decodeReceiptContext(readReceiptSummary(request.userMessage).value)).toEqual(
                 expect.arrayContaining([expect.objectContaining({ callId, status: 'success' })])
             );
@@ -553,7 +559,9 @@ describe('a whole-project vibe run of measured recipe batches (AC-003 of #4372)'
         expect(cardContent(brief)).toContain(`${descriptor} drums`);
         expect(cardContent(brief)).not.toContain(`${excluded} drums`);
         const schedule = agentRunLifecycle.get(brief.runId)?.plan?.batchSchedule;
-        if (schedule?.kind !== 'vibe-run') throw new Error('Expected a scheduled vibe run');
+        if (schedule?.kind !== 'vibe-run') {
+            throw new Error('Expected a scheduled vibe run');
+        }
         const plan = readScheduledVibeRunPlan(schedule.serializedPlan);
         expect(plan).not.toBeNull();
         expect([...new Set(plan?.batches.flatMap((batch) => batch.objective.descriptors))]).toEqual([descriptor]);
