@@ -18,8 +18,8 @@ importers:
         specifier: 1.2.7
         version: 1.2.7
       '@grame/faustwasm':
-        specifier: 0.20.0
-        version: 0.20.0
+        specifier: 0.18.5
+        version: 0.18.5
       '@mlc-ai/web-llm':
         specifier: ^0.2.87
         version: 0.2.87
@@ -761,8 +761,8 @@ packages:
   '@floating-ui/utils@0.2.12':
     resolution: {integrity: sha512-HpCo8tmWzLVad5s2d19EhAz5zqrrQ6s69qd6moPMQvkOuSwDT1YgRfWSVuc4ennqrgv3OHppiOGMQ7oC13yIww==}
 
-  '@grame/faustwasm@0.20.0':
-    resolution: {integrity: sha512-oxy1MgkGVMxmWdmpiP0OGFv9T0nUfYYINFMoYhErzCipdfkMYv35KgVg5OojHa9NgXD9leLlAB+IIzJZ0KoIQQ==}
+  '@grame/faustwasm@0.18.5':
+    resolution: {integrity: sha512-mJhyTMv1b6V+ICm/XKcNgOFtxJVX4nAIrTDLqJdB5PW6xTIMeJtNHkUBIg+RlWMrbs0QhGYYBVsq22Y6e87v3w==}
     hasBin: true
 
   '@humanfs/core@0.19.2':
@@ -6203,7 +6203,7 @@ snapshots:
 
   '@floating-ui/utils@0.2.12': {}
 
-  '@grame/faustwasm@0.20.0':
+  '@grame/faustwasm@0.18.5':
     dependencies:
       '@types/emscripten': 1.41.6
 

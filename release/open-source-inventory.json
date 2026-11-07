@@ -168,8 +168,8 @@
             "digests": [
                 "sha256:c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4:LICENSE",
                 "sha256:c148064afc3d904d474c5f20ee39052ff86085a02d148552ce59f4d0ebd7aeb9:NOTICE",
-                "sha256:7d231e006e395caf5f824ede95c654272fe9b6c3681ba7e897c700193918004e:public/legal/DEPENDENCY-LICENSES.txt",
-                "sha256:39be520fbcf9d89ecf56557446b58c12957e66cc5d9572a6bd07d9fc70168ef5:release/dependency-license-proofs.json"
+                "sha256:fed4842a581b5f7946ee83cac22e10256b1cd29dcb8b7a034984a71ec81e67f1:public/legal/DEPENDENCY-LICENSES.txt",
+                "sha256:c4edd90ef57a6a99bfd8ee533cbb95167547b3575ccadf2cdb72f7f6725519ab:release/dependency-license-proofs.json"
             ],
             "licenses": [
                 "Apache-2.0",
@@ -281,7 +281,7 @@
                 "exact collaboration-server npm lock graph"
             ],
             "digests": [
-                "sha256:92c6e7962f6f3c93fc00ef60fc96606288a79decee79cdd159061fb73002daed",
+                "sha256:63ffe9382a624bd73fa7ac4e5689a00d964c80434664532d7dbeeb5512f6c6ca",
                 "sha256:d5943b73cb367ddf580983190df0e0c073383c75ebce9611aefb3340c1a380b7"
             ],
             "licenses": [
@@ -357,7 +357,7 @@
                 "sha256:bf221c27635dc00ee3f1bc6c9797fe660f68869520fdf36aa18392cc4ad2220c:public/legal/Magenta.js-NOTICE.txt",
                 "sha256:f287e3fb4298afb4cef22ba892eb1b26a199f5752fce597a3f37d75615f0627c:public/legal/TensorFlow.js-NOTICE.txt",
                 "sha256:f712cedc36337b85cba55f34746f24a51cb713f6a69fdc352bfffda17a277982:public/legal/seedrandom-MIT.txt",
-                "sha256:92b32ab867746bf00ce82e54c9bea8a663e708ebcc2e8338104c1c29d1e62ca6:public/legal/THIRD-PARTY-NOTICES.md"
+                "sha256:124e107bd7f45b0b84313f9a4140ae83e07841c46818ab25909383ce019446ea:public/legal/THIRD-PARTY-NOTICES.md"
             ],
             "licenses": [
                 "Apache-2.0:TensorFlow.js",
@@ -586,7 +586,7 @@
                 "sha256:d412ab9d5ac17e6931705aac01e5a0d323da5acd2e89a2c19aa8fc05becc59ad:@mlc-ai/web-llm-0.2.84-LICENSE",
                 "sha256:84a271fd53a9c884c0bf6672ab87add1b06adb9302f898ba23b966d2ce6971a1:public/legal/Apache-2.0.txt",
                 "sha256:b9adf0d5d38c111db457713cb7d8684ec9a255c848f75671fed5dd632805f431:public/legal/Qwen-NOTICE.txt",
-                "sha256:92b32ab867746bf00ce82e54c9bea8a663e708ebcc2e8338104c1c29d1e62ca6:public/legal/THIRD-PARTY-NOTICES.md"
+                "sha256:124e107bd7f45b0b84313f9a4140ae83e07841c46818ab25909383ce019446ea:public/legal/THIRD-PARTY-NOTICES.md"
             ],
             "licenses": [
                 "admission-evidence:Apache-2.0-Qwen3-1.7B-4B-8B-licensed-candidates-with-unproven-conversion-mapping",
@@ -796,7 +796,7 @@
                 "sha256:f77d905d3e620445e1016fa0d8021f5490c9ae3a5daf681ee030464a9fbec5c0:.agents/decisions/0035-admit-direct-magenta-ddsp-checkpoint-downloads.md",
                 "sha256:f09ba74cf3d2213f7d69c8370aaeedf6414c57d7c00578c8a2ca94261a5c8ac5:electron/protocol.ts",
                 "sha256:6f39f28c5ad181ce246a368bb4764d5faf5c48c433150482b4429832eb3424ec:src/modules/BrowserAi/models/DdspArtifactManifest.ts",
-                "sha256:92b32ab867746bf00ce82e54c9bea8a663e708ebcc2e8338104c1c29d1e62ca6:public/legal/THIRD-PARTY-NOTICES.md",
+                "sha256:124e107bd7f45b0b84313f9a4140ae83e07841c46818ab25909383ce019446ea:public/legal/THIRD-PARTY-NOTICES.md",
                 "sha256:c05c0f10685919a7045fa160a6df7fbea08c7d71af7b5110ebbabdb09084c8c0:src/modules/BrowserAi/repositories/modelDownloadManager.ts",
                 "sha256:f764dafcb6a2fc5f328d023726c09d17aa5e39ca48bc5740f08aa10d4d01d496:src/modules/BrowserAi/useCases/downloadDdspInstrument.ts",
                 "sha256:93020ca3edba6d1712fa3d68779fc0e1ade24b9c12cd9919e24c780ee43386f7:src/modules/BrowserAi/repositories/stageDdspInstrumentGeneration.ts",
@@ -1123,7 +1123,7 @@
                 "sha256:46e03e356685b20e7444b6979ad61579d962f4a4a08a748142fdc497ecaa23ea:git:github.com/pichenettes/eurorack@99432f2bf443219b3eb77e65e1a18583faad422e:plaits/dsp/drums/analog_bass_drum.h",
                 "sha256:46e03e356685b20e7444b6979ad61579d962f4a4a08a748142fdc497ecaa23ea:release/upstream-proofs/mutable-instruments-analog_bass_drum.h",
                 "sha256:22f658d32f65c7c535005368d589dc056c0f8417f3f15190d151233de60957a0:public/legal/MUTABLE-INSTRUMENTS-PLAITS-MIT.txt",
-                "sha256:92b32ab867746bf00ce82e54c9bea8a663e708ebcc2e8338104c1c29d1e62ca6:public/legal/THIRD-PARTY-NOTICES.md"
+                "sha256:124e107bd7f45b0b84313f9a4140ae83e07841c46818ab25909383ce019446ea:public/legal/THIRD-PARTY-NOTICES.md"
             ],
             "licenses": [
                 "MIT"
@@ -1300,12 +1300,12 @@
                 "public/legal/SOURCES.json"
             ],
             "revisions": [
-                "@grame/faustwasm@0.20.0",
-                "cf11238e2587608534621182db1a9dd61682933a",
-                "libfaust 2.90.19 at 21884a6d63713ff99dca2fef95c33aecaedfe643"
+                "@grame/faustwasm@0.18.5",
+                "ba611eaeefcb41f935cab1481ea9580b470ae8eb",
+                "libfaust 2.89.2 at ada86ab32fe875f5d1d028c3a99f17e3a83e0ad8"
             ],
             "digests": [
-                "pnpm-integrity:sha512-oxy1MgkGVMxmWdmpiP0OGFv9T0nUfYYINFMoYhErzCipdfkMYv35KgVg5OojHa9NgXD9leLlAB+IIzJZ0KoIQQ==",
+                "pnpm-integrity:sha512-mJhyTMv1b6V+ICm/XKcNgOFtxJVX4nAIrTDLqJdB5PW6xTIMeJtNHkUBIg+RlWMrbs0QhGYYBVsq22Y6e87v3w==",
                 "public/legal/SOURCES.json"
             ],
             "licenses": [
@@ -1787,7 +1787,7 @@
                 "sha256:4e3ab01320777977abfccaedaf0166a2b1ea49e8adf12831996c570b7461bbe2:release/upstream-proofs/audio-export-codecs/BUILD.md",
                 "sha256:95c070480aa027041f59caa2b7b4b989f8c0fbf85195cfd681716de5c2ce7a96:release/upstream-proofs/audio-export-codecs/reproduction-commands.json",
                 "sha256:dff24941db687b3a453063d7647cf4ea67c78a4c651eaceba481615ccb0c1133:release/upstream-proofs/audio-export-codecs/provenance.json",
-                "sha256:92b32ab867746bf00ce82e54c9bea8a663e708ebcc2e8338104c1c29d1e62ca6:public/legal/THIRD-PARTY-NOTICES.md",
+                "sha256:124e107bd7f45b0b84313f9a4140ae83e07841c46818ab25909383ce019446ea:public/legal/THIRD-PARTY-NOTICES.md",
                 "sha256:c4bd7e21a0acd609df3f850f98a6eb006626a41cea907a0af0232b69e8ee3d6c:release/upstream-proofs/audio-export-codecs/vorbis-primer-page.patch",
                 "sha256:49ddc53f865c69d4ec9e6cb4d4594afe22ffc805a5920d828d8009cc68c09789:release/upstream-proofs/audio-export-codecs/vorbis-short-leading-context.patch"
             ],
@@ -1822,7 +1822,7 @@
     "snapshots": [
         {
             "path": "package.json",
-            "sha256": "7a661ce3f5ed9726e3bdfd203888b5cec6971fb89707e793f86b8fe6fe541b49"
+            "sha256": "16ead28cedc9f9847a24e47856cff3bb063f770bfb5ab5179685d803b517f9d6"
         },
         {
             "path": "server/package.json",
@@ -1834,7 +1834,7 @@
         },
         {
             "path": "pnpm-lock.yaml",
-            "sha256": "92c6e7962f6f3c93fc00ef60fc96606288a79decee79cdd159061fb73002daed"
+            "sha256": "63ffe9382a624bd73fa7ac4e5689a00d964c80434664532d7dbeeb5512f6c6ca"
         },
         {
             "path": "Cargo.toml",
@@ -2034,7 +2034,7 @@
         {
             "surface": "faust-runtime",
             "file": "public/legal/SOURCES.json",
-            "value": "https://github.com/grame-cncm/faust/archive/21884a6d63713ff99dca2fef95c33aecaedfe643.tar.gz"
+            "value": "https://github.com/grame-cncm/faust/archive/ada86ab32fe875f5d1d028c3a99f17e3a83e0ad8.tar.gz"
         },
         {
             "surface": "faust-runtime",
@@ -2044,7 +2044,7 @@
         {
             "surface": "faust-runtime",
             "file": "public/legal/SOURCES.json",
-            "value": "https://github.com/grame-cncm/faustwasm/archive/cf11238e2587608534621182db1a9dd61682933a.tar.gz"
+            "value": "https://github.com/grame-cncm/faustwasm/archive/ba611eaeefcb41f935cab1481ea9580b470ae8eb.tar.gz"
         },
         {
             "surface": "kokoro-model",

@@ -61,7 +61,7 @@
             },
             {
                 "path": "package.json",
-                "sha256": "7a661ce3f5ed9726e3bdfd203888b5cec6971fb89707e793f86b8fe6fe541b49"
+                "sha256": "16ead28cedc9f9847a24e47856cff3bb063f770bfb5ab5179685d803b517f9d6"
             },
             {
                 "path": "rust-toolchain.toml",
@@ -7889,6 +7889,21 @@
                     {
                         "sourcePath": "package.json",
                         "sha256": "cd7e0d13df9e60b931dd7b307c2e1c06af9c44667dda281d5c77d7d226034f9e"
+                    }
+                ],
+                "licenses": [
+                    "LGPL-3.0"
+                ]
+            }
+        },
+        "npm:@grame/faustwasm@0.18.5": {
+            "source": "https://registry.npmjs.org/@grame/faustwasm/-/faustwasm-0.18.5.tgz",
+            "revision": "sha512-mJhyTMv1b6V+ICm/XKcNgOFtxJVX4nAIrTDLqJdB5PW6xTIMeJtNHkUBIg+RlWMrbs0QhGYYBVsq22Y6e87v3w==",
+            "assembled": {
+                "metadata": [
+                    {
+                        "sourcePath": "package.json",
+                        "sha256": "0041a3b18dfb797eece149643114769779b6e9b89e4310b77930be8fc3c3a8ed"
                     }
                 ],
                 "licenses": [

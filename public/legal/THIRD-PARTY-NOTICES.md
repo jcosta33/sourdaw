@@ -21,15 +21,15 @@ byte-for-byte from its package. Vite bundles lamejs into Sourdaw's application c
 
 | Component | Version | License           | Source                                                                                                                                                                                                              |
 | --------- | ------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| FaustWasm | 0.20.0  | LGPL-2.1-or-later | [wrapper](https://github.com/grame-cncm/faustwasm/archive/cf11238e2587608534621182db1a9dd61682933a.tar.gz), [compiler](https://github.com/grame-cncm/faust/archive/21884a6d63713ff99dca2fef95c33aecaedfe643.tar.gz) |
+| FaustWasm | 0.18.5  | LGPL-2.1-or-later | [wrapper](https://github.com/grame-cncm/faustwasm/archive/ba611eaeefcb41f935cab1481ea9580b470ae8eb.tar.gz), [compiler](https://github.com/grame-cncm/faust/archive/ada86ab32fe875f5d1d028c3a99f17e3a83e0ad8.tar.gz) |
 | lamejs    | 1.2.7   | LGPL-3.0-only     | [source](https://github.com/gideonstele/lamejs/archive/1fb0ef5fa177413107e2e107d054a9b994e3f79c.tar.gz)                                                                                                             |
 
-FaustWasm's `COPYING.txt` grants LGPL-2.1-or-later. The package metadata names LGPL-2.1.
+FaustWasm's `COPYING.txt` grants LGPL-2.1-or-later despite the package metadata naming LGPL-3.0.
 Its notice is preserved. lamejs declares LGPL-3.0. The upstream notices and complete license texts
 are beside this file.
 
 FaustWasm's package source is pinned by npm `gitHead`. The bundled compiler identifies itself as
-2.90.19; the matching Faust version commit is pinned, but a reproducible rebuild has not yet proven
+2.89.2; the matching Faust version commit is pinned, but a reproducible rebuild has not yet proven
 that exact compiler commit produced the binary.
 
 See [SOURCES.json](./SOURCES.json) for exact package, source, and file identities. See

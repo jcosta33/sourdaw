@@ -199,12 +199,6 @@ const LICENSE_SIGNATURES: Readonly<Record<string, readonly RegExp[]>> = {
         /the software is provided ["'“]as is["'”]/iu,
         /(?:disclaims\s+all\s+warranties|all\s+implied\s+warranties)[\s\S]*?merchantability/iu,
     ],
-    // FaustWasm declares the deprecated LGPL-2.1 id, and its COPYING wraps the grant.
-    'LGPL-2.1': [
-        /GNU Lesser General Public License/iu,
-        /either version 2\.1 of the\s+License, or \(at your option\) any later version/iu,
-        /without any warranty/iu,
-    ],
     'LGPL-2.1-or-later': [
         /GNU Lesser General Public License/iu,
         /either version 2\.1 of the License, or \(at your option\) any later version/iu,

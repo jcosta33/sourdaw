@@ -71,25 +71,25 @@ export type LgplRuntimeContract = Readonly<Record<string, RequiredComponent>>;
 const REQUIRED_COMPONENTS: LgplRuntimeContract = {
     faustwasm: {
         package: '@grame/faustwasm',
-        version: '0.20.0',
-        specifier: '0.20.0',
-        integrity: 'sha512-oxy1MgkGVMxmWdmpiP0OGFv9T0nUfYYINFMoYhErzCipdfkMYv35KgVg5OojHa9NgXD9leLlAB+IIzJZ0KoIQQ==',
+        version: '0.18.5',
+        specifier: '0.18.5',
+        integrity: 'sha512-mJhyTMv1b6V+ICm/XKcNgOFtxJVX4nAIrTDLqJdB5PW6xTIMeJtNHkUBIg+RlWMrbs0QhGYYBVsq22Y6e87v3w==',
         repository: 'https://github.com/grame-cncm/faustwasm',
-        revision: 'cf11238e2587608534621182db1a9dd61682933a',
+        revision: 'ba611eaeefcb41f935cab1481ea9580b470ae8eb',
         distribution: 'copied-byte-for-byte',
-        packageLicense: 'LGPL-2.1',
+        packageLicense: 'LGPL-3.0',
         license: 'LGPL-2.1-or-later',
         licenseFiles: {
             'public/legal/faustwasm-COPYING.txt':
-                'sha256:5af8efd745a8c91bf99443662e85708866807dc2e01b08045f338d63e2839916',
+                'sha256:587bc956e3703e11aa8f4350193d6f5e37b497d84a552abdbe348b48e542d5a1',
         },
         packageFiles: {
-            'COPYING.txt': 'sha256:5af8efd745a8c91bf99443662e85708866807dc2e01b08045f338d63e2839916',
+            'COPYING.txt': 'sha256:c747ba23f84a8b47ebc6007bf536215b3ceeab6bfa2f803cab422a512e3f1ed3',
             'libfaust-wasm/libfaust-wasm.data':
-                'sha256:7f338f4d5006608241c875c38363348d42f9aeed5cbfa5cbb63828e5d4f912ed',
-            'libfaust-wasm/libfaust-wasm.js': 'sha256:82b9fe95a126afab27ccd8bdc0ac9f6c7191db569fef3d1b59cb873508797acc',
+                'sha256:12e89b91e9b9fce899b1cdf6f62fdea18d95ce1ae63a69a61d76c3d365e52050',
+            'libfaust-wasm/libfaust-wasm.js': 'sha256:73b9ee9ba0368f8a52d1e5feeeaee528930e38420acc9ea65b1198b480ed9e25',
             'libfaust-wasm/libfaust-wasm.wasm':
-                'sha256:b047d7c2dd1e77392ee352a95db9df4bd81458c5ca58ccc67631476fe4b59573',
+                'sha256:b81cd9c08c5d230a193194286974a5403d0ca6c9fb2768987af8defca6527202',
         },
         shippedFiles: {
             'public/faust/libfaust-wasm.data': 'libfaust-wasm/libfaust-wasm.data',
@@ -99,13 +99,13 @@ const REQUIRED_COMPONENTS: LgplRuntimeContract = {
         sources: {
             faustwasm: {
                 repository: 'https://github.com/grame-cncm/faustwasm',
-                revision: 'cf11238e2587608534621182db1a9dd61682933a',
+                revision: 'ba611eaeefcb41f935cab1481ea9580b470ae8eb',
                 relationship: 'npm-gitHead',
             },
             'faust-core': {
                 repository: 'https://github.com/grame-cncm/faust',
-                revision: '21884a6d63713ff99dca2fef95c33aecaedfe643',
-                version: '2.90.19',
+                revision: 'ada86ab32fe875f5d1d028c3a99f17e3a83e0ad8',
+                version: '2.89.2',
                 relationship: 'embedded-version-match',
             },
         },
