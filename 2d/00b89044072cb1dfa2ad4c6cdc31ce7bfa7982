@@ -1,0 +1,31 @@
+src/modules/AiRuntime/useCases/readRequestMixDescriptors.ts
+  s_68423a2adea8d2::t_2fc4ba20bf3af4 43-45,54-56
+src/modules/AiRuntime/useCases/agentRequestOrchestration/proposeNextScheduledBatch.ts
+  s_68423a2adea8d2::t_1fa71ce1b0b900 39-42
+  s_68423a2adea8d2::t_2fc4ba20bf3af4 236-239,243-246,525
+src/modules/AiRuntime/useCases/__tests__/multiBatchRun.spec.ts
+  s_68423a2adea8d2::t_1fa71ce1b0b900 453-455,457-459,470-474
+  s_68423a2adea8d2::t_8f0a510070138a 501-506,523-524
+  s_68423a2adea8d2::t_932b196ba70c84 14,31,447-452,456,460-462,466-469,475-498
+  s_68423a2adea8d2::t_6d363ba4fb867a 34,463-465,500,507-522
+  s_68423a2adea8d2::t_f6b6749ac37aab 499
+src/modules/AiRuntime/useCases/__tests__/readRequestMixDescriptors.spec.ts
+  s_68423a2adea8d2::t_932b196ba70c84 45
+  s_68423a2adea8d2::t_2fc4ba20bf3af4 62-64
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2d00b89044072cb1dfa2ad4c6cdc31ce7bfa7982",
+  "prompts": {},
+  "sessions": {
+    "s_68423a2adea8d2": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34b-f305-7c03-beb2-57afa678cda5",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
