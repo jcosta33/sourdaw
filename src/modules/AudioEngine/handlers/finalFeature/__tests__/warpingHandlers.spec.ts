@@ -5,13 +5,11 @@ import { handleSetWarpAlgorithm } from '../handleSetWarpAlgorithm';
 import { handleSetWarpPitchShift } from '../handleSetWarpPitchShift';
 
 const mocks = vi.hoisted(() => ({
-    enableWarping: vi.fn(),
     setWarpAlgorithm: vi.fn(),
     setPitchShift: vi.fn(),
 }));
 
 vi.mock('#/modules/ElasticAudio/useCases', () => ({
-    enableWarping: mocks.enableWarping,
     setWarpAlgorithm: mocks.setWarpAlgorithm,
     setPitchShift: mocks.setPitchShift,
 }));
@@ -19,9 +17,10 @@ vi.mock('#/modules/ElasticAudio/useCases', () => ({
 describe('Warping Handlers', () => {
     beforeEach(() => vi.clearAllMocks());
 
-    it('handleEnableWarping delegates to use case', () => {
-        void handleEnableWarping.execute({ type: 'enableWarping', payload: { clipId: 'c1' } });
-        expect(mocks.enableWarping).toHaveBeenCalledWith('c1');
+    it('keeps public repitch enablement singleton and undoable', () => {
+        // Actual project writes, inverse replay and refusals belong to publicWarpActionsAuthority.integration.spec.ts.
+        expect(handleEnableWarping.batchExecution).toBe('singleton');
+        expect(handleEnableWarping.undoable).toBe(true);
     });
 
     it('handleSetWarpAlgorithm delegates to use case', () => {
