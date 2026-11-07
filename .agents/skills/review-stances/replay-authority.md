@@ -97,7 +97,25 @@ boundaries.
    `executeAppActionBatch` describes members before executing, so later inverses capture pre-batch state. Probe: real
    grouped Undo/Redo against raw CRDT and projection; swap the earlier-sibling projection for live pre-batch state and
    the group fails. When a member snapshots state an earlier one produced (comp-then-remove), inspect the real history
-   entry: a correct final state does not prove the inverse composed the prefix.
+   entry: a correct final state does not prove the inverse composed the prefix. #6221 (`7115fe4389`) refreshed a
+   created clip's guard after the whole Redo group, so a later grouped `addNotes` entered the creator's capture:
+   the second Undo removed the notes first and then falsely refused the clip. Its public approval describes single
+   duplicate cycles and earlier-member restores; those probes omit the later-note member. The missing probe is an actual
+   `addClip` + `addNotes` group through Undo, Redo, Undo, including a serialized and hydrated future stack. Every
+   current creation/duplication producer publishes its own fresh execution-prefix capture only after successful
+   commit, authenticated against its pending inverse; a failed later member leaves that inverse unchanged. Keep
+   duplicate MIDI/satellite and retired-take round trips, plus peer additions after Redo that still refuse Undo.
+   Restamping from final group state must fail the composed case; weakening the guard must fail the peer case.
+   A creator followed by removal can leave no durable project change. Its fresh runtime note/lane identities must
+   not advance one inverse while the removal retains its prior capture. Replay a saved duplicate/remove group,
+   with and without an unrelated durable sibling, through two reload Undo/Redo cycles. Replace the root from a
+   later sibling's committed callback and require neither capture generation to advance. Creator-prefix captures
+   join the same owner-bound, group-wide publication/settlement as removal captures; ambiguous publication retains
+   every paired capture. Canonicalization may clone a requested action: only a private dispatcher binding from
+   the exact authenticated pending request authorizes that canonical object. Borrowed/forged contexts, other
+   pending entries, stale inverses, replaced history and authority resets must refuse the binding. Payload or id
+   equality never grants replay authority. Required CI on #6302 exposed both the missing net-zero composition and
+   the distinction between requested and canonical identities.
 
 ## Retired lessons
 

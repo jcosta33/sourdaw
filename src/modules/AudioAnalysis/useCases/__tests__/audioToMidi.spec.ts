@@ -1,12 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
+import { type AppAction } from '#/utils/handlerContract';
+
 const mocks = vi.hoisted(() => ({
-    addClip: vi.fn(() => ({ id: 'new-midi-clip' })),
     getAllTracks: vi.fn(),
     getCachedAudioBuffer: vi.fn(),
-    addMidiNote: vi.fn(),
     getTransportState: vi.fn(),
-    executeAppAction: vi.fn(),
+    executeAppActionBatch: vi.fn(async (_actions: AppAction[], _options?: unknown) => ({ status: 'committed' })),
     clipStartTempo: null as number | null,
     tempoChangeBeat: null as number | null,
     tempoAfterChange: null as number | null,
@@ -45,7 +46,6 @@ vi.mock('#/modules/Transport/stores', async (importOriginal) => {
 });
 
 vi.mock('#/modules/Arrangement/useCases', () => ({
-    addClip: mocks.addClip,
     getAllTracks: mocks.getAllTracks,
 }));
 
@@ -54,22 +54,36 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
 }));
 
 vi.mock('#/modules/Command/useCases', () => ({
-    executeAppAction: mocks.executeAppAction,
+    executeAppActionBatch: mocks.executeAppActionBatch,
     executeUserAppAction: vi.fn(),
-}));
-
-vi.mock('#/modules/MIDI/useCases', () => ({
-    addMidiNote: mocks.addMidiNote,
+    resetActionReplayAuthority: vi.fn(),
 }));
 
 vi.mock('#/modules/Transport/useCases', () => ({
     getTransportState: mocks.getTransportState,
 }));
 
-import { getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
-
 import { audioToMidi } from '../audioToMidi';
 import { detectOnsets } from '../detectOnsets';
+
+type NoteCall = [clipId: string, pitch: number, startBeat: number, duration: number, velocity: number];
+
+function noteCalls(): NoteCall[] {
+    return mocks.executeAppActionBatch.mock.calls.flatMap(([actions]) =>
+        actions.flatMap((action) => {
+            if (action.type !== 'addNotes') {
+                return [];
+            }
+            return action.payload.notes.map((note): NoteCall => [
+                action.payload.clipId,
+                note.pitch,
+                note.startBeat,
+                note.duration,
+                note.velocity ?? 100,
+            ]);
+        })
+    );
+}
 
 const SAMPLE_RATE = 44100;
 const HOP_SIZE = 512;
@@ -99,82 +113,54 @@ function makeBuffer(length: number, fill: (index: number) => number): AudioBuffe
     } as unknown as AudioBuffer;
 }
 
-describe('audioToMidi track creation routes through the command boundary (Fix 1)', () => {
+describe('audioToMidi plans complete command creation', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        mocks.clipStartTempo = null;
-        mocks.addMidiNote.mockReset();
         mocks.getTransportState.mockReturnValue({ tempo: 120 });
-        mocks.addClip.mockReturnValue({ id: 'new-midi-clip' });
+        mocks.getCachedAudioBuffer.mockReturnValue(makeBuffer(SAMPLE_RATE, (index) => (index % 5000 < 100 ? 1 : 0)));
     });
 
-    function loudBuffer(): AudioBuffer {
-        // Several sharp onsets so detectOnsets yields notes.
-        const length = SAMPLE_RATE;
-        return makeBuffer(length, (index) => (index % 5000 < 100 ? 1.0 : 0));
-    }
-
-    it('dispatches an addTrack AppAction (instead of mutating the store) when target is not MIDI', () => {
-        const audioClip = { id: 'c1', audioBufferId: 'buf1', startBeat: 0, endBeat: 4, name: 'Drum' };
-        const audioTrack = { id: 't1', kind: 'audio', clips: [audioClip] };
-        const createdTrack = { id: 'midi-created', kind: 'midi', clips: [] };
-
-        // After the dispatch, getAllTracks must surface the newly-created MIDI track.
-        mocks.getAllTracks
-            .mockReturnValueOnce([audioTrack]) // clip lookup
-            .mockReturnValueOnce([audioTrack]) // resolveMidiTrackId: existing-track check
-            .mockReturnValueOnce([audioTrack]) // resolveMidiTrackId: idsBefore snapshot
-            .mockReturnValue([audioTrack, createdTrack]); // after dispatch + later reads
-        mocks.getCachedAudioBuffer.mockReturnValue(loudBuffer());
-
-        audioToMidi({ clipId: 'c1', trackId: 't1', sensitivity: 0.1 });
-
-        expect(getCachedAudioBuffer).toHaveBeenCalledWith({ bufferId: 'buf1' });
-        expect(mocks.executeAppAction).toHaveBeenCalledWith({
+    it('prepares destination and clip identities in one compensated batch', async () => {
+        mocks.getAllTracks.mockReturnValue([
+            { id: 't1', kind: 'audio', clips: [{ id: 'c1', startBeat: 0, endBeat: 4, name: 'Drum' }] },
+        ]);
+        expect(await audioToMidi({ clipId: 'c1', trackId: 't1', sensitivity: 0.1 })).toBe(true);
+        const [actions, options] = mocks.executeAppActionBatch.mock.calls[0]!;
+        expect(actions.map((action) => action.type)).toEqual(['addTrack', 'addClip', 'addNotes']);
+        const track = actions[0];
+        const clip = actions[1];
+        const notes = actions[2];
+        expect(track).toMatchObject({
             type: 'addTrack',
-            payload: { name: 'Drum (MIDI)', kind: 'midi' },
+            payload: { id: expect.any(String), kind: 'midi', name: 'Drum (MIDI)' },
         });
-        // The clip is attached to the dispatched track's id — proving the resolved id
-        // flows from the command boundary, not from a hidden direct mutation.
-        expect(mocks.addClip).toHaveBeenCalledWith(expect.objectContaining({ trackId: 'midi-created' }));
-        expect(mocks.addMidiNote).toHaveBeenCalled();
+        if (track?.type !== 'addTrack' || clip?.type !== 'addClip' || notes?.type !== 'addNotes') {
+            throw new Error('Expected complete conversion plan');
+        }
+        expect(clip.payload.trackId).toBe(track.payload.id);
+        expect(notes.payload.clipId).toBe(clip.payload.id);
+        expect(options).toMatchObject({
+            requireCompensation: true,
+            groupId: expect.any(String),
+            groupLabel: 'Convert audio to MIDI',
+        });
     });
 
-    it('does not dispatch addTrack when the target already is a MIDI track', () => {
-        const audioClip = { id: 'c1', audioBufferId: 'buf1', startBeat: 0, endBeat: 4, name: 'Drum' };
-        const midiTrack = { id: 't1', kind: 'midi', clips: [audioClip] };
-        mocks.getAllTracks.mockReturnValue([midiTrack]);
-        mocks.getCachedAudioBuffer.mockReturnValue(loudBuffer());
-
-        audioToMidi({ clipId: 'c1', trackId: 't1', sensitivity: 0.1 });
-
-        expect(getCachedAudioBuffer).toHaveBeenCalledWith({ bufferId: 'buf1' });
-        expect(mocks.executeAppAction).not.toHaveBeenCalled();
-        expect(mocks.addClip).toHaveBeenCalledWith(expect.objectContaining({ trackId: 't1' }));
-    });
-
-    it('aborts without adding a clip when the dispatched track never materialises', () => {
-        const audioClip = { id: 'c1', audioBufferId: 'buf1', startBeat: 0, endBeat: 4, name: 'Drum' };
-        const audioTrack = { id: 't1', kind: 'audio', clips: [audioClip] };
-        // Dispatch is a no-op (e.g. uninitialised store): no new MIDI track ever appears.
-        mocks.getAllTracks.mockReturnValue([audioTrack]);
-        mocks.getCachedAudioBuffer.mockReturnValue(loudBuffer());
-
-        audioToMidi({ clipId: 'c1', trackId: 't1', sensitivity: 0.1 });
-
-        expect(getCachedAudioBuffer).toHaveBeenCalledWith({ bufferId: 'buf1' });
-        expect(mocks.executeAppAction).toHaveBeenCalled();
-        expect(mocks.addClip).not.toHaveBeenCalled();
-        expect(mocks.addMidiNote).not.toHaveBeenCalled();
+    it('reuses an existing MIDI destination without a track creation command', async () => {
+        mocks.getAllTracks.mockReturnValue([
+            { id: 't1', kind: 'midi', clips: [{ id: 'c1', startBeat: 0, endBeat: 4, name: 'Drum' }] },
+        ]);
+        expect(await audioToMidi({ clipId: 'c1', trackId: 't1', sensitivity: 0.1 })).toBe(true);
+        const actions = mocks.executeAppActionBatch.mock.calls[0]![0];
+        expect(actions.map((action) => action.type)).toEqual(['addClip', 'addNotes']);
+        expect(actions[0]).toMatchObject({ payload: { trackId: 't1' } });
     });
 });
 
 describe('audioToMidi follows the physical source and tempo map', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        mocks.addMidiNote.mockReset();
         mocks.getTransportState.mockReturnValue({ tempo: 120 });
-        mocks.addClip.mockReturnValue({ id: 'new-midi-clip' });
     });
 
     function arrangeClip(clip: Record<string, unknown>): void {
@@ -188,10 +174,10 @@ describe('audioToMidi follows the physical source and tempo map', () => {
     }
 
     function notes(): Array<{ pitch: number; beat: number }> {
-        return mocks.addMidiNote.mock.calls.map((call) => ({ pitch: call[1] as number, beat: call[2] as number }));
+        return noteCalls().map((call) => ({ pitch: call[1], beat: call[2] }));
     }
 
-    it('honours canonical zero over stale beat offset and integrates a tempo change before the onset', () => {
+    it('honours canonical zero over stale beat offset and integrates a tempo change before the onset', async () => {
         mocks.tempoChangeBeat = 3;
         mocks.tempoAfterChange = 60;
         arrangeClip({
@@ -205,7 +191,7 @@ describe('audioToMidi follows the physical source and tempo map', () => {
         });
         mocks.getCachedAudioBuffer.mockReturnValue(stepBuffer(1.5, 2));
 
-        expect(audioToMidi({ clipId: 'c1', trackId: 't1', sensitivity: 0.1 })).toBe(true);
+        expect(await audioToMidi({ clipId: 'c1', trackId: 't1', sensitivity: 0.1 })).toBe(true);
         expect(notes()).toHaveLength(1);
         expect(notes()[0]!.pitch).toBe(36);
         // Beat 2→3 takes 0.5 s; beat 3→4 takes 1 s. The attack is two beats into the clip.
@@ -215,29 +201,32 @@ describe('audioToMidi follows the physical source and tempo map', () => {
     it.each([
         { rate: 0.5, expectedBeat: 3 },
         { rate: 2, expectedBeat: 1.125 },
-    ])('places a $rate-rate source attack after signed pre-roll across the tempo change', ({ rate, expectedBeat }) => {
-        mocks.tempoChangeBeat = 3;
-        mocks.tempoAfterChange = 60;
-        arrangeClip({
-            id: 'c1',
-            audioBufferId: 'buf1',
-            startBeat: 2,
-            endBeat: 6,
-            name: 'Drum',
-            audioOffsetSeconds: -0.5,
-            audioOffsetBeats: 0,
-            stretchMode: 'repitch',
-            stretchRatio: rate,
-        });
-        mocks.getCachedAudioBuffer.mockReturnValue(stepBuffer(0.75, 1.5));
+    ])(
+        'places a $rate-rate source attack after signed pre-roll across the tempo change',
+        async ({ rate, expectedBeat }) => {
+            mocks.tempoChangeBeat = 3;
+            mocks.tempoAfterChange = 60;
+            arrangeClip({
+                id: 'c1',
+                audioBufferId: 'buf1',
+                startBeat: 2,
+                endBeat: 6,
+                name: 'Drum',
+                audioOffsetSeconds: -0.5,
+                audioOffsetBeats: 0,
+                stretchMode: 'repitch',
+                stretchRatio: rate,
+            });
+            mocks.getCachedAudioBuffer.mockReturnValue(stepBuffer(0.75, 1.5));
 
-        expect(audioToMidi({ clipId: 'c1', trackId: 't1', sensitivity: 0.1 })).toBe(true);
-        expect(notes()).toHaveLength(1);
-        // The detector reports a leading energy frame, about 0.06 beat before the sample step.
-        expect(Math.abs(notes()[0]!.beat - expectedBeat)).toBeLessThan(0.08);
-    });
+            expect(await audioToMidi({ clipId: 'c1', trackId: 't1', sensitivity: 0.1 })).toBe(true);
+            expect(notes()).toHaveLength(1);
+            // The detector reports a leading energy frame, about 0.06 beat before the sample step.
+            expect(Math.abs(notes()[0]!.beat - expectedBeat)).toBeLessThan(0.08);
+        }
+    );
 
-    it('uses original pass seams and distinct first, wrap, and later-head sources', () => {
+    it('uses original pass seams and distinct first, wrap, and later-head sources', async () => {
         const regionTone = (index: number, sourceStart: number, sourceEnd: number, frequency: number) => {
             const seconds = index / SAMPLE_RATE;
             if (seconds < sourceStart || seconds >= sourceEnd) {
@@ -271,7 +260,7 @@ describe('audioToMidi follows the physical source and tempo map', () => {
         });
         mocks.getCachedAudioBuffer.mockReturnValue(buffer);
 
-        expect(audioToMidi({ clipId: 'c1', trackId: 't1', sensitivity: 0.1, mode: 'pitched' })).toBe(true);
+        expect(await audioToMidi({ clipId: 'c1', trackId: 't1', sensitivity: 0.1, mode: 'pitched' })).toBe(true);
         const emitted = notes().sort((left, right) => left.beat - right.beat);
         expect(emitted).toHaveLength(3);
         expect(emitted.map((note) => note.pitch)).toEqual([64, 76, 69]);
@@ -280,7 +269,7 @@ describe('audioToMidi follows the physical source and tempo map', () => {
         expect(emitted[2]!.beat).toBeCloseTo(3.28, 1);
     });
 
-    it('does not read an onset when the canonical entry is the exclusive physical source end', () => {
+    it('does not read an onset when the canonical entry is the exclusive physical source end', async () => {
         const buffer = stepBuffer(0.25, 1);
         arrangeClip({
             id: 'c1',
@@ -293,7 +282,7 @@ describe('audioToMidi follows the physical source and tempo map', () => {
         });
         mocks.getCachedAudioBuffer.mockReturnValue(buffer);
 
-        expect(audioToMidi({ clipId: 'c1', trackId: 't1', sensitivity: 0.1 })).toBe(false);
+        expect(await audioToMidi({ clipId: 'c1', trackId: 't1', sensitivity: 0.1 })).toBe(false);
         expect(notes()).toHaveLength(0);
     });
 });
@@ -302,12 +291,10 @@ describe('audioToMidi pitched mode (clamped pitch-window path coverage)', () => 
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.clipStartTempo = null;
-        mocks.addMidiNote.mockReset();
         mocks.getTransportState.mockReturnValue({ tempo: 120 });
-        mocks.addClip.mockReturnValue({ id: 'new-midi-clip' });
     });
 
-    it('processes a clip whose final onset sits near the end without error', () => {
+    it('processes a clip whose final onset sits near the end without error', async () => {
         // A tone burst whose onset is close enough to the clip end that the pitch window
         // would overrun — exercises the bounds clamp in detectPitchForOnsets. This asserts
         // the path completes and still emits pitched notes; it does NOT distinguish the fix
@@ -324,76 +311,51 @@ describe('audioToMidi pitched mode (clamped pitch-window path coverage)', () => 
         mocks.getAllTracks.mockReturnValue([midiTrack]);
         mocks.getCachedAudioBuffer.mockReturnValue(buffer);
 
-        expect(() => audioToMidi({ clipId: 'c1', trackId: 't1', sensitivity: 0.1, mode: 'pitched' })).not.toThrow();
+        expect(await audioToMidi({ clipId: 'c1', trackId: 't1', sensitivity: 0.1, mode: 'pitched' })).toBe(true);
         expect(getCachedAudioBuffer).toHaveBeenCalledWith({ bufferId: 'buf1' });
-        expect(mocks.addMidiNote).toHaveBeenCalled();
+        expect(noteCalls().length).toBeGreaterThan(0);
         // The window never reads out of bounds, so every emitted pitch is a valid MIDI value.
-        for (const call of mocks.addMidiNote.mock.calls) {
-            const pitch = call[1] as number;
+        for (const call of noteCalls()) {
+            const pitch = call[1];
             expect(pitch).toBeGreaterThanOrEqual(0);
             expect(pitch).toBeLessThanOrEqual(127);
         }
     });
 });
 
-describe('audioToMidi return value discriminates real conversion from no-op/failure', () => {
+describe('audioToMidi committed result', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        mocks.addMidiNote.mockReset();
         mocks.getTransportState.mockReturnValue({ tempo: 120 });
-        mocks.addClip.mockReturnValue({ id: 'new-midi-clip' });
+        mocks.getAllTracks.mockReturnValue([
+            { id: 't1', kind: 'midi', clips: [{ id: 'c1', startBeat: 0, endBeat: 4, name: 'Drum' }] },
+        ]);
+        mocks.getCachedAudioBuffer.mockReturnValue(makeBuffer(SAMPLE_RATE, (index) => (index % 5000 < 100 ? 1 : 0)));
     });
 
-    function loudBuffer(): AudioBuffer {
-        const length = SAMPLE_RATE;
-        return makeBuffer(length, (index) => (index % 5000 < 100 ? 1.0 : 0));
-    }
-
-    function silentBuffer(): AudioBuffer {
-        const length = SAMPLE_RATE;
-        return makeBuffer(length, () => 0);
-    }
-
-    it('returns true when notes were actually written', () => {
-        const audioClip = { id: 'c1', audioBufferId: 'buf1', startBeat: 0, endBeat: 4, name: 'Drum' };
-        const midiTrack = { id: 't1', kind: 'midi', clips: [audioClip] };
-        mocks.getAllTracks.mockReturnValue([midiTrack]);
-        mocks.getCachedAudioBuffer.mockReturnValue(loudBuffer());
-
-        const result = audioToMidi({ clipId: 'c1', trackId: 't1', sensitivity: 0.1 });
-
-        expect(result).toBe(true);
-        expect(mocks.addMidiNote).toHaveBeenCalled();
+    it.each(['committed', 'committed-with-warning'])('returns true only after %s', async (status) => {
+        mocks.executeAppActionBatch.mockResolvedValueOnce({ status });
+        expect(await audioToMidi({ clipId: 'c1', trackId: 't1', sensitivity: 0.1 })).toBe(true);
+        expect(noteCalls().length).toBeGreaterThan(0);
     });
 
-    it('returns false without writing a clip when no onsets are detected', () => {
-        const audioClip = { id: 'c1', audioBufferId: 'buf1', startBeat: 0, endBeat: 4, name: 'Drum' };
-        const midiTrack = { id: 't1', kind: 'midi', clips: [audioClip] };
-        mocks.getAllTracks.mockReturnValue([midiTrack]);
-        mocks.getCachedAudioBuffer.mockReturnValue(silentBuffer());
+    it.each(['failed', 'conflicted', 'rejected', 'cancelled', 'ambiguous', 'no-op'])(
+        'returns false for %s',
+        async (status) => {
+            mocks.executeAppActionBatch.mockResolvedValueOnce({ status });
+            expect(await audioToMidi({ clipId: 'c1', trackId: 't1', sensitivity: 0.1 })).toBe(false);
+        }
+    );
 
-        const result = audioToMidi({ clipId: 'c1', trackId: 't1', sensitivity: 0.1 });
-
-        expect(result).toBe(false);
-        expect(mocks.addClip).not.toHaveBeenCalled();
-        expect(mocks.addMidiNote).not.toHaveBeenCalled();
+    it('does not submit a creation batch when there are no onsets', async () => {
+        mocks.getCachedAudioBuffer.mockReturnValue(makeBuffer(SAMPLE_RATE, () => 0));
+        expect(await audioToMidi({ clipId: 'c1', trackId: 't1', sensitivity: 0.1 })).toBe(false);
+        expect(mocks.executeAppActionBatch).not.toHaveBeenCalled();
     });
 
-    it('returns false instead of throwing when addMidiNote fails (e.g. MIDI store not initialized)', () => {
-        const audioClip = { id: 'c1', audioBufferId: 'buf1', startBeat: 0, endBeat: 4, name: 'Drum' };
-        const midiTrack = { id: 't1', kind: 'midi', clips: [audioClip] };
-        mocks.getAllTracks.mockReturnValue([midiTrack]);
-        mocks.getCachedAudioBuffer.mockReturnValue(loudBuffer());
-        mocks.addMidiNote.mockImplementation(() => {
-            throw new Error('MIDI store not initialized');
-        });
-
-        let result: boolean | undefined;
-        expect(() => {
-            result = audioToMidi({ clipId: 'c1', trackId: 't1', sensitivity: 0.1 });
-        }).not.toThrow();
-
-        expect(result).toBe(false);
+    it('returns false when dispatch rejects', async () => {
+        mocks.executeAppActionBatch.mockRejectedValueOnce(new Error('MIDI store not initialized'));
+        await expect(audioToMidi({ clipId: 'c1', trackId: 't1', sensitivity: 0.1 })).resolves.toBe(false);
     });
 });
 
@@ -407,9 +369,7 @@ describe('audioToMidi converts only the audio a clip plays', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.clipStartTempo = null;
-        mocks.addMidiNote.mockReset();
         mocks.getTransportState.mockReturnValue({ tempo: TEMPO });
-        mocks.addClip.mockReturnValue({ id: 'new-midi-clip' });
     });
 
     function arrangeClip(clip: Record<string, unknown>): void {
@@ -426,10 +386,10 @@ describe('audioToMidi converts only the audio a clip plays', () => {
     }
 
     function noteStartBeats(): number[] {
-        return mocks.addMidiNote.mock.calls.map((call) => call[2] as number);
+        return noteCalls().map((call) => call[2]);
     }
 
-    it('drops an onset before a positive audio offset and shifts a later one earlier by that offset', () => {
+    it('drops an onset before a positive audio offset and shifts a later one earlier by that offset', async () => {
         const offsetHops = 86;
         const offsetSec = (offsetHops * HOP_SIZE) / SAMPLE_RATE;
         const offsetBeats = offsetSec * BEATS_PER_SECOND;
@@ -448,17 +408,16 @@ describe('audioToMidi converts only the audio a clip plays', () => {
         arrangeClip(clip);
         mocks.getCachedAudioBuffer.mockReturnValue(stepBuffer(headOnsetSample, length));
 
-        expect(audioToMidi({ clipId: 'c1', trackId: 't1', sensitivity: SENSITIVITY })).toBe(false);
-        expect(mocks.addMidiNote).not.toHaveBeenCalled();
+        expect(await audioToMidi({ clipId: 'c1', trackId: 't1', sensitivity: SENSITIVITY })).toBe(false);
+        expect(noteCalls()).toHaveLength(0);
 
         vi.clearAllMocks();
         mocks.getTransportState.mockReturnValue({ tempo: TEMPO });
-        mocks.addClip.mockReturnValue({ id: 'new-midi-clip' });
         arrangeClip(clip);
         const laterBuffer = stepBuffer(laterOnsetSample, length);
         mocks.getCachedAudioBuffer.mockReturnValue(laterBuffer);
 
-        expect(audioToMidi({ clipId: 'c1', trackId: 't1', sensitivity: SENSITIVITY })).toBe(true);
+        expect(await audioToMidi({ clipId: 'c1', trackId: 't1', sensitivity: SENSITIVITY })).toBe(true);
         const rawOnsets = detectOnsets(laterBuffer, SENSITIVITY, MIN_INTERVAL_SEC);
         expect(rawOnsets.length).toBeGreaterThan(0);
         const rawStartBeat = rawOnsets[0]!.timeSec * BEATS_PER_SECOND;
@@ -468,7 +427,7 @@ describe('audioToMidi converts only the audio a clip plays', () => {
         expect(written[0]).toBeCloseTo(rawStartBeat - offsetBeats, 1);
     });
 
-    it('transcribes the audible source transient using clip-start tempo rather than base tempo', () => {
+    it('transcribes the audible source transient using clip-start tempo rather than base tempo', async () => {
         mocks.clipStartTempo = 60;
         const onsetSample = 100 * HOP_SIZE;
         const buffer = stepBuffer(onsetSample, 180 * HOP_SIZE + FRAME_SIZE);
@@ -482,13 +441,13 @@ describe('audioToMidi converts only the audio a clip plays', () => {
         });
         mocks.getCachedAudioBuffer.mockReturnValue(buffer);
 
-        expect(audioToMidi({ clipId: 'c1', trackId: 't1', sensitivity: SENSITIVITY })).toBe(true);
+        expect(await audioToMidi({ clipId: 'c1', trackId: 't1', sensitivity: SENSITIVITY })).toBe(true);
         expect(noteStartBeats()).toHaveLength(1);
         expect(noteStartBeats()[0]).toBeGreaterThan(0);
         expect(noteStartBeats()[0]).toBeLessThan(0.5);
     });
 
-    it('writes no note for an onset past the clip audible end', () => {
+    it('writes no note for an onset past the clip audible end', async () => {
         const onsetSample = 200 * HOP_SIZE;
         const length = 280 * HOP_SIZE + FRAME_SIZE;
         const buffer = stepBuffer(onsetSample, length);
@@ -499,11 +458,11 @@ describe('audioToMidi converts only the audio a clip plays', () => {
         expect(rawOnsets.length).toBeGreaterThan(0);
         expect(rawOnsets[0]!.timeSec).toBeGreaterThan(4 / BEATS_PER_SECOND);
 
-        expect(audioToMidi({ clipId: 'c1', trackId: 't1', sensitivity: SENSITIVITY })).toBe(false);
-        expect(mocks.addMidiNote).not.toHaveBeenCalled();
+        expect(await audioToMidi({ clipId: 'c1', trackId: 't1', sensitivity: SENSITIVITY })).toBe(false);
+        expect(noteCalls()).toHaveLength(0);
     });
 
-    it('repeats an in-loop onset once per iteration and ignores buffer past the loop window', () => {
+    it('repeats an in-loop onset once per iteration and ignores buffer past the loop window', async () => {
         const inLoopSample = 8 * HOP_SIZE;
         const outsideSample = 60 * HOP_SIZE;
         const length = 180 * HOP_SIZE + FRAME_SIZE;
@@ -523,7 +482,7 @@ describe('audioToMidi converts only the audio a clip plays', () => {
         expect(rawOnsets.length).toBeGreaterThanOrEqual(2);
         const outsideBeat = rawOnsets[1]!.timeSec * BEATS_PER_SECOND;
 
-        expect(audioToMidi({ clipId: 'c1', trackId: 't1', sensitivity: SENSITIVITY })).toBe(true);
+        expect(await audioToMidi({ clipId: 'c1', trackId: 't1', sensitivity: SENSITIVITY })).toBe(true);
         const written = noteStartBeats()
             .slice()
             .sort((left, right) => left - right);
@@ -538,7 +497,7 @@ describe('audioToMidi converts only the audio a clip plays', () => {
         }
     });
 
-    it('places the first audible onset after a negative-offset pre-roll, not at beat 0', () => {
+    it('places the first audible onset after a negative-offset pre-roll, not at beat 0', async () => {
         const onsetSample = 8 * HOP_SIZE;
         const length = SAMPLE_RATE;
         const buffer = stepBuffer(onsetSample, length);
@@ -557,7 +516,7 @@ describe('audioToMidi converts only the audio a clip plays', () => {
         expect(rawOnsets.length).toBeGreaterThan(0);
         const rawStartBeat = rawOnsets[0]!.timeSec * BEATS_PER_SECOND;
 
-        expect(audioToMidi({ clipId: 'c1', trackId: 't1', sensitivity: SENSITIVITY })).toBe(true);
+        expect(await audioToMidi({ clipId: 'c1', trackId: 't1', sensitivity: SENSITIVITY })).toBe(true);
         const written = noteStartBeats();
         expect(written.length).toBeGreaterThan(0);
         const firstBeat = Math.min(...written);
@@ -567,7 +526,7 @@ describe('audioToMidi converts only the audio a clip plays', () => {
         expect(firstBeat).toBeGreaterThan(1);
     });
 
-    it('transcribes a trimmed loop from its anchored region, tail then wrapped head', () => {
+    it('transcribes a trimmed loop from its anchored region, tail then wrapped head', async () => {
         // A clip looped at 0 (region source beats [0, 2)) and start-trimmed
         // to 1: the pass enters at phase 1, so each pass plays source beats
         // [1, 2) — the region tail — then wraps to [0, 1) — the region head.
@@ -609,11 +568,13 @@ describe('audioToMidi converts only the audio a clip plays', () => {
         });
         mocks.getCachedAudioBuffer.mockReturnValue(buffer);
 
-        expect(audioToMidi({ clipId: 'c1', trackId: 't1', sensitivity: SENSITIVITY, mode: 'pitched' })).toBe(true);
+        expect(await audioToMidi({ clipId: 'c1', trackId: 't1', sensitivity: SENSITIVITY, mode: 'pitched' })).toBe(
+            true
+        );
 
-        const written = mocks.addMidiNote.mock.calls.map((call) => ({
-            pitch: call[1] as number,
-            startBeat: call[2] as number,
+        const written = noteCalls().map((call) => ({
+            pitch: call[1],
+            startBeat: call[2],
         }));
         expect(written).toHaveLength(4);
         const sorted = written.slice().sort((left, right) => left.startBeat - right.startBeat);

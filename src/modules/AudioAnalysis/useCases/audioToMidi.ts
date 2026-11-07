@@ -1,9 +1,15 @@
-import { addClip, getAllTracks } from '#/modules/Arrangement/useCases';
+import { getAllTracks } from '#/modules/Arrangement/useCases';
 import { getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
-import { addMidiNote } from '#/modules/MIDI/useCases';
+import { executeAppActionBatch } from '#/modules/Command/useCases';
+import {
+    projectRevisionMatchesLiveIgnoringSaveWrites,
+    settlePendingProjectWritesAndCaptureRevision,
+} from '#/modules/CrdtDocument/useCases';
 import { readBeatAtSamples, readSecondsAtBeat, readTempoAtBeat } from '#/modules/Transport/stores';
 import { projectAudioLoopPassSegments } from '#/utils/audioSourceTime';
 import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
+import { type AppAction } from '#/utils/handlerContract';
+import { ADD_NOTES_MAX_NOTES_PER_COMMAND } from '#/utils/midiNoteBatchLimits';
 import { frequencyToMidiNote } from '#/utils/pitch';
 import { boundStretchRatio } from '#/utils/stretchRatioBound';
 
@@ -17,6 +23,7 @@ export type AudioToMidiOptions = {
     minInterval?: number;
     targetPitch?: number;
     mode?: 'rhythm' | 'pitched';
+    signal?: AbortSignal;
 };
 
 const FRAME_SIZE = 1024;
@@ -215,17 +222,25 @@ function detectPitchForOnsets(
 
 /**
  * Detect onsets in `options.clipId`'s cached audio and write them as MIDI notes on a
- * (possibly newly-created) MIDI track. Returns whether a MIDI clip was actually produced,
- * so callers can distinguish a real conversion from a silent no-op (clip/buffer missing, no
- * onsets detected, or MIDI track resolution failed) or a failed write (e.g. `addMidiNote`
- * throwing because the MIDI store isn't initialized) instead of assuming success whenever the
- * call completes. Like `handlePolyMidi`'s conversion path, the fallible body is caught here so
- * callers only ever need to branch on the boolean return, never on a thrown error.
+ * (possibly newly-created) MIDI track. Success means the complete grouped creation
+ * committed; missing input, no onsets and refused or failed writes return false.
  */
-export function audioToMidi(options: AudioToMidiOptions): boolean {
-    const { clipId, trackId, sensitivity = 0.5, minInterval = 0.25, targetPitch = 36, mode = 'rhythm' } = options;
+export async function audioToMidi(options: AudioToMidiOptions): Promise<boolean> {
+    const {
+        clipId,
+        trackId,
+        sensitivity = 0.5,
+        minInterval = 0.25,
+        targetPitch = 36,
+        mode = 'rhythm',
+        signal,
+    } = options;
 
     try {
+        if (signal?.aborted) {
+            return false;
+        }
+        const projectRevision = settlePendingProjectWritesAndCaptureRevision();
         const clip = getAllTracks()
             .flatMap((time) => time.clips)
             .find((context) => context.id === clipId);
@@ -274,25 +289,24 @@ export function audioToMidi(options: AudioToMidiOptions): boolean {
             return false;
         }
 
-        const midiTrackId = resolveMidiTrackId(trackId, `${clip.name} (MIDI)`);
-        if (!midiTrackId) {
-            return false;
-        }
-
+        const destination = resolveMidiTrackId(trackId, `${clip.name} (MIDI)`);
+        const midiClipId = `clip-audio-midi-${crypto.randomUUID()}`;
         const clipStartBeat = clip.startBeat;
         const endBeat = clip.endBeat;
-
-        const midiClip = addClip({
-            trackId: midiTrackId,
-            startBeat: clipStartBeat,
-            endBeat: Math.ceil(endBeat),
-            name: `${clip.name} → MIDI`,
-            type: 'midi',
-        });
-
-        if (!midiClip) {
-            return false;
-        }
+        const actions: AppAction[] = [
+            ...destination.actions,
+            {
+                type: 'addClip',
+                payload: {
+                    id: midiClipId,
+                    trackId: destination.trackId,
+                    startBeat: clipStartBeat,
+                    endBeat: Math.ceil(endBeat),
+                    name: `${clip.name} → MIDI`,
+                    type: 'midi',
+                },
+            },
+        ];
 
         let maxAmplitude = 1e-8;
         for (const output of transcribed) {
@@ -301,6 +315,7 @@ export function audioToMidi(options: AudioToMidiOptions): boolean {
             }
         }
 
+        const notes = [];
         for (let index = 0; index < transcribed.length; index++) {
             const onset = transcribed[index]!;
             const startBeat = onset.startBeat;
@@ -309,10 +324,24 @@ export function audioToMidi(options: AudioToMidiOptions): boolean {
             const velocity = Math.max(1, Math.min(127, Math.round((onset.amplitude / maxAmplitude) * 127)));
             const pitch = mode === 'pitched' && onset.pitch !== undefined ? onset.pitch : targetPitch;
 
-            addMidiNote(midiClip.id, pitch, startBeat, duration, velocity);
+            notes.push({ pitch, startBeat, duration, velocity });
         }
-
-        return true;
+        for (let offset = 0; offset < notes.length; offset += ADD_NOTES_MAX_NOTES_PER_COMMAND) {
+            actions.push({
+                type: 'addNotes',
+                payload: { clipId: midiClipId, notes: notes.slice(offset, offset + ADD_NOTES_MAX_NOTES_PER_COMMAND) },
+            });
+        }
+        const result = await executeAppActionBatch(actions, {
+            groupId: `audio-to-midi-${crypto.randomUUID()}`,
+            groupLabel: 'Convert audio to MIDI',
+            source: 'manual',
+            requireCompensation: true,
+            signal,
+            shouldExecute: () =>
+                signal?.aborted !== true && projectRevisionMatchesLiveIgnoringSaveWrites(projectRevision),
+        });
+        return result.status === 'committed' || result.status === 'committed-with-warning';
     } catch {
         return false;
     }

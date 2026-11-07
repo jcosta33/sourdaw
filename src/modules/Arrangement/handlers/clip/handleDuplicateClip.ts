@@ -1,5 +1,6 @@
+import { commitRedoInverseCapture } from '#/modules/Command/useCases';
 import { createHandler } from '#/utils/createHandler';
-import { type GeneratedMidiStateGuard, type HandlerValidationContext } from '#/utils/handlerContract';
+import { type AppAction, type GeneratedMidiStateGuard, type HandlerValidationContext } from '#/utils/handlerContract';
 
 import { resolveEligibleClipWriteTarget } from '../../stores/resolveEligibleClipWriteTarget';
 import { duplicateClip } from '../../useCases/clip/duplicateClip';
@@ -7,6 +8,7 @@ import { prepareDuplicateClipTargetId } from '../../useCases/clip/prepareDuplica
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { toHandlerExecutionResult } from '../toHandlerExecutionResult';
 
+import { prepareCreatedClipRedoGuard } from './prepareCreatedClipRedoGuard';
 import { stampCreatedClipStateGuard } from './stampCreatedClipStateGuard';
 
 type DuplicateClipAction = { payload: { clipId: string; targetClipId?: string } };
@@ -14,6 +16,7 @@ type DuplicateClipAction = { payload: { clipId: string; targetClipId?: string } 
 type DuplicateClipState = {
     targetClipId: string;
     generatedMidiStateGuard: GeneratedMidiStateGuard;
+    stageRedoGuard?: (action: AppAction) => void;
 };
 
 const duplicateClipStates = new WeakMap<object, DuplicateClipState>();
@@ -109,10 +112,27 @@ export const handleDuplicateClip = createHandler<'duplicateClip'>({
             return toHandlerExecutionResult(false);
         }
         stampCreatedClipStateGuard(state.generatedMidiStateGuard, state.targetClipId);
+        if (state.stageRedoGuard) {
+            state.stageRedoGuard(alpha);
+            return {
+                status: 'written',
+                afterCommit: () => {
+                    // Command settles every staged inverse together after these effects complete.
+                },
+                afterAmbiguousCommit: () => {
+                    commitRedoInverseCapture({ phase: 'discard', actions: [alpha] });
+                },
+            };
+        }
         return toHandlerExecutionResult(true);
     },
-    describe: (alpha) => {
+    describe: (alpha, context) => {
         const state = getDuplicateClipState(alpha);
+        state.stageRedoGuard = prepareCreatedClipRedoGuard({
+            recordedRedo: context?.recordedRedo,
+            clipId: state.targetClipId,
+            guard: state.generatedMidiStateGuard,
+        });
         return {
             label: 'Duplicate clip',
             inverseAction: {
