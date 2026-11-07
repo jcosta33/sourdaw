@@ -255,11 +255,11 @@ three stances is not this procedure: stop and dispatch the third.
 
 Stances are the mechanism, not the paperwork. One reader finds what the reader already expects; three
 blind stances with distinct failure modes find the silent ones — a check that cannot fail, a suite the
-push workflow never ran, the state a theme was never given. A change that cannot alter what the product
-does, what a test proves, what a rule, procedure, contract or decision requires or records, which
-document a requirement points at, a persisted or generated artifact, or a build or delivery path is
-genuinely trivial and may honestly run one, subject to the machine floor of its class. Any other change
-carries three.
+push workflow never ran, the state a theme was never given. A change is absolutely tiny and harmless
+only when it cannot alter what the product does, what a test proves, what a rule, procedure, contract
+or decision requires or records, which document a requirement points at, a persisted or generated
+artifact, or a build or delivery path; such a change may honestly run one, subject to the machine floor
+of its class. Any other change carries three.
 
 A stance is a failure mode, never a file, a path, or a role: "correctness" above all is the baseline
 every reviewer already holds, not a stance. Three stance _names_ satisfy `review:publish` even when
