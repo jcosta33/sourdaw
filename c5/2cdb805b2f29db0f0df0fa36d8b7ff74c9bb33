@@ -1,0 +1,73 @@
+.agents/skills/review-stances/test-validity.md
+  s_e1e066bff5f265::t_6be7b8bdd40949 75-78
+release/open-source-inventory.json
+  s_8dd2ba9e498da7::t_78b49ef4749073 1216
+scripts/__tests__/resourceGuardShowOutput.spec.ts
+  s_e1e066bff5f265::t_9eb7b9e54630b4 1-2,4,8-14,42-73,75-171
+scripts/resourceGuard.ts
+  s_e1e066bff5f265::t_002eb2da777f8b 3345
+src/modules/AiRuntime/transformers/__tests__/llmActionBridge.spec.ts
+  s_e1e066bff5f265::t_d6c339de095a1b 2192-2194,2196-2197,2200,2202,2205
+src/modules/AiRuntime/transformers/llmActionStrategies/__tests__/clipStrategy.spec.ts
+  s_e1e066bff5f265::t_ff3416fd59e199 592-633
+src/modules/AiRuntime/transformers/llmActionStrategies/clipEditingStrategies.ts
+  s_e1e066bff5f265::t_dfcfb42e0bf35c 111-120,427-433
+src/modules/Arrangement/handlers/clip/__tests__/handleCrossfadeClipsRefusal.spec.ts
+  s_e1e066bff5f265::t_b6f4dd67dd4acf 1-138
+src/modules/Arrangement/handlers/clip/handleCrossfadeClips.ts
+  s_e1e066bff5f265::t_ee01af820ae8ac 8,129,147-152,155
+src/modules/Arrangement/useCases/clipEditing/__tests__/crossfadeClips.spec.ts
+  s_e1e066bff5f265::t_8423fb1fa21839 554-563,566-567,570-580,582-583
+src/modules/Arrangement/useCases/clipEditing/crossfadeClipBLoopOriginEntry.ts
+  s_e1e066bff5f265::t_b375339c09cc95 11
+src/modules/Arrangement/useCases/clipEditing/crossfadeClips.ts
+  s_e1e066bff5f265::t_07c8de1f304951 9,39-40,43,78
+src/modules/Arrangement/useCases/clipEditing/findCrossfadePair.ts
+  s_e1e066bff5f265::t_d3fb7407de7ba1 1-21
+src/modules/Arrangement/useCases/clipEditing/resolveCrossfadeClipB.ts
+  s_e1e066bff5f265::t_a8f82cf4c3c312 152,161
+src/modules/Arrangement/useCases/device/addExternalDevice.ts
+  s_e1e066bff5f265::t_2e8110209a44de 8-9,37
+src/modules/Arrangement/useCases/device/externalPluginDeviceType.ts
+  s_e1e066bff5f265::t_19e2fcb448573c 1-7
+src/modules/Arrangement/useCases/index.ts
+  s_e1e066bff5f265::t_d6d9f1f7544171 178
+src/modules/TimelineEditor/presentations/views/Inspector/DeviceInspector.tsx
+  s_e1e066bff5f265::t_cd4dd2c67539fa 5-13,23-26,99-109,111-117,125-131
+src/modules/TimelineEditor/presentations/views/Inspector/TrackDevicesSection.tsx
+  s_e1e066bff5f265::t_346ee3e0fc7345 48-49,130-133,135-141,143,455
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/DeviceInspector.spec.tsx
+  s_e1e066bff5f265::t_3177118d9c2dc6 2-11,78-82,87-88,104-109,359-492
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/resolveDevicePlugin.spec.ts
+  s_e1e066bff5f265::t_5c8a305c424655 1-59
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/resolveExternalPluginEditorAccess.spec.ts
+  s_e1e066bff5f265::t_810c48b03e84e6 1-122
+src/modules/TimelineEditor/presentations/views/Inspector/resolveDevicePlugin.ts
+  s_e1e066bff5f265::t_6d7f33971521c8 1-2,6-16,22-24
+src/modules/TimelineEditor/presentations/views/Inspector/resolveExternalPluginEditorAccess.ts
+  s_e1e066bff5f265::t_c2ccfba6ce127d 1-42
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c52cdb805b2f29db0f0df0fa36d8b7ff74c9bb33",
+  "prompts": {},
+  "sessions": {
+    "s_8dd2ba9e498da7": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34a-1f45-7430-80af-58acd6c4b831",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_e1e066bff5f265": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "67e4e20e-9c34-4e53-9156-5eb29b3183b7",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
