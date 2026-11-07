@@ -4,8 +4,7 @@ import { secondsBetweenBeats } from '#/modules/Transport/useCases';
 
 type Source = NonNullable<Parameters<typeof renderTrackSubgraphOffline>[0]['source']>;
 
-/** Disposable render input: never installed in a document or allocated through live track factories. */
-export function createPresetPreviewProject(devices: Device[]) {
+function createPreviewTrack(devices: Device[]): { track: Track; clipId: string } {
     const trackId = `preset-preview-${crypto.randomUUID()}`;
     const clipId = crypto.randomUUID();
     const alternativeId = crypto.randomUUID();
@@ -57,6 +56,12 @@ export function createPresetPreviewProject(devices: Device[]) {
         midiOutputTrackId: null,
         followChordTrack: false,
     };
+    return { track, clipId };
+}
+
+/** Disposable render input: never installed in a document or allocated through live track factories. */
+export function createPresetPreviewProject(devices: Device[]) {
+    const { track, clipId } = createPreviewTrack(devices);
     const tempo = 120;
     const tempoMap: NonNullable<Source['project']['tempoMap']> = {
         changes: [{ id: 'preview-tempo', beat: 0, tempo, curve: 'instant' }],
