@@ -21,6 +21,7 @@ import {
 } from '#/modules/Command/useCases';
 import { agentProjectRepairStateStore } from '#/modules/CrdtDocument/stores';
 import {
+    captureProjectIdentity,
     captureProjectRevision,
     clearActionHistory,
     createCrdtDoc,
@@ -191,10 +192,9 @@ describe('track header mute admission', () => {
         expect(rawRoot().tracks.tracks[0]?.muted).toBe(true);
         expect(trackStore.value?.tracks[0]?.muted).toBe(true);
     });
-    it.each([
-        { clicks: 2, muted: false },
-        { clicks: 3, muted: true },
-    ])('preserves $clicks rapid toggle intents', async ({ clicks, muted }) => {
+    it('routes two rapid button clicks through ordered actions', async () => {
+        const clicks = 2;
+        const muted = false;
         render(<Header />);
         expect(screen.getByRole('button', { name: 'Mute Target' })).toBeInTheDocument();
         const history = captureUndoHistory();
@@ -214,20 +214,21 @@ describe('track header mute admission', () => {
         expect(captureUndoHistory()).toEqual(history);
         expect(rawRoot().actionHistory).toEqual(sharedHistory);
     });
-    it('commits queued hook requests in the same project', async () => {
+    it.each([
+        { clicks: 2, muted: false },
+        { clicks: 3, muted: true },
+    ])('settles all $clicks queued hook requests in the same project', async ({ clicks, muted }) => {
         const hook = renderHook(() => useTrackMuteToggle('target', false));
         const history = captureUndoHistory();
         const sharedHistory = structuredClone(rawRoot().actionHistory);
-        const first = hook.result.current();
-        const second = hook.result.current();
-        await first;
-        await second;
-        expect(rawRoot().tracks.tracks[0]?.muted).toBe(false);
-        expect(trackStore.value?.tracks[0]?.muted).toBe(false);
-        expect(engine.mute.mock.calls.filter(([id]) => id === 'target').map(([, muted]) => muted)).toContain(true);
-        expect(engine.mute.mock.calls.filter(([id]) => id === 'target').at(-1)).toEqual(['target', false]);
+        const requests = Array.from({ length: clicks }, () => hook.result.current());
+        await Promise.all(requests);
+        expect(rawRoot().tracks.tracks[0]?.muted).toBe(muted);
+        expect(trackStore.value?.tracks[0]?.muted).toBe(muted);
+        expect(engine.mute.mock.calls.filter(([id]) => id === 'target').at(-1)).toEqual(['target', muted]);
         expect(captureUndoHistory()).toEqual(history);
         expect(rawRoot().actionHistory).toEqual(sharedHistory);
+        expect(notices).toEqual([]);
         hook.unmount();
     });
     it('retires a held request when its target changes', async () => {
@@ -318,7 +319,7 @@ describe('track header mute admission', () => {
         expect(engine.gain).not.toHaveBeenCalled();
         expect(engine.soloGate).not.toHaveBeenCalled();
     });
-    it('retires a held action after replacing the project with the same track IDs', async () => {
+    it('retires held requests when a writable successor retains the same track IDs', async () => {
         const entered = Promise.withResolvers<void>();
         const held = Promise.withResolvers<void>();
         const snapshot = transactSnapshot(async () => {
@@ -327,21 +328,31 @@ describe('track header mute admission', () => {
         });
         await entered.promise;
         const hook = renderHook(() => useTrackMuteToggle('target', false));
-        const oldRoot = getCrdtDoc('root');
-        if (!oldRoot) {
-            throw new Error('Expected original root');
-        }
-        const pending = hook.result.current();
-        resetCrdtProjectAuthority('Replacement with same tracks');
+        const identity = captureProjectIdentity();
+        const first = hook.result.current();
+        const second = hook.result.current();
         removeCrdtDoc('root');
-        createCrdtDoc('root', oldRoot);
+        createCrdtDoc('root');
+        trackStore.set({
+            tracks: [
+                TrackDummy.create({ id: 'target', name: 'Successor', kind: 'midi', muted: false }),
+                TrackDummy.create({ id: 'other', name: 'Successor other', kind: 'midi', muted: true }),
+            ],
+            selectedTrackId: 'target',
+            ghostClips: [],
+        });
+        flushAutomergeStorageWrites();
+        expect(captureProjectIdentity()).not.toBe(identity);
+        expect(agentProjectRepairStateStore.value).toBeNull();
+        expect(rawRoot().tracks.tracks).toEqual(trackStore.value?.tracks);
+        expect(trackStore.value?.tracks[0]).toMatchObject({ id: 'target', name: 'Successor', muted: false });
         const replacement = structuredClone(rawRoot());
         const revision = captureProjectRevision();
         const tracks = structuredClone(trackStore.value);
         const history = captureUndoHistory();
         held.resolve();
         await snapshot;
-        await pending;
+        await Promise.all([first, second]);
         expect(rawRoot()).toEqual(replacement);
         expect(captureProjectRevision()).toBe(revision);
         expect(trackStore.value).toEqual(tracks);
@@ -349,6 +360,9 @@ describe('track header mute admission', () => {
         expect(engine.mute).not.toHaveBeenCalled();
         expect(engine.gain).not.toHaveBeenCalled();
         expect(engine.soloGate).not.toHaveBeenCalled();
+        await hook.result.current();
+        expect(rawRoot().tracks.tracks[0]?.muted).toBe(true);
+        expect(trackStore.value?.tracks[0]?.muted).toBe(true);
         hook.unmount();
     });
     it('refuses a real click when project repair is required without changing project or engine', async () => {
