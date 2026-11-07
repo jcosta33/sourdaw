@@ -1,6 +1,6 @@
 import { getAgentBuiltinDeviceFactoryManifest } from '#/modules/Arrangement/useCases';
-import { querySemanticProject } from '#/modules/Project/useCases';
 import { compareAgentScopeMeasurements } from '#/modules/AudioAnalysis/useCases';
+import { type querySemanticProject } from '#/modules/Project/useCases';
 import { digest } from '#/utils/canonicalDigest';
 
 import { type AnswerOnsets } from '../models/AnswerEvidence';
@@ -476,23 +476,37 @@ function queryScope(input: QueryInput): string | null {
     const keys = Object.keys(QUERY_FILTER_KEYS) as QueryFilterKey[];
     const entries = keys.flatMap((key) => {
         const value = filters?.[key];
-        if (value === undefined) return [];
+        if (value === undefined) {
+            return [];
+        }
         if (typeof value === 'string') {
-            if (/[\r\n]/.test(value)) return [null];
+            if (/[\r\n]/.test(value)) {
+                return [null];
+            }
             return [`${key}: ${quoteSourceData(value)}`];
         }
-        if (typeof value === 'number' && !Number.isFinite(value)) return [null];
+        if (typeof value === 'number' && !Number.isFinite(value)) {
+            return [null];
+        }
         return [`${key}: ${String(value)}`];
     });
-    if (entries.includes(null) || (input.type === 'project-summary' && entries.length > 0)) return null;
+    if (entries.includes(null) || (input.type === 'project-summary' && entries.length > 0)) {
+        return null;
+    }
     const scope = entries.length ? [`filters (${entries.join(', ')})`] : [];
     if (input.type === 'diff') {
-        if (input.sinceRevision === undefined || /[\r\n]/.test(input.sinceRevision)) return null;
+        if (input.sinceRevision === undefined || /[\r\n]/.test(input.sinceRevision)) {
+            return null;
+        }
         scope.push(`sinceRevision: ${quoteSourceData(input.sinceRevision)}`);
     }
-    if (input.page?.limit !== undefined) scope.push(`limit: ${String(input.page.limit)}`);
+    if (input.page?.limit !== undefined) {
+        scope.push(`limit: ${String(input.page.limit)}`);
+    }
     if (input.page?.cursor !== undefined) {
-        if (/[\r\n]/.test(input.page.cursor)) return null;
+        if (/[\r\n]/.test(input.page.cursor)) {
+            return null;
+        }
         scope.push(`cursor: ${quoteSourceData(input.page.cursor)}`);
     }
     return scope.length ? ` with ${scope.join('; ')}` : '';
@@ -516,10 +530,13 @@ function composeReadStatement(
             source.sourceRevision !== intake.authority.revision ||
             (source.input.type === 'diff' &&
                 source.warnings.some((warning) => warning.includes('outside the retained semantic diff window')))
-        )
+        ) {
             return null;
+        }
         const scope = queryScope(source.input);
-        if (scope === null) return null;
+        if (scope === null) {
+            return null;
+        }
         return {
             text: `The ${quoteSourceData(read.source.value.queryType)} query${scope} returned ${String(read.source.value.itemCount)} item(s) on this page out of ${String(read.source.value.total)} matching item(s).`,
             callIds: [statement.callId],

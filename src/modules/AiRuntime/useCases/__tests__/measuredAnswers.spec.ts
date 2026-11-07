@@ -336,8 +336,11 @@ describe('AC002 measured answers use actual successful audio reductions', () => 
                 (produced) => {
                     const copy = structuredClone(produced);
                     if (copy.receipt.callId === 'measure') {
-                        if (mismatch === 'receipt') copy.receipt.revision = 'different';
-                        else if (copy.answerMeasurement) copy.answerMeasurement.revision = 'different';
+                        if (mismatch === 'receipt') {
+                            copy.receipt.revision = 'different';
+                        } else if (copy.answerMeasurement) {
+                            copy.answerMeasurement.revision = 'different';
+                        }
                     }
                     return copy;
                 }

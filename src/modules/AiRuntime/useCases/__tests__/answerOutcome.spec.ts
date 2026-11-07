@@ -150,7 +150,9 @@ function runScriptedLoop(
         },
     };
     const requestTurn = vi.fn();
-    for (const turn of beforeIntake) requestTurn.mockResolvedValueOnce(turn);
+    for (const turn of beforeIntake) {
+        requestTurn.mockResolvedValueOnce(turn);
+    }
     requestTurn.mockResolvedValueOnce({ status: 'complete', toolCalls: [intake] });
     for (const turn of turns) {
         requestTurn.mockResolvedValueOnce(turn);
@@ -257,7 +259,9 @@ describe('answer.respond ends a run as an answer outcome', () => {
             answerTurn({ intakeCallId: 'intake', statements: [{ kind: 'query-page', callId: 'query' }] }),
         ]);
         expect(result.status).toBe('complete');
-        if (result.status !== 'complete') throw new Error(result.reason);
+        if (result.status !== 'complete') {
+            throw new Error(result.reason);
+        }
         expect(result.answer?.text).toBe(
             'The “project-summary” query returned 1 item(s) on this page out of 1 matching item(s).'
         );
@@ -317,7 +321,9 @@ describe('answer.respond ends a run as an answer outcome', () => {
             answerTurn({ intakeCallId: 'intake', statements: [{ kind: 'query-page', callId: 'query' }] }),
         ]);
         expect(result.status).toBe('complete');
-        if (result.status !== 'complete') throw new Error(result.reason);
+        if (result.status !== 'complete') {
+            throw new Error(result.reason);
+        }
         expect(result.answer?.text).toContain(`sinceRevision: “${baseline}”`);
     });
 
@@ -399,7 +405,9 @@ describe('answer.respond ends a run as an answer outcome', () => {
                 answerTurn({ intakeCallId: 'intake', statements: [{ kind: 'query-page', callId: 'query' }] }),
             ]);
             expect(result.status).toBe('complete');
-            if (result.status !== 'complete') throw new Error(result.reason);
+            if (result.status !== 'complete') {
+                throw new Error(result.reason);
+            }
             expect(result.answer?.text).toContain('1 item(s) on this page out of 1 matching item(s)');
             expect(result.answer?.text).toContain('Lead \\*One\\*');
             expect(result.answer?.text).toContain('muted: false');
@@ -424,7 +432,9 @@ describe('answer.respond ends a run as an answer outcome', () => {
             answerTurn({ intakeCallId: 'intake', statements: [{ kind: 'query-page', callId: 'query' }] }),
         ]);
         expect(result.status).toBe('complete');
-        if (result.status !== 'complete') throw new Error(result.reason);
+        if (result.status !== 'complete') {
+            throw new Error(result.reason);
+        }
         expect(result.answer?.text).toContain('exactName');
         expect(result.answer?.text).toContain('selected: false');
         expect(result.answer?.text).toContain('startBeat: 0');
@@ -466,7 +476,9 @@ describe('answer.respond ends a run as an answer outcome', () => {
             answerTurn({ intakeCallId: 'intake', statements: [{ kind: 'query-page', callId: 'query' }] }),
         ]);
         expect(result.status).toBe('complete');
-        if (result.status !== 'complete') throw new Error(result.reason);
+        if (result.status !== 'complete') {
+            throw new Error(result.reason);
+        }
         for (const [key, value] of Object.entries(filters)) {
             expect(result.answer?.text).toContain(
                 `${key}: ${typeof value === 'string' ? `“${value}”` : String(value)}`
