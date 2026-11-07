@@ -151,22 +151,22 @@ describe('LibraryBrowser', () => {
     });
 
     it('should render without crashing', () => {
-        render(<LibraryBrowser preview={mocks.preview} selectedTrackId={null} />);
+        render(<LibraryBrowser preview={mocks.preview} />);
         expect(document.body).toBeTruthy();
     });
 
     it('should handle store state', () => {
-        render(<LibraryBrowser preview={mocks.preview} selectedTrackId={null} />);
+        render(<LibraryBrowser preview={mocks.preview} />);
         expect(document.body).toBeTruthy();
     });
 
     it('should render with useCase bindings', () => {
-        render(<LibraryBrowser preview={mocks.preview} selectedTrackId={null} />);
+        render(<LibraryBrowser preview={mocks.preview} />);
         expect(document.body).toBeTruthy();
     });
 
     it('should have interactive elements', () => {
-        render(<LibraryBrowser preview={mocks.preview} selectedTrackId={null} />);
+        render(<LibraryBrowser preview={mocks.preview} />);
         const buttons = screen.queryAllByRole('button');
         expect(buttons.length).toBeGreaterThanOrEqual(0);
     });
@@ -183,7 +183,7 @@ describe('LibraryBrowser', () => {
             displayName: 'Kick',
         });
 
-        render(<LibraryBrowser preview={mocks.preview} selectedTrackId={null} />);
+        render(<LibraryBrowser preview={mocks.preview} />);
 
         fireEvent.click(screen.getByRole('button', { name: 'Play Kick' }));
 
@@ -206,7 +206,7 @@ describe('LibraryBrowser', () => {
             displayName: 'Texture',
         });
 
-        render(<LibraryBrowser preview={mocks.preview} selectedTrackId={null} />);
+        render(<LibraryBrowser preview={mocks.preview} />);
 
         fireEvent.click(screen.getByRole('button', { name: 'Play Texture' }));
 
@@ -215,6 +215,43 @@ describe('LibraryBrowser', () => {
                 '"Texture" is a .flac file — your browser may not be able to preview it.',
                 'warning'
             );
+        });
+    });
+
+    it('offers no add control on a row when the embedding surface supplies no placement', () => {
+        mocks.libraryState = createLibraryState({
+            provider: 'browser',
+            ext: 'wav',
+            rootRef: 'browser-root',
+            relativePath: 'Loops/Texture.wav',
+            displayName: 'Texture',
+        });
+
+        render(<LibraryBrowser preview={mocks.preview} />);
+
+        expect(screen.getByRole('button', { name: 'Play Texture' })).toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'Add Texture to track' })).toBeNull();
+    });
+
+    it('hands the row sample to the supplied placement when its add control is pressed', () => {
+        mocks.libraryState = createLibraryState({
+            provider: 'browser',
+            ext: 'wav',
+            rootRef: 'browser-root',
+            relativePath: 'Loops/Texture.wav',
+            displayName: 'Texture',
+        });
+        const onAddSample = vi.fn();
+
+        render(<LibraryBrowser preview={mocks.preview} onAddSample={onAddSample} />);
+        fireEvent.click(screen.getByRole('button', { name: 'Add Texture to track' }));
+
+        expect(onAddSample).toHaveBeenCalledTimes(1);
+        expect(onAddSample).toHaveBeenCalledWith({
+            id: 'sample1',
+            name: 'Texture',
+            path: 'Loops/Texture.wav',
+            libraryRootId: 'root1',
         });
     });
 
@@ -230,7 +267,7 @@ describe('LibraryBrowser', () => {
         state.samples[0]!.folder = 'Drums\\Kits';
         mocks.libraryState = state;
 
-        render(<LibraryBrowser preview={mocks.preview} selectedTrackId={null} />);
+        render(<LibraryBrowser preview={mocks.preview} />);
 
         // The subfolder button must show only the leaf segment, not the full path.
         expect(screen.getByRole('button', { name: /^Open folder Kits,/ })).toBeTruthy();
@@ -261,7 +298,7 @@ describe('LibraryBrowser', () => {
         ];
         mocks.libraryState = state;
 
-        render(<LibraryBrowser preview={mocks.preview} selectedTrackId={null} />);
+        render(<LibraryBrowser preview={mocks.preview} />);
 
         const names = screen
             .getAllByRole('button', { name: /^Open folder / })
@@ -287,7 +324,7 @@ describe('LibraryBrowser', () => {
             displayName: 'Texture',
         });
 
-        render(<LibraryBrowser preview={mocks.preview} selectedTrackId={null} />);
+        render(<LibraryBrowser preview={mocks.preview} />);
 
         fireEvent.click(screen.getByRole('button', { name: 'Play Texture' }));
 
@@ -309,7 +346,7 @@ describe('LibraryBrowser', () => {
             displayName: 'Kick',
         });
 
-        render(<LibraryBrowser preview={mocks.preview} selectedTrackId={null} />);
+        render(<LibraryBrowser preview={mocks.preview} />);
 
         expect(screen.queryByRole('button', { name: 'Analyze' })).toBeNull();
     });
@@ -323,7 +360,7 @@ describe('LibraryBrowser', () => {
             displayName: 'Kick',
         });
 
-        render(<LibraryBrowser preview={mocks.preview} selectedTrackId={null} />);
+        render(<LibraryBrowser preview={mocks.preview} />);
 
         // The map panel (and its button) only mounts once the MAP toggle is on.
         fireEvent.click(screen.getByRole('button', { name: 'Timbral spatial map' }));
@@ -357,11 +394,11 @@ describe('LibraryBrowser', () => {
             displayName: 'Kick',
         });
 
-        const { rerender } = render(<LibraryBrowser preview={mocks.preview} selectedTrackId={null} />);
+        const { rerender } = render(<LibraryBrowser preview={mocks.preview} />);
 
         fireEvent.click(screen.getByRole('button', { name: 'Play Kick' }));
 
-        rerender(<LibraryBrowser preview={{ ...mocks.preview, playingId: 'sample1' }} selectedTrackId={null} />);
+        rerender(<LibraryBrowser preview={{ ...mocks.preview, playingId: 'sample1' }} />);
         fireEvent.click(screen.getByRole('button', { name: 'Stop Kick' }));
 
         resolveFile(new File(['audio'], 'Kick.wav', { type: 'audio/wav' }));
@@ -402,7 +439,7 @@ describe('LibraryBrowser', () => {
         ];
         mocks.libraryState = state;
 
-        render(<LibraryBrowser preview={mocks.preview} selectedTrackId={null} />);
+        render(<LibraryBrowser preview={mocks.preview} />);
 
         // Click sample 1 (deferred file 1)
         fireEvent.click(screen.getByRole('button', { name: 'Play Kick' }));
@@ -444,7 +481,7 @@ describe('LibraryBrowser', () => {
             displayName: 'Kick',
         });
 
-        const { unmount } = render(<LibraryBrowser preview={mocks.preview} selectedTrackId={null} />);
+        const { unmount } = render(<LibraryBrowser preview={mocks.preview} />);
 
         // Click sample
         fireEvent.click(screen.getByRole('button', { name: 'Play Kick' }));
@@ -462,10 +499,10 @@ describe('LibraryBrowser', () => {
 
     it('does not stop playback when re-rendered with an updated preview reference', () => {
         const preview = { ...mocks.preview, stop: vi.fn(), playingId: null };
-        const { rerender } = render(<LibraryBrowser preview={preview} selectedTrackId={null} />);
+        const { rerender } = render(<LibraryBrowser preview={preview} />);
 
         const updatedPreview = { ...mocks.preview, stop: vi.fn(), playingId: 'sample-1' };
-        rerender(<LibraryBrowser preview={updatedPreview} selectedTrackId={null} />);
+        rerender(<LibraryBrowser preview={updatedPreview} />);
 
         expect(preview.stop).not.toHaveBeenCalled();
         expect(updatedPreview.stop).not.toHaveBeenCalled();
@@ -473,7 +510,7 @@ describe('LibraryBrowser', () => {
 
     it('stops preview on unmount', () => {
         const preview = { ...mocks.preview, stop: vi.fn() };
-        const { unmount } = render(<LibraryBrowser preview={preview} selectedTrackId={null} />);
+        const { unmount } = render(<LibraryBrowser preview={preview} />);
         unmount();
         expect(preview.stop).toHaveBeenCalledTimes(1);
     });
@@ -527,7 +564,7 @@ describe('LibraryBrowser', () => {
             scanProgress: 0,
         };
 
-        render(<LibraryBrowser preview={mocks.preview} selectedTrackId={null} />);
+        render(<LibraryBrowser preview={mocks.preview} />);
 
         fireEvent.click(screen.getByRole('button', { name: 'Play Kick' }));
 
@@ -586,7 +623,7 @@ describe('LibraryBrowser', () => {
             scanProgress: 0,
         };
 
-        render(<LibraryBrowser preview={mocks.preview} selectedTrackId={null} />);
+        render(<LibraryBrowser preview={mocks.preview} />);
 
         fireEvent.click(screen.getByRole('button', { name: 'Play Kick' }));
 
@@ -641,7 +678,7 @@ describe('LibraryBrowser', () => {
             scanProgress: 0,
         };
 
-        render(<LibraryBrowser preview={mocks.preview} selectedTrackId={null} />);
+        render(<LibraryBrowser preview={mocks.preview} />);
 
         fireEvent.click(screen.getByRole('button', { name: 'Play External Sample' }));
 
@@ -697,7 +734,7 @@ describe('LibraryBrowser', () => {
             scanProgress: 0,
         };
 
-        render(<LibraryBrowser preview={mocks.preview} selectedTrackId={null} />);
+        render(<LibraryBrowser preview={mocks.preview} />);
 
         fireEvent.click(screen.getByRole('button', { name: 'Play External Sample' }));
 
@@ -752,7 +789,7 @@ describe('LibraryBrowser', () => {
             scanProgress: 0,
         };
 
-        render(<LibraryBrowser preview={mocks.preview} selectedTrackId={null} />);
+        render(<LibraryBrowser preview={mocks.preview} />);
 
         fireEvent.click(screen.getByRole('button', { name: 'Play Kick' }));
 
@@ -810,7 +847,7 @@ describe('LibraryBrowser', () => {
             scanProgress: 0,
         };
 
-        render(<LibraryBrowser preview={mocks.preview} selectedTrackId={null} />);
+        render(<LibraryBrowser preview={mocks.preview} />);
 
         fireEvent.click(screen.getByRole('button', { name: 'Play Kick' }));
 
@@ -873,7 +910,7 @@ describe('LibraryBrowser', () => {
             scanProgress: 0,
         };
 
-        render(<LibraryBrowser preview={mocks.preview} selectedTrackId={null} />);
+        render(<LibraryBrowser preview={mocks.preview} />);
 
         fireEvent.click(screen.getByRole('button', { name: 'Play Kick' }));
         await waitFor(() => {
@@ -901,7 +938,7 @@ describe('LibraryBrowser', () => {
             displayName: 'Kick',
         });
 
-        render(<LibraryBrowser preview={mocks.preview} selectedTrackId={null} />);
+        render(<LibraryBrowser preview={mocks.preview} />);
 
         fireEvent.click(screen.getByRole('button', { name: 'Find samples similar to Kick' }));
 
@@ -922,7 +959,7 @@ describe('LibraryBrowser', () => {
             displayName: 'Kick',
         });
 
-        render(<LibraryBrowser preview={mocks.preview} selectedTrackId={null} />);
+        render(<LibraryBrowser preview={mocks.preview} />);
 
         fireEvent.click(screen.getByRole('button', { name: 'Find samples similar to Kick' }));
 
@@ -944,7 +981,7 @@ describe('LibraryBrowser', () => {
         state.samples = [kick, { ...kick, id: 'sample2', displayName: 'Snare', relativePath: 'Drums/Snare.wav' }];
         mocks.libraryState = state;
 
-        render(<LibraryBrowser preview={mocks.preview} selectedTrackId={null} />);
+        render(<LibraryBrowser preview={mocks.preview} />);
 
         fireEvent.click(screen.getByRole('button', { name: 'Find samples similar to Kick' }));
 
@@ -970,7 +1007,7 @@ describe('LibraryBrowser', () => {
         state.searchQuery = 'similar:sample1';
         mocks.libraryState = state;
 
-        render(<LibraryBrowser preview={mocks.preview} selectedTrackId={null} />);
+        render(<LibraryBrowser preview={mocks.preview} />);
 
         expect(screen.getByRole('button', { name: 'Play Snare' })).toBeTruthy();
         expect(screen.queryByRole('button', { name: 'Play Hat' })).toBeNull();

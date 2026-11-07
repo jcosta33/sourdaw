@@ -35,7 +35,6 @@ import {
     hasUnresolvedExternalPluginRestoreFailure,
     isSupportedPluginFormat,
     openPluginGui,
-    resolvePluginEditorCapability,
 } from '#/modules/PluginHost/useCases';
 import { showDevicePanelForType } from '#/modules/WorkspaceShell/useCases';
 import { getPlatformCapabilities, DISABLED_REASONS } from '#/utils/platformCapabilities';
@@ -45,6 +44,8 @@ import { menuBtnClass } from '#/utils/UI/contextMenuStyles';
 import { type Track } from '../../../models/TrackViewTypes';
 import { ChoiceCard } from '../../components/Inspector/ChoiceCard';
 import { readExternalPluginStateChunk } from '../../helpers/externalPluginStateFile';
+
+import { resolveExternalPluginEditorAccess } from './resolveExternalPluginEditorAccess';
 
 type TrackDevicesSectionProps = {
     track: Track;
@@ -126,31 +127,20 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
             ? [{ device, instanceId: device.externalInstanceId }]
             : []
     );
-    // Resolved against the scan registry at render rather than recorded on the
-    // device, so a plugin rescanned after an upgrade that added an editor is
-    // offered one without the project having to be rewritten. Only a plugin the
-    // scan positively reports as having no editor loses the control — an
-    // unqueried capability keeps it, and the open attempt answers for itself.
-    const editorCapableDeviceIds = new Set(
-        externalDeviceEditors
+    // The Open editor control and the inspector's editor line both read this one answer, so they cannot
+    // disagree about whether the editor can be opened.
+    const openableEditorDeviceIds = new Set(
+        track.devices
             .filter(
-                ({ device }) =>
-                    resolvePluginEditorCapability(
-                        supportedExternalPlugins.find(
-                            (plugin) =>
-                                plugin.id === device.externalPluginId ||
-                                plugin.descriptor_id === device.externalPluginId
-                        )
-                    ) !== 'absent'
+                (device) =>
+                    device.type === 'external-plugin' &&
+                    resolveExternalPluginEditorAccess(
+                        device,
+                        supportedExternalPlugins,
+                        activationState.byInstanceId
+                    ) === 'openable'
             )
-            .map(({ device }) => device.id)
-    );
-    // Only an 'active' entry means the host holds an instance the GUI open/close IPC can
-    // address; while loading, or with no entry at all, the control could only fail.
-    const activeExternalDeviceIds = new Set(
-        externalDeviceEditors
-            .filter(({ instanceId }) => activationState.byInstanceId[instanceId]?.status === 'active')
-            .map(({ device }) => device.id)
+            .map((device) => device.id)
     );
     const openEditorDeviceIds = new Set(
         externalDeviceEditors
@@ -462,11 +452,7 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
                                         <TooltipContent side="top">Retry plugin activation</TooltipContent>
                                     </Tooltip>
                                 ) : null}
-                                {device.type === 'external-plugin' &&
-                                device.externalInstanceId &&
-                                !unavailableExternalDeviceIds.has(device.id) &&
-                                activeExternalDeviceIds.has(device.id) &&
-                                editorCapableDeviceIds.has(device.id) ? (
+                                {openableEditorDeviceIds.has(device.id) ? (
                                     <Tooltip>
                                         <TooltipTrigger asChild>
                                             <Button

@@ -27,10 +27,10 @@ test.describe('Timeline Navigation & Editing Surface', () => {
     // flowCoverage owns Volume row creation; panelDeepCoverage owns the Eq picker and row.
 
     /**
-     * Zoom observable: the minimap slider's aria-valuenow is scrollX as a percentage of
-     * the project at the current zoom (TimelineMinimap.tsx), and zoomTimeline raises
+     * Zoom observable: the minimap slider's aria-valuenow is the scroll position in beats,
+     * clamped to the span the minimap draws (TimelineMinimap.tsx), and zoomTimeline raises
      * pixelsPerBeat while holding scrollX — so with the viewport scrolled off zero, a
-     * zoom-in must shrink the recorded percentage. The first phase pins the minimap's
+     * zoom-in must shrink the recorded beat position. The first phase pins the minimap's
      * own keyboard scroll; the second pins the zoom shortcut. Polling on the value,
      * never a sleep (#3675).
      */

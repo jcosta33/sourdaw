@@ -50,7 +50,11 @@ none.
    the suspended frame sits above its integer frame, make the write, resume and capture the first rendered
    quantum; or suspend an `OfflineAudioContext` at every quantum and write through the AudioParam alone to
    see where the clamp moves the event. A device whose re-entry or immediate change must hold on the frame a
-   suspended context resumes on carries it through its port.
+   suspended context resumes on carries it through shared memory its processor reads at the head of every
+   quantum, never through its port: Chromium dispatches each port message as its own task on the rendering
+   thread with no promise that it runs before that quantum. #5988 posted the Transient Shaper's reset and
+   gains over the port, and CI caught a resume whose first sample kept the old gain. Probe it by holding
+   every port message to the processor until the resumed quantum is captured.
 7. **A resume-frame gate must be an edge, not a write at `currentTime` (#5914).** An exclusive audition closed the
    programme with a gain gate written at raw `currentTime` while suspended; on a resume frame above its integer frame
    the gate closed one sample late and about one run in five read a nonzero programme sample on the first resumed

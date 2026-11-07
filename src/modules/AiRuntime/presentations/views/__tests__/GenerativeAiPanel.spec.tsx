@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, within } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { GenerativeAiPanel } from '../GenerativeAiPanel';
@@ -39,24 +39,6 @@ vi.mock('../../components/AiTaskResultCard', () => ({
     AiTaskResultCard: ({ task, onRemove }: MockAiTaskResultCardProps) => (
         <button type="button" data-testid="task-card" onClick={() => onRemove(task.id)}>
             Remove task {task.id}
-        </button>
-    ),
-}));
-
-vi.mock('../../components/GenerativeParamGrids', () => ({
-    GenreGrid: ({ value, onChange }: any) => (
-        <button onClick={() => onChange('Rock')} data-testid="genre-grid">
-            Genre: {value || 'None'}
-        </button>
-    ),
-    MoodGrid: ({ value, onChange }: any) => (
-        <button onClick={() => onChange('Happy')} data-testid="mood-grid">
-            Mood: {value || 'None'}
-        </button>
-    ),
-    InstrumentGrid: ({ value, onChange }: any) => (
-        <button onClick={() => onChange('Piano')} data-testid="instrument-grid">
-            Instrument: {value || 'None'}
         </button>
     ),
 }));
@@ -144,5 +126,70 @@ describe('GenerativeAiPanel', () => {
         const aiTab = screen.getByText('AI');
         fireEvent.click(aiTab);
         expect(screen.getByText('Describe the Music')).toBeInTheDocument();
+    });
+});
+
+describe('GenerativeAiPanel — option grid semantics', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        mockAiState.isPanelOpen = true;
+        mockAiState.tasks = [];
+    });
+
+    function renderAndSwitchToAi() {
+        render(<GenerativeAiPanel />);
+        fireEvent.click(screen.getByText('AI'));
+    }
+
+    it('AI tab exposes five button options in each grid', () => {
+        renderAndSwitchToAi();
+        expect(within(screen.getByTestId('genre-grid')).getAllByRole('button')).toHaveLength(5);
+        expect(within(screen.getByTestId('mood-grid')).getAllByRole('button')).toHaveLength(5);
+        expect(within(screen.getByTestId('instrument-grid')).getAllByRole('button')).toHaveLength(5);
+    });
+
+    it('Lo-Fi starts unpressed; selecting enables Generate MIDI and reveals Genre Clear; deselecting reverses both', () => {
+        renderAndSwitchToAi();
+        const loFi = within(screen.getByTestId('genre-grid')).getByRole('button', { name: 'Lo-Fi' });
+        const generateMidi = screen.getByRole('button', { name: /Generate MIDI/ });
+
+        expect(loFi).toHaveAttribute('aria-pressed', 'false');
+        expect(screen.queryByRole('button', { name: 'Clear' })).toBeNull();
+        expect(generateMidi).toBeDisabled();
+
+        fireEvent.click(loFi);
+        expect(loFi).toHaveAttribute('aria-pressed', 'true');
+        expect(screen.getByRole('button', { name: 'Clear' })).toBeInTheDocument();
+        expect(generateMidi).toBeEnabled();
+
+        fireEvent.click(loFi);
+        expect(loFi).toHaveAttribute('aria-pressed', 'false');
+        expect(screen.queryByRole('button', { name: 'Clear' })).toBeNull();
+        expect(generateMidi).toBeDisabled();
+    });
+
+    it('Genre Clear clears the selection', () => {
+        renderAndSwitchToAi();
+        const loFi = within(screen.getByTestId('genre-grid')).getByRole('button', { name: 'Lo-Fi' });
+        fireEvent.click(loFi);
+        expect(loFi).toHaveAttribute('aria-pressed', 'true');
+
+        fireEvent.click(screen.getByRole('button', { name: 'Clear' }));
+        expect(loFi).toHaveAttribute('aria-pressed', 'false');
+        expect(screen.queryByRole('button', { name: 'Clear' })).toBeNull();
+    });
+
+    it('Chill and Drum Kit flip their own pressed states independently', () => {
+        renderAndSwitchToAi();
+        const chill = within(screen.getByTestId('mood-grid')).getByRole('button', { name: 'Chill' });
+        const drumKit = within(screen.getByTestId('instrument-grid')).getByRole('button', { name: 'Drum Kit' });
+
+        fireEvent.click(chill);
+        expect(chill).toHaveAttribute('aria-pressed', 'true');
+        expect(drumKit).toHaveAttribute('aria-pressed', 'false');
+
+        fireEvent.click(drumKit);
+        expect(drumKit).toHaveAttribute('aria-pressed', 'true');
+        expect(chill).toHaveAttribute('aria-pressed', 'true');
     });
 });

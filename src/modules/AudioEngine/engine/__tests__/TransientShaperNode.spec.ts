@@ -2,6 +2,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { fetchWasmModule } from '#/infra/audioWorklet/workletInitShared';
 
+import {
+    NO_IMMEDIATE_FRAME,
+    readTransientShaperControl,
+    type TransientShaperControlSnapshot,
+    viewTransientShaperControl,
+} from '../../models/TransientShaperControl';
 import { createTransientShaperNode } from '../TransientShaperNode';
 
 const lease = vi.hoisted(() => ({
@@ -41,7 +47,11 @@ class FakeNode {
     port = { onmessage: null as ((event: MessageEvent) => void) | null, postMessage: vi.fn(), close: vi.fn() };
     disconnect = vi.fn();
     onprocessorerror: (() => void) | null = null;
-    constructor() {
+    constructor(
+        _context: BaseAudioContext,
+        _name: string,
+        readonly options?: { processorOptions?: { control?: unknown } }
+    ) {
         if (constructionFails) {
             throw new Error('construction failed');
         }
@@ -49,6 +59,19 @@ class FakeNode {
     }
     message(data: unknown) {
         this.port.onmessage?.(new MessageEvent('message', { data }));
+    }
+    /** What the processor reads at the head of its next quantum. */
+    shared(): TransientShaperControlSnapshot {
+        const control = viewTransientShaperControl(this.options?.processorOptions?.control);
+        const snapshot = {
+            resetEpoch: Number.NaN,
+            attackGain: { value: Number.NaN, frame: Number.NaN },
+            sustainGain: { value: Number.NaN, frame: Number.NaN },
+        };
+        if (!control || !readTransientShaperControl(control, snapshot)) {
+            throw new Error('No consistent shared control block');
+        }
+        return snapshot;
     }
 }
 const context = { currentTime: 0.25, sampleRate: 48000 } as BaseAudioContext;
@@ -142,23 +165,31 @@ describe('Transient Shaper host lifecycle and scheduling', () => {
         expect(reachedTime === undefined ? undefined : Math.ceil(reachedTime * 48000)).toBe(896);
         dispose(node, fake);
     });
-    it('queues exact reset epochs synchronously for actual bypass transitions, including coalesced transitions', async () => {
+    it('writes exact reset epochs synchronously for actual bypass transitions, including coalesced transitions', async () => {
         const { node, fake } = await create();
+        expect(fake.shared()).toEqual({
+            resetEpoch: 0,
+            attackGain: { value: 1, frame: NO_IMMEDIATE_FRAME },
+            sustainGain: { value: 1, frame: NO_IMMEDIATE_FRAME },
+        });
         node.setBypass(true);
         node.setBypass(true);
+        expect(fake.shared().resetEpoch).toBe(1);
         node.setBypass(false);
         node.setBypass(true);
         expect(fake.parameters.get('_resetEpoch')?.valueWrites.mock.calls).toEqual([[1], [2], [3]]);
         expect(fake.parameters.get('_resetEpoch')?.cancelScheduledValues.mock.calls).toEqual([[0], [0], [0]]);
-        expect(fake.port.postMessage.mock.calls).toEqual([
-            [{ type: 'init' }],
-            [{ type: 'reset', epoch: 1 }],
-            [{ type: 'reset', epoch: 2 }],
-            [{ type: 'reset', epoch: 3 }],
-        ]);
+        expect(fake.shared().resetEpoch).toBe(3);
+        // Re-entry never waits on a port message the rendering thread may dispatch late.
+        expect(fake.port.postMessage.mock.calls).toEqual([[{ type: 'init' }]]);
         dispose(node, fake);
     });
-    it('posts immediate and already reached gains for the resume frame Chromium cannot reach through the AudioParam', async () => {
+    it('refuses to load without shared memory instead of losing re-entry writes', async () => {
+        vi.stubGlobal('SharedArrayBuffer', undefined);
+        await expect(createTransientShaperNode(context)).rejects.toThrow('cross-origin isolation');
+        expect(instances).toHaveLength(0);
+    });
+    it('writes immediate and already reached gains for the resume frame Chromium cannot reach through the AudioParam', async () => {
         // 193024 / 48000 * 48000 sits above 193024, so Chromium lands an event
         // at this currentTime on frame 193025 whatever time the write names.
         const pausedContext = { currentTime: 193024 / 48000, sampleRate: 48000 } as BaseAudioContext;
@@ -168,34 +199,33 @@ describe('Transient Shaper host lifecycle and scheduling', () => {
         if (!fake) {
             throw new Error('No worklet');
         }
-        node.setParam('attackGain', 2);
+        node.setParam('attackGain', 1.5);
+        expect(fake.shared().attackGain).toEqual({ value: 1.5, frame: 193024 });
         node.setParam('sustainGain', 0.25, 0);
         node.setParam('attackGain', 9, 193024);
         node.setParam('sustainGain', 0.5, 193025);
         node.setParam('attackGain', Number.NaN);
         node.setParam('_resetEpoch', 4);
         node.setBypass(true);
-        expect(fake.port.postMessage.mock.calls.slice(1)).toEqual([
-            [{ type: 'gain', name: 'attackGain', value: 2, frame: 193024 }],
-            [{ type: 'gain', name: 'sustainGain', value: 0.25, frame: 193024 }],
-            [{ type: 'gain', name: 'attackGain', value: 2, frame: 193024 }],
-            [{ type: 'reset', epoch: 1 }],
-        ]);
+        expect(fake.shared()).toEqual({
+            resetEpoch: 1,
+            attackGain: { value: 2, frame: 193024 },
+            sustainGain: { value: 0.25, frame: 193024 },
+        });
         expect(fake.parameters.get('sustainGain')?.setValueAtTime).toHaveBeenLastCalledWith(0.5, 193025 / 48000);
+        expect(fake.port.postMessage.mock.calls).toEqual([[{ type: 'init' }]]);
         dispose(node, fake);
         node.setParam('attackGain', 1);
-        expect(fake.port.postMessage).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'gain', value: 1 }));
+        expect(fake.shared().attackGain).toEqual({ value: 2, frame: 193024 });
     });
-    it('clears a posted gain only when valid automation reaches the frame it was posted for', async () => {
+    it('clears an immediate gain only when valid automation reaches the frame it was written for', async () => {
         const { node, fake } = await create();
         node.setParam('attackGain', 0.5);
         node.scheduleParam('attackGain', [{ startFrame: 12001, endFrame: 24000, startValue: 1, endValue: 2 }]);
         node.scheduleParam('attackGain', [{ startFrame: 0, endFrame: 12000, startValue: Number.NaN, endValue: 2 }]);
+        expect(fake.shared().attackGain).toEqual({ value: 0.5, frame: 12000 });
         node.scheduleParam('attackGain', [{ startFrame: 12000, endFrame: 24000, startValue: 2, endValue: 2 }]);
-        expect(fake.port.postMessage.mock.calls.slice(1)).toEqual([
-            [{ type: 'gain', name: 'attackGain', value: 0.5, frame: 12000 }],
-            [{ type: 'clear-gain', name: 'attackGain' }],
-        ]);
+        expect(fake.shared().attackGain.frame).toBe(NO_IMMEDIATE_FRAME);
         dispose(node, fake);
     });
     it('uses the final exact Float32 value as terminal failure and never wraps', async () => {

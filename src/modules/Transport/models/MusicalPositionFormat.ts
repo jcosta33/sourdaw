@@ -2,7 +2,7 @@ import { BEAT_EPSILON } from './TempoMap';
 import { getBarBeatAtPosition, getTimeSignatureSegmentAtBeat, type TimeSignatureChange } from './TimeSignatureMap';
 
 /** Display resolution: a quarter note holds four sixteenths. */
-const SIXTEENTHS_PER_QUARTER = 4;
+export const SIXTEENTHS_PER_QUARTER = 4;
 
 type MeterDefaults = {
     defaultNumerator: number;
@@ -15,7 +15,7 @@ type MeterDefaults = {
  * within the tempo-map same-beat tolerance of a sixteenth boundary snaps onto it first, so float
  * noise just under a boundary does not drop a whole sixteenth.
  */
-function snapToSixteenthBoundary(beats: number): number {
+export function snapToSixteenthBoundary(beats: number): number {
     const nearest = Math.round(beats * SIXTEENTHS_PER_QUARTER) / SIXTEENTHS_PER_QUARTER;
     return Math.abs(beats - nearest) <= BEAT_EPSILON ? nearest : beats;
 }

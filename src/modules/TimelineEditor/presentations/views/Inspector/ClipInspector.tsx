@@ -9,10 +9,8 @@ import { Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { Separator } from '#/components/ui/separator';
 import { Slider } from '#/components/ui/slider';
-import { useStore } from '#/infra/store/useStore';
 import { getClipEndLimit, setClipColor, renameClip, setClipFollowAction } from '#/modules/Arrangement/useCases';
 import { executeUserAppAction } from '#/modules/Command/useCases';
-import { defaultTransportState, timeSignatureMapStore, transportStore } from '#/modules/Transport/stores';
 import { formatMusicalLength, formatMusicalPosition } from '#/modules/Transport/useCases';
 import { dbToGain, formatGainDb, gainToDb, SEND_MIN_DB } from '#/utils/audioLevelLaw';
 import { CLIP_COLOR_PRESETS } from '#/utils/UI/colorPresets';
@@ -21,6 +19,7 @@ import { type Clip, type FollowAction, type StretchMode } from '../../../models/
 import { ControlHeader } from '../../components/Inspector/ControlHeader';
 import { InsetPanel } from '../../components/Inspector/InsetPanel';
 import { InspectorDetailHeader } from '../../components/Inspector/InspectorDetailHeader';
+import { useMeterInput } from '../../hooks/useMeterInput';
 
 import { ClipAudioAiSection } from './ClipAudioAiSection';
 import { ClipGainEnvelopeSection } from './ClipGainEnvelopeSection';
@@ -43,8 +42,6 @@ function parseGainDbText(text: string): number | null {
     return Number.isFinite(parsed) ? parsed : null;
 }
 
-const EMPTY_METER_MAP = { changes: [] };
-
 /** An uncommitted fade drag, with the stored fade it moved away from. */
 type FadeDrag = { from: number; value: number };
 
@@ -65,13 +62,7 @@ type ClipInspectorProps = {
 
 export const ClipInspector = ({ clip, trackId, onBack }: ClipInspectorProps): ReactElement => {
     const duration = clip.endBeat - clip.startBeat;
-    const transport = useStore(transportStore, defaultTransportState);
-    const meterMap = useStore(timeSignatureMapStore, EMPTY_METER_MAP);
-    const meter = {
-        changes: meterMap.changes,
-        defaultNumerator: transport.timeSignatureNumerator,
-        defaultDenominator: transport.timeSignatureDenominator,
-    };
+    const meter = useMeterInput();
     const [editingName, setEditingName] = useState(false);
     const [nameValue, setNameValue] = useState(clip.name);
 

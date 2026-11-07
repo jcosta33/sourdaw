@@ -5,6 +5,8 @@ import { updateTrack } from '../../repositories/track/updateTrack';
 import { getTrackEligibility } from '../../stores/trackEligibility';
 import { type Device } from '../../stores/trackStore';
 
+import { EXTERNAL_PLUGIN_DEVICE_TYPE } from './externalPluginDeviceType';
+
 function nextDeviceIdStr(): string {
     return `device-${crypto.randomUUID().slice(0, 8)}`;
 }
@@ -32,7 +34,7 @@ export function addExternalDevice(trackId: string, pluginId: string, pluginName:
     const device: Device = {
         id: nextDeviceIdStr(),
         name: pluginName,
-        type: 'external-plugin',
+        type: EXTERNAL_PLUGIN_DEVICE_TYPE,
         bypassed: false,
         parameterValues: {},
         externalPluginId: pluginId,
