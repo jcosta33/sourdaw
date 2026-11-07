@@ -1,0 +1,20 @@
+src/modules/AiRuntime/useCases/__tests__/multiBatchRun.spec.ts
+  s_68423a2adea8d2::t_da04b27f201b1e 40,516-528,530-547,551-574,576-585,587-600,602-603,605-610,612-616,618-622,624
+  s_68423a2adea8d2::t_5881d013b48d1b 529,548-550,575,586
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a95ce4b92c0a2081b71d0d7dc49655145e13f150",
+  "prompts": {},
+  "sessions": {
+    "s_68423a2adea8d2": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34b-f305-7c03-beb2-57afa678cda5",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
