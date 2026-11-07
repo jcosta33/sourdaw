@@ -1,0 +1,117 @@
+scripts/__tests__/deliverPullRequest.spec.ts
+  s_3bb7d711a342d3::t_44d6dfb3f8e729 252
+scripts/__tests__/e2eServerIdentity.spec.ts
+  s_3bb7d711a342d3::t_89cc755d097109 415,450
+scripts/deliverPullRequest.ts
+  s_3bb7d711a342d3::t_00a0e548204b19 1325
+scripts/releaseVersion.ts
+  s_3bb7d711a342d3::t_3b4161fb041584 426
+scripts/testInstructions.ts
+  s_3bb7d711a342d3::t_4e1664e933cb48 251,290,296,314,390,466,483,490,521,534,851
+src/app/__tests__/main.spec.tsx
+  s_3bb7d711a342d3::t_6391dd899575d1 534,539,576,585
+src/app/__tests__/mainAppImportRecovery.spec.tsx
+  s_3bb7d711a342d3::t_9d7052ac17ecba 130,137,289
+src/app/__tests__/mainRenderBeforeBootstrap.spec.tsx
+  s_3bb7d711a342d3::t_361e520f871b52 224,370
+src/components/ui/__tests__/bipolar-slider.spec.tsx
+  s_3bb7d711a342d3::t_b5dbe24b29cc90 127,179
+src/components/ui/__tests__/slider.spec.tsx
+  s_3bb7d711a342d3::t_804b535ff0f97f 134,232,265,310,351
+src/modules/AiGeneration/repositories/nativeAIBridge/__tests__/audioDenoising.spec.ts
+  s_3bb7d711a342d3::t_ea76998497a635 46
+src/modules/AiRuntime/useCases/__tests__/bassCompressorPromptWorkflow.spec.ts
+  s_3bb7d711a342d3::t_49718a97976e9e 1526,1598,1603
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/executeConfirmedCommandBatch.spec.ts
+  s_3bb7d711a342d3::t_3af48f9d131609 1374
+src/modules/Arrangement/handlers/device/__tests__/midiNodelessEffectCommands.integration.spec.ts
+  s_3bb7d711a342d3::t_1016acb6acca86 231
+src/modules/Arrangement/handlers/preset/__tests__/handleLoadPreset.spec.ts
+  s_3bb7d711a342d3::t_b6d12ad928f076 734
+src/modules/Arrangement/useCases/freezeBounce/__tests__/freezeTrack.spec.ts
+  s_3bb7d711a342d3::t_1f32b19140dee8 493
+src/modules/Arrangement/useCases/timeOperations/__tests__/globalTimeTransaction.spec.ts
+  s_3bb7d711a342d3::t_56080f7597e645 1060,1130
+src/modules/Arrangement/useCases/timeOperations/__tests__/prepareTimeOperationStateRestore.spec.ts
+  s_3bb7d711a342d3::t_dc5ccad1d1869e 980
+src/modules/AudioEngine/engine/__tests__/TrackNodeDevices.spec.ts
+  s_3bb7d711a342d3::t_0d43fe72b77a92 426,874,1058
+src/modules/AudioEngine/useCases/offlineRender/__tests__/nullTestRenderHarness.ts
+  s_3bb7d711a342d3::t_00553568fa6200 394
+src/modules/AudioRendering/presentations/views/__tests__/ExportDialog.spec.tsx
+  s_3bb7d711a342d3::t_48e5ecce1f975f 947
+src/modules/AudioRendering/repositories/audioEncoders/convertFloatChannelsToPcm.ts
+  s_3bb7d711a342d3::t_90cf370a7841ce 59,67
+src/modules/AudioRendering/repositories/audioEncoders/encodeOggAudio.ts
+  s_3bb7d711a342d3::t_10240e08233c67 40
+src/modules/AudioRendering/repositories/audioEncoders/flacEncoder.ts
+  s_3bb7d711a342d3::t_47d519f64cf0c6 444
+src/modules/AudioRendering/repositories/audioExport/__tests__/downloadAudioWav.spec.ts
+  s_3bb7d711a342d3::t_d1f0ff16490aa1 28,32
+src/modules/BrowserAi/presentations/views/__tests__/ModelManagerPanel.spec.tsx
+  s_3bb7d711a342d3::t_4e4147fb919bf6 271,294,349
+src/modules/Collaboration/useCases/__tests__/durableAssetOwnership.spec.ts
+  s_3bb7d711a342d3::t_ddf668387cea75 256
+src/modules/Command/useCases/__tests__/executeAppAction.spec.ts
+  s_3bb7d711a342d3::t_58ec72e3f55772 869
+src/modules/ControlSurface/presentations/views/__tests__/HardwareMappingManager.spec.tsx
+  s_3bb7d711a342d3::t_2093c67de04e21 41,49
+src/modules/ControlSurface/useCases/hardware/__tests__/downloadHardwareMappings.spec.ts
+  s_3bb7d711a342d3::t_aa6bf08287fd1d 71
+src/modules/CrdtDocument/repositories/__tests__/branchStateAuthority.spec.ts
+  s_3bb7d711a342d3::t_d900b4b7a0fc20 1243
+src/modules/CrdtDocument/useCases/projection/__tests__/projectionAfterPartialMerge.integration.spec.ts
+  s_3bb7d711a342d3::t_327ec5dc092330 351
+src/modules/DawInterchange/handlers/__tests__/handleExportDawProject.spec.ts
+  s_3bb7d711a342d3::t_7cb54dcda8c2ac 347
+src/modules/Gluten/presentations/views/__tests__/glutenTopologyControlGating.spec.tsx
+  s_3bb7d711a342d3::t_c26e94efe6722b 84
+src/modules/MixerConsole/presentations/views/Mixer/__tests__/SendsSection.spec.tsx
+  s_3bb7d711a342d3::t_28b2ff9145008d 182,231,282
+src/modules/Onboarding/presentations/views/__tests__/OnboardingTour.spec.tsx
+  s_3bb7d711a342d3::t_f9134db4c38b7a 26
+src/modules/PluginHost/useCases/faustEngine/__tests__/compileFaustDSP.spec.ts
+  s_3bb7d711a342d3::t_df4f8131f143de 58,100
+src/modules/PluginHost/useCases/pluginLifecycle/__tests__/lifecycle.spec.ts
+  s_3bb7d711a342d3::t_3c7c5b54d4dabb 266
+src/modules/Preferences/presentations/views/__tests__/ShortcutsSection.spec.tsx
+  s_3bb7d711a342d3::t_43ecffec0de817 46
+src/modules/Preferences/presentations/views/preferences/__tests__/MidiSection.spec.tsx
+  s_3bb7d711a342d3::t_1abf31e35025ac 79
+src/modules/Project/useCases/composeProductionBriefUpdate.ts
+  s_3bb7d711a342d3::t_8ca3d60480f4cb 49
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/PianoRollKeyRailGeometry.spec.tsx
+  s_3bb7d711a342d3::t_18e4c874424986 115,162
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/PianoRollOpeningScroll.spec.tsx
+  s_3bb7d711a342d3::t_b67bc048ad2fb4 102
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/deviceParameterGestureUndo.integration.spec.tsx
+  s_3bb7d711a342d3::t_3a2af421a80bb9 279
+src/modules/TimelineEditor/presentations/views/Inspector/layouts/__tests__/compressorCurveGestureUndo.integration.spec.tsx
+  s_3bb7d711a342d3::t_2f8da5de9b6ea6 227
+src/modules/TimelineEditor/presentations/views/Inspector/layouts/__tests__/distortionCurveGestureUndo.integration.spec.tsx
+  s_3bb7d711a342d3::t_e4930e7fdff521 195
+src/modules/TimelineEditor/presentations/views/Inspector/layouts/__tests__/synthEnvelopeGestureUndo.integration.spec.tsx
+  s_3bb7d711a342d3::t_06c3b83c340489 255
+src/modules/TimelineEditor/presentations/views/__tests__/InspectorPanel.trackSwitch.spec.tsx
+  s_3bb7d711a342d3::t_e735eb8d2a77c7 109
+src/modules/Transport/useCases/__tests__/playheadScheduler.spec.ts
+  s_3bb7d711a342d3::t_75a20582362604 837
+src/modules/Transport/useCases/tempoMap/__tests__/prepareTimelineMapTimeOperation.spec.ts
+  s_3bb7d711a342d3::t_d9886ef7576499 1804,1813
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9c02b68cfa2b3730f8b7b0d9e7c36784234c0b12",
+  "prompts": {},
+  "sessions": {
+    "s_3bb7d711a342d3": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "s_3bb7d711a342d3",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
