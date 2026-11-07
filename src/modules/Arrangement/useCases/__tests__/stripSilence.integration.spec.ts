@@ -264,15 +264,13 @@ describe('stripSilence satellite migration (ledger #2108)', () => {
                 automation: typeof automationStore.value;
                 takeLanes: typeof takeLaneStore.value;
             }>('root')!;
-            return JSON.parse(
-                JSON.stringify({
-                    tracks: document.tracks.tracks,
-                    gain: document.gainEnvelopes,
-                    warp: document.warpStates,
-                    automation: document.automation,
-                    takes: document.takeLanes,
-                })
-            );
+            return structuredClone({
+                tracks: document.tracks.tracks,
+                gain: document.gainEnvelopes,
+                warp: document.warpStates,
+                automation: document.automation,
+                takes: document.takeLanes,
+            });
         };
         flushAutomergeStorageWrites();
         const before = capture();
