@@ -3,9 +3,8 @@ import { launch_new_project, setupWorkspace } from './e2eUtils';
 
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
 
-// Error-path coverage: a corrupt MIDI file must surface an error notification
-// and add no track. The existing MIDI import spec covers the happy path
-// (midiExportDownloadTestId); the rejection branch is uncovered.
+// This browser case owns the corrupt import-to-notification path and verifies
+// that rejection adds no track. NotificationToast.spec.tsx owns dismissal.
 //
 // importMidiFile (Arrangement use case) catches a parse failure from
 // readMidiFile and calls notifyUser(`Failed to import "${file.name}" -
@@ -26,8 +25,10 @@ test.describe('Import error paths — corrupt MIDI rejected', () => {
         await page.keyboard.press(`${MOD}+K`);
         const palette = page.getByTestId('command-palette-input');
         await palette.fill('Add Audio Track');
+        const trackRows = trackList.locator('[role="row"] [role="row"]');
+        const tracksBeforeAdd = await trackRows.count();
         await page.getByRole('option', { name: /^Add Audio Track/ }).click();
-        await expect(trackList.getByRole('row').first()).toBeVisible();
+        await expect(trackRows).toHaveCount(tracksBeforeAdd + 1);
         const tracksAfterAdd = await trackList.getByRole('row').count();
         expect(tracksAfterAdd).toBeGreaterThanOrEqual(1);
 
