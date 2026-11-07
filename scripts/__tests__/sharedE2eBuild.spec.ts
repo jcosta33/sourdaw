@@ -54,15 +54,14 @@ describe('shared e2e build', () => {
             const root = fixture();
             const manifest = join(root, 'dist', 'shared-e2e-manifest.json');
             if (failure !== 'missing') {
-                writeFileSync(
-                    manifest,
-                    failure === 'malformed'
-                        ? '{'
-                        : JSON.stringify({
-                              sha: failure === 'wrong sha' ? 'b'.repeat(40) : sha,
-                              mode: failure === 'wrong mode' ? 'production' : 'e2e',
-                          })
-                );
+                let contents = '{';
+                if (failure !== 'malformed') {
+                    contents = JSON.stringify({
+                        sha: failure === 'wrong sha' ? 'b'.repeat(40) : sha,
+                        mode: failure === 'wrong mode' ? 'production' : 'e2e',
+                    });
+                }
+                writeFileSync(manifest, contents);
             }
             if (failure === 'missing index') {
                 rmSync(join(root, 'dist', 'index.html'));
