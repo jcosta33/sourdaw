@@ -210,7 +210,7 @@ test('proves the live Chromium Browser AI admission boundary without skipping', 
     // transform before the launch-screen readiness gate can observe the app.
     test.setTimeout(180_000);
     await setupWorkspace(page);
-    await launch_new_project_via_ui(page, { firstPaintTimeoutMs: 90_000 });
+    await launch_new_project_via_ui(page);
 
     await assertBrowserAiCapabilityBoundary({ page, testInfo });
 });
