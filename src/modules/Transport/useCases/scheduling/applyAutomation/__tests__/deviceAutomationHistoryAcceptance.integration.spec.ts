@@ -1,6 +1,8 @@
 import { change, clone } from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
+import { registerProjectSlotProjections } from '#/app/registerProjectSlotProjections';
 import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
@@ -57,6 +59,9 @@ import { executePlayheadSeek } from '../../../transportControls/executePlayheadS
 import { pausePlayback } from '../../../transportControls/pausePlayback';
 import { stopPlayback } from '../../../transportControls/stopPlayback';
 import { applyAutomation } from '../applyAutomation';
+
+registerDeviceEnginePorts();
+registerProjectSlotProjections();
 
 // Engine clocks, carrier admission and terminal engine I/O are controlled.
 // Runtime parameter routing, scheduler teardown, Command, macro capture,

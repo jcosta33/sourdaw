@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
@@ -26,6 +27,8 @@ import { runProjectLoadTransaction } from '../../projectPersistence/helpers/runP
 import { verifyAudioBufferReferences } from '../../projectPersistence/helpers/verifyAudioBufferReferences';
 import { setProjectIdentityTransitionDependencies } from '../../projectPersistence/projectIdentityTransitionDependencies';
 import * as subject from '../switchArrangement';
+
+registerDeviceEnginePorts();
 
 const mocks = vi.hoisted(() => ({
     getCachedAudioBuffer: vi.fn<(input: { bufferId: string }) => AudioBuffer | null>(),

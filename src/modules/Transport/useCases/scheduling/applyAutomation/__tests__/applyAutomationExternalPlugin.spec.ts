@@ -226,8 +226,8 @@ describe('applyAutomation on an external plugin device', () => {
         expect(updateDeviceParam).toHaveBeenCalled();
 
         vi.mocked(updateDeviceParam).mockClear();
-        // Mutated in place: replacing the snapshot would be a project change,
-        // which drops runtime ownership before the gate edge is ever reached.
+        // Keep this fixture's owner while changing its gate; immutable edits
+        // retain the same ownership too, as the connected history spec proves.
         const track = (trackStore as unknown as MutableStore<{ tracks: { automationMode: string }[] }>).value
             .tracks[0]!;
         track.automationMode = 'off';
