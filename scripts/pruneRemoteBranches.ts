@@ -40,9 +40,9 @@ export type PruneRemoteBranchesPort = {
     branchHoldsRevision: (branch: RemoteBranch, revision: string) => boolean;
 };
 
-export type PruneRemoteBranchesArgs = { apply: boolean; limit?: number; help: boolean };
+export type PruneRemoteBranchesArgs = { apply: boolean; limit?: number; help: boolean; branches?: string[] };
 
-const usage = 'usage: pnpm branch:prune [--apply] [--limit <n>]';
+const usage = 'usage: pnpm branch:prune [--apply] [--limit <n>] [--branch <name>]...';
 const BATCH_SIZE = 50;
 const [REQUIRED_OWNER, REQUIRED_NAME] = REQUIRED_REPOSITORY.split('/') as [string, string];
 
@@ -52,6 +52,7 @@ export function parsePruneRemoteBranchesArgs(args: string[]): PruneRemoteBranche
     }
     let apply = false;
     let limit: number | undefined;
+    let branches: string[] | undefined;
     let index = 0;
     while (index < args.length) {
         const arg = args[index];
@@ -65,9 +66,30 @@ export function parsePruneRemoteBranchesArgs(args: string[]): PruneRemoteBranche
             index += 2;
             continue;
         }
+        if (arg === '--branch') {
+            const name = parseBranchSelector(args[index + 1]);
+            branches ??= [];
+            if (!branches.includes(name)) {
+                branches.push(name);
+            }
+            index += 2;
+            continue;
+        }
         fail(usage);
     }
-    return { apply, limit, help: false };
+    return { apply, limit, help: false, branches };
+}
+
+function parseBranchSelector(value: string | undefined): string {
+    if (value === undefined || value === '' || value.startsWith('-')) {
+        fail(usage);
+    }
+    try {
+        spawnCapture('git', ['check-ref-format', `refs/heads/${value}`]);
+    } catch {
+        fail(usage);
+    }
+    return value;
 }
 
 function parsePositiveLimit(value: string | undefined): number {
@@ -335,6 +357,12 @@ export function pruneRemoteBranches(
     log: (message: string) => void
 ): number {
     const branches = port.listBranches();
+    const selectedNames = args.branches === undefined ? undefined : new Set(args.branches);
+    for (const name of selectedNames ?? []) {
+        if (!branches.some((branch) => branch.name === name)) {
+            fail(`unknown remote branch: ${name}`);
+        }
+    }
     const prMap = fetchPullRequestsInBatches(
         branches.map((branch) => branch.name),
         port
@@ -355,8 +383,12 @@ export function pruneRemoteBranches(
         }
     }
     retainMeasurementRevisionHolders(branches, classes, port, log);
-    printPlan(branches, classes, prMap, log);
-    const spent = branches
+    const selectedBranches = branches.filter((branch) => selectedNames === undefined || selectedNames.has(branch.name));
+    const selectedClasses = new Map(
+        [...classes].filter(([name]) => selectedNames === undefined || selectedNames.has(name))
+    );
+    printPlan(selectedBranches, selectedClasses, prMap, log);
+    const spent = selectedBranches
         .filter((branch) => classes.get(branch.name) === 'spent')
         .sort((left, right) => left.name.localeCompare(right.name));
     if (!args.apply) {
