@@ -1,0 +1,19 @@
+src/modules/AiRuntime/useCases/__tests__/planWithMeasurements.spec.ts
+  s_68423a2adea8d2::t_bca71999dff6b7 147-149,153-155,183,194,209-211,240-242,255-257,260-262,270-278
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "76e2a0082fbf39f886be73251147483ca703be2f",
+  "prompts": {},
+  "sessions": {
+    "s_68423a2adea8d2": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34b-f305-7c03-beb2-57afa678cda5",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
