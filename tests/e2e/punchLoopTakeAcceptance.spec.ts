@@ -6,8 +6,8 @@ import { chromium, type Page, type TestInfo } from '@playwright/test';
 
 import { expect, test } from './e2eTest';
 import { launch_new_project, setupWorkspace, wait_for_launch_first_paint, wait_for_workspace_ready } from './e2eUtils';
-import { attach_first_paint_console, CAPABILITIES_MARKER, wait_for_console_marker } from './firstPaintDiagnostics';
 import { installFilePickerCapture } from './exportFilePickerCapture';
+import { attach_first_paint_console, CAPABILITIES_MARKER, wait_for_console_marker } from './firstPaintDiagnostics';
 import {
     bindPunchRecordingClockWitness,
     captureFrameDrift,
@@ -110,12 +110,12 @@ function correlation(left: number[], right: number[]): number {
     return product / Math.sqrt(leftSquare * rightSquare);
 }
 
-function bestMicTimecodeMatch(recordedRms: number[]): number {
+function bestMicTimecodeMatch(recordedRms: number[], blockSeconds = 0.1): number {
     const observed = recordedRms.slice(2, -2);
     let best = -1;
-    for (let start = 0; start <= MIC_SECONDS - recordedRms.length * 0.1; start += 0.1) {
+    for (let start = 0; start <= MIC_SECONDS - recordedRms.length * blockSeconds; start += blockSeconds) {
         const expected = observed.map((_, index) =>
-            markerAmplitude(Math.floor((start + (index + 2) * 0.1) / MARKER_SECONDS))
+            markerAmplitude(Math.floor((start + (index + 2) * blockSeconds) / MARKER_SECONDS))
         );
         best = Math.max(best, correlation(observed, expected));
     }
@@ -207,30 +207,33 @@ async function expectNoAuditionRecording(page: Page, trackId: string, takeIds: s
     ).toEqual(takeIds);
 }
 
-async function recordedEnvelope(page: Page, bufferId: string | null): Promise<number[]> {
-    return page.evaluate(async (id) => {
-        const { audioBufferCache } = await import('/src/modules/AudioEngine/stores/audioBufferCache.ts');
-        let buffer: AudioBuffer | undefined;
-        if (id) {
-            buffer = audioBufferCache.get(id);
-        } else {
-            buffer = Reflect.get(window, '__punchClosingBuffer');
-        }
-        if (!buffer) {
-            return [];
-        }
-        const data = buffer.getChannelData(0);
-        const block = Math.round(buffer.sampleRate * 0.1);
-        const result: number[] = [];
-        for (let offset = 0; offset + block <= data.length; offset += block) {
-            let power = 0;
-            for (let frame = offset; frame < offset + block; frame++) {
-                power += data[frame] * data[frame];
+async function recordedEnvelope(page: Page, bufferId: string | null, blockSeconds = 0.1): Promise<number[]> {
+    return page.evaluate(
+        async ({ id, seconds }) => {
+            const { audioBufferCache } = await import('/src/modules/AudioEngine/stores/audioBufferCache.ts');
+            let buffer: AudioBuffer | undefined;
+            if (id) {
+                buffer = audioBufferCache.get(id);
+            } else {
+                buffer = Reflect.get(window, '__punchClosingBuffer');
             }
-            result.push(Math.sqrt(power / block));
-        }
-        return result;
-    }, bufferId);
+            if (!buffer) {
+                return [];
+            }
+            const data = buffer.getChannelData(0);
+            const block = Math.round(buffer.sampleRate * seconds);
+            const result: number[] = [];
+            for (let offset = 0; offset + block <= data.length; offset += block) {
+                let power = 0;
+                for (let frame = offset; frame < offset + block; frame++) {
+                    power += data[frame] * data[frame];
+                }
+                result.push(Math.sqrt(power / block));
+            }
+            return result;
+        },
+        { id: bufferId, seconds: blockSeconds }
+    );
 }
 
 async function createCompRegion(
@@ -1611,5 +1614,341 @@ test('keeps a live take when Pause is immediately followed by New Project', asyn
                 await browser.close();
             }
         }
+    }
+});
+
+async function automaticPunchProjectOwner(page: Page) {
+    return page.evaluate(async () => {
+        const [{ projectStore }, { captureDurableDocumentWitness }] = await Promise.all([
+            import('/src/modules/Project/stores/projectStore.ts'),
+            import('/src/modules/CrdtDocument/useCases/index.ts'),
+        ]);
+        const mirror = JSON.parse(sessionStorage.getItem('sourdaw-undo-session') ?? '{}');
+        return {
+            projectId: projectStore.value?.projectId,
+            witness: captureDurableDocumentWitness(),
+            mirrorProjectId: mirror.projectId,
+            mirrorWitness: mirror.witness,
+            pastLength: mirror.past?.length,
+            futureLength: mirror.future?.length,
+        };
+    });
+}
+
+async function reloadAutomaticPunchSession(page: Page, projectId: string, projectName: string): Promise<void> {
+    const boot = attach_first_paint_console(page);
+    const response = await page.reload();
+    expect(decodeURIComponent(response?.headers()['x-sourdaw-root'] ?? '')).toBe(process.cwd());
+    await wait_for_console_marker(boot, CAPABILITIES_MARKER, 30_000);
+    await expect
+        .poll(() => settledReopenMode(page, projectId, projectName), { timeout: 30_000 })
+        .toMatch(/^(saved-active|launch-ready)$/);
+    if ((await settledReopenMode(page, projectId, projectName)) === 'launch-ready') {
+        await wait_for_launch_first_paint(page);
+        await page.getByRole('button', { name: `Open recent project ${projectName}` }).click();
+    }
+    await wait_for_workspace_ready(page);
+    await expect.poll(() => readyProjectId(page)).toBe(projectId);
+}
+
+async function automaticPunchMidiState(page: Page, trackId: string, knownClipId?: string) {
+    return page.evaluate(
+        async ({ id, previousId }) => {
+            const [{ trackStore }, { midiStore }, { getCrdtDoc }, { undoHistoryStore }] = await Promise.all([
+                import('/src/modules/Arrangement/stores/trackStore.ts'),
+                import('/src/modules/MIDI/stores/midiStore.ts'),
+                import('/src/modules/CrdtDocument/useCases/index.ts'),
+                import('/src/modules/Command/stores/index.ts'),
+            ]);
+            const root = getCrdtDoc<{ tracks?: typeof trackStore.value; midi?: typeof midiStore.value }>('root');
+            if (!root) {
+                throw new Error('Automatic punch has no authoritative recording document');
+            }
+            const clips = trackStore.value?.tracks.find((track) => track.id === id)?.clips ?? [];
+            const rawClips = root.tracks?.tracks.find((track) => track.id === id)?.clips ?? [];
+            const clipId = clips[0]?.id ?? previousId;
+            const selectRows = (state: typeof midiStore.value) => ({
+                notes: clipId ? (state?.notesByClipId[clipId] ?? []) : [],
+                cc: clipId ? (state?.ccByClipId[clipId] ?? []) : [],
+                bend: clipId ? (state?.pitchBendByClipId[clipId] ?? []) : [],
+            });
+            return {
+                clips,
+                rows: selectRows(midiStore.value),
+                rawMatchesProjection:
+                    JSON.stringify(
+                        rawClips.map((clip) => ({
+                            id: clip.id,
+                            startBeat: clip.startBeat,
+                            endBeat: clip.endBeat,
+                            midiOffsetBeats: clip.midiOffsetBeats,
+                        }))
+                    ) ===
+                        JSON.stringify(
+                            clips.map((clip) => ({
+                                id: clip.id,
+                                startBeat: clip.startBeat,
+                                endBeat: clip.endBeat,
+                                midiOffsetBeats: clip.midiOffsetBeats,
+                            }))
+                        ) &&
+                    JSON.stringify(selectRows(root.midi ?? null)) === JSON.stringify(selectRows(midiStore.value)),
+                recordingHistory: (undoHistoryStore.value?.past ?? [])
+                    .filter((entry) => entry.kind === 'action' && entry.action.type === 'commitRecording')
+                    .map((entry) => ({ id: entry.id, groupId: entry.groupId })),
+            };
+        },
+        { id: trackId, previousId: knownClipId }
+    );
+}
+
+test('finishes an edited automatic mixed punch at its original sounded out and replays after reopen', async ({
+    browserName: _browserName,
+}, testInfo: TestInfo) => {
+    test.setTimeout(180_000);
+    const outBeat = 11.03;
+    const projectName = `Automatic mixed punch ${randomUUID()}`;
+    const baseURL = testInfo.project.use.baseURL;
+    if (typeof baseURL !== 'string') {
+        throw new TypeError('Automatic punch acceptance requires a lane-owned browser origin');
+    }
+    const micWav = testInfo.outputPath('automatic-punch-microphone.wav');
+    await writeFile(micWav, fakeMicrophoneWav());
+    const browser = await chromium.launch({
+        channel: 'chromium',
+        headless: true,
+        args: ['--use-fake-device-for-media-stream', `--use-file-for-fake-audio-capture=${micWav}`],
+    });
+    const context = await browser.newContext({
+        baseURL,
+        permissions: ['microphone'],
+        acceptDownloads: true,
+        serviceWorkers: 'block',
+        viewport: { width: 1440, height: 900 },
+    });
+    let page = await context.newPage();
+    let completed = false;
+    try {
+        await installPunchRecordingClockWitness(page);
+        await setupWorkspace(page);
+        const response = await page.request.get('/');
+        expect(decodeURIComponent(response.headers()['x-sourdaw-root'] ?? '')).toBe(process.cwd());
+        await launch_new_project(page);
+        await page.getByTestId('project-name').click();
+        await page.locator('input:focus').fill(projectName);
+        await page.locator('input:focus').press('Enter');
+        const initialProjectId = await readyProjectId(page);
+        if (!initialProjectId) {
+            throw new Error('Automatic punch needs a real project identity before boot reconciliation');
+        }
+        await page.keyboard.press(`${MODIFIER}+s`);
+        await expect(page.getByTitle('Unsaved changes')).toHaveCount(0, { timeout: 30_000 });
+        await reloadAutomaticPunchSession(page, initialProjectId, projectName);
+        await expect
+            .poll(async () => {
+                const owner = await automaticPunchProjectOwner(page);
+                return (
+                    owner.projectId === initialProjectId &&
+                    owner.mirrorProjectId === initialProjectId &&
+                    owner.witness === owner.mirrorWitness &&
+                    owner.pastLength === 0 &&
+                    owner.futureLength === 0
+                );
+            })
+            .toBe(true);
+        const audioTrackId = await configurePunchTrack(page);
+        const midiTrackId = await page.evaluate(async (out) => {
+            const [{ executeAppAction }, { trackStore }] = await Promise.all([
+                import('/src/modules/Command/useCases/index.ts'),
+                import('/src/modules/Arrangement/stores/trackStore.ts'),
+            ]);
+            await executeAppAction({ type: 'setPunchOut', payload: { beat: out } }, { skipUndo: true });
+            await executeAppAction(
+                { type: 'addTrack', payload: { name: 'Punch keys', kind: 'midi' } },
+                { skipUndo: true }
+            );
+            const track = trackStore.value?.tracks.find((candidate) => candidate.name === 'Punch keys');
+            if (!track) {
+                throw new Error('Typed MIDI setup did not produce Punch keys');
+            }
+            await executeAppAction(
+                { type: 'armTrack', payload: { trackId: track.id, armed: true } },
+                { skipUndo: true }
+            );
+            return track.id;
+        }, outBeat);
+        await expect(page.getByTestId(`track-arm-${midiTrackId}`)).toHaveAttribute('aria-label', 'Disarm Punch keys');
+        await page.getByTestId('toggle-virtual-keyboard').click();
+        await expect(page.getByRole('region', { name: 'Virtual Piano Keyboard' })).toBeVisible();
+        await bindPunchRecordingClockWitness(page, audioTrackId);
+        await page.getByTestId('transport-record').click();
+        await expect
+            .poll(
+                async () => {
+                    const clock = await currentPunchRecordingClock(page);
+                    return (
+                        clock.recording?.sampleZeroContextFrame !== null &&
+                        clock.recording !== null &&
+                        clock.output?.isRecording === true
+                    );
+                },
+                { timeout: 20_000, intervals: [10, 20] }
+            )
+            .toBe(true);
+        const reference = await currentPunchRecordingClock(page);
+        if (!reference.recording || reference.recording.sampleZeroContextFrame === null || !reference.output) {
+            throw new Error('Original punch has no stable producer/output clock reference');
+        }
+        expect(reference.output.gestureBeat).toBeLessThan(10.8);
+        await page.keyboard.down('g');
+        await page.getByRole('button', { name: 'Punch recording settings', exact: true }).click();
+        const outInput = page.getByTestId('punch-out-beat');
+        await expect(outInput).toBeVisible();
+        await outInput.fill('10.5');
+        await outInput.press('Enter');
+        await expect(outInput).toHaveValue('10.5');
+        await outInput.press('Escape');
+        const editedAt = await page.evaluate(async () => {
+            const [{ transportStore }, { captureGestureBeat }] = await Promise.all([
+                import('/src/modules/Transport/stores/transportStore.ts'),
+                import('/src/modules/Transport/stores/captureGestureBeat.ts'),
+            ]);
+            return { out: transportStore.value?.punchOutBeat, beat: captureGestureBeat() };
+        });
+        expect(editedAt.out).toBe(10.5);
+        expect(editedAt.beat, 'the real marker UI must commit before the original out').toBeLessThan(outBeat);
+        await expect(page.getByTestId('transport-record')).toHaveAttribute('aria-pressed', 'false', {
+            timeout: 10_000,
+        });
+        const witness = await readPunchRecordingClockWitness(page);
+        const stop = stopClockEvent(witness);
+        const frames = finalCapturedFrames(witness);
+        const requiredFrames = Math.ceil(
+            reference.recording.contextFrame +
+                (((outBeat - reference.output.gestureBeat) * 60) / TEMPO + frozenRecordingLatency(witness)) *
+                    reference.recording.sampleRate -
+                reference.recording.sampleZeroContextFrame
+        );
+        // The independent read pairs a stable SAB/context frame with the immediately read browser output.
+        // Its one-quantum boundary uncertainty is far below the original missing final scheduling grain.
+        expect(frames).toBeGreaterThanOrEqual(requiredFrames - RECORDING_RENDER_QUANTUM_FRAMES);
+        expect(stop.output!.wrapCount).toBe(reference.output.wrapCount);
+        expect(stop.output!.gestureBeat).toBeGreaterThanOrEqual(outBeat);
+        await page.keyboard.up('g');
+        await page.keyboard.press('a');
+        await page.getByTestId('transport-stop').click();
+        await expect.poll(async () => (await recordingSnapshot(page, audioTrackId))?.bufferId ?? null).not.toBeNull();
+        const audio = await recordingSnapshot(page, audioTrackId);
+        if (!audio) {
+            throw new Error('Automatic punch did not publish its captured audio');
+        }
+        const midi = await automaticPunchMidiState(page, midiTrackId);
+        expect(midi.rawMatchesProjection).toBe(true);
+        expect(midi.clips).toHaveLength(1);
+        expect(midi.rows.notes).toHaveLength(1);
+        expect(midi.rows.notes[0]!.pitch).toBe(67);
+        const midiClip = midi.clips[0]!;
+        const note = midi.rows.notes[0]!;
+        expect(midiClip.startBeat - (midiClip.midiOffsetBeats ?? 0) + note.startBeat + note.duration).toBeCloseTo(
+            outBeat,
+            7
+        );
+        expect(midi.rows.cc).toEqual([]);
+        expect(midi.rows.bend).toEqual([]);
+        expect(midi.recordingHistory).toHaveLength(2);
+        expect(new Set(midi.recordingHistory.map((entry) => entry.groupId)).size).toBe(1);
+        expect(midi.recordingHistory[0]!.groupId).toBeTruthy();
+        const owners = await recordingOwners(page, audioTrackId);
+        const midiOwners = await recordingOwners(page, midiTrackId);
+        expect(owners.raw).toEqual(owners.projected);
+        expect(midiOwners.raw).toEqual(midiOwners.projected);
+        expect(audio.clipEndBeat).toBeCloseTo(outBeat, 5);
+        const pcm = await pcmFingerprint(page, audio.bufferId);
+        expect(pcm.frames).toBe(frames);
+        expect(pcm.sampleRate).toBe(MIC_SAMPLE_RATE);
+        const envelope = await recordedEnvelope(page, audio.bufferId, 0.01);
+        expect(envelope.length).toBeGreaterThan(30);
+        expect(bestMicTimecodeMatch(envelope, 0.01)).toBeGreaterThan(0.45);
+        await testInfo.attach('automatic-punch-independent-frontier', {
+            body: JSON.stringify(
+                {
+                    originalOutBeat: outBeat,
+                    editedOutBeat: 10.5,
+                    markerEdit: editedAt,
+                    reference,
+                    requiredFrames,
+                    frames,
+                    witness,
+                    audio,
+                    midi,
+                    pcm,
+                },
+                null,
+                2
+            ),
+            contentType: 'application/json',
+        });
+        const expectOneGestureReplay = async (target: Page) => {
+            await target.getByTestId('transport-undo').click();
+            await expect.poll(async () => (await recordingOwners(target, audioTrackId)).raw.clips.length).toBe(0);
+            const empty = await automaticPunchMidiState(target, midiTrackId, midiClip.id);
+            expect(empty.rawMatchesProjection).toBe(true);
+            expect(empty.clips).toEqual([]);
+            expect(empty.rows).toEqual({ notes: [], cc: [], bend: [] });
+            expect((await recordingOwners(target, audioTrackId)).raw.lanes).toEqual([]);
+            expect((await recordingOwners(target, midiTrackId)).raw.lanes).toEqual([]);
+            await target.getByTestId('transport-redo').click();
+            await expect
+                .poll(async () => (await recordingSnapshot(target, audioTrackId))?.bufferId)
+                .toBe(audio.bufferId);
+            expect(await recordingOwners(target, audioTrackId)).toEqual(owners);
+            expect(await recordingOwners(target, midiTrackId)).toEqual(midiOwners);
+            expect((await automaticPunchMidiState(target, midiTrackId)).rows).toEqual(midi.rows);
+            expect(await pcmFingerprint(target, audio.bufferId)).toEqual(pcm);
+        };
+        await expectOneGestureReplay(page);
+        const projectId = await readyProjectId(page);
+        if (!projectId) {
+            throw new Error('Automatic punch project has no identity to save');
+        }
+        await page.keyboard.press(`${MODIFIER}+s`);
+        await expect(page.getByTitle('Unsaved changes')).toHaveCount(0, { timeout: 30_000 });
+        await expect
+            .poll(async () => {
+                const owner = await automaticPunchProjectOwner(page);
+                return owner.projectId === owner.mirrorProjectId && owner.witness === owner.mirrorWitness;
+            })
+            .toBe(true);
+        await reloadAutomaticPunchSession(page, projectId, projectName);
+        expect(await recordingOwners(page, audioTrackId)).toEqual(owners);
+        expect(await recordingOwners(page, midiTrackId)).toEqual(midiOwners);
+        await expectOneGestureReplay(page);
+        await page.close();
+        page = await context.newPage();
+        await installBrowserPlaybackObserver(page);
+        await reopenRecentProject(page, projectId, projectName);
+        expect(await recordingOwners(page, audioTrackId)).toEqual(owners);
+        expect(await recordingOwners(page, midiTrackId)).toEqual(midiOwners);
+        expect((await automaticPunchMidiState(page, midiTrackId)).rows).toEqual(midi.rows);
+        expect(await pcmFingerprint(page, audio.bufferId)).toEqual(pcm);
+        await expect(page.getByTestId(`track-arm-${audioTrackId}`)).toHaveAttribute('aria-label', 'Arm Punch mic');
+        await expect(page.getByTestId(`track-arm-${midiTrackId}`)).toHaveAttribute('aria-label', 'Arm Punch keys');
+        // A fresh tab has no prior sessionStorage mirror; prove persisted audio playback instead.
+        await prepareRecordedBufferObserver(page, audio.bufferId);
+        await seek(page, audio.clipStartBeat);
+        await page.getByTestId('transport-play').click();
+        await expect
+            .poll(async () => (await browserStarts(page)).filter((entry) => entry.recordedBuffer).length)
+            .toBeGreaterThan(0);
+        await page.getByTestId('transport-stop').click();
+        expect(await recordingOwners(page, audioTrackId)).toEqual(owners);
+        expect((await automaticPunchMidiState(page, midiTrackId)).rows).toEqual(midi.rows);
+        completed = true;
+    } finally {
+        if (!completed) {
+            await retainPunchFailureDiagnostics(page, testInfo, 'automatic-punch-clock');
+        }
+        await context.close();
+        await browser.close();
     }
 });

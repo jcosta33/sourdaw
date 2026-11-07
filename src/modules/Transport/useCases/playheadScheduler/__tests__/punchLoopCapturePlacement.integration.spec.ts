@@ -72,6 +72,7 @@ import {
     triggerLiveNoteOn,
 } from '#/modules/MIDI/useCases';
 import * as synthVoices from '#/modules/Synth/useCases';
+import { CLIP_LOOP_WINDOW_BEAT_TOLERANCE } from '#/utils/clipLoopOrigin';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { secondsBetweenBeats } from '../../../models/TempoMap';
@@ -4508,7 +4509,7 @@ describe('punch audio capture loop placement', () => {
                     const exported = projectMidiClipPlayback({ notes, controlChanges: [], clip });
                     expect(exported.notes).toHaveLength(1);
                     expect(exported.notes[0]!.startBeat + exported.notes[0]!.duration).toBeLessThanOrEqual(
-                        admittedOut + 1e-9
+                        admittedOut + CLIP_LOOP_WINDOW_BEAT_TOLERANCE
                     );
                 }
                 expect(clip.endBeat).toBe(admittedOut);
