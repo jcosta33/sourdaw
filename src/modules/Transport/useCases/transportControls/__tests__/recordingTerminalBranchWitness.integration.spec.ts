@@ -62,7 +62,11 @@ const mocks = vi.hoisted(() => {
         startAudioRecording: vi.fn<StartAudioRecordingFn>((_trackId, terminal, _inputId, onCaptureClock) => {
             capturedAudioTerminal = terminal;
             const sampleZeroContextSeconds = audioClock.currentTime;
-            onCaptureClock?.(() => ({ status: 'captured', contextSeconds: sampleZeroContextSeconds }));
+            onCaptureClock?.(() => ({
+                status: 'captured',
+                contextSeconds: sampleZeroContextSeconds,
+                capturedThroughContextSeconds: audioClock.currentTime,
+            }));
             return Promise.resolve(true);
         }),
         // The real Stop awaits a recorder flush that settles the capture and

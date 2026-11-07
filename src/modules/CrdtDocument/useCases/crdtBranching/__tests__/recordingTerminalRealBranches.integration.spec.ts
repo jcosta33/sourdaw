@@ -87,7 +87,11 @@ const mocks = vi.hoisted(() => {
         >((_trackId, callback, _inputId, register) => {
             terminal = callback;
             // The recorder publishes the sample-zero frame its completed result carries.
-            register(() => ({ status: 'captured', contextSeconds: 0 }));
+            register(() => ({
+                status: 'captured',
+                contextSeconds: 0,
+                capturedThroughContextSeconds: clock.currentTime,
+            }));
             firstStop = Promise.withResolvers<void>();
             secondStop = Promise.withResolvers<void>();
             return Promise.resolve(true);

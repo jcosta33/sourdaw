@@ -4,6 +4,8 @@ import { type createNativeRecordingCaptureClock } from '#/modules/AudioEngine/us
 
 import { nativeRecordingEntry } from '../playheadScheduler/nativeRecordingEntry';
 
+import { redateNativePunchEnding } from './redateNativePunchEnding';
+
 type NativeClock = ReturnType<typeof createNativeRecordingCaptureClock>;
 export type NativeCaptureSnapshot = NonNullable<NativeClock['last']>;
 export type NativeCaptureBoundary = Readonly<{
@@ -32,6 +34,9 @@ function incomingAnchor(boundary: NativeCaptureBoundary): NativeCaptureSnapshot 
 class NativeRecordingCaptureHistory {
     private projectionKnown = false;
     private historyComplete = true;
+    private endingRefused = false;
+    private automaticEnding: { outBeat: number; contextSeconds: number; anchor: NativeCaptureSnapshot } | null = null;
+    private automaticEndingFrozen = false;
     private lastObservation: NativeCaptureSnapshot | null = null;
     private readonly epochs = new Map<string, Epoch>();
     private readonly boundaries = new Map<string, NativeCaptureBoundary>();
@@ -83,11 +88,77 @@ class NativeRecordingCaptureHistory {
     }
 
     isProjectionKnown(): boolean {
-        return this.projectionKnown && this.historyComplete;
+        return this.projectionKnown && this.historyComplete && !this.endingRefused;
     }
 
-    refuseProjection(): void {
+    projectionState(): 'pending' | 'known' | 'refused' {
+        if (!this.historyComplete || this.endingRefused) {
+            return 'refused';
+        }
+        return this.projectionKnown ? 'known' : 'pending';
+    }
+
+    readAutomaticEnding(outBeat: number) {
+        if (this.projectionState() === 'refused') {
+            return { status: 'refused' as const };
+        }
+        if (!this.automaticEnding) {
+            const anchors = Array.from(this.epochs.values(), (epoch) => epoch.first).toSorted(
+                (left, right) => left.contextSeconds - right.contextSeconds
+            );
+            for (const anchor of anchors) {
+                const entry = nativeRecordingEntry(anchor);
+                const geometry = anchor.geometry;
+                if (
+                    entry.beat <= outBeat &&
+                    (!geometry.isLooping || entry.beat >= geometry.loopEnd || outBeat <= geometry.loopEnd)
+                ) {
+                    this.automaticEnding = {
+                        outBeat,
+                        contextSeconds: entry.contextSeconds + geometry.secondsAtBeat(outBeat) - entry.songSeconds,
+                        anchor,
+                    };
+                    break;
+                }
+            }
+        }
+        if (this.automaticEnding && !this.automaticEndingFrozen && this.lastObservation) {
+            for (const epoch of this.epochs.values()) {
+                this.automaticEnding = redateNativePunchEnding(this.automaticEnding, {
+                    ...epoch.first,
+                    audibleContextSeconds: this.lastObservation.audibleContextSeconds,
+                });
+            }
+        }
+        const target = this.automaticEnding;
+        if (!target || this.projectionState() !== 'known') {
+            return { status: 'pending' as const };
+        }
+        const entry = this.entryAt(target.contextSeconds + this.latencySeconds);
+        if (!entry) {
+            return { status: 'pending' as const };
+        }
+        const geometry = target.anchor.geometry;
+        const outSeconds = geometry.secondsAtBeat(target.outBeat);
+        return {
+            status: 'dated' as const,
+            ending: {
+                contextSeconds: target.contextSeconds,
+                beatAtContextSeconds: (seconds: number) =>
+                    geometry.beatAtSeconds(outSeconds + seconds - target.contextSeconds),
+            },
+        };
+    }
+
+    refuseProjection(reason: 'unavailable' | 'ending' = 'unavailable'): void {
         this.projectionKnown = false;
+        if (reason === 'ending') {
+            this.endingRefused = true;
+        }
+    }
+
+    freezeAutomaticEnding(): void {
+        this.automaticEndingFrozen = true;
     }
 
     bind(clipId: string, boundAtContextSeconds: number): void {

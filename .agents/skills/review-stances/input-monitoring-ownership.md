@@ -156,6 +156,26 @@ hardware audibility. Runtime-session companions live in `session-lifecycle.md`.
     name at worker initialization. Run two isolated workers sharing a filename-keyed staged OPFS at one timestamp:
     each delivered WAV keeps its own PCM, and removing one staging entry does not remove the other's.
 
+## Automatic punch needs the published terminal PCM, not a scheduled stop
+
+#4897's seam punch-out logic closed a real recorder before its physical out. The later #5891 selected-pass tests
+could synthesize a terminal buffer without proving that the producer retained its final required frame; the
+unpublished #5381 seam repair exposed this missing producer stance. Historical private review prompts and tiers
+are unestablished. Drive automatic punch through the actual recording processor, stable session-owned ring and
+recorder stop, with frame-coded input. Require the exact last exclusive-out frame to survive and its stored playback
+window to end there, including held MIDI in the same group. Removing the frontier wait must lose that frame and fail.
+
+Keep the sample-zero handle's release separate from progress-reader lifetime. A retired session cannot adopt a
+successor publication. Native input additionally waits for the sounded native target and its own latency-adjusted
+frontier; first publication pending and a forecast-only observation cannot be called refused. A genuine refusal
+retains complete muted PCM and its visible recovery diagnostic without a ready-placement claim. Pair pending-to-valid,
+lost-history recovery, real Stop and teardown controls. Clock and lifecycle complements are in `session-lifecycle.md`;
+controlled hardware seams establish producer ordering and storage, not hardware audibility. An automatic admission's MIDI candidate proof authenticates
+its actual selected raw clip incarnation, not merely an original surviving row on that track. Exercise real CC/bend
+input after a fresh arm, same-ID recreation and insertion beside a surviving original candidate. Original second-clip
+and later loop/nearest placement must remain eligible; keeping all original candidate identities is distinct from
+admitting newly created media. Late key-up validates its original onset against that same owner.
+
 ## Retired lessons
 
 - Aborted graph repair must rearm committed monitoring intent (#5286) -> enforced by

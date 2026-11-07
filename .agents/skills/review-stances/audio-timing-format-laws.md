@@ -7,6 +7,25 @@ of it. Audio source offsets and every source reader belong to `audio-source-time
 failure mode, the input, state or mutation to run, and the check that must go red. Report the concrete break or
 none.
 
+## Recording MIDI source positions include the admitted media lead-in
+
+#5891 introduced recordingMidiSourceBeatAt with the clip's timeline start as its source origin. A punched clip
+already carried midiOffsetBeats for latency lead-in, so a 30ms capture at 120 BPM stored a held end at 1.03 while
+playback required 1.09, ending 0.06 beat before its sounded out. Zero-offset fixtures missed the source-basis
+distinction. Historical private review prompts and tiers are unestablished.
+
+Drive a real punch with 30ms latency and inspect its actual media offset. The compensated downbeat remains
+representable at source 0: subtract startBeat−midiOffsetBeats before the existing nonnegative clamp. Use that
+same owner conversion for onset, expression, release and Stop, with captured pass origins across loop edits.
+Require the stored source end to map back to the sounded exclusive out, a late key-up to remain bounded and
+one Undo/Redo group to restore the same rows. Keep zero-offset and ordinary manual/non-punch controls.
+Removing only the media-origin adjustment must fail the real lead-in endpoint and downbeat cases; adding
+the offset after clamping must fail the compensated downbeat. These are input/source laws, not a general
+gesture-clock redesign or physical MIDI proof. Strike another valid note only0.01 beat before automatic out,
+release once before out and once after it, and repeat with real media lead-in. The ordinary minimum duration may
+never extend an automatic-owned source end; manual/no-cap minimum behavior remains a control. Invalid/nonpositive
+available intervals must emit no zero or malformed note, through both key-up and held sealing. Automatic owner lifetime is in `session-lifecycle.md`.
+
 ## Standing probes
 
 1. **Tempo projection in both directions to every terminal binding.** Trace seconds to beats and beats to

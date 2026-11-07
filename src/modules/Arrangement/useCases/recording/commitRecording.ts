@@ -11,6 +11,7 @@ import { liveTempoTimeline } from '../liveTempoTimeline';
 import { fitFlatTakesToClip } from './fitFlatTakesToClip';
 import { placeRecordingClipStart } from './placeRecordingClipStart';
 import { placeRecordingTakes } from './placeRecordingTakes';
+import { RecordingRootMovedRefusal, recordingCommitGroups } from './recordingCommitGroup';
 import { recordingPassTiming } from './recordingPassTiming';
 import { stageRecordingTake } from './stageRecordingTake';
 import { withMinimumRecordingLength } from './withMinimumRecordingLength';
@@ -25,13 +26,6 @@ type RecordedCapture = {
     sourceContextOriginSeconds?: number;
     sourceDurationSeconds?: number;
 };
-
-class RecordingRootMovedRefusal extends Error {
-    constructor() {
-        super('Recording commit was refused by its execution guard');
-        this.name = 'RecordingRootMovedRefusal';
-    }
-}
 
 function requireRecordingRoot(options?: { shouldExecute?: () => boolean }): void {
     if (options?.shouldExecute?.() === false) {
@@ -157,6 +151,7 @@ export async function commitRecording(
     // Placement changes projected take rows before dispatch. Check their owner
     // first, then repeat inside the dispatch after its snapshot-transaction wait.
     requireRecordingRoot(options);
+    const submit = recordingCommitGroups.captureSubmission(clip.id);
     const passOwner = recordingPassTiming.ownedTakes(clip.id);
     const dispatchOptions = options && {
         shouldExecute: () => {
@@ -165,7 +160,8 @@ export async function commitRecording(
         },
     };
     if (capture === undefined) {
-        await executeAppAction({ type: 'commitRecording', payload: { clip } }, dispatchOptions);
+        const action = { type: 'commitRecording' as const, payload: { clip } };
+        await (submit ? submit(action, dispatchOptions?.shouldExecute) : executeAppAction(action, dispatchOptions));
         recordingPassTiming.retireIfOwner(clip.id, passOwner);
         return;
     }
@@ -184,6 +180,7 @@ export async function commitRecording(
     // The flat take follows the clip the handler will write, one-beat floor included.
     const committed = withMinimumRecordingLength(coverRecordedPasses(placed, capture));
     fitFlatTakesToClip(committed);
-    await executeAppAction({ type: 'commitRecording', payload: { clip: committed } }, dispatchOptions);
+    const action = { type: 'commitRecording' as const, payload: { clip: committed } };
+    await (submit ? submit(action, dispatchOptions?.shouldExecute) : executeAppAction(action, dispatchOptions));
     recordingPassTiming.retireIfOwner(clip.id, passOwner);
 }

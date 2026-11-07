@@ -52,7 +52,8 @@ type StartAudioRecording = (
     inputId?: string | null,
     onCaptureClock?: (
         readStart: () =>
-            { status: 'pending' | 'retry' | 'unavailable' } | { status: 'captured'; contextSeconds: number }
+            | { status: 'pending' | 'retry' | 'unavailable' }
+            | { status: 'captured'; contextSeconds: number; capturedThroughContextSeconds: number }
     ) => void
 ) => Promise<boolean>;
 
@@ -170,6 +171,8 @@ export const startAudioRecording: StartAudioRecording = inject({ logger })(
                     return {
                         status: 'captured',
                         contextSeconds: publication.sampleZeroContextFrame / session.captureSampleRate,
+                        capturedThroughContextSeconds:
+                            (publication.sampleZeroContextFrame + publication.sampleCount) / session.captureSampleRate,
                     };
                 });
 

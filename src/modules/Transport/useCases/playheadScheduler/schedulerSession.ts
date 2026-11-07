@@ -1,5 +1,6 @@
 import { type SourceWithFade } from '../../models/SourceWithFade';
 import { type TempoChange } from '../../stores/tempoMapStore';
+import { type createAutomaticPunchEnding } from '../transportControls/createAutomaticPunchEnding';
 
 import { cutSource } from './cutSource';
 
@@ -73,6 +74,7 @@ export const schedulerSession = {
     // instant passes and the sources have stopped themselves.
     pendingFences: [] as Array<{ source: SourceWithFade; stopAt: number }>,
     punchRecordingActive: false,
+    automaticPunch: null as ReturnType<typeof createAutomaticPunchEnding> | null,
     onStopRequested: null as (() => void) | null,
     /** Observe a terminal audio pass on the audible carrier before capture readers detach. */
     observeNativeRecordingClock: null as (() => boolean) | null,
