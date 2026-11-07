@@ -114,7 +114,7 @@ describe('Sidebar', () => {
     it('stops the active or preparing preview through the actual main-tab handler', () => {
         render(<Sidebar />);
         for (const name of ['Effects', 'Library', 'Macros', 'Project', 'Instruments']) {
-            fireEvent.click(screen.getByRole('tab', { name, exact: true }));
+            fireEvent.click(screen.getByRole('tab', { name }));
             expect(previewStop).toHaveBeenCalledTimes(
                 ['Effects', 'Library', 'Macros', 'Project', 'Instruments'].indexOf(name) + 1
             );
