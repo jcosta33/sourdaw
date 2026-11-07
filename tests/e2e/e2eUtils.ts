@@ -41,10 +41,6 @@ type LaunchFromTemplateInput = {
     template_name: string | RegExp;
 };
 
-type LaunchNewProjectOptions = {
-    firstPaintTimeoutMs?: number;
-};
-
 type SetupWorkspaceOptions = {
     /** Fresh-context persistence proofs must keep their own saved data across reload. */
     clearLocalStorage?: boolean;
@@ -133,9 +129,13 @@ export async function wait_for_workspace_ready(page: Page): Promise<void> {
  * handshake, React render, WASM boot, `[capabilities]`), so a red leg
  * diagnoses itself instead of surfacing as an opaque "element(s) not found".
  */
+type LaunchFirstPaintOptions = {
+    firstPaintTimeoutMs?: number;
+};
+
 export async function wait_for_launch_first_paint(
     page: Page,
-    { firstPaintTimeoutMs = LAUNCH_SCREEN_FIRST_PAINT_TIMEOUT_MS }: LaunchNewProjectOptions = {}
+    { firstPaintTimeoutMs = LAUNCH_SCREEN_FIRST_PAINT_TIMEOUT_MS }: LaunchFirstPaintOptions = {}
 ): Promise<void> {
     const timeline = attach_first_paint_console(page);
     const startedAtMs = performance.now();
@@ -154,9 +154,34 @@ export async function wait_for_launch_first_paint(
     }
 }
 
-export async function launch_new_project(page: Page, options: LaunchNewProjectOptions = {}): Promise<void> {
-    await wait_for_launch_first_paint(page, options);
+const DIRECT_SETUP_ENTRY_PATH = '/e2e/direct-project-setup.js';
 
+/**
+ * Create a blank project by invoking newProject directly through the E2E-only
+ * same-build module route, bypassing the launch-screen UI entirely. The entry
+ * is served at a deterministic path in both dev mode (via the vite plugin
+ * middleware) and built e2e mode (emitted at that path by the build). Throws
+ * when newProject returns false — no fallback clicks.
+ */
+export async function launch_new_project(page: Page): Promise<void> {
+    const result = await page.evaluate(async (entryPath: string) => {
+        const { newProject }: typeof import('./directProjectSetupEntry') = await import(entryPath);
+        return newProject();
+    }, DIRECT_SETUP_ENTRY_PATH);
+    if (!result) {
+        throw new Error('newProject returned false — project setup was refused or superseded');
+    }
+    await wait_for_workspace_ready(page);
+}
+
+/**
+ * Create a new project through the launch-screen UI. Use this only for tests
+ * that explicitly verify launch-screen behaviour (overlays, transitions, motion
+ * preference). All other tests that just need an open project should use
+ * launch_new_project.
+ */
+export async function launch_new_project_via_ui(page: Page, options: LaunchFirstPaintOptions = {}): Promise<void> {
+    await wait_for_launch_first_paint(page, options);
     await page.locator('#launch-new-project').click();
     await wait_for_workspace_ready(page);
 }

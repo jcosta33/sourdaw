@@ -13,6 +13,7 @@ describe('same-build persistence inspection entry', () => {
         expect(e2e.build.rolldownOptions.input).toEqual({
             index: resolve(root, 'index.html'),
             'persisted-hydration': resolve(root, 'tests/e2e/persistedHydrationEntry.ts'),
+            'direct-project-setup': resolve(root, 'tests/e2e/directProjectSetupEntry.ts'),
         });
         expect(e2e.build.rolldownOptions.preserveEntrySignatures).toBe('strict');
         const output = e2e.build.rolldownOptions.output;
@@ -34,6 +35,18 @@ describe('same-build persistence inspection entry', () => {
         ]);
     });
 
+    it('emits the direct project setup entry at a deterministic e2e path', async () => {
+        const e2e = await resolveConfig({ root, mode: 'e2e' }, 'build');
+        const output = e2e.build.rolldownOptions.output;
+        if (Array.isArray(output) || typeof output?.entryFileNames !== 'function') {
+            throw new TypeError('The persistence entry requires its own deterministic filename');
+        }
+        expect(output.entryFileNames({ name: 'direct-project-setup' })).toBe('e2e/direct-project-setup.js');
+        const entry = readFileSync(resolve(root, 'tests/e2e/directProjectSetupEntry.ts'), 'utf8');
+        expect(entry).toContain("export { newProject } from '../../src/modules/Project/useCases'");
+        expect(entry).not.toMatch(/import\s*\(|new\s+\w+\(\)|createProject|projectStore\.set/);
+    });
+
     it('does not add the inspection entry or change entry signatures in a shipping build', async () => {
         const shipping = await resolveConfig({ root, mode: 'production' }, 'build');
         expect(shipping.build.rolldownOptions.input).toBeUndefined();
@@ -51,5 +64,11 @@ describe('same-build persistence inspection entry', () => {
         });
         const shipping = await resolveConfig({ root, mode: 'production' }, 'serve');
         expect(shipping.plugins.some((plugin) => plugin.name === 'sourdaw-e2e-serving-checkout')).toBe(false);
+    });
+
+    it('serves the direct project setup entry at the deterministic path in e2e dev mode', async () => {
+        const dev = await resolveConfig({ root, mode: 'e2e' }, 'serve');
+        const plugin = dev.plugins.find((p) => p.name === 'sourdaw-e2e-persistence-entry');
+        expect(plugin?.configureServer).toBeTypeOf('function');
     });
 });
