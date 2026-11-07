@@ -20,7 +20,9 @@ function fixture(): string {
     return root;
 }
 afterEach(() => {
-    for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
+    for (const root of roots.splice(0)) {
+        rmSync(root, { recursive: true, force: true });
+    }
 });
 
 describe('shared e2e build', () => {
@@ -51,7 +53,7 @@ describe('shared e2e build', () => {
         async (failure) => {
             const root = fixture();
             const manifest = join(root, 'dist', 'shared-e2e-manifest.json');
-            if (failure !== 'missing')
+            if (failure !== 'missing') {
                 writeFileSync(
                     manifest,
                     failure === 'malformed'
@@ -61,7 +63,10 @@ describe('shared e2e build', () => {
                               mode: failure === 'wrong mode' ? 'production' : 'e2e',
                           })
                 );
-            if (failure === 'missing index') rmSync(join(root, 'dist', 'index.html'));
+            }
+            if (failure === 'missing index') {
+                rmSync(join(root, 'dist', 'index.html'));
+            }
             await expect(prepareSharedE2e(root, sha)).rejects.toThrow();
             expect(() => readFileSync(join(root, 'dist', 'static.txt'))).toThrow();
         }
