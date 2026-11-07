@@ -1,0 +1,57 @@
+tests/e2e/punchLoopTakeAcceptance.spec.ts
+  s_8dd2ba9e498da7::t_e5f52a69ecaa7b 1713
+  s_8dd2ba9e498da7::t_d2d8b303fd68ff 113,116,118,210-218,220-236,1619,1654-1670,1674-1679,1686-1687,1694-1705,1707-1712,1714-1719,1721-1726,1728-1739,1759-1788,1790-1792,1794-1803,1817,1820,1822-1827,1829-1883,1885-1888,1890-1915,1926-1927,1929-1933,1947,1950-1953
+  s_8dd2ba9e498da7::t_7ac4c684f419e0 1620-1632,1634-1653,1740-1749,1751-1755,1757-1758,1804-1816,1818-1819,1916-1925,1928,1936-1945
+  s_8dd2ba9e498da7::t_f33ffe53de69ca 10,1633,1671-1673,1680-1685,1688-1693,1706,1720,1727,1750,1756,1789,1793,1821,1828,1884,1889,1934-1935,1946,1948-1949,1954
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerSeamEdit.spec.ts
+  s_8dd2ba9e498da7::t_2a46953fad72e7 180,185
+  s_8dd2ba9e498da7::t_375271746ed0eb 124-126,181-184,187-205
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerSeamPunch.spec.ts
+  s_8dd2ba9e498da7::t_7ac4c684f419e0 316,415-416,433,435-436,440-446,595
+  s_8dd2ba9e498da7::t_2a46953fad72e7 191,196
+  s_8dd2ba9e498da7::t_ad110cbaf5dc9c 127-129,192-195,198-216
+src/modules/Arrangement/presentations/views/__tests__/trackCreateUndo.integration.spec.tsx
+  s_8dd2ba9e498da7::t_88bf99d94ef7b7 92
+src/modules/Arrangement/presentations/views/__tests__/trackDeleteUndo.integration.spec.tsx
+  s_8dd2ba9e498da7::t_cde7df6306f3ae 80
+src/modules/MixerConsole/presentations/views/Mixer/__tests__/mixerStripUndo.integration.spec.tsx
+  s_8dd2ba9e498da7::t_026d160f0614fd 146
+src/modules/Transport/useCases/playheadScheduler/__tests__/punchLoopCapturePlacement.integration.spec.ts
+  s_8dd2ba9e498da7::t_e40c7902d840a5 75,4512
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerLoopSeamTiming.spec.ts
+  s_8dd2ba9e498da7::t_615ab72a72bebc 113-118
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerPunchHandover.spec.ts
+  s_8dd2ba9e498da7::t_2e09035b39c6f4 164-166,227-229
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerSeamHandover.spec.ts
+  s_8dd2ba9e498da7::t_72f5bac676e42e 137-142
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerSeamNotes.spec.ts
+  s_8dd2ba9e498da7::t_e0919f13634bf6 111-116
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerStall.spec.ts
+  s_8dd2ba9e498da7::t_c1c8466ff6afa9 130-135
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerStoredControllerStaleMoves.spec.ts
+  s_8dd2ba9e498da7::t_26fd559ded8e50 233-238
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerStoredControllers.spec.ts
+  s_8dd2ba9e498da7::t_c84c303f88e6a8 127-132
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerSupersededSeamRecordingPass.spec.ts
+  s_8dd2ba9e498da7::t_9727cf102436fb 117-122
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerTempoChangePosition.spec.ts
+  s_8dd2ba9e498da7::t_4abdd4854d277c 112-117
+src/modules/Transport/workers/__tests__/schedulerWorkerTimerPhaseStall.spec.ts
+  s_8dd2ba9e498da7::t_a3c05396454859 133-138
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b5e4dab7e8660d1bc0168df5e0a9665725de77b6",
+  "prompts": {},
+  "sessions": {
+    "s_8dd2ba9e498da7": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34a-1f45-7430-80af-58acd6c4b831",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
