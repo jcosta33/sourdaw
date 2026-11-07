@@ -33,7 +33,14 @@ describe('bundled Basic Pitch real-model inference', () => {
         const requests: string[] = [];
         let weightsUnavailable = true;
         vi.stubGlobal('fetch', async (input: string | URL | Request) => {
-            const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+            let url: string;
+            if (typeof input === 'string') {
+                url = input;
+            } else if (input instanceof URL) {
+                url = input.href;
+            } else {
+                url = input.url;
+            }
             requests.push(url);
             if (url === '/assets/model-fingerprint.json') {
                 return new Response(readFileSync(resolve(packageRoot, 'model/model.json')), {
@@ -58,7 +65,9 @@ describe('bundled Basic Pitch real-model inference', () => {
             const envelope = Math.min(1, seconds / 0.025, (durationSeconds - seconds) / 0.05);
             for (const frequency of [261.625565, 329.627557]) {
                 for (let harmonic = 1; harmonic <= 5; harmonic++) {
-                    pcm[frame] += (0.12 * envelope * Math.sin(2 * Math.PI * frequency * harmonic * seconds)) / harmonic;
+                    pcm[frame] =
+                        pcm[frame]! +
+                        (0.12 * envelope * Math.sin(2 * Math.PI * frequency * harmonic * seconds)) / harmonic;
                 }
             }
         }
