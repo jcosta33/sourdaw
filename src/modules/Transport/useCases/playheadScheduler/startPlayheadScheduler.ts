@@ -1182,7 +1182,8 @@ export function startPlayheadScheduler(): void {
                 schedulerSession.scheduledAudioClips,
                 schedulerSession.scheduledFrozenTracks,
                 schedulerSession.activeAudioSources,
-                current
+                current,
+                now
             );
             // Incoming pass: the window past the seam, emitted against the
             // incoming pass's own position at `now`, so its first beat lands
@@ -1243,7 +1244,8 @@ export function startPlayheadScheduler(): void {
                 schedulerSession.scheduledAudioClips,
                 schedulerSession.scheduledFrozenTracks,
                 schedulerSession.activeAudioSources,
-                current
+                current,
+                now
             );
             schedulerSession.lastScheduledBeat = seam.wrappedUpTo;
         } else {
@@ -1292,7 +1294,8 @@ export function startPlayheadScheduler(): void {
                 schedulerSession.scheduledAudioClips,
                 schedulerSession.scheduledFrozenTracks,
                 schedulerSession.activeAudioSources,
-                current
+                current,
+                now
             );
             schedulerSession.lastScheduledBeat = scheduleUpTo;
         }

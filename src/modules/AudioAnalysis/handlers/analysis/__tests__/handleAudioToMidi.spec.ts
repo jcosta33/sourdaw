@@ -13,10 +13,11 @@ vi.mock('../../../useCases/audioToMidi', () => ({
 describe('handleAudioToMidi', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        mocks.audioToMidi.mockResolvedValue(true);
     });
 
-    it('should execute audioToMidi with the provided payload', () => {
-        handleAudioToMidi.execute({
+    it('should execute audioToMidi with the provided payload', async () => {
+        await handleAudioToMidi.execute({
             type: 'audioToMidi',
             payload: {
                 clipId: 'c1',
@@ -34,8 +35,8 @@ describe('handleAudioToMidi', () => {
         });
     });
 
-    it('should use defaults for missing parameters', () => {
-        handleAudioToMidi.execute({
+    it('should use defaults for missing parameters', async () => {
+        await handleAudioToMidi.execute({
             type: 'audioToMidi',
             payload: {
                 clipId: 'c1',
@@ -50,7 +51,14 @@ describe('handleAudioToMidi', () => {
         });
     });
 
-    it('should provide a description', () => {
+    it('waits for conversion and reports a real no-write', async () => {
+        mocks.audioToMidi.mockResolvedValueOnce(false);
+        await expect(handleAudioToMidi.execute({ type: 'audioToMidi', payload: { clipId: 'c1' } })).resolves.toEqual({
+            status: 'no-write',
+        });
+    });
+
+    it('should provide a description', async () => {
         const description = handleAudioToMidi.describe({
             type: 'audioToMidi',
             payload: { clipId: 'c1' },
@@ -59,7 +67,8 @@ describe('handleAudioToMidi', () => {
         expect(description.label).toBe('Convert audio to MIDI');
     });
 
-    it('is not undoable — its clip/note writes bypass the command pipeline so there is no inverse to honor', () => {
+    it('delegates Undo to the grouped child commands and executes outside a project transaction', async () => {
         expect(handleAudioToMidi.undoable).toBe(false);
+        expect(handleAudioToMidi.executionKind).toBe('runtime');
     });
 });

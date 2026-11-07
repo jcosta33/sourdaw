@@ -101,11 +101,13 @@ export function projectAudioLoopPassSegments({
     }
     const regionStart = resolveAudioLoopStartSeconds(clip, tempoAtClipStart);
     const headSource =
-        clip.audioLoopStartSeconds === undefined || iterationStartBeat === clip.startBeat
-            ? sourceStart
-            : regionStart +
-              boundStretchRatio(stretchRatio) *
-                  (secondsAtBeat(iterationStartBeat) - secondsAtBeat(iterationStartBeat - phase));
+        clip.audioOffsetSeconds === undefined && clip.audioLoopStartSeconds === undefined
+            ? regionStart + resolveAudioSourceOffsetSeconds({ audioOffsetBeats: phase }, tempoAtClipStart)
+            : clip.audioLoopStartSeconds === undefined || iterationStartBeat === clip.startBeat
+              ? sourceStart
+              : regionStart +
+                boundStretchRatio(stretchRatio) *
+                    (secondsAtBeat(iterationStartBeat) - secondsAtBeat(iterationStartBeat - phase));
     const headEnd = Math.min(duration, loopLengthBeats - phase);
     const segments = [{ startOffsetBeats: 0, endOffsetBeats: headEnd, sourceStartSeconds: headSource }];
     if (phase > 0 && duration > headEnd) {

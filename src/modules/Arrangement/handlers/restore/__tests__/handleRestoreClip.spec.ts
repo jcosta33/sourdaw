@@ -317,6 +317,39 @@ describe('handleRestoreClip', () => {
         expect(desc.label).toBe('Restore clip');
     });
 
+    it.each([undefined, 0, 1, Number.MAX_SAFE_INTEGER])(
+        'inserts only the restored clip at slot %s and retains every surviving peer clip',
+        (clipIndex) => {
+            const action = createRestoreClipAction(clipIndex === undefined ? {} : { clipIndex });
+            expect(handleRestoreClip.execute(action)).toEqual({ status: 'written' });
+            const updater = mocks.updateTrack.mock.calls[0]?.[1];
+            if (!updater) {
+                throw new Error('Expected a track update');
+            }
+            const left = ClipDummy.create({ id: 'left', trackId: 't1', startBeat: 0, endBeat: 2 });
+            const peer = ClipDummy.create({ id: 'peer', trackId: 't1', startBeat: 10, endBeat: 14, gain: 0.3 });
+            const current = { ...createTrack({ id: 't1', name: 'Track 1', kind: 'midi' }), clips: [left, peer] };
+            const updated = updater(current);
+            const expected =
+                clipIndex === 0
+                    ? [action.payload.clipSnapshot, left, peer]
+                    : clipIndex === 1
+                      ? [left, action.payload.clipSnapshot, peer]
+                      : [left, peer, action.payload.clipSnapshot];
+            expect(updated).toEqual({ ...current, clips: expected });
+            expect(current.clips).toEqual([left, peer]);
+        }
+    );
+
+    it.each([-1, 0.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1, '1', null])(
+        'rejects a malformed captured clip slot %s',
+        (clipIndex) => {
+            const payload = { ...createRestoreClipAction().payload, clipIndex };
+            expect(handleRestoreClip.validateSessionActionArguments?.(payload)).toBe(false);
+            expect(mocks.updateTrack).not.toHaveBeenCalled();
+        }
+    );
+
     it.each([false, true])('refuses a captured lane id owned by another track before writes, ripple=%s', (ripple) => {
         takeLaneStore.set({ lanes: [{ id: 'lane-1', trackId: 'other-track', takes: [], activeCompRegions: [] }] });
         const action = createRestoreClipAction({

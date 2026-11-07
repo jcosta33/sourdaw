@@ -1,6 +1,7 @@
-import { addClip, getAllTracks } from '#/modules/Arrangement/useCases';
+import { getAllTracks } from '#/modules/Arrangement/useCases';
 import { getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
-import { addMidiNote } from '#/modules/MIDI/useCases';
+import { executeAppActionBatch } from '#/modules/Command/useCases';
+import { type AppAction } from '#/utils/handlerContract';
 import { readBeatAtSamples, readSecondsAtBeat, readTempoAtBeat } from '#/modules/Transport/stores';
 import { getAudioTimelineElapsedSeconds, projectAudioLoopPassSegments } from '#/utils/audioSourceTime';
 import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
@@ -223,7 +224,7 @@ function detectPitchForOnsets(
  * call completes. Like `handlePolyMidi`'s conversion path, the fallible body is caught here so
  * callers only ever need to branch on the boolean return, never on a thrown error.
  */
-export function audioToMidi(options: AudioToMidiOptions): boolean {
+export async function audioToMidi(options: AudioToMidiOptions): Promise<boolean> {
     const { clipId, trackId, sensitivity = 0.5, minInterval = 0.25, targetPitch = 36, mode = 'rhythm' } = options;
 
     try {
@@ -282,26 +283,23 @@ export function audioToMidi(options: AudioToMidiOptions): boolean {
             return false;
         }
 
-        const midiTrackId = resolveMidiTrackId(trackId, `${clip.name} (MIDI)`);
-        if (!midiTrackId) {
-            return false;
-        }
-
+        const destination = resolveMidiTrackId(trackId, `${clip.name} (MIDI)`);
+        const midiClipId = `clip-audio-midi-${crypto.randomUUID()}`;
         const clipStartBeat = clip.startBeat;
-        const endBeat = clip.endBeat;
-
-        const midiClip = addClip({
-            trackId: midiTrackId,
-            startBeat: clipStartBeat,
-            endBeat: Math.ceil(endBeat),
-            name: `${clip.name} → MIDI`,
-            type: 'midi',
-        });
-
-        if (!midiClip) {
-            return false;
-        }
-
+        const actions: AppAction[] = [
+            ...destination.actions,
+            {
+                type: 'addClip',
+                payload: {
+                    id: midiClipId,
+                    trackId: destination.trackId,
+                    startBeat: clipStartBeat,
+                    endBeat: Math.ceil(clip.endBeat),
+                    name: `${clip.name} → MIDI`,
+                    type: 'midi',
+                },
+            },
+        ];
         let maxAmplitude = 1e-8;
         for (const output of transcribed) {
             if (output.amplitude > maxAmplitude) {
@@ -309,6 +307,7 @@ export function audioToMidi(options: AudioToMidiOptions): boolean {
             }
         }
 
+        const notes = [];
         for (let index = 0; index < transcribed.length; index++) {
             const onset = transcribed[index]!;
             const startBeat = onset.startBeat - clipStartBeat;
@@ -318,10 +317,16 @@ export function audioToMidi(options: AudioToMidiOptions): boolean {
             const velocity = Math.max(1, Math.min(127, Math.round((onset.amplitude / maxAmplitude) * 127)));
             const pitch = mode === 'pitched' && onset.pitch !== undefined ? onset.pitch : targetPitch;
 
-            addMidiNote(midiClip.id, pitch, startBeat, duration, velocity);
+            notes.push({ pitch, startBeat, duration, velocity });
         }
-
-        return true;
+        actions.push({ type: 'addNotes', payload: { clipId: midiClipId, notes } });
+        const result = await executeAppActionBatch(actions, {
+            groupId: `audio-to-midi-${crypto.randomUUID()}`,
+            groupLabel: 'Convert audio to MIDI',
+            source: 'manual',
+            requireCompensation: true,
+        });
+        return result.status === 'committed' || result.status === 'committed-with-warning';
     } catch {
         return false;
     }

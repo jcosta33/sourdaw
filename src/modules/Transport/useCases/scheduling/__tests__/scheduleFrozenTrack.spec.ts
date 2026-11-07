@@ -306,6 +306,44 @@ describe('scheduleFrozenTrack', () => {
         expect(start).toHaveBeenCalledWith(expect.closeTo(10.35, 9), expect.closeTo(2, 9));
     });
 
+    it('anchors the frozen start and wrap floor to the captured tick after the live clock advances', () => {
+        const start = vi.fn();
+        vi.mocked(createBufferSource).mockReturnValue({
+            start,
+            connect: vi.fn(),
+            onended: null,
+        } as unknown as AudioBufferSourceNode);
+        vi.mocked(getCachedAudioBuffer).mockReturnValue({ duration: 100 } as AudioBuffer);
+        vi.mocked(getCurrentTime).mockReturnValue(10 + 128 / 48_000);
+        vi.mocked(getCompensationDelay).mockReturnValue(0.125);
+        const track = {
+            id: 'frozen-anchor',
+            freezeState: { status: 'frozen', frozenBufferId: 'buf-1' },
+            clips: [{ startBeat: 0 }],
+        };
+        expect(scheduleFrozenTrack(track, 0, [], 120, 4, 10)).toBe(true);
+        expect(start).toHaveBeenCalledWith(12.125, 2);
+    });
+
+    it('uses the live clock for genuinely late frozen catch-up while keeping the captured mapping', () => {
+        const start = vi.fn();
+        vi.mocked(createBufferSource).mockReturnValue({
+            start,
+            connect: vi.fn(),
+            onended: null,
+        } as unknown as AudioBufferSourceNode);
+        vi.mocked(getCachedAudioBuffer).mockReturnValue({ duration: 100 } as AudioBuffer);
+        vi.mocked(getCurrentTime).mockReturnValue(13);
+        vi.mocked(getCompensationDelay).mockReturnValue(0.125);
+        const track = {
+            id: 'frozen-late',
+            freezeState: { status: 'frozen', frozenBufferId: 'buf-1' },
+            clips: [{ startBeat: 0 }],
+        };
+        expect(scheduleFrozenTrack(track, 0, [], 120, null, 10)).toBe(true);
+        expect(start).toHaveBeenCalledWith(13, 2.875);
+    });
+
     it('integrates the tempo map between the playhead and the track start', () => {
         // 120 BPM to beat 4, 60 after. The buffer starts at beat 8, so from the
         // playhead at beat 0 that is 4 beats at 120 (2 s) plus 4 at 60 (4 s) = 6 s.

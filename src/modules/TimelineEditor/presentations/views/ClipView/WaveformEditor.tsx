@@ -591,12 +591,12 @@ export const WaveformEditor = ({ clipId, audioBufferId }: WaveformEditorProps): 
                             'justify-between text-[var(--color-accent-lavender)] hover:bg-accent'
                         )}
                         role="menuitem"
-                        onClick={waveAct(() => {
+                        onClick={waveAct(async () => {
                             const track = trackState.tracks.find((time) =>
                                 time.clips.some((context) => context.id === clipId)
                             );
                             if (track) {
-                                audioToMidi({ clipId, trackId: track.id });
+                                await audioToMidi({ clipId, trackId: track.id });
                             }
                         })}
                     >

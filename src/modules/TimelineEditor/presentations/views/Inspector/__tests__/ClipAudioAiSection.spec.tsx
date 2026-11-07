@@ -1,9 +1,9 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { handleAiDenoiseClip } from '#/modules/AiGeneration/useCases';
 import { notifyAiChange } from '#/modules/AiRuntime/useCases';
-import { audioToMidi } from '#/modules/AudioAnalysis/useCases';
+import { audioToMidi, insertPolyphonicMidiNotes, polyphonicAudioToMidi } from '#/modules/AudioAnalysis/useCases';
 import { getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
@@ -235,30 +235,68 @@ describe('ClipAudioAiSection', () => {
         expect(screen.getByText('MIDI (Basic)')).toBeInTheDocument();
     });
 
-    it('notifies success only when audioToMidi actually produced a clip', () => {
-        vi.mocked(audioToMidi).mockReturnValue(true);
+    it('notifies success only when audioToMidi actually produced a clip', async () => {
+        vi.mocked(audioToMidi).mockResolvedValue(true);
 
         render(<ClipAudioAiSection {...defaultProps} />);
         fireEvent.click(screen.getByText('MIDI (Basic)'));
 
         expect(audioToMidi).toHaveBeenCalledWith({ clipId: 'clip-1', trackId: 'track-1' });
-        expect(notifyAiChange).toHaveBeenCalledWith('Audio converted to MIDI', [
-            'New MIDI clip created from detected onsets',
-        ]);
+        await waitFor(() =>
+            expect(notifyAiChange).toHaveBeenCalledWith('Audio converted to MIDI', [
+                'New MIDI clip created from detected onsets',
+            ])
+        );
         expect(notifyUser).not.toHaveBeenCalled();
     });
 
-    it('does not report success when audioToMidi silently finds nothing to convert', () => {
+    it('does not show success while conversion is still pending', async () => {
+        let commit!: (result: boolean) => void;
+        vi.mocked(audioToMidi).mockImplementationOnce(
+            () =>
+                new Promise((resolve) => {
+                    commit = resolve;
+                })
+        );
+        render(<ClipAudioAiSection {...defaultProps} />);
+        fireEvent.click(screen.getByText('MIDI (Basic)'));
+        expect(notifyAiChange).not.toHaveBeenCalled();
+        commit(true);
+        await waitFor(() => expect(notifyAiChange).toHaveBeenCalledWith('Audio converted to MIDI', expect.any(Array)));
+    });
+
+    it('does not report success when audioToMidi silently finds nothing to convert', async () => {
         // audioToMidi returns `false` (never throws) when the clip, buffer, onsets, or
         // MIDI-track resolution come up empty. Without gating on that result, this click
         // would always show "Audio converted to MIDI" regardless of outcome.
-        vi.mocked(audioToMidi).mockReturnValue(false);
+        vi.mocked(audioToMidi).mockResolvedValue(false);
 
         render(<ClipAudioAiSection {...defaultProps} />);
         fireEvent.click(screen.getByText('MIDI (Basic)'));
 
         expect(notifyAiChange).not.toHaveBeenCalled();
-        expect(notifyUser).toHaveBeenCalledWith('Audio to MIDI conversion failed', 'error');
+        await waitFor(() => expect(notifyUser).toHaveBeenCalledWith('Audio to MIDI conversion failed', 'error'));
+    });
+
+    it('awaits polyphonic insertion and reports a rejected output rather than premature success', async () => {
+        vi.mocked(polyphonicAudioToMidi).mockResolvedValueOnce({
+            notes: [{ pitchMidi: 60, startTimeSeconds: 0.5, durationSeconds: 0.25, amplitude: 0.8 }],
+            sourceClip: { startBeat: 0, endBeat: 8, name: 'Test Audio' },
+        });
+        let finish!: (result: null) => void;
+        vi.mocked(insertPolyphonicMidiNotes).mockImplementationOnce(
+            () =>
+                new Promise((resolve) => {
+                    finish = resolve;
+                })
+        );
+        render(<ClipAudioAiSection {...defaultProps} />);
+        fireEvent.click(screen.getByText('Audio → MIDI (Poly)'));
+        await waitFor(() => expect(insertPolyphonicMidiNotes).toHaveBeenCalledOnce());
+        expect(notifyAiChange).not.toHaveBeenCalled();
+        finish(null);
+        await waitFor(() => expect(notifyUser).toHaveBeenCalledWith('Polyphonic MIDI conversion failed', 'error'));
+        expect(notifyAiChange).not.toHaveBeenCalled();
     });
 
     it('should render Polyphonic MIDI section', () => {

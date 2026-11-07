@@ -1,17 +1,18 @@
 import { createHandler } from '#/utils/createHandler';
-import { type AppAction } from '#/utils/handlerContract';
+import { type AppAction, type HandlerValidationContext } from '#/utils/handlerContract';
 
 import { audioSourceAfterSlip } from '../../useCases/clipEditing/audioSourceAfterSlip';
 import { audioSourceStateMatches } from '../../useCases/clipEditing/audioSourceStateMatches';
 import { captureAudioSourceState } from '../../useCases/clipEditing/captureAudioSourceState';
 import { isAudioSourceStateSnapshot } from '../../useCases/clipEditing/isAudioSourceStateSnapshot';
+import { projectClipReplayPrefix } from '../../useCases/clipEditing/projectClipReplayPrefix';
 import { slipClipContent } from '../../useCases/clipEditing/slipClipContent';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { toHandlerExecutionResult } from '../toHandlerExecutionResult';
 
 type SlipClipContentAction = Extract<AppAction, { type: 'slipClipContent' }>;
 
-function expectedAudioSourceMatches(action: SlipClipContentAction): boolean {
+function expectedAudioSourceMatches(action: SlipClipContentAction, context?: HandlerValidationContext): boolean {
     const { expectedAudioSource, restoreAudioSource } = action.payload;
     if (expectedAudioSource === undefined && restoreAudioSource === undefined) {
         return true;
@@ -19,9 +20,9 @@ function expectedAudioSourceMatches(action: SlipClipContentAction): boolean {
     if (!isAudioSourceStateSnapshot(expectedAudioSource) || !isAudioSourceStateSnapshot(restoreAudioSource)) {
         return false;
     }
-    const clip = getTrackStoreState()
-        ?.tracks.flatMap((track) => track.clips)
-        .find((candidate) => candidate.id === action.payload.clipId);
+    const clip = projectClipReplayPrefix(context?.actions.slice(0, context.actionIndex))?.clips.find(
+        (owner) => owner.clip.id === action.payload.clipId
+    )?.clip;
     return clip?.type === 'audio' && audioSourceStateMatches(clip, expectedAudioSource);
 }
 

@@ -124,7 +124,9 @@ function passClip(overrides: Record<string, unknown>): Record<string, unknown> {
 function scheduleLive(
     clip: Record<string, unknown>,
     fromBeat = 0,
-    toBeat = 32
+    toBeat = 32,
+    positionAudioTimeSeconds?: number,
+    bufferDuration = 4
 ): Array<ReturnType<typeof makeFakeSource>> {
     const sources: Array<ReturnType<typeof makeFakeSource>> = [];
     mockCreateBufferSource.mockImplementation(() => {
@@ -132,7 +134,7 @@ function scheduleLive(
         sources.push(fake);
         return fake as unknown as AudioBufferSourceNode;
     });
-    mockGetCachedAudioBuffer.mockReturnValue({ duration: 4 } as AudioBuffer);
+    mockGetCachedAudioBuffer.mockReturnValue({ duration: bufferDuration } as AudioBuffer);
     mockResolveClips.mockReturnValue([clip] as never);
     trackStoreState.value = {
         tracks: [
@@ -145,7 +147,7 @@ function scheduleLive(
             },
         ],
     };
-    scheduleAudioClips(fromBeat, toBeat, 0, new Set(), new Set(), [], defaultTransportState);
+    scheduleAudioClips(fromBeat, toBeat, 0, new Set(), new Set(), [], defaultTransportState, positionAudioTimeSeconds);
     return sources;
 }
 
@@ -168,6 +170,64 @@ describe('scheduleAudioClips live two-segment seam', () => {
         schedulerSession.pendingSeam = null;
         schedulerSession.lastLoopSeamAudioTime = null;
         disposeAudioClipScheduling();
+    });
+
+    it('keeps distinct repitched loop passes contiguous on the captured tick clock after quantum advances', () => {
+        const quantum = 128 / 48_000;
+        const tickAudioTime = 10;
+        let reads = 0;
+        vi.mocked(getCurrentTime).mockImplementation(() => tickAudioTime + ++reads * quantum);
+        tempoMapStore.value = {
+            changes: [
+                { id: 'base', beat: 0, tempo: 120, curve: 'instant' },
+                { id: 'change', beat: 4, tempo: 60, curve: 'instant' },
+            ],
+        };
+        const clip = passClip({
+            startBeat: 2,
+            endBeat: 8,
+            regionStartBeat: 2,
+            regionEndBeat: 8,
+            audioOffsetBeats: 11,
+            audioOffsetSeconds: 5.5,
+            audioLoopStartSeconds: 5.5,
+            loopOriginBeat: 2,
+            stretchMode: 'repitch',
+            stretchRatio: 1.5,
+        });
+        const sources = scheduleLive(clip, 0, 8, tickAudioTime, 13);
+        expect(sources).toHaveLength(2);
+        expect(sources[0]!.start).toHaveBeenCalledWith(11, 5.5, expect.closeTo(4.5, 12));
+        expect(sources[1]!.start).toHaveBeenCalledWith(14, 5.5, expect.closeTo(3, 12));
+        const [firstWhen, , firstDuration] = sources[0]!.start.mock.calls[0]!;
+        const [resetWhen] = sources[1]!.start.mock.calls[0]!;
+        expect(resetWhen - (firstWhen + firstDuration / 1.5)).toBe(0);
+        expect(sources.map((source) => (source.playbackRate as { value: number }).value)).toEqual([1.5, 1.5]);
+    });
+
+    it('catches up a genuinely late source on the live clock without shifting the next captured pass', () => {
+        vi.mocked(getCurrentTime).mockReturnValue(2);
+        tempoMapStore.value = {
+            changes: [
+                { id: 'base', beat: 0, tempo: 120, curve: 'instant' },
+                { id: 'change', beat: 4, tempo: 60, curve: 'instant' },
+            ],
+        };
+        const clip = passClip({
+            startBeat: 2,
+            endBeat: 8,
+            regionStartBeat: 2,
+            regionEndBeat: 8,
+            audioOffsetSeconds: 5.5,
+            audioLoopStartSeconds: 5.5,
+            loopOriginBeat: 2,
+            stretchMode: 'repitch',
+            stretchRatio: 1.5,
+        });
+        const sources = scheduleLive(clip, 0, 8, 0, 13);
+        expect(sources).toHaveLength(2);
+        expect(sources[0]!.start).toHaveBeenCalledWith(2, 7, expect.closeTo(3, 12));
+        expect(sources[1]!.start).toHaveBeenCalledWith(4, 5.5, expect.closeTo(3, 12));
     });
 
     it('nonzero entry phase: the live two-segment read equals the offline projection exactly', () => {

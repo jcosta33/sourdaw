@@ -1,7 +1,6 @@
 import { type NoteEventTime } from '@spotify/basic-pitch';
 
-import { addClip } from '#/modules/Arrangement/useCases';
-import { batchAddMidiNotes } from '#/modules/MIDI/useCases';
+import { executeAppActionBatch } from '#/modules/Command/useCases';
 import { DEFAULT_TEMPO_BPM } from '#/modules/Transport/stores';
 import { getTransportState } from '#/modules/Transport/useCases';
 
@@ -18,41 +17,52 @@ export type InsertPolyphonicMidiNotesResult = {
     trackId: string;
 };
 
-export function insertPolyphonicMidiNotes(
+export async function insertPolyphonicMidiNotes(
     notes: NoteEventTime[],
     sourceClip: SourceClip,
     targetTrackId: string
-): InsertPolyphonicMidiNotesResult | null {
+): Promise<InsertPolyphonicMidiNotesResult | null> {
+    if (notes.length === 0) return null;
     const tempo = getTransportState()?.tempo ?? DEFAULT_TEMPO_BPM;
     const beatsPerSecond = tempo / 60;
 
-    const midiTrackId = resolveMidiTrackId(targetTrackId, `${sourceClip.name} (MIDI)`);
-    if (!midiTrackId) {
-        return null;
-    }
-
-    const midiClip = addClip({
-        trackId: midiTrackId,
-        startBeat: sourceClip.startBeat,
-        endBeat: Math.ceil(sourceClip.endBeat),
-        name: `${sourceClip.name} → MIDI (poly)`,
-        type: 'midi',
-    });
-
-    if (!midiClip) {
-        return null;
-    }
-
-    // Insert all detected notes in a single batch store mutation (avoids O(N) CRDT flood)
-    batchAddMidiNotes(
-        midiClip.id,
-        notes.map((note) => ({
-            pitch: note.pitchMidi,
-            startBeat: note.startTimeSeconds * beatsPerSecond,
-            duration: Math.max(0.0625, note.durationSeconds * beatsPerSecond),
-            velocity: Math.max(1, Math.min(127, Math.round(note.amplitude * 127))),
-        }))
+    const destination = resolveMidiTrackId(targetTrackId, `${sourceClip.name} (MIDI)`);
+    const clipId = `clip-audio-midi-${crypto.randomUUID()}`;
+    const result = await executeAppActionBatch(
+        [
+            ...destination.actions,
+            {
+                type: 'addClip',
+                payload: {
+                    id: clipId,
+                    trackId: destination.trackId,
+                    startBeat: sourceClip.startBeat,
+                    endBeat: Math.ceil(sourceClip.endBeat),
+                    name: `${sourceClip.name} → MIDI (poly)`,
+                    type: 'midi',
+                },
+            },
+            {
+                type: 'addNotes',
+                payload: {
+                    clipId,
+                    notes: notes.map((note) => ({
+                        pitch: note.pitchMidi,
+                        startBeat: note.startTimeSeconds * beatsPerSecond,
+                        duration: Math.max(0.0625, note.durationSeconds * beatsPerSecond),
+                        velocity: Math.max(1, Math.min(127, Math.round(note.amplitude * 127))),
+                    })),
+                },
+            },
+        ],
+        {
+            groupId: `audio-to-midi-${crypto.randomUUID()}`,
+            groupLabel: 'Convert polyphonic audio to MIDI',
+            source: 'manual',
+            requireCompensation: true,
+        }
     );
-
-    return { clipId: midiClip.id, trackId: midiTrackId };
+    return result.status === 'committed' || result.status === 'committed-with-warning'
+        ? { clipId, trackId: destination.trackId }
+        : null;
 }

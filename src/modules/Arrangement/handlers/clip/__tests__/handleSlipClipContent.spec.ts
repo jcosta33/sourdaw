@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { type AppAction } from '#/utils/handlerContract';
+
 import { handleSlipClipContent } from '../handleSlipClipContent';
 
 const mocks = vi.hoisted(() => ({
@@ -119,6 +121,49 @@ describe('handleSlipClipContent', () => {
             type: 'slipClipContent',
             payload: { clipId: 'cm', clipType: 'midi', offset: 0 },
         });
+    });
+
+    it('validates the canonical source written by earlier inverse members without writing it', () => {
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [{ id: 't1', clips: [{ id: 'c1', type: 'audio', audioOffsetSeconds: 0, audioOffsetBeats: 0 }] }],
+        });
+        const prior: AppAction = {
+            type: 'slipClipContent',
+            payload: { clipId: 'c1', clipType: 'audio', offset: 4, offsetSeconds: 0 },
+        };
+        const inverse: Extract<AppAction, { type: 'slipClipContent' }> = {
+            type: 'slipClipContent',
+            payload: {
+                clipId: 'c1',
+                clipType: 'audio',
+                offset: 2,
+                expectedAudioSource: { audioOffsetSeconds: 0, audioOffsetBeats: 4 },
+                restoreAudioSource: { audioOffsetSeconds: null, audioOffsetBeats: 2 },
+            },
+        };
+        expect(handleSlipClipContent.validate?.(inverse, { actions: [prior, inverse], actionIndex: 1 })).toBe(true);
+        expect(handleSlipClipContent.execute(inverse)).toEqual({ status: 'conflict' });
+        expect(mocks.slipClipContent).not.toHaveBeenCalled();
+    });
+
+    it('refuses an invalid prior replay prefix without writing', () => {
+        const inverse: Extract<AppAction, { type: 'slipClipContent' }> = {
+            type: 'slipClipContent',
+            payload: {
+                clipId: 'c1',
+                clipType: 'audio',
+                offset: 2,
+                expectedAudioSource: { audioOffsetSeconds: 0, audioOffsetBeats: 4 },
+                restoreAudioSource: { audioOffsetSeconds: null, audioOffsetBeats: 2 },
+            },
+        };
+        expect(
+            handleSlipClipContent.validate?.(inverse, {
+                actions: [{ type: 'removeClip', payload: { clipId: 'missing' } }, inverse],
+                actionIndex: 1,
+            })
+        ).toBe(false);
+        expect(mocks.slipClipContent).not.toHaveBeenCalled();
     });
 
     it('is undoable', () => {

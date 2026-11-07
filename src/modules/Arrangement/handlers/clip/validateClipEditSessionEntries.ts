@@ -257,6 +257,8 @@ export function isRestoreClipSessionPayload(value: unknown): value is ValidatedR
     return (
         value.clipId.length > 0 &&
         value.trackId.length > 0 &&
+        (value.clipIndex === undefined ||
+            (typeof value.clipIndex === 'number' && Number.isSafeInteger(value.clipIndex) && value.clipIndex >= 0)) &&
         isClipSnapshot(value.clipSnapshot, value.clipId, value.trackId) &&
         (value.ripplePlan === null ||
             isRippleDeleteCapture(value.ripplePlan, value.clipSnapshot, value.clipId, value.trackId)) &&
@@ -271,13 +273,30 @@ export function isRestoreClipSessionPayload(value: unknown): value is ValidatedR
     );
 }
 
+export function isRemoveClipSessionPayload(value: unknown): boolean {
+    return (
+        isRecord(value) &&
+        typeof value.clipId === 'string' &&
+        value.clipId.length > 0 &&
+        (!Object.hasOwn(value, 'ripple') || typeof value.ripple === 'boolean') &&
+        Object.keys(value).every((key) => key === 'clipId' || key === 'ripple')
+    );
+}
+
 export function isRemoveClipSessionEntry(entry: HandlerSessionActionEntry): boolean {
-    if (entry.action.type !== 'removeClip' || entry.inverseAction?.type !== 'restoreClip' || entry.redoAction) {
+    if (entry.action.type !== 'removeClip' || entry.inverseAction?.type !== 'restoreClip') {
         return false;
     }
     return (
+        isRemoveClipSessionPayload(entry.action.payload) &&
         entry.action.payload.clipId === entry.inverseAction.payload.clipId &&
-        isRestoreClipSessionPayload(entry.inverseAction.payload)
+        isRestoreClipSessionPayload(entry.inverseAction.payload) &&
+        (!entry.redoAction ||
+            (entry.redoAction.type === 'removeClip' &&
+                isRemoveClipSessionPayload(entry.redoAction.payload) &&
+                entry.redoAction.payload.clipId === entry.action.payload.clipId &&
+                (entry.action.payload.ripple === undefined ||
+                    entry.redoAction.payload.ripple === entry.action.payload.ripple)))
     );
 }
 

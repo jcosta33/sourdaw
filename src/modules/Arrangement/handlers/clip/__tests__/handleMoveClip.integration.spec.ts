@@ -274,6 +274,48 @@ describe('handleMoveClip atomic integration', () => {
         expect(undoHistoryStore.value?.past).toEqual([]);
     });
 
+    it('retains three-clip order and exact material through a same-track move, undo and redo', async () => {
+        const state = trackStore.value;
+        const source = state?.tracks.find((track) => track.id === 'track-1');
+        const original = source?.clips[0];
+        if (!state || !source || !original) {
+            throw new Error('Expected the seeded move source');
+        }
+        const left = ClipDummy.create({ id: 'left', trackId: source.id, startBeat: 0, endBeat: 2 });
+        const right = ClipDummy.create({ id: 'right', trackId: source.id, startBeat: 10, endBeat: 14 });
+        trackStore.set({
+            ...state,
+            tracks: state.tracks.map((track) =>
+                track.id === source.id ? { ...track, clips: [left, original, right] } : track
+            ),
+        });
+        const before = structuredClone(trackStore.value?.tracks);
+        const automationBefore = structuredClone(automationStore.value);
+        const changed = before?.map((track) => ({
+            ...track,
+            clips: track.clips.map((clip) =>
+                clip.id === original.id ? { ...clip, startBeat: 16, endBeat: 24 } : clip
+            ),
+        }));
+
+        expect(
+            await executeAppActionBatch(
+                [{ type: 'moveClip', payload: { clipId: original.id, trackId: source.id, startBeat: 16 } }],
+                { source: 'manual', requireCompensation: true }
+            )
+        ).toMatchObject({ status: 'committed' });
+        expect(trackStore.value?.tracks).toEqual(changed);
+        const automationChanged = structuredClone(automationStore.value);
+        for (let cycle = 0; cycle < 2; cycle += 1) {
+            await undo();
+            expect(trackStore.value?.tracks).toEqual(before);
+            expect(automationStore.value).toEqual(automationBefore);
+            await redo();
+            expect(trackStore.value?.tracks).toEqual(changed);
+            expect(automationStore.value).toEqual(automationChanged);
+        }
+    });
+
     it('commits atomically and round-trips exact track membership and geometry through undo and redo', async () => {
         const action = {
             type: 'moveClip' as const,
