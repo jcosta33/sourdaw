@@ -1,0 +1,20 @@
+src/modules/Arrangement/useCases/freezeBounce/__tests__/silentBakeGuard.spec.ts
+  s_8dd2ba9e498da7::t_e2b3ecccca8a12 3-6,10-19,126-156,167-173,223,228-231,235,238-239,243-262
+  s_8dd2ba9e498da7::t_219c6289c405ae 263-264
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "63d39a578a54cd75dd20bda5a6750bf08e9de851",
+  "prompts": {},
+  "sessions": {
+    "s_8dd2ba9e498da7": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34a-1f45-7430-80af-58acd6c4b831",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
