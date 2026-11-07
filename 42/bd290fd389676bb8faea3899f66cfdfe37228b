@@ -1,0 +1,40 @@
+src/modules/Command/useCases/__tests__/commandPreviewContentAuthority.spec.ts
+  s_68423a2adea8d2::t_2b64862ef98308 1-184
+src/modules/AiRuntime/useCases/agentRequestOrchestration/executePromptCommandPreview.ts
+  s_68423a2adea8d2::t_a5d17073083dd7 10
+  s_68423a2adea8d2::t_219e33f78ef753 69
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/executePromptCommandPreviewSave.spec.ts
+  s_68423a2adea8d2::t_18317441661c71 1-2,10-15,23-24,26-145,147,153,158-169,183,204,242
+  s_68423a2adea8d2::t_a5d17073083dd7 3-9,16-22,25,148-152,154-157,170-182,184-188,190,194-203,205-218,222-223,227-241
+  s_68423a2adea8d2::t_0c35f181b5dc0a 189,191-193,219-221,224-226
+  s_68423a2adea8d2::t_2049710e70cfe8 146
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/executePromptCommandPreview.spec.ts
+  s_68423a2adea8d2::t_a5d17073083dd7 204-206
+  s_68423a2adea8d2::t_330f21a33e8d26 43-44,203,212,226
+src/modules/CrdtDocument/useCases/__tests__/previewCommandBatchSave.spec.ts
+  s_68423a2adea8d2::t_85b7c4483f07f2 1-291
+src/modules/Command/useCases/__tests__/commandBatchPreflightSave.spec.ts
+  s_68423a2adea8d2::t_85b7c4483f07f2 1-183
+src/modules/Command/useCases/prepareCommandBatchPreflight.ts
+  s_68423a2adea8d2::t_7e5845c8dc71b6 148-157,165,167,192,219,221,240
+src/modules/Command/useCases/previewVersionedCommandBatchEnvelope.ts
+  s_68423a2adea8d2::t_77274ee70525e5 27-29
+src/modules/CrdtDocument/useCases/createCommandPreviewWorkspace.ts
+  s_68423a2adea8d2::t_43a2adc057cbd4 8,11
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "42bd290fd389676bb8faea3899f66cfdfe37228b",
+  "prompts": {},
+  "sessions": {
+    "s_68423a2adea8d2": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34b-f305-7c03-beb2-57afa678cda5",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
