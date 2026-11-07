@@ -1,0 +1,21 @@
+src/modules/Arrangement/useCases/getArrangementHandlers.ts
+  s_1052c2a2231ded::t_6e1cb958241b32 48-50
+src/modules/Arrangement/useCases/patternInstance/restorePatternInstanceLink.ts
+  s_1052c2a2231ded::t_6e1cb958241b32 16-23
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7842a20939b7b25aefd0e68ac99567b0d938701e",
+  "prompts": {},
+  "sessions": {
+    "s_1052c2a2231ded": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b349-24b6-7622-8534-09f171c780d5",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
