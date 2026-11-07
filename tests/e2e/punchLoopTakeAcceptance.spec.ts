@@ -117,7 +117,11 @@ function bestMicTimecodeMatch(recordedRms: number[], blockSeconds = 0.1): number
         const expected = observed.map((_, index) =>
             markerAmplitude(Math.floor((start + (index + 2) * blockSeconds) / MARKER_SECONDS))
         );
-        best = Math.max(best, correlation(observed, expected));
+        const score = correlation(observed, expected);
+        // A short candidate can fit inside one constant marker, where correlation is undefined.
+        if (Number.isFinite(score)) {
+            best = Math.max(best, score);
+        }
     }
     return best;
 }
@@ -1707,6 +1711,14 @@ test('finishes an edited automatic mixed punch at its original sounded out and r
 }, testInfo: TestInfo) => {
     test.setTimeout(180_000);
     const outBeat = 11.03;
+    expect(bestMicTimecodeMatch(Array<number>(44).fill(0), 0.01)).toBe(-1);
+    expect(bestMicTimecodeMatch(Array<number>(44).fill(0.25), 0.01)).toBe(-1);
+    expect(
+        bestMicTimecodeMatch(
+            Array.from({ length: 44 }, (_, index) => (index % 2 === 0 ? 0.1 : 0.3)),
+            0.01
+        )
+    ).toBeLessThan(0.45);
     const projectName = `Automatic mixed punch ${randomUUID()}`;
     const baseURL = testInfo.project.use.baseURL;
     if (typeof baseURL !== 'string') {
