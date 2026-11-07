@@ -37,6 +37,7 @@ import { confirmPendingChatActions } from '../confirmPendingChatActions';
 import * as briefCompiler from '../executeBriefCompile';
 import { getAgentApprovalView } from '../getAgentApprovalView';
 import { getBriefMixIntentCatalog } from '../getBriefMixIntentCatalog';
+import { getProjectContext } from '../getProjectContext';
 import { generateToolPlanningOutcome } from '../llmOrchestration/inference';
 import { metricGoalStateCodec } from '../metricGoalStateCodec';
 import { reproposePendingChatActions } from '../reproposePendingChatActions';
@@ -512,63 +513,115 @@ describe('a whole-project vibe run of measured recipe batches (AC-003 of #4372)'
     });
 
     it.each([
-        { callId: 'brief-compile', vision: 'First vision', descriptor: 'wide', excluded: 'warm' },
-        { callId: 'later-compile', vision: 'Later vision', descriptor: 'warm', excluded: 'wide' },
-    ])('adopts $callId with its own brief and mix selection', async ({ callId, vision, descriptor, excluded }) => {
-        const intent = (requestedDescriptors: readonly string[]) => ({
-            catalogId: getBriefMixIntentCatalog().catalogId,
-            requestedDescriptors,
-        });
-        const requests = scriptPlanningTurns([
-            briefIntake,
-            () => [
-                {
-                    id: 'brief-compile',
-                    name: 'brief.compile',
-                    arguments: { vision: 'First vision', mixIntent: intent(['wide']) },
-                },
-            ],
-            () => [
-                {
-                    id: 'later-compile',
-                    name: 'brief.compile',
-                    arguments: { vision: 'Later vision', mixIntent: intent(['warm']) },
-                },
-            ],
-            (request) =>
-                proposeBrief(request).map((call) => ({
-                    ...call,
-                    arguments: { ...call.arguments, compiledCallIds: [callId] },
-                })),
-        ]);
-        await sendChatMessage('make this mix warmer or wider');
-        for (const [index, callId] of [
-            [2, 'brief-compile'],
-            [3, 'later-compile'],
-        ] as const) {
-            const request = requests[index];
-            if (request === undefined) {
-                throw new Error('Expected the compiler receipt turn');
-            }
-            expect(decodeReceiptContext(readReceiptSummary(request.userMessage).value)).toEqual(
-                expect.arrayContaining([expect.objectContaining({ callId, status: 'success' })])
+        {
+            callId: 'brief-compile',
+            vision: 'First vision',
+            descriptor: 'wide',
+            excluded: 'warm',
+            role: 'bass',
+            stemRecipe: 'bass-wide',
+        },
+        {
+            callId: 'later-compile',
+            vision: 'Later vision',
+            descriptor: 'warm',
+            excluded: 'wide',
+            role: 'lead vocal',
+            stemRecipe: 'vocal-warm',
+        },
+    ])(
+        'adopts $callId with its own brief and mix selection',
+        async ({ callId, vision, descriptor, excluded, role, stemRecipe }) => {
+            landProjectEdit(() => {
+                const state = trackStore.value;
+                if (state === null) {
+                    throw new Error('Expected project tracks');
+                }
+                trackStore.set({
+                    ...state,
+                    tracks: state.tracks.map((track) => (track.id === BASS_ID ? { ...track, name: 'Stem 7' } : track)),
+                });
+            });
+            expect(getProjectContext().tracks.find((track) => track.id === BASS_ID)?.canonicalRole?.source).not.toBe(
+                'authored'
             );
+            expect(getProjectContext().tracks.find((track) => track.id === BASS_ID)?.canonicalRole?.role).toBe(
+                'unknown'
+            );
+            expect(projectStore.value?.productionBrief.trackRoles).toEqual([]);
+            const intent = (requestedDescriptors: readonly string[]) => ({
+                catalogId: getBriefMixIntentCatalog().catalogId,
+                requestedDescriptors,
+            });
+            const requests = scriptPlanningTurns([
+                briefIntake,
+                () => [
+                    {
+                        id: 'brief-compile',
+                        name: 'brief.compile',
+                        arguments: {
+                            vision: 'First vision',
+                            trackRoles: [{ trackId: BASS_ID, role: 'bass' }],
+                            mixIntent: intent(['wide']),
+                        },
+                    },
+                ],
+                () => [
+                    {
+                        id: 'later-compile',
+                        name: 'brief.compile',
+                        arguments: {
+                            vision: 'Later vision',
+                            trackRoles: [{ trackId: BASS_ID, role: 'lead vocal' }],
+                            mixIntent: intent(['warm']),
+                        },
+                    },
+                ],
+                (request) =>
+                    proposeBrief(request).map((call) => ({
+                        ...call,
+                        arguments: { ...call.arguments, compiledCallIds: [callId] },
+                    })),
+            ]);
+            await sendChatMessage('make the whole mix warmer or wider; Stem 7 is bass or lead vocal');
+            for (const [index, callId] of [
+                [2, 'brief-compile'],
+                [3, 'later-compile'],
+            ] as const) {
+                const request = requests[index];
+                if (request === undefined) {
+                    throw new Error('Expected the compiler receipt turn');
+                }
+                expect(decodeReceiptContext(readReceiptSummary(request.userMessage).value)).toEqual(
+                    expect.arrayContaining([expect.objectContaining({ callId, status: 'success' })])
+                );
+            }
+            const brief = requireOnlyProposedCard();
+            expect(brief.actions).toMatchObject([
+                {
+                    type: 'setProductionBrief',
+                    payload: { brief: { vision, trackRoles: [expect.objectContaining({ trackId: BASS_ID, role })] } },
+                },
+            ]);
+            expect(cardContent(brief)).toContain(`${descriptor} drums`);
+            expect(cardContent(brief)).not.toContain(`${excluded} drums`);
+            const schedule = agentRunLifecycle.get(brief.runId)?.plan?.batchSchedule;
+            if (schedule?.kind !== 'vibe-run') {
+                throw new Error('Expected a scheduled vibe run');
+            }
+            const plan = readScheduledVibeRunPlan(schedule.serializedPlan);
+            expect(plan).not.toBeNull();
+            expect([...new Set(plan?.batches.flatMap((batch) => batch.objective.descriptors))]).toEqual([descriptor]);
+            expect(plan?.batches.flatMap((batch) => batch.targets.flatMap((target) => target.recipeIds))).toContain(
+                `drums-${descriptor}`
+            );
+            const stemTargets =
+                plan?.batches.flatMap((batch) => batch.targets.filter((target) => target.targetId === BASS_ID)) ?? [];
+            expect(stemTargets).toHaveLength(1);
+            expect(stemTargets[0]?.recipeIds).toContain(stemRecipe);
+            expect(stemTargets[0]?.recipeIds).not.toContain(`${role === 'bass' ? 'vocal' : 'bass'}-${descriptor}`);
         }
-        const brief = requireOnlyProposedCard();
-        expect(brief.actions).toMatchObject([{ type: 'setProductionBrief', payload: { brief: { vision } } }]);
-        expect(cardContent(brief)).toContain(`${descriptor} drums`);
-        expect(cardContent(brief)).not.toContain(`${excluded} drums`);
-        const schedule = agentRunLifecycle.get(brief.runId)?.plan?.batchSchedule;
-        if (schedule?.kind !== 'vibe-run') {
-            throw new Error('Expected a scheduled vibe run');
-        }
-        const plan = readScheduledVibeRunPlan(schedule.serializedPlan);
-        expect(plan).not.toBeNull();
-        expect([...new Set(plan?.batches.flatMap((batch) => batch.objective.descriptors))]).toEqual([descriptor]);
-        expect(plan?.batches.flatMap((batch) => batch.targets.flatMap((target) => target.recipeIds))).toContain(
-            `drums-${descriptor}`
-        );
-    });
+    );
 
     it('lists the planned batches on the brief card and applies nothing before Confirm', async () => {
         scriptPlanningTurns(BRIEF_ROUTE);
