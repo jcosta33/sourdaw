@@ -707,7 +707,7 @@ describe('AppShell', () => {
             expect(dockHeader).toHaveClass('daw-header-band');
             expect(dockHeader).not.toHaveAttribute('style');
             expect(dockHeader).toContainElement(tablist);
-            expect(screen.getByRole('tabpanel').parentElement).toHaveClass('daw-panel-surface');
+            expect(screen.getByRole('tabpanel').parentElement).toHaveClass('bg-surface-base', 'border-t');
         });
 
         it('marks the active tab aria-selected and the rest unselected', () => {
