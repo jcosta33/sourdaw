@@ -1,0 +1,36 @@
+src/modules/AiRuntime/useCases/readAnswerProjectQuery.ts
+  s_68423a2adea8d2::t_855e75e7ff2081 6-15
+  s_68423a2adea8d2::t_3c580a7e824b4e 1-5,16-25,27-28
+  s_68423a2adea8d2::t_73e15fb153b483 26
+src/modules/AiRuntime/useCases/__tests__/answerQuerySaveAuthority.spec.ts
+  s_68423a2adea8d2::t_1e68438f871b03 1-4,9-62,66,70-73,75,83-87,91-119,121-136,142,146,150-164
+  s_68423a2adea8d2::t_0ed58ec940f8ce 5-8,63-65,67-69,74,76-82,88-90,120,137-141,143-145,147-149
+src/modules/AiRuntime/useCases/__tests__/answerOutcome.spec.ts
+  s_68423a2adea8d2::t_73e15fb153b483 46,49,51
+  s_68423a2adea8d2::t_5018a69389fa3a 6,305
+src/modules/AiRuntime/useCases/applicationOwnedToolLoop.ts
+  s_68423a2adea8d2::t_73e15fb153b483 416-417,420-421,430,462-463,475-482,1362-1363,1367,1492,1577,3165
+  s_68423a2adea8d2::t_855e75e7ff2081 118
+  s_68423a2adea8d2::t_653284debb02ff 429
+src/modules/AiRuntime/AGENTS.md
+  s_68423a2adea8d2::t_653284debb02ff 27
+src/modules/AiRuntime/useCases/composeMeasuredAnswer.ts
+  s_68423a2adea8d2::t_855e75e7ff2081 23,28
+  s_68423a2adea8d2::t_73e15fb153b483 453-454
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "fe140ff8befff99d90c4ee6fe9ebeb004276e7a7",
+  "prompts": {},
+  "sessions": {
+    "s_68423a2adea8d2": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34b-f305-7c03-beb2-57afa678cda5",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
