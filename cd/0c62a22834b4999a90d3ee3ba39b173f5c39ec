@@ -1,0 +1,26 @@
+tests/e2e/directProjectSetupContract.ts
+  s_fdddfa6a468c89::t_795a07e85dffdc 1-8
+scripts/__tests__/viteE2ePersistenceEntry.spec.ts
+  s_fdddfa6a468c89::t_88d1e5d0ccce84 44-53,55-56
+tests/e2e/directProjectSetupEntry.ts
+  s_fdddfa6a468c89::t_4ae62f100def62 1-6
+tests/e2e/e2eUtils.ts
+  s_fdddfa6a468c89::t_a4c09acd9c77f8 169
+  s_fdddfa6a468c89::t_55672dc541bfbf 6
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "cd0c62a22834b4999a90d3ee3ba39b173f5c39ec",
+  "prompts": {},
+  "sessions": {
+    "s_fdddfa6a468c89": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8a8aad0b-494a-4b52-8941-3a8cc43c46a4",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
