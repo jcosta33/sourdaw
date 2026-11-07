@@ -1,0 +1,37 @@
+src/modules/AudioAnalysis/useCases/polyphonicAudioToMidi.ts
+  s_1052c2a2231ded::t_1178cab8e16ef3 12-13,24-25,57-58,70-71,127-133
+src/modules/AudioAnalysis/useCases/__tests__/polyphonicAudioToMidi.realModel.integration.spec.ts
+  s_1052c2a2231ded::t_a1fb1e3dff35d0 1-4,6-31,33,35-43,47-59,61-66,71-72,74-88
+  s_1052c2a2231ded::t_9bd4d98ec64010 60
+  s_1052c2a2231ded::t_fcea510cda2453 34,44-46,67-70,73
+  s_1052c2a2231ded::t_1178cab8e16ef3 5,32
+src/modules/AudioAnalysis/repositories/loadBasicPitchModel.ts
+  s_1052c2a2231ded::t_1178cab8e16ef3 1-18
+src/modules/AudioAnalysis/repositories/__tests__/loadBasicPitchModel.assets.spec.ts
+  s_1052c2a2231ded::t_9bd4d98ec64010 40-43
+  s_1052c2a2231ded::t_fcea510cda2453 1-39,44-48
+package.json
+  s_1052c2a2231ded::t_cdfe7553cfa238 120
+src/modules/AudioAnalysis/useCases/__tests__/polyphonicAudioToMidi.spec.ts
+  s_1052c2a2231ded::t_1178cab8e16ef3 39-40,43-44
+.agents/skills/review-stances/bundled-model-assets.md
+  s_1052c2a2231ded::t_fcea510cda2453 1-21
+pnpm-lock.yaml
+  s_1052c2a2231ded::t_2a4dfea1bdc613 38-40
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "510e29f96ff10626dc2ee70c84bdfdb852c4be66",
+  "prompts": {},
+  "sessions": {
+    "s_1052c2a2231ded": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b349-24b6-7622-8534-09f171c780d5",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
