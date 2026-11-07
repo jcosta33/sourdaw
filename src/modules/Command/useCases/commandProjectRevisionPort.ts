@@ -2,7 +2,7 @@ type CommandProjectRevisionProvider = () => string;
 type CommandProjectRevisionLiveMatch = (expectedRevision: string) => boolean;
 type CommandProjectMutationAuthority = {
     revisionProvider: CommandProjectRevisionProvider;
-    captureMutationAuthorization: () => () => boolean;
+    captureMutationAuthorization: (options: { rejectForeignPendingWrites: true }) => () => boolean;
 };
 
 const UNCONFIGURED_PROJECT_REVISION = 'unconfigured-project-revision';
@@ -48,7 +48,7 @@ export const commandProjectRevisionPort = {
         const capturedRevision = provider();
         const ownsMutations =
             mutationAuthority?.revisionProvider === capturedProvider
-                ? mutationAuthority.captureMutationAuthorization()
+                ? mutationAuthority.captureMutationAuthorization({ rejectForeignPendingWrites: true })
                 : null;
         return () =>
             configurationGeneration === capturedGeneration &&

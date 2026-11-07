@@ -3,6 +3,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { registerSupportingServicePorts } from '#/app/registerSupportingServicePorts';
 import {
     configureAutomergeStoragePort,
+    countPendingAutomergeStorageWrites,
+    getCurrentAutomergeStorageMutationOwner,
+    hasForeignPendingAutomergeStorageWrites,
+    runOutsideAutomergeStoragePublisherScope,
     createAutomergeStorage,
     runWithAutomergeStorageTransaction,
     flushAutomergeStorageWrites,
@@ -287,7 +291,7 @@ describe('command preflight save and content authority', () => {
                 if (transaction.status === 'threw') {
                     throw transaction.error;
                 }
-                const preparedPostconditions = transaction.value.preparePostconditions();
+                const preparedPostconditions = transaction.scope(() => transaction.value.preparePostconditions());
                 if (preparedPostconditions.status !== 'ready') {
                     throw new Error(preparedPostconditions.reason);
                 }
@@ -386,6 +390,137 @@ describe('command preflight save and content authority', () => {
                 unsubscribe();
                 configureAutomergeStoragePort(null);
                 removeCrdtDoc('owned');
+                removeCrdtDoc('root');
+            }
+        }
+    );
+
+    it.each([
+        { document: 'root', phase: 'before capture' },
+        { document: 'peer-child', phase: 'before capture' },
+        { document: 'root', phase: 'during capture' },
+    ] as const)(
+        'refuses a foreign unflushed $document edit queued $phase after an owned publication',
+        async ({ document, phase }) => {
+            configureAutomergeStoragePort(null);
+            removeCrdtDoc('root');
+            removeCrdtDoc('owned');
+            removeCrdtDoc('peer-child');
+            createCrdtDoc('root');
+            createCrdtDoc('owned');
+            createCrdtDoc('peer-child');
+            registerCrdtStorageRuntime();
+            projectStore.set({ ...structuredClone(defaultProjectStoreState), name: 'Before listener' });
+            const peer = createAutomergeStorage<{ name: string }>('peer-child', 'peerMeta');
+            const rootGain = createAutomergeStorage<{ value: number }>('root', 'ownedGain');
+            const childGain = createAutomergeStorage<{ value: number }>('owned', 'ownedGain');
+            peer.set({ name: 'Before listener' });
+            rootGain.set({ value: 1 });
+            childGain.set({ value: 1 });
+            flushAutomergeStorageWrites();
+            const readVisibleName = () => (document === 'root' ? projectStore.value?.name : peer.get()?.name);
+            function readRawName(): unknown {
+                const value = getCrdtDoc(document)?.[document === 'root' ? 'projectMeta' : 'peerMeta'];
+                return value !== null && typeof value === 'object' && 'name' in value ? value.name : undefined;
+            }
+            vi.stubGlobal(
+                'requestAnimationFrame',
+                vi.fn(() => 0)
+            );
+            vi.stubGlobal('cancelAnimationFrame', vi.fn());
+            const revision = captureProjectRevision();
+            commandProjectRevisionPort.setProvider(captureProjectRevision);
+            commandProjectRevisionPort.setLiveMatchIgnoringSaveWrites(
+                settledProjectRevisionMatchesLiveIgnoringSaveWrites
+            );
+            let sawOwnedPublication = false;
+            let queued = false;
+            let ownerWasForeign = false;
+            let revisionStayedUnchanged = false;
+            let pendingBefore = 0;
+            let pendingAfter = 0;
+            let rawNameWhenQueued: unknown;
+            let visibleNameWhenQueued: unknown;
+            function queueForeignEdit(): void {
+                runOutsideAutomergeStoragePublisherScope(() => {
+                    const before = captureProjectRevision();
+                    pendingBefore = countPendingAutomergeStorageWrites();
+                    ownerWasForeign = getCurrentAutomergeStorageMutationOwner() === undefined;
+                    if (document === 'root') {
+                        const project = projectStore.value;
+                        if (!project) {
+                            throw new Error('Expected visible project metadata');
+                        }
+                        projectStore.set({ ...project, name: 'Foreign visible edit' });
+                    } else {
+                        peer.set({ name: 'Foreign visible edit' });
+                    }
+                    queued = true;
+                    pendingAfter = countPendingAutomergeStorageWrites();
+                    revisionStayedUnchanged = captureProjectRevision() === before;
+                    rawNameWhenQueued = readRawName();
+                    visibleNameWhenQueued = readVisibleName();
+                });
+            }
+            commandBatchPreflightPort.setProvider(({ projectDocument }) => {
+                if (projectDocument && phase === 'during capture' && !queued) {
+                    expect(sawOwnedPublication).toBe(true);
+                    queueForeignEdit();
+                }
+                return validState();
+            });
+            clearHandlerRegistry();
+            registerHandlerMap({
+                setTrackGain: {
+                    execute: () => {
+                        childGain.set({ value: 0.8 });
+                        rootGain.set({ value: 0.8 });
+                    },
+                    describe: () => ({ label: 'Set gain' }),
+                    undoable: false,
+                    requiresAbortCompensation: false,
+                    validate: () => true,
+                },
+            });
+            const unsubscribe = subscribeToCrdtChanges((docId) => {
+                if (docId !== 'owned' || sawOwnedPublication) {
+                    return;
+                }
+                sawOwnedPublication = true;
+                if (phase === 'before capture') {
+                    queueForeignEdit();
+                }
+            });
+            try {
+                const result = await executeAppActionBatch(
+                    [{ type: 'setTrackGain', payload: { trackId: 'track-vocal', gain: 0.8, expectedGain: 1 } }],
+                    { prepareValidation: () => prepareCommandBatchPreflight(revisionEnvelope(revision)) }
+                );
+                expect(sawOwnedPublication).toBe(true);
+                expect(queued).toBe(true);
+                expect(ownerWasForeign).toBe(true);
+                expect(revisionStayedUnchanged).toBe(true);
+                expect(pendingAfter).toBe(pendingBefore + 1);
+                expect(rawNameWhenQueued).toBe('Before listener');
+                expect(visibleNameWhenQueued).toBe('Foreign visible edit');
+                expect(hasForeignPendingAutomergeStorageWrites(document)).toBe(true);
+                expect.soft(result).toMatchObject({
+                    status: 'ambiguous',
+                    reason: 'Automerge storage transaction committed before a later document failed',
+                });
+                expect.soft(getCrdtDoc('root')?.ownedGain).toEqual({ value: 1 });
+                expect(getCrdtDoc('owned')?.ownedGain).toEqual({ value: 0.8 });
+                expect(readRawName()).toBe('Before listener');
+                expect(readVisibleName()).toBe('Foreign visible edit');
+                flushAutomergeStorageWrites();
+                expect(readRawName()).toBe('Foreign visible edit');
+                expect(getCrdtDoc('owned')?.ownedGain).toEqual({ value: 0.8 });
+                expect.soft(getCrdtDoc('root')?.ownedGain).toEqual({ value: 1 });
+            } finally {
+                unsubscribe();
+                configureAutomergeStoragePort(null);
+                removeCrdtDoc('owned');
+                removeCrdtDoc('peer-child');
                 removeCrdtDoc('root');
             }
         }

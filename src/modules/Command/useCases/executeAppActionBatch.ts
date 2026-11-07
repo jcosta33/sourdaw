@@ -1049,7 +1049,9 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
 
             let postconditions: CommandBatchPostconditionValidation | undefined;
             try {
-                const preparedPostconditions = storageTransaction.value.validation?.preparePostconditions();
+                const preparedPostconditions = storageTransaction.scope(() =>
+                    storageTransaction.value.validation?.preparePostconditions()
+                );
                 if (preparedPostconditions?.status === 'rejected') {
                     throw new AutomergeStorageTransactionValidationError(preparedPostconditions.reason);
                 }

@@ -110,6 +110,8 @@ describe('registerKernelPorts after registration', () => {
     it('binds the real command mutation authority before owned publications and rejects a foreign listener', () => {
         const { command, crdtDocument, storage } = modules;
         crdtDocument.createCrdtDoc('root');
+        crdtDocument.registerCrdtStorageRuntime();
+        storage.flushAutomergeStorageWrites();
         command.commandProjectRevisionPort.setProvider(crdtDocument.captureProjectRevision);
         const results: boolean[] = [];
         const unsubscribe = crdtDocument.subscribeToCrdtChanges(() => {
@@ -144,6 +146,8 @@ describe('registerKernelPorts after registration', () => {
     it('keeps the bound owner authorized across its root and child publications', () => {
         const { command, crdtDocument, storage } = modules;
         crdtDocument.createCrdtDoc('root');
+        crdtDocument.registerCrdtStorageRuntime();
+        storage.flushAutomergeStorageWrites();
         command.commandProjectRevisionPort.setProvider(crdtDocument.captureProjectRevision);
         const results: boolean[] = [];
         const transaction = storage.runWithAutomergeStorageTransaction(undefined, (scope) =>
@@ -171,6 +175,8 @@ describe('registerKernelPorts after registration', () => {
             const { command, crdtDocument, storage } = modules;
             crdtDocument.createCrdtDoc('root');
             crdtDocument.createCrdtDoc('child');
+            crdtDocument.registerCrdtStorageRuntime();
+            storage.flushAutomergeStorageWrites();
             command.commandProjectRevisionPort.setProvider(crdtDocument.captureProjectRevision);
             const original = crdtDocument.getCrdtDoc<Record<string, unknown>>(target);
             if (!original) {
