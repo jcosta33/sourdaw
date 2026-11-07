@@ -435,7 +435,7 @@ const expectedValidationJobs = [
     'pr-secrets',
     'validation-gate',
 ];
-const expectedHeavyGateNeeds = ['e2e', 'e2e-report', 'browser-ai-webgpu'];
+const expectedHeavyGateNeeds = ['e2e-build', 'e2e', 'e2e-report', 'browser-ai-webgpu'];
 const scope = workflow.jobs?.scope;
 const scopePlan = stepNamed(scope, 'Plan affected checks');
 const scopeCheckout = stepNamed(scope, 'Checkout');
@@ -1380,16 +1380,41 @@ expect(
     }) !== 0,
     'a refused approval admission must fail Gate rather than pass on skipped checks'
 );
-const browserResults = (e2e, report, hardware) => JSON.stringify({
-    e2e: { result: e2e }, 'e2e-report': { result: report }, 'browser-ai-webgpu': { result: hardware },
+const browserResults = (build, e2e, report, hardware) => JSON.stringify({
+    'e2e-build': { result: build }, e2e: { result: e2e }, 'e2e-report': { result: report },
+    'browser-ai-webgpu': { result: hardware },
 });
 const selectedMatrix = JSON.stringify({ include: [{ id: 1, specs: ['tests/e2e/export.spec.ts'] }] });
-expect(workflowShellStatus(heavyGateRun, { RESULTS: browserResults('success', 'success', 'skipped'), MATRIX: selectedMatrix, BROWSER_AI: 'false' }) === 0,
+const emptyMatrix = '{"include":[]}';
+expect(workflowShellStatus(heavyGateRun, { RESULTS: browserResults('success', 'success', 'success', 'skipped'), MATRIX: selectedMatrix, BROWSER_AI: 'false' }) === 0,
     'selected browser checks must pass HeavyGate');
-expect(workflowShellStatus(heavyGateRun, { RESULTS: browserResults('skipped', 'skipped', 'skipped'), MATRIX: '{"include":[]}', BROWSER_AI: 'false' }) === 0,
+expect(workflowShellStatus(heavyGateRun, { RESULTS: browserResults('skipped', 'skipped', 'skipped', 'skipped'), MATRIX: emptyMatrix, BROWSER_AI: 'false' }) === 0,
     'unselected browser checks must skip HeavyGate');
-expect(workflowShellStatus(heavyGateRun, { RESULTS: browserResults('cancelled', 'success', 'skipped'), MATRIX: selectedMatrix, BROWSER_AI: 'false' }) !== 0,
-    'cancelled selected E2E must fail HeavyGate');
+for (const result of ['failure', 'cancelled', 'skipped']) {
+    expect(workflowShellStatus(heavyGateRun, { RESULTS: browserResults(result, 'success', 'success', 'skipped'), MATRIX: selectedMatrix, BROWSER_AI: 'false' }) !== 0,
+        `selected E2E build ${result} must fail HeavyGate`);
+}
+expect(workflowShellStatus(heavyGateRun, {
+    RESULTS: JSON.stringify({
+        e2e: { result: 'success' }, 'e2e-report': { result: 'success' }, 'browser-ai-webgpu': { result: 'skipped' },
+    }), MATRIX: selectedMatrix, BROWSER_AI: 'false',
+}) !== 0, 'missing selected E2E build must fail HeavyGate');
+expect(workflowShellStatus(heavyGateRun, { RESULTS: browserResults('success', 'skipped', 'skipped', 'skipped'), MATRIX: emptyMatrix, BROWSER_AI: 'false' }) !== 0,
+    'unexpected E2E build with an empty matrix must fail HeavyGate');
+for (const job of ['e2e', 'e2e-report']) {
+    for (const result of ['failure', 'cancelled', 'skipped']) {
+        const results = { 'e2e-build': { result: 'success' }, e2e: { result: 'success' }, 'e2e-report': { result: 'success' }, 'browser-ai-webgpu': { result: 'skipped' } };
+        results[job] = { result };
+        expect(workflowShellStatus(heavyGateRun, { RESULTS: JSON.stringify(results), MATRIX: selectedMatrix, BROWSER_AI: 'false' }) !== 0,
+            `selected ${job} ${result} must fail HeavyGate`);
+    }
+}
+expect(workflowShellStatus(heavyGateRun, { RESULTS: browserResults('success', 'success', 'success', 'success'), MATRIX: selectedMatrix, BROWSER_AI: 'false' }) !== 0,
+    'unexpected Browser AI execution must fail HeavyGate');
+for (const result of ['failure', 'cancelled', 'skipped']) {
+    expect(workflowShellStatus(heavyGateRun, { RESULTS: browserResults('success', 'success', 'success', result), MATRIX: selectedMatrix, BROWSER_AI: 'true' }) !== 0,
+        `selected Browser AI ${result} must fail HeavyGate`);
+}
 // The daily web train. It is the only route to production now that the Vercel
 // Git integration is off, so what it refuses to deploy from matters as much as
 // what it deploys.
