@@ -1,0 +1,49 @@
+scripts/test-health-gate-scripts.sh
+  s_eb3cd86b0cee6e::t_990d7deea6f567 1418-1419,1422,1424,1430,1436,1439
+  s_eb3cd86b0cee6e::t_c76a7f8ff4c684 455-457,582-583,588
+  s_eb3cd86b0cee6e::t_d38836a58122bc 420,438
+  s_eb3cd86b0cee6e::t_d8887579f1004f 584-587
+  s_eb3cd86b0cee6e::t_80333d582103f1 1352,1365-1381,1383-1386,1388,1391,1393-1405
+  s_eb3cd86b0cee6e::t_e0b547525f968b 1426-1427
+scripts/healthGateWorkflowContract.ts
+  s_eb3cd86b0cee6e::t_4116a882f9f040 177
+scripts/__tests__/fixtures/health-gate-workflows.snapshot.json
+  s_eb3cd86b0cee6e::t_915ffa48e5a01a 173-233,238-239,241,287,299-300,302,687
+scripts/__tests__/healthGatesWorkflow.spec.ts
+  s_eb3cd86b0cee6e::t_1812cc23cd505a 3639,3657,3668,3678-3680,3696,3700
+  s_eb3cd86b0cee6e::t_d4df9ae3b35dc5 3646-3652,3665,3672,3681-3694,3697-3699
+  s_eb3cd86b0cee6e::t_e3485ab6a99214 199,219,3610,3614,3618,3640,3654,3660-3662
+  s_eb3cd86b0cee6e::t_cd1d8fa18579dd 2083-2085,2087-2089,2116,2119,3770-3776
+  s_eb3cd86b0cee6e::t_6969441326e0a9 3643-3645
+  s_eb3cd86b0cee6e::t_ee79e62bbfcbac 2086,3615,3655-3656,3658
+  s_eb3cd86b0cee6e::t_896e9806abbbe3 3764-3769
+  s_eb3cd86b0cee6e::t_bc155431636900 5130,5143,5145,5151-5153,5155,5165,5170,5175-5176,5178
+  s_eb3cd86b0cee6e::t_7769e2d654d78a 5150,5177
+  s_eb3cd86b0cee6e::t_f1e1d8e482f396 83-84,2113,2117
+scripts/__tests__/deliverPullRequest.spec.ts
+  s_eb3cd86b0cee6e::t_01b26d6d63ff82 6837-6841
+scripts/workflowSecuritySurfaceContract.ts
+  s_eb3cd86b0cee6e::t_6cc933957695b1 65-66
+.github/workflows/heavy-gates.yml
+  s_eb3cd86b0cee6e::t_8789cbf4695b34 266-267
+scripts/__tests__/prValidationScope.spec.ts
+  s_eb3cd86b0cee6e::t_8f050524442382 988-990
+.github/workflows/health-gates.yml
+  s_eb3cd86b0cee6e::t_dafb58a48bc338 135-180,183-188,226,237,243-249,252
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "cff90fafffd3a4e5ab0ad59c76f8444d29d57611",
+  "prompts": {},
+  "sessions": {
+    "s_eb3cd86b0cee6e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34c-a4d8-7523-838e-1cd1a0a25d78",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
