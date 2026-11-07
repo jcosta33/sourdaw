@@ -71,6 +71,8 @@ export { acceptGhostClip } from './clip/acceptGhostClip';
 export { dismissGhostClip } from './clip/dismissGhostClip';
 export { setClipAudioAssetStager } from './clip/setClipAudioAssetStager';
 export { stageClipAudioAsset } from './clip/stageClipAudioAsset';
+export { compileNewAudioTrackAction } from './compileNewAudioTrackAction';
+export { retainedCreation } from './creationBatch';
 export { updateClip } from './updateClip';
 export { replaceClipAudioBuffer } from './replaceClipAudioBuffer';
 export { relinkClipAudioSource } from './relinkClipAudioSource';

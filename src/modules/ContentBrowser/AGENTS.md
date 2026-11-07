@@ -4,7 +4,7 @@ Workspace sidebar presentation container and navigation tabs (Project, Instrumen
 
 ## Public Contract Surface
 
-Public surface: `presentations/views/index.ts`.
+Public surface: `presentations/views/index.ts`, `useCases/index.ts`. `placeLibrarySample` there is the one routine that places a browser sample as a clip. It lives here because it composes SampleLibrary and Collaboration, which core-domain Arrangement may not depend on; the timeline drop and the sidebar add both call it.
 
 ## Key Subsystems
 
