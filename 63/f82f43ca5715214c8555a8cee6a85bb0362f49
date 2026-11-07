@@ -1,0 +1,19 @@
+tests/e2e/voiceDraftBoundaryWorkflow.spec.ts
+  s_1052c2a2231ded::t_58c7b63267c7f0 4,32-36,39-43,161,168-170,224-231,243-247,256
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "63f82f43ca5715214c8555a8cee6a85bb0362f49",
+  "prompts": {},
+  "sessions": {
+    "s_1052c2a2231ded": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b349-24b6-7622-8534-09f171c780d5",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
