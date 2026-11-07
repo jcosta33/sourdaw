@@ -237,7 +237,7 @@ never name the stances:
 
 | Class                                                                                       | Earns                                                     | Machine draw floor |
 | ------------------------------------------------------------------------------------------- | --------------------------------------------------------- | ------------------ |
-| `docs-only` (every path Markdown outside `public/`)                                         | correctness                                               | 1                  |
+| `docs-only` (every path Markdown outside `public/` and `.github/`)                          | correctness                                               | 1                  |
 | `test-only` (every path a test)                                                             | test-validity                                             | 1                  |
 | `small` (no specialist surface, within the line budget, handwritten paths all under `src/`) | correctness, test-validity                                | 2                  |
 | `small-tooling` (the same, with handwritten paths outside `src/`)                           | correctness, module-boundaries, test-validity             | 3                  |
@@ -256,9 +256,10 @@ three stances is not this procedure: stop and dispatch the third.
 Stances are the mechanism, not the paperwork. One reader finds what the reader already expects; three
 blind stances with distinct failure modes find the silent ones — a check that cannot fail, a suite the
 push workflow never ran, the state a theme was never given. A change that cannot alter what the product
-does, what a test proves, what a rule, contract or decision requires or records, or which document a
-requirement points at is genuinely trivial — a typo, a link, a Markdown comment, a spec rename — and
-may honestly run one, subject to the machine floor of its class. Any other change carries three.
+does, what a test proves, what a rule, procedure, contract or decision requires or records, which
+document a requirement points at, a persisted or generated artifact, or a build or delivery path is
+genuinely trivial and may honestly run one, subject to the machine floor of its class. Any other change
+carries three.
 
 A stance is a failure mode, never a file, a path, or a role: "correctness" above all is the baseline
 every reviewer already holds, not a stance. Three stance _names_ satisfy `review:publish` even when
