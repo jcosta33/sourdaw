@@ -106,6 +106,16 @@ describe('reading the characters a whole-project request asks for', () => {
             });
             expect(readDescriptors(`do not make this mix not only Warmer but darker ${connector} wider`)).toEqual([]);
         });
+
+        it('does not read the second named operand as a new instruction', () => {
+            trackStore.set({
+                tracks: [createTrack({ id: 'named', name: 'Make Warmer' })],
+                selectedTrackId: null,
+                ghostClips: [],
+            });
+            expect(readDescriptors(`make this mix not only darker ${connector} Make Warmer`)).toEqual(['dark']);
+            expect(readDescriptors(`do not make this mix not only darker ${connector} Make Warmer`)).toEqual([]);
+        });
     });
 
     it.each([

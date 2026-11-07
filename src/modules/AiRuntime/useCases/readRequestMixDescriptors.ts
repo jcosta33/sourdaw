@@ -73,8 +73,12 @@ function readAdditiveCorrelatives(text: string, prompt: string): AdditiveCorrela
         }
         const secondStart = boundary.index + connector[0].length;
         const end = nextClauseEnd(text, secondStart)?.index ?? prompt.length;
-        const second = prompt.slice(secondStart, end).trim();
-        if (second === '' || /^also$/iu.test(second) || instructionPattern.test(second)) {
+        const second = text.slice(secondStart, end).trim();
+        if (
+            prompt.slice(secondStart, end).trim() === '' ||
+            /^also$/iu.test(second) ||
+            instructionPattern.test(second)
+        ) {
             continue;
         }
         pairs.push({ start: opening.index, connectorStart: boundary.index, end });
