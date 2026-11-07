@@ -1,0 +1,28 @@
+scripts/__tests__/pruneRemoteBranches.spec.ts
+  s_1052c2a2231ded::t_049ac7c9933662 148-150,153-155,158-159,266-277,283-292,294,304-310,343,350-352,366-373,378-380,382-383,392-394,410-414
+  s_1052c2a2231ded::t_0a0d52a5de5ac4 354-363,391
+  s_1052c2a2231ded::t_19301c35eca191 147,151-152,156-157,160,293,295-303,311-323,329-342,344-349,353,364-365,374-377,381,384-390,395-409,415-427
+  s_1052c2a2231ded::t_51c9109daa10c6 278-282,324-328
+scripts/pruneRemoteBranches.ts
+  s_1052c2a2231ded::t_f81899569ffdf5 43,45,55,69-77,80-92,360-365,386,390-391
+  s_1052c2a2231ded::t_0a0d52a5de5ac4 387,389
+  s_1052c2a2231ded::t_51c9109daa10c6 388
+.agents/skills/delivery-orchestration/SKILL.md
+  s_1052c2a2231ded::t_b8d738d1a6d62c 42
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "506c752915bff6810e202c4d092208a2f320b3cd",
+  "prompts": {},
+  "sessions": {
+    "s_1052c2a2231ded": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b349-24b6-7622-8534-09f171c780d5",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
