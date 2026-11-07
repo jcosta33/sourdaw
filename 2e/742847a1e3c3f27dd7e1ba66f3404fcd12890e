@@ -1,0 +1,22 @@
+src/modules/AiGeneration/useCases/actions/__tests__/generateMidiPromptProjectTruth.integration.spec.ts
+  s_1052c2a2231ded::t_a746466f80bd63 9-19,66-67,128-130,141-148,226-229,243-249,251-253,256-259,263-265,270-273,276-278,303-306,312-315,320-323,332-335
+  s_1052c2a2231ded::t_88a09ce080b3c0 1-8,20-23,25-65,68-103,105-118,120-127,131-140,149-225,230-242,250,254-255,266-269,279-302,307-311,316-319,324-331,336-337
+  s_1052c2a2231ded::t_c537882dd5ba8c 24,104,119
+  s_1052c2a2231ded::t_48503953a4696a 260-262,274-275
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2e742847a1e3c3f27dd7e1ba66f3404fcd12890e",
+  "prompts": {},
+  "sessions": {
+    "s_1052c2a2231ded": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b349-24b6-7622-8534-09f171c780d5",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
