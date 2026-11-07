@@ -1,0 +1,23 @@
+src/modules/CommandInterface/useCases/keyboardShortcutActions/handleKeyboardShortcut/__tests__/handleKeydownDuplicateSelection.integration.spec.ts
+  s_977061c47f01dd::t_cc1ad0ca86ea88 5,37-42,48-53,200,521-522,532-542
+src/modules/CommandInterface/useCases/keyboardShortcutActions/clipShortcuts/__tests__/enqueueClipDuplicate.spec.ts
+  s_977061c47f01dd::t_cc1ad0ca86ea88 196-200,224-230
+src/modules/CommandInterface/useCases/keyboardShortcutActions/clipShortcuts/duplicateSelectedClipsForward.ts
+  s_977061c47f01dd::t_cc1ad0ca86ea88 5,77,81-85
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "fb9b3640b3b0445409d42d1b58a9dbbe6e7631cd",
+  "prompts": {},
+  "sessions": {
+    "s_977061c47f01dd": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34d-123d-7452-a6e7-60608388b6d7",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
