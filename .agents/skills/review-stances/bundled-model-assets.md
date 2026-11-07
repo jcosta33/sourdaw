@@ -4,6 +4,14 @@ A model topology file is not a complete model. Manifest-relative weight paths mu
 by the production bundler, and inference must execute those actual bytes. Development dependency paths and mocked
 note results cannot establish packaged availability.
 
+## Scope
+
+This class covers the shipped inference boundary between model topology, emitted weight assets, and the runtime
+that consumes them. Release-provenance probes authenticate records and digests; test-validity probes establish
+observation. Neither alone proves that a packaged model resolves its weights and executes them with its supported
+runtime. One observed escape establishes this class; keep its single concrete probe rather than inventing five
+variants without independent failure evidence.
+
 ## Standing probes
 
 1. **A bundled topology retains an unbundled weight filename (`5a1067d3a6`, merged by `8f96c82bae`).** The Basic Pitch
