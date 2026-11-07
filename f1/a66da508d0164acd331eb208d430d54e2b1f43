@@ -1,0 +1,27 @@
+tests/e2e/browserAiWebGpuAdmission.spec.ts
+  s_fdddfa6a468c89::t_3bd92cca34e286 213
+  s_fdddfa6a468c89::t_3f09a071bc99b9 223
+  s_fdddfa6a468c89::t_658edf450e00ea 9
+tests/e2e/directProjectSetup.spec.ts
+  s_fdddfa6a468c89::t_761779370bf263 2,18-24,27-33
+tests/e2e/browserAiAdmittedPresentation.spec.ts
+  s_fdddfa6a468c89::t_c0d41d07f83ebd 76
+  s_fdddfa6a468c89::t_9b815b402e2619 9
+  s_fdddfa6a468c89::t_8ec5a438e52105 41
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f1a66da508d0164acd331eb208d430d54e2b1f43",
+  "prompts": {},
+  "sessions": {
+    "s_fdddfa6a468c89": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8a8aad0b-494a-4b52-8941-3a8cc43c46a4",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
