@@ -2,6 +2,7 @@ import { cacheAudioBuffer, getCachedAudioBuffer } from '#/modules/AudioEngine/us
 import { clearClipPitchAnalysis } from '#/modules/Knead/useCases';
 import { readTempoAtBeat } from '#/modules/Transport/stores';
 import { restampLoopOriginEntry } from '#/utils/clipLoopOrigin';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { updateClip } from '../../repositories/track/updateClip';
@@ -40,9 +41,13 @@ export function reverseClip(clipId: string, reversedBufferId?: string): boolean 
     const audioSource = reversedClipAudioSource(
         clip,
         buffer.length / buffer.sampleRate,
-        liveTempoTimeline.secondsAtBeat
+        liveTempoTimeline.secondsAtBeat,
+        readTempoAtBeat({ beat: clip.startBeat })
     );
     if (audioSource === null) {
+        if (clip.loopEnabled) {
+            notifyUser('Bounce this looped clip to audio before reversing.', 'warning');
+        }
         return false;
     }
 

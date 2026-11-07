@@ -117,6 +117,12 @@ vi.mock('#/modules/Transport/useCases', () => ({
     countSettledTakes: () => mocks.takes.settled,
 }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    captureOfflineRenderProjectSource: vi.fn(() => {
+        throw new Error('Unexpected selection render capture in this fixture');
+    }),
+    captureOfflineRenderRuntimeInput: vi.fn(() => {
+        throw new Error('Unexpected selection render capture in this fixture');
+    }),
     builtinSynthVoice: { read: vi.fn() },
     exportCachedAudioBuffers: vi.fn(() => {
         throw new Error('Unexpected exportCachedAudioBuffers in this fixture');

@@ -2516,6 +2516,8 @@ export type AppAction =
               fadeOutBeats?: number;
               /** Offset the restore puts back; optional so older undo entries still decode. */
               audioOffsetBeats?: number;
+              /** Modern exact optional alias capture. Absent retains the older numeric/omitted contract. */
+              audioOffsetBeatsCapture?: { present: false } | { present: true; value: number };
               /** Loop anchor the restore puts back; optional so older undo entries still decode. */
               loopOriginBeat?: number;
               /** Canonical source clock the restore puts back exactly. Present only for a
