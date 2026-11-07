@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { readSecondsAtBeat, readTempoAtBeat } from '#/modules/Transport/stores';
+import { projectAudioLoopPassSegments } from '#/utils/audioSourceTime';
 import { resolveClipLoopOriginAdvance } from '#/utils/clipLoopOrigin';
 
 import { normalizeTrack, type Clip, type Track } from '../../../models/Track';
@@ -20,6 +22,7 @@ type RenderTrackOffline = (
 ) => Promise<AudioBuffer | null>;
 
 type PushUndoEntry = (label: string, undoFn: () => void, redoFn: () => void) => void;
+type FixtureClock = NonNullable<Parameters<typeof readSecondsAtBeat>[0]['clock']>;
 
 const mocks = vi.hoisted(() => {
     type TestTrackStore = {
@@ -27,12 +30,15 @@ const mocks = vi.hoisted(() => {
         set: ReturnType<typeof vi.fn<(state: TrackStoreState) => void>>;
     };
 
+    const tempoChanges: FixtureClock['changes'] = [];
     const trackStore: TestTrackStore = {
         value: null,
         set: vi.fn<(state: TrackStoreState) => void>(),
     };
 
     return {
+        tempo: 60,
+        tempoChanges,
         cacheAudioBuffer: vi.fn<(input: CacheAudioBufferInput) => string>(),
         pushUndoEntry: vi.fn<PushUndoEntry>(),
         renderTrackOffline: vi.fn<RenderTrackOffline>(),
@@ -45,11 +51,42 @@ const mocks = vi.hoisted(() => {
     };
 });
 
-vi.mock('#/modules/AudioEngine/useCases', () => ({
+// Owner-use-case fixture: storage/engine boundaries are doubles. The separate
+// command integration keeps the real revision history, document and publication.
+vi.mock('#/modules/AudioEngine/useCases', async (original) => ({
+    ...(await original<typeof import('#/modules/AudioEngine/useCases')>()),
     cacheAudioBuffer: mocks.cacheAudioBuffer,
+    getAudioContext: () => ({ sampleRate: 48000 }),
+    captureOfflineRenderProjectSource: () => ({
+        tracks: mocks.trackStore.value,
+        midi: midiMocks.state.value,
+        transport: { tempo: mocks.tempo },
+        tempoMap: { changes: mocks.tempoChanges },
+        sidechainRoutes: [],
+        takeLanes: null,
+    }),
+    captureOfflineRenderRuntimeInput: () => ({
+        deviceLatencyMs: new Map(),
+        calibrationByDevice: new Map(),
+        loadedExternalInstanceIds: new Set(),
+        externalPluginParameters: null,
+    }),
 }));
-
-vi.mock('#/modules/Command/useCases', () => ({
+vi.mock('#/modules/CrdtDocument/useCases', async (original) => ({
+    ...(await original<typeof import('#/modules/CrdtDocument/useCases')>()),
+    captureProjectRootIdentity: () => 'owner-fixture-root',
+    captureProjectRevision: () => 'owner-fixture-revision',
+    settlePendingProjectWritesAndCaptureRevision: () => 'owner-fixture-revision',
+    getCrdtDoc: () => ({
+        tracks: mocks.trackStore.value,
+        midi: midiMocks.state.value,
+        transport: { tempo: mocks.tempo },
+        tempoMap: { changes: mocks.tempoChanges },
+    }),
+    projectRevisionMatchesLiveWithinProjection: () => true,
+}));
+vi.mock('#/modules/Command/useCases', async (original) => ({
+    ...(await original<typeof import('#/modules/Command/useCases')>()),
     executeUserAppAction: vi.fn(),
     pushUndoEntry: mocks.pushUndoEntry,
 }));
@@ -384,6 +421,8 @@ describe('bounceSelection', () => {
 
     beforeEach(() => {
         vi.clearAllMocks();
+        mocks.tempo = 60;
+        mocks.tempoChanges = [];
         vi.useFakeTimers();
         vi.setSystemTime(1234567890);
         vi.spyOn(crypto, 'randomUUID').mockReturnValue('11111111-1111-4111-8111-111111111111');
@@ -414,7 +453,7 @@ describe('bounceSelection', () => {
 
         const didWrite = await bounceSelection('track-1', 2, 6);
 
-        const expectedBufferId = 'bounce-sel-track-1-1234567890';
+        const expectedBufferId = 'bounce-sel-track-1-11111111-1111-4111-8111-111111111111';
         expect(mocks.renderTrackOffline).toHaveBeenCalledWith(
             expect.objectContaining({
                 clips: [beforeClip, selectedClip, afterClip],
@@ -787,6 +826,170 @@ describe('bounceSelection', () => {
         expect(fragment.audioOffsetBeats).toBe(8);
         expect(fragment.loopOriginBeat).toBe(0);
         expect(regionOf(fragment)).toEqual({ region: 0, entry: 0 });
+    });
+
+    function sourceAt(clip: Clip, beat: number): number | undefined {
+        const clock: FixtureClock = { tempo: mocks.tempo, changes: mocks.tempoChanges };
+        return projectAudioLoopPassSegments({
+            clip,
+            loopLengthBeats: clip.loopLength ?? clip.endBeat - clip.startBeat,
+            iterationStartBeat: beat,
+            iterationEndBeat: beat + 0.25,
+            stretchRatio: clip.stretchMode && clip.stretchMode !== 'off' ? (clip.stretchRatio ?? 1) : 1,
+            tempoAtClipStart: readTempoAtBeat({
+                beat: clip.startBeat,
+                clock,
+            }),
+            secondsAtBeat: (position) => readSecondsAtBeat({ beat: position, clock }),
+        })[0]?.sourceStartSeconds;
+    }
+
+    it.each([2, 0])('preserves canonical looping audio outside a bounce beginning at beat %s', async (startBeat) => {
+        const source = createAudioClip({
+            id: 'canonical-loop',
+            startBeat: 0,
+            endBeat: 10,
+            audioOffsetSeconds: 1,
+            loopEnabled: true,
+            loopLength: 4,
+            loopOriginBeat: 0,
+        });
+        const untouched = createAudioClip({ id: 'outside', startBeat: 12, endBeat: 14, audioOffsetSeconds: 5 });
+        const before = createAudioTrack({ clips: [source, untouched] });
+        setTrackStoreState({ tracks: [before], selectedTrackId: 'track-1' });
+        const rendered = createTestAudioBuffer();
+        const pcmBefore = rendered.getChannelData(0).slice();
+        mocks.renderTrackOffline.mockResolvedValue(rendered);
+
+        expect(await bounceSelection('track-1', startBeat, 6)).toBe(true);
+        const after = mocks.trackStore.value!;
+        const right = after.tracks[0]!.clips.find((clip) => clip.startBeat === 6)!;
+        expect(right).toBeDefined();
+        expect([6, 7.5, 8, 9].map((beat) => sourceAt(right, beat))).toEqual([3, 4.5, 1, 2]);
+        expect(after.tracks[0]!.clips.find((clip) => clip.id === 'outside')).toEqual(untouched);
+        if (startBeat > 0) {
+            const left = after.tracks[0]!.clips.find((clip) => clip.id === source.id)!;
+            expect(left.endBeat).toBe(startBeat);
+            expect(sourceAt(left, 0)).toBe(1);
+        }
+        expect(rendered.getChannelData(0)).toEqual(pcmBefore);
+        const [, undo, redo] = getFirstUndoEntry();
+        undo();
+        expect(mocks.trackStore.value?.tracks).toEqual([before]);
+        redo();
+        expect(mocks.trackStore.value?.tracks).toEqual(after.tracks);
+    });
+
+    it.each([2, 0])(
+        'preserves the right source at consumed rate0.5 across tempo changes, selection start%s',
+        async (startBeat) => {
+            mocks.tempo = 120;
+            mocks.tempoChanges = [
+                { id: 'fixture-initial-tempo', beat: 0, tempo: 120, curve: 'instant' },
+                { id: 'fixture-slow-tempo', beat: 4, tempo: 60, curve: 'instant' },
+            ];
+            const clip = createAudioClip({
+                id: 'stretched-loop',
+                startBeat: 0,
+                endBeat: 10,
+                audioOffsetSeconds: 1,
+                loopEnabled: true,
+                loopLength: 4,
+                loopOriginBeat: 0,
+                stretchMode: 'repitch',
+                stretchRatio: 0.5,
+            });
+            setTrackStoreState({ tracks: [createAudioTrack({ clips: [clip] })], selectedTrackId: 'track-1' });
+            mocks.renderTrackOffline.mockResolvedValue(createTestAudioBuffer());
+            expect(await bounceSelection('track-1', startBeat, 6)).toBe(true);
+            const right = mocks.trackStore.value!.tracks[0]!.clips.find((row) => row.startBeat === 6)!;
+            expect([6, 7.5, 8, 9].map((beat) => sourceAt(right, beat))).toEqual([2, 2.75, 1, 1.5]);
+            expect(right).toMatchObject({
+                stretchMode: 'repitch',
+                stretchRatio: 0.5,
+                loopLength: 4,
+                loopOriginBeat: 0,
+            });
+        }
+    );
+
+    it.each([4, 8])(
+        'preserves the implicit audio left period%s through outside PCM, extension and callback replay',
+        async (period) => {
+            const clip = createAudioClip({
+                id: 'implicit-loop',
+                startBeat: 0,
+                endBeat: period,
+                audioOffsetSeconds: 0,
+                loopEnabled: true,
+            });
+            const before = createAudioTrack({ clips: [clip] });
+            setTrackStoreState({ tracks: [before], selectedTrackId: 'track-1' });
+            mocks.renderTrackOffline.mockResolvedValue(createTestAudioBuffer());
+            expect(await bounceSelection('track-1', 2, 6)).toBe(true);
+            const left = mocks.trackStore.value!.tracks[0]!.clips.find((row) => row.id === clip.id)!;
+            const pcm = Float32Array.from({ length: 384000 }, (_, frame) => frame / 384000);
+            const frameAt = (row: Clip, beat: number) => Math.round(sourceAt(row, beat)! * 48000);
+            const after = structuredClone(mocks.trackStore.value!.tracks);
+            expect({
+                period: left.loopLength,
+                outsidePcm: [0.5, 1.5].map((beat) => pcm[frameAt(left, beat)]),
+                extendedSource: sourceAt({ ...left, endBeat: period + 1 }, period + 0.5),
+            }).toEqual({ period, outsidePcm: [0.5, 1.5].map((beat) => pcm[frameAt(clip, beat)]), extendedSource: 0.5 });
+            const [, undo, redo] = getFirstUndoEntry();
+            undo();
+            expect(mocks.trackStore.value?.tracks).toEqual([before]);
+            expect(Object.hasOwn(mocks.trackStore.value!.tracks[0]!.clips[0]!, 'loopLength')).toBe(false);
+            redo();
+            expect(mocks.trackStore.value?.tracks).toEqual(after);
+        }
+    );
+
+    function holdRender() {
+        const entered = Promise.withResolvers<void>();
+        const release = Promise.withResolvers<AudioBuffer | null>();
+        mocks.renderTrackOffline.mockImplementation(() => {
+            entered.resolve();
+            return release.promise;
+        });
+        return { entered: entered.promise, release: release.resolve };
+    }
+
+    it('refuses a held render after the sampled source changes on the same track and clip ids', async () => {
+        const source = createAudioClip({ id: 'same-clip', startBeat: 2, endBeat: 6, audioOffsetSeconds: 1 });
+        const track = createAudioTrack({ clips: [source] });
+        setTrackStoreState({ tracks: [track], selectedTrackId: 'track-1' });
+        const gate = holdRender();
+        const pending = bounceSelection('track-1', 2, 6);
+        await gate.entered;
+        const edited = { ...source, audioOffsetSeconds: 3, audioBufferId: 'replacement-buffer' };
+        const latest = { tracks: [{ ...track, clips: [edited] }], selectedTrackId: 'track-1' };
+        setTrackStoreState(latest);
+        gate.release(createTestAudioBuffer());
+
+        expect(await pending).toBe(false);
+        expect(mocks.trackStore.value).toEqual(latest);
+        expect(mocks.trackStore.set).not.toHaveBeenCalled();
+        expect(mocks.cacheAudioBuffer).not.toHaveBeenCalled();
+        expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
+    });
+
+    it('retains unrelated peer and selection changes while admitting an unchanged sampled source', async () => {
+        const source = createAudioClip({ id: 'same-clip', startBeat: 2, endBeat: 6, audioOffsetSeconds: 1 });
+        const track = createAudioTrack({ clips: [source] });
+        const peer = createAudioTrack({ id: 'peer', name: 'before', clips: [] });
+        setTrackStoreState({ tracks: [track, peer], selectedTrackId: 'track-1' });
+        const gate = holdRender();
+        const pending = bounceSelection('track-1', 2, 6);
+        await gate.entered;
+        const changedPeer = { ...peer, name: 'peer edit', gain: 0.4 };
+        setTrackStoreState({ tracks: [track, changedPeer], selectedTrackId: 'peer' });
+        gate.release(createTestAudioBuffer());
+
+        expect(await pending).toBe(true);
+        expect(mocks.trackStore.value?.tracks[1]).toEqual(changedPeer);
+        expect(mocks.trackStore.value?.selectedTrackId).toBe('peer');
+        expect(mocks.pushUndoEntry).toHaveBeenCalledTimes(1);
     });
 
     it('reports no-write when the track store is torn down after a successful render', async () => {

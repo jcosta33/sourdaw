@@ -578,6 +578,12 @@ vi.mock('#/modules/Automation/stores', () => ({
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/AudioEngine/useCases')>();
     return {
+        captureOfflineRenderProjectSource: vi.fn(() => {
+            throw new Error('Unexpected selection render capture in this fixture');
+        }),
+        captureOfflineRenderRuntimeInput: vi.fn(() => {
+            throw new Error('Unexpected selection render capture in this fixture');
+        }),
         builtinSynthVoice: actual.builtinSynthVoice,
         configureOfflineMidiEventProjection: actual.configureOfflineMidiEventProjection,
         configureOfflinePpqEndpointProjection: actual.configureOfflinePpqEndpointProjection,

@@ -40,3 +40,13 @@ from the `state-and-write-paths` skill.
    authority at mutation admission, before it waits for the storage lock; recapturing inside the queued storage
    phase can authenticate an intervening ordinary replacement as the older prepared commit. Queue an ordinary
    replacement behind the lock and require the older prepared commit to refuse.
+
+7. **Two accepted bounces must not reuse clock-based material identity (#226).** The selection-bounce owner
+   extracted by #226 retained `bounce-sel-${trackId}-${Date.now()}`. This identifies the available owner
+   extraction, not proof of where the earlier clock-based algorithm originated; that PR has no public review.
+   The missing probe is two successful typed bounces on one track while `Date.now()` is fixed, with distinct
+   nonperiodic first PCM and second PCM. Undo the second and authenticate the first cached material through the
+   actual retained clip/history reference; Redo must recover the second. An ID-inequality assertion alone is
+   insufficient: reinstating the timestamp producer must fail the restored first-PCM comparison. Use the
+   platform's unique identity producer and retain unrelated source PCM. This is runtime/history material proof,
+   not a durability receipt or saved-session replay claim.
