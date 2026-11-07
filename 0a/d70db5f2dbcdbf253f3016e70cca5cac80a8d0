@@ -1,0 +1,282 @@
+src/modules/Command/useCases/__tests__/versionedCommandArgumentKeys.spec.ts
+  s_eb3cd86b0cee6e::t_e422728348b69d 249-274
+src/modules/Arrangement/useCases/freezeBounce/__tests__/bounceSelectionCommand.integration.spec.ts
+  s_eb3cd86b0cee6e::t_e422728348b69d 1-747
+src/modules/AiRuntime/useCases/agentReference/__tests__/preparedStemImportResourceCleanup.spec.ts
+  s_eb3cd86b0cee6e::t_e422728348b69d 31-36
+src/modules/AiRuntime/useCases/cancelPendingChatActions.ts
+  s_eb3cd86b0cee6e::t_e422728348b69d 9,63-65,68
+src/modules/AiRuntime/useCases/planWholeProjectVibeRun.ts
+  s_eb3cd86b0cee6e::t_e422728348b69d 36-37,166-167,169-172,177-180,328
+src/modules/AiRuntime/useCases/__tests__/submitAdmittedPromptRequest.spec.ts
+  s_eb3cd86b0cee6e::t_e422728348b69d 11,206-208,354,360
+src/modules/Arrangement/useCases/clipEditing/__tests__/reverseClip.spec.ts
+  s_eb3cd86b0cee6e::t_e422728348b69d 9,53-54,336,379-395,400-401,411,441,922,957-1063,1118,1137-1145,1147-1149
+src/modules/AiRuntime/useCases/reproposePendingChatActions.ts
+  s_eb3cd86b0cee6e::t_e422728348b69d 18,90-97
+  s_eb3cd86b0cee6e::t_291439f6223da0 98
+src/modules/Arrangement/presentations/views/__tests__/trackCreateUndo.integration.spec.tsx
+  s_eb3cd86b0cee6e::t_e422728348b69d 173-178
+src/modules/CrdtDocument/useCases/projectRevisionMatchesLiveWithinProjection.ts
+  s_eb3cd86b0cee6e::t_e422728348b69d 1-9
+src/modules/AiRuntime/useCases/vibeRun/readVibeMetricLabel.ts
+  s_eb3cd86b0cee6e::t_e422728348b69d 1-8
+src/modules/Project/useCases/projectPersistence/__tests__/missingMediaOnLoad.spec.ts
+  s_eb3cd86b0cee6e::t_e422728348b69d 108-113
+src/modules/Arrangement/useCases/clipEditing/reverseClip.ts
+  s_eb3cd86b0cee6e::t_e422728348b69d 5,44-45,48-50
+src/modules/Arrangement/handlers/clip/__tests__/handleReverseClip.spec.ts
+  s_eb3cd86b0cee6e::t_e422728348b69d 131,145,150,181,224,286-290,305-308,344-347,381-383,393-396,410-413,423-426,534,714-715,720-722
+src/modules/AiRuntime/useCases/__tests__/briefFromRequest.spec.ts
+  s_eb3cd86b0cee6e::t_e422728348b69d 10,49,65,76,87-93,163-173,214,297-334,366,496,596,648,692,699-758,813-816,824-857,860-867
+src/modules/CommandInterface/useCases/keyboardShortcutActions/handleKeyboardShortcut/__tests__/handleKeydown.spec.ts
+  s_eb3cd86b0cee6e::t_e422728348b69d 44,185,190-193,754,897,900,912,916,928,931-933,945,1474
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/saveProject.recentRoundTrip.spec.ts
+  s_eb3cd86b0cee6e::t_e422728348b69d 120-125
+src/modules/Arrangement/presentations/views/__tests__/trackDeleteUndo.integration.spec.tsx
+  s_eb3cd86b0cee6e::t_e422728348b69d 161-166
+.agents/skills/review-stances/audio-source-time.md
+  s_eb3cd86b0cee6e::t_e422728348b69d 108-152
+src/modules/MixerConsole/presentations/views/Mixer/__tests__/mixerStripUndo.integration.spec.tsx
+  s_eb3cd86b0cee6e::t_e422728348b69d 264-269
+src/modules/AiRuntime/useCases/getBriefMixIntentCatalog.ts
+  s_eb3cd86b0cee6e::t_e422728348b69d 1-12
+src/modules/AiRuntime/useCases/__tests__/cancelPendingChatActions.spec.ts
+  s_eb3cd86b0cee6e::t_e422728348b69d 3-6,10,32-64,100-108,142-149,153,159-167,195-203,218-225,240-247
+src/modules/Command/useCases/versionedCommandArgumentKeys.ts
+  s_eb3cd86b0cee6e::t_e422728348b69d 3839,3842-3850,3886,3901,3906,3924,3927-3928,3948,3962-3963,3972,3974,3986-3987,3995-3996,4008,4024,4034,4052,4060-4062,4069,4090-4091,4105-4106,4120-4121,4165-4166,4242-4243,4466,4472,4476-4477,4502,4513,4595-4596,4623-4624,4646,4660,4669,4691,4705,4712,4719-4721,4759-4761,4783,4788,4800,4807,4812,4814,4820,4825,4827-4828,4847,4854,4862-4863,4869,4872,4916-4917,4926-4927,4990,4996-4997,5010-5011,5037,5042-5043,5077,5084,5089-5090,5106,5111-5112,5124,5134,5141,5147,5152,5161-5162,5184,5189-5190,5227-5228,5248,5262-5263,5271-5272,5363,5370,5376-5377,5384,5398,5413,5427,5432-5435,5464,5470,5484,5490,5535,5537,5552,5561-5562,5564,5577-5578,5581,5588,5593,5620,5625,5720,5727,5755,5763,5769,5777-5778,5818,5829,5837,5843,5850,5855,5863-5864,6075,6091,6108,6115-6116,6119,6150,6163-6166,6176-6177,6222,6236,6241,6243,6282,6293,6299,6306,6311,6313-6316,6332,6371,6376,6394,6399,6431,6436,6499,6508,6520,6532,6553,6565,6571,6577-6578,6603,6609-6610,6674,6680,6690,6695,6697,6706,6708,6717,6765,6770,6789,6794,6954-6972,6975,6977-6987,6989-6990,6998-7031,7037-7038,7041-7045,7047-7048,7050,7052-7062,7066-7068,7070-7074,7076-7077,7079-7081,7084-7095,7097,7099-7101,7106,7109-7112,7116-7121,7126,7128-7129,7131-7132,7135-7148,7151-7152,7155,7157-7160,7164-7165,7167-7175,7177-7179
+  s_eb3cd86b0cee6e::t_76e111d4f1049a 3840-3841
+src/infra/dialogService/__tests__/NotificationToast.spec.tsx
+  s_eb3cd86b0cee6e::t_e422728348b69d 51,58-61,63-65
+src/modules/AiRuntime/useCases/vibeRun/compileVibeBatchMetricState.ts
+  s_eb3cd86b0cee6e::t_e422728348b69d 1-101
+src/modules/Proof/presentations/views/__tests__/ProofPanel.spec.tsx
+  s_eb3cd86b0cee6e::t_e422728348b69d 39-44
+src/modules/AiRuntime/useCases/__tests__/submitAdmittedPromptRequestSave.spec.ts
+  s_eb3cd86b0cee6e::t_e422728348b69d 1-158
+src/modules/Project/useCases/projectPersistence/__tests__/discardProjectChanges.realPath.spec.ts
+  s_eb3cd86b0cee6e::t_e422728348b69d 48-53
+src/modules/Arrangement/handlers/clip/handleConsolidateSelection.ts
+  s_eb3cd86b0cee6e::t_e422728348b69d 2,9,15-29
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/exportProjectFile.roundTrip.spec.ts
+  s_eb3cd86b0cee6e::t_e422728348b69d 59-64
+src/modules/Transport/useCases/__tests__/ensureTrackStrips.spec.ts
+  s_eb3cd86b0cee6e::t_e422728348b69d 75-80
+src/modules/AiRuntime/models/BriefMixIntent.ts
+  s_eb3cd86b0cee6e::t_e422728348b69d 1-4
+src/modules/AiRuntime/useCases/vibeRun/formatVibeFigure.ts
+  s_eb3cd86b0cee6e::t_e422728348b69d 1-11
+src/modules/Arrangement/handlers/clip/__tests__/handleRestoreReversedClip.spec.ts
+  s_eb3cd86b0cee6e::t_e422728348b69d 106-131
+src/modules/AiRuntime/useCases/vibeRun/readVibeBatchRecipeGoals.ts
+  s_eb3cd86b0cee6e::t_e422728348b69d 1-63
+src/modules/AiRuntime/useCases/vibeRun/readVibeTargetName.ts
+  s_eb3cd86b0cee6e::t_e422728348b69d 1-9
+src/modules/Arrangement/handlers/clip/__tests__/handleConsolidateSelection.spec.ts
+  s_eb3cd86b0cee6e::t_e422728348b69d 31-35
+src/modules/AiRuntime/validators/readPerceptualConstraintReading.ts
+  s_eb3cd86b0cee6e::t_e422728348b69d 1-88
+src/modules/CrdtDocument/useCases/__tests__/projectRevisionMatchesLiveWithinProjection.spec.ts
+  s_eb3cd86b0cee6e::t_e422728348b69d 1-58
+.agents/skills/review-stances/command-entry-and-state-oracles.md
+  s_eb3cd86b0cee6e::t_e422728348b69d 76-89
+src/modules/AiRuntime/useCases/__tests__/executePromptActionGroup.spec.ts
+  s_eb3cd86b0cee6e::t_e422728348b69d 68-73
+src/modules/CommandInterface/useCases/keyboardShortcutActions/clipShortcuts/__tests__/enqueueClipDuplicate.spec.ts
+  s_eb3cd86b0cee6e::t_e422728348b69d 1-349
+src/modules/Arrangement/stores/__tests__/deviceWriteBoundaryClosure.spec.ts
+  s_eb3cd86b0cee6e::t_e422728348b69d 858-868,901-911,1151-1155
+src/modules/AiRuntime/useCases/metricGoalStateCodec.ts
+  s_eb3cd86b0cee6e::t_e422728348b69d 202
+src/modules/AiRuntime/useCases/readArrangementRange.ts
+  s_eb3cd86b0cee6e::t_e422728348b69d 1-15
+src/modules/AiRuntime/AGENTS.md
+  s_eb3cd86b0cee6e::t_e422728348b69d 42,46
+src/modules/AiRuntime/useCases/vibeRun/describeVibeRunSummary.ts
+  s_eb3cd86b0cee6e::t_e422728348b69d 1-44
+src/modules/Project/useCases/recentProjects/__tests__/loadRecentProject.spec.ts
+  s_eb3cd86b0cee6e::t_e422728348b69d 53-58
+src/modules/AiRuntime/useCases/__tests__/groundApplicationRecipeBatch.spec.ts
+  s_eb3cd86b0cee6e::t_e422728348b69d 83-110
+src/modules/AiRuntime/models/IntentResult.ts
+  s_eb3cd86b0cee6e::t_e422728348b69d 2,61-62,64-69
+src/modules/Arrangement/handlers/clip/handleBounceSelection.ts
+  s_eb3cd86b0cee6e::t_e422728348b69d 2,9,15-29
+src/modules/ProofChamber/presentations/views/__tests__/proofChamberPresetUndo.integration.spec.tsx
+  s_eb3cd86b0cee6e::t_e422728348b69d 45-50
+src/modules/AiRuntime/models/AgentRun.ts
+  s_eb3cd86b0cee6e::t_e422728348b69d 6,102,119-146
+  s_eb3cd86b0cee6e::t_30bd7e7cc81416 147
+src/modules/Arrangement/useCases/freezeBounce/bounceSelection.ts
+  s_eb3cd86b0cee6e::t_e422728348b69d 1,11-12,15,19,22,63-79,83-84,87-99,106-107,111-113,118-124,133,147-151,172-176,178-181,183-186,188,190-205,207-249,251-284,287,295,299-307,309,311,313-327,329-337,339-344,346-349,351-397
+tests/e2e/importErrorPathsTestId.spec.ts
+  s_eb3cd86b0cee6e::t_e422728348b69d 28-31,36,55
+  s_eb3cd86b0cee6e::t_7d48b3f5d0a974 6-7,56-57
+src/modules/CrdtDocument/useCases/index.ts
+  s_eb3cd86b0cee6e::t_e422728348b69d 1
+src/modules/CommandInterface/useCases/keyboardShortcutActions/handleKeyboardShortcut/handleKeydown.ts
+  s_eb3cd86b0cee6e::t_e422728348b69d 50,241,245
+src/modules/AiRuntime/useCases/__tests__/resumeAgentRunDecision.spec.ts
+  s_eb3cd86b0cee6e::t_e422728348b69d 1,4-15,30-31,33,88-106,110-185,251-268,271-272
+src/modules/AiRuntime/useCases/hasContradictoryMetricGoals.ts
+  s_eb3cd86b0cee6e::t_e422728348b69d 1-25
+tests/e2e/tempoSourceTimeAcceptance.spec.ts
+  s_eb3cd86b0cee6e::t_e422728348b69d 3,19,1747-2213
+tests/e2e/fullWorkflowTestId.spec.ts
+  s_eb3cd86b0cee6e::t_e422728348b69d 14
+src/modules/Arrangement/handlers/track/__tests__/duplicateTrack.integration.spec.ts
+  s_eb3cd86b0cee6e::t_e422728348b69d 13-18
+src/modules/AiRuntime/useCases/groundApplicationRecipeBatch.ts
+  s_eb3cd86b0cee6e::t_e422728348b69d 4,16-17,29-30,33,103-104,143,156
+src/modules/CommandInterface/useCases/keyboardShortcutActions/clipShortcuts/duplicateSelectedClipsForward.ts
+  s_eb3cd86b0cee6e::t_e422728348b69d 1,5,8-10,32-69,81-84,86,91,96,104,118,122-124,126-128
+src/modules/AiRuntime/useCases/agentRequestOrchestration/orchestratePromptChatRequest.ts
+  s_eb3cd86b0cee6e::t_e422728348b69d 622-628,755-758
+.agents/skills/review-stances/test-observation-scope.md
+  s_eb3cd86b0cee6e::t_e422728348b69d 89-99
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  s_eb3cd86b0cee6e::t_e422728348b69d 46,133,136,1613-1615,1636-1648,1660-1666,1680,2195-2229
+src/modules/AiRuntime/useCases/__tests__/briefMixIntent.spec.ts
+  s_eb3cd86b0cee6e::t_e422728348b69d 1-37
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/applyImportedProjectData.roundTrip.spec.ts
+  s_eb3cd86b0cee6e::t_e422728348b69d 159-164
+src/modules/Arrangement/handlers/track/__tests__/trackStateUndo.integration.spec.ts
+  s_eb3cd86b0cee6e::t_e422728348b69d 48-53
+src/modules/CommandInterface/useCases/keyboardShortcutActions/handleKeyboardShortcut/__tests__/handleKeydownDuplicateSelection.integration.spec.ts
+  s_eb3cd86b0cee6e::t_e422728348b69d 1-701
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/interruptedProjectLoadDirtyTracking.integration.spec.ts
+  s_eb3cd86b0cee6e::t_e422728348b69d 111-116,206-211
+src/modules/AudioRendering/presentations/views/__tests__/exportStreamingMemory.spec.tsx
+  s_eb3cd86b0cee6e::t_e422728348b69d 581-586
+tests/e2e/fermenterPanelDeepTestId.spec.ts
+  s_eb3cd86b0cee6e::t_e422728348b69d 9,27,36-46
+  s_eb3cd86b0cee6e::t_7d48b3f5d0a974 35,47
+src/modules/Arrangement/useCases/freezeBounce/__tests__/silentBakeGuard.spec.ts
+  s_eb3cd86b0cee6e::t_e422728348b69d 3-6,10-19,126-156,167-173,223,228-231,235,238-239,243-262
+  s_eb3cd86b0cee6e::t_06092180b822c2 263-264
+.agents/skills/review-stances/asset-cache-publication.md
+  s_eb3cd86b0cee6e::t_e422728348b69d 43-52
+src/modules/GrandBoule/useCases/__tests__/grandBouleParameterPersistence.integration.spec.ts
+  s_eb3cd86b0cee6e::t_e422728348b69d 160-165
+src/modules/Arrangement/useCases/freezeBounce/selectionBounceSourceProjection.ts
+  s_eb3cd86b0cee6e::t_e422728348b69d 1-112
+src/modules/AiRuntime/useCases/vibeRun/describeVibeRunObjective.ts
+  s_eb3cd86b0cee6e::t_e422728348b69d 1-6
+src/modules/Arrangement/handlers/clip/handleReverseClip.ts
+  s_eb3cd86b0cee6e::t_e422728348b69d 42-47,51-57,92,116
+src/modules/AiRuntime/useCases/vibeRun/readVibeBatchPairs.ts
+  s_eb3cd86b0cee6e::t_e422728348b69d 1-15
+src/modules/AiRuntime/validators/readScheduledVibeRunPlan.ts
+  s_eb3cd86b0cee6e::t_e422728348b69d 1-117
+src/modules/Arrangement/handlers/clip/__tests__/handleBounceSelection.spec.ts
+  s_eb3cd86b0cee6e::t_e422728348b69d 31-35
+src/modules/AiRuntime/useCases/applicationOwnedToolLoop.ts
+  s_eb3cd86b0cee6e::t_e422728348b69d 38,50,1431-1432,1436-1450,3210-3213
+src/utils/handlerContract.ts
+  s_eb3cd86b0cee6e::t_e422728348b69d 2519-2520
+src/modules/AiRuntime/useCases/perceptualConstraints/withPerceptualConstraintAuthority.ts
+  s_eb3cd86b0cee6e::t_e422728348b69d 9,59-61
+src/modules/AiRuntime/useCases/__tests__/admitWorkflowMetricIntake.spec.ts
+  s_eb3cd86b0cee6e::t_e422728348b69d 1-178
+src/modules/AiRuntime/useCases/agentRequestOrchestration/describeAppliedBatches.ts
+  s_eb3cd86b0cee6e::t_e422728348b69d 1-4
+src/modules/Crumbs/useCases/__tests__/crumbsParameterPersistence.integration.spec.ts
+  s_eb3cd86b0cee6e::t_e422728348b69d 51-56
+release/open-source-inventory.json
+  s_eb3cd86b0cee6e::t_e422728348b69d 1216
+.agents/skills/review-stances/replay-authority.md
+  s_eb3cd86b0cee6e::t_e422728348b69d 92-96
+src/modules/AiRuntime/useCases/agentToolCatalog.ts
+  s_eb3cd86b0cee6e::t_e422728348b69d 56,532,543-557,589-590
+src/modules/Bacteria/useCases/bacteriaParamBridge/__tests__/chooseBacteriaBodyUndo.integration.spec.ts
+  s_eb3cd86b0cee6e::t_e422728348b69d 47-52
+src/modules/AiRuntime/useCases/vibeRun/planVibeRunSchedule.ts
+  s_eb3cd86b0cee6e::t_e422728348b69d 1-299
+src/modules/CommandInterface/useCases/keyboardShortcutActions/clipShortcuts/enqueueClipDuplicate.ts
+  s_eb3cd86b0cee6e::t_e422728348b69d 1-82
+src/modules/AiRuntime/models/MetricGoalAdmission.ts
+  s_eb3cd86b0cee6e::t_e422728348b69d 52-53,60-61
+src/modules/AiRuntime/useCases/agentRequestOrchestration/groundVibeRunBatch.ts
+  s_eb3cd86b0cee6e::t_e422728348b69d 1-129
+src/modules/AiRuntime/useCases/agentRequestOrchestration/readVibeRunBriefDrift.ts
+  s_eb3cd86b0cee6e::t_e422728348b69d 1-16
+src/modules/AiRuntime/useCases/vibeRun/describeVibeBatchCard.ts
+  s_eb3cd86b0cee6e::t_e422728348b69d 1-44
+src/modules/AudioRendering/presentations/views/__tests__/ExportDialog.spec.tsx
+  s_eb3cd86b0cee6e::t_e422728348b69d 309-314
+src/modules/Crust/useCases/crustParamBridge/__tests__/loadCrustPatchWithAudio.spec.ts
+  s_eb3cd86b0cee6e::t_e422728348b69d 42-47
+src/modules/AiRuntime/stores/agentRunStore.ts
+  s_eb3cd86b0cee6e::t_e422728348b69d 20,38,51-52,1324-1365,1412,1432
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/executeImmediatePromptCommand.spec.ts
+  s_eb3cd86b0cee6e::t_e422728348b69d 64-69
+src/modules/AiRuntime/models/RetainedCompilation.ts
+  s_eb3cd86b0cee6e::t_e422728348b69d 2,5,48-49,51-56
+src/modules/Gluten/useCases/glutenParamBridge/__tests__/glutenParameterUndo.integration.spec.ts
+  s_eb3cd86b0cee6e::t_e422728348b69d 43-48
+src/modules/Project/useCases/__tests__/arrangement.spec.ts
+  s_eb3cd86b0cee6e::t_e422728348b69d 21-26
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/projectLoadDirtyTracking.integration.spec.ts
+  s_eb3cd86b0cee6e::t_e422728348b69d 68-73,162-167
+scripts/__tests__/pruneRemoteBranches.spec.ts
+  s_eb3cd86b0cee6e::t_e422728348b69d 147-160,266-427
+src/modules/Project/useCases/projectTemplates/templateHelpers/__tests__/finalizeTemplate.spec.ts
+  s_eb3cd86b0cee6e::t_e422728348b69d 34-39
+src/modules/Arrangement/useCases/freezeBounce/captureSelectionBounceSource.ts
+  s_eb3cd86b0cee6e::t_e422728348b69d 1-180
+src/modules/CommandInterface/useCases/keyboardShortcutActions/clipShortcuts/duplicateClipSelectingCopy.ts
+  s_eb3cd86b0cee6e::t_e422728348b69d 1,4,8-12,17-22,24-37,40-41
+.agents/skills/review-stances/ai-request-authority.md
+  s_eb3cd86b0cee6e::t_e422728348b69d 53-59
+src/modules/Arrangement/useCases/freezeBounce/__tests__/bounceSelection.spec.ts
+  s_eb3cd86b0cee6e::t_e422728348b69d 3-4,25,33,40-41,54-57,59-73,75-89,424-425,456,831-993
+  s_eb3cd86b0cee6e::t_eb33a5fa7c03f9 994
+src/modules/AiRuntime/useCases/admitWorkflowMetricIntake.ts
+  s_eb3cd86b0cee6e::t_e422728348b69d 1,10,36
+src/modules/AiRuntime/useCases/evaluateMetricGoalAdmission.ts
+  s_eb3cd86b0cee6e::t_e422728348b69d 12,494
+src/modules/AiRuntime/useCases/executeBriefCompile.ts
+  s_eb3cd86b0cee6e::t_e422728348b69d 6-7,12,21-23,165-190,211-212,227-236,277-278
+src/modules/AiRuntime/useCases/groundCompiledCommandBatch.ts
+  s_eb3cd86b0cee6e::t_e422728348b69d 59-64,479-485
+src/modules/CommandInterface/useCases/keyboardShortcutActions/clipShortcuts/__tests__/duplicateSelectedClipsForward.spec.ts
+  s_eb3cd86b0cee6e::t_e422728348b69d 44
+src/modules/AiRuntime/useCases/submitAdmittedPromptRequest.ts
+  s_eb3cd86b0cee6e::t_e422728348b69d 85,100
+src/modules/AiRuntime/useCases/readBriefMixIntent.ts
+  s_eb3cd86b0cee6e::t_e422728348b69d 1-33
+scripts/pruneRemoteBranches.ts
+  s_eb3cd86b0cee6e::t_e422728348b69d 43,45,55,69-77,80-92,360-365,386-391
+src/modules/Arrangement/useCases/clipEditing/reversedClipAudioSource.ts
+  s_eb3cd86b0cee6e::t_e422728348b69d 1-7,18,25-27,56-57,62-106
+src/modules/AiRuntime/useCases/perceptualConstraints/readPerceptualConstraintGoals.ts
+  s_eb3cd86b0cee6e::t_e422728348b69d 1-49
+src/modules/AiRuntime/useCases/getAgentRunDecisionResumeAdmission.ts
+  s_eb3cd86b0cee6e::t_e422728348b69d 4,38
+src/modules/AiRuntime/models/VibeRunPlan.ts
+  s_eb3cd86b0cee6e::t_e422728348b69d 120-135
+src/modules/AiRuntime/useCases/agentRequestOrchestration/resolveConfirmationAdmission.ts
+  s_eb3cd86b0cee6e::t_e422728348b69d 6,26,96-112,273-283
+src/modules/AiRuntime/useCases/agentRequestOrchestration/proposeNextScheduledBatch.ts
+  s_eb3cd86b0cee6e::t_e422728348b69d 8,10,13-15,17,20,22,25-28,30,32,39-42,45-52,55-56,72,84-88,188-191,193,199-314,323,362-373,461-520,531,540
+src/modules/Arrangement/handlers/clip/handleRestoreReversedClip.ts
+  s_eb3cd86b0cee6e::t_e422728348b69d 3,26-39,55-72
+src/modules/AiRuntime/useCases/__tests__/multiBatchRun.spec.ts
+  s_eb3cd86b0cee6e::t_e422728348b69d 1-1030
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0ad70db5f2dbcdbf253f3016e70cca5cac80a8d0",
+  "prompts": {},
+  "sessions": {
+    "s_eb3cd86b0cee6e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34c-a4d8-7523-838e-1cd1a0a25d78",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
