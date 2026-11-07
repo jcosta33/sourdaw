@@ -120,7 +120,7 @@ const WEBLLM_LEGAL_PATH_PREFIX = 'public/legal/';
 // paths, source buckets, and path-to-source mapping are byte-identical to the
 // previous pin; only the shared notice's content digest moved. Any other
 // field moving is a legal-closure change, not drift.
-const WEBLLM_LEGAL_CLOSURE_DIGEST = 'e4fc225b5a235755f9fc244ff3a16840077e51c2d927e227809001c35f419f93';
+const WEBLLM_LEGAL_CLOSURE_DIGEST = 'a96c3cbcf13b507b08fd721b409096cde845be1d67c485c3e2a6ac2e82fce651';
 const APACHE_TVM_COMMIT = 'bc1a904ec1ad89454ee6577d66cde1268b8f6bc8';
 const TVM_FFI_COMMIT = '3c35034fd1026011736e19a4e0e1ed0f22058c42';
 

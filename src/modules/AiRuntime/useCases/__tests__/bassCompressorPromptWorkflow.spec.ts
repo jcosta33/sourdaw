@@ -1523,7 +1523,7 @@ describe('bass compressor prompt workflow', () => {
 
         expect(undoError).toBeInstanceOf(Error);
         if (!(undoError instanceof Error) || !(undoError.cause instanceof Error)) {
-            throw new Error('Expected grouped undo to retain the repaired runtime warning');
+            throw new TypeError('Expected grouped undo to retain the repaired runtime warning');
         }
         expect(undoError.name).toBe('AppActionCommittedError');
         expect(undoError.cause.message).toContain('partial TrackNode removal failed');
@@ -1595,12 +1595,12 @@ describe('bass compressor prompt workflow', () => {
 
         expect(undoError).toBeInstanceOf(Error);
         if (!(undoError instanceof Error)) {
-            throw new Error('Expected grouped undo to report committed runtime divergence');
+            throw new TypeError('Expected grouped undo to report committed runtime divergence');
         }
         expect(undoError.name).toBe('AppActionCommittedError');
         expect(undoError.cause).toBeInstanceOf(Error);
         if (!(undoError.cause instanceof Error)) {
-            throw new Error('Expected committed error to retain the runtime warning');
+            throw new TypeError('Expected committed error to retain the runtime warning');
         }
         expect(undoError.cause.message).toContain('persistent runtime teardown failure');
         expect(undoError.cause.message.toLowerCase()).toContain('manual repair');

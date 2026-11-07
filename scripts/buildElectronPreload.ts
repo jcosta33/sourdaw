@@ -3,8 +3,8 @@
  * Bundles the Electron preload into one CommonJS file at `electron/out/preload.cjs`.
  *
  * The window runs with `sandbox: true`. Electron gives a sandboxed preload a
- * polyfilled `require` that resolves only `electron`, `events`, `timers` and
- * `url`; a relative specifier is not resolvable there at all. So the preload
+ * polyfilled `require` that resolves only `electron`. A relative specifier is
+ * not resolvable there at all. So the preload
  * cannot be `tsc`'s per-file output — importing `./bridge.js` would throw
  * "module not found" inside the sandbox and leave `window.sourdaw` undefined,
  * with the renderer reporting nothing beyond a missing global.

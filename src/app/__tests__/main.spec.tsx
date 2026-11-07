@@ -531,12 +531,12 @@ describe('app main composition', () => {
             const reported: unknown = logged.cause;
             expect(reported).toBeInstanceOf(AggregateError);
             if (!(reported instanceof AggregateError)) {
-                throw new Error('Terminal import causes were not retained in the log');
+                throw new TypeError('Terminal import causes were not retained in the log');
             }
             expect(mocks.importRejections).toHaveLength(2);
             const [firstImportRejection, secondImportRejection] = mocks.importRejections;
             if (!(firstImportRejection instanceof Error) || !(secondImportRejection instanceof Error)) {
-                throw new Error('The actual import rejection objects are absent');
+                throw new TypeError('The actual import rejection objects are absent');
             }
             expect(firstImportRejection).not.toBe(secondImportRejection);
             expect(firstImportRejection.cause).toBe(firstReason);
@@ -573,7 +573,7 @@ describe('app main composition', () => {
         const reported: unknown = logged.cause;
         expect(reported).toBeInstanceOf(AggregateError);
         if (!(reported instanceof AggregateError)) {
-            throw new Error('The terminal App failure cause was not an AggregateError');
+            throw new TypeError('The terminal App failure cause was not an AggregateError');
         }
         expect(reported.errors).toHaveLength(2);
         expect(mocks.importRejections).toHaveLength(2);
@@ -582,7 +582,7 @@ describe('app main composition', () => {
         for (const importRejection of reported.errors) {
             expect(importRejection).toBeInstanceOf(Error);
             if (!(importRejection instanceof Error)) {
-                throw new Error('The AggregateError did not retain an import rejection');
+                throw new TypeError('The AggregateError did not retain an import rejection');
             }
             // Vitest wraps each module rejection in its own mock-factory error and keeps the original as `cause`.
             expect(importRejection.cause).toBe(failure);

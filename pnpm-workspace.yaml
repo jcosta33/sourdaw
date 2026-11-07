@@ -39,7 +39,7 @@ minimumReleaseAgeExclude:
 # must not reload when that editor socket disconnects. Keep the browser control
 # in e2eHmrDisconnectBoundary.spec.ts when updating or removing this patch.
 patchedDependencies:
-    vite@8.3.5: patches/vite@8.3.5.patch
+    vite@8.3.6: patches/vite@8.3.6.patch
 
 # Two coexisting tfjs-core stacks are deliberate (#4466). The app pins
 # tfjs-core/converter/backend-webgpu 4.22.0 exactly for its WebGPU DDSP worker;

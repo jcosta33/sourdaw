@@ -124,7 +124,7 @@ describe('BipolarSlider', () => {
         const slider = screen.getByRole('slider', { name: 'Threshold' });
         const root = slider.closest('[data-slot="slider"]');
         if (!(root instanceof HTMLElement)) {
-            throw new Error('Missing Slider root');
+            throw new TypeError('Missing Slider root');
         }
         Object.defineProperties(root, {
             setPointerCapture: { configurable: true, value: vi.fn() },
@@ -176,7 +176,7 @@ describe('BipolarSlider', () => {
             );
             const root = screen.getByRole('slider', { name: 'Bipolar value' }).closest('[data-slot="slider"]');
             if (!(root instanceof HTMLElement)) {
-                throw new Error('Missing Slider root');
+                throw new TypeError('Missing Slider root');
             }
             Object.defineProperties(root, {
                 setPointerCapture: { configurable: true, value: vi.fn() },
