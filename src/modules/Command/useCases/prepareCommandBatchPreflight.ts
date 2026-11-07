@@ -212,50 +212,120 @@ export function prepareCommandBatchPreflight(
 
     return {
         status: 'ready',
-        postconditions: {
-            documentId: COMMAND_PROJECT_DOCUMENT_ID,
-            validate(projectDocument): string | null {
-                let after: ReturnType<typeof commandBatchPreflightPort.capture>;
-                let afterRevision: string;
-                try {
-                    afterRevision = readValidationRevision(envelope.baseRevision);
-                    after = commandBatchPreflightPort.capture({ assetReferences, projectDocument, targetIds });
-                } catch (error) {
-                    const reason = error instanceof Error ? error.message : String(error);
-                    return `Command batch postcondition validation failed: ${reason}`;
+        prepareExecution() {
+            let executionRevision: string;
+            let executionValidationRevision: string;
+            let isMutationAuthorized: () => boolean;
+            try {
+                executionValidationRevision = readValidationRevision(envelope.baseRevision);
+                executionRevision = commandProjectRevisionPort.capture();
+                isMutationAuthorized = commandProjectRevisionPort.captureMutationAuthorization();
+                // The caller enters its exact storage scope before any handler can publish.
+                if (!isMutationAuthorized()) {
+                    return { status: 'rejected', reason: 'Command batch execution source is unavailable' };
                 }
-                if (!after) {
-                    return 'Command batch preflight state became unavailable';
-                }
-                if (!after.projectInvariantsValid) {
-                    return 'Command batch violated project invariants';
-                }
-                if (!after.audioGraphValid) {
-                    return 'Command batch produced an invalid audio graph';
-                }
-                const postconditionFailure = validateConditions({
-                    conditions: envelope.postconditions,
+                const revisionFailure = validateConditions({
+                    conditions: preconditions.filter((condition) => condition.kind === 'project-revision'),
                     envelope,
-                    lockedRanges: after.lockedRanges,
-                    revision: afterRevision,
-                    targetFingerprints: after.targetFingerprints,
+                    lockedRanges: before.lockedRanges,
+                    revision: executionValidationRevision,
+                    targetFingerprints: before.targetFingerprints,
                 });
-                if (postconditionFailure) {
-                    return postconditionFailure;
+                if (revisionFailure) {
+                    return { status: 'rejected', reason: revisionFailure };
                 }
-                for (const condition of envelope.postconditions) {
-                    if (condition.kind !== 'targets-unchanged') {
-                        continue;
-                    }
-                    const changed = Object.keys(protectedFingerprints).find(
-                        (targetId) => after.targetFingerprints[targetId] !== protectedFingerprints[targetId]
-                    );
-                    if (changed) {
-                        return `Command batch changed protected target: ${changed}`;
-                    }
-                }
-                return null;
-            },
+            } catch (error) {
+                const reason = error instanceof Error ? error.message : String(error);
+                return { status: 'rejected', reason: `Command batch execution preparation failed: ${reason}` };
+            }
+            return {
+                status: 'ready',
+                validation: {
+                    preparePostconditions() {
+                        let validationRevision: string;
+                        try {
+                            // Historical reads must finish before Automerge opens the candidate.
+                            const currentValidationRevision = readValidationRevision(envelope.baseRevision);
+                            const currentRevision = commandProjectRevisionPort.capture();
+                            if (!isMutationAuthorized()) {
+                                return {
+                                    status: 'rejected',
+                                    reason: 'Command batch project changed after execution source preparation',
+                                };
+                            }
+                            // Only this exact owner's published prefix may retain its admitted source.
+                            // A compatible foreign source keeps its own revision, never the old base.
+                            validationRevision =
+                                currentRevision === executionRevision
+                                    ? currentValidationRevision
+                                    : executionValidationRevision;
+                        } catch (error) {
+                            const reason = error instanceof Error ? error.message : String(error);
+                            return {
+                                status: 'rejected',
+                                reason: `Command batch postcondition preparation failed: ${reason}`,
+                            };
+                        }
+                        return {
+                            status: 'ready',
+                            postconditions: {
+                                documentId: COMMAND_PROJECT_DOCUMENT_ID,
+                                validate(projectDocument): string | null {
+                                    let after: ReturnType<typeof commandBatchPreflightPort.capture>;
+                                    try {
+                                        if (!isMutationAuthorized()) {
+                                            return 'Command batch project changed after execution source preparation';
+                                        }
+                                        after = commandBatchPreflightPort.capture({
+                                            assetReferences,
+                                            projectDocument,
+                                            targetIds,
+                                        });
+                                        if (!isMutationAuthorized()) {
+                                            return 'Command batch project changed after execution source preparation';
+                                        }
+                                    } catch (error) {
+                                        const reason = error instanceof Error ? error.message : String(error);
+                                        return `Command batch postcondition validation failed: ${reason}`;
+                                    }
+                                    if (!after) {
+                                        return 'Command batch preflight state became unavailable';
+                                    }
+                                    if (!after.projectInvariantsValid) {
+                                        return 'Command batch violated project invariants';
+                                    }
+                                    if (!after.audioGraphValid) {
+                                        return 'Command batch produced an invalid audio graph';
+                                    }
+                                    const postconditionFailure = validateConditions({
+                                        conditions: envelope.postconditions,
+                                        envelope,
+                                        lockedRanges: after.lockedRanges,
+                                        revision: validationRevision,
+                                        targetFingerprints: after.targetFingerprints,
+                                    });
+                                    if (postconditionFailure) {
+                                        return postconditionFailure;
+                                    }
+                                    for (const condition of envelope.postconditions) {
+                                        if (condition.kind !== 'targets-unchanged') {
+                                            continue;
+                                        }
+                                        const changed = Object.keys(protectedFingerprints).find(
+                                            (targetId) =>
+                                                after.targetFingerprints[targetId] !== protectedFingerprints[targetId]
+                                        );
+                                        if (changed) {
+                                            return `Command batch changed protected target: ${changed}`;
+                                        }
+                                    }
+                                    return null;
+                                },
+                            },
+                        };
+                    },
+                },
+            };
         },
     };
 }

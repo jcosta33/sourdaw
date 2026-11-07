@@ -32,7 +32,10 @@ import { actionHistoryMetadataPort, type ActionHistoryMetadata } from './actionH
 import { appendAbortFailures } from './appendAbortFailures';
 import { bindCanonicalRedoAction } from './bindCanonicalRedoAction';
 import { captureRecordedRedoContext } from './captureRecordedRedoContext';
-import { type CommandBatchValidationPreparation } from './commandBatchValidation';
+import {
+    type CommandBatchPostconditionValidation,
+    type CommandBatchValidationPreparation,
+} from './commandBatchValidation';
 import { commitRedoInverseCapture } from './commitRedoInverseCapture';
 import { commitUndoEntries } from './commitUndoEntries';
 import { compensateAbortedActions } from './compensateAbortedActions';
@@ -966,19 +969,26 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
             });
 
             const attemptedActions: PreparedBatchAction[] = [];
-            const storageTransaction = runWithAutomergeStorageTransaction(options?.snapshotTransaction, (scope) =>
-                executePreparedBatch(
-                    preparedActions,
-                    scope,
-                    attemptedActions,
-                    options?.shouldExecute,
-                    options?.authorizeFirstHandler,
-                    options?.signal,
-                    options?.onDeferredEffectAttempt,
-                    options?.workOwner,
-                    options?.undoEntryIds
-                )
-            );
+            const storageTransaction = runWithAutomergeStorageTransaction(options?.snapshotTransaction, (scope) => {
+                const executionValidation = scope(() => batchValidation?.prepareExecution());
+                if (executionValidation?.status === 'rejected') {
+                    throw new AutomergeStorageTransactionValidationError(executionValidation.reason);
+                }
+                return {
+                    validation: executionValidation?.validation,
+                    execution: executePreparedBatch(
+                        preparedActions,
+                        scope,
+                        attemptedActions,
+                        options?.shouldExecute,
+                        options?.authorizeFirstHandler,
+                        options?.signal,
+                        options?.onDeferredEffectAttempt,
+                        options?.workOwner,
+                        options?.undoEntryIds
+                    ),
+                };
+            });
             storageTransaction.validateCommit(getProjectMutationAdmissionFailure);
             storageTransaction.validateCommit(() =>
                 productionBriefAdmission.allowsCurrent() ? null : 'Action batch conflicts with locked production intent'
@@ -996,12 +1006,15 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                 if (storageTransaction.error instanceof AutomergeStorageWriteConflictError) {
                     return { status: 'conflicted', reason, actions: [] };
                 }
+                if (storageTransaction.error instanceof AutomergeStorageTransactionValidationError) {
+                    return { status: 'conflicted', reason, actions: [], failureKind: 'verification' };
+                }
                 return { status: 'failed', reason, actions: [] };
             }
 
             let executedActions: PreparedBatchAction[];
             try {
-                executedActions = await storageTransaction.value;
+                executedActions = await storageTransaction.value.execution;
             } catch (error) {
                 const compensationFailure = await compensateAttemptedBatch(attemptedActions, storageTransaction.scope);
                 const rollbackFailure = await rollbackAttemptedBatch(attemptedActions, storageTransaction.scope);
@@ -1034,7 +1047,13 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                 return { status: 'no-op', actions: [] };
             }
 
+            let postconditions: CommandBatchPostconditionValidation | undefined;
             try {
+                const preparedPostconditions = storageTransaction.value.validation?.preparePostconditions();
+                if (preparedPostconditions?.status === 'rejected') {
+                    throw new AutomergeStorageTransactionValidationError(preparedPostconditions.reason);
+                }
+                postconditions = preparedPostconditions?.postconditions;
                 assertExecutionAuthorized(options?.shouldExecute);
             } catch (error) {
                 const compensationFailure = await compensateAttemptedBatch(attemptedActions, storageTransaction.scope);
@@ -1049,13 +1068,21 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                         actions: [],
                     };
                 }
+                if (error instanceof AutomergeStorageTransactionValidationError) {
+                    return {
+                        status: 'conflicted',
+                        reason: failureReason(error),
+                        actions: [],
+                        failureKind: 'verification',
+                    };
+                }
                 return { status: 'cancelled', reason: failureReason(error), actions: [] };
             }
 
             registerHandlerCommitValidation(
                 storageTransaction,
                 executedActions.flatMap((prepared) => (prepared.commitValidation ? [prepared.commitValidation] : [])),
-                batchValidation?.postconditions
+                postconditions
             );
 
             const committedActions = executedActions.map(({ requestedAction }) => requestedAction);

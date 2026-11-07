@@ -3,18 +3,26 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { registerSupportingServicePorts } from '#/app/registerSupportingServicePorts';
 import {
     configureAutomergeStoragePort,
+    createAutomergeStorage,
+    runWithAutomergeStorageTransaction,
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
 import {
+    captureProjectMutationAuthorization,
     captureProjectRevision,
     createCrdtDoc,
     getCrdtDoc,
     registerCrdtStorageRuntime,
     removeCrdtDoc,
     settledProjectRevisionMatchesLiveIgnoringSaveWrites,
+    mutateCrdtDoc,
+    subscribeToCrdtChanges,
 } from '#/modules/CrdtDocument/useCases';
 import { arrangementStore, defaultProjectStoreState, projectStore } from '#/modules/Project/stores';
 import { buildProjectData } from '#/modules/Project/useCases';
+
+import { clearHandlerRegistry, registerHandlerMap } from '../../stores/handlerRegistry';
+import { executeAppActionBatch } from '../executeAppActionBatch';
 
 import { type VersionedCommandBatchEnvelope } from '../../models/VersionedCommandBatchEnvelope';
 import { commandBatchPreflightPort } from '../commandBatchPreflightPort';
@@ -24,8 +32,14 @@ import { createExecutionCommandEnvelope } from '../createExecutionCommandEnvelop
 import { parseVersionedCommandBatchEnvelope } from '../parseVersionedCommandBatchEnvelope';
 import { prepareCommandBatchPreflight } from '../prepareCommandBatchPreflight';
 
+commandProjectRevisionPort.configureMutationAuthority({
+    revisionProvider: captureProjectRevision,
+    captureMutationAuthorization: captureProjectMutationAuthorization,
+});
+
 describe('command preflight save and content authority', () => {
     afterEach(() => {
+        clearHandlerRegistry();
         configureAutomergeStoragePort(null);
         commandBatchPreflightPort.setProvider(null);
         commandProjectRevisionPort.setProvider(null);
@@ -68,13 +82,29 @@ describe('command preflight save and content authority', () => {
         };
     }
 
+    function finalValidation(preflight: ReturnType<typeof prepareCommandBatchPreflight>) {
+        if (preflight.status !== 'ready') {
+            throw new Error(preflight.reason);
+        }
+        const execution = preflight.prepareExecution();
+        if (execution.status !== 'ready') {
+            throw new Error(execution.reason);
+        }
+        const prepared = execution.validation.preparePostconditions();
+        if (prepared.status !== 'ready') {
+            throw new Error(prepared.reason);
+        }
+        return prepared.postconditions;
+    }
+
     it('settles before both state captures and supplies only the original exact condition revision', () => {
         let settled = false;
         commandProjectRevisionPort.setProvider(() => 'saved');
-        commandProjectRevisionPort.setLiveMatchIgnoringSaveWrites(() => {
+        const match = vi.fn(() => {
             settled = true;
             return true;
         });
+        commandProjectRevisionPort.setLiveMatchIgnoringSaveWrites(match);
         const captures: boolean[] = [];
         commandBatchPreflightPort.setProvider(() => {
             captures.push(settled);
@@ -87,7 +117,10 @@ describe('command preflight save and content authority', () => {
             throw new Error(prepared.reason);
         }
         settled = false;
-        expect(prepared.postconditions.validate({})).toBeNull();
+        const postconditions = finalValidation(prepared);
+        expect(match).toHaveBeenCalledTimes(3);
+        expect(postconditions.validate({})).toBeNull();
+        expect(match).toHaveBeenCalledTimes(3);
         expect(captures).toEqual([true, true]);
         expect(
             prepareCommandBatchPreflight({
@@ -105,7 +138,7 @@ describe('command preflight save and content authority', () => {
         if (wrongPost.status !== 'ready') {
             throw new Error(wrongPost.reason);
         }
-        expect(wrongPost.postconditions.validate({})).toBe(
+        expect(finalValidation(wrongPost).validate({})).toBe(
             'Command batch base revision does not match current project state'
         );
     });
@@ -155,23 +188,36 @@ describe('command preflight save and content authority', () => {
             if (!savedDocument) {
                 throw new Error('Expected saved root');
             }
-            expect(prepared.postconditions.validate(savedDocument)).toBeNull();
+            const execution = prepared.prepareExecution();
+            if (execution.status !== 'ready') {
+                throw new Error(execution.reason);
+            }
+            const postconditions = execution.validation.preparePostconditions();
+            if (postconditions.status !== 'ready') {
+                throw new Error(postconditions.reason);
+            }
+            expect(postconditions.postconditions.validate(savedDocument)).toBeNull();
             vi.stubGlobal('requestAnimationFrame', () => 0);
             const savedProject = projectStore.value;
             if (!savedProject) {
                 throw new Error('Expected saved project');
             }
             projectStore.set({ ...savedProject, name: 'Edited project' });
-            expect(prepared.postconditions.validate(savedDocument)).toBe(
-                'Command batch base revision does not match current project state'
-            );
+            expect(prepared.prepareExecution()).toEqual({
+                status: 'rejected',
+                reason: 'Command batch base revision does not match current project state',
+            });
+            expect(execution.validation.preparePostconditions()).toEqual({
+                status: 'rejected',
+                reason: 'Command batch project changed after execution source preparation',
+            });
             expect(prepareCommandBatchPreflight(envelope).status).toBe('rejected');
             const compatible = prepareCommandBatchPreflight(envelope, { allowCompatibleProjectDivergence: true });
             expect(compatible.status).toBe('ready');
             if (compatible.status !== 'ready') {
                 throw new Error(compatible.reason);
             }
-            expect(compatible.postconditions.validate({})).toBe(
+            expect(finalValidation(compatible).validate({})).toBe(
                 'Command batch base revision does not match current project state'
             );
         } finally {
@@ -180,4 +226,227 @@ describe('command preflight save and content authority', () => {
             removeCrdtDoc('root');
         }
     });
+    it.each(['before capture', 'during capture'] as const)(
+        'fences published changes %s without another historical read',
+        (phase) => {
+            let revision = 'saved';
+            commandProjectRevisionPort.setProvider(() => revision);
+            const match = vi.fn(() => true);
+            commandProjectRevisionPort.setLiveMatchIgnoringSaveWrites(match);
+            commandBatchPreflightPort.setProvider(({ projectDocument }) => {
+                if (projectDocument && phase === 'during capture') {
+                    revision = 'changed';
+                }
+                return validState();
+            });
+            const postconditions = finalValidation(prepareCommandBatchPreflight(revisionEnvelope('base')));
+            match.mockClear();
+            if (phase === 'before capture') {
+                revision = 'changed';
+            }
+            expect(postconditions.validate({})).toBe(
+                'Command batch project changed after execution source preparation'
+            );
+            expect(match).not.toHaveBeenCalled();
+        }
+    );
+
+    it.each([false, true])(
+        'leaves owned writes pending through final preparation and preserves candidate refusal=%s',
+        (refuse) => {
+            configureAutomergeStoragePort(null);
+            removeCrdtDoc('root');
+            createCrdtDoc('root');
+            registerCrdtStorageRuntime();
+            const gain = createAutomergeStorage<{ value: number }>('root', 'ownedGain');
+            gain.set({ value: 1 });
+            flushAutomergeStorageWrites();
+            const revision = captureProjectRevision();
+            commandProjectRevisionPort.setProvider(captureProjectRevision);
+            const match = vi.fn(settledProjectRevisionMatchesLiveIgnoringSaveWrites);
+            commandProjectRevisionPort.setLiveMatchIgnoringSaveWrites(match);
+            commandBatchPreflightPort.setProvider(({ projectDocument }) => ({
+                ...validState(),
+                projectInvariantsValid: !projectDocument || !refuse,
+            }));
+            const preflight = prepareCommandBatchPreflight(revisionEnvelope(revision));
+            const transaction = runWithAutomergeStorageTransaction(undefined, (scope) =>
+                scope(() => {
+                    if (preflight.status !== 'ready') {
+                        throw new Error(preflight.reason);
+                    }
+                    const execution = preflight.prepareExecution();
+                    if (execution.status !== 'ready') {
+                        throw new Error(execution.reason);
+                    }
+                    gain.set({ value: 0.8 });
+                    return execution.validation;
+                })
+            );
+            try {
+                if (transaction.status === 'threw') {
+                    throw transaction.error;
+                }
+                const preparedPostconditions = transaction.value.preparePostconditions();
+                if (preparedPostconditions.status !== 'ready') {
+                    throw new Error(preparedPostconditions.reason);
+                }
+                const postconditions = preparedPostconditions.postconditions;
+                expect(getCrdtDoc('root')?.ownedGain).toEqual({ value: 1 });
+                expect(gain.get()).toEqual({ value: 0.8 });
+                match.mockClear();
+                transaction.validateDocument(postconditions.documentId, postconditions.validate);
+                if (refuse) {
+                    expect(() => transaction.commit()).toThrow('Command batch violated project invariants');
+                    transaction.abort();
+                    expect(getCrdtDoc('root')?.ownedGain).toEqual({ value: 1 });
+                    expect(gain.get()).toEqual({ value: 1 });
+                } else {
+                    transaction.commit();
+                    expect(getCrdtDoc('root')?.ownedGain).toEqual({ value: 0.8 });
+                    expect(gain.get()).toEqual({ value: 0.8 });
+                }
+                expect(match).not.toHaveBeenCalled();
+            } finally {
+                transaction.abort();
+                configureAutomergeStoragePort(null);
+                removeCrdtDoc('root');
+            }
+        }
+    );
+    it.each([false, true])(
+        'admits an owned child publication before the root and detects a foreign notification=%s',
+        async (foreign) => {
+            configureAutomergeStoragePort(null);
+            removeCrdtDoc('root');
+            removeCrdtDoc('owned');
+            createCrdtDoc('root');
+            createCrdtDoc('owned');
+            registerCrdtStorageRuntime();
+            const rootGain = createAutomergeStorage<{ value: number }>('root', 'ownedGain');
+            const childGain = createAutomergeStorage<{ value: number }>('owned', 'ownedGain');
+            rootGain.set({ value: 1 });
+            childGain.set({ value: 1 });
+            flushAutomergeStorageWrites();
+            const revision = captureProjectRevision();
+            commandProjectRevisionPort.setProvider(captureProjectRevision);
+            const match = vi.fn(settledProjectRevisionMatchesLiveIgnoringSaveWrites);
+            commandProjectRevisionPort.setLiveMatchIgnoringSaveWrites(match);
+            commandBatchPreflightPort.setProvider(validState);
+            clearHandlerRegistry();
+            registerHandlerMap({
+                setTrackGain: {
+                    execute: () => {
+                        childGain.set({ value: 0.8 });
+                        rootGain.set({ value: 0.8 });
+                    },
+                    describe: () => ({ label: 'Set gain' }),
+                    undoable: false,
+                    requiresAbortCompensation: false,
+                    validate: () => true,
+                },
+            });
+            let sawOwnedPublication = false;
+            const unsubscribe = subscribeToCrdtChanges((docId) => {
+                if (docId !== 'owned' || sawOwnedPublication) {
+                    return;
+                }
+                sawOwnedPublication = true;
+                // A historical matcher in the later candidate must fail even without a save.
+                match.mockImplementation(() => {
+                    throw new Error('Historical matcher reached an open candidate');
+                });
+                if (foreign) {
+                    mutateCrdtDoc<Record<string, unknown>>({
+                        id: 'root',
+                        changeFn: (draft) => {
+                            draft.peer = true;
+                        },
+                    });
+                }
+            });
+            try {
+                const result = await executeAppActionBatch(
+                    [{ type: 'setTrackGain', payload: { trackId: 'track-vocal', gain: 0.8, expectedGain: 1 } }],
+                    { prepareValidation: () => prepareCommandBatchPreflight(revisionEnvelope(revision)) }
+                );
+                expect(sawOwnedPublication).toBe(true);
+                expect(getCrdtDoc('owned')?.ownedGain).toEqual({ value: 0.8 });
+                if (foreign) {
+                    expect(result).toMatchObject({
+                        status: 'ambiguous',
+                        reason: 'Automerge storage transaction committed before a later document failed',
+                    });
+                    expect(getCrdtDoc('root')).toMatchObject({ ownedGain: { value: 1 }, peer: true });
+                } else {
+                    expect(result.status).toBe('committed');
+                    expect(getCrdtDoc('root')?.ownedGain).toEqual({ value: 0.8 });
+                }
+            } finally {
+                unsubscribe();
+                configureAutomergeStoragePort(null);
+                removeCrdtDoc('owned');
+                removeCrdtDoc('root');
+            }
+        }
+    );
+
+    it.each([false, true])(
+        'normalizes an owned published prefix without granting the original base to compatible foreign content=%s',
+        (compatible) => {
+            configureAutomergeStoragePort(null);
+            removeCrdtDoc('root');
+            createCrdtDoc('root');
+            registerCrdtStorageRuntime();
+            commandProjectRevisionPort.setProvider(captureProjectRevision);
+            commandProjectRevisionPort.setLiveMatchIgnoringSaveWrites(
+                settledProjectRevisionMatchesLiveIgnoringSaveWrites
+            );
+            commandBatchPreflightPort.setProvider(validState);
+            const base = captureProjectRevision();
+            if (compatible) {
+                mutateCrdtDoc<Record<string, unknown>>({
+                    id: 'root',
+                    changeFn: (draft) => {
+                        draft.peer = true;
+                    },
+                });
+            }
+            const preflight = prepareCommandBatchPreflight(revisionEnvelope(base), {
+                allowCompatibleProjectDivergence: compatible,
+            });
+            const transaction = runWithAutomergeStorageTransaction(undefined, (scope) =>
+                scope(() => {
+                    if (preflight.status !== 'ready') {
+                        throw new Error(preflight.reason);
+                    }
+                    const execution = preflight.prepareExecution();
+                    if (execution.status !== 'ready') {
+                        throw new Error(execution.reason);
+                    }
+                    mutateCrdtDoc<Record<string, unknown>>({
+                        id: 'root',
+                        changeFn: (draft) => {
+                            draft.owned = true;
+                        },
+                    });
+                    const prepared = execution.validation.preparePostconditions();
+                    if (prepared.status !== 'ready') {
+                        throw new Error(prepared.reason);
+                    }
+                    const document = getCrdtDoc('root');
+                    if (!document) {
+                        throw new Error('Expected root');
+                    }
+                    expect(prepared.postconditions.validate(document)).toBe(
+                        compatible ? 'Command batch base revision does not match current project state' : null
+                    );
+                })
+            );
+            transaction.commit();
+            expect(transaction.status).toBe('returned');
+            configureAutomergeStoragePort(null);
+            removeCrdtDoc('root');
+        }
+    );
 });
