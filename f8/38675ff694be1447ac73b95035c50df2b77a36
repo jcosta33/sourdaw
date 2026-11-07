@@ -1,0 +1,14 @@
+.agents/skills/delivery-orchestration/SKILL.md
+  h_beb54bf43b47b7 238-248
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f838675ff694be1447ac73b95035c50df2b77a36",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
