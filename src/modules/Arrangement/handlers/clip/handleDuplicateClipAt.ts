@@ -1,3 +1,4 @@
+import { commitRedoInverseCapture } from '#/modules/Command/useCases';
 import { createHandler } from '#/utils/createHandler';
 import { type AppAction, type GeneratedMidiStateGuard, type HandlerValidationContext } from '#/utils/handlerContract';
 
@@ -16,7 +17,7 @@ type DuplicateClipAtAction = Extract<AppAction, { type: 'duplicateClipAt' }>;
 type DuplicateClipAtState = {
     targetClipId: string;
     generatedMidiStateGuard: GeneratedMidiStateGuard;
-    publishRedoGuard?: () => void;
+    stageRedoGuard?: (action: AppAction) => void;
 };
 
 const duplicateClipAtStates = new WeakMap<object, DuplicateClipAtState>();
@@ -114,14 +115,15 @@ export const handleDuplicateClipAt = createHandler<'duplicateClipAt'>({
             }
             capture?.complete();
             stampCreatedClipStateGuard(state.generatedMidiStateGuard, state.targetClipId);
+            state.stageRedoGuard?.(action);
             const discard = () => createdClipMidiCapture({ phase: 'discard', action });
             return {
                 status: 'written',
-                afterCommit: () => {
+                afterCommit: discard,
+                afterAmbiguousCommit: () => {
                     discard();
-                    state.publishRedoGuard?.();
+                    commitRedoInverseCapture({ phase: 'discard', actions: [action] });
                 },
-                afterAmbiguousCommit: discard,
             };
         } catch (error) {
             capture?.discard();
@@ -130,7 +132,7 @@ export const handleDuplicateClipAt = createHandler<'duplicateClipAt'>({
     },
     describe: (action, context) => {
         const state = getDuplicateClipAtState(action);
-        state.publishRedoGuard = prepareCreatedClipRedoGuard({
+        state.stageRedoGuard = prepareCreatedClipRedoGuard({
             recordedRedo: context?.recordedRedo,
             clipId: state.targetClipId,
             guard: state.generatedMidiStateGuard,

@@ -1,4 +1,4 @@
-import { getHeads } from '@automerge/automerge';
+import { change, clone, getHeads, load, save } from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { getProductionCommandHandlerMaps } from '#/app/getProductionCommandHandlerMaps';
@@ -24,6 +24,9 @@ import {
     createCrdtDoc,
     getCrdtDoc,
     mutateCrdtDoc,
+    projectCrdtToStores,
+    replaceCrdtDoc,
+    replaceCrdtDocInLineage,
     registerCrdtStorageRuntime,
     removeCrdtDoc,
     resetCrdtProjectAuthority,
@@ -116,7 +119,24 @@ describe('created clip replay preserves its own action prefix', () => {
             ccByClipId: {},
             pitchBendByClipId: {},
         });
-        automationStore.set({ lanes: [] });
+        automationStore.set({
+            lanes: [
+                {
+                    id: 'source-lane',
+                    trackId: 'track-1',
+                    clipId: 'source',
+                    parameterId: 'gain',
+                    parameterName: 'Gain',
+                    points: [{ beat: 1, value: 0.5, curve: 'linear', tension: 0 }],
+                    objects: [],
+                    visible: true,
+                    enabled: true,
+                    collapsed: false,
+                    minValue: 0,
+                    maxValue: 1,
+                },
+            ],
+        });
         setAllEnvelopes({});
         setEnvelope('source', { clipId: 'source', enabled: true, points: [{ id: 'gain', beatOffset: 0, gainDb: -6 }] });
         flushAutomergeStorageWrites();
@@ -206,6 +226,138 @@ describe('created clip replay preserves its own action prefix', () => {
             expect(content()).toEqual(before);
         }
     );
+
+    async function reloadHistory(side: 'past' | 'future', count: number) {
+        await vi.waitFor(() => {
+            const mirror = JSON.parse(sessionStorage.getItem('sourdaw-undo-session') ?? '{}') as {
+                past?: unknown[];
+                future?: unknown[];
+            };
+            expect(mirror[side]).toHaveLength(count);
+        });
+        flushAutomergeStorageWrites();
+        replaceCrdtDocInLineage({ id: 'root', doc: load(save(getCrdtDoc('root')!)) });
+        projectCrdtToStores({ resetProjections: true });
+        clearHandlerRegistry();
+        registerProductionCommandHandlers(getProductionCommandHandlerMaps({ canMutateBranchMetadata: () => true }));
+        expect(undoHistoryStore.value?.[side]).toHaveLength(count);
+    }
+
+    async function duplicateThenRemove(durableSibling: boolean) {
+        const options = { groupId: 'duplicate-remove', groupLabel: 'Duplicate then remove' };
+        await executeAppAction(creator('duplicateClipAt'), options);
+        await executeAppAction({ type: 'removeClip', payload: { clipId: 'copy', ripple: false } }, options);
+        if (durableSibling) {
+            await executeAppAction({ type: 'renameTrack', payload: { trackId: 'track-1', name: 'Renamed' } }, options);
+        }
+    }
+
+    it.each([false, true])(
+        'keeps saved duplicate/remove captures paired through repeated replay (durable sibling=%s)',
+        async (durableSibling) => {
+            trackStore.set({ ...trackStore.value!, selectedTrackId: null });
+            const before = content();
+            await duplicateThenRemove(durableSibling);
+            const after = content();
+            const count = durableSibling ? 3 : 2;
+            await reloadHistory('past', count);
+            expect((await undo()).headConsumed).toBe(true);
+            expect(content()).toEqual(before);
+            await reloadHistory('future', count);
+            await redo();
+            expect(content()).toEqual(after);
+            await reloadHistory('past', count);
+            expect((await undo()).headConsumed).toBe(true);
+            expect(content()).toEqual(before);
+            await reloadHistory('future', count);
+            await redo();
+            expect(content()).toEqual(after);
+        }
+    );
+
+    it('keeps both duplicate/remove captures when a committed observer changes their source', async () => {
+        await duplicateThenRemove(true);
+        await undo();
+        await reloadHistory('future', 3);
+        const entries = undoHistoryStore.value!.future;
+        const previous = entries.map((entry) =>
+            entry.kind === 'action' ? structuredClone(entry.inverseAction) : null
+        );
+        const actions = entries.map((entry) => {
+            if (entry.kind !== 'action') {
+                throw new Error('Expected saved duplicate/remove actions');
+            }
+            return entry.redoAction ?? entry.action;
+        });
+        const rename = getArrangementHandlers().renameTrack;
+        const originalExecute = rename.execute;
+        const observer = vi.spyOn(rename, 'execute').mockImplementation(async (action, context) => {
+            const effect = await originalExecute(action, context);
+            return {
+                ...effect,
+                status: 'written',
+                afterCommit: async () => {
+                    await effect?.afterCommit?.();
+                    type Root = { midi: NonNullable<typeof midiStore.value> };
+                    replaceCrdtDoc({
+                        id: 'root',
+                        doc: change(clone(getCrdtDoc<Root>('root')!), (document) => {
+                            document.midi.notesByClipId.source![0]!.velocity = 42;
+                        }),
+                    });
+                    projectCrdtToStores();
+                },
+            };
+        });
+        let result;
+        try {
+            result = await executeAppActionBatch(actions, { skipUndo: true });
+        } finally {
+            observer.mockRestore();
+        }
+        expect(result.status).toBe('committed');
+        expect(midiStore.value?.notesByClipId.source?.[0]?.velocity).toBe(42);
+        expect(entries.map((entry) => (entry.kind === 'action' ? entry.inverseAction : null))).toEqual(previous);
+    });
+
+    it('keeps every paired creator/removal capture after an ambiguous group publication', async () => {
+        await duplicateThenRemove(true);
+        await undo();
+        await reloadHistory('future', 3);
+        const entries = undoHistoryStore.value!.future;
+        const previous = entries.map((entry) =>
+            entry.kind === 'action' ? structuredClone(entry.inverseAction) : null
+        );
+        const actions = entries.map((entry) => {
+            if (entry.kind !== 'action') {
+                throw new Error('Expected saved duplicate/remove actions');
+            }
+            return entry.redoAction ?? entry.action;
+        });
+        let failAfterPublication = true;
+        configureAutomergeStoragePort({
+            getDoc: (docId) => getCrdtDoc<Record<string, unknown>>(docId),
+            getDocHeads: (docId) => getHeads(getCrdtDoc(docId)!),
+            getSemanticMessage: () => undefined,
+            hasDoc: (docId) => getCrdtDoc(docId) !== undefined,
+            mutateDoc: ({ docId, changeFn, message, changedKeys, snapshotTransaction }) => {
+                mutateCrdtDoc({ id: docId, changeFn, message, localSlots: changedKeys, snapshotTransaction });
+                if (failAfterPublication) {
+                    failAfterPublication = false;
+                    throw new Error('Controlled failure after grouped creator/removal publication');
+                }
+            },
+        });
+        try {
+            const result = await executeAppActionBatch(actions, { skipUndo: true });
+            expect(result.status).toBe('ambiguous');
+            expect(trackStore.value?.tracks[0]?.name).toBe('Renamed');
+            expect(trackStore.value?.tracks[0]?.clips.some((clip) => clip.id === 'copy')).toBe(false);
+            expect(entries.map((entry) => (entry.kind === 'action' ? entry.inverseAction : null))).toEqual(previous);
+        } finally {
+            registerCrdtStorageRuntime();
+        }
+    });
 
     it('does not publish a fresh creator guard when a grouped replay rolls back', async () => {
         await executeAppActionBatch(

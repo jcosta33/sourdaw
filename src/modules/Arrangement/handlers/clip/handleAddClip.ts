@@ -1,5 +1,7 @@
+import { commitRedoInverseCapture } from '#/modules/Command/useCases';
 import { serializeMidiStateForClips } from '#/modules/MIDI/useCases';
 import { createHandler } from '#/utils/createHandler';
+import { type AppAction } from '#/utils/handlerContract';
 
 import { addClip } from '../../useCases/clip/addClip';
 import { getNextAppActionClipId } from '../../useCases/clip/getNextAppActionClipId';
@@ -14,7 +16,7 @@ type AddClipAction = { payload: { id?: string } };
 type AddClipState = {
     clipId: string;
     generatedMidiStateGuard: { entityJson: string; midiByClipIdJson: string };
-    publishRedoGuard?: () => void;
+    stageRedoGuard?: (action: AppAction) => void;
 };
 
 const addClipStates = new WeakMap<object, AddClipState>();
@@ -53,12 +55,12 @@ export const handleAddClip = createHandler<'addClip'>({
         }
         state.generatedMidiStateGuard.entityJson = JSON.stringify(clip);
         state.generatedMidiStateGuard.midiByClipIdJson = serializeMidiStateForClips([clip.id]);
-        if (state.publishRedoGuard) {
+        if (state.stageRedoGuard) {
+            state.stageRedoGuard(alpha);
             return {
                 status: 'written',
-                afterCommit: state.publishRedoGuard,
                 afterAmbiguousCommit: () => {
-                    // Ambiguous publication cannot authorize replacing the saved inverse.
+                    commitRedoInverseCapture({ phase: 'discard', actions: [alpha] });
                 },
             };
         }
@@ -66,7 +68,7 @@ export const handleAddClip = createHandler<'addClip'>({
     },
     describe: (alpha, context) => {
         const state = getAddClipState(alpha);
-        state.publishRedoGuard = prepareCreatedClipRedoGuard({
+        state.stageRedoGuard = prepareCreatedClipRedoGuard({
             recordedRedo: context?.recordedRedo,
             clipId: state.clipId,
             guard: state.generatedMidiStateGuard,

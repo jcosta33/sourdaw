@@ -30,7 +30,12 @@ Report a probe that cannot run with its exact mutation, named check and limitati
    multi-request setup, and population walks in one case. Shrink cost without losing the asserted
    condition: a shorter render must still produce a receipt above its bound, and a dev-server resolve
    with discovery off must assert the exact source file chosen rather than an inequality. A raised
-   timeout or warm-up hides the cost.
+   timeout or warm-up hides the cost. A generic deep matcher over a long typed PCM buffer can dominate an otherwise
+   prompt async ownership test: queued Audio-to-MIDI cases in #6302 spent over 97% of local case time comparing
+   1.76 million samples and exceeded the default deadline on hosted runners. Measure admission, release, conversion
+   and assertion phases separately. Preserve the whole source fixture and compare its exact view bytes with a
+   standard-library byte primitive, including byteOffset and byteLength; a mutation at the final byte must fail.
+   Never replace full-buffer preservation with sampled elements, shorter audio or a larger timeout.
    Compose stage deadlines (escalation plus proof, navigation plus overlay, every retry attempt plus
    backoff within step and job budgets) and drive a stalled child through the loop. A wall-clock bound
    measures only the budgeted quantity; a count cap is not a deadline. Under induced engine or runner

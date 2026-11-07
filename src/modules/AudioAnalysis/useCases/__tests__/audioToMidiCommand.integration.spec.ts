@@ -1,3 +1,5 @@
+import { Buffer } from 'node:buffer';
+
 import { clone } from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -245,7 +247,7 @@ describe('registered audio-to-MIDI committed creation', () => {
             const admission = vi.spyOn(storage, 'waitForAutomergeSnapshotTransaction');
             const controller = new AbortController();
             let settled = false;
-            const pcm = mocks.getCachedAudioBuffer().getChannelData(0).slice();
+            const pcm: Float32Array = mocks.getCachedAudioBuffer().getChannelData(0).slice();
             const projectRevision = settlePendingProjectWritesAndCaptureRevision();
             let work: Promise<boolean>;
             if (route === 'basic') {
@@ -305,7 +307,13 @@ describe('registered audio-to-MIDI committed creation', () => {
                 await blocker;
             }
             expect(await conversion).toBe(transition === 'save');
-            expect(mocks.getCachedAudioBuffer().getChannelData(0)).toEqual(pcm);
+            const source: Float32Array = mocks.getCachedAudioBuffer().getChannelData(0);
+            expect(source.byteLength).toBe(pcm.byteLength);
+            expect(
+                Buffer.from(source.buffer, source.byteOffset, source.byteLength).equals(
+                    Buffer.from(pcm.buffer, pcm.byteOffset, pcm.byteLength)
+                )
+            ).toBe(true);
             if (transition === 'save') {
                 expect(midiOutput()).toHaveLength(1);
                 await expectRoundTrip(expected!);

@@ -31,6 +31,7 @@ import { undoStore } from '../stores/undoStore';
 
 import { actionHistoryMetadataPort, type ActionHistoryMetadata } from './actionHistoryMetadataPort';
 import { appendAbortFailures } from './appendAbortFailures';
+import { bindCanonicalRedoAction } from './bindCanonicalRedoAction';
 import { captureRecordedRedoContext } from './captureRecordedRedoContext';
 import { commitRedoInverseCapture } from './commitRedoInverseCapture';
 import { commitUndoEntry } from './commitUndoEntry';
@@ -166,6 +167,7 @@ function coalesceTargetsMatch(previous: AppAction, next: AppAction): boolean {
 export const executeAppAction: ExecuteAppAction = inject({ logger })(
     ({ logger }) =>
         async function executeAppAction(action: AppAction, options?: ExecuteAppActionOptions): Promise<void> {
+            const requestedAction = action;
             const recordedRedo = options?.skipUndo ? captureRecordedRedoContext(action) : undefined;
             const materialized = options?.commandEnvelope
                 ? { action, applicationAssignedIds: options.commandEnvelope.applicationAssignedIds }
@@ -197,6 +199,7 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
                 }
             }
             action = materializeCommandHandlerArguments(action, handler, materializationContext);
+            bindCanonicalRedoAction(requestedAction, action, recordedRedo);
             const historyGroupId = handler.batchExecution === 'singleton' ? undefined : options?.groupId;
             const historyGroupLabel = historyGroupId ? options?.groupLabel : undefined;
             if (

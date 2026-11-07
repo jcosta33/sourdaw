@@ -1,5 +1,6 @@
+import { commitRedoInverseCapture } from '#/modules/Command/useCases';
 import { createHandler } from '#/utils/createHandler';
-import { type GeneratedMidiStateGuard, type HandlerValidationContext } from '#/utils/handlerContract';
+import { type AppAction, type GeneratedMidiStateGuard, type HandlerValidationContext } from '#/utils/handlerContract';
 
 import { resolveEligibleClipWriteTarget } from '../../stores/resolveEligibleClipWriteTarget';
 import { duplicateClip } from '../../useCases/clip/duplicateClip';
@@ -15,7 +16,7 @@ type DuplicateClipAction = { payload: { clipId: string; targetClipId?: string } 
 type DuplicateClipState = {
     targetClipId: string;
     generatedMidiStateGuard: GeneratedMidiStateGuard;
-    publishRedoGuard?: () => void;
+    stageRedoGuard?: (action: AppAction) => void;
 };
 
 const duplicateClipStates = new WeakMap<object, DuplicateClipState>();
@@ -111,12 +112,12 @@ export const handleDuplicateClip = createHandler<'duplicateClip'>({
             return toHandlerExecutionResult(false);
         }
         stampCreatedClipStateGuard(state.generatedMidiStateGuard, state.targetClipId);
-        if (state.publishRedoGuard) {
+        if (state.stageRedoGuard) {
+            state.stageRedoGuard(alpha);
             return {
                 status: 'written',
-                afterCommit: state.publishRedoGuard,
                 afterAmbiguousCommit: () => {
-                    // Ambiguous publication cannot authorize replacing the saved inverse.
+                    commitRedoInverseCapture({ phase: 'discard', actions: [alpha] });
                 },
             };
         }
@@ -124,7 +125,7 @@ export const handleDuplicateClip = createHandler<'duplicateClip'>({
     },
     describe: (alpha, context) => {
         const state = getDuplicateClipState(alpha);
-        state.publishRedoGuard = prepareCreatedClipRedoGuard({
+        state.stageRedoGuard = prepareCreatedClipRedoGuard({
             recordedRedo: context?.recordedRedo,
             clipId: state.targetClipId,
             guard: state.generatedMidiStateGuard,
