@@ -257,12 +257,14 @@ run on such a head with fewer than three stances is not this procedure: stop and
 
 Stances are the mechanism, not the paperwork. One reader finds what the reader already expects; three
 blind stances with distinct failure modes find the silent ones — a check that cannot fail, a suite the
-push workflow never ran, the state a theme was never given. They are not mandatory in the
-bureaucratic sense: a comment, a typo, a link, a prose change that alters no rule, procedure,
-contract, or decision, or a test-only change that alters no assertion or fixture may honestly run
-one, because there is no second failure mode to attack. Prose that alters a rule — an ADR, AGENTS.md,
-this procedure — is a delivery-path change and carries three. The obligation is proportional to
-consequence, and its floor for anything real is three.
+push workflow never ran, the state a theme was never given. They are not mandatory in the bureaucratic
+sense: a change that alters no rule, procedure, contract, or decision — a typo, a link, a Markdown
+comment, a test-only change that alters no assertion or fixture — may honestly run one, because there
+is no second failure mode to attack. The allowance never runs below the machine floor of the change's
+class: a comment or typo in product code is `small` and takes two. A change alters a rule, procedure,
+contract, or decision when it changes what an operator is required, permitted or forbidden to do, or
+which document a requirement points at; any such change is a delivery-path change and carries three.
+The obligation is proportional to consequence, and its floor for anything real is three.
 
 A stance is a failure mode, never a file, a path, or a role: "correctness" above all is the baseline
 every reviewer already holds, not a stance. Three stance _names_ satisfy `review:publish` even when
