@@ -1,0 +1,60 @@
+src/modules/GrandBoule/useCases/__tests__/grandBouleParameterPersistence.integration.spec.ts
+  s_8dd2ba9e498da7::t_e0ba5bf914ba05 86-87
+src/modules/Project/useCases/__tests__/projectPersistence.spec.ts
+  s_8dd2ba9e498da7::t_e0ba5bf914ba05 138-143
+src/modules/Arrangement/useCases/comping/__tests__/targetedTakeLaneUndo.spec.ts
+  s_8dd2ba9e498da7::t_e0ba5bf914ba05 22-24
+src/modules/Arrangement/presentations/views/__tests__/trackCreateUndo.integration.spec.tsx
+  s_8dd2ba9e498da7::t_e0ba5bf914ba05 93
+src/modules/TimelineEditor/presentations/views/AutomationLane/__tests__/NotePropertyLane.spec.tsx
+  s_8dd2ba9e498da7::t_e0ba5bf914ba05 40-42
+src/modules/TimelineEditor/presentations/views/AutomationLane/__tests__/PitchBendLane.spec.tsx
+  s_8dd2ba9e498da7::t_e0ba5bf914ba05 52-54
+src/app/__tests__/bootstrap.spec.ts
+  s_8dd2ba9e498da7::t_e0ba5bf914ba05 178,319,384,1135
+src/app/__tests__/main.spec.tsx
+  s_8dd2ba9e498da7::t_e0ba5bf914ba05 152-157
+src/modules/TimelineEditor/presentations/views/AutomationLane/__tests__/PressureSlideLaneExpressionCurve.spec.tsx
+  s_8dd2ba9e498da7::t_e0ba5bf914ba05 45-47
+src/modules/Transport/useCases/playheadScheduler/__tests__/initialPlaybackWindow.integration.spec.ts
+  s_8dd2ba9e498da7::t_0295957809380d 148,803-812,833-844
+  s_8dd2ba9e498da7::t_e0ba5bf914ba05 149-150
+src/modules/Transport/useCases/transportControls/__tests__/stopActiveRecording.spec.ts
+  s_8dd2ba9e498da7::t_e0ba5bf914ba05 27-29
+src/modules/Transport/useCases/transportControls/__tests__/toggleRecordingPreRoll.spec.ts
+  s_8dd2ba9e498da7::t_e0ba5bf914ba05 62-64
+src/modules/TimelineEditor/presentations/views/AutomationLane/__tests__/CCLane.spec.tsx
+  s_8dd2ba9e498da7::t_e0ba5bf914ba05 66-68
+src/modules/MixerConsole/presentations/views/Mixer/__tests__/mixerStripUndo.integration.spec.tsx
+  s_8dd2ba9e498da7::t_e0ba5bf914ba05 147
+src/modules/MixerConsole/presentations/views/Mixer/__tests__/DeviceChainSection.spec.tsx
+  s_8dd2ba9e498da7::t_e0ba5bf914ba05 33-35
+src/modules/TimelineEditor/presentations/views/AutomationLane/__tests__/laneUndoRoundTrip.spec.tsx
+  s_8dd2ba9e498da7::t_e0ba5bf914ba05 21-23
+src/modules/Arrangement/useCases/comping/__tests__/compingUndo.spec.ts
+  s_8dd2ba9e498da7::t_e0ba5bf914ba05 27-29
+src/modules/Project/useCases/__tests__/arrangement.spec.ts
+  s_8dd2ba9e498da7::t_e0ba5bf914ba05 173-174,252-253
+src/modules/Transport/useCases/transportControls/__tests__/pausePlayback.spec.ts
+  s_8dd2ba9e498da7::t_e0ba5bf914ba05 72-74
+src/modules/Arrangement/presentations/views/__tests__/trackDeleteUndo.integration.spec.tsx
+  s_8dd2ba9e498da7::t_e0ba5bf914ba05 81
+src/modules/Transport/useCases/transportControls/__tests__/recordStartSetupFailure.spec.ts
+  s_8dd2ba9e498da7::t_e0ba5bf914ba05 79-81
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1a70ff2315fec4ad157e60910d94f6835a672917",
+  "prompts": {},
+  "sessions": {
+    "s_8dd2ba9e498da7": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34a-1f45-7430-80af-58acd6c4b831",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
