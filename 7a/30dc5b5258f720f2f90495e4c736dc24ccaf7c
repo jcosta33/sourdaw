@@ -1,0 +1,27 @@
+scripts/__tests__/sharedE2eBuild.spec.ts
+  s_eb3cd86b0cee6e::t_f62465c5a2fc95 1,3-21,25-33,38-48,79-91
+  s_eb3cd86b0cee6e::t_5598776e2e84f9 2,69-78
+  s_eb3cd86b0cee6e::t_7b90bdcdaf4b49 22-24,34-37,49-68
+playwright.config.ts
+  s_eb3cd86b0cee6e::t_7b90bdcdaf4b49 83-84
+scripts/sharedE2eBuild.ts
+  s_eb3cd86b0cee6e::t_7b90bdcdaf4b49 1-84
+scripts/__tests__/e2eServerIdentity.spec.ts
+  s_eb3cd86b0cee6e::t_f62465c5a2fc95 301-320
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7a30dc5b5258f720f2f90495e4c736dc24ccaf7c",
+  "prompts": {},
+  "sessions": {
+    "s_eb3cd86b0cee6e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34c-a4d8-7523-838e-1cd1a0a25d78",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
