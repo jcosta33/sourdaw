@@ -64,13 +64,16 @@ const mocks = vi.hoisted(() => {
     };
 });
 
-vi.mock('../bootstrap', () => {
+// Registered per test with `vi.doMock`: Vitest caches a mock factory's result across
+// `vi.resetModules()` and shares one in-flight factory per mock, so only re-registering
+// makes each test observe its own bootstrap import.
+function mockBootstrapModule(): Promise<Record<string, never>> {
     mocks.bootstrap();
     if (mocks.bootstrapFailure) {
         throw mocks.bootstrapFailure;
     }
     return new Promise<Record<string, never>>(() => undefined);
-});
+}
 
 vi.mock('../browserDisplayScaleHost', () => ({
     mountBrowserDisplayScaleHost: mocks.mountBrowserDisplayScaleHost,
@@ -270,6 +273,7 @@ describe('app main first paint', () => {
     beforeEach(async () => {
         vi.clearAllMocks();
         vi.resetModules();
+        vi.doMock('../bootstrap', mockBootstrapModule);
         mocks.bootstrapFailure = null;
         mocks.appImportPending = false;
         mocks.appImportRelease = null;
