@@ -1,0 +1,20 @@
+tests/e2e/importErrorPathsTestId.spec.ts
+  s_1052c2a2231ded::t_73601b6cb138a4 6-7
+  s_1052c2a2231ded::t_d1a6ccac654e20 28-29,31
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "039a321d4c71f958b9b54c6e6afb8b00ccabc778",
+  "prompts": {},
+  "sessions": {
+    "s_1052c2a2231ded": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b349-24b6-7622-8534-09f171c780d5",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
