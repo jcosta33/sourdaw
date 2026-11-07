@@ -1,0 +1,23 @@
+tests/e2e/devServerOnlySpecs.ts
+  s_1052c2a2231ded::t_2b06231c71341b 36
+tests/e2e/voiceDraftBoundaryWorkflow.spec.ts
+  s_1052c2a2231ded::t_e5adccf961cda6 102,125
+  s_1052c2a2231ded::t_2b06231c71341b 1-28,31-101,103-124,126-179,187-207,212-238
+  s_1052c2a2231ded::t_b268474b670fc2 29-30,180-186,208-211
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "74467bbe3f707ecb6a29589dc3de4fefb9a94aea",
+  "prompts": {},
+  "sessions": {
+    "s_1052c2a2231ded": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b349-24b6-7622-8534-09f171c780d5",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
