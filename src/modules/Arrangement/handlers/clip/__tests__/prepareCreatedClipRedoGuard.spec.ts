@@ -5,7 +5,12 @@ import { type AppAction } from '#/utils/handlerContract';
 
 import { prepareCreatedClipRedoGuard } from '../prepareCreatedClipRedoGuard';
 
-vi.mock('#/modules/Command/useCases', () => ({ commitRedoInverseCapture: vi.fn() }));
+vi.mock('#/modules/Command/useCases', () => ({
+    commitRedoInverseCapture: vi.fn(),
+    resetActionReplayAuthority: vi.fn(() => {
+        throw new Error('Unexpected project authority reset in creator guard spec');
+    }),
+}));
 
 describe('prepareCreatedClipRedoGuard', () => {
     beforeEach(() => vi.clearAllMocks());
