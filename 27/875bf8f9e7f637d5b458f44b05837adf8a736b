@@ -1,0 +1,20 @@
+src/modules/AiRuntime/useCases/agentRequestOrchestration/groundVibeRunBatch.ts
+  s_68423a2adea8d2::t_b7c43a8ce3a212 7,12,56-108,136-138
+  s_68423a2adea8d2::t_c67cd718602c5b 47-55,121-122,125
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "27875bf8f9e7f637d5b458f44b05837adf8a736b",
+  "prompts": {},
+  "sessions": {
+    "s_68423a2adea8d2": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34b-f305-7c03-beb2-57afa678cda5",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
