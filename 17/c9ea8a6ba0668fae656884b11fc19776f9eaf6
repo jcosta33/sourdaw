@@ -1,0 +1,21 @@
+src/modules/Arrangement/presentations/views/__tests__/TrackHeaderMuteAdmission.integration.spec.tsx
+  s_977061c47f01dd::t_1731a7e0b33cd7 210,228
+src/modules/Arrangement/presentations/views/__tests__/TrackHeader.spec.tsx
+  s_977061c47f01dd::t_1731a7e0b33cd7 34
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "17c9ea8a6ba0668fae656884b11fc19776f9eaf6",
+  "prompts": {},
+  "sessions": {
+    "s_977061c47f01dd": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34d-123d-7452-a6e7-60608388b6d7",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
