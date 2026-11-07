@@ -1,0 +1,22 @@
+tests/e2e/aiFeatures.spec.ts
+  s_3c46fae9485e4a::t_18bd7a7cb311cb 11,13,15-19
+src/modules/AiRuntime/presentations/views/__tests__/GenerativeAiPanel.spec.tsx
+  s_3c46fae9485e4a::t_78d660179b006c 131-195
+  s_3c46fae9485e4a::t_e895b1fc3d50ee 1
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f75fa6897118654276dbb1a0218c319cf3f97065",
+  "prompts": {},
+  "sessions": {
+    "s_3c46fae9485e4a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "261f7e7f-ae9a-4364-a048-dcb45523715a",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
