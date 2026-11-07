@@ -1,0 +1,41 @@
+scripts/__tests__/pnpmModulesPreflight.spec.ts
+  s_977061c47f01dd::t_934f5430116bb9 475-491,494-509,511,514,523
+crates/daw-dsp/benches/wasm/renderTable.mjs
+  s_b5af394099ee27::t_dcf779ebfdf4c6 283
+crates/daw-dsp/benches/wasm/run.mjs
+  s_b5af394099ee27::t_878f24fd040f84 1018,1052
+scripts/__tests__/checkReleaseInventory.spec.ts
+  s_b5af394099ee27::t_076f731e6b149d 123
+src/app/__tests__/browserDisplayScaleHost.spec.ts
+  s_b5af394099ee27::t_c3296ef8df3ca9 50
+src/components/daw/__tests__/DawContextMenuSurface.spec.tsx
+  s_b5af394099ee27::t_16c8ba36ab93e5 132,142,149,156,186,202
+src/components/daw/__tests__/LatchButton.spec.tsx
+  s_b5af394099ee27::t_7b9b31fdd9fe7e 84,99,109
+src/modules/Fermenter/presentations/components/__tests__/OutputMeter.spec.tsx
+  s_b5af394099ee27::t_c866acba59d688 66,77-78
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "40a64bbd8fb2cb1798114df5702eb01410ee1a73",
+  "prompts": {},
+  "sessions": {
+    "s_977061c47f01dd": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34d-123d-7452-a6e7-60608388b6d7",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_b5af394099ee27": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "s_b5af394099ee27",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
