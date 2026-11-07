@@ -53,7 +53,7 @@ const context: ProjectContext = {
     tracks: [
         track('track-bass', 'Bass'),
         track('track-keys', 'Keys'),
-        track('track-mix', 'Mix', {
+        track('track-drums', 'Drums', {
             clipCount: 1,
             clips: [{ id: 'clip-snare', name: 'Snare Take', type: 'audio', startBeat: 0, endBeat: 4, noteCount: 0 }],
         }),
@@ -90,13 +90,17 @@ function basis(prompt: string, toolCalls: Call[]) {
 
 function read(text: string, pending: ReturnType<typeof basis>) {
     const removals = refinementClauseReader.removals({ text, basis: pending, context });
-    if (removals.status !== 'read') throw new Error(`Expected removal reading: ${removals.status}`);
+    if (removals.status !== 'read') {
+        throw new Error(`Expected removal reading: ${removals.status}`);
+    }
     return { text, basis: pending, context, ...removals };
 }
 
 describe('refinement grammar at its owning readers', () => {
     it('asks for an apostrophe at a word boundary but reads internal apostrophes', () => {
-        const result = refinementClauseReader.unreadMark({ text: "turn the mix' level down 2 dB", context });
+        const text = "turn the mix' level down 2 dB";
+        expect(refinementRequestReading.clauses(text, context)[0]?.masked).toContain("mix'");
+        const result = refinementClauseReader.unreadMark({ text, context });
         expect(result).toMatchObject({
             reason: 'The refinement holds a mark its clause grammar does not read.',
             question: expect.stringContaining("'"),
@@ -134,7 +138,9 @@ describe('refinement grammar at its owning readers', () => {
         for (const text of ['and unmute Bass', 'unmute Bass']) {
             const result = refinementClauseReader.values(read(text, pending));
             expect(result.status).toBe('bound');
-            if (result.status !== 'bound') throw new Error('Expected bound toggle');
+            if (result.status !== 'bound') {
+                throw new Error('Expected bound toggle');
+            }
             expect([...result.values.entries()]).toEqual([
                 [
                     0,
@@ -153,7 +159,9 @@ describe('refinement grammar at its owning readers', () => {
         const pending = basis('mute Bass', [mute('track-bass')]);
         const result = refinementClauseReader.values(read('mute Bass', pending));
         expect(result.status).toBe('bound');
-        if (result.status !== 'bound') throw new Error('Expected bound restatement');
+        if (result.status !== 'bound') {
+            throw new Error('Expected bound restatement');
+        }
         expect([...result.values.entries()]).toEqual([]);
         expect(result.comparative).toBeNull();
     });
