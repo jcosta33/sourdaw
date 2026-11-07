@@ -417,7 +417,7 @@ const gateNeeds = gate?.needs ?? [];
 // One entry, because the validation lane is one reusable workflow now. A
 // The reusable validation lane includes its own explicit selected-result
 // summary, so the outer Gate can require one result for that whole lane.
-const expectedGateNeeds = ['admission', 'scope', 'validation', 'affected', 'codeql'];
+const expectedGateNeeds = ['admission', 'scope', 'e2e-build', 'validation', 'affected', 'codeql'];
 const expectedValidationJobs = [
     'decide',
     'static',
@@ -435,7 +435,7 @@ const expectedValidationJobs = [
     'pr-secrets',
     'validation-gate',
 ];
-const expectedHeavyGateNeeds = ['e2e-build', 'e2e', 'e2e-report', 'browser-ai-webgpu'];
+const expectedHeavyGateNeeds = ['e2e', 'e2e-report', 'browser-ai-webgpu'];
 const scope = workflow.jobs?.scope;
 const scopePlan = stepNamed(scope, 'Plan affected checks');
 const scopeCheckout = stepNamed(scope, 'Checkout');
@@ -452,6 +452,9 @@ for (const name of ['profile', 'matrix', 'browser', 'browser-ai', 'codeql']) {
         `required scope must export ${name} from its plan`);
 }
 expect(Object.keys(scope?.outputs ?? {}).length === 5, 'required scope must export exactly selected-check outputs');
+const sharedBuild = workflow.jobs?.['e2e-build'];
+expect(sharedBuild?.needs === 'scope' && sharedBuild?.if === '${{ fromJSON(needs.scope.outputs.matrix).include[0] != null }}',
+    'shared E2E build must start after scope and independently of validation');
 expect(stepNamed(scope, 'Upload scope manifest')?.with?.path === 'pr-validation-scope.json' &&
     stepNamed(scope, 'Upload scope manifest')?.with?.['if-no-files-found'] === 'error',
     'required scope must publish its manifest or fail');
@@ -576,8 +579,13 @@ expect(workflow.jobs?.validation?.with?.browser === "${{ needs.scope.outputs.bro
 expect(workflow.jobs?.validation?.with?.profile === '${{ needs.scope.outputs.profile }}', 'validation must use selected profile');
 expect(workflow.jobs?.validation?.with?.mode === 'full', 'required validation must select full mode');
 expect(workflow.jobs?.affected?.uses === './.github/workflows/heavy-gates.yml', 'the PR workflow must call selected browser checks');
-expect(JSON.stringify(workflow.jobs?.affected?.needs) === JSON.stringify(['scope', 'validation']),
-    'selected browser checks must wait for scope and successful validation');
+expect(JSON.stringify(workflow.jobs?.affected?.needs) === JSON.stringify(['scope', 'validation', 'e2e-build']),
+    'selected browser checks must wait for scope, validation, and the shared producer');
+const affectedAdmission = typeof workflow.jobs?.affected?.if === 'string'
+    ? workflow.jobs.affected.if.replace(/\s+/gu, ' ')
+    : '';
+expect(affectedAdmission === "${{ always() && needs.scope.result == 'success' && needs.validation.result == 'success' && ((fromJSON(needs.scope.outputs.matrix).include[0] != null && needs.e2e-build.result == 'success') || (fromJSON(needs.scope.outputs.matrix).include[0] == null && needs.e2e-build.result == 'skipped')) }}",
+    'selected browser checks must admit matching producer results, including the empty-matrix hardware route');
 expect(workflow.jobs?.affected?.with?.matrix === '${{ needs.scope.outputs.matrix }}', 'selected browser checks must use scope matrix');
 expect(workflow.jobs?.affected?.with?.['browser-ai'] === "${{ needs.scope.outputs.browser-ai == 'true' }}", 'hardware proof must use selected scope');
 expect(
@@ -1341,6 +1349,7 @@ expect(expectedValidationJobs.includes('unit'), 'unit suite must stay inside the
 expect(gateNeeds.includes('affected') && gateNeeds.includes('codeql'), 'selected browser and CodeQL checks must decide Gate');
 expect(
     gateRun.includes('.scope.result == "success"') &&
+        gateRun.includes('.["e2e-build"].result == $selected') &&
         gateRun.includes('.validation.result == "success"') &&
         gateRun.includes('.affected.result == "success"') &&
         gateRun.includes('.codeql.result == "success"') &&
@@ -1353,21 +1362,47 @@ expect(
         heavyGateRun.includes('.["browser-ai-webgpu"].result == $hardware'),
     'HeavyGate must require the exact outcomes for selected browser jobs'
 );
-const requiredResults = (codeql, overrides = {}) => JSON.stringify({
-    admission: { result: overrides.admission ?? 'success', outputs: { admitted: 'true' } },
-    scope: { result: overrides.scope ?? 'success', outputs: { browser: 'true', 'browser-ai': 'false', codeql } },
-    validation: { result: overrides.validation ?? 'success' },
-    affected: { result: overrides.affected ?? 'success' },
-    codeql: { result: overrides.codeql ?? (codeql === 'true' ? 'success' : 'skipped') },
+const selectedMatrix = JSON.stringify({ include: [{ id: 1, specs: ['tests/e2e/export.spec.ts'] }] });
+const emptyMatrix = '{"include":[]}';
+const requiredResults = (codeql, overrides = {}) => {
+    const matrix = overrides.matrix ?? selectedMatrix;
+    const build = overrides['e2e-build'] ?? (JSON.parse(matrix).include.length > 0 ? 'success' : 'skipped');
+    return JSON.stringify({
+        admission: { result: overrides.admission ?? 'success', outputs: { admitted: 'true' } },
+        scope: { result: overrides.scope ?? 'success', outputs: { matrix, browser: 'true', 'browser-ai': 'false', codeql } },
+        'e2e-build': { result: build },
+        validation: { result: overrides.validation ?? 'success' },
+        affected: { result: overrides.affected ?? 'success' },
+        codeql: { result: overrides.codeql ?? (codeql === 'true' ? 'success' : 'skipped') },
+    });
+};
+const gateStatus = (results) => workflowShellStatus(gateRun, {
+    RESULTS: results,
+    MATRIX: JSON.parse(results).scope?.outputs?.matrix ?? '',
 });
-expect(workflowShellStatus(gateRun, { RESULTS: requiredResults('true') }) === 0, 'selected CodeQL success must pass Gate');
-expect(workflowShellStatus(gateRun, { RESULTS: requiredResults('false') }) === 0, 'unselected CodeQL skip must pass Gate');
+expect(gateStatus(requiredResults('true')) === 0, 'selected CodeQL success and selected E2E build must pass Gate');
+expect(gateStatus(requiredResults('false')) === 0, 'unselected CodeQL skip must pass Gate');
+expect(gateStatus(requiredResults('true', { matrix: emptyMatrix, 'e2e-build': 'skipped' })) === 0,
+    'an empty E2E matrix may skip the producer while an independent hardware-only route passes Gate');
 for (const job of expectedGateNeeds) {
-    expect(workflowShellStatus(gateRun, { RESULTS: requiredResults('true', { [job]: 'cancelled' }) }) !== 0,
+    expect(gateStatus(requiredResults('true', { [job]: 'cancelled' })) !== 0,
         `${job} cancellation must fail Gate`);
 }
-expect(workflowShellStatus(gateRun, { RESULTS: requiredResults('false', { codeql: 'success' }) }) !== 0,
+expect(gateStatus(requiredResults('false', { codeql: 'success' })) !== 0,
     'unexpected CodeQL execution must fail Gate');
+for (const result of ['failure', 'cancelled', 'skipped']) {
+    expect(gateStatus(requiredResults('true', { 'e2e-build': result })) !== 0,
+        `selected E2E producer ${result} must fail Gate`);
+}
+expect(gateStatus(requiredResults('true', { matrix: emptyMatrix, 'e2e-build': 'success' })) !== 0,
+    'unexpected E2E producer success with an empty matrix must fail Gate');
+for (const matrix of ['not-json', '{"include":null}', '{"include":[{"id":"1","specs":[]}]}', '']) {
+    expect(gateStatus(requiredResults('true', { matrix, 'e2e-build': 'skipped' })) !== 0,
+        'malformed or absent matrix must fail closed in Gate');
+}
+const missingBuild = JSON.parse(requiredResults('true'));
+delete missingBuild['e2e-build'];
+expect(gateStatus(JSON.stringify(missingBuild)) !== 0, 'missing shared producer result must fail Gate');
 expect(
     workflowShellStatus(gateRun, {
         RESULTS: JSON.stringify({
@@ -1380,39 +1415,28 @@ expect(
     }) !== 0,
     'a refused approval admission must fail Gate rather than pass on skipped checks'
 );
-const browserResults = (build, e2e, report, hardware) => JSON.stringify({
-    'e2e-build': { result: build }, e2e: { result: e2e }, 'e2e-report': { result: report },
+const browserResults = (e2e, report, hardware) => JSON.stringify({
+    e2e: { result: e2e }, 'e2e-report': { result: report },
     'browser-ai-webgpu': { result: hardware },
 });
-const selectedMatrix = JSON.stringify({ include: [{ id: 1, specs: ['tests/e2e/export.spec.ts'] }] });
-const emptyMatrix = '{"include":[]}';
-expect(workflowShellStatus(heavyGateRun, { RESULTS: browserResults('success', 'success', 'success', 'skipped'), MATRIX: selectedMatrix, BROWSER_AI: 'false' }) === 0,
+expect(workflowShellStatus(heavyGateRun, { RESULTS: browserResults('success', 'success', 'skipped'), MATRIX: selectedMatrix, BROWSER_AI: 'false' }) === 0,
     'selected browser checks must pass HeavyGate');
-expect(workflowShellStatus(heavyGateRun, { RESULTS: browserResults('skipped', 'skipped', 'skipped', 'skipped'), MATRIX: emptyMatrix, BROWSER_AI: 'false' }) === 0,
+expect(workflowShellStatus(heavyGateRun, { RESULTS: browserResults('skipped', 'skipped', 'skipped'), MATRIX: emptyMatrix, BROWSER_AI: 'false' }) === 0,
     'unselected browser checks must skip HeavyGate');
-for (const result of ['failure', 'cancelled', 'skipped']) {
-    expect(workflowShellStatus(heavyGateRun, { RESULTS: browserResults(result, 'success', 'success', 'skipped'), MATRIX: selectedMatrix, BROWSER_AI: 'false' }) !== 0,
-        `selected E2E build ${result} must fail HeavyGate`);
-}
-expect(workflowShellStatus(heavyGateRun, {
-    RESULTS: JSON.stringify({
-        e2e: { result: 'success' }, 'e2e-report': { result: 'success' }, 'browser-ai-webgpu': { result: 'skipped' },
-    }), MATRIX: selectedMatrix, BROWSER_AI: 'false',
-}) !== 0, 'missing selected E2E build must fail HeavyGate');
-expect(workflowShellStatus(heavyGateRun, { RESULTS: browserResults('success', 'skipped', 'skipped', 'skipped'), MATRIX: emptyMatrix, BROWSER_AI: 'false' }) !== 0,
-    'unexpected E2E build with an empty matrix must fail HeavyGate');
+expect(workflowShellStatus(heavyGateRun, { RESULTS: browserResults('skipped', 'skipped', 'success'), MATRIX: emptyMatrix, BROWSER_AI: 'true' }) === 0,
+    'an empty matrix must still admit the hardware-only Browser AI route');
 for (const job of ['e2e', 'e2e-report']) {
     for (const result of ['failure', 'cancelled', 'skipped']) {
-        const results = { 'e2e-build': { result: 'success' }, e2e: { result: 'success' }, 'e2e-report': { result: 'success' }, 'browser-ai-webgpu': { result: 'skipped' } };
+        const results = { e2e: { result: 'success' }, 'e2e-report': { result: 'success' }, 'browser-ai-webgpu': { result: 'skipped' } };
         results[job] = { result };
         expect(workflowShellStatus(heavyGateRun, { RESULTS: JSON.stringify(results), MATRIX: selectedMatrix, BROWSER_AI: 'false' }) !== 0,
             `selected ${job} ${result} must fail HeavyGate`);
     }
 }
-expect(workflowShellStatus(heavyGateRun, { RESULTS: browserResults('success', 'success', 'success', 'success'), MATRIX: selectedMatrix, BROWSER_AI: 'false' }) !== 0,
+expect(workflowShellStatus(heavyGateRun, { RESULTS: browserResults('success', 'success', 'success'), MATRIX: selectedMatrix, BROWSER_AI: 'false' }) !== 0,
     'unexpected Browser AI execution must fail HeavyGate');
 for (const result of ['failure', 'cancelled', 'skipped']) {
-    expect(workflowShellStatus(heavyGateRun, { RESULTS: browserResults('success', 'success', 'success', result), MATRIX: selectedMatrix, BROWSER_AI: 'true' }) !== 0,
+    expect(workflowShellStatus(heavyGateRun, { RESULTS: browserResults('success', 'success', result), MATRIX: selectedMatrix, BROWSER_AI: 'true' }) !== 0,
         `selected Browser AI ${result} must fail HeavyGate`);
 }
 // The daily web train. It is the only route to production now that the Vercel

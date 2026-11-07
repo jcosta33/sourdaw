@@ -80,6 +80,8 @@ const PULL_REQUEST_CONCURRENCY_CANCELLATION = true;
 // accepts skipped required checks, so the summary and its sole step use always().
 const GATE_CONDITION = '${{ always() }}';
 const HEAVY_GATE_CONDITION = '${{ always() }}';
+const AFFECTED_ADMISSION =
+    "${{ always() && needs.scope.result == 'success' && needs.validation.result == 'success' && ((fromJSON(needs.scope.outputs.matrix).include[0] != null && needs.e2e-build.result == 'success') || (fromJSON(needs.scope.outputs.matrix).include[0] == null && needs.e2e-build.result == 'skipped')) }}";
 const HEALTH_GATES_TRIGGERS = ['pull_request'] as const;
 const HEAVY_GATES_TRIGGERS = ['workflow_call'] as const;
 const NIGHTLY_TRIGGERS = ['schedule', 'workflow_dispatch'] as const;
@@ -194,7 +196,7 @@ const BROWSER_AI_WEBGPU_TEST_MATCH = ['browserAiWebGpuAdmission.spec.ts', 'brows
 const BROWSER_AI_WEBGPU_ORIGIN = 'http://localhost:5188';
 const BROWSER_AI_WEBGPU_SERVER_COMMAND = 'pnpm dev --host 127.0.0.1 --port 5188 --strictPort';
 const BROWSER_AI_WEBGPU_GLOBAL_SETUP = './firstPaintWarmup.ts';
-const GATE_MEMBERS = ['admission', 'scope', 'validation', 'affected', 'codeql'] as const;
+const GATE_MEMBERS = ['admission', 'scope', 'e2e-build', 'validation', 'affected', 'codeql'] as const;
 // Exact and ordered. `Gate` is a required status check, so a leg dropped from
 // this lane stops deciding merges while every check still reads green.
 const VALIDATION_JOBS = [
@@ -214,7 +216,7 @@ const VALIDATION_JOBS = [
     'pr-secrets',
     'validation-gate',
 ] as const;
-const HEAVY_GATE_MEMBERS = ['e2e-build', 'e2e', 'e2e-report', 'browser-ai-webgpu'] as const;
+const HEAVY_GATE_MEMBERS = ['e2e', 'e2e-report', 'browser-ai-webgpu'] as const;
 const DEPLOY_WEB_JOB = 'deploy-web';
 const DEPLOY_WEB_JOB_NAME = 'Daily web deploy';
 // A dispatch runs on whichever ref the person firing it chose, so the branch
@@ -337,7 +339,6 @@ const SUITE_JOB_WIRING = {
     },
     e2e: {
         workflow: 'heavy',
-        needs: 'e2e-build',
         if: 'fromJSON(inputs.matrix).include[0] != null',
     },
 } satisfies Record<string, Readonly<{ workflow: 'validation' | 'heavy'; needs?: string; if: string }>>;
@@ -2079,6 +2080,13 @@ function assertJobGraph(set: WorkflowSet): void {
     ) {
         throw new Error('required browser smoke must consume the affected scope');
     }
+    const e2eBuild = jobAt(health, 'e2e-build');
+    if (
+        e2eBuild.needs !== 'scope' ||
+        e2eBuild.if !== '${{ fromJSON(needs.scope.outputs.matrix).include[0] != null }}'
+    ) {
+        throw new Error('shared E2E build must start from validated scope before validation finishes');
+    }
     const browserInput = recordAt(recordAt(recordAt(set.validation, 'on'), 'workflow_call'), 'inputs');
     if (
         JSON.stringify(browserInput.browser) !==
@@ -2102,11 +2110,13 @@ function assertJobGraph(set: WorkflowSet): void {
         throw new Error('shared validation must default to full');
     }
     const affected = jobAt(health, 'affected');
+    const affectedAdmission = typeof affected.if === 'string' ? affected.if.replaceAll(/\s+/gu, ' ') : '';
     if (
         affected.uses !== './.github/workflows/heavy-gates.yml' ||
-        JSON.stringify(affected.needs) !== JSON.stringify(['scope', 'validation'])
+        JSON.stringify(affected.needs) !== JSON.stringify(['scope', 'validation', 'e2e-build']) ||
+        affectedAdmission !== AFFECTED_ADMISSION
     ) {
-        throw new Error('required affected E2E must wait for scope and successful validation');
+        throw new Error('required affected E2E must wait for successful validation and the selected shared build');
     }
     if (
         recordAt(affected, 'with').matrix !== '${{ needs.scope.outputs.matrix }}' ||
@@ -3597,14 +3607,15 @@ describe('health gates workflow contract', () => {
     });
 
     it('transports the integration build once to each selected shard', () => {
-        const producer = jobAt(heavyWorkflow, 'e2e-build');
+        const producer = jobAt(workflow, 'e2e-build');
         const shard = jobAt(heavyWorkflow, 'e2e');
         const artifact = 'e2e-build-${{ github.run_id }}-${{ github.run_attempt }}';
         expect(producer.name).toBe('Shared E2E build');
-        expect(producer.if).toBe(shard.if);
+        expect(producer.needs).toBe('scope');
+        expect(producer.if).toBe('${{ fromJSON(needs.scope.outputs.matrix).include[0] != null }}');
         expect(producer.container).toEqual(shard.container);
         expect(producer.defaults).toEqual(shard.defaults);
-        expect(shard.needs).toBe('e2e-build');
+        expect(shard.needs).toBeUndefined();
         for (const job of [producer, shard]) {
             expect(recordAt(stepNamed(job, 'Checkout'), 'with')).toMatchObject({
                 ref: '${{ github.sha }}',
@@ -3625,40 +3636,68 @@ describe('health gates workflow contract', () => {
         expect(stepNamed(shard, 'Run shard').run).toBe('node scripts/prValidationScope.ts run');
     });
 
-    it('requires the selected shared build in HeavyGate', () => {
-        const script = assertGateContract(heavyWorkflow, 'heavy-gate', 'HeavyGate', HEAVY_GATE_CONDITION);
+    it('requires the selected shared build in the parent Gate', () => {
+        const script = assertGateContract(workflow, 'gate', 'Gate', GATE_CONDITION);
         const selected = JSON.stringify({ include: [{ id: 1, specs: ['tests/e2e/export.spec.ts'] }] });
         const empty = JSON.stringify({ include: [] });
-        const results = (build: JobResult, shard: JobResult, report: JobResult) =>
+        expect(stepNamed(jobAt(workflow, 'gate'), 'Require selected checks to succeed').env.MATRIX).toBe(
+            '${{ needs.scope.outputs.matrix }}'
+        );
+        const results = (
+            matrix: string,
+            build: JobResult,
+            affected: JobResult,
+            codeql: JobResult,
+            validation: JobResult
+        ) =>
             JSON.stringify({
+                admission: { result: 'success', outputs: { admitted: 'true' } },
+                scope: {
+                    result: 'success',
+                    outputs: { matrix, browser: 'true', 'browser-ai': 'false', codeql: 'true' },
+                },
                 'e2e-build': { result: build },
-                e2e: { result: shard },
-                'e2e-report': { result: report },
-                'browser-ai-webgpu': { result: 'skipped' },
+                validation: { result: validation },
+                affected: { result: affected },
+                codeql: { result: codeql },
             });
         expect(
-            runResultsGuard(script, results('success', 'success', 'success'), { MATRIX: selected, BROWSER_AI: 'false' })
+            runResultsGuard(script, results(selected, 'success', 'success', 'success', 'success'), { MATRIX: selected })
         ).toBe(0);
         expect(
-            runResultsGuard(script, results('skipped', 'skipped', 'skipped'), { MATRIX: empty, BROWSER_AI: 'false' })
+            runResultsGuard(script, results(empty, 'skipped', 'success', 'success', 'success'), { MATRIX: empty })
         ).toBe(0);
         for (const result of ['failure', 'cancelled', 'skipped'] as const) {
             expect(
-                runResultsGuard(script, results(result, 'skipped', 'skipped'), {
+                runResultsGuard(script, results(selected, result, 'success', 'success', 'success'), {
                     MATRIX: selected,
-                    BROWSER_AI: 'false',
-                })
-            ).not.toBe(0);
-            expect(
-                runResultsGuard(script, results(result, 'success', 'success'), {
-                    MATRIX: selected,
-                    BROWSER_AI: 'false',
                 })
             ).not.toBe(0);
         }
         expect(
-            runResultsGuard(script, results('success', 'skipped', 'skipped'), { MATRIX: empty, BROWSER_AI: 'false' })
+            runResultsGuard(script, results(empty, 'success', 'success', 'success', 'success'), { MATRIX: empty })
         ).not.toBe(0);
+        expect(
+            runResultsGuard(
+                script,
+                JSON.stringify({
+                    admission: { result: 'success', outputs: { admitted: 'true' } },
+                    scope: {
+                        result: 'success',
+                        outputs: { matrix: selected, browser: 'true', 'browser-ai': 'false', codeql: 'true' },
+                    },
+                    validation: { result: 'success' },
+                    affected: { result: 'success' },
+                    codeql: { result: 'success' },
+                }),
+                { MATRIX: selected }
+            )
+        ).not.toBe(0);
+        for (const matrix of ['not-json', '{"include":null}', '{"include":[{"id":"1","specs":[]}]}']) {
+            expect(
+                runResultsGuard(script, results(matrix, 'skipped', 'success', 'success', 'success'), { MATRIX: matrix })
+            ).not.toBe(0);
+        }
     });
 
     it('makes selected validation, E2E and CodeQL decisive for the required Gate', () => {
@@ -3722,7 +3761,19 @@ describe('health gates workflow contract', () => {
         const disconnectedAffected = cloneWorkflows('disconnected affected E2E');
         jobAt(disconnectedAffected.health, 'affected').needs = 'validation';
         expect(() => assertJobGraph(disconnectedAffected)).toThrow(
-            'required affected E2E must wait for scope and successful validation'
+            'required affected E2E must wait for successful validation and the selected shared build'
+        );
+
+        const permissiveAffected = cloneWorkflows('permissive affected admission');
+        jobAt(permissiveAffected.health, 'affected').if = '${{ always() }}';
+        expect(() => assertJobGraph(permissiveAffected)).toThrow(
+            'required affected E2E must wait for successful validation and the selected shared build'
+        );
+
+        const validationGatedBuild = cloneWorkflows('validation-gated shared E2E build');
+        jobAt(validationGatedBuild.health, 'e2e-build').needs = 'validation';
+        expect(() => assertJobGraph(validationGatedBuild)).toThrow(
+            'shared E2E build must start from validated scope before validation finishes'
         );
 
         const unselectedCodeql = cloneWorkflows('unselected CodeQL');
@@ -5076,6 +5127,7 @@ describe('health gates workflow contract', () => {
 
     it('requires selected PR and browser checks to succeed, including after cancellation', () => {
         const gateScript = assertGateContract(workflow, 'gate', 'Gate', GATE_CONDITION);
+        const selectedMatrix = JSON.stringify({ include: [{ id: 1, specs: ['tests/e2e/export.spec.ts'] }] });
         const requiredResults = (
             codeql: 'true' | 'false',
             overrides: Record<string, JobResult> = {},
@@ -5088,17 +5140,19 @@ describe('health gates workflow contract', () => {
                 },
                 scope: {
                     result: overrides.scope ?? 'success',
-                    outputs: { browser: 'true', 'browser-ai': 'false', codeql },
+                    outputs: { matrix: selectedMatrix, browser: 'true', 'browser-ai': 'false', codeql },
                 },
+                'e2e-build': { result: overrides['e2e-build'] ?? 'success' },
                 validation: { result: overrides.validation ?? 'success' },
                 affected: { result: overrides.affected ?? 'success' },
                 codeql: { result: overrides.codeql ?? (codeql === 'true' ? 'success' : 'skipped') },
             });
-        expect(runResultsGuard(gateScript, requiredResults('true'))).toBe(0);
-        expect(runResultsGuard(gateScript, requiredResults('false'))).toBe(0);
-        for (const dependency of ['admission', 'scope', 'validation', 'affected', 'codeql']) {
+        const gateStatus = (results: string) => runResultsGuard(gateScript, results, { MATRIX: selectedMatrix });
+        expect(gateStatus(requiredResults('true'))).toBe(0);
+        expect(gateStatus(requiredResults('false'))).toBe(0);
+        for (const dependency of ['admission', 'scope', 'e2e-build', 'validation', 'affected', 'codeql']) {
             for (const result of ['failure', 'cancelled', 'skipped'] as const) {
-                expect(runResultsGuard(gateScript, requiredResults('true', { [dependency]: result }))).not.toBe(0);
+                expect(gateStatus(requiredResults('true', { [dependency]: result }))).not.toBe(0);
             }
         }
         // A refused admission skips every heavy job; Gate must fail, never pass on the skips, and say why.
@@ -5108,21 +5162,20 @@ describe('health gates workflow contract', () => {
                 outputs: { admitted: 'false', reason: 'the reviewer App has not approved head abc' },
             },
             scope: { result: 'skipped', outputs: {} },
+            'e2e-build': { result: 'skipped' },
             validation: { result: 'skipped' },
             affected: { result: 'skipped' },
             codeql: { result: 'skipped' },
         });
-        expect(runResultsGuard(gateScript, refused)).not.toBe(0);
+        expect(gateStatus(refused)).not.toBe(0);
         expect(
             spawnSync('bash', ['-c', gateScript], { encoding: 'utf8', env: { ...process.env, RESULTS: refused } })
                 .stdout
         ).toMatch(/^::error title=Gate not admitted::the reviewer App has not approved head abc\n/u);
-        expect(runResultsGuard(gateScript, requiredResults('true', {}, 'false'))).not.toBe(0);
-        expect(runResultsGuard(gateScript, requiredResults('false', { codeql: 'success' }))).not.toBe(0);
-        expect(
-            runResultsGuard(gateScript, requiredResults('true').replace('"browser":"true"', '"browser":""'))
-        ).not.toBe(0);
-        expect(runResultsGuard(gateScript, '{}')).not.toBe(0);
+        expect(gateStatus(requiredResults('true', {}, 'false'))).not.toBe(0);
+        expect(gateStatus(requiredResults('false', { codeql: 'success' }))).not.toBe(0);
+        expect(gateStatus(requiredResults('true').replace('"browser":"true"', '"browser":""'))).not.toBe(0);
+        expect(gateStatus('{}')).not.toBe(0);
         const renamedGate = asRecord(structuredClone(workflow), 'renamed gate workflow');
         jobAt(renamedGate, 'gate').name = 'Health summary';
         expect(() => assertGateContract(renamedGate, 'gate', 'Gate', GATE_CONDITION)).toThrow(
@@ -5149,12 +5202,10 @@ describe('health gates workflow contract', () => {
         const heavyGateScript = assertGateContract(heavyWorkflow, 'heavy-gate', 'HeavyGate', HEAVY_GATE_CONDITION);
         const browserResults = (e2e: JobResult, report: JobResult, hardware: JobResult) =>
             JSON.stringify({
-                'e2e-build': { result: e2e === 'skipped' ? 'skipped' : 'success' },
                 e2e: { result: e2e },
                 'e2e-report': { result: report },
                 'browser-ai-webgpu': { result: hardware },
             });
-        const selectedMatrix = JSON.stringify({ include: [{ id: 1, specs: ['tests/e2e/export.spec.ts'] }] });
         const emptyMatrix = JSON.stringify({ include: [] });
         expect(
             runResultsGuard(heavyGateScript, browserResults('success', 'success', 'skipped'), {
