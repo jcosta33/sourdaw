@@ -13,11 +13,14 @@ export function restorePatternInstanceLink(input: Input): 'written' | 'conflict'
     const replacement = input.replacement;
     const written = updateClipInStore(input.clipId, (clip) => {
         const { parentClipId: _parent, overrides: _overrides, ...rest } = clip;
-        return {
-            ...rest,
-            ...(replacement.parentClipId.present ? { parentClipId: replacement.parentClipId.value } : {}),
-            ...(replacement.overrides.present ? { overrides: structuredClone(replacement.overrides.value) } : {}),
-        };
+        const restored: typeof clip = rest;
+        if (replacement.parentClipId.present) {
+            restored.parentClipId = replacement.parentClipId.value;
+        }
+        if (replacement.overrides.present) {
+            restored.overrides = structuredClone(replacement.overrides.value);
+        }
+        return restored;
     });
     return written ? 'written' : 'conflict';
 }
