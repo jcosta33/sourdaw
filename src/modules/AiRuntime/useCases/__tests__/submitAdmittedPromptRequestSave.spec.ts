@@ -79,10 +79,17 @@ describe('selected preset planned across project writes', () => {
         let capturedRevision = '';
         const initialGain = trackStore.value?.tracks[0]?.gain;
         const initialColor = trackStore.value?.tracks[0]?.color;
-        if (initialGain === undefined) throw new Error('Missing track');
+        if (initialGain === undefined) {
+            throw new Error('Missing track');
+        }
         mocks.parse.mockImplementationOnce(async ({ projectRevision }) => {
+            if (typeof projectRevision !== 'string' || projectRevision.length === 0) {
+                throw new Error('Expected a captured project revision');
+            }
             capturedRevision = projectRevision;
-            if (write === 'saved edit') moveTrackFader('track-1', 0.5);
+            if (write === 'saved edit') {
+                moveTrackFader('track-1', 0.5);
+            }
             if (write === 'edit and revert') {
                 moveTrackFader('track-1', 0.5);
                 moveTrackFader('track-1', initialGain);
@@ -98,12 +105,16 @@ describe('selected preset planned across project writes', () => {
             }
             if (write === 'unflushed edit') {
                 const state = trackStore.value;
-                if (!state) throw new Error('Missing tracks');
+                if (!state) {
+                    throw new Error('Missing tracks');
+                }
                 trackStore.set({ ...state, tracks: state.tracks.map((track) => ({ ...track, gain: 0.5 })) });
                 expect(captureProjectRevision()).toBe(projectRevision);
             } else if (write === 'save' || write === 'saved edit') {
                 await writeProjectSave();
-                if (write === 'save') expect(captureProjectRevision()).not.toBe(projectRevision);
+                if (write === 'save') {
+                    expect(captureProjectRevision()).not.toBe(projectRevision);
+                }
             }
             return {
                 actions: [{ type: 'setTrackColor', payload: { trackId: 'track-1', color: '#ff5500' } }],
@@ -126,7 +137,9 @@ describe('selected preset planned across project writes', () => {
         }
         const result = await pending;
         expect(result.status).toBe('awaiting-approval');
-        if (result.status !== 'awaiting-approval') throw new Error(result.status);
+        if (result.status !== 'awaiting-approval') {
+            throw new Error(result.status);
+        }
         const card = getPendingActionConfirmation(result.confirmationId);
         expect(card).toMatchObject({
             runId: result.runId,
