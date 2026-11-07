@@ -91,7 +91,10 @@ export async function prepareSharedE2e(root: string, sha: string): Promise<void>
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
     const root = resolve(import.meta.dirname, '..');
-    const sha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim();
+    const sha = execFileSync('git', ['-c', `safe.directory=${root}`, 'rev-parse', 'HEAD'], {
+        cwd: root,
+        encoding: 'utf8',
+    }).trim();
     if (!process.env.GITHUB_SHA || process.env.GITHUB_SHA !== sha) {
         throw new Error('GITHUB_SHA must match the checked-out integration commit');
     }
