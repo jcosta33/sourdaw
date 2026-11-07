@@ -1,0 +1,23 @@
+tests/e2e/tempoSourceTimeAcceptance.spec.ts
+  s_8dd2ba9e498da7::t_a4db05da35c86b 1839-1846,1851,1998
+  s_8dd2ba9e498da7::t_6aa54c9887127f 1932,2161,2165,2174-2175,2177-2206
+  s_8dd2ba9e498da7::t_cb8b644a617411 2015,2061-2065,2067-2071,2073
+  s_8dd2ba9e498da7::t_b85c7e87b91792 1747-1838,1847-1850,1852-1856,1861,1864-1931,1933-1940,1942-1997,1999-2014,2016-2060,2066,2072,2074-2151,2154-2158,2166-2169,2211-2213
+  s_8dd2ba9e498da7::t_0e5605c90a2f0a 3,19,1857-1860,1862-1863,1941,2152-2153,2159-2160,2162-2164,2170-2173,2176,2207-2210
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "37ff82c30740d6b1ba36667cb13133b529a22efb",
+  "prompts": {},
+  "sessions": {
+    "s_8dd2ba9e498da7": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34a-1f45-7430-80af-58acd6c4b831",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
