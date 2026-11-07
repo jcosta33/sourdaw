@@ -1744,7 +1744,8 @@ test('finishes an edited automatic mixed punch at its original sounded out and r
     browserName: _browserName,
 }, testInfo: TestInfo) => {
     test.setTimeout(180_000);
-    const outBeat = 11.03;
+    const outBeat = 18.03;
+    const editedOutBeat = 14.5;
     expect(bestMicTimecodeMatch(Array<number>(44).fill(0), 0.01)).toBe(-1);
     expect(bestMicTimecodeMatch(Array<number>(44).fill(0.25), 0.01)).toBe(-1);
     expect(
@@ -1808,6 +1809,10 @@ test('finishes an edited automatic mixed punch at its original sounded out and r
                 import('/src/modules/Command/useCases/index.ts'),
                 import('/src/modules/Arrangement/stores/trackStore.ts'),
             ]);
+            await executeAppAction(
+                { type: 'setLoopRegion', payload: { startBeat: 8, endBeat: 24 } },
+                { skipUndo: true }
+            );
             await executeAppAction({ type: 'setPunchOut', payload: { beat: out } }, { skipUndo: true });
             await executeAppAction(
                 { type: 'addTrack', payload: { name: 'Punch keys', kind: 'midi' } },
@@ -1853,9 +1858,9 @@ test('finishes an edited automatic mixed punch at its original sounded out and r
         await page.getByRole('button', { name: 'Punch recording settings', exact: true }).click();
         const outInput = page.getByTestId('punch-out-beat');
         await expect(outInput).toBeVisible();
-        await outInput.fill('10.5');
+        await outInput.fill(String(editedOutBeat));
         await outInput.press('Enter');
-        await expect(outInput).toHaveValue('10.5');
+        await expect(outInput).toHaveValue(String(editedOutBeat));
         await outInput.press('Escape');
         const editedAt = await page.evaluate(async () => {
             const [{ transportStore }, { captureGestureBeat }] = await Promise.all([
@@ -1864,7 +1869,7 @@ test('finishes an edited automatic mixed punch at its original sounded out and r
             ]);
             return { out: transportStore.value?.punchOutBeat, beat: captureGestureBeat() };
         });
-        expect(editedAt.out).toBe(10.5);
+        expect(editedAt.out).toBe(editedOutBeat);
         expect(editedAt.beat, 'the real marker UI must commit before the original out').toBeLessThan(outBeat);
         await expect(page.getByTestId('transport-record')).toHaveAttribute('aria-pressed', 'false', {
             timeout: 10_000,
@@ -1922,7 +1927,7 @@ test('finishes an edited automatic mixed punch at its original sounded out and r
             body: JSON.stringify(
                 {
                     originalOutBeat: outBeat,
-                    editedOutBeat: 10.5,
+                    editedOutBeat,
                     markerEdit: editedAt,
                     reference,
                     requiredFrames,
