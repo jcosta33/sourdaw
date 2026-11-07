@@ -831,7 +831,7 @@ describe('initial browser playback window', () => {
                         hold: null,
                     });
                     expect(initialAnchor()).toBe(10.1);
-                    const bound = ownedRead();
+                    const bound = owner.read();
                     if (bound.status !== 'bounded') {
                         throw new Error('The admitted initial punch did not date its original out');
                     }
