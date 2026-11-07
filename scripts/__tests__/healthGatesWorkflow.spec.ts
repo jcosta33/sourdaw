@@ -3624,10 +3624,10 @@ describe('health gates workflow contract', () => {
         }
         expect(stepNamed(producer, 'Build shared E2E app').run).toBe('node scripts/sharedE2eBuild.ts build');
         const upload = stepNamed(producer, 'Upload shared E2E build');
-        expect(upload.uses).toBe('actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a');
+        expect(upload.uses).toBe('actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9');
         expect(recordAt(upload, 'with')).toMatchObject({ name: artifact, path: 'dist/', 'if-no-files-found': 'error' });
         const download = stepNamed(shard, 'Download shared E2E build');
-        expect(download.uses).toBe('actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c');
+        expect(download.uses).toBe('actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333');
         expect(recordAt(download, 'with')).toMatchObject({ name: artifact, path: 'dist/' });
         expect(recordAt(stepNamed(shard, 'Run shard'), 'env')).toMatchObject({
             E2E_SPECS: '${{ toJSON(matrix.specs) }}',
