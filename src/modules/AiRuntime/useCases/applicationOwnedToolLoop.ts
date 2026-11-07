@@ -46,6 +46,7 @@ import {
 import { MAX_LLM_ACTIONS_PER_BATCH } from '../models/LlmActionLimits';
 import { type MeasuredPreview } from '../models/MeasuredPreview';
 import { type MetricRecipeSource } from '../models/MetricGoalAdmission';
+import { type ProjectContextProductionBrief } from '../models/ProjectContext';
 import {
     type AdoptedRecipe,
     type RetainedCommand,
@@ -1426,11 +1427,17 @@ type ExecutedRead = {
     measuredPreview?: MeasuredPreview | null;
     /** Set only by the brief compiler; it is what makes the entry the loop retains a brief. */
     briefChangeLines?: readonly string[] | null;
+    composedBrief?: ProjectContextProductionBrief | null;
 };
 
 function retainedCompilationOf(executed: ExecutedRead, retainable: RetainedCommandSet): RetainedCompilation {
-    if (executed.briefChangeLines !== undefined && executed.briefChangeLines !== null) {
-        return { kind: 'brief', ...retainable, changeLines: executed.briefChangeLines };
+    if (
+        executed.briefChangeLines !== undefined &&
+        executed.briefChangeLines !== null &&
+        executed.composedBrief !== undefined &&
+        executed.composedBrief !== null
+    ) {
+        return { kind: 'brief', ...retainable, changeLines: executed.briefChangeLines, brief: executed.composedBrief };
     }
     if (executed.measuredPreview !== undefined && executed.measuredPreview !== null) {
         return { kind: 'preview', ...retainable, measuredPreview: executed.measuredPreview };

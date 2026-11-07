@@ -17,6 +17,7 @@ import {
     type AgentRunBatch,
     type AgentRunBatchSchedule,
     type AgentRunBatchScheduleSlice,
+    type AgentRunBulkSetBatchSchedule,
     type AgentRunBudgetAttempt,
     type AgentRunCommittedWork,
     type AgentRunDecision,
@@ -34,6 +35,7 @@ import {
     type AgentRunSagaStep,
     type AgentRunState,
     type AgentRunTemporaryAsset,
+    type AgentRunVibeRunBatchSchedule,
     type AgentRunWorkLease,
 } from '../models/AgentRun';
 import { APPLICATION_TOOL_RECEIPT_MAX_BYTES, type ApplicationToolReceipt } from '../models/ApplicationOwnedTool';
@@ -46,6 +48,8 @@ import {
     type ThreadContextEvidence,
 } from '../models/ThreadContext';
 import { hasSamePreparedStemImportRecovery } from '../validators/hasSamePreparedStemImportRecovery';
+import { readPerceptualConstraintReading } from '../validators/readPerceptualConstraintReading';
+import { readScheduledVibeRunPlan } from '../validators/readScheduledVibeRunPlan';
 
 const MAX_PENDING_EFFECT_RECOVERIES = 256;
 const MAX_PREPARED_STEM_IMPORT_RECOVERIES = 256;
@@ -1317,7 +1321,48 @@ function readBoundRequestProtections(value: unknown): BoundRequestProtections | 
 
 /** A schedule stored before kinds existed held bulk-set slices, the only kind there was; any other kind is unreadable. */
 function readAgentRunBatchScheduleKind(value: unknown): AgentRunBatchSchedule['kind'] | null {
-    return value === undefined || value === 'bulk-set' ? 'bulk-set' : null;
+    if (value === undefined || value === 'bulk-set') {
+        return 'bulk-set';
+    }
+    return value === 'vibe-run' ? 'vibe-run' : null;
+}
+
+type AgentRunBatchScheduleBase = Omit<AgentRunBulkSetBatchSchedule, 'kind'>;
+
+/**
+ * A vibe run's own fields, read whole: a plan its own reader accepts, planned against the brief
+ * revision the schedule names, whose batches are exactly the schedule's slices after the brief, and
+ * the request's recorded constraints. Anything else would let a restored run ground a batch nobody
+ * planned, or hold it to constraints nobody stated.
+ */
+function readAgentRunVibeRunBatchSchedule(
+    value: UnknownRecord,
+    base: AgentRunBatchScheduleBase
+): AgentRunVibeRunBatchSchedule | null {
+    const serializedPlan = readSerializedSlice(value.serializedPlan);
+    const briefRevision = readNonNegativeInteger(value.briefRevision);
+    const recordedConstraints = readPerceptualConstraintReading(value.recordedConstraints);
+    const plan = serializedPlan === null ? null : readScheduledVibeRunPlan(serializedPlan);
+    const [brief, ...batchSlices] = base.slices;
+    if (
+        serializedPlan === null ||
+        briefRevision === null ||
+        recordedConstraints === null ||
+        plan === null ||
+        plan.briefRevision !== briefRevision ||
+        base.serializedProviderProposal !== null ||
+        brief?.serializedSlice !== 'production-brief' ||
+        brief.commandCount !== 1 ||
+        batchSlices.length !== plan.batches.length ||
+        batchSlices.some(
+            (slice, index) =>
+                slice.serializedSlice !== plan.batches[index]?.id ||
+                slice.commandCount !== plan.batches[index]?.commandCount
+        )
+    ) {
+        return null;
+    }
+    return { ...base, kind: 'vibe-run', serializedPlan, briefRevision, recordedConstraints };
 }
 
 /**
@@ -1364,9 +1409,8 @@ function readAgentRunBatchSchedule(value: unknown): AgentRunBatchSchedule | null
     ) {
         return null;
     }
-    const schedule: AgentRunBatchSchedule = {
+    const schedule: AgentRunBatchScheduleBase = {
         schemaVersion: 1,
-        kind,
         scheduleId,
         position,
         total,
@@ -1385,7 +1429,7 @@ function readAgentRunBatchSchedule(value: unknown): AgentRunBatchSchedule | null
     ) {
         schedule.metricGoalState = value.metricGoalState;
     }
-    return schedule;
+    return kind === 'vibe-run' ? readAgentRunVibeRunBatchSchedule(value, schedule) : { ...schedule, kind };
 }
 
 function readAgentRunPlan(value: unknown, fallbackScope: AgentRun['scope']): AgentRunPlan | null | undefined {
