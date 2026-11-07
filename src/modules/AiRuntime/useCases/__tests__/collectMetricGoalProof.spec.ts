@@ -33,6 +33,8 @@ const expansion = expandMixRecipe({ recipeId: recipe.id, targetId, role: 'bass',
 if (expansion.status !== 'expanded') {
     throw new Error(`Expected a Bass warm recipe expansion: ${expansion.reason}`);
 }
+const expandedRecipe = expansion.recipe;
+const expandedCommands = expansion.commands;
 
 const authority: MetricRequestAuthority = {
     schemaVersion: 1,
@@ -105,7 +107,7 @@ function measuredInput(turn: number, origin: 'planner' | 'approval-preview' = 'p
         scope: { kind: 'tracks', ids: [targetId] },
         range: { startBeat: 0, endBeat: 4, sectionId: null },
         targets: [target],
-        recipeSource: expansion.recipe,
+        recipeSource: expandedRecipe,
         batchContentHash: digest('batch'),
         revision: 'revision-1',
     };
@@ -113,7 +115,7 @@ function measuredInput(turn: number, origin: 'planner' | 'approval-preview' = 'p
         kind: 'preview',
         callId: 'measurement',
         revision: 'revision-1',
-        commands: expansion.commands,
+        commands: expandedCommands,
         measuredPreview: preview,
     };
     const receipt: ApplicationToolReceipt = {
@@ -122,7 +124,6 @@ function measuredInput(turn: number, origin: 'planner' | 'approval-preview' = 'p
         callId: 'measurement',
         toolName: 'analysis.measure',
         turn,
-        ...(origin === 'approval-preview' ? { origin: 'application-verification' as const } : {}),
         status: 'success',
         revision: 'revision-1',
         data: {
@@ -139,12 +140,15 @@ function measuredInput(turn: number, origin: 'planner' | 'approval-preview' = 'p
         warnings: [],
         error: null,
     };
+    if (origin === 'approval-preview') {
+        receipt.origin = 'application-verification';
+    }
     return { preview, compilation, receipt };
 }
 
 describe('collectMetricGoalProof', () => {
     it('admits a planner preview only after the configured intake turn', () => {
-        expect(expansion.commands).toEqual(
+        expect(expandedCommands).toEqual(
             expect.arrayContaining([
                 expect.objectContaining({
                     operation: 'addDevice',
