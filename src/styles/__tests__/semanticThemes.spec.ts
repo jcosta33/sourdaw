@@ -1,10 +1,43 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { runInNewContext } from 'node:vm';
 
+import { stringify } from 'superjson';
 import { describe, expect, it } from 'vitest';
 
 const tokens = readFileSync(resolve(process.cwd(), 'src/styles/tokens.css'), 'utf8');
+const indexHtml = readFileSync(resolve(process.cwd(), 'index.html'), 'utf8');
 const lightBlock = /:root\.light\s*\{([^}]*)\}/u.exec(tokens)?.[1] ?? '';
+const startupThemeScript = /<script id="sourdaw-theme">([\s\S]*?)<\/script>/u.exec(indexHtml)?.[1] ?? '';
+
+const runStartupTheme = (stored: string | null) => {
+    const classes = new Set<string>(['dark']);
+    const style: Record<string, string> = {};
+    const metaAttributes: Record<string, string> = {};
+    runInNewContext(startupThemeScript, {
+        window: { localStorage: { getItem: () => stored } },
+        document: {
+            documentElement: {
+                classList: {
+                    toggle(name: string, enabled: boolean) {
+                        if (enabled) {
+                            classes.add(name);
+                        } else {
+                            classes.delete(name);
+                        }
+                    },
+                },
+                style,
+            },
+            querySelector: () => ({
+                setAttribute(name: string, value: string) {
+                    metaAttributes[name] = value;
+                },
+            }),
+        },
+    });
+    return { classes, colorScheme: style.colorScheme, themeColor: metaAttributes.content };
+};
 
 const readToken = (source: string, name: string): string => {
     const value = new RegExp(`${name}:\\s*([^;]+);`, 'u').exec(source)?.[1];
@@ -64,5 +97,23 @@ describe('semantic light theme', () => {
         for (const text of ['--color-text-primary', '--color-text-secondary', '--color-text-tertiary']) {
             expect(contrast(readToken(lightBlock, text), readToken(lightBlock, surface))).toBeGreaterThanOrEqual(4.5);
         }
+    });
+
+    it('restores the persisted light theme before the entry module and startup paint', () => {
+        const startup = runStartupTheme(stringify({ theme: 'light' }));
+
+        expect(startup.classes).toEqual(new Set(['light']));
+        expect(startup.colorScheme).toBe('light');
+        expect(startup.themeColor).toBe('#f0ece5');
+        expect(indexHtml.indexOf('id="sourdaw-theme"')).toBeLessThan(indexHtml.indexOf('id="sourdaw-entry"'));
+        expect(indexHtml).toContain(':root.light');
+    });
+
+    it('falls back to the dark startup when persisted preferences are corrupt', () => {
+        const startup = runStartupTheme('{not-json');
+
+        expect(startup.classes).toEqual(new Set(['dark']));
+        expect(startup.colorScheme).toBe('dark');
+        expect(startup.themeColor).toBe('#020100');
     });
 });
