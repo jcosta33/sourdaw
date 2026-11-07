@@ -334,7 +334,10 @@ function readCoverageRefusals(
  * the caller already measured; it renders nothing and writes nothing.
  */
 export function planWholeProjectVibeRun(input: PlanWholeProjectVibeRunInput): VibeRunPlan {
-    const protectedIds = new Set([...readProtectedTrackIds(input.context), ...(input.protectedTargetIds ?? [])]);
+    const protectedIds = new Set(input.protectedTargetIds);
+    for (const targetId of readProtectedTrackIds(input.context)) {
+        protectedIds.add(targetId);
+    }
     const excludedTargets: VibeRunExcludedTarget[] = [];
     const tracksByRole = new Map<SemanticCommandListRoleFamily, ProjectContextTrack[]>();
     for (const track of input.context.tracks) {

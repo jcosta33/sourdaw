@@ -97,7 +97,7 @@ describe('optional initial-baseline failures at the non-acoustic brief boundary'
             )
         ).toMatchObject({ status: 'planned' });
     });
-    it.each([
+    const refusalCases: readonly { name: string; patch: Partial<Input> }[] = [
         { name: 'missing metadata', patch: { initialBaselineRefusal: undefined } },
         {
             name: 'wrong source revision',
@@ -212,7 +212,8 @@ describe('optional initial-baseline failures at the non-acoustic brief boundary'
         },
         { name: 'missing action grant', patch: { grants: { ...input().grants, allowedOperationPrefixes: [] } } },
         { name: 'unreadable metric state', patch: { metricGoalState: '{}' } },
-    ] satisfies readonly { name: string; patch: Partial<Input> }[])('does not waive $name', ({ patch }) => {
+    ];
+    it.each(refusalCases)('does not waive $name', ({ patch }) => {
         expect(planAgentRun(input(patch))).toMatchObject({ status: 'rejected' });
     });
     it('does not turn an acoustic metric authority into optional initial evidence', () => {

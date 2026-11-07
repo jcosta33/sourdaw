@@ -32,7 +32,6 @@ import { readScheduledVibeRunPlan } from '../../validators/readScheduledVibeRunP
 import { readVibeRunInitialReceipt } from '../../validators/readVibeRunInitialReceipt';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { agentWorkBudget } from '../agentWorkBudget';
-import { planVibeRunSchedule } from '../vibeRun/planVibeRunSchedule';
 import { agentRunCancellation } from '../cancelAgentRun';
 import { cancelPendingChatActions } from '../cancelPendingChatActions';
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
@@ -44,6 +43,7 @@ import { planWholeProjectVibeRun } from '../planWholeProjectVibeRun';
 import { reproposePendingChatActions } from '../reproposePendingChatActions';
 import { sendChatMessage as sendChatMessageWithoutDocumentFlush } from '../sendChatMessage';
 import { formatVibeFigure } from '../vibeRun/formatVibeFigure';
+import { planVibeRunSchedule } from '../vibeRun/planVibeRunSchedule';
 
 import {
     isRecord,
@@ -683,7 +683,8 @@ describe('initial role and exact-section baselines through the brief pipeline', 
             });
             expect(measuredPlan(brief).initial).toEqual(initial);
         }
-        const state = JSON.parse(JSON.stringify(readAgentRunState()));
+        const serializedState = JSON.stringify(readAgentRunState());
+        const state: unknown = JSON.parse(serializedState);
         expect(sanitizeAgentRunState(state).runs.find((run) => run.runId === brief.runId)?.plan?.batchSchedule).toEqual(
             agentRunLifecycle.get(brief.runId)?.plan?.batchSchedule
         );
@@ -816,10 +817,12 @@ describe('initial role and exact-section baselines through the brief pipeline', 
             const tracks = structuredClone(trackStore.value);
             const history = structuredClone(undoHistoryStore.value);
             const renders = audio.renderTrackSubgraphOffline.mock.calls.length;
-            const outcome =
-                operation === 'Confirm'
-                    ? await confirmPendingChatActions({ confirmationId: batch.id })
-                    : await reproposePendingChatActions({ confirmationId: batch.id });
+            let outcome;
+            if (operation === 'Confirm') {
+                outcome = await confirmPendingChatActions({ confirmationId: batch.id });
+            } else {
+                outcome = await reproposePendingChatActions({ confirmationId: batch.id });
+            }
             expect(outcome).toMatchObject({
                 status: operation === 'Confirm' ? 'failed' : 'rejected',
                 reason: expect.stringContaining('section map'),
@@ -838,10 +841,12 @@ describe('initial role and exact-section baselines through the brief pipeline', 
         const tracks = structuredClone(trackStore.value);
         const history = structuredClone(undoHistoryStore.value);
         const renders = audio.renderTrackSubgraphOffline.mock.calls.length;
-        const outcome =
-            operation === 'Confirm'
-                ? await confirmPendingChatActions({ confirmationId: batch.id })
-                : await reproposePendingChatActions({ confirmationId: batch.id });
+        let outcome;
+        if (operation === 'Confirm') {
+            outcome = await confirmPendingChatActions({ confirmationId: batch.id });
+        } else {
+            outcome = await reproposePendingChatActions({ confirmationId: batch.id });
+        }
         expect(outcome).toMatchObject({
             status: operation === 'Confirm' ? 'failed' : 'rejected',
             reason: expect.stringContaining('changed role'),

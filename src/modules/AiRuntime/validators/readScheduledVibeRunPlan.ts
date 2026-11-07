@@ -99,6 +99,22 @@ function readBatch(value: unknown): ScheduledVibeRunBatch | null {
     ) {
         return null;
     }
+    const extras = readBatchExtras(value, objective);
+    if (extras === null) {
+        return null;
+    }
+    return {
+        id: value.id,
+        ordinal: value.ordinal,
+        objective: { descriptors, role, ...extras.objectiveExtras },
+        ...extras.batchExtras,
+        targetIds,
+        targets,
+        commandCount: value.commandCount,
+    };
+}
+
+function readBatchExtras(value: Record<string, unknown>, objective: Record<string, unknown> | null) {
     const ranges = value.verificationRanges === undefined ? undefined : readEvery(value.verificationRanges, readRange);
     const witnessIds = value.witnessIds === undefined ? undefined : readTexts(value.witnessIds);
     const sections = objective?.sections === undefined ? undefined : readEvery(objective.sections, readSection);
@@ -107,21 +123,21 @@ function readBatch(value: unknown): ScheduledVibeRunBatch | null {
     if (ranges === null || witnessIds === null || sections === null || sectionGoals === null) {
         return null;
     }
-    return {
-        id: value.id,
-        ordinal: value.ordinal,
-        objective: {
-            descriptors,
-            role,
-            ...(sections === undefined ? {} : { sections }),
-            ...(sectionGoals === undefined ? {} : { sectionGoals }),
-        },
-        ...(ranges === undefined ? {} : { verificationRanges: ranges }),
-        ...(witnessIds === undefined ? {} : { witnessIds }),
-        targetIds,
-        targets,
-        commandCount: value.commandCount,
-    };
+    const objectiveExtras: { sections?: typeof sections; sectionGoals?: typeof sectionGoals } = {};
+    if (sections !== undefined) {
+        objectiveExtras.sections = sections;
+    }
+    if (sectionGoals !== undefined) {
+        objectiveExtras.sectionGoals = sectionGoals;
+    }
+    const batchExtras: { verificationRanges?: typeof ranges; witnessIds?: typeof witnessIds } = {};
+    if (ranges !== undefined) {
+        batchExtras.verificationRanges = ranges;
+    }
+    if (witnessIds !== undefined) {
+        batchExtras.witnessIds = witnessIds;
+    }
+    return { objectiveExtras, batchExtras };
 }
 
 function readRange(value: unknown): VibeRunVerificationRange | null {
@@ -147,9 +163,10 @@ function readSection(value: unknown) {
     return range === null ? null : { id: value.id, startBeat: range.startBeat, endBeat: range.endBeat };
 }
 function readSectionGoal(value: unknown) {
-    return isRecord(value) && isText(value.sectionId) && isText(value.statement)
-        ? { sectionId: value.sectionId, statement: value.statement }
-        : null;
+    if (!isRecord(value) || !isText(value.sectionId) || !isText(value.statement)) {
+        return null;
+    }
+    return { sectionId: value.sectionId, statement: value.statement };
 }
 function validInitialRoles(value: unknown, targetIds: readonly string[]): boolean {
     if (!Array.isArray(value) || value.length !== targetIds.length) {
@@ -243,6 +260,21 @@ function readWitnessIdentity(
         band: value.band,
     };
 }
+function readWitnessScalar(value: unknown, band: string | null): unknown {
+    if (band === null) {
+        return value;
+    }
+    if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+        return undefined;
+    }
+    const descriptor = Object.getOwnPropertyDescriptor(value, band);
+    if (descriptor !== undefined && 'value' in descriptor) {
+        const scalar: unknown = descriptor.value;
+        return scalar;
+    }
+    return undefined;
+}
+
 function readWitness(
     value: unknown,
     tables: InitialTables,
@@ -270,12 +302,7 @@ function readWitness(
     ) {
         return null;
     }
-    const scalar =
-        identity.band === null
-            ? entry.value
-            : typeof entry.value === 'object' && entry.value !== null && !Array.isArray(entry.value)
-              ? Object.getOwnPropertyDescriptor(entry.value, identity.band)?.value
-              : undefined;
+    const scalar = readWitnessScalar(entry.value, identity.band);
     if (typeof scalar !== 'number' || !Number.isFinite(scalar)) {
         return null;
     }

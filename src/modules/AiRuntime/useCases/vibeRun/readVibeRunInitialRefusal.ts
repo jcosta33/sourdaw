@@ -56,7 +56,7 @@ function readMetadata(value: unknown, revision: string): VibeRunInitialBaselineR
         return null;
     }
     const ids = new Set<string>(value.receiptCallIds);
-    if (ids.size !== value.receiptCallIds.length || (value.stage === 'preflight' ? ids.size !== 0 : ids.size === 0)) {
+    if (ids.size !== value.receiptCallIds.length || (value.stage === 'preflight' ? ids.size > 0 : ids.size === 0)) {
         return null;
     }
     return { schemaVersion: 1, sourceRevision: revision, stage: value.stage, receiptCallIds: [...ids] };

@@ -60,10 +60,12 @@ async function measureRequests(
         for (const request of input.requests) {
             assertCurrent();
             const callId = `vibe-initial-${crypto.randomUUID()}`;
-            const range =
-                request.range.sectionId === null
-                    ? { startBeat: request.range.startBeat, endBeat: request.range.endBeat }
-                    : { sectionId: request.range.sectionId };
+            let range: { startBeat: number; endBeat: number } | { sectionId: string };
+            if (request.range.sectionId === null) {
+                range = { startBeat: request.range.startBeat, endBeat: request.range.endBeat };
+            } else {
+                range = { sectionId: request.range.sectionId };
+            }
             const read = await executeAnalysisMeasure({
                 call: {
                     id: callId,

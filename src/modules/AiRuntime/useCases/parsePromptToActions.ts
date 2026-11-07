@@ -2233,7 +2233,9 @@ async function planBriefVibeRun(input: {
         };
     }
     const run = agentRunLifecycle.get(input.runId);
-    if (run === null) return {};
+    if (run === null) {
+        return {};
+    }
     const planned = await planVibeRunSchedule({
         prompt: input.prompt,
         context: input.context,

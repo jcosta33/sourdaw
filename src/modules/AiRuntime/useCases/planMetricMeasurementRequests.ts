@@ -57,7 +57,7 @@ export function planMetricMeasurementRequests(input: {
         const ids = [...group.metrics.keys()];
         for (let offset = 0; offset < ids.length; offset += ANALYSIS_MEASURE_MAX_TARGETS) {
             const chunk = ids.slice(offset, offset + ANALYSIS_MEASURE_MAX_TARGETS);
-            const metrics = [...new Set(chunk.flatMap((id) => [...(group.metrics.get(id) ?? [])]))];
+            const metrics = [...new Set(chunk.flatMap((id) => Array.from(group.metrics.get(id) ?? [])))];
             requests.push({
                 prefix: group.prefix,
                 scope: group.kind === 'master' ? { kind: 'master' } : { kind: group.kind, ids: chunk },

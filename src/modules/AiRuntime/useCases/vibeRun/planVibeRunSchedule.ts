@@ -1,6 +1,5 @@
 import { getMixRecipeCatalog } from '#/modules/Arrangement/useCases';
 import { captureProjectIdentity } from '#/modules/CrdtDocument/useCases';
-import { readSecondsAtBeat } from '#/modules/Transport/stores';
 import { digest } from '#/utils/canonicalDigest';
 
 import { type AgentRunBudgets } from '../../models/AgentRun';
@@ -25,23 +24,20 @@ import { readScheduledVibeRunPlan } from '../../validators/readScheduledVibeRunP
 import { readExplicitProtections } from '../agentReference/readExplicitProtections';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { CANONICAL_ROLE_OPTIONS } from '../canonicalRoleFamilies';
-import { hasContradictoryMetricGoals } from '../hasContradictoryMetricGoals';
 import { type MetricGoal } from '../metricGoalContractTypes';
 import { objectiveMetricProjection } from '../objectiveMetricProjection';
 import { compilePerceptualConstraints } from '../perceptualConstraints/compilePerceptualConstraints';
-import { readPerceptualConstraintGoals } from '../perceptualConstraints/readPerceptualConstraintGoals';
 import { planMetricMeasurementRequests } from '../planMetricMeasurementRequests';
 import { planWholeProjectVibeRun } from '../planWholeProjectVibeRun';
 import { readArrangementRange } from '../readArrangementRange';
 import { type readBriefMixIntent } from '../readBriefMixIntent';
-import { readMeasurementRenderedSeconds } from '../readMeasurementRenderedSeconds';
 
 import { collectVibeRunInitialBaselines } from './collectVibeRunInitialBaselines';
 import { describeVibeRunObjective } from './describeVibeRunObjective';
 import { formatVibeFigure } from './formatVibeFigure';
-import { type VibeBatchPair } from './readVibeBatchPairs';
 import { readVibeBatchRecipeGoals } from './readVibeBatchRecipeGoals';
 import { readVibeMetricLabel } from './readVibeMetricLabel';
+import { readVibeRunFitRefusals } from './readVibeRunFitRefusals';
 
 type VibeRunSchedule = Extract<NonNullable<IntentResult['batchSchedule']>, { kind: 'vibe-run' }>;
 
@@ -119,118 +115,6 @@ function toScheduledBatch(batch: VibeRunPlan['batches'][number]): ScheduledVibeR
         targets: structuredClone(batch.targets),
         commandCount: batch.commandCount,
     };
-}
-
-/** Prefix reads shared with execution, including exact range identity and reference subjects. */
-function previewRequests(pairs: readonly VibeBatchPair[], goals: readonly MetricGoal[], context: ProjectContext) {
-    return planMetricMeasurementRequests({
-        context,
-        reads: goals.flatMap((goal) => {
-            if (goal.metricId === null || goal.range === null || goal.relation === 'unsupported') {
-                return [];
-            }
-            const { range, metricId } = goal;
-            const step = pairs.findIndex((pair) => pair.stepId === goal.stepId) + 1;
-            const prefixes = new Set([pairs.length, ...(step > 0 ? [step] : []), ...(step > 1 ? [step - 1] : [])]);
-            return [
-                ...[...prefixes].map((prefix) => ({
-                    prefix: String(prefix),
-                    range,
-                    metricId,
-                    targetIds: goal.targetIds,
-                })),
-                {
-                    prefix: String(pairs.length),
-                    range: goal.range,
-                    metricId: goal.metricId,
-                    targetIds: goal.referenceTargetIds,
-                },
-            ];
-        }),
-    });
-}
-
-function targetCount(request: ReturnType<typeof planMetricMeasurementRequests>[number]): number {
-    return request.scope.kind === 'master' ? 1 : request.scope.ids.length;
-}
-
-function readRemaining(budgets: AgentRunBudgets, category: string): number {
-    const limit = budgets.limits[category] ?? Number.POSITIVE_INFINITY;
-    return limit - (budgets.consumed[category] ?? 0);
-}
-
-/**
- * Why the planned batches cannot all run as planned, checked before anything is scheduled: every
- * batch's preview must fit the run's render budget and each measurement's seconds ceilings, its
- * goals must not contradict each other or the request's holds, and every command must fit the run's
- * command budget. A run that does not fit is not scheduled at all, never shrunk to what fits.
- */
-function readFitRefusals(input: {
-    batches: readonly ScheduledVibeRunBatch[];
-    context: ProjectContext;
-    reading: PerceptualConstraintReading;
-    budgets: AgentRunBudgets;
-    initialRequests: ReturnType<typeof planMetricMeasurementRequests>;
-}): string[] {
-    const range = readArrangementRange(input.context);
-    if (range === null) {
-        return ['the arrangement holds no audio to measure each batch against'];
-    }
-    const refusals: string[] = [];
-    const { measurementMeasuredSeconds, measurementRenderedSeconds } = readAgentResourceLimits();
-    for (const required of input.initialRequests) {
-        const { range: measuredRange } = required;
-        const measuredSeconds =
-            readSecondsAtBeat({ beat: measuredRange.endBeat }) - readSecondsAtBeat({ beat: measuredRange.startBeat });
-        const renderedSeconds = readMeasurementRenderedSeconds(measuredRange.endBeat);
-        if (measuredSeconds > measurementMeasuredSeconds || renderedSeconds > measurementRenderedSeconds) {
-            refusals.push(
-                `range ${measuredRange.sectionId ?? 'arrangement'} [${String(measuredRange.startBeat)}, ${String(measuredRange.endBeat)}] exceeds measurement ceilings (${String(measurementMeasuredSeconds)} s measured, ${String(measurementRenderedSeconds)} s from project start)`
-            );
-        }
-    }
-    const catalog = getMixRecipeCatalog();
-    const holds = readPerceptualConstraintGoals(input.reading, input.context);
-    const initialRenders = input.initialRequests.reduce((total, request) => total + targetCount(request), 0);
-    let renders = initialRenders;
-    let analyses = initialRenders;
-    for (const batch of input.batches) {
-        const recipeGoals = readVibeBatchRecipeGoals({ batch, catalog, range });
-        if (recipeGoals.status === 'refused') {
-            refusals.push(recipeGoals.reason);
-            continue;
-        }
-        const goals = [...recipeGoals.goals, ...holds];
-        if (hasContradictoryMetricGoals(goals)) {
-            refusals.push(
-                `batch ${String(batch.ordinal + BRIEF_POSITION)} would be asked to move a metric one way and another, or to move one the request holds`
-            );
-        }
-        const requests = previewRequests(recipeGoals.pairs, goals, input.context);
-        const comparisons = requests.reduce((total, request) => total + targetCount(request), 0);
-        renders += comparisons * 2;
-        analyses += comparisons;
-    }
-    const renderBudget = readRemaining(input.budgets, 'maxRenderJobs');
-    if (renders > renderBudget) {
-        refusals.push(
-            `initial measurements and previewing every batch need ${String(renders)} renders, more than the ${String(renderBudget)} this run's maxRenderJobs budget has left`
-        );
-    }
-    const analysisBudget = readRemaining(input.budgets, 'localAnalysis');
-    if (analyses > analysisBudget) {
-        refusals.push(
-            `initial measurements and every preview need ${String(analyses)} reductions, more than the ${String(analysisBudget)} this run's localAnalysis budget has left`
-        );
-    }
-    const commands = BRIEF_COMMAND_COUNT + input.batches.reduce((total, batch) => total + batch.commandCount, 0);
-    const commandBudget = readRemaining(input.budgets, 'maxCommands');
-    if (commands > commandBudget) {
-        refusals.push(
-            `the brief and every batch need ${String(commands)} commands, more than the ${String(commandBudget)} this run's maxCommands budget has left`
-        );
-    }
-    return refusals;
 }
 
 function trackName(context: ProjectContext, trackId: string): string {
@@ -519,7 +403,7 @@ function readWholeRunFit(
     if (run === null) {
         return ['this run no longer exists'];
     }
-    const refusals = readFitRefusals({
+    const refusals = readVibeRunFitRefusals({
         batches,
         context: input.context,
         reading,
@@ -581,11 +465,12 @@ async function planSchedule(input: ScheduleInput): Promise<PlannedVibeRunSchedul
     }
     const initialRequests = planMetricMeasurementRequests({
         context: input.context,
-        reads: initial.goals.flatMap((goal) =>
-            goal.metricId === null || goal.range === null
-                ? []
-                : [{ prefix: 'initial', range: goal.range, metricId: goal.metricId, targetIds: goal.targetIds }]
-        ),
+        reads: initial.goals.flatMap((goal) => {
+            if (goal.metricId === null || goal.range === null) {
+                return [];
+            }
+            return [{ prefix: 'initial', range: goal.range, metricId: goal.metricId, targetIds: goal.targetIds }];
+        }),
     });
     const reading = compilePerceptualConstraints(input.prompt, input.context);
     const refusals = readWholeRunFit(input, batches, reading, initialRequests);
