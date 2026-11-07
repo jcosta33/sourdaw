@@ -2,6 +2,8 @@ import { createStore } from '#/infra/store/createStore';
 import { createLocalStorage } from '#/infra/store/storage/createLocalStorage';
 import { type AppAction } from '#/utils/handlerContract';
 
+import { migrateStoredShortcutCombo } from '../models/ShortcutCombo';
+
 export type ShortcutAction = { type: 'appAction'; action: AppAction } | { type: 'callback'; id: string };
 
 export type ShortcutDefinition = {
@@ -129,14 +131,14 @@ const INITIAL_DEFINITIONS: ShortcutDefinition[] = [
         label: 'Add MIDI Track',
         category: 'workflow',
         defaultKeys: ['n'],
-        action: { type: 'appAction', action: { type: 'addTrack', payload: { name: 'MIDI', kind: 'midi' } } },
+        action: { type: 'appAction', action: { type: 'addTrack', payload: { kind: 'midi' } } },
     },
     {
         id: 'arrangement.addAudioTrack',
         label: 'Add Audio Track',
         category: 'workflow',
         defaultKeys: ['shift+n'],
-        action: { type: 'appAction', action: { type: 'addTrack', payload: { name: 'Audio', kind: 'audio' } } },
+        action: { type: 'appAction', action: { type: 'addTrack', payload: { kind: 'audio' } } },
     },
     // ── Editing ──────────────────────────────────────────────────────────
     {
@@ -439,7 +441,16 @@ const INITIAL_DEFINITIONS: ShortcutDefinition[] = [
     ...buildLoopStationPadDefinitions(),
 ];
 
-const storage = createLocalStorage<ShortcutStoreState>('sourdaw-shortcuts');
+const storage = createLocalStorage<ShortcutStoreState>('sourdaw-shortcut-bindings');
+
+/**
+ * Bindings saved before shortcut keys were read from the physical key. They
+ * name the character a modifier produced (`alt+∂`, `shift+!`), so they are
+ * migrated once, as the seed of the current key. Bindings in the current key
+ * are never migrated: a capture such as AZERTY `shift+&` is a valid physical
+ * key that the US tables would misread as `shift+7`.
+ */
+const legacyStorage = createLocalStorage<unknown>('sourdaw-shortcuts');
 
 function createInitialShortcutStoreState(): ShortcutStoreState {
     return {
@@ -495,8 +506,23 @@ function validateStoredShortcutStoreState(value: unknown): ShortcutStoreState {
     };
 }
 
+function readLegacyShortcutStoreState(): ShortcutStoreState | null {
+    const legacy = legacyStorage.isSupported() ? legacyStorage.get() : null;
+    if (!isRecord(legacy)) {
+        return null;
+    }
+
+    const customMappings = Object.fromEntries(
+        Object.entries(validateStoredCustomMappings(legacy.customMappings)).map(([definitionId, keys]) => [
+            definitionId,
+            keys.map(migrateStoredShortcutCombo),
+        ])
+    );
+    return { definitions: INITIAL_DEFINITIONS, customMappings };
+}
+
 export const shortcutStore = createStore<ShortcutStoreState>({
     storage,
-    initialData: createInitialShortcutStoreState(),
+    initialData: readLegacyShortcutStoreState() ?? createInitialShortcutStoreState(),
     sanitize: validateStoredShortcutStoreState,
 });

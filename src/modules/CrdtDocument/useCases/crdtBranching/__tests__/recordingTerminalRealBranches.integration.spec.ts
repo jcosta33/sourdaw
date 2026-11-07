@@ -3,6 +3,9 @@ import { IDBFactory } from 'fake-indexeddb';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { getProductionCommandHandlerMaps } from '#/app/getProductionCommandHandlerMaps';
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
+import { registerKernelPorts } from '#/app/registerKernelPorts';
+import { registerProjectSlotProjections } from '#/app/registerProjectSlotProjections';
 import { MockAudioBuffer } from '#/helpers/__tests__/audioContext.mock';
 import { withProjectAudioStorageLock } from '#/infra/storage/withProjectAudioStorageLock';
 import {
@@ -28,7 +31,13 @@ import {
     setActionHistoryMetadataPort,
     undo,
 } from '#/modules/Command/useCases';
-import { defaultTransportState, playheadPositionRef, tempoMapStore, transportStore } from '#/modules/Transport/stores';
+import {
+    defaultTransportState,
+    playheadClockRef,
+    playheadPositionRef,
+    tempoMapStore,
+    transportStore,
+} from '#/modules/Transport/stores';
 import { isTransportIdle } from '#/modules/Transport/useCases';
 
 import { DOC_PREFIX_ROOT } from '../../../models/CrdtDocumentTypes';
@@ -48,11 +57,14 @@ import { whenBranchStateSettled } from '../../whenBranchStateSettled';
 import { forkProjectBranch } from '../forkProjectBranch';
 import { switchBranch } from '../switchBranch';
 
+registerDeviceEnginePorts();
+
 const TRACK_ID = 'recording-track';
 const SESSION_KEY = 'sourdaw-undo-session';
 const database = new IDBFactory();
 type RecordingTerminal = Parameters<typeof import('#/modules/AudioEngine/useCases').startAudioRecording>[1];
 type RecordingResult = Parameters<RecordingTerminal>[0];
+type CaptureRegistrar = NonNullable<Parameters<typeof import('#/modules/AudioEngine/useCases').startAudioRecording>[3]>;
 
 const mocks = vi.hoisted(() => {
     let terminal: RecordingTerminal | null = null;
@@ -65,14 +77,21 @@ const mocks = vi.hoisted(() => {
         clock,
         compactProject: vi.fn<() => Promise<void>>(() => Promise.resolve()),
         notifyUser: vi.fn<(message: string, level: string) => void>(),
-        startAudioRecording: vi.fn<(trackId: string, callback: RecordingTerminal) => Promise<boolean>>(
-            (_trackId, callback) => {
-                terminal = callback;
-                firstStop = Promise.withResolvers<void>();
-                secondStop = Promise.withResolvers<void>();
-                return Promise.resolve(true);
-            }
-        ),
+        startAudioRecording: vi.fn<
+            (
+                trackId: string,
+                callback: RecordingTerminal,
+                inputId: string | null | undefined,
+                register: CaptureRegistrar
+            ) => Promise<boolean>
+        >((_trackId, callback, _inputId, register) => {
+            terminal = callback;
+            // The recorder publishes the sample-zero frame its completed result carries.
+            register(() => ({ status: 'captured', contextSeconds: 0 }));
+            firstStop = Promise.withResolvers<void>();
+            secondStop = Promise.withResolvers<void>();
+            return Promise.resolve(true);
+        }),
         stopAudioRecording: vi.fn<() => Promise<void>>(() => {
             if (terminal) {
                 pendingTerminal = terminal;
@@ -122,7 +141,14 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     getCompensationDelay: () => 0,
     startAudioRecording: mocks.startAudioRecording,
     stopAudioRecording: mocks.stopAudioRecording,
-    audioEngine: { setTransportInfo: vi.fn() },
+    audioEngine: {
+        beginAudioPreviewIntent: () => ({
+            signal: new AbortController().signal,
+            isCurrent: () => true,
+            release: vi.fn(),
+        }),
+        setTransportInfo: vi.fn(),
+    },
     stopAllScheduled: vi.fn(),
     stopNativeLiveGraphSession: vi.fn(() => Promise.resolve({ outcome: 'declined', reason: 'no session' })),
 }));
@@ -255,10 +281,18 @@ async function openRecording(): Promise<string> {
     // without introducing scheduler startup into the branch-owner contract.
     transportStore.set({ ...defaultTransportState, tempo: 120, isPlaying: true, playheadPosition: 4 });
     playheadPositionRef.current = 4;
+    // A rolling scheduler commits its beat with the audio instant it projected it to.
+    playheadClockRef.beat = 4;
+    playheadClockRef.audioTimeSeconds = mocks.clock.currentTime;
     flushAutomergeStorageWrites();
     await executeAppAction({ type: 'toggleRecording' });
     await vi.waitFor(() => {
-        expect(mocks.startAudioRecording).toHaveBeenCalledExactlyOnceWith(TRACK_ID, expect.any(Function), null);
+        expect(mocks.startAudioRecording).toHaveBeenCalledExactlyOnceWith(
+            TRACK_ID,
+            expect.any(Function),
+            null,
+            expect.any(Function)
+        );
         expect(clips()).toHaveLength(1);
         expect(takeLaneStore.value?.lanes.flatMap((lane) => lane.takes)).toHaveLength(1);
         expect(transportStore.value?.isRecording).toBe(true);
@@ -282,6 +316,12 @@ function observe(operation: Promise<void>): Promise<void> {
 
 async function heldStop(): Promise<{ stopping: Promise<void>; identity: string }> {
     const identity = captureProjectRootIdentity();
+    // Stop ends base playback at its gesture. The rolling scheduler has committed
+    // the two seconds `pcm()` captured, four beats at 120 BPM, when it is pressed.
+    mocks.clock.currentTime = 2;
+    playheadClockRef.beat = 8;
+    playheadClockRef.audioTimeSeconds = 2;
+    playheadPositionRef.current = 8;
     const stopping = observe(executeAppAction({ type: 'stopPlayback' }));
     await mocks.firstStopEntered();
     expect(mocks.isHeld()).toBe(true);
@@ -291,6 +331,8 @@ async function heldStop(): Promise<{ stopping: Promise<void>; identity: string }
     expect(commits()).toHaveLength(0);
     return { stopping, identity };
 }
+
+registerKernelPorts();
 
 describe('recording terminals through actual project branch transitions', () => {
     let unsubscribeProjection: (() => void) | null = null;
@@ -308,6 +350,7 @@ describe('recording terminals through actual project branch transitions', () => 
         localStorage.removeItem('sourdaw-branches');
         resetCrdtProjectAuthority('recording branch ownership');
         registerCrdtStorageRuntime();
+        registerProjectSlotProjections();
         initBranchState();
         await whenBranchStateSettled();
         clearHandlerRegistry();

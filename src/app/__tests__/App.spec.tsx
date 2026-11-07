@@ -4,6 +4,21 @@ import { render, screen } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 
 import { App } from '../App';
+import { registerDeviceEnginePorts } from '../registerDeviceEnginePorts';
+import { registerKernelPorts } from '../registerKernelPorts';
+import { registerSupportingServicePorts } from '../registerSupportingServicePorts';
+
+vi.mock('../registerDeviceEnginePorts', () => ({
+    registerDeviceEnginePorts: vi.fn<() => void>(),
+}));
+
+vi.mock('../registerSupportingServicePorts', () => ({
+    registerSupportingServicePorts: vi.fn<() => void>(),
+}));
+
+vi.mock('../registerKernelPorts', () => ({
+    registerKernelPorts: vi.fn<() => void>(),
+}));
 
 // Mock providers and components
 vi.mock('@tanstack/react-query', () => ({
@@ -36,6 +51,20 @@ vi.mock('../router', () => ({
 }));
 
 describe('App', () => {
+    it('registers the device engine ports when the module loads, before any render', () => {
+        // `main.tsx` may render App before bootstrap has run, and the preset
+        // browser reads the preset port while it renders.
+        expect(registerDeviceEnginePorts).toHaveBeenCalledExactlyOnceWith();
+    });
+
+    it('registers the supporting service ports when the module loads, before any render', () => {
+        expect(registerSupportingServicePorts).toHaveBeenCalledExactlyOnceWith();
+    });
+
+    it('registers the kernel ports when the module loads, before any render', () => {
+        expect(registerKernelPorts).toHaveBeenCalledExactlyOnceWith();
+    });
+
     it('should render all providers and router', () => {
         render(<App />);
         expect(screen.getByTestId('error-boundary')).toBeInTheDocument();

@@ -10,7 +10,7 @@ import { INIT_SAB_MESSAGE_TYPE } from '#/infra/audioWorklet/workletPortMessages'
 import { NOTE_NAMES } from '#/utils/noteNames';
 
 import { STEREO_CHANNEL_COUNT } from '../models/ChannelLaw';
-import scoringProcessorUrl from '../services/scoringProcessor.ts?worker&url';
+import scoringProcessorUrl from '../worklets/scoringProcessor.ts?worker&url';
 
 import { requireSharedArrayBuffer } from './pluginHostingErrors';
 import {

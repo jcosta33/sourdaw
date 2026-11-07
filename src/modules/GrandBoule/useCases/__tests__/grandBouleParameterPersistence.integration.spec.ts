@@ -59,7 +59,7 @@ vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
     };
 });
 
-// Non-spread listing of hydrateYeastCrdtProjection — projectSlotProjections imports it for the yeast slot.
+// Non-spread listing of hydrateYeastCrdtProjection — registerProjectSlotProjections (src/app) imports it for the yeast slot.
 vi.mock('#/modules/Yeast/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/Yeast/useCases')>();
     return {
@@ -67,7 +67,7 @@ vi.mock('#/modules/Yeast/useCases', async (importOriginal) => {
     };
 });
 
-// Non-spread listing of hydrateKneadFromTrackStore — projectSlotProjections imports it for the knead slot.
+// Non-spread listing of hydrateKneadFromTrackStore — registerProjectSlotProjections (src/app) imports it for the knead slot.
 vi.mock('#/modules/Knead/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/Knead/useCases')>();
     return {
@@ -78,10 +78,14 @@ vi.mock('#/modules/Knead/useCases', async (importOriginal) => {
     };
 });
 
-// Non-spread listing of projectDrumPreviewCandidateNotes — prepareDrumPreviewBranches imports it for drum preview branches.
+// Non-spread listing of projectDrumPreviewCandidateNotes — registerProjectSlotProjections (src/app) imports it for drum preview sources.
 vi.mock('#/modules/MIDI/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/MIDI/useCases')>();
     return {
+        captureEventPositionAt: actual.captureEventPositionAt,
+        replaceFrozenMidiTakeRow: actual.replaceFrozenMidiTakeRow,
+        sealHeldRecordedMidiNotes: actual.sealHeldRecordedMidiNotes,
+        snapshotMidiClipData: actual.snapshotMidiClipData,
         isExactMidiClipDataActionSnapshot: actual.isExactMidiClipDataActionSnapshot,
         decodeMidiClipDataSnapshots: actual.decodeMidiClipDataSnapshots,
         adaptGrooveTemplateForConsumer: vi.fn(),
@@ -132,7 +136,7 @@ vi.mock('#/modules/MIDI/useCases', async (importOriginal) => {
     };
 });
 
-// Non-spread listing of hydrateSidechainRoutes — projectSlotProjections imports it for the sidechainRoutes slot.
+// Non-spread listing of hydrateSidechainRoutes — registerProjectSlotProjections (src/app) imports it for the sidechainRoutes slot.
 vi.mock('#/modules/Routing/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/Routing/useCases')>();
     return {
@@ -153,6 +157,7 @@ vi.mock('#/modules/Routing/useCases', async (importOriginal) => {
 });
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    builtinSynthVoice: { read: vi.fn() },
     rearmCommittedTrackInputMonitoring: vi.fn(async () => undefined),
     reconcileAutoInputMonitoring: vi.fn(),
     stopTrackInputMonitoring: vi.fn(),
@@ -181,6 +186,8 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     garbageCollectFreezeAudioBuffers: vi.fn(),
     getAudioContext: vi.fn(),
     getCachedAudioBuffer: vi.fn(),
+    restoreUnpinnedAudioBuffersFromIdb: vi.fn(),
+    holdAudioBufferForSession: vi.fn(),
     getCompensationDelay: vi.fn(),
     getDefaultBendRangeSemitones: vi.fn(),
     getDeviceChainTailSeconds: vi.fn(),

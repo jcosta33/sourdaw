@@ -4,9 +4,6 @@
 export type { ExportedAudioBuffer } from './audioBufferCache';
 export { audioBufferCache } from './audioBufferCache';
 
-export type { AudioGraphState } from './audioGraphStore';
-export { audioGraphStore, defaultAudioGraphState } from './audioGraphStore';
-
 export type { AudioRecordingState } from './audioRecordingStore';
 export { audioRecordingStore } from './audioRecordingStore';
 

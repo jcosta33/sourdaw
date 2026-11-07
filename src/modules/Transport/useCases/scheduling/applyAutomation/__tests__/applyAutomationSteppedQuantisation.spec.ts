@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { trackStore } from '#/modules/Arrangement/stores';
 import {
     getCompensationDelay,
@@ -14,6 +15,8 @@ import { applyFermenterRuntimeParam } from '#/modules/Fermenter/useCases';
 import { schedulerSession } from '../../../playheadScheduler/schedulerSession';
 import { appliedAutomationBases } from '../appliedAutomationBases';
 import { applyAutomation } from '../applyAutomation';
+
+registerDeviceEnginePorts();
 
 /**
  * Live-playback guard: a lane on a **stepped** device parameter must deliver an

@@ -1,7 +1,12 @@
 import { getMixRecipeCatalog } from '#/modules/Arrangement/useCases';
 import { getAgentMeasurementMetricIds } from '#/modules/AudioAnalysis/useCases';
 import { getDeclarativeTransformDocumentSchema } from '#/modules/Command/useCases';
-import { getProjectProtocolContracts } from '#/modules/Project/useCases';
+import {
+    getCanonicalTrackRoleOptions,
+    getProductionBriefUpdateLimits,
+    getProjectProtocolContracts,
+    getSemanticProjectQueryFiltersSchema,
+} from '#/modules/Project/useCases';
 import { MIDI_TRANSFORM_MAX_NOTES } from '#/utils/midiNoteBatchLimits';
 
 import {
@@ -15,6 +20,7 @@ import {
     ANALYSIS_MEASURE_TOOL_NAME,
     ANALYSIS_REQUEST_TOOL_NAME,
     ANSWER_RESPOND_TOOL_NAME,
+    BRIEF_COMPILE_TOOL_NAME,
     COMMAND_BATCH_DECLINE_TOOL_NAME,
     COMMAND_BATCH_PROPOSAL_TOOL_NAME,
     COMMAND_HISTORY_TOOL_NAME,
@@ -28,11 +34,6 @@ import {
     TRANSFORM_COMPILE_TOOL_NAME,
 } from '../models/AgentToolCatalogNames';
 import { ANALYSIS_MEASURE_MAX_ID_LENGTH, ANALYSIS_MEASURE_MAX_TARGETS } from '../models/AnalysisMeasureLimits';
-import {
-    ANSWER_RESPOND_MAX_CALL_ID_LENGTH,
-    ANSWER_RESPOND_MAX_EVIDENCE_CALL_IDS,
-    ANSWER_RESPOND_MAX_TEXT_LENGTH,
-} from '../models/AnswerRespond';
 import {
     COMMAND_BATCH_DECLINE_KINDS,
     COMMAND_BATCH_DECLINE_MAX_QUESTION_LENGTH,
@@ -51,6 +52,8 @@ import { SEMANTIC_COMMAND_LIST_V1_JSON_SCHEMA } from '../models/SemanticCommandL
 import { PROPOSAL_REFINES_MAX_LENGTH } from '../models/ThreadContext';
 import { type ToolSchema } from '../models/ToolDefinitions';
 
+import { createCanonicalAnswerRespondParameters } from './createCanonicalAnswerRespondParameters';
+
 export {
     AGENT_CAPABILITIES_TOOL_NAME,
     AGENT_CATALOG_DISCOVERY_TOOL_NAME,
@@ -61,6 +64,7 @@ export {
     ANALYSIS_MEASURE_TOOL_NAME,
     ANALYSIS_REQUEST_TOOL_NAME,
     ANSWER_RESPOND_TOOL_NAME,
+    BRIEF_COMPILE_TOOL_NAME,
     COMMAND_BATCH_DECLINE_TOOL_NAME,
     COMMAND_BATCH_PROPOSAL_TOOL_NAME,
     COMMAND_HISTORY_TOOL_NAME,
@@ -106,7 +110,7 @@ function getProjectQuerySchema(): ToolSchema {
         'Read bounded, revision-bearing project facts. Query calls must be returned alone; use their receipts in a later planning turn.',
         {
             type: { type: 'string', enum: queryTypes },
-            filters: { type: 'object', additionalProperties: false },
+            filters: getSemanticProjectQueryFiltersSchema(),
             page: {
                 type: 'object',
                 properties: {
@@ -473,19 +477,15 @@ export function getAgentToolCatalogSchemas(): readonly ToolSchema[] {
             },
             ['kind', 'reason', 'questions']
         ),
-        tool(
-            ANSWER_RESPOND_TOOL_NAME,
-            `Answer the request in text instead of changing the project. Use this when the request asks for information or analysis rather than for a change. Before answering a question about the level, tone, dynamics, stereo image or timing of a track, bus, section or the master, call ${ANALYSIS_MEASURE_TOOL_NAME} on that scope and cite the figures it returns. List in evidenceCallIds the callId of every earlier successful call of this run whose receipt the answer relies on. An answer never proposes a change: return this call alone in its turn.`,
-            {
-                text: { type: 'string', minLength: 1, maxLength: ANSWER_RESPOND_MAX_TEXT_LENGTH },
-                evidenceCallIds: {
-                    type: 'array',
-                    maxItems: ANSWER_RESPOND_MAX_EVIDENCE_CALL_IDS,
-                    items: { type: 'string', minLength: 1, maxLength: ANSWER_RESPOND_MAX_CALL_ID_LENGTH },
-                },
+        {
+            type: 'function',
+            function: {
+                name: ANSWER_RESPOND_TOOL_NAME,
+                description:
+                    'Alone, {} enters read-only answering without output or bonus; after frozen intake, {intakeCallId,statements} completes from successful reads. Select closed statements referencing receipt callId; the application owns prose, figures, comparisons and ties. Measured audio requires analysis.measure after intake, matching subject, scope, range and metrics. Recipes are attributed knowledge, not project measurements.',
+                parameters: createCanonicalAnswerRespondParameters(),
             },
-            ['text', 'evidenceCallIds']
-        ),
+        },
         tool(COMMAND_HISTORY_TOOL_NAME, 'Read bounded, revision-bearing command history.', {
             page: {
                 type: 'object',
@@ -522,5 +522,53 @@ export function getAgentToolCatalogSchemas(): readonly ToolSchema[] {
         getAnalysisCompareReferenceSchema(),
         getRecipeDiscoverySchema(),
         getRecipeExpansionSchema(),
+        getBriefCompileSchema(),
     ];
+}
+
+function getBriefCompileSchema(): ToolSchema {
+    const limits = getProductionBriefUpdateLimits();
+    const statement = { type: 'string', minLength: 1, maxLength: limits.statementMaxLength };
+    const entries = (properties: Record<string, unknown>, required: string[]) => ({
+        type: 'array',
+        maxItems: limits.entriesPerFieldPerUpdate,
+        items: { type: 'object', properties, required, additionalProperties: false },
+    });
+    return tool(
+        BRIEF_COMPILE_TOOL_NAME,
+        "Compose the next revision of the project's production brief from a whole-project request: its vision, named references, preferences, section goals and roles for tracks that have none. Call it only after the creative interpretation admitted mode brief. The application records the request's protective clauses as hard constraints itself, keeps every lock and decision unchanged, never replaces a role already set, and refuses ids the project does not hold. This is a preview: nothing is written until the user confirms. Propose its callId alone in command.batch.propose compiledCallIds, with an empty commands list.",
+        {
+            vision: { type: 'string', minLength: 1, maxLength: limits.visionMaxLength },
+            references: entries(
+                {
+                    label: {
+                        type: 'string',
+                        minLength: 1,
+                        maxLength: limits.referenceLabelMaxLength,
+                        description: 'A record, artist or sound in words; never a link.',
+                    },
+                },
+                ['label']
+            ),
+            preferences: entries(
+                {
+                    trackId: { type: 'string', minLength: 1, maxLength: 256 },
+                    sectionId: { type: 'string', minLength: 1, maxLength: 256 },
+                    statement,
+                },
+                ['statement']
+            ),
+            sectionGoals: entries({ sectionId: { type: 'string', minLength: 1, maxLength: 256 }, statement }, [
+                'sectionId',
+                'statement',
+            ]),
+            trackRoles: entries(
+                {
+                    trackId: { type: 'string', minLength: 1, maxLength: 256 },
+                    role: { type: 'string', enum: getCanonicalTrackRoleOptions().filter((role) => role !== 'unknown') },
+                },
+                ['trackId', 'role']
+            ),
+        }
+    );
 }

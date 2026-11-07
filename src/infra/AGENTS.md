@@ -10,6 +10,7 @@ Cross-cutting technical infrastructure: audio latency-profile preferences, Audio
 - Owns base typed event bus primitive (`events/EventBus.ts`).
 - Owns structured logging, error classification, and telemetry formatting (`logger/`, `errors/`).
 - Owns desktop dialog dispatch abstractions (`dialogService/`).
+- Owns the Keyboard Map API read (`keyboardLayout/`): the active layout's unmodified character per physical key, shared by every shortcut reader.
 
 ## Architectural Invariants (Hard)
 
@@ -22,5 +23,5 @@ Cross-cutting technical infrastructure: audio latency-profile preferences, Audio
 PR CI owns broader unit and crate suites. Locally run only the exact changed spec or filtered Rust test.
 
 ```bash
-pnpm test:run <changed-spec>
+pnpm guard --profile focused -- pnpm test:run <changed-spec>
 ```

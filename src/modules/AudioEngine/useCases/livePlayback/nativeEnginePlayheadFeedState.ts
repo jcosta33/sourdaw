@@ -60,6 +60,7 @@ import { getEngineTransportPosition } from '../../repositories/engineTransport/g
 
 import { nativeLiveAutomationWriter } from './nativeLiveAutomationWriterState';
 import { nativeLiveMidiWriter } from './nativeLiveMidiWriterState';
+import { nativeRecordingCaptureClockState } from './nativeRecordingCaptureClock';
 import { publishNativeTunerTelemetry } from './publishNativeTunerTelemetry';
 import { pumpNativeLiveAutomationWriter } from './pumpNativeLiveAutomationWriter';
 import { pumpNativeLiveMidiWriter } from './pumpNativeLiveMidiWriter';
@@ -144,6 +145,7 @@ export function pollNativeEnginePlayheadOnce(): void {
         return;
     }
     nativeEnginePlayheadFeed.inFlightEpoch = epoch;
+    const sentSeconds = performance.now() / 1000;
     void getEngineTransportPosition()
         .then((reading) => {
             // A reading that lands after its own run ended belongs to a session
@@ -153,6 +155,7 @@ export function pollNativeEnginePlayheadOnce(): void {
                 return;
             }
             nativeEnginePlayheadFeed.reading = reading;
+            nativeRecordingCaptureClockState.observe(reading, sentSeconds, performance.now() / 1000);
             // Before the stopped-transport return below, deliberately. A tuner
             // on a native strip goes on analysing whatever reaches its input
             // with the transport parked — a player checking a string against

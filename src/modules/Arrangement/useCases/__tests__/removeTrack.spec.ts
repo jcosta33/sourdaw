@@ -286,9 +286,7 @@ describe('removeTrack', () => {
         expect(mockEventBus.emit).toHaveBeenCalledWith('track.removed', { trackId: 'bus-1' });
     });
 
-    it('should remove the engine track strip when the master track is deleted', () => {
-        // Master is live-strip eligible, so it owns a TrackNode too (e.g. via
-        // handleRemoveAllTracks, which removes every track).
+    it('refuses to remove the master track and leaves project and engine untouched', () => {
         const master = {
             id: 'master',
             name: 'Master',
@@ -299,15 +297,17 @@ describe('removeTrack', () => {
         };
         vi.mocked(getTrackState).mockReturnValue({
             tracks: [master as never],
-            selectedTrackId: null,
+            selectedTrackId: 'master',
         });
         vi.mocked(getTrackById).mockReturnValue(master as never);
 
-        removeTrack('master');
+        const result = removeTrack('master');
 
-        expect(ownerUseCases.removeTrackStrip).toHaveBeenCalledWith('master');
-        expect(ownerUseCases.removeBusStrip).not.toHaveBeenCalled();
-        expect(mockEventBus.emit).toHaveBeenCalledWith('track.removed', { trackId: 'master' });
+        expect(result).toEqual({ removed: false });
+        expect(setTrackState).not.toHaveBeenCalled();
+        expect(ownerUseCases.removeTrackStrip).not.toHaveBeenCalled();
+        expect(ownerUseCases.removeAutomationLanesForTrack).not.toHaveBeenCalled();
+        expect(mockEventBus.emit).not.toHaveBeenCalled();
     });
 
     it('should not touch engine strips when a folder track is deleted', () => {

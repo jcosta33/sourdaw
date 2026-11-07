@@ -185,7 +185,7 @@ describe('TimelineEmptyMenu', () => {
         fireEvent.click(button);
         expect(executeUserAppAction).toHaveBeenCalledWith({
             type: 'addTrack',
-            payload: { name: 'Audio', kind: 'audio' },
+            payload: { kind: 'audio' },
         });
         expect(mockOnClose).toHaveBeenCalled();
     });

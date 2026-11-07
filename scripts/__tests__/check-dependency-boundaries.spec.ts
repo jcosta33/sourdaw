@@ -23,9 +23,15 @@ import {
     findContractReexportFindings,
     findMixedTypeValueExports,
     findModelCasingFindings,
+    computeModuleTierRows,
+    findModuleTierState,
     findStaticGuardFindings,
+    findWorkerSpawnState,
     isModuleRootIndex,
     isUseCaseBarrel,
+    judgeModuleTierRows,
+    moduleTiersVerdict,
+    refusesBaselineWrite,
 } from '../check-dependency-boundaries.mjs';
 
 const require = createRequire(import.meta.url);
@@ -124,6 +130,97 @@ function invokeStaticGuardFindings(repositoryRoot: string): StaticGuardFinding[]
     return candidate(repositoryRoot);
 }
 
+// Kernel may depend on nothing, core domain only on kernel; Core and Peer share a tier.
+const moduleTierManifest = {
+    tiers: [
+        { name: 'kernel', meaning: 'Knows no domain.', mayDependOn: [] },
+        { name: 'core domain', meaning: 'Owns project truth.', mayDependOn: ['kernel'] },
+    ],
+    modules: {
+        Core: { tier: 'core domain', reason: 'Owns a core aggregate.' },
+        Kernel: { tier: 'kernel', reason: 'Shared kernel.' },
+        Peer: { tier: 'core domain', reason: 'Owns another core aggregate.' },
+    },
+};
+
+function withModuleTierFixture(files: Record<string, FixtureContents>, run: (repositoryRoot: string) => void): void {
+    const repositoryRoot = mkdtempSync(join(tmpdir(), 'check-dependency-boundaries-module-tiers-'));
+    try {
+        for (const moduleName of Object.keys(moduleTierManifest.modules)) {
+            mkdirSync(join(repositoryRoot, 'src/modules', moduleName), { recursive: true });
+        }
+        for (const [repoPath, contents] of Object.entries(files)) {
+            mkdirSync(dirname(join(repositoryRoot, repoPath)), { recursive: true });
+            writeFixtureFiles(repositoryRoot, { [repoPath]: contents });
+        }
+        run(repositoryRoot);
+    } finally {
+        rmSync(repositoryRoot, { force: true, recursive: true });
+    }
+}
+
+function moduleTierRowsOf(repositoryRoot: string) {
+    return findModuleTierState(repositoryRoot, moduleTierManifest).rows;
+}
+
+// Core and Peer form the one allowed cycle; Kernel → Third is the one accepted upward edge.
+// Fourth is a core module no allowance names, so a planted edge through it is never accepted.
+const allowanceManifest = {
+    tiers: moduleTierManifest.tiers,
+    modules: {
+        Core: { tier: 'core domain', reason: 'Owns a core aggregate.' },
+        Fourth: { tier: 'core domain', reason: 'Owns a fourth core aggregate.' },
+        Kernel: { tier: 'kernel', reason: 'Shared kernel.' },
+        Peer: { tier: 'core domain', reason: 'Owns another core aggregate.' },
+        Third: { tier: 'core domain', reason: 'Owns a third core aggregate.' },
+    },
+    allowedCycles: [
+        {
+            name: 'pair',
+            members: ['Peer', 'Core'],
+            reason: 'Core and Peer read each other.',
+            retiredBy: 'A redraw.',
+        },
+    ],
+    acceptedTierEdges: [{ from: 'Kernel', to: 'Third', reason: 'Kernel reads a Third type.' }],
+};
+
+type SyntheticEdge = { from: string; to: string };
+
+const allowedEdges: SyntheticEdge[] = [
+    { from: 'Core', to: 'Peer' },
+    { from: 'Peer', to: 'Core' },
+    { from: 'Kernel', to: 'Third' },
+];
+
+function judgeEdges(edges: SyntheticEdge[], manifest: typeof allowanceManifest = allowanceManifest) {
+    const withExamples = edges.map((edge) => ({ ...edge, example: `src/modules/${edge.from}/useCases/x.ts:1` }));
+    const { rows } = computeModuleTierRows({ edges: withExamples, manifest });
+    return judgeModuleTierRows({ rows, manifest });
+}
+
+const allowedPair = { type: 'module-cycle', members: ['Core', 'Peer'] };
+
+function withWorkerSpawnFixture(files: Record<string, FixtureContents>, run: (repositoryRoot: string) => void): void {
+    const repositoryRoot = mkdtempSync(join(tmpdir(), 'check-dependency-boundaries-worker-spawns-'));
+    try {
+        mkdirSync(join(repositoryRoot, 'src'), { recursive: true });
+        for (const [repoPath, contents] of Object.entries(files)) {
+            mkdirSync(dirname(join(repositoryRoot, repoPath)), { recursive: true });
+            writeFixtureFiles(repositoryRoot, { [repoPath]: contents });
+        }
+        run(repositoryRoot);
+    } finally {
+        rmSync(repositoryRoot, { force: true, recursive: true });
+    }
+}
+
+function workerSpawnRowsOf(repositoryRoot: string) {
+    return findWorkerSpawnState(repositoryRoot).rows;
+}
+
+const nonLiteralWorkerTarget = '<target not a string literal>';
+
 function isUnsupportedSymlinkError(error: unknown): boolean {
     if (typeof error !== 'object' || error === null || !('code' in error)) {
         return false;
@@ -216,8 +313,6 @@ describe('check-dependency-boundaries', () => {
             'src/modules/Foo/index.cts',
             'src/modules/Foo/index.d.ts',
             'src/modules/Foo/Index.D.MTS',
-            'src/modules/Common/Foo/Index.tsx',
-            'src/modules/Supporting/Foo/INDEX.JS',
             'src\\modules\\Foo\\Index.TSX',
         ];
 
@@ -231,6 +326,8 @@ describe('check-dependency-boundaries', () => {
             'src/modules/Foo/events/index.js',
             'src/modules/Foo/stores/Index.d.ts',
             'src/modules/Foo/presentations/views/index.mts',
+            'src/modules/Common/Foo/Index.tsx',
+            'src/modules/Supporting/Foo/INDEX.JS',
         ];
 
         for (const filePath of contractEntries) {
@@ -240,13 +337,89 @@ describe('check-dependency-boundaries', () => {
         expect(isUseCaseBarrel('src\\modules\\Foo\\useCases\\index.ts')).toBe(true);
     });
 
-    it('should capture namespaced modules as distinct modules', () => {
+    it('should treat a Common folder under src/modules as an ordinary module name', () => {
         const ruleConfig = mainConfig.forbidden.find(
             (candidate: { name: string }) => candidate.name === 'cross-module-index-only'
         );
         const match = new RegExp(ruleConfig.from.path).exec('src/modules/Common/Foo/useCases/run.ts');
 
-        expect(match?.slice(1)).toEqual(['src/modules/Common/', 'Foo']);
+        expect(match?.slice(1)).toEqual(['src/modules/', 'Common']);
+    });
+
+    type SameModuleRule = {
+        name: string;
+        severity: string;
+        from: { path: string | string[] };
+        to: { path: string; pathNot: string | string[] };
+    };
+
+    const findRule = (config: { forbidden: SameModuleRule[] }, name: string): SameModuleRule => {
+        const rule = config.forbidden.find((candidate) => candidate.name === name);
+        if (!rule) {
+            throw new Error(`missing rule ${name}`);
+        }
+        return rule;
+    };
+
+    // Evaluates the rule the way dependency-cruiser does: `$n` in `to` takes the
+    // n-th capture group of the first `from.path` pattern that matches.
+    const violatesSameModuleRule = (rule: SameModuleRule, from: string, to: string): boolean => {
+        const groups = [rule.from.path]
+            .flat()
+            .map((pattern) => new RegExp(pattern).exec(from))
+            .find((match) => match !== null);
+        if (!groups) {
+            throw new Error(`${rule.name} does not match ${from}`);
+        }
+        const substitute = (pattern: string): string =>
+            pattern.replace(/\$(\d)/g, (_, index: string) => groups[Number(index)] ?? '');
+        return (
+            new RegExp(rule.to.path).test(to) &&
+            ![rule.to.pathNot].flat().some((pattern) => new RegExp(substitute(pattern)).test(to))
+        );
+    };
+
+    const sameModuleRules: Array<[string, SameModuleRule, string]> = [
+        [
+            'cross-module-index-only',
+            findRule(mainConfig, 'cross-module-index-only'),
+            'src/modules/Project/useCases/run.ts',
+        ],
+        [
+            'no-relative-cross-module-imports',
+            findRule(mainConfig, 'no-relative-cross-module-imports'),
+            'src/modules/Project/useCases/run.ts',
+        ],
+        [
+            'test cross-module-index-only',
+            findRule(testConfig, 'cross-module-index-only'),
+            'src/modules/Project/useCases/__tests__/run.spec.ts',
+        ],
+        [
+            'test no-relative-cross-module-imports',
+            findRule(testConfig, 'no-relative-cross-module-imports'),
+            'src/modules/Project/useCases/__tests__/run.spec.ts',
+        ],
+    ];
+
+    it.each(sameModuleRules)('should exempt only the importing module itself from %s', (_name, rule, from) => {
+        expect(rule.severity).toBe('error');
+        expect(violatesSameModuleRule(rule, from, 'src/modules/Project/models/Thing/Thing.ts')).toBe(false);
+        // A module whose name extends the importer's is a different module.
+        expect(violatesSameModuleRule(rule, from, 'src/modules/ProjectVersioning/models/Thing/Thing.ts')).toBe(true);
+        expect(violatesSameModuleRule(rule, from, 'src/modules/Other/repositories/read.ts')).toBe(true);
+    });
+
+    it('should reject a cross-module import of a non-barrel path and accept barrels', () => {
+        const rule = findRule(mainConfig, 'cross-module-index-only');
+        const from = 'src/modules/A/useCases/x.ts';
+
+        expect(violatesSameModuleRule(rule, from, 'src/modules/B/models/Thing/Thing.ts')).toBe(true);
+        expect(violatesSameModuleRule(rule, from, 'src/modules/B/repositories/read.ts')).toBe(true);
+        expect(violatesSameModuleRule(rule, from, 'src/modules/B/useCases/helper.ts')).toBe(true);
+        expect(violatesSameModuleRule(rule, from, 'src/modules/B/useCases/index.ts')).toBe(false);
+        expect(violatesSameModuleRule(rule, from, 'src/modules/B/presentations/views/index.ts')).toBe(false);
+        expect(violatesSameModuleRule(rule, from, 'src/modules/AB/models/Thing.ts')).toBe(true);
     });
 
     it('should include tests outside modules and global test setup', () => {
@@ -310,7 +483,14 @@ describe('check-dependency-boundaries', () => {
         );
 
         expect(new RegExp(moduleRule.to.path).test('src/modules/Bar/useCases/run.ts')).toBe(true);
+        expect(new RegExp(moduleRule.to.path).test('src/modules/AudioEngine/workers/grandBouleEngineWorker.ts')).toBe(
+            true
+        );
+        expect(new RegExp(moduleRule.to.path).test('src/modules/AudioEngine/worklets/wasmView.ts')).toBe(false);
         expect(new RegExp(desktopIpcRule.to.path).test('/node_modules/.pnpm/@tauri-apps/api/index.js')).toBe(true);
+        expect(new RegExp(desktopIpcRule.from.path).test('src/modules/A/worklets/processor.ts')).toBe(true);
+        expect(new RegExp(desktopIpcRule.to.path).test('src/helpers/clamp.ts')).toBe(true);
+        expect(new RegExp(desktopIpcRule.to.path).test('src/utils/desktopBridge.ts')).toBe(true);
     });
 
     it('should block reverse imports into AudioEngine worklets while keeping the Yeast Worker client separate', () => {
@@ -418,18 +598,16 @@ describe('check-dependency-boundaries', () => {
             'src/components/TauriClient.tsx',
             'src/app/tauriClient.ts',
             'src/routes/tauriClient.ts',
-            'src/shared/tauriClient.ts',
+            'src/engine/tauriClient.ts',
             'src/helpers/tauriClient.ts',
             'src/types/tauriClient.d.ts',
             'src/utils/otherBridge.ts',
             'src/utils/__tests__/other.spec.ts',
         ];
-        const allowedRepositoryOrigins = [
-            'src/modules/Foo/repositories/read.ts',
+        const allowedRepositoryOrigins = ['src/modules/Foo/repositories/read.ts'];
+        const nestedRepositoryOrigins = [
             'src/modules/Common/Foo/repositories/read.ts',
             'src/modules/Supporting/Foo/repositories/read.ts',
-        ];
-        const nestedRepositoryOrigins = [
             'src/modules/Foo/useCases/repositories/tauriClient.ts',
             'src/modules/Foo/presentations/repositories/tauriClient.ts',
             'src/modules/Foo/repositoriesSibling/tauriClient.ts',
@@ -500,6 +678,40 @@ describe('check-dependency-boundaries', () => {
         expect(violates('src/modules/Foo/useCases/__tests__/run.spec.ts', resolvedTauriPath)).toBe(true);
         expect(violates('src/modules/Foo/useCases/run.ts', 'src/utils/desktopBridge.ts')).toBe(true);
         expect(violates('src/modules/Foo/repositories/read.ts', 'src/utils/desktopBridge.ts')).toBe(false);
+    });
+
+    it('should treat only src/modules/<Module>/repositories as a repository surface', () => {
+        let repositoryRoot: string | undefined;
+
+        try {
+            repositoryRoot = mkdtempSync(join(tmpdir(), 'check-dependency-boundaries-repository-root-'));
+            const vendorExport = "export type { InvokeArgs } from '@tauri-apps/api/core';\n";
+            const moduleRepository = join(repositoryRoot, 'src/modules/Foo/repositories');
+            const namespacedRepository = join(repositoryRoot, 'src/modules/Common/Foo/repositories');
+            mkdirSync(moduleRepository, { recursive: true });
+            mkdirSync(namespacedRepository, { recursive: true });
+            writeFileSync(join(moduleRepository, 'direct.ts'), vendorExport);
+            writeFileSync(join(namespacedRepository, 'direct.ts'), vendorExport);
+            const consumer = [
+                "import type { InvokeArgs } from '../repositories/direct';",
+                'export type Consumed = InvokeArgs;',
+                '',
+            ].join('\n');
+            mkdirSync(join(repositoryRoot, 'src/modules/Foo/useCases'), { recursive: true });
+            mkdirSync(join(repositoryRoot, 'src/modules/Common/Foo/useCases'), { recursive: true });
+            writeFileSync(join(repositoryRoot, 'src/modules/Foo/useCases/consume.ts'), consumer);
+            writeFileSync(join(repositoryRoot, 'src/modules/Common/Foo/useCases/consume.ts'), consumer);
+
+            const vendorFiles = findStaticGuardFindings(repositoryRoot)
+                .filter(({ reason }) => reason.includes('Tauri vendor type'))
+                .map(({ file }) => file);
+
+            expect(vendorFiles).toEqual(['src/modules/Foo/repositories/direct.ts']);
+        } finally {
+            if (repositoryRoot) {
+                rmSync(repositoryRoot, { force: true, recursive: true });
+            }
+        }
     });
 
     it('should reject Tauri vendor types crossing repository public surfaces', () => {
@@ -1611,6 +1823,483 @@ describe('check-dependency-boundaries', () => {
             (candidate: { name: string }) => candidate.name === 'module-runtime-no-worker-imports-type-only'
         );
         expect(new RegExp(reverseWorkerTypeRule.to.path).test('src/modules/Yeast/workers/MidiRack.ts')).toBe(true);
+    });
+
+    it('should fail a planted module edge its tier may not take, naming an example import', () => {
+        const allowedEdge = {
+            'src/modules/Peer/useCases/readKernel.ts': "import { kernel } from '#/modules/Kernel/stores';\n",
+        };
+        withModuleTierFixture(allowedEdge, (baselineRoot) => {
+            const known = moduleTierRowsOf(baselineRoot);
+            expect(known).toEqual([]);
+
+            withModuleTierFixture(
+                {
+                    ...allowedEdge,
+                    'src/modules/Kernel/useCases/readCore.ts': [
+                        "import { track } from '#/modules/Core/stores';",
+                        'export const read = () => track;',
+                    ],
+                },
+                (repositoryRoot) => {
+                    const state = findModuleTierState(repositoryRoot, moduleTierManifest);
+                    const planted = { type: 'module-tier', from: 'Kernel', to: 'Core' };
+
+                    expect(compareRows({ current: state.rows, known })).toEqual({ novel: [planted], stale: [] });
+                    expect([...state.details.values()]).toEqual([
+                        'kernel may not depend on core domain; e.g. src/modules/Kernel/useCases/readCore.ts:1',
+                    ]);
+                }
+            );
+        });
+    });
+
+    it('should leave a stale module-tier row once its last import is removed', () => {
+        withModuleTierFixture(
+            { 'src/modules/Kernel/useCases/readCore.ts': "export { track } from '#/modules/Core/stores';\n" },
+            (repositoryRoot) => {
+                const known = moduleTierRowsOf(repositoryRoot);
+                expect(known).toEqual([{ type: 'module-tier', from: 'Kernel', to: 'Core' }]);
+
+                rmSync(join(repositoryRoot, 'src/modules/Kernel/useCases/readCore.ts'));
+
+                expect(compareRows({ current: moduleTierRowsOf(repositoryRoot), known })).toEqual({
+                    novel: [],
+                    stale: known,
+                });
+            }
+        );
+    });
+
+    it('should refuse a module directory without a tier and a tier row without a directory', () => {
+        withModuleTierFixture({ 'src/modules/Orphan/useCases/run.ts': 'export const run = 1;\n' }, (repositoryRoot) => {
+            rmSync(join(repositoryRoot, 'src/modules/Peer'), { recursive: true });
+
+            expect(findModuleTierState(repositoryRoot, moduleTierManifest).findings).toEqual([
+                {
+                    file: '.dependency-cruiser.module-tiers.cjs',
+                    line: 1,
+                    reason: 'module Peer has a tier but no src/modules/Peer directory',
+                },
+                { file: '.dependency-cruiser.module-tiers.cjs', line: 1, reason: 'module Orphan has no tier' },
+            ]);
+        });
+    });
+
+    it('should refuse a module that names a tier the manifest does not define', () => {
+        withModuleTierFixture({}, (repositoryRoot) => {
+            const manifest = {
+                ...moduleTierManifest,
+                modules: { ...moduleTierManifest.modules, Peer: { tier: 'platform', reason: 'Misplaced.' } },
+            };
+
+            expect(findModuleTierState(repositoryRoot, manifest).findings).toEqual([
+                {
+                    file: '.dependency-cruiser.module-tiers.cjs',
+                    line: 1,
+                    reason: 'module Peer names unknown tier "platform"',
+                },
+            ]);
+        });
+    });
+
+    it('should refuse a tier that may depend on a tier the manifest does not define', () => {
+        withModuleTierFixture({}, (repositoryRoot) => {
+            const manifest = {
+                ...moduleTierManifest,
+                tiers: [
+                    moduleTierManifest.tiers[0],
+                    { name: 'core domain', meaning: 'Owns project truth.', mayDependOn: ['kernel', 'platform'] },
+                ],
+            };
+
+            expect(findModuleTierState(repositoryRoot, manifest).findings).toEqual([
+                {
+                    file: '.dependency-cruiser.module-tiers.cjs',
+                    line: 1,
+                    reason: 'tier "core domain" may depend on unknown tier "platform"',
+                },
+            ]);
+        });
+    });
+
+    it('should report a two-module cycle as one strongly connected component row', () => {
+        withModuleTierFixture(
+            {
+                'src/modules/Core/useCases/readPeer.ts': "import type { Peer } from '#/modules/Peer/stores';\n",
+                'src/modules/Peer/useCases/loadCore.ts':
+                    "export const load = () => import('#/modules/Core/useCases');\n",
+            },
+            (repositoryRoot) => {
+                const rows = moduleTierRowsOf(repositoryRoot);
+                expect(rows).toEqual([{ type: 'module-cycle', members: ['Core', 'Peer'] }]);
+
+                // A cycle that grows or shrinks is a different row, never the same one.
+                const known = [{ type: 'module-cycle', members: ['Core', 'Kernel', 'Peer'] }];
+                expect(compareRows({ current: rows, known })).toEqual({ novel: rows, stale: known });
+            }
+        );
+    });
+
+    it('should ignore edges into presentations and edges from tests, testing helpers and presentations', () => {
+        withModuleTierFixture(
+            {
+                'src/modules/Kernel/useCases/__tests__/readPeer.spec.ts':
+                    "import { peer } from '#/modules/Peer/stores';\n",
+                'src/modules/Kernel/useCases/readPeer.test.ts': "import { peer } from '#/modules/Peer/stores';\n",
+                'src/modules/Kernel/testing/peerFixture.ts': "import { peer } from '#/modules/Peer/stores';\n",
+                'src/modules/Kernel/presentations/views/PeerView.tsx':
+                    "import { peer } from '#/modules/Peer/stores';\n",
+                'src/modules/Kernel/useCases/mountPeer.ts':
+                    "import { PeerPanel } from '#/modules/Peer/presentations/views';\n",
+                // The one counted edge, spelled relatively, proves the scan itself runs.
+                'src/modules/Kernel/useCases/readCore.ts': "import { track } from '../../Core/stores';\n",
+            },
+            (repositoryRoot) => {
+                expect(moduleTierRowsOf(repositoryRoot)).toEqual([{ type: 'module-tier', from: 'Kernel', to: 'Core' }]);
+            }
+        );
+    });
+
+    it('should admit a same-tier edge that the tier list does not name', () => {
+        withModuleTierFixture(
+            { 'src/modules/Core/useCases/readPeer.ts': "import { peer } from '#/modules/Peer/stores';\n" },
+            (repositoryRoot) => {
+                expect(moduleTierManifest.tiers[1]?.mayDependOn).not.toContain('core domain');
+                expect(moduleTierRowsOf(repositoryRoot)).toEqual([]);
+            }
+        );
+    });
+
+    it('should pass module tier rows that exactly match the manifest allowances', () => {
+        const withExamples = allowedEdges.map((edge) => ({ ...edge, example: 'src/modules/x.ts:1' }));
+        const { rows } = computeModuleTierRows({ edges: withExamples, manifest: allowanceManifest });
+
+        expect(rows).toEqual([allowedPair, { type: 'module-tier', from: 'Kernel', to: 'Third' }]);
+        expect(judgeModuleTierRows({ rows, manifest: allowanceManifest })).toEqual({ novel: [], stale: [] });
+    });
+
+    describe('gate verdict the CLI exits on', () => {
+        const exactRows = [allowedPair, { type: 'module-tier', from: 'Kernel', to: 'Third' }];
+        const novelRow = { type: 'module-tier', from: 'Fourth', to: 'Third' };
+
+        it('should be ok when the rows exactly match the manifest allowances', () => {
+            expect(moduleTiersVerdict({ rows: exactRows, manifest: allowanceManifest })).toEqual({
+                ok: true,
+                novel: [],
+                stale: [],
+            });
+        });
+
+        it('should not be ok when an allowance is stale and no row is novel', () => {
+            const verdict = moduleTiersVerdict({ rows: [allowedPair], manifest: allowanceManifest });
+
+            expect(verdict).toEqual({
+                ok: false,
+                novel: [],
+                stale: [{ type: 'module-tier', from: 'Kernel', to: 'Third' }],
+            });
+        });
+
+        it('should not be ok when a row is novel and no allowance is stale', () => {
+            const verdict = moduleTiersVerdict({ rows: [...exactRows, novelRow], manifest: allowanceManifest });
+
+            expect(verdict).toEqual({ ok: false, novel: [novelRow], stale: [] });
+        });
+    });
+
+    describe('baseline write refusal', () => {
+        it('should refuse to write a baseline for the manifest-governed moduleTiers gate', () => {
+            expect(refusesBaselineWrite('moduleTiers')).toBe(true);
+        });
+
+        it('should accept a real baseline gate name', () => {
+            expect(refusesBaselineWrite('workerSpawns')).toBe(false);
+        });
+    });
+
+    it('should fail a planted new member of an allowed cycle', () => {
+        const planted = [...allowedEdges, { from: 'Peer', to: 'Fourth' }, { from: 'Fourth', to: 'Core' }];
+
+        expect(judgeEdges(planted)).toEqual({
+            novel: [{ type: 'module-cycle', members: ['Core', 'Fourth', 'Peer'] }],
+            stale: [allowedPair],
+        });
+    });
+
+    it('should fail a planted second cycle beside the allowed one', () => {
+        const planted = [...allowedEdges, { from: 'Third', to: 'Fourth' }, { from: 'Fourth', to: 'Third' }];
+
+        expect(judgeEdges(planted)).toEqual({
+            novel: [{ type: 'module-cycle', members: ['Fourth', 'Third'] }],
+            stale: [],
+        });
+    });
+
+    it('should fail an allowed cycle whose observed cycle has lost a member', () => {
+        const manifest = {
+            ...allowanceManifest,
+            allowedCycles: [{ ...allowanceManifest.allowedCycles[0], members: ['Core', 'Fourth', 'Peer'] }],
+        };
+
+        expect(judgeEdges(allowedEdges, manifest)).toEqual({
+            novel: [allowedPair],
+            stale: [{ type: 'module-cycle', members: ['Core', 'Fourth', 'Peer'] }],
+        });
+    });
+
+    it('should fail a planted upward tier edge no allowance accepts', () => {
+        expect(judgeEdges([...allowedEdges, { from: 'Kernel', to: 'Fourth' }])).toEqual({
+            novel: [{ type: 'module-tier', from: 'Kernel', to: 'Fourth' }],
+            stale: [],
+        });
+    });
+
+    it('should fail an allowed cycle the code no longer produces as stale', () => {
+        const withoutCycle = allowedEdges.filter(({ from, to }) => !(from === 'Peer' && to === 'Core'));
+
+        expect(judgeEdges(withoutCycle)).toEqual({ novel: [], stale: [allowedPair] });
+    });
+
+    it('should fail an accepted tier edge the code no longer produces as stale', () => {
+        const withoutEdge = allowedEdges.filter(({ from }) => from !== 'Kernel');
+
+        expect(judgeEdges(withoutEdge)).toEqual({
+            novel: [],
+            stale: [{ type: 'module-tier', from: 'Kernel', to: 'Third' }],
+        });
+    });
+
+    it('should refuse an allowance whose reason is empty or missing', () => {
+        withModuleTierFixture({}, (repositoryRoot) => {
+            const reasoned = {
+                ...moduleTierManifest,
+                allowedCycles: [
+                    { name: 'pair', members: ['Core', 'Peer'], reason: 'Both read.', retiredBy: 'A redraw.' },
+                ],
+                acceptedTierEdges: [{ from: 'Kernel', to: 'Core', reason: 'Kernel reads a Core type.' }],
+            };
+            expect(findModuleTierState(repositoryRoot, reasoned).findings).toEqual([]);
+
+            const unreasoned = {
+                ...reasoned,
+                allowedCycles: [{ name: 'pair', members: ['Core', 'Peer'], reason: ' ', retiredBy: '' }],
+                acceptedTierEdges: [{ from: 'Kernel', to: 'Core' }],
+            };
+            expect(findModuleTierState(repositoryRoot, unreasoned).findings).toEqual([
+                { file: '.dependency-cruiser.module-tiers.cjs', line: 1, reason: 'allowed cycle "pair" has no reason' },
+                {
+                    file: '.dependency-cruiser.module-tiers.cjs',
+                    line: 1,
+                    reason: 'allowed cycle "pair" names no decision that would retire it',
+                },
+                {
+                    file: '.dependency-cruiser.module-tiers.cjs',
+                    line: 1,
+                    reason: 'accepted tier edge Kernel → Core has no reason',
+                },
+            ]);
+        });
+    });
+
+    it('should fail a Worker spawned from a file outside a workers/ folder, naming the spawn site', () => {
+        withWorkerSpawnFixture({}, (baselineRoot) => {
+            const known = workerSpawnRowsOf(baselineRoot);
+            expect(known).toEqual([]);
+
+            withWorkerSpawnFixture(
+                {
+                    'src/modules/Foo/repositories/startFoo.ts': [
+                        'export const start = () =>',
+                        "    new Worker(new URL('./fooWorker.ts', import.meta.url), { type: 'module' });",
+                    ],
+                },
+                (repositoryRoot) => {
+                    const state = findWorkerSpawnState(repositoryRoot);
+                    const planted = {
+                        type: 'worker-spawn',
+                        from: 'src/modules/Foo/repositories/startFoo.ts',
+                        to: 'src/modules/Foo/repositories/fooWorker.ts',
+                    };
+
+                    expect(compareRows({ current: state.rows, known })).toEqual({ novel: [planted], stale: [] });
+                    expect([...state.details.values()]).toEqual([
+                        'worker entry must live in a workers/ folder; e.g. line 2',
+                    ]);
+                }
+            );
+        });
+    });
+
+    it('should admit a Worker, SharedWorker and ?worker import whose target is in a workers/ folder', () => {
+        withWorkerSpawnFixture(
+            {
+                'src/modules/Foo/repositories/startFoo.ts': [
+                    "export const a = () => new Worker(new URL('../workers/fooWorker.ts', import.meta.url));",
+                    "export const b = () => new SharedWorker(new URL('../workers/fooWorker.ts', import.meta.url));",
+                    "export const c = () => import('../workers/fooWorker?worker');",
+                ],
+                'src/modules/Foo/useCases/startFoo.ts':
+                    "import FooWorker from '#/modules/Foo/workers/fooWorker?sharedworker';\nexport { FooWorker };\n",
+                'src/infra/archive/extract.ts':
+                    "export const e = () => new Worker(new URL('./workers/extractWorker.ts', import.meta.url));\n",
+            },
+            (repositoryRoot) => {
+                expect(workerSpawnRowsOf(repositoryRoot)).toEqual([]);
+            }
+        );
+    });
+
+    it('should fail a ?worker import and a new SharedWorker whose target is outside a workers/ folder', () => {
+        withWorkerSpawnFixture(
+            {
+                'src/modules/Foo/repositories/loadFoo.ts': "export const load = () => import('../fooWorker?worker');\n",
+                'src/modules/Foo/useCases/shareFoo.ts':
+                    "export const share = () => new SharedWorker(new URL('./fooShared.ts', import.meta.url));\n",
+                'src/modules/Foo/engine/importFoo.ts':
+                    "import FooWorker from './fooEngineWorker?worker';\nexport { FooWorker };\n",
+                'src/modules/Foo/engine/nestedWorkersName.ts':
+                    "export const n = () => new Worker(new URL('./notworkers/inner.ts', import.meta.url));\n",
+            },
+            (repositoryRoot) => {
+                expect(workerSpawnRowsOf(repositoryRoot).map(({ from, to }) => ({ from, to }))).toEqual([
+                    { from: 'src/modules/Foo/engine/importFoo.ts', to: 'src/modules/Foo/engine/fooEngineWorker' },
+                    {
+                        from: 'src/modules/Foo/engine/nestedWorkersName.ts',
+                        to: 'src/modules/Foo/engine/notworkers/inner.ts',
+                    },
+                    { from: 'src/modules/Foo/repositories/loadFoo.ts', to: 'src/modules/Foo/fooWorker' },
+                    { from: 'src/modules/Foo/useCases/shareFoo.ts', to: 'src/modules/Foo/useCases/fooShared.ts' },
+                ]);
+            }
+        );
+    });
+
+    it('should fail a combined Vite worker query whose target is outside a workers/ folder', () => {
+        withWorkerSpawnFixture(
+            {
+                'src/modules/Foo/repositories/inline.ts': "import A from '../a?worker&inline';\nexport { A };\n",
+                'src/modules/Foo/repositories/shared.ts': "import B from '../b?sharedworker';\nexport { B };\n",
+                'src/modules/Foo/repositories/sharedInline.ts':
+                    "export const c = () => import('../c?sharedworker&inline');\n",
+                'src/modules/Foo/repositories/reversed.ts': "import D from '../d?inline&worker';\nexport { D };\n",
+            },
+            (repositoryRoot) => {
+                expect(workerSpawnRowsOf(repositoryRoot).map(({ from, to }) => ({ from, to }))).toEqual([
+                    { from: 'src/modules/Foo/repositories/inline.ts', to: 'src/modules/Foo/a' },
+                    { from: 'src/modules/Foo/repositories/reversed.ts', to: 'src/modules/Foo/d' },
+                    { from: 'src/modules/Foo/repositories/shared.ts', to: 'src/modules/Foo/b' },
+                    { from: 'src/modules/Foo/repositories/sharedInline.ts', to: 'src/modules/Foo/c' },
+                ]);
+            }
+        );
+    });
+
+    it('should admit a combined Vite worker query whose target is in a workers/ folder', () => {
+        withWorkerSpawnFixture(
+            {
+                'src/modules/Foo/repositories/inline.ts':
+                    "import A from '../workers/a?worker&inline';\nexport { A };\n",
+                'src/modules/Foo/repositories/shared.ts': "import B from '../workers/b?sharedworker';\nexport { B };\n",
+                'src/modules/Foo/repositories/sharedInline.ts':
+                    "export const c = () => import('../workers/c?sharedworker&inline');\n",
+            },
+            (repositoryRoot) => {
+                expect(workerSpawnRowsOf(repositoryRoot)).toEqual([]);
+            }
+        );
+    });
+
+    it('should not count a Vite query that asks for a worker URL, or one that only resembles a worker query', () => {
+        withWorkerSpawnFixture(
+            {
+                'src/modules/Foo/engine/urlForm.ts':
+                    "import a from '../worklets/a.ts?worker&url';\nimport b from '../worklets/b.ts?url&worker';\nexport { a, b };\n",
+                'src/modules/Foo/engine/lookalike.ts':
+                    "import c from '../c?workers';\nimport d from '../d?myworker&inline';\nexport { c, d };\n",
+                // The one counted spawn proves the scan itself runs.
+                'src/modules/Foo/engine/counted.ts': "import e from '../e?worker&inline';\nexport { e };\n",
+            },
+            (repositoryRoot) => {
+                expect(workerSpawnRowsOf(repositoryRoot).map(({ from }) => from)).toEqual([
+                    'src/modules/Foo/engine/counted.ts',
+                ]);
+            }
+        );
+    });
+
+    it('should fail a Worker whose target is not a string literal', () => {
+        withWorkerSpawnFixture(
+            {
+                'src/modules/Foo/repositories/variable.ts':
+                    'export const v = (path: string) => new Worker(new URL(path, import.meta.url));\n',
+                'src/modules/Foo/repositories/plainUrl.ts': "export const p = () => new Worker('/fooWorker.js');\n",
+                'src/modules/Foo/repositories/noBase.ts':
+                    "export const n = () => new Worker(new URL('../workers/a.ts'));\n",
+            },
+            (repositoryRoot) => {
+                expect(workerSpawnRowsOf(repositoryRoot)).toEqual([
+                    {
+                        type: 'worker-spawn',
+                        from: 'src/modules/Foo/repositories/noBase.ts',
+                        to: nonLiteralWorkerTarget,
+                    },
+                    {
+                        type: 'worker-spawn',
+                        from: 'src/modules/Foo/repositories/plainUrl.ts',
+                        to: nonLiteralWorkerTarget,
+                    },
+                    {
+                        type: 'worker-spawn',
+                        from: 'src/modules/Foo/repositories/variable.ts',
+                        to: nonLiteralWorkerTarget,
+                    },
+                ]);
+            }
+        );
+    });
+
+    it('should leave a stale worker-spawn row once the spawn is removed', () => {
+        withWorkerSpawnFixture(
+            {
+                'src/modules/Foo/repositories/startFoo.ts':
+                    "export const s = () => new Worker(new URL('./fooWorker.ts', import.meta.url));\n",
+            },
+            (repositoryRoot) => {
+                const known = workerSpawnRowsOf(repositoryRoot);
+                expect(known).toHaveLength(1);
+
+                rmSync(join(repositoryRoot, 'src/modules/Foo/repositories/startFoo.ts'));
+
+                expect(compareRows({ current: workerSpawnRowsOf(repositoryRoot), known })).toEqual({
+                    novel: [],
+                    stale: known,
+                });
+            }
+        );
+    });
+
+    it('should not count worklet processor URLs, unrelated constructors or non-production files as spawns', () => {
+        withWorkerSpawnFixture(
+            {
+                'src/modules/Foo/engine/FooNode.ts':
+                    "import url from '../worklets/fooProcessor.ts?worker&url';\nexport { url };\n",
+                'src/modules/Foo/engine/Other.ts':
+                    "export const o = () => new Date(new URL('./x.ts', import.meta.url));\n",
+                'src/modules/Foo/repositories/__tests__/startFoo.spec.ts':
+                    "export const s = () => new Worker(new URL('./fooWorker.ts', import.meta.url));\n",
+                'src/modules/Foo/testing/fakeFoo.ts':
+                    "export const t = () => new Worker(new URL('./fooWorker.ts', import.meta.url));\n",
+                // The one counted spawn proves the scan itself runs.
+                'src/modules/Foo/repositories/startFoo.ts':
+                    "export const s = () => new Worker(new URL('./fooWorker.ts', import.meta.url));\n",
+            },
+            (repositoryRoot) => {
+                expect(workerSpawnRowsOf(repositoryRoot).map(({ from }) => from)).toEqual([
+                    'src/modules/Foo/repositories/startFoo.ts',
+                ]);
+            }
+        );
     });
 
     it('should verify AGENTS.md and provider symlinks across all modules in src/modules', () => {

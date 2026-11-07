@@ -86,15 +86,29 @@ const midiMocks = vi.hoisted(() => {
     return {
         state,
         splitMidiNotesAtBeat: vi.fn(
-            (input: { sourceClipId: string; newClipId: string; splitBeat: number; discardBeforeBeat?: number }) => {
+            (input: {
+                sourceClipId: string;
+                newClipId: string;
+                splitBeat: number;
+                discardBeforeBeat?: number;
+                copiesLoopMaterial?: boolean;
+            }) => {
                 // Behavior-faithful partition: drop notes in
                 // [discardBeforeBeat, splitBeat), re-base notes >= splitBeat
-                // onto the new clip at -splitBeat, trim straddlers.
+                // onto the new clip at -splitBeat, trim straddlers. A looping
+                // source's fragment copies every row unchanged instead.
                 const s = state.value;
                 if (!s) {
                     return;
                 }
                 const source = s.notesByClipId[input.sourceClipId] ?? [];
+                if (input.copiesLoopMaterial) {
+                    setValue({
+                        ...s,
+                        notesByClipId: { ...s.notesByClipId, [input.newClipId]: source.map((note) => ({ ...note })) },
+                    });
+                    return;
+                }
                 const discardBefore = input.discardBeforeBeat ?? Number.NEGATIVE_INFINITY;
                 const kept: Array<Record<string, unknown>> = [];
                 const moved: Array<Record<string, unknown>> = [];
@@ -640,11 +654,9 @@ describe('bounceSelection', () => {
         };
     }
 
-    it('a spanning looped fragment re-stamps the anchor to its head and keeps sounding its surviving notes', async () => {
-        // Looped [0,10), L=4, anchored at 0: window [0,4). n-left sounds and
-        // stays in the left half; n-in (m 3) is in-selection and discarded;
-        // n-right/n-tail (m 9, 13) move to the fragment re-based by −8,
-        // landing at 1 and 5.
+    it('a spanning looped MIDI fragment keeps the source basis and every row of its loop', async () => {
+        // Looped [0,10), L=4, anchored at 0: window [0,4). Bounce selection
+        // [2,8) leaves the left half [0,2) and a right fragment [8,10).
         midiMocks.state.value = {
             notesByClipId: {
                 'clip-span-midi': [
@@ -680,21 +692,31 @@ describe('bounceSelection', () => {
 
         const fragment = keptFragment();
         expect(fragment.startBeat).toBe(8);
-        expect(fragment.midiOffsetBeats).toBe(0);
-        // Re-stamped to the fragment's own head. The stale carry would derive
-        // advance 8, whose window [−8,−4) silences every survivor; the re-stamp
-        // makes the advance 0 — exactly the anchor-absent figure — so the
-        // window law here reduces to the unanchored read the dedicated specs
-        // pin end-to-end for the same restamp derivation
+        // The looping source's basis carries: the content offset advances to
+        // the selection end, the anchor and the loop length stay the source's,
+        // and the fragment holds every row of the loop, so it plays the
+        // source's passes from beat 8 on. The re-based restamp (#5495) entered
+        // the loop at its head instead, a phase shift for any cut off the loop
+        // grid. The dedicated specs score the same derivation end-to-end
         // (selectedTimeRangeDeletionLoopOrigin.spec.ts).
-        expect(fragment.loopOriginBeat).toBe(8);
+        expect(fragment.midiOffsetBeats).toBe(8);
+        expect(fragment.loopOriginBeat).toBe(0);
+        expect(fragment.loopLength).toBe(4);
+        expect(midiMocks.splitMidiNotesAtBeat).toHaveBeenCalledWith(
+            expect.objectContaining({ sourceClipId: 'clip-span-midi', copiesLoopMaterial: true })
+        );
+        expect(midiMocks.state.value?.notesByClipId[fragment.id]?.map((note) => note.id)).toEqual([
+            'n-left',
+            'n-in',
+            'n-right',
+            'n-tail',
+        ]);
     });
 
-    it('a right-edge looped fragment re-stamps the anchor to its head and keeps sounding its surviving notes', async () => {
+    it('a right-edge looped MIDI fragment keeps the source basis', async () => {
         // Looped [4,10), L=4, anchored at 4: window [0,4) covering timeline
-        // [4,8). Selection [4,6) excises the head m∈[0,2): n-a/n-b (m 2.5, 3.5)
-        // sound before and survive onto the fragment at 0.5/1.5; n-c (m 6.5)
-        // lands past the re-stamped window.
+        // [4,8). Selection [4,6) bounces the head; the fragment [6,10) keeps
+        // the rest.
         midiMocks.state.value = {
             notesByClipId: {
                 'clip-edge': [
@@ -729,8 +751,12 @@ describe('bounceSelection', () => {
 
         const fragment = keptFragment();
         expect(fragment.startBeat).toBe(6);
-        expect(fragment.midiOffsetBeats).toBe(0);
-        expect(fragment.loopOriginBeat).toBe(6);
+        // The source's basis carries: content offset 2 at the selection end,
+        // the anchor at 4, so the fragment enters the loop at phase 2 where
+        // the source played it.
+        expect(fragment.midiOffsetBeats).toBe(2);
+        expect(fragment.loopOriginBeat).toBe(4);
+        expect(fragment.loopLength).toBe(4);
     });
 
     it('a spanning looped audio fragment carries its anchor and keeps the source region', async () => {

@@ -157,10 +157,10 @@ function publishCount(control: Int32Array, sampleCount: number, sampleZeroContex
     storeRecordingSampleCount(control, sampleCount);
 }
 
-async function loadActualProducer(): Promise<typeof import('../../services/recordingProcessor').writeRingRelease> {
+async function loadActualProducer(): Promise<typeof import('../../worklets/recordingProcessor').writeRingRelease> {
     vi.stubGlobal('AudioWorkletProcessor', class {});
     vi.stubGlobal('registerProcessor', vi.fn());
-    const { writeRingRelease } = await import('../../services/recordingProcessor');
+    const { writeRingRelease } = await import('../../worklets/recordingProcessor');
     return writeRingRelease;
 }
 

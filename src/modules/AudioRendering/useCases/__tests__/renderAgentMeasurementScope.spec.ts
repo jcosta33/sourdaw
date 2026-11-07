@@ -15,7 +15,7 @@ const engine = vi.hoisted(() => ({
     renderTrackSubgraphOffline: vi.fn(),
     isExportActive: vi.fn(),
 }));
-const crdt = vi.hoisted(() => ({ projectRevisionMatchesLiveIgnoringCommandCheckpoint: vi.fn() }));
+const crdt = vi.hoisted(() => ({ projectRevisionMatchesLiveIgnoringSaveWrites: vi.fn() }));
 
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
@@ -26,7 +26,7 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
 
 vi.mock('#/modules/CrdtDocument/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/CrdtDocument/useCases')>()),
-    projectRevisionMatchesLiveIgnoringCommandCheckpoint: crdt.projectRevisionMatchesLiveIgnoringCommandCheckpoint,
+    projectRevisionMatchesLiveIgnoringSaveWrites: crdt.projectRevisionMatchesLiveIgnoringSaveWrites,
 }));
 
 function track(id: string, kind: Track['kind'], overrides: Partial<Track> = {}): Track {
@@ -48,7 +48,7 @@ beforeEach(() => {
     engine.renderOffline.mockReset().mockResolvedValue(fakeBuffer());
     engine.renderTrackSubgraphOffline.mockReset().mockResolvedValue(fakeBuffer());
     engine.isExportActive.mockReset().mockReturnValue(false);
-    crdt.projectRevisionMatchesLiveIgnoringCommandCheckpoint.mockReset().mockReturnValue(true);
+    crdt.projectRevisionMatchesLiveIgnoringSaveWrites.mockReset().mockReturnValue(true);
     sidechainStore.set({ routes: [] });
     trackStore.set({
         tracks: [track('master', 'master'), track('track-1', 'audio'), track('up-1', 'audio', { outputId: 'track-1' })],

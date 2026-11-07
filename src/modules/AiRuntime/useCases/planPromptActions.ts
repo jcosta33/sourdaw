@@ -1,4 +1,9 @@
-import { captureProjectRevision, settlePendingProjectWritesAndCaptureRevision } from '#/modules/CrdtDocument/useCases';
+import { openCachedAudioBufferHold } from '#/modules/AudioEngine/useCases';
+import {
+    type captureProjectRevision,
+    projectRevisionMatchesLiveIgnoringSaveWrites,
+    settlePendingProjectWritesAndCaptureRevision,
+} from '#/modules/CrdtDocument/useCases';
 import { canonicalJson } from '#/utils/canonicalDigest';
 
 import { AiProposalInvalidatedError } from '../errors/AiProposalInvalidatedError';
@@ -7,6 +12,7 @@ import { type AgentRunCreationRefusalReason, describeAgentRunCreationRefusal } f
 import { getCreativeSelectionSnapshot } from '../models/CreativeInterpretation';
 import { type PlannedIntentResult } from '../models/IntentResult';
 import { type ModelProviderResult, type ModelProviderStreamIdentity } from '../models/ModelProviderProtocol';
+import { type AnswerSuggestion } from '../models/PlanningOutcome';
 import { type PlanningProfile, guardReadonlyPlanningResult } from '../models/PlanningProfile';
 import { type StemImportPromptScope } from '../models/StemImportCapability';
 import { type ThreadContext } from '../models/ThreadContext';
@@ -15,7 +21,6 @@ import { admitBoundedAgentCorrection } from './admitBoundedAgentCorrection';
 import { normalizeAgentFailure } from './agentErrorAndSaga';
 import { createStemImportPromptScope } from './agentReference/createStemImportPromptScope';
 import { preparedStemImportCleanup } from './agentReference/discardPreparedStemImportResources';
-import { getWholeProjectVibeMixScope } from './agentReference/getWholeProjectVibeMixScope';
 import { prepareStemImport } from './agentReference/prepareStemImport';
 import { preparedStemImportResources } from './agentReference/registerPreparedStemImportResources';
 import { agentRunLifecycle } from './agentRunLifecycle';
@@ -24,6 +29,7 @@ import { agentRunCancellation } from './cancelAgentRun';
 import { getProjectContext } from './getProjectContext';
 import { type ProviderAttemptAdmission, type ProviderAttemptAdmissionResult } from './llmOrchestration/inference';
 import { parsePromptToActions } from './parsePromptToActions';
+import { settledProjectContentMatches } from './settledProjectContentMatches';
 
 type PlanPromptActionsInput = {
     prompt: string;
@@ -36,6 +42,8 @@ type PlanPromptActionsInput = {
     profile?: PlanningProfile;
     /** The chat thread's state before this request; a request from outside a thread passes none. */
     thread?: ThreadContext | null;
+    /** An earlier answer's suggestion the user asked to see proposed, compiled without a provider. */
+    suggestion?: AnswerSuggestion;
 };
 
 /**
@@ -191,6 +199,7 @@ export async function planPromptActions(input: PlanPromptActionsInput): Promise<
         await preparedStemImportCleanup.discardBestEffort(stemImportScope.actionSeed.stems);
     };
     const profileOptions = input.profile === undefined ? {} : { profile: input.profile };
+    const suggestionOptions = input.suggestion === undefined ? {} : { suggestion: input.suggestion };
     let result;
     try {
         result = await parsePromptToActions({
@@ -205,6 +214,7 @@ export async function planPromptActions(input: PlanPromptActionsInput): Promise<
             onMeasurementAttempt,
             thread: input.thread,
             ...profileOptions,
+            ...suggestionOptions,
         });
         if (input.profile === 'readonly-answer') {
             result = guardReadonlyPlanningResult(result);
@@ -213,11 +223,13 @@ export async function planPromptActions(input: PlanPromptActionsInput): Promise<
         const rejectionEvidence = result.rejectionEvidence;
         const correctableValidationFailure = isCorrectableRejection(result.rejectionReason);
         const correctionAdmission = input.onProviderAttempt;
+        // A suggestion's refusal names the project state that refused it; no provider can correct that.
         if (
+            input.suggestion === undefined &&
             correctableValidationFailure &&
             correctionAdmission !== undefined &&
             input.signal?.aborted !== true &&
-            captureProjectRevision() === projectRevision
+            projectRevisionMatchesLiveIgnoringSaveWrites(projectRevision)
         ) {
             agentRunLifecycle.recordError({
                 runId: streamIdentity.runId,
@@ -241,7 +253,7 @@ export async function planPromptActions(input: PlanPromptActionsInput): Promise<
             });
             const admitCorrectionAttempt: typeof correctionAdmission = (attempt) => {
                 const admission = correctionAdmission(attempt);
-                const currentRevision = captureProjectRevision();
+                const contentCurrent = projectRevisionMatchesLiveIgnoringSaveWrites(projectRevision);
                 const correctionAllowed =
                     admission.status === 'admitted' &&
                     admitBoundedAgentCorrection({
@@ -249,8 +261,8 @@ export async function planPromptActions(input: PlanPromptActionsInput): Promise<
                         maxAttempts: 1,
                         reservedBudgetAvailable: true,
                         cancellationRequested: input.signal?.aborted === true,
-                        stale: currentRevision !== projectRevision,
-                        sameRevision: currentRevision === projectRevision,
+                        stale: !contentCurrent,
+                        sameRevision: contentCurrent,
                         sameScope:
                             canonicalJson(getCreativeSelectionSnapshot(context)) ===
                             canonicalJson(getCreativeSelectionSnapshot(getProjectContext())),
@@ -293,28 +305,34 @@ export async function planPromptActions(input: PlanPromptActionsInput): Promise<
             result = guardReadonlyPlanningResult(result);
         }
         if (input.profile !== 'readonly-answer' && result.preparationRequest === 'stem-import') {
-            const preparedStemImport = await prepareStemImport(input.signal, input.onLocalWorkAttempt);
-            if (preparedStemImport.status === 'cancelled') {
-                await settleAutoCreatedRun('completed');
-                input.signal?.removeEventListener('abort', onAbort);
-                return {
-                    context,
-                    result: {
-                        actions: [],
-                        rawText: input.prompt,
-                        requiresConfirmation: false,
-                        planningOutcome: { kind: 'no-match' as const },
-                    },
-                    projectRevision,
-                };
-            }
-            stemImportScope = createStemImportPromptScope(preparedStemImport, projectRevision);
-            if (streamIdentity !== undefined) {
-                preparedStemImportResources.register({
-                    runId: streamIdentity.runId,
-                    stems: stemImportScope.actionSeed.stems,
-                });
-                stemImportResourcesRegistered = true;
+            // The decoded stems stay resident until the run's registration owns them.
+            const stemHold = openCachedAudioBufferHold();
+            try {
+                const preparedStemImport = await prepareStemImport(input.signal, input.onLocalWorkAttempt, stemHold);
+                if (preparedStemImport.status === 'cancelled') {
+                    await settleAutoCreatedRun('completed');
+                    input.signal?.removeEventListener('abort', onAbort);
+                    return {
+                        context,
+                        result: {
+                            actions: [],
+                            rawText: input.prompt,
+                            requiresConfirmation: false,
+                            planningOutcome: { kind: 'no-match' as const },
+                        },
+                        projectRevision,
+                    };
+                }
+                stemImportScope = createStemImportPromptScope(preparedStemImport, projectRevision);
+                if (streamIdentity !== undefined) {
+                    preparedStemImportResources.register({
+                        runId: streamIdentity.runId,
+                        stems: stemImportScope.actionSeed.stems,
+                    });
+                    stemImportResourcesRegistered = true;
+                }
+            } finally {
+                stemHold.release();
             }
             result = await parsePromptToActions({
                 prompt: input.prompt,
@@ -364,20 +382,24 @@ export async function planPromptActions(input: PlanPromptActionsInput): Promise<
         await discardStemImportScope();
     }
 
-    const wholeProjectVibeMixScope =
-        input.profile === 'readonly-answer' ? undefined : getWholeProjectVibeMixScope(context, projectRevision);
-    const wholeProjectVibeMixAction = result.actions.find((action) => action.type === 'automateTrackGainRange');
-    if (wholeProjectVibeMixScope && wholeProjectVibeMixAction) {
-        result.wholeProjectVibeMixPlan = {
-            ...wholeProjectVibeMixScope.plan,
-            commandBatch: [wholeProjectVibeMixAction],
-        };
-    }
-
-    if (input.signal?.aborted !== true && result.actions.length > 0 && captureProjectRevision() !== projectRevision) {
+    if (
+        input.signal?.aborted !== true &&
+        result.actions.length > 0 &&
+        !projectRevisionMatchesLiveIgnoringSaveWrites(projectRevision)
+    ) {
         if (stemImportScope) {
             await discardStemImportScope();
         }
+        await settleAutoCreatedRun('failed');
+        input.signal?.removeEventListener('abort', onAbort);
+        throw new AiProposalInvalidatedError();
+    }
+
+    if (
+        input.signal?.aborted !== true &&
+        result.planningOutcome?.kind === 'answer' &&
+        !settledProjectContentMatches(projectRevision)
+    ) {
         await settleAutoCreatedRun('failed');
         input.signal?.removeEventListener('abort', onAbort);
         throw new AiProposalInvalidatedError();

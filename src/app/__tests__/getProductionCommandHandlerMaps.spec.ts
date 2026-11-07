@@ -75,8 +75,10 @@ describe('getProductionCommandHandlerMaps', () => {
             Object.entries(handlerMap).map(([actionType, handler]) => ({ actionType, handler: handler as unknown }))
         );
 
-        expect(handlerMaps).toHaveLength(36);
+        expect(handlerMaps).toHaveLength(38);
         expect(new Set(actionTypes).size).toBe(actionTypes.length);
+        expect(actionTypes).toContain('editTempoMap');
+        expect(actionTypes).toContain('restoreTempoMapEdit');
         expect(
             allHandlers.filter(({ handler }) => !handlerCanJoinBatch(handler)).map(({ actionType }) => actionType)
         ).toEqual([]);
@@ -86,8 +88,11 @@ describe('getProductionCommandHandlerMaps', () => {
         expect(undoStore.value?.past.map((entry) => entry.label)).toEqual(['Current action']);
 
         const registrations = getExecutableCommandRegistrations();
-        expect(registrations).toHaveLength(111);
+        expect(registrations).toHaveLength(113);
         expect(registrations.map(({ actionType }) => actionType)).toContain('setCompRegion');
+        expect(registrations.map(({ actionType }) => actionType)).toContain('setProductionBrief');
+        expect(registrations.map(({ actionType }) => actionType)).not.toContain('editTempoMap');
+        expect(registrations.map(({ actionType }) => actionType)).not.toContain('restoreTempoMapEdit');
         expect(registrations.every((registration) => typeof registration.handler.execute === 'function')).toBe(true);
         expect(
             registrations

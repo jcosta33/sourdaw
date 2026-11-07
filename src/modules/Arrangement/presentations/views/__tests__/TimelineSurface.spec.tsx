@@ -7,7 +7,7 @@ import { playheadPositionRef } from '#/modules/Transport/stores';
 
 import { createTrack, type Clip, type Track } from '../../../models/Track';
 import { clipSelectionStore } from '../../../stores/clipSelectionStore';
-import { setAutoScroll } from '../../../stores/timelineViewStore';
+import { setAutoScroll, setScrollX, setTimelineViewportHeight } from '../../../stores/timelineViewStore';
 import { useTimelineInteractions } from '../../hooks/useTimelineInteractions';
 import { TimelineSurface } from '../TimelineSurface';
 
@@ -100,7 +100,9 @@ vi.mock('../../renderers/createTimelineRenderer', () => ({
     ),
 }));
 
-const renderModelRef = vi.hoisted(() => ({ tracks: [] as Array<{ id: string; height: number }> }));
+const renderModelRef = vi.hoisted(() => ({
+    tracks: [] as Array<{ id: string; height: number; variationLanes?: unknown[] }>,
+}));
 vi.mock('../../../useCases/buildTimelineRenderModel', () => ({
     buildTimelineRenderModel: vi.fn(() => ({ tracks: renderModelRef.tracks })),
 }));
@@ -143,6 +145,7 @@ vi.mock('../../../stores/timelineViewStore', () => {
     return {
         timelineViewStore: store,
         setAutoScroll: vi.fn(),
+        setTimelineViewportHeight: vi.fn(),
         setScrollX: vi.fn(setScrollX),
         setTimelineZoom: vi.fn(setTimelineZoom),
     };
@@ -296,6 +299,37 @@ describe('TimelineSurface', () => {
         expect(screen.queryByRole('listbox', { name: 'Timeline clips' })).not.toBeInTheDocument();
     });
 
+    it('reports the canvas viewport height whenever its container resizes', () => {
+        const resizeCallbacks: ResizeObserverCallback[] = [];
+        vi.stubGlobal(
+            'ResizeObserver',
+            class {
+                constructor(callback: ResizeObserverCallback) {
+                    resizeCallbacks.push(callback);
+                }
+                observe(): void {}
+                unobserve(): void {}
+                disconnect(): void {}
+            }
+        );
+
+        try {
+            renderWithTooltip(<TimelineSurface />);
+            expect(setTimelineViewportHeight).not.toHaveBeenCalled();
+
+            for (const callback of resizeCallbacks) {
+                callback(
+                    [{ contentRect: new DOMRectReadOnly(0, 0, 900, 312) } as ResizeObserverEntry],
+                    {} as ResizeObserver
+                );
+            }
+
+            expect(setTimelineViewportHeight).toHaveBeenCalledWith(312);
+        } finally {
+            vi.unstubAllGlobals();
+        }
+    });
+
     it('should render PresenceOverlay', async () => {
         renderWithTooltip(<TimelineSurface />);
         expect(await screen.findByTestId('presence-overlay')).toBeInTheDocument();
@@ -421,11 +455,15 @@ describe('TimelineSurface — marquee selection box', () => {
         });
     });
 
+    afterEach(() => {
+        renderModelRef.tracks = [];
+    });
+
     it('renders a marquee box spanning the selected tracks and beat range', () => {
-        zoomHandlers.trackStoreRef.current?.set({
-            tracks: [makeTrack({ id: 'a', height: 40 }), makeTrack({ id: 'b', height: 60 })],
-            selectedTrackId: null,
-        });
+        renderModelRef.tracks = [
+            { id: 'a', height: 40 },
+            { id: 'b', height: 60 },
+        ];
         zoomHandlers.timelineViewStoreRef.current?.set({
             scrollX: 0,
             scrollY: 0,
@@ -447,11 +485,11 @@ describe('TimelineSurface — marquee selection box', () => {
         expect(marquee!.style.height).toBe('100px');
     });
 
-    it('uses the folder row height (26) for folder tracks within the marquee', () => {
-        zoomHandlers.trackStoreRef.current?.set({
-            tracks: [makeTrack({ id: 'f', kind: 'folder', height: 80 }), makeTrack({ id: 'b', height: 50 })],
-            selectedTrackId: null,
-        });
+    it('spans the variation lanes under a selected track, as the canvas lays them out', () => {
+        renderModelRef.tracks = [
+            { id: 'a', height: 40, variationLanes: [{}, {}] },
+            { id: 'b', height: 50 },
+        ];
         zoomHandlers.timelineViewStoreRef.current?.set({
             scrollX: 0,
             scrollY: 0,
@@ -461,21 +499,61 @@ describe('TimelineSurface — marquee selection box', () => {
         clipSelectionStore.set({
             selectedClipId: null,
             selectedClipIds: [],
-            marqueeSelection: { startBeat: 0, endBeat: 4, trackIds: ['f', 'b'] },
+            marqueeSelection: { startBeat: 0, endBeat: 4, trackIds: ['a', 'b'] },
         });
 
         const { container } = renderWithTooltip(<TimelineSurface />);
         const marquee = container.querySelector('[style*="left: 0px"]') as HTMLElement | null;
         expect(marquee).not.toBeNull();
-        // folder collapses to 26 + track b 50 = 76.
-        expect(marquee!.style.height).toBe('76px');
+        // Row a 40 + two 24px lanes, then row b 50.
+        expect(marquee!.style.height).toBe('138px');
+    });
+
+    it('spans the lanes of the last selected track', () => {
+        renderModelRef.tracks = [{ id: 'a', height: 40, variationLanes: [{}] }];
+        zoomHandlers.timelineViewStoreRef.current?.set({
+            scrollX: 0,
+            scrollY: 0,
+            pixelsPerBeat: 10,
+            autoScrollEnabled: true,
+        });
+        clipSelectionStore.set({
+            selectedClipId: null,
+            selectedClipIds: [],
+            marqueeSelection: { startBeat: 0, endBeat: 4, trackIds: ['a'] },
+        });
+
+        const { container } = renderWithTooltip(<TimelineSurface />);
+        const marquee = container.querySelector('[style*="left: 0px"]') as HTMLElement | null;
+        expect(marquee!.style.height).toBe('64px');
+    });
+
+    it('starts the marquee below the lanes of an unselected track above it', () => {
+        renderModelRef.tracks = [
+            { id: 'a', height: 40, variationLanes: [{}] },
+            { id: 'b', height: 50 },
+        ];
+        zoomHandlers.timelineViewStoreRef.current?.set({
+            scrollX: 0,
+            scrollY: 0,
+            pixelsPerBeat: 10,
+            autoScrollEnabled: true,
+        });
+        clipSelectionStore.set({
+            selectedClipId: null,
+            selectedClipIds: [],
+            marqueeSelection: { startBeat: 0, endBeat: 4, trackIds: ['b'] },
+        });
+
+        const { container } = renderWithTooltip(<TimelineSurface />);
+        const marquee = container.querySelector('[style*="left: 0px"]') as HTMLElement | null;
+        expect(marquee).not.toBeNull();
+        expect(marquee!.style.top).toBe('64px');
+        expect(marquee!.style.height).toBe('50px');
     });
 
     it('renders no marquee box when the selection trackIds match no rendered track', () => {
-        zoomHandlers.trackStoreRef.current?.set({
-            tracks: [makeTrack({ id: 'a', height: 40 })],
-            selectedTrackId: null,
-        });
+        renderModelRef.tracks = [{ id: 'a', height: 40 }];
         clipSelectionStore.set({
             selectedClipId: null,
             selectedClipIds: [],
@@ -972,4 +1050,225 @@ describe('TimelineSurface — follow-playhead auto-scroll is measured in CSS pix
             expect(scrollX).toBe(0);
         }
     );
+});
+
+describe('TimelineSurface — stopped locate scrolls the playhead into view', () => {
+    const VIEWPORT_CSS_WIDTH = 800;
+    const originalGetBoundingClientRect = HTMLDivElement.prototype.getBoundingClientRect;
+    const viewportRect: DOMRect = {
+        x: 0,
+        y: 0,
+        top: 0,
+        left: 0,
+        right: VIEWPORT_CSS_WIDTH,
+        bottom: 600,
+        width: VIEWPORT_CSS_WIDTH,
+        height: 600,
+        toJSON: () => ({}),
+    };
+
+    beforeEach(() => {
+        vi.clearAllMocks();
+        scheduler.loop = null;
+        HTMLDivElement.prototype.getBoundingClientRect = () => viewportRect;
+    });
+
+    afterEach(() => {
+        HTMLDivElement.prototype.getBoundingClientRect = originalGetBoundingClientRect;
+        playheadPositionRef.current = 0;
+    });
+
+    // Mounts stopped, scrolled far right (5000..5800 px at 10 px/beat) with the
+    // playhead at beat 520 (inside the view), and waits for the render loop.
+    const mountStoppedFarRight = async (): Promise<void> => {
+        zoomHandlers.timelineViewStoreRef.current?.set({
+            scrollX: 5000,
+            scrollY: 0,
+            pixelsPerBeat: 10,
+            autoScrollEnabled: true,
+        });
+        zoomHandlers.transportStoreRef.current?.set({ isPlaying: false });
+        playheadPositionRef.current = 520;
+        renderWithTooltip(<TimelineSurface />);
+        await act(async () => {
+            await new Promise((resolve) => {
+                setTimeout(resolve, 0);
+            });
+        });
+        expect(scheduler.loop).not.toBeNull();
+        act(() => {
+            scheduler.loop!();
+        });
+        vi.mocked(setScrollX).mockClear();
+    };
+
+    it('scrolls the view to a playhead located off-screen to the left', async () => {
+        await mountStoppedFarRight();
+
+        playheadPositionRef.current = 0;
+        act(() => {
+            zoomHandlers.transportStoreRef.current?.set({ isPlaying: false, playheadPosition: 0 });
+        });
+        act(() => {
+            scheduler.loop!();
+        });
+
+        expect(setScrollX).toHaveBeenCalledTimes(1);
+        // The store clamps the requested placement to 0, which brings beat 0 into view.
+        const store = zoomHandlers.timelineViewStoreRef.current as Store<{ scrollX: number }>;
+        expect(store.value!.scrollX).toBe(0);
+    });
+
+    it('records the baseline of a located playhead that needs no scroll', async () => {
+        await mountStoppedFarRight();
+
+        // A locate that lands inside the view: no scroll, but it is the new baseline.
+        playheadPositionRef.current = 530;
+        act(() => {
+            zoomHandlers.transportStoreRef.current?.set({ isPlaying: false, playheadPosition: 530 });
+        });
+        act(() => {
+            scheduler.loop!();
+        });
+        expect(setScrollX).not.toHaveBeenCalled();
+
+        // Only the view moves; the playhead has not been located again.
+        act(() => {
+            zoomHandlers.timelineViewStoreRef.current?.set({
+                scrollX: 9000,
+                scrollY: 0,
+                pixelsPerBeat: 10,
+                autoScrollEnabled: true,
+            });
+        });
+        act(() => {
+            scheduler.loop!();
+        });
+
+        expect(setScrollX).not.toHaveBeenCalled();
+    });
+
+    it('leaves the view alone when playback pauses with follow off and the playhead off-screen', async () => {
+        zoomHandlers.timelineViewStoreRef.current?.set({
+            scrollX: 0,
+            scrollY: 0,
+            pixelsPerBeat: 10,
+            autoScrollEnabled: false,
+        });
+        zoomHandlers.transportStoreRef.current?.set({ isPlaying: true });
+        playheadPositionRef.current = 100;
+        renderWithTooltip(<TimelineSurface />);
+        await act(async () => {
+            await new Promise((resolve) => {
+                setTimeout(resolve, 0);
+            });
+        });
+        act(() => {
+            scheduler.loop!();
+        });
+        vi.mocked(setScrollX).mockClear();
+
+        // The scheduler parks a tick past the last playing frame's beat.
+        playheadPositionRef.current = 101;
+        act(() => {
+            zoomHandlers.transportStoreRef.current?.set({ isPlaying: false, playheadPosition: 101 });
+        });
+        act(() => {
+            scheduler.loop!();
+        });
+
+        expect(setScrollX).not.toHaveBeenCalled();
+    });
+
+    it('leaves the view alone when a roll started after mount stops with follow off and the playhead off-screen', async () => {
+        zoomHandlers.timelineViewStoreRef.current?.set({
+            scrollX: 0,
+            scrollY: 0,
+            pixelsPerBeat: 10,
+            autoScrollEnabled: true,
+        });
+        zoomHandlers.transportStoreRef.current?.set({ isPlaying: false });
+        playheadPositionRef.current = 10;
+        renderWithTooltip(<TimelineSurface />);
+        await act(async () => {
+            await new Promise((resolve) => {
+                setTimeout(resolve, 0);
+            });
+        });
+        act(() => {
+            scheduler.loop!();
+        });
+
+        // A playing frame inside the view, follow on.
+        playheadPositionRef.current = 20;
+        act(() => {
+            zoomHandlers.transportStoreRef.current?.set({ isPlaying: true });
+        });
+        act(() => {
+            scheduler.loop!();
+        });
+
+        // The user scrolls away, which turns follow off and leaves the playhead off-screen.
+        act(() => {
+            zoomHandlers.timelineViewStoreRef.current?.set({
+                scrollX: 5000,
+                scrollY: 0,
+                pixelsPerBeat: 10,
+                autoScrollEnabled: false,
+            });
+        });
+        vi.mocked(setScrollX).mockClear();
+
+        playheadPositionRef.current = 21;
+        act(() => {
+            zoomHandlers.transportStoreRef.current?.set({ isPlaying: false, playheadPosition: 21 });
+        });
+        act(() => {
+            scheduler.loop!();
+        });
+
+        expect(setScrollX).not.toHaveBeenCalled();
+    });
+
+    it('does not treat the first frame of a stopped mount as a stop transition', async () => {
+        zoomHandlers.timelineViewStoreRef.current?.set({
+            scrollX: 0,
+            scrollY: 0,
+            pixelsPerBeat: 10,
+            autoScrollEnabled: true,
+        });
+        zoomHandlers.transportStoreRef.current?.set({ isPlaying: false });
+        // Beat 1000 is pixel 10000, far outside the 800 px view.
+        playheadPositionRef.current = 1000;
+        renderWithTooltip(<TimelineSurface />);
+        await act(async () => {
+            await new Promise((resolve) => {
+                setTimeout(resolve, 0);
+            });
+        });
+        act(() => {
+            scheduler.loop!();
+        });
+
+        expect(setScrollX).not.toHaveBeenCalled();
+    });
+
+    it('does not move the view when only scrollX changes and the playhead stays still', async () => {
+        await mountStoppedFarRight();
+
+        // Manual scroll or zoom away from the playhead leaves it out of view.
+        act(() => {
+            zoomHandlers.timelineViewStoreRef.current?.set({
+                scrollX: 9000,
+                scrollY: 0,
+                pixelsPerBeat: 10,
+                autoScrollEnabled: true,
+            });
+        });
+        act(() => {
+            scheduler.loop!();
+        });
+
+        expect(setScrollX).not.toHaveBeenCalled();
+    });
 });

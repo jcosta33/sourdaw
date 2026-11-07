@@ -21,11 +21,20 @@ const SYNTH_FAMILY_GUIDANCE_VERSION_BUMPS: Readonly<Record<string, string>> = {
     'builtin-synth-brass': 'descriptor-v1:e0b5d9cb',
 };
 
-// PR #5863 updates Bacteria Spring guidance, which is part of its command
-// contract fingerprint just like the synth-family guidance above.
+// The display name is part of the descriptor fingerprint, so giving the Faust
+// De-esser, LUFS meter and widener names distinct from their builtins' bumps these.
+const FAUST_RENAME_VERSION_BUMPS: Readonly<Record<string, string>> = {
+    'faust-lufs-meter': 'descriptor-v1:6b8d7980',
+    'faust-stereo-widener': 'descriptor-v1:1af04a73',
+    'faust-de-esser': 'descriptor-v1:d2abdc9c',
+};
+
+// Spring guidance and retiring inert breakdown depth both change Bacteria’s
+// command contract fingerprint, just like the synth-family guidance above.
 const INTENTIONAL_DESCRIPTOR_VERSION_BUMPS: Readonly<Record<string, string>> = {
     ...SYNTH_FAMILY_GUIDANCE_VERSION_BUMPS,
-    bacteria: 'descriptor-v1:3821f89e',
+    ...FAUST_RENAME_VERSION_BUMPS,
+    bacteria: 'descriptor-v1:37015492',
 };
 
 const BASELINE_DESCRIPTOR_VERSION_PINS: Readonly<Record<string, string>> = {
@@ -94,9 +103,8 @@ const BASELINE_DESCRIPTOR_VERSION_PINS: Readonly<Record<string, string>> = {
     // Gluten records that lookahead detects ahead of the delay on every
     // topology (#4958), not only Diode.
     gluten: 'descriptor-v1:d40becfe',
-    // Bacteria records that a band with no stored body plays none, which is
-    // what undoing a band's first body restores.
-    bacteria: 'descriptor-v1:39845906',
+    // Bacteria no longer advertises inert breakdown depth; stored values remain intact.
+    bacteria: 'descriptor-v1:38e15328',
     grinder: 'descriptor-v1:8aec6249',
     proof: 'descriptor-v1:0f484ceb',
     // Yeast undeclares its four arpeggiator parameters (#4650): the rack's

@@ -6,7 +6,7 @@
  * The engine enforces the same ceiling (`LEVAIN_SAMPLE_CHUNK_FLOATS` in
  * `crates/daw-dsp/src/levain/mod.rs`): its write window never offers more and
  * it refuses a larger count, so a chunk above this is rejected, not trusted.
- * A spec (`AudioEngine/services/__tests__/levainProcessorSampleUpload.spec.ts`)
+ * A spec (`AudioEngine/worklets/__tests__/levainProcessorSampleUpload.spec.ts`)
  * pins this equal to the shipped engine's window.
  */
 export const LEVAIN_SAMPLE_CHUNK_FLOATS = 16_384;

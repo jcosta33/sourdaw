@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { Container } from '#/infra/di/Container';
 import {
     configureAutomergeStoragePort,
@@ -67,13 +68,27 @@ import {
     BLUES_CLIP_END_BEAT,
     BLUES_CLIP_START_BEAT,
     BLUES_PROMPT,
+    bluesProposalItems,
     deriveBluesNotes,
     deriveBluesTransformCommands,
+    discoverSearchedCalls,
     emptyMidiState,
     GENERATED_CLIP_ID,
     GENERATED_TRACK_ID,
-    scriptHighLevelIntentProvider,
+    proposeDiscoveredCalls,
+    scriptProviderTurns,
+    searchCalls,
 } from './highLevelIntentWorkflowFixture';
+import { nonAcousticMetricIntakeTurn } from './metricGoalWorkflowFixture';
+
+registerDeviceEnginePorts();
+
+const bluesIntake = nonAcousticMetricIntakeTurn({
+    modeId: 'create',
+    dimensions: ['arrangement', 'midi-content'],
+    creationSlotObjectTypes: ['track'],
+    nestedCreationSlotObjectTypes: ['clip'],
+});
 
 const runtimeMocks = vi.hoisted(() => {
     const backend: { value: 'cloud' | 'webllm' } = { value: 'webllm' };
@@ -267,7 +282,12 @@ describe('high-level intent execution', () => {
         configureAiWorkflowCommandPreflightFixture();
         vi.clearAllMocks();
         runtimeMocks.backend.value = 'webllm';
-        scriptHighLevelIntentProvider(runtimeMocks.generateWebLlmCompletion);
+        scriptProviderTurns(runtimeMocks.generateWebLlmCompletion, [
+            bluesIntake,
+            () => searchCalls(),
+            discoverSearchedCalls(),
+            proposeDiscoveredCalls(bluesProposalItems()),
+        ]);
         await cloudSession.clear();
         configureAutomergeStoragePort(null);
         resetCrdtProjectAuthority('high-level intent execution test');
@@ -346,7 +366,13 @@ describe('high-level intent execution', () => {
         const confirmation = requireConfirmation();
         expect(confirmation.projectRevision).toBe(revisionBefore);
         expect(confirmation.approvalSnapshot.commandBatch?.authority.baseRevision).toBe(revisionBefore);
-        expect(agentRunLifecycle.get(confirmation.runId)?.phase).toBe('waiting-for-approval');
+        const run = agentRunLifecycle.get(confirmation.runId);
+        expect(run?.phase).toBe('waiting-for-approval');
+        expect(run?.plan?.applicationToolReceipts).toBeDefined();
+        expect(run?.plan?.applicationToolReceipts?.some((receipt) => receipt.toolName === 'analysis.measure')).toBe(
+            false
+        );
+        expect(runtimeMocks.generateWebLlmCompletion).toHaveBeenCalledTimes(4);
 
         await expect(confirmPendingChatActions({ confirmationId: confirmation.id })).resolves.toEqual({
             status: 'executed',

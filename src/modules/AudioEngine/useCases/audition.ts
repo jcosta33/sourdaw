@@ -1,18 +1,16 @@
+import { logger } from '#/infra/logger/appLogger';
 import { trackStore } from '#/modules/Arrangement/stores';
-import {
-    scheduleNote,
-    getDrumKitDefByIndex,
-    scheduleDrumKitNote,
-    scheduleKitNote,
-    getSynthParamsFromDevices,
-} from '#/modules/Synth/useCases';
 import { isBypassedNoteReceiver, readDrumKitOutputGain } from '#/utils/deviceTypeMatching';
 
+import { type AudioPreviewIntent } from '../models/AudioPreviewIntent';
 import { audioEngine } from '../repositories/createWebAudioEngine';
 
 import { getDrumKitByIndex } from './audioEngineQueries/getDrumKitByIndex';
 import { startFaustNote } from './faustScheduler/startFaustNote';
 import { resolveAuditionNoteReceiver } from './resolveAuditionNoteReceiver';
+import { builtinSynthVoice } from './scheduling/builtinSynthVoice';
+
+const AUDITION_CALLER = 'playAuditionNote';
 
 type AuditionDeviceParameterValues = Record<string, number> & {
     kit?: number;
@@ -32,7 +30,57 @@ type AuditionTrack = {
     devices: AuditionDevice[];
 };
 
-export function playAuditionNote(trackId: string, pitch: number, velocity: number = 100): () => void {
+export function playAuditionNote(
+    trackId: string,
+    pitch: number,
+    velocity: number = 100,
+    parentIntent?: AudioPreviewIntent
+): () => void {
+    const intent = parentIntent ?? audioEngine.beginAudioPreviewIntent();
+    let ended = false;
+    let stopNote: (() => void) | null = null;
+    const stop = () => {
+        if (ended) {
+            return;
+        }
+        ended = true;
+        intent.signal.removeEventListener('abort', stop);
+        try {
+            stopNote?.();
+        } finally {
+            if (parentIntent === undefined) {
+                intent.release();
+            }
+        }
+    };
+    intent.signal.addEventListener('abort', stop, { once: true });
+    const start = () => {
+        if (ended || !intent.isCurrent()) {
+            stop();
+            return;
+        }
+        stopNote = startAuditionNote(trackId, pitch, velocity);
+        if (!intent.isCurrent()) {
+            stop();
+        }
+    };
+    try {
+        if (intent.ready === undefined) {
+            start();
+        } else {
+            void intent.ready.then(start).catch((error: unknown) => {
+                stop();
+                logger.warn(new Error('Note audition could not restore its listening output', { cause: error }));
+            });
+        }
+    } catch (error) {
+        stop();
+        throw error;
+    }
+    return stop;
+}
+
+function startAuditionNote(trackId: string, pitch: number, velocity: number): () => void {
     const strip = audioEngine.ensureTrackStrip(trackId);
     const now = audioEngine.context.currentTime;
 
@@ -57,9 +105,10 @@ export function playAuditionNote(trackId: string, pitch: number, velocity: numbe
         const drumDevice = receiver.device;
         const kitIndex = drumDevice.parameterValues.kit ?? drumDevice.parameterValues.kitId ?? 0;
         const kitGain = readDrumKitOutputGain(drumDevice);
-        const kitDef = getDrumKitDefByIndex(kitIndex);
+        const voice = builtinSynthVoice.read(AUDITION_CALLER);
+        const kitDef = voice.getDrumKitDefByIndex(kitIndex);
         if (kitDef) {
-            scheduleDrumKitNote(audioEngine.context, strip.gainNode, kitDef, pitch, now, velocity, 1, kitGain);
+            voice.scheduleDrumKitNote(audioEngine.context, strip.gainNode, kitDef, pitch, now, velocity, 1, kitGain);
             return () => {};
         }
 
@@ -72,7 +121,7 @@ export function playAuditionNote(trackId: string, pitch: number, velocity: numbe
             return () => {};
         }
 
-        const osc: (OscillatorNode & { _env?: GainNode }) | null = scheduleKitNote(
+        const osc: (OscillatorNode & { _env?: GainNode }) | null = voice.scheduleKitNote(
             audioEngine.context,
             strip.gainNode,
             kit,
@@ -87,7 +136,7 @@ export function playAuditionNote(trackId: string, pitch: number, velocity: numbe
             return () => {};
         }
 
-        const releaseTime = getSynthParamsFromDevices(track?.devices ?? []).release;
+        const releaseTime = voice.getSynthParamsFromDevices(track?.devices ?? []).release;
         return () => {
             const killTime = audioEngine.context.currentTime;
             // scheduleKitNote schedules through the builtin synth, which always
@@ -190,8 +239,9 @@ export function playAuditionNote(trackId: string, pitch: number, velocity: numbe
         return startFaustNote(trackId, receiver.device.id, pitch, velocity, now);
     }
 
-    const synthParams = getSynthParamsFromDevices(track?.devices ?? []);
-    const osc = scheduleNote(audioEngine.context, strip.gainNode, pitch, now, 60, velocity, synthParams);
+    const voice = builtinSynthVoice.read(AUDITION_CALLER);
+    const synthParams = voice.getSynthParamsFromDevices(track?.devices ?? []);
+    const osc = voice.scheduleNote(audioEngine.context, strip.gainNode, pitch, now, 60, velocity, synthParams);
 
     return () => {
         const killTime = audioEngine.context.currentTime;

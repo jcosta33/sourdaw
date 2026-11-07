@@ -2,10 +2,7 @@ import {
     getVersionedCommandBatchIdempotentReplay,
     refreshVersionedCommandBatchForApproval,
 } from '#/modules/Command/useCases';
-import {
-    projectRevisionMatchesLiveIgnoringCommandCheckpoint,
-    settlePendingProjectWritesAndCaptureRevision,
-} from '#/modules/CrdtDocument/useCases';
+import { settlePendingProjectWritesAndCaptureRevision } from '#/modules/CrdtDocument/useCases';
 
 import { type ChatActionConfirmationStatus } from '../../models/Chat';
 import { chatStore, updateChatMessage } from '../../stores/chatStore';
@@ -15,7 +12,11 @@ import {
     type PendingAppActionConfirmation,
 } from '../../stores/pendingActionConfirmationStore';
 import { hasExactAgentCommandBatchAuthority } from '../../validators/hasExactAgentCommandBatchAuthority';
+import { agentRunLifecycle } from '../agentRunLifecycle';
+import { approvedProjectRevision } from '../approvedProjectRevision';
+import { bindMetricGoalsToBatch } from '../bindMetricGoalsToBatch';
 import { compileAgentRiskApproval } from '../compileAgentRiskApproval';
+import { metricGoalStateCodec } from '../metricGoalStateCodec';
 
 import { admitCommittedSectionRenderRetry } from './admitCommittedSectionRenderRetry';
 import { confirmationTerminalSettlement } from './confirmationTerminalSettlement';
@@ -66,6 +67,9 @@ function hasSameAdmissionBinding(
         current.runId === admitted.runId &&
         current.status === admitted.status &&
         current.projectRevision === admitted.projectRevision &&
+        current.approvalSnapshot.metricGoalState === admitted.approvalSnapshot.metricGoalState &&
+        current.approvalSnapshot.agentApproval?.metricGoalState ===
+            admitted.approvalSnapshot.agentApproval?.metricGoalState &&
         currentBatch?.serialized === admittedBatch?.serialized &&
         (currentBatch === undefined ||
             admittedBatch === undefined ||
@@ -258,10 +262,7 @@ async function resolveConfirmationAdmission(input: {
             };
         }
     }
-    if (
-        !hasPriorVerifiedBatchReceipt &&
-        !projectRevisionMatchesLiveIgnoringCommandCheckpoint(confirmation.projectRevision)
-    ) {
+    if (!hasPriorVerifiedBatchReceipt && !approvedProjectRevision.matchesLive(confirmation.projectRevision)) {
         const commandBatch = confirmation.approvalSnapshot.commandBatch;
         if (!commandBatch) {
             return {
@@ -295,7 +296,8 @@ async function resolveConfirmationAdmission(input: {
                     status: 'handled',
                     result: await confirmationTerminalSettlement.invalidateForDivergence(
                         confirmation,
-                        refreshed.divergence
+                        refreshed.divergence,
+                        refreshed.refusal
                     ),
                 };
             }
@@ -304,7 +306,13 @@ async function resolveConfirmationAdmission(input: {
                 result: await confirmationTerminalSettlement.invalidateForProjectChange(confirmation),
             };
         }
-        const agentApproval = compileAgentRiskApproval({ commandBatch: refreshed.commandBatch });
+        const metricGoalState = JSON.stringify(
+            bindMetricGoalsToBatch({
+                state: metricGoalStateCodec(confirmation.approvalSnapshot.metricGoalState),
+                commandBatch: refreshed.commandBatch,
+            })
+        );
+        const agentApproval = compileAgentRiskApproval({ commandBatch: refreshed.commandBatch, metricGoalState });
         const rebound = refreshPendingActionConfirmationApproval({
             agentApproval,
             commandBatch: refreshed.commandBatch,
@@ -313,6 +321,19 @@ async function resolveConfirmationAdmission(input: {
             projectRevision: refreshed.currentRevision,
         });
         if (!rebound) {
+            return {
+                status: 'handled',
+                result: await confirmationTerminalSettlement.invalidateForProjectChange(confirmation),
+            };
+        }
+        if (
+            !agentRunLifecycle.rebindMetricGoalState({
+                runId: confirmation.runId,
+                expectedMetricGoalState: confirmation.approvalSnapshot.metricGoalState,
+                metricGoalState,
+                revision: refreshed.currentRevision,
+            })
+        ) {
             return {
                 status: 'handled',
                 result: await confirmationTerminalSettlement.invalidateForProjectChange(confirmation),

@@ -173,6 +173,42 @@ type ReconcileChildInput = {
 };
 
 /**
+ * Automerge 3.5 bulk hydration can import nextDown(1) as integer zero. Only
+ * composites just accepted by reconciliation come here: re-emit their finite
+ * fractional leaves through the exact scalar proxy path in this same change.
+ * Integer leaves stay bulk-imported, including its signed-zero representation.
+ */
+function writeAssignedFractionalLeaves(written: unknown, intended: unknown): void {
+    if (written === intended) {
+        return;
+    }
+    if (Array.isArray(written) && Array.isArray(intended)) {
+        for (const [index, value] of intended.entries()) {
+            if (typeof value === 'number' && Number.isFinite(value) && !Number.isInteger(value)) {
+                written[index] = value;
+            } else {
+                writeAssignedFractionalLeaves(written[index], value);
+            }
+        }
+        return;
+    }
+    if (!isUnknownRecord(written) || !isUnknownRecord(intended)) {
+        return;
+    }
+    for (const [field, value] of Object.entries(intended)) {
+        // Re-emission only owns fields installed by the accepted composite assignment.
+        if (!Object.hasOwn(written, field)) {
+            continue;
+        }
+        if (typeof value === 'number' && Number.isFinite(value) && !Number.isInteger(value)) {
+            written[field] = value;
+        } else {
+            writeAssignedFractionalLeaves(written[field], value);
+        }
+    }
+}
+
+/**
  * A collection is addressed by numeric index and a map by string key; the two
  * never cross. Keeping the pairing in the narrowing rather than in a cast means
  * a mismatch is a type error at the call site instead of a silent write to the
@@ -181,10 +217,12 @@ type ReconcileChildInput = {
 function writeChild(container: MutableContainer | unknown[], field: string | number, value: unknown): void {
     if (Array.isArray(container) && typeof field === 'number') {
         container[field] = value;
+        writeAssignedFractionalLeaves(container[field], value);
         return;
     }
     if (!Array.isArray(container) && typeof field === 'string') {
         container[field] = value;
+        writeAssignedFractionalLeaves(container[field], value);
         return;
     }
     throw new Error('CRDT slot reconciliation addressed a container with the wrong key kind');
@@ -678,6 +716,7 @@ function placeRows(input: PlaceRowsInput): void {
         }
         const insertAt = Math.min(previousIndex + 1, order.length);
         current.splice(insertAt, 0, desired[desiredIndex]);
+        writeAssignedFractionalLeaves(current[insertAt], desired[desiredIndex]);
         order.splice(insertAt, 0, identity);
         positionsStale = true;
         previousIndex = insertAt;

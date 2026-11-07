@@ -172,6 +172,7 @@ export const SamplesTab = ({
                                         <Row gap={1}>
                                             <PreviewButton
                                                 isPlaying={preview.playingId === sample.id}
+                                                itemName={sample.name}
                                                 onPlay={() => {
                                                     const buffer = sample.audioBufferId
                                                         ? getCachedAudioBuffer({ bufferId: sample.audioBufferId })
@@ -203,7 +204,9 @@ export const SamplesTab = ({
                                                 onToggleFavorite(sample.id);
                                             }}
                                             aria-label={
-                                                favorites.has(sample.id) ? 'Remove from favorites' : 'Add to favorites'
+                                                favorites.has(sample.id)
+                                                    ? `Remove ${sample.name} from favorites`
+                                                    : `Add ${sample.name} to favorites`
                                             }
                                         >
                                             <Star

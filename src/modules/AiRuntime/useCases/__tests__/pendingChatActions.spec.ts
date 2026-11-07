@@ -1,6 +1,7 @@
 import { parse } from 'superjson';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { logger } from '#/infra/logger/appLogger';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 import {
@@ -9,6 +10,7 @@ import {
     migrateLegacyAppActionToVersionedCommandEnvelope,
     serializeVersionedCommandEnvelope,
 } from '#/modules/Command/useCases';
+import { captureProjectIdentity } from '#/modules/CrdtDocument/useCases';
 
 import {
     clearPendingActionConfirmations,
@@ -26,6 +28,9 @@ import {
     configureAiWorkflowCommandCheckpointRuntime,
     resetAiWorkflowCommandCheckpointRuntime,
 } from './aiWorkflowCommandCheckpointRuntime';
+import { configuredLiteralMetricState } from './metricGoalWorkflowFixture';
+
+registerDeviceEnginePorts();
 
 type ExecuteAppActionBatch = (typeof import('#/modules/Command/useCases'))['executeAppActionBatch'];
 type AppAction = Parameters<ExecuteAppActionBatch>[0][number];
@@ -96,7 +101,7 @@ vi.mock('#/modules/CrdtDocument/useCases', async (import_original) => ({
     captureProjectMutationAuthorization: projectMutationAuthorization.capture,
     captureProjectRevision: () => mocks.projectRevision.value,
     captureUnownedProjectMutations: () => mocks.unownedMutationEpoch.value,
-    projectRevisionMatchesLiveIgnoringCommandCheckpoint: mocks.projectRevisionMatchesLive,
+    projectRevisionMatchesLiveIgnoringSaveWrites: mocks.projectRevisionMatchesLive,
     DOC_BRANCHES: '__branches__',
     DOC_PREFIX_ROOT: 'root',
     compactProject: vi.fn(),
@@ -177,7 +182,7 @@ function proposePendingActionConfirmation(
     const commandBatch = compileVersionedCommandBatchEnvelope({
         runId: input.id,
         batchId: input.groupId ?? input.id,
-        projectId: input.projectRevision,
+        projectId: captureProjectIdentity(),
         baseRevision: input.projectRevision,
         intent: input.prompt,
         commands,
@@ -190,10 +195,15 @@ function proposePendingActionConfirmation(
         },
     });
     approvedActionsByBatch.set(commandBatch.serialized, input.actions);
+    const metricGoalState = configuredLiteralMetricState(commandBatch);
     return storePendingActionConfirmation({
         ...input,
         commandBatch,
-        agentApproval: compileAgentRiskApproval({ commandBatch }),
+        metricGoalState,
+        agentApproval: compileAgentRiskApproval({
+            commandBatch,
+            metricGoalState,
+        }),
     });
 }
 
@@ -221,7 +231,7 @@ describe('pending chat action confirmation', () => {
             availableAssetHashes: [],
             availableAudioBufferIds: [],
             lockedRanges: [],
-            projectId: 'revision-1',
+            projectId: captureProjectIdentity(),
             projectInvariantsValid: true,
             targetFingerprints: Object.fromEntries(targetIds.map((targetId) => [targetId, `fp:${targetId}`])),
         }));

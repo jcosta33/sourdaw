@@ -100,6 +100,7 @@ export const EVIDENCE_SUITE_DATA: Readonly<Record<string, readonly string[]>> = 
         'evidence/agent-campaign/corpora/development.json',
         'evidence/agent-campaign/corpora/fixture-project.json',
         'evidence/agent-campaign/corpora/held-out.json',
+        'src/modules/AiRuntime/__tests__/acceptanceFixtureLifetime.ts',
     ],
 };
 

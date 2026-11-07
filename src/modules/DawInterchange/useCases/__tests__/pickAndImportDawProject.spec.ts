@@ -31,7 +31,7 @@ vi.mock('../importDawProject', () => ({
 describe('pickAndImportDawProject', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        vi.mocked(saveProjectBeforeReplacement).mockResolvedValue(true);
+        vi.mocked(saveProjectBeforeReplacement).mockResolvedValue('save-closed-takes');
         vi.mocked(importDawProject).mockResolvedValue({ ok: true, warnings: [] });
     });
 
@@ -53,6 +53,7 @@ describe('pickAndImportDawProject', () => {
         expect(importDawProject).toHaveBeenCalledWith({
             buffer: expect.any(ArrayBuffer),
             fileName: 'song.dawproject',
+            outgoingProject: 'save-closed-takes',
             shouldProceed: expect.any(Function),
         });
     });
@@ -61,13 +62,13 @@ describe('pickAndImportDawProject', () => {
     // withdraws it, so the session stays in the project the user chose last.
     it('does not import once a pre-save that the open project choice outlasted finishes', async () => {
         vi.mocked(pickFiles).mockResolvedValue([new File([new Uint8Array([1])], 'song.dawproject')]);
-        const save = Promise.withResolvers<boolean>();
+        const save = Promise.withResolvers<'discard'>();
         vi.mocked(saveProjectBeforeReplacement).mockReturnValueOnce(save.promise);
 
         const importOperation = pickAndImportDawProject();
         await vi.waitFor(() => expect(saveProjectBeforeReplacement).toHaveBeenCalledOnce());
         pendingProjectReplacements.withdraw();
-        save.resolve(true);
+        save.resolve('discard');
 
         await expect(importOperation).resolves.toBe(false);
         expect(importDawProject).not.toHaveBeenCalled();
@@ -91,15 +92,24 @@ describe('pickAndImportDawProject', () => {
         await expect(pickAndImportDawProject()).resolves.toBe(false);
     });
 
-    // Issue 3694: the import replaces the open project, so a pre-switch save
-    // that resolved with the project still dirty (a plugin capture rejected
-    // before commit) must refuse the replacement entirely.
-    it('refuses the import when the pre-switch save resolved with the project still dirty', async () => {
+    // Issue 3694: the import replaces the open project, so Cancel after a
+    // failed save, or one that resolved with the project still dirty (a plugin
+    // capture rejected before commit), must refuse the replacement entirely.
+    it('refuses the import when the user cancels after the pre-switch save', async () => {
         vi.mocked(pickFiles).mockResolvedValue([new File([new Uint8Array([1])], 'song.dawproject')]);
-        vi.mocked(saveProjectBeforeReplacement).mockResolvedValue(false);
+        vi.mocked(saveProjectBeforeReplacement).mockResolvedValue('stay');
 
         await expect(pickAndImportDawProject()).resolves.toBe(false);
 
         expect(importDawProject).not.toHaveBeenCalled();
+    });
+
+    it("imports discarding the outgoing project when the user chose Don't Save", async () => {
+        vi.mocked(pickFiles).mockResolvedValue([new File([new Uint8Array([1])], 'song.dawproject')]);
+        vi.mocked(saveProjectBeforeReplacement).mockResolvedValue('discard');
+
+        await expect(pickAndImportDawProject()).resolves.toBe(true);
+
+        expect(vi.mocked(importDawProject).mock.calls[0]?.[0].outgoingProject).toBe('discard');
     });
 });

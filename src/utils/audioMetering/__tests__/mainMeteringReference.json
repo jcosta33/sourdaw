@@ -1,0 +1,341 @@
+{
+    "reference": "origin/main 33b8b8969d4268e1119f94ec3c7cda6b28842a76, captured before PCM/meter port",
+    "cases": [
+        {
+            "name": "calibrated",
+            "rate": 44100,
+            "length": 88337,
+            "inputSha256": "c7841334a4af8b7662ef8a43e7f65d565a874a9a150ad1c85eb39b6eae19af3f",
+            "integratedLufs": -20.21357676645584,
+            "truePeak": 0.10216130592925765,
+            "normalization": {
+                "gain": 2.0449318460628385,
+                "limitedByCeiling": false
+            }
+        },
+        {
+            "name": "absolute-gate",
+            "rate": 44100,
+            "length": 88337,
+            "inputSha256": "ed673102b3396ddb55460906db75e12eca2bde9c631a7ef23850fc39601f7899",
+            "integratedLufs": null,
+            "truePeak": 0.000300365401731284,
+            "normalization": {
+                "gain": 1,
+                "limitedByCeiling": false
+            }
+        },
+        {
+            "name": "relative-gate",
+            "rate": 44100,
+            "length": 88337,
+            "inputSha256": "e5829496ee1ff9a6d4a3d0e702a71d8d2bf25821fb2ebe9142a9cc9f4f1233fb",
+            "integratedLufs": -7.7833604696892404,
+            "truePeak": 0.5006089944727137,
+            "normalization": {
+                "gain": 0.4888414498340246,
+                "limitedByCeiling": false
+            }
+        },
+        {
+            "name": "short",
+            "rate": 44100,
+            "length": 17639,
+            "inputSha256": "e0007d87a1340a4efb45f7a87c2a554c411422f6ae6e2a710a3f29cd69f421f5",
+            "integratedLufs": null,
+            "truePeak": 0.11028749443266861,
+            "normalization": {
+                "gain": 1,
+                "limitedByCeiling": false
+            }
+        },
+        {
+            "name": "edge-tail",
+            "rate": 44100,
+            "length": 88337,
+            "inputSha256": "b9bf278367818aeca50d211d59cb91ec50c1e3f5d435316d28479d1c64fa2df7",
+            "integratedLufs": -34.91750995893055,
+            "truePeak": 1.6325338523893151,
+            "normalization": {
+                "gain": 0.5459310609880121,
+                "limitedByCeiling": true
+            }
+        },
+        {
+            "name": "non-finite",
+            "rate": 44100,
+            "length": 88337,
+            "inputSha256": "63c6b661160d581c7167ccd00efb1ffa57d278a4ed05737b29cb645e058e1a8a",
+            "integratedLufs": -20.21357565150663,
+            "truePeak": 0.10216130592925765,
+            "normalization": {
+                "gain": 2.0449315835687134,
+                "limitedByCeiling": false
+            }
+        },
+        {
+            "name": "silence",
+            "rate": 44100,
+            "length": 88337,
+            "inputSha256": "1acf69ebfb6dfd2e825d8212f34b776ca5099a3de74283ee1b47cb610e79d156",
+            "integratedLufs": null,
+            "truePeak": 0,
+            "normalization": {
+                "gain": 1,
+                "limitedByCeiling": false
+            }
+        },
+        {
+            "name": "calibrated",
+            "rate": 48000,
+            "length": 96137,
+            "inputSha256": "ef2941504660b9338965f820b2cbe81a14522fc90ead89e0daa992f86397a997",
+            "integratedLufs": -20.21660266637857,
+            "truePeak": 0.10073566642586229,
+            "normalization": {
+                "gain": 2.0456443622599854,
+                "limitedByCeiling": false
+            }
+        },
+        {
+            "name": "absolute-gate",
+            "rate": 48000,
+            "length": 96137,
+            "inputSha256": "bfbd58192ac04b92236ce6ea40364242b6c4d9b816a239692985f84fda56ee47",
+            "integratedLufs": null,
+            "truePeak": 0.00030038227741613355,
+            "normalization": {
+                "gain": 1,
+                "limitedByCeiling": false
+            }
+        },
+        {
+            "name": "relative-gate",
+            "rate": 48000,
+            "length": 96137,
+            "inputSha256": "35ee123a3e877b2534c15f2cbf70445c7a28e161e46a5b8a8a11abe872de06c5",
+            "integratedLufs": -7.7863879690176505,
+            "truePeak": 0.5006371124181896,
+            "normalization": {
+                "gain": 0.48901186704823824,
+                "limitedByCeiling": false
+            }
+        },
+        {
+            "name": "short",
+            "rate": 48000,
+            "length": 19199,
+            "inputSha256": "eee311af0dad475e1dbaa51547e3f4185554ae2e2ac1717b78e0ebc34f7f6f6f",
+            "integratedLufs": null,
+            "truePeak": 0.11057031742348045,
+            "normalization": {
+                "gain": 1,
+                "limitedByCeiling": false
+            }
+        },
+        {
+            "name": "edge-tail",
+            "rate": 48000,
+            "length": 96137,
+            "inputSha256": "11a9c897f69e4d74a6107afc2f45b0dd7a4770e2b2e1df5ae47649693d5cb63f",
+            "integratedLufs": -35.270159457927456,
+            "truePeak": 1.5645159445957688,
+            "normalization": {
+                "gain": 0.5696656152417943,
+                "limitedByCeiling": true
+            }
+        },
+        {
+            "name": "non-finite",
+            "rate": 48000,
+            "length": 96137,
+            "inputSha256": "7594ad09257d5db6bfb67b457114be78882754b317656222afccd7ba6541df40",
+            "integratedLufs": -20.216602283925805,
+            "truePeak": 0.10536536628978865,
+            "normalization": {
+                "gain": 2.045644272187194,
+                "limitedByCeiling": false
+            }
+        },
+        {
+            "name": "silence",
+            "rate": 48000,
+            "length": 96137,
+            "inputSha256": "e99c804919121e489c3c428dfdd1cd7dbcc30ff52d7d9f8d53710b59a3184576",
+            "integratedLufs": null,
+            "truePeak": 0,
+            "normalization": {
+                "gain": 1,
+                "limitedByCeiling": false
+            }
+        },
+        {
+            "name": "calibrated",
+            "rate": 88200,
+            "length": 176537,
+            "inputSha256": "fb2fae9bf4a91da023da8f9e2d61a0a5a31c7e4eb441f3cfd091c47e8e37eea4",
+            "integratedLufs": -20.233278102455802,
+            "truePeak": 0.10326933386568271,
+            "normalization": {
+                "gain": 2.0495754250328244,
+                "limitedByCeiling": false
+            }
+        },
+        {
+            "name": "absolute-gate",
+            "rate": 88200,
+            "length": 176537,
+            "inputSha256": "a82b88d3f5e42c28b13897510b61dd5a69ff9fdf1c887affcfebac9b05eb8dea",
+            "integratedLufs": null,
+            "truePeak": 0.00030044786558747205,
+            "normalization": {
+                "gain": 1,
+                "limitedByCeiling": false
+            }
+        },
+        {
+            "name": "relative-gate",
+            "rate": 88200,
+            "length": 176537,
+            "inputSha256": "a9fddcfae8f86c772f47b37895f8ecd61e69f67d3c74ae48ad4abc85318a47b9",
+            "integratedLufs": -7.8030702590802425,
+            "truePeak": 0.5007464340887964,
+            "normalization": {
+                "gain": 0.4899519753411026,
+                "limitedByCeiling": false
+            }
+        },
+        {
+            "name": "short",
+            "rate": 88200,
+            "length": 35279,
+            "inputSha256": "0de6a8ea9531e0de35346481a92af77a25ad242c64c646183d70204e38f130ba",
+            "integratedLufs": null,
+            "truePeak": 0.11148404143568769,
+            "normalization": {
+                "gain": 1,
+                "limitedByCeiling": false
+            }
+        },
+        {
+            "name": "edge-tail",
+            "rate": 88200,
+            "length": 176537,
+            "inputSha256": "28e796ff335f264c45442c3db71c6f766b072e04fac2d8dca2f76089bd509436",
+            "integratedLufs": -37.83377481315182,
+            "truePeak": 1.5916609100604546,
+            "normalization": {
+                "gain": 0.5599502585634863,
+                "limitedByCeiling": true
+            }
+        },
+        {
+            "name": "non-finite",
+            "rate": 88200,
+            "length": 176537,
+            "inputSha256": "7dd4171053c82410bb377ad2e1a2834cc91f12c18cd200c6ea8127286b89f8be",
+            "integratedLufs": -20.233276794528667,
+            "truePeak": 0.10326933386568271,
+            "normalization": {
+                "gain": 2.0495751164063942,
+                "limitedByCeiling": false
+            }
+        },
+        {
+            "name": "silence",
+            "rate": 88200,
+            "length": 176537,
+            "inputSha256": "7ac7594d831beefc38c2717b89c99783a34cc4963b8a13f717ba4a121657568b",
+            "integratedLufs": null,
+            "truePeak": 0,
+            "normalization": {
+                "gain": 1,
+                "limitedByCeiling": false
+            }
+        },
+        {
+            "name": "calibrated",
+            "rate": 96000,
+            "length": 192137,
+            "inputSha256": "d1502b549f3acf834b7fe9ae466955cde9977913592244f7b0381a033c0e8476",
+            "integratedLufs": -20.234992239073158,
+            "truePeak": 0.10015074543298397,
+            "normalization": {
+                "gain": 2.049979943063869,
+                "limitedByCeiling": false
+            }
+        },
+        {
+            "name": "absolute-gate",
+            "rate": 96000,
+            "length": 192137,
+            "inputSha256": "5c7bd767bbe99816a1cb8e30b1721cb1e2f3f115b2558bc0b67c96f99b977a86",
+            "integratedLufs": null,
+            "truePeak": 0.0003004522414506994,
+            "normalization": {
+                "gain": 1,
+                "limitedByCeiling": false
+            }
+        },
+        {
+            "name": "relative-gate",
+            "rate": 96000,
+            "length": 192137,
+            "inputSha256": "4d7da1cc2c6f2ea673a7b98fd5da7581dc62fce6cadc262d3723b1a5c8c89cbb",
+            "integratedLufs": -7.80478502528746,
+            "truePeak": 0.5007537264209532,
+            "normalization": {
+                "gain": 0.49004871108866016,
+                "limitedByCeiling": false
+            }
+        },
+        {
+            "name": "short",
+            "rate": 96000,
+            "length": 38399,
+            "inputSha256": "6ed9f221de2bef996b7ead0de7cc4ed63134e7ae59a8f61e07780fcab4b00a1c",
+            "integratedLufs": null,
+            "truePeak": 0.11152494100861077,
+            "normalization": {
+                "gain": 1,
+                "limitedByCeiling": false
+            }
+        },
+        {
+            "name": "edge-tail",
+            "rate": 96000,
+            "length": 192137,
+            "inputSha256": "2cee7d95d498ad2827a8d22b82f6bfb0b76523abcfdde1ad9309f5a4c8edf3c2",
+            "integratedLufs": -38.194232500001206,
+            "truePeak": 1.5778940388322553,
+            "normalization": {
+                "gain": 0.5648357343395057,
+                "limitedByCeiling": true
+            }
+        },
+        {
+            "name": "non-finite",
+            "rate": 96000,
+            "length": 192137,
+            "inputSha256": "f55b35f2a4486e062816303048feb465ec1b3f9f5ab5c5acc2e4c7ea23aa6d0b",
+            "integratedLufs": -20.234988935405926,
+            "truePeak": 0.10015074543298397,
+            "normalization": {
+                "gain": 2.0499791633567166,
+                "limitedByCeiling": false
+            }
+        },
+        {
+            "name": "silence",
+            "rate": 96000,
+            "length": 192137,
+            "inputSha256": "6547197032dc2b2883b2dd423c81b45054ed39c4daa60fa4bfb42c7a9310a2ac",
+            "integratedLufs": null,
+            "truePeak": 0,
+            "normalization": {
+                "gain": 1,
+                "limitedByCeiling": false
+            }
+        }
+    ]
+}

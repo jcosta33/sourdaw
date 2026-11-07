@@ -1,5 +1,55 @@
 import { execFileSync } from 'node:child_process';
 
+export type ChangedRecord = { path: string; status: string };
+
+/** Working-tree inputs browser selection reads; any uncommitted change to them disables narrowing. */
+export const SELECTION_INPUTS = [
+    'src',
+    'public',
+    'tests',
+    'scripts/e2eSuiteOwners.json',
+    'scripts/e2eAffectedGraph.ts',
+    'scripts/e2eCoverageSelection.ts',
+    'scripts/e2eFileGraph.ts',
+    'scripts/e2eTestSideGraph.ts',
+    'scripts/e2eTestSideRoute.ts',
+    'tsconfig.json',
+    'playwright.config.ts',
+    'vite.config.ts',
+    'package.json',
+];
+
+/** Every path of a NUL-terminated `--name-status -z` diff with the status of its record. */
+export function parseChangedRecords(diff: string): ChangedRecord[] {
+    if (diff === '') {
+        throw new Error('Changed-path diff is empty');
+    }
+    const fields = diff.split('\0');
+    if (fields.pop() !== '') {
+        throw new Error('Changed-path diff must be NUL terminated');
+    }
+    const records: ChangedRecord[] = [];
+    for (let index = 0; index < fields.length;) {
+        const status = fields[index++];
+        if (status === undefined || !/^(?:[AMDUT]|[RC]\d+)$/.test(status)) {
+            throw new Error(`Unsupported diff status: ${status}`);
+        }
+        const count = /^[RC]/.test(status) ? 2 : 1;
+        for (let offset = 0; offset < count; offset++) {
+            const path = fields[index++];
+            if (!path || path.startsWith('/') || path.split('/').includes('..')) {
+                throw new Error('Invalid changed path');
+            }
+            records.push({ path, status });
+        }
+    }
+    return records;
+}
+
+export function parseChangedPaths(diff: string): string[] {
+    return [...new Set(parseChangedRecords(diff).map((record) => record.path))].sort();
+}
+
 function git(root: string, args: string[]): string {
     return execFileSync('git', args, { cwd: root, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 });
 }
@@ -32,22 +82,7 @@ export function readCheckoutDiff(
         if (git(root, ['status', '--porcelain', '--untracked-files=no']) !== '') {
             throw new Error('Selection checkout has dirty tracked inputs');
         }
-        if (
-            git(root, [
-                'status',
-                '--porcelain',
-                '--untracked-files=all',
-                '--',
-                'src',
-                'public',
-                'tests/e2e',
-                'scripts/e2eSuiteOwners.json',
-                'scripts/e2eAffectedGraph.ts',
-                'tsconfig.json',
-                'playwright.config.ts',
-                'package.json',
-            ]) !== ''
-        ) {
+        if (git(root, ['status', '--porcelain', '--untracked-files=all', '--', ...SELECTION_INPUTS]) !== '') {
             throw new Error('Selection checkout has uncommitted inventory or graph inputs');
         }
     }

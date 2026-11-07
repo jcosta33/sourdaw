@@ -227,6 +227,22 @@ function channelsAddressedOnHead(head: EditedClipHead): Set<number> {
 }
 
 /**
+ * A channel can carry two bends onto one head, its unscoped row and its recorded wheel (`pitchBendLaneKey`), but
+ * the range reader reads every row on the head under one state per channel. The later one is the bend the
+ * channel's own notes hear, so its recorded state is the one the head declares.
+ */
+function latestCarryPerChannel(carried: readonly CarriedBendRecording[]): CarriedBendRecording[] {
+    const latest = new Map<number, CarriedBendRecording>();
+    for (const carry of carried) {
+        const current = latest.get(carry.channel);
+        if (!current || current.recordedBeat <= carry.recordedBeat) {
+            latest.set(carry.channel, carry);
+        }
+    }
+    return [...latest.values()];
+}
+
+/**
  * The messages that keep a bend carried onto a cut at the range its row was recorded under. Before the cut the
  * row is a carry, read at the beat it was recorded at (`projectChannelBend`); on the edited clip's head it is an
  * ordinary row, read under the state in force there, which is the state at the cut. A channel whose carried row
@@ -251,7 +267,7 @@ export function reconcileCarriedBendRanges({
 }): CarriedBendRangeMessages {
     const messages: CarriedBendRangeMessages = { onHead: [], afterHead: [] };
     const addressedOnHead = channelsAddressedOnHead(head);
-    for (const { channel, recordedBeat } of carried) {
+    for (const { channel, recordedBeat } of latestCarryPerChannel(carried)) {
         if (addressedOnHead.has(channel)) {
             continue;
         }

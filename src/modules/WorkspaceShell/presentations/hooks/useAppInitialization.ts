@@ -1,15 +1,16 @@
 import { useEffect } from 'react';
 
 import { logger } from '#/infra/logger/appLogger';
+import { syncSoloModePreference } from '#/modules/Arrangement/useCases';
 import {
     initializeAudioEngine,
     getAudioContext,
     setMasterGainValue,
     resumeEngine,
     syncAutoInputMonitoring,
-    syncControlRoomMonitoring,
     syncNativeTimelineSamples,
 } from '#/modules/AudioEngine/useCases';
+import { syncControlRoomMonitoring } from '#/modules/ControlRoom/useCases';
 import { syncKneadToEngine } from '#/modules/Knead/useCases';
 import { initWebMidi } from '#/modules/MIDI/useCases';
 import { preferencesStore } from '#/modules/Preferences/stores';
@@ -29,8 +30,6 @@ import {
     syncTransportMapsToNativeSession,
 } from '#/modules/Transport/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
-
-import { syncSoloModePreference } from '../../useCases/togglePanel/panelToggles/syncSoloModePreference';
 
 const FIRST_LOAD_HINT_KEY = 'wd:first-load-hint-shown';
 const FIRST_LOAD_HINT_DELAY_MS = 3000;

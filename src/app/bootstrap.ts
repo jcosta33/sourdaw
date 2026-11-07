@@ -11,7 +11,6 @@ import {
     getAgentCapabilityCatalog,
     failMixAnalysis,
     initializeVoiceInputAvailability,
-    cancelActiveAgentRuns,
     recoverInterruptedAgentRuns,
     recoverRetainedSectionRenderEffects,
     setVoiceToggleEventBus,
@@ -28,11 +27,11 @@ import {
     persistDevicePatch,
     quantiseDeviceParameterValue,
     cleanupUnusedFreezeFiles,
-    runtimeGraphTopology,
     setTrackGain as setTrackGainArrangement,
     setTrackPan as setTrackPanArrangement,
     setDeviceParameter,
     initStalenessDetection,
+    initTimelineViewReconciliation,
     setArrangementEventBus,
     setClipAudioAssetStager,
     setOfflineRenderDependencies,
@@ -41,6 +40,15 @@ import {
     getDeviceContractVersionForCommand,
     getDeviceTypesForCommandDeviceIds,
     reserveNextTrackColorForCommand,
+    admitRecordingMidiNoteOn,
+    admitRecordingMidiNoteOff,
+    admitRecordingMidiExpression,
+    findOpenRecordingMidiAdmission,
+    findOpenRecordingMidiMemberAdmission,
+    getRecordingMidiAdmission,
+    retireRecordingMidiAdmission,
+    takeOwnsRecordingRoot,
+    recordingMidiSourceBeatAt,
 } from '#/modules/Arrangement/useCases';
 import { setMixAnalysisDisplayLifecycle } from '#/modules/AudioAnalysis/useCases';
 import {
@@ -55,19 +63,12 @@ import {
     configureOfflineMidiEventProjection,
     configureOfflinePpqEndpointProjection,
     configureOfflineYeastMidiProcessing,
-    configureRuntimeGraphProjectRevisionValidator,
-    configureRuntimeGraphTopologyValidator,
     recordNativeChainReleases,
-    configureDurableAudioBufferOwnership,
     isTunerTelemetryNativelyOwned,
     startMainThreadLongTaskObservation,
     stopAllScheduled,
 } from '#/modules/AudioEngine/useCases';
-import {
-    clearAgentMeasurementArtifacts,
-    clearAgentSectionRenderArtifacts,
-    stageAudioBufferAsset,
-} from '#/modules/AudioRendering/useCases';
+import { stageAudioBufferAsset } from '#/modules/AudioRendering/useCases';
 import {
     getAutomationValueAtBeat,
     createOfflineAutomationEvaluator,
@@ -108,22 +109,23 @@ import {
     commandRuntimeRepairPort,
     setCommandEventBus,
     syncActionReplayMetadata,
+    resetActionReplayAuthority,
     stampSessionUndoWitness,
 } from '#/modules/Command/useCases';
 import { setMidiLearnDependencies } from '#/modules/ControlSurface/useCases';
-import { actionHistoryStore } from '#/modules/CrdtDocument/stores';
 import {
     agentProjectInspectionPort,
     initBranchState,
     captureProjectRootIdentity,
     captureProjectRevision,
-    projectRevisionMatchesLiveIgnoringCommandCheckpoint,
+    settledProjectRevisionMatchesLiveIgnoringSaveWrites,
     inspectAgentProjectDivergence,
     createCommandPreviewWorkspace,
     createCommandRecoveryWorkspace,
     markActionHistoryEntryReverted,
     recordActionHistoryEntries,
     recordActionHistoryEntry,
+    subscribeToPublishedActionHistory,
     clearActionHistory as clearCrdtActionHistory,
     registerCrdtStorageRuntime,
     sessionUndoWitnessStampPort,
@@ -162,6 +164,7 @@ import {
     destroyWebMidi,
     setWebMidiRealtimeProcessor,
     setWebMidiRuntimeEventBus,
+    setRecordingMidiAdmissionPort,
 } from '#/modules/MIDI/useCases';
 import { externalPluginParameterStore } from '#/modules/PluginHost/stores';
 import {
@@ -170,15 +173,11 @@ import {
 } from '#/modules/PluginHost/useCases';
 import {
     agentCapabilityDiscoveryPort,
-    collectDurableOwnedAudioBufferIds,
     getDurableProjectOwnerId,
     productionBriefActionBatchAdmission,
     initGrooveTemplateDirtyTracking,
     initPluginStateDirtyTracking,
     initProjectDirtyTracking,
-    setAgentMeasurementArtifactsClearer,
-    setAgentSectionRenderArtifactsClearer,
-    setActiveAgentRunsCanceller,
     setProjectIdentityTransitionDependencies,
 } from '#/modules/Project/useCases';
 import { clearProofMeters, updateProofMeters } from '#/modules/Proof/stores';
@@ -231,18 +230,27 @@ import {
     captureCommandBatchPreflightState,
 } from './captureCommandBatchPreflightState';
 import { composeGrandBoule } from './composeGrandBoule';
+import { configureAudioEngineRuntime } from './configureAudioEngineRuntime';
+import { configureProjectOriginalMediaPort } from './configureProjectOriginalMediaPort';
 import { getAgentProtocolManifest } from './getAgentProtocolManifest';
 import { getProductionCommandHandlerMaps } from './getProductionCommandHandlerMaps';
+import { initAudioBufferCacheAccess } from './initAudioBufferCacheAccess';
 import { initCrumbsModePush } from './initCrumbsModePush';
 import { initDeviceStateReconciliation } from './initDeviceStateReconciliation';
 import { initInputMonitoringProjectAccess } from './initInputMonitoringProjectAccess';
+import { initLevainDeviceStateProjectAccess } from './initLevainDeviceStateProjectAccess';
 import { nativeBuiltinParameterName } from './nativeBuiltinParameterNames';
 import { nativeModAssignments } from './nativeModAssignments';
 import { acquireNativeSampleBank, nativeSampleBankKey } from './nativeSampleBanks';
 import { prepareOfflineDeviceSetup, captureOfflineDeviceSetup } from './prepareOfflineDeviceSetup';
 import { projectNativeDeviceState } from './projectNativeDeviceState';
 import { eventBus, logger } from './registerDependencies';
+import { registerDeviceEnginePorts } from './registerDeviceEnginePorts';
 import { registerGlobalErrorHandlers } from './registerGlobalErrorHandlers';
+import { registerKernelPorts } from './registerKernelPorts';
+import { registerProjectLifecycle } from './registerProjectLifecycle';
+import { registerProjectSlotProjections } from './registerProjectSlotProjections';
+import { registerSupportingServicePorts } from './registerSupportingServicePorts';
 
 logCapabilities();
 
@@ -255,6 +263,11 @@ logCapabilities();
 initBranchState();
 
 registerCrdtStorageRuntime();
+registerProjectSlotProjections();
+registerProjectLifecycle();
+registerDeviceEnginePorts();
+registerSupportingServicePorts();
+registerKernelPorts();
 setElasticSensitivityRootIdentityCapture(captureProjectRootIdentity);
 configureCommandBatchIdempotency({ canExecute: canExecuteCommandBatch });
 setActionHistoryMetadataPort({
@@ -266,11 +279,8 @@ setActionHistoryMetadataPort({
 sessionUndoWitnessStampPort.setProvider(stampSessionUndoWitness);
 productionBriefAdmissionPort.setGuard(productionBriefActionBatchAdmission.capture);
 commandProjectRevisionPort.setProvider(captureProjectRevision);
-commandProjectRevisionPort.setLiveMatchIgnoringCommandCheckpoint(projectRevisionMatchesLiveIgnoringCommandCheckpoint);
-configureRuntimeGraphProjectRevisionValidator(
-    (expectedProjectRevision) => captureProjectRevision() === expectedProjectRevision
-);
-configureRuntimeGraphTopologyValidator(runtimeGraphTopology.matchesCurrentProject);
+commandProjectRevisionPort.setLiveMatchIgnoringSaveWrites(settledProjectRevisionMatchesLiveIgnoringSaveWrites);
+configureAudioEngineRuntime();
 commandBatchPreflightPort.setProvider(captureCommandBatchPreflightState);
 // AiRuntime publishes the capability catalog and imports Project, so capability
 // discovery reaches it through the port the composition root registers.
@@ -289,9 +299,9 @@ commandDeviceVersionsPort.setResolver(
         getDeviceContractVersionForCommand(deviceType) ?? getExternalPluginContractVersionForCommand(deviceType)
 );
 commandTrackDefaultsPort.setTrackColorProvider(reserveNextTrackColorForCommand);
-syncActionReplayMetadata(actionHistoryStore.value?.entries ?? []);
-actionHistoryStore.subscribe((state) => {
-    syncActionReplayMetadata(state?.entries ?? []);
+subscribeToPublishedActionHistory({
+    onHistory: syncActionReplayMetadata,
+    onRootReplaced: resetActionReplayAuthority,
 });
 setRuntimeLogger(logger);
 configureCollaborationAssetOwner({
@@ -372,17 +382,6 @@ setWorkspaceEventBus(eventBus);
 // AudioRendering's barrel, which Arrangement cannot import without a module
 // cycle, so the composition root supplies the stager.
 setClipAudioAssetStager(stageAudioBufferAsset);
-// Same seam shape as the stager above: AudioRendering's WAV export path
-// imports Project's use cases, so Project cannot import AudioRendering's
-// barrel directly without a cycle. See agentMeasurementArtifactClearingState.ts.
-setAgentMeasurementArtifactsClearer(clearAgentMeasurementArtifacts);
-// Two more seams of the same shape: the retained section renders and the
-// in-flight agent runs both belong to the project being torn down, and each
-// implementation's module imports Project's barrel, so Project cannot import
-// either back. See agentSectionRenderArtifactsClearingState.ts and
-// activeAgentRunCancellationState.ts.
-setAgentSectionRenderArtifactsClearer(clearAgentSectionRenderArtifacts);
-setActiveAgentRunsCanceller(cancelActiveAgentRuns);
 // An unload changes native strip state with no batch of its own to report it,
 // so PluginHost forwards the strips its own release touched here, the one
 // place that may cross from PluginHost's contract into AudioEngine's.
@@ -407,6 +406,17 @@ configureYeastRuntime({ panicOutputNotes: stopAllScheduled });
 configureLevainZoneTableBuilder(buildLevainZoneTables);
 const disposeWebMidiRealtimeProcessor = setWebMidiRealtimeProcessor({ processor: processRealtimeMidiInput });
 setWebMidiRuntimeEventBus({ eventBus });
+setRecordingMidiAdmissionPort({
+    admitRecordingMidiNoteOn,
+    admitRecordingMidiNoteOff,
+    admitRecordingMidiExpression,
+    findOpenRecordingMidiAdmission,
+    findOpenRecordingMidiMemberAdmission,
+    getRecordingMidiAdmission,
+    retireRecordingMidiAdmission,
+    takeOwnsRecordingRoot,
+    recordingMidiSourceBeatAt,
+});
 setNotificationEventBus(eventBus);
 // Storage adapters cannot resolve `notifyUser` before this line: `inject`
 // caches the closure it builds on first call, and an unregistered token
@@ -428,6 +438,7 @@ setTimeOperationDependencies({
     prepareTimelineMapTimeOperation,
     prepareTimelineMapStateRestore,
 });
+configureProjectOriginalMediaPort();
 setProjectIdentityTransitionDependencies({
     leaveCollaborationSession: leaveSession,
     resumeDurableAssetOwnerHandoffsAfterProjectLoad: async (authority) => {
@@ -451,11 +462,7 @@ setProjectIdentityTransitionDependencies({
     },
 });
 
-// The audio-cache collectors pull the durable owned-id set at collection time
-// (issue #3777), so ordinary PCM a saved project still references survives the
-// age/budget sweeps while it is inactive. Enumeration stays a pull from the
-// persisted snapshots — no second ownership table to drift.
-configureDurableAudioBufferOwnership(collectDurableOwnedAudioBufferIds);
+initAudioBufferCacheAccess();
 initInputMonitoringProjectAccess();
 
 function disposeYeastRealtimeBridge(): void {
@@ -672,6 +679,7 @@ initToasterKitPersistence();
 // neither Levain's instrument id nor Crumbs' sample reference is one. Registered
 // here so a device's first appearance is already carrying whatever the document
 // held for it, and only a genuine edit afterwards writes back.
+initLevainDeviceStateProjectAccess();
 initLevainDeviceStatePersistence();
 initBacteriaSubscribers({ eventBus, logger });
 // Same shape and the same reason, subscriber first so the device's first
@@ -706,6 +714,7 @@ initCrumbsModePush(eventBus);
 // this restores.
 syncCrumbsNativeInstances();
 initStalenessDetection();
+initTimelineViewReconciliation();
 
 // Registered for the life of the process, so deadline-evidence reading has
 // main-thread long-task coverage from startup regardless of what is mounted.

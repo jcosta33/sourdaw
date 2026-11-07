@@ -31,7 +31,7 @@
  * abort — only about the transient flags and the two stores' contents.
  */
 
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const documentIdentity = vi.hoisted(() => ({ epoch: 0 }));
 
@@ -108,6 +108,7 @@ vi.mock('#/infra/store/createStore', async (importOriginal) => {
 });
 // Four hoisted bindings stay live; newly listed names are unread graph-coverage stubs.
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    builtinSynthVoice: { read: vi.fn() },
     rearmCommittedTrackInputMonitoring: vi.fn(async () => undefined),
     reconcileAutoInputMonitoring: vi.fn(),
     forgetProjectLatchedPedals: vi.fn(),
@@ -140,6 +141,8 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     garbageCollectCachedAudioBuffersBySize: vi.fn(),
     garbageCollectFreezeAudioBuffers: vi.fn(),
     getCachedAudioBuffer: vi.fn(),
+    restoreUnpinnedAudioBuffersFromIdb: vi.fn(),
+    holdAudioBufferForSession: vi.fn(),
     getCompensationDelay: vi.fn(),
     getDefaultBendRangeSemitones: vi.fn(),
     getDeviceChainTailSeconds: vi.fn(),
@@ -219,6 +222,7 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     beginBranchSession: vi.fn(),
     projectActionHistoryToStore: mockProjectActionHistoryToStore,
     projectRevisionMatchesLiveIgnoringCommandCheckpoint: vi.fn(() => true),
+    projectRevisionMatchesLiveIgnoringSaveWrites: vi.fn(() => true),
     removeCrdtDoc: vi.fn(),
     projectBranchSession: vi.fn(),
     replaceCrdtDoc: vi.fn(),
@@ -265,6 +269,7 @@ import { projectLoadFailureStore } from '../../../../stores/projectLoadFailureSt
 import { defaultProjectStoreState, projectStore } from '../../../../stores/projectStore';
 import { replaceProjectData } from '../../helpers/replaceProjectData';
 import { unsavedClosedTakes } from '../../helpers/unsavedClosedTakes';
+import { projectLifecycleRegistry } from '../../projectLifecycleRegistry';
 import { initProjectDirtyTracking } from '../initProjectDirtyTracking';
 
 import type { HydratableProjectData } from '../../helpers/isHydratableProjectData';
@@ -473,11 +478,34 @@ const successorOwnedAborts: Array<{ label: string; arrange: () => void }> = [
     },
 ];
 
+/**
+ * The module reset and hydrate a load runs write neither store this spec reads,
+ * and the production registration reaches every module this spec replaces with
+ * a partial double, so one stand-in participant takes the place of the modules
+ * a load resets and hydrates.
+ */
+const moduleLifecycleParticipant = {
+    module: 'ModuleLifecycleStandIn',
+    resetForProject: vi.fn(),
+    hydrateFromProjectData: vi.fn(),
+};
+
+/**
+ * A committed step that throws is only logged: the replacement carries on
+ * degraded, so a missing registration would pass every store assertion here.
+ */
+function loggedCommittedStepFailures(): string[] {
+    return mockLogger.error.mock.calls
+        .map(([error]: unknown[]) => (error instanceof Error ? error.message : String(error)))
+        .filter((message: string) => message.includes('Committed project replacement failed during'));
+}
+
 describe('interrupted project load dirty tracking', () => {
     let stopDirtyTracking: () => void = () => {};
 
     beforeEach(() => {
         vi.clearAllMocks();
+        projectLifecycleRegistry.configure([moduleLifecycleParticipant]);
         documentIdentity.epoch = 0;
         stopDirtyTracking();
         batchFlushFailure.error = null;
@@ -509,6 +537,10 @@ describe('interrupted project load dirty tracking', () => {
         });
         stopDirtyTracking = initProjectDirtyTracking();
         unsavedClosedTakes.acknowledgeAll();
+    });
+
+    afterEach(() => {
+        expect(loggedCommittedStepFailures()).toEqual([]);
     });
 
     describe('an aborted open leaves the session it interrupted editable', () => {

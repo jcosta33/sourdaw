@@ -24,7 +24,6 @@ import {
     resolveAutoMatchValue,
 } from '#/modules/Automation/useCases';
 import { captureProjectRootIdentity } from '#/modules/CrdtDocument/useCases';
-import { applyFermenterRuntimeParam, mapFermenterParamToDspParam } from '#/modules/Fermenter/useCases';
 import { fromStereoPan } from '#/utils/audioLevelLaw';
 import {
     getDeviceAutomationParameterId,
@@ -42,6 +41,7 @@ import { schedulerSession } from '../../playheadScheduler/schedulerSession';
 
 import { appliedAutomationBases, clearAppliedAutomationBases } from './appliedAutomationBases';
 import { clearDeviceReadBeatByTrack, deviceReadBeatByTrack } from './deviceReadBeatByTrack';
+import { deviceRuntimeParameterWriters } from './deviceRuntimeParameterWriters';
 import { restoreAutomationBaseValue } from './restoreAutomationBaseValue';
 import { scheduleComposedTrackGainAutomation } from './scheduleComposedTrackGainAutomation';
 
@@ -879,19 +879,21 @@ export function applyAutomation(currentBeat: number): Set<string> {
                 // It writes nothing for a hosted plugin, whose Web Audio path is
                 // IPC to the very instance being stamped.
                 const carried = isDeviceCarriedByNativeSession(lane.trackId, device.id);
-                if (device.type === 'fermenter') {
-                    // Fermenter params use camelCase ids that must be mapped to
-                    // their snake_case DSP ids before reaching the WASM node —
-                    // the same translation the UI bridge applies. Runtime
-                    // automation bypasses UI state and persistence so the
-                    // user's manual base and CRDT history remain unchanged.
+                const runtimeWriter = deviceRuntimeParameterWriters.read('applyAutomation', device.type);
+                if (runtimeWriter !== null) {
+                    // A device whose module owns its runtime write (Fermenter)
+                    // spells its parameters differently on the engine, and
+                    // its module translates them — the same translation its
+                    // panel applies. Runtime automation bypasses UI state and
+                    // persistence so the user's manual base and CRDT history
+                    // remain unchanged.
                     if (carried ? released : moved) {
-                        applyFermenterRuntimeParam({ deviceId: device.id, paramId, value: delivered });
+                        runtimeWriter.write({ deviceId: device.id, paramId, value: delivered });
                     } else if (carried && moved) {
                         holdWebFallbackDeviceParam(
                             targetOwner.trackId,
                             targetOwner.deviceId,
-                            mapFermenterParamToDspParam({ paramId }),
+                            runtimeWriter.engineParameterName(paramId),
                             delivered
                         );
                     }

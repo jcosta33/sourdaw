@@ -73,9 +73,11 @@ vi.mock('#/modules/Arrangement/stores', () => ({
     readMusicalRange: vi.fn(),
     gainEnvelopeStore: { value: { envelopes: {} }, subscribe: vi.fn() },
     vcaGroupStore: { value: { groups: [] }, subscribe: vi.fn(() => () => {}) },
+    soloModeStore: { value: null, subscribe: vi.fn(() => () => {}) },
     setWarpState: vi.fn(),
     getStoredWarpState: vi.fn(),
     warpStateStore: { value: { states: {} }, subscribe: vi.fn() },
+    timelineEditingStore: { value: null },
     trackStore: { value: null },
     resolveEligibleClipWriteTarget: vi.fn<typeof import('#/modules/Arrangement/stores').resolveEligibleClipWriteTarget>(
         () => ({ status: 'missing' })

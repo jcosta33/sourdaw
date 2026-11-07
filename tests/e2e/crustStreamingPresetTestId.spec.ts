@@ -1,5 +1,4 @@
-import { test, expect } from '@playwright/test';
-
+import { test, expect } from './e2eTest';
 import { launch_new_project, setupWorkspace } from './e2eUtils';
 
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
@@ -32,7 +31,10 @@ test.describe('Crust streaming preset — selection changes aria-selected + LUFS
     test('selecting a streaming preset flips aria-selected and changes the LUFS readout', async ({ page }) => {
         // The streaming-target button opens a listbox. Scope by its "Target"
         // label to distinguish from any other listbox-popup button.
-        const targetButton = page.locator('button[aria-haspopup="listbox"]').filter({ hasText: /Target/i }).first();
+        const targetButton = page
+            .locator('button[aria-haspopup="listbox"]')
+            .filter({ hasText: /Target/i })
+            .first();
         await expect(targetButton).toBeVisible({ timeout: 5000 });
 
         // Capture the current LUFS readout before switching.

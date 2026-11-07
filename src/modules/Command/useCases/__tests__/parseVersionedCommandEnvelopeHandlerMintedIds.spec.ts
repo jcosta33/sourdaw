@@ -6,6 +6,7 @@ import { type CommandApplicationAssignedId } from '../../models/VersionedCommand
 import { compileCommandArgumentMetadata } from '../commandArgumentMetadata';
 import { createVersionedCommandEnvelope } from '../createVersionedCommandEnvelope';
 import { parseVersionedCommandEnvelope } from '../parseVersionedCommandEnvelope';
+import { readHandlerMintedApplicationIds } from '../readHandlerMintedApplicationIds';
 import { serializeVersionedCommandEnvelope } from '../serializeVersionedCommandEnvelope';
 
 type GlueAction = Extract<AppAction, { type: 'glueClips' }>;
@@ -262,5 +263,19 @@ describe('parseVersionedCommandEnvelope over ids a handler drew while compiling'
                 expect(parseWithAssignedIds(forged, assigned)).toBe('invalid');
             }
         );
+    });
+});
+
+describe('local tempo-map row application IDs', () => {
+    it('reports only actual new after-row IDs, never retained rows or source proof identities', () => {
+        const payload = {
+            rowPlan: { before: [{ id: 'kept' }], after: [{ id: 'kept' }, { id: 'minted' }] },
+            audioSourcePromotion: { clips: [{ clipId: 'source', inputs: { audioBufferId: 'media' } }] },
+        };
+        expect(readHandlerMintedApplicationIds('editTempoMap', payload)).toEqual([
+            { argument: 'rowPlan.after[1].id', value: 'minted' },
+        ]);
+        expect(readHandlerMintedApplicationIds('restoreTempoMapEdit', payload)).toEqual([]);
+        expect(readHandlerMintedApplicationIds('editTempoMap', { rowPlan: { before: [], after: [] } })).toEqual([]);
     });
 });

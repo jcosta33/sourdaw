@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { writeFile } from 'node:fs/promises';
 import { gunzipSync } from 'node:zlib';
 
-import { expect, test, type CDPSession, type TestInfo } from '@playwright/test';
+import { type CDPSession, type TestInfo } from '@playwright/test';
 
 import {
     admitOfflineAudioWorkletTrace,
@@ -10,6 +10,8 @@ import {
     OFFLINE_TRACE_PHASES,
     type TraceAdmission,
 } from '../../scripts/offlineAudioWorkletTrace';
+
+import { expect, test } from './e2eTest';
 
 const QUANTUM_FRAMES = 128;
 const SAMPLE_RATE = 48_000;
@@ -346,6 +348,7 @@ test('admits a complete native OfflineAudioWorklet callback population', async (
 
     const session = await browser.newBrowserCDPSession();
     const version = await session.send('Browser.getVersion');
+    // Category advertisement can be incomplete; admission validates the captured native events.
     const categories = await session.send('Tracing.getCategories');
     let maximumBufferUsage = 0;
     session.on('Tracing.bufferUsage', (usage) => {
@@ -424,7 +427,7 @@ test('admits a complete native OfflineAudioWorklet callback population', async (
         browser: version,
         protocolVersion: version.protocolVersion,
         traceConfiguration: TRACE_CONFIGURATION,
-        supportedTraceCategories: categories.categories.filter((category) => TRACE_CATEGORIES.includes(category)),
+        advertisedTraceCategories: categories.categories.filter((category) => TRACE_CATEGORIES.includes(category)),
         completion,
         maximumBufferUsage,
         compressedTraceBytes: captured.bytes.byteLength,
@@ -448,7 +451,6 @@ test('admits a complete native OfflineAudioWorklet callback population', async (
     expect(completion.traceFormat).toBe('json');
     expect(completion.streamCompression).toBe('gzip');
     expect(maximumBufferUsage).toBeLessThan(1);
-    expect(categories.categories).toEqual(expect.arrayContaining(TRACE_CATEGORIES));
     expect(producerResult).toMatchObject({
         isSecureContext: true,
         processorErrors: 0,

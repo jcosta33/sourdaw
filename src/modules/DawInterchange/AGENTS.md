@@ -4,8 +4,7 @@ Import and export interchange translation between Sourdaw internal project state
 
 ## Public Contract Surface
 
-- `useCases`: `importDawProject`, `pickAndImportDawProject`, `exportDawProject`, `getDawProjectHandlers`.
-- Handlers: `getDawProjectHandlers` (`importDawProject`, `exportDawProject`).
+Public surface: `useCases/index.ts`.
 
 ## Key Subsystems
 
@@ -26,5 +25,5 @@ Import and export interchange translation between Sourdaw internal project state
 PR CI owns broader unit and crate suites. Locally run only the exact changed spec or filtered Rust test.
 
 ```bash
-pnpm test:run <changed-spec>
+pnpm guard --profile focused -- pnpm test:run <changed-spec>
 ```

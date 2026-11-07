@@ -47,6 +47,14 @@ export function projectMidiNotesByClipIdThroughRestores(actions: readonly AppAct
             }
             continue;
         }
+        if (action.type === 'restoreClip') {
+            // `restoreMidiClipData` replaces the bucket when the removal captured
+            // one and leaves the clip's notes alone when it captured none.
+            if (action.payload.midiNotesSnapshot !== null) {
+                notesByClipId[action.payload.clipId] = cloneSnapshotNotes(action.payload.midiNotesSnapshot);
+            }
+            continue;
+        }
         if (action.type !== 'restoreMidiClipNotes') {
             continue;
         }

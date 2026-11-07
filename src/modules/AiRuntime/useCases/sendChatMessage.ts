@@ -10,6 +10,7 @@ import { type executeImmediatePromptCommand } from './agentRequestOrchestration/
 import { orchestratePromptChatRequest } from './agentRequestOrchestration/orchestratePromptChatRequest';
 import { resolveBackend } from './llmOrchestration/backendResolution/helpers';
 import { resolveAgentExecutionMode } from './resolveAgentExecutionMode';
+import { stopMeasuredPreviewAudition } from './stopMeasuredPreviewAudition';
 
 type SendChatMessageOptions = {
     mode?: AgentExecutionMode;
@@ -49,5 +50,6 @@ export async function sendChatMessage(
             throw createAiRuntimeError('Hosted AI is not configured.');
         }
     }
+    void stopMeasuredPreviewAudition();
     return orchestratePromptChatRequest({ userText, requestedRoute, backend, interactionMode, options });
 }

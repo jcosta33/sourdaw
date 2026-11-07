@@ -1,6 +1,5 @@
 import { getPluginById } from '#/modules/Arrangement/useCases';
 import { getFactoryDrumKitByIndex } from '#/modules/AudioEngine/useCases';
-import { getStoredDrumVoiceMetadata } from '#/modules/Toaster/useCases';
 import { isDrumDevice } from '#/utils/deviceTypeMatching';
 
 import {
@@ -10,6 +9,8 @@ import {
 } from '../models/CanonicalTrackRole';
 import { type ProjectMidiNote } from '../models/ProjectData';
 import { createBoundedRevisionToken } from '../services/createBoundedRevisionToken';
+
+import { storedDrumVoices } from './storedDrumVoices';
 
 type Note = Pick<ProjectMidiNote, 'pitch'> & Partial<Omit<ProjectMidiNote, 'pitch'>>;
 type Clip = { id: string; type: 'audio' | 'midi'; notes?: readonly Note[] };
@@ -384,7 +385,7 @@ function authoredRole(input: RoleInput): CanonicalTrackRoleProjection | null {
 
 function storedVoices(device: Device): Array<{ pitch: number; family: CanonicalTrackRole | null }> | null {
     if (device.type === 'toaster') {
-        const metadata = getStoredDrumVoiceMetadata(device.deviceState);
+        const metadata = storedDrumVoices.read('getCanonicalTrackRole').voicesOf(device.deviceState);
         return metadata.status === 'known' ? metadata.voices : null;
     }
     if (!isDrumDevice(device.type)) {

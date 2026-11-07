@@ -1,8 +1,9 @@
-import { workspaceStore } from '#/modules/WorkspaceShell/stores';
 import { shiftLoopOriginEntry } from '#/utils/clipLoopOrigin';
 import { type ClipSnapshot } from '#/utils/handlerContract';
 
+import { timelineEditingStore } from '../../stores/timelineEditingStore';
 import { type Clip } from '../../stores/trackStore';
+import { relocateAudioSourceTimeFields } from '../clip/relocateAudioSourceTimeFields';
 import { getTrackStoreState } from '../getTrackStoreState';
 
 type RippleDeleteShift = {
@@ -12,7 +13,16 @@ type RippleDeleteShift = {
     automationDelta: number;
 };
 
-type RippleDeleteClip = ClipSnapshot & Pick<Clip, 'loopOriginBeat'>;
+type RippleDeleteClip = ClipSnapshot &
+    Pick<
+        Clip,
+        | 'loopOriginBeat'
+        | 'audioOffsetSeconds'
+        | 'audioUnwrappedOffsetSeconds'
+        | 'audioLoopStartSeconds'
+        | 'audioLoopPassEntrySeconds'
+        | 'audioLoopPassOriginBeat'
+    >;
 
 type RippleDeletePlan<ClipShape extends RippleDeleteClip = Clip> = {
     removedClips: ClipShape[];
@@ -67,7 +77,7 @@ export function planRippleDelete(
         }
     }
     const gap = deleteEnd - deleteStart;
-    const rippleEnabled = ripple ?? workspaceStore.value?.rippleEditing ?? false;
+    const rippleEnabled = ripple ?? timelineEditingStore.value?.rippleEditing ?? false;
     const shiftedClips: RippleDeleteShift[] = [];
 
     const nextClips = track.clips.reduce<RippleDeleteClip[]>((accumulator, clip) => {
@@ -90,6 +100,7 @@ export function planRippleDelete(
                 // content offset; the loop anchor moves with it so the ripple
                 // cannot re-roll which passes sound (#4988).
                 ...shiftLoopOriginEntry(clip, -gap),
+                ...relocateAudioSourceTimeFields(clip, -gap),
             });
             return accumulator;
         }

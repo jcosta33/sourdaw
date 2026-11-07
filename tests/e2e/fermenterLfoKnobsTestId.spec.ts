@@ -1,5 +1,4 @@
-import { expect, test } from '@playwright/test';
-
+import { expect, test } from './e2eTest';
 import { launch_new_project, open_browser_instrument, setupWorkspace } from './e2eUtils';
 
 test.describe('Fermenter LFO Rate', () => {

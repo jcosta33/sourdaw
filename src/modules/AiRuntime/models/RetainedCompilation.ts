@@ -1,5 +1,6 @@
 import { type AdoptedRecipe } from './AdoptedRecipe';
 import { type MeasuredPreview } from './MeasuredPreview';
+import { type MetricRecipeSource } from './MetricGoalAdmission';
 
 export { type AdoptedRecipe } from './AdoptedRecipe';
 
@@ -38,6 +39,11 @@ export type RetainedCommandSet = {
 export type RetainedCompilation = RetainedCommandSet &
     (
         | { kind: 'transform' }
-        | { kind: 'recipe'; recipe: AdoptedRecipe }
+        | { kind: 'recipe'; recipe: AdoptedRecipe; metricRecipe?: MetricRecipeSource }
         | { kind: 'preview'; measuredPreview: MeasuredPreview }
+        /**
+         * The one `setProductionBrief` the application composed from the request, and the lines that
+         * describe its change. It is confirmed alone and never grounded with other commands.
+         */
+        | { kind: 'brief'; changeLines: readonly string[] }
     );

@@ -534,15 +534,14 @@ export function authorRepairRecords(
     return { kind: 'one', candidate };
 }
 
+/**
+ * The comment id and side identify the thread root. The finding's path and line describe the position
+ * recorded at repair time; GitHub rewrites the root's live path on a rename and moves or nulls its live
+ * line on later pushes, so an immutable record cannot keep matching them.
+ */
 function findingRefusal(thread: ReviewRepairThreadState, finding: ReviewRepairFinding): string | undefined {
     if (finding.commentId !== thread.rootCommentId) {
         return `finding commentId ${finding.commentId} does not match the thread root ${thread.rootCommentId}`;
-    }
-    if (finding.path !== thread.rootPath) {
-        return `finding path ${finding.path} does not match the thread root ${thread.rootPath}`;
-    }
-    if (finding.line !== thread.rootLine) {
-        return `finding line ${finding.line} does not match the thread root ${thread.rootLine}`;
     }
     if (finding.side !== thread.rootSide) {
         return `finding side ${finding.side} does not match the thread root ${thread.rootSide}`;

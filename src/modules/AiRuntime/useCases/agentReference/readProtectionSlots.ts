@@ -3,7 +3,8 @@ import { refinementProtectionForms } from './refinementProtectionForms';
 
 /** Where an explicit protection clause sits in a request: the references it protects and how it was closed. */
 
-const PROTECTION_VERB = String.raw`(?:leave|leaving|keep|keeping|preserve|preserving|retain|retaining)`;
+/** The one definition of a protection verb, shared with the clip reader so the two cannot drift apart. */
+export const PROTECTION_VERB = String.raw`(?:leave|leaving|keep|keeping|preserve|preserving|retain|retaining)`;
 const INSTRUCTION_VERBS = String.raw`(?:turn|set|make|raise|lower|boost|cut|reduce|increase|decrease|add|create|remove|delete|rename|insert|copy|duplicate|trim|split|quantize|transpose|normalize|bring|apply|load|import|export|bounce|render)`;
 
 const startPatterns: ReadonlyArray<{ kind: StartKind; pattern: RegExp }> = [
@@ -20,6 +21,8 @@ const startPatterns: ReadonlyArray<{ kind: StartKind; pattern: RegExp }> = [
     },
 ];
 const instructionPattern = new RegExp(String.raw`\b${INSTRUCTION_VERBS}\b`, 'giu');
+const instructionStartPattern = new RegExp(String.raw`^\s+${INSTRUCTION_VERBS}\b`, 'iu');
+const joiningAndPattern = /\band\s+$/iu;
 const conjunctionPattern = /\b(?:then|but|so|because)\b/giu;
 const hardBoundaryPattern = /[;:\n]|[.!?](?=\s|$)/gu;
 
@@ -41,7 +44,13 @@ const OPENS_WITH_PROTECTION_VERB = new RegExp(String.raw`^\s*${PROTECTION_VERB}\
 const LAST_WITH = /\bwith\s+(?![\s\S]*\bwith\s)/iu;
 
 type StartKind = 'verb' | 'prohibition' | 'carve-out';
-type Event = { index: number; end: number; kind: StartKind | 'cut' | 'instruction' };
+type Event = {
+    index: number;
+    end: number;
+    kind: StartKind | 'cut' | 'instruction';
+    /** Where the text before the event ends: a bare `and` that joins it to the clause before belongs to the cut. */
+    cutAt: number;
+};
 type Piece = {
     start: number;
     end: number;
@@ -49,6 +58,8 @@ type Piece = {
     memberSeparators: Range[];
 };
 export type Slot = {
+    /** What opened the clause: a protection verb, a prohibition ("without touching"), a carve-out, or nothing. */
+    lead: StartKind | null;
     start: number;
     end: number;
     /** The whole clause, only when no unread text follows its closer. */
@@ -68,10 +79,23 @@ export type Range = { start: number; end: number };
 
 /**
  * A capitalized word inside a sentence belongs to a title-cased name ("Keep Them Separate"), not to a request,
- * unless a conjunction opens its clause ("but Keep the Drum Bus unchanged").
+ * unless a conjunction or a comma or dash opens its clause ("but Keep the Drum Bus unchanged", "Alright, Keep Alpha alone").
  */
-function opensTitleCasedPhrase(masked: string, index: number): boolean {
-    return /^\p{Lu}/u.test(masked.slice(index)) && !opensClause(masked, index) && !followsConjunction(masked, index);
+function opensTitleCasedPhrase(masked: string, index: number, names: readonly Range[]): boolean {
+    return (
+        /^\p{Lu}/u.test(masked.slice(index)) &&
+        !opensClause(masked, index) &&
+        !followsConjunction(masked, index) &&
+        !followsPunctuationBoundary(masked, index, names)
+    );
+}
+
+/** Whether a comma or a dash ends the text right before the index, outside every project object name in `names`. */
+function followsPunctuationBoundary(masked: string, index: number, names: readonly Range[]): boolean {
+    const before = masked.slice(0, index).trimEnd();
+    const punctuation = before.length - 1;
+    const insideName = names.some((name) => punctuation >= name.start && punctuation < name.end);
+    return /[,\-–—]$/u.test(before) && !insideName;
 }
 
 function followsConjunction(masked: string, index: number): boolean {
@@ -97,26 +121,54 @@ function opensInstruction(masked: string, index: number): boolean {
     );
 }
 
-function collectEvents(masked: string): Event[] {
-    const starts: Event[] = startPatterns.flatMap(({ kind, pattern }) =>
+/** The index of the `and` that joins an instruction starting at `index` to the clause before it, else `index`. */
+function joiningAndStart(masked: string, index: number): number {
+    const joining = joiningAndPattern.exec(masked.slice(0, index));
+    return joining === null ? index : joining.index;
+}
+
+function collectStarts(masked: string, names: readonly Range[]): Event[] {
+    return startPatterns.flatMap(({ kind, pattern }) =>
         Array.from(masked.matchAll(pattern), (match) => ({
             index: match.index,
             end: match.index + match[0].length,
             kind,
-        })).filter((start) => !opensTitleCasedPhrase(masked, start.index))
+            cutAt: match.index,
+        })).filter((start) => !opensTitleCasedPhrase(masked, start.index, names))
     );
+}
+
+/** The spans of the words that open a protection, so a caller blanking object names can leave them readable. */
+function readProtectionStartRanges(masked: string, names: readonly Range[] = []): Range[] {
+    return collectStarts(masked, names).map(({ index, end }) => ({ start: index, end }));
+}
+
+/** A `then` opening an instruction cuts where its joining `and` starts, so the conjunction stays with the instruction. */
+function readBoundaryCutAt(masked: string, match: RegExpExecArray): number {
+    const opensInstructionAfterThen =
+        match[0].toLowerCase() === 'then' && instructionStartPattern.test(masked.slice(match.index + match[0].length));
+    if (!opensInstructionAfterThen) {
+        return match.index;
+    }
+    return joiningAndStart(masked, match.index);
+}
+
+function collectEvents(masked: string, names: readonly Range[]): Event[] {
+    const starts = collectStarts(masked, names);
     const insideStart = (index: number) => starts.some((start) => index >= start.index && index < start.end);
     const cuts: Event[] = [hardBoundaryPattern, conjunctionPattern].flatMap((pattern) =>
         Array.from(masked.matchAll(pattern), (match) => ({
             index: match.index,
             end: match.index + match[0].length,
             kind: 'cut' as const,
+            cutAt: readBoundaryCutAt(masked, match),
         })).filter((cut) => !insideStart(cut.index))
     );
     const instructions: Event[] = Array.from(masked.matchAll(instructionPattern), (match) => ({
         index: match.index,
         end: match.index + match[0].length,
         kind: 'instruction' as const,
+        cutAt: joiningAndStart(masked, match.index),
     })).filter((cut) => !insideStart(cut.index) && opensInstruction(masked, cut.index));
     return [...starts, ...cuts, ...instructions].toSorted(
         (left, right) => left.index - right.index || right.end - left.end
@@ -142,12 +194,12 @@ function continuesProtectionOwner(masked: string, event: Event, lead: Piece['lea
 }
 
 /** The text cut at boundaries, instruction verbs and conjunctions, and before every protection start. */
-function splitPieces(masked: string): Piece[] {
+function splitPieces(masked: string, names: readonly Range[]): Piece[] {
     const pieces: Piece[] = [];
     let cursor = 0;
     let lead: Piece['lead'] = null;
     let memberSeparators: Range[] = [];
-    for (const event of collectEvents(masked)) {
+    for (const event of collectEvents(masked, names)) {
         if (event.index < cursor) {
             continue;
         }
@@ -163,7 +215,7 @@ function splitPieces(masked: string): Piece[] {
             memberSeparators.push({ start: event.index, end: event.end });
             continue;
         }
-        pieces.push({ start: cursor, end: event.index, lead, memberSeparators });
+        pieces.push({ start: cursor, end: Math.max(cursor, event.cutAt), lead, memberSeparators });
         memberSeparators = [];
         if (event.kind === 'cut' || event.kind === 'instruction') {
             cursor = event.end;
@@ -210,7 +262,7 @@ function findCloser(masked: string, from: number, end: number, pattern: RegExp, 
 }
 
 /** The reference a piece protects, and whether a closing word shows it is read as a closed protection. */
-function readSlot(masked: string, piece: Piece): Slot | null {
+function readSlot(masked: string, piece: Piece): Omit<Slot, 'lead'> | null {
     const { lead } = piece;
     if (lead === null) {
         const closer = findCloser(masked, piece.start, piece.end, headlessCloserPattern, HEADLESS);
@@ -292,9 +344,9 @@ function readsOtherwise(masked: string, pieces: readonly Piece[], index: number)
 }
 
 /** Every slot of the text, a carve-out right after a protection marked as only exempting from it. */
-function readSlots(masked: string): Slot[] {
+function readSlots(masked: string, names: readonly Range[] = []): Slot[] {
     const slots: Slot[] = [];
-    const pieces = splitPieces(masked);
+    const pieces = splitPieces(masked, names);
     let previousProtects = false;
     for (const [index, piece] of pieces.entries()) {
         const slot = readSlot(masked, piece);
@@ -304,10 +356,10 @@ function readSlots(masked: string): Slot[] {
         }
         const isCarveOut = piece.lead?.kind === 'carve-out';
         const otherwise = readsOtherwise(masked, pieces, index);
-        slots.push({ ...slot, exempts: isCarveOut && previousProtects, otherwise });
+        slots.push({ ...slot, lead: piece.lead?.kind ?? null, exempts: isCarveOut && previousProtects, otherwise });
         previousProtects = piece.lead?.kind === 'verb' || piece.lead?.kind === 'prohibition';
     }
     return slots;
 }
 
-export const protectionSlots = { read: readSlots } as const;
+export const protectionSlots = { read: readSlots, startRanges: readProtectionStartRanges } as const;

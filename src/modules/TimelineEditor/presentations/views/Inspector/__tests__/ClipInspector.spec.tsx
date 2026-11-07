@@ -1,6 +1,7 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { act, render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { timeSignatureMapStore } from '#/modules/Transport/stores';
 import { dbToGain } from '#/utils/audioLevelLaw';
 
 import { ClipInspector } from '../ClipInspector';
@@ -189,10 +190,15 @@ vi.mock('#/utils/UI/colorPresets', () => ({
     CLIP_COLOR_PRESETS: ['#ff0000', '#00ff00', '#0000ff', ''],
 }));
 
+const arrangementMocks = vi.hoisted(() => ({
+    getClipEndLimit: vi.fn<(clipId: string) => number | null>(),
+}));
+
 vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/Arrangement/useCases')>();
     return {
         ...actual,
+        getClipEndLimit: arrangementMocks.getClipEndLimit,
         trimClipStart: vi.fn(),
         trimClipEnd: vi.fn(),
         setClipFade: vi.fn(),
@@ -246,6 +252,7 @@ describe('ClipInspector', () => {
 
     beforeEach(() => {
         vi.clearAllMocks();
+        arrangementMocks.getClipEndLimit.mockReturnValue(null);
     });
 
     it('should render without crashing', () => {
@@ -269,6 +276,34 @@ describe('ClipInspector', () => {
         expect(screen.getByText('Position')).toBeInTheDocument();
     });
 
+    it('reads the clip position and length as bars.beats.sixteenths, never raw floats', () => {
+        render(
+            <ClipInspector
+                {...defaultProps}
+                clip={{ ...defaultProps.clip, startBeat: 31.666666666666668, endBeat: 35.54133333333297 }}
+            />
+        );
+        expect(screen.getByText('8.4.3')).toBeInTheDocument();
+        expect(screen.getByText('9.4.3')).toBeInTheDocument();
+        expect(screen.getByText('0.3.3')).toBeInTheDocument();
+        expect(screen.queryByText(/\d\.\d{4,}/)).not.toBeInTheDocument();
+    });
+
+    it('re-reads the position and length when the project meter changes while open', () => {
+        timeSignatureMapStore.set({ changes: [] });
+        render(<ClipInspector {...defaultProps} clip={{ ...defaultProps.clip, startBeat: 9, endBeat: 18 }} />);
+        expect(screen.getByText('3.2.1')).toBeInTheDocument();
+        expect(screen.getByText('2.1.0')).toBeInTheDocument();
+
+        act(() => {
+            timeSignatureMapStore.set({ changes: [{ id: 'ts-1', beat: 0, numerator: 3, denominator: 4 }] });
+        });
+
+        expect(screen.getByText('4.1.1')).toBeInTheDocument();
+        expect(screen.getByText('3.0.0')).toBeInTheDocument();
+        timeSignatureMapStore.set({ changes: [] });
+    });
+
     it('should render Trim section', () => {
         render(<ClipInspector {...defaultProps} />);
         expect(screen.getByText('Trim')).toBeInTheDocument();
@@ -277,6 +312,90 @@ describe('ClipInspector', () => {
     it('should render Fades section', () => {
         render(<ClipInspector {...defaultProps} />);
         expect(screen.getByText('Fades')).toBeInTheDocument();
+    });
+
+    it('offers fades and the gain envelope on an audio clip', () => {
+        render(<ClipInspector {...defaultProps} />);
+        expect(screen.getByLabelText('Fade in duration')).toBeInTheDocument();
+        expect(screen.getByLabelText('Fade out duration')).toBeInTheDocument();
+        expect(screen.getByTestId('gain-envelope-section')).toBeInTheDocument();
+    });
+
+    it('offers no fades or gain envelope on a MIDI clip, which plays neither, but keeps clip gain', () => {
+        render(<ClipInspector {...defaultProps} clip={{ ...defaultProps.clip, type: 'midi' }} />);
+        expect(screen.queryByText('Fades')).not.toBeInTheDocument();
+        expect(screen.queryByLabelText('Fade in duration')).not.toBeInTheDocument();
+        expect(screen.queryByLabelText('Fade out duration')).not.toBeInTheDocument();
+        expect(screen.queryByTestId('gain-envelope-section')).not.toBeInTheDocument();
+        expect(screen.getByLabelText('Clip gain value')).toBeInTheDocument();
+    });
+
+    it('commits one guarded setClipFade per fade-in gesture and none while dragging', () => {
+        render(<ClipInspector {...defaultProps} />);
+        const slider = screen.getByLabelText('Fade in duration');
+
+        fireEvent.change(slider, { target: { value: '1' } });
+        fireEvent.change(slider, { target: { value: '1.5' } });
+        expect(commandMocks.executeUserAppAction).not.toHaveBeenCalled();
+        fireEvent.blur(slider, { target: { value: '1.5' } });
+
+        expect(commandMocks.executeUserAppAction).toHaveBeenCalledTimes(1);
+        expect(commandMocks.executeUserAppAction).toHaveBeenCalledWith({
+            type: 'setClipFade',
+            payload: {
+                clipId: 'clip-1',
+                fadeInBeats: 1.5,
+                fadeOutBeats: 0.5,
+                expectedFadeInBeats: 0.5,
+                expectedFadeOutBeats: 0.5,
+            },
+        });
+    });
+
+    it('commits one guarded setClipFade per fade-out gesture', () => {
+        render(<ClipInspector {...defaultProps} />);
+        const slider = screen.getByLabelText('Fade out duration');
+
+        fireEvent.change(slider, { target: { value: '2' } });
+        fireEvent.blur(slider, { target: { value: '2' } });
+
+        expect(commandMocks.executeUserAppAction).toHaveBeenCalledTimes(1);
+        expect(commandMocks.executeUserAppAction).toHaveBeenCalledWith({
+            type: 'setClipFade',
+            payload: {
+                clipId: 'clip-1',
+                fadeInBeats: 0.5,
+                fadeOutBeats: 2,
+                expectedFadeInBeats: 0.5,
+                expectedFadeOutBeats: 0.5,
+            },
+        });
+    });
+
+    it('dispatches no fade action when the gesture ends where it started', () => {
+        render(<ClipInspector {...defaultProps} />);
+        const slider = screen.getByLabelText('Fade in duration');
+
+        fireEvent.change(slider, { target: { value: '0.5' } });
+        fireEvent.blur(slider, { target: { value: '0.5' } });
+
+        expect(commandMocks.executeUserAppAction).not.toHaveBeenCalled();
+    });
+
+    it('follows the stored fade after a drag that returned to its start and committed nothing', () => {
+        const { rerender } = render(<ClipInspector {...defaultProps} />);
+        const slider = screen.getByLabelText('Fade in duration');
+
+        // Radix ends a drag back to its start value without a commit.
+        fireEvent.change(slider, { target: { value: '2' } });
+        expect(slider).toHaveValue('2');
+        expect(screen.getByText('2.00 beats')).toBeInTheDocument();
+        fireEvent.change(slider, { target: { value: '0.5' } });
+        rerender(<ClipInspector {...defaultProps} clip={{ ...defaultProps.clip, fadeInBeats: 1 }} />);
+
+        expect(screen.getByLabelText('Fade in duration')).toHaveValue('1');
+        expect(screen.getByText('1.00 beats')).toBeInTheDocument();
+        expect(commandMocks.executeUserAppAction).not.toHaveBeenCalled();
     });
 
     it('should render Gain section', () => {
@@ -458,6 +577,32 @@ describe('ClipInspector', () => {
             type: 'trimClipEnd',
             payload: { clipId: 'clip-1', newEndBeat: 7.75 },
         });
+    });
+
+    it('stops the Trim End slider where the clip source runs out', () => {
+        arrangementMocks.getClipEndLimit.mockReturnValue(10.5);
+        render(<ClipInspector {...defaultProps} />);
+        const slider = screen.getByLabelText('Trim clip end') as HTMLInputElement;
+
+        expect(arrangementMocks.getClipEndLimit).toHaveBeenCalledWith('clip-1');
+        expect(slider.max).toBe('10.5');
+        expect(slider.min).toBe('1');
+    });
+
+    it('keeps the Trim End slider range 256 beats past the start when the end is unlimited', () => {
+        render(<ClipInspector {...defaultProps} />);
+        const slider = screen.getByLabelText('Trim clip end') as HTMLInputElement;
+
+        expect(slider.max).toBe('256');
+    });
+
+    it('keeps the Trim End range ordered when the source ends within a beat of the clip start', () => {
+        arrangementMocks.getClipEndLimit.mockReturnValue(0.5);
+        render(<ClipInspector {...defaultProps} clip={{ ...defaultProps.clip, endBeat: 0.5 }} />);
+        const slider = screen.getByLabelText('Trim clip end') as HTMLInputElement;
+
+        expect(slider.min).toBe('0.5');
+        expect(slider.max).toBe('0.5');
     });
 
     it('dispatches no trimClipStart action when the commit lands on the current start bound', () => {

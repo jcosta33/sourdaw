@@ -5,18 +5,92 @@ import { ResizeHandle } from '../ResizeHandle';
 
 describe('ResizeHandle — separator structure', () => {
     it('renders a separator role', () => {
-        render(<ResizeHandle direction="vertical" onResize={vi.fn()} />);
+        render(
+            <ResizeHandle
+                label="Resize panel"
+                valueNow={200}
+                valueMin={100}
+                valueMax={400}
+                onSetSize={vi.fn()}
+                direction="vertical"
+                onResize={vi.fn()}
+            />
+        );
         expect(screen.getByRole('separator')).toBeInTheDocument();
     });
 
     it('aria-orientation is vertical for vertical direction', () => {
-        render(<ResizeHandle direction="vertical" onResize={vi.fn()} />);
+        render(
+            <ResizeHandle
+                label="Resize panel"
+                valueNow={200}
+                valueMin={100}
+                valueMax={400}
+                onSetSize={vi.fn()}
+                direction="vertical"
+                onResize={vi.fn()}
+            />
+        );
         expect(screen.getByRole('separator')).toHaveAttribute('aria-orientation', 'vertical');
     });
 
     it('aria-orientation is horizontal for horizontal direction', () => {
-        render(<ResizeHandle direction="horizontal" onResize={vi.fn()} />);
+        render(
+            <ResizeHandle
+                label="Resize panel"
+                valueNow={200}
+                valueMin={100}
+                valueMax={400}
+                onSetSize={vi.fn()}
+                direction="horizontal"
+                onResize={vi.fn()}
+            />
+        );
         expect(screen.getByRole('separator')).toHaveAttribute('aria-orientation', 'horizontal');
+    });
+});
+
+describe('ResizeHandle — accessible name and value', () => {
+    it('exposes its label and rounded size as a named separator', () => {
+        render(
+            <ResizeHandle
+                direction="vertical"
+                label="Resize track list"
+                valueNow={200.4}
+                valueMin={100}
+                valueMax={400}
+                onSetSize={vi.fn()}
+                onResize={vi.fn()}
+            />
+        );
+        const separator = screen.getByRole('separator', { name: 'Resize track list' });
+        expect(separator).toHaveAttribute('aria-valuenow', '200');
+        expect(separator).toHaveAttribute('aria-valuemin', '100');
+        expect(separator).toHaveAttribute('aria-valuemax', '400');
+    });
+});
+
+describe('ResizeHandle — Home and End', () => {
+    it('sets the size outright to the bounds through onSetSize', () => {
+        const onSetSize = vi.fn();
+        render(
+            <ResizeHandle
+                direction="vertical"
+                label="Resize panel"
+                valueNow={200}
+                valueMin={100}
+                valueMax={400}
+                onResize={vi.fn()}
+                onSetSize={onSetSize}
+            />
+        );
+        const separator = screen.getByRole('separator');
+
+        fireEvent.keyDown(separator, { key: 'Home' });
+        expect(onSetSize).toHaveBeenLastCalledWith(100);
+
+        fireEvent.keyDown(separator, { key: 'End' });
+        expect(onSetSize).toHaveBeenLastCalledWith(400);
     });
 });
 
@@ -28,7 +102,17 @@ describe('ResizeHandle — mouse drag interaction', () => {
 
     it('calls onResize with the delta when dragging vertically', () => {
         const onResize = vi.fn();
-        render(<ResizeHandle direction="vertical" onResize={onResize} />);
+        render(
+            <ResizeHandle
+                label="Resize panel"
+                valueNow={200}
+                valueMin={100}
+                valueMax={400}
+                onSetSize={vi.fn()}
+                direction="vertical"
+                onResize={onResize}
+            />
+        );
 
         // Start drag at clientX=100
         fireEvent.mouseDown(screen.getByRole('separator'), { clientX: 100, preventDefault: vi.fn() });
@@ -40,7 +124,17 @@ describe('ResizeHandle — mouse drag interaction', () => {
 
     it('calls onResize with the delta when dragging horizontally', () => {
         const onResize = vi.fn();
-        render(<ResizeHandle direction="horizontal" onResize={onResize} />);
+        render(
+            <ResizeHandle
+                label="Resize panel"
+                valueNow={200}
+                valueMin={100}
+                valueMax={400}
+                onSetSize={vi.fn()}
+                direction="horizontal"
+                onResize={onResize}
+            />
+        );
 
         fireEvent.mouseDown(screen.getByRole('separator'), { clientY: 200, preventDefault: vi.fn() });
         fireEvent.mouseMove(document, { clientY: 180 });
@@ -50,14 +144,35 @@ describe('ResizeHandle — mouse drag interaction', () => {
 
     it('does not call onResize before mouseDown', () => {
         const onResize = vi.fn();
-        render(<ResizeHandle direction="vertical" onResize={onResize} />);
+        render(
+            <ResizeHandle
+                label="Resize panel"
+                valueNow={200}
+                valueMin={100}
+                valueMax={400}
+                onSetSize={vi.fn()}
+                direction="vertical"
+                onResize={onResize}
+            />
+        );
         fireEvent.mouseMove(document, { clientX: 100 });
         expect(onResize).not.toHaveBeenCalled();
     });
 
     it('calls onResizeEnd when drag ends (mouseup)', () => {
         const onResizeEnd = vi.fn();
-        render(<ResizeHandle direction="vertical" onResize={vi.fn()} onResizeEnd={onResizeEnd} />);
+        render(
+            <ResizeHandle
+                label="Resize panel"
+                valueNow={200}
+                valueMin={100}
+                valueMax={400}
+                onSetSize={vi.fn()}
+                direction="vertical"
+                onResize={vi.fn()}
+                onResizeEnd={onResizeEnd}
+            />
+        );
 
         fireEvent.mouseDown(screen.getByRole('separator'), { clientX: 0, preventDefault: vi.fn() });
         fireEvent.mouseUp(document);
@@ -66,7 +181,17 @@ describe('ResizeHandle — mouse drag interaction', () => {
     });
 
     it('sets body cursor during drag and clears it on release', () => {
-        render(<ResizeHandle direction="vertical" onResize={vi.fn()} />);
+        render(
+            <ResizeHandle
+                label="Resize panel"
+                valueNow={200}
+                valueMin={100}
+                valueMax={400}
+                onSetSize={vi.fn()}
+                direction="vertical"
+                onResize={vi.fn()}
+            />
+        );
 
         fireEvent.mouseDown(screen.getByRole('separator'), { clientX: 0, preventDefault: vi.fn() });
         expect(document.body.style.cursor).toBe('col-resize');
@@ -78,14 +203,34 @@ describe('ResizeHandle — mouse drag interaction', () => {
     });
 
     it('uses row-resize cursor for horizontal direction', () => {
-        render(<ResizeHandle direction="horizontal" onResize={vi.fn()} />);
+        render(
+            <ResizeHandle
+                label="Resize panel"
+                valueNow={200}
+                valueMin={100}
+                valueMax={400}
+                onSetSize={vi.fn()}
+                direction="horizontal"
+                onResize={vi.fn()}
+            />
+        );
         fireEvent.mouseDown(screen.getByRole('separator'), { clientY: 0, preventDefault: vi.fn() });
         expect(document.body.style.cursor).toBe('row-resize');
     });
 
     it('stops calling onResize after mouseUp', () => {
         const onResize = vi.fn();
-        render(<ResizeHandle direction="vertical" onResize={onResize} />);
+        render(
+            <ResizeHandle
+                label="Resize panel"
+                valueNow={200}
+                valueMin={100}
+                valueMax={400}
+                onSetSize={vi.fn()}
+                direction="vertical"
+                onResize={onResize}
+            />
+        );
 
         fireEvent.mouseDown(screen.getByRole('separator'), { clientX: 0, preventDefault: vi.fn() });
         fireEvent.mouseMove(document, { clientX: 10 });
@@ -100,7 +245,17 @@ describe('ResizeHandle — mouse drag interaction', () => {
     // WorkspaceShell/presentations/components before it was deleted.
     it('reports each move relative to the previous one, not to the drag origin', () => {
         const onResize = vi.fn();
-        render(<ResizeHandle direction="vertical" onResize={onResize} />);
+        render(
+            <ResizeHandle
+                label="Resize panel"
+                valueNow={200}
+                valueMin={100}
+                valueMax={400}
+                onSetSize={vi.fn()}
+                direction="vertical"
+                onResize={onResize}
+            />
+        );
 
         fireEvent.mouseDown(screen.getByRole('separator'), { clientX: 0, preventDefault: vi.fn() });
         fireEvent.mouseMove(document, { clientX: 10 });
@@ -112,7 +267,18 @@ describe('ResizeHandle — mouse drag interaction', () => {
 
     it('does not call onResizeEnd on a mouseup that ends no drag', () => {
         const onResizeEnd = vi.fn();
-        render(<ResizeHandle direction="vertical" onResize={vi.fn()} onResizeEnd={onResizeEnd} />);
+        render(
+            <ResizeHandle
+                label="Resize panel"
+                valueNow={200}
+                valueMin={100}
+                valueMax={400}
+                onSetSize={vi.fn()}
+                direction="vertical"
+                onResize={vi.fn()}
+                onResizeEnd={onResizeEnd}
+            />
+        );
 
         fireEvent.mouseUp(document);
 
@@ -120,7 +286,17 @@ describe('ResizeHandle — mouse drag interaction', () => {
     });
 
     it('ends a drag without throwing when onResizeEnd is omitted', () => {
-        render(<ResizeHandle direction="vertical" onResize={vi.fn()} />);
+        render(
+            <ResizeHandle
+                label="Resize panel"
+                valueNow={200}
+                valueMin={100}
+                valueMax={400}
+                onSetSize={vi.fn()}
+                direction="vertical"
+                onResize={vi.fn()}
+            />
+        );
 
         fireEvent.mouseDown(screen.getByRole('separator'), { clientX: 0, preventDefault: vi.fn() });
 
@@ -129,7 +305,17 @@ describe('ResizeHandle — mouse drag interaction', () => {
 
     it('detaches its document listeners on unmount mid-drag', () => {
         const onResize = vi.fn();
-        const { unmount } = render(<ResizeHandle direction="vertical" onResize={onResize} />);
+        const { unmount } = render(
+            <ResizeHandle
+                label="Resize panel"
+                valueNow={200}
+                valueMin={100}
+                valueMax={400}
+                onSetSize={vi.fn()}
+                direction="vertical"
+                onResize={onResize}
+            />
+        );
 
         fireEvent.mouseDown(screen.getByRole('separator'), { clientX: 0, preventDefault: vi.fn() });
         unmount();
@@ -139,7 +325,17 @@ describe('ResizeHandle — mouse drag interaction', () => {
     });
 
     it('clears the body cursor and user-select on unmount mid-drag instead of stranding them', () => {
-        const { unmount } = render(<ResizeHandle direction="vertical" onResize={vi.fn()} />);
+        const { unmount } = render(
+            <ResizeHandle
+                label="Resize panel"
+                valueNow={200}
+                valueMin={100}
+                valueMax={400}
+                onSetSize={vi.fn()}
+                direction="vertical"
+                onResize={vi.fn()}
+            />
+        );
 
         fireEvent.mouseDown(screen.getByRole('separator'), { clientX: 0, preventDefault: vi.fn() });
         expect(document.body.style.cursor).toBe('col-resize');
@@ -153,7 +349,17 @@ describe('ResizeHandle — mouse drag interaction', () => {
 
     it('does not clear the cursor on unmount when no drag was in progress', () => {
         document.body.style.cursor = 'wait';
-        const { unmount } = render(<ResizeHandle direction="vertical" onResize={vi.fn()} />);
+        const { unmount } = render(
+            <ResizeHandle
+                label="Resize panel"
+                valueNow={200}
+                valueMin={100}
+                valueMax={400}
+                onSetSize={vi.fn()}
+                direction="vertical"
+                onResize={vi.fn()}
+            />
+        );
 
         unmount();
 

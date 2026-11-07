@@ -15,7 +15,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('#/modules/ElasticAudio/useCases', () => ({ readClipTransientOnsets: mocks.readSource }));
 vi.mock('#/modules/Project/stores', () => ({ getSettledProjectId: mocks.projectId }));
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
-    projectRevisionMatchesLiveIgnoringCommandCheckpoint: mocks.revisionMatches,
+    projectRevisionMatchesLiveIgnoringSaveWrites: mocks.revisionMatches,
 }));
 vi.mock('../../stores/agentResourceLimitsStore', () => ({ readAgentResourceLimits: mocks.limits }));
 

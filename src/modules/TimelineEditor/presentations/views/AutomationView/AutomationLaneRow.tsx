@@ -1,6 +1,7 @@
 import { type ReactElement, type MouseEvent, type KeyboardEvent, useState, useRef, useEffect } from 'react';
 
 import { useStore } from '#/infra/store/useStore';
+import { defaultTimelineEditingState, timelineEditingStore } from '#/modules/Arrangement/stores';
 import { interpolateAutomationValue } from '#/modules/Arrangement/useCases';
 import {
     addAutomationPoint,
@@ -20,6 +21,7 @@ import { playheadPositionRef, transportStore } from '#/modules/Transport/stores'
 import { defaultTransportState } from '#/modules/Transport/useCases';
 import { defaultWorkspaceState, workspaceStore, type WorkspaceState } from '#/modules/WorkspaceShell/stores';
 import { cn } from '#/utils/Styles/cn';
+import { isDragGestureActive, isPlainEscapePress } from '#/utils/UI/activeDragGesture';
 
 import { type AutomationLane, type AutomationCurveType } from '../../../models/AutomationViewTypes';
 import {
@@ -122,7 +124,7 @@ export const AutomationLaneRow = ({
     const isDrawMode = workspace.activeTool === 'draw';
     const curveColor = lane.color ?? trackColor ?? '#a78bfa';
     const isDisabled = lane.enabled === false;
-    const snapValue = workspace.snapValue ?? 1;
+    const { snapValue } = useStore(timelineEditingStore, defaultTimelineEditingState);
 
     const viewportStartBeat = scrollX / pixelsPerBeat;
     const viewportEndBeat = viewportStartBeat + containerWidth / pixelsPerBeat;
@@ -341,7 +343,10 @@ export const AutomationLaneRow = ({
             event.preventDefault();
             setSelectedPoints(lane.points.map((param) => param.beat));
         }
-        if (event.key === 'Escape') {
+        // A live drag owns Escape: it cancels itself, and the selection being dragged stays. Once
+        // none is live, only the plain press the drag owners act on clears it, so a held key's
+        // repeat after the cancel cannot drop the selection.
+        if (isPlainEscapePress(event) && !isDragGestureActive()) {
             setSelectedPoints([]);
         }
     };

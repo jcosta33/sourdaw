@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { defaultTransportState, tempoMapStore, transportStore } from '#/modules/Transport/stores';
+
 const mocks = vi.hoisted(() => {
     const trackState = { value: null as unknown };
     const markerState = { value: null as unknown };
@@ -517,6 +519,8 @@ describe('executeGlobalTimeOperation audio clip geometry (delete/duplicate appli
         mocks.batchDepth = 0;
         setStates();
         setTimeOperationDependencies(null);
+        transportStore.set({ ...defaultTransportState, tempo: 120 });
+        tempoMapStore.set({ changes: [] });
     });
 
     it('delete splits a fully-spanning audio clip into left/right fragments and preserves audio offset', () => {
@@ -534,8 +538,16 @@ describe('executeGlobalTimeOperation audio clip geometry (delete/duplicate appli
         const result = executeGlobalTimeOperation({ operation: { type: 'delete', startBeat: 2, endBeat: 6 } });
         expect(result.status).toBe('applied');
         const next = mocks.trackState.value as { tracks: Array<{ clips: Array<Record<string, unknown>> }> };
+        // At 120 BPM the legacy one-beat entry is 0.5 seconds; the right
+        // fragment consumes six beats (3 seconds) before its relocation.
         expect(next.tracks[0]!.clips).toEqual([
-            { ...span, endBeat: 2, name: 'span (L)' },
+            {
+                ...span,
+                endBeat: 2,
+                name: 'span (L)',
+                audioOffsetSeconds: 0.5,
+                audioUnwrappedOffsetSeconds: 0.5,
+            },
             {
                 ...span,
                 id: 'clip-dt-aaaaaaaa',
@@ -543,6 +555,8 @@ describe('executeGlobalTimeOperation audio clip geometry (delete/duplicate appli
                 endBeat: 6,
                 name: 'span (R)',
                 audioOffsetBeats: 1 + (6 - 0),
+                audioOffsetSeconds: 3.5,
+                audioUnwrappedOffsetSeconds: 3.5,
                 midiOffsetBeats: 0,
             },
         ]);
@@ -555,7 +569,9 @@ describe('executeGlobalTimeOperation audio clip geometry (delete/duplicate appli
         const result = executeGlobalTimeOperation({ operation: { type: 'delete', startBeat: 4, endBeat: 8 } });
         expect(result.status).toBe('applied');
         const next = mocks.trackState.value as { tracks: Array<{ clips: Array<Record<string, unknown>> }> };
-        expect(next.tracks[0]!.clips).toEqual([{ ...left, endBeat: 4 }]);
+        expect(next.tracks[0]!.clips).toEqual([
+            { ...left, endBeat: 4, audioOffsetSeconds: 0, audioUnwrappedOffsetSeconds: 0 },
+        ]);
     });
 
     it('delete moves a tail audio clip left and preserves its audio offset', () => {
@@ -565,8 +581,10 @@ describe('executeGlobalTimeOperation audio clip geometry (delete/duplicate appli
         const result = executeGlobalTimeOperation({ operation: { type: 'delete', startBeat: 2, endBeat: 6 } });
         expect(result.status).toBe('applied');
         const next = mocks.trackState.value as { tracks: Array<{ clips: Array<Record<string, unknown>> }> };
-        // After-range clips only shift start/end by the deleted duration; offset is unchanged.
-        expect(next.tracks[0]!.clips).toEqual([{ ...tail, startBeat: 6, endBeat: 16 }]);
+        // The whole clip relocates; its two-beat source entry stays at one second.
+        expect(next.tracks[0]!.clips).toEqual([
+            { ...tail, startBeat: 6, endBeat: 16, audioOffsetSeconds: 1, audioUnwrappedOffsetSeconds: 1 },
+        ]);
     });
 
     it('delete removes a fully-inside clip without producing splits', () => {

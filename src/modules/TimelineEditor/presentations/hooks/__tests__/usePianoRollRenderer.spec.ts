@@ -1,6 +1,7 @@
 import { renderHook, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
+import { getPianoRollRowTop } from '../../helpers/pianoRollConstants';
 import { usePianoRollRenderer } from '../usePianoRollRenderer';
 
 const mocks = vi.hoisted(() => {
@@ -8,7 +9,17 @@ const mocks = vi.hoisted(() => {
         id: string;
         kind: string;
         color: string;
-        clips: Array<{ id: string; type: string; color: string; startBeat?: number; endBeat?: number }>;
+        clips: Array<{
+            id: string;
+            type: string;
+            color: string;
+            startBeat?: number;
+            endBeat?: number;
+            midiOffsetBeats?: number;
+            loopEnabled?: boolean;
+            loopLength?: number;
+            loopOriginBeat?: number;
+        }>;
     };
     return {
         midiState: { notesByClipId: {} },
@@ -39,16 +50,16 @@ vi.mock('#/utils/UI/resolveToken', () => ({
 type RendererDeps = Parameters<typeof usePianoRollRenderer>[0];
 
 // ── Geometry ─────────────────────────────────────────────────────────────
-// chromatic + unfolded → 60 rows, pitches 83..24 top-to-bottom.
+// chromatic + unfolded → 128 rows, pitches 127..0 top-to-bottom.
 // The canvas covers the viewport, so its width comes from the scroll
 // container: clientWidth 400 - PITCH_RAIL_WIDTH(40) = 360 visible pixels.
-// height = 60 * 16 + RULER(22) = 982. At scrollLeft 0 the drawn slice starts
-// at beat 0, so note x = startBeat * 10, y = (83 - pitch) * 16.
+// height = 128 * 16 + RULER(22) = 2070. At scrollLeft 0 the drawn slice starts
+// at beat 0, so note x = startBeat * 10, y = (127 - pitch) * 16.
 const BEAT_W = 10;
 const VIEWPORT_W = 360;
 const PITCH_RAIL_W = 40;
 
-const rowY = (pitch: number): number => (83 - pitch) * 16;
+const rowY = (pitch: number): number => (127 - pitch) * 16;
 
 /**
  * Stand-in for the `overflow-auto` scroll container. Only `clientWidth` and
@@ -145,9 +156,9 @@ describe('usePianoRollRenderer', () => {
 
         const canvas = deps.canvasRef.current!;
         expect(canvas.width).toBe(VIEWPORT_W);
-        expect(canvas.height).toBe(982);
+        expect(canvas.height).toBe(2070);
         expect(canvas.style.width).toBe(`${VIEWPORT_W}px`);
-        expect(canvas.style.height).toBe('982px');
+        expect(canvas.style.height).toBe('2070px');
     });
 
     // Issue #2299. A backing store sized to the whole arrangement made the
@@ -157,6 +168,17 @@ describe('usePianoRollRenderer', () => {
     // The backing store must therefore not grow with content at all — a clip
     // 100x longer than the viewport gets the same backing store as an empty
     // one, and the extra beats live in CSS layout instead (PianoRoll.tsx).
+    it.each(['__proto__', 'constructor', 'toString'])(
+        'paints the grid for the Object.prototype scale name %s as chromatic',
+        (scaleType) => {
+            const deps = buildDeps({ scaleType });
+            renderHook(() => usePianoRollRenderer(deps));
+
+            expect(() => runTick()).not.toThrow();
+            expect(deps.canvasRef.current!.width).toBe(VIEWPORT_W);
+        }
+    );
+
     it('keeps the backing store at the viewport size no matter how long the clip is', () => {
         const emptyDeps = buildDeps();
         renderHook(() => usePianoRollRenderer(emptyDeps));
@@ -211,6 +233,26 @@ describe('usePianoRollRenderer', () => {
         // The cache window starts half a viewport before the scroll offset
         // (300 - 180), and is blitted at that same origin.
         expect(drawImage).toHaveBeenCalledWith(expect.anything(), -180, 0);
+    });
+
+    // The key rail positions its labels from `getPianoRollRowTop`, so the
+    // canvas must start its note rows at that same y. The first tick builds the
+    // grid cache and then paints the dynamic layer, each shifting its origin
+    // below the ruler once; a missing or wrong shift on either leg moves every
+    // row (grid lines or notes) off the labels. Horizontal-only translates
+    // (the cache's content-x shift) have y = 0 and are not row origins.
+    it('moves both the grid cache and the dynamic layer to the first row top before drawing rows', () => {
+        const translate = vi.spyOn(ctx, 'translate');
+        const deps = buildDeps();
+        renderHook(() => usePianoRollRenderer(deps));
+
+        runTick();
+
+        const rowOriginShifts = translate.mock.calls.filter(([, y]) => y !== 0);
+        expect(rowOriginShifts).toEqual([
+            [0, getPianoRollRowTop(0)],
+            [0, getPianoRollRowTop(0)],
+        ]);
     });
 
     // Every repaint walks the whole note list, including every frame of a
@@ -269,7 +311,7 @@ describe('usePianoRollRenderer', () => {
         runTick();
         const cacheWidth = VIEWPORT_W * 2;
         const rebuilds = (): number =>
-            fillRect.mock.calls.filter((call) => call[2] === cacheWidth && call[3] === 982).length;
+            fillRect.mock.calls.filter((call) => call[2] === cacheWidth && call[3] === 2070).length;
         expect(rebuilds()).toBe(1);
 
         // Inside the cached window: 40 frames of scrolling, no rebuild.
@@ -390,6 +432,131 @@ describe('usePianoRollRenderer', () => {
         expect(roundRect).toHaveBeenCalledWith(21, rowY(60) + 1, 38, 14, 2);
     });
 
+    describe('silent region shading', () => {
+        const NOTE_AREA_H = 2048;
+        const withClip = (clip: Partial<(typeof mocks.trackState.tracks)[number]['clips'][number]>): void => {
+            mocks.trackState = {
+                tracks: [
+                    {
+                        id: 'track-1',
+                        kind: 'midi',
+                        color: 'oklch(0.5 0.1 200)',
+                        clips: [{ id: 'clip-1', type: 'midi', color: '', startBeat: 0, endBeat: 16, ...clip }],
+                    },
+                ],
+            };
+        };
+
+        it('shades from the clip end to the right edge of the drawn grid', () => {
+            const fillRect = vi.spyOn(ctx, 'fillRect');
+            withClip({ endBeat: 16 });
+            renderHook(() => usePianoRollRenderer(buildDeps({ beatWidth: 10 })));
+
+            runTick();
+
+            // Window ends at beat 16 = 160px; the slice ends at 360px.
+            expect(fillRect).toHaveBeenCalledWith(160, 0, 200, NOTE_AREA_H);
+            expect(fillRect).toHaveBeenCalledWith(160, 0, 1, NOTE_AREA_H);
+        });
+
+        it('shades before the window start when the clip is left-trimmed', () => {
+            const fillRect = vi.spyOn(ctx, 'fillRect');
+            withClip({ endBeat: 16, midiOffsetBeats: 2 });
+            renderHook(() => usePianoRollRenderer(buildDeps()));
+
+            runTick();
+
+            expect(fillRect).toHaveBeenCalledWith(0, 0, 20, NOTE_AREA_H);
+            expect(fillRect).toHaveBeenCalledWith(180, 0, 180, NOTE_AREA_H);
+        });
+
+        it('shades from the loop end while the clip loops', () => {
+            const fillRect = vi.spyOn(ctx, 'fillRect');
+            withClip({ endBeat: 16, loopEnabled: true, loopLength: 8 });
+            renderHook(() => usePianoRollRenderer(buildDeps()));
+
+            runTick();
+
+            expect(fillRect).toHaveBeenCalledWith(80, 0, 280, NOTE_AREA_H);
+            expect(fillRect).toHaveBeenCalledWith(80, 0, 1, NOTE_AREA_H);
+        });
+
+        it('carries a trimmed loop back by its anchor advance, with a line at each edge', () => {
+            const fillRect = vi.spyOn(ctx, 'fillRect');
+            // Trimmed 2 beats past the anchor: the window is [3 - 2, 3 - 2 + 8).
+            withClip({
+                startBeat: 4,
+                endBeat: 20,
+                midiOffsetBeats: 3,
+                loopEnabled: true,
+                loopLength: 8,
+                loopOriginBeat: 2,
+            });
+            renderHook(() => usePianoRollRenderer(buildDeps()));
+
+            runTick();
+
+            expect(fillRect).toHaveBeenCalledWith(0, 0, 10, NOTE_AREA_H);
+            expect(fillRect).toHaveBeenCalledWith(10, 0, 1, NOTE_AREA_H);
+            expect(fillRect).toHaveBeenCalledWith(90, 0, 270, NOTE_AREA_H);
+            expect(fillRect).toHaveBeenCalledWith(90, 0, 1, NOTE_AREA_H);
+        });
+
+        it('ignores a stale loop anchor while the loop is off', () => {
+            const fillRect = vi.spyOn(ctx, 'fillRect');
+            withClip({ startBeat: 4, endBeat: 20, midiOffsetBeats: 3, loopEnabled: false, loopOriginBeat: 2 });
+            renderHook(() => usePianoRollRenderer(buildDeps()));
+
+            runTick();
+
+            expect(fillRect).toHaveBeenCalledWith(0, 0, 30, NOTE_AREA_H);
+        });
+
+        it('paints under the notes of other open clips, which play by their own span', () => {
+            const fillRect = vi.spyOn(ctx, 'fillRect');
+            const roundRect = vi.spyOn(ctx, 'roundRect');
+            mocks.midiState = {
+                notesByClipId: {
+                    'clip-2': [{ id: 'o1', pitch: 65, startBeat: 20, duration: 1, velocity: 100 }],
+                },
+            };
+            mocks.trackState = {
+                tracks: [
+                    {
+                        id: 'track-1',
+                        kind: 'midi',
+                        color: 'oklch(0.5 0.1 200)',
+                        clips: [
+                            { id: 'clip-1', type: 'midi', color: '', startBeat: 0, endBeat: 16 },
+                            { id: 'clip-2', type: 'midi', color: 'oklch(0.7 0.1 20)', startBeat: 0, endBeat: 32 },
+                        ],
+                    },
+                ],
+            };
+            renderHook(() => usePianoRollRenderer(buildDeps({ openedClipIds: ['clip-1', 'clip-2'] })));
+
+            runTick();
+
+            const shadeCall = fillRect.mock.calls.findIndex((args) => args[0] === 160 && args[3] === NOTE_AREA_H);
+            const noteCall = roundRect.mock.calls.findIndex((args) => args[0] === 201);
+            expect(shadeCall).toBeGreaterThanOrEqual(0);
+            expect(noteCall).toBeGreaterThanOrEqual(0);
+            expect(fillRect.mock.invocationCallOrder[shadeCall]).toBeLessThan(
+                roundRect.mock.invocationCallOrder[noteCall]!
+            );
+        });
+
+        it('shades nothing for a clip without a finite span', () => {
+            const fillRect = vi.spyOn(ctx, 'fillRect');
+            withClip({ endBeat: undefined });
+            renderHook(() => usePianoRollRenderer(buildDeps()));
+
+            runTick();
+
+            expect(fillRect).not.toHaveBeenCalledWith(expect.anything(), 0, expect.anything(), NOTE_AREA_H);
+        });
+    });
+
     it('draws the drag-to-create preview rectangle', () => {
         const roundRect = vi.spyOn(ctx, 'roundRect');
         const deps = buildDeps({
@@ -426,7 +593,7 @@ describe('usePianoRollRenderer', () => {
 
         expect(setLineDash).toHaveBeenCalledWith([4, 3]);
         // Column fill: x = stepBeat * beatWidth, width = gridSnap * beatWidth, full note area
-        expect(fillRect).toHaveBeenCalledWith(40, 0, 10, 960);
+        expect(fillRect).toHaveBeenCalledWith(40, 0, 10, 2048);
         // Row highlight for the step pitch
         expect(fillRect).toHaveBeenCalledWith(0, rowY(60), 360, 16);
     });

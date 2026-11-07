@@ -1,10 +1,13 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { getAgentBuiltinDeviceFactoryManifest } from '#/modules/Arrangement/useCases';
 
 import { type ScannedPlugin } from '../../models/ScannedPlugin';
 import { defaultPluginScanState, pluginScanStore } from '../../stores/pluginScanStore';
 import { getAgentDeviceFactoryManifest } from '../getAgentDeviceFactoryManifest';
+
+registerDeviceEnginePorts();
 
 describe('agent device factory manifest', () => {
     afterEach(() => {

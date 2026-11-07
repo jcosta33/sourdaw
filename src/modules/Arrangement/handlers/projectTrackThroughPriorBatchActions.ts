@@ -6,6 +6,8 @@ import { clampClipGain } from '../transformers/clampClipGain';
 import { getPlatformPlugins } from '../useCases/getPlatformPlugins';
 import { clampTrackGain } from '../useCases/setTrackGainPan/clampTrackGain';
 
+import { toPresetProjectDevices } from './preset/toPresetProjectDevices';
+
 export function projectTrackThroughPriorBatchActions(track: Track, context: HandlerValidationContext): Track {
     const projected = structuredClone(track);
     for (const action of context.actions.slice(0, context.actionIndex)) {
@@ -151,6 +153,8 @@ export function projectTrackThroughPriorBatchActions(track: Track, context: Hand
                     projected.devices.splice(action.payload.targetIndex, 0, device);
                 }
             }
+        } else if (action.type === 'restorePresetDeviceChain') {
+            projected.devices = toPresetProjectDevices(action.payload.replacementDevices);
         } else if (action.type === 'restoreDevice') {
             projected.devices.splice(action.payload.deviceIndex, 0, structuredClone(action.payload.deviceSnapshot));
         } else if (action.type === 'setDeviceParameter') {

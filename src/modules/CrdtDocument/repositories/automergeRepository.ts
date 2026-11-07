@@ -27,6 +27,7 @@ import {
 
 import { type CrdtDocumentSnapshot } from '../models/CrdtDocumentSnapshot';
 import { type DocId, type DocumentBundle, type MergeResult, DOC_PREFIX_ROOT } from '../models/CrdtDocumentTypes';
+import { advanceDocumentIdentityEpoch, readDocumentIdentityEpoch } from '../stores/documentIdentityEpoch';
 
 import { compareIncrementalKeys } from './crdtPersistence/compareIncrementalKeys';
 
@@ -297,7 +298,9 @@ class AutomergeRepository {
     private rootId: DocId = DOC_PREFIX_ROOT;
     private mutationEpoch = 0;
     private lastHistoryDiscardEpoch = 0;
-    private documentIdentityEpoch = 0;
+    private get documentIdentityEpoch(): number {
+        return readDocumentIdentityEpoch();
+    }
     private rootIdentityEpoch = 0;
     private unownedMutationEpoch = 0;
     private mutationEpochByOwner = new WeakMap<object, number>();
@@ -499,13 +502,15 @@ class AutomergeRepository {
         changeFn: ChangeFn<TDoc>,
         message?: string,
         snapshotTransaction?: object,
-        localSlots?: readonly string[]
+        localSlots?: readonly string[],
+        beforeChange?: (document: Readonly<TDoc>) => void
     ): void {
         const doc = this.docs.get(id) as Doc<TDoc> | undefined;
         if (!doc) {
             throw new Error(`Document not found: ${id}`);
         }
 
+        beforeChange?.(doc);
         this.captureBeforeMutation(id, snapshotTransaction);
         const previousHeads = getHeads(doc);
         const updated = message ? change(doc, { message }, changeFn) : change(doc, changeFn);
@@ -1310,7 +1315,7 @@ class AutomergeRepository {
     }
 
     private markDocumentIdentityMutation(): void {
-        this.documentIdentityEpoch += 1;
+        advanceDocumentIdentityEpoch();
         this.markMutation();
     }
 

@@ -1,7 +1,7 @@
-import { test, expect } from '@playwright/test';
-import type { Page } from '@playwright/test';
-
+import { test, expect } from './e2eTest';
 import { launch_from_template, setupWorkspace } from './e2eUtils';
+
+import type { Page } from '@playwright/test';
 
 async function openTab(page: Page, tabId: string): Promise<void> {
     const dock = page.getByTestId('toggle-bottom-dock');

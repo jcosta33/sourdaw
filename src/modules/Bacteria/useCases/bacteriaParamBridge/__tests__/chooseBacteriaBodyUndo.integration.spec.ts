@@ -44,6 +44,7 @@ const engineWrites: { trackId: string; deviceId: string; paramId: string; value:
 let afterEngineWrite: (() => void) | null = null;
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    builtinSynthVoice: { read: vi.fn() },
     reconcileAutoInputMonitoring: vi.fn(),
     stopTrackInputMonitoring: vi.fn(),
     rearmCommittedTrackInputMonitoring: vi.fn(),
@@ -75,6 +76,8 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     garbageCollectFreezeAudioBuffers: vi.fn(),
     getAudioContext: vi.fn(),
     getCachedAudioBuffer: vi.fn(),
+    restoreUnpinnedAudioBuffersFromIdb: vi.fn(),
+    holdAudioBufferForSession: vi.fn(),
     getCompensationDelay: vi.fn(),
     getDefaultBendRangeSemitones: vi.fn(),
     getDeviceChainTailSeconds: vi.fn(),

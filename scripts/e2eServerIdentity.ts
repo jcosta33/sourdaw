@@ -151,3 +151,8 @@ export async function assertServingCheckoutIdentity(origin: string, expectedRoot
             `Stop that server or set ${SOURDAW_E2E_PORT_ENV} to a lane-unique port.`
     );
 }
+
+/** The required affected shard already owns an e2e build and preview. */
+export function isBuiltE2eShardRun(environment: Partial<Pick<NodeJS.ProcessEnv, 'CI' | 'E2E_SPECS'>>): boolean {
+    return Boolean(environment.CI) && environment.E2E_SPECS !== undefined;
+}

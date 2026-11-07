@@ -8,8 +8,8 @@ import { type PresetAction, trackAction } from './Types';
  * exact spelling mints a device no descriptor matches: silent in playback and
  * absent from a render. `Gate`, `DeEsser` and `AutoPan` were three such labels
  * (the catalog says `Noise Gate`, `De-esser` and `Auto-Pan`). Ids are also the
- * only unambiguous key: `De-esser`, `LUFS Meter` and `Stereo Widener` each name
- * two catalog plugins, a builtin and a Faust build.
+ * stable key: catalog names are unique, but a name is a spelling and an id is
+ * the identity a device is stored under.
  */
 export const devicePresets: readonly PresetAction[] = [
     {

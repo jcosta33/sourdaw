@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
+import { projectChannelBend } from '#/modules/MIDI/useCases';
+
 import { projectNoteExpressionCurves } from '../projectNoteExpressionCurves';
 
 /** 120 BPM at 48 kHz: one beat is half a second, 24000 frames. */
@@ -321,12 +323,14 @@ describe('projectNoteExpressionCurves', () => {
     });
 
     describe('with the track channel pitch bend', () => {
-        const move = (beat: number, value: number, rangeSemitones = 2) => ({
+        const move = (beat: number, value: number, rangeSemitones = 2, channel = 0, channelScoped = false) => ({
             beat,
             frame: frameAtBeat(beat),
             recordedBeat: beat,
             value,
             rangeSemitones,
+            channel,
+            channelScoped,
         });
         /** A move a pass head plays at `beat`, carried from the row recorded at `recordedBeat` before it. */
         const carried = (beat: number, recordedBeat: number, value: number) => ({
@@ -334,6 +338,109 @@ describe('projectNoteExpressionCurves', () => {
             recordedBeat,
         });
         const plainNote = { pressure: 10, slide: 64 };
+
+        describe('per MIDI channel', () => {
+            const channelTwoNote = { pressure: 10, slide: 64, channel: 2 };
+
+            it('moves a sounding note only by the recorded moves of its own channel', () => {
+                const { atStart, changes } = projectNoteExpressionCurves({
+                    note: channelTwoNote,
+                    channelBend: [move(1, 8_191, 2, 1, true), move(1.5, 100, 12, 2, true), move(2, 0, 2, 1, true)],
+                    startBeat: 0,
+                    releaseFrame: frameAtBeat(3),
+                    frameAtBeat,
+                });
+
+                expect(atStart).toBeUndefined();
+                expect(changes.map((change) => [change.beat, change.expression.pitchBend])).toEqual([[1.5, 100]]);
+                expect(changes[0]?.expression.pitchBendRangeSemitones).toBe(12);
+            });
+
+            it('starts a note under its own channel’s bend in force, not another channel’s later one', () => {
+                const { atStart } = projectNoteExpressionCurves({
+                    note: channelTwoNote,
+                    channelBend: [move(0.2, 300, 12, 2, true), move(0.5, 8_191, 2, 1, true)],
+                    startBeat: 1,
+                    releaseFrame: frameAtBeat(3),
+                    frameAtBeat,
+                });
+
+                expect(atStart).toEqual({ pressure: 10, slide: 64, pitchBend: 300, pitchBendRangeSemitones: 12 });
+            });
+
+            it('starts a note unbent when only another channel bent', () => {
+                const { atStart, changes } = projectNoteExpressionCurves({
+                    note: channelTwoNote,
+                    channelBend: [move(0.5, 8_191, 2, 1, true)],
+                    startBeat: 1,
+                    releaseFrame: frameAtBeat(3),
+                    frameAtBeat,
+                });
+
+                expect({ atStart, changes }).toEqual({ atStart: undefined, changes: [] });
+            });
+
+            it('gives an unscoped move (drawn, imported or an MPE master’s) to a note on any channel, at the move’s own range', () => {
+                const { atStart, changes } = projectNoteExpressionCurves({
+                    note: { pressure: 10, slide: 64, channel: 5 },
+                    channelBend: [move(0.5, 1_000, 48, 0), move(2, 2_000, 48, 0)],
+                    startBeat: 1,
+                    releaseFrame: frameAtBeat(3),
+                    frameAtBeat,
+                });
+
+                expect(atStart).toEqual({ pressure: 10, slide: 64, pitchBend: 1_000, pitchBendRangeSemitones: 48 });
+                expect(changes.map((change) => [change.beat, change.expression.pitchBend])).toEqual([[2, 2_000]]);
+            });
+
+            it('starts a note under the later of an unscoped move and its own channel’s recorded move', () => {
+                const drawnThenRecorded = projectNoteExpressionCurves({
+                    note: { pressure: 10, slide: 64, channel: 0 },
+                    channelBend: [move(0.5, 4_096, 2, 0), move(0.75, 8_191, 2, 0, true)],
+                    startBeat: 1,
+                    releaseFrame: frameAtBeat(3),
+                    frameAtBeat,
+                });
+                const otherChannel = projectNoteExpressionCurves({
+                    note: { pressure: 10, slide: 64, channel: 1 },
+                    channelBend: [move(0.5, 4_096, 2, 0), move(0.75, 8_191, 2, 0, true)],
+                    startBeat: 1,
+                    releaseFrame: frameAtBeat(3),
+                    frameAtBeat,
+                });
+
+                expect(drawnThenRecorded.atStart?.pitchBend).toBe(8_191);
+                expect(otherChannel.atStart?.pitchBend).toBe(4_096);
+            });
+
+            it('finds the bend in force among many moves of other channels', () => {
+                const others = Array.from({ length: 5_000 }, (_, index) =>
+                    move(0.5 + index / 10_000, index, 2, 1 + (index % 3), true)
+                );
+                const { atStart } = projectNoteExpressionCurves({
+                    note: { ...channelTwoNote, channel: 9 },
+                    channelBend: [move(0.1, 77, 2, 9, true), ...others],
+                    startBeat: 2,
+                    releaseFrame: frameAtBeat(3),
+                    frameAtBeat,
+                });
+
+                expect(atStart?.pitchBend).toBe(77);
+            });
+
+            it('lets a note with no stored channel hear the moves of every channel, scoped or not', () => {
+                const { atStart, changes } = projectNoteExpressionCurves({
+                    note: plainNote,
+                    channelBend: [move(0.5, 300, 2, 3, true), move(1, 500, 2, 0, true), move(1.5, 700, 2, 1)],
+                    startBeat: 0.75,
+                    releaseFrame: frameAtBeat(3),
+                    frameAtBeat,
+                });
+
+                expect(atStart?.pitchBend).toBe(300);
+                expect(changes.map((change) => change.expression.pitchBend)).toEqual([500, 700]);
+            });
+        });
 
         it('moves a sounding note at each move strictly between its start and its release', () => {
             const { atStart, changes } = projectNoteExpressionCurves({
@@ -544,6 +651,30 @@ describe('projectNoteExpressionCurves', () => {
             expect(changes).toEqual([]);
         });
 
+        it('orders a frozen crop’s folded own bend against the carried channel move by their original moments', () => {
+            const channelAfterOwn = projectNoteExpressionCurves({
+                note: { pitchBend: 2_000, pitchBendRangeSemitones: 48 },
+                channelBend: [carried(2, 1.5, 4_096)],
+                startBeat: 2,
+                recordedOwnBendBeat: 1.25,
+                releaseFrame: frameAtBeat(4),
+                frameAtBeat,
+            });
+            const ownAfterChannel = projectNoteExpressionCurves({
+                note: { pitchBend: 3_000, pitchBendRangeSemitones: 48 },
+                channelBend: [carried(2, 1.5, 4_096)],
+                startBeat: 2,
+                recordedOwnBendBeat: 1.75,
+                releaseFrame: frameAtBeat(4),
+                frameAtBeat,
+            });
+
+            expect(channelAfterOwn.atStart?.pitchBend).toBe(4_096);
+            expect(channelAfterOwn.atStart?.pitchBendRangeSemitones).toBe(2);
+            expect(ownAfterChannel.atStart).toBeUndefined();
+            expect(ownAfterChannel.changes).toEqual([]);
+        });
+
         it('keeps a cut note on its own bend point recorded after the channel move', () => {
             const { atStart } = projectNoteExpressionCurves({
                 note: {
@@ -657,6 +788,66 @@ describe('projectNoteExpressionCurves', () => {
                 [frameAtBeat(1), 200],
                 [frameAtBeat(2), 300],
             ]);
+        });
+    });
+
+    describe('on a looping clip whose head is cut a loop or more past its anchor', () => {
+        // The uncut source: loop [0, 4) of content anchored at timeline 1 and
+        // first trimmed to 3, wrapping at timeline 5, 9, 13 and 17. Delete Time
+        // over [1, 9.5) opens the clip on content 0.5 at timeline 1. The only
+        // bend row, at content 3.5, played at timeline 8.5 in the pass before.
+        const uncut = {
+            startBeat: 3,
+            endBeat: 19,
+            midiOffsetBeats: 2,
+            loopEnabled: true,
+            loopLength: 4,
+            loopOriginBeat: 1,
+        };
+        const excised = { ...uncut, startBeat: 1, endBeat: 10.5, midiOffsetBeats: 8.5, loopOriginBeat: -7.5 };
+        const excisedShiftBeats = 8.5;
+        const pitchBends = [{ id: 'pass-before', beat: 3.5, value: 6_000, channel: 0 }];
+
+        const channelBendOf = (clip: typeof uncut) =>
+            projectChannelBend({ clips: [{ clip, controlChanges: [], pitchBends }], frameAtBeat });
+
+        /** The note-on expression of a note at content `contentBeat`, held two beats from its uncut start. */
+        function startOf(
+            clip: typeof uncut,
+            note: { pitchBend?: number },
+            noteStartBeat: number,
+            playedFromBeat = noteStartBeat
+        ) {
+            return projectNoteExpressionCurves({
+                note: { pressure: 10, slide: 64, channel: 0, ...note },
+                channelBend: channelBendOf(clip),
+                startBeat: playedFromBeat,
+                beatsIntoNote: playedFromBeat - noteStartBeat,
+                releaseFrame: frameAtBeat(noteStartBeat + 2),
+                frameAtBeat,
+            }).atStart;
+        }
+
+        it('starts a note with no bend of its own under the bend the pass before left, as the uncut clip does', () => {
+            // Content 1.5: timeline 2 on the excised clip, 10.5 on the uncut one.
+            const excisedStart = startOf(excised, {}, 2);
+
+            expect(excisedStart).toEqual({ pressure: 10, slide: 64, pitchBend: 6_000, pitchBendRangeSemitones: 2 });
+            expect(excisedStart).toEqual(startOf(uncut, {}, 2 + excisedShiftBeats));
+        });
+
+        it('keeps a note struck after the cut on its own bend, since the pass before bent the channel earlier', () => {
+            expect(startOf(excised, { pitchBend: 2_000 }, 2)).toBeUndefined();
+            expect(startOf(uncut, { pitchBend: 2_000 }, 2 + excisedShiftBeats)).toBeUndefined();
+        });
+
+        it('keeps a note the cut took the head off on the bend it was struck with before the cut', () => {
+            // Struck at content 0.1, timeline 0.6 before the excised head and 9.1
+            // on the uncut clip: after the pass before's bend at 8.5.
+            expect(startOf(excised, { pitchBend: 2_000 }, 0.6, 1)).toBeUndefined();
+            expect(
+                startOf(uncut, { pitchBend: 2_000 }, 0.6 + excisedShiftBeats, 1 + excisedShiftBeats)
+            ).toBeUndefined();
         });
     });
 });

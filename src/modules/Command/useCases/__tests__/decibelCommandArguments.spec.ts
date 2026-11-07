@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createEventBus } from '#/infra/events/createEventBus';
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
-import { type Clip, trackStore } from '#/modules/Arrangement/stores';
+import { type Clip, trackStore, vcaGroupStore } from '#/modules/Arrangement/stores';
 import { createTrack, getArrangementHandlers } from '#/modules/Arrangement/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import { createAutomationLane, getAutomationHandlers } from '#/modules/Automation/useCases';
@@ -145,6 +145,7 @@ describe('decibel arguments on level-bearing commands', () => {
         setActionHistoryMetadataPort(noActionHistoryMetadataPort);
         macroStore.set({ macros: [], recording: false, currentRecording: [] });
         seedProject();
+        vcaGroupStore.set({ groups: [{ id: 'vca-drums', name: 'Drum VCA', gain: 0.75, muted: false, trackIds: [] }] });
         transportStore.set({ ...defaultTransportState, masterGain: 80 });
         const gainLane = { ...createAutomationLane(TRACK_ID, 'gain', 'Gain', 0, 1), id: LANE_ID };
         const panLane = { ...createAutomationLane(TRACK_ID, 'pan', 'Pan', -1, 1), id: PAN_LANE_ID };
@@ -162,9 +163,64 @@ describe('decibel arguments on level-bearing commands', () => {
         clearHandlerRegistry();
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
         automationStore.set({ lanes: [] });
+        vcaGroupStore.set({ groups: [] });
         transportStore.set(defaultTransportState);
         configureAutomergeStoragePort(null);
         removeCrdtDoc('root');
+    });
+
+    it('writes VCA decibels through the registered handler and restores the linear state on undo and redo', async () => {
+        await executeAppAction({ type: 'setVcaGain', payload: { vcaGroupId: 'vca-drums', gainDb: -6 } });
+        expect(vcaGroupStore.value?.groups[0]?.gain).toBeCloseTo(dbToGain(-6));
+        await undo();
+        expect(vcaGroupStore.value?.groups[0]?.gain).toBe(0.75);
+        await redo();
+        expect(vcaGroupStore.value?.groups[0]?.gain).toBeCloseTo(dbToGain(-6));
+        await executeAppAction({ type: 'setVcaGain', payload: { vcaGroupId: 'vca-drums', deltaDb: -2 } });
+        expect(vcaGroupStore.value?.groups[0]?.gain).toBeCloseTo(dbToGain(-8));
+    });
+
+    it('writes relative metronome decibels and restores the linear value on undo and redo', async () => {
+        const before = transportStore.value!.metronomeVolume;
+        await executeAppAction({ type: 'setMetronomeVolume', payload: { deltaDb: -6 } });
+        expect(transportStore.value?.metronomeVolume).toBeCloseTo(before * dbToGain(-6));
+        await undo();
+        expect(transportStore.value?.metronomeVolume).toBe(before);
+        await redo();
+        expect(transportStore.value?.metronomeVolume).toBeCloseTo(before * dbToGain(-6));
+    });
+
+    it.each([
+        { action: { type: 'setVcaGain', payload: { vcaGroupId: 'vca-drums', gainDb: 7 } } as const },
+        { action: { type: 'setMetronomeVolume', payload: { volumeDb: 1 } } as const },
+    ])('refuses a level above the owning ceiling without a write', async ({ action }) => {
+        const beforeVca = vcaGroupStore.value?.groups[0]?.gain;
+        const beforeMetronome = transportStore.value?.metronomeVolume;
+        expect(await refusalOf(action)).not.toBeNull();
+        expect(vcaGroupStore.value?.groups[0]?.gain).toBe(beforeVca);
+        expect(transportStore.value?.metronomeVolume).toBe(beforeMetronome);
+    });
+
+    it('refuses relative decibels at silence and contradictory forms without changing either control', async () => {
+        vcaGroupStore.set({ groups: [{ id: 'vca-drums', name: 'Drum VCA', gain: 0, muted: false, trackIds: [] }] });
+        transportStore.set({ ...defaultTransportState, metronomeVolume: 0 });
+        expect(
+            await refusalOf({ type: 'setVcaGain', payload: { vcaGroupId: 'vca-drums', deltaDb: 1 } })
+        ).not.toBeNull();
+        expect(await refusalOf({ type: 'setMetronomeVolume', payload: { deltaDb: 1 } })).not.toBeNull();
+        expect(
+            await refusalOf({ type: 'setVcaGain', payload: { vcaGroupId: 'vca-drums', gain: 0.5, gainDb: -6 } })
+        ).not.toBeNull();
+        expect(await refusalOf({ type: 'setMetronomeVolume', payload: { volume: 0.5, volumeDb: -6 } })).not.toBeNull();
+        expect(vcaGroupStore.value?.groups[0]?.gain).toBe(0);
+        expect(transportStore.value?.metronomeVolume).toBe(0);
+    });
+
+    it('preserves the VCA multiplier ceiling and metronome unity ceiling', async () => {
+        await executeAppAction({ type: 'setVcaGain', payload: { vcaGroupId: 'vca-drums', gainDb: gainToDb(2) } });
+        expect(vcaGroupStore.value?.groups[0]?.gain).toBeCloseTo(2);
+        await executeAppAction({ type: 'setMetronomeVolume', payload: { volumeDb: 0 } });
+        expect(transportStore.value?.metronomeVolume).toBe(1);
     });
 
     // The fader sits at 0.8 (≈ -1.9 dB), so an absolute request and a relative

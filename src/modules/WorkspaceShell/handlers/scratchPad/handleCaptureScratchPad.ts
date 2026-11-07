@@ -9,7 +9,7 @@ export const handleCaptureScratchPad = createHandler<'captureScratchPad'>({
         // Also open the scratch pad if it's closed
         const state = workspaceStore.value;
         if (state && !state.scratchPadOpen) {
-            workspaceStore.set({ ...state, scratchPadOpen: true });
+            workspaceStore.set({ ...state, scratchPadOpen: true, scratchPadCollapsed: false });
         }
     },
     describe: () => ({ label: 'Capture Arrangement to Scratch Pad' }),

@@ -50,13 +50,13 @@ Design for the weakest target as the realism floor (WebGPU, media APIs, hardware
 
 Payloads crossing the bridge are serializable, typed, minimal, and stable. Arguments cross **positionally** in addon parameter order — `SOURDAW_COMMAND_ARGUMENTS` in `src/utils/sourdawCommandArguments.ts` is the pinned order. Bulk bytes cross as raw buffers, never JSON number arrays. Never leak a native or runtime handle over IPC; explicit DTOs only.
 
-Frontend desktop I/O belongs only in module-root `src/modules/<M>/repositories/` (including the `Common/` and `Supporting/` namespaces) or the exact `src/utils/desktopBridge.ts` adapter. Only `src/utils/__tests__/desktopBridge.spec.ts` may mock the adapter dependencies. Nested `useCases/repositories` and `presentations/repositories` folders, all other `src/**` origins, and non-allowlisted bridge callers are forbidden; depcruise enforces `desktop-ipc-only-in-repositories` as an **error**.
+Frontend desktop I/O belongs only in module-root `src/modules/<M>/repositories/` or the exact `src/utils/desktopBridge.ts` adapter. Only `src/utils/__tests__/desktopBridge.spec.ts` may mock the adapter dependencies. Nested `useCases/repositories` and `presentations/repositories` folders, all other `src/**` origins, and non-allowlisted bridge callers are forbidden; depcruise enforces `desktop-ipc-only-in-repositories` as an **error**.
 
 **Why:** a runtime handle over IPC couples the frontend to Rust internals and breaks on native refactors.
 
 ### 5. Empirically verify the FFI bridge
 
-There is **no** binding-generation pipeline — Cargo does not regenerate frontend types. When changing native commands, events, or state models, align hand-maintained invoke call sites and DTOs, then verify with `pnpm cargo:test --package sourdaw-native <filter>`, the pull request's CI TypeScript typechecks, and `pnpm test:run electron/__tests__/commands.spec.ts` (signature and argument-order parity lives there).
+There is **no** binding-generation pipeline — Cargo does not regenerate frontend types. When changing native commands, events, or state models, align hand-maintained invoke call sites and DTOs, then verify with `pnpm guard --profile focused -- pnpm cargo:test --package sourdaw-native <filter>`, the pull request's CI TypeScript typechecks, and `pnpm guard --profile focused -- pnpm test:run electron/__tests__/commands.spec.ts` (signature and argument-order parity lives there).
 
 **Why:** serialization mismatches are invisible to a mental model and only surface at the compiler or the parity spec.
 

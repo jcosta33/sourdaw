@@ -1,8 +1,12 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { getFermenterFactoryPresets } from '#/modules/Fermenter/useCases';
 
+import { getPluginById } from '../../models/DeviceParameter';
 import { getFactoryPresets } from '../soundPresetLibrary';
+
+registerDeviceEnginePorts();
 
 describe('soundPresetLibrary', () => {
     it('should export getFactoryPresets', () => {
@@ -52,6 +56,26 @@ describe('soundPresetLibrary', () => {
     it('includes the Grand Boule factory preset', () => {
         expect(getFactoryPresets().some(({ id }) => id === 'grand-boule-default')).toBe(true);
     });
+
+    it('stores no parameter value outside its device descriptor declared range', () => {
+        // Loading clamps to the declared range, so an out-of-range stored value
+        // is silently replaced by the nearest bound and never delivers its name.
+        const outOfRange: string[] = [];
+        for (const preset of getFactoryPresets()) {
+            for (const device of preset.devices) {
+                const descriptor = getPluginById(device.type);
+                for (const [parameterId, value] of Object.entries(device.parameterValues)) {
+                    const declared = descriptor?.parameters.find((parameter) => parameter.id === parameterId);
+                    if (declared && (value < declared.minValue || value > declared.maxValue)) {
+                        outOfRange.push(
+                            `${preset.id} / ${device.type} / ${parameterId} = ${value} outside ${declared.minValue}..${declared.maxValue}`
+                        );
+                    }
+                }
+            }
+        }
+        expect(outOfRange).toEqual([]);
+    });
 });
 
 describe('getFactoryPresets platform cache', () => {
@@ -69,6 +93,9 @@ describe('getFactoryPresets platform cache', () => {
 
     it('rebuilds the cache with native-only presets when the runtime switches to desktop', async () => {
         const { getFactoryPresets: freshGetFactoryPresets } = await import('../soundPresetLibrary');
+        const { registerDeviceEnginePorts: registerFreshDeviceEnginePorts } =
+            await import('#/app/registerDeviceEnginePorts');
+        registerFreshDeviceEnginePorts();
 
         // Web platform (no desktop bridge): builds and caches the web catalogue.
         const webPresets = freshGetFactoryPresets();

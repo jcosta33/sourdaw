@@ -65,7 +65,6 @@ const sourceRoot = join(repoRoot, 'src');
 /**
  * The four contract-folder barrels (ADR 0006). A module's public surface is only
  * ever one of these, so this list is the population definition, not a sample.
- * `Common/` and `Supporting/` are the namespaced module groups.
  */
 export const allBarrelKinds = ['useCases', 'stores', 'events', 'presentations/views'] as const;
 
@@ -86,9 +85,7 @@ export const gatedBarrelKinds: ReadonlyArray<(typeof allBarrelKinds)[number]> = 
 
 function buildBarrelPattern(kinds: ReadonlyArray<string>): RegExp {
     const kindAlternation = kinds.map((kind) => kind.replace('/', '\\/')).join('|');
-    return new RegExp(
-        `^#\\/modules\\/[A-Za-z0-9]+(?:\\/(?:Common|Supporting)\\/[A-Za-z0-9]+)?\\/(?:${kindAlternation})$`
-    );
+    return new RegExp(`^#\\/modules\\/[A-Za-z0-9]+\\/(?:${kindAlternation})$`);
 }
 
 const moduleExtensions = ['.ts', '.tsx', '.js', '.jsx'] as const;
@@ -144,7 +141,6 @@ const exemptions: ReadonlyArray<ExemptionRow> = [
         barrel: '#/modules/MIDI/stores',
         missingKeys: [
             'GROOVE_CONSUMER_TYPES',
-            'LEGACY_MIDI_PROBABILITY_SEED',
             'canonicalizeGrooveConsumerId',
             'chordTrackStore',
             'defaultChordTrackState',
@@ -164,24 +160,15 @@ const exemptions: ReadonlyArray<ExemptionRow> = [
         reason: "Reachable via this spec's graph but never read by its tests (verified passing).",
     },
     {
-        spec: 'src/modules/CommandInterface/useCases/keyboardShortcutActions/__tests__/handleKeyboardShortcut.spec.ts',
-        barrel: '#/modules/Arrangement/stores',
-        missingKeys: ['markerStore', 'resolveEligibleDeviceWriteTarget'],
-        reason: "Reachable via this spec's graph but never read by its tests (verified passing).",
-    },
-    {
         spec: 'src/modules/Crust/useCases/crustParamBridge/__tests__/loadCrustPatchWithAudio.spec.ts',
         barrel: '#/modules/Arrangement/stores',
         missingKeys: [
             'appendClipToTrack',
             'clipSelectionStore',
-            'gainEnvelopeStore',
             'getTrackEligibility',
             'markerStore',
             'resolveEligibleClipWriteTarget',
-            'takeLaneStore',
             'updateClipInStore',
-            'vcaGroupStore',
         ],
         reason: "Reachable via this spec's graph but never read by its tests (verified passing).",
     },
@@ -220,14 +207,7 @@ const exemptions: ReadonlyArray<ExemptionRow> = [
     {
         spec: 'src/modules/Transport/useCases/__tests__/ensureTrackStrips.spec.ts',
         barrel: '#/modules/Arrangement/stores',
-        missingKeys: [
-            'appendClipToTrack',
-            'clipSelectionStore',
-            'gainEnvelopeStore',
-            'resolveEligibleClipWriteTarget',
-            'updateClipInStore',
-            'vcaGroupStore',
-        ],
+        missingKeys: ['appendClipToTrack', 'clipSelectionStore', 'resolveEligibleClipWriteTarget', 'updateClipInStore'],
         reason: "Reachable via this spec's graph but never read by its tests (verified passing).",
     },
     {
@@ -876,7 +856,7 @@ export type AnalyzeInput = {
     exemptions?: ReadonlyArray<ExemptionRow>;
 };
 
-/** `#/modules/Foo/Common/Bar/presentations/views` → `presentations/views`. No kind
+/** `#/modules/Foo/presentations/views` → `presentations/views`. No kind
  * is a suffix of another, so the suffix test partitions unambiguously. */
 function kindOfSpecifier(specifier: string): string | undefined {
     return allBarrelKinds.find((kind) => specifier.endsWith(`/${kind}`));

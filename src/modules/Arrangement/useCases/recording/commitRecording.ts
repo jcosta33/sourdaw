@@ -1,12 +1,19 @@
 import { executeAppAction } from '#/modules/Command/useCases';
 import { readSecondsAtBeat, readTempoAtBeat } from '#/modules/Transport/stores';
+import { CLIP_LOOP_WINDOW_BEAT_TOLERANCE } from '#/utils/clipLoopOrigin';
 
+import { startFirstPassAtRecordPoint } from '../../models/TakeLane';
 import { clipEntrySeconds } from '../../models/TempoTimeline';
+import { takeLaneStore } from '../../stores/takeLaneStore';
 import { type Clip } from '../../stores/trackStore';
 import { liveTempoTimeline } from '../liveTempoTimeline';
 
+import { fitFlatTakesToClip } from './fitFlatTakesToClip';
 import { placeRecordingClipStart } from './placeRecordingClipStart';
 import { placeRecordingTakes } from './placeRecordingTakes';
+import { recordingPassTiming } from './recordingPassTiming';
+import { stageRecordingTake } from './stageRecordingTake';
+import { withMinimumRecordingLength } from './withMinimumRecordingLength';
 
 /** Where a captured recording's media truly begins, as the capture terminal measured it. */
 type RecordedCapture = {
@@ -14,24 +21,106 @@ type RecordedCapture = {
     provisionalStartBeat: number;
     /** The song time the capture's first sample sounds on, pre-roll lead and latency included. */
     mediaOriginSeconds: number;
+    /** Producer sample zero less admission latency, on the audio context clock. */
+    sourceContextOriginSeconds?: number;
+    sourceDurationSeconds?: number;
 };
 
+class RecordingRootMovedRefusal extends Error {
+    constructor() {
+        super('Recording commit was refused by its execution guard');
+        this.name = 'RecordingRootMovedRefusal';
+    }
+}
+
+function requireRecordingRoot(options?: { shouldExecute?: () => boolean }): void {
+    if (options?.shouldExecute?.() === false) {
+        throw new RecordingRootMovedRefusal();
+    }
+}
+
+function stageFinalCapturedPass(clip: Clip, capture: RecordedCapture): void {
+    if (
+        capture.sourceContextOriginSeconds === undefined ||
+        capture.sourceDurationSeconds === undefined ||
+        capture.sourceDurationSeconds <= 0
+    ) {
+        return;
+    }
+    const finalPass = recordingPassTiming.finalPass(
+        clip.id,
+        capture.sourceContextOriginSeconds + capture.sourceDurationSeconds
+    );
+    if (!finalPass) {
+        return;
+    }
+    const lane = takeLaneStore.value?.lanes.find((candidate) => candidate.trackId === clip.trackId);
+    const previous = lane?.takes.findLast((take) => take.clipId === clip.id && take.sourceOffsetBeats !== undefined);
+    if (!previous || previous.sourceOffsetBeats === undefined) {
+        return;
+    }
+    // The first staged wrap spans the loop, but its recording started at the
+    // record point. Keep the existing unwrapped beat identity of later passes.
+    const previousPass = startFirstPassAtRecordPoint(previous, capture.provisionalStartBeat);
+    const provisional = lane?.takes.find((take) => take.clipId === clip.id && take.sourceOffsetBeats === undefined);
+    if (!provisional) {
+        throw new Error('Recording provisional take is not available');
+    }
+    stageRecordingTake({
+        trackId: clip.trackId,
+        clipId: clip.id,
+        name: provisional.name,
+        provisionalTakeId: provisional.id,
+        ...finalPass,
+        sourceOffsetBeats: previous.sourceOffsetBeats + previous.endBeat - previousPass.startBeat,
+    });
+}
+
 /**
- * Open a captured clip where its loop passes require. The capture terminal has
- * already placed it on its media origin or, under pre-roll, on the record
- * point; a loop recording begun inside the loop opens earlier still, at its
- * first pass. The offset is then rewritten in the unit the readers seek in —
- * the capture's lead-in before the clip's first beat in seconds, converted at
- * the tempo governing that beat — and is negative when the clip opens before
- * its media begins.
+ * Place a captured clip on the beat its loop passes require and enter its
+ * media at the capture's true origin. A loop recording begun inside the loop
+ * has completed passes reaching before the clip's opening beat, so it opens at
+ * the earliest of them; otherwise the clip keeps the beat the terminal placed
+ * it on, a punch's included. Either way the offset is the capture's lead-in
+ * before that first beat in seconds, converted at the tempo governing the beat
+ * — the unit the readers seek in — and is negative when the clip opens before
+ * its media begins. A punch that never wrapped still captured the hardware
+ * latency before its beat, so the offset is written even when no pass moves the
+ * clip; without it the take would enter its media at sample zero and sound
+ * late by that lead. A clip that keeps its beat and whose media begins on it
+ * stores no field, as the manual writer leaves an ordinary take: beats closer
+ * than the clip-loop tolerance are one instant.
  */
 function placeCapturedClip(clip: Clip, mediaOriginSeconds: number): Clip {
     const startBeat = placeRecordingClipStart(clip.id, clip.startBeat);
-    if (startBeat === clip.startBeat) {
+    const leadInSeconds = readSecondsAtBeat({ beat: startBeat }) - mediaOriginSeconds;
+    const audioOffsetBeats = (leadInSeconds * readTempoAtBeat({ beat: startBeat })) / 60;
+    if (startBeat === clip.startBeat && Math.abs(audioOffsetBeats) <= CLIP_LOOP_WINDOW_BEAT_TOLERANCE) {
         return clip;
     }
-    const leadInSeconds = readSecondsAtBeat({ beat: startBeat }) - mediaOriginSeconds;
-    return { ...clip, startBeat, audioOffsetBeats: (leadInSeconds * readTempoAtBeat({ beat: startBeat })) / 60 };
+    return { ...clip, startBeat, audioOffsetBeats };
+}
+
+/** A continuous capture must also carry the retained passes placed on its loop geometry. */
+function coverRecordedPasses(clip: Clip, capture: RecordedCapture): Clip {
+    const lane = takeLaneStore.value?.lanes.find((candidate) => candidate.trackId === clip.trackId);
+    let capturedEnd: ReturnType<typeof recordingPassTiming.captureEnd> = undefined;
+    if (capture.sourceContextOriginSeconds !== undefined && capture.sourceDurationSeconds !== undefined) {
+        capturedEnd = recordingPassTiming.captureEnd(
+            clip.id,
+            capture.sourceContextOriginSeconds + capture.sourceDurationSeconds
+        );
+    }
+    // Keep the original source as an editable handle. Ordinary base playback
+    // ends at the gesture; genuine captured passes may still require a later
+    // song beat after the last lap wrapped back to the loop start.
+    let endBeat = capturedEnd ? Math.min(clip.endBeat, capturedEnd.endBeat) : clip.endBeat;
+    for (const take of lane?.takes ?? []) {
+        if (take.clipId === clip.id && take.passDepthSeconds !== undefined) {
+            endBeat = Math.max(endBeat, take.endBeat);
+        }
+    }
+    return endBeat === clip.endBeat ? clip : { ...clip, endBeat };
 }
 
 /**
@@ -48,7 +137,8 @@ function placeCapturedClip(clip: Clip, mediaOriginSeconds: number): Clip {
  * An audio capture terminal hands in where its media truly begins. The clip is
  * placed against its loop passes first, then the staged takes are placed
  * against that committed clip's media origin, both before the dispatch so they
- * land in the one entry, which captures the live lane state. A MIDI recording
+ * land in the one entry, which captures the live lane state; a flat take then
+ * takes the committed clip's final extent. A MIDI recording
  * keeps the clip it opened, its passes bounded by that clip's start, and
  * commits without a capture.
  *
@@ -64,30 +154,36 @@ export async function commitRecording(
     capture?: RecordedCapture,
     options?: { shouldExecute?: () => boolean }
 ): Promise<void> {
-    // Placement writes provisional takes before dispatch, so it needs the same
-    // authority as the dispatch's post-wait check. A false guard must reject:
-    // executeAppAction otherwise resolves silently, hiding the refused take
-    // from the terminal's cleanup and notice (#5517).
-    const shouldExecute = (): boolean => {
-        if (options?.shouldExecute && !options.shouldExecute()) {
-            throw new Error('Recording commit was refused by its execution guard');
-        }
-        return true;
+    // Placement changes projected take rows before dispatch. Check their owner
+    // first, then repeat inside the dispatch after its snapshot-transaction wait.
+    requireRecordingRoot(options);
+    const passOwner = recordingPassTiming.ownedTakes(clip.id);
+    const dispatchOptions = options && {
+        shouldExecute: () => {
+            requireRecordingRoot(options);
+            return true;
+        },
     };
-    shouldExecute();
-    const guardedOptions = options?.shouldExecute ? { shouldExecute } : options;
     if (capture === undefined) {
-        await executeAppAction({ type: 'commitRecording', payload: { clip } }, guardedOptions);
+        await executeAppAction({ type: 'commitRecording', payload: { clip } }, dispatchOptions);
+        recordingPassTiming.retireIfOwner(clip.id, passOwner);
         return;
     }
+    stageFinalCapturedPass(clip, capture);
     const placed = placeCapturedClip(clip, capture.mediaOriginSeconds);
     placeRecordingTakes({
         clipId: clip.id,
         recordPointBeat: capture.provisionalStartBeat,
         mediaOriginSeconds: capture.mediaOriginSeconds,
+        sourceContextOriginSeconds: capture.sourceContextOriginSeconds,
+        sourceDurationSeconds: capture.sourceDurationSeconds,
         clipMediaOriginSeconds:
             readSecondsAtBeat({ beat: placed.startBeat }) -
             clipEntrySeconds(liveTempoTimeline, placed.startBeat, placed.audioOffsetBeats ?? 0),
     });
-    await executeAppAction({ type: 'commitRecording', payload: { clip: placed } }, guardedOptions);
+    // The flat take follows the clip the handler will write, one-beat floor included.
+    const committed = withMinimumRecordingLength(coverRecordedPasses(placed, capture));
+    fitFlatTakesToClip(committed);
+    await executeAppAction({ type: 'commitRecording', payload: { clip: committed } }, dispatchOptions);
+    recordingPassTiming.retireIfOwner(clip.id, passOwner);
 }

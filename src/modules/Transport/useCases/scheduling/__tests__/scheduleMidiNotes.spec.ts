@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { type Clip, trackStore } from '#/modules/Arrangement/stores';
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
+import { type Clip, takeLaneStore, type TakeLaneStoreState, trackStore } from '#/modules/Arrangement/stores';
 import { resolveClipsWithComping, getSynthParamsForTrack } from '#/modules/Arrangement/useCases';
 import {
     applyNoteExpression,
@@ -12,7 +13,7 @@ import {
 } from '#/modules/AudioEngine/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import { getAutomationValueAtBeat } from '#/modules/Automation/useCases';
-import { midiStore } from '#/modules/MIDI/stores';
+import { midiStore, type MidiNote } from '#/modules/MIDI/stores';
 import {
     getChordAtBeat,
     projectClipControllerEvents,
@@ -26,6 +27,7 @@ import { isFaustInstrumentModule, registerFaustDSP } from '#/modules/PluginHost/
 import { getDrumKitDefByIndex, scheduleDrumKitNote, scheduleKitNote, scheduleNote } from '#/modules/Synth/useCases';
 import { processYeastMidi } from '#/modules/Yeast/useCases';
 import { dbToGain } from '#/utils/audioLevelLaw';
+import { resolveLoopAnchoredStartBeat } from '#/utils/clipLoopOrigin';
 
 import { defaultTransportState } from '../../../models/TransportState';
 import {
@@ -38,11 +40,14 @@ import { timeSignatureMapStore } from '../../../stores/timeSignatureMapStore';
 import { disposePlayheadScheduler } from '../../playheadScheduler/disposePlayheadScheduler';
 import { schedulerSession } from '../../playheadScheduler/schedulerSession';
 import { forgetHeldNoteExpression } from '../forgetHeldNoteExpression';
+import { prepareInitialMidiWindow } from '../prepareInitialMidiWindow';
 import { releaseStoredControllers } from '../releaseStoredControllers';
 import { scheduleFrozenTrack } from '../scheduleFrozenTrack';
 import { scheduleMidiNotes } from '../scheduleMidiNotes';
 
 import type { SchedulerCancellation } from '../schedulerCancellation';
+
+registerDeviceEnginePorts();
 
 /** Types withheld only inside tests that exercise the generic admission guard. */
 const injectedWithheldDeviceTypes = vi.hoisted(() => new Set<string>());
@@ -76,7 +81,9 @@ const realNoteExpression = vi.hoisted(async () => {
         relocateNoteExpression: relocate.relocateNoteExpression,
     };
 });
-const shouldPlayProbability = vi.hoisted(() => vi.fn((_input: { eventId: string }) => true));
+const shouldPlayProbability = vi.hoisted(() =>
+    vi.fn((_input: Parameters<typeof import('#/modules/MIDI/useCases').shouldPlayMidiEvent>[0]) => true)
+);
 const registerScheduledSourceMock = vi.hoisted(() => vi.fn<(node: AudioScheduledSourceNode) => void>());
 /** What the engine double answers with: the context's sample rate and each track strip's device nodes. */
 const engineStub = vi.hoisted(() => ({
@@ -84,20 +91,24 @@ const engineStub = vi.hoisted(() => ({
     nodesFor: (_trackId: string): unknown[] => [],
 }));
 
-vi.mock('#/modules/Arrangement/stores', () => ({
-    trackStore: { value: { tracks: [] } },
+vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Arrangement/stores')>()),
+    trackStore: { value: { tracks: [] }, subscribe: () => () => undefined },
     // Read at module scope by the MIDI barrel's device-write wiring, which the
     // tests that load the real projections past the barrel double evaluate.
     persistDeviceParam: vi.fn(),
     resolveEligibleDeviceWriteTarget: vi.fn(),
 }));
-vi.mock('#/modules/MIDI/stores', () => ({
-    midiStore: { value: null },
+vi.mock('#/modules/MIDI/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/MIDI/stores')>()),
+    midiStore: { value: null, subscribe: () => () => undefined },
 }));
-vi.mock('#/modules/Automation/stores', () => ({
-    automationStore: { value: null },
+vi.mock('#/modules/Automation/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Automation/stores')>()),
+    automationStore: { value: null, subscribe: () => () => undefined },
 }));
-vi.mock('#/modules/Automation/useCases', () => ({
+vi.mock('#/modules/Automation/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Automation/useCases')>()),
     getAutomationValueAtBeat: vi.fn(() => null),
     isRecordingAutomation: vi.fn(() => false),
 }));
@@ -108,7 +119,8 @@ vi.mock('../../../stores/tempoMapStore', () => ({
 vi.mock('../../../stores/timeSignatureMapStore', () => ({
     timeSignatureMapStore: { value: { changes: [] } },
 }));
-vi.mock('#/modules/Arrangement/useCases', () => ({
+vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Arrangement/useCases')>()),
     resolveClipsWithComping: vi.fn((_trackId: string, clips: Clip[]) =>
         clips.map((clip) => ({
             ...clip,
@@ -119,7 +131,8 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     ),
     getSynthParamsForTrack: vi.fn(() => ({})),
 }));
-vi.mock('#/modules/AudioEngine/useCases', async () => ({
+vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
     applyNoteExpression: vi.fn(),
     // The real projection: what a curve becomes is the contract under test here,
     // with only the engine surface around it doubled.
@@ -150,17 +163,20 @@ vi.mock('#/modules/AudioEngine/useCases', async () => ({
     })),
     scheduleFaustNote: vi.fn(),
 }));
-vi.mock('#/modules/Synth/useCases', () => ({
+vi.mock('#/modules/Synth/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Synth/useCases')>()),
     getDrumKitDefByIndex: vi.fn(() => null),
     scheduleDrumKitNote: vi.fn(),
     scheduleKitNote: vi.fn(),
     scheduleNote: vi.fn(),
 }));
-vi.mock('#/modules/Yeast/useCases', () => ({
+vi.mock('#/modules/Yeast/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Yeast/useCases')>()),
     processYeastMidi: vi.fn(),
     getYeastSchedulingLookahead: vi.fn(() => ({ earlyBeats: 0, lateBeats: 0 })),
 }));
-vi.mock('#/modules/MIDI/useCases', () => ({
+vi.mock('#/modules/MIDI/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/MIDI/useCases')>()),
     getChordAtBeat: vi.fn(),
     projectChannelBend: () => [],
     projectClipControllerEvents: vi.fn(),
@@ -379,7 +395,12 @@ describe('scheduleMidiNotes', () => {
         (midiStore as { value: unknown }).value = { notesByClipId: {} };
 
         const previousPendingSeam = schedulerSession.pendingSeam;
-        schedulerSession.pendingSeam = { seamAudioTime: 10.1, anchorAudioTime: 10, anchorPosition: 11.9 };
+        schedulerSession.pendingSeam = {
+            seamAudioTime: 10.1,
+            destinationBeat: 4,
+            anchorAudioTime: 10,
+            anchorPosition: 11.9,
+        };
         try {
             await scheduleMidiNotes(
                 4.05,
@@ -992,6 +1013,628 @@ describe('scheduleMidiNotes', () => {
             absoluteOccurrenceIndex: 2,
             probabilityPercent: 50,
         });
+    });
+
+    it.each([
+        { recordingPassIndex: 1, heard: [67] },
+        { recordingPassIndex: undefined, heard: [72, 67] },
+    ])(
+        'plays only the selected pass of a raw recording clip (pass $recordingPassIndex)',
+        async ({ recordingPassIndex, heard }) => {
+            const sourceClip = midiClip({ startBeat: 0, endBeat: 4, midiOffsetBeats: 3.5 });
+            const track = midiTrack({ clips: [sourceClip] });
+            (trackStore as { value: unknown }).value = { tracks: [track] };
+            (midiStore as { value: unknown }).value = {
+                probabilitySeed: 0xdecafbad,
+                notesByClipId: {
+                    'clip-1': [
+                        // The earlier pass's last row, inside the window the selected pass reads.
+                        {
+                            id: 'held-previous',
+                            pitch: 72,
+                            startBeat: 3.75,
+                            duration: 1,
+                            velocity: 100,
+                            recordingPassIndex: 0,
+                        },
+                        {
+                            id: 'selected-row',
+                            pitch: 67,
+                            startBeat: 4.5,
+                            duration: 1,
+                            velocity: 100,
+                            recordingPassIndex: 1,
+                        },
+                    ],
+                },
+                ccByClipId: {},
+                pitchBendByClipId: {},
+            };
+            vi.mocked(resolveClipsWithComping).mockReturnValue([
+                {
+                    ...sourceClip,
+                    regionStartBeat: 0,
+                    regionEndBeat: 4,
+                    sourceStartBeat: 0,
+                    midiTakeId: 'selected',
+                    midiTakeRecordingPassIndex: recordingPassIndex,
+                },
+            ]);
+
+            await scheduleMidiNotes(0, 2, 0, new Set<string>(), [], defaultTransportState, 120);
+
+            expect(vi.mocked(scheduleNote).mock.calls.map(([, , pitch]) => pitch)).toEqual(heard);
+        }
+    );
+
+    it('schedules selected frozen source in both first and rolling WebAudio windows', async () => {
+        // A looping comp restarts the take each loop length, as live does.
+        const sourceClip = midiClip({ startBeat: 0, endBeat: 8, loopEnabled: true, loopLength: 4 });
+        const track = midiTrack({ clips: [sourceClip] });
+        (trackStore as { value: unknown }).value = { tracks: [track] };
+        (midiStore as { value: unknown }).value = {
+            probabilitySeed: 0xdecafbad,
+            notesByClipId: {
+                'clip-1': [{ id: 'ordinary-row', pitch: 60, startBeat: 1, duration: 1, velocity: 100 }],
+            },
+            ccByClipId: {},
+            pitchBendByClipId: {},
+        };
+        vi.mocked(resolveClipsWithComping).mockReturnValue([
+            {
+                ...sourceClip,
+                regionStartBeat: 0,
+                regionEndBeat: 8,
+                sourceStartBeat: 0,
+                midiTakeId: 'selected',
+                midiTakeRecordingPassIndex: 1,
+                midiTakeSource: {
+                    sourceClipId: 'clip-1',
+                    sourceEntryBeat: 5,
+                    sourceEndBeat: 9,
+                    phaseHeadBeat: 0,
+                    passLengthBeats: 4,
+                    rows: {
+                        notes: {
+                            present: true,
+                            value: [
+                                {
+                                    id: 'held-previous',
+                                    pitch: 72,
+                                    startBeat: 4.75,
+                                    duration: 1,
+                                    velocity: 100,
+                                    recordingPassIndex: 0,
+                                },
+                                {
+                                    id: 'selected-row',
+                                    pitch: 67,
+                                    startBeat: 5.5,
+                                    duration: 1,
+                                    velocity: 100,
+                                    recordingPassIndex: 1,
+                                },
+                            ],
+                        },
+                        controlChanges: { present: false, value: [] },
+                        pitchBends: { present: false, value: [] },
+                    },
+                },
+            },
+        ]);
+
+        await scheduleMidiNotes(0, 1, 0, new Set<string>(), [], defaultTransportState, 120);
+        await scheduleMidiNotes(4, 5, 4, new Set<string>(), [], defaultTransportState, 120);
+
+        expect(vi.mocked(scheduleNote).mock.calls.map(([, , pitch]) => pitch)).toEqual([67, 67]);
+        expect(shouldPlayMidiEvent).toHaveBeenCalledWith(
+            expect.objectContaining({
+                clipId: 'clip-1',
+                eventId: 'selected-row',
+                absoluteOccurrenceIndex: 1,
+            })
+        );
+    });
+
+    it('schedules a frozen first pass’s run-up under a comp that ends at the take start', async () => {
+        // Recorded from 6 in loop [8, 12): the first pass's take opens on the loop, its run-up before it.
+        const sourceClip = midiClip({ startBeat: 6, endBeat: 13 });
+        const track = midiTrack({ clips: [sourceClip] });
+        (trackStore as { value: unknown }).value = { tracks: [track] };
+        (midiStore as { value: unknown }).value = {
+            probabilitySeed: 0xdecafbad,
+            notesByClipId: { 'clip-1': [] },
+            ccByClipId: {},
+            pitchBendByClipId: {},
+        };
+        vi.mocked(resolveClipsWithComping).mockReturnValue([
+            {
+                ...sourceClip,
+                endBeat: 8,
+                regionStartBeat: 6,
+                regionEndBeat: 8,
+                sourceStartBeat: 6,
+                midiTakeId: 'first-pass',
+                midiTakeRecordingPassIndex: 0,
+                midiTakeSource: {
+                    sourceClipId: 'clip-1',
+                    sourceEntryBeat: 2,
+                    sourceEndBeat: 6,
+                    phaseHeadBeat: 8,
+                    passLengthBeats: 4,
+                    rows: {
+                        notes: {
+                            present: true,
+                            value: [
+                                {
+                                    id: 'run-up',
+                                    pitch: 61,
+                                    startBeat: 0.5,
+                                    duration: 0.25,
+                                    velocity: 100,
+                                    recordingPassIndex: 0,
+                                },
+                            ],
+                        },
+                        controlChanges: { present: false, value: [] },
+                        pitchBends: { present: false, value: [] },
+                    },
+                },
+            },
+        ]);
+
+        await scheduleMidiNotes(6, 8, 6, new Set<string>(), [], defaultTransportState, 120);
+
+        expect(vi.mocked(scheduleNote).mock.calls.map(([, , pitch]) => pitch)).toEqual([61]);
+        expect(shouldPlayMidiEvent).toHaveBeenCalledWith(
+            expect.objectContaining({ eventId: 'run-up', absoluteOccurrenceIndex: 0 })
+        );
+    });
+
+    it('schedules a frozen take in a looping comp that opens mid-pass as live comp playback does, over two repeats', async () => {
+        // Pass 1 of a loop [0, 4) recording reads source 5 at its pass head 0. The comp opens a beat into
+        // the pass, so live restarts every loop length from beat 1 reading source 6 there: 63, a beat past
+        // the pass end, closes the first repeat and 64, before the read, folds into its tail.
+        const rows = [
+            { id: 'fold', pitch: 64, startBeat: 5.75, duration: 0.25, velocity: 100 },
+            { id: 'early', pitch: 61, startBeat: 6.25, duration: 0.25, velocity: 100 },
+            { id: 'tagged', pitch: 62, startBeat: 7.5, duration: 0.25, velocity: 100, recordingPassIndex: 1 },
+            { id: 'past-pass', pitch: 63, startBeat: 9.5, duration: 0.25, velocity: 100 },
+        ];
+        vi.mocked(projectClipMidiEvents).mockImplementation(realMidiUseCases.projectClipMidiEvents);
+        const sourceClip = midiClip({ startBeat: 0, endBeat: 9, loopEnabled: true, loopLength: 4 });
+        const fragment = {
+            ...sourceClip,
+            startBeat: 1,
+            regionStartBeat: 1,
+            regionEndBeat: 9,
+            sourceStartBeat: -5,
+            midiOffsetBeats: 6,
+            midiTakeRecordingPassIndex: 1,
+        };
+        (trackStore as { value: unknown }).value = { tracks: [midiTrack({ clips: [sourceClip] })] };
+        const heard = async (frozen: boolean) => {
+            vi.mocked(scheduleNote).mockClear();
+            (midiStore as { value: unknown }).value = {
+                probabilitySeed: 0xdecafbad,
+                notesByClipId: { 'clip-1': frozen ? [] : rows },
+                ccByClipId: {},
+                pitchBendByClipId: {},
+            };
+            vi.mocked(resolveClipsWithComping).mockReturnValue([
+                frozen
+                    ? {
+                          ...fragment,
+                          midiTakeId: 'pass-1',
+                          midiTakeSource: {
+                              sourceClipId: 'clip-1',
+                              sourceEntryBeat: 5,
+                              sourceEndBeat: 9,
+                              phaseHeadBeat: 0,
+                              passLengthBeats: 4,
+                              rows: {
+                                  notes: { present: true, value: rows },
+                                  controlChanges: { present: false, value: [] },
+                                  pitchBends: { present: false, value: [] },
+                              },
+                          },
+                      }
+                    : fragment,
+            ]);
+            await scheduleMidiNotes(0, 9, 0, new Set<string>(), [], defaultTransportState, 120);
+            return vi
+                .mocked(scheduleNote)
+                .mock.calls.map(([, , pitch, time]) => [pitch, time])
+                .sort((left, right) => Number(left[1]) - Number(right[1]));
+        };
+
+        const live = await heard(false);
+        const frozen = await heard(true);
+
+        expect(live.map(([pitch]) => pitch)).toEqual([61, 62, 63, 64, 61, 62, 63, 64]);
+        expect(frozen).toEqual(live);
+    });
+
+    describe.each([
+        { route: 'direct', devices: [] },
+        { route: 'Yeast', devices: [{ id: 'y', type: 'yeast' }] },
+    ])('a frozen take against the live fragment it replaces, through the $route route', ({ devices }) => {
+        // Pass 0 of a loop recorded from 8 sounds source 0 at its pass head 8, four beats a pass. A live
+        // fragment of it reads the clip's rows from its own media offset through the direct route; the
+        // frozen one reads the captured rows through the route under test, so each case schedules the
+        // same comp both ways and compares what sounds.
+        const passZero = (rows: readonly MidiNote[]) => ({
+            sourceClipId: 'clip-1',
+            sourceEntryBeat: 0,
+            sourceEndBeat: 4,
+            phaseHeadBeat: 8,
+            passLengthBeats: 4,
+            rows: {
+                notes: { present: true, value: rows },
+                controlChanges: { present: false, value: [] },
+                pitchBends: { present: false, value: [] },
+            },
+        });
+        /** A comp of Pass 0 over [startBeat, endBeat) of `clip`, as comp resolution hands it to the scheduler. */
+        const comped = (clip: Clip, startBeat: number, endBeat: number) => ({
+            ...clip,
+            startBeat,
+            endBeat,
+            regionStartBeat: startBeat,
+            regionEndBeat: endBeat,
+            sourceStartBeat: 8,
+            midiOffsetBeats: startBeat - 8,
+            midiTakeRecordingPassIndex: 0,
+        });
+        const row = (id: string, pitch: number, startBeat: number, probability = 100, duration = 0.25): MidiNote => ({
+            id,
+            pitch,
+            startBeat,
+            duration,
+            velocity: 100,
+            probability,
+            recordingPassIndex: 0,
+        });
+
+        async function heard(
+            fragments: readonly ReturnType<typeof comped>[],
+            rows: readonly MidiNote[],
+            frozen: boolean
+        ) {
+            vi.mocked(projectClipMidiEvents).mockImplementation(realMidiUseCases.projectClipMidiEvents);
+            vi.mocked(scheduleNote).mockClear();
+            shouldPlayProbability.mockClear();
+            (trackStore as { value: unknown }).value = {
+                tracks: [midiTrack({ clips: fragments, devices: frozen ? devices : [] })],
+            };
+            (midiStore as { value: unknown }).value = {
+                probabilitySeed: 0xdecafbad,
+                notesByClipId: { 'clip-1': frozen ? [] : rows },
+                ccByClipId: {},
+                pitchBendByClipId: {},
+            };
+            vi.mocked(resolveClipsWithComping).mockReturnValue(
+                fragments.map((fragment) =>
+                    frozen ? { ...fragment, midiTakeId: 'pass-0', midiTakeSource: passZero(rows) } : fragment
+                )
+            );
+            await scheduleMidiNotes(0, 24, 0, new Set<string>(), [], defaultTransportState, 120);
+            return {
+                notes: vi
+                    .mocked(scheduleNote)
+                    .mock.calls.map(([, , pitch, time, duration]) => [pitch, time, duration])
+                    .sort((left, right) => Number(left[1]) - Number(right[1]) || Number(left[0]) - Number(right[0])),
+                rolls: shouldPlayProbability.mock.calls
+                    .map(([input]) => `${input.eventId}@${input.absoluteOccurrenceIndex}`)
+                    .sort(),
+            };
+        }
+
+        const chanceRows = [0.25, 1.25, 2.25, 3.25].map((startBeat, index) =>
+            row(`chance-${index}`, 60 + index, startBeat, 50)
+        );
+        const looping = midiClip({ startBeat: 8, endBeat: 24, loopEnabled: true, loopLength: 4 });
+
+        it('rolls each repeat of a split on the loop grid on the occurrence the unsplit comp rolled it on', async () => {
+            const live = await heard([comped(looping, 8, 24)], chanceRows, false);
+            const frozen = await heard(
+                [comped(looping, 8, 16), { ...comped(looping, 16, 24), id: 'right' }],
+                chanceRows,
+                true
+            );
+
+            expect(live.rolls).toContain('chance-0@3');
+            expect(frozen).toEqual(live);
+        });
+
+        it('keeps counting occurrences on the take’s own grid past an off-grid split', async () => {
+            const live = await heard([comped(looping, 8, 24)], chanceRows, false);
+            const frozen = await heard(
+                [comped(looping, 8, 17), { ...comped(looping, 17, 24), id: 'right' }],
+                chanceRows,
+                true
+            );
+
+            expect(frozen.notes).toEqual(live.notes);
+            // The right fragment opens two loops past the pass head: its repeats roll as the third and
+            // fourth. Only 20.25 moves, onto the repeat that opens at 17, as live counts a fragment's repeats.
+            const outsideTheRestart = (roll: string) => roll !== 'chance-0@3' && roll !== 'chance-0@2';
+            expect(frozen.rolls.filter(outsideTheRestart)).toEqual(live.rolls.filter(outsideTheRestart));
+            expect(frozen.rolls.filter((roll) => roll.startsWith('chance-1'))).toEqual([
+                'chance-1@0',
+                'chance-1@1',
+                'chance-1@2',
+                'chance-1@3',
+            ]);
+        });
+
+        it.each([2, 3])(
+            'restarts a comp looping every %d beats of a four-beat pass where live restarts it',
+            async (loopLength) => {
+                // `held` outlasts the loop, so the loop length, not the pass, bounds how long it sounds.
+                const rows = [
+                    row('a', 60, 0.25),
+                    row('b', 61, 1.25),
+                    row('c', 62, 2.25),
+                    row('d', 63, 3.25),
+                    row('held', 64, 0.5, 100, 3.25),
+                ];
+                const clip = midiClip({ startBeat: 8, endBeat: 20, loopEnabled: true, loopLength });
+                const live = await heard([comped(clip, 8, 20)], rows, false);
+                const frozen = await heard([comped(clip, 8, 20)], rows, true);
+
+                // A repeat that restarted on the pass length instead would sound 60 at 8.25, 12.25 and 16.25 only.
+                expect(live.notes.filter(([pitch]) => pitch === 60)).toHaveLength(12 / loopLength);
+                // Live holds it for one whole loop length each repeat, wrapping what outlasts the repeat
+                // into its head: twelve beats over the comp, six seconds at half a second a beat.
+                const heldSeconds = live.notes
+                    .filter(([pitch]) => pitch === 64)
+                    .reduce((total, [, , duration]) => total + Number(duration), 0);
+                expect(heldSeconds).toBeCloseTo(6, 9);
+                expect(frozen).toEqual(live);
+            }
+        );
+
+        it.each([
+            {
+                clip: 'a clip slipped three beats into its notes',
+                clipOffset: 3,
+                origin: { occurrenceOriginDepthBeats: 4 },
+            },
+            // A source saved before capture recorded its origin depth counts from where its first
+            // source beat sounds, 8 - 4: live's origin whenever the clip carried no MIDI offset.
+            { clip: 'an unslipped clip, from a source saved without its origin depth', clipOffset: 0, origin: {} },
+        ])(
+            'rolls a split take on $clip on the occurrences live rolled before the split',
+            async ({ clipOffset, origin }) => {
+                // Take 1 sits four beats deep in a recording at 8, so live reads media clipOffset + t - 4 at
+                // beat t and counts the take's occurrences from beat 4: the comp opening at 10 starts on its
+                // second. A split at 18 freezes the take onto both halves; the real comp resolution hands
+                // the scheduler each side.
+                const rows = [10.25, 11.25, 12.25, 13.25].map((beat, index) => ({
+                    ...row(`slipped-${index}`, 60 + index, clipOffset + beat - 4, 50),
+                    recordingPassIndex: 1,
+                }));
+                const take = {
+                    id: 'take-1',
+                    name: 'Take 1',
+                    clipId: 'clip-1',
+                    startBeat: 8,
+                    endBeat: 12,
+                    selected: false,
+                    sourceOffsetBeats: 4,
+                    recordingPassIndex: 1,
+                };
+                // As capture writes it: the pass head at the take start, entering media clipOffset + 8 - 4.
+                const midiSource = {
+                    sourceClipId: 'clip-1',
+                    sourceEntryBeat: clipOffset + 4,
+                    sourceEndBeat: clipOffset + 8,
+                    phaseHeadBeat: 8,
+                    passLengthBeats: 4,
+                    ...origin,
+                    rows: {
+                        notes: { present: true, value: rows },
+                        controlChanges: { present: false, value: [] },
+                        pitchBends: { present: false, value: [] },
+                    },
+                };
+                const slipped = { startBeat: 8, loopEnabled: true, loopLength: 4, midiOffsetBeats: clipOffset };
+                const realArrangementUseCases = await vi.importActual<typeof import('#/modules/Arrangement/useCases')>(
+                    '#/modules/Arrangement/useCases'
+                );
+                type CompLane = Pick<TakeLaneStoreState['lanes'][number], 'takes' | 'activeCompRegions'>;
+                const resolved = (clips: Clip[], lane: CompLane) => {
+                    takeLaneStore.set({ lanes: [{ id: 'lane', trackId: 'track-1', ...lane }] });
+                    return realArrangementUseCases.resolveClipsWithComping('track-1', clips);
+                };
+                const scheduled = async (clips: Clip[], fragments: ReturnType<typeof resolved>, frozen: boolean) => {
+                    vi.mocked(projectClipMidiEvents).mockImplementation(realMidiUseCases.projectClipMidiEvents);
+                    vi.mocked(scheduleNote).mockClear();
+                    shouldPlayProbability.mockClear();
+                    (trackStore as { value: unknown }).value = {
+                        tracks: [midiTrack({ clips, devices: frozen ? devices : [] })],
+                    };
+                    (midiStore as { value: unknown }).value = {
+                        probabilitySeed: 0xdecafbad,
+                        notesByClipId: { 'clip-1': frozen ? [] : rows },
+                        ccByClipId: {},
+                        pitchBendByClipId: {},
+                    };
+                    vi.mocked(resolveClipsWithComping).mockReturnValue(fragments);
+                    await scheduleMidiNotes(0, 24, 0, new Set<string>(), [], defaultTransportState, 120);
+                    return {
+                        notes: vi
+                            .mocked(scheduleNote)
+                            .mock.calls.map(([, , pitch, time]) => [pitch, time])
+                            .sort((left, right) => Number(left[1]) - Number(right[1])),
+                        rolls: [
+                            ...new Set(
+                                shouldPlayProbability.mock.calls.map(
+                                    ([input]) => `${input.eventId}@${input.absoluteOccurrenceIndex}`
+                                )
+                            ),
+                        ].sort(),
+                    };
+                };
+
+                try {
+                    const unsplit = [midiClip({ ...slipped, endBeat: 24 })];
+                    const live = await scheduled(
+                        unsplit,
+                        resolved(unsplit, {
+                            takes: [take],
+                            activeCompRegions: [{ startBeat: 10, endBeat: 24, takeId: 'take-1' }],
+                        }),
+                        false
+                    );
+                    const split = [
+                        midiClip({ ...slipped, endBeat: 18 }),
+                        midiClip({
+                            ...slipped,
+                            id: 'right',
+                            startBeat: 18,
+                            endBeat: 24,
+                            midiOffsetBeats: clipOffset + 10,
+                        }),
+                    ];
+                    const frozen = await scheduled(
+                        split,
+                        resolved(split, {
+                            takes: [
+                                { ...take, midiSource },
+                                {
+                                    ...take,
+                                    id: 'take-1:right',
+                                    clipId: 'right',
+                                    startBeat: 18,
+                                    endBeat: 24,
+                                    midiSource,
+                                },
+                            ],
+                            activeCompRegions: [
+                                { startBeat: 10, endBeat: 18, takeId: 'take-1' },
+                                { startBeat: 18, endBeat: 24, takeId: 'take-1:right' },
+                            ],
+                        }),
+                        true
+                    );
+
+                    expect(live.rolls).toContain('slipped-0@1');
+                    expect(live.rolls).not.toContain('slipped-0@0');
+                    expect(frozen.notes).toEqual(live.notes);
+                    // Live also rolls rows the clip end cuts from the last repeat; frozen rolls none live did not.
+                    expect(frozen.rolls.length).toBeGreaterThan(0);
+                    expect(live.rolls).toEqual(expect.arrayContaining(frozen.rolls));
+                } finally {
+                    takeLaneStore.set({ lanes: [] });
+                }
+            }
+        );
+
+        it('reads a comp that does not loop straight through, past the pass end', async () => {
+            const rows = [row('before', 60, 0.25), row('a', 61, 1.25), row('b', 62, 3.25), row('past', 63, 5.5)];
+            const clip = midiClip({ startBeat: 8, endBeat: 20 });
+            const live = await heard([comped(clip, 9, 20)], rows, false);
+            const frozen = await heard([comped(clip, 9, 20)], rows, true);
+
+            expect(live.notes.map(([pitch]) => pitch)).toEqual([61, 62, 63]);
+            expect(frozen).toEqual(live);
+        });
+    });
+
+    it('prepares selected source for the first Yeast window and reads it again while rolling', async () => {
+        const sourceClip = midiClip({ startBeat: 0, endBeat: 8, loopEnabled: true, loopLength: 4 });
+        const track = midiTrack({ clips: [sourceClip], devices: [{ id: 'y', type: 'yeast' }] });
+        (trackStore as { value: unknown }).value = { tracks: [track] };
+        (midiStore as { value: unknown }).value = {
+            probabilitySeed: 0xdecafbad,
+            notesByClipId: { 'clip-1': [{ id: 'ordinary-row', pitch: 60, startBeat: 1, duration: 1, velocity: 100 }] },
+            ccByClipId: {},
+            pitchBendByClipId: {},
+        };
+        vi.mocked(resolveClipsWithComping).mockReturnValue([
+            {
+                ...sourceClip,
+                regionStartBeat: 0,
+                regionEndBeat: 8,
+                sourceStartBeat: 0,
+                midiTakeId: 'selected',
+                midiTakeRecordingPassIndex: 1,
+                midiTakeSource: {
+                    sourceClipId: 'clip-1',
+                    sourceEntryBeat: 5,
+                    sourceEndBeat: 9,
+                    phaseHeadBeat: 0,
+                    passLengthBeats: 4,
+                    rows: {
+                        notes: {
+                            present: true,
+                            value: [
+                                {
+                                    id: 'held-previous',
+                                    pitch: 72,
+                                    startBeat: 4.75,
+                                    duration: 1,
+                                    velocity: 100,
+                                    recordingPassIndex: 0,
+                                },
+                                {
+                                    id: 'selected-row',
+                                    pitch: 67,
+                                    startBeat: 5.5,
+                                    duration: 1,
+                                    velocity: 100,
+                                    recordingPassIndex: 1,
+                                },
+                            ],
+                        },
+                        controlChanges: { present: false, value: [] },
+                        pitchBends: { present: false, value: [] },
+                    },
+                },
+            },
+        ]);
+        const cancellation: SchedulerCancellation = {
+            generation: 1,
+            discontinuityEpoch: 1,
+            isCurrent: () => true,
+            yeastRouteLineage: new Map(),
+        };
+        const prepared = await prepareInitialMidiWindow(0, 1, defaultTransportState, cancellation, {
+            trackState: trackStore.value,
+            midiState: midiStore.value,
+            tempoState: tempoMapStore.value,
+            isCurrent: () => true,
+        });
+        if (!prepared) {
+            throw new Error('expected selected Yeast preparation');
+        }
+        expect(scheduleNote).not.toHaveBeenCalled();
+
+        await scheduleMidiNotes(
+            0,
+            1,
+            0,
+            new Set<string>(),
+            [],
+            defaultTransportState,
+            120,
+            cancellation,
+            false,
+            prepared,
+            0
+        );
+        await scheduleMidiNotes(4, 5, 4, new Set<string>(), [], defaultTransportState, 120, cancellation);
+
+        expect(vi.mocked(scheduleNote).mock.calls.map(([, , pitch]) => pitch)).toEqual([67, 67]);
+        expect(shouldPlayMidiEvent).toHaveBeenCalledWith(
+            expect.objectContaining({
+                clipId: 'clip-1',
+                eventId: 'selected-row',
+                absoluteOccurrenceIndex: 1,
+            })
+        );
     });
 
     it('counts a non-dyadic exact-multiple advance tolerantly through the live occurrence floor', async () => {
@@ -2827,8 +3470,9 @@ describe('scheduleMidiNotes', () => {
 
                 it('plays a Yeast note a clip offset wrapped to the loop end in full, its curve from its own start', async () => {
                     fermenterStripWithControls();
-                    // The offset puts the note before the clip's head, and the loop wraps it to the pass end: a
-                    // wrapped note rings its whole length from the wrapped start, so no head of it was cut.
+                    // The offset puts the note before the clip's head, and the loop wraps it to the pass end: the
+                    // wrapped note plays its whole length from the wrapped start, ending on the pass end, so no head
+                    // of it was cut.
                     const track = midiTrack({
                         clips: [
                             midiClip({
@@ -3525,7 +4169,7 @@ describe('scheduleMidiNotes', () => {
             expect(scheduleNote).toHaveBeenCalledTimes(10);
         });
 
-        it('bounds Yeast loop work while retaining a prior occurrence release in the window', async () => {
+        it('bounds Yeast loop work while delivering the pass-head release in the window', async () => {
             const track = midiTrack({
                 clips: [midiClip({ endBeat: 128, loopEnabled: true, loopLength: 4 })],
                 devices: [{ id: 'yeast-1', type: 'yeast' }],
@@ -3533,26 +4177,28 @@ describe('scheduleMidiNotes', () => {
             (trackStore as { value: unknown }).value = { tracks: [track] };
             (midiStore as { value: unknown }).value = {
                 notesByClipId: {
-                    'clip-1': [{ id: 'long-note', pitch: 60, startBeat: 0, duration: 5, velocity: 100 }],
+                    'clip-1': [{ id: 'long-note', pitch: 60, startBeat: 3, duration: 2, velocity: 100 }],
                 },
             };
 
             await scheduleMidiNotes(4.5, 5.5, 4.5, new Set<string>(), [], defaultTransportState, 120);
 
-            expect(shouldPlayMidiEvent).toHaveBeenCalledTimes(1);
-            expect(shouldPlayMidiEvent).toHaveBeenCalledWith(
-                expect.objectContaining({ eventId: 'long-note', absoluteOccurrenceIndex: 0 })
-            );
-            expect(processYeastMidi).toHaveBeenCalledWith(
+            // The note at 3 runs a beat past each pass end; that beat is its own
+            // note on the head of the same pass, released at 5 on the second
+            // pass. Of the clip's 32 passes only that one and the one before it
+            // (whose raw release at 5 the content query still offers; its note
+            // ends at its own pass end and places nothing here) are evaluated.
+            expect(vi.mocked(shouldPlayMidiEvent).mock.calls.map(([input]) => input.absoluteOccurrenceIndex)).toEqual([
+                0, 1,
+            ]);
+            expect(processYeastMidi).toHaveBeenCalledTimes(1);
+            expect(vi.mocked(processYeastMidi).mock.calls[0]![0].events).toEqual([
                 expect.objectContaining({
-                    events: [
-                        expect.objectContaining({
-                            noteInstanceId: 'live-yeast:track-1:clip-1:0:long-note',
-                            kind: { type: 'noteOff', channel: 0, note: 60 },
-                        }),
-                    ],
-                })
-            );
+                    noteInstanceId: 'live-yeast:track-1:clip-1:1:long-note:pass-head',
+                    timePpq: 5,
+                    kind: { type: 'noteOff', channel: 0, note: 60 },
+                }),
+            ]);
         });
 
         it('retains a leading interval when the clip starts at the scheduler high-water mark', async () => {
@@ -3958,6 +4604,81 @@ describe('scheduleMidiNotes', () => {
             (trackStore as { value: unknown }).value = { tracks: [track] };
             (midiStore as { value: unknown }).value = midi;
         }
+
+        it('keeps a selected completed pass pedal held across its inner repeat and lifts at the true end', async () => {
+            useRealProjections();
+            const setSustain = vi.fn();
+            stripWith({
+                type: 'grand-boule',
+                deviceId: 'gb-1',
+                grandBouleControls: {
+                    noteOn: vi.fn(),
+                    noteOff: vi.fn(),
+                    noteExpression: vi.fn(),
+                    setSustain,
+                    setSostenuto: vi.fn(),
+                    setUnaCorda: vi.fn(),
+                },
+            });
+            const clip = midiClip({ endBeat: 8, loopEnabled: true, loopLength: 4 });
+            const rows = {
+                notes: { present: true as const, value: [] },
+                controlChanges: {
+                    present: true as const,
+                    value: [storedController('press', 64, 127, 4), storedController('next-pass-lift', 64, 0, 8)],
+                },
+                pitchBends: { present: true as const, value: [] },
+            };
+            const source = {
+                sourceClipId: 'clip-1',
+                rows,
+                sourceEntryBeat: 4,
+                sourceEndBeat: 8,
+                phaseHeadBeat: 0,
+                passLengthBeats: 4,
+            };
+            const take = {
+                id: 'take-1',
+                clipId: 'clip-1',
+                name: 'Second pass',
+                startBeat: 0,
+                endBeat: 4,
+                selected: false,
+                sourceOffsetBeats: 4,
+                recordingPassIndex: 1,
+                midiSource: source,
+            };
+            const previousLanes = takeLaneStore.value;
+            takeLaneStore.set({
+                lanes: [
+                    {
+                        id: 'lane',
+                        trackId: 'track-1',
+                        takes: [take],
+                        activeCompRegions: [{ startBeat: 0, endBeat: 8, takeId: take.id }],
+                    },
+                ],
+            });
+            const actualArrangement = await vi.importActual<typeof import('#/modules/Arrangement/useCases')>(
+                '#/modules/Arrangement/useCases'
+            );
+            const resolved = actualArrangement.resolveClipsWithComping('track-1', [clip]);
+            takeLaneStore.set(previousLanes);
+            expect(resolved[0]).toMatchObject({ startBeat: 0, endBeat: 8, midiTakeSource: source });
+            vi.mocked(resolveClipsWithComping).mockReturnValue(resolved);
+            (trackStore as { value: unknown }).value = {
+                tracks: [midiTrack({ clips: [clip], devices: [{ id: 'gb-1', type: 'grand-boule' }] })],
+            };
+            (midiStore as { value: unknown }).value = { notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} };
+
+            await scheduleMidiNotes(0, 8, 0, new Set<string>(), [], defaultTransportState, 120);
+
+            expect(setSustain.mock.calls).toEqual([
+                [1, 0, true],
+                [1, 4 * BEAT_FRAMES, true],
+                [0, 8 * BEAT_FRAMES, true],
+            ]);
+        });
 
         it('posts a Grand Boule sustain press and lift at their own frames, ahead of a note on the same frame', async () => {
             const posted: string[] = [];
@@ -4598,6 +5319,55 @@ describe('scheduleMidiNotes', () => {
         });
 
         describe('stored controllers through the real projection and release', () => {
+            it('posts selected frozen pedal rows on first and rolling pass windows instead of ordinary rows', async () => {
+                useRealProjections();
+                const handleCc = vi.fn();
+                stripWith({
+                    type: 'levain',
+                    deviceId: 'lv-1',
+                    levainControls: { noteOn: vi.fn(), noteOff: vi.fn(), noteExpression: vi.fn(), handleCc },
+                });
+                const sourceClip = midiClip({ startBeat: 0, endBeat: 8, loopEnabled: true, loopLength: 4 });
+                const track = midiTrack({ clips: [sourceClip], devices: [{ id: 'lv-1', type: 'levain' }] });
+                (trackStore as { value: unknown }).value = { tracks: [track] };
+                (midiStore as { value: unknown }).value = {
+                    notesByClipId: { 'clip-1': [] },
+                    ccByClipId: { 'clip-1': [storedController('ordinary', 64, 0, 1)] },
+                    pitchBendByClipId: {},
+                };
+                vi.mocked(resolveClipsWithComping).mockReturnValue([
+                    {
+                        ...sourceClip,
+                        regionStartBeat: 0,
+                        regionEndBeat: 8,
+                        sourceStartBeat: 0,
+                        midiTakeId: 'selected',
+                        midiTakeSource: {
+                            sourceClipId: 'clip-1',
+                            sourceEntryBeat: 5,
+                            sourceEndBeat: 9,
+                            phaseHeadBeat: 0,
+                            passLengthBeats: 4,
+                            rows: {
+                                notes: { present: true, value: [] },
+                                controlChanges: {
+                                    present: true,
+                                    value: [storedController('selected', 64, 127, 5.25)],
+                                },
+                                pitchBends: { present: true, value: [] },
+                            },
+                        },
+                    },
+                ]);
+
+                await scheduleMidiNotes(0, 1, 0, new Set<string>(), [], defaultTransportState, 120);
+                await scheduleMidiNotes(4, 5, 4, new Set<string>(), [], defaultTransportState, 120);
+
+                expect(handleCc.mock.calls).toEqual([
+                    [64, 127, BEAT_FRAMES / 4, true],
+                    [64, 127, BEAT_FRAMES / 4, true],
+                ]);
+            });
             it('releases every pedal and controller a real schedule left engaged, on stop', async () => {
                 const levain = { noteOn: vi.fn(), noteOff: vi.fn(), noteExpression: vi.fn(), handleCc: vi.fn() };
                 const grandBoule = {
@@ -5664,5 +6434,266 @@ describe('scheduleMidiNotes carries the loop anchor through selection, admission
             { pitch: 60, time: 0, duration: 0.5 },
             { pitch: 60, time: 0, duration: 0.5 },
         ]);
+    });
+});
+
+/**
+ * A looping clip cut off its loop grid — the right fragment of a split, or the
+ * clip itself start-trimmed to the same beat — must play every pass the
+ * uncut clip plays there: each note struck and held exactly as the source
+ * strikes and holds it, and each chance note rolled on the occurrence the
+ * source rolls it on. Both cut states carry the source's anchor (0) under a
+ * head at 6, half a loop off the grid, so the source's pass seams fall at the
+ * fragment's 8 and 12, not at its own head plus whole loops. The synth path
+ * runs the real projection and the real probability roll; the comping double
+ * stamps the anchored source start production's resolver stamps.
+ */
+describe('scheduleMidiNotes plays a looping clip cut off its loop grid on the source passes', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        forgetStoredControllerEngagements();
+        (trackStore as { value: unknown }).value = { tracks: [] };
+        (midiStore as { value: unknown }).value = null;
+        (automationStore as { value: unknown }).value = null;
+        (tempoMapStore as { value: unknown }).value = { changes: [] };
+        (timeSignatureMapStore as { value: unknown }).value = { changes: [] };
+        vi.mocked(resolveClipsWithComping).mockImplementation((_trackId, clips) =>
+            clips.map((clip) => ({
+                ...clip,
+                regionStartBeat: clip.startBeat,
+                regionEndBeat: clip.endBeat,
+                sourceStartBeat: resolveLoopAnchoredStartBeat({
+                    startBeat: clip.startBeat,
+                    loopOriginBeat: clip.loopOriginBeat,
+                    loopEnabled: clip.loopEnabled ?? false,
+                }),
+            }))
+        );
+        vi.mocked(projectClipMidiEvents).mockImplementation((input) => realMidiUseCases.projectClipMidiEvents(input));
+        vi.mocked(processYeastMidi).mockImplementation((input) => Promise.resolve([...input.events]));
+        vi.mocked(projectCommittedGroove).mockImplementation(({ events }) => events);
+        engineStub.sampleRate = 48_000;
+        vi.mocked(ensureTrackStrip).mockImplementation(
+            (trackId) =>
+                ({
+                    gainNode: {},
+                    preFaderTap: { connect: vi.fn() },
+                    deviceNodes: engineStub.nodesFor(trackId),
+                }) as never
+        );
+        shouldPlayProbability.mockImplementation(realMidiUseCases.shouldPlayMidiEvent);
+        vi.mocked(getCurrentTime).mockReturnValue(0);
+    });
+
+    const PROBABILITY_SEED = 6;
+
+    /**
+     * The source's rows: one held inside the loop (1.5–2.5), one crossing the
+     * loop seam (3.5–4.5, which the loop wraps onto the pass head), and a
+     * 50% chance note at 1 whose rolls under seed 6 sound occurrences 1 and 2
+     * and drop occurrence 3.
+     */
+    function sourceRows(): MidiNote[] {
+        return [
+            { id: 'n-held', pitch: 60, startBeat: 1.5, duration: 1, velocity: 100 },
+            { id: 'n-seam', pitch: 64, startBeat: 3.5, duration: 1, velocity: 100 },
+            { id: 'n-chance', pitch: 67, startBeat: 1, duration: 0.25, velocity: 100, probability: 50 },
+        ] as MidiNote[];
+    }
+
+    function uncutClip(): Clip {
+        return midiClip({ startBeat: 0, endBeat: 16, loopEnabled: true, loopLength: 4, loopOriginBeat: 0 });
+    }
+
+    /** What the split writer stores for the right fragment of a cut at 6: the source trimmed to 6, rows untouched. */
+    function splitFragment(): Clip {
+        return midiClip({
+            startBeat: 6,
+            endBeat: 16,
+            loopEnabled: true,
+            loopLength: 4,
+            loopOriginBeat: 0,
+            midiOffsetBeats: 6,
+        });
+    }
+
+    /** What a start trim to 6 stores: the offset wrapped to its phase 2, every row ridden by the wrap's −4. */
+    function startTrimmedClip(): Clip {
+        return midiClip({
+            startBeat: 6,
+            endBeat: 16,
+            loopEnabled: true,
+            loopLength: 4,
+            loopOriginBeat: 0,
+            midiOffsetBeats: 2,
+        });
+    }
+
+    function startTrimmedRows(): MidiNote[] {
+        return sourceRows().map((row) => ({ ...row, startBeat: row.startBeat - 4 }));
+    }
+
+    /** The source with its head and anchor one loop later, over [4,20): its passes from 8 roll occurrences 1 and 2. */
+    function sourceFromBeat4(): Clip {
+        return midiClip({ startBeat: 4, endBeat: 20, loopEnabled: true, loopLength: 4, loopOriginBeat: 4 });
+    }
+
+    /**
+     * That source with its head drawn back a loop to 0 while the anchor stays
+     * at 4: the head's pass lies one pass ahead of the anchor's. Its rows sit
+     * a loop later, so each row's phase in the anchored loop is the source's.
+     */
+    function headAheadOfAnchorClip(): Clip {
+        return midiClip({ startBeat: 0, endBeat: 20, loopEnabled: true, loopLength: 4, loopOriginBeat: 4 });
+    }
+
+    function headAheadOfAnchorRows(): MidiNote[] {
+        return sourceRows().map((row) => ({ ...row, startBeat: row.startBeat + 4 }));
+    }
+
+    type Voice = { pitch: number; beat: number; duration: number };
+
+    /** Scheduler window edges cutting [8, 16) into widths repeating `widths`, the last cut at 16. */
+    function windowEdges(widths: readonly number[]): number[] {
+        const edges = [8];
+        for (let index = 0; edges.at(-1)! < 16; index++) {
+            edges.push(Math.min(16, edges.at(-1)! + widths[index % widths.length]!));
+        }
+        return edges;
+    }
+
+    const HALF_BEAT_WINDOWS = windowEdges([0.5]);
+
+    /**
+     * Every note-on the span [8, 16) strikes, in beats (the clock reads beat 0
+     * at 0 s, 120 BPM), swept window by window between `edges`. Half-beat
+     * windows sweep it as playback does: a window that narrow reads the loop
+     * selectors' phase indexes rather than taking every row as a candidate.
+     */
+    async function voicesFor(
+        clip: Clip,
+        rows: MidiNote[],
+        route: 'synth' | 'yeast' = 'synth',
+        edges: readonly number[] = HALF_BEAT_WINDOWS
+    ): Promise<Voice[]> {
+        vi.mocked(scheduleNote).mockClear();
+        shouldPlayProbability.mockClear();
+        const devices = route === 'yeast' ? [{ id: 'yeast-rack', type: 'yeast' }] : [];
+        (trackStore as { value: unknown }).value = { tracks: [midiTrack({ clips: [clip], devices })] };
+        (midiStore as { value: unknown }).value = {
+            probabilitySeed: PROBABILITY_SEED,
+            notesByClipId: { [clip.id]: rows },
+            ccByClipId: {},
+            pitchBendByClipId: {},
+        };
+        for (let index = 1; index < edges.length; index++) {
+            await scheduleMidiNotes(
+                edges[index - 1]!,
+                edges[index]!,
+                0,
+                new Set<string>(),
+                [],
+                defaultTransportState,
+                120
+            );
+        }
+        return vi
+            .mocked(scheduleNote)
+            .mock.calls.map((call) => ({ pitch: call[2], beat: call[3] * 2, duration: call[4] * 2 }))
+            .sort((left, right) => left.beat - right.beat || left.pitch - right.pitch);
+    }
+
+    /** The occurrence each roll of the chance note was handed, in roll order. */
+    function chanceOccurrences(): number[] {
+        const chanceRolls = shouldPlayProbability.mock.calls.filter(([input]) => input.eventId === 'n-chance');
+        return chanceRolls.map(([input]) => input.absoluteOccurrenceIndex);
+    }
+
+    const SOURCE_VOICES: Voice[] = [
+        { pitch: 64, beat: 8, duration: 0.5 },
+        { pitch: 67, beat: 9, duration: 0.25 },
+        { pitch: 60, beat: 9.5, duration: 1 },
+        { pitch: 64, beat: 11.5, duration: 0.5 },
+        { pitch: 64, beat: 12, duration: 0.5 },
+        { pitch: 60, beat: 13.5, duration: 1 },
+        { pitch: 64, beat: 15.5, duration: 0.5 },
+    ];
+
+    it('pins the uncut source: the seam note re-strikes on each pass head, the held note never does', async () => {
+        expect(await voicesFor(uncutClip(), sourceRows())).toEqual(SOURCE_VOICES);
+        expect(chanceOccurrences()).toEqual([2, 3]);
+    });
+
+    it('strikes and holds every note of the split right fragment where the uncut source does', async () => {
+        // The fragment's own head-plus-loop boundaries fall at 10 and 14: the
+        // held note at 9.5 must not be cut and re-struck at 10, and the seam
+        // note must re-strike at the source seams 8 and 12, not sustain over them.
+        expect(await voicesFor(splitFragment(), sourceRows())).toEqual(SOURCE_VOICES);
+    });
+
+    it('rolls the split fragment chance note on the occurrence the uncut source rolls it on', async () => {
+        await voicesFor(splitFragment(), sourceRows());
+        expect(chanceOccurrences()).toEqual([2, 3]);
+    });
+
+    it('strikes and holds every note of the start-trimmed clip where the untrimmed source does', async () => {
+        expect(await voicesFor(startTrimmedClip(), startTrimmedRows())).toEqual(SOURCE_VOICES);
+    });
+
+    it('rolls the start-trimmed chance note on the occurrence the untrimmed source rolls it on', async () => {
+        await voicesFor(startTrimmedClip(), startTrimmedRows());
+        expect(chanceOccurrences()).toEqual([2, 3]);
+    });
+
+    // The rack's output re-enters the same pass projection, so the Yeast route
+    // strikes, cuts and rolls the source exactly as the synth route does; its
+    // chance roll happens earlier, once per pass, as the rack's input is prepared.
+    it('pins the uncut source on the Yeast rack route', async () => {
+        expect(await voicesFor(uncutClip(), sourceRows(), 'yeast')).toEqual(SOURCE_VOICES);
+    });
+
+    // Live playback cuts the timeline into look-ahead windows of whatever
+    // width the clock delivers; the notes a loop sounds cannot depend on where
+    // those cuts fall, on either side of the seam or the pass head.
+    it.each([
+        { partition: 'one-loop windows', widths: [4] },
+        { partition: 'irregular windows straddling the seams', widths: [0.3, 0.7, 0.13] },
+    ])('sounds the uncut source on both routes alike under $partition', async ({ widths }) => {
+        const edges = windowEdges(widths);
+        expect(await voicesFor(uncutClip(), sourceRows(), 'synth', edges)).toEqual(SOURCE_VOICES);
+        expect(await voicesFor(uncutClip(), sourceRows(), 'yeast', edges)).toEqual(SOURCE_VOICES);
+    });
+
+    it('sounds the split fragment on the Yeast rack route exactly as the uncut source', async () => {
+        expect(await voicesFor(splitFragment(), sourceRows(), 'yeast')).toEqual(SOURCE_VOICES);
+    });
+
+    it('sounds the start-trimmed clip on the Yeast rack route exactly as the untrimmed source', async () => {
+        expect(await voicesFor(startTrimmedClip(), startTrimmedRows(), 'yeast')).toEqual(SOURCE_VOICES);
+    });
+
+    // A head one pass ahead of the anchor counts that pass before the anchor's
+    // occurrence 0, so the pass at 8 is the head's third but the anchor's second.
+    const SOURCE_FROM_BEAT_4_VOICES: Voice[] = [
+        ...SOURCE_VOICES.slice(0, 5),
+        { pitch: 67, beat: 13, duration: 0.25 },
+        ...SOURCE_VOICES.slice(5),
+    ];
+
+    it('pins the source anchored at 4: the chance note sounds on both passes from 8', async () => {
+        expect(await voicesFor(sourceFromBeat4(), sourceRows())).toEqual(SOURCE_FROM_BEAT_4_VOICES);
+        expect(chanceOccurrences()).toEqual([1, 2]);
+    });
+
+    it('rolls a clip whose head lies a pass ahead of its anchor on the anchored source occurrences', async () => {
+        expect(await voicesFor(headAheadOfAnchorClip(), headAheadOfAnchorRows())).toEqual(SOURCE_FROM_BEAT_4_VOICES);
+        expect(chanceOccurrences()).toEqual([1, 2]);
+    });
+
+    it('sounds a clip whose head lies a pass ahead of its anchor on the Yeast rack route as the anchored source', async () => {
+        expect(await voicesFor(sourceFromBeat4(), sourceRows(), 'yeast')).toEqual(SOURCE_FROM_BEAT_4_VOICES);
+        expect(await voicesFor(headAheadOfAnchorClip(), headAheadOfAnchorRows(), 'yeast')).toEqual(
+            SOURCE_FROM_BEAT_4_VOICES
+        );
     });
 });

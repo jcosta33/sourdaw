@@ -177,6 +177,9 @@ function captureRemovePatch(action: Extract<AppAction, { type: 'removeFromVca' }
 
 function captureGainPatch(action: Extract<AppAction, { type: 'setVcaGain' }>): RestoreLegacyVcaStatePayload {
     const group = getVcaGroupsState().find((candidate) => candidate.id === action.payload.vcaGroupId);
+    if (action.payload.gain === undefined) {
+        return emptyPatch();
+    }
     const expectedGain = Math.max(0, Math.min(2, action.payload.gain));
     if (!group || Object.is(group.gain, expectedGain)) {
         return emptyPatch();

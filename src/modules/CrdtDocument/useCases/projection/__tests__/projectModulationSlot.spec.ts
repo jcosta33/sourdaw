@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerProjectSlotProjections } from '#/app/registerProjectSlotProjections';
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
 import { modulationStore, type ModulationStoreState } from '#/modules/Automation/stores';
 
@@ -131,6 +132,7 @@ const validState: ModulationStoreState = { modulators: [validModulator] };
 describe('projectCrdtToStores — modulation slot survival (audit CC-4)', () => {
     beforeEach(async () => {
         vi.clearAllMocks();
+        registerProjectSlotProjections();
         configureAutomergeStoragePort(null);
         modulationStore.set({ modulators: [] });
         await flushPendingFrame();

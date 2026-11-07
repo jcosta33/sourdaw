@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
+
 import { type ProjectContext } from '../../models/ProjectContext';
 import { type BoundRequestProtections } from '../../models/ProposalGroundingBasis';
 import { type RetainedCompilation } from '../../models/RetainedCompilation';
@@ -9,6 +11,8 @@ import { executeTransformCompile } from '../executeTransformCompile';
 import { groundCompiledCommandBatch } from '../groundCompiledCommandBatch';
 import { materializeTransformToolCalls } from '../materializeTransformToolCalls';
 import { projectDeclarativeTransformSnapshot } from '../projectDeclarativeTransformSnapshot';
+
+registerDeviceEnginePorts();
 
 /**
  * A compiled command list proves which objects its selectors resolve to, never that the user asked

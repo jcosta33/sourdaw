@@ -1,19 +1,19 @@
 import { useSyncExternalStore } from 'react';
 
 import { clipSelectionStore, trackStore } from '#/modules/Arrangement/stores';
-import { transportStore } from '#/modules/Transport/stores';
-
-/** Beats per bar when transport state is unavailable. */
-const FALLBACK_BEATS_PER_BAR = 4;
+import { defaultTransportState, timeSignatureMapStore, transportStore } from '#/modules/Transport/stores';
+import { formatMusicalLengthParts, measureMusicalLength } from '#/modules/Transport/useCases';
 
 const subscribe = (cb: () => void): (() => void) => {
     const unsub1 = clipSelectionStore.subscribe(cb);
     const unsub2 = trackStore.subscribe(cb);
     const unsub3 = transportStore.subscribe(cb);
+    const unsub4 = timeSignatureMapStore.subscribe(cb);
     return () => {
         unsub1();
         unsub2();
         unsub3();
+        unsub4();
     };
 };
 
@@ -28,15 +28,20 @@ const getSnapshot = (): string => {
         if (!clip) {
             return '1 clip';
         }
-        const beats = clip.endBeat - clip.startBeat;
-        // Bars come from the transport time signature, not a hardcoded 4: in 3/4 a
-        // 3-bar clip is 9 beats, which /4 renders as "2.25 bars" and then silently
-        // falls back to beats phrasing.
-        const beatsPerBar = transportStore.value?.timeSignatureNumerator ?? FALLBACK_BEATS_PER_BAR;
-        const bars = beats / beatsPerBar;
-        return bars === Math.floor(bars)
-            ? `1 clip · ${bars} bar${bars !== 1 ? 's' : ''}`
-            : `1 clip · ${beats} beat${beats !== 1 ? 's' : ''}`;
+        // Length reads through the project's meter map, so a meter change or a non-4/4
+        // project never skews it; whole bars read as "N bars".
+        const transport = transportStore.value ?? defaultTransportState;
+        const length = measureMusicalLength({
+            startBeat: clip.startBeat,
+            lengthBeats: clip.endBeat - clip.startBeat,
+            changes: timeSignatureMapStore.value?.changes ?? [],
+            defaultNumerator: transport.timeSignatureNumerator,
+            defaultDenominator: transport.timeSignatureDenominator,
+        });
+        if (length.beats === 0 && length.sixteenths === 0 && length.bars > 0) {
+            return `1 clip · ${length.bars} bar${length.bars === 1 ? '' : 's'}`;
+        }
+        return `1 clip · ${formatMusicalLengthParts(length)}`;
     }
     return `${ids.length} clips selected`;
 };
@@ -44,7 +49,7 @@ const getSnapshot = (): string => {
 /**
  * Derives a human-readable label for the current clip selection.
  * Subscribes to clipSelectionStore, trackStore and transportStore — the last one
- * because bar counts depend on the time signature.
+ * because lengths depend on the meter map.
  */
 export const useSelectionLabel = (): string => {
     return useSyncExternalStore(subscribe, getSnapshot);

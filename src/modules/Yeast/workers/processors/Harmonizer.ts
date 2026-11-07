@@ -18,6 +18,8 @@ const SCALE_PATTERNS: Record<string, number[]> = {
     chromatic: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
 };
 const SCALE_NAMES = Object.keys(SCALE_PATTERNS);
+const SCALE_PATTERNS_BY_NAME: ReadonlyMap<string, readonly number[]> = new Map(Object.entries(SCALE_PATTERNS));
+const MAJOR_PATTERN: readonly number[] = SCALE_PATTERNS.major!;
 
 type HarmonyVoice = {
     degrees: number;
@@ -53,10 +55,7 @@ export class Harmonizer extends BaseMidiProcessor {
         _transport: TransportInfo,
         preview?: YeastPreviewDecisionSink
     ): void {
-        // scaleName is always a valid SCALE_PATTERNS key: the constructor and
-        // resetParams set it to 'major', and setParam('scale', v) clamps via
-        // SCALE_NAMES[...] ?? 'major'. The fallback is therefore unreachable.
-        const pattern = SCALE_PATTERNS[this.scaleName]!;
+        const pattern = SCALE_PATTERNS_BY_NAME.get(this.scaleName) ?? MAJOR_PATTERN;
 
         for (const event of input) {
             // Always pass through original
@@ -118,7 +117,7 @@ export class Harmonizer extends BaseMidiProcessor {
         }
     }
 
-    private diatonicTranspose(note: number, degrees: number, pattern: number[]): number {
+    private diatonicTranspose(note: number, degrees: number, pattern: readonly number[]): number {
         const pc = (((note - this.root) % 12) + 12) % 12;
         const octave = Math.floor((note - this.root) / 12);
 

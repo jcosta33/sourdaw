@@ -1,6 +1,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { createMockAudioContext } from '#/helpers/__tests__/audioContext.mock';
 import {
     configureAutomergeStoragePort,
@@ -12,6 +13,7 @@ import { getArrangementHandlers, getPluginById, setDeviceParameter } from '#/mod
 import {
     audioEngine,
     getAudioContext,
+    initEngineDeviceCollaborators,
     isDeviceCarriedByNativeSession,
     updateDeviceParam,
 } from '#/modules/AudioEngine/useCases';
@@ -43,6 +45,8 @@ import { seekPlayhead, stopPlayback } from '#/modules/Transport/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { DeviceParameterControl } from '../DeviceParameterControl';
+
+registerDeviceEnginePorts();
 
 // Command, Arrangement, Automerge and history stay real. This is the engine's
 // shared Web Audio/native parameter boundary; the actual RotaryKnob and Radix Slider stay real.
@@ -290,6 +294,7 @@ function sliderTrack(): HTMLElement {
 }
 
 describe('Inspector continuous parameter gestures through real history', () => {
+    initEngineDeviceCollaborators();
     beforeEach(async () => {
         engineWrites.length = 0;
         afterEngineWrite = null;
@@ -381,10 +386,8 @@ describe('Inspector continuous parameter gestures through real history', () => {
         fireEvent.pointerMove(root, { pointerId: 2, clientX: 20, clientY: 10 });
         expect(writes(compressor.id)).toEqual([-36, expect.closeTo(-12, 12), -48]);
         const readouts = screen.getAllByText('-48.0 dB');
-        expect(readouts).toHaveLength(2);
-        for (const readout of readouts) {
-            expect(readout).toBeVisible();
-        }
+        expect(readouts).toHaveLength(1);
+        expect(readouts[0]).toBeVisible();
         expect(rawValues(compressor.id)?.['comp-threshold']).toBe(-20);
         expect(settlePendingProjectWritesAndCaptureRevision()).toBe(revision);
         expect(depth()).toBe(0);
@@ -405,7 +408,7 @@ describe('Inspector continuous parameter gestures through real history', () => {
 
         fireEvent.keyDown(slider, { key: 'End' });
         await expectCommitted('comp-threshold', 0, 1, compressor.id);
-        expect(screen.getAllByText('0.0 dB')).toHaveLength(2);
+        expect(screen.getAllByText('0.0 dB')).toHaveLength(1);
         expect(writes(compressor.id).at(-1)).toBe(0);
 
         await act(() => undo());
@@ -431,12 +434,12 @@ describe('Inspector continuous parameter gestures through real history', () => {
         fireEvent.pointerMove(root, { pointerId: 2, clientX: 20, clientY: 10 });
         expect(rawValues(compressor.id)?.['comp-threshold']).toBe(-20);
         expect(values(compressor.id)['comp-threshold']).toBe(-20);
-        expect(screen.getAllByText('-48.0 dB')).toHaveLength(2);
+        expect(screen.getAllByText('-48.0 dB')).toHaveLength(1);
         expect(depth()).toBe(0);
 
         fireEvent.keyDown(slider, { key: 'End' });
         await expectCommitted('comp-threshold', 0, 1, compressor.id);
-        expect(screen.getAllByText('0.0 dB')).toHaveLength(2);
+        expect(screen.getAllByText('0.0 dB')).toHaveLength(1);
         expect(writes(compressor.id)).toEqual([-36, -48, -20, 0, 0, 0]);
         await act(() => undo());
         expect(rawValues(compressor.id)?.['comp-threshold']).toBe(-20);
@@ -445,7 +448,7 @@ describe('Inspector continuous parameter gestures through real history', () => {
         await act(() => redo());
         expect(rawValues(compressor.id)?.['comp-threshold']).toBe(0);
         expect(values(compressor.id)['comp-threshold']).toBe(0);
-        expect(screen.getAllByText('0.0 dB')).toHaveLength(2);
+        expect(screen.getAllByText('0.0 dB')).toHaveLength(1);
         expect(writes(compressor.id).at(-1)).toBe(0);
         const completedWrites = writes(compressor.id);
 

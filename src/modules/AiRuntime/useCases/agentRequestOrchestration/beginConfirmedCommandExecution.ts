@@ -1,8 +1,4 @@
 import { parseVersionedCommandBatchEnvelope } from '#/modules/Command/useCases';
-import {
-    captureProjectRevision,
-    projectRevisionMatchesLiveIgnoringCommandCheckpoint,
-} from '#/modules/CrdtDocument/useCases';
 
 import { describeAgentRunHardLimit } from '../../models/AgentResourceLimits';
 import { type AgentRun, type AgentRunWorkLease } from '../../models/AgentRun';
@@ -14,6 +10,7 @@ import {
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { agentRunWorkLease } from '../agentRunWorkLease';
 import { agentWorkBudget, type AgentWorkBudgetEstimate } from '../agentWorkBudget';
+import { approvedProjectRevision } from '../approvedProjectRevision';
 import { getPlannedActionAffectedIds } from '../getPlannedActionAffectedIds';
 import { validateAgentRiskApproval } from '../validateAgentRiskApproval';
 
@@ -75,9 +72,7 @@ function getApprovalPreflightFailure(
     if (!approved.agentApproval) {
         return { reason: 'The command batch has no exact risk approval binding.', stale: false };
     }
-    const currentRevision = projectRevisionMatchesLiveIgnoringCommandCheckpoint(confirmation.projectRevision)
-        ? confirmation.projectRevision
-        : captureProjectRevision();
+    const currentRevision = approvedProjectRevision.readValidationRevision(confirmation.projectRevision);
     const validation = validateAgentRiskApproval({
         approval: approved.agentApproval,
         commandBatch: approved.commandBatch,

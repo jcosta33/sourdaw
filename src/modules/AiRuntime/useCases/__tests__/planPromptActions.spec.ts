@@ -3,6 +3,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
     captureProjectRevision: vi.fn(() => 'rev-1'),
     settlePendingProjectWritesAndCaptureRevision: vi.fn(() => 'rev-1'),
+    // Revisions here are labels with no document behind them, so the save-insensitive question is
+    // answered as equality with the live label; planPromptActionsAfterSave.spec.ts asks it over a
+    // real document and a real save.
+    projectRevisionMatchesLiveIgnoringSaveWrites: vi.fn<(expected: string) => boolean>(),
     getProjectContext: vi.fn(() => ({ tracks: [] })),
     parsePromptToActions: vi.fn(),
     prepareStemImport: vi.fn(),
@@ -12,7 +16,8 @@ const mocks = vi.hoisted(() => ({
     discardRegisteredPreparedStemImportResources: vi.fn(),
 }));
 
-vi.mock('#/modules/CrdtDocument/useCases', () => ({
+vi.mock('#/modules/CrdtDocument/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/CrdtDocument/useCases')>()),
     commandSourcePublicationMatches: vi.fn<
         typeof import('#/modules/CrdtDocument/useCases').commandSourcePublicationMatches
     >(() => false),
@@ -27,6 +32,7 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     readOwnedProjectPublications: vi.fn(() => []),
     captureProjectRevision: mocks.captureProjectRevision,
     settlePendingProjectWritesAndCaptureRevision: mocks.settlePendingProjectWritesAndCaptureRevision,
+    projectRevisionMatchesLiveIgnoringSaveWrites: mocks.projectRevisionMatchesLiveIgnoringSaveWrites,
     DOC_BRANCHES: '__branches__',
     DOC_PREFIX_ROOT: 'root',
     compactProject: vi.fn(),
@@ -105,6 +111,9 @@ describe('planPromptActions', () => {
         agentResourceLimitsStore.set(DEFAULT_AGENT_RESOURCE_LIMITS);
         mocks.captureProjectRevision.mockReset().mockReturnValue('rev-1');
         mocks.settlePendingProjectWritesAndCaptureRevision.mockReset().mockReturnValue('rev-1');
+        mocks.projectRevisionMatchesLiveIgnoringSaveWrites
+            .mockReset()
+            .mockImplementation((expected) => mocks.captureProjectRevision() === expected);
         mocks.getProjectContext.mockReset().mockReturnValue({ tracks: [] });
         mocks.parsePromptToActions.mockReset();
         mocks.prepareStemImport.mockReset().mockResolvedValue({ status: 'prepared' });

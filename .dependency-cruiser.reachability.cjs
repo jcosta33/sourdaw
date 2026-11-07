@@ -11,7 +11,7 @@
  * exact edges to the baseline and rejects both new and stale debt.
  */
 
-const MODULE = 'src/modules/(?:Common/|Supporting/)?';
+const MODULE = 'src/modules/';
 
 /** @type {import('dependency-cruiser').IConfiguration} */
 module.exports = {

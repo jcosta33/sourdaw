@@ -1,5 +1,8 @@
 import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 
+import { defaultTransportState } from '#/modules/Transport/stores';
+
+import { recordingPassTiming } from '../recordingPassTiming';
 import { stopRecording } from '../stopRecording';
 
 import type { TakeLaneStoreState, takeLaneStore } from '#/modules/Arrangement/stores/takeLaneStore';
@@ -65,6 +68,7 @@ describe('stopRecording', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.activeRecordingRef.current = ['c1'];
+        recordingPassTiming.retire('c1');
     });
 
     it('updates clip endBeat and clears active recording ref', () => {
@@ -76,8 +80,9 @@ describe('stopRecording', () => {
                 },
             ],
         } as unknown as TrackState);
-        mocks.transportStoreValue = { playheadPosition: 8 } as unknown as TransportState;
+        mocks.transportStoreValue = { ...defaultTransportState, playheadPosition: 8 };
         mocks.takeLaneStoreValue.value = null;
+        recordingPassTiming.begin('c1', 4);
 
         stopRecording();
 
@@ -99,10 +104,11 @@ describe('stopRecording', () => {
                 },
             ],
         } as unknown as TrackState);
-        mocks.transportStoreValue = { playheadPosition: 4 } as unknown as TransportState;
+        mocks.transportStoreValue = { ...defaultTransportState, playheadPosition: 4 };
         mocks.takeLaneStoreValue.value = {
             lanes: [{ id: 'l1', takes: [{ clipId: 'c1', startBeat: 4, endBeat: 4 }] }],
         } as unknown as TakeLaneStoreState;
+        recordingPassTiming.begin('c1', 4);
 
         stopRecording(12);
 
@@ -116,7 +122,7 @@ describe('stopRecording', () => {
         mocks.getTrackState.mockReturnValue({
             tracks: [{ clips: [{ id: 'c1', type: 'midi', startBeat: 4, endBeat: 4 }] }],
         } as unknown as TrackState);
-        mocks.transportStoreValue = { playheadPosition: 4.1 } as unknown as TransportState;
+        mocks.transportStoreValue = { ...defaultTransportState, playheadPosition: 4.1 };
 
         stopRecording();
 
@@ -132,10 +138,11 @@ describe('stopRecording', () => {
         mocks.getTrackState.mockReturnValue({
             tracks: [{ clips: [{ id: 'c1', type: 'audio', startBeat: 1, endBeat: 1 }] }],
         } as unknown as TrackState);
-        mocks.transportStoreValue = { playheadPosition: 6 } as unknown as TransportState;
+        mocks.transportStoreValue = { ...defaultTransportState, playheadPosition: 6 };
         mocks.takeLaneStoreValue.value = {
             lanes: [{ id: 'l1', takes: [{ clipId: 'c1', startBeat: 1, endBeat: 1 }] }],
         } as unknown as TakeLaneStoreState;
+        recordingPassTiming.begin('c1', 1);
 
         stopRecording(1.5);
 
@@ -148,11 +155,14 @@ describe('stopRecording', () => {
     });
 
     it('updates take lanes', () => {
-        mocks.getTrackState.mockReturnValue({ tracks: [{ clips: [] }] } as unknown as TrackState);
-        mocks.transportStoreValue = { playheadPosition: 10 } as unknown as TransportState;
+        mocks.getTrackState.mockReturnValue({
+            tracks: [{ id: 't1', clips: [{ id: 'c1', type: 'audio', startBeat: 0, endBeat: 0 }] }],
+        } as unknown as TrackState);
+        mocks.transportStoreValue = { ...defaultTransportState, playheadPosition: 10 };
         mocks.takeLaneStoreValue.value = {
-            lanes: [{ id: 'l1', takes: [{ clipId: 'c1', startBeat: 0, endBeat: 0 }] }],
+            lanes: [{ id: 'l1', trackId: 't1', takes: [{ clipId: 'c1', startBeat: 0, endBeat: 0 }] }],
         } as unknown as TakeLaneStoreState;
+        recordingPassTiming.begin('c1', 0);
 
         stopRecording();
 
@@ -167,7 +177,7 @@ describe('stopRecording', () => {
     it('returns immediately when no clips are actively recording', () => {
         mocks.activeRecordingRef.current = [];
         mocks.getTrackState.mockReturnValue({ tracks: [{ clips: [] }] } as unknown as TrackState);
-        mocks.transportStoreValue = { playheadPosition: 8 } as unknown as TransportState;
+        mocks.transportStoreValue = { ...defaultTransportState, playheadPosition: 8 };
 
         stopRecording();
 
@@ -196,7 +206,7 @@ describe('stopRecording', () => {
                 },
             ],
         } as unknown as TrackState);
-        mocks.transportStoreValue = { playheadPosition: 6 } as unknown as TransportState;
+        mocks.transportStoreValue = { ...defaultTransportState, playheadPosition: 6 };
         mocks.takeLaneStoreValue.value = {
             lanes: [
                 {
@@ -208,6 +218,7 @@ describe('stopRecording', () => {
                 },
             ],
         } as unknown as TakeLaneStoreState;
+        recordingPassTiming.begin('c1', 0);
 
         stopRecording();
 
@@ -220,5 +231,20 @@ describe('stopRecording', () => {
         // Recording take is finalised; the unrelated take is unchanged.
         expect(laneState.lanes[0]!.takes[0]!.endBeat).toBe(6);
         expect(laneState.lanes[0]!.takes[1]!.endBeat).toBe(1);
+    });
+
+    it('refuses audio finalisation without a current capture witness', () => {
+        mocks.getTrackState.mockReturnValue({
+            tracks: [{ id: 't1', clips: [{ id: 'c1', type: 'audio', startBeat: 0, endBeat: 0 }] }],
+        } as unknown as TrackState);
+        mocks.transportStoreValue = { ...defaultTransportState, playheadPosition: 6 };
+        mocks.takeLaneStoreValue.value = {
+            lanes: [{ id: 'l1', trackId: 't1', takes: [{ clipId: 'c1', startBeat: 0, endBeat: 0 }] }],
+        } as unknown as TakeLaneStoreState;
+
+        stopRecording();
+
+        expect(mocks.setTrackState).not.toHaveBeenCalled();
+        expect(mocks.takeLaneStoreSet).not.toHaveBeenCalled();
     });
 });

@@ -57,9 +57,15 @@ vi.mock('../TrackHeader/InlineTrackName', () => ({
     InlineTrackName: ({ track }: { track: { name: string } }) => <span>{track.name}</span>,
 }));
 
-vi.mock('../TrackHeader/ResizeHandle', () => ({
-    ResizeHandle: () => <div data-testid="resize-handle" />,
-}));
+const resizeHandle = vi.hoisted(() => ({ renderReal: false }));
+
+vi.mock('../TrackHeader/ResizeHandle', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('../TrackHeader/ResizeHandle')>();
+    return {
+        ResizeHandle: (props: Parameters<typeof actual.ResizeHandle>[0]) =>
+            resizeHandle.renderReal ? <actual.ResizeHandle {...props} /> : <div data-testid="resize-handle" />,
+    };
+});
 
 vi.mock('../TrackHeader/InputSelector', () => ({
     InputSelector: () => <div data-testid="input-selector" />,
@@ -178,6 +184,15 @@ describe('TrackHeader', () => {
         expect(screen.getByLabelText(/folder/i)).toBeInTheDocument();
     });
 
+    it('offers the track height handle on an ordinary track but not on a folder row', () => {
+        const { unmount } = renderWithTooltip(<TrackHeader track={mockTrack} isSelected={false} />);
+        expect(screen.getByTestId('resize-handle')).toBeInTheDocument();
+        unmount();
+
+        renderWithTooltip(<TrackHeader track={mockFolderTrack} isSelected={false} />);
+        expect(screen.queryByTestId('resize-handle')).not.toBeInTheDocument();
+    });
+
     it('should toggle folder collapse', () => {
         renderWithTooltip(<TrackHeader track={mockFolderTrack} isSelected={false} />);
         const collapseButton = screen.getByLabelText(/folder/i);
@@ -290,7 +305,7 @@ describe('TrackHeader', () => {
 
     it('should cycle input monitoring on click', () => {
         renderWithTooltip(<TrackHeader track={mockTrack} isSelected={false} />);
-        const monitorButton = screen.getByLabelText(/Input monitoring/);
+        const monitorButton = screen.getByLabelText('Input monitoring for Test Track: Auto');
         fireEvent.click(monitorButton);
         expect(setInputMonitoring).toHaveBeenCalledWith('track1', 'on');
     });
@@ -298,7 +313,7 @@ describe('TrackHeader', () => {
     it('cycles input monitoring from on to off', () => {
         const track = { ...mockTrack, inputMonitoring: 'on' as const };
         renderWithTooltip(<TrackHeader track={track} isSelected={false} />);
-        fireEvent.click(screen.getByLabelText(/Input monitoring/));
+        fireEvent.click(screen.getByLabelText('Input monitoring for Test Track: On'));
         expect(setInputMonitoring).toHaveBeenCalledWith('track1', 'off');
     });
 
@@ -346,8 +361,41 @@ describe('TrackHeader', () => {
     it('toggles variation lanes on click', async () => {
         const { toggleVariationLanes } = await import('../../../useCases/toggleTrackState/toggleVariationLanes');
         renderWithTooltip(<TrackHeader track={mockTrack} isSelected={false} />);
-        fireEvent.click(screen.getByLabelText('Toggle variation lanes'));
+        fireEvent.click(screen.getByLabelText('Variation lanes for Test Track'));
         expect(toggleVariationLanes).toHaveBeenCalledWith('track1');
+    });
+
+    it('names the variation and monitoring buttons of two tracks after their own track', () => {
+        const otherTrack = { ...mockTrack, id: 'track2', name: 'Second Track' };
+        renderWithTooltip(
+            <>
+                <TrackHeader track={mockTrack} isSelected={false} />
+                <TrackHeader track={otherTrack} isSelected={false} />
+            </>
+        );
+        expect(screen.getByRole('button', { name: 'Variation lanes for Test Track' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Variation lanes for Second Track' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Input monitoring for Test Track: Auto' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Input monitoring for Second Track: Auto' })).toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'Toggle variation lanes' })).toBeNull();
+    });
+
+    it('names each track height separator after its own track', () => {
+        const otherTrack = { ...mockTrack, id: 'track2', name: 'Second Track' };
+        resizeHandle.renderReal = true;
+        try {
+            renderWithTooltip(
+                <>
+                    <TrackHeader track={mockTrack} isSelected={false} />
+                    <TrackHeader track={otherTrack} isSelected={false} />
+                </>
+            );
+            const first = screen.getByRole('separator', { name: 'Resize Test Track height' });
+            const second = screen.getByRole('separator', { name: 'Resize Second Track height' });
+            expect(first).not.toBe(second);
+        } finally {
+            resizeHandle.renderReal = false;
+        }
     });
 
     it('renders a drum-machine folder with the drum icon and toaster device', () => {
@@ -357,13 +405,13 @@ describe('TrackHeader', () => {
         };
         renderWithTooltip(<TrackHeader track={drumFolder} isSelected={false} />);
         // collapsed=false renders the collapse (down-chevron) affordance.
-        expect(screen.getByLabelText('Collapse folder')).toBeInTheDocument();
+        expect(screen.getByLabelText('Collapse folder Folder Track')).toBeInTheDocument();
     });
 
     it('renders the expand affordance when a folder is collapsed', () => {
         const collapsedFolder = { ...mockFolderTrack, collapsed: true };
         renderWithTooltip(<TrackHeader track={collapsedFolder} isSelected={false} />);
-        expect(screen.getByLabelText('Expand folder')).toBeInTheDocument();
+        expect(screen.getByLabelText('Expand folder Folder Track')).toBeInTheDocument();
     });
 
     it('selects the folder track on row click', () => {
@@ -377,12 +425,12 @@ describe('TrackHeader', () => {
         renderWithTooltip(<TrackHeader track={midiTrack} isSelected={true} />);
         expect(screen.queryByTestId('input-selector')).not.toBeInTheDocument();
         // midi tracks still expose input monitoring.
-        expect(screen.getByLabelText(/Input monitoring/)).toBeInTheDocument();
+        expect(screen.getByLabelText('Input monitoring for Test Track: Auto')).toBeInTheDocument();
     });
 
     it('omits the input monitoring button for a bus track', () => {
         const busTrack = { ...mockTrack, kind: 'bus' as const };
         renderWithTooltip(<TrackHeader track={busTrack} isSelected={true} />);
-        expect(screen.queryByLabelText(/Input monitoring/)).not.toBeInTheDocument();
+        expect(screen.queryByLabelText('Input monitoring for Test Track: Auto')).not.toBeInTheDocument();
     });
 });

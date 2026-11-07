@@ -1,5 +1,4 @@
-import { expect, test } from '@playwright/test';
-
+import { expect, test } from './e2eTest';
 import { launch_new_project, setupWorkspace } from './e2eUtils';
 
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
@@ -25,7 +24,7 @@ test.describe('Solo-safe toggle — context menu + indicator', () => {
     });
 
     test('enabling Solo Safe reveals the ShieldCheck indicator and relabels the menuitem', async ({ page }) => {
-        const strip = page.getByRole('group', { name: 'Audio channel' });
+        const strip = page.getByRole('group', { name: 'Audio 1 channel' });
 
         // Before: no Solo-safe indicator on the strip.
         await expect(strip.getByLabel('Solo safe')).toHaveCount(0);

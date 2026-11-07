@@ -19,7 +19,7 @@ vi.mock('#/infra/audioWorklet/workletInitShared', () => ({
     })),
 }));
 
-vi.mock('../../services/kneadProcessor.ts?worker&url', () => ({ default: 'knead-processor-url' }));
+vi.mock('../../worklets/kneadProcessor.ts?worker&url', () => ({ default: 'knead-processor-url' }));
 
 describe('isKneadDevice', () => {
     it('should match the knead device type case-insensitively', () => {

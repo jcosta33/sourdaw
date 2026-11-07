@@ -1,5 +1,4 @@
-import { expect, test } from '@playwright/test';
-
+import { expect, test } from './e2eTest';
 import { launch_from_template, setupWorkspace, wait_for_workspace_ready } from './e2eUtils';
 
 const isMac = process.platform === 'darwin';

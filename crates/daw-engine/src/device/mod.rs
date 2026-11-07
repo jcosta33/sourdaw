@@ -37,7 +37,15 @@ pub(crate) mod cpal_backend;
 #[cfg(any(windows, test))]
 pub(crate) mod wasapi;
 
+use crate::capture_clock::PresentationTime;
 use crate::engine_events::StreamErrorKind;
+
+/// One callback's timing, never a separately polled latency slot.
+#[derive(Clone, Copy, Default)]
+pub(crate) struct OutputTiming {
+    pub output_path_frames: usize,
+    pub presentation_end: Option<PresentationTime>,
+}
 
 /// What the caller asks of the platform when opening the default output.
 #[derive(Clone, Copy, Debug)]
@@ -65,14 +73,15 @@ pub(crate) struct NegotiatedOutput {
 /// length is a whole number of frames — for a device currently running
 /// `channels` channels. The channel count travels per call because a
 /// device-invalidation recovery may resume the same callback on an
-/// endpoint with a different layout. `output_path_frames` is the frames
+/// endpoint with a different layout. `OutputTiming::output_path_frames` is the frames
 /// between this callback's invocation and the instant its first sample
 /// reaches the device, as the backend reports it for *this* callback — on
 /// cpal, the playback timestamp minus the callback timestamp — or zero when
 /// the backend has no figure. Runs on the audio thread: it must not
 /// allocate, lock, or block, and neither may the backend code around its
-/// invocation.
-pub(crate) type RenderFn = Box<dyn FnMut(&mut [f32], usize, usize) + Send + 'static>;
+/// invocation. `presentation_end` dates this buffer's exclusive end with the
+/// platform's prediction (or is absent); it must travel with that buffer.
+pub(crate) type RenderFn = Box<dyn FnMut(&mut [f32], usize, OutputTiming) + Send + 'static>;
 
 /// Mid-stream error notification — device invalidation included. Backends
 /// map their native error codes onto [`StreamErrorKind`] before calling

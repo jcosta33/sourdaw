@@ -1,11 +1,12 @@
 import { writeFile } from 'node:fs/promises';
 import { gunzipSync } from 'node:zlib';
 
-import { expect, test, type Page } from '@playwright/test';
+import { type Page } from '@playwright/test';
 
 import { admitLoopbackProvider } from './admitLoopbackProvider';
+import { expect, test } from './e2eTest';
 import { launch_new_project, setupWorkspace } from './e2eUtils';
-import { startScriptedToolProvider, type ScriptedToolRequest } from './scriptedToolProvider';
+import { literalWholeRequestIntake, startScriptedToolProvider, type ScriptedToolRequest } from './scriptedToolProvider';
 
 function record(value: unknown): value is Record<string, unknown> {
     return value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -124,8 +125,12 @@ for (const recipe of [
         expect(dry.energy).toBeGreaterThan(0);
         expect(dry.warnings).toEqual([]);
         const provider = await startScriptedToolProvider((request, turn) => {
-            expect(turn).toBeLessThan(4);
-            if (turn === 0)
+            expect(turn).toBeLessThan(5);
+            if (turn === 0) {
+                return [literalWholeRequestIntake(request)];
+            }
+            const step = turn - 1;
+            if (step === 0)
                 return [
                     {
                         id: 'project',
@@ -133,7 +138,7 @@ for (const recipe of [
                         arguments: { type: 'object', page: { limit: 50 } },
                     },
                 ];
-            if (turn === 1) {
+            if (step === 1) {
                 receipt(request, 'project');
                 return [
                     {
@@ -143,7 +148,7 @@ for (const recipe of [
                     },
                 ];
             }
-            if (turn === 2) {
+            if (step === 2) {
                 const discovered = receipt(request, 'discover');
                 expect(discovered.candidates).toEqual(
                     expect.arrayContaining([
@@ -211,7 +216,7 @@ for (const recipe of [
             const confirm = page.getByRole('button', { name: 'Confirm pending actions', exact: true });
             await expect(confirm).toBeVisible({ timeout: 45000 });
             expect(provider.failures).toEqual([]);
-            expect(provider.requests).toHaveLength(4);
+            expect(provider.requests).toHaveLength(5);
             const proposed = await sourceState(page);
             expect(proposed.document).toBe(before.document);
             expect(proposed.revision).toBe(before.revision);
@@ -568,7 +573,30 @@ test('actual TrackNode factory and shipping offline strategy render the same gai
         device.outputNode.connect(analyser);
         const warmUntil = context.currentTime + 1;
         while (context.currentTime < warmUntil) await new Promise(requestAnimationFrame);
+        // Chromium lands every AudioParam write made at a currentTime that sits
+        // above its integer frame on the next sample (a k-rate one a quantum
+        // late). Re-enter on such a frame, so the case proves the hard re-entry
+        // every run instead of on the few pause frames that happen to hit it.
+        // Such frames cluster with long gaps between, so each attempt lets the
+        // clock run to just before the next one and suspends there.
+        const sitsAbove = (frame: number) => (frame / rate) * rate > frame;
+        const nextFrameAbove = (from: number) => {
+            let frame = Math.ceil(from / 128) * 128;
+            while (!sitsAbove(frame)) frame += 128;
+            return frame;
+        };
+        const contextFrame = () => Math.round(context.currentTime * rate);
         await context.suspend();
+        let reentryAttempts = 0;
+        while (!sitsAbove(contextFrame())) {
+            reentryAttempts++;
+            if (reentryAttempts > 400) throw new Error('No suspended frame sat above its integer frame');
+            const target = nextFrameAbove(contextFrame());
+            await context.resume();
+            while (contextFrame() < target - 512) await new Promise(requestAnimationFrame);
+            await context.suspend();
+        }
+        const resumeFrame = contextFrame();
         const reentryCapture = new AudioWorkletNode(context, 'shaper-capture', {
             numberOfInputs: 1,
             numberOfOutputs: 1,
@@ -602,6 +630,9 @@ test('actual TrackNode factory and shipping offline strategy render the same gai
             captureStart: start,
             firstCapturedFrame: live.firstFrame,
             reentry: [fresh.left[0] / strip.faderNode.gain.value, fresh.right[0] / strip.faderNode.gain.value],
+            resumeFrame,
+            reentryAttempts,
+            reentryFirstFrame: fresh.firstFrame,
             actualReady: device.controller.ready,
             pendingFinalBypassed,
         };
@@ -613,6 +644,7 @@ test('actual TrackNode factory and shipping offline strategy render the same gai
     expect(result.firstCapturedFrame).toBe(result.captureStart);
     expect(result.parityError).toBeLessThan(1e-7);
     expect(result.oracleError).toBeLessThan(1e-7);
+    expect(result.reentryFirstFrame).toBe(result.resumeFrame);
     expect(result.reentry).toEqual([1, 1]);
     expect(result.actualReady).toBe(true);
     expect(result.pendingFinalBypassed).toBe(true);
@@ -943,13 +975,28 @@ test('bounded live Chromium trace observes the active scalar bridge and dry work
     if (typeof start?.ts !== 'number' || typeof end?.ts !== 'number') throw new Error('Active trace bounds absent');
     const startTs = start.ts,
         endTs = end.ts;
-    const relevant = events.filter((event) => typeof event.ts === 'number' && event.ts >= startTs && event.ts < endTs);
-    const author = relevant.filter(
-        (event) => event.name === 'AudioWorkletProcessor::Process (author script execution)' && event.ph === 'X'
+    function interval(value: Record<string, unknown>) {
+        if (typeof value.ts !== 'number' || typeof value.dur !== 'number' || value.dur < 0)
+            throw new Error('Incomplete trace interval');
+        return { start: value.ts, end: value.ts + value.dur, duration: value.dur };
+    }
+    function nestedIn(parent: Record<string, unknown>, child: Record<string, unknown>) {
+        return (
+            child.pid === parent.pid &&
+            child.tid === parent.tid &&
+            interval(child).start >= interval(parent).start &&
+            interval(child).end <= interval(parent).end
+        );
+    }
+    const complete = (name: string) => events.filter((event) => event.name === name && event.ph === 'X');
+    const destination = complete('RealtimeAudioDestinationHandler::Render').filter(
+        (event) => typeof event.ts === 'number' && event.ts >= startTs && event.ts < endTs
     );
-    const outer = relevant.filter((event) => event.name === 'AudioWorkletProcessor::Process' && event.ph === 'X');
-    const destination = relevant.filter(
-        (event) => event.name === 'RealtimeAudioDestinationHandler::Render' && event.ph === 'X'
+    const outer = complete('AudioWorkletProcessor::Process').filter((event) =>
+        destination.some((render) => nestedIn(render, event))
+    );
+    const author = complete('AudioWorkletProcessor::Process (author script execution)').filter((event) =>
+        outer.some((frame) => nestedIn(frame, event))
     );
     const dryStart = events.find((event) => event.name === 'transient-dry-start');
     const dryEnd = events.find((event) => event.name === 'transient-dry-end');
@@ -972,14 +1019,11 @@ test('bounded live Chromium trace observes the active scalar bridge and dry work
             event.ts < dryEndTs
     );
     expect(author.length).toBeGreaterThan(0);
-    expect(outer.length).toBe(author.length);
+    for (const frame of outer) {
+        expect(author.filter((event) => nestedIn(frame, event))).toHaveLength(1);
+    }
     expect(destination.length).toBeGreaterThan(0);
     expect(dryDestination.length).toBeGreaterThan(0);
-    function interval(value: Record<string, unknown>) {
-        if (typeof value.ts !== 'number' || typeof value.dur !== 'number' || value.dur < 0)
-            throw new Error('Incomplete trace interval');
-        return { start: value.ts, end: value.ts + value.dur, duration: value.dur };
-    }
     for (const authorEvent of author) {
         const own = interval(authorEvent);
         const parents = outer.filter(
@@ -996,13 +1040,7 @@ test('bounded live Chromium trace observes the active scalar bridge and dry work
             throw new Error('Destination frame producer missing');
         const span = interval(event),
             budgetUs = (event.args.frames / rate) * 1e6;
-        const children = author.filter(
-            (child) =>
-                child.pid === event.pid &&
-                child.tid === event.tid &&
-                interval(child).start >= span.start &&
-                interval(child).end <= span.end
-        );
+        const children = author.filter((child) => nestedIn(event, child));
         expect(children.length).toBeGreaterThan(0);
         expect(span.duration).toBeLessThan(budgetUs);
         return {

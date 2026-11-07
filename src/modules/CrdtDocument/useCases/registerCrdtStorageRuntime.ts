@@ -19,10 +19,11 @@ export function registerCrdtStorageRuntime(): void {
         hasDoc: (docId) => hasCrdtDoc(docId),
         isMutationBlockedBySnapshotTransaction: (docId, snapshotTransaction) =>
             automergeRepository.isMutationBlockedBySnapshotTransaction(docId, snapshotTransaction),
-        mutateDoc: ({ docId, changedKeys, changeFn, message, snapshotTransaction }) => {
+        mutateDoc: ({ docId, changedKeys, changeFn, message, snapshotTransaction, beforeChange }) => {
             mutateCrdtDoc<StorageRuntimeDoc>({
                 id: docId,
                 changeFn,
+                beforeChange,
                 message,
                 snapshotTransaction,
                 localSlots: changedKeys,

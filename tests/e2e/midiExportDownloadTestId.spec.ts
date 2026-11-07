@@ -1,5 +1,4 @@
-import { test, expect } from '@playwright/test';
-
+import { test, expect } from './e2eTest';
 import { launch_new_project, setupWorkspace } from './e2eUtils';
 
 // Encode a MIDI variable-length quantity (used for delta-times and meta lengths).
@@ -80,8 +79,14 @@ test.describe('MIDI clip export — .mid download', () => {
         const canvas = page.getByLabel('Timeline editor surface');
         let menuOpened = false;
         for (const pos of [
-            { x: 30, y: 20 }, { x: 30, y: 50 }, { x: 30, y: 80 }, { x: 30, y: 110 },
-            { x: 60, y: 20 }, { x: 60, y: 50 }, { x: 60, y: 80 }, { x: 60, y: 110 },
+            { x: 30, y: 20 },
+            { x: 30, y: 50 },
+            { x: 30, y: 80 },
+            { x: 30, y: 110 },
+            { x: 60, y: 20 },
+            { x: 60, y: 50 },
+            { x: 60, y: 80 },
+            { x: 60, y: 110 },
         ]) {
             await canvas.click({ button: 'right', position: pos });
             const exportItem = page.getByRole('menuitem', { name: /Export as MIDI/i }).first();

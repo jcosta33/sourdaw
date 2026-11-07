@@ -2,6 +2,7 @@ import { getDeviceAutomationOwnerId } from '#/utils/automationDeviceTarget';
 import { type AppAction } from '#/utils/handlerContract';
 
 import { compileCommandArgumentMetadata } from './commandArgumentMetadata';
+import { isRecordedIntentPath } from './isRecordedIntentPath';
 
 export const COMMAND_TEMPO_TARGET_ID = '@project/transport/tempo';
 export const COMMAND_TIME_SIGNATURE_TARGET_ID = '@project/transport/time-signature';
@@ -77,7 +78,11 @@ export function getCommandDivergenceTargetIds(input: {
         const payload = action.payload;
         if (typeof payload === 'object' && payload !== null && !Array.isArray(payload)) {
             for (const reference of compileCommandArgumentMetadata(payload).objectReferences) {
-                targetIds.add(reference.id);
+                // A brief's ids are intent, not targets: an edit to a track it names is no drift, and
+                // the brief's own handler refuses a write naming an object the project no longer holds.
+                if (!isRecordedIntentPath(action.type, reference.argument)) {
+                    targetIds.add(reference.id);
+                }
             }
         }
         const parameterDeviceTargetId = getParameterDeviceTargetId(action);

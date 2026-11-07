@@ -1,6 +1,7 @@
 import { parse as parsePersistedValue } from 'superjson';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { Container } from '#/infra/di/Container';
 import {
     configureAutomergeStoragePort,
@@ -14,6 +15,7 @@ import {
     clearUndoHistory,
     commandTrackDefaultsPort,
     executeAppAction,
+    executeAppActionBatch,
     resetActionReplayAuthority,
     setActionHistoryMetadataPort,
     undo,
@@ -31,7 +33,7 @@ import { setNotificationEventBus } from '#/utils/Notification/notificationEventB
 import { type AgentRunBatchSchedule } from '../../models/AgentRun';
 import { MAX_LLM_ACTIONS_PER_BATCH } from '../../models/LlmActionLimits';
 import { type ProjectContext, type ProjectContextTrack } from '../../models/ProjectContext';
-import { WORKFLOW_CAPABILITY_IDS, WORKFLOW_CAPABILITY_TOOL_NAME } from '../../models/WorkflowCapability';
+import { WORKFLOW_CAPABILITY_TOOL_NAME } from '../../models/WorkflowCapability';
 import { cloudSession } from '../../repositories/cloudLlm/cloudSession';
 import { resolveSemanticCommandListSelector } from '../../services/semanticCommandListCandidates';
 import { persistAgentRunState, readAgentRunState, sanitizeAgentRunState } from '../../stores/agentRunStore';
@@ -44,7 +46,6 @@ import {
 } from '../../stores/pendingActionConfirmationStore';
 import { getBulkDeviceInsertionTrackScope } from '../agentReference/getBulkDeviceInsertionTrackScope';
 import { getDrumRoutingPromptScope } from '../agentReference/getDrumRoutingPromptScope';
-import { getWholeProjectVibeMixScope } from '../agentReference/getWholeProjectVibeMixScope';
 import { proposeNextScheduledBatch } from '../agentRequestOrchestration/proposeNextScheduledBatch';
 import { rebaseBulkSetSliceEvidence } from '../agentRequestOrchestration/rebaseBulkSetSliceEvidence';
 import { revalidateApprovedMatchSelectors } from '../agentRequestOrchestration/revalidateApprovedMatchSelectors';
@@ -54,6 +55,7 @@ import { confirmPendingChatActions } from '../confirmPendingChatActions';
 import { deriveMatchSelectorPredicates } from '../deriveMatchSelectorPredicates';
 import { getAgentApprovalView } from '../getAgentApprovalView';
 import { getProjectContext } from '../getProjectContext';
+import { metricGoalStateCodec } from '../metricGoalStateCodec';
 import { planAgentRun } from '../planAgentRun';
 import { readChatThreadContext } from '../readChatThreadContext';
 import { sendChatMessage } from '../sendChatMessage';
@@ -73,6 +75,9 @@ import {
     scriptProviderTurns,
     searchCalls,
 } from './highLevelIntentWorkflowFixture';
+import { literalMetricIntakeTurn } from './metricGoalWorkflowFixture';
+
+registerDeviceEnginePorts();
 
 const runtimeMocks = vi.hoisted(() => ({ generateWebLlmCompletion: vi.fn() }));
 
@@ -427,54 +432,6 @@ describe('drum routing scope', () => {
                 createDrumContext([createTrack('track-kick', 'Kick', { canonicalRole: nameDerived('kick') })])
             )
         ).toEqual({ status: 'invalid', reason: 'MF-01 found no unambiguous drum tracks' });
-    });
-});
-
-describe('whole-project vibe-mix scope', () => {
-    const context = createContext(
-        [
-            createTrack('bus-drums', 'Drum Bus', { kind: 'bus' }),
-            createTrack('bus-bass', 'Bass Bus', { kind: 'bus' }),
-            createTrack('track-vocal', 'Lead Vocal'),
-            createTrack('master', 'Master', { kind: 'master' }),
-        ],
-        {
-            sections: [
-                { id: 'section-chorus-one', name: 'Chorus One', startBeat: 0, endBeat: 8 },
-                { id: 'section-chorus-two', name: 'Chorus Two', startBeat: 8, endBeat: 16 },
-            ],
-        }
-    );
-
-    it('discovers the drum and bass impact buses through the shared selector resolver', () => {
-        expect(getWholeProjectVibeMixScope(context)?.targetIds).toEqual(['bus-drums', 'bus-bass']);
-        expect(
-            resolvedSelectorsMatching('track', {
-                all: [{ kind: 'bus' }, { nameIncludes: 'drum' }, { nameIncludes: 'bus' }],
-            })
-        ).toHaveLength(1);
-        expect(
-            resolvedSelectorsMatching('track', {
-                all: [{ kind: 'bus' }, { nameIncludes: 'bass' }, { nameIncludes: 'bus' }],
-            })
-        ).toHaveLength(1);
-    });
-
-    it('claims no scope when the shared resolver names no bus', () => {
-        resolverSpy.mockReturnValue(resolverFoundNothing);
-
-        expect(getWholeProjectVibeMixScope(context)).toBeNull();
-    });
-
-    it('refuses two buses that both name the role', () => {
-        const withSecondDrumBus = createContext(
-            [...context.tracks, createTrack('bus-drums-two', 'Drum Bus 2', { kind: 'bus' })],
-            {
-                sections: context.sections,
-            }
-        );
-
-        expect(getWholeProjectVibeMixScope(withSecondDrumBus)).toBeNull();
     });
 });
 
@@ -1518,6 +1475,7 @@ describe('bulk set commands across successive batches', () => {
             const plan = agentRunLifecycle.get(runId)!.plan!;
             const batchSchedule: AgentRunBatchSchedule = {
                 schemaVersion: 1,
+                kind: 'bulk-set',
                 scheduleId: 'schedule-1',
                 position: 1,
                 total: 2,
@@ -1687,8 +1645,12 @@ function layerNames(count: number): string[] {
 }
 
 async function seedTracks(names: readonly string[]): Promise<string[]> {
-    for (const name of names) {
-        await executeAppAction({ type: 'addTrack', payload: { name, kind: 'audio' } });
+    const seedResult = await executeAppActionBatch(
+        names.map((name) => ({ type: 'addTrack' as const, payload: { name, kind: 'audio' as const } })),
+        { requireCompensation: true }
+    );
+    if (seedResult.status !== 'committed') {
+        throw new Error(`Expected the fixture tracks to commit, got ${seedResult.status}`);
     }
     return (trackStore.value?.tracks ?? []).map((track) => track.id);
 }
@@ -1714,6 +1676,7 @@ function muteLayersItem(count = LAYER_COUNT) {
 
 function scriptMuteLayersProposal(item: Record<string, unknown> = muteLayersItem()): void {
     scriptProviderTurns(runtimeMocks.generateWebLlmCompletion, [
+        literalMetricIntakeTurn,
         () => [MUTE_SEARCH_CALL],
         discoverSearchedCalls(['muteTrack']),
         proposeDiscoveredCalls([item], ['muteTrack']),
@@ -1893,6 +1856,12 @@ describe('a bulk request confirmed one batch at a time', () => {
         const first = requireOnlyProposedConfirmation();
         expect(first.approvalSnapshot.batchPosition).toEqual({ index: 1, total: 2 });
         expect(first.actions).toHaveLength(MAX_LLM_ACTIONS_PER_BATCH);
+        const firstGoals = metricGoalStateCodec(first.approvalSnapshot.metricGoalState);
+        expect(firstGoals?.binding?.schedulePosition).toBe(1);
+        expect(firstGoals?.authorities[0]).toMatchObject({ kind: 'literal', origin: 'configured-joint-intake' });
+        expect(agentRunLifecycle.get(first.runId)?.plan?.batchSchedule?.metricGoalState).toBe(
+            first.approvalSnapshot.metricGoalState
+        );
 
         await expect(confirmPendingChatActions({ confirmationId: first.id })).resolves.toEqual({ status: 'executed' });
         expect(mutedTrackIds()).toEqual(layerIds.slice(0, MAX_LLM_ACTIONS_PER_BATCH));
@@ -1901,11 +1870,73 @@ describe('a bulk request confirmed one batch at a time', () => {
         expect(second.runId).toBe(first.runId);
         expect(second.approvalSnapshot.batchPosition).toEqual({ index: 2, total: 2 });
         expect(getAgentApprovalView({ confirmationId: second.id })?.batchPosition).toEqual({ index: 2, total: 2 });
+        const secondGoals = metricGoalStateCodec(second.approvalSnapshot.metricGoalState);
+        expect(secondGoals?.binding?.schedulePosition).toBe(2);
+        expect(secondGoals?.authorities).toEqual(firstGoals?.authorities);
+        expect(secondGoals?.binding?.revision).not.toBe(firstGoals?.binding?.revision);
+        expect(secondGoals?.binding?.contentHash).not.toBe(firstGoals?.binding?.contentHash);
+        expect(secondGoals?.binding?.batchId).not.toBe(firstGoals?.binding?.batchId);
+        expect(secondGoals?.proofs).toEqual([]);
+        expect(runtimeMocks.generateWebLlmCompletion).toHaveBeenCalledTimes(4);
 
         await expect(confirmPendingChatActions({ confirmationId: second.id })).resolves.toEqual({ status: 'executed' });
         expect(mutedTrackIds()).toEqual(layerIds);
         expect(agentRunLifecycle.get(first.runId)?.phase).toBe('completed');
         expect(proposedConfirmations()).toEqual([]);
+    });
+
+    it('does not drop corrupt historical settlement when a persisted schedule proposes its next batch', async () => {
+        const layerIds = await seedLayerTracks();
+        scriptMuteLayersProposal();
+        await requestMuteLayers();
+        const first = requireOnlyProposedConfirmation();
+        const stored = structuredClone(readAgentRunState());
+        const run = stored.runs.find((entry) => entry.runId === first.runId);
+        if (run?.plan === null || run?.plan === undefined) {
+            throw new TypeError('Expected the actual scheduled run.');
+        }
+        const originalGrants = structuredClone(run.grants);
+        run.plan.terminalMeasurementSettlement = '{}';
+        persistAgentRunState(sanitizeAgentRunState(stored));
+        await expect(confirmPendingChatActions({ confirmationId: first.id })).resolves.toEqual({ status: 'executed' });
+        expect(mutedTrackIds()).toEqual(layerIds.slice(0, MAX_LLM_ACTIONS_PER_BATCH));
+        expect(proposedConfirmations()).toEqual([]);
+        expect(agentRunLifecycle.get(first.runId)?.phase).toBe('partially-completed');
+        expect(chatStore.value?.messages.at(-1)?.content).toContain('Terminal measurement settlement does not match');
+        expect(agentRunLifecycle.get(first.runId)?.grants).toEqual(originalGrants);
+        expect(runtimeMocks.generateWebLlmCompletion).toHaveBeenCalledTimes(4);
+    });
+
+    it('reads a schedule persisted before schedules had a kind as bulk-set and proposes its next batch', async () => {
+        const layerIds = await seedLayerTracks();
+        scriptMuteLayersProposal();
+        await requestMuteLayers();
+        const first = requireOnlyProposedConfirmation();
+        const stored = structuredClone(readAgentRunState());
+        const schedule = stored.runs.find((entry) => entry.runId === first.runId)?.plan?.batchSchedule;
+        if (schedule === undefined) {
+            throw new TypeError('Expected the actual scheduled run.');
+        }
+        expect(schedule.kind).toBe('bulk-set');
+        // The shape a run stored before schedules carried a kind.
+        Reflect.deleteProperty(schedule, 'kind');
+        expect(Object.hasOwn(schedule, 'kind')).toBe(false);
+
+        const restored = sanitizeAgentRunState(stored);
+        expect(restored.runs.find((entry) => entry.runId === first.runId)?.plan?.batchSchedule).toEqual({
+            ...schedule,
+            kind: 'bulk-set',
+        });
+        persistAgentRunState(restored);
+
+        await expect(confirmPendingChatActions({ confirmationId: first.id })).resolves.toEqual({ status: 'executed' });
+        expect(mutedTrackIds()).toEqual(layerIds.slice(0, MAX_LLM_ACTIONS_PER_BATCH));
+        const second = requireOnlyProposedConfirmation();
+        expect(second.runId).toBe(first.runId);
+        expect(second.approvalSnapshot.batchPosition).toEqual({ index: 2, total: 2 });
+        await expect(confirmPendingChatActions({ confirmationId: second.id })).resolves.toEqual({ status: 'executed' });
+        expect(mutedTrackIds()).toEqual(layerIds);
+        expect(agentRunLifecycle.get(first.runId)?.phase).toBe('completed');
     });
 
     it('carries named protection facts into each scheduled card scope', async () => {
@@ -1915,6 +1946,7 @@ describe('a bulk request confirmed one batch at a time', () => {
             throw new Error('Expected the protected Vocals track.');
         }
         scriptProviderTurns(runtimeMocks.generateWebLlmCompletion, [
+            literalMetricIntakeTurn,
             () => searchCalls(['pan track']),
             discoverSearchedCalls(['setTrackPan']),
             proposeDiscoveredCalls(
@@ -1953,6 +1985,7 @@ describe('a bulk request confirmed one batch at a time', () => {
         const newlySelectedId = layerIds[LAYER_COUNT - 1]!;
         trackStore.set({ ...trackStore.value!, selectedTrackId: vocalsId });
         scriptProviderTurns(runtimeMocks.generateWebLlmCompletion, [
+            literalMetricIntakeTurn,
             () => searchCalls(['pan track']),
             discoverSearchedCalls(['setTrackPan']),
             proposeDiscoveredCalls(
@@ -2030,6 +2063,7 @@ describe('a bulk request confirmed one batch at a time', () => {
             }
             trackStore.set({ ...trackStore.value!, selectedTrackId: vocalsId });
             scriptProviderTurns(runtimeMocks.generateWebLlmCompletion, [
+                literalMetricIntakeTurn,
                 () => searchCalls(['pan track']),
                 discoverSearchedCalls(['setTrackPan']),
                 proposeDiscoveredCalls(
@@ -2082,6 +2116,7 @@ describe('a bulk request confirmed one batch at a time', () => {
         const vocalsId = layerIds.at(-1)!;
         trackStore.set({ ...trackStore.value!, selectedTrackId: vocalsId });
         cycleProviderAttempt(runtimeMocks.generateWebLlmCompletion, [
+            literalMetricIntakeTurn,
             () => searchCalls(['pan track']),
             discoverSearchedCalls(['setTrackPan']),
             proposeDiscoveredCalls(
@@ -2168,16 +2203,22 @@ describe('a bulk request confirmed one batch at a time', () => {
                 events: [],
             };
             markReceiptTimeoutStage('seedTracks', 'begin');
-            const trackIds = await seedTracks([
-                'Intro',
-                ...layerNames(MAX_LLM_ACTIONS_PER_BATCH - 1),
-                'Outro',
-                'Vocals',
-            ]);
+            const trackNames = ['Intro', ...layerNames(MAX_LLM_ACTIONS_PER_BATCH - 1), 'Outro', 'Vocals'];
+            const seedResult = await executeAppActionBatch(
+                trackNames.map((name) => ({ type: 'addTrack' as const, payload: { name, kind: 'audio' as const } })),
+                { requireCompensation: true }
+            );
+            if (seedResult.status !== 'committed') {
+                throw new Error(`Expected the receipt fixture tracks to commit, got ${seedResult.status}`);
+            }
+            const tracks = trackStore.value?.tracks ?? [];
+            expect(tracks.map((track) => track.name)).toEqual(trackNames);
+            const trackIds = tracks.map((track) => track.id);
             markReceiptTimeoutStage('seedTracks', 'end');
             const vocalsId = trackIds.at(-1)!;
             const commandNames = ['muteTrack', 'createBus', 'addSend', 'setTrackPan'];
             scriptProviderTurns(runtimeMocks.generateWebLlmCompletion, [
+                literalMetricIntakeTurn,
                 () => searchCalls(['mute track', 'create a bus', 'add a send to a bus', 'pan track']),
                 discoverSearchedCalls(commandNames),
                 proposeDiscoveredCalls(
@@ -2326,12 +2367,32 @@ describe('a bulk request confirmed one batch at a time', () => {
     it('refuses a list larger than one batch that shares its turn with a specialized workflow', async () => {
         await seedLayerTracks();
         cycleProviderAttempt(runtimeMocks.generateWebLlmCompletion, [
+            literalMetricIntakeTurn,
             () => [MUTE_SEARCH_CALL],
             discoverSearchedCalls(['muteTrack']),
-            (message) => [
-                { name: WORKFLOW_CAPABILITY_TOOL_NAME, arguments: { capabilityId: WORKFLOW_CAPABILITY_IDS[0] } },
-                ...proposeDiscoveredCalls([muteLayersItem()], ['muteTrack'])(message),
-            ],
+            (message, systemPrompt) => {
+                if (typeof systemPrompt !== 'string') {
+                    throw new TypeError('Expected the actual local provider schema.');
+                }
+                const line = systemPrompt
+                    .split('\n')
+                    .find((entry) => entry.startsWith(`- ${WORKFLOW_CAPABILITY_TOOL_NAME}:`));
+                const schemaStart = line?.lastIndexOf(' {"type":"object"') ?? -1;
+                if (!line || schemaStart < 0) {
+                    throw new TypeError('Expected the advertised workflow selector.');
+                }
+                const schema: { properties: { capabilityId: { oneOf: Array<{ const: string }> } } } = JSON.parse(
+                    line.slice(schemaStart + 1)
+                );
+                const capabilityId = schema.properties.capabilityId.oneOf[0]?.const;
+                if (!capabilityId) {
+                    throw new TypeError('Expected an advertised workflow capability.');
+                }
+                return [
+                    { name: WORKFLOW_CAPABILITY_TOOL_NAME, arguments: { capabilityId } },
+                    ...proposeDiscoveredCalls([muteLayersItem()], ['muteTrack'])(message),
+                ];
+            },
         ]);
 
         await requestMuteLayers();

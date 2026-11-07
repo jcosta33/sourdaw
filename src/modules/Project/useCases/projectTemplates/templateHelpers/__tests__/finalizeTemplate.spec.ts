@@ -3,6 +3,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createTrack } from '#/modules/Arrangement/useCases';
 
 import {
+    commitProjectAuthority,
+    committedProject,
+} from '../../../projectPersistence/helpers/committedProjectAuthority';
+import {
     projectLoadEpoch,
     runProjectLoadTransaction,
 } from '../../../projectPersistence/helpers/runProjectLoadTransaction';
@@ -27,6 +31,7 @@ vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
     setTrackState: mocks.setTrackState,
 }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    builtinSynthVoice: { read: vi.fn() },
     rearmCommittedTrackInputMonitoring: vi.fn(async () => undefined),
     reconcileAutoInputMonitoring: vi.fn(),
     stopTrackInputMonitoring: vi.fn(),
@@ -53,6 +58,8 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     garbageCollectFreezeAudioBuffers: vi.fn(),
     getAudioContext: vi.fn(),
     getCachedAudioBuffer: vi.fn(),
+    restoreUnpinnedAudioBuffersFromIdb: vi.fn(),
+    holdAudioBufferForSession: vi.fn(),
     getCompensationDelay: vi.fn(),
     getDefaultBendRangeSemitones: vi.fn(),
     getDeviceChainTailSeconds: vi.fn(),
@@ -113,7 +120,7 @@ describe('finalizeTemplate', () => {
         vi.clearAllMocks();
     });
 
-    it('commits sidechain truth before yielding for device readiness', async () => {
+    it('commits sidechain truth before asking for device readiness', async () => {
         const readiness = Promise.withResolvers<{ status: 'ready'; devices: [] }>();
         mocks.waitForDevices.mockReturnValue(readiness.promise);
         const trigger = createTrack({ id: 'trigger', name: 'Trigger', kind: 'audio' });
@@ -151,6 +158,28 @@ describe('finalizeTemplate', () => {
         expect(readinessOrder).toBeGreaterThan(stripConstructionOrder);
     });
 
+    it('resolves the template while device readiness is still in flight', async () => {
+        const readiness = Promise.withResolvers<{
+            status: 'failed';
+            devices: [{ deviceId: string; status: 'failed'; stage: 'content' }];
+        }>();
+        mocks.waitForDevices.mockReturnValue(readiness.promise);
+
+        await expect(finalizeTemplate({ tracks: [] })).resolves.toBeUndefined();
+
+        expect(mocks.ensureTrackStrips).toHaveBeenCalledOnce();
+        expect(mocks.waitForDevices).toHaveBeenCalledOnce();
+        expect(mocks.notifyUser).not.toHaveBeenCalled();
+
+        readiness.resolve({
+            status: 'failed',
+            devices: [{ deviceId: 'levain-1', status: 'failed', stage: 'content' }],
+        });
+        await vi.waitFor(() =>
+            expect(mocks.notifyUser).toHaveBeenCalledWith(expect.stringContaining('levain-1'), 'warning')
+        );
+    });
+
     it('keeps committed template truth and reports failed devices without throwing', async () => {
         mocks.whenProjectIdentityTransitionDependenciesConfigured.mockResolvedValue(undefined);
         const currentProject = runProjectLoadTransaction();
@@ -166,7 +195,9 @@ describe('finalizeTemplate', () => {
 
         expect(mocks.setTrackState).toHaveBeenCalledOnce();
         expect(mocks.ensureTrackStrips).toHaveBeenCalledOnce();
-        expect(mocks.notifyUser).toHaveBeenCalledWith(expect.stringContaining('levain-1'), 'warning');
+        await vi.waitFor(() =>
+            expect(mocks.notifyUser).toHaveBeenCalledWith(expect.stringContaining('levain-1'), 'warning')
+        );
     });
 
     it('does not report an obsolete cancelled cohort over the current project', async () => {
@@ -216,12 +247,24 @@ describe('finalizeTemplate', () => {
 
             expect(templateA.isCurrent()).toBe(false);
             expect(projectB.isCurrent()).toBe(true);
+            // Project B reaches the authority switch, so the template's cohort
+            // now belongs to a project the user has left.
+            commitProjectAuthority();
 
-            readiness.resolve(failedReadiness);
-            await completionA;
+            // The readiness report is detached from template finalization, so
+            // observe the callback reading the committed generation before
+            // asserting it stayed silent; `await completionA` no longer waits
+            // for it.
+            const committed = vi.spyOn(committedProject, 'generation', 'get');
+            try {
+                readiness.resolve(failedReadiness);
+                await vi.waitFor(() => expect(committed).toHaveBeenCalled());
 
-            expect(projectBEnteredRuntimeTransition).toBe(false);
-            expect(mocks.notifyUser).not.toHaveBeenCalled();
+                expect(projectBEnteredRuntimeTransition).toBe(false);
+                expect(mocks.notifyUser).not.toHaveBeenCalled();
+            } finally {
+                committed.mockRestore();
+            }
         } finally {
             readiness.resolve(failedReadiness);
             releaseTemplateA();

@@ -205,6 +205,40 @@ describe('resolveEligibleClipWriteTarget', () => {
         expect(resolveEligibleClipWriteTarget({ clipId: 'clip-1' })).toEqual({ status: 'ineligible' });
     });
 
+    it('applies the same owner index to an unpublished explicit prefix without reading the live store', () => {
+        const prefix = { ...defaultTrackState, tracks: [makeTrack('prefix-track', ['unpublished-right'])] };
+        vi.spyOn(trackStore, 'value', 'get').mockImplementation(() => {
+            throw new Error('Live state is not the prefix');
+        });
+        expect(resolveEligibleClipWriteTarget({ clipId: 'unpublished-right' }, prefix)).toEqual({
+            status: 'eligible',
+            trackId: 'prefix-track',
+            clipId: 'unpublished-right',
+        });
+    });
+
+    it.each(['duplicate', 'malformed', 'ineligible'] as const)(
+        'refuses a %s explicit prefix through the existing eligibility law',
+        (kind) => {
+            const track = makeTrack('prefix-track', ['unpublished-right']);
+            if (kind === 'duplicate') {
+                track.clips.push(makeClip('unpublished-right', track.id));
+            }
+            if (kind === 'malformed') {
+                track.clips[0]!.trackId = 'different-owner';
+            }
+            if (kind === 'ineligible') {
+                setRuntimeKind(track, 'vca');
+            }
+            expect(
+                resolveEligibleClipWriteTarget(
+                    { clipId: 'unpublished-right' },
+                    { ...defaultTrackState, tracks: [track] }
+                )
+            ).toEqual({ status: 'ineligible' });
+        }
+    );
+
     it('fails closed when a clip trackId does not match its owning track', () => {
         vi.spyOn(trackStore, 'value', 'get').mockReturnValue({
             ...defaultTrackState,

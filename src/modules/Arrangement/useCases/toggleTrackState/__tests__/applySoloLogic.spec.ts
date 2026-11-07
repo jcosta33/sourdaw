@@ -11,7 +11,7 @@ const mocks = vi.hoisted(() => ({
     setTrackMute: vi.fn(),
     setTrackSoloGate: vi.fn(),
     calculateSoloLogic: vi.fn(),
-    workspaceStore: { value: null as { soloMode: 'sip' | 'afl' | 'pfl' } | null },
+    soloModeStore: { value: null as { soloMode: 'sip' | 'afl' | 'pfl' } | null },
 }));
 
 vi.mock('../../getTrackStoreState', () => ({
@@ -24,8 +24,8 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     setTrackSoloGate: mocks.setTrackSoloGate,
 }));
 
-vi.mock('#/modules/WorkspaceShell/stores', () => ({
-    workspaceStore: mocks.workspaceStore,
+vi.mock('../../../stores/soloModeStore', () => ({
+    soloModeStore: mocks.soloModeStore,
 }));
 
 vi.mock('../../../services/applySoloLogic', () => ({
@@ -35,10 +35,10 @@ vi.mock('../../../services/applySoloLogic', () => ({
 describe('applySoloLogic use case', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        mocks.workspaceStore.value = { soloMode: 'pfl' };
+        mocks.soloModeStore.value = { soloMode: 'pfl' };
     });
 
-    it('reads Arrangement and Workspace state, applies the calculation, and persists saved gains', () => {
+    it('reads track and solo mode state, applies the calculation, and persists saved gains', () => {
         const track = TrackDummy.create({ id: 't1', gain: 0.5, soloed: true });
         const state = { tracks: [track], selectedTrackId: null };
         const firstResult: ApplySoloLogicOutput = {

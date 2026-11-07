@@ -1,54 +1,62 @@
 import { type ReactElement } from 'react';
 
-import { DawEmptyState } from '#/components/daw/DawEmptyState';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { DawReadoutRow } from '#/components/daw/DawReadoutRow';
-import { useStore } from '#/infra/store/useStore';
-import { audioGraphStore, defaultAudioGraphState } from '#/modules/AudioEngine/stores';
 
 import { type Track } from '../../../models/TrackViewTypes';
 import { SurfaceCard } from '../../components/Inspector/SurfaceCard';
-
-type RoutingGraphState = {
-    routes: Array<{
-        id: string;
-        sourceId: string;
-        destinationId: string;
-        gain: number;
-    }>;
-};
+import { useTracks } from '../../hooks/useTracks';
 
 type TrackRoutingSectionProps = {
     track: Track;
 };
 
-export const TrackRoutingSection = ({ track }: TrackRoutingSectionProps): ReactElement => {
-    const graphState = useStore<RoutingGraphState>(audioGraphStore, defaultAudioGraphState);
+type TrackRouting = {
+    outputLabel: string;
+    inputNames: string[];
+};
 
-    const trackRoutes = graphState.routes.filter((r) => r.sourceId === track.id || r.destinationId === track.id);
+const MASTER_OUTPUT_ID = 'master';
+const HARDWARE_OUTPUT_ID = 'hw_out';
+
+const resolveOutputLabel = (outputId: string, tracks: Track[]): string => {
+    if (outputId === MASTER_OUTPUT_ID) {
+        return 'Master';
+    }
+    if (outputId === HARDWARE_OUTPUT_ID) {
+        return 'Hardware output';
+    }
+    return tracks.find((candidate) => candidate.id === outputId)?.name ?? 'Unknown destination';
+};
+
+const listInputNames = (track: Track, tracks: Track[]): string[] => {
+    if (track.kind !== 'master' && track.kind !== 'bus') {
+        return [];
+    }
+    const receivesId = track.kind === 'master' ? MASTER_OUTPUT_ID : track.id;
+    return tracks
+        .filter((candidate) => candidate.id !== track.id && candidate.outputId === receivesId)
+        .map((candidate) => candidate.name);
+};
+
+export const deriveTrackRouting = (track: Track, tracks: Track[]): TrackRouting => ({
+    outputLabel: resolveOutputLabel(track.outputId, tracks),
+    inputNames: listInputNames(track, tracks),
+});
+
+export const TrackRoutingSection = ({ track }: TrackRoutingSectionProps): ReactElement => {
+    const { tracks } = useTracks();
+    const { outputLabel, inputNames } = deriveTrackRouting(track, tracks);
 
     return (
         <div>
             <DawHeaderBand compact className="mb-2 rounded-sm" title="Routing" />
-            {trackRoutes.length > 0 ? (
-                <div className="grid grid-cols-1 @md:grid-cols-2 gap-2">
-                    {trackRoutes.map((route) => (
-                        <SurfaceCard key={route.id}>
-                            <DawReadoutRow
-                                label={route.sourceId === track.id ? `→ ${route.destinationId}` : `← ${route.sourceId}`}
-                                value={`${(route.gain * 100).toFixed(0)}%`}
-                            />
-                        </SurfaceCard>
-                    ))}
-                </div>
-            ) : (
-                <DawEmptyState
-                    compact
-                    className="mx-1"
-                    title="Default routing to master"
-                    description="No custom sends or route overrides are active for this track."
-                />
-            )}
+            <SurfaceCard>
+                <DawReadoutRow label="Output" value={outputLabel} />
+                {inputNames.length > 0 ? (
+                    <DawReadoutRow label={inputNames.length === 1 ? 'Input' : 'Inputs'} value={inputNames.join(', ')} />
+                ) : null}
+            </SurfaceCard>
         </div>
     );
 };

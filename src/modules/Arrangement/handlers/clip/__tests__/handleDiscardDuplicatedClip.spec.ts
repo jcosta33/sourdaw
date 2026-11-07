@@ -7,6 +7,11 @@ const mocks = vi.hoisted(() => ({
     removeClip: vi.fn(),
     resolveEligibleClipWriteTarget: vi.fn(),
     restoreTakesForClip: vi.fn(),
+    refreshCreatedClipStateGuard: vi.fn(),
+}));
+
+vi.mock('../stampCreatedClipStateGuard', () => ({
+    refreshCreatedClipStateGuard: mocks.refreshCreatedClipStateGuard,
 }));
 
 vi.mock('../../../useCases/getTrackStoreState', () => ({
@@ -110,5 +115,56 @@ describe('handleDiscardDuplicatedClip', () => {
         });
 
         expect(mocks.restoreTakesForClip).toHaveBeenCalledExactlyOnceWith(retiredTakeLanes);
+    });
+
+    it('re-pins the guard to the clip the redo re-created', () => {
+        const recorded = { entityJson: '{"id":"clip-copy","v":1}', midiByClipIdJson: '{"v":1}' };
+        const refreshed = { entityJson: '{"id":"clip-copy","v":2}', midiByClipIdJson: '{"v":2}' };
+        mocks.refreshCreatedClipStateGuard.mockReturnValue(refreshed);
+        mocks.resolveEligibleClipWriteTarget.mockReturnValue({
+            status: 'eligible',
+            trackId: 'track-1',
+            clipId: 'clip-copy',
+        });
+        const inverse = {
+            type: 'discardDuplicatedClip' as const,
+            payload: { clipId: 'clip-copy', generatedMidiStateGuard: recorded },
+        };
+
+        handleDiscardDuplicatedClip.afterRedoReplay?.(inverse);
+
+        expect(mocks.refreshCreatedClipStateGuard).toHaveBeenCalledExactlyOnceWith(recorded, 'clip-copy');
+        expect(inverse.payload.generatedMidiStateGuard).toBe(refreshed);
+    });
+
+    it('leaves an unguarded inverse unguarded after a redo', () => {
+        mocks.resolveEligibleClipWriteTarget.mockReturnValue({
+            status: 'eligible',
+            trackId: 'track-1',
+            clipId: 'clip-copy',
+        });
+        const inverse: { type: 'discardDuplicatedClip'; payload: { clipId: string } } = {
+            type: 'discardDuplicatedClip',
+            payload: { clipId: 'clip-copy' },
+        };
+
+        handleDiscardDuplicatedClip.afterRedoReplay?.(inverse);
+
+        expect(mocks.refreshCreatedClipStateGuard).not.toHaveBeenCalled();
+        expect(inverse.payload).toEqual({ clipId: 'clip-copy' });
+    });
+
+    it('keeps the recorded guard when the redo re-created nothing', () => {
+        const recorded = { entityJson: '{}', midiByClipIdJson: '{}' };
+        mocks.resolveEligibleClipWriteTarget.mockReturnValue({ status: 'missing' });
+        const inverse = {
+            type: 'discardDuplicatedClip' as const,
+            payload: { clipId: 'clip-copy', generatedMidiStateGuard: recorded },
+        };
+
+        handleDiscardDuplicatedClip.afterRedoReplay?.(inverse);
+
+        expect(mocks.refreshCreatedClipStateGuard).not.toHaveBeenCalled();
+        expect(inverse.payload.generatedMidiStateGuard).toBe(recorded);
     });
 });

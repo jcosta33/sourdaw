@@ -5,7 +5,12 @@ import {
     trackStore,
     vcaGroupStore,
 } from '#/modules/Arrangement/stores';
-import { getGlueEligibleClipPairs, getPlatformPlugins, getPluginById } from '#/modules/Arrangement/useCases';
+import {
+    getAlternativeClips,
+    getGlueEligibleClipPairs,
+    getPlatformPlugins,
+    getPluginById,
+} from '#/modules/Arrangement/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import { getAutomationLaneCeiling, isLinearGainAutomationLane } from '#/modules/Automation/useCases';
 import { agentProjectRepairStateStore } from '#/modules/CrdtDocument/stores';
@@ -154,6 +159,7 @@ export function getProjectContext(): ProjectContext {
         punchOutBeat: transportState?.punchOutBeat ?? 16,
         metronomeEnabled: transportState?.metronomeEnabled ?? false,
         metronomeVolume: transportState?.metronomeVolume ?? 0.5,
+        metronomeVolumeDb: toLevelDb(transportState?.metronomeVolume ?? 0.5),
         masterGain: (transportState?.masterGain ?? 80) / 100,
         masterGainDb: toLevelDb((transportState?.masterGain ?? 80) / 100),
         levelLaw: PROJECT_CONTEXT_LEVEL_LAW,
@@ -228,6 +234,7 @@ export function getProjectContext(): ProjectContext {
             id: group.id,
             name: group.name,
             gain: group.gain,
+            gainDb: toLevelDb(group.gain),
             muted: group.muted,
             trackIds: [...group.trackIds],
         })),
@@ -252,7 +259,9 @@ export function getProjectContext(): ProjectContext {
             vcaGroupId: time.vcaGroupId ?? null,
             outputId: time.outputId,
             clipCount: time.clips.length,
-            alternativeClipIds: time.alternatives.flatMap((alternative) => alternative.clips.map((clip) => clip.id)),
+            alternativeClipIds: time.alternatives.flatMap((alternative) =>
+                getAlternativeClips(time, alternative).map((clip) => clip.id)
+            ),
             deviceCount: time.devices.length,
             clips: time.clips.map((context) => ({
                 id: context.id,

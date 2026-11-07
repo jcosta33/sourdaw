@@ -6,6 +6,7 @@ import {
     type NativeDspNode,
 } from '../../../repositories/deviceStrategy/nativeDspDeviceFactories';
 import { NativeDspDeviceStrategy } from '../../../repositories/deviceStrategy/NativeDspDeviceStrategy';
+import { importWorkletProcessor } from '../../../testing/importWorkletProcessor';
 import {
     createGrowableMemory,
     installWorkletGlobals,
@@ -13,7 +14,7 @@ import {
     RealFloat32Array,
     resetGrowableMemory,
     type GrowableMemory,
-} from '../../../services/__tests__/wasmViewGrowthHarness';
+} from '../../../testing/wasmViewGrowthHarness';
 import { schedulePendingSuspends } from '../schedulePendingSuspends';
 import { type PendingExpressionWorkletEvent, type PendingNoteWorkletEvent } from '../types';
 
@@ -157,7 +158,7 @@ const { registry } = installWorkletGlobals<LevainProcessorLike>();
 const MINIMAL_WASM = new Uint8Array([0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00]);
 
 async function startProcessor(): Promise<LevainProcessorLike> {
-    await import('../../../services/levainProcessor');
+    await importWorkletProcessor('levain-processor');
     const Ctor = registry.get('levain-processor');
     if (!Ctor) {
         throw new Error('levain-processor was not registered');

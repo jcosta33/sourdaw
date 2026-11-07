@@ -287,7 +287,7 @@ export const StatusBar = (): ReactElement => {
                 value={
                     <span
                         ref={masterLevelTextRef}
-                        className="w-10 text-right font-mono text-[10px] text-muted-foreground"
+                        className="w-[9ch] text-right font-mono text-[10px] text-muted-foreground"
                     >
                         {/* Before the first meter tick, no output level has been measured. */}
                         n/a

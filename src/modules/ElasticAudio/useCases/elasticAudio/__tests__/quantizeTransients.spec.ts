@@ -6,7 +6,7 @@ const mocks = vi.hoisted(() => ({
             clips: Array<{ id: string; type: string }>;
         }>,
     },
-    workspaceValue: { snapValue: 0.25 },
+    timelineEditingValue: { snapValue: 0.25 },
     pushUndoEntry: vi.fn(),
     warpStates: new Map<
         string,
@@ -24,6 +24,11 @@ vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
     trackStore: {
         get value() {
             return mocks.trackStoreValue;
+        },
+    },
+    timelineEditingStore: {
+        get value() {
+            return mocks.timelineEditingValue;
         },
     },
     warpStates: mocks.warpStates,
@@ -47,14 +52,6 @@ vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
     },
 }));
 
-vi.mock('#/modules/WorkspaceShell/stores', () => ({
-    workspaceStore: {
-        get value() {
-            return mocks.workspaceValue;
-        },
-    },
-}));
-
 vi.mock('#/modules/Command/useCases', () => ({
     executeUserAppAction: vi.fn(),
     pushUndoEntry: (...args: unknown[]) => mocks.pushUndoEntry(...args),
@@ -66,7 +63,7 @@ describe('quantizeTransients', () => {
     beforeEach(() => {
         mocks.pushUndoEntry.mockReset();
         mocks.warpStates.clear();
-        mocks.workspaceValue = { snapValue: 0.25 };
+        mocks.timelineEditingValue = { snapValue: 0.25 };
         mocks.trackStoreValue = {
             tracks: [{ clips: [{ id: 'c1', type: 'audio' }] }],
         };

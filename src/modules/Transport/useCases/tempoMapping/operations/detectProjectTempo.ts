@@ -1,19 +1,13 @@
 import { type TempoMapResult } from '../../../models/TempoMappingTypes';
 
-import { applyTempoMap } from './applyTempoMap';
 import { detectTempoFromOnsets } from './detectTempoFromOnsets';
 import { estimateOnsetsFromClips } from './estimateOnsetsFromClips';
 
 /**
- * Run full tempo detection on the current project.
+ * Estimate the current project's tempo. Adopting the result is an explicit
+ * tempo command, which owns source preservation and Undo.
  */
 export function detectProjectTempo(): TempoMapResult {
     const onsets = estimateOnsetsFromClips();
-    const result = detectTempoFromOnsets(onsets);
-
-    if (result.confidence > 0.5) {
-        applyTempoMap(result);
-    }
-
-    return result;
+    return detectTempoFromOnsets(onsets);
 }

@@ -34,7 +34,7 @@ vi.mock('../telemetryAllocator', async () => {
     return { ...actual, telemetryAllocator: { allocateSlot: vi.fn(() => null), releaseSlot: vi.fn() } };
 });
 
-vi.mock('../../services/grinderProcessor.ts?worker&url', () => ({ default: 'grinder-processor-url' }));
+vi.mock('../../worklets/grinderProcessor.ts?worker&url', () => ({ default: 'grinder-processor-url' }));
 
 describe('isGrinderDevice', () => {
     it('should return true only for the grinder device type string', () => {

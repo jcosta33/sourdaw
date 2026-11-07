@@ -1,6 +1,7 @@
-import { test, expect, type Page } from '@playwright/test';
+import { type Page } from '@playwright/test';
 import { stringify as superjsonStringify } from 'superjson';
 
+import { test, expect } from './e2eTest';
 import { enable_direct_e2e_viewport, launch_new_project } from './e2eUtils';
 
 // Mirrors onboardingTour.spec.ts: omit the onboarding-completed key so the tour

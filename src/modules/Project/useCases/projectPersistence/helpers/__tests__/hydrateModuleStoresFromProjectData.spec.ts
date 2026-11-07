@@ -1,11 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerProjectLifecycle } from '#/app/registerProjectLifecycle';
+import { markerStore, trackStore } from '#/modules/Arrangement/stores';
+import { automationStore } from '#/modules/Automation/stores';
+
 import { hydrateModuleStoresFromProjectData } from '../hydrateModuleStoresFromProjectData';
 import { type HydratableProjectData } from '../isHydratableProjectData';
 
 const mocks = vi.hoisted(() => ({
-    automationStoreSet: vi.fn(),
-    markerStoreSet: vi.fn(),
     restoreAdjustmentLayerSnapshot: vi.fn(),
     replaceChordTrackState: vi.fn(),
     hydrateGrooveTemplates: vi.fn(),
@@ -16,53 +18,45 @@ const mocks = vi.hoisted(() => ({
     hydrateModulationState: vi.fn(),
     hydrateCvGateState: vi.fn(),
     setSidechainRoutes: vi.fn(),
-    trackStoreSet: vi.fn(),
     restoreTransportSnapshot: vi.fn(),
 }));
 
-vi.mock('#/modules/Arrangement/stores', () => ({
-    // Admission belongs to the caller; this helper imports its shape only.
-    isValidTakePlacement: vi.fn(() => {
-        throw new Error('Unexpected take placement admission in a helper lifecycle test');
-    }),
-    markerStore: { set: mocks.markerStoreSet },
-    trackStore: { set: mocks.trackStoreSet },
-}));
-
-vi.mock('#/modules/Arrangement/useCases', () => ({
+vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Arrangement/useCases')>()),
     restoreAdjustmentLayerSnapshot: mocks.restoreAdjustmentLayerSnapshot,
     hydrateVcaGroups: mocks.hydrateVcaGroups,
     hydrateClipGainEnvelopes: mocks.hydrateClipGainEnvelopes,
     hydrateClipWarpStates: mocks.hydrateClipWarpStates,
 }));
 
-vi.mock('#/modules/Automation/useCases', () => ({
+vi.mock('#/modules/Automation/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Automation/useCases')>()),
     hydrateModulationState: mocks.hydrateModulationState,
 }));
 
-vi.mock('#/modules/CvGate/useCases', () => ({
+vi.mock('#/modules/CvGate/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/CvGate/useCases')>()),
     hydrateCvGateState: mocks.hydrateCvGateState,
 }));
 
-vi.mock('#/modules/Automation/stores', () => ({
-    automationStore: { set: mocks.automationStoreSet },
-}));
-
-vi.mock('#/modules/MIDI/useCases', () => ({
+vi.mock('#/modules/MIDI/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/MIDI/useCases')>()),
     replaceChordTrackState: mocks.replaceChordTrackState,
     hydrateGrooveTemplates: mocks.hydrateGrooveTemplates,
 }));
 
-vi.mock('#/modules/Routing/useCases', () => ({
+vi.mock('#/modules/Routing/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Routing/useCases')>()),
     setSidechainRoutes: mocks.setSidechainRoutes,
 }));
 
-vi.mock('#/modules/Transport/useCases', () => ({
-    preferencesSeededTransportState: vi.fn(),
+vi.mock('#/modules/Transport/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Transport/useCases')>()),
     restoreTransportSnapshot: mocks.restoreTransportSnapshot,
 }));
 
-vi.mock('#/modules/Yeast/useCases', () => ({
+vi.mock('#/modules/Yeast/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Yeast/useCases')>()),
     hydrateYeastState: mocks.hydrateYeastState,
 }));
 
@@ -101,6 +95,7 @@ function createHydratableProjectData(overrides: HydratableProjectDataOverrides =
 
 describe('hydrateModuleStoresFromProjectData', () => {
     beforeEach(() => {
+        registerProjectLifecycle();
         vi.clearAllMocks();
     });
 
@@ -301,6 +296,10 @@ describe('hydrateModuleStoresFromProjectData', () => {
     });
 
     it('leaves active arrangement and automation stores to the active-snapshot hydrator', () => {
+        const trackStoreSet = vi.spyOn(trackStore, 'set');
+        const markerStoreSet = vi.spyOn(markerStore, 'set');
+        const automationStoreSet = vi.spyOn(automationStore, 'set');
+
         hydrateModuleStoresFromProjectData(
             createHydratableProjectData({
                 adjustmentLayers: undefined,
@@ -311,8 +310,9 @@ describe('hydrateModuleStoresFromProjectData', () => {
             })
         );
 
-        expect(mocks.trackStoreSet).not.toHaveBeenCalled();
-        expect(mocks.markerStoreSet).not.toHaveBeenCalled();
-        expect(mocks.automationStoreSet).not.toHaveBeenCalled();
+        expect(trackStoreSet).not.toHaveBeenCalled();
+        expect(markerStoreSet).not.toHaveBeenCalled();
+        expect(automationStoreSet).not.toHaveBeenCalled();
+        vi.restoreAllMocks();
     });
 });

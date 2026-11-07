@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { act, fireEvent, render, cleanup, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
@@ -31,11 +32,13 @@ import {
     removeCrdtDoc,
     registerCrdtStorageRuntime,
     resetCrdtProjectAuthority,
-    projectRevisionMatchesLiveIgnoringCommandCheckpoint,
+    projectRevisionMatchesLiveIgnoringSaveWrites,
 } from '#/modules/CrdtDocument/useCases';
 
 import { AgentWorkspace } from '../AgentWorkspace';
 import { PromptBar } from '../PromptBar';
+
+registerDeviceEnginePorts();
 
 const handlers = getArrangementHandlers();
 
@@ -87,9 +90,7 @@ describe('Prompt Bar canonical approval parity', () => {
         vi.spyOn(handlers.removeTrack, 'execute');
         registerHandlerMap(handlers);
         commandProjectRevisionPort.setProvider(captureProjectRevision);
-        commandProjectRevisionPort.setLiveMatchIgnoringCommandCheckpoint(
-            projectRevisionMatchesLiveIgnoringCommandCheckpoint
-        );
+        commandProjectRevisionPort.setLiveMatchIgnoringSaveWrites(projectRevisionMatchesLiveIgnoringSaveWrites);
         commandBatchPreflightPort.setProvider(() => ({
             projectId: captureProjectIdentity(),
             targetFingerprints: { 'review-track': 'review-track' },

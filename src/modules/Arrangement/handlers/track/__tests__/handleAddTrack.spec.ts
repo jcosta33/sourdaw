@@ -199,6 +199,52 @@ describe('handleAddTrack', () => {
         expect(inverse.payload.generatedMidiStateGuard).toBeDefined();
     });
 
+    it('names a nameless track after the tracks its plan creates before it', () => {
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [
+                { id: 'existing-midi', name: 'MIDI 2', kind: 'midi' },
+                { id: 'existing-audio', name: 'Audio 6', kind: 'audio' },
+            ],
+        });
+        const plan: Parameters<typeof handleAddTrack.describe>[0][] = [
+            { type: 'addTrack', payload: { kind: 'midi' } },
+            { type: 'addTrack', payload: { kind: 'audio' } },
+            { type: 'addTrack', payload: { kind: 'midi' } },
+        ];
+        const last = structuredClone(plan[2]!);
+
+        // A raw plan, as AI envelope compilation passes it: the nameless
+        // prefix is named by the same rule.
+        handleAddTrack.materializeCommandArguments?.(last, { actions: plan, actionIndex: 2 });
+
+        expect(last.payload.name).toBe('MIDI 4');
+        expect(plan[0]!.payload.name).toBeUndefined();
+
+        // A prepared prefix, as Command passes it, already carries the names.
+        const prepared = structuredClone(plan[2]!);
+        handleAddTrack.materializeCommandArguments?.(prepared, {
+            actions: plan,
+            actionIndex: 2,
+            preparedPrefix: [
+                { type: 'addTrack', payload: { name: 'MIDI 3', kind: 'midi' } },
+                { type: 'addTrack', payload: { name: 'Audio 7', kind: 'audio' } },
+            ],
+        });
+        expect(prepared.payload.name).toBe('MIDI 4');
+    });
+
+    it('keeps an explicit name when materializing', () => {
+        const action: Parameters<typeof handleAddTrack.describe>[0] = {
+            type: 'addTrack',
+            payload: { name: 'MIDI 1', kind: 'midi' },
+        };
+        mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 'existing', name: 'MIDI 1', kind: 'midi' }] });
+
+        handleAddTrack.materializeCommandArguments?.(action, { actions: [action], actionIndex: 0 });
+
+        expect(action.payload.name).toBe('MIDI 1');
+    });
+
     it('does not claim compensation when the prepared id collides', () => {
         const action = {
             type: 'addTrack',

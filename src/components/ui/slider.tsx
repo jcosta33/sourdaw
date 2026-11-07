@@ -6,6 +6,8 @@ import { Slider as SliderPrimitive } from 'radix-ui';
 
 import { cn } from '#/utils/Styles/cn';
 
+import { useSliderGesture } from './slider-gesture';
+
 function Slider({
     className,
     trackClassName,
@@ -15,6 +17,11 @@ function Slider({
     value,
     onValueChange,
     onValueCommit,
+    onPointerDown,
+    onPointerCancel,
+    onLostPointerCapture,
+    onBlur,
+    onKeyDownCapture,
     min = 0,
     max = 100,
     step = 1,
@@ -37,14 +44,21 @@ function Slider({
         return [Math.round((min + max) / 2)];
     };
     const _values = computeValues();
+    const gesture = useSliderGesture({
+        onValueChange,
+        onValueCommit,
+        onPointerDown,
+        onPointerCancel,
+        onLostPointerCapture,
+        onBlur,
+        onKeyDownCapture,
+    });
 
     return (
         <SliderPrimitive.Root
             data-slot="slider"
             defaultValue={defaultValue}
             value={value}
-            onValueChange={onValueChange}
-            onValueCommit={onValueCommit}
             min={min}
             max={max}
             step={step}
@@ -53,11 +67,12 @@ function Slider({
                 className
             )}
             {...props}
+            {...gesture.rootProps}
         >
             <SliderPrimitive.Track
                 data-slot="slider-track"
                 className={cn(
-                    'daw-inset-surface relative grow overflow-hidden rounded-full data-[orientation=horizontal]:h-1.5 data-[orientation=horizontal]:w-full data-[orientation=vertical]:h-full data-[orientation=vertical]:w-1.5',
+                    'relative grow overflow-hidden rounded-full border border-control-rail-edge bg-surface-inset shadow-[inset_0_1px_2px_rgba(0,0,0,0.45)] data-[orientation=horizontal]:h-1.5 data-[orientation=horizontal]:w-full data-[orientation=vertical]:h-full data-[orientation=vertical]:w-1.5',
                     trackClassName
                 )}
             >
@@ -65,7 +80,7 @@ function Slider({
                     data-slot="slider-range"
                     className={cn(
                         'absolute data-[orientation=horizontal]:h-full data-[orientation=vertical]:w-full',
-                        '[background:linear-gradient(180deg,rgba(127,184,196,0.92)_0%,rgba(127,184,196,0.62)_100%)]',
+                        '[background:linear-gradient(180deg,var(--color-control-fill-cyan-top)_0%,var(--color-control-fill-cyan-bottom)_100%)]',
                         'shadow-[0_0_10px_rgba(127,184,196,0.12)]',
                         rangeClassName
                     )}
@@ -79,8 +94,8 @@ function Slider({
                     min={min}
                     max={max}
                     defaultValue={defaultValue}
-                    onValueChange={onValueChange}
-                    onValueCommit={onValueCommit}
+                    canEdit={onValueChange !== undefined}
+                    commitValue={gesture.commitValue}
                     thumbClassName={thumbClassName}
                     ariaLabel={ariaLabel}
                     ariaLabelledBy={ariaLabelledBy}
@@ -96,8 +111,8 @@ function SliderThumbNode({
     min,
     max,
     defaultValue,
-    onValueChange,
-    onValueCommit,
+    canEdit,
+    commitValue,
     thumbClassName,
     ariaLabel,
     ariaLabelledBy,
@@ -107,8 +122,9 @@ function SliderThumbNode({
     min: number;
     max: number;
     defaultValue?: number[];
-    onValueChange?: (value: number[]) => void;
-    onValueCommit?: (value: number[]) => void;
+    /** Whether the slider reports changes at all; a typed value or a reset needs a listener. */
+    canEdit: boolean;
+    commitValue: (value: number[]) => void;
     thumbClassName?: string;
     ariaLabel?: string;
     ariaLabelledBy?: string;
@@ -139,8 +155,8 @@ function SliderThumbNode({
                 if (event.metaKey || event.ctrlKey) {
                     event.preventDefault();
                     event.stopPropagation();
-                    if (defaultValue && onValueChange) {
-                        onValueChange(Array.isArray(defaultValue) ? defaultValue : [defaultValue]);
+                    if (defaultValue && canEdit) {
+                        commitValue(Array.isArray(defaultValue) ? defaultValue : [defaultValue]);
                     }
                 }
             }}
@@ -159,11 +175,10 @@ function SliderThumbNode({
                     onKeyDown={(keyEvent) => {
                         if (keyEvent.key === 'Enter') {
                             const num = Number(editVal);
-                            if (!isNaN(num) && onValueChange) {
+                            if (!isNaN(num) && canEdit) {
                                 const newVals = [...values];
                                 newVals[index] = Math.max(min, Math.min(max, num));
-                                onValueChange(newVals);
-                                onValueCommit?.(newVals);
+                                commitValue(newVals);
                             }
                             setIsEditing(false);
                         }

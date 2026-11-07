@@ -5,10 +5,13 @@ import { confirmPendingChatActions } from '../confirmPendingChatActions';
 import type { PendingAppActionConfirmation } from '../../stores/pendingActionConfirmationStore';
 
 const mocks = vi.hoisted(() => ({
+    stop: vi.fn(async () => ({ status: 'idle' })),
     consumeAdmission: vi.fn(),
     executeRetry: vi.fn(),
     resolveAdmission: vi.fn(),
 }));
+
+vi.mock('../stopMeasuredPreviewAudition', () => ({ stopMeasuredPreviewAudition: mocks.stop }));
 
 vi.mock('../agentRequestOrchestration/resolveConfirmationAdmission', () => ({
     confirmationAdmission: {
@@ -90,6 +93,19 @@ const commandBatch = {
 describe('confirmPendingChatActions retry admission', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+    });
+
+    it('retires only its comparison before the admission promise can settle', async () => {
+        const pending = Promise.withResolvers<unknown>();
+        mocks.resolveAdmission.mockImplementationOnce(() => {
+            expect(mocks.stop).toHaveBeenCalledExactlyOnceWith({ confirmationId: confirmation.id });
+            return pending.promise;
+        });
+        mocks.consumeAdmission.mockReturnValueOnce({ status: 'handled', result: { status: 'missing' } });
+        const confirming = confirmPendingChatActions({ confirmationId: confirmation.id });
+        expect(mocks.stop).toHaveBeenCalledExactlyOnceWith({ confirmationId: confirmation.id });
+        pending.resolve({ status: 'missing' });
+        await expect(confirming).resolves.toEqual({ status: 'missing' });
     });
 
     it('returns a changed handled admission without invoking the retry executor', async () => {

@@ -17,12 +17,12 @@ const mocks = vi.hoisted(() => {
         automationPanelWidth: 400,
         scratchPadOpen: false,
         scratchPadHeight: 120,
+        scratchPadCollapsed: false,
+        timelineMinimapPreviewHeight: null,
         activeTool: 'select' as const,
         selectedClipId: null as string | null,
         selectedClipIds: [] as string[],
         marqueeSelection: null,
-        soloMode: 'sip' as const,
-        snapValue: 0.25,
         trackListWidth: 200,
         sidebarWidth: 224,
         inspectorWidth: 256,
@@ -31,11 +31,8 @@ const mocks = vi.hoisted(() => {
         channelStripWidth: 'normal' as const,
         timeDisplayMode: 'musical' as const,
         chatPanelWidth: 320,
-        rippleEditing: false,
         dualViewOpen: false,
         sessionViewWidth: 320,
-        automationVisibility: 'hidden' as const,
-        automationSubLanes: {} as Record<string, string[]>,
         aiPanelWidth: 340,
         fermenterHeight: 320,
         toasterHeight: 420,
@@ -85,8 +82,6 @@ import { closeUndoHistory } from '../closeUndoHistory';
 import { openInspector } from '../openInspector';
 import { openMixer } from '../openMixer';
 import { openVirtualKeyboard } from '../openVirtualKeyboard';
-import { setSnapValue } from '../setSnapValue';
-import { setSoloMode } from '../setSoloMode';
 import { setTrackListWidth } from '../setTrackListWidth';
 import { setVirtualKeyboardOctave } from '../setVirtualKeyboardOctave';
 import { setVirtualKeyboardVelocity } from '../setVirtualKeyboardVelocity';
@@ -193,16 +188,6 @@ describe('panel toggle functions', () => {
     });
 
     describe('set functions write values with clamping', () => {
-        it('setSoloMode writes mode string', () => {
-            setSoloMode('afl');
-            expect(mocks.updateState).toHaveBeenCalledWith({ soloMode: 'afl' });
-        });
-
-        it('setSnapValue writes snap value', () => {
-            setSnapValue(0.125);
-            expect(mocks.updateState).toHaveBeenCalledWith({ snapValue: 0.125 });
-        });
-
         it('setTrackListWidth writes width', () => {
             setTrackListWidth(300);
             expect(mocks.updateState).toHaveBeenCalledWith({ trackListWidth: 300 });

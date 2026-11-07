@@ -3,6 +3,7 @@ import { createHandler } from '#/utils/createHandler';
 import { type AppAction } from '#/utils/handlerContract';
 import { runAllAsyncEffects } from '#/utils/runEffects';
 
+import { getAlternativeClips } from '../../models/TrackAlternativeClips';
 import { getVcaGroupsState } from '../../stores/vcaGroupStore';
 import { captureTrackRemovalRuntimeAuthority } from '../../useCases/captureTrackRemovalRuntimeAuthority';
 import { captureTrackRemovalSnapshot } from '../../useCases/captureTrackRemovalSnapshot';
@@ -26,6 +27,10 @@ function currentStateMatches(action: RemoveTrackAction): boolean {
     if (!currentTrack) {
         return !hasStateGuard;
     }
+    // The master track is the project's one output bus; it is never removable.
+    if (currentTrack.kind === 'master') {
+        return false;
+    }
     if (action.payload.expectedKind !== undefined && currentTrack.kind !== action.payload.expectedKind) {
         return false;
     }
@@ -43,7 +48,7 @@ function currentStateMatches(action: RemoveTrackAction): boolean {
     }
     if (action.payload.expectedAlternativeClipIds !== undefined) {
         const currentAlternativeClipIds = currentTrack.alternatives.flatMap((alternative) =>
-            alternative.clips.map((clip) => clip.id)
+            getAlternativeClips(currentTrack, alternative).map((clip) => clip.id)
         );
         if (
             currentAlternativeClipIds.length !== action.payload.expectedAlternativeClipIds.length ||
