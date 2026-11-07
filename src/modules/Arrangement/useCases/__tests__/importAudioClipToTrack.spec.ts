@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { collaborationAssetTransfer } from '../collaborationAssetTransfer';
 import * as subject from '../importAudioClipToTrack';
@@ -8,8 +8,9 @@ const mocks = vi.hoisted(() => {
     // exercise the missing-transport branch.
     const transport: { value: { tempo: number } | undefined } = { value: { tempo: 120 } };
     return {
-        decodeAudioFile: vi.fn<(file: File) => Promise<{ id: string; buffer: AudioBuffer }>>(),
+        decodeAudioFile: vi.fn<(typeof import('#/modules/AudioEngine/useCases'))['decodeAudioFile']>(),
         discardDecodedAudioFile: vi.fn(),
+        releaseHold: vi.fn(),
         notifyUser: vi.fn(),
         getTrackById: vi.fn<(id: string) => { clips: { id: string; endBeat: number }[] } | undefined>(),
         executeAppActionBatch: vi.fn(),
@@ -21,8 +22,9 @@ const mocks = vi.hoisted(() => {
 });
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
-    decodeAudioFile: (file: File) => mocks.decodeAudioFile(file),
+    decodeAudioFile: mocks.decodeAudioFile,
     discardDecodedAudioFile: mocks.discardDecodedAudioFile,
+    openCachedAudioBufferHold: () => ({ retain: vi.fn(), release: mocks.releaseHold }),
 }));
 
 collaborationAssetTransfer.configure({
@@ -76,6 +78,9 @@ function fakeBuffer(duration: number): AudioBuffer {
 }
 
 describe('importAudioClipToTrack', () => {
+    afterEach(() => {
+        expect(mocks.releaseHold).toHaveBeenCalledTimes(1);
+    });
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.transport.value = { tempo: 120 };
