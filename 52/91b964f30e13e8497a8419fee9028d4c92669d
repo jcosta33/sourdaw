@@ -1,0 +1,78 @@
+src/utils/handlerContract.ts
+  s_1052c2a2231ded::t_f6d24e558879c8 3275-3278
+  s_1052c2a2231ded::t_f4efa0b036b624 3280-3295
+src/modules/Arrangement/handlers/patternInstance/handleDetachPatternInstance.ts
+  s_1052c2a2231ded::t_0684128f732b10 2,5-9,12,14-17,26,28-41,46-47
+  s_1052c2a2231ded::t_637ed04dd53410 27
+  s_1052c2a2231ded::t_f6d24e558879c8 42-45
+src/modules/Arrangement/handlers/patternInstance/handleCreatePatternInstance.ts
+  s_1052c2a2231ded::t_f6d24e558879c8 63-67,70-73
+  s_1052c2a2231ded::t_0684128f732b10 1,3,6-27,30-33,35,39-40,45-57,61-62,68-69,74-75
+src/modules/Command/useCases/__tests__/versionedCommandArgumentKeys.spec.ts
+  s_1052c2a2231ded::t_f6d24e558879c8 15-20,27-31,33-35,38-40,43-66
+  s_1052c2a2231ded::t_a686ff25f32f1a 13-14,21-26,32,36-37,41-42,67-69
+src/modules/Arrangement/useCases/patternInstance/isPatternInstanceLinkCurrent.ts
+  s_1052c2a2231ded::t_f4efa0b036b624 1-11
+.agents/skills/review-stances/replay-authority.md
+  s_1052c2a2231ded::t_a686ff25f32f1a 101-109
+src/modules/Arrangement/useCases/patternInstance/detachPatternInstance.ts
+  s_1052c2a2231ded::t_0684128f732b10 1-3
+src/modules/Arrangement/handlers/patternInstance/__tests__/handleDetachPatternInstance.spec.ts
+  s_1052c2a2231ded::t_f6d24e558879c8 10-14,29-35,51-74
+  s_1052c2a2231ded::t_01ad83f56bf546 89-91,100-103
+  s_1052c2a2231ded::t_0e1b3e7d8e64bb 7-9,36,48-50,75-77
+  s_1052c2a2231ded::t_ec3ea918e320d6 92-99
+src/modules/Arrangement/useCases/__tests__/getArrangementHandlers.spec.ts
+  s_1052c2a2231ded::t_de86be6abaadb5 6-8,11-16
+src/modules/Arrangement/handlers/patternInstance/__tests__/patternInstanceAuthority.integration.spec.ts
+  s_1052c2a2231ded::t_de86be6abaadb5 158-160,177-179,193-195,208-210,233-235,292-294,322-334,341-349,351,357-362,370-376,381-386,390-391,395-399,436-442,446-454
+  s_1052c2a2231ded::t_57c9d915b1646b 350,459-464,471-474
+  s_1052c2a2231ded::t_828501e36614cc 38,46-47,67-68,72,145,377,455
+  s_1052c2a2231ded::t_f6d24e558879c8 10-15,69-71,335-340,352-356,363-369,378-380,387-389,392-394,400-435,443-445,456-458,465-470
+  s_1052c2a2231ded::t_4b46b94e231e6a 1-9,16-37,39-45,48-66,73-144,146-157,161-176,180-192,196-207,211-232,236-291,295-321,475-476
+src/modules/Arrangement/handlers/patternInstance/__tests__/handleCreatePatternInstance.spec.ts
+  s_1052c2a2231ded::t_0e1b3e7d8e64bb 4,11,13-15,21,23,29,39,41-45,56-60,63-73
+  s_1052c2a2231ded::t_f6d24e558879c8 7-10,61-62
+src/modules/Arrangement/useCases/patternInstance/createPatternInstance.ts
+  s_1052c2a2231ded::t_f6d24e558879c8 11-16,34-40
+  s_1052c2a2231ded::t_11308b59055537 41-43
+  s_1052c2a2231ded::t_0684128f732b10 1,3-5,17-19,54
+src/modules/Arrangement/handlers/patternInstance/handleRestorePatternInstanceLink.ts
+  s_1052c2a2231ded::t_f4efa0b036b624 1-13
+src/modules/Arrangement/useCases/getArrangementHandlers.ts
+  s_1052c2a2231ded::t_f4efa0b036b624 5-7,134-136
+src/modules/Arrangement/useCases/patternInstance/getPatternInstanceLinkState.ts
+  s_1052c2a2231ded::t_f4efa0b036b624 1,3-4,6,8-12,16-18,20-21,28
+  s_1052c2a2231ded::t_f6d24e558879c8 13-15,22-27
+src/modules/Arrangement/useCases/patternInstance/restorePatternInstanceLink.ts
+  s_1052c2a2231ded::t_f4efa0b036b624 1,3,5-20,22-23
+src/modules/Arrangement/stores/updateClipInStore.ts
+  s_1052c2a2231ded::t_f4efa0b036b624 7
+src/modules/Arrangement/useCases/patternInstance/__tests__/detachPatternInstance.spec.ts
+  s_1052c2a2231ded::t_4b46b94e231e6a 5,22,28-29,31-32
+src/modules/Arrangement/useCases/patternInstance/__tests__/createPatternInstance.spec.ts
+  s_1052c2a2231ded::t_11308b59055537 84
+  s_1052c2a2231ded::t_f6d24e558879c8 135-155,174-179,233-238,308-313,369-374
+  s_1052c2a2231ded::t_4b46b94e231e6a 47,53-54,56-57,60,125
+  s_1052c2a2231ded::t_57c9d915b1646b 126-134,156
+src/modules/Arrangement/stores/appendClipToTrack.ts
+  s_1052c2a2231ded::t_f4efa0b036b624 6
+src/modules/Command/useCases/versionedCommandArgumentKeys.ts
+  s_1052c2a2231ded::t_7f824e3ac05b1c 5875,5880-5923,6120,6136,6153,6160-6161,6164,6195,6208-6211,6221-6222,6267,6281,6286,6288,6327,6338,6344,6351,6356,6360-6361,6377,6416,6421,6439,6444,6476,6481,6544,6553,6565,6577,6598,6610,6616,6622-6623,6648,6654-6655,6719,6725,6740,6742,6751,6753,6762,6810,6815,6834,6839,7153,7155-7158,7162-7167,7172,7174-7175,7177-7178,7181-7194,7197-7198,7201,7203-7206,7210-7211,7213-7221,7223-7225
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5291b964f30e13e8497a8419fee9028d4c92669d",
+  "prompts": {},
+  "sessions": {
+    "s_1052c2a2231ded": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b349-24b6-7622-8534-09f171c780d5",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
