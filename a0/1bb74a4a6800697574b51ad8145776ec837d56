@@ -1,0 +1,42 @@
+.agents/skills/review-stances/security-and-platform.md
+  s_939911bea2ef3b::t_85de33236bb1bb 125-135
+scripts/__tests__/verifyPackagedNativeArtifacts.spec.ts
+  s_939911bea2ef3b::t_85af6d5a715acf 1-73,87,91-106,110-128,130-136,139-144,158,160-193
+  s_939911bea2ef3b::t_5abbc6ac31d717 107-109,137-138,145-157
+  s_939911bea2ef3b::t_0756776b37d658 159
+  s_939911bea2ef3b::t_8028b369bd08ed 74-86,88-90,129
+docs/architecture/10-desktop-packaging.md
+  s_939911bea2ef3b::t_0756776b37d658 19-20
+  s_939911bea2ef3b::t_85de33236bb1bb 7-18,21-56
+scripts/verifyPackagedNativeArtifacts.ts
+  s_939911bea2ef3b::t_0756776b37d658 168-172
+  s_939911bea2ef3b::t_5abbc6ac31d717 22-25,64-67,89-94,98-101,105-108,186,189,194-198
+  s_939911bea2ef3b::t_7d3033142a6867 1-4,6-13,17-21,26-63,68-88,95-97,102-104,109-119,123-167,173-174,182-184,190-193,199,203-205
+  s_939911bea2ef3b::t_8028b369bd08ed 14-16,120-122,175-181,185,187-188,200-202
+  s_939911bea2ef3b::t_ad095c9231b82e 5
+scripts/flipElectronFuses.ts
+  s_939911bea2ef3b::t_85de33236bb1bb 69
+  s_939911bea2ef3b::t_5abbc6ac31d717 230-233,235-263
+  s_939911bea2ef3b::t_ec726486afe313 264-265
+scripts/__tests__/desktopPackaging.spec.ts
+  s_939911bea2ef3b::t_ec726486afe313 1-9,17-18,20-66,74-78,82-118,122-126,131-133
+  s_939911bea2ef3b::t_5abbc6ac31d717 10-16,19,68-70,72-73,119-121,127-130
+  s_939911bea2ef3b::t_85de33236bb1bb 67
+  s_939911bea2ef3b::t_8028b369bd08ed 71,79-81
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a01bb74a4a6800697574b51ad8145776ec837d56",
+  "prompts": {},
+  "sessions": {
+    "s_939911bea2ef3b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34a-952d-7121-902e-cafc5e44b0f7",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
