@@ -21,6 +21,11 @@ export type SessionActionContract = {
     readonly role: 'forward' | 'internal-replay';
     readonly validateArguments: (payload: unknown) => boolean;
     readonly validateEntry?: (entry: SessionActionEntry) => boolean;
+    /**
+     * Runs on each entry the forward contract begins once hydration keeps it, so its owner can
+     * re-establish replay state that lives only in memory. Never called on the write side.
+     */
+    readonly restoreEntry?: (entry: SessionActionEntry) => void;
 };
 
 export type SessionActionEntry = Pick<ActionUndoEntry, 'action' | 'inverseAction' | 'redoAction'>;
@@ -321,7 +326,11 @@ function reachableRunFromPresent<TInput, TOutput>(
 }
 
 function sanitizeReachableEntries(values: unknown[], nearestFirst: boolean): ActionUndoEntry[] {
-    return reachableRunFromPresent(values, nearestFirst, sanitizeStoredEntry);
+    const entries = reachableRunFromPresent(values, nearestFirst, sanitizeStoredEntry);
+    for (const entry of entries) {
+        getActionContract(entry.action)?.restoreEntry?.(entry);
+    }
+    return entries;
 }
 
 function readStoredProjectId(value: Record<string, unknown>): string | undefined {

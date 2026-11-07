@@ -1,8 +1,7 @@
-import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
-
 import { type AgentRun, type AgentRunDecision } from '../models/AgentRun';
 
 import { getPlanningProviderSchemaContract } from './planningProviderSchema';
+import { settledProjectContentMatches } from './settledProjectContentMatches';
 
 export type AgentRunDecisionResumeAdmission =
     { status: 'admitted'; decision: AgentRunDecision } | { status: 'rejected'; reason: string };
@@ -36,7 +35,7 @@ export function getAgentRunDecisionResumeAdmission(run: AgentRun | null): AgentR
     if (decision.resumeAttemptId !== null) {
         return { status: 'rejected', reason: 'A replacement planning attempt is already being admitted.' };
     }
-    if (captureProjectRevision() !== decision.revision) {
+    if (!settledProjectContentMatches(decision.revision)) {
         return { status: 'rejected', reason: 'The project revision changed while the decision was pending.' };
     }
     if (!hasSameBoundAuthority(run, decision)) {

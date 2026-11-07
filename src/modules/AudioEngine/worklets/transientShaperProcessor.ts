@@ -1,17 +1,34 @@
+import {
+    NO_IMMEDIATE_FRAME,
+    readTransientShaperControl,
+    type TransientShaperControl,
+    type TransientShaperControlSnapshot,
+    viewTransientShaperControl,
+} from '../models/TransientShaperControl';
 import { resolveProcessorWasmModule } from '../transformers/resolveProcessorWasmModule';
 import { initSync, TransientShaperInstance } from '../wasm/daw_dsp.js';
 
 const RESET_FAULT_EPOCH = 16_777_215;
 
-type GainName = 'attackGain' | 'sustainGain';
 type ImmediateGain = { value: number; frame: number };
-type ControlMessage = { type: string; epoch?: unknown; name?: unknown; value?: unknown; frame?: unknown };
+type ControlMessage = { type: string };
+
+function processorControl(options: unknown): TransientShaperControl | null {
+    if (typeof options !== 'object' || options === null || !('processorOptions' in options)) {
+        return null;
+    }
+    const processorOptions = options.processorOptions;
+    if (typeof processorOptions !== 'object' || processorOptions === null || !('control' in processorOptions)) {
+        return null;
+    }
+    return viewTransientShaperControl(processorOptions.control);
+}
 
 function gainAtFrame(values: Float32Array | undefined, frame: number): number {
     return values?.[values.length === 1 ? 0 : frame] ?? Number.NaN;
 }
 
-/** A posted immediate write wins on its exact frame; every other frame reads the AudioParam. */
+/** An immediate write wins on its exact frame; every other frame reads the AudioParam. */
 function gainForFrame(
     immediate: ImmediateGain,
     immediateIndex: number,
@@ -21,29 +38,24 @@ function gainForFrame(
     return frame === immediateIndex ? immediate.value : gainAtFrame(values, frame);
 }
 
-function isGainName(name: unknown): name is GainName {
-    return name === 'attackGain' || name === 'sustainGain';
-}
-
-function isNonNegativeInteger(value: unknown): value is number {
-    return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
-}
-
 class TransientShaperProcessor extends AudioWorkletProcessor {
     private instance: TransientShaperInstance | null = null;
     private disposed = false;
     private faulted = false;
     private resetEpoch = 0;
-    // The host posts every bypass reset and immediate gain write here as well as
-    // to its AudioParam. Chromium lands an AudioParam event at a `currentTime`
-    // that sits above its integer frame one sample late (a k-rate one a whole
-    // quantum late), so the frame a suspended context resumes on can only be
-    // reached through the port: the idle worklet drains a message posted while
-    // a live context is suspended before the quantum it resumes on.
-    private pendingResetEpoch = 0;
-    private readonly immediateGains: Record<GainName, ImmediateGain> = {
-        attackGain: { value: 1, frame: -1 },
-        sustainGain: { value: 1, frame: -1 },
+    // The host writes every bypass reset and immediate gain to the shared
+    // control block as well as to its AudioParam. Chromium lands an AudioParam
+    // event at a `currentTime` that sits above its integer frame one sample late
+    // (a k-rate one a whole quantum late), so the frame a suspended context
+    // resumes on is reached through the control block, read at the head of every
+    // quantum. The port cannot carry it: Chromium dispatches each port message
+    // as its own task on this thread, with no promise that a message posted
+    // while the context was suspended runs before the quantum it resumes on.
+    private readonly control: TransientShaperControl | null;
+    private readonly shared: TransientShaperControlSnapshot = {
+        resetEpoch: 0,
+        attackGain: { value: 1, frame: NO_IMMEDIATE_FRAME },
+        sustainGain: { value: 1, frame: NO_IMMEDIATE_FRAME },
     };
 
     static get parameterDescriptors(): Array<{
@@ -69,19 +81,8 @@ class TransientShaperProcessor extends AudioWorkletProcessor {
     constructor(...args: unknown[]) {
         super();
         let module = resolveProcessorWasmModule(args[0]);
+        this.control = processorControl(args[0]);
         this.port.onmessage = (event: MessageEvent<ControlMessage>) => {
-            if (event.data.type === 'reset') {
-                this.acceptReset(event.data.epoch);
-                return;
-            }
-            if (event.data.type === 'gain') {
-                this.acceptImmediateGain(event.data);
-                return;
-            }
-            if (event.data.type === 'clear-gain') {
-                this.clearImmediateGain(event.data.name);
-                return;
-            }
             if (event.data.type === 'dispose') {
                 if (!this.disposed) {
                     this.disposed = true;
@@ -98,6 +99,9 @@ class TransientShaperProcessor extends AudioWorkletProcessor {
                 if (!module) {
                     throw new TypeError('Transient Shaper requires a compiled WASM module');
                 }
+                if (!this.control) {
+                    throw new TypeError('Transient Shaper requires a shared control block');
+                }
                 initSync({ module });
                 module = null;
                 this.instance = new TransientShaperInstance(sampleRate);
@@ -111,7 +115,10 @@ class TransientShaperProcessor extends AudioWorkletProcessor {
 
     process(inputs: Float32Array[][], outputs: Float32Array[][], parameters: Record<string, Float32Array>): boolean {
         const output = outputs[0];
-        const epoch = Math.max(parameters._resetEpoch?.[0] ?? 0, this.pendingResetEpoch);
+        if (this.control) {
+            readTransientShaperControl(this.control, this.shared);
+        }
+        const epoch = Math.max(parameters._resetEpoch?.[0] ?? 0, this.shared.resetEpoch);
         if (epoch >= RESET_FAULT_EPOCH) {
             this.faulted = true;
         }
@@ -132,26 +139,6 @@ class TransientShaperProcessor extends AudioWorkletProcessor {
         return true;
     }
 
-    private acceptReset(epoch: unknown): void {
-        if (isNonNegativeInteger(epoch) && epoch > this.pendingResetEpoch) {
-            this.pendingResetEpoch = epoch;
-        }
-    }
-
-    private acceptImmediateGain({ name, value, frame }: ControlMessage): void {
-        if (!isGainName(name) || typeof value !== 'number' || !Number.isFinite(value) || !isNonNegativeInteger(frame)) {
-            return;
-        }
-        this.immediateGains[name].value = value;
-        this.immediateGains[name].frame = frame;
-    }
-
-    private clearImmediateGain(name: unknown): void {
-        if (isGainName(name)) {
-            this.immediateGains[name].frame = -1;
-        }
-    }
-
     private render(
         instance: TransientShaperInstance,
         inputs: Float32Array[][],
@@ -165,8 +152,8 @@ class TransientShaperProcessor extends AudioWorkletProcessor {
         const attackGain = parameters.attackGain;
         const sustainGain = parameters.sustainGain;
         const frames = Math.max(left?.length ?? 0, right?.length ?? 0);
-        const immediateAttack = this.immediateGains.attackGain;
-        const immediateSustain = this.immediateGains.sustainGain;
+        const immediateAttack = this.shared.attackGain;
+        const immediateSustain = this.shared.sustainGain;
         const attackIndex = immediateAttack.frame - currentFrame;
         const sustainIndex = immediateSustain.frame - currentFrame;
         // Let unexpected WASM traps reach processorerror. The normal render

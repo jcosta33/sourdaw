@@ -348,7 +348,7 @@ describe('project projection after a partial bundle merge', () => {
                         expect(activeCase?.signal.aborted).toBe(true);
                         const reason: unknown = activeCase?.signal.reason;
                         if (!(reason instanceof Error)) {
-                            throw new Error('Expected Vitest timeout error');
+                            throw new TypeError('Expected Vitest timeout error');
                         }
                         expect(reason.name).toBe('Error');
                         expect(reason.message).toMatch(/^Test timed out in 5000ms\./);

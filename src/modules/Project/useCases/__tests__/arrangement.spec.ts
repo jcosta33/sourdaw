@@ -18,6 +18,12 @@ const { cancelPreparedBuffers, prepareCachedAudioBuffersFromIdb, publishPrepared
 // switchArrangement imports getAudioContext and prepareCachedAudioBuffersFromIdb;
 // runProjectLoadTransaction.activate imports cancelPendingAudioBufferImport.
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    captureOfflineRenderProjectSource: vi.fn(() => {
+        throw new Error('Unexpected selection render capture in this fixture');
+    }),
+    captureOfflineRenderRuntimeInput: vi.fn(() => {
+        throw new Error('Unexpected selection render capture in this fixture');
+    }),
     builtinSynthVoice: { read: vi.fn() },
     createNativeRecordingCaptureClock: vi.fn(() => ({
         admission: null,
@@ -188,6 +194,7 @@ vi.mock('#/modules/Arrangement/useCases', async () => {
         applySoloLogic: vi.fn(),
         clampDeviceParameterValue: vi.fn(),
         clampExternalPluginAutomationValue: vi.fn(),
+        getAutomationDeviceDescriptor: actual.getAutomationDeviceDescriptor,
         getEffectiveGain: vi.fn(),
         getGainAtBeat: vi.fn(),
         getLastClipEndBeat: vi.fn(() => 0),

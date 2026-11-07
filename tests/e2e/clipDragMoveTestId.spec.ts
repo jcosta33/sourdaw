@@ -75,8 +75,8 @@ test.describe('Clip drag / move on the timeline', () => {
 
     test('dragging a clip rightward increases its start beat', async ({ page }) => {
         const startBeat = page.getByTestId('selected-clip-start-beat');
-        // The imported clip starts at beat 0.
-        await expect(startBeat).toHaveText(/@ 0 beats/i);
+        // The imported clip starts at bar 1.1.1.
+        await expect(startBeat).toHaveText(/@ 1\.1\.1/);
 
         const canvas = page.getByLabel('Timeline editor surface');
         const box = await canvas.boundingBox();
@@ -95,16 +95,14 @@ test.describe('Clip drag / move on the timeline', () => {
         await page.mouse.up();
         await page.waitForTimeout(800);
 
-        // The start beat readout now reflects the moved position — greater than 0.
-        const afterText = await startBeat.innerText();
-        const afterBeat = Number(afterText.match(/-?\d+(\.\d+)?/)?.[0] ?? '0');
-        expect(afterBeat).toBeGreaterThan(0);
+        // The start readout now reflects the moved position — no longer bar 1.1.1.
+        await expect(startBeat).not.toHaveText(/@ 1\.1\.1/);
     });
 
     test('dragging a clip moves it without duplicating', async ({ page }) => {
         const startBeat = page.getByTestId('selected-clip-start-beat');
         const clipCount = page.getByTestId('selected-track-clip-count');
-        await expect(startBeat).toHaveText(/@ 0 beats/i);
+        await expect(startBeat).toHaveText(/@ 1\.1\.1/);
         const countBefore = await clipCount.innerText();
 
         const canvas = page.getByLabel('Timeline editor surface');
@@ -122,10 +120,8 @@ test.describe('Clip drag / move on the timeline', () => {
         await page.mouse.up();
         await page.waitForTimeout(800);
 
-        // The clip moved (start beat > 0)…
-        const afterText = await startBeat.innerText();
-        const afterBeat = Number(afterText.match(/-?\d+(\.\d+)?/)?.[0] ?? '0');
-        expect(afterBeat).toBeGreaterThan(0);
+        // The clip moved (start no longer bar 1.1.1)…
+        await expect(startBeat).not.toHaveText(/@ 1\.1\.1/);
         // …and the track still holds the same number of clips — a plain drag
         // moves, it does not duplicate (Alt+drag would).
         await expect(clipCount).toHaveText(countBefore);

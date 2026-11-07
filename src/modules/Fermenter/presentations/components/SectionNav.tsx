@@ -9,6 +9,9 @@ import { DawTabStrip, type DawTabStripItem } from '#/components/daw/DawTabStrip'
 
 export type FermenterSection = 'osc' | 'filter' | 'env' | 'mod' | 'fx';
 
+export const FERMENTER_SECTION_PANEL_ID = 'fermenter-section-panel';
+export const FERMENTER_SECTION_TAB_ID_PREFIX = 'fermenter-section';
+
 const SECTIONS: readonly DawTabStripItem<FermenterSection>[] = [
     { id: 'osc', label: 'Oscillator', activeClassName: 'bg-[var(--color-accent-lavender)] text-white' },
     { id: 'filter', label: 'Filter', activeClassName: 'bg-[var(--color-accent-cyan)] text-white' },
@@ -25,7 +28,8 @@ type SectionNavProps = {
 export const SectionNav = ({ active, onChange }: SectionNavProps): ReactElement => (
     <DawTabStrip
         label="Fermenter sections"
-        idPrefix="fermenter-section"
+        idPrefix={FERMENTER_SECTION_TAB_ID_PREFIX}
+        panelId={FERMENTER_SECTION_PANEL_ID}
         items={SECTIONS}
         activeId={active}
         onChange={onChange}

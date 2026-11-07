@@ -1,3 +1,4 @@
+import { commitRedoInverseCapture } from '#/modules/Command/useCases';
 import { createHandler } from '#/utils/createHandler';
 import { type AppAction, type GeneratedMidiStateGuard, type HandlerValidationContext } from '#/utils/handlerContract';
 
@@ -8,6 +9,7 @@ import { toHandlerExecutionResult } from '../toHandlerExecutionResult';
 import { isDuplicateClipAtSessionEntry } from '../validateCreationSessionEntries';
 
 import { createdClipMidiCapture } from './createdClipMidiCapture';
+import { prepareCreatedClipRedoGuard } from './prepareCreatedClipRedoGuard';
 import { stampCreatedClipStateGuard } from './stampCreatedClipStateGuard';
 
 type DuplicateClipAtAction = Extract<AppAction, { type: 'duplicateClipAt' }>;
@@ -15,6 +17,7 @@ type DuplicateClipAtAction = Extract<AppAction, { type: 'duplicateClipAt' }>;
 type DuplicateClipAtState = {
     targetClipId: string;
     generatedMidiStateGuard: GeneratedMidiStateGuard;
+    stageRedoGuard?: (action: AppAction) => void;
 };
 
 const duplicateClipAtStates = new WeakMap<object, DuplicateClipAtState>();
@@ -112,15 +115,28 @@ export const handleDuplicateClipAt = createHandler<'duplicateClipAt'>({
             }
             capture?.complete();
             stampCreatedClipStateGuard(state.generatedMidiStateGuard, state.targetClipId);
+            state.stageRedoGuard?.(action);
             const discard = () => createdClipMidiCapture({ phase: 'discard', action });
-            return { status: 'written', afterCommit: discard, afterAmbiguousCommit: discard };
+            return {
+                status: 'written',
+                afterCommit: discard,
+                afterAmbiguousCommit: () => {
+                    discard();
+                    commitRedoInverseCapture({ phase: 'discard', actions: [action] });
+                },
+            };
         } catch (error) {
             capture?.discard();
             throw error;
         }
     },
-    describe: (action) => {
+    describe: (action, context) => {
         const state = getDuplicateClipAtState(action);
+        state.stageRedoGuard = prepareCreatedClipRedoGuard({
+            recordedRedo: context?.recordedRedo,
+            clipId: state.targetClipId,
+            guard: state.generatedMidiStateGuard,
+        });
         return {
             label: 'Duplicate clip at destination',
             inverseAction: {

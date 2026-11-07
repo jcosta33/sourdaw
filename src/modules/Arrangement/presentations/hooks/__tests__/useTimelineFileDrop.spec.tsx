@@ -126,6 +126,9 @@ vi.mock('#/modules/Command/useCases', () => ({
     pushUndoEntry: vi.fn(),
     syncActionReplayMetadata: vi.fn(),
     resetActionReplayAuthority: vi.fn(),
+    readUndoEntryForInverse: vi.fn(),
+    commitRedoInverseCapture: vi.fn(),
+    isAppActionCommittedError: vi.fn(() => false),
     REDO_NOT_APPLIED: Symbol('REDO_NOT_APPLIED'),
 }));
 
@@ -1425,7 +1428,10 @@ describe('useTimelineFileDrop', () => {
         });
 
         await waitFor(() => {
-            expect(mocks.decodeAudioFile).toHaveBeenCalledWith(mockFile);
+            expect(mocks.decodeAudioFile).toHaveBeenCalledWith(
+                mockFile,
+                expect.objectContaining({ retain: expect.any(Function), release: expect.any(Function) })
+            );
             expect(batchPayload('addClip')).toEqual(expect.objectContaining({ audioBufferId: 'buf-flac' }));
         });
     });

@@ -1041,10 +1041,24 @@ describe('package scripts and gitignore', () => {
             'only the gate job may emit the stable Gate summary check name'
         );
         expect(gate.if).toBe(REQUIRED_GATE_CONDITION);
-        expect(workflowArrayAt(gate, 'needs')).toEqual(['admission', 'scope', 'validation', 'affected', 'codeql']);
+        expect(workflowArrayAt(gate, 'needs')).toEqual([
+            'admission',
+            'scope',
+            'e2e-build',
+            'validation',
+            'affected',
+            'codeql',
+        ]);
         const gateStep = workflowStep(gate, 'Require selected checks to succeed');
         expect(gateStep.if).toBe(REQUIRED_GATE_CONDITION);
-        expect(workflowRecordAt(gateStep, 'env')).toEqual({ RESULTS: '${{ toJSON(needs) }}' });
+        expect(workflowRecordAt(gateStep, 'env')).toEqual({
+            RESULTS: '${{ toJSON(needs) }}',
+            MATRIX: '${{ needs.scope.outputs.matrix }}',
+        });
+        expect(gateStep.run).toContain(
+            'if type != "object" or (.include | type) != "array" then error("invalid E2E plan")'
+        );
+        expect(gateStep.run).toContain('.["e2e-build"].result == $selected');
         expect(gateStep.run).toContain('.scope.result == "success"');
         expect(gateStep.run).toContain('.validation.result == "success"');
         expect(gateStep.run).toContain('.affected.result == "success"');
@@ -1073,7 +1087,7 @@ describe('package scripts and gitignore', () => {
         expect(Object.hasOwn(workflowStep(codeql, 'Checkout'), 'if')).toBe(false);
 
         const analyze = workflowStep(codeql, 'Analyse');
-        expect(analyze.uses).toBe('github/codeql-action/analyze@c16c0f3f2812ec4bb3750a5ed64873fe2ce0fbef');
+        expect(analyze.uses).toBe('github/codeql-action/analyze@52cf1852265d99e9bea071b03366fc777a602909');
         expect(Object.hasOwn(analyze, 'with')).toBe(false);
     });
 

@@ -30,6 +30,8 @@ release and provenance drift in `release-provenance-drift.md`.
    same defect (#5749, #5809): assert the real control while the dirty state holds, before waiting for Save or
    autosave, by its stable identity and a separate expected-name assertion, then make that control unavailable
    (rename its test id) and require the named case to fail at admission.
+   The piano roll numeric zoom assertion was conditional on the slider appearing (#1452): remove
+   the required slider and require the numeric case to fail.
    (#4441, #1531, #1536, #1590, #5370, #2606, #4356, #4933, #5111, #4987, #5144, #5749)
 
 2. **A negative case passes on the wrong refusal.**
@@ -72,6 +74,10 @@ release and provenance drift in `release-provenance-drift.md`.
    An upstream already-projected integration delta cannot discriminate TrackNode's direct loops
    (#5387/#5805): add direct writer fixtures with full scheduled-instrument after-chains; reverting
    the reorder and replacement loops must fail their named direct cases.
+   Guard output collection and mocked emission do not prove delivery through the CLI pipe (#3057):
+   send output larger than pipe capacity through the real CLI and require the complete byte-exact
+   body and markers for success and failure, correct channels and exit codes, and prompt exit.
+   Check the bounded default failure tail and signal cleanup; restoring forced exit must lose output.
    (#3905, #2648, #1049, #5277, #5339, #4128, #2811, #2083, #5643, #5254, #5247, #5215, #474, #5798, #5565, #5387, #5805)
 
 4. **The oracle is computed by the code under test.**
@@ -135,6 +141,50 @@ release and provenance drift in `release-provenance-drift.md`.
    assertion and regenerated snapshot together: the snapshot diff holds only the intended change, and
    mutating that value (a depth-two checkout for a full-history edit) must fail the assertion.
    (#2988, #3060, #1084, #974, #5199)
+
+## Automation tests must reach the real runtime consumer
+
+PR #1648's snapshot reset lost a driving receipt before Off could restore its saved base. The unit
+fixture changed a nested `automationMode` in place, whereas the real public setter publishes an
+immutable track-store object. PR #3847 later retained the same reset. Historical private reviewer
+prompts, stances and tiers are unestablished. Exercise the actual setter and observe the required
+runtime restore before accepting a negative history claim.
+
+First prove live Command, raw/semantic/session history, active macro recording and Undo/Redo through
+a real manual edit. Capture the actual post-Redo baseline: manual Redo deliberately records the
+forward macro action again. Then require exact playback/restore preservation after the required
+runtime event. Pair ordinary immutable updates with real root and scheduler replacements, including
+null/empty intermediate observations. A one-device fixture or disabled history port cannot prove
+the route matrix or the negative claim.
+
+Carrier positives must also use admitted parameters. The prior Knead/`shift_semitones` fixture
+passed because stored undeclared keys were accepted, although Knead declares no device parameters.
+Retain its routing call counts, slew values and full-versus-fallback assertions with Bacteria/`mix`,
+plus an independent real Knead refusal. Crumbs has an ordinary Web route and its actual native
+fallback door refuses; forcing a carried predicate cannot prove a native body exists.
+
+The target omission traces to playback in `4f410257b212bbbd2210fa6553f7aaa3394f69bc` (no associated
+PR) and restoration in PR #807. PR #831 deliberately retained the global missing-descriptor
+fallback; it did not originate that omission. Historical private reviewer prompts, stances and tiers
+are unestablished. Pair declared delivery with unknown stored Bacteria and bogus Yeast/Knead
+refusals, current-owner admission loss before restore, unknown-family compatibility and hosted
+parameter/no-base-restore asymmetry. Preserve the existing internal-key denial when adding declared
+membership. A declared-values-only fixture cannot expose the permissive fallback.
+
+A getter test does not prove its runtime caller admits the input. Linked-lane commit
+`2a0e594f94d36a6e1898a8a567b6b9c5de2ca0d9` let the getter resolve an empty follower before inspecting
+local points, while Transport still returned early. GitHub reports no associated PR; historical
+private reviewer prompts, stances and tiers are unestablished. Later cycle hardening and PR #765's
+offline parity did not introduce this mismatch. The connected witness observed a valid source
+runtime event but no scaled follower event. An earlier clip assertion had masked this case until
+the legitimate removed-lane restore was separated from the next ownership baseline.
+
+Use empty followers without dummy points and require real scaled events on both track and clip
+routes, with raw truth, bases, history and macro state unchanged. Retain dangling/cyclic links,
+nonlinked empty lanes, Off/disabled/recording and duplicate-material controls. A source/helper value
+alone is not follower playback evidence. Future targeted gate/fence mutations must fail those
+oracles; they were not executed in this change. Controlled engine-boundary events establish no
+actual sound, native IPC landing or save/reopen acceptance.
 
 ## Retired lessons
 

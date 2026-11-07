@@ -118,6 +118,7 @@ describe('committed Redo inverse capture publication', () => {
         'unproved',
         'missing-entry',
         'partial-set',
+        'stale-inverse',
     ] as const)('settles the complete group only on its proven installed publication: %s', (terminal) => {
         const before = Automerge.clone(getCrdtDoc('root')!);
         const previous = entries.map((entry) => entry.inverseAction);
@@ -151,6 +152,9 @@ describe('committed Redo inverse capture publication', () => {
             replaceCrdtDoc({ id: 'root', doc: Automerge.clone(getCrdtDoc('root')!) });
         } else if (terminal === 'clone') {
             replaceCrdtDocInLineage({ id: 'root', doc: Automerge.clone(getCrdtDoc('root')!) });
+        } else if (terminal === 'stale-inverse') {
+            entries[0]!.inverseAction = rename('first', 'New inverse');
+            previous[0] = entries[0]!.inverseAction;
         } else if (terminal === 'missing-entry') {
             undoStore.set({ past: [], future: [entries[0]!] });
         }

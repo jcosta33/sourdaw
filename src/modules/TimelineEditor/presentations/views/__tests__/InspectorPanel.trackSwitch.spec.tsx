@@ -106,7 +106,7 @@ const selectTrack = (selected: Track): void => {
 const readSliderRoot = (name: string): HTMLElement => {
     const root = screen.getByRole('slider', { name }).closest('[data-slot="slider"]');
     if (!(root instanceof HTMLElement)) {
-        throw new Error(`Missing Slider root for ${name}`);
+        throw new TypeError(`Missing Slider root for ${name}`);
     }
     Object.defineProperties(root, {
         setPointerCapture: { configurable: true, value: vi.fn() },

@@ -177,6 +177,11 @@ export const executableAppActionEffectsByType = {
         removes: ['clip'],
         noteFields: ['startBeat'],
     },
+    quantizeTransients: {
+        dimensions: ['clip-audio', 'arrangement', 'automation'],
+        scope: 'target',
+        creates: ['clip', 'automation-lane'],
+    },
     crossfadeClips: {
         dimensions: ['clip-audio', 'arrangement'],
         scope: 'target',

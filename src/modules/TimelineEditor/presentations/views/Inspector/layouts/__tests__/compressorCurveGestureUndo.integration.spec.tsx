@@ -224,7 +224,7 @@ function Layout({ displayed }: { displayed?: Device }) {
 function curve(): HTMLCanvasElement {
     const element = screen.getByRole('img', { name: 'Compressor transfer curve' });
     if (!(element instanceof HTMLCanvasElement)) {
-        throw new Error('Required real Compressor canvas is absent');
+        throw new TypeError('Required real Compressor canvas is absent');
     }
     return element;
 }

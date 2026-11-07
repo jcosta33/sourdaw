@@ -228,7 +228,7 @@ async function assertConnectedCrust(): Promise<InstanceType<typeof audio.Control
     expect(device?.controller?.ready).toBe(true);
     const worklet = device?.inputNode;
     if (!(worklet instanceof audio.ControlledWorkletNode)) {
-        throw new Error('Crust did not load its real worklet wrapper');
+        throw new TypeError('Crust did not load its real worklet wrapper');
     }
     expect(worklet.name).toBe('crust-processor');
     expect(worklet.connectedTo.length).toBeGreaterThan(0);

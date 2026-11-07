@@ -19,7 +19,7 @@ import {
 } from './githubAppIdentity.ts';
 import { fail, PR_STATE } from './prContract.ts';
 import { REVIEW_THREAD_COMMENT_FIELDS, readCommentDatabaseId } from './reviewRepair.ts';
-import { readRegisteredLaneStack, type LaneStack } from './stackedLanes.ts';
+import { readSupersessionLaneStack, type SupersessionLaneStack } from './stackedLanes.ts';
 
 export type IssueComment = {
     id: string;
@@ -53,7 +53,7 @@ export type SupersedePullRequestPort = {
     assertCurrentPullRequest: (number: number, expected: SupersededPullRequest) => void;
     inspectReviewThreads: (number: number) => SupersededReviewThread[];
     isCommitAncestor?: (repository: string, ancestor: string, descendant: string) => boolean;
-    readRegisteredLaneStack?: (childBranch: string) => LaneStack | undefined;
+    readSupersessionLaneStack?: (childBranch: string) => SupersessionLaneStack | undefined;
     comment: (number: number, body: string) => AddedIssueCommentReceipt;
     close: (number: number) => PullRequestCloseReceipt;
     deleteComment: (id: string) => void;
@@ -86,8 +86,8 @@ export function shellPort(
         inspectReviewThreads: (number) => inspectReviewThreads(number, gh),
         isCommitAncestor: (repository, ancestor, descendant) =>
             inspectCommitAncestry(repository, ancestor, descendant, gh),
-        readRegisteredLaneStack: (branch) =>
-            readRegisteredLaneStack(primaryRoot, branch, (args) =>
+        readSupersessionLaneStack: (branch) =>
+            readSupersessionLaneStack(primaryRoot, branch, (args) =>
                 capture('git', args, { cwd: primaryRoot, env: session.env })
             ),
         comment: (number, body) => addComment(nodeId(number), body, commentClientMutationId(number, body), gh),

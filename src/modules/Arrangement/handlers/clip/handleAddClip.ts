@@ -1,5 +1,7 @@
+import { commitRedoInverseCapture } from '#/modules/Command/useCases';
 import { serializeMidiStateForClips } from '#/modules/MIDI/useCases';
 import { createHandler } from '#/utils/createHandler';
+import { type AppAction } from '#/utils/handlerContract';
 
 import { addClip } from '../../useCases/clip/addClip';
 import { getNextAppActionClipId } from '../../useCases/clip/getNextAppActionClipId';
@@ -7,11 +9,14 @@ import { getPlannedTrackState } from '../getPlannedTrackState';
 import { toHandlerExecutionResult } from '../toHandlerExecutionResult';
 import { isAddClipSessionEntry } from '../validateCreationSessionEntries';
 
+import { prepareCreatedClipRedoGuard } from './prepareCreatedClipRedoGuard';
+
 type AddClipAction = { payload: { id?: string } };
 
 type AddClipState = {
     clipId: string;
     generatedMidiStateGuard: { entityJson: string; midiByClipIdJson: string };
+    stageRedoGuard?: (action: AppAction) => void;
 };
 
 const addClipStates = new WeakMap<object, AddClipState>();
@@ -50,10 +55,27 @@ export const handleAddClip = createHandler<'addClip'>({
         }
         state.generatedMidiStateGuard.entityJson = JSON.stringify(clip);
         state.generatedMidiStateGuard.midiByClipIdJson = serializeMidiStateForClips([clip.id]);
+        if (state.stageRedoGuard) {
+            state.stageRedoGuard(alpha);
+            return {
+                status: 'written',
+                afterCommit: () => {
+                    // Command settles every staged inverse together after these effects complete.
+                },
+                afterAmbiguousCommit: () => {
+                    commitRedoInverseCapture({ phase: 'discard', actions: [alpha] });
+                },
+            };
+        }
         return toHandlerExecutionResult(true);
     },
-    describe: (alpha) => {
+    describe: (alpha, context) => {
         const state = getAddClipState(alpha);
+        state.stageRedoGuard = prepareCreatedClipRedoGuard({
+            recordedRedo: context?.recordedRedo,
+            clipId: state.clipId,
+            guard: state.generatedMidiStateGuard,
+        });
         return {
             label: `Add clip "${alpha.payload.name}"`,
             inverseAction: {

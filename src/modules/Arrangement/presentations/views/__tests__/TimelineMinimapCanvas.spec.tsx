@@ -31,7 +31,8 @@ vi.mock('#/infra/store/useStore', () => ({
     }),
 }));
 
-vi.mock('#/modules/Transport/stores', () => ({
+vi.mock('#/modules/Transport/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Transport/stores')>()),
     transportStore: { value: { isPlaying: false } },
 }));
 

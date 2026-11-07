@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { defaultTimelineEditingState, timelineEditingStore } from '#/modules/Arrangement/stores';
 import { executeUserAppAction } from '#/modules/Command/useCases';
 
 import { elasticCommands } from '../ElasticCommands';
@@ -62,12 +63,14 @@ describe('elasticCommands', () => {
         });
     });
 
-    it('elastic-quantize dispatches quantizeTransients for the selected clip', () => {
+    it('elastic-quantize dispatches quantizeTransients for the selected clip on the snap grid', () => {
+        timelineEditingStore.set({ ...defaultTimelineEditingState, snapValue: 0.25 });
+
         runAction('elastic-quantize');
 
         expect(executeUserAppAction).toHaveBeenCalledWith({
             type: 'quantizeTransients',
-            payload: { clipId: 'clip-1' },
+            payload: { clipId: 'clip-1', gridSize: 0.25 },
         });
     });
 

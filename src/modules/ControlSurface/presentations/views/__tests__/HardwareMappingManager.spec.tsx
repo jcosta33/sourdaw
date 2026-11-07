@@ -38,7 +38,7 @@ function mappingFile(json: string): File {
 function fileInput(): HTMLInputElement {
     const input = screen.getByLabelText('Mapping JSON file');
     if (!(input instanceof HTMLInputElement)) {
-        throw new Error('Expected a mapping file input');
+        throw new TypeError('Expected a mapping file input');
     }
     return input;
 }
@@ -46,7 +46,7 @@ function fileInput(): HTMLInputElement {
 function exportedBlob(): Blob {
     const candidate = vi.mocked(URL.createObjectURL).mock.lastCall?.[0];
     if (!(candidate instanceof Blob)) {
-        throw new Error('Expected an actual exported Blob');
+        throw new TypeError('Expected an actual exported Blob');
     }
     return candidate;
 }

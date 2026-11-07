@@ -47,8 +47,7 @@ import {
 import { getAllClipIds } from '../../selectionHelpers/getAllClipIds';
 import { goToNextMarker } from '../../selectionHelpers/goToNextMarker';
 import { goToPreviousMarker } from '../../selectionHelpers/goToPreviousMarker';
-import { duplicateClipSelectingCopy } from '../clipShortcuts/duplicateClipSelectingCopy';
-import { duplicateSelectedClipsForward } from '../clipShortcuts/duplicateSelectedClipsForward';
+import { enqueueClipDuplicate } from '../clipShortcuts/enqueueClipDuplicate';
 import { duplicateTrack } from '../trackShortcuts/duplicateTrack';
 
 const ZOOM_STEP = 4;
@@ -239,25 +238,11 @@ export const handleKeydown = inject({ eventBus: CommandEventBus })(({ eventBus }
                     return true;
                 }
 
-                // R-B2: if multiple clips are selected, duplicate all forward by selection span
-                const selectedClipIds = clipSelectionStore.value?.selectedClipIds ?? [];
-                if (selectedClipIds.length > 1) {
-                    void duplicateSelectedClipsForward(selectedClipIds);
-                } else {
-                    const selectedClipId = clipSelectionStore.value?.selectedClipId;
-                    if (selectedClipId) {
-                        void duplicateClipSelectingCopy('duplicateClip', selectedClipId);
-                    }
-                }
+                void enqueueClipDuplicate('duplicateClip');
                 return true;
             }
             if (appAction.type === 'duplicateClipToNextBar' && appAction.payload.clipId === 'selected') {
-                // Single-clip command: the clip context menu hides it for a multi-clip selection, so the key does too.
-                const selectedClipIds = clipSelectionStore.value?.selectedClipIds ?? [];
-                const selectedClipId = clipSelectionStore.value?.selectedClipId;
-                if (selectedClipId && selectedClipIds.length <= 1) {
-                    void duplicateClipSelectingCopy('duplicateClipToNextBar', selectedClipId);
-                }
+                void enqueueClipDuplicate('duplicateClipToNextBar');
                 return true;
             }
 

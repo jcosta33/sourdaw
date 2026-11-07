@@ -5,6 +5,7 @@ import { captureClipAudioSource, type ClipAudioSourceFields } from '../../useCas
 import { consumedStretchFactor } from '../../useCases/clipEditing/consumedStretchFactor';
 import { crossfadeClipBLoopOriginEntry } from '../../useCases/clipEditing/crossfadeClipBLoopOriginEntry';
 import { crossfadeClips, DEFAULT_CROSSFADE_BEATS } from '../../useCases/clipEditing/crossfadeClips';
+import { findCrossfadePair } from '../../useCases/clipEditing/findCrossfadePair';
 import { resolveCrossfadeClipB } from '../../useCases/clipEditing/resolveCrossfadeClipB';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { liveTempoTimeline } from '../../useCases/liveTempoTimeline';
@@ -125,7 +126,7 @@ function computeCrossfadeSnapshots(clipA: Clip, clipB: Clip, durationBeats: numb
     }
     if (clipB.loopOriginBeat !== undefined) {
         // The forward leg shifts a beat-only audio clip B's anchor by
-        // `clipBDelta - contentDelta` and leaves a MIDI or canonical clip B's
+        // `clipBDelta - contentDelta` and leaves a canonical clip B's
         // untouched; the redo snapshot records the same result so both legs
         // restore the anchor their side of the crossfade held (#5198).
         const shifted = crossfadeClipBLoopOriginEntry(clipB, clipBDelta, contentDelta);
@@ -142,13 +143,16 @@ export const handleCrossfadeClips = createHandler<'crossfadeClips'>({
         );
     },
     describe: (action) => {
-        const clips = getTrackStoreState()?.tracks.flatMap((track) => track.clips) ?? [];
-        const clipA = clips.find((clip) => clip.id === action.payload.clipAId);
-        const clipB = clips.find((clip) => clip.id === action.payload.clipBId);
         const durationBeats = action.payload.durationBeats ?? DEFAULT_CROSSFADE_BEATS;
-        if (!clipA || !clipB || clipA.id === clipB.id || !Number.isFinite(durationBeats) || durationBeats < 0) {
+        const pair = findCrossfadePair(
+            getTrackStoreState()?.tracks ?? [],
+            action.payload.clipAId,
+            action.payload.clipBId
+        );
+        if (!pair || pair.clipA.id === pair.clipB.id || !Number.isFinite(durationBeats) || durationBeats < 0) {
             return { label: 'Crossfade clips', inverseAction: null };
         }
+        const { clipA, clipB } = pair;
         const snapshots = computeCrossfadeSnapshots(clipA, clipB, durationBeats);
         if (!snapshots) {
             return { label: 'Crossfade clips', inverseAction: null };

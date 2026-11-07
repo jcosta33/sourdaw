@@ -18,10 +18,28 @@ describe('SectionNav', () => {
         expect(screen.getByRole('tablist', { name: 'Fermenter sections' })).toBeInTheDocument();
         expect(screen.getAllByRole('tab')).toHaveLength(SECTION_LABELS.length);
         for (const [section, label] of SECTION_LABELS) {
-            expect(screen.getByRole('tab', { name: label })).toHaveAttribute(
-                'aria-selected',
-                String(section === 'filter')
+            const tab = screen.getByRole('tab', { name: label });
+            expect(tab).toHaveAttribute('aria-selected', String(section === 'filter'));
+            expect(tab).toHaveAttribute('aria-controls', 'fermenter-section-panel');
+        }
+    });
+
+    it('keeps each selected section’s accent styling', () => {
+        const accents: Record<FermenterSection, string> = {
+            osc: 'lavender',
+            filter: 'cyan',
+            env: 'mint',
+            mod: 'peach',
+            fx: 'lavender',
+        };
+
+        for (const [section, label] of SECTION_LABELS) {
+            const { unmount } = render(<SectionNav active={section} onChange={vi.fn()} />);
+            expect(screen.getByRole('tab', { name: label })).toHaveClass(
+                `bg-[var(--color-accent-${accents[section]})]`,
+                'text-white'
             );
+            unmount();
         }
     });
 

@@ -54,6 +54,20 @@ describe('diffProposalCommands', () => {
         });
     });
 
+    it('reports a second identical occurrence as added, never pairing the one previous occurrence twice', () => {
+        const bar1 = { type: 'addClip', payload: { trackId: 'midi-1', startBeat: 0, endBeat: 4 } };
+
+        expect(
+            diff(
+                { actions: [bar1], actionLabels: ['Bar 1'] },
+                { actions: [bar1, bar1], actionLabels: ['Bar 1', 'Bar 1 again'] }
+            )
+        ).toEqual({
+            changes: [{ kind: 'added', actionType: 'addClip', label: 'Bar 1 again' }],
+            unchangedCount: 1,
+        });
+    });
+
     it('does not assign a fresh clip to either old clip when both share one target', () => {
         const first = {
             type: 'addClip',
@@ -537,6 +551,69 @@ describe('diffProposalCommands', () => {
                     fields: [{ field: 'afterDeviceId', previous: 'device-1', next: 'device-2' }],
                 },
             ]);
+        });
+
+        it('reports an optional field the replacement leaves out, with its previous value and no next value', () => {
+            expect(
+                changedOnly(
+                    'addDevice',
+                    { trackId: 'track-1', deviceType: 'builtin-eq', afterDeviceId: 'device-1' },
+                    { trackId: 'track-1', deviceType: 'builtin-eq' }
+                )
+            ).toEqual({
+                changes: [
+                    {
+                        kind: 'changed',
+                        actionType: 'addDevice',
+                        label: 'After',
+                        fields: [{ field: 'afterDeviceId', previous: 'device-1', next: null }],
+                    },
+                ],
+                unchangedCount: 0,
+            });
+        });
+
+        it('pairs a placement set by its exact clips before pairing another set by a clip both share', () => {
+            const move = (clipId: string, startBeat: number) => ({ clipId, trackId: 'track-1', startBeat });
+            const verse = [move('clip-a', 4)];
+            const chorus = [move('clip-a', 8), move('clip-b', 12)];
+            const verseMoved = [move('clip-a', 16)];
+            const chorusMoved = [move('clip-a', 20), move('clip-c', 24)];
+
+            expect(
+                diff(
+                    {
+                        actions: [
+                            { type: 'moveClips', payload: { moves: verse } },
+                            { type: 'moveClips', payload: { moves: chorus } },
+                        ],
+                        actionLabels: ['Move verse', 'Move chorus'],
+                    },
+                    {
+                        actions: [
+                            { type: 'moveClips', payload: { moves: verseMoved } },
+                            { type: 'moveClips', payload: { moves: chorusMoved } },
+                        ],
+                        actionLabels: ['Move verse later', 'Move chorus later'],
+                    }
+                )
+            ).toEqual({
+                changes: [
+                    {
+                        kind: 'changed',
+                        actionType: 'moveClips',
+                        label: 'Move verse later',
+                        fields: [{ field: 'moves', previous: canonicalJson(verse), next: canonicalJson(verseMoved) }],
+                    },
+                    {
+                        kind: 'changed',
+                        actionType: 'moveClips',
+                        label: 'Move chorus later',
+                        fields: [{ field: 'moves', previous: canonicalJson(chorus), next: canonicalJson(chorusMoved) }],
+                    },
+                ],
+                unchangedCount: 0,
+            });
         });
 
         it('pairs two automated ranges on one track by the parameter each automates', () => {

@@ -13,6 +13,7 @@ function createInternalReplayContract(
         | 'restoreClip'
         | 'restoreClipPlacement'
         | 'restoreClipSplitState'
+        | 'restoreStripSilenceState'
         | 'restoreAudioClipStartTrim'
         | 'restoreAudioClipSlip'
         | 'restoreDrawnClip'
@@ -73,6 +74,13 @@ export function getInternalUndoSessionReplayContracts(): readonly SessionActionC
             validateArguments: (payload: unknown) => validateVersionedCommandArguments('deleteTime', payload),
             validateEntry: (entry) => getHandlerByType('deleteTime')?.validateSessionEntry?.(entry) === true,
         },
+        {
+            actionType: 'stripSilence',
+            operationVersion: 1,
+            role: 'forward',
+            validateArguments: (payload: unknown) => validateVersionedCommandArguments('stripSilence', payload),
+            validateEntry: (entry) => getHandlerByType('stripSilence')?.validateSessionEntry?.(entry) === true,
+        },
         createInternalReplayContract('discardCreatedTrack', 1, 'optional'),
         createInternalReplayContract('discardDuplicatedClip', 1, 'optional'),
         createInternalReplayContract('discardDrawnClip', 1, 'optional'),
@@ -80,6 +88,7 @@ export function getInternalUndoSessionReplayContracts(): readonly SessionActionC
         createInternalReplayContract('restoreClip', 1, 'required'),
         createInternalReplayContract('restoreClipPlacement', 1, 'required'),
         createInternalReplayContract('restoreClipSplitState', 1, 'required'),
+        createInternalReplayContract('restoreStripSilenceState', 1, 'required'),
         createInternalReplayContract('restoreAudioClipStartTrim', 1, 'required'),
         createInternalReplayContract('restoreAudioClipSlip', 1, 'required'),
         createInternalReplayContract('restoreDrawnClip', 1, 'optional'),
