@@ -1,0 +1,42 @@
+src/modules/Transport/useCases/scheduling/applyAutomation/__tests__/applyAutomationExternalPlugin.spec.ts
+  s_8dd2ba9e498da7::t_712db9a8034ddd 229-230
+src/modules/Transport/useCases/scheduling/applyAutomation/__tests__/deviceAutomationHistoryAcceptance.integration.spec.ts
+  s_8dd2ba9e498da7::t_712db9a8034ddd 5,64
+  s_8dd2ba9e498da7::t_b167c4902723d7 4,63
+  s_939911bea2ef3b::t_bbab53eb554c1e 65
+src/modules/Project/useCases/arrangement/__tests__/switchArrangement.spec.ts
+  s_8dd2ba9e498da7::t_f6a8eacf4f5412 3,31
+  s_fdddfa6a468c89::t_a40d1cce01ad7c 32
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5d243863975839312de1e7bcd1fd13193d964774",
+  "prompts": {},
+  "sessions": {
+    "s_8dd2ba9e498da7": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34a-1f45-7430-80af-58acd6c4b831",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_939911bea2ef3b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34a-952d-7121-902e-cafc5e44b0f7",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_fdddfa6a468c89": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8a8aad0b-494a-4b52-8941-3a8cc43c46a4",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
