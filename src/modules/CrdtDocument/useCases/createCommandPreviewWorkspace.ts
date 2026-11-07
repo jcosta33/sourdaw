@@ -5,10 +5,10 @@ import { createAutomergeStoragePreview } from '#/infra/store/storage/createAutom
 import { DOC_PREFIX_ROOT } from '../models/CrdtDocumentTypes';
 import { automergeRepository } from '../repositories/automergeRepository';
 
-import { captureProjectRevision } from './captureProjectRevision';
+import { settledProjectRevisionMatchesLiveIgnoringSaveWrites } from './settledProjectRevisionMatchesLiveIgnoringSaveWrites';
 
 export function createCommandPreviewWorkspace(expectedRevision: string) {
-    if (captureProjectRevision() !== expectedRevision) {
+    if (!settledProjectRevisionMatchesLiveIgnoringSaveWrites(expectedRevision)) {
         throw new Error('Command batch base revision does not match current project state');
     }
 

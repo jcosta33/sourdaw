@@ -24,10 +24,12 @@ export function previewVersionedCommandBatchEnvelope(envelope: VersionedCommandB
         (command) => ({ type: command.operation, payload: command.arguments }) as AppAction
     );
     const divergenceTargetIds = getVersionedCommandBatchDivergenceTargetIds(envelope);
+    const revisionDiverged =
+        commandProjectRevisionPort.isConfigured() &&
+        !commandProjectRevisionPort.matchesLiveIgnoringSaveWrites(envelope.baseRevision);
     const observedRevision = commandProjectRevisionPort.isConfigured()
         ? commandProjectRevisionPort.capture()
         : envelope.baseRevision;
-    const revisionDiverged = observedRevision !== envelope.baseRevision;
     let preparedValidation: ReturnType<typeof prepareCommandBatchPreflight> | null = null;
     if (!revisionDiverged) {
         preparedValidation = prepareCommandBatchPreflight(envelope);

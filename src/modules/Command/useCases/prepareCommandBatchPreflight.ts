@@ -145,6 +145,16 @@ function validateConditions(input: {
     return null;
 }
 
+function readValidationRevision(baseRevision: string): string {
+    if (!commandProjectRevisionPort.isConfigured()) {
+        return baseRevision;
+    }
+    if (commandProjectRevisionPort.matchesLiveIgnoringSaveWrites(baseRevision)) {
+        return baseRevision;
+    }
+    return commandProjectRevisionPort.capture();
+}
+
 export function prepareCommandBatchPreflight(
     envelope: VersionedCommandBatchEnvelope,
     options: { allowCompatibleProjectDivergence?: boolean } = {}
@@ -152,7 +162,9 @@ export function prepareCommandBatchPreflight(
     const targetIds = getRequiredTargetIds(envelope);
     const assetReferences = getAssetReferences(envelope);
     let before: ReturnType<typeof commandBatchPreflightPort.capture>;
+    let beforeRevision: string;
     try {
+        beforeRevision = readValidationRevision(envelope.baseRevision);
         before = commandBatchPreflightPort.capture({ assetReferences, targetIds });
     } catch (error) {
         const reason = error instanceof Error ? error.message : String(error);
@@ -177,9 +189,7 @@ export function prepareCommandBatchPreflight(
         conditions: preconditions,
         envelope,
         lockedRanges: before.lockedRanges,
-        revision: commandProjectRevisionPort.isConfigured()
-            ? commandProjectRevisionPort.capture()
-            : envelope.baseRevision,
+        revision: beforeRevision,
         targetFingerprints: before.targetFingerprints,
     });
     if (conditionFailure) {
@@ -206,7 +216,9 @@ export function prepareCommandBatchPreflight(
             documentId: COMMAND_PROJECT_DOCUMENT_ID,
             validate(projectDocument): string | null {
                 let after: ReturnType<typeof commandBatchPreflightPort.capture>;
+                let afterRevision: string;
                 try {
+                    afterRevision = readValidationRevision(envelope.baseRevision);
                     after = commandBatchPreflightPort.capture({ assetReferences, projectDocument, targetIds });
                 } catch (error) {
                     const reason = error instanceof Error ? error.message : String(error);
@@ -225,9 +237,7 @@ export function prepareCommandBatchPreflight(
                     conditions: envelope.postconditions,
                     envelope,
                     lockedRanges: after.lockedRanges,
-                    revision: commandProjectRevisionPort.isConfigured()
-                        ? commandProjectRevisionPort.capture()
-                        : envelope.baseRevision,
+                    revision: afterRevision,
                     targetFingerprints: after.targetFingerprints,
                 });
                 if (postconditionFailure) {
