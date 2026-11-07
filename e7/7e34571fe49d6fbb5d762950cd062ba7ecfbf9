@@ -1,0 +1,54 @@
+src/modules/CommandInterface/useCases/keyboardShortcutActions/handleKeyboardShortcut/handleKeydown.ts
+  s_977061c47f01dd::t_e7bdf11bc0c3df 241,245
+  s_977061c47f01dd::t_99adbe94f91a86 50
+src/modules/CommandInterface/useCases/keyboardShortcutActions/handleKeyboardShortcut/__tests__/handleKeydown.spec.ts
+  s_977061c47f01dd::t_4ef3b73ca8a453 190-192
+  s_977061c47f01dd::t_eb2d061a3b5eec 44,185,754,897,900,912,916,928,931-933,945
+  s_977061c47f01dd::t_1157021b35a3d9 193,1474
+src/modules/CommandInterface/useCases/keyboardShortcutActions/clipShortcuts/__tests__/duplicateSelectedClipsForward.spec.ts
+  s_977061c47f01dd::t_60f074c7555d15 44
+src/modules/CommandInterface/useCases/keyboardShortcutActions/clipShortcuts/__tests__/enqueueClipDuplicate.spec.ts
+  s_977061c47f01dd::t_9f7aa24df691ba 1-3,8,16,23-44,50-52,56,65-69,73-90,95-108,165-166,171-182,186-191,203,216,248,296-306
+  s_977061c47f01dd::t_60f074c7555d15 132
+  s_977061c47f01dd::t_4ef3b73ca8a453 4-7,9-15,17-22,45-49,53-55,57-64,70-72,91-94,109-131,133-164,167-170,183-185,192-202,204-215,217-247
+  s_977061c47f01dd::t_f426bdfafb4df6 278,280-281,286-295
+  s_977061c47f01dd::t_88e5721eeda294 249-277,279,282-285
+src/modules/CommandInterface/useCases/keyboardShortcutActions/clipShortcuts/duplicateClipSelectingCopy.ts
+  s_977061c47f01dd::t_99adbe94f91a86 1,4,8-12,17-22,24-37,40-41
+src/modules/CommandInterface/useCases/keyboardShortcutActions/clipShortcuts/enqueueClipDuplicate.ts
+  s_977061c47f01dd::t_99adbe94f91a86 1-10,13-20,26-36,40-41,48-57,59-62,68-76,78
+  s_977061c47f01dd::t_4ef3b73ca8a453 21-25,37-39,63-67
+  s_977061c47f01dd::t_eb2d061a3b5eec 11-12,42-47
+  s_977061c47f01dd::t_e7bdf11bc0c3df 58,77
+src/modules/CommandInterface/useCases/keyboardShortcutActions/handleKeyboardShortcut/__tests__/handleKeydownDuplicateSelection.integration.spec.ts
+  s_977061c47f01dd::t_747bb883c6535d 33,215,218,226,349-350,375,384
+  s_977061c47f01dd::t_6b622a927cab11 50,54,66,107,109-116,121,295,321,329,334,342,347
+  s_977061c47f01dd::t_86f1122caca93b 3,38-49,124-135,142-160,176-186,214,228,291-294,314-318,320,326-328,331-333,336-338,341,344,346,409,441,492,540
+  s_977061c47f01dd::t_09d31028c9fc48 207-209
+  s_977061c47f01dd::t_cffc2c89ac0f27 56-59,165,355,371,502,536
+  s_977061c47f01dd::t_4ef3b73ca8a453 7-32,68-106,118-120,136-141,161-164,166-175,200-206,210-212,229-290,296-312,322-325,330,335,343,348,351-354,356-370,372-374,376-383,385-408,410-440,442-491,493-501,503-535,537-539,541
+  s_977061c47f01dd::t_7a9cd9f5ac8e5f 1-2,4-6,34-37,51-53,55,60-65,67,108,117,122-123,187-199,213,216-217,219-225,227,313,319,339-340,345,542
+src/modules/CommandInterface/useCases/keyboardShortcutActions/clipShortcuts/duplicateSelectedClipsForward.ts
+  s_977061c47f01dd::t_99adbe94f91a86 1,40-43,45,50,55,63,81,87-88,97-110,113-114
+  s_977061c47f01dd::t_e7bdf11bc0c3df 89-90,95-96
+.agents/skills/review-stances/command-entry-and-state-oracles.md
+  s_977061c47f01dd::t_0d5fc08131b73a 76-86
+.agents/skills/review-stances/test-observation-scope.md
+  s_977061c47f01dd::t_c77fe3e5202075 89-96
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e77e34571fe49d6fbb5d762950cd062ba7ecfbf9",
+  "prompts": {},
+  "sessions": {
+    "s_977061c47f01dd": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34d-123d-7452-a6e7-60608388b6d7",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
