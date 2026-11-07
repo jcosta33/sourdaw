@@ -11,8 +11,10 @@ import { useStoreSelector } from '#/infra/store/useStoreSelector';
 import { clipSelectionStore, defaultClipSelectionState } from '#/modules/Arrangement/stores';
 import { selectClip } from '#/modules/Arrangement/useCases';
 import { midiStore, type MidiStoreState } from '#/modules/MIDI/stores';
+import { formatMusicalPosition } from '#/modules/Transport/useCases';
 import { setWorkspaceMode } from '#/modules/WorkspaceShell/useCases';
 
+import { useMeterInput } from '../hooks/useMeterInput';
 import { useTracks } from '../hooks/useTracks';
 
 import { ClipEditorTray } from './ClipEditorTray';
@@ -33,6 +35,7 @@ export const ClipView = (): ReactElement => {
     const [showAutomationTray, setShowAutomationTray] = useState(true);
 
     const clipSelection = useStore(clipSelectionStore, defaultClipSelectionState);
+    const meter = useMeterInput();
 
     // Hooks must precede the no-track early return; the selected-clip
     // derivation is pure, so it moves up with them.
@@ -40,6 +43,8 @@ export const ClipView = (): ReactElement => {
         selectedTrack?.clips.find((context) => context.id === clipSelection.selectedClipId) ??
         selectedTrack?.clips[0] ??
         null;
+
+    const startPosition = selectedClip ? formatMusicalPosition({ ...meter, beat: selectedClip.startBeat }) : '';
 
     // Live note count for the selected MIDI clip — the dock's only DOM
     // readout of clip content, so recording and editing flows are observable
@@ -159,9 +164,9 @@ export const ClipView = (): ReactElement => {
                     <span
                         className="text-[10px] text-muted-foreground/60"
                         data-testid="selected-clip-start-beat"
-                        aria-label={`Selected clip starts at beat ${selectedClip.startBeat}`}
+                        aria-label={`Selected clip starts at bar ${startPosition}`}
                     >
-                        @ {selectedClip.startBeat} beats
+                        @ {startPosition}
                     </span>
                 ) : null}
                 <span

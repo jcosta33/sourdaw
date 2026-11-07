@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { useStore } from '#/infra/store/useStore';
@@ -962,7 +962,13 @@ describe('WaveformEditor', () => {
         expect(screen.queryByRole('menuitem', { name: /AI Stem Separation/ })).not.toBeInTheDocument();
     });
 
-    it('should dispatch audio to MIDI for the track that contains the clip', () => {
+    it.each([true, false])('awaits audio-to-MIDI outcome %s for the containing track', async (converted) => {
+        let release!: (result: boolean) => void;
+        vi.mocked(audioToMidi).mockReturnValueOnce(
+            new Promise((resolve) => {
+                release = resolve;
+            })
+        );
         const clipFixture: Clip = {
             id: 'clip-1',
             trackId: 'track-1',
@@ -987,6 +993,16 @@ describe('WaveformEditor', () => {
         fireEvent.click(screen.getByRole('menuitem', { name: /AI Audio → MIDI/ }));
 
         expect(vi.mocked(audioToMidi)).toHaveBeenCalledWith({ clipId: 'clip-1', trackId: 'track-1' });
+        expect(screen.queryByRole('menuitem', { name: /AI Audio → MIDI/ })).not.toBeInTheDocument();
+        expect(notifyUser).not.toHaveBeenCalled();
+        await act(async () => {
+            release(converted);
+        });
+        if (converted) {
+            expect(notifyUser).not.toHaveBeenCalled();
+        } else {
+            expect(notifyUser).toHaveBeenCalledWith('Audio to MIDI conversion failed', 'error');
+        }
     });
 
     it('should not dispatch audio to MIDI when no track contains the clip', () => {

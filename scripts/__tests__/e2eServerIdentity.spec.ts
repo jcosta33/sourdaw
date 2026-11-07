@@ -298,6 +298,26 @@ describe('playwright config port derivation', () => {
         expect(servers.map((server) => server.reuseExistingServer)).toEqual([false]);
     });
 
+    it('uses the shared build for a mixed shard without changing its projects or companion', async () => {
+        vi.stubEnv('CI', 'true');
+        vi.stubEnv('SOURDAW_SHARED_E2E_BUILD', '1');
+        vi.stubEnv(SOURDAW_E2E_PORT_ENV, '6123');
+        vi.stubEnv('E2E_SPECS', JSON.stringify(['tests/e2e/browserAiPanelsTestId.spec.ts', devServerOnlySpecs[0]]));
+        const config = await loadPlaywrightConfig();
+        const [built, dev] = config.projects ?? [];
+        expect(config.workers).toBe(1);
+        expect(config.retries).toBe(0);
+        expect(built?.testIgnore).toHaveLength(devServerOnlySpecs.length + 1);
+        expect(dev?.testMatch).toHaveLength(devServerOnlySpecs.length);
+        expect(dev?.use?.baseURL).toBe('http://127.0.0.1:6124');
+        const servers = webServers(config);
+        expect(servers.map((server) => server.command)).toEqual([
+            'node scripts/sharedE2eBuild.ts prepare && pnpm exec vite preview --mode e2e --host 127.0.0.1 --port 6123 --strictPort',
+            'node scripts/e2eDevServer.ts 6124',
+        ]);
+        expect(servers.map((server) => server.reuseExistingServer)).toEqual([false, false]);
+    });
+
     it('serves a built-only shard at the last port without deriving a companion', async () => {
         vi.stubEnv('CI', 'true');
         vi.stubEnv(SOURDAW_E2E_PORT_ENV, '65535');

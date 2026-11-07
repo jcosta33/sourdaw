@@ -1525,6 +1525,59 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
         });
     });
 
+    describe('strip silence replay', () => {
+        afterEach(() => vi.restoreAllMocks());
+
+        it('keeps Undo and Redo of a strip silence across a binary reload', async () => {
+            const source: Clip = {
+                ...createClipFixture('clip-a', 0, 8),
+                type: 'audio',
+                audioBufferId: 'source-buffer',
+                audioOffsetSeconds: 0,
+            };
+            trackStore.set({
+                tracks: [TrackDummy.create({ id: TRACK_ID, kind: 'audio', clips: [source] })],
+                selectedTrackId: TRACK_ID,
+                ghostClips: [],
+            });
+            // Sound at 0.5-1 s and 2-3 s of a four-second source, silence around it.
+            const channelData = new Float32Array(4 * 48000);
+            channelData.fill(0.5, 0.5 * 48000, 48000);
+            channelData.fill(0.5, 2 * 48000, 3 * 48000);
+            vi.spyOn(audioBufferCache, 'get').mockReturnValue({
+                getChannelData: () => channelData,
+                length: channelData.length,
+                numberOfChannels: 1,
+                sampleRate: 48000,
+                duration: channelData.length / 48000,
+                copyFromChannel: () => undefined,
+                copyToChannel: () => undefined,
+            });
+            flushAutomergeStorageWrites();
+            stopProjectionBridge = setupProjectionBridge();
+            projectCrdtToStores();
+            const before = structuredClone(trackStore.value?.tracks[0]?.clips);
+
+            await executeAppAction({ type: 'stripSilence', payload: { clipId: 'clip-a', minDuration: 0.1 } });
+            const stripped = structuredClone(trackStore.value?.tracks[0]?.clips);
+            expect(stripped).toHaveLength(2);
+            await vi.waitFor(() =>
+                expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).past).toHaveLength(1)
+            );
+
+            reloadSavedProject();
+            expect((await undo()).headConsumed).toBe(true);
+            expect(trackStore.value?.tracks[0]?.clips).toEqual(before);
+            await vi.waitFor(() =>
+                expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).future).toHaveLength(1)
+            );
+
+            reloadSavedProject();
+            await redo();
+            expect(trackStore.value?.tracks[0]?.clips).toEqual(stripped);
+        });
+    });
+
     describe('audio start trim captured source replay', () => {
         afterEach(() => tempoMapStore.set({ changes: [] }));
 

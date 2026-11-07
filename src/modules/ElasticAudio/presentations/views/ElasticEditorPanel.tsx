@@ -35,13 +35,13 @@ import { setDefaultAlgorithm } from '../../useCases/audioWarping/setDefaultAlgor
 import { addManualMarker } from '../../useCases/elasticAudio/addManualMarker';
 import { detectTransientsForClip } from '../../useCases/elasticAudio/detectTransientsForClip';
 import { markElasticDetectionComplete } from '../../useCases/elasticAudio/markElasticDetectionComplete';
-import { quantizeTransients } from '../../useCases/elasticAudio/quantizeTransients';
 import { removeMarker } from '../../useCases/elasticAudio/removeMarker';
 import { resolveElasticEditorTarget } from '../../useCases/elasticAudio/resolveElasticEditorTarget';
 import { selectElasticMarkers } from '../../useCases/elasticAudio/selectElasticMarkers';
 import { setElasticSensitivity } from '../../useCases/elasticAudio/setElasticSensitivity';
 import { setElasticTool } from '../../useCases/elasticAudio/setElasticTool';
 import { toggleMarkerLock } from '../../useCases/elasticAudio/toggleMarkerLock';
+import { quantizeTransients } from '../../useCases/quantizeTransients';
 
 type StretchMode = 'repitch' | 'phase-vocoder' | 'wsola';
 
@@ -108,6 +108,8 @@ export const ElasticEditorPanel = (): ReactElement => {
     });
 
     const { clipId, clip } = resolveElasticEditorTarget(elasticState, clipSelection, trackState);
+    const snapValue = timelineEditing.snapValue;
+    const transientSensitivity = preferences.elasticTransientSensitivity;
     const isAudioClip = clip !== null && clip.type === 'audio';
 
     const warpState = (clipId === null ? undefined : warpStates.states[clipId]) ?? EMPTY_WARP_STATE;
@@ -134,7 +136,7 @@ export const ElasticEditorPanel = (): ReactElement => {
                 setElasticTool('add-marker');
                 event.preventDefault();
             } else if (event.key === 'g' || event.key === 'G') {
-                quantizeTransients(clipId);
+                void quantizeTransients(clipId, snapValue, transientSensitivity);
                 event.preventDefault();
             } else if (event.key === 'Delete' || event.key === 'Backspace') {
                 const selected = elasticState.selectedMarkerIds;
@@ -146,7 +148,7 @@ export const ElasticEditorPanel = (): ReactElement => {
         };
         window.addEventListener('keydown', onKeyDown);
         return () => window.removeEventListener('keydown', onKeyDown);
-    }, [clipId, elasticState.openClipId, elasticState.selectedMarkerIds]);
+    }, [clipId, elasticState.openClipId, elasticState.selectedMarkerIds, snapValue, transientSensitivity]);
 
     const beatWidth = Math.max(1, 40 * zoom);
 
@@ -180,7 +182,7 @@ export const ElasticEditorPanel = (): ReactElement => {
     };
 
     const handleQuantize = (): void => {
-        quantizeTransients(clipId);
+        void quantizeTransients(clipId, snapValue, transientSensitivity);
     };
 
     const handleToolClick = (tool: ElasticEditorTool): void => {

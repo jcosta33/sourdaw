@@ -66,6 +66,7 @@ import {
     electronReleaseTarget,
     type ElectronRuntimeContract,
 } from './electronRuntimeContract.ts';
+import { verifyPackagedNativeArtifacts } from './verifyPackagedNativeArtifacts.ts';
 
 /**
  * The slice of electron-builder's `AfterPackContext` this hook reads.
@@ -226,30 +227,39 @@ export const findFuseMismatches = (wire: Partial<Record<FuseV1Options, FuseState
     return mismatches;
 };
 
-export const afterPack = async (context: AfterPackContext): Promise<void> => {
-    const binaryPath = resolveElectronBinaryPath(context);
+export const createAfterPack =
+    (contract: ElectronRuntimeContract = ELECTRON_RUNTIME_CONTRACT) =>
+    async (context: AfterPackContext): Promise<void> => {
+        const binaryPath = resolveElectronBinaryPath(context);
 
-    await verifyStagedElectronLegalFiles(context);
-    await flipFuses(binaryPath, {
-        version: FuseVersion.V1,
-        [FuseV1Options.RunAsNode]: false,
-        [FuseV1Options.OnlyLoadAppFromAsar]: true,
-        [FuseV1Options.EnableEmbeddedAsarIntegrityValidation]: true,
-        [FuseV1Options.EnableCookieEncryption]: true,
-        [FuseV1Options.EnableNodeOptionsEnvironmentVariable]: false,
-        [FuseV1Options.EnableNodeCliInspectArguments]: false,
-        [FuseV1Options.GrantFileProtocolExtraPrivileges]: false,
-    });
+        await verifyPackagedNativeArtifacts(
+            resolvePackagedResourcesPath(context),
+            context.electronPlatformName,
+            context.arch
+        );
+        await verifyStagedElectronLegalFiles(context, contract);
+        await flipFuses(binaryPath, {
+            version: FuseVersion.V1,
+            [FuseV1Options.RunAsNode]: false,
+            [FuseV1Options.OnlyLoadAppFromAsar]: true,
+            [FuseV1Options.EnableEmbeddedAsarIntegrityValidation]: true,
+            [FuseV1Options.EnableCookieEncryption]: true,
+            [FuseV1Options.EnableNodeOptionsEnvironmentVariable]: false,
+            [FuseV1Options.EnableNodeCliInspectArguments]: false,
+            [FuseV1Options.GrantFileProtocolExtraPrivileges]: false,
+        });
 
-    const wire = await getCurrentFuseWire(binaryPath);
-    const mismatches = findFuseMismatches(wire);
-    if (mismatches.length > 0) {
-        throw new Error(`Electron fuses were not applied to ${binaryPath}: ${mismatches.join('; ')}`);
-    }
+        const wire = await getCurrentFuseWire(binaryPath);
+        const mismatches = findFuseMismatches(wire);
+        if (mismatches.length > 0) {
+            throw new Error(`Electron fuses were not applied to ${binaryPath}: ${mismatches.join('; ')}`);
+        }
 
-    console.log(
-        `[fuses] verified on ${binaryPath}: ${[...REQUIRED_FUSES]
-            .map(([fuse, enabled]) => `${FuseV1Options[fuse]}=${String(enabled)}`)
-            .join(' ')}`
-    );
-};
+        console.log(
+            `[fuses] verified on ${binaryPath}: ${[...REQUIRED_FUSES]
+                .map(([fuse, enabled]) => `${FuseV1Options[fuse]}=${String(enabled)}`)
+                .join(' ')}`
+        );
+    };
+
+export const afterPack = createAfterPack();

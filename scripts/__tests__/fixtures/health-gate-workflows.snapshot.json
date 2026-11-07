@@ -170,12 +170,75 @@
           "profile": "${{ needs.scope.outputs.profile }}"
         }
       },
+      "e2e-build": {
+        "name": "Shared E2E build",
+        "needs": "scope",
+        "if": "${{ fromJSON(needs.scope.outputs.matrix).include[0] != null }}",
+        "runs-on": "ubuntu-latest",
+        "container": {
+          "image": "mcr.microsoft.com/playwright:v1.64.1-noble@sha256:47b510dd9230bf0b9bfc9b20102241e577ea7a99334ab4c3ca19f19770e9b8ea",
+          "options": "--init --ipc=host"
+        },
+        "defaults": {
+          "run": {
+            "shell": "bash"
+          }
+        },
+        "timeout-minutes": 75,
+        "steps": [
+          {
+            "name": "Checkout",
+            "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+            "with": {
+              "ref": "${{ github.sha }}",
+              "persist-credentials": false
+            }
+          },
+          {
+            "name": "Set up pnpm",
+            "uses": "./.github/actions/setup-pnpm",
+            "with": {
+              "package_json_file": "package.json"
+            }
+          },
+          {
+            "name": "Set up Node",
+            "timeout-minutes": 3,
+            "continue-on-error": true,
+            "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+            "with": {
+              "node-version": "24.19.0",
+              "cache": "pnpm"
+            }
+          },
+          {
+            "name": "Install dependencies",
+            "run": "pnpm install --frozen-lockfile"
+          },
+          {
+            "name": "Build shared E2E app",
+            "run": "node scripts/sharedE2eBuild.ts build"
+          },
+          {
+            "name": "Upload shared E2E build",
+            "uses": "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
+            "with": {
+              "name": "e2e-build-${{ github.run_id }}-${{ github.run_attempt }}",
+              "path": "dist/",
+              "if-no-files-found": "error",
+              "retention-days": 7
+            }
+          }
+        ]
+      },
       "affected": {
         "name": "Affected workflows",
         "needs": [
           "scope",
-          "validation"
+          "validation",
+          "e2e-build"
         ],
+        "if": "${{ !cancelled() && needs.scope.result == 'success' && needs.validation.result == 'success' &&\n    ((fromJSON(needs.scope.outputs.matrix).include[0] != null && needs.e2e-build.result == 'success') ||\n     (fromJSON(needs.scope.outputs.matrix).include[0] == null && needs.e2e-build.result == 'skipped')) }}",
         "uses": "./.github/workflows/heavy-gates.yml",
         "with": {
           "matrix": "${{ needs.scope.outputs.matrix }}",
@@ -221,6 +284,7 @@
         "needs": [
           "admission",
           "scope",
+          "e2e-build",
           "validation",
           "affected",
           "codeql"
@@ -232,9 +296,10 @@
             "name": "Require selected checks to succeed",
             "if": "${{ always() }}",
             "env": {
-              "RESULTS": "${{ toJSON(needs) }}"
+              "RESULTS": "${{ toJSON(needs) }}",
+              "MATRIX": "${{ needs.scope.outputs.matrix }}"
             },
-            "run": "set -euo pipefail\nprintf '%s' \"$RESULTS\" | jq -r '\n  if .admission.result == \"success\" and .admission.outputs.admitted == \"true\" then empty\n  else \"::error title=Gate not admitted::\\(.admission.outputs.reason // \"approval admission did not decide\")\" end'\nprintf '%s' \"$RESULTS\" | jq -e '\n  (keys | sort) == [\"admission\", \"affected\", \"codeql\", \"scope\", \"validation\"] and\n  .admission.result == \"success\" and .admission.outputs.admitted == \"true\" and\n  .scope.result == \"success\" and .validation.result == \"success\" and .affected.result == \"success\" and\n  (.scope.outputs.browser == \"true\" or .scope.outputs.browser == \"false\") and\n  (.scope.outputs[\"browser-ai\"] == \"true\" or .scope.outputs[\"browser-ai\"] == \"false\") and\n  (if .scope.outputs.codeql == \"true\" then .codeql.result == \"success\"\n   elif .scope.outputs.codeql == \"false\" then .codeql.result == \"skipped\"\n   else false end)'\n"
+            "run": "set -euo pipefail\nprintf '%s' \"$RESULTS\" | jq -r '\n  if .admission.result == \"success\" and .admission.outputs.admitted == \"true\" then empty\n  else \"::error title=Gate not admitted::\\(.admission.outputs.reason // \"approval admission did not decide\")\" end'\nselected=$(printf '%s' \"$MATRIX\" | jq -er '\n  if type != \"object\" or (.include | type) != \"array\" then error(\"invalid E2E plan\")\n  elif all(.include[]; (.id | type) == \"number\" and (.specs | type) == \"array\" and (.specs | length) > 0) then\n    if (.include | length) > 0 then \"success\" else \"skipped\" end\n  else error(\"invalid E2E group\") end')\nprintf '%s' \"$RESULTS\" | jq -e --arg selected \"$selected\" '\n  (keys | sort) == [\"admission\", \"affected\", \"codeql\", \"e2e-build\", \"scope\", \"validation\"] and\n  .admission.result == \"success\" and .admission.outputs.admitted == \"true\" and\n  .scope.result == \"success\" and .validation.result == \"success\" and .affected.result == \"success\" and\n  .[\"e2e-build\"].result == $selected and\n  (.scope.outputs.browser == \"true\" or .scope.outputs.browser == \"false\") and\n  (.scope.outputs[\"browser-ai\"] == \"true\" or .scope.outputs[\"browser-ai\"] == \"false\") and\n  (if .scope.outputs.codeql == \"true\" then .codeql.result == \"success\"\n   elif .scope.outputs.codeql == \"false\" then .codeql.result == \"skipped\"\n   else false end)'\n"
           }
         ]
       }
@@ -402,7 +467,11 @@
         "steps": [
           {
             "name": "Checkout",
-            "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
+            "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+            "with": {
+              "ref": "${{ github.sha }}",
+              "persist-credentials": false
+            }
           },
           {
             "name": "Set up pnpm",
@@ -426,6 +495,14 @@
             "run": "pnpm install --frozen-lockfile"
           },
           {
+            "name": "Download shared E2E build",
+            "uses": "actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c",
+            "with": {
+              "name": "e2e-build-${{ github.run_id }}-${{ github.run_attempt }}",
+              "path": "dist/"
+            }
+          },
+          {
             "name": "Verify preinstalled browser runtime",
             "timeout-minutes": 2,
             "run": "node scripts/verifyPlaywrightRuntime.ts 1.65.0"
@@ -434,7 +511,8 @@
             "name": "Run shard",
             "id": "run_shard",
             "env": {
-              "E2E_SPECS": "${{ toJSON(matrix.specs) }}"
+              "E2E_SPECS": "${{ toJSON(matrix.specs) }}",
+              "SOURDAW_SHARED_E2E_BUILD": "1"
             },
             "run": "node scripts/prValidationScope.ts run"
           },

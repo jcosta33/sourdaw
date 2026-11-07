@@ -150,20 +150,12 @@ export type ExecutableAppActionDirectionalIntent = {
 
 export type ExecutableAppActionDiscoverability = 'hidden' | 'visible';
 
-export type ExecutableAppActionSessionReplay = 'forward' | 'none';
-
 type ExecutableAppActionDescriptor = {
     actionType: AppActionType;
     operationVersion?: number;
     risk: ExecutableAppActionRisk;
     description: string;
     discoverability?: ExecutableAppActionDiscoverability;
-    /**
-     * `none` keeps the command out of the forward contracts a reload replays undo entries through,
-     * so registering it leaves its undo history across a reload exactly as it was before it was
-     * executable. Absent means `forward`.
-     */
-    sessionReplay?: ExecutableAppActionSessionReplay;
     intentPhrases: readonly string[];
     /**
      * Phrases that name this action only in a clause stating a decibel figure in a form one of its
@@ -810,6 +802,65 @@ export const executableAppActionDescriptors = [
                 },
             },
             required: ['clipIds'],
+        },
+    },
+    {
+        actionType: 'quantizeTransients',
+        risk: 'destructive-reversible',
+        description:
+            'Cut one unlocked, unlooped audio clip at its detected transients and move each slice so its hit lands on an explicit beat grid, as one reversible edit; gaps left behind stay silent.',
+        intentPhrases: [
+            'quantize transients',
+            'quantize the transients',
+            'quantize audio',
+            'quantize the audio',
+            'quantize audio clip',
+            'quantize the audio clip',
+            'beat detective',
+        ],
+        targetRules: editableAudioClipTargetRules,
+        valueRules: [{ argument: 'gridSize', kind: 'number-if-present', requiredInPrompt: true, match: 'exact' }],
+        materializedArgumentsValidation: 'owner-required',
+        parameters: {
+            properties: {
+                clipId: { type: 'string', description: 'Existing unlocked, unlooped audio clip ID' },
+                gridSize: {
+                    type: 'number',
+                    minimum: 1 / 32,
+                    maximum: 4,
+                    description: 'Quantize grid in beats, from 1/32 through 4 (0.25 is a sixteenth note)',
+                },
+                strength: {
+                    type: 'number',
+                    minimum: 0,
+                    maximum: 1,
+                    description: 'How far each hit moves toward its grid point, 0 through 1; defaults to 1',
+                },
+                swing: {
+                    type: 'number',
+                    minimum: 0,
+                    maximum: 1,
+                    description: 'Swing applied to off-beat grid points, 0 through 1; defaults to 0',
+                },
+                sensitivity: {
+                    type: 'number',
+                    minimum: 0,
+                    maximum: 1,
+                    description: 'Transient detection sensitivity, 0 through 1; defaults to 0.5',
+                },
+                minConfidence: {
+                    type: 'number',
+                    minimum: 0,
+                    maximum: 1,
+                    description: 'Lowest detection confidence a hit needs to be cut, 0 through 1; defaults to 0',
+                },
+                startBeat: { type: 'number', description: 'Optional song beat the quantized range starts at' },
+                endBeat: {
+                    type: 'number',
+                    description: 'Optional song beat the quantized range ends at; later audio stays where it is',
+                },
+            },
+            required: ['clipId', 'gridSize'],
         },
     },
     {
@@ -1633,7 +1684,6 @@ export const executableAppActionDescriptors = [
         // Only `brief.compile` reaches it: the application composes the whole brief, so no provider
         // ever names this command or its arguments.
         discoverability: 'hidden',
-        sessionReplay: 'none',
         intentPhrases: [],
         targetRules: [],
         parameters: {
@@ -3208,6 +3258,7 @@ export const executableAppActionMutationIdentityRulesByType = {
     setClipColor: CLIP_MUTATION_IDENTITY,
     setClipFade: CLIP_MUTATION_IDENTITY,
     glueClips: MANY_CLIPS_MUTATION_IDENTITY,
+    quantizeTransients: CLIP_MUTATION_IDENTITY,
     crossfadeClips: DUAL_CLIPS_MUTATION_IDENTITY,
     lockClip: CLIP_MUTATION_IDENTITY,
     setClipLoop: CLIP_MUTATION_IDENTITY,
@@ -3326,6 +3377,7 @@ export const executableAppActionMutationIdempotenceByType = {
     setClipColor: true,
     setClipFade: true,
     glueClips: false,
+    quantizeTransients: false,
     crossfadeClips: false,
     lockClip: true,
     setClipLoop: true,

@@ -1,4 +1,4 @@
-import { detectTransients as detectSourceTransients } from '../../models/TransientDetection';
+import { detectTransients as detectSourceTransients } from '#/utils/transientOnsetDetection';
 
 export type TransientHit = ReturnType<typeof detectSourceTransients>[number];
 

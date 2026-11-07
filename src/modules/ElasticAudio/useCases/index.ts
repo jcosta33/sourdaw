@@ -14,7 +14,7 @@ export { setElasticSensitivityRootIdentityCapture } from './elasticAudio/elastic
 export { addManualMarker } from './elasticAudio/addManualMarker';
 export { removeMarker } from './elasticAudio/removeMarker';
 export { toggleMarkerLock } from './elasticAudio/toggleMarkerLock';
-export { quantizeTransients } from './elasticAudio/quantizeTransients';
+export { quantizeTransients } from './quantizeTransients';
 
 export { enableWarping } from './audioWarping/enableWarping';
 export { setWarpAlgorithm } from './audioWarping/setWarpAlgorithm';

@@ -10,11 +10,13 @@ const mocks = vi.hoisted(() => ({
 
 // `hydrateBacteriaPatchFromProject`'s real implementation pulls in the
 // `Arrangement` stores barrel, which reaches `pushUndoEntry` through modules
-// this spec never exercises (Automation, ElasticAudio); the barrel-mock
-// coverage check needs it named here even though no test calls it.
+// this spec never exercises (Automation, ElasticAudio), and ElasticAudio reaches
+// `executeUserAppAction`; the barrel-mock coverage check needs both named here
+// even though no test calls them.
 vi.mock('#/modules/Command/useCases', () => ({
     getExecutableAppActionEffect: vi.fn(() => null),
     executeAppAction: mocks.executeAppAction,
+    executeUserAppAction: vi.fn(),
     pushUndoEntry: mocks.pushUndoEntry,
 }));
 

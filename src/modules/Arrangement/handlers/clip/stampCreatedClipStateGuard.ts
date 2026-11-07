@@ -54,28 +54,3 @@ export function stampCreatedClipStateGuard(guard: GeneratedMidiStateGuard, clipI
     guard.clipSatellitesJson = state.clipSatellitesJson;
     guard.clipAutomationLanesJson = state.clipAutomationLanesJson;
 }
-
-/**
- * The guard re-pinned to what a redo just re-created. The replay mints fresh
- * note and automation-lane ids, so the guard recorded at the first execute no
- * longer describes the copy. Only the legs the guard already carries are
- * re-read: a leg left absent stays on its absence check. A clip that is on no
- * track keeps the recorded guard.
- */
-export function refreshCreatedClipStateGuard(guard: GeneratedMidiStateGuard, clipId: string): GeneratedMidiStateGuard {
-    const state = readCreatedClipState(clipId);
-    if (!state) {
-        return guard;
-    }
-    const refreshed: GeneratedMidiStateGuard = {
-        entityJson: state.entityJson,
-        midiByClipIdJson: state.midiByClipIdJson,
-    };
-    if (guard.clipSatellitesJson !== undefined) {
-        refreshed.clipSatellitesJson = state.clipSatellitesJson;
-    }
-    if (guard.clipAutomationLanesJson !== undefined) {
-        refreshed.clipAutomationLanesJson = state.clipAutomationLanesJson;
-    }
-    return refreshed;
-}

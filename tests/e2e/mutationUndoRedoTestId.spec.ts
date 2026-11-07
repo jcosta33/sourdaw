@@ -189,7 +189,7 @@ test.describe('Undo/redo round-trips of major mutations', () => {
         const canvas = await importClipOnFirstTrack(page);
 
         const startBeat = page.getByTestId('selected-clip-start-beat');
-        await expect(startBeat).toHaveText(/@ 0 beats/i);
+        await expect(startBeat).toHaveText(/@ 1\.1\.1/);
 
         const box = await canvas.boundingBox();
         expect(box).not.toBeNull();
@@ -203,7 +203,7 @@ test.describe('Undo/redo round-trips of major mutations', () => {
         }
         await page.mouse.up();
         await page.waitForTimeout(800);
-        await expect(startBeat).not.toHaveText(/@ 0 beats/i);
+        await expect(startBeat).not.toHaveText(/@ 1\.1\.1/);
 
         const undo = page.getByTestId('transport-undo');
         const redo = page.getByTestId('transport-redo');
@@ -211,10 +211,10 @@ test.describe('Undo/redo round-trips of major mutations', () => {
 
         await undo.click();
         await page.waitForTimeout(500);
-        await expect(startBeat).toHaveText(/@ 0 beats/i);
+        await expect(startBeat).toHaveText(/@ 1\.1\.1/);
 
         await redo.click();
         await page.waitForTimeout(500);
-        await expect(startBeat).not.toHaveText(/@ 0 beats/i);
+        await expect(startBeat).not.toHaveText(/@ 1\.1\.1/);
     });
 });

@@ -20,6 +20,10 @@ import { logger } from '#/infra/logger/appLogger';
 import { MODEL_RELEASE_ADMISSION } from '#/infra/release/modelReleaseAdmission';
 import { getAllTracks } from '#/modules/Arrangement/useCases';
 import { getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
+import {
+    projectRevisionMatchesLiveIgnoringSaveWrites,
+    settlePendingProjectWritesAndCaptureRevision,
+} from '#/modules/CrdtDocument/useCases';
 
 /**
  * The Basic Pitch neural network was trained on exactly 22 050 Hz input; any
@@ -36,12 +40,13 @@ export type PolyphonicAudioToMidiOptions = {
     frameThreshold?: number;
     minNoteLength?: number;
     onProgress?: (percent: number) => void;
+    signal?: AbortSignal;
 };
 
 export type PolyphonicAudioToMidiResult = {
     notes: NoteEventTime[];
     /** Source clip boundaries, for callers that need to place notes in the timeline. */
-    sourceClip: { startBeat: number; endBeat: number; name: string };
+    sourceClip: { startBeat: number; endBeat: number; name: string; projectRevision: string; signal?: AbortSignal };
 };
 
 // ── Model singleton ─────────────────────────────────────────────────────
@@ -88,7 +93,7 @@ async function getBasicPitchModel(): Promise<BasicPitch> {
  * This is significantly more accurate than the simple onset-detection
  * approach in audioToMidi.ts, especially for melodic content.
  *
- * @returns The generated notes and the IDs of the created clip/track.
+ * @returns Detected notes and transient source authority for the later insertion.
  */
 export async function polyphonicAudioToMidi(
     options: PolyphonicAudioToMidiOptions
@@ -97,6 +102,12 @@ export async function polyphonicAudioToMidi(
         throw new Error('Basic Pitch model artifacts are not admitted in this release');
     }
     const { clipId, onsetThreshold = 0.5, frameThreshold = 0.3, minNoteLength = 11, onProgress } = options;
+    if (options.signal?.aborted) {
+        return null;
+    }
+    const projectRevision = settlePendingProjectWritesAndCaptureRevision();
+    const sourceIsCurrent = () =>
+        options.signal?.aborted !== true && projectRevisionMatchesLiveIgnoringSaveWrites(projectRevision);
 
     // Find the source clip and its audio buffer
     const clip = getAllTracks()
@@ -120,6 +131,9 @@ export async function polyphonicAudioToMidi(
 
     // Run the neural network inference
     const model = await getBasicPitchModel();
+    if (!sourceIsCurrent()) {
+        return null;
+    }
     let frames: number[][] = [];
     let onsets: number[][] = [];
     let contours: number[][] = [];
@@ -140,6 +154,9 @@ export async function polyphonicAudioToMidi(
         source.start();
 
         evaluationBuffer = await offlineCtx.startRendering();
+        if (!sourceIsCurrent()) {
+            return null;
+        }
     }
 
     try {
@@ -160,6 +177,9 @@ export async function polyphonicAudioToMidi(
     }
 
     // Convert model output to note events
+    if (!sourceIsCurrent()) {
+        return null;
+    }
     let noteEvents = outputToNotesPoly(
         frames,
         onsets,
@@ -188,6 +208,12 @@ export async function polyphonicAudioToMidi(
 
     return {
         notes: notesWithTime,
-        sourceClip: { startBeat: clip.startBeat, endBeat: clip.endBeat, name: clip.name },
+        sourceClip: {
+            startBeat: clip.startBeat,
+            endBeat: clip.endBeat,
+            name: clip.name,
+            projectRevision,
+            signal: options.signal,
+        },
     };
 }

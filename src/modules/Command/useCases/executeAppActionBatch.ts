@@ -30,6 +30,7 @@ import {
 
 import { actionHistoryMetadataPort, type ActionHistoryMetadata } from './actionHistoryMetadataPort';
 import { appendAbortFailures } from './appendAbortFailures';
+import { bindCanonicalRedoAction } from './bindCanonicalRedoAction';
 import { captureRecordedRedoContext } from './captureRecordedRedoContext';
 import { type CommandBatchValidationPreparation } from './commandBatchValidation';
 import { commitRedoInverseCapture } from './commitRedoInverseCapture';
@@ -785,6 +786,7 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                         actions: [],
                     };
                 }
+                bindCanonicalRedoAction(requestedAction, action, recordedRedos.get(requestedAction));
                 canonicalizedActions.push({
                     action,
                     requestedAction,

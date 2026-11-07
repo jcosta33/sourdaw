@@ -2,7 +2,7 @@ import { type Locator } from '@playwright/test';
 
 import { chooseProjectDirectory } from './chosenProjectDirectory';
 import { expect, test } from './e2eTest';
-import { launch_new_project, setupWorkspace, wait_for_workspace_ready } from './e2eUtils';
+import { launch_new_project, launch_new_project_via_ui, setupWorkspace, wait_for_workspace_ready } from './e2eUtils';
 
 type Box = { x: number; y: number; width: number; height: number };
 
@@ -116,7 +116,7 @@ test.describe('Launch Screen & Project Entry', () => {
             await launch_screen.waitFor({ state: 'visible' });
             await expect(launch_screen).toHaveCSS('transition-property', 'none');
 
-            await launch_new_project(page);
+            await launch_new_project_via_ui(page);
         });
 
         test.describe('with full motion', () => {
@@ -128,7 +128,7 @@ test.describe('Launch Screen & Project Entry', () => {
                 await expect(launch_screen).toHaveCSS('transition-property', 'opacity, scale');
                 await expect(launch_screen).toHaveCSS('transition-duration', '0.65s');
 
-                await launch_new_project(page);
+                await launch_new_project_via_ui(page);
             });
         });
     });
