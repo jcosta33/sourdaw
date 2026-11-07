@@ -1,9 +1,9 @@
 import { act, render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { TrackClipsSection } from '../TrackClipsSection';
-
 import { defaultTransportState, timeSignatureMapStore, transportStore } from '#/modules/Transport/stores';
+
+import { TrackClipsSection } from '../TrackClipsSection';
 
 import type { Track } from '../../../../models/TrackViewTypes';
 
