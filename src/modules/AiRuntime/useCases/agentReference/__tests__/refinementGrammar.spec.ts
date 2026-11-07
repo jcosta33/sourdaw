@@ -68,10 +68,10 @@ const context: ProjectContext = {
 const mute = (trackId: string): Call => ({ name: 'muteTrack', arguments: { trackId, muted: true } });
 const lower = (trackId: string): Call => ({ name: 'setTrackGain', arguments: { trackId, deltaDb: -2 } });
 
-function basis(prompt: string, toolCalls: Call[]) {
+function basis(prompt: string, toolCalls: Call[], projectContext: ProjectContext = context) {
     const result = groundCompiledCommandBatch({
         toolCalls,
-        context,
+        context: projectContext,
         prompt,
         projectRevision: undefined,
         workflowCapabilityId: undefined,
@@ -88,15 +88,49 @@ function basis(prompt: string, toolCalls: Call[]) {
     return result.groundingBasis;
 }
 
-function read(text: string, pending: ReturnType<typeof basis>) {
-    const removals = refinementClauseReader.removals({ text, basis: pending, context });
+function read(text: string, pending: ReturnType<typeof basis>, projectContext: ProjectContext = context) {
+    const removals = refinementClauseReader.removals({ text, basis: pending, context: projectContext });
     if (removals.status !== 'read') {
         throw new Error(`Expected removal reading: ${removals.status}`);
     }
-    return { text, basis: pending, context, ...removals };
+    return { text, basis: pending, context: projectContext, ...removals };
 }
 
 describe('refinement grammar at its owning readers', () => {
+    it('asks when a masked protection names pending and off-card objects', () => {
+        const projectContext = {
+            ...context,
+            tracks: [
+                track('track-snare', 'Snare'),
+                track('track-bass', 'Bass'),
+                track('track-long-name', 'Snare and Bass alone'),
+            ],
+        };
+        const pending = basis('turn Snare down 2 dB', [lower('track-snare')], projectContext);
+        const text = 'leave Snare and Bass alone';
+        const clauses = refinementRequestReading.clauses(text, projectContext);
+        expect(clauses).toHaveLength(1);
+        expect(clauses[0]?.masked).toBe(`leave ${'□'.repeat('Snare and Bass alone'.length)}`);
+        expect(refinementClauseReader.removals({ text, basis: pending, context: projectContext })).toEqual({
+            status: 'clarify',
+            reason: 'The refinement keeps something unchanged that it cannot protect apart from the pending changes.',
+            question:
+                '"leave Snare and Bass alone" keeps something a pending change acts on, or names no one object. Name each object off the proposal to keep, as in "keep the Bass unchanged", or the pending change to remove, as in "remove the snare".',
+        });
+    });
+
+    it('asks where a pushed pan should land', () => {
+        const pending = basis('pan Bass left 30%', [
+            { name: 'setTrackPan', arguments: { trackId: 'track-bass', pan: -30 } },
+        ]);
+        expect(refinementClauseReader.values(read('push it 10 right', pending))).toEqual({
+            status: 'clarify',
+            reason: 'The refinement leaves part of the change it asks for open.',
+            question:
+                'Should the pan land at 10 or move 10 toward that side? Say where it should land, as in "pan it 10 right".',
+        });
+    });
+
     it('asks for an apostrophe at a word boundary but reads internal apostrophes', () => {
         const text = "turn the mix' level down 2 dB";
         expect(refinementRequestReading.clauses(text, context)[0]?.masked).toContain("mix'");
