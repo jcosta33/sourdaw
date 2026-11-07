@@ -59,12 +59,16 @@ async function palette(page: Page, name: string): Promise<void> {
 
 // The evidence read refuses a project that is still hydrating, a clip whose decoded PCM is not
 // cached yet, and a document that moved mid-read. Each is transient, and a throw from inside an
-// `expect.poll` callback ends the poll at once, so the read retries here instead.
+// `expect.poll` callback ends the poll at once, so the read retries here instead. The retry is
+// shorter than the 5s poll deadline so that a state that never settles still fails with its own
+// message instead of the poll's bare timeout.
+const EVIDENCE_SETTLE_TIMEOUT_MS = 3_000;
+
 async function capture(page: Page): Promise<Snapshot> {
     let snapshot: Snapshot | undefined;
     await expect(async () => {
         snapshot = await captureOnce(page);
-    }).toPass();
+    }).toPass({ timeout: EVIDENCE_SETTLE_TIMEOUT_MS });
     if (!snapshot) {
         throw new Error('Evidence capture settled without a snapshot');
     }
