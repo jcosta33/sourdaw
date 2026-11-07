@@ -1,0 +1,41 @@
+tests/e2e/directProjectSetupEntry.ts
+  s_fdddfa6a468c89::t_4d630b9c70b871 1-5
+tests/e2e/launchFlows.spec.ts
+  s_fdddfa6a468c89::t_b386605f8b29a5 119,131
+  s_fdddfa6a468c89::t_74be2b09bf64eb 5
+vite.config.ts
+  s_fdddfa6a468c89::t_d2f8ea7341715c 109-115,119-129,138,146-147
+  s_fdddfa6a468c89::t_15c86da4a42f07 108
+  s_fdddfa6a468c89::t_e53200ea00355a 148
+tests/e2e/applicationModuleRecovery.spec.ts
+  s_fdddfa6a468c89::t_5a8d5e7a239c7c 134
+tests/e2e/browserAiAdmittedPresentation.spec.ts
+  s_fdddfa6a468c89::t_bf990f6b2c7f89 41
+tests/e2e/directProjectSetup.spec.ts
+  s_fdddfa6a468c89::t_dd14f947910e97 1-28
+tests/e2e/e2eUtils.ts
+  s_fdddfa6a468c89::t_1d0db753e19d03 157-175,177-182,184
+  s_fdddfa6a468c89::t_ddf8fc8e5ccc63 132-135,138
+  s_fdddfa6a468c89::t_15c86da4a42f07 183
+scripts/__tests__/viteE2ePersistenceEntry.spec.ts
+  s_fdddfa6a468c89::t_388178044fe34a 16,38-49,68-73
+tests/e2e/smoke.spec.ts
+  s_fdddfa6a468c89::t_cc391fd7f60ae0 195,200
+  s_fdddfa6a468c89::t_89ef3a67a7fb9d 601
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "112530561bbed29f0a7700277734bcc4f27c69d0",
+  "prompts": {},
+  "sessions": {
+    "s_fdddfa6a468c89": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8a8aad0b-494a-4b52-8941-3a8cc43c46a4",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
