@@ -1776,7 +1776,7 @@ test('finishes an edited automatic mixed punch at its original sounded out and r
     let completed = false;
     try {
         await installPunchRecordingClockWitness(page);
-        await setupWorkspace(page);
+        await setupWorkspace(page, { clearLocalStorage: false });
         const response = await page.request.get('/');
         expect(decodeURIComponent(response.headers()['x-sourdaw-root'] ?? '')).toBe(process.cwd());
         await launch_new_project(page);
