@@ -313,12 +313,24 @@ describe('free-text MIDI generation project authority', () => {
 
     it('cannot publish an old result into a replacement project root', async () => {
         await startGeneration();
+        const original = truth();
         crdt.resetCrdtProjectAuthority('Replacement project');
         await command.executeAppAction({
             type: 'addTrack',
-            payload: { id: 'replacement', name: 'New project', kind: 'midi', withoutDefaultDevice: true },
+            payload: { id: 'target', name: 'Replacement piano', kind: 'midi', withoutDefaultDevice: true },
         });
+        await command.executeAppAction({
+            type: 'addTrack',
+            payload: { id: 'replacement-keeper', name: 'Replacement keeper', kind: 'midi', withoutDefaultDevice: true },
+        });
+        arrangement.selectTrack('target');
         const replacement = truth();
+        expect(replacement.revision).not.toBe(original.revision);
+        expect(replacement.tracks?.tracks.find((track) => track.id === 'target')).toMatchObject({
+            name: 'Replacement piano',
+            kind: 'midi',
+            clips: [],
+        });
         response.resolve(providerResponse());
         await pending;
         expect(truth()).toEqual(replacement);

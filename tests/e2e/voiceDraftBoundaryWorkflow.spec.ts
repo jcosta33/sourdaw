@@ -9,7 +9,8 @@ type VoiceBoundaryProbe = {
     stops: string[];
     cancels: string[];
     unexpected: string[];
-    deliverQueued: (sessionId: string, payloads: VoiceTerminalPayload[]) => void;
+    queueTerminal: (sessionId: string, payload: VoiceTerminalPayload) => string;
+    deliverQueued: (queueId: string) => number;
 };
 
 declare global {
@@ -32,19 +33,28 @@ async function readTruth(page: Page) {
         const root = getCrdtDoc<{
             tracks: { tracks: Array<{ id: string; name: string; kind: string }> };
         }>('root');
-        if (!root?.tracks) throw new Error('The voice workflow requires real project track authority');
+        if (!root?.tracks) {
+            throw new Error('The voice workflow requires real project track authority');
+        }
         const tracks = trackStore.value?.tracks ?? [];
+        const snapshot = (value: unknown): unknown => {
+            const serialized = JSON.stringify(value);
+            if (serialized === undefined) {
+                return undefined;
+            }
+            return JSON.parse(serialized);
+        };
         return {
             revision,
-            document: JSON.stringify(root),
+            document: snapshot(root),
             tracks: tracks.map((track) => ({ id: track.id, name: track.name, kind: track.kind })),
             rawTracks: root.tracks.tracks.map((track) => ({ id: track.id, name: track.name, kind: track.kind })),
-            master: JSON.stringify(tracks.filter((track) => track.kind === 'master')),
-            rawMaster: JSON.stringify(root.tracks.tracks.filter((track) => track.kind === 'master')),
-            undo: JSON.stringify(undoHistoryStore.value),
-            history: JSON.stringify(actionHistoryStore.value),
-            runs: JSON.stringify(agentRunStore.value),
-            confirmations: JSON.stringify(pendingActionConfirmationStore.value),
+            master: snapshot(tracks.filter((track) => track.kind === 'master')),
+            rawMaster: snapshot(root.tracks.tracks.filter((track) => track.kind === 'master')),
+            undo: snapshot(undoHistoryStore.value),
+            history: snapshot(actionHistoryStore.value),
+            runs: snapshot(agentRunStore.value),
+            confirmations: snapshot(pendingActionConfirmationStore.value),
         };
     });
 }
@@ -69,18 +79,36 @@ test('native transcript stays a draft until explicit submission and confirmation
 
     await page.addInitScript(() => {
         const terminals = new Map<string, Set<(event: string, payload: unknown) => void>>();
+        const queuedTerminals = new Map<
+            string,
+            { callbacks: Array<(event: string, payload: unknown) => void>; payload: VoiceTerminalPayload }
+        >();
         const probe: VoiceBoundaryProbe = {
             starts: [],
             stops: [],
             cancels: [],
             unexpected: [],
-            deliverQueued: (sessionId, payloads) => {
-                // Queue the callbacks before delivery, so a duplicate already in
-                // flight still reaches the real hook after its first unsubscribe.
+            queueTerminal: (sessionId, payload) => {
+                // Native events already queued retain their original callback
+                // even when the application unsubscribes before later delivery.
                 const callbacks = [...(terminals.get(sessionId) ?? [])];
-                for (const payload of payloads) {
-                    for (const callback of callbacks) callback('dictation-result', payload);
+                if (callbacks.length === 0) {
+                    throw new Error('No native terminal subscription to capture');
                 }
+                const queueId = crypto.randomUUID();
+                queuedTerminals.set(queueId, { callbacks, payload });
+                return queueId;
+            },
+            deliverQueued: (queueId) => {
+                const queued = queuedTerminals.get(queueId);
+                if (queued === undefined) {
+                    throw new Error('Unknown queued native terminal');
+                }
+                queuedTerminals.delete(queueId);
+                for (const callback of queued.callbacks) {
+                    callback('dictation-result', queued.payload);
+                }
+                return queued.callbacks.length;
             },
         };
         const refuse = (command: string): Promise<never> => {
@@ -167,7 +195,7 @@ test('native transcript stays a draft until explicit submission and confirmation
     const baseline = await readTruth(page);
     expect(baseline.tracks).toEqual([{ id: expect.any(String), name: 'Master', kind: 'master' }]);
     expect(baseline.rawTracks).toEqual(baseline.tracks);
-    expect(baseline.rawMaster).toBe(baseline.master);
+    expect(baseline.rawMaster).toEqual(baseline.master);
 
     // Playwright produces a trusted native event; no forged gesture or direct
     // draft injection can bypass the application's voice-control admission.
@@ -175,11 +203,20 @@ test('native transcript stays a draft until explicit submission and confirmation
     await expect.poll(() => page.evaluate(() => window.__SOURDAW_VOICE_BOUNDARY__?.starts.length)).toBe(1);
     await expect(mic).toHaveAttribute('aria-pressed', 'true');
     const sessionId = await page.evaluate(() => window.__SOURDAW_VOICE_BOUNDARY__?.starts[0]);
-    if (sessionId === undefined) throw new Error('The trusted voice click did not start a native session');
+    if (sessionId === undefined) {
+        throw new Error('The trusted voice click did not start a native session');
+    }
     await page.evaluate((id) => {
-        window.__SOURDAW_VOICE_BOUNDARY__?.deliverQueued(id, [
-            { session_id: 'another-native-session', text: 'delete every track', duration_ms: 900 },
-        ]);
+        const probe = window.__SOURDAW_VOICE_BOUNDARY__;
+        if (probe === undefined) {
+            throw new Error('Native boundary fixture is unavailable');
+        }
+        const queued = probe.queueTerminal(id, {
+            session_id: 'another-native-session',
+            text: 'delete every track',
+            duration_ms: 900,
+        });
+        probe.deliverQueued(queued);
     }, sessionId);
     await expect(input).toHaveValue('');
     expect(await readTruth(page)).toEqual(baseline);
@@ -187,10 +224,17 @@ test('native transcript stays a draft until explicit submission and confirmation
     await mic.click();
     await expect.poll(() => page.evaluate(() => window.__SOURDAW_VOICE_BOUNDARY__?.stops)).toEqual([sessionId]);
     const transcript = 'create 3 audio tracks';
-    await page.evaluate(
+    const queuedDuplicate = await page.evaluate(
         ({ id, text }) => {
+            const probe = window.__SOURDAW_VOICE_BOUNDARY__;
+            if (probe === undefined) {
+                throw new Error('Native boundary fixture is unavailable');
+            }
             const terminal = { session_id: id, text, duration_ms: 1200 };
-            window.__SOURDAW_VOICE_BOUNDARY__?.deliverQueued(id, [terminal, terminal]);
+            const first = probe.queueTerminal(id, terminal);
+            const duplicate = probe.queueTerminal(id, terminal);
+            probe.deliverQueued(first);
+            return duplicate;
         },
         { id: sessionId, text: transcript }
     );
@@ -200,16 +244,27 @@ test('native transcript stays a draft until explicit submission and confirmation
     expect(await readTruth(page)).toEqual(baseline);
     expect(externalRequests).toEqual([]);
 
+    const editedDraft = 'Keep this edited draft';
+    await input.fill(editedDraft);
+    expect(
+        await page.evaluate((queueId) => window.__SOURDAW_VOICE_BOUNDARY__?.deliverQueued(queueId), queuedDuplicate)
+    ).toBeGreaterThan(0);
+    await expect(input).toHaveValue(editedDraft);
+    await expect(page.getByText('Changes awaiting review', { exact: true })).toHaveCount(0);
+    expect(await readTruth(page)).toEqual(baseline);
+    expect(externalRequests).toEqual([]);
+
+    await input.fill(transcript);
     await input.press('Enter');
     await expect(page.getByText('Changes awaiting review', { exact: true })).toBeVisible({ timeout: 20_000 });
     const proposed = await readTruth(page);
-    expect(proposed.document).toBe(baseline.document);
+    expect(proposed.document).toEqual(baseline.document);
     expect(proposed.revision).toBe(baseline.revision);
     expect(proposed.tracks).toEqual(baseline.tracks);
-    expect(proposed.undo).toBe(baseline.undo);
-    expect(proposed.history).toBe(baseline.history);
-    expect(proposed.runs).not.toBe(baseline.runs);
-    expect(proposed.confirmations).not.toBe(baseline.confirmations);
+    expect(proposed.undo).toEqual(baseline.undo);
+    expect(proposed.history).toEqual(baseline.history);
+    expect(proposed.runs).not.toEqual(baseline.runs);
+    expect(proposed.confirmations).not.toEqual(baseline.confirmations);
 
     await page.getByRole('button', { name: 'Review in Agent', exact: true }).click();
     const confirm = page.getByRole('button', { name: 'Confirm agent actions', exact: true });
@@ -227,10 +282,10 @@ test('native transcript stays a draft until explicit submission and confirmation
     expect(createdAudioTracks.every((track) => !baseline.tracks.some((prior) => prior.id === track.id))).toBe(true);
     expect(committed.tracks).toHaveLength(baseline.tracks.length + 3);
     expect(committed.rawTracks).toEqual(committed.tracks);
-    expect(committed.master).toBe(baseline.master);
-    expect(committed.rawMaster).toBe(baseline.rawMaster);
-    expect(committed.document).not.toBe(baseline.document);
-    expect(committed.history).not.toBe(baseline.history);
+    expect(committed.master).toEqual(baseline.master);
+    expect(committed.rawMaster).toEqual(baseline.rawMaster);
+    expect(committed.document).not.toEqual(baseline.document);
+    expect(committed.history).not.toEqual(baseline.history);
     const undoEntries = await page.evaluate(async () => {
         const { undoHistoryStore } = await import('/src/modules/Command/stores/index.ts');
         return (undoHistoryStore.value?.past ?? []).map((entry) => ({ source: entry.source, groupId: entry.groupId }));
@@ -243,8 +298,8 @@ test('native transcript stays a draft until explicit submission and confirmation
     const undone = await readTruth(page);
     expect(undone.tracks).toEqual(baseline.tracks);
     expect(undone.rawTracks).toEqual(baseline.rawTracks);
-    expect(undone.master).toBe(baseline.master);
-    expect(undone.rawMaster).toBe(baseline.rawMaster);
+    expect(undone.master).toEqual(baseline.master);
+    expect(undone.rawMaster).toEqual(baseline.rawMaster);
     expect(externalRequests).toEqual([]);
     const native = await page.evaluate(() => ({
         starts: window.__SOURDAW_VOICE_BOUNDARY__?.starts,
