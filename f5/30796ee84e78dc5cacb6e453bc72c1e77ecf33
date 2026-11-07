@@ -1,0 +1,23 @@
+src/modules/AiRuntime/useCases/__tests__/cancelPendingChatActions.spec.ts
+  s_68423a2adea8d2::t_4cfa73286d1e9b 4-5
+src/modules/AiRuntime/useCases/__tests__/readRequestMixDescriptors.spec.ts
+  s_68423a2adea8d2::t_061b13a91878ef 71-75,77-94,97-117,119-148,152-163
+src/modules/AiRuntime/useCases/readRequestMixDescriptors.ts
+  s_68423a2adea8d2::t_4cfa73286d1e9b 56,62
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f530796ee84e78dc5cacb6e453bc72c1e77ecf33",
+  "prompts": {},
+  "sessions": {
+    "s_68423a2adea8d2": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34b-f305-7c03-beb2-57afa678cda5",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
