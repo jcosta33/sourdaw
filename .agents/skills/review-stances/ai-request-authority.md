@@ -50,3 +50,10 @@ Report the concrete break or none.
    test absolute and relative decibels, the owning ceiling, silence and legacy linear values at actual
    execution (#4366); VCA and metronome fell outside the first enumerated family list, so a passing
    sample of those families cannot prove the remaining catalog.
+7. **Read-only planning keeps the captured content authority across saves (#5852, #6240).** Hold a
+   selected preset's planner across a real save timestamp and active-arrangement copy; the approval
+   retains the original revision and intent. Saved and unflushed fader edits, edit then revert,
+   child-document changes and root replacement refuse before compilation. Replacing the save-aware
+   content comparison with raw heads must fail the save case; accepting only the final snapshot must
+   fail the reverted edit. A storage-owner write authorization is not read-only content admission;
+   execution still requires its own write authority.
