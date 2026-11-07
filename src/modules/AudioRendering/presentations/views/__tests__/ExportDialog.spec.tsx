@@ -306,6 +306,9 @@ vi.mock('#/modules/Automation/stores', () => ({
 // AudioEngine key in this factory is an unread graph-coverage stub (`vi.fn()`
 // and `audioEngine: {}`).
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    openCachedAudioBufferHold: vi.fn(() => {
+        throw new Error('Unexpected audio buffer residency hold in this fixture');
+    }),
     captureOfflineRenderProjectSource: vi.fn(() => {
         throw new Error('Unexpected selection render capture in this fixture');
     }),

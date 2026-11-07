@@ -47,6 +47,9 @@ vi.mock('../../../useCases/importMidiFile', () => ({
 }));
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    openCachedAudioBufferHold: vi.fn(() => {
+        throw new Error('Unexpected audio buffer residency hold in this fixture');
+    }),
     decodeAudioFile: vi.fn(),
     discardDecodedAudioFile: vi.fn(),
 }));
