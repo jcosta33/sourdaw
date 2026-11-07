@@ -66,7 +66,7 @@ const context: ProjectContext = {
 };
 
 const mute = (trackId: string): Call => ({ name: 'muteTrack', arguments: { trackId, muted: true } });
-const solo = (trackId: string): Call => ({ name: 'soloTrack', arguments: { trackId, soloed: true } });
+const lower = (trackId: string): Call => ({ name: 'setTrackGain', arguments: { trackId, deltaDb: -2 } });
 
 function basis(prompt: string, toolCalls: Call[]) {
     const result = groundCompiledCommandBatch({
@@ -128,9 +128,10 @@ describe('refinement grammar at its owning readers', () => {
     });
 
     it('uses the source clause matching the pending action type', () => {
-        const pending = basis('mute Bass and solo Bass', [mute('track-bass'), solo('track-bass')]);
-        expect(pending.commands.map((command) => command.type)).toEqual(['muteTrack', 'soloTrack']);
-        expect(refinementClauseReader.combination(read('solo Bass', pending))).toEqual({ status: 'read' });
+        const pending = basis('mute Bass and turn Bass down 2 dB', [mute('track-bass'), lower('track-bass')]);
+        expect(pending.commands.map((command) => command.type)).toEqual(['muteTrack', 'setTrackGain']);
+        expect(pending.commands.map((command) => command.sourceCallIndex)).toEqual([0, 1]);
+        expect(refinementClauseReader.combination(read('turn Bass down', pending))).toEqual({ status: 'read' });
     });
 
     it('reads an opening conjunction before a changed toggle', () => {
