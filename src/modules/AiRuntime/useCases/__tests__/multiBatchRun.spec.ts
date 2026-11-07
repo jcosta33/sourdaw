@@ -27,6 +27,7 @@ import { clearAiHistory } from '../../stores/aiActionHistoryStore';
 import { chatStore, clearChatMessages } from '../../stores/chatStore';
 import { pendingActionConfirmationStore } from '../../stores/pendingActionConfirmationStore';
 import { groundVibeRunBatch } from '../agentRequestOrchestration/groundVibeRunBatch';
+import { normalizeAgentFailure } from '../agentErrorAndSaga';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { agentRunCancellation } from '../cancelAgentRun';
 import { cancelPendingChatActions } from '../cancelPendingChatActions';
@@ -445,13 +446,17 @@ describe('a whole-project vibe run of measured recipe batches (AC-003 of #4372)'
     });
 
     it.each([
-        { settlement: 'reject', cleared: false },
-        { settlement: 'resolve', cleared: false },
-        { settlement: 'reject', cleared: true },
-        { settlement: 'resolve', cleared: true },
+        { settlement: 'reject', cleared: false, stop: 'cancelled' },
+        { settlement: 'resolve', cleared: false, stop: 'cancelled' },
+        { settlement: 'reject', cleared: true, stop: 'cancelled' },
+        { settlement: 'resolve', cleared: true, stop: 'cancelled' },
+        { settlement: 'reject', cleared: false, stop: 'failed' },
+        { settlement: 'resolve', cleared: false, stop: 'failed' },
+        { settlement: 'reject', cleared: true, stop: 'failed' },
+        { settlement: 'resolve', cleared: true, stop: 'failed' },
     ] as const)(
-        'settles a cancelled later preview with $settlement (chat cleared: $cleared)',
-        async ({ settlement, cleared }) => {
+        'settles a $stop later preview with $settlement (chat cleared: $cleared)',
+        async ({ settlement, cleared, stop }) => {
             const brief = await confirmBrief();
             const drums = requireOnlyProposedCard();
             let admitted!: () => void;
@@ -472,15 +477,32 @@ describe('a whole-project vibe run of measured recipe batches (AC-003 of #4372)'
             });
             const confirmation = confirmPendingChatActions({ confirmationId: drums.id });
             await admission;
-            await expect(
-                agentRunCancellation.cancel({ runId: brief.runId, reason: 'Cancelled by user' })
-            ).resolves.toMatchObject({
-                status: 'cancelled',
-                phase: 'partially-completed',
-            });
-            const cancelled = agentRunLifecycle.get(brief.runId);
-            expect(cancelled?.batches.at(-1)?.status).toBe('cancelled');
-            const errors = structuredClone(cancelled?.errors);
+            if (stop === 'cancelled') {
+                await expect(
+                    agentRunCancellation.cancel({ runId: brief.runId, reason: 'Cancelled by user' })
+                ).resolves.toMatchObject({
+                    status: 'cancelled',
+                    phase: 'partially-completed',
+                });
+            } else {
+                const batchId = agentRunLifecycle.get(brief.runId)?.batches.at(-1)?.batchId;
+                if (batchId === undefined) {
+                    throw new TypeError('Expected a preparing batch');
+                }
+                agentRunLifecycle.recordError({
+                    runId: brief.runId,
+                    terminal: true,
+                    error: normalizeAgentFailure({
+                        category: 'render',
+                        source: 'command-execution',
+                        related: { workIds: [batchId] },
+                    }),
+                });
+                expect(agentRunLifecycle.get(brief.runId)?.cancellation.requestedAt).toBeNull();
+            }
+            const stopped = agentRunLifecycle.get(brief.runId);
+            expect(stopped?.batches.at(-1)?.status).toBe(stop);
+            const errors = structuredClone(stopped?.errors);
             const revision = captureProjectRevision();
             const tracks = structuredClone(trackStore.value);
             const history = structuredClone(undoHistoryStore.value);
@@ -496,7 +518,7 @@ describe('a whole-project vibe run of measured recipe batches (AC-003 of #4372)'
             await expect(confirmation).resolves.toEqual({ status: 'executed' });
             const settled = agentRunLifecycle.get(brief.runId);
             expect(settled?.phase).toBe('partially-completed');
-            expect(settled?.batches.at(-1)?.status).toBe('cancelled');
+            expect(settled?.batches.at(-1)?.status).toBe(stop);
             expect(settled?.errors).toEqual(errors);
             expect(captureProjectRevision()).toBe(revision);
             expect(trackStore.value).toEqual(tracks);
@@ -505,8 +527,8 @@ describe('a whole-project vibe run of measured recipe batches (AC-003 of #4372)'
                 expect(chatStore.value?.messages).toEqual([]);
             } else {
                 expect(chatStore.value?.messages.find((message) => message.id === preparing?.id)).toMatchObject({
-                    content: 'Cancelled preparation of batch 3 of 4. Batches 1–2 remain applied.',
-                    pendingActionConfirmationStatus: 'cancelled',
+                    content: `${stop === 'cancelled' ? 'Cancelled' : 'Stopped'} preparation of batch 3 of 4. Batches 1–2 remain applied.`,
+                    pendingActionConfirmationStatus: stop === 'cancelled' ? 'cancelled' : undefined,
                 });
                 expect(chatStore.value?.messages.filter((message) => message.id !== preparing?.id)).toEqual(
                     otherMessages
