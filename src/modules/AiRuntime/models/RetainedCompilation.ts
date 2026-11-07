@@ -1,6 +1,8 @@
 import { type AdoptedRecipe } from './AdoptedRecipe';
+import { type BriefMixIntent } from './BriefMixIntent';
 import { type MeasuredPreview } from './MeasuredPreview';
 import { type MetricRecipeSource } from './MetricGoalAdmission';
+import { type ProjectContextProductionBrief } from './ProjectContext';
 
 export { type AdoptedRecipe } from './AdoptedRecipe';
 
@@ -43,7 +45,13 @@ export type RetainedCompilation = RetainedCommandSet &
         | { kind: 'preview'; measuredPreview: MeasuredPreview }
         /**
          * The one `setProductionBrief` the application composed from the request, and the lines that
-         * describe its change. It is confirmed alone and never grounded with other commands.
+         * describe its change. It is confirmed alone and never grounded with other commands. `brief` is
+         * the whole next brief that command writes, which the vibe-run planner reads before Confirm.
          */
-        | { kind: 'brief'; changeLines: readonly string[] }
+        | {
+              kind: 'brief';
+              changeLines: readonly string[];
+              brief: ProjectContextProductionBrief;
+              mixIntent: BriefMixIntent;
+          }
     );

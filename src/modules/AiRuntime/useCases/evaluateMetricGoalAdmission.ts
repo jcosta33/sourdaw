@@ -9,6 +9,7 @@ import { type MetricGoalEvaluation, type MetricGoalProof } from '../models/Metri
 import { bindMetricGoalsToBatch } from './bindMetricGoalsToBatch';
 import { digestCommandBatchContent } from './digestCommandBatchContent';
 import { unaccountedNumericRefusal } from './evaluateRequestNumericLiterals';
+import { hasContradictoryMetricGoals } from './hasContradictoryMetricGoals';
 import { type MetricGoal, type MetricGoalState } from './metricGoalContractTypes';
 import { objectiveMetricProjection } from './objectiveMetricProjection';
 import { describePerceptualConstraintFailure } from './perceptualConstraints/describePerceptualConstraintFailure';
@@ -174,29 +175,6 @@ function criterionSourceRefusal(goals: MetricGoal[]): Refusal | null {
         }
     }
     return null;
-}
-
-function contradictoryCriteria(goals: MetricGoal[]): boolean {
-    for (const left of goals) {
-        const sameAxis = (right: MetricGoal) =>
-            left.metricId === right.metricId &&
-            left.band === right.band &&
-            JSON.stringify(left.targetIds) === JSON.stringify(right.targetIds) &&
-            JSON.stringify(left.referenceTargetIds) === JSON.stringify(right.referenceTargetIds) &&
-            JSON.stringify(left.range) === JSON.stringify(right.range);
-        if (
-            goals.some(
-                (right) =>
-                    sameAxis(right) &&
-                    ((left.relation === 'increase' && ['decrease', 'hold'].includes(right.relation)) ||
-                        (left.relation === 'decrease' && right.relation === 'hold') ||
-                        (left.relation === 'greater-than-current' && right.relation === 'less-than-current'))
-            )
-        ) {
-            return true;
-        }
-    }
-    return false;
 }
 
 function scopeContains(
@@ -513,7 +491,7 @@ export function evaluateMetricGoalAdmission(input: AdmissionInput): MetricGoalEv
     if (sourceRefusal !== null) {
         return blocked(criteria, sourceRefusal);
     }
-    if (contradictoryCriteria(goals)) {
+    if (hasContradictoryMetricGoals(goals)) {
         return blocked(criteria, {
             failure: 'contradictory',
             reason: 'The frozen objective criteria contradict each other on the same subjects and range.',

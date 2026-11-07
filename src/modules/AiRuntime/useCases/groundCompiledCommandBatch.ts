@@ -56,6 +56,12 @@ type GroundCompiledCommandBatchInput = {
     refinementProtections?: ProposalProtectionFacts;
     /** Resolved protections of this exact request when replaying a later scheduled slice. */
     requestProtections?: BoundRequestProtections;
+    /**
+     * The request's perceptual constraints as they were read when its run was planned. A later batch
+     * of an application-planned run is held to exactly these, never to a reading of the request
+     * against the project as it is when that batch is proposed.
+     */
+    recordedConstraints?: PerceptualConstraintReading;
 };
 
 /** What grounding a refinement against its pending card's basis established. */
@@ -470,11 +476,13 @@ export function groundCompiledCommandBatch(input: GroundCompiledCommandBatchInpu
     // Refused here, inside planning, so the provider can answer with a batch that leaves the
     // excluded dimension alone; compilation refuses it again for every route that skips the loop.
     // A refinement is held to the constraints its card recorded, whichever route grounds it.
-    const constraints = readRequestPerceptualConstraints({
-        prompt: input.prompt,
-        context: input.context,
-        recorded: input.refinementProtections?.perceptualConstraints,
-    });
+    const constraints =
+        input.recordedConstraints ??
+        readRequestPerceptualConstraints({
+            prompt: input.prompt,
+            context: input.context,
+            recorded: input.refinementProtections?.perceptualConstraints,
+        });
     const excludedEdit = findExcludedDimensionEdit({
         constraints: constraints.constraints,
         actions: guarded.actions,
