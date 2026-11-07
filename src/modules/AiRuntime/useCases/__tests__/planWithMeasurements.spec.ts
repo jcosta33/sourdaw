@@ -13,7 +13,7 @@ import {
     parseVersionedCommandBatchEnvelope,
 } from '#/modules/Command/useCases';
 import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
-import { transportStore } from '#/modules/Transport/stores';
+import { tempoMapStore, transportStore } from '#/modules/Transport/stores';
 
 import { AiProposalInvalidatedError } from '../../errors/AiProposalInvalidatedError';
 import { readAgentRunState, sanitizeAgentRunState } from '../../stores/agentRunStore';
@@ -110,6 +110,8 @@ describe('configured mixing plan with actual measurements', () => {
         'handles %s during a required measurement intake',
         async (write) => {
             const prompt = 'Make Lead Vocal warmer over Chorus and set its fader to 70%';
+            tempoMapStore.set({ changes: [] });
+            expect(transportStore.value?.tempo).toBe(120);
             seedSavableProject();
             flushAutomergeStorageWrites();
             const revision = captureProjectRevision();
