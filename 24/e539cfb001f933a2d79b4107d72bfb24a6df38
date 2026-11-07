@@ -1,0 +1,41 @@
+src/modules/Toaster/presentations/views/__tests__/ToasterControlKeyboard.integration.spec.tsx
+  s_eb3cd86b0cee6e::t_1c9f750f608681 170
+  s_eb3cd86b0cee6e::t_b49a712d695702 57-59,146,173
+src/modules/Fermenter/presentations/views/__tests__/FermenterControlKeyboard.integration.spec.tsx
+  s_eb3cd86b0cee6e::t_b49a712d695702 89,91,111-113,115-116,120-121,125-126,244-249,252,254,285
+src/modules/Proof/presentations/views/__tests__/ProofDisclosure.integration.spec.tsx
+  s_eb3cd86b0cee6e::t_b49a712d695702 305
+tests/e2e/toastDismissTestId.spec.ts
+  s_eb3cd86b0cee6e::t_e74f6ab6c80f61 1-40
+src/modules/Crust/presentations/views/__tests__/CrustControls.integration.spec.tsx
+  s_eb3cd86b0cee6e::t_1c9f750f608681 579
+  s_eb3cd86b0cee6e::t_e2762319d41e26 380-381,400,437-438,535,561,564,588,660-661,673-674,722-723,754
+src/modules/ElasticAudio/presentations/views/__tests__/ElasticEditorControls.integration.spec.tsx
+  s_68423a2adea8d2::t_bacc259334be5b 65-67
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/PianoRollToolbarIntegration.spec.tsx
+  s_68423a2adea8d2::t_ff93aea398a862 54
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "24e539cfb001f933a2d79b4107d72bfb24a6df38",
+  "prompts": {},
+  "sessions": {
+    "s_68423a2adea8d2": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34b-f305-7c03-beb2-57afa678cda5",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_eb3cd86b0cee6e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34c-a4d8-7523-838e-1cd1a0a25d78",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
