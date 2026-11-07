@@ -80,8 +80,8 @@ function builtShardProjects(): Project[] {
 function builtShardWebServers(): WebServer[] {
     const servers: WebServer[] = [
         {
-            // The build is part of server startup, so the wait covers it.
-            command: `pnpm exec vite build --mode e2e && pnpm exec vite preview --mode e2e --host 127.0.0.1 --port ${port} --strictPort`,
+            // The default build is part of server startup, so the wait covers it.
+            command: `${env.SOURDAW_SHARED_E2E_BUILD === '1' ? 'node scripts/sharedE2eBuild.ts prepare' : 'pnpm exec vite build --mode e2e'} && pnpm exec vite preview --mode e2e --host 127.0.0.1 --port ${port} --strictPort`,
             url: e2eOrigin(port),
             timeout: 600_000,
             reuseExistingServer: false,
