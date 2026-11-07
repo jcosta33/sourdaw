@@ -1,0 +1,21 @@
+src/modules/AiRuntime/useCases/__tests__/readRequestMetricNumbers.spec.ts
+  s_68423a2adea8d2::t_afb72c6f24c92a 4,53,67,149,153,155
+src/modules/AiRuntime/useCases/readRequestMetricNumbers.ts
+  s_68423a2adea8d2::t_afb72c6f24c92a 22-27
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "cb692219e8ac47b160aa3664d327a223c4187990",
+  "prompts": {},
+  "sessions": {
+    "s_68423a2adea8d2": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34b-f305-7c03-beb2-57afa678cda5",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
