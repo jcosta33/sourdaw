@@ -5,10 +5,10 @@ import { trackStore } from '#/modules/Arrangement/stores';
 import { undoHistoryStore } from '#/modules/Command/stores';
 import {
     captureProjectIdentity,
-    captureProjectMutationAuthorization,
     captureProjectRootIdentity,
     mutateCrdtDoc,
     persistCrdtProject,
+    projectRevisionMatchesLiveIgnoringSaveWrites,
 } from '#/modules/CrdtDocument/useCases';
 import { type AppAction } from '#/utils/handlerContract';
 
@@ -67,7 +67,6 @@ vi.mock('#/modules/CrdtDocument/useCases', async (importOriginal) => ({
     >(() => () => undefined),
     captureActiveBranchReference: vi.fn(),
     captureDurableDocumentWitness: vi.fn(),
-    captureProjectMutationAuthorization: vi.fn(() => () => true),
     captureProjectIdentity: vi.fn(() => 'revision-1'),
     captureProjectRevision: vi.fn(() => 'revision-1'),
     captureProjectRootIdentity: vi.fn(() => 'root-identity'),
@@ -204,8 +203,10 @@ describe('submitAdmittedPromptRequest', () => {
         agentResourceLimitsStore.set(DEFAULT_AGENT_RESOURCE_LIMITS);
         randomUuid = vi.spyOn(crypto, 'randomUUID').mockReturnValue('00000000-0000-0000-0000-000000000001');
         mocks.settlePendingProjectWritesAndCaptureRevision.mockReturnValue('revision-1');
+        vi.mocked(projectRevisionMatchesLiveIgnoringSaveWrites).mockImplementation(
+            (revision) => revision === 'revision-1'
+        );
         mocks.getProjectContext.mockReturnValue({ tracks: [], selectedClipIds: [] });
-        vi.mocked(captureProjectMutationAuthorization).mockReturnValue(() => true);
         vi.mocked(captureProjectRootIdentity).mockReturnValue('root-identity');
         vi.mocked(captureProjectIdentity).mockReturnValue('revision-1');
         mocks.parsePromptToActions.mockResolvedValue({
@@ -350,20 +351,16 @@ describe('submitAdmittedPromptRequest', () => {
         expect(agentRunLifecycle.get(RUN_ID)?.phase).toBe('cancelled');
     });
 
-    it.each(['revision', 'root', 'mutation', 'selection'])(
+    it.each(['revision', 'root', 'selection'])(
         'rejects selected preset %s drift across admission before compilation',
         async (drift) => {
-            let mutationCurrent = true;
-            vi.mocked(captureProjectMutationAuthorization).mockReturnValue(() => mutationCurrent);
             mocks.parsePromptToActions.mockImplementationOnce(async () => {
                 if (drift === 'revision') {
                     mocks.settlePendingProjectWritesAndCaptureRevision.mockReturnValue('revision-2');
+                    vi.mocked(projectRevisionMatchesLiveIgnoringSaveWrites).mockReturnValue(false);
                 }
                 if (drift === 'root') {
                     vi.mocked(captureProjectRootIdentity).mockReturnValue('replaced-root');
-                }
-                if (drift === 'mutation') {
-                    mutationCurrent = false;
                 }
                 if (drift === 'selection') {
                     mocks.getProjectContext.mockReturnValue({
