@@ -1,0 +1,38 @@
+src/modules/AiRuntime/useCases/__tests__/measuredAnswers.spec.ts
+  s_68423a2adea8d2::t_d6acee101468e5 309-312,319-322
+  s_68423a2adea8d2::t_50fc0db90a3510 313-318
+  s_68423a2adea8d2::t_561038a167bd90 323-347
+src/modules/AiRuntime/AGENTS.md
+  s_68423a2adea8d2::t_230b5e487246e2 27
+src/modules/AiRuntime/useCases/applicationOwnedToolLoop.ts
+  s_68423a2adea8d2::t_50fc0db90a3510 421-428
+src/modules/AiRuntime/useCases/composeMeasuredAnswer.ts
+  s_68423a2adea8d2::t_50fc0db90a3510 27-37,450-471,514-520
+  s_68423a2adea8d2::t_73a155f305ba2e 2,447-449,472-500,511-513,521-522,524
+src/modules/AiRuntime/useCases/__tests__/answerOutcome.spec.ts
+  s_68423a2adea8d2::t_54c763a75ba7a0 295
+  s_68423a2adea8d2::t_a8dcec22dd17b0 136-137,162,263,350-376,473
+  s_68423a2adea8d2::t_d6acee101468e5 152-154,267,336,347,413-414,524
+  s_68423a2adea8d2::t_230b5e487246e2 8,259-260,306-332,426-427,468-469
+  s_68423a2adea8d2::t_14f1b85890467e 257,265,424,434,437,460,464,466,475,477-506,519,522,538
+  s_68423a2adea8d2::t_ca9a255721f850 4-5,377-412,474
+  s_68423a2adea8d2::t_50fc0db90a3510 6,133-135,138-139,164,202-206,255-256,258,268-294,296-302,333-335,337-346,348-349,417-423,425,461-463,465,467,508-518,520-521,525-537
+  s_68423a2adea8d2::t_7e1822a4ba7ef9 303-305
+  s_68423a2adea8d2::t_9c0618be2b1fd1 254,261-262,264,266,415-416,428-433,435-436,438-459,470-472,476,507,523,539
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4cb4d844e4f423c58ae04612d03e4c4cf6c65cdc",
+  "prompts": {},
+  "sessions": {
+    "s_68423a2adea8d2": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34b-f305-7c03-beb2-57afa678cda5",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
