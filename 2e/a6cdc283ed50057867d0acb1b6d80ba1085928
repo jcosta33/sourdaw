@@ -1,0 +1,19 @@
+src/modules/AiRuntime/useCases/__tests__/resumeAgentRunDecision.spec.ts
+  s_68423a2adea8d2::t_0ad37611995ffd 89-93
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2ea6cdc283ed50057867d0acb1b6d80ba1085928",
+  "prompts": {},
+  "sessions": {
+    "s_68423a2adea8d2": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34b-f305-7c03-beb2-57afa678cda5",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
