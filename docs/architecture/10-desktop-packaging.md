@@ -4,6 +4,50 @@ Desktop packaging is an Electron shell around the browser build and the Rust
 native addon. The package layout must leave the renderer in the archive and the
 native addon and sample library as real files beside it.
 
+## Native artifact production
+
+`scripts/buildNativeAddon.ts` queries the selected PATH Cargo with `cargo -Vv`
+from the repository root and requires one reported host target. That Cargo host,
+rather than Node's architecture or a physical CPU inference, selects the native
+Darwin, Linux or Windows artifact names. Unsupported or malformed hosts fail
+before compilation. This producer builds for Cargo's reported host only;
+cross-compilation is outside its contract.
+
+Both Cargo builds explicitly pass that concrete host through `--target` and an
+absolute output root through `--target-dir`. The root is `CARGO_TARGET_DIR`,
+resolved against the repository root when relative, or `<repo>/target` when unset.
+Empty or invalid roots are refused. The addon is read only from
+`<root>/<host>/release/<cdylib>`; the scanner is read only from
+`<root>/scan-helper/<host>/release/<helper>`. They are staged beside the native
+crate as `sourdaw-native.node` and `sourdaw-plugin-scan-helper[.exe]`, preserving
+the helper's mode. Only the helper build overrides `CARGO_PROFILE_RELEASE_LTO=false`.
+
+An explicitly set `CARGO_BUILD_TARGET` must equal the reported host or Cargo's
+`host-tuple` spelling; empty, custom and conflicting targets are refused before
+either build. Cargo configuration defaults such as `build.target` and
+`build.target-dir` are instead deliberately overridden by the command's explicit
+target and directories, so personal configuration cannot redirect the outputs
+away from the paths this script reads. See Cargo's
+[build options](https://doc.rust-lang.org/cargo/commands/cargo-build.html) and
+[verbose version query](https://doc.rust-lang.org/cargo/commands/cargo-version.html).
+
+To check the producer on a native runner, invoke it from the repository root with
+`CARGO_TARGET_DIR` set to a path containing spaces, then inspect the two staged
+files. For example, in a POSIX shell:
+
+```sh
+CARGO_TARGET_DIR="target/native desktop" pnpm guard --profile broad -- node scripts/buildNativeAddon.ts
+```
+
+Setting `CARGO_BUILD_TARGET=wasm32-unknown-unknown` on that invocation must exit
+nonzero with `CARGO_BUILD_TARGET must be the native Cargo host ... or host-tuple`
+before compilation. Process-boundary doubles cover output routing and staging;
+they do not establish actual Windows or Linux compilation, loadability, or package
+acceptance. The CI native-parity job invokes this same CLI and requires the staged
+addon before loading it for parity checks. Broader native-runner and portable
+entry-point acceptance remains tracked in
+[#6288](https://github.com/jcosta33/sourdaw/issues/6288).
+
 ## Native artifact admission
 
 The electron-builder `afterPack` hook validates the files the shell actually loads:
