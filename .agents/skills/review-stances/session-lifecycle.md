@@ -174,6 +174,23 @@ listener, callback or state may return. A new current initialization remains a p
 Revert each capability, completion or teardown guard and require its named connected case to fail.
 These controlled browser and repository probes do not establish native or hardware behavior.
 
+### Device automation ownership must survive ordinary project edits
+
+PR #1648 introduced a reset of driving receipts whenever the track-store object changed. PR #3847
+later extracted the same comparison and retained its semantics. A connected Off regression emitted
+no saved-base restoration after the real immutable mode setter replaced that object; the existing
+fixture mutated a nested mock in place and missed the transition. Historical private reviewer
+prompts, stances and tiers are unestablished.
+
+Drive a parameter, publish Off through the real public setter, and require one restoration of the
+latest persisted manual base without project or manual-history changes. Runtime ownership follows
+the installed root and actual scheduler lifetime, not a projection reference. Pair the ordinary
+edit with a same-ID root replacement and a same-root scheduler teardown/restart: neither may reuse
+an outgoing driving or bypass receipt, including across null or empty automation observations.
+A loop/follow discontinuity within one live generation keeps ownership while snapping stale slew.
+The connected regression observed the missing restore; selective fence-removal probes remain
+prescriptions, not completed mutation evidence.
+
 ## Retired lessons
 
 - Early scheduler callbacks publishing future deadlines (#955) -> enforced by
