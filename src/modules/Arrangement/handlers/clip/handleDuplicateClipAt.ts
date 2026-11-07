@@ -8,8 +8,8 @@ import { toHandlerExecutionResult } from '../toHandlerExecutionResult';
 import { isDuplicateClipAtSessionEntry } from '../validateCreationSessionEntries';
 
 import { createdClipMidiCapture } from './createdClipMidiCapture';
-import { stampCreatedClipStateGuard } from './stampCreatedClipStateGuard';
 import { prepareCreatedClipRedoGuard } from './prepareCreatedClipRedoGuard';
+import { stampCreatedClipStateGuard } from './stampCreatedClipStateGuard';
 
 type DuplicateClipAtAction = Extract<AppAction, { type: 'duplicateClipAt' }>;
 

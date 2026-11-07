@@ -1,4 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
+import { getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
 import { type AppAction } from '#/utils/handlerContract';
 
 const mocks = vi.hoisted(() => ({
@@ -60,24 +62,25 @@ vi.mock('#/modules/Transport/useCases', () => ({
     getTransportState: mocks.getTransportState,
 }));
 
-import { getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
-
 import { audioToMidi } from '../audioToMidi';
 import { detectOnsets } from '../detectOnsets';
 
-function noteCalls(): Array<[string, number, number, number, number]> {
+type NoteCall = [clipId: string, pitch: number, startBeat: number, duration: number, velocity: number];
+
+function noteCalls(): NoteCall[] {
     return mocks.executeAppActionBatch.mock.calls.flatMap(([actions]) =>
-        actions.flatMap((action) =>
-            action.type === 'addNotes'
-                ? action.payload.notes.map((note): [string, number, number, number, number] => [
-                      action.payload.clipId,
-                      note.pitch,
-                      note.startBeat,
-                      note.duration,
-                      note.velocity ?? 100,
-                  ])
-                : []
-        )
+        actions.flatMap((action) => {
+            if (action.type !== 'addNotes') {
+                return [];
+            }
+            return action.payload.notes.map((note): NoteCall => [
+                action.payload.clipId,
+                note.pitch,
+                note.startBeat,
+                note.duration,
+                note.velocity ?? 100,
+            ]);
+        })
     );
 }
 
@@ -130,8 +133,9 @@ describe('audioToMidi plans complete command creation', () => {
             type: 'addTrack',
             payload: { id: expect.any(String), kind: 'midi', name: 'Drum (MIDI)' },
         });
-        if (track?.type !== 'addTrack' || clip?.type !== 'addClip' || notes?.type !== 'addNotes')
+        if (track?.type !== 'addTrack' || clip?.type !== 'addClip' || notes?.type !== 'addNotes') {
             throw new Error('Expected complete conversion plan');
+        }
         expect(clip.payload.trackId).toBe(track.payload.id);
         expect(notes.payload.clipId).toBe(clip.payload.id);
         expect(options).toMatchObject({
@@ -169,7 +173,7 @@ describe('audioToMidi follows the physical source and tempo map', () => {
     }
 
     function notes(): Array<{ pitch: number; beat: number }> {
-        return noteCalls().map((call) => ({ pitch: call[1] as number, beat: call[2] as number }));
+        return noteCalls().map((call) => ({ pitch: call[1], beat: call[2] }));
     }
 
     it('honours canonical zero over stale beat offset and integrates a tempo change before the onset', async () => {
@@ -311,7 +315,7 @@ describe('audioToMidi pitched mode (clamped pitch-window path coverage)', () => 
         expect(noteCalls().length).toBeGreaterThan(0);
         // The window never reads out of bounds, so every emitted pitch is a valid MIDI value.
         for (const call of noteCalls()) {
-            const pitch = call[1] as number;
+            const pitch = call[1];
             expect(pitch).toBeGreaterThanOrEqual(0);
             expect(pitch).toBeLessThanOrEqual(127);
         }
@@ -381,7 +385,7 @@ describe('audioToMidi converts only the audio a clip plays', () => {
     }
 
     function noteStartBeats(): number[] {
-        return noteCalls().map((call) => call[2] as number);
+        return noteCalls().map((call) => call[2]);
     }
 
     it('drops an onset before a positive audio offset and shifts a later one earlier by that offset', async () => {
@@ -568,8 +572,8 @@ describe('audioToMidi converts only the audio a clip plays', () => {
         );
 
         const written = noteCalls().map((call) => ({
-            pitch: call[1] as number,
-            startBeat: call[2] as number,
+            pitch: call[1],
+            startBeat: call[2],
         }));
         expect(written).toHaveLength(4);
         const sorted = written.slice().sort((left, right) => left.startBeat - right.startBeat);

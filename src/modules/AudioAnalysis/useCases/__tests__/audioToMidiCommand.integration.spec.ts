@@ -1,8 +1,9 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { clone } from '@automerge/automerge';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { registerProjectSlotProjections } from '#/app/registerProjectSlotProjections';
+import { createEventBus } from '#/infra/events/createEventBus';
 import * as storage from '#/infra/store/storage/createAutomergeStorage';
 import { defaultTrackState, trackStore } from '#/modules/Arrangement/stores';
 import {
@@ -30,6 +31,11 @@ import {
     createCrdtDoc,
     getCrdtDoc,
     markActionHistoryEntryReverted,
+    mutateCrdtDoc,
+    projectCrdtToStores,
+    replaceCrdtDoc,
+    settlePendingProjectWritesAndCaptureRevision,
+    transactSnapshot,
     recordActionHistoryEntries,
     recordActionHistoryEntry,
     registerCrdtStorageRuntime,
@@ -38,6 +44,7 @@ import {
 } from '#/modules/CrdtDocument/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
 import { getMidiNoteTransformHandlers } from '#/modules/MIDI/useCases';
+import { arrangementStore, defaultProjectStoreState, projectStore } from '#/modules/Project/stores';
 import { defaultTransportState, tempoMapStore, transportStore } from '#/modules/Transport/stores';
 import {
     setNotificationEventBus,
@@ -45,15 +52,6 @@ import {
     type ConfirmPayload,
     type PromptPayload,
 } from '#/utils/Notification/notificationEventBus';
-import { createEventBus } from '#/infra/events/createEventBus';
-import {
-    mutateCrdtDoc,
-    projectCrdtToStores,
-    replaceCrdtDoc,
-    settlePendingProjectWritesAndCaptureRevision,
-    transactSnapshot,
-} from '#/modules/CrdtDocument/useCases';
-import { arrangementStore, defaultProjectStoreState, projectStore } from '#/modules/Project/stores';
 
 import { handleAudioToMidi } from '../../handlers/analysis/handleAudioToMidi';
 import { audioToMidi } from '../audioToMidi';
@@ -75,7 +73,9 @@ class NoopArrangementEventBus {
 
 function projectState() {
     const document = getCrdtDoc<{ tracks?: unknown; midi?: unknown }>('root');
-    if (!document) throw new Error('Expected root CRDT document');
+    if (!document) {
+        throw new Error('Expected root CRDT document');
+    }
     return structuredClone({
         authority: { tracks: document.tracks, midi: document.midi },
         tracks: trackStore.value,
@@ -247,14 +247,16 @@ describe('registered audio-to-MIDI committed creation', () => {
             let settled = false;
             const pcm = mocks.getCachedAudioBuffer().getChannelData(0).slice();
             const projectRevision = settlePendingProjectWritesAndCaptureRevision();
-            const work =
-                route === 'basic'
-                    ? audioToMidi({ clipId: 'source', trackId: 'audio', signal: controller.signal })
-                    : insertPolyphonicMidiNotes(
-                          [{ pitchMidi: 60, startTimeSeconds: 0.25, durationSeconds: 0.1, amplitude: 0.8 }],
-                          { startBeat: 0, endBeat: 80, name: 'Poly', projectRevision, signal: controller.signal },
-                          'audio'
-                      ).then((result) => result !== null);
+            let work: Promise<boolean>;
+            if (route === 'basic') {
+                work = audioToMidi({ clipId: 'source', trackId: 'audio', signal: controller.signal });
+            } else {
+                work = insertPolyphonicMidiNotes(
+                    [{ pitchMidi: 60, startTimeSeconds: 0.25, durationSeconds: 0.1, amplitude: 0.8 }],
+                    { startBeat: 0, endBeat: 80, name: 'Poly', projectRevision, signal: controller.signal },
+                    'audio'
+                ).then((result) => result !== null);
+            }
             const conversion = work.then((result) => {
                 settled = true;
                 return result;
@@ -264,7 +266,9 @@ describe('registered audio-to-MIDI committed creation', () => {
                 await vi.waitFor(() => expect(admission).toHaveBeenCalled());
                 expect(settled).toBe(false);
                 expect(midiOutput()).toHaveLength(0);
-                if (transition === 'cancel') controller.abort();
+                if (transition === 'cancel') {
+                    controller.abort();
+                }
                 if (transition === 'root-same-bytes') {
                     replaceCrdtDoc({ id: 'root', doc: clone(getCrdtDoc('root')!) });
                     projectCrdtToStores({ resetProjections: true });
@@ -279,10 +283,18 @@ describe('registered audio-to-MIDI committed creation', () => {
                         id: 'root',
                         snapshotTransaction: owner,
                         changeFn: (document) => {
-                            if (transition === 'source') document.tracks.tracks[0]!.clips[0]!.endBeat = 79;
-                            if (transition === 'tempo') document.transport.tempo = 90;
-                            if (transition === 'arrangement') document.arrangements.activeArrangementId = 'chorus';
-                            if (transition === 'save') document.projectMeta.updatedAt += 1;
+                            if (transition === 'source') {
+                                document.tracks.tracks[0]!.clips[0]!.endBeat = 79;
+                            }
+                            if (transition === 'tempo') {
+                                document.transport.tempo = 90;
+                            }
+                            if (transition === 'arrangement') {
+                                document.arrangements.activeArrangementId = 'chorus';
+                            }
+                            if (transition === 'save') {
+                                document.projectMeta.updatedAt += 1;
+                            }
                         },
                     });
                     projectCrdtToStores();

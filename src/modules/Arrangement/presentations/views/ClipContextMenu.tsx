@@ -173,13 +173,13 @@ export const ClipContextMenu = ({ x, y, clipId, splitBeat, onClose }: ClipContex
                             if (result.status === 'executed' || result.status === 'executed-with-warning') {
                                 return;
                             }
-                            throw new Error(
-                                'reason' in result
-                                    ? result.reason
-                                    : result.status === 'no-op'
-                                      ? 'No MIDI clip was created'
-                                      : `Unexpected conversion outcome: ${result.status}`
-                            );
+                            if ('reason' in result) {
+                                throw new Error(result.reason);
+                            }
+                            if (result.status === 'no-op') {
+                                throw new Error('No MIDI clip was created');
+                            }
+                            throw new Error(`Unexpected conversion outcome: ${result.status}`);
                         },
                         {
                             startMsg: 'Converting audio to MIDI…',

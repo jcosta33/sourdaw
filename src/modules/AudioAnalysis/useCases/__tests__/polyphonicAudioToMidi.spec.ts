@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { noteFramesToTime } from '@spotify/basic-pitch';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { polyphonicAudioToMidi } from '../polyphonicAudioToMidi';
 
@@ -157,8 +157,12 @@ describe('polyphonicAudioToMidi', () => {
             const controller = new AbortController();
             const analysis = polyphonicAudioToMidi({ clipId: 'clip-1', signal: controller.signal });
             await entered;
-            if (transition === 'changed-source') sourceAuthority.revision = 'replacement-revision';
-            if (transition === 'cancelled') controller.abort();
+            if (transition === 'changed-source') {
+                sourceAuthority.revision = 'replacement-revision';
+            }
+            if (transition === 'cancelled') {
+                controller.abort();
+            }
             release();
             const result = await analysis;
             if (transition !== 'unchanged') {

@@ -452,10 +452,12 @@ describe('ClipContextMenu', () => {
     it.each(['no-op', 'rejected', 'conflicted', 'cancelled', 'failed', 'ambiguous'] as const)(
         'rejects the audio-to-MIDI toast callback for %s output',
         async (status) => {
-            const result: Awaited<ReturnType<typeof executeAppActionBatch>> =
-                status === 'no-op'
-                    ? { status, actions: [] }
-                    : { status, actions: [], reason: 'Conversion did not commit' };
+            let result: Awaited<ReturnType<typeof executeAppActionBatch>>;
+            if (status === 'no-op') {
+                result = { status, actions: [] };
+            } else {
+                result = { status, actions: [], reason: 'Conversion did not commit' };
+            }
             vi.mocked(executeAppActionBatch).mockResolvedValueOnce(result);
             let callbackResult!: Promise<void>;
             vi.mocked(runAiActionWithToast).mockImplementationOnce((action) => {
@@ -491,11 +493,11 @@ describe('ClipContextMenu', () => {
             render(<ClipContextMenu x={0} y={0} clipId="clip1" splitBeat={4} onClose={mockOnClose} />);
             fireEvent.click(screen.getByRole('button', { name: 'Convert to MIDI' }));
             expect(completed).toBe(false);
-            release(
-                status === 'executed'
-                    ? { status, actions: [] }
-                    : { status, actions: [], warning: 'Committed with a warning' }
-            );
+            if (status === 'executed') {
+                release({ status, actions: [] });
+            } else {
+                release({ status, actions: [], warning: 'Committed with a warning' });
+            }
             await callbackResult;
             expect(completed).toBe(true);
         }

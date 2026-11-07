@@ -1,3 +1,4 @@
+import { getHeads } from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { getProductionCommandHandlerMaps } from '#/app/getProductionCommandHandlerMaps';
@@ -22,6 +23,7 @@ import {
 import {
     createCrdtDoc,
     getCrdtDoc,
+    mutateCrdtDoc,
     registerCrdtStorageRuntime,
     removeCrdtDoc,
     resetCrdtProjectAuthority,
@@ -35,8 +37,8 @@ import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { setAllEnvelopes, setEnvelope } from '../../../stores/gainEnvelopeStore';
 import { trackStore } from '../../../stores/trackStore';
 import { warpStates } from '../../../stores/warpStates';
-import { getArrangementHandlers } from '../../../useCases/getArrangementHandlers';
 import { setArrangementEventBus } from '../../../useCases/arrangementEventBus';
+import { getArrangementHandlers } from '../../../useCases/getArrangementHandlers';
 
 registerDeviceEnginePorts();
 registerProjectSlotProjections();
@@ -62,16 +64,18 @@ function content() {
 }
 
 function creator(type: 'addClip' | 'duplicateClip' | 'duplicateClipAt' | 'duplicateClipToNextBar'): AppAction {
-    if (type === 'addClip')
+    if (type === 'addClip') {
         return {
             type,
             payload: { id: 'copy', trackId: 'track-1', startBeat: 4, endBeat: 8, name: 'Created', type: 'midi' },
         };
-    if (type === 'duplicateClipAt')
+    }
+    if (type === 'duplicateClipAt') {
         return {
             type,
             payload: { clipId: 'source', targetClipId: 'copy', destinationTrackId: 'track-1', startBeat: 4 },
         };
+    }
     return { type, payload: { clipId: 'source', targetClipId: 'copy' } };
 }
 
@@ -240,4 +244,63 @@ describe('created clip replay preserves its own action prefix', () => {
         expect(content()).toEqual(before);
         expect(undoHistoryStore.value).toEqual(history);
     });
+
+    it.each(['addClip', 'duplicateClip', 'duplicateClipToNextBar'] as const)(
+        '%s leaves its paired guard and history unchanged after an ambiguous publication',
+        async (type) => {
+            await executeAppAction(creator(type));
+            await undo();
+            const entry = undoHistoryStore.value?.future[0];
+            if (entry?.kind !== 'action' || entry.inverseAction?.type !== 'discardDuplicatedClip') {
+                throw new Error('Expected the pending creator inverse');
+            }
+            const inverse = entry.inverseAction;
+            const guard = inverse.payload.generatedMidiStateGuard;
+            const previousInverse = structuredClone(inverse);
+            const history = structuredClone(undoHistoryStore.value);
+            const execution = vi.spyOn(getArrangementHandlers()[type], 'execute');
+            const onCommitted = vi.fn();
+            const onAmbiguousCommit = vi.fn();
+            macroStore.set({ macros: [], recording: true, currentRecording: [] });
+            let throwAfterPublication = true;
+            configureAutomergeStoragePort({
+                getDoc: (docId) => getCrdtDoc<Record<string, unknown>>(docId),
+                getDocHeads: (docId) => getHeads(getCrdtDoc(docId)!),
+                getSemanticMessage: () => undefined,
+                hasDoc: (docId) => getCrdtDoc(docId) !== undefined,
+                mutateDoc: ({ docId, changeFn, message, changedKeys, snapshotTransaction }) => {
+                    mutateCrdtDoc({ id: docId, changeFn, message, localSlots: changedKeys, snapshotTransaction });
+                    if (throwAfterPublication) {
+                        throwAfterPublication = false;
+                        throw new Error('Controlled failure after creator publication');
+                    }
+                },
+            });
+            try {
+                const result = await executeAppActionBatch([entry.redoAction ?? entry.action], {
+                    skipUndo: true,
+                    onCommitted,
+                    onAmbiguousCommit,
+                });
+                expect(result.status).toBe('ambiguous');
+                expect(onAmbiguousCommit).toHaveBeenCalledOnce();
+                expect(onCommitted).not.toHaveBeenCalled();
+                expect(execution).toHaveBeenCalledOnce();
+                const effects = await execution.mock.results[0]?.value;
+                expect(effects?.afterAmbiguousCommit).toBeTypeOf('function');
+                expect(inverse.payload.generatedMidiStateGuard).toBe(guard);
+                expect(inverse).toEqual(previousInverse);
+                expect(undoHistoryStore.value).toEqual(history);
+                expect(macroStore.value?.currentRecording).toEqual([]);
+                expect(
+                    getCrdtDoc<{ tracks: NonNullable<typeof trackStore.value> }>('root')?.tracks.tracks[0]?.clips.some(
+                        (clip) => clip.id === 'copy'
+                    )
+                ).toBe(true);
+            } finally {
+                execution.mockRestore();
+                registerCrdtStorageRuntime();
+            }
+        }
+    );
 });

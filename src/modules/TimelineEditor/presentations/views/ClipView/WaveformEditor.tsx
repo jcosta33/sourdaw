@@ -427,8 +427,8 @@ export const WaveformEditor = ({ clipId, audioBufferId }: WaveformEditorProps): 
         };
     }, [waveCtxMenu]);
 
-    const waveAct = (fn: () => void) => () => {
-        fn();
+    const waveAct = (fn: () => void | Promise<void>) => () => {
+        void fn();
         setWaveCtxMenu(null);
     };
 

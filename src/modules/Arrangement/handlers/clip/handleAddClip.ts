@@ -6,6 +6,7 @@ import { getNextAppActionClipId } from '../../useCases/clip/getNextAppActionClip
 import { getPlannedTrackState } from '../getPlannedTrackState';
 import { toHandlerExecutionResult } from '../toHandlerExecutionResult';
 import { isAddClipSessionEntry } from '../validateCreationSessionEntries';
+
 import { prepareCreatedClipRedoGuard } from './prepareCreatedClipRedoGuard';
 
 type AddClipAction = { payload: { id?: string } };
@@ -52,9 +53,16 @@ export const handleAddClip = createHandler<'addClip'>({
         }
         state.generatedMidiStateGuard.entityJson = JSON.stringify(clip);
         state.generatedMidiStateGuard.midiByClipIdJson = serializeMidiStateForClips([clip.id]);
-        return state.publishRedoGuard
-            ? { status: 'written', afterCommit: state.publishRedoGuard }
-            : toHandlerExecutionResult(true);
+        if (state.publishRedoGuard) {
+            return {
+                status: 'written',
+                afterCommit: state.publishRedoGuard,
+                afterAmbiguousCommit: () => {
+                    // Ambiguous publication cannot authorize replacing the saved inverse.
+                },
+            };
+        }
+        return toHandlerExecutionResult(true);
     },
     describe: (alpha, context) => {
         const state = getAddClipState(alpha);

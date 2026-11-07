@@ -6,8 +6,8 @@ import { duplicateClipToNextBar } from '../../useCases/clip/duplicateClipToNextB
 import { prepareDuplicateClipTargetId } from '../../useCases/clip/prepareDuplicateClipTargetId';
 import { toHandlerExecutionResult } from '../toHandlerExecutionResult';
 
-import { stampCreatedClipStateGuard } from './stampCreatedClipStateGuard';
 import { prepareCreatedClipRedoGuard } from './prepareCreatedClipRedoGuard';
+import { stampCreatedClipStateGuard } from './stampCreatedClipStateGuard';
 
 type DuplicateClipToNextBarAction = { payload: { clipId: string; targetClipId?: string } };
 
@@ -77,9 +77,16 @@ export const handleDuplicateClipToNextBar = createHandler<'duplicateClipToNextBa
             return toHandlerExecutionResult(false);
         }
         stampCreatedClipStateGuard(state.generatedMidiStateGuard, state.targetClipId);
-        return state.publishRedoGuard
-            ? { status: 'written', afterCommit: state.publishRedoGuard }
-            : toHandlerExecutionResult(true);
+        if (state.publishRedoGuard) {
+            return {
+                status: 'written',
+                afterCommit: state.publishRedoGuard,
+                afterAmbiguousCommit: () => {
+                    // Ambiguous publication cannot authorize replacing the saved inverse.
+                },
+            };
+        }
+        return toHandlerExecutionResult(true);
     },
     describe: (alpha, context) => {
         const state = getDuplicateClipToNextBarState(alpha);

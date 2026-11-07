@@ -14,7 +14,7 @@ export function prepareCreatedClipRedoGuard({ recordedRedo, clipId, guard }: Inp
     }
     return () => {
         if (recordedRedo.isCurrent()) {
-            inverse.payload.generatedMidiStateGuard = { ...guard };
+            inverse.payload.generatedMidiStateGuard = structuredClone(guard);
         }
     };
 }

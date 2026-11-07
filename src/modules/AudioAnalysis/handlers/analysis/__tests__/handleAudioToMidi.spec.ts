@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+
 import { handleAudioToMidi } from '../handleAudioToMidi';
+
 const mocks = vi.hoisted(() => ({ audioToMidi: vi.fn() }));
 vi.mock('../../../useCases/audioToMidi', () => ({ audioToMidi: mocks.audioToMidi }));
 
