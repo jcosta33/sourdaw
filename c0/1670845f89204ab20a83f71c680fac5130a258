@@ -1,0 +1,26 @@
+.agents/skills/delivery-orchestration/references/closure-and-retirement.md
+  s_8dd2ba9e498da7::t_008abdd1063118 68-69
+  s_8dd2ba9e498da7::t_4a49f3784a4aa6 65-67,70
+.agents/skills/review-stances/closure-authority-proof.md
+  s_8dd2ba9e498da7::t_2f88e60ca95cac 133-136
+scripts/__tests__/supersedePullRequest.spec.ts
+  s_8dd2ba9e498da7::t_5b264688b7b383 1446-1461,3870-3950,3959,3987,4026
+scripts/supersedePullRequest.ts
+  s_8dd2ba9e498da7::t_e767b5a683d646 4,275,373,382,412,1091-1092,1098-1099,1358,1362
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c01670845f89204ab20a83f71c680fac5130a258",
+  "prompts": {},
+  "sessions": {
+    "s_8dd2ba9e498da7": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34a-1f45-7430-80af-58acd6c4b831",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
