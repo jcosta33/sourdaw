@@ -193,11 +193,11 @@ describe('ordered duplicate intent controlled outcomes', () => {
         'retires a %s batch and lets fresh input recover',
         async (status) => {
             setClipSelection(['source', 'other']);
-            dispatchBatch.mockResolvedValueOnce(
-                status === 'no-op'
-                    ? { status, actions: [] }
-                    : { status, reason: 'controlled boundary result', actions: [] }
-            );
+            if (status === 'no-op') {
+                dispatchBatch.mockResolvedValueOnce({ status, actions: [] });
+            } else {
+                dispatchBatch.mockResolvedValueOnce({ status, reason: 'controlled boundary result', actions: [] });
+            }
             await Promise.all([enqueueClipDuplicate('duplicateClip'), enqueueClipDuplicate('duplicateClip')]);
             expect(dispatchBatch).toHaveBeenCalledTimes(1);
             expect(clipSelectionStore.value?.selectedClipIds).toEqual(['source', 'other']);
@@ -221,7 +221,13 @@ describe('ordered duplicate intent controlled outcomes', () => {
         async (witness) => {
             setClipSelection(['source', 'other']);
             dispatchBatch.mockImplementationOnce(async (actions) => {
-                createNamedCopies(witness === 'all' ? actions : witness === 'partial' ? actions.slice(0, 1) : []);
+                if (witness === 'all') {
+                    createNamedCopies(actions);
+                } else if (witness === 'partial') {
+                    createNamedCopies(actions.slice(0, 1));
+                } else {
+                    createNamedCopies([]);
+                }
                 return { status: 'ambiguous', reason: 'commit acknowledgement lost', actions: [] };
             });
             await Promise.all([enqueueClipDuplicate('duplicateClip'), enqueueClipDuplicate('duplicateClip')]);

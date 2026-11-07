@@ -2,7 +2,7 @@ import { logger } from '#/infra/logger/appLogger';
 import { trackStore, type Track } from '#/modules/Arrangement/stores';
 import { prepareDuplicateClipTargetId, setClipSelection } from '#/modules/Arrangement/useCases';
 import { executeAppActionBatch } from '#/modules/Command/useCases';
-import { type AppAction } from '#/utils/handlerContract';
+import { type AppAction, type ExecuteOptions } from '#/utils/handlerContract';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 type ClipPlacement = {
@@ -74,12 +74,15 @@ export async function duplicateSelectedClipsForward(
             targetClipId: copyIds[index],
         },
     }));
-    const result = await executeAppActionBatch(actions, {
+    const options: ExecuteOptions = {
         groupId: `duplicate-clips-forward-${crypto.randomUUID()}`,
         groupLabel: `Duplicate ${actions.length} clip${actions.length > 1 ? 's' : ''} forward`,
         source: 'manual',
-        ...(authority ? { shouldExecute: authority.shouldExecute } : {}),
-    });
+    };
+    if (authority) {
+        options.shouldExecute = authority.shouldExecute;
+    }
+    const result = await executeAppActionBatch(actions, options);
 
     // A refusal is the user's to see; a handler failure is a defect and propagates.
     if (result.status === 'rejected' || result.status === 'conflicted') {

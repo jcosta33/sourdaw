@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { batchStoreUpdates } from '#/infra/store/createStore';
 import { Container } from '#/infra/di/Container';
+import { createEventBus } from '#/infra/events/createEventBus';
 import * as automergeStorage from '#/infra/store/storage/createAutomergeStorage';
 import { clipSelectionStore, defaultTrackState, trackStore, type TrackStoreState } from '#/modules/Arrangement/stores';
 import {
@@ -33,11 +34,22 @@ import {
 import { agentProjectRepairStateStore } from '#/modules/CrdtDocument/stores';
 import { midiStore } from '#/modules/MIDI/stores';
 import { type ActionHandler, type AppAction } from '#/utils/handlerContract';
-import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
+import {
+    type ConfirmPayload,
+    type NotifyPayload,
+    type PromptPayload,
+    setNotificationEventBus,
+} from '#/utils/Notification/notificationEventBus';
 
 import * as duplicateIntents from '../../clipShortcuts/enqueueClipDuplicate';
 
 import { handleKeydown } from '../handleKeydown';
+
+type NotificationEvents = {
+    'ui.notify': NotifyPayload;
+    'ui.confirm': ConfirmPayload;
+    'ui.prompt': PromptPayload;
+};
 
 const noActionHistoryMetadataPort = {
     record: () => [],
@@ -185,7 +197,7 @@ describe('overlapping duplicate shortcut selection through real Command', () => 
             return intent;
         });
         setCommandEventBus({ emit: async () => undefined });
-        setNotificationEventBus({ emit: async () => undefined });
+        setNotificationEventBus(createEventBus<NotificationEvents>());
         automergeStorage.configureAutomergeStoragePort(null);
         resetCrdtProjectAuthority('duplicate shortcut integration');
         removeCrdtDoc('root');
@@ -506,6 +518,8 @@ describe('overlapping duplicate shortcut selection through real Command', () => 
             function hold<TAction extends AppAction>(handler: ActionHandler<TAction>): ActionHandler<TAction> {
                 return {
                     ...handler,
+                    // The async barrier cannot certify synchronous isolated-project preview.
+                    previewExecution: undefined,
                     execute: async (action, context) => {
                         const result = handler.execute(action, context);
                         entered.resolve();
@@ -515,15 +529,17 @@ describe('overlapping duplicate shortcut selection through real Command', () => 
                 };
             }
             clearHandlerRegistry();
-            registerHandlerMap({
-                ...handlers,
-                duplicateClip: type === 'duplicateClip' ? hold(handlers.duplicateClip) : handlers.duplicateClip,
-                duplicateClipToNextBar:
-                    type === 'duplicateClipToNextBar'
-                        ? hold(handlers.duplicateClipToNextBar)
-                        : handlers.duplicateClipToNextBar,
-                duplicateClipAt: type === 'duplicateClipAt' ? hold(handlers.duplicateClipAt) : handlers.duplicateClipAt,
-            });
+            switch (type) {
+                case 'duplicateClip':
+                    registerHandlerMap({ ...handlers, duplicateClip: hold(handlers.duplicateClip) });
+                    break;
+                case 'duplicateClipToNextBar':
+                    registerHandlerMap({ ...handlers, duplicateClipToNextBar: hold(handlers.duplicateClipToNextBar) });
+                    break;
+                case 'duplicateClipAt':
+                    registerHandlerMap({ ...handlers, duplicateClipAt: hold(handlers.duplicateClipAt) });
+                    break;
+            }
             try {
                 pressDuplicate(type === 'duplicateClipToNextBar');
                 await entered.promise;
