@@ -131,7 +131,7 @@ async function seedSavedProject(page: Page): Promise<string> {
     }, stringify(true));
     const response = await page.goto('/?app-module-recovery=proof#preserved');
     expect(decodeURIComponent(response?.headers()['x-sourdaw-root'] ?? '')).toBe(ROOT);
-    await launch_new_project(page, { firstPaintTimeoutMs: 180_000 });
+    await launch_new_project(page);
     await page.getByTestId('project-name').click();
     const name = page.locator('input:focus');
     await name.fill(PROJECT_NAME);
