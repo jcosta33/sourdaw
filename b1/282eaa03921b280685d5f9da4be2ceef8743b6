@@ -1,0 +1,21 @@
+src/modules/Arrangement/useCases/clipEditing/__tests__/reverseClip.spec.ts
+  s_8dd2ba9e498da7::t_cb852425439571 1048,1051
+src/modules/Arrangement/useCases/freezeBounce/__tests__/bounceSelection.spec.ts
+  s_8dd2ba9e498da7::t_e4500503048515 25,33,41,832,841,843,888-889
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b1282eaa03921b280685d5f9da4be2ceef8743b6",
+  "prompts": {},
+  "sessions": {
+    "s_8dd2ba9e498da7": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34a-1f45-7430-80af-58acd6c4b831",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
