@@ -1,0 +1,48 @@
+src/modules/Transport/useCases/scheduling/scheduleAudioClips.ts
+  s_68423a2adea8d2::t_4322d8c3998013 98,116-118,120,170-173
+  s_68423a2adea8d2::t_f92a35ff272c24 99-115,121-124
+src/modules/Transport/useCases/playheadScheduler/projectLoopAudioWindows.ts
+  s_68423a2adea8d2::t_f92a35ff272c24 45-47,50-58,88,90
+  s_68423a2adea8d2::t_28e6125373ea10 68-75,80-81
+src/modules/Transport/useCases/playheadScheduler/schedulerSession.ts
+  s_68423a2adea8d2::t_753a4bb8c299c4 1,83
+src/modules/Transport/useCases/playheadScheduler/createLoopAudioSchedule.ts
+  s_68423a2adea8d2::t_753a4bb8c299c4 7,36,529-539,710,768-779
+  s_68423a2adea8d2::t_f92a35ff272c24 97-99,106-108,128-130,134-139,160-162,164-166,170-172,279-281,284-289,295-298,309,311,313-314,316,318-320,331,333,335,337,351-353,367-372,375-380,383-385,414-416,447,449,451-453,481-483,487-489,497-502,504-506,567-569,578-580,635-643,647-649,654-656,680-682,733-735
+  s_68423a2adea8d2::t_28e6125373ea10 209-218,226-231,236,241-247,263-278,657-661,699-709
+  s_68423a2adea8d2::t_556c8edd1c9004 757,782
+src/modules/Transport/useCases/playheadScheduler/startPlayheadScheduler.ts
+  s_68423a2adea8d2::t_28e6125373ea10 1629-1632
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerSeamHandover.spec.ts
+  s_68423a2adea8d2::t_f92a35ff272c24 587
+src/modules/Transport/useCases/playheadScheduler/__tests__/initialPlaybackWindow.integration.spec.ts
+  s_68423a2adea8d2::t_753a4bb8c299c4 285-292
+src/modules/Transport/useCases/playheadScheduler/__tests__/createLoopAudioSchedule.spec.ts
+  s_68423a2adea8d2::t_753a4bb8c299c4 51
+  s_68423a2adea8d2::t_f92a35ff272c24 55-57,81-83,207,209
+src/modules/Transport/models/LoopAudioScheduleLifetime.ts
+  s_68423a2adea8d2::t_753a4bb8c299c4 1-21
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerLoopAudioStall.spec.ts
+  s_68423a2adea8d2::t_f92a35ff272c24 61-63,321-333,335,583-585,884-888,950-959,963,981-989,1003-1011,1133-1137,1176-1180,1197-1205,1210-1221
+  s_68423a2adea8d2::t_4322d8c3998013 317-320,334,336,545-550,625-634
+src/modules/CrdtDocument/useCases/crdtBranching/__tests__/forkKeepsPlaybackProgress.integration.spec.ts
+  s_68423a2adea8d2::t_f92a35ff272c24 163-165
+src/modules/Transport/useCases/playheadScheduler/fenceSource.ts
+  s_68423a2adea8d2::t_f92a35ff272c24 8,10
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "cd40286a0d4441715bb37f89c0163a45559805a3",
+  "prompts": {},
+  "sessions": {
+    "s_68423a2adea8d2": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34b-f305-7c03-beb2-57afa678cda5",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
