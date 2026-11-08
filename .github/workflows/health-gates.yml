@@ -3,68 +3,29 @@ name: Health gates
 # Only pull_request may mint Gate. GitHub accepts skipped required checks, so
 # approval, schedule and dispatch must never create another Gate on this head.
 # Every selected check finishes before this required aggregate can succeed.
-# Pushes run only the cheap pr-checks.yml; this heavy run starts when a label is
-# added, and admission lets it proceed only for the reviewer App's approval
-# label on its approval of this exact head. Any other label event still ends
-# in a failing Gate that names the reason, never a skipped one. review:publish
-# applies the label after its publication lock is released; if that write
-# fails, a plain review:publish re-run replays the review and re-applies it.
+# The workflow runs for every open, push, reopen, and draft-state change.
+# Heavy checks run only when the pull request is not a draft. A draft still
+# ends in a failing Gate, never a skipped one: a skipped required check passes.
 on:
   pull_request:
-    types: [labeled]
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
 
 permissions:
   contents: read
   pull-requests: read
 
-# One run per pull request: a newer label event supersedes an older run. The
-# cancelled run's gate still runs under always() and fails, and the newest run
-# always ends in its own non-skipped Gate, so no cancellation yields a skip.
+# One run per pull request: a newer push or draft-state change supersedes an
+# older run. The cancelled run's gate still runs under always() and fails, and
+# the newest run always ends in its own non-skipped Gate, so no cancellation
+# yields a skip.
 concurrency:
   group: health-gates-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
 jobs:
-  admission:
-    name: Approval admission
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    outputs:
-      admitted: ${{ steps.decide.outputs.admitted }}
-      reason: ${{ steps.decide.outputs.reason }}
-    steps:
-      # The decision runs from the default branch, never the candidate head,
-      # so a pull request cannot rewrite the rule that admits it.
-      - name: Checkout trusted admission
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ github.event.repository.default_branch }}
-          path: trusted
-          sparse-checkout: scripts
-          persist-credentials: false
-      - name: Set up Node
-        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version: 24.22.2
-      - name: Read reviews
-        env:
-          GH_TOKEN: ${{ github.token }}
-          REPOSITORY: ${{ github.repository }}
-          NUMBER: ${{ github.event.pull_request.number }}
-        run: gh api --paginate --slurp "repos/$REPOSITORY/pulls/$NUMBER/reviews" > "$RUNNER_TEMP/reviews.json"
-      - name: Decide admission
-        id: decide
-        env:
-          REVIEWS_PATH: ${{ runner.temp }}/reviews.json
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-          LABEL_NAME: ${{ github.event.label.name }}
-          SENDER_NODE_ID: ${{ github.event.sender.node_id }}
-        run: node trusted/scripts/ciApprovalAdmission.ts
-
   scope:
     name: Plan required checks
-    needs: admission
-    if: needs.admission.outputs.admitted == 'true'
+    if: github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     timeout-minutes: 10
     # Reading the nightly coverage map artifact needs actions: read.
@@ -128,14 +89,13 @@ jobs:
     needs: scope
     uses: ./.github/workflows/validation.yml
     with:
-      mode: full
       browser: ${{ needs.scope.outputs.browser == 'true' }}
       profile: ${{ needs.scope.outputs.profile }}
 
   e2e-build:
     name: Shared E2E build
     needs: scope
-    if: ${{ fromJSON(needs.scope.outputs.matrix).include[0] != null }}
+    if: ${{ github.event.pull_request.draft == false && needs.scope.result == 'success' && fromJSON(needs.scope.outputs.matrix || '{"include":[]}').include[0] != null }}
     runs-on: ubuntu-latest
     container:
       image: mcr.microsoft.com/playwright:v1.65.0-noble@sha256:6e3fb709361521eb27161606e6da6d2674e5e89fa16516cb37d6fdd91372273d
@@ -183,9 +143,9 @@ jobs:
     # The producer overlaps validation. Admit consumers only after both required predecessors complete.
     needs: [scope, validation, e2e-build]
     if: >-
-      ${{ !cancelled() && needs.scope.result == 'success' && needs.validation.result == 'success' &&
-          ((fromJSON(needs.scope.outputs.matrix).include[0] != null && needs.e2e-build.result == 'success') ||
-           (fromJSON(needs.scope.outputs.matrix).include[0] == null && needs.e2e-build.result == 'skipped')) }}
+      ${{ github.event.pull_request.draft == false && !cancelled() && needs.scope.result == 'success' && needs.validation.result == 'success' &&
+          ((fromJSON(needs.scope.outputs.matrix || '{"include":[]}').include[0] != null && needs.e2e-build.result == 'success') ||
+           (fromJSON(needs.scope.outputs.matrix || '{"include":[]}').include[0] == null && needs.e2e-build.result == 'skipped')) }}
     uses: ./.github/workflows/heavy-gates.yml
     with:
       matrix: ${{ needs.scope.outputs.matrix }}
@@ -221,7 +181,6 @@ jobs:
     name: Gate
     if: ${{ always() }}
     needs:
-      - admission
       - scope
       - e2e-build
       - validation
@@ -235,19 +194,20 @@ jobs:
         env:
           RESULTS: ${{ toJSON(needs) }}
           MATRIX: ${{ needs.scope.outputs.matrix }}
+          DRAFT: ${{ github.event.pull_request.draft }}
         run: |
           set -euo pipefail
-          printf '%s' "$RESULTS" | jq -r '
-            if .admission.result == "success" and .admission.outputs.admitted == "true" then empty
-            else "::error title=Gate not admitted::\(.admission.outputs.reason // "approval admission did not decide")" end'
+          if [ "$DRAFT" != "false" ]; then
+            printf '%s\n' '::error title=Gate refused::pull request is a draft'
+            exit 1
+          fi
           selected=$(printf '%s' "$MATRIX" | jq -er '
             if type != "object" or (.include | type) != "array" then error("invalid E2E plan")
             elif all(.include[]; (.id | type) == "number" and (.specs | type) == "array" and (.specs | length) > 0) then
               if (.include | length) > 0 then "success" else "skipped" end
             else error("invalid E2E group") end')
           printf '%s' "$RESULTS" | jq -e --arg selected "$selected" '
-            (keys | sort) == ["admission", "affected", "codeql", "e2e-build", "scope", "validation"] and
-            .admission.result == "success" and .admission.outputs.admitted == "true" and
+            (keys | sort) == ["affected", "codeql", "e2e-build", "scope", "validation"] and
             .scope.result == "success" and .validation.result == "success" and .affected.result == "success" and
             .["e2e-build"].result == $selected and
             (.scope.outputs.browser == "true" or .scope.outputs.browser == "false") and

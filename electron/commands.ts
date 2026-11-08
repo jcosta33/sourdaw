@@ -69,12 +69,6 @@ export const EXPOSED_COMMANDS = [
     'close_plugin_gui',
     'close_provider_gateway_session',
     'close_push_transport',
-    'collab_apply_change',
-    'collab_create_project',
-    'collab_get_document_state',
-    'collab_load_bundle',
-    'collab_merge_bundle',
-    'collab_save_bundle',
     'commit_export_files',
     'commit_levain_bank',
     'commit_pitch_edit',
@@ -219,12 +213,25 @@ export const EXPOSED_COMMANDS = [
  * the same change and restored: `refreshExternalPluginParameters` re-reads a
  * loaded instance's parameters through it whenever the automation menu or
  * panel opens, so its caller never went away.
+ *
+ * The raw native CRDT document commands are denied because project truth and
+ * synchronization use the browser Automerge repository. Their renderer
+ * repository wrappers have no product consumers: a wrapper's command-name
+ * literal does not justify granting native document access. The Rust bodies
+ * remain available in-process; a renderer grant requires a real caller and
+ * reviewed request-validation and decoding bounds.
  */
 export const DENIED_COMMANDS = [
     'begin_renderer_session',
     'cancel_dictation',
     'close_all_plugin_guis',
+    'collab_apply_change',
+    'collab_create_project',
+    'collab_get_document_state',
     'collab_get_nearby_sessions',
+    'collab_load_bundle',
+    'collab_merge_bundle',
+    'collab_save_bundle',
     'collab_start_advertising',
     'collab_start_browsing',
     'collab_stop_advertising',
