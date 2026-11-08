@@ -1,0 +1,37 @@
+electron/__tests__/webviewSecurity.spec.ts
+  s_1052c2a2231ded::t_938cf1f66e541f 46,93-96
+scripts/__tests__/vercelContentSecurityPolicy.spec.ts
+  s_1052c2a2231ded::t_530cdcfa1fefc0 39,157-160
+src/modules/Crust/presentations/components/CrustMeteringStrip.tsx
+  s_977061c47f01dd::t_481f5c293e3532 34,38,41,43,114,117,119,170
+src/modules/Preferences/presentations/views/preferences/__tests__/AppearanceSection.spec.tsx
+  s_1052c2a2231ded::t_4715ba25a3b2b5 39-40,50,59-60
+src/modules/WorkspaceShell/presentations/hooks/__tests__/useThemeSynchronization.spec.ts
+  s_977061c47f01dd::t_f67236ecc62ad4 30-31,34,39-40,51-52
+src/styles/__tests__/semanticThemes.spec.ts
+  s_1052c2a2231ded::t_21ac75909670cc 10,12-17,73-81,117-125,140-160
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "6f9d0f6dc7b8b4ef6c2b2782784888405997c814",
+  "prompts": {},
+  "sessions": {
+    "s_1052c2a2231ded": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b349-24b6-7622-8534-09f171c780d5",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_977061c47f01dd": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34d-123d-7452-a6e7-60608388b6d7",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
