@@ -295,8 +295,14 @@ describe('recorded ride replay against actual peer lane changes', () => {
     it('replays both unchanged recorded lanes as one user unit and preserves the prior edit', async () => {
         const tracks = structuredClone(material().tracks);
         const priorIds = undoHistoryStore.value?.past.map((entry) => entry.id);
+        if (!priorIds) {
+            throw new Error('Expected history before recording');
+        }
         const after = recordTwoLanes();
         const recordedIds = undoHistoryStore.value?.past.slice(1).map((entry) => entry.id);
+        if (!recordedIds) {
+            throw new Error('Expected recorded history');
+        }
 
         expect(await undo({ stepOverConflicts: false })).toEqual({ headConsumed: true });
         expect(material().automation.lanes).toEqual(initialLanes);
@@ -308,10 +314,7 @@ describe('recorded ride replay against actual peer lane changes', () => {
 
         expect(material().automation).toEqual(after.automation);
         expect(material().tracks).toEqual(tracks);
-        expect(undoHistoryStore.value?.past.map((entry) => entry.id)).toEqual([
-            ...(priorIds ?? []),
-            ...(recordedIds ?? []),
-        ]);
+        expect(undoHistoryStore.value?.past.map((entry) => entry.id)).toEqual([...priorIds, ...recordedIds]);
         expect(undoHistoryStore.value?.future).toEqual([]);
         expect(notifications).toEqual([]);
     });
