@@ -142,7 +142,7 @@ describe('Sidebar', () => {
     const openImportedFileInput = (): HTMLInputElement => {
         fireEvent.click(screen.getByText('Library'));
         fireEvent.click(screen.getByText('Imported'));
-        const fileInput = document.querySelector('input[type="file"]');
+        const fileInput = document.querySelector<HTMLInputElement>('input[type="file"]');
         if (!fileInput) {
             throw new Error('Expected the Imported tab to render a file input');
         }
