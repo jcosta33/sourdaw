@@ -128,9 +128,6 @@ export const Sidebar = ({ style, onClose, panelActions }: SidebarProps): ReactEl
 
             try {
                 const { id: bufferId, buffer } = await decodeAudioFile(file, hold);
-                if (importedSampleHold() === null) {
-                    break;
-                }
                 const name = file.name.replace(/\.[^.]+$/, '');
                 setUserSamples((prev) => [
                     ...prev,
