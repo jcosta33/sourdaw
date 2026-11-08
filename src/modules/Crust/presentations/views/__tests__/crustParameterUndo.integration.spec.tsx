@@ -113,7 +113,8 @@ describe('Crust numeric gestures through real Command and CRDT', () => {
         trackStore.set({
             tracks: [
                 {
-                    ...createTrack({ id: TRACK, name: 'Crust', kind: 'audio', color: '#123456' }),
+                    ...createTrack({ id: TRACK, name: 'Crust', kind: 'audio' }),
+                    color: '#123456',
                     devices: [
                         {
                             id: DEVICE,
@@ -223,8 +224,9 @@ describe('Crust numeric gestures through real Command and CRDT', () => {
         if (!track) {
             throw new Error('Missing test track');
         }
-        const values = { ...projectedDevice().parameterValues };
-        delete values.gain;
+        const values = Object.fromEntries(
+            Object.entries(projectedDevice().parameterValues).filter(([key]) => key !== 'gain')
+        );
         trackStore.set({
             tracks: [{ ...track, devices: track.devices.map((device) => ({ ...device, parameterValues: values })) }],
             selectedTrackId: TRACK,

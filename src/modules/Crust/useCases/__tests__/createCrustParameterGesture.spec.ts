@@ -17,7 +17,6 @@ import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stor
 import {
     captureUndoHistory,
     clearUndoHistory,
-    executeUserAppAction,
     redo,
     resetActionReplayAuthority,
     setActionHistoryMetadataPort,
@@ -116,7 +115,8 @@ describe('Crust numeric controller with real Command and CRDT', () => {
         trackStore.set({
             tracks: [
                 {
-                    ...createTrack({ id: TRACK, name: 'Crust', kind: 'audio', color: '#123456' }),
+                    ...createTrack({ id: TRACK, name: 'Crust', kind: 'audio' }),
+                    color: '#123456',
                     devices: [
                         {
                             id: DEVICE,
@@ -134,6 +134,7 @@ describe('Crust numeric controller with real Command and CRDT', () => {
         crustStore.set({});
         flushAutomergeStorageWrites();
         audio.updateDeviceParam.mockReset();
+        setGestureClockSource({ getAudioTimeSeconds: () => 0, readNativeCursorBeats: () => 0 });
         transportStore.set({ ...defaultTransportState, isPlaying: false });
         vi.stubGlobal(
             'AudioContext',
@@ -152,7 +153,7 @@ describe('Crust numeric controller with real Command and CRDT', () => {
         vi.restoreAllMocks();
         stopAutomationRecording();
         transportStore.set({ ...defaultTransportState, isPlaying: false });
-        setGestureClockSource(null);
+        setGestureClockSource({ getAudioTimeSeconds: () => 0, readNativeCursorBeats: () => 0 });
         vi.unstubAllGlobals();
         agentProjectRepairStateStore.set(null);
         registerCrdtStorageRuntime();
@@ -220,19 +221,16 @@ describe('Crust numeric controller with real Command and CRDT', () => {
             if (!track) {
                 throw new Error('Missing track');
             }
+            let changedTrack: Track;
+            if (change === 'removed') {
+                changedTrack = { ...track, devices: [] };
+            } else if (change === 'duplicate') {
+                changedTrack = { ...track, devices: [...track.devices, ...track.devices] };
+            } else {
+                changedTrack = { ...track, frozen: true };
+            }
             trackStore.set({
-                tracks: [
-                    {
-                        ...track,
-                        ...(change === 'frozen' ? { frozen: true } : {}),
-                        devices:
-                            change === 'removed'
-                                ? []
-                                : change === 'duplicate'
-                                  ? [...track.devices, ...track.devices]
-                                  : track.devices,
-                    },
-                ],
+                tracks: [changedTrack],
                 selectedTrackId: TRACK,
                 ghostClips: [],
             });
@@ -360,6 +358,76 @@ describe('Crust numeric controller with real Command and CRDT', () => {
             await undo();
             await redo();
             expect(recording).toHaveBeenCalledTimes(3);
+        }
+    );
+    it('replays a hidden bit-depth choice with exact absent-field restoration and effective engine default', async () => {
+        const edit = controller();
+        expect(Object.hasOwn(rawDevice().parameterValues, 'outputBitDepth')).toBe(false);
+        expect(getCrustState(DEVICE).patch.outputBitDepth).toBe(24);
+        await edit.change('outputBitDepth', 32);
+        expect(rawDevice().parameterValues.outputBitDepth).toBe(32);
+        expect(projectedDevice()).toEqual(rawDevice());
+        expect(getCrustState(DEVICE).patch.outputBitDepth).toBe(32);
+        expect(captureUndoHistory().past).toHaveLength(1);
+        expect(captureUndoHistory().past[0]).toMatchObject({
+            kind: 'action',
+            action: {
+                type: 'setDeviceParameter',
+                payload: { paramId: 'outputBitDepth', value: 32, expectedValuePresent: false },
+            },
+            inverseAction: {
+                type: 'setDeviceParameter',
+                payload: { paramId: 'outputBitDepth', value: 24, deleteParameter: true },
+            },
+        });
+        audio.updateDeviceParam.mockClear();
+        await undo();
+        expect(Object.hasOwn(rawDevice().parameterValues, 'outputBitDepth')).toBe(false);
+        expect(projectedDevice()).toEqual(rawDevice());
+        expect(getCrustState(DEVICE).patch.outputBitDepth).toBe(24);
+        expect(audio.updateDeviceParam).toHaveBeenLastCalledWith(TRACK, DEVICE, 'outputBitDepth', 24);
+        await redo();
+        expect(rawDevice().parameterValues.outputBitDepth).toBe(32);
+        expect(audio.updateDeviceParam).toHaveBeenLastCalledWith(TRACK, DEVICE, 'outputBitDepth', 32);
+        await undo();
+        expect(Object.hasOwn(rawDevice().parameterValues, 'outputBitDepth')).toBe(false);
+        expect(getCrustState(DEVICE).patch.outputBitDepth).toBe(24);
+        expect(audio.updateDeviceParam).toHaveBeenLastCalledWith(TRACK, DEVICE, 'outputBitDepth', 24);
+    });
+
+    it.each(['write', 'touch', 'latch'] as const)(
+        'commits the hidden 32-bit choice in %s without recording automation',
+        async (automationMode) => {
+            const track = trackStore.value?.tracks[0];
+            if (!track) {
+                throw new Error('Missing track');
+            }
+            trackStore.set({ tracks: [{ ...track, automationMode }], selectedTrackId: TRACK, ghostClips: [] });
+            flushAutomergeStorageWrites();
+            setGestureClockSource({ getAudioTimeSeconds: () => 0, readNativeCursorBeats: () => 1 });
+            transportStore.set({ ...defaultTransportState, isPlaying: true });
+            const recording = vi.spyOn(automationApi, 'recordAutomationValue');
+            const edit = controller();
+            await edit.change('outputBitDepth', 32);
+            expect(rawDevice().parameterValues.outputBitDepth).toBe(32);
+            expect(captureUndoHistory().past).toHaveLength(1);
+            expect(recording).not.toHaveBeenCalled();
+            await undo();
+            expect(Object.hasOwn(rawDevice().parameterValues, 'outputBitDepth')).toBe(false);
+            await redo();
+            expect(rawDevice().parameterValues.outputBitDepth).toBe(32);
+            expect(recording).not.toHaveBeenCalled();
+        }
+    );
+
+    it.each([0, 17, 64])(
+        'refuses invalid hidden bit depth %s without project, history or runtime writes',
+        async (value) => {
+            const edit = controller();
+            await edit.change('outputBitDepth', value);
+            expect(Object.hasOwn(rawDevice().parameterValues, 'outputBitDepth')).toBe(false);
+            expect(captureUndoHistory().past).toHaveLength(0);
+            expect(audio.updateDeviceParam).not.toHaveBeenCalled();
         }
     );
 });

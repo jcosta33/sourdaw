@@ -25,6 +25,7 @@ type Gesture = {
     present: boolean;
     value: number | undefined;
     defaultValue: number;
+    recordingEligible: boolean;
     root: string;
     project: ReturnType<typeof captureProjectTransitionAuthority>;
     runtime: ReturnType<typeof captureDeviceParameterRuntimeWriteAuthority>;
@@ -121,6 +122,30 @@ function cancel(scope: Scope, gesture: Gesture): void {
     }
 }
 
+function isOutputBitDepth(value: number): value is CrustPatch['outputBitDepth'] {
+    return value === 16 || value === 24 || value === 32;
+}
+
+function readParameterAdmission(key: Key) {
+    const descriptor = getPluginById('crust');
+    const parameter = descriptor?.parameters.find((parameter) => parameter.id === key);
+    const undeclaredDefaults = descriptor?.undeclaredParameterDefaults;
+    let defaultValue: number | undefined;
+    if (parameter) {
+        defaultValue = parameter.defaultValue;
+    } else if (undeclaredDefaults && Object.hasOwn(undeclaredDefaults, key)) {
+        defaultValue = undeclaredDefaults[key];
+    }
+    if (
+        typeof defaultValue !== 'number' ||
+        !Number.isFinite(defaultValue) ||
+        (key === 'outputBitDepth' && !isOutputBitDepth(defaultValue))
+    ) {
+        return null;
+    }
+    return { defaultValue, recordingEligible: parameter?.automatable === true };
+}
+
 function start(scope: Scope, key: Key): number {
     if (scope.disposed || typeof DEFAULT_CRUST_PATCH[key] !== 'number') {
         return -1;
@@ -134,13 +159,13 @@ function start(scope: Scope, key: Key): number {
         cancel(scope, previous);
     }
     const target = resolveEligibleDeviceWriteTarget(scope.deviceId);
-    const owner =
-        target.status === 'eligible'
-            ? trackStore.value?.tracks.find((track) => track.id === target.trackId)
-            : undefined;
+    if (target.status !== 'eligible') {
+        return -1;
+    }
+    const owner = trackStore.value?.tracks.find((track) => track.id === target.trackId);
     const device = owner?.devices.find((candidate) => candidate.id === scope.deviceId);
-    const parameter = getPluginById('crust')?.parameters.find((parameter) => parameter.id === key);
-    if (!owner || device?.type !== 'crust' || !parameter) {
+    const admission = readParameterAdmission(key);
+    if (!owner || device?.type !== 'crust' || !admission) {
         return -1;
     }
     paramBatcher.cancel(`${scope.deviceId}:${key}`);
@@ -153,7 +178,8 @@ function start(scope: Scope, key: Key): number {
         frozen: owner.frozen,
         present: Object.hasOwn(device.parameterValues, key),
         value: device.parameterValues[key],
-        defaultValue: parameter.defaultValue ?? parameter.value,
+        defaultValue: admission.defaultValue,
+        recordingEligible: admission.recordingEligible,
         root: captureProjectRootIdentity(),
         project: captureProjectTransitionAuthority(),
         runtime: captureDeviceParameterRuntimeWriteAuthority(owner.id, device.id, key),
@@ -221,7 +247,7 @@ async function commit(scope: Scope, gesture: Gesture): Promise<void> {
 }
 
 function change(scope: Scope, key: Key, value: number, transient = false, recordingSample = true): Promise<void> {
-    if (!Number.isFinite(value) || scope.disposed) {
+    if (!Number.isFinite(value) || scope.disposed || (key === 'outputBitDepth' && !isOutputBitDepth(value))) {
         return Promise.resolve();
     }
     if (!scope.gestures.has(key)) {
@@ -244,7 +270,7 @@ function change(scope: Scope, key: Key, value: number, transient = false, record
             transient: true,
             runtimeOwner: gesture.runtime.owner,
             automationRecordingOwner: gesture.recording.owner,
-            automationRecordingPolicy: recordingSample ? undefined : 'suppressed',
+            automationRecordingPolicy: recordingSample && gesture.recordingEligible ? undefined : 'suppressed',
         });
         if (!accepted) {
             cancel(scope, gesture);
