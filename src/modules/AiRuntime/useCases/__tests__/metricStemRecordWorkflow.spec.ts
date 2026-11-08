@@ -816,6 +816,14 @@ describe('stem import and starting mix workflow', () => {
         planning.mockRestore();
         expect(mocks.stageDurableAsset).toHaveBeenCalledTimes(STEM_SOURCE_NAMES.length);
         if (kind === 'long') {
+            const serialized = plans.at(-1)?.metricGoalState;
+            if (serialized !== undefined) {
+                const stored = JSON.parse(serialized) as { refinedRequests?: string[] };
+                expect({
+                    retainedOriginal: stored.refinedRequests?.includes(originalPrompt),
+                    codecRejected: metricGoalStateCodec(serialized) === null,
+                }).toBeNull();
+            }
             expect(plans.at(-1)).toMatchObject({
                 actions: [],
                 rejectionReason: "This proposal's verification record can no longer be read; start a fresh request.",
