@@ -1412,6 +1412,21 @@ const draftGate = spawnSync('bash', ['-c', gateRun], {
 });
 expect(draftGate.status !== 0 && draftGate.stdout === '::error title=Gate refused::pull request is a draft\n',
     'a draft must fail Gate rather than pass on skipped checks');
+const passingDraft = spawnSync('bash', ['-c', gateRun], {
+    cwd: process.env.TEST_TEMP_ROOT,
+    encoding: 'utf8',
+    env: {
+        ...process.env,
+        DRAFT: 'true',
+        MATRIX: selectedMatrix,
+        RESULTS: requiredResults('false'),
+    },
+});
+expect(
+    passingDraft.status !== 0 &&
+        passingDraft.stdout === '::error title=Gate refused::pull request is a draft\n',
+    'a draft must fail Gate even when every selected job would pass'
+);
 const browserResults = (e2e, report, hardware) => JSON.stringify({
     e2e: { result: e2e }, 'e2e-report': { result: report },
     'browser-ai-webgpu': { result: hardware },

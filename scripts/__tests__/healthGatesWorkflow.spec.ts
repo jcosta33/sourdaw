@@ -5096,6 +5096,17 @@ describe('health gates workflow contract', () => {
             codeql: { result: 'skipped' },
         });
         expect(gateStatus(draft, 'true')).not.toBe(0);
+        const passingDraft = spawnSync('bash', ['-c', gateScript], {
+            encoding: 'utf8',
+            env: {
+                ...process.env,
+                RESULTS: requiredResults('false'),
+                DRAFT: 'true',
+                MATRIX: selectedMatrix,
+            },
+        });
+        expect(passingDraft.status).not.toBe(0);
+        expect(passingDraft.stdout).toBe('::error title=Gate refused::pull request is a draft\n');
         expect(
             spawnSync('bash', ['-c', gateScript], {
                 encoding: 'utf8',
