@@ -1,22 +1,25 @@
 // Literal input PCM and clock equations. These do not import an edit or playback projector.
 const RATE = 48_000;
 
-function pcm16Wav(frames: number, at: (frame: number) => number): Buffer {
-    const wav = Buffer.alloc(44 + frames * 2);
+function pcm16Wav(frames: number, at: (frame: number, channel: number) => number, channels = 1): Buffer {
+    const frameBytes = channels * 2;
+    const wav = Buffer.alloc(44 + frames * frameBytes);
     wav.write('RIFF', 0);
     wav.writeUInt32LE(wav.length - 8, 4);
     wav.write('WAVEfmt ', 8);
     wav.writeUInt32LE(16, 16);
     wav.writeUInt16LE(1, 20);
-    wav.writeUInt16LE(1, 22);
+    wav.writeUInt16LE(channels, 22);
     wav.writeUInt32LE(RATE, 24);
-    wav.writeUInt32LE(RATE * 2, 28);
-    wav.writeUInt16LE(2, 32);
+    wav.writeUInt32LE(RATE * frameBytes, 28);
+    wav.writeUInt16LE(frameBytes, 32);
     wav.writeUInt16LE(16, 34);
     wav.write('data', 36);
-    wav.writeUInt32LE(frames * 2, 40);
+    wav.writeUInt32LE(frames * frameBytes, 40);
     for (let frame = 0; frame < frames; frame += 1) {
-        wav.writeInt16LE(at(frame), 44 + frame * 2);
+        for (let channel = 0; channel < channels; channel += 1) {
+            wav.writeInt16LE(at(frame, channel), 44 + frame * frameBytes + channel * 2);
+        }
     }
     return wav;
 }
@@ -63,6 +66,16 @@ function stretchedTrimSample(frame: number): number {
 }
 
 export const physicalSourceFixture = {
+    stereoIslands: () =>
+        pcm16Wav(
+            5 * RATE,
+            (frame, channel) => {
+                const sounding =
+                    channel === 0 ? frame < 48_000 || frame >= 192_000 : frame >= 96_000 && frame < 144_000;
+                return sounding ? 16_384 : 0;
+            },
+            2
+        ),
     slip: () => pcm16Wav(4 * RATE, slipSample),
     slipSample,
     // The finder returns the LEFT sample of each sign pair, not the sample after it.
