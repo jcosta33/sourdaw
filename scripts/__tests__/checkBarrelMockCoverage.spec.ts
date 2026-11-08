@@ -42,8 +42,8 @@
 
 import { join } from 'node:path';
 
-import { beforeAll, describe, expect, it } from 'vitest';
 import { loadConfigFromFile, resolveConfig, transformWithOxc } from 'vite';
+import { beforeAll, describe, expect, it } from 'vitest';
 
 import {
     allBarrelKinds,
