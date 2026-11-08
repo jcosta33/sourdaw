@@ -185,9 +185,6 @@ export { getMidiNoteTransformHandlers } from './getMidiNoteTransformHandlers';
 export { getMidiTransformProtocolContract } from './getMidiTransformProtocolContract';
 export { getMidiGrooveHandlers } from './getMidiGrooveHandlers';
 
-// ── Pattern Instances ─────────────────────────────────────────────────────────
-export { getPatternInstanceHandlers } from './getPatternInstanceHandlers';
-
 export { strumNotes } from './strumNotes/strumNotes';
 export { restoreStrumOriginals } from './strumNotes/restoreStrumOriginals';
 
