@@ -1,0 +1,19 @@
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerLoopAudioStall.spec.ts
+  s_68423a2adea8d2::t_75ceb35d204184 311-318
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "16c3bb37dcacb817cdf66700bf9a6316ecef877d",
+  "prompts": {},
+  "sessions": {
+    "s_68423a2adea8d2": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34b-f305-7c03-beb2-57afa678cda5",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
