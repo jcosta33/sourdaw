@@ -1,0 +1,21 @@
+scripts/workflowSecuritySurfaceContract.ts
+  s_6584878ed83d04::t_a81bf65384177a 13
+scripts/__tests__/healthGatesWorkflow.spec.ts
+  s_6584878ed83d04::t_77ff23c7abd911 31
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c7e205cb8b95f2319e852d1ddbef5e93869f6ca0",
+  "prompts": {},
+  "sessions": {
+    "s_6584878ed83d04": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "eb8dc258-27ed-45aa-b77a-54b7a029172e",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
