@@ -7,7 +7,22 @@ import { describe, expect, it } from 'vitest';
 
 const root = resolve(import.meta.dirname, '../..');
 
+function expectSafeDirectProjectEntry(entry: string): void {
+    expect(entry).toContain("from '../../src/modules/Project/useCases'");
+    expect(entry).toMatch(/export\s+const\s+newProject\b/);
+    expect(entry).not.toMatch(/import\s*\(|new\s+\w+\(\)|createProject|projectStore\.set/);
+}
+
 describe('same-build persistence inspection entry', () => {
+    it('accepts a lazy read-only constructor without running it at module load', () => {
+        const entry = `
+            import { newProject as _newProject } from '../../src/modules/Project/useCases';
+            export const newProject = _newProject;
+            export const inspectProject = () => new Set();
+        `;
+        expectSafeDirectProjectEntry(entry);
+    });
+
     it('keeps the real index entry and eight direct namespaces only in e2e builds', async () => {
         const e2e = await resolveConfig({ root, mode: 'e2e' }, 'build');
         expect(e2e.build.rolldownOptions.input).toEqual({
@@ -52,9 +67,7 @@ describe('same-build persistence inspection entry', () => {
             })
         ).toBe('e2e/direct-project-setup.js');
         const entry = readFileSync(resolve(root, 'tests/e2e/directProjectSetupEntry.ts'), 'utf8');
-        expect(entry).toContain("from '../../src/modules/Project/useCases'");
-        expect(entry).toMatch(/export\s+const\s+newProject\b/);
-        expect(entry).not.toMatch(/import\s*\(|new\s+\w+\(\)|createProject|projectStore\.set/);
+        expectSafeDirectProjectEntry(entry);
     });
 
     it('does not add the inspection entry or change entry signatures in a shipping build', async () => {
