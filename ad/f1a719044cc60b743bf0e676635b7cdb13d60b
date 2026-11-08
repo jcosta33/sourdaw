@@ -1,0 +1,28 @@
+src/modules/AiRuntime/useCases/__tests__/metricGuardFixture.ts
+  s_68423a2adea8d2::t_da6e15dfdfa555 100-102,124-126,128-130,152-154,164-166,186-188,203-205,221-223,264-266
+src/modules/AiRuntime/useCases/__tests__/metricProofStructure.spec.ts
+  s_68423a2adea8d2::t_da6e15dfdfa555 19-24,26-29
+  s_68423a2adea8d2::t_7049596efbca97 6
+src/modules/AiRuntime/useCases/__tests__/metricGoalGuardContracts.spec.ts
+  s_68423a2adea8d2::t_7049596efbca97 4
+src/modules/AiRuntime/useCases/__tests__/metricNonAcousticClipGuard.spec.ts
+  s_68423a2adea8d2::t_7049596efbca97 6
+  s_68423a2adea8d2::t_5753c34697b8a1 104-119
+  s_68423a2adea8d2::t_da6e15dfdfa555 61-63,91,93,120-123,172,174
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "adf1a719044cc60b743bf0e676635b7cdb13d60b",
+  "prompts": {},
+  "sessions": {
+    "s_68423a2adea8d2": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34b-f305-7c03-beb2-57afa678cda5",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
