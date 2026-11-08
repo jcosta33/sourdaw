@@ -1,0 +1,19 @@
+src/modules/ContentBrowser/presentations/views/__tests__/Sidebar.spec.tsx
+  s_02903fa7eb13ea::t_5f5b79aec5dec2 145
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "6b82f4c0c9c57fddd0be8e67974ed1f2930adc3d",
+  "prompts": {},
+  "sessions": {
+    "s_02903fa7eb13ea": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "09ad8230-37d3-4b52-835c-e4a4f9483b9c",
+        "model": "composer-2.5-fast"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
