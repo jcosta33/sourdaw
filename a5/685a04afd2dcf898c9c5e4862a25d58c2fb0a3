@@ -1,0 +1,35 @@
+src/modules/ContentBrowser/presentations/views/__tests__/Sidebar.spec.tsx
+  s_02903fa7eb13ea::t_0efe282b29655a 98-102,104-105
+  s_02903fa7eb13ea::t_d4de107c695848 271,273-274
+  s_02903fa7eb13ea::t_5dfed2abab9a8a 272
+src/modules/ContentBrowser/useCases/placeLibrarySample.ts
+  s_02903fa7eb13ea::t_064d79c200b9e3 8
+  s_02903fa7eb13ea::t_be4bb8f47eeaa5 235
+src/modules/ContentBrowser/presentations/hooks/__tests__/useImportedSampleResidency.spec.ts
+  s_02903fa7eb13ea::t_12f78c160cdb61 1-18,20,23-34,36-39
+  s_02903fa7eb13ea::t_5b88d606633fda 40
+src/modules/ContentBrowser/useCases/__tests__/placeLibrarySample.spec.ts
+  s_02903fa7eb13ea::t_09419886c6cd34 113
+src/modules/ContentBrowser/presentations/hooks/useImportedSampleResidency.ts
+  s_02903fa7eb13ea::t_a07c5f0e4d7a62 1,3,5-22
+src/modules/ContentBrowser/presentations/views/Sidebar.tsx
+  s_02903fa7eb13ea::t_36884e7dbffb36 20
+  s_02903fa7eb13ea::t_b7e50b90e87d70 113
+  s_02903fa7eb13ea::t_b09a8a93d21eaf 126
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a5685a04afd2dcf898c9c5e4862a25d58c2fb0a3",
+  "prompts": {},
+  "sessions": {
+    "s_02903fa7eb13ea": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "09ad8230-37d3-4b52-835c-e4a4f9483b9c",
+        "model": "composer-2.5-fast"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
