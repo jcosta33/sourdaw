@@ -25,14 +25,13 @@ import {
 import { arrangementStore, defaultProjectStoreState, projectStore } from '#/modules/Project/stores';
 import { buildProjectData } from '#/modules/Project/useCases';
 
-import { clearHandlerRegistry, registerHandlerMap } from '../../stores/handlerRegistry';
-import { executeAppActionBatch } from '../executeAppActionBatch';
-
 import { type VersionedCommandBatchEnvelope } from '../../models/VersionedCommandBatchEnvelope';
+import { clearHandlerRegistry, registerHandlerMap } from '../../stores/handlerRegistry';
 import { commandBatchPreflightPort } from '../commandBatchPreflightPort';
 import { commandProjectRevisionPort } from '../commandProjectRevisionPort';
 import { compileVersionedCommandBatchEnvelope } from '../compileVersionedCommandBatchEnvelope';
 import { createExecutionCommandEnvelope } from '../createExecutionCommandEnvelope';
+import { executeAppActionBatch } from '../executeAppActionBatch';
 import { parseVersionedCommandBatchEnvelope } from '../parseVersionedCommandBatchEnvelope';
 import { prepareCommandBatchPreflight } from '../prepareCommandBatchPreflight';
 
