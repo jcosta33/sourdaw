@@ -16,7 +16,13 @@ import {
     type TrackSelectionChangedPayload,
 } from '#/modules/Arrangement/events';
 import { clipSelectionStore, trackStore } from '#/modules/Arrangement/stores';
-import { clearClipSelection, selectClipWithFocus, setArrangementEventBus } from '#/modules/Arrangement/useCases';
+import {
+    clearClipSelection,
+    selectAllClips,
+    selectClipWithFocus,
+    setArrangementEventBus,
+    toggleClipInSelection,
+} from '#/modules/Arrangement/useCases';
 import { clearHandlerRegistry, undoHistoryStore } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
@@ -306,6 +312,136 @@ describe('mounted pattern palette project workflow', () => {
             expect(readClip(linked.id)).toEqual(linked);
         });
     });
+
+    it('creates from the focused clip when it is not first in a multi-selection', async () => {
+        selectClipWithFocus('source');
+        toggleClipInSelection('keeper');
+        expect(clipSelectionStore.value).toMatchObject({
+            selectedClipId: 'keeper',
+            selectedClipIds: ['source', 'keeper'],
+        });
+        const before = material();
+        const priorHistory = replayHistory();
+        render(<CommandPalette />);
+
+        await invokeCommand('Create Pattern Instance');
+
+        await waitFor(() => {
+            expect(trackStore.value?.tracks.flatMap((track) => track.clips)).toHaveLength(3);
+        });
+        const created = material()
+            .tracks.tracks.flatMap((track) => track.clips)
+            .find((candidate) => candidate.id !== 'source' && candidate.id !== 'keeper');
+        if (!created) {
+            throw new Error('Expected the committed pattern copy');
+        }
+        expect(created).toMatchObject({
+            parentClipId: 'keeper',
+            trackId: 'keeper-track',
+            startBeat: 3,
+            endBeat: 5,
+            type: 'midi',
+            overrides: {},
+        });
+        const expected = structuredClone(before);
+        const owner = expected.tracks.tracks.find((track) => track.id === 'keeper-track');
+        const notes = before.midi.notesByClipId.keeper;
+        if (!owner || !notes) {
+            throw new Error('Expected the focused clip owner and notes');
+        }
+        owner.clips.push(created);
+        expected.midi.notesByClipId[created.id] = notes.map((note) => ({
+            ...note,
+            id: `note-inst-${created.id}-${note.id}`,
+        }));
+        expect(material()).toEqual(expected);
+        await waitFor(() => expect(clipSelectionStore.value?.selectedClipId).toBe(created.id));
+        expect(replayHistory().past.slice(0, -1)).toEqual(priorHistory.past);
+        expect(undoHistoryStore.value?.past).toHaveLength(2);
+        expect(actionHistoryStore.value?.entries).toHaveLength(2);
+    });
+
+    it('detaches only the focused linked clip when it is not first in a multi-selection', async () => {
+        for (const [sourceClipId, targetTrackId, startBeat, targetClipId] of [
+            ['source', 'source-track', 10, 'source-instance'],
+            ['keeper', 'keeper-track', 3, 'keeper-instance'],
+        ] as const) {
+            await executeAppAction({
+                type: 'createPatternInstance',
+                payload: { sourceClipId, targetTrackId, startBeat, targetClipId },
+            });
+        }
+        selectClipWithFocus('source-instance');
+        toggleClipInSelection('keeper-instance');
+        expect(clipSelectionStore.value).toMatchObject({
+            selectedClipId: 'keeper-instance',
+            selectedClipIds: ['source-instance', 'keeper-instance'],
+        });
+        const before = material();
+        const priorHistory = replayHistory();
+        render(<CommandPalette />);
+
+        await invokeCommand('Detach Pattern Instance');
+
+        await waitFor(() => expect(undoHistoryStore.value?.past).toHaveLength(4));
+        const expected = structuredClone(before);
+        const detached = expected.tracks.tracks
+            .flatMap((track) => track.clips)
+            .find((clip) => clip.id === 'keeper-instance');
+        if (!detached) {
+            throw new Error('Expected the focused linked fixture');
+        }
+        delete detached.parentClipId;
+        delete detached.overrides;
+        expect(material()).toEqual(expected);
+        expect(readClip('source-instance')).toEqual(
+            before.tracks.tracks.flatMap((track) => track.clips).find((clip) => clip.id === 'source-instance')
+        );
+        expect(clipSelectionStore.value?.selectedClipId).toBe('keeper-instance');
+        expect(replayHistory().past.slice(0, -1)).toEqual(priorHistory.past);
+
+        await invokeCommand('Undo');
+        await waitFor(() => expect(material()).toEqual(before));
+        await invokeCommand('Redo');
+        await waitFor(() => expect(material()).toEqual(expected));
+    });
+
+    it.each(['Create Pattern Instance', 'Detach Pattern Instance'] as const)(
+        'leaves Select All with no primary unchanged after %s',
+        async (label) => {
+            await executeAppAction({
+                type: 'createPatternInstance',
+                payload: {
+                    sourceClipId: 'source',
+                    targetTrackId: 'source-track',
+                    startBeat: 10,
+                    targetClipId: 'prepared-instance',
+                },
+            });
+            // Enumerate every real clip with a linked clip first, so an illicit
+            // first-ID fallback cannot hide behind detaching an unlinked parent.
+            selectAllClips(() => ['prepared-instance', 'source', 'keeper']);
+            const selection = clipSelectionStore.value;
+            expect(selection).toMatchObject({
+                selectedClipId: null,
+                selectedClipIds: ['prepared-instance', 'source', 'keeper'],
+            });
+            const before = material();
+            const priorHistory = replayHistory();
+            const metadata = structuredClone(actionHistoryStore.value);
+            render(<CommandPalette />);
+
+            const command = await showCommand(label);
+            await act(async () => {
+                fireEvent.click(command);
+            });
+
+            expect(material()).toEqual(before);
+            expect(clipSelectionStore.value).toBe(selection);
+            expect(replayHistory()).toEqual(priorHistory);
+            expect(actionHistoryStore.value).toEqual(metadata);
+        }
+    );
 
     it('leaves missing selection without project or history effects', async () => {
         clearClipSelection();

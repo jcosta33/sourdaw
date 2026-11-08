@@ -8,12 +8,16 @@ import { miscCommands } from '../MiscCommands';
 
 const patternState = vi.hoisted(() => {
     const clip: { id: string; type: 'midi' | 'audio' } = { id: 'clip-1', type: 'midi' };
-    return { clip };
+    const selection: { value: { selectedClipId: string | null; selectedClipIds: string[] } } = {
+        value: { selectedClipId: 'clip-1', selectedClipIds: ['clip-1'] },
+    };
+    return { clip, selection };
 });
 vi.mock('#/modules/Arrangement/stores', () => ({
+    clipSelectionStore: patternState.selection,
     trackStore: {
         get value() {
-            return { tracks: [{ clips: [patternState.clip] }] };
+            return { tracks: [{ clips: [patternState.clip, { id: 'clip-2', type: 'midi' }] }] };
         },
     },
 }));
@@ -37,6 +41,7 @@ describe('miscCommands', () => {
     beforeEach(async () => {
         vi.clearAllMocks();
         patternState.clip.type = 'midi';
+        patternState.selection.value = { selectedClipId: 'clip-1', selectedClipIds: ['clip-1'] };
         const { getSelectedClipId } = await import('../../selectionHelpers/getSelectedClipId');
         vi.mocked(getSelectedClipId).mockReturnValue('clip-1');
     });
@@ -192,6 +197,28 @@ describe('miscCommands', () => {
         expect(executeUserAppAction).not.toHaveBeenCalled();
     });
 
+    it('detaches the primary MIDI clip instead of the first selected clip', () => {
+        patternState.selection.value = { selectedClipId: 'clip-2', selectedClipIds: ['clip-1', 'clip-2'] };
+
+        runAction('detach-pattern-instance');
+
+        expect(executeUserAppAction).toHaveBeenCalledExactlyOnceWith({
+            type: 'detachPatternInstance',
+            payload: { clipId: 'clip-2' },
+        });
+    });
+
+    it.each([
+        { selectedClipId: null, selectedClipIds: ['clip-1', 'clip-2'] },
+        { selectedClipId: 'clip-1', selectedClipIds: ['clip-2'] },
+    ])('does not detach without a primary in the selection: %j', (selection) => {
+        patternState.selection.value = selection;
+
+        runAction('detach-pattern-instance');
+
+        expect(executeUserAppAction).not.toHaveBeenCalled();
+    });
+
     it('quantize-to-grid-elastic dispatches detectTransients for the selected clip', () => {
         runAction('quantize-to-grid-elastic');
 
@@ -210,6 +237,7 @@ describe('miscCommands', () => {
     it('does not dispatch clip-scoped actions when no clip is selected', async () => {
         const { getSelectedClipId } = await import('../../selectionHelpers/getSelectedClipId');
         vi.mocked(getSelectedClipId).mockReturnValue(null);
+        patternState.selection.value = { selectedClipId: null, selectedClipIds: [] };
 
         runAction('quantize-to-grid-elastic');
         runAction('enable-warping');

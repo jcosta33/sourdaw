@@ -1,5 +1,5 @@
 import { logger } from '#/infra/logger/appLogger';
-import { trackStore } from '#/modules/Arrangement/stores';
+import { clipSelectionStore, trackStore } from '#/modules/Arrangement/stores';
 import { executeUserAppAction } from '#/modules/Command/useCases';
 import { openPreferencesDialog } from '#/modules/WorkspaceShell/useCases';
 
@@ -95,8 +95,9 @@ export const miscCommands: CallableCommandEntry[] = [
         description: 'Break the link between this clip and its parent pattern',
         category: 'Clips',
         action: () => {
-            const clipId = getSelectedClipId();
-            if (!clipId) {
+            const selection = clipSelectionStore.value;
+            const clipId = selection?.selectedClipId;
+            if (!clipId || !selection?.selectedClipIds.includes(clipId)) {
                 return;
             }
             const clip = trackStore.value?.tracks

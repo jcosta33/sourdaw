@@ -4,12 +4,11 @@ import { prepareDuplicateClipTargetId, selectClipWithFocus } from '#/modules/Arr
 import { executeUserAppAction, isAppActionCommittedError } from '#/modules/Command/useCases';
 import { captureProjectIdentity } from '#/modules/CrdtDocument/stores';
 
-import { getSelectedClipId } from '../selectionHelpers/getSelectedClipId';
-
 /** Select only the preallocated copy witnessed in the same project and selection. */
 export async function createPatternInstanceFromSelection(): Promise<boolean> {
-    const sourceClipId = getSelectedClipId();
-    if (!sourceClipId) {
+    const selection = clipSelectionStore.value;
+    const sourceClipId = selection?.selectedClipId;
+    if (!sourceClipId || !selection?.selectedClipIds.includes(sourceClipId)) {
         return false;
     }
     const owner = trackStore.value?.tracks.find((track) => track.clips.some((clip) => clip.id === sourceClipId));
@@ -19,7 +18,6 @@ export async function createPatternInstanceFromSelection(): Promise<boolean> {
     }
     const targetClipId = prepareDuplicateClipTargetId();
     const projectIdentity = captureProjectIdentity();
-    const selection = clipSelectionStore.value;
     const ownsInvocation = () => captureProjectIdentity() === projectIdentity && clipSelectionStore.value === selection;
     try {
         await executeUserAppAction(
