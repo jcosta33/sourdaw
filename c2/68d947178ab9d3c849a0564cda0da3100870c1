@@ -1,0 +1,19 @@
+scripts/__tests__/trustedGitleaksInstaller.spec.ts
+  s_68423a2adea8d2::t_8f33e2adb132fe 344,352-362,408
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c268d947178ab9d3c849a0564cda0da3100870c1",
+  "prompts": {},
+  "sessions": {
+    "s_68423a2adea8d2": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34b-f305-7c03-beb2-57afa678cda5",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
