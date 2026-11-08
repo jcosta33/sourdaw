@@ -254,7 +254,6 @@ export const trustedDependencyGraphs: Record<TrustedGithubWriteCommand, readonly
         'scripts/reviewRepair.ts',
         'scripts/reviewRoundEscalation.ts',
         'scripts/publishReview.ts',
-        'scripts/reviewApprovalLabel.ts',
         'scripts/pullRequestReviewState.ts',
         'scripts/reviewCommentDiffPreflight.ts',
         'scripts/reviewDocumentParser.ts',
@@ -289,7 +288,6 @@ export const trustedDependencyGraphs: Record<TrustedGithubWriteCommand, readonly
     'review:publish': [
         'scripts/trustedGithubWriteBootstrap.ts',
         'scripts/publishReview.ts',
-        'scripts/reviewApprovalLabel.ts',
         'scripts/reconstructReviewRounds.ts',
         'scripts/reviewRepair.ts',
         'scripts/reviewRoundEscalation.ts',
@@ -332,7 +330,6 @@ export const trustedDependencyGraphs: Record<TrustedGithubWriteCommand, readonly
         'scripts/reviewRepair.ts',
         'scripts/reviewRoundEscalation.ts',
         'scripts/publishReview.ts',
-        'scripts/reviewApprovalLabel.ts',
         'scripts/pullRequestReviewState.ts',
         'scripts/reviewCommentDiffPreflight.ts',
         'scripts/reviewDocumentParser.ts',

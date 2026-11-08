@@ -5,7 +5,6 @@
     "heavy-gates.yml",
     "nightly-evidence-report.yml",
     "nightly.yml",
-    "pr-checks.yml",
     "quantum-measurements.yml",
     "validation.yml",
     "wasm-artifacts.yml"
@@ -15,7 +14,11 @@
     "on": {
       "pull_request": {
         "types": [
-          "labeled"
+          "opened",
+          "synchronize",
+          "reopened",
+          "ready_for_review",
+          "converted_to_draft"
         ]
       }
     },
@@ -28,58 +31,9 @@
       "cancel-in-progress": true
     },
     "jobs": {
-      "admission": {
-        "name": "Approval admission",
-        "runs-on": "ubuntu-latest",
-        "timeout-minutes": 5,
-        "outputs": {
-          "admitted": "${{ steps.decide.outputs.admitted }}",
-          "reason": "${{ steps.decide.outputs.reason }}"
-        },
-        "steps": [
-          {
-            "name": "Checkout trusted admission",
-            "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
-            "with": {
-              "ref": "${{ github.event.repository.default_branch }}",
-              "path": "trusted",
-              "sparse-checkout": "scripts",
-              "persist-credentials": false
-            }
-          },
-          {
-            "name": "Set up Node",
-            "uses": "actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
-            "with": {
-              "node-version": "24.22.2"
-            }
-          },
-          {
-            "name": "Read reviews",
-            "env": {
-              "GH_TOKEN": "${{ github.token }}",
-              "REPOSITORY": "${{ github.repository }}",
-              "NUMBER": "${{ github.event.pull_request.number }}"
-            },
-            "run": "gh api --paginate --slurp \"repos/$REPOSITORY/pulls/$NUMBER/reviews\" > \"$RUNNER_TEMP/reviews.json\""
-          },
-          {
-            "name": "Decide admission",
-            "id": "decide",
-            "env": {
-              "REVIEWS_PATH": "${{ runner.temp }}/reviews.json",
-              "HEAD_SHA": "${{ github.event.pull_request.head.sha }}",
-              "LABEL_NAME": "${{ github.event.label.name }}",
-              "SENDER_NODE_ID": "${{ github.event.sender.node_id }}"
-            },
-            "run": "node trusted/scripts/ciApprovalAdmission.ts"
-          }
-        ]
-      },
       "scope": {
         "name": "Plan required checks",
-        "needs": "admission",
-        "if": "needs.admission.outputs.admitted == 'true'",
+        "if": "github.event.pull_request.draft == false",
         "runs-on": "ubuntu-latest",
         "timeout-minutes": 10,
         "permissions": {
@@ -165,7 +119,6 @@
         "needs": "scope",
         "uses": "./.github/workflows/validation.yml",
         "with": {
-          "mode": "full",
           "browser": "${{ needs.scope.outputs.browser == 'true' }}",
           "profile": "${{ needs.scope.outputs.profile }}"
         }
@@ -173,7 +126,7 @@
       "e2e-build": {
         "name": "Shared E2E build",
         "needs": "scope",
-        "if": "${{ fromJSON(needs.scope.outputs.matrix).include[0] != null }}",
+        "if": "${{ github.event.pull_request.draft == false && needs.scope.result == 'success' && fromJSON(needs.scope.outputs.matrix || '{\"include\":[]}').include[0] != null }}",
         "runs-on": "ubuntu-latest",
         "container": {
           "image": "mcr.microsoft.com/playwright:v1.65.0-noble@sha256:6e3fb709361521eb27161606e6da6d2674e5e89fa16516cb37d6fdd91372273d",
@@ -238,7 +191,7 @@
           "validation",
           "e2e-build"
         ],
-        "if": "${{ !cancelled() && needs.scope.result == 'success' && needs.validation.result == 'success' &&\n    ((fromJSON(needs.scope.outputs.matrix).include[0] != null && needs.e2e-build.result == 'success') ||\n     (fromJSON(needs.scope.outputs.matrix).include[0] == null && needs.e2e-build.result == 'skipped')) }}",
+        "if": "${{ github.event.pull_request.draft == false && !cancelled() && needs.scope.result == 'success' && needs.validation.result == 'success' &&\n    ((fromJSON(needs.scope.outputs.matrix || '{\"include\":[]}').include[0] != null && needs.e2e-build.result == 'success') ||\n     (fromJSON(needs.scope.outputs.matrix || '{\"include\":[]}').include[0] == null && needs.e2e-build.result == 'skipped')) }}",
         "uses": "./.github/workflows/heavy-gates.yml",
         "with": {
           "matrix": "${{ needs.scope.outputs.matrix }}",
@@ -282,7 +235,6 @@
         "name": "Gate",
         "if": "${{ always() }}",
         "needs": [
-          "admission",
           "scope",
           "e2e-build",
           "validation",
@@ -297,126 +249,12 @@
             "if": "${{ always() }}",
             "env": {
               "RESULTS": "${{ toJSON(needs) }}",
-              "MATRIX": "${{ needs.scope.outputs.matrix }}"
+              "MATRIX": "${{ needs.scope.outputs.matrix }}",
+              "DRAFT": "${{ github.event.pull_request.draft }}"
             },
-            "run": "set -euo pipefail\nprintf '%s' \"$RESULTS\" | jq -r '\n  if .admission.result == \"success\" and .admission.outputs.admitted == \"true\" then empty\n  else \"::error title=Gate not admitted::\\(.admission.outputs.reason // \"approval admission did not decide\")\" end'\nselected=$(printf '%s' \"$MATRIX\" | jq -er '\n  if type != \"object\" or (.include | type) != \"array\" then error(\"invalid E2E plan\")\n  elif all(.include[]; (.id | type) == \"number\" and (.specs | type) == \"array\" and (.specs | length) > 0) then\n    if (.include | length) > 0 then \"success\" else \"skipped\" end\n  else error(\"invalid E2E group\") end')\nprintf '%s' \"$RESULTS\" | jq -e --arg selected \"$selected\" '\n  (keys | sort) == [\"admission\", \"affected\", \"codeql\", \"e2e-build\", \"scope\", \"validation\"] and\n  .admission.result == \"success\" and .admission.outputs.admitted == \"true\" and\n  .scope.result == \"success\" and .validation.result == \"success\" and .affected.result == \"success\" and\n  .[\"e2e-build\"].result == $selected and\n  (.scope.outputs.browser == \"true\" or .scope.outputs.browser == \"false\") and\n  (.scope.outputs[\"browser-ai\"] == \"true\" or .scope.outputs[\"browser-ai\"] == \"false\") and\n  (if .scope.outputs.codeql == \"true\" then .codeql.result == \"success\"\n   elif .scope.outputs.codeql == \"false\" then .codeql.result == \"skipped\"\n   else false end)'\n"
+            "run": "set -euo pipefail\nif [ \"$DRAFT\" != \"false\" ]; then\n  printf '%s\\n' '::error title=Gate refused::pull request is a draft'\n  exit 1\nfi\nselected=$(printf '%s' \"$MATRIX\" | jq -er '\n  if type != \"object\" or (.include | type) != \"array\" then error(\"invalid E2E plan\")\n  elif all(.include[]; (.id | type) == \"number\" and (.specs | type) == \"array\" and (.specs | length) > 0) then\n    if (.include | length) > 0 then \"success\" else \"skipped\" end\n  else error(\"invalid E2E group\") end')\nprintf '%s' \"$RESULTS\" | jq -e --arg selected \"$selected\" '\n  (keys | sort) == [\"affected\", \"codeql\", \"e2e-build\", \"scope\", \"validation\"] and\n  .scope.result == \"success\" and .validation.result == \"success\" and .affected.result == \"success\" and\n  .[\"e2e-build\"].result == $selected and\n  (.scope.outputs.browser == \"true\" or .scope.outputs.browser == \"false\") and\n  (.scope.outputs[\"browser-ai\"] == \"true\" or .scope.outputs[\"browser-ai\"] == \"false\") and\n  (if .scope.outputs.codeql == \"true\" then .codeql.result == \"success\"\n   elif .scope.outputs.codeql == \"false\" then .codeql.result == \"skipped\"\n   else false end)'\n"
           }
         ]
-      }
-    }
-  },
-  "pr-checks.yml": {
-    "name": "PR checks",
-    "on": {
-      "pull_request": {
-        "types": [
-          "opened",
-          "synchronize",
-          "reopened",
-          "ready_for_review"
-        ]
-      }
-    },
-    "permissions": {
-      "contents": "read",
-      "pull-requests": "read"
-    },
-    "concurrency": {
-      "group": "pr-checks-${{ github.event.pull_request.number }}",
-      "cancel-in-progress": true
-    },
-    "jobs": {
-      "scope": {
-        "name": "Plan push checks",
-        "runs-on": "ubuntu-latest",
-        "timeout-minutes": 10,
-        "permissions": {
-          "contents": "read",
-          "pull-requests": "read",
-          "actions": "read"
-        },
-        "outputs": {
-          "profile": "${{ steps.plan.outputs.profile }}",
-          "matrix": "${{ steps.plan.outputs.matrix }}",
-          "browser": "${{ steps.plan.outputs.browser }}",
-          "browser-ai": "${{ steps.plan.outputs.browser-ai }}",
-          "codeql": "${{ steps.plan.outputs.codeql }}"
-        },
-        "steps": [
-          {
-            "name": "Checkout",
-            "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
-            "with": {
-              "fetch-depth": 0,
-              "persist-credentials": false
-            }
-          },
-          {
-            "name": "Enable Corepack",
-            "run": "corepack enable"
-          },
-          {
-            "name": "Set up pnpm",
-            "uses": "./.github/actions/setup-pnpm",
-            "with": {
-              "package_json_file": "package.json"
-            }
-          },
-          {
-            "name": "Set up Node",
-            "timeout-minutes": 3,
-            "continue-on-error": true,
-            "uses": "actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
-            "with": {
-              "node-version": "24.22.2",
-              "cache": "pnpm"
-            }
-          },
-          {
-            "name": "Install dependencies",
-            "run": "pnpm install --frozen-lockfile --ignore-scripts"
-          },
-          {
-            "name": "Fetch coverage map",
-            "id": "coverage_map",
-            "env": {
-              "GH_TOKEN": "${{ github.token }}",
-              "E2E_COVERAGE_MAP": "${{ runner.temp }}/e2e-coverage-map.json"
-            },
-            "run": "node scripts/fetchE2eCoverageMap.ts"
-          },
-          {
-            "name": "Plan affected checks",
-            "id": "plan",
-            "env": {
-              "BASE_SHA": "${{ github.event.pull_request.base.sha }}",
-              "HEAD_SHA": "${{ github.event.pull_request.head.sha }}",
-              "E2E_COVERAGE_MAP": "${{ runner.temp }}/e2e-coverage-map.json",
-              "E2E_COVERAGE_MAP_CREATED_AT": "${{ steps.coverage_map.outputs.created-at }}"
-            },
-            "run": "node scripts/prValidationScope.ts plan"
-          },
-          {
-            "name": "Upload scope manifest",
-            "uses": "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9",
-            "with": {
-              "name": "pr-validation-scope",
-              "path": "pr-validation-scope.json",
-              "if-no-files-found": "error",
-              "retention-days": 7
-            }
-          }
-        ]
-      },
-      "validation": {
-        "name": "Push validation",
-        "needs": "scope",
-        "uses": "./.github/workflows/validation.yml",
-        "with": {
-          "mode": "preliminary",
-          "browser": "${{ needs.scope.outputs.browser == 'true' }}",
-          "profile": "${{ needs.scope.outputs.profile }}"
-        }
       }
     }
   },
@@ -695,12 +533,6 @@
     "on": {
       "workflow_call": {
         "inputs": {
-          "mode": {
-            "description": "Full required validation or preliminary push validation.",
-            "required": false,
-            "default": "full",
-            "type": "string"
-          },
           "browser": {
             "description": "Whether the affected plan requires browser smoke.",
             "required": true,
@@ -794,14 +626,13 @@
               "EVENT": "${{ github.event_name }}",
               "BROWSER": "${{ inputs.browser }}",
               "PROFILE": "${{ inputs.profile }}",
-              "MODE": "${{ inputs.mode }}",
               "RUST": "${{ steps.filter-retry.outputs.rust || steps.filter.outputs.rust }}",
               "SERVER": "${{ steps.filter-retry.outputs.server || steps.filter.outputs.server }}",
               "E2E": "${{ steps.filter-retry.outputs.e2e || steps.filter.outputs.e2e }}",
               "WEB": "${{ steps.filter-retry.outputs.web || steps.filter.outputs.web }}",
               "UNCLASSIFIED": "${{ steps.filter-retry.outputs.unclassified || steps.filter.outputs.unclassified }}"
             },
-            "run": "set -euo pipefail\n# An empty verdict means both filter attempts failed or never ran;\n# letting it read as `false` would skip every lane under a green job.\nfor verdict in \"$RUST\" \"$SERVER\" \"$E2E\" \"$WEB\" \"$UNCLASSIFIED\" \"$BROWSER\"; do\n  if [ \"$verdict\" != \"true\" ] && [ \"$verdict\" != \"false\" ]; then\n    printf 'No scope verdict: both \"Filter changed paths\" and \"Retry changed-paths filter after a transient API failure\" failed or produced no output.\\n' >&2\n    exit 1\n  fi\ndone\ncase \"$MODE\" in\n  full|preliminary) ;;\n  *) printf 'Invalid validation mode: %s\\n' \"$MODE\" >&2; exit 1 ;;\nesac\ncase \"$PROFILE\" in\n  docs|tooling|broad) ;;\n  *) printf 'Invalid affected profile: %s\\n' \"$PROFILE\" >&2; exit 1 ;;\nesac\nheavy=false\nif [ \"$EVENT\" = \"pull_request_review\" ]; then heavy=true; fi\nrust=$RUST\nserver=$SERVER\ne2e=$E2E\nweb=$WEB\nif [ \"$UNCLASSIFIED\" = \"true\" ]; then\n  rust=true\n  server=true\n  e2e=true\n  web=true\nfi\ne2e=$BROWSER\ntooling=false\nif [ \"$EVENT\" = \"pull_request\" ]; then\n  case \"$PROFILE\" in\n    docs|tooling)\n      if [ \"$BROWSER\" != \"false\" ]; then\n        printf 'Narrow profile conflicts with browser selection\\n' >&2\n        exit 1\n      fi\n      rust=false\n      server=false\n      e2e=false\n      web=false\n      if [ \"$PROFILE\" = \"tooling\" ]; then tooling=true; fi\n      ;;\n  esac\nfi\n# `code` is the one question the scope-independent jobs ask: does this\n# head carry anything but prose? Only a change that claims no scope at\n# all — documentation — answers no.\ncode=false\nif [ \"$rust\" = \"true\" ] || [ \"$server\" = \"true\" ] || [ \"$e2e\" = \"true\" ] || [ \"$web\" = \"true\" ]; then\n  code=true\nfi\nif [ \"$tooling\" = \"true\" ]; then code=true; fi\n{\n  printf 'heavy=%s\\n' \"$heavy\"\n  printf 'rust=%s\\n' \"$rust\"\n  printf 'server=%s\\n' \"$server\"\n  printf 'e2e=%s\\n' \"$e2e\"\n  printf 'web=%s\\n' \"$web\"\n  printf 'code=%s\\n' \"$code\"\n  printf 'tooling=%s\\n' \"$tooling\"\n} >> \"$GITHUB_OUTPUT\"\n"
+            "run": "set -euo pipefail\n# An empty verdict means both filter attempts failed or never ran;\n# letting it read as `false` would skip every lane under a green job.\nfor verdict in \"$RUST\" \"$SERVER\" \"$E2E\" \"$WEB\" \"$UNCLASSIFIED\" \"$BROWSER\"; do\n  if [ \"$verdict\" != \"true\" ] && [ \"$verdict\" != \"false\" ]; then\n    printf 'No scope verdict: both \"Filter changed paths\" and \"Retry changed-paths filter after a transient API failure\" failed or produced no output.\\n' >&2\n    exit 1\n  fi\ndone\ncase \"$PROFILE\" in\n  docs|tooling|broad) ;;\n  *) printf 'Invalid affected profile: %s\\n' \"$PROFILE\" >&2; exit 1 ;;\nesac\nheavy=false\nif [ \"$EVENT\" = \"pull_request_review\" ]; then heavy=true; fi\nrust=$RUST\nserver=$SERVER\ne2e=$E2E\nweb=$WEB\nif [ \"$UNCLASSIFIED\" = \"true\" ]; then\n  rust=true\n  server=true\n  e2e=true\n  web=true\nfi\ne2e=$BROWSER\ntooling=false\nif [ \"$EVENT\" = \"pull_request\" ]; then\n  case \"$PROFILE\" in\n    docs|tooling)\n      if [ \"$BROWSER\" != \"false\" ]; then\n        printf 'Narrow profile conflicts with browser selection\\n' >&2\n        exit 1\n      fi\n      rust=false\n      server=false\n      e2e=false\n      web=false\n      if [ \"$PROFILE\" = \"tooling\" ]; then tooling=true; fi\n      ;;\n  esac\nfi\n# `code` is the one question the scope-independent jobs ask: does this\n# head carry anything but prose? Only a change that claims no scope at\n# all — documentation — answers no.\ncode=false\nif [ \"$rust\" = \"true\" ] || [ \"$server\" = \"true\" ] || [ \"$e2e\" = \"true\" ] || [ \"$web\" = \"true\" ]; then\n  code=true\nfi\nif [ \"$tooling\" = \"true\" ]; then code=true; fi\n{\n  printf 'heavy=%s\\n' \"$heavy\"\n  printf 'rust=%s\\n' \"$rust\"\n  printf 'server=%s\\n' \"$server\"\n  printf 'e2e=%s\\n' \"$e2e\"\n  printf 'web=%s\\n' \"$web\"\n  printf 'code=%s\\n' \"$code\"\n  printf 'tooling=%s\\n' \"$tooling\"\n} >> \"$GITHUB_OUTPUT\"\n"
           }
         ]
       },
@@ -1008,7 +839,7 @@
       "unit": {
         "name": "Unit suite ${{ matrix.shard }}/4",
         "needs": "decide",
-        "if": "inputs.mode == 'full' && (needs.decide.outputs.web == 'true')",
+        "if": "(needs.decide.outputs.web == 'true')",
         "runs-on": "ubuntu-latest",
         "timeout-minutes": 45,
         "strategy": {
@@ -1179,7 +1010,7 @@
       "build": {
         "name": "Production build",
         "needs": "decide",
-        "if": "inputs.mode == 'full' && (needs.decide.outputs.web == 'true')",
+        "if": "(needs.decide.outputs.web == 'true')",
         "runs-on": "ubuntu-latest",
         "timeout-minutes": 20,
         "steps": [
@@ -1217,7 +1048,7 @@
       "rust": {
         "name": "Rust workspace and collaboration server",
         "needs": "decide",
-        "if": "inputs.mode == 'full' && (needs.decide.outputs.rust == 'true' || needs.decide.outputs.server == 'true')",
+        "if": "(needs.decide.outputs.rust == 'true' || needs.decide.outputs.server == 'true')",
         "runs-on": "ubuntu-latest",
         "timeout-minutes": 60,
         "steps": [
@@ -1293,7 +1124,7 @@
       "native-macos": {
         "name": "Native audio backend (macOS)",
         "needs": "decide",
-        "if": "inputs.mode == 'full' && (needs.decide.outputs.rust == 'true')",
+        "if": "(needs.decide.outputs.rust == 'true')",
         "runs-on": "macos-latest",
         "timeout-minutes": 60,
         "steps": [
@@ -1374,7 +1205,7 @@
       "native-windows": {
         "name": "Native audio backend (Windows)",
         "needs": "decide",
-        "if": "inputs.mode == 'full' && (needs.decide.outputs.rust == 'true')",
+        "if": "(needs.decide.outputs.rust == 'true')",
         "runs-on": "windows-latest",
         "timeout-minutes": 60,
         "steps": [
@@ -1413,7 +1244,7 @@
       "native-parity": {
         "name": "Native parity (macOS)",
         "needs": "decide",
-        "if": "inputs.mode == 'full' && (needs.decide.outputs.rust == 'true' || needs.decide.outputs.web == 'true')",
+        "if": "(needs.decide.outputs.rust == 'true' || needs.decide.outputs.web == 'true')",
         "runs-on": "macos-latest",
         "timeout-minutes": 60,
         "steps": [
@@ -1582,10 +1413,9 @@
             "if": "${{ always() }}",
             "env": {
               "RESULTS": "${{ toJSON(needs) }}",
-              "PULL_REQUEST": "${{ github.event.pull_request != null }}",
-              "MODE": "${{ inputs.mode }}"
+              "PULL_REQUEST": "${{ github.event.pull_request != null }}"
             },
-            "run": "set -euo pipefail\nprintf '%s' \"$RESULTS\" | jq -e --arg pr \"$PULL_REQUEST\" --arg mode \"$MODE\" '\n  def selected($flag):\n    if $flag == \"true\" then \"success\"\n    elif $flag == \"false\" then \"skipped\"\n    else error(\"missing scope verdict\") end;\n  def broad($flag): if $mode == \"preliminary\" then \"skipped\" else selected($flag) end;\n  ($mode == \"full\" or $mode == \"preliminary\") and\n  (keys | sort) == ([\"decide\", \"static\", \"lint\", \"boundaries\", \"unit\", \"tooling-unit\", \"smoke\", \"build\", \"rust\", \"native-macos\", \"native-windows\", \"native-parity\", \"dependency-review\", \"pr-secrets\"] | sort) and\n  .decide.result == \"success\" and .static.result == \"success\" and\n  (.decide.outputs | [.rust, .server, .e2e, .web, .code, .tooling] | all(. == \"true\" or . == \"false\")) and\n  .lint.result == selected(.decide.outputs.code) and\n  .boundaries.result == selected(.decide.outputs.code) and\n  .unit.result == broad(.decide.outputs.web) and\n  .[\"tooling-unit\"].result == selected(.decide.outputs.tooling) and\n  .build.result == broad(.decide.outputs.web) and\n  .rust.result == broad(if .decide.outputs.rust == \"true\" or .decide.outputs.server == \"true\" then \"true\" else \"false\" end) and\n  .[\"native-macos\"].result == broad(.decide.outputs.rust) and\n  .[\"native-windows\"].result == broad(.decide.outputs.rust) and\n  .[\"native-parity\"].result == broad(if .decide.outputs.rust == \"true\" or .decide.outputs.web == \"true\" then \"true\" else \"false\" end) and\n  .smoke.result == (if $pr == \"true\" then selected(.decide.outputs.e2e) elif $pr == \"false\" then \"skipped\" else error(\"missing PR verdict\") end) and\n  .[\"dependency-review\"].result == selected($pr) and\n  .[\"pr-secrets\"].result == selected($pr)'\n"
+            "run": "set -euo pipefail\nprintf '%s' \"$RESULTS\" | jq -e --arg pr \"$PULL_REQUEST\" '\n  def selected($flag):\n    if $flag == \"true\" then \"success\"\n    elif $flag == \"false\" then \"skipped\"\n    else error(\"missing scope verdict\") end;\n  (keys | sort) == ([\"decide\", \"static\", \"lint\", \"boundaries\", \"unit\", \"tooling-unit\", \"smoke\", \"build\", \"rust\", \"native-macos\", \"native-windows\", \"native-parity\", \"dependency-review\", \"pr-secrets\"] | sort) and\n  .decide.result == \"success\" and .static.result == \"success\" and\n  (.decide.outputs | [.rust, .server, .e2e, .web, .code, .tooling] | all(. == \"true\" or . == \"false\")) and\n  .lint.result == selected(.decide.outputs.code) and\n  .boundaries.result == selected(.decide.outputs.code) and\n  .unit.result == selected(.decide.outputs.web) and\n  .[\"tooling-unit\"].result == selected(.decide.outputs.tooling) and\n  .build.result == selected(.decide.outputs.web) and\n  .rust.result == selected(if .decide.outputs.rust == \"true\" or .decide.outputs.server == \"true\" then \"true\" else \"false\" end) and\n  .[\"native-macos\"].result == selected(.decide.outputs.rust) and\n  .[\"native-windows\"].result == selected(.decide.outputs.rust) and\n  .[\"native-parity\"].result == selected(if .decide.outputs.rust == \"true\" or .decide.outputs.web == \"true\" then \"true\" else \"false\" end) and\n  .smoke.result == (if $pr == \"true\" then selected(.decide.outputs.e2e) elif $pr == \"false\" then \"skipped\" else error(\"missing PR verdict\") end) and\n  .[\"dependency-review\"].result == selected($pr) and\n  .[\"pr-secrets\"].result == selected($pr)'\n"
           }
         ]
       }

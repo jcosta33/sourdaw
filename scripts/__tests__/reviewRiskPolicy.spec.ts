@@ -656,7 +656,6 @@ describe('planReviewRisk', () => {
         'rust-toolchain',
         'scripts/buildNativeAddon.ts',
         'scripts/ensurePinnedRustToolchain.sh',
-        'scripts/ciApprovalAdmission.ts',
         'scripts/prepareReviewEntry.ts',
         'scripts/installCleanupLanes.ts',
         '.github/CODEOWNERS',
