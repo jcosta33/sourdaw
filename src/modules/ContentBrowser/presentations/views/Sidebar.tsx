@@ -117,13 +117,20 @@ export const Sidebar = ({ style, onClose, panelActions }: SidebarProps): ReactEl
             return;
         }
         for (const file of Array.from(files)) {
+            const hold = importedSampleHold();
+            if (hold === null) {
+                break;
+            }
             const isAudio = file.type.startsWith('audio/') || isAudioFile(file.name);
             if (!isAudio) {
                 continue;
             }
 
             try {
-                const { id: bufferId, buffer } = await decodeAudioFile(file, importedSampleHold());
+                const { id: bufferId, buffer } = await decodeAudioFile(file, hold);
+                if (importedSampleHold() === null) {
+                    break;
+                }
                 const name = file.name.replace(/\.[^.]+$/, '');
                 setUserSamples((prev) => [
                     ...prev,
@@ -137,6 +144,9 @@ export const Sidebar = ({ style, onClose, panelActions }: SidebarProps): ReactEl
                     },
                 ]);
             } catch {
+                if (importedSampleHold() === null) {
+                    break;
+                }
                 notifyUser(`Failed to import "${file.name}" — unsupported format or corrupt file`, 'error');
             }
         }

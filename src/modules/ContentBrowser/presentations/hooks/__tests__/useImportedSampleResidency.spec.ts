@@ -1,3 +1,5 @@
+import { StrictMode, createElement, type ReactNode } from 'react';
+
 import { renderHook } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -20,9 +22,22 @@ describe('useImportedSampleResidency', () => {
         vi.clearAllMocks();
     });
 
+    it('returns the same hold from repeated getter calls and opens only once', () => {
+        const { result } = renderHook(() => useImportedSampleResidency());
+        const first = result.current();
+        const second = result.current();
+
+        expect(first).not.toBeNull();
+        expect(second).toBe(first);
+        expect(holdMocks.openCachedAudioBufferHold).toHaveBeenCalledTimes(1);
+    });
+
     it('opens one hold and retains each imported buffer id', () => {
         const { result } = renderHook(() => useImportedSampleResidency());
         const hold = result.current();
+        if (hold === null) {
+            throw new Error('Expected an import residency hold');
+        }
 
         hold.retain('import-a');
         hold.retain('import-b');
@@ -35,8 +50,34 @@ describe('useImportedSampleResidency', () => {
 
     it('releases the hold when the sidebar unmounts', () => {
         const { result, unmount } = renderHook(() => useImportedSampleResidency());
-        result.current().retain('import-a');
+        const hold = result.current();
+        if (hold === null) {
+            throw new Error('Expected an import residency hold');
+        }
+        hold.retain('import-a');
         unmount();
         expect(holdMocks.release).toHaveBeenCalled();
+    });
+
+    it('opens no hold after unmount and the getter returns null', () => {
+        const { result, unmount } = renderHook(() => useImportedSampleResidency());
+        expect(result.current()).not.toBeNull();
+        unmount();
+        vi.clearAllMocks();
+        expect(result.current()).toBeNull();
+        expect(holdMocks.openCachedAudioBufferHold).not.toHaveBeenCalled();
+    });
+
+    it('keeps one hold through a StrictMode double mount', () => {
+        const { result } = renderHook(() => useImportedSampleResidency(), {
+            wrapper: ({ children }: { children: ReactNode }) => createElement(StrictMode, null, children),
+        });
+        const first = result.current();
+        const second = result.current();
+
+        expect(first).not.toBeNull();
+        expect(second).toBe(first);
+        expect(holdMocks.openCachedAudioBufferHold).toHaveBeenCalledTimes(1);
+        expect(holdMocks.release).not.toHaveBeenCalled();
     });
 });
