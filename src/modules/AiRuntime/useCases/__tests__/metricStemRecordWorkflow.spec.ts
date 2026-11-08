@@ -45,6 +45,7 @@ import { defaultTransportState, transportStore } from '#/modules/Transport/store
 import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
 import { type ToolSchema } from '../../models/ToolDefinitions';
+import { buildWireToolNameCodec } from '../../repositories/cloudLlm/cloudInference/buildWireToolNameCodec';
 import { cloudSession } from '../../repositories/cloudLlm/cloudSession';
 import { clearAiHistory } from '../../stores/aiActionHistoryStore';
 import { chatStore } from '../../stores/chatStore';
@@ -435,23 +436,35 @@ function asCommandBatchProposal(userMessage: string, commands: readonly Provider
     ];
 }
 
-function toolCallsResponse(calls: readonly ProviderCall[]): Response {
+function toolCallsResponse(
+    calls: readonly ProviderCall[],
+    schemas: readonly ToolSchema[],
+    requestIndex: number
+): Response {
+    const codec = buildWireToolNameCodec(schemas);
+    const advertised = new Set(schemas.map((schema) => schema.function.name));
+    const toolCalls = calls.map((call, index) => {
+        const name = codec.encode(call.name);
+        if (!advertised.has(name)) {
+            throw new Error(`Tool ${name} was not advertised on this request`);
+        }
+        return {
+            id: `fixture-${String(requestIndex)}-${String(index)}`,
+            type: 'function',
+            function: { name, arguments: JSON.stringify(call.arguments) },
+        };
+    });
+    // Usage is omitted intentionally: #4729 covers providers that do not report it.
     return new Response(
         JSON.stringify({
             choices: [
-                {
-                    finish_reason: 'tool_calls',
-                    message: {
-                        tool_calls: calls.map((call) => ({
-                            function: { name: call.name, arguments: JSON.stringify(call.arguments) },
-                        })),
-                    },
-                },
+                { finish_reason: 'tool_calls', message: { role: 'assistant', content: null, tool_calls: toolCalls } },
             ],
-            // #4729: a provider that omits usage entirely. A hosted run may not spend its
-            // remoteTokens budget on unreported estimates before the loop's own turn limit ends it.
         }),
-        { status: 200, headers: { 'Content-Type': 'application/json' } }
+        {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+        }
     );
 }
 
@@ -634,13 +647,43 @@ describe('stem import and starting mix workflow', () => {
         ['long', `Raise Guide Mix by 1 dB while keeping true peak below -1 dBTP ${'please '.repeat(1200)}end`],
     ] as const)('plans a staged refinement of the %s predecessor', async (kind, originalPrompt) => {
         let predecessorId = '';
+        const emittedIds = new Set<string>();
+        const replayedIds = new Set<string>();
         mocks.fetch.mockImplementation((_input, init) => {
             if (typeof init?.body !== 'string') {
                 throw new TypeError('Expected hosted body');
             }
             const body = init.body;
             const message = getHostedUserMessage(body);
-            const schemas = (JSON.parse(body) as { tools: ToolSchema[] }).tools;
+            const request = JSON.parse(body) as { tools: ToolSchema[]; messages: unknown[] };
+            const schemas = request.tools;
+            const assistantIds = request.messages.flatMap((message) => {
+                if (!isRecord(message) || message.role !== 'assistant' || !Array.isArray(message.tool_calls)) {
+                    return [];
+                }
+                return message.tool_calls.flatMap((call: unknown) =>
+                    isRecord(call) && typeof call.id === 'string' ? [call.id] : []
+                );
+            });
+            for (const message of request.messages) {
+                if (!isRecord(message) || message.role !== 'tool') {
+                    continue;
+                }
+                expect(typeof message.tool_call_id).toBe('string');
+                if (typeof message.tool_call_id !== 'string') {
+                    throw new TypeError('Expected correlated tool result');
+                }
+                expect(assistantIds).toContain(message.tool_call_id);
+                expect(emittedIds.has(message.tool_call_id)).toBe(true);
+                replayedIds.add(message.tool_call_id);
+            }
+            const requestIndex = mocks.fetch.mock.calls.length;
+            const reply = (calls: readonly ProviderCall[]) => {
+                for (const [index] of calls.entries()) {
+                    emittedIds.add(`fixture-${String(requestIndex)}-${String(index)}`);
+                }
+                return Promise.resolve(toolCallsResponse(calls, schemas, requestIndex));
+            };
             const receipts = getReplayedToolReceipts(body);
             if (!predecessorId) {
                 if (
@@ -651,40 +694,34 @@ describe('stem import and starting mix workflow', () => {
                             entry.status === 'success'
                     )
                 ) {
-                    return Promise.resolve(toolCallsResponse(literalMetricIntakeTurn(message, schemas)));
+                    return reply(literalMetricIntakeTurn(message, schemas));
                 }
                 if (!receipts.some((entry) => isRecord(entry) && entry.toolName === 'agent.catalog.discover')) {
-                    return Promise.resolve(
-                        toolCallsResponse([
-                            {
-                                name: 'agent.catalog.discover',
-                                arguments: { category: 'command', names: ['setTrackGain'] },
-                            },
-                        ])
-                    );
-                }
-                return Promise.resolve(
-                    toolCallsResponse([
+                    return reply([
                         {
-                            name: 'command.batch.propose',
-                            arguments: {
-                                commands: [{ name: 'setTrackGain', arguments: { trackId: 'track-guide', deltaDb: 1 } }],
-                                plan: metricGoalProviderPlan('Raise Guide Mix by 1 dB', ['track-guide']),
-                            },
+                            name: 'agent.catalog.discover',
+                            arguments: { category: 'command', names: ['setTrackGain'] },
                         },
-                    ])
-                );
+                    ]);
+                }
+                return reply([
+                    {
+                        name: 'command.batch.propose',
+                        arguments: {
+                            commands: [{ name: 'setTrackGain', arguments: { trackId: 'track-guide', deltaDb: 1 } }],
+                            plan: metricGoalProviderPlan('Raise Guide Mix by 1 dB', ['track-guide']),
+                        },
+                    },
+                ]);
             }
             const calls = getProviderCallsForUserMessage(message, receipts, schemas);
-            return Promise.resolve(
-                toolCallsResponse(
-                    calls.map((call) => {
-                        if (call.name !== 'command.batch.propose') {
-                            return call;
-                        }
-                        return { ...call, arguments: { ...call.arguments, refines: predecessorId } };
-                    })
-                )
+            return reply(
+                calls.map((call) => {
+                    if (call.name !== 'command.batch.propose') {
+                        return call;
+                    }
+                    return { ...call, arguments: { ...call.arguments, refines: predecessorId } };
+                })
             );
         });
         await sendChatMessage(originalPrompt);
@@ -703,6 +740,7 @@ describe('stem import and starting mix workflow', () => {
         const plans = await Promise.all(planning.mock.results.map((entry) => entry.value));
         planning.mockRestore();
         expect(mocks.stageDurableAsset).toHaveBeenCalledTimes(STEM_SOURCE_NAMES.length);
+        expect(replayedIds.size).toBeGreaterThan(0);
         if (kind === 'long') {
             const serialized = plans.at(-1)?.metricGoalState;
             let diagnostic = 'No verification record returned';
