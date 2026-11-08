@@ -1,0 +1,33 @@
+scripts/pullRequestGateWorkflowContract.ts
+  s_6584878ed83d04::t_e320ec0db27fd4 102
+scripts/test-health-gate-scripts.sh
+  s_6584878ed83d04::t_1c9bc3ebf445f7 199-200
+  s_6584878ed83d04::t_da1e442ba6f31b 469,471
+  s_6584878ed83d04::t_145aa59fdec495 480,482
+scripts/__tests__/healthGatesWorkflow.spec.ts
+  s_6584878ed83d04::t_9bed3def74ec5a 2032
+  s_6584878ed83d04::t_27554d514c4bda 2028-2030
+  s_6584878ed83d04::t_b7a993a3fcaae4 2153-2154
+  s_6584878ed83d04::t_143a26b555512a 56
+  s_6584878ed83d04::t_77ff23c7abd911 31
+.github/workflows/heavy-gates.yml
+  s_6584878ed83d04::t_c8f876f32221f4 3-4
+scripts/workflowSecuritySurfaceContract.ts
+  s_6584878ed83d04::t_a81bf65384177a 13
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "6a22b85d5eeffaa58810f0d45950dcaa86ca3de4",
+  "prompts": {},
+  "sessions": {
+    "s_6584878ed83d04": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "eb8dc258-27ed-45aa-b77a-54b7a029172e",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
