@@ -44,6 +44,7 @@ export function triggerLiveNoteOn(channel: number, note: number, velocity: numbe
         recordingBeat: number;
         recordingPassIndex: number;
         recordingAdmissionId?: string;
+        recordingExcluded?: boolean;
     } = {
         audioTime,
         recordingBeat: position.beat,
@@ -51,6 +52,9 @@ export function triggerLiveNoteOn(channel: number, note: number, velocity: numbe
     };
     if (admission) {
         time.recordingAdmissionId = admission.id;
+    }
+    if (recordingMidiAdmissionPort.isRecordingMidiInputExcluded(audioTime, trackId)) {
+        time.recordingExcluded = true;
     }
     return handleWebMidiNoteOn(channel, note, velocity, time);
 }

@@ -24,6 +24,9 @@ const overdub = vi.hoisted(() => {
 });
 
 vi.mock('#/modules/MIDI/useCases', () => ({
+    captureEventPositionAt: () => {
+        throw new Error('This manual stop fixture has no automatic MIDI capture position');
+    },
     isOverdubLanding: () => overdub.state.landing !== null,
     countSettledOverdubPasses: () => overdub.state.settled,
     waitForOverdubLanding: async () => {

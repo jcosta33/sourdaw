@@ -9,6 +9,7 @@ import { createMidiNote } from '../createMidiNote';
 
 import { createRecordedAdmittedMidiNote } from './createRecordedAdmittedMidiNote';
 import { midiMessageHandlerDependencies } from './midiMessageHandlerDependencies';
+import { recordingMidiAdmissionPort } from './recordingMidiAdmissionPort';
 import { resolveRecordingPlacement } from './resolveRecordingPlacement';
 import { withRecordedNoteExpression } from './withRecordedNoteExpression';
 
@@ -18,6 +19,7 @@ type SealHeldRecordedMidiNotesInput = {
     endAudioTime?: number;
     admissions?: readonly RecordingMidiAdmission[];
     endSourceBeat?: number;
+    exclusiveEndSourceBeat?: number;
 };
 
 /** Close registered held keys inside the recording's existing Stop commit. */
@@ -27,16 +29,25 @@ export function sealHeldRecordedMidiNotes({
     endAudioTime,
     admissions = [],
     endSourceBeat,
+    exclusiveEndSourceBeat,
 }: SealHeldRecordedMidiNotesInput): void {
     const stoppedAt = endAudioTime ?? audioEngine.context.currentTime;
     for (const admitted of admissions) {
         if (admitted.clipId !== clipId || admitted.trackId !== trackId || admitted.onsetAudioTime >= stoppedAt) {
             continue;
         }
-        appendRecordedMidiNote({ clipId, note: createRecordedAdmittedMidiNote(admitted, stoppedAt, endSourceBeat) });
+        const note = createRecordedAdmittedMidiNote(admitted, stoppedAt, endSourceBeat, exclusiveEndSourceBeat);
+        if (note) {
+            appendRecordedMidiNote({ clipId, note });
+        }
     }
     for (const held of activeNotes.values()) {
-        if (held.trackId !== trackId || held.recordingClipId !== clipId || held.startTime >= stoppedAt) {
+        if (
+            held.recordingExcluded ||
+            held.trackId !== trackId ||
+            held.recordingClipId !== clipId ||
+            held.startTime >= stoppedAt
+        ) {
             continue;
         }
         if (admissions.some((admitted) => admitted.id === held.recordingAdmissionId)) {
@@ -46,7 +57,11 @@ export function sealHeldRecordedMidiNotes({
             trackId,
             admittedBeat: held.startBeat,
         });
-        if (!placement || placement.clipId !== clipId) {
+        if (
+            !placement ||
+            placement.clipId !== clipId ||
+            recordingMidiAdmissionPort.isRecordingMidiInputExcluded(held.startTime, trackId, placement.clipId)
+        ) {
             continue;
         }
         const durationSeconds = stoppedAt - held.startTime;

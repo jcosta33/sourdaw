@@ -165,6 +165,7 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     stopAudioRecording: mocks.stopAudioRecording,
     readNativeEnginePlayheadSeconds: () => null,
     audioEngine: {
+        context: mocks.audioClock,
         beginAudioPreviewIntent: () => ({
             signal: new AbortController().signal,
             isCurrent: () => true,
@@ -684,16 +685,30 @@ describe('automatic punch Pause and Play with real recording commits', () => {
         const start = Promise.withResolvers<boolean>();
         mocks.startAudioRecording.mockImplementationOnce(() => start.promise);
         const errors = vi.spyOn(logger, 'error').mockImplementation(() => undefined);
-        // A short region, so a few ticks carry the roll past its punch-out.
         await punchInOnLaterTick([recordingTrack('audio')], 4.5);
+        const owner = schedulerSession.automaticPunch;
+        if (!owner) {
+            throw new Error('Expected the actual automatic punch owner');
+        }
+        const bound = owner.read();
+        if (bound.status !== 'bounded') {
+            throw new Error('Expected the original punch-out date');
+        }
+        expect(Number.isFinite(bound.ending.contextSeconds)).toBe(true);
+        expect(bound.ending.midiPosition.beat).toBe(4.5);
+        const stopsAtPendingStart = mocks.stopAudioRecording.mock.calls.length;
 
         // The roll passes the punch-out point while the input is still opening.
-        for (let ticks = 0; ticks < 8 && schedulerSession.punchRecordingActive; ticks++) {
+        while (mocks.audioClock.currentTime <= bound.ending.contextSeconds) {
             mocks.audioClock.currentTime += 0.03;
             await tick(1);
         }
-        expect(schedulerSession.punchRecordingActive).toBe(false);
+        expect(mocks.audioClock.currentTime).toBeGreaterThan(bound.ending.contextSeconds);
+        expect(schedulerSession.automaticPunch).toBe(owner);
+        expect(schedulerSession.punchRecordingActive).toBe(true);
         expect(transportStore.value?.isPlaying).toBe(true);
+        expect(mocks.stopAudioRecording).toHaveBeenCalledTimes(stopsAtPendingStart);
+        expect(mocks.pendingCount()).toBe(0);
         start.reject(new Error('microphone permission denied'));
 
         await vi.waitFor(() => expect(mocks.notifyUser).toHaveBeenCalledWith(INPUT_START_FAILURE, 'error'));

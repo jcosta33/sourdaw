@@ -246,6 +246,7 @@ function handleAdmittedNoteOn(
         recordingBeat: number;
         recordingPassIndex: number;
         recordingAdmissionId?: string;
+        recordingExcluded?: boolean;
     } = {
         ...timeStamp,
         recordingBeat: position.beat,
@@ -253,6 +254,9 @@ function handleAdmittedNoteOn(
     };
     if (admission) {
         admittedTime.recordingAdmissionId = admission.id;
+    }
+    if (recordingMidiAdmissionPort.isRecordingMidiInputExcluded(timeStamp.audioTime, trackId)) {
+        admittedTime.recordingExcluded = true;
     }
     // The wheels it is struck under are those at arrival: bends admitted
     // while it waits in the queue move the note at their own frame.

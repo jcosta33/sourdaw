@@ -9,6 +9,7 @@ const get_track_strip = vi.hoisted(() => vi.fn());
 const audio_clock = vi.hoisted(() => ({ currentTime: 2, sampleRate: 48000, baseLatency: 0, outputLatency: 0 }));
 
 vi.mock('#/modules/Arrangement/useCases', () => ({
+    isRecordingMidiInputExcluded: () => false,
     getRecordingMidiAdmission: () => undefined,
     retireRecordingMidiAdmission: () => undefined,
     takeOwnsRecordingRoot: () => true,
@@ -16,6 +17,7 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
 
 vi.mock('../recordingMidiAdmissionPort', () => ({
     recordingMidiAdmissionPort: {
+        isRecordingMidiInputExcluded: () => false,
         getRecordingMidiAdmission: () => undefined,
         retireRecordingMidiAdmission: () => undefined,
         takeOwnsRecordingRoot: () => true,

@@ -341,6 +341,52 @@ beforeEach(() => {
 });
 
 describe('AgentWorkspace', () => {
+    it('preserves repeated proposal and history actions across updates without duplicate keys', () => {
+        const consoleError = vi.spyOn(console, 'error');
+        try {
+            const repeated = 'Add track (audio)';
+            const labels = [repeated, repeated, repeated, 'Set track name'];
+            const actions: AiActionGroup['actions'] = [
+                ...Array.from({ length: 3 }, () => ({
+                    kind: 'appAction' as const,
+                    actionType: 'addTrack',
+                    label: repeated,
+                })),
+                { kind: 'appAction', actionType: 'renameTrack', label: 'Set track name' },
+            ];
+            agentRunControlsMock.list.mockReturnValue([projection()]);
+            agentRunControlsMock.get.mockReturnValue(projection());
+            setRuns([run()]);
+            pendingActionConfirmationStore.set({ confirmations: [confirmation({ actionLabels: labels })] });
+            aiActionHistoryStore.set({ groups: [historyGroup({ actions })], panelOpen: false });
+
+            render(<AgentWorkspace />);
+            const rowText = (name: string) =>
+                within(screen.getByRole('list', { name }))
+                    .getAllByRole('listitem')
+                    .map((row) => row.textContent);
+            expect(rowText('Proposed actions')).toEqual(labels);
+            expect(rowText('Actions for Add a bassline')).toEqual(labels);
+
+            act(() => {
+                pendingActionConfirmationStore.set({
+                    confirmations: [confirmation({ actionLabels: [repeated, 'Set track name'] })],
+                });
+                aiActionHistoryStore.set({
+                    groups: [historyGroup({ actions: [actions[0]!, actions[3]!] })],
+                    panelOpen: false,
+                });
+            });
+            expect(rowText('Proposed actions')).toEqual([repeated, 'Set track name']);
+            expect(rowText('Actions for Add a bassline')).toEqual([repeated, 'Set track name']);
+            expect(
+                consoleError.mock.calls.filter((args) => args.some((arg) => String(arg).includes('same key')))
+            ).toEqual([]);
+        } finally {
+            consoleError.mockRestore();
+        }
+    });
+
     it('connects one proposed audition and retires its sound before changing the selected groups', () => {
         agentRunControlsMock.list.mockReturnValue([projection()]);
         agentRunControlsMock.get.mockReturnValue(projection());

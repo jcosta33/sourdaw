@@ -49,6 +49,10 @@ export function commitRecoveredAudioRecording(
             return retainRecoveredPcm(bufferId);
         })
         .catch((error: unknown) => {
+            if (error instanceof Error && error.name === 'RecordingCommitOwnershipRefusal') {
+                notifyUser('Recording changed while it was finishing; your current edit was kept.', 'warning');
+                return 'refused' as const;
+            }
             if (error instanceof Error && error.name === 'RecordingRootMovedRefusal') {
                 notifyUser(
                     'Recording stopped — the project switched branches while the take was landing, so it was not kept.',

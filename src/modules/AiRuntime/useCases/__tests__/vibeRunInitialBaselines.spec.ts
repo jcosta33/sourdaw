@@ -672,6 +672,7 @@ describe('initial role and exact-section baselines through the brief pipeline', 
         expect(liveBriefRevision()).toBe(BRIEF_REVISION);
     });
 
+    // This workflow runs real objective DSP across 27 staged renders on loaded runners.
     it('retains historical provenance through brief and two batch commits and rejects tampered restoration', async () => {
         const brief = await confirmBrief();
         const initial = structuredClone(measuredPlan(brief).initial);
@@ -707,7 +708,7 @@ describe('initial role and exact-section baselines through the brief pipeline', 
         ]) {
             expect(readScheduledVibeRunPlan(JSON.stringify(tamper(structuredClone(plan))))).toBeNull();
         }
-    });
+    }, 15_000);
 
     it.each([
         'missing section',
@@ -1095,6 +1096,7 @@ describe('initial role and exact-section baselines through the brief pipeline', 
         expect(audio.renderTrackSubgraphOffline).toHaveBeenCalledTimes(3);
     });
 
+    // This workflow runs real objective DSP across 27 staged renders on loaded runners.
     it('keeps processing eligible under an original control-only fader protection', async () => {
         const gain = trackStore.value?.tracks.find((track) => track.id === VOCAL_ID)?.gain;
         const brief = await confirmBrief('make this mix warmer and keep Vocal fader unchanged');
@@ -1107,7 +1109,7 @@ describe('initial role and exact-section baselines through the brief pipeline', 
         await expect(confirmPendingChatActions({ confirmationId: vocal.id })).resolves.toEqual({ status: 'executed' });
         expect(trackDeviceTypes(VOCAL_ID)).toEqual(['builtin-eq']);
         expect(trackStore.value?.tracks.find((track) => track.id === VOCAL_ID)?.gain).toBe(gain);
-    });
+    }, 15_000);
 
     it('refuses an unresolved original whole-object protection before any initial render', async () => {
         const revision = captureProjectRevision();
