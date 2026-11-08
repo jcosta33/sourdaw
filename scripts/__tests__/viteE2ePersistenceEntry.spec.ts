@@ -59,7 +59,12 @@ function isSafeDirectProjectEntry(entry: string): boolean {
     }
     const runtimeBindings = new Set<string>();
     for (const statement of source.statements) {
-        if (ts.isFunctionDeclaration(statement) && statement.name) {
+        if (
+            ts.isFunctionDeclaration(statement) &&
+            statement.name &&
+            statement.body &&
+            !statement.modifiers?.some((modifier) => modifier.kind === ts.SyntaxKind.DeclareKeyword)
+        ) {
             runtimeBindings.add(statement.name.text);
         }
         if (ts.isImportDeclaration(statement) && statement.importClause && !statement.importClause.isTypeOnly) {
@@ -185,6 +190,36 @@ describe('same-build persistence inspection entry', () => {
         const entry = `${base}\nconst inspect = localStorage;`;
         expect(observeReads(entry)).toBe(1);
         expect(isSafeDirectProjectEntry(entry)).toBe(false);
+    });
+
+    it('distinguishes erased function declarations from implemented local functions', () => {
+        const base = `import { newProject as _newProject } from '../../src/modules/Project/useCases';
+            export const newProject = _newProject;`;
+        const observeReads = (entry: string) => {
+            let reads = 0;
+            const sandbox = {};
+            Object.defineProperty(sandbox, 'ambientAction', {
+                get: () => {
+                    reads++;
+                    return () => true;
+                },
+            });
+            const emitted = ts.transpileModule(entry, {
+                compilerOptions: { module: ts.ModuleKind.CommonJS },
+            }).outputText;
+            const execute = runInNewContext(`(function (exports, require) { ${emitted}\n})`, sandbox);
+            execute({}, () => ({ newProject: () => true }));
+            return reads;
+        };
+        const implemented = `${base}\nfunction ambientAction() { return true; }\nconst inspect = ambientAction;`;
+        expect(observeReads(implemented)).toBe(0);
+        expect(isSafeDirectProjectEntry(implemented)).toBe(true);
+        const overloaded = `${base}\nfunction ambientAction(): boolean;\nfunction ambientAction() { return true; }\nconst inspect = ambientAction;`;
+        expect(observeReads(overloaded)).toBe(0);
+        expect(isSafeDirectProjectEntry(overloaded)).toBe(true);
+        const declared = `${base}\ndeclare function ambientAction(): boolean;\nconst inspect = ambientAction;`;
+        expect(observeReads(declared)).toBe(1);
+        expect(isSafeDirectProjectEntry(declared)).toBe(false);
     });
 
     it.each([
