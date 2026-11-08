@@ -158,6 +158,11 @@ describe('useTimelineFileDrop', () => {
 
     beforeEach(() => {
         vi.clearAllMocks();
+        for (const mock of Object.values(mocks)) {
+            if (typeof mock === 'function') {
+                mock.mockReset();
+            }
+        }
         projectEpoch.reset();
         mocks.buildTimelineRenderModel.mockReturnValue({ tempo: 120 });
         mocks.getAssetTransfer.mockReturnValue({
@@ -631,7 +636,10 @@ describe('useTimelineFileDrop', () => {
                 fallbackName: 'Kick',
             });
         });
-        expect(mocks.decodeAudioFile).toHaveBeenCalledWith(file);
+        expect(mocks.decodeAudioFile).toHaveBeenCalledWith(
+            file,
+            expect.objectContaining({ retain: expect.any(Function), release: expect.any(Function) })
+        );
         expect(batchPayload('addClip')).toEqual(
             expect.objectContaining({
                 trackId: expect.any(String),
@@ -681,7 +689,10 @@ describe('useTimelineFileDrop', () => {
                 fallbackName: 'Clap',
             });
         });
-        expect(mocks.decodeAudioFile).toHaveBeenCalledWith(file);
+        expect(mocks.decodeAudioFile).toHaveBeenCalledWith(
+            file,
+            expect.objectContaining({ retain: expect.any(Function), release: expect.any(Function) })
+        );
         expect(batchPayload('addClip')).toEqual(
             expect.objectContaining({
                 trackId: 't1',
@@ -1451,6 +1462,7 @@ describe('useTimelineFileDrop', () => {
         // No eligible track and a refusing batch -> abort, nothing retained.
         mocks.hitTestTrack.mockReturnValue(null);
         mocks.trackStoreValue.value = { tracks: [], selectedTrackId: null };
+        mocks.decodeAudioFile.mockResolvedValue({ id: 'raw-buffer', buffer: { duration: 1 } });
         mocks.executeAppActionBatch.mockResolvedValue({
             status: 'conflicted',
             reason: 'the track could not be created',
@@ -1475,8 +1487,9 @@ describe('useTimelineFileDrop', () => {
         );
         mocks.hitTestTrack.mockReturnValue(null);
         const { result } = renderHook(() => useTimelineFileDrop({ getCanvasCoords, getBeatFromX }));
-        const dropPromise = act(async () => {
-            await result.current.handleFileDrop({
+        let drop: Promise<void> = Promise.resolve();
+        await act(async () => {
+            drop = result.current.handleFileDrop({
                 preventDefault: vi.fn(),
                 dataTransfer: {
                     getData: (type: string) =>
@@ -1492,16 +1505,25 @@ describe('useTimelineFileDrop', () => {
                 },
             } as any);
         });
+        await waitFor(() => {
+            expect(mocks.resolveDroppedSampleFile).toHaveBeenCalledExactlyOnceWith({
+                libraryRootId: 'root',
+                relativePath: 'stale.wav',
+                fallbackName: 'Stale sample',
+            });
+        });
 
         projectEpoch.advance();
         expect(projectEpoch.latest()?.isCurrent()).toBe(false);
         expect(projectEpoch.currentAuthority().isCurrent()).toBe(true);
-        resolveSample({
-            status: 'resolved',
-            provider: 'browser',
-            file: new File(['audio'], 'stale.wav', { type: 'audio/wav' }),
+        await act(async () => {
+            resolveSample({
+                status: 'resolved',
+                provider: 'browser',
+                file: new File(['audio'], 'stale.wav', { type: 'audio/wav' }),
+            });
+            await drop;
         });
-        await dropPromise;
 
         expect(mocks.decodeAudioFile).not.toHaveBeenCalled();
         expect(mocks.executeAppActionBatch).not.toHaveBeenCalled();
