@@ -1,0 +1,30 @@
+electron/commands.ts
+  s_68423a2adea8d2::t_e3a64ce1644c08 216-222,228-230,232-234
+electron/__tests__/commands.spec.ts
+  s_68423a2adea8d2::t_31e7e76174182f 112-125,437-448
+electron/__tests__/bridge.spec.ts
+  s_68423a2adea8d2::t_6f7dac005e1254 282-285
+  s_68423a2adea8d2::t_31e7e76174182f 264-281,286-314
+electron/__tests__/router.spec.ts
+  s_68423a2adea8d2::t_31e7e76174182f 96-104,108-117,119-120
+  s_68423a2adea8d2::t_b6685e7f6d020d 11,105-107,118
+electron/__tests__/agentWebviewBoundary.spec.ts
+  s_68423a2adea8d2::t_31e7e76174182f 77-87
+  s_68423a2adea8d2::t_e3a64ce1644c08 9-11,58
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3c7c071e7e53177e2320c90394503bcf072605fa",
+  "prompts": {},
+  "sessions": {
+    "s_68423a2adea8d2": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34b-f305-7c03-beb2-57afa678cda5",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
