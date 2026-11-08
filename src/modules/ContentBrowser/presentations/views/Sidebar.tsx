@@ -14,6 +14,7 @@ import { AUDIO_ACCEPT_ATTRIBUTE, isAudioFile } from '#/utils/audioFileExtensions
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { addBrowserSample } from '../../useCases/addBrowserSample';
+import { registerBrowserImportedSampleAudio } from '../../useCases/registerBrowserImportedSampleAudio';
 import { loadSidebarFavorites } from '../../useCases/sidebar-favorites/load-sidebar-favorites';
 import { saveSidebarFavorites } from '../../useCases/sidebar-favorites/save-sidebar-favorites';
 import { RailBackBar } from '../components/Sidebar/RailBackBar';
@@ -122,6 +123,7 @@ export const Sidebar = ({ style, onClose, panelActions }: SidebarProps): ReactEl
 
             try {
                 const { id: bufferId, buffer } = await decodeAudioFile(file);
+                registerBrowserImportedSampleAudio(bufferId);
                 const name = file.name.replace(/\.[^.]+$/, '');
                 setUserSamples((prev) => [
                     ...prev,

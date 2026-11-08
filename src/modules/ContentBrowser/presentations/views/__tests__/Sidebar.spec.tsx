@@ -95,6 +95,14 @@ vi.mock('#/modules/SampleLibrary/presentations/views', () => ({
     LibraryBrowser: () => <div data-testid="library-browser">Library Browser</div>,
 }));
 
+const sidebarImportMocks = vi.hoisted(() => ({
+    registerBrowserImportedSampleAudio: vi.fn(),
+}));
+
+vi.mock('#/modules/ContentBrowser/useCases/registerBrowserImportedSampleAudio', () => ({
+    registerBrowserImportedSampleAudio: sidebarImportMocks.registerBrowserImportedSampleAudio,
+}));
+
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
     decodeAudioFile: vi.fn(async (file: File) => ({
@@ -261,6 +269,9 @@ describe('Sidebar', () => {
         expect(decodeAudioFile).toHaveBeenCalledWith(expect.objectContaining({ name: 'beat.opus' }));
         expect(decodeAudioFile).toHaveBeenCalledWith(expect.objectContaining({ name: 'loop.wave' }));
         expect(decodeAudioFile).not.toHaveBeenCalledWith(expect.objectContaining({ name: 'notes.txt' }));
+        expect(sidebarImportMocks.registerBrowserImportedSampleAudio).toHaveBeenCalledTimes(2);
+        expect(sidebarImportMocks.registerBrowserImportedSampleAudio).toHaveBeenCalledWith('buffer-beat.opus');
+        expect(sidebarImportMocks.registerBrowserImportedSampleAudio).toHaveBeenCalledWith('buffer-loop.wave');
         await waitFor(() => expect(screen.getByText('2 samples')).toBeInTheDocument());
     });
 });

@@ -18,6 +18,7 @@ const mocks = vi.hoisted(() => ({
     stageLocalAsset: vi.fn(),
     releaseStagedAsset: vi.fn(),
     promoteStagedAsset: vi.fn(),
+    restoreUnpinnedAudioBuffersFromIdb: vi.fn(),
 }));
 
 vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
@@ -54,6 +55,7 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     getCachedAudioBuffer: mocks.getCachedAudioBuffer,
     decodeAudioFile: mocks.decodeAudioFile,
     discardDecodedAudioFile: mocks.discardDecodedAudioFile,
+    restoreUnpinnedAudioBuffersFromIdb: mocks.restoreUnpinnedAudioBuffersFromIdb,
 }));
 
 vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
@@ -106,8 +108,47 @@ describe('placeLibrarySample', () => {
             promoteStagedAsset: mocks.promoteStagedAsset,
         });
         mocks.promoteStagedAsset.mockReturnValue(true);
+        mocks.restoreUnpinnedAudioBuffersFromIdb.mockResolvedValue({
+            absentIds: [],
+            release: vi.fn(),
+        });
         vi.mocked(executeAppActionBatch).mockReset();
         vi.mocked(executeAppActionBatch).mockResolvedValue({ status: 'committed', actions: [] });
+    });
+
+    it('rehydrates an evicted browser-import buffer id before treating the sample as unavailable', async () => {
+        const restored = bufferOf(2);
+        mocks.getCachedAudioBuffer.mockImplementation(({ bufferId }: { bufferId: string }) => {
+            if (bufferId === 'b1' && mocks.restoreUnpinnedAudioBuffersFromIdb.mock.calls.length > 0) {
+                return restored;
+            }
+            return null;
+        });
+        mocks.ensureFactorySampleBuffer.mockResolvedValue({ status: 'not-factory' });
+
+        await place({ id: 'user-b1', name: 'Kick', audioBufferId: 'b1' }, 't1');
+
+        expect(mocks.restoreUnpinnedAudioBuffersFromIdb).toHaveBeenCalledExactlyOnceWith({ bufferIds: ['b1'] });
+        expect(clipPayload()).toEqual(expect.objectContaining({ audioBufferId: 'b1' }));
+        expect(executeAppActionBatch).toHaveBeenCalledTimes(1);
+        expect(mocks.notifyUser).not.toHaveBeenCalled();
+    });
+
+    it('reports unavailable when a browser-import buffer is gone and storage holds no PCM', async () => {
+        mocks.getCachedAudioBuffer.mockReturnValue(null);
+        mocks.restoreUnpinnedAudioBuffersFromIdb.mockResolvedValue({
+            absentIds: ['b1'],
+            release: vi.fn(),
+        });
+        mocks.ensureFactorySampleBuffer.mockResolvedValue({ status: 'not-factory' });
+
+        await place({ id: 'user-b1', name: 'Kick', audioBufferId: 'b1' }, 't1');
+
+        expect(mocks.notifyUser).toHaveBeenCalledWith(
+            'Could not access "Kick" — audio buffer is not available.',
+            'error'
+        );
+        expect(executeAppActionBatch).not.toHaveBeenCalled();
     });
 
     it('places a cached buffer at the requested beat with its staged hash, then promotes the lease once', async () => {
