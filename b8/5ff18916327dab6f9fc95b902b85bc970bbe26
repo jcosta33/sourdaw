@@ -1,0 +1,19 @@
+tests/e2e/sharedMeterReadings.spec.ts
+  s_977061c47f01dd::t_f51a842d5e1c0c 88,177,184-196,204-205,223
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b85ff18916327dab6f9fc95b902b85bc970bbe26",
+  "prompts": {},
+  "sessions": {
+    "s_977061c47f01dd": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34d-123d-7452-a6e7-60608388b6d7",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
