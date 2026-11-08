@@ -14,7 +14,7 @@ import {
 } from '../../tests/e2e/browserAiHardware';
 import browserAiWebGpuAdmissionConfig from '../../tests/e2e/browserAiWebGpuAdmission.playwright.config';
 import { COLD_FIRST_PAINT_TIMEOUT_MS } from '../../tests/e2e/coldFirstPaintBudget';
-import { assertApprovalGatedRequiredCheck } from '../approvalGatedWorkflowContract';
+import { assertPullRequestGateWorkflows } from '../pullRequestGateWorkflowContract';
 import { assertDeployWebBuildRun, assertDeployWebJobNoVercelPull } from '../deployWebWorkflowContract';
 import {
     assertWorkflowFileInventory,
@@ -2031,7 +2031,7 @@ function assertValidationScopeConditions(candidate: UnknownRecord): void {
 // run of `health-gates.yml` may mint that name, `gate` must be unable to skip,
 // and it must fail unless the reviewer App approved the exact head.
 function assertRequiredCheckIsolation(set: WorkflowSet): void {
-    assertApprovalGatedRequiredCheck(Object.fromEntries(workflowFiles(set)));
+    assertPullRequestGateWorkflows(Object.fromEntries(workflowFiles(set)));
     if (JSON.stringify(Object.keys(recordAt(set.heavy, 'on')).sort()) !== JSON.stringify([...HEAVY_GATES_TRIGGERS])) {
         throw new Error('heavy-gates.yml must be reusable-only');
     }
@@ -2153,7 +2153,7 @@ function assertDeviceWriteBoundaryCensus(set: WorkflowSet): void {
 }
 
 // The nightly reporter is the only thing that observes what path filters and
-// the approval gate skip, so a leg missing from its needs is a class of failure
+// path filters and draft refusal skip, so a leg missing from its needs is a class of failure
 // that reports nowhere a person looks.
 function assertNightlyReportCoverage(set: WorkflowSet): void {
     const nightlyReport = jobAt(set.nightly, 'nightly-report');

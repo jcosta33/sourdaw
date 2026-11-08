@@ -99,7 +99,7 @@ function assertNonDraftHeavyChecks(jobs: WorkflowRecord): void {
  * mint `Gate`; `Gate` always runs and fails for a draft; every heavy job waits for the non-draft
  * scope; and no other workflow mints `Gate`.
  */
-export function assertApprovalGatedRequiredCheck(workflows: Readonly<Record<string, unknown>>): void {
+export function assertPullRequestGateWorkflows(workflows: Readonly<Record<string, unknown>>): void {
     if (workflows['pr-checks.yml'] !== undefined) {
         throw new Error('pr-checks.yml must not exist; pull-request CI is health-gates.yml');
     }
