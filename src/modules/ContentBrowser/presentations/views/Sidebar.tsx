@@ -14,10 +14,10 @@ import { AUDIO_ACCEPT_ATTRIBUTE, isAudioFile } from '#/utils/audioFileExtensions
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { addBrowserSample } from '../../useCases/addBrowserSample';
-import { registerBrowserImportedSampleAudio } from '../../useCases/registerBrowserImportedSampleAudio';
 import { loadSidebarFavorites } from '../../useCases/sidebar-favorites/load-sidebar-favorites';
 import { saveSidebarFavorites } from '../../useCases/sidebar-favorites/save-sidebar-favorites';
 import { RailBackBar } from '../components/Sidebar/RailBackBar';
+import { useImportedSampleResidency } from '../hooks/useImportedSampleResidency';
 import { usePreviewAudio } from '../hooks/usePreviewAudio';
 import { useTracks } from '../hooks/useTracks';
 
@@ -110,6 +110,7 @@ export const Sidebar = ({ style, onClose, panelActions }: SidebarProps): ReactEl
     const { tracks, selectedTrackId } = useTracks();
     const fileInputRef = useRef<HTMLInputElement>(null);
     const preview = usePreviewAudio();
+    const importedSampleHold = useImportedSampleResidency();
 
     const handleFileImport = async (files: FileList | null) => {
         if (!files) {
@@ -122,8 +123,7 @@ export const Sidebar = ({ style, onClose, panelActions }: SidebarProps): ReactEl
             }
 
             try {
-                const { id: bufferId, buffer } = await decodeAudioFile(file);
-                registerBrowserImportedSampleAudio(bufferId);
+                const { id: bufferId, buffer } = await decodeAudioFile(file, importedSampleHold());
                 const name = file.name.replace(/\.[^.]+$/, '');
                 setUserSamples((prev) => [
                     ...prev,

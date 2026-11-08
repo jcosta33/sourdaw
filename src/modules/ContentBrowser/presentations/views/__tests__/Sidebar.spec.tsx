@@ -95,12 +95,14 @@ vi.mock('#/modules/SampleLibrary/presentations/views', () => ({
     LibraryBrowser: () => <div data-testid="library-browser">Library Browser</div>,
 }));
 
-const sidebarImportMocks = vi.hoisted(() => ({
-    registerBrowserImportedSampleAudio: vi.fn(),
-}));
+const sidebarImportMocks = vi.hoisted(() => {
+    const hold = { retain: vi.fn(), release: vi.fn() };
+    const importedSampleHold = vi.fn(() => hold);
+    return { hold, importedSampleHold };
+});
 
-vi.mock('#/modules/ContentBrowser/useCases/registerBrowserImportedSampleAudio', () => ({
-    registerBrowserImportedSampleAudio: sidebarImportMocks.registerBrowserImportedSampleAudio,
+vi.mock('../../hooks/useImportedSampleResidency', () => ({
+    useImportedSampleResidency: () => sidebarImportMocks.importedSampleHold,
 }));
 
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
@@ -266,12 +268,10 @@ describe('Sidebar', () => {
         });
 
         expect(decodeAudioFile).toHaveBeenCalledTimes(2);
-        expect(decodeAudioFile).toHaveBeenCalledWith(expect.objectContaining({ name: 'beat.opus' }));
-        expect(decodeAudioFile).toHaveBeenCalledWith(expect.objectContaining({ name: 'loop.wave' }));
-        expect(decodeAudioFile).not.toHaveBeenCalledWith(expect.objectContaining({ name: 'notes.txt' }));
-        expect(sidebarImportMocks.registerBrowserImportedSampleAudio).toHaveBeenCalledTimes(2);
-        expect(sidebarImportMocks.registerBrowserImportedSampleAudio).toHaveBeenCalledWith('buffer-beat.opus');
-        expect(sidebarImportMocks.registerBrowserImportedSampleAudio).toHaveBeenCalledWith('buffer-loop.wave');
+        const decodeCalls = vi.mocked(decodeAudioFile).mock.calls;
+        expect(decodeCalls.some((call) => (call[0] as File).name === 'notes.txt')).toBe(false);
+        expect(decodeCalls.map((call) => (call[0] as File).name).sort()).toEqual(['beat.opus', 'loop.wave']);
+        expect(decodeCalls.every((call) => call[1] === sidebarImportMocks.hold)).toBe(true);
         await waitFor(() => expect(screen.getByText('2 samples')).toBeInTheDocument());
     });
 });

@@ -5,12 +5,7 @@ import {
     retainedCreation,
     stageClipAudioAsset,
 } from '#/modules/Arrangement/useCases';
-import {
-    decodeAudioFile,
-    discardDecodedAudioFile,
-    getCachedAudioBuffer,
-    restoreUnpinnedAudioBuffersFromIdb,
-} from '#/modules/AudioEngine/useCases';
+import { decodeAudioFile, discardDecodedAudioFile, getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
 import { getAssetTransfer } from '#/modules/Collaboration/useCases';
 import { executeAppActionBatch } from '#/modules/Command/useCases';
 import {
@@ -230,19 +225,6 @@ async function prepareLibraryFileSample(
 // is handle-less, so the SampleLibrary file resolver would have nothing to
 // resolve. The buffer is taken from the cache, or re-obtained for a factory
 // sample, before any file access or decode.
-async function readResidentAudioBuffer(bufferId: string): Promise<AudioBuffer | null> {
-    const resident = getCachedAudioBuffer({ bufferId });
-    if (resident) {
-        return resident;
-    }
-    const { release } = await restoreUnpinnedAudioBuffersFromIdb({ bufferIds: [bufferId] });
-    try {
-        return getCachedAudioBuffer({ bufferId });
-    } finally {
-        release();
-    }
-}
-
 async function prepareSample(
     sample: LibrarySamplePayload,
     authority: Authority,
@@ -250,7 +232,7 @@ async function prepareSample(
     readTempo: () => number
 ): Promise<Preparation> {
     const candidateBufferId = sample.audioBufferId ?? sample.id;
-    let cachedBuffer = await readResidentAudioBuffer(candidateBufferId);
+    let cachedBuffer = getCachedAudioBuffer({ bufferId: candidateBufferId });
     if (!cachedBuffer) {
         const factoryBuffer = await ensureFactorySampleBuffer({ sampleId: candidateBufferId });
         if (factoryBuffer.status === 'unavailable') {
