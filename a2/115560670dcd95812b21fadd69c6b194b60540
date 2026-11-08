@@ -1,0 +1,28 @@
+src/utils/audioLevelLaw.ts
+  s_68423a2adea8d2::t_1e4de7ad247164 360-362
+src/modules/Command/useCases/__tests__/decibelCommandArguments.spec.ts
+  s_68423a2adea8d2::t_c499684727a097 5-8,198-203,213-217,223-226,236-238,241-258,265-268,272-293,296
+  s_68423a2adea8d2::t_ebb00f0fd05eae 37,259-264,269-271
+  s_68423a2adea8d2::t_bdacab663aba86 1,14,16-19,187-197,204-212,219,221,227-235
+  s_68423a2adea8d2::t_5e5e89f68761bc 182-186,218,220,222,239-240,294-295
+  s_68423a2adea8d2::t_39f908e65256f3 297
+src/utils/__tests__/audioLevelLaw.spec.ts
+  s_68423a2adea8d2::t_bdacab663aba86 19-20,273-294
+  s_68423a2adea8d2::t_225b9a1aa18cf4 295
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a2115560670dcd95812b21fadd69c6b194b60540",
+  "prompts": {},
+  "sessions": {
+    "s_68423a2adea8d2": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34b-f305-7c03-beb2-57afa678cda5",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
