@@ -1,0 +1,97 @@
+src/modules/Bacteria/useCases/__tests__/initBacteriaModAssignmentsPersistence.spec.ts
+  s_1052c2a2231ded::t_4fc250d64359c8 17-18
+src/modules/AiRuntime/useCases/__tests__/aiPanelActions.spec.ts
+  s_1052c2a2231ded::t_bb7abbc296847f 10-11
+src/modules/Arrangement/presentations/hooks/__tests__/useTimelineFileDrop.spec.tsx
+  s_1052c2a2231ded::t_bb7abbc296847f 122-123
+src/modules/Project/useCases/__tests__/arrangement.spec.ts
+  s_1052c2a2231ded::t_dfb66f452b2fd6 157-158
+src/modules/Project/useCases/recentProjects/__tests__/loadRecentProject.spec.ts
+  s_1052c2a2231ded::t_59a7065946b7c4 135-136
+src/modules/TimelineEditor/presentations/views/AutomationLane/__tests__/CCLane.spec.tsx
+  s_1052c2a2231ded::t_59a7065946b7c4 66-67
+src/modules/TimelineEditor/presentations/views/AutomationLane/__tests__/PitchBendLane.spec.tsx
+  s_1052c2a2231ded::t_59a7065946b7c4 52-53
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/PianoRollContextMenu.quantizeGridLabels.spec.tsx
+  s_1052c2a2231ded::t_d24c218ce46501 111-112
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/ClipInspector.spec.tsx
+  s_1052c2a2231ded::t_d24c218ce46501 217-218
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/TrackLevelSection.spec.tsx
+  s_1052c2a2231ded::t_d24c218ce46501 25-26
+src/modules/MixerConsole/presentations/views/Mixer/__tests__/DeviceChainSection.spec.tsx
+  s_1052c2a2231ded::t_4fc250d64359c8 33-34
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/saveProject.recentRoundTrip.spec.ts
+  s_1052c2a2231ded::t_59a7065946b7c4 207-208
+src/modules/ProofChamber/presentations/views/__tests__/proofChamberDampingDefaultGrid.spec.tsx
+  s_1052c2a2231ded::t_59a7065946b7c4 42-43
+src/modules/Collaboration/useCases/__tests__/automergeSync.spec.ts
+  s_1052c2a2231ded::t_4fc250d64359c8 72-73
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/applyImportedProjectData.roundTrip.spec.ts
+  s_1052c2a2231ded::t_4fc250d64359c8 142-143
+src/modules/ProofChamber/presentations/views/__tests__/proofChamberAlgorithmGating.spec.tsx
+  s_1052c2a2231ded::t_59a7065946b7c4 47-48
+src/modules/TimelineEditor/presentations/views/AutomationLane/__tests__/PressureSlideLaneExpressionCurve.spec.tsx
+  s_1052c2a2231ded::t_d24c218ce46501 45-46
+src/modules/TimelineEditor/presentations/helpers/__tests__/automationDragClickAddUndo.spec.tsx
+  s_1052c2a2231ded::t_59a7065946b7c4 16-17
+src/modules/Arrangement/useCases/freezeBounce/__tests__/bounceTrackTransactionScope.spec.ts
+  s_1052c2a2231ded::t_bb7abbc296847f 41-42
+src/modules/Arrangement/handlers/clip/__tests__/handleRemoveClip.spec.ts
+  s_1052c2a2231ded::t_bb7abbc296847f 72-73
+src/modules/Project/useCases/projectPersistence/__tests__/discardProjectChanges.realPath.spec.ts
+  s_1052c2a2231ded::t_4fc250d64359c8 129-130
+src/modules/GrandBoule/useCases/__tests__/setGrandBouleMasterGain.spec.ts
+  s_1052c2a2231ded::t_4fc250d64359c8 12-13
+src/modules/AiRuntime/useCases/aiPanelActions/__tests__/runAppAction.spec.ts
+  s_1052c2a2231ded::t_bb7abbc296847f 42-43
+src/modules/TimelineEditor/presentations/views/AutomationLane/__tests__/laneUndoRoundTrip.spec.tsx
+  s_1052c2a2231ded::t_d24c218ce46501 21-22
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/interruptedProjectLoadDirtyTracking.integration.spec.ts
+  s_1052c2a2231ded::t_59a7065946b7c4 194-195
+src/modules/Arrangement/useCases/comping/__tests__/targetedTakeLaneUndo.spec.ts
+  s_1052c2a2231ded::t_bb7abbc296847f 22-23
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/SendsEditor.spec.tsx
+  s_1052c2a2231ded::t_d24c218ce46501 19-20
+src/modules/GrandBoule/useCases/__tests__/setGrandBouleSympatheticSend.spec.ts
+  s_1052c2a2231ded::t_4fc250d64359c8 12-13
+src/modules/Project/useCases/__tests__/projectPersistence.spec.ts
+  s_1052c2a2231ded::t_4fc250d64359c8 120-121
+src/modules/ProofChamber/presentations/views/__tests__/ProofChamberPanel.spec.tsx
+  s_1052c2a2231ded::t_59a7065946b7c4 43-44
+src/modules/Arrangement/presentations/views/__tests__/TrackHeader.spec.tsx
+  s_1052c2a2231ded::t_bb7abbc296847f 34-35
+src/modules/Arrangement/useCases/comping/__tests__/compingUndo.spec.ts
+  s_1052c2a2231ded::t_bb7abbc296847f 27-28
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/projectLoadDirtyTracking.integration.spec.ts
+  s_1052c2a2231ded::t_59a7065946b7c4 150-151
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/ClipGainEnvelopeSection.spec.tsx
+  s_1052c2a2231ded::t_d24c218ce46501 100-101
+src/app/__tests__/main.spec.tsx
+  s_1052c2a2231ded::t_bb7abbc296847f 238-239
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/TrackDevicesSection.spec.tsx
+  s_1052c2a2231ded::t_d24c218ce46501 83-84
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/KneadEditor.spec.tsx
+  s_1052c2a2231ded::t_d24c218ce46501 121-122
+src/modules/Arrangement/useCases/device/sendManagement/__tests__/commitSendEdit.spec.ts
+  s_1052c2a2231ded::t_bb7abbc296847f 17-18
+src/modules/GrandBoule/useCases/__tests__/setGrandBouleSoundboardSend.spec.ts
+  s_1052c2a2231ded::t_4fc250d64359c8 12-13
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/PianoRollContextMenu.spec.tsx
+  s_1052c2a2231ded::t_d24c218ce46501 79-80
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1a18ac462f534834bce41e0cbca9f9c71aaabdfc",
+  "prompts": {},
+  "sessions": {
+    "s_1052c2a2231ded": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b349-24b6-7622-8534-09f171c780d5",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
