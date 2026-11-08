@@ -1,0 +1,56 @@
+src/modules/ContentBrowser/useCases/__tests__/placeLibrarySample.spec.ts
+  s_1052c2a2231ded::t_7a330b511b498a 12-13,59,104,127-128
+  s_1052c2a2231ded::t_0d5489b076d963 141-142,146-149,153-171
+  s_1052c2a2231ded::t_def9d5569db289 143-145,150-152
+src/modules/ContentBrowser/useCases/__tests__/placeLibrarySampleResidency.integration.spec.ts
+  s_1052c2a2231ded::t_f6f2d50c3b2c54 2-3,5-11,13-22,25-34,36-44,46-50,52-55,62-116,118-126,128-145,148-158,198-218,220-228,231-243,245-253,255-259,266-287,289-290,294,305-307,332,353-354,356-361,366-369,373-374,617
+  s_1052c2a2231ded::t_8d9b5a19f70723 299,311-312,315-317,326-327,329-331,351,379,381-387,494-530,534-542,544-585,589-602,606-616
+  s_1052c2a2231ded::t_1ecc2cdb55c801 262-264,425-427,435-438,456-459,531-533,586-588,603-605
+  s_1052c2a2231ded::t_229d970b87e493 362,372,376-378
+  s_1052c2a2231ded::t_2862fec870c93b 1,24,56-61,146-147,219,229-230,260-261,265
+  s_1052c2a2231ded::t_ff904990af6153 4,127
+  s_1052c2a2231ded::t_0afc5531454c95 159-197,313,318-323,340-342,355
+  s_1052c2a2231ded::t_2add240c92c962 388-424,428-434,439-453,455,460-493
+  s_1052c2a2231ded::t_e66b7eaf56cd7b 288,300-304,336-339,352,454,543
+  s_1052c2a2231ded::t_38fcf5d47a6689 12
+  s_1052c2a2231ded::t_4ba5f61a55ee43 23
+  s_1052c2a2231ded::t_ad60f2c0fb2298 35
+  s_1052c2a2231ded::t_f11d4554d9b467 45
+  s_1052c2a2231ded::t_e865840f835e1c 51
+  s_1052c2a2231ded::t_e58f3b9aa78ef9 117
+  s_1052c2a2231ded::t_6a92748392cc7a 244
+  s_1052c2a2231ded::t_734fa467accdaf 254
+  s_1052c2a2231ded::t_fcb1a6ba6f152a 291-293
+  s_1052c2a2231ded::t_ec86a731bebd49 295-298
+  s_1052c2a2231ded::t_3bebe0c75e14fc 308-310
+  s_1052c2a2231ded::t_2dfafe7fdede8a 314
+  s_1052c2a2231ded::t_8bbac219918df1 324-325
+  s_1052c2a2231ded::t_7dc5920fcd7442 328
+  s_1052c2a2231ded::t_c38d4b3b062989 333-335
+  s_1052c2a2231ded::t_73b00a9b3177c3 343-345,348-350
+  s_1052c2a2231ded::t_3878103f429dbd 363-365
+  s_1052c2a2231ded::t_02874c710f050c 370-371
+  s_1052c2a2231ded::t_0d6dc0f9d7a8d5 375
+  s_1052c2a2231ded::t_676c9b593ac298 380
+src/modules/ContentBrowser/useCases/placeLibrarySample.ts
+  s_1052c2a2231ded::t_919b19ee1eb0f6 12,57,167-168,171,190-191,214,241-242,256-258,262,324,330-333,366
+  s_1052c2a2231ded::t_7a330b511b498a 8-11,13-14,323,326-329,365,367
+.agents/skills/review-stances/asset-cache-publication.md
+  s_1052c2a2231ded::t_73109bf21ccee1 72-82
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0b0ac75e5667bf4e58b9288f3dea260a973555da",
+  "prompts": {},
+  "sessions": {
+    "s_1052c2a2231ded": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b349-24b6-7622-8534-09f171c780d5",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
