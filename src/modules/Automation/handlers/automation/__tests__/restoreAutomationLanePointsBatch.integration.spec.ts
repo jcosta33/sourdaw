@@ -2,15 +2,20 @@ import * as Automerge from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { registerProjectSlotProjections } from '#/app/registerProjectSlotProjections';
+import { createEventBus } from '#/infra/events/createEventBus';
 import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
-import { clearHandlerRegistry, macroStore, registerHandlerMap } from '#/modules/Command/stores';
+import { clearHandlerRegistry, macroStore, registerHandlerMap, undoHistoryStore } from '#/modules/Command/stores';
 import {
+    clearUndoHistory,
+    executeAppAction,
     executeAppActionBatch,
+    redo,
     resetActionReplayAuthority,
     setActionHistoryMetadataPort,
+    undo,
 } from '#/modules/Command/useCases';
 import {
     clearActionHistory,
@@ -23,6 +28,12 @@ import {
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
 import { type AppAction } from '#/utils/handlerContract';
+import {
+    type ConfirmPayload,
+    type NotifyPayload,
+    type PromptPayload,
+    setNotificationEventBus,
+} from '#/utils/Notification/notificationEventBus';
 
 import { type AutomationLane, type AutomationPoint } from '../../../models/Automation';
 import { automationStore, type AutomationStoreState } from '../../../stores/automationStore';
@@ -81,6 +92,7 @@ describe('guarded automation point restores through real atomic batches', () => 
         registerProjectSlotProjections();
         clearHandlerRegistry();
         registerHandlerMap(getAutomationHandlers());
+        clearUndoHistory();
         resetActionReplayAuthority();
         setActionHistoryMetadataPort({
             record: recordActionHistoryEntry,
@@ -97,6 +109,7 @@ describe('guarded automation point restores through real atomic batches', () => 
         automationStore.set({ lanes: [] });
         flushAutomergeStorageWrites();
         clearHandlerRegistry();
+        clearUndoHistory();
         resetActionReplayAuthority();
         configureAutomergeStoragePort(null);
         removeCrdtDoc('root');
@@ -139,4 +152,73 @@ describe('guarded automation point restores through real atomic batches', () => 
             expect(Automerge.getHeads(getCrdtDoc('root')!)).toEqual(heads);
         }
     );
+
+    it.each([
+        {
+            type: 'reverseAutomation',
+            forward: [
+                { id: 'right', beat: 1.25, value: 0.625, curve: 'linear', tension: 0 },
+                { id: 'left', beat: 5.5, value: 0.125, curve: 'linear', tension: 0 },
+            ],
+        },
+        {
+            type: 'invertAutomation',
+            forward: [
+                { id: 'left', beat: 1.25, value: 0.875, curve: 'linear', tension: 0 },
+                { id: 'right', beat: 5.5, value: 0.375, curve: 'linear', tension: 0 },
+            ],
+        },
+    ] as const)('replays a normal $type command through exact project state and history', async ({ type, forward }) => {
+        const bus = createEventBus<{
+            'ui.notify': NotifyPayload;
+            'ui.confirm': ConfirmPayload;
+            'ui.prompt': PromptPayload;
+        }>();
+        const notifications: NotifyPayload[] = [];
+        bus.on('ui.notify', (payload) => {
+            notifications.push(payload);
+        });
+        setNotificationEventBus(bus);
+        const points: AutomationPoint[] = [
+            { id: 'left', beat: 1.25, value: 0.125, curve: 'linear', tension: 0 },
+            { id: 'right', beat: 5.5, value: 0.625, curve: 'linear', tension: 0 },
+        ];
+        automationStore.set({ lanes: [{ ...lane('first'), points }, lane('second')] });
+        const before = material().automation;
+        const expected = { lanes: [{ ...before.lanes[0], points: forward }, before.lanes[1]] };
+        const action = { type, payload: { laneId: 'first' } } satisfies AppAction;
+
+        await executeAppAction(action);
+
+        expect(material().automation).toStrictEqual(expected);
+        expect(automationStore.value).toStrictEqual(expected);
+        const entry = undoHistoryStore.value?.past.at(-1);
+        if (!entry || entry.kind !== 'action') {
+            throw new Error('Expected the real transform history entry');
+        }
+        expect(entry).toMatchObject({
+            action,
+            inverseAction: {
+                type: 'restoreAutomationLanePoints',
+                payload: { laneId: 'first', points, expectedPoints: forward },
+            },
+        });
+        expect(undoHistoryStore.value?.past).toEqual([entry]);
+        expect(undoHistoryStore.value?.future).toEqual([]);
+
+        expect(await undo({ stepOverConflicts: false })).toEqual({ headConsumed: true });
+
+        expect(material().automation).toStrictEqual(before);
+        expect(automationStore.value).toStrictEqual(before);
+        expect(undoHistoryStore.value?.past).toEqual([]);
+        expect(undoHistoryStore.value?.future).toEqual([entry]);
+
+        await redo({ stepOverConflicts: false });
+
+        expect(material().automation).toStrictEqual(expected);
+        expect(automationStore.value).toStrictEqual(expected);
+        expect(undoHistoryStore.value?.past).toEqual([entry]);
+        expect(undoHistoryStore.value?.future).toEqual([]);
+        expect(notifications).toEqual([]);
+    });
 });
