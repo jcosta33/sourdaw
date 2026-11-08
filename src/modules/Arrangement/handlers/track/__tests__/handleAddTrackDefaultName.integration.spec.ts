@@ -1,16 +1,18 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { getProductionCommandHandlerMaps } from '#/app/getProductionCommandHandlerMaps';
 import { Container } from '#/infra/di/Container';
 import { createEventBus } from '#/infra/events/createEventBus';
-import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
+import * as automergeStorage from '#/infra/store/storage/createAutomergeStorage';
 import { defaultTrackState, trackStore } from '#/modules/Arrangement/stores';
 import { createTrack, setArrangementEventBus, setTrackStoreState } from '#/modules/Arrangement/useCases';
 import { clearHandlerRegistry } from '#/modules/Command/stores';
 import {
+    captureUndoHistory,
     clearUndoHistory,
     executeAppAction,
     executeAppActionBatch,
+    executeUserAppAction,
     redo,
     registerProductionCommandHandlers,
     resetActionReplayAuthority,
@@ -20,9 +22,11 @@ import {
 import { shortcutStore } from '#/modules/CommandInterface/stores';
 import {
     createCrdtDoc,
+    getCrdtDoc,
     registerCrdtStorageRuntime,
     removeCrdtDoc,
     resetCrdtProjectAuthority,
+    transactSnapshot,
 } from '#/modules/CrdtDocument/useCases';
 
 // Real production handlers, dispatch, CRDT authority and undo history: a
@@ -52,7 +56,7 @@ describe('addTrack default names', () => {
     beforeEach(() => {
         Container.clear();
         setArrangementEventBus(createEventBus<ArrangementTrackEvents>());
-        configureAutomergeStoragePort(null);
+        automergeStorage.configureAutomergeStoragePort(null);
         resetCrdtProjectAuthority('add track default name integration');
         removeCrdtDoc('root');
         createCrdtDoc('root');
@@ -74,7 +78,7 @@ describe('addTrack default names', () => {
         clearHandlerRegistry();
         setTrackStoreState(structuredClone(defaultTrackState));
         Container.clear();
-        configureAutomergeStoragePort(null);
+        automergeStorage.configureAutomergeStoragePort(null);
         removeCrdtDoc('root');
     });
 
@@ -84,6 +88,63 @@ describe('addTrack default names', () => {
         await executeAppAction({ type: 'addTrack', payload: { kind: 'audio' } });
 
         expect(trackNames()).toEqual(['Audio 1', 'Lead', 'MIDI 1', 'MIDI 2', 'Audio 2']);
+    });
+
+    it('numbers overlapping nameless UI additions after both wait at a real snapshot transaction', async () => {
+        automergeStorage.flushAutomergeStorageWrites();
+        const entered = Promise.withResolvers<void>();
+        const held = Promise.withResolvers<void>();
+        const firstWaiting = Promise.withResolvers<void>();
+        const secondWaiting = Promise.withResolvers<void>();
+        const waitForSnapshot = automergeStorage.waitForAutomergeSnapshotTransaction;
+        let admissions = 0;
+        const waitSpy = vi
+            .spyOn(automergeStorage, 'waitForAutomergeSnapshotTransaction')
+            .mockImplementation((transaction) => {
+                admissions += 1;
+                if (admissions === 1) {
+                    firstWaiting.resolve();
+                } else if (admissions === 2) {
+                    secondWaiting.resolve();
+                }
+                return waitForSnapshot(transaction);
+            });
+        const snapshotTransaction = transactSnapshot(async () => {
+            entered.resolve();
+            await held.promise;
+        });
+        await entered.promise;
+        let commands: Promise<void>[] = [];
+        try {
+            commands = [
+                executeUserAppAction({ type: 'addTrack', payload: { kind: 'midi' } }),
+                executeUserAppAction({ type: 'addTrack', payload: { kind: 'midi' } }),
+            ];
+            await Promise.all([firstWaiting.promise, secondWaiting.promise]);
+        } finally {
+            held.resolve();
+            await Promise.allSettled([snapshotTransaction, ...commands]);
+            waitSpy.mockRestore();
+        }
+        await snapshotTransaction;
+        await Promise.all(commands);
+
+        const created = trackStore.value?.tracks.slice(2) ?? [];
+        expect(created).toHaveLength(2);
+        expect(new Set(created.map((track) => track.id)).size).toBe(2);
+        const raw = getCrdtDoc<{ tracks: Pick<NonNullable<typeof trackStore.value>, 'tracks'> }>('root');
+        expect(raw?.tracks.tracks).toEqual(trackStore.value?.tracks);
+        const history = captureUndoHistory();
+        expect(history.past).toHaveLength(2);
+        expect(history.future).toEqual([]);
+        const recorded = history.past.map((entry) => {
+            if (entry.kind !== 'action' || entry.action.type !== 'addTrack') {
+                throw new Error('Expected an actual addTrack history entry for each UI request');
+            }
+            return { id: entry.action.payload.id, name: entry.action.payload.name };
+        });
+        expect(recorded).toEqual(created.map(({ id, name }) => ({ id, name })));
+        expect(created.map((track) => track.name)).toEqual(['MIDI 1', 'MIDI 2']);
     });
 
     it('continues from the highest default number of the kind, counting a bare label as 1', async () => {
