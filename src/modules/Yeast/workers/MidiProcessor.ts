@@ -7,8 +7,8 @@
 
 import { type MidiEvent, type TransportInfo } from '../models/MidiEvent';
 
-import type { YeastPreviewDecisionSink } from './YeastPreviewSidecar';
 import type { YeastProcessorCommand } from '../models/YeastProcessorCommand';
+import type { YeastPreviewDecisionSink } from './YeastPreviewSidecar';
 
 export type MidiProcessorParams = Readonly<Record<string, number>>;
 

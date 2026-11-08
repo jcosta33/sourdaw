@@ -210,7 +210,6 @@ const hostedQuantumMeasurement = parse(
     readFileSync(`${process.env.REPO_ROOT}/.github/workflows/quantum-measurements.yml`, 'utf8')
 );
 const hostedWasm = parse(readFileSync(`${process.env.REPO_ROOT}/.github/workflows/wasm-artifacts.yml`, 'utf8'));
-const prChecks = parse(readFileSync(`${process.env.REPO_ROOT}/.github/workflows/pr-checks.yml`, 'utf8'));
 assertHostedQuantumMeasurementWorkflow(hostedQuantumMeasurement);
 assertHostedWasmWorkflow(hostedWasm);
 const gitleaksHelper = readFileSync(`${process.env.REPO_ROOT}/scripts/run-gitleaks-history-scan.sh`, 'utf8');
@@ -417,7 +416,7 @@ const gateNeeds = gate?.needs ?? [];
 // One entry, because the validation lane is one reusable workflow now. A
 // The reusable validation lane includes its own explicit selected-result
 // summary, so the outer Gate can require one result for that whole lane.
-const expectedGateNeeds = ['admission', 'scope', 'e2e-build', 'validation', 'affected', 'codeql'];
+const expectedGateNeeds = ['scope', 'e2e-build', 'validation', 'affected', 'codeql'];
 const expectedValidationJobs = [
     'decide',
     'static',
@@ -453,21 +452,16 @@ for (const name of ['profile', 'matrix', 'browser', 'browser-ai', 'codeql']) {
 }
 expect(Object.keys(scope?.outputs ?? {}).length === 5, 'required scope must export exactly selected-check outputs');
 const sharedBuild = workflow.jobs?.['e2e-build'];
-expect(sharedBuild?.needs === 'scope' && sharedBuild?.if === '${{ fromJSON(needs.scope.outputs.matrix).include[0] != null }}',
-    'shared E2E build must start after scope and independently of validation');
+expect(sharedBuild?.needs === 'scope' && sharedBuild?.if === '${{ github.event.pull_request.draft == false && needs.scope.result == \'success\' && fromJSON(needs.scope.outputs.matrix || \'{"include":[]}\').include[0] != null }}',
+    'shared E2E build must start after a non-draft scope and independently of validation');
 expect(stepNamed(scope, 'Upload scope manifest')?.with?.path === 'pr-validation-scope.json' &&
     stepNamed(scope, 'Upload scope manifest')?.with?.['if-no-files-found'] === 'error',
     'required scope must publish its manifest or fail');
 
 expect(workflow.name === 'Health gates', 'workflow name must stay Health gates');
-// The central invariant of the split. GitHub counts a check run whose
-// conclusion is `skipped` as satisfying a required status check, and prefers
-// the newest run of that name, so an event that can reach `gate` and skip it
-// mints a passing `Gate` over a red head. A `pull_request_review` trigger did
-// exactly that in production. A labeled `pull_request` is the only event here,
-// it can never skip `gate`, and `gate` fails unless the trusted admission
-// admitted the reviewer App's approval of the exact head. The shared contract
-// holds the whole boundary, including the cheap per-push workflow's lack of Gate.
+// GitHub counts a skipped required check as passing and prefers the newest
+// run of that name. Gate therefore runs on every pull_request event this file
+// answers, including drafts, and fails closed when the pull request is a draft.
 expect(
     JSON.stringify(Object.keys(events ?? {})) === JSON.stringify(['pull_request']),
     'health-gates.yml must answer to pull_request alone, because any other event can skip Gate and a skipped Gate satisfies the required check'
@@ -476,7 +470,6 @@ let approvalGateError;
 try {
     assertApprovalGatedRequiredCheck({
         'health-gates.yml': workflow,
-        'pr-checks.yml': prChecks,
         'validation.yml': validationWorkflow,
         'heavy-gates.yml': heavyWorkflow,
         'nightly.yml': nightly,
@@ -522,7 +515,6 @@ function gateNameViolations(file, jobs) {
     return violations;
 }
 for (const [file, parsed] of [
-    ['pr-checks.yml', prChecks],
     ['validation.yml', validationWorkflow],
     ['heavy-gates.yml', heavyWorkflow],
     ['nightly.yml', nightly],
@@ -577,20 +569,20 @@ expect(workflow.jobs?.validation?.uses === './.github/workflows/validation.yml',
 expect(workflow.jobs?.validation?.needs === 'scope', 'validation must wait for selected scope');
 expect(workflow.jobs?.validation?.with?.browser === "${{ needs.scope.outputs.browser == 'true' }}", 'validation smoke must use selected browser scope');
 expect(workflow.jobs?.validation?.with?.profile === '${{ needs.scope.outputs.profile }}', 'validation must use selected profile');
-expect(workflow.jobs?.validation?.with?.mode === 'full', 'required validation must select full mode');
+expect(workflow.jobs?.validation?.with?.mode === undefined, 'required validation must not select a mode that can skip jobs');
 expect(workflow.jobs?.affected?.uses === './.github/workflows/heavy-gates.yml', 'the PR workflow must call selected browser checks');
 expect(JSON.stringify(workflow.jobs?.affected?.needs) === JSON.stringify(['scope', 'validation', 'e2e-build']),
     'selected browser checks must wait for scope, validation, and the shared producer');
 const affectedAdmission = typeof workflow.jobs?.affected?.if === 'string'
     ? workflow.jobs.affected.if.replace(/\s+/gu, ' ')
     : '';
-expect(affectedAdmission === "${{ !cancelled() && needs.scope.result == 'success' && needs.validation.result == 'success' && ((fromJSON(needs.scope.outputs.matrix).include[0] != null && needs.e2e-build.result == 'success') || (fromJSON(needs.scope.outputs.matrix).include[0] == null && needs.e2e-build.result == 'skipped')) }}",
-    'selected browser checks must admit matching producer results, including the empty-matrix hardware route');
+expect(affectedAdmission === "${{ github.event.pull_request.draft == false && !cancelled() && needs.scope.result == 'success' && needs.validation.result == 'success' && ((fromJSON(needs.scope.outputs.matrix || '{\"include\":[]}').include[0] != null && needs.e2e-build.result == 'success') || (fromJSON(needs.scope.outputs.matrix || '{\"include\":[]}').include[0] == null && needs.e2e-build.result == 'skipped')) }}",
+    'selected browser checks must admit a non-draft matching producer result, including the empty-matrix hardware route');
 expect(workflow.jobs?.affected?.with?.matrix === '${{ needs.scope.outputs.matrix }}', 'selected browser checks must use scope matrix');
 expect(workflow.jobs?.affected?.with?.['browser-ai'] === "${{ needs.scope.outputs.browser-ai == 'true' }}", 'hardware proof must use selected scope');
 expect(
     workflow.jobs?.validation?.if === undefined,
-    'the health validation lane must run on every pull request'
+    'the health validation lane must follow scope with no extra condition'
 );
 expect(
     concurrency?.group === 'health-gates-${{ github.event.pull_request.number }}',
@@ -690,19 +682,19 @@ expect(staticJob?.if === undefined, 'static must stay unconditional so wasm fres
 // proves nothing, and narrowing or dropping one retires the proof while every
 // other pin stays green.
 expect(
-    validationWorkflow.jobs?.build?.if === "inputs.mode == 'full' && (needs.decide.outputs.web == 'true')",
+    validationWorkflow.jobs?.build?.if === "(needs.decide.outputs.web == 'true')",
     'the production build must answer to the web scope alone'
 );
 expect(
-    validationWorkflow.jobs?.rust?.if === "inputs.mode == 'full' && (needs.decide.outputs.rust == 'true' || needs.decide.outputs.server == 'true')",
+    validationWorkflow.jobs?.rust?.if === "(needs.decide.outputs.rust == 'true' || needs.decide.outputs.server == 'true')",
     'the Rust workspace leg must answer to the Rust and server scopes'
 );
 expect(
-    validationWorkflow.jobs?.['native-macos']?.if === "inputs.mode == 'full' && (needs.decide.outputs.rust == 'true')",
+    validationWorkflow.jobs?.['native-macos']?.if === "(needs.decide.outputs.rust == 'true')",
     'the native macOS leg must answer to the Rust scope alone'
 );
 expect(
-    validationWorkflow.jobs?.['native-windows']?.if === "inputs.mode == 'full' && (needs.decide.outputs.rust == 'true')",
+    validationWorkflow.jobs?.['native-windows']?.if === "(needs.decide.outputs.rust == 'true')",
     'the native Windows leg must answer to the Rust scope alone'
 );
 const deviceWriteBoundaryCensusRun =
@@ -1222,7 +1214,6 @@ expect(
 const workflowsByFile = {
     'nightly-evidence-report.yml': parse(readFileSync(`${process.env.REPO_ROOT}/.github/workflows/nightly-evidence-report.yml`, 'utf8')),
     'health-gates.yml': workflow,
-    'pr-checks.yml': prChecks,
     'validation.yml': validationWorkflow,
     'heavy-gates.yml': heavyWorkflow,
     'nightly.yml': nightly,
@@ -1368,7 +1359,6 @@ const requiredResults = (codeql, overrides = {}) => {
     const matrix = overrides.matrix ?? selectedMatrix;
     const build = overrides['e2e-build'] ?? (JSON.parse(matrix).include.length > 0 ? 'success' : 'skipped');
     return JSON.stringify({
-        admission: { result: overrides.admission ?? 'success', outputs: { admitted: 'true' } },
         scope: { result: overrides.scope ?? 'success', outputs: { matrix, browser: 'true', 'browser-ai': 'false', codeql } },
         'e2e-build': { result: build },
         validation: { result: overrides.validation ?? 'success' },
@@ -1379,6 +1369,7 @@ const requiredResults = (codeql, overrides = {}) => {
 const gateStatus = (results) => workflowShellStatus(gateRun, {
     RESULTS: results,
     MATRIX: JSON.parse(results).scope?.outputs?.matrix ?? '',
+    DRAFT: 'false',
 });
 expect(gateStatus(requiredResults('true')) === 0, 'selected CodeQL success and selected E2E build must pass Gate');
 expect(gateStatus(requiredResults('false')) === 0, 'unselected CodeQL skip must pass Gate');
@@ -1403,17 +1394,38 @@ for (const matrix of ['not-json', '{"include":null}', '{"include":[{"id":"1","sp
 const missingBuild = JSON.parse(requiredResults('true'));
 delete missingBuild['e2e-build'];
 expect(gateStatus(JSON.stringify(missingBuild)) !== 0, 'missing shared producer result must fail Gate');
-expect(
-    workflowShellStatus(gateRun, {
+const draftGate = spawnSync('bash', ['-c', gateRun], {
+    cwd: process.env.TEST_TEMP_ROOT,
+    encoding: 'utf8',
+    env: {
+        ...process.env,
+        DRAFT: 'true',
+        MATRIX: '',
         RESULTS: JSON.stringify({
-            admission: { result: 'success', outputs: { admitted: 'false', reason: 'not approved' } },
             scope: { result: 'skipped', outputs: {} },
+            'e2e-build': { result: 'skipped' },
             validation: { result: 'skipped' },
             affected: { result: 'skipped' },
             codeql: { result: 'skipped' },
         }),
-    }) !== 0,
-    'a refused approval admission must fail Gate rather than pass on skipped checks'
+    },
+});
+expect(draftGate.status !== 0 && draftGate.stdout === '::error title=Gate refused::pull request is a draft\n',
+    'a draft must fail Gate rather than pass on skipped checks');
+const passingDraft = spawnSync('bash', ['-c', gateRun], {
+    cwd: process.env.TEST_TEMP_ROOT,
+    encoding: 'utf8',
+    env: {
+        ...process.env,
+        DRAFT: 'true',
+        MATRIX: selectedMatrix,
+        RESULTS: requiredResults('false'),
+    },
+});
+expect(
+    passingDraft.status !== 0 &&
+        passingDraft.stdout === '::error title=Gate refused::pull request is a draft\n',
+    'a draft must fail Gate even when every selected job would pass'
 );
 const browserResults = (e2e, report, hardware) => JSON.stringify({
     e2e: { result: e2e }, 'e2e-report': { result: report },
