@@ -1357,7 +1357,8 @@ function readAgentRunVibeRunBatchSchedule(
         batchSlices.some(
             (slice, index) =>
                 slice.serializedSlice !== plan.batches[index]?.id ||
-                slice.commandCount !== plan.batches[index]?.commandCount
+                slice.commandCount !== plan.batches[index]?.commandCount ||
+                JSON.stringify(slice.targetIds) !== JSON.stringify(plan.batches[index]?.targetIds)
         )
     ) {
         return null;

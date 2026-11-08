@@ -19,6 +19,7 @@ export type CapturedInputEventTime = Readonly<{
     recordingBeat?: number;
     recordingPassIndex?: number;
     recordingAdmissionId?: string;
+    recordingExcluded?: boolean;
 }>;
 
 /**

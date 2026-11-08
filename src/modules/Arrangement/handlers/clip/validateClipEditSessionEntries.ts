@@ -1,6 +1,5 @@
 import { isExactAutomationLaneSnapshots, isExactClipAutomationMoveSnapshots } from '#/modules/Automation/useCases';
 import { decodeMidiClipDataSnapshots, isExactMidiClipDataActionSnapshot } from '#/modules/MIDI/useCases';
-import { hasValidAudioSourceTiles } from '#/utils/audioSourceTime';
 import {
     type AppAction,
     type HandlerSessionActionEntry,
@@ -9,7 +8,6 @@ import {
 import { isRecord, valuesEqual } from '#/utils/structuralEquality';
 
 import { isExactClipSnapshot as isClipSnapshot } from '../../stores/isExactClipSnapshot';
-import { decodeExactTakeLaneSnapshots } from '../../stores/takeLaneStore';
 import { clipSplitSource } from '../../useCases/clipEditing/clipSplitSource';
 import { isClipRestoreOrderSnapshot } from '../../useCases/clipEditing/isClipRestoreOrderSnapshot';
 import { projectClipSplitSourceWindow } from '../../useCases/clipEditing/projectClipSplitSourceWindow';
@@ -18,70 +16,18 @@ import { clipSatelliteStateCodec } from '../../useCases/timeOperations/clipSatel
 import { isReKeyLaneTransition } from '../../useCases/timeOperations/isReKeyLaneTransition';
 import { timeOperationRestorePlan } from '../../useCases/timeOperations/prepareTimeOperationStateRestore';
 import { reverseRestorePlan } from '../../useCases/timeOperations/reverseRestorePlan';
+import { isRetiredTakeLanes } from '../isRetiredTakeLanes';
 
 import { hasFiniteNumbers } from './hasFiniteNumbers';
 import { isClipSplitOrderSnapshot } from './isClipSplitOrderSnapshot';
 import { isRemoveClipSessionPayload } from './isRemoveClipSessionPayload';
 import { splitLeftSourceMatches } from './splitLeftSourceMatches';
 
-import type { TakeLane } from '../../models/TakeLane';
 import type { Clip } from '../../stores/trackStore';
 import type { undoRippleDelete } from '../../useCases/rippleDelete/undoRippleDelete';
 
 function optionalField(value: Record<string, unknown>, key: string, accepts: (field: unknown) => boolean): boolean {
     return !Object.hasOwn(value, key) || value[key] === undefined || accepts(value[key]);
-}
-
-function isRetiredTakeLane(value: unknown, lane: TakeLane, clipId: string, trackId?: string): boolean {
-    if (
-        !isRecord(value) ||
-        typeof value.laneIndex !== 'number' ||
-        !Number.isSafeInteger(value.laneIndex) ||
-        value.laneIndex < 0
-    ) {
-        return false;
-    }
-    if (trackId !== undefined && lane.trackId !== trackId) {
-        return false;
-    }
-    return (
-        optionalField(
-            value,
-            'retiredTakeIds',
-            (ids) =>
-                Array.isArray(ids) &&
-                ids.every(
-                    (id) =>
-                        typeof id === 'string' && lane.takes.some((take) => take.id === id && take.clipId === clipId)
-                )
-        ) &&
-        optionalField(
-            value,
-            'retiredBaseGapAudioSources',
-            (tiles) =>
-                hasValidAudioSourceTiles(tiles) &&
-                tiles.every(
-                    (tile) =>
-                        tile.clipId === clipId && lane.baseGapAudioSources?.some((saved) => valuesEqual(saved, tile))
-                )
-        ) &&
-        Object.keys(value).every((key) =>
-            ['laneIndex', 'lane', 'retiredTakeIds', 'retiredBaseGapAudioSources'].includes(key)
-        )
-    );
-}
-
-function isRetiredTakeLanes(value: unknown, clipId: string, trackId?: string): boolean {
-    if (!Array.isArray(value)) {
-        return false;
-    }
-    const lanes = decodeExactTakeLaneSnapshots(value.map((entry) => (isRecord(entry) ? entry.lane : undefined)));
-    return (
-        lanes !== null &&
-        new Set(lanes.map((lane) => lane.id)).size === lanes.length &&
-        new Set(lanes.map((lane) => lane.trackId)).size === lanes.length &&
-        value.every((entry, index) => isRetiredTakeLane(entry, lanes[index]!, clipId, trackId))
-    );
 }
 
 function isRippleDeleteShift(

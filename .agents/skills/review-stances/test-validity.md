@@ -78,6 +78,17 @@ release and provenance drift in `release-provenance-drift.md`.
    send output larger than pipe capacity through the real CLI and require the complete byte-exact
    body and markers for success and failure, correct channels and exit codes, and prompt exit.
    Check the bounded default failure tail and signal cleanup; restoring forced exit must lose output.
+   Public Enable Audio Warping wrote only a preview Map and declared undo without an inverse:
+   handler commit `7de8489e3a3e857969cc288492bf664063358927` introduced the route, while
+   `f8348057fba44a1a5d91d7b734557e4bbd7baaef` added only mocked delegation assertions. GitHub
+   reports no associated PR for either commit; PR #415 relocated and retained them. Historical
+   private review stances are unestablished. Drive the registered public action with an off-mode
+   audio clip carrying a non-unit ratio, a keeper clip and a prior independent edit. Require raw
+   CRDT and projected clip mode, the real history metadata and inverse, repeated-enable no-op,
+   exact Undo/Redo, and missing/MIDI target non-effects. The resulting real offline playback
+   projection must change rate with enable and Undo. Restoring the preview-only route or dropping
+   the inverse must fail `publicWarpActionsAuthority.integration.spec.ts`; a mock call cannot prove
+   clip enablement, output or reversible project history.
    (#3905, #2648, #1049, #5277, #5339, #4128, #2811, #2083, #5643, #5254, #5247, #5215, #474, #5798, #5565, #5387, #5805)
 
 4. **The oracle is computed by the code under test.**

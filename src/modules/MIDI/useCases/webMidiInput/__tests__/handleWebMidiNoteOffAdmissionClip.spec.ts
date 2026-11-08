@@ -13,6 +13,7 @@ const recording_admission = vi.hoisted(() => ({
 }));
 
 vi.mock('#/modules/Arrangement/useCases', () => ({
+    isRecordingMidiInputExcluded: () => false,
     getRecordingMidiAdmission: recording_admission.get,
     retireRecordingMidiAdmission: recording_admission.retire,
     takeOwnsRecordingRoot: () => true,
@@ -20,6 +21,7 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
 
 vi.mock('../recordingMidiAdmissionPort', () => ({
     recordingMidiAdmissionPort: {
+        isRecordingMidiInputExcluded: () => false,
         getRecordingMidiAdmission: recording_admission.get,
         retireRecordingMidiAdmission: recording_admission.retire,
         takeOwnsRecordingRoot: () => true,

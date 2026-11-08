@@ -34,6 +34,7 @@ const applyNoteExpression = vi.hoisted(() => vi.fn());
 
 vi.mock('../recordingMidiAdmissionPort', () => ({
     recordingMidiAdmissionPort: {
+        isRecordingMidiInputExcluded: () => false,
         admitRecordingMidiNoteOn: () => null,
         admitRecordingMidiNoteOff: () => undefined,
         admitRecordingMidiExpression: () => undefined,
