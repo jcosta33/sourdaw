@@ -1,0 +1,19 @@
+tests/e2e/e2eUtils.ts
+  s_6584878ed83d04::t_657476e832874b 122-124
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "425b47d02c6d52a80cf8047fc049db0ff97b2883",
+  "prompts": {},
+  "sessions": {
+    "s_6584878ed83d04": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "eb8dc258-27ed-45aa-b77a-54b7a029172e",
+        "model": "grok-4.7"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
