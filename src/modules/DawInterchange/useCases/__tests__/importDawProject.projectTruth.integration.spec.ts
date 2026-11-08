@@ -267,7 +267,7 @@ describe('DAWproject import project truth and PCM publication', () => {
             timeSignatureDenominator: 4,
         });
         const document = runtime.crdt.getCrdtDoc('root');
-        expect(document?.tracks).toEqual(JSON.parse(JSON.stringify({ tracks })));
+        expect(document?.tracks).toEqual(structuredClone({ tracks }));
         expect(document).toMatchObject({
             midi: runtime.midi.midiStore.value,
             transport: { tempo: 143, timeSignatureNumerator: 3, timeSignatureDenominator: 4 },
