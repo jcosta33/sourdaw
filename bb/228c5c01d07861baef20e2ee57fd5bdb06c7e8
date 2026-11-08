@@ -1,0 +1,29 @@
+src/modules/Automation/useCases/automationRecording/__tests__/recordedRideAuthority.integration.spec.ts
+  s_1052c2a2231ded::t_bb80caa40cfe37 1-201,203-207,209-230,238,242-245,251-253,271-273,278-279,281-285,287-289
+  s_1052c2a2231ded::t_7a777890685941 240-241,250,254,257-266,280
+  s_1052c2a2231ded::t_d98b0e4cb1364f 202
+  s_1052c2a2231ded::t_288a6e9523ad7d 208
+  s_1052c2a2231ded::t_424655a878834d 231-233,235-237
+  s_1052c2a2231ded::t_d2c41a0421097e 239
+  s_1052c2a2231ded::t_4cb6f19b084529 246-249
+  s_1052c2a2231ded::t_25b2d1d46503f7 255-256
+  s_1052c2a2231ded::t_4e0b06c07b4156 267-270
+  s_1052c2a2231ded::t_0defb7482250d6 274-277
+  s_1052c2a2231ded::t_43396424322739 286
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "bb228c5c01d07861baef20e2ee57fd5bdb06c7e8",
+  "prompts": {},
+  "sessions": {
+    "s_1052c2a2231ded": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b349-24b6-7622-8534-09f171c780d5",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
