@@ -9,6 +9,6 @@
  * re-couple every artifact-list edit there to a reference-machine re-measurement.
  */
 export const wasmToolchainPins = {
-    wasmPack: '0.14.0',
-    wasmOpt: 'bundled-by-wasm-pack@0.14.0',
+    wasmPack: '0.15.1',
+    wasmOpt: 'bundled-by-wasm-pack@0.15.1',
 } as const;

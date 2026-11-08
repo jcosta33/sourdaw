@@ -6,7 +6,7 @@ Assembled records use hash-pinned metadata from the lock-resolved install plus c
 Generation fails when configured records are missing or inconsistent.
 
 Source graph digests:
-- Cargo.lock sha256:48588572a92db3a3dd8c60a1248f3eed04be68131ffe4e43ead0ed7d2381e0b1
+- Cargo.lock sha256:9310e8f1debd75adf4b82f062948457313b89b0a18b02763ba531707344c4010
 - pnpm-lock.yaml sha256:a07f95f0ac0ffa5f351663153c9646a2ad8308b7db8596eed6df345871fdbde6
 - server/package-lock.json sha256:d5943b73cb367ddf580983190df0e0c073383c75ebce9611aefb3340c1a380b7
 
@@ -115,7 +115,7 @@ cargo:jni-min-helper@0.3.4 | MIT OR Apache-2.0 | sha256:d339fd6c8f03bb9f6f22ac5f
 cargo:jni-sys@0.3.1 | MIT OR Apache-2.0 | sha256:1d85bd754b04ceec93e98e890edd1fa3c6a22e81bcb32135806beeccefa51cd1,sha256:c6596eb7be8581c18be736c846fb9173b69eccf6ef94c5135893ec56bd92ba08 | Cargo.lock
 cargo:jni-sys@0.4.1 | MIT OR Apache-2.0 | sha256:1d85bd754b04ceec93e98e890edd1fa3c6a22e81bcb32135806beeccefa51cd1,sha256:c6596eb7be8581c18be736c846fb9173b69eccf6ef94c5135893ec56bd92ba08 | Cargo.lock
 cargo:jni-sys-macros@0.4.1 | MIT OR Apache-2.0 | sha256:a4d5a97bf9b8fef1c7833fef16078944347f0fc6087835933251c937454618a9 | Cargo.lock
-cargo:js-sys@0.3.104 | MIT OR Apache-2.0 | sha256:378f5840b258e2779c39418f3f2d7b2ba96f1c7917dd6be0713f88305dbda397,sha256:a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2 | Cargo.lock
+cargo:js-sys@0.3.107 | MIT OR Apache-2.0 | sha256:378f5840b258e2779c39418f3f2d7b2ba96f1c7917dd6be0713f88305dbda397,sha256:a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2 | Cargo.lock
 cargo:lazy_static@1.5.1 | MIT OR Apache-2.0 | sha256:23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3,sha256:a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2 | Cargo.lock
 cargo:leb128@0.2.7 | MIT OR Apache-2.0 | sha256:7b63ecd5f1902af1b63729947373683c32745c16a10e8e6292e2e2dcd7e90ae0,sha256:a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2 | Cargo.lock
 cargo:libc@0.2.191 | MIT OR Apache-2.0 | sha256:123a331b5dbf04c30097fa43b8f858bc85df671fe776de498d01f3d6b7c1f69e,sha256:62c7a1e35f56406896d7aa7ca52d0cc0d272ac022b5d2796e7d6905db8a3636a | Cargo.lock
@@ -208,7 +208,7 @@ cargo:sha2@0.11.1 | MIT OR Apache-2.0 | sha256:831e0f43ad0bf014c1c4fec5767aae470
 cargo:simd_cesu8@1.2.0 | Apache-2.0 OR MIT | sha256:23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3,sha256:a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2 | Cargo.lock
 cargo:simdutf8@0.1.5 | MIT OR Apache-2.0 | sha256:0cec06e0e55fbc3dc5cee4fca9b607f66cb8f4e4dbcf3b3c013594dd156732e9,sha256:1847e0e0698142ed4347c1441a9fa81c8fbddd44b1d8bbcd5e3647f991759d7f | Cargo.lock
 cargo:slab@0.4.12 | MIT | sha256:8ce0830173fdac609dfb4ea603fdc002c2f4af0dc9b1a005653f5da9cf534b18 | Cargo.lock
-cargo:smallvec@1.16.4 | MIT OR Apache-2.0 | sha256:0b28172679e0009b655da42797c03fd163a3379d5cfa67ba1f1655e974a2a1a9,sha256:a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2 | Cargo.lock
+cargo:smallvec@1.16.5 | MIT OR Apache-2.0 | sha256:0b28172679e0009b655da42797c03fd163a3379d5cfa67ba1f1655e974a2a1a9,sha256:a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2 | Cargo.lock
 cargo:smol_str@0.3.7 | MIT OR Apache-2.0 | sha256:23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3,sha256:a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2 | Cargo.lock
 cargo:socket-pktinfo@0.4.1 | MIT | sha256:1ea20122ffdda9e68f47eb121b811011757f332d41d97f610ea91c598beff733 | Cargo.lock
 cargo:socket2@0.6.5 | MIT OR Apache-2.0 | sha256:378f5840b258e2779c39418f3f2d7b2ba96f1c7917dd6be0713f88305dbda397,sha256:a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2 | Cargo.lock
@@ -259,7 +259,7 @@ cargo:tracing@0.1.44 | MIT | sha256:898b1ae9821e98daf8964c8d6c7f61641f5f5aa78ad5
 cargo:tracing-attributes@0.1.31 | MIT | sha256:898b1ae9821e98daf8964c8d6c7f61641f5f5aa78ad500020771c0939ee0dea1 | Cargo.lock
 cargo:tracing-core@0.1.36 | MIT | sha256:58545fed1565e42d687aecec6897d35c6d37ccb71479a137c0deb2203e125c79,sha256:898b1ae9821e98daf8964c8d6c7f61641f5f5aa78ad500020771c0939ee0dea1 | Cargo.lock
 cargo:transpose@0.2.3 | MIT OR Apache-2.0 | sha256:5080149357fd0be590bdc10cf92165412bb4d61ce496284d56f2d12874ae3121,sha256:8797ef61538ec5ee9222ebef7ca4e0f3ec5761b145ca9943d358c450efb644dd | Cargo.lock
-cargo:triple_buffer@9.0.0 | MPL-2.0 | sha256:4b89d4518bd135ab4ee154a7bce722246b57a98c3d7efc1a09409898160c2bd1 | Cargo.lock
+cargo:triple_buffer@9.0.1 | MPL-2.0 | sha256:4b89d4518bd135ab4ee154a7bce722246b57a98c3d7efc1a09409898160c2bd1 | Cargo.lock
 cargo:try-lock@0.2.5 | MIT | sha256:c816a0749cdc6bf062a5111c159723de51b2bfac66a1dac2655abd9e6b1583eb | Cargo.lock
 cargo:typenum@1.20.1 | MIT OR Apache-2.0 | sha256:516b24e051bf5630880ebbd55c40a25ce9552ebaf8970a53e8976eb70e522406,sha256:a825bd853ab71619a4923d7b4311221427848070ff44d990da39b0b274c1683f,sha256:db11fec9946737df39ca3898d9cd8c10ec6f6c3a884a6802b0ad0b81b4e8f23a | Cargo.lock
 cargo:unicode-ident@1.0.27 | (MIT OR Apache-2.0) AND Unicode-3.0 | sha256:23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3,sha256:62c7a1e35f56406896d7aa7ca52d0cc0d272ac022b5d2796e7d6905db8a3636a,sha256:f7db81051789b729fea528a63ec4c938fdcb93d9d61d97dc8cc2e9df6d47f2a1 | Cargo.lock
@@ -268,18 +268,18 @@ cargo:untrusted@0.9.0 | ISC | sha256:7abd9b6960dcf7d4d0a48606a5b71bfe37d472db68d
 cargo:url@2.5.8 | MIT OR Apache-2.0 | sha256:a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2,sha256:b38f11f6096706e6de553dabe2a7ed142d59b6fa8c97e290c67496154745cdd5 | Cargo.lock
 cargo:utf8_iter@1.1.0 | Apache-2.0 OR MIT | sha256:3fa4ca83dcc9237839b1bdeb2e6d16bdfb5ec0c5ce42b24694d8bbf0dcbef72c,sha256:c30152c94a6d75e021adbc52b3a52470366a46edb917e17deae3259251af244c,sha256:cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30 | Cargo.lock
 cargo:utf_types@1.0.0 | Apache-2.0 OR MIT | sha256:3210be7332b5bdf48eb24a945258b9f38616a2cceb0dfc06e3c3c7e9740475a0,sha256:3fa4ca83dcc9237839b1bdeb2e6d16bdfb5ec0c5ce42b24694d8bbf0dcbef72c,sha256:cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30 | Cargo.lock
-cargo:uuid@1.29.0 | Apache-2.0 OR MIT | sha256:436bc5a105d8e57dcd8778730f3754f7bf39c14d2f530e4cde4bd2d17a83ec3d,sha256:a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2 | Cargo.lock
+cargo:uuid@1.29.1 | Apache-2.0 OR MIT | sha256:436bc5a105d8e57dcd8778730f3754f7bf39c14d2f530e4cde4bd2d17a83ec3d,sha256:a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2 | Cargo.lock
 cargo:visibility@0.1.1 | Zlib OR MIT OR Apache-2.0 | sha256:23f99ac423f5950bbd814d05e77e5e7be5183903133f3938be2a313cb8070205,sha256:50d26cd90660ea5dfca5db399824028bca4eda4ee5be5d50a1b0be573936cabe,sha256:b405b5dbae5d4473f5f932af2b5d47df6114036a0b1382d9f6c411a62b71a547,sha256:b72b2d40a984de67680d4b874dea846f5e389599bbe495b22f63e87c6f1d5f0c | Cargo.lock
 cargo:vst3@0.3.0 | MIT OR Apache-2.0 | sha256:0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594,sha256:23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3 | Cargo.lock
 cargo:want@0.3.2 | MIT | sha256:a65f5d0a945d267751344c95665945b90c030ea107faf5c85d518929886187da | Cargo.lock
 cargo:wasi@0.11.1+wasi-snapshot-preview1 | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT | sha256:23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3,sha256:268872b9816f90fd8e85db5a28d33f8150ebb8dd016653fb39ef1f94f2686bc5,sha256:a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2 | Cargo.lock
-cargo:wasm-bindgen@0.2.127 | MIT OR Apache-2.0 | sha256:378f5840b258e2779c39418f3f2d7b2ba96f1c7917dd6be0713f88305dbda397,sha256:a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2 | Cargo.lock
-cargo:wasm-bindgen-futures@0.4.77 | MIT OR Apache-2.0 | sha256:378f5840b258e2779c39418f3f2d7b2ba96f1c7917dd6be0713f88305dbda397,sha256:a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2 | Cargo.lock
-cargo:wasm-bindgen-macro@0.2.127 | MIT OR Apache-2.0 | sha256:378f5840b258e2779c39418f3f2d7b2ba96f1c7917dd6be0713f88305dbda397,sha256:a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2 | Cargo.lock
-cargo:wasm-bindgen-macro-support@0.2.127 | MIT OR Apache-2.0 | sha256:378f5840b258e2779c39418f3f2d7b2ba96f1c7917dd6be0713f88305dbda397,sha256:a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2 | Cargo.lock
-cargo:wasm-bindgen-shared@0.2.127 | MIT OR Apache-2.0 | sha256:378f5840b258e2779c39418f3f2d7b2ba96f1c7917dd6be0713f88305dbda397,sha256:a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2 | Cargo.lock
+cargo:wasm-bindgen@0.2.130 | MIT OR Apache-2.0 | sha256:378f5840b258e2779c39418f3f2d7b2ba96f1c7917dd6be0713f88305dbda397,sha256:a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2 | Cargo.lock
+cargo:wasm-bindgen-futures@0.4.80 | MIT OR Apache-2.0 | sha256:378f5840b258e2779c39418f3f2d7b2ba96f1c7917dd6be0713f88305dbda397,sha256:a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2 | Cargo.lock
+cargo:wasm-bindgen-macro@0.2.130 | MIT OR Apache-2.0 | sha256:378f5840b258e2779c39418f3f2d7b2ba96f1c7917dd6be0713f88305dbda397,sha256:a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2 | Cargo.lock
+cargo:wasm-bindgen-macro-support@0.2.130 | MIT OR Apache-2.0 | sha256:378f5840b258e2779c39418f3f2d7b2ba96f1c7917dd6be0713f88305dbda397,sha256:a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2 | Cargo.lock
+cargo:wasm-bindgen-shared@0.2.130 | MIT OR Apache-2.0 | sha256:378f5840b258e2779c39418f3f2d7b2ba96f1c7917dd6be0713f88305dbda397,sha256:a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2 | Cargo.lock
 cargo:wasm-streams@0.5.0 | MIT OR Apache-2.0 | sha256:23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3,sha256:62c7a1e35f56406896d7aa7ca52d0cc0d272ac022b5d2796e7d6905db8a3636a | Cargo.lock
-cargo:web-sys@0.3.104 | MIT OR Apache-2.0 | sha256:378f5840b258e2779c39418f3f2d7b2ba96f1c7917dd6be0713f88305dbda397,sha256:a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2 | Cargo.lock
+cargo:web-sys@0.3.107 | MIT OR Apache-2.0 | sha256:378f5840b258e2779c39418f3f2d7b2ba96f1c7917dd6be0713f88305dbda397,sha256:a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2 | Cargo.lock
 cargo:web-time@1.1.0 | MIT OR Apache-2.0 | sha256:54a744942eb3fa63a74d8d359989ed6962c04f3f10ff20cfa08ff8aa7efbe4e6,sha256:f428305bbf2e70fbd807af0f3c7ac1b7acfb95311640f451e9d2e48db6d7e96b | Cargo.lock
 cargo:webpki-root-certs@1.0.11 | CDLA-Permissive-2.0 | sha256:e271993808fec50ab29350b39539cdec611a9103f827e0aa26d61da70e2d33f8 | Cargo.lock
 cargo:whisper-rs@0.16.0 | Unlicense | sha256:f0510d3b9d1223c45e8fdd2b49270ec8734fff491c7f7d1b948ee70162e1ceff | Cargo.lock
@@ -1630,7 +1630,7 @@ SOFTWARE.
 ===== sha256:0b28172679e0009b655da42797c03fd163a3379d5cfa67ba1f1655e974a2a1a9 =====
 Evidence labels: LICENSE-MIT
 Packages:
-- cargo:smallvec@1.16.4
+- cargo:smallvec@1.16.5
 
 Copyright (c) 2018 The Servo Project Developers
 
@@ -7571,15 +7571,15 @@ USE OR OTHER DEALINGS IN THE SOFTWARE.
 Evidence labels: LICENSE-MIT
 Packages:
 - cargo:cfg-if@1.0.5
-- cargo:js-sys@0.3.104
+- cargo:js-sys@0.3.107
 - cargo:openssl-probe@0.2.2
 - cargo:socket2@0.6.5
-- cargo:wasm-bindgen-futures@0.4.77
-- cargo:wasm-bindgen-macro-support@0.2.127
-- cargo:wasm-bindgen-macro@0.2.127
-- cargo:wasm-bindgen-shared@0.2.127
-- cargo:wasm-bindgen@0.2.127
-- cargo:web-sys@0.3.104
+- cargo:wasm-bindgen-futures@0.4.80
+- cargo:wasm-bindgen-macro-support@0.2.130
+- cargo:wasm-bindgen-macro@0.2.130
+- cargo:wasm-bindgen-shared@0.2.130
+- cargo:wasm-bindgen@0.2.130
+- cargo:web-sys@0.3.107
 
 Copyright (c) 2014 Alex Crichton
 
@@ -8480,7 +8480,7 @@ DEALINGS IN THE SOFTWARE.
 ===== sha256:436bc5a105d8e57dcd8778730f3754f7bf39c14d2f530e4cde4bd2d17a83ec3d =====
 Evidence labels: LICENSE-MIT
 Packages:
-- cargo:uuid@1.29.0
+- cargo:uuid@1.29.1
 
 Copyright (c) 2014 The Rust Project Developers
 Copyright (c) 2018 Ashley Mannix, Christopher Armstrong, Dylan DPC, Hunar Roop Kahlon
@@ -9688,7 +9688,7 @@ SOFTWARE.
 ===== sha256:4b89d4518bd135ab4ee154a7bce722246b57a98c3d7efc1a09409898160c2bd1 =====
 Evidence labels: LICENSE
 Packages:
-- cargo:triple_buffer@9.0.0
+- cargo:triple_buffer@9.0.1
 
 Mozilla Public License Version 2.0
 ==================================
@@ -20394,7 +20394,7 @@ Packages:
 - cargo:indexmap@2.14.2
 - cargo:itertools@0.15.0
 - cargo:jni@0.21.1
-- cargo:js-sys@0.3.104
+- cargo:js-sys@0.3.107
 - cargo:lazy_static@1.5.1
 - cargo:leb128@0.2.7
 - cargo:lock_api@0.4.14
@@ -20419,7 +20419,7 @@ Packages:
 - cargo:security-framework-sys@2.17.0
 - cargo:security-framework@3.7.0
 - cargo:simd_cesu8@1.2.0
-- cargo:smallvec@1.16.4
+- cargo:smallvec@1.16.5
 - cargo:smol_str@0.3.7
 - cargo:socket2@0.6.5
 - cargo:stable_deref_trait@1.2.1
@@ -20427,14 +20427,14 @@ Packages:
 - cargo:system-configuration@0.7.0
 - cargo:unicode-segmentation@1.13.3
 - cargo:url@2.5.8
-- cargo:uuid@1.29.0
+- cargo:uuid@1.29.1
 - cargo:wasi@0.11.1+wasi-snapshot-preview1
-- cargo:wasm-bindgen-futures@0.4.77
-- cargo:wasm-bindgen-macro-support@0.2.127
-- cargo:wasm-bindgen-macro@0.2.127
-- cargo:wasm-bindgen-shared@0.2.127
-- cargo:wasm-bindgen@0.2.127
-- cargo:web-sys@0.3.104
+- cargo:wasm-bindgen-futures@0.4.80
+- cargo:wasm-bindgen-macro-support@0.2.130
+- cargo:wasm-bindgen-macro@0.2.130
+- cargo:wasm-bindgen-shared@0.2.130
+- cargo:wasm-bindgen@0.2.130
+- cargo:web-sys@0.3.107
 
                               Apache License
                         Version 2.0, January 2004
