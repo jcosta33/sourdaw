@@ -69,3 +69,14 @@ from the `state-and-write-paths` skill.
    transient; its public review reported permanent-absence/deadline attacks. Inject one null read result for
    a real cached buffer, then permit subsequent actual reads: the case must fail at that first missing source.
    Permanent absence alone cannot expose this masking. Historical private prompts and reviewer tiers are unknown.
+   Browser sample rows can also outlive runtime residency before the placement gesture. #4045 (`e4212599d4`)
+   introduced imported-buffer-ID drops through a cache-only lookup; #6287 kept that lookup when sharing click
+   and drop placement. Evict a real imported stereo source while its stored or pending-session PCM remains,
+   then place through the registered Command and verify the same ID, exact runtime Float32 channels, the actual
+   staged WAV's quantized samples and hash, raw/projected state and Undo/Redo. A preview control's Stop label
+   is insufficient when a cache miss substitutes a tone. Restore the original through the existing scoped
+   storage read, hold it until placement commits or aborts, and prove release after the real clip owner retires.
+   The library-file fallback creates another decoded UUID: retain that ID before its cache write too. Revoke
+   project authority during restoration and factory lookup; neither late completion may stage through the new
+   project's global asset owner. The missed probe is eviction before the gesture plus pressure during staging
+   and commit admission, not a longer UI wait. The original CI evictor and historical review prompts are unknown.

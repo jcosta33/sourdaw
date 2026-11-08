@@ -5,7 +5,13 @@ import {
     retainedCreation,
     stageClipAudioAsset,
 } from '#/modules/Arrangement/useCases';
-import { decodeAudioFile, discardDecodedAudioFile, getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
+import {
+    decodeAudioFile,
+    discardDecodedAudioFile,
+    getCachedAudioBuffer,
+    openCachedAudioBufferHold,
+    restoreUnpinnedAudioBuffersFromIdb,
+} from '#/modules/AudioEngine/useCases';
 import { getAssetTransfer } from '#/modules/Collaboration/useCases';
 import { executeAppActionBatch } from '#/modules/Command/useCases';
 import {
@@ -48,6 +54,7 @@ const BATCH_NAMING: Record<PlaceLibrarySampleInput['origin'], { groupIdPrefix: s
 type CreationBatchAction = Parameters<typeof executeAppActionBatch>[0][number];
 type AssetTransfer = ReturnType<typeof getAssetTransfer>;
 type Authority = PlaceLibrarySampleInput['authority'];
+type AudioHold = ReturnType<typeof openCachedAudioBufferHold>;
 
 /** A sample made ready to place: its audio, length, and the resources held until the clip commits or fails. */
 type PreparedSample = {
@@ -157,10 +164,11 @@ async function decodeLibraryFile(
     sample: LibrarySamplePayload,
     file: File,
     authority: Authority,
-    readTempo: () => number
+    readTempo: () => number,
+    hold: AudioHold
 ): Promise<PreparedSample | null> {
     try {
-        const result = await decodeAudioFile(file);
+        const result = await decodeAudioFile(file, hold);
         return {
             audioBufferId: result.id,
             decodedAudioBufferId: result.id,
@@ -179,7 +187,8 @@ async function prepareLibraryFileSample(
     sample: LibrarySamplePayload,
     authority: Authority,
     assetTransfer: AssetTransfer,
-    readTempo: () => number
+    readTempo: () => number,
+    hold: AudioHold
 ): Promise<Preparation> {
     if (!sample.libraryRootId || !sample.path) {
         notifyIfCurrent(authority, `Could not access "${sample.name}" — audio buffer is not available.`);
@@ -202,7 +211,7 @@ async function prepareLibraryFileSample(
             return ABANDONED;
         }
         const { file } = resolvedSampleFile;
-        const decoded = await decodeLibraryFile(sample, file, authority, readTempo);
+        const decoded = await decodeLibraryFile(sample, file, authority, readTempo, hold);
         if (!decoded) {
             return ABANDONED;
         }
@@ -229,7 +238,8 @@ async function prepareSample(
     sample: LibrarySamplePayload,
     authority: Authority,
     assetTransfer: AssetTransfer,
-    readTempo: () => number
+    readTempo: () => number,
+    hold: AudioHold
 ): Promise<Preparation> {
     const candidateBufferId = sample.audioBufferId ?? sample.id;
     let cachedBuffer = getCachedAudioBuffer({ bufferId: candidateBufferId });
@@ -243,10 +253,13 @@ async function prepareSample(
             cachedBuffer = factoryBuffer.buffer;
         }
     }
+    if (!authority.isCurrent()) {
+        return ABANDONED;
+    }
     if (cachedBuffer) {
         return prepareCachedSample(sample, candidateBufferId, cachedBuffer, authority, readTempo);
     }
-    return prepareLibraryFileSample(sample, authority, assetTransfer, readTempo);
+    return prepareLibraryFileSample(sample, authority, assetTransfer, readTempo, hold);
 }
 
 function buildPlacementActions(
@@ -307,8 +320,17 @@ export async function placeLibrarySample({
     const assetTransfer = getAssetTransfer();
     let prepared: PreparedSample | null = null;
     let committed = false;
+    let releaseAudio: (() => void) | undefined;
+    const decodeHold = openCachedAudioBufferHold();
     try {
-        const preparation = await prepareSample(sample, authority, assetTransfer, readTempo);
+        const restored = await restoreUnpinnedAudioBuffersFromIdb({
+            bufferIds: [sample.audioBufferId ?? sample.id],
+        });
+        releaseAudio = restored.release;
+        if (!authority.isCurrent()) {
+            return;
+        }
+        const preparation = await prepareSample(sample, authority, assetTransfer, readTempo, decodeHold);
         if (preparation.status === 'abandoned') {
             return;
         }
@@ -340,5 +362,8 @@ export async function placeLibrarySample({
             releasePrepared(prepared, assetTransfer);
         }
         notifyIfCurrent(authority, LIBRARY_SAMPLE_MALFORMED_MESSAGE);
+    } finally {
+        decodeHold.release();
+        releaseAudio?.();
     }
 }
