@@ -1,0 +1,29 @@
+src/modules/AiRuntime/useCases/agentReference/proposalCommandShape.ts
+  s_68423a2adea8d2::t_67c053670d6e09 365-383,389
+src/modules/AiRuntime/useCases/agentReference/__tests__/plainTempoClipProtection.spec.ts
+  s_68423a2adea8d2::t_7d0af036635df3 400-430
+  s_68423a2adea8d2::t_01f8a9645c8bae 230,306-314,316
+  s_68423a2adea8d2::t_408157df27c23a 136-227
+  s_68423a2adea8d2::t_643e6641b6c252 109,228,231,237-282,288-305,315,317-399,431-487
+  s_68423a2adea8d2::t_85fec94458df98 283-287
+  s_68423a2adea8d2::t_13dedaec02be73 106-108
+  s_68423a2adea8d2::t_eee09cd6f02715 110-112,133-135
+  s_68423a2adea8d2::t_2fd98edcde25b9 229
+  s_68423a2adea8d2::t_9fa34caab754ed 232-236
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c75e12a53ae56498484d6075be213e36d54cbdad",
+  "prompts": {},
+  "sessions": {
+    "s_68423a2adea8d2": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34b-f305-7c03-beb2-57afa678cda5",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
