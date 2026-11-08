@@ -1,0 +1,20 @@
+src/modules/Command/useCases/__tests__/commandBatchPreflightSave.spec.ts
+  s_68423a2adea8d2::t_7fdfd9f0e6afe1 34
+  s_68423a2adea8d2::t_f9093280ee8ea3 29
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "6c1097b5f5d252aaf86b03fbe4661e296b9efe59",
+  "prompts": {},
+  "sessions": {
+    "s_68423a2adea8d2": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34b-f305-7c03-beb2-57afa678cda5",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
