@@ -1,0 +1,20 @@
+scripts/__tests__/agentDeliveryScripts.spec.ts
+  h_beb54bf43b47b7 1163,1316
+scripts/__tests__/e2eServerIdentity.spec.ts
+  h_beb54bf43b47b7 24-29
+scripts/e2eServerIdentity.ts
+  h_beb54bf43b47b7 3-4
+scripts/trustedGithubWriteBootstrap.ts
+  h_beb54bf43b47b7 181
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "118ad7fc5e1b61e8c1347c34718844aee3049ecf",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
