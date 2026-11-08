@@ -1,0 +1,20 @@
+src/modules/Arrangement/presentations/hooks/__tests__/useTimelineFileDrop.spec.tsx
+  s_1052c2a2231ded::t_ab741fa8cbb20f 161-165,639-642,692-695,1490-1492,1508-1514,1519-1525
+  s_1052c2a2231ded::t_4d999aef25d1cb 1465
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2751097005614aa6cb91bfce078b60b7fc95afdc",
+  "prompts": {},
+  "sessions": {
+    "s_1052c2a2231ded": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b349-24b6-7622-8534-09f171c780d5",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
