@@ -1085,6 +1085,7 @@ jobs:
           gitleaks_url="https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
 
           curl --fail --location --proto '=https' --tlsv1.2 --silent --show-error \
+            --retry 3 --retry-max-time 120 --connect-timeout 10 --max-time 60 \
             --output "$gitleaks_archive" \
             "$gitleaks_url"
           printf '%s  %s\n' "$GITLEAKS_SHA256" "$gitleaks_archive" | sha256sum --check --status
