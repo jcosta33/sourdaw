@@ -1,34 +1,19 @@
 /**
- * The approval-gated boundary of the required `Gate`, shared by both health-gate harnesses (the
- * vitest spec and the shell harness). Pushes run only `pr-checks.yml`; `health-gates.yml` mints
- * `Gate` from labeled `pull_request` events, and `scripts/ciApprovalAdmission.ts`, run from the
- * default branch, admits only the reviewer App's approval label on its approval of the exact head.
+ * The required `Gate` boundary, shared by both health-gate harnesses. `health-gates.yml` mints
+ * `Gate` from pull-request events that open, update, reopen, or change draft state. Heavy checks
+ * run only for a non-draft pull request. `Gate` always runs and fails for a draft, a cancellation,
+ * or a failed selected check, because GitHub treats a skipped required check as passing.
  */
 
 export const REQUIRED_CHECK_NAME = 'Gate';
-export const HEALTH_GATES_EVENTS = { pull_request: { types: ['labeled'] } } as const;
-export const PR_CHECKS_EVENTS = {
-    pull_request: { types: ['opened', 'synchronize', 'reopened', 'ready_for_review'] },
+export const HEALTH_GATES_EVENTS = {
+    pull_request: { types: ['opened', 'synchronize', 'reopened', 'ready_for_review', 'converted_to_draft'] },
 } as const;
 export const GATE_CONDITION = '${{ always() }}';
 export const GATE_STEP = 'Require selected checks to succeed';
-export const ADMITTED_CONDITION = "needs.admission.outputs.admitted == 'true'";
-export const ADMISSION_GATE_CLAUSE = '.admission.result == "success" and .admission.outputs.admitted == "true"';
-export const ADMISSION_CHECKOUT = {
-    ref: '${{ github.event.repository.default_branch }}',
-    path: 'trusted',
-    'sparse-checkout': 'scripts',
-    'persist-credentials': false,
-} as const;
-export const ADMISSION_DECISION_RUN = 'node trusted/scripts/ciApprovalAdmission.ts';
-export const ADMISSION_DECISION_ENV = {
-    REVIEWS_PATH: '${{ runner.temp }}/reviews.json',
-    HEAD_SHA: '${{ github.event.pull_request.head.sha }}',
-    LABEL_NAME: '${{ github.event.label.name }}',
-    SENDER_NODE_ID: '${{ github.event.sender.node_id }}',
-} as const;
-export const ADMISSION_REVIEWS_RUN =
-    'gh api --paginate --slurp "repos/$REPOSITORY/pulls/$NUMBER/reviews" > "$RUNNER_TEMP/reviews.json"';
+export const NON_DRAFT_CONDITION = 'github.event.pull_request.draft == false';
+export const DRAFT_GATE_CLAUSE = 'pull request is a draft';
+export const GATE_DRAFT_ENV = '${{ github.event.pull_request.draft }}';
 
 type WorkflowRecord = Record<string, unknown>;
 
@@ -69,83 +54,64 @@ function assertGateCannotSkip(gate: WorkflowRecord): void {
         throw new Error('Gate must run after cancellation');
     }
     const needs = Array.isArray(gate.needs) ? gate.needs : [];
-    if (needs[0] !== 'admission' || typeof step.run !== 'string' || !step.run.includes(ADMISSION_GATE_CLAUSE)) {
-        throw new Error('Gate must fail unless approval admission admitted the head');
+    const run = typeof step.run === 'string' ? step.run : '';
+    if (needs.includes('admission') || run.includes('.admission.') || !run.includes(DRAFT_GATE_CLAUSE)) {
+        throw new Error('Gate must fail when the pull request is a draft');
+    }
+    const env = asWorkflowRecord(step.env, 'gate env');
+    if (env.DRAFT !== GATE_DRAFT_ENV) {
+        throw new Error('Gate must read the event draft flag');
+    }
+    for (const job of ['scope', 'e2e-build', 'validation', 'affected', 'codeql']) {
+        if (!needs.includes(job)) {
+            throw new Error('Gate must fail unless the selected checks succeeded');
+        }
     }
 }
 
-function assertTrustedAdmission(admission: WorkflowRecord): void {
-    for (const softening of ['if', 'continue-on-error', 'permissions', 'needs']) {
-        if (admission[softening] !== undefined) {
-            throw new Error(`approval admission must not declare ${softening}`);
+function assertNonDraftHeavyChecks(jobs: WorkflowRecord): void {
+    const scope = asWorkflowRecord(jobs.scope, 'scope');
+    if (scope.if !== NON_DRAFT_CONDITION || scope['continue-on-error'] !== undefined) {
+        throw new Error('the heavy checks must run only for a non-draft pull request');
+    }
+    for (const [jobId, job] of Object.entries(jobs)) {
+        if (jobId === 'scope' || jobId === 'gate') {
+            continue;
         }
-    }
-    if (!sameValue(namedStep(admission, 'Checkout trusted admission', 'admission').with, ADMISSION_CHECKOUT)) {
-        throw new Error('approval admission must decide from the default branch, never the candidate head');
-    }
-    const reviews = namedStep(admission, 'Read reviews', 'admission');
-    if (
-        reviews.run !== ADMISSION_REVIEWS_RUN ||
-        !sameValue(reviews.env, {
-            GH_TOKEN: '${{ github.token }}',
-            REPOSITORY: '${{ github.repository }}',
-            NUMBER: '${{ github.event.pull_request.number }}',
-        })
-    ) {
-        throw new Error('approval admission must read every review of this pull request');
-    }
-    const decide = namedStep(admission, 'Decide admission', 'admission');
-    if (
-        decide.id !== 'decide' ||
-        decide.run !== ADMISSION_DECISION_RUN ||
-        !sameValue(decide.env, ADMISSION_DECISION_ENV)
-    ) {
-        throw new Error('approval admission must decide on the event head, label and sender with the trusted script');
-    }
-    if (
-        !sameValue(admission.outputs, {
-            admitted: '${{ steps.decide.outputs.admitted }}',
-            reason: '${{ steps.decide.outputs.reason }}',
-        })
-    ) {
-        throw new Error('approval admission must export its decision and reason');
+        const record = asWorkflowRecord(job, jobId);
+        const needs = record.needs;
+        const waitsForScope = needs === 'scope' || (Array.isArray(needs) && needs.includes('scope'));
+        if (!waitsForScope) {
+            throw new Error(`health-gates.yml job ${jobId} must wait for the non-draft scope`);
+        }
+        if (jobId === 'e2e-build' || jobId === 'affected') {
+            const condition = typeof record.if === 'string' ? record.if : '';
+            if (!condition.includes(NON_DRAFT_CONDITION)) {
+                throw new Error('the heavy checks must run only for a non-draft pull request');
+            }
+        }
     }
 }
 
 /**
- * The approval-gated boundary of the required check. GitHub counts a `skipped` conclusion as
- * satisfying a required check and prefers the newest run of its name, so: only a labeled
- * `pull_request` run of `health-gates.yml` may mint `Gate`; `Gate` always runs and fails unless
- * the trusted admission admitted the event's exact head; every other job waits for that admission;
- * and the cheap per-push workflow, like every other file, mints no `Gate`.
+ * The required-check boundary. GitHub counts a `skipped` conclusion as satisfying a required check
+ * and prefers the newest run of its name, so: only a pull_request run of `health-gates.yml` may
+ * mint `Gate`; `Gate` always runs and fails for a draft; every heavy job waits for the non-draft
+ * scope; and no other workflow mints `Gate`.
  */
 export function assertApprovalGatedRequiredCheck(workflows: Readonly<Record<string, unknown>>): void {
+    if (workflows['pr-checks.yml'] !== undefined) {
+        throw new Error('pr-checks.yml must not exist; pull-request CI is health-gates.yml');
+    }
     const health = asWorkflowRecord(workflows['health-gates.yml'], 'health-gates.yml');
     if (!sameValue(health.on, HEALTH_GATES_EVENTS)) {
         throw new Error(
-            'health-gates.yml must answer to labeled pull_request events alone, or a skipped Gate can satisfy the required check'
+            'health-gates.yml must answer to pull_request open, push, reopen, and draft-state events alone, or a skipped Gate can satisfy the required check'
         );
     }
     const jobs = workflowJobs(health, 'health-gates.yml');
     assertGateCannotSkip(asWorkflowRecord(jobs.gate, 'gate'));
-    assertTrustedAdmission(asWorkflowRecord(jobs.admission, 'admission'));
-    const scope = asWorkflowRecord(jobs.scope, 'scope');
-    if (scope.needs !== 'admission' || scope.if !== ADMITTED_CONDITION) {
-        throw new Error('the heavy checks must start only after approval admission admits the head');
-    }
-    for (const [jobId, job] of Object.entries(jobs)) {
-        if (jobId === 'admission' || jobId === 'gate' || jobId === 'scope') {
-            continue;
-        }
-        const needs = asWorkflowRecord(job, jobId).needs;
-        if (needs !== 'scope' && !(Array.isArray(needs) && needs.includes('scope'))) {
-            throw new Error(`health-gates.yml job ${jobId} must wait for approval admission through scope`);
-        }
-    }
-    const checks = asWorkflowRecord(workflows['pr-checks.yml'], 'pr-checks.yml');
-    if (!sameValue(checks.on, PR_CHECKS_EVENTS)) {
-        throw new Error('pr-checks.yml must answer to pull-request pushes alone');
-    }
+    assertNonDraftHeavyChecks(jobs);
     for (const [file, workflow] of Object.entries(workflows)) {
         if (file === 'health-gates.yml') {
             continue;
