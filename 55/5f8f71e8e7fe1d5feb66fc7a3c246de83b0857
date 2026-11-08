@@ -1,0 +1,19 @@
+src/modules/AiRuntime/useCases/__tests__/bassCompressorParameterPromptWorkflow.spec.ts
+  s_1052c2a2231ded::t_d694c82bc9b41d 21,528
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "555f8f71e8e7fe1d5feb66fc7a3c246de83b0857",
+  "prompts": {},
+  "sessions": {
+    "s_1052c2a2231ded": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b349-24b6-7622-8534-09f171c780d5",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
