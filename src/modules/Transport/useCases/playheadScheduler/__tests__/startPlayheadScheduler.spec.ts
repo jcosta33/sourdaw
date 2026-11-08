@@ -489,6 +489,24 @@ function scheduledSource(
     startTime: number,
     compensationSeconds: number
 ): SourceWithFade {
+    function connect(destination: AudioNode, output?: number, input?: number): AudioNode;
+    function connect(destination: AudioParam, output?: number): void;
+    function connect(destination: AudioNode | AudioParam, _output?: number, _input?: number): AudioNode | void {
+        if ('numberOfInputs' in destination) {
+            return destination;
+        }
+        return undefined;
+    }
+    function disconnect(): void;
+    function disconnect(output: number): void;
+    function disconnect(destination: AudioNode): void;
+    function disconnect(destination: AudioNode, output: number): void;
+    function disconnect(destination: AudioNode, output: number, input: number): void;
+    function disconnect(destination: AudioParam): void;
+    function disconnect(destination: AudioParam, output: number): void;
+    function disconnect(_destination?: AudioNode | AudioParam | number, _output?: number, _input?: number): void {
+        // This scheduling double has no graph edges to detach.
+    }
     const parameter = (): AudioParam => ({
         automationRate: 'a-rate',
         defaultValue: 1,
@@ -517,8 +535,8 @@ function scheduledSource(
         loop: false,
         loopStart: 0,
         loopEnd: 0,
-        connect: vi.fn<AudioBufferSourceNode['connect']>(),
-        disconnect: vi.fn<AudioBufferSourceNode['disconnect']>(),
+        connect,
+        disconnect,
         start: vi.fn<AudioBufferSourceNode['start']>(),
         stop: vi.fn<AudioBufferSourceNode['stop']>(),
         compensationSeconds,
