@@ -1,4 +1,5 @@
 import { batchStoreUpdates } from '#/infra/store/createStore';
+import { markGrooveTemplateProjectWrite } from '#/modules/MIDI/useCases';
 import { createHandler } from '#/utils/createHandler';
 import { type YeastProcessorSnapshot } from '#/utils/handlerContract';
 
@@ -57,17 +58,33 @@ export const handleAddYeastProcessor = createHandler<'addYeastProcessor'>({
             // assignments; the captured ones ride the restore payload and are
             // re-bound in the same batch (#4124) — straight store writes, never
             // a nested undoable dispatch, which would double-record the undo.
+            let grooveChanged = false;
             batchStoreUpdates(() => {
                 const processors = [...state.processors];
                 const atIndex = Math.max(0, Math.min(restore.atIndex, processors.length));
                 processors.splice(atIndex, 0, restore.processor);
-                commitYeastProjection(processors);
-                restoreYeastGrooveAssignments(restore.grooveAssignments ?? []);
+                const reconciled = commitYeastProjection(processors);
+                const restored = restoreYeastGrooveAssignments(restore.grooveAssignments ?? []);
+                grooveChanged = reconciled || restored;
             });
+            if (!grooveChanged) {
+                return { status: 'written' };
+            }
+            return {
+                status: 'written',
+                afterCommit: markGrooveTemplateProjectWrite,
+                afterAmbiguousCommit: markGrooveTemplateProjectWrite,
+            };
+        }
+        const grooveChanged = addYeastProcessor(action.payload.type, action.payload.processorId, action.payload.name);
+        if (!grooveChanged) {
             return { status: 'written' };
         }
-        addYeastProcessor(action.payload.type, action.payload.processorId, action.payload.name);
-        return { status: 'written' };
+        return {
+            status: 'written',
+            afterCommit: markGrooveTemplateProjectWrite,
+            afterAmbiguousCommit: markGrooveTemplateProjectWrite,
+        };
     },
     isNoop: (action) => {
         const restore = action.payload.restore;

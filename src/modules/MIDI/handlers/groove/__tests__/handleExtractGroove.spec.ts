@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { type GrooveTemplate } from '../../../models/GrooveTemplate';
 import { defaultGrooveTemplateState, grooveTemplateStore } from '../../../stores/grooveTemplateStore';
 import { createGrooveTemplate } from '../../../useCases/grooveTemplates/createGrooveTemplate';
+import { markGrooveTemplateProjectWrite } from '../../../useCases/grooveTemplates/markGrooveTemplateProjectWrite';
 import { prepareGrooveExtraction } from '../../../useCases/grooveTemplates/prepareGrooveExtraction';
 import { handleExtractGroove } from '../handleExtractGroove';
 
@@ -166,7 +167,11 @@ describe('handleExtractGroove', () => {
         };
 
         expect(JSON.stringify(reorderedProposal)).not.toBe(JSON.stringify(extracted.template));
-        expect(handleExtractGroove.execute(action)).toEqual({ status: 'written' });
+        expect(handleExtractGroove.execute(action)).toEqual({
+            status: 'written',
+            afterCommit: markGrooveTemplateProjectWrite,
+            afterAmbiguousCommit: markGrooveTemplateProjectWrite,
+        });
         expect(grooveTemplateStore.value?.templates).toContainEqual(extracted.template);
     });
 
@@ -249,7 +254,11 @@ describe('handleExtractGroove', () => {
             type: 'deleteGrooveTemplate',
             payload: { templateId: 'collision-id' },
         });
-        expect(handleExtractGroove.execute(action)).toEqual({ status: 'written' });
+        expect(handleExtractGroove.execute(action)).toEqual({
+            status: 'written',
+            afterCommit: markGrooveTemplateProjectWrite,
+            afterAmbiguousCommit: markGrooveTemplateProjectWrite,
+        });
         expect(grooveTemplateStore.value?.templates).toContainEqual(action.payload.proposal);
 
         expect(handleExtractGroove.isNoop?.(action)).toBe(true);

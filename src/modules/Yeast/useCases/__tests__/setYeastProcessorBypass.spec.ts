@@ -24,7 +24,7 @@ const store = vi.hoisted(() => ({
     },
 }));
 
-const commit = vi.hoisted(() => vi.fn<(processors: readonly YeastProcessorInfo[]) => void>());
+const commit = vi.hoisted(() => vi.fn<(processors: readonly YeastProcessorInfo[]) => boolean>());
 
 vi.mock('../../stores/yeastStore', () => ({ yeastStore: store }));
 vi.mock('../commitYeastProjection', () => ({ commitYeastProjection: commit }));
@@ -37,7 +37,8 @@ describe('setYeastProcessorBypass', () => {
     });
 
     it('commits the processor list with the target processor bypassed', () => {
-        setYeastProcessorBypass('arp-1', true);
+        commit.mockReturnValueOnce(true);
+        expect(setYeastProcessorBypass('arp-1', true)).toBe(true);
 
         expect(commit).toHaveBeenCalledTimes(1);
         const committed = commit.mock.calls[0]?.[0];
@@ -53,7 +54,7 @@ describe('setYeastProcessorBypass', () => {
     });
 
     it('is a no-op when the processor id is not found', () => {
-        setYeastProcessorBypass('does-not-exist', true);
+        expect(setYeastProcessorBypass('does-not-exist', true)).toBe(false);
         expect(commit).not.toHaveBeenCalled();
     });
 
@@ -61,7 +62,7 @@ describe('setYeastProcessorBypass', () => {
         const previous = store.value;
         store.value = undefined as unknown as typeof store.value;
         try {
-            setYeastProcessorBypass('arp-1', true);
+            expect(setYeastProcessorBypass('arp-1', true)).toBe(false);
             expect(commit).not.toHaveBeenCalled();
         } finally {
             store.value = previous;

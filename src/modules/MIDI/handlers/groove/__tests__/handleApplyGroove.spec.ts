@@ -32,7 +32,11 @@ beforeEach(() => {
 
 describe('handleApplyGroove — execute', () => {
     it('calls assignGrooveTemplate with the correct input', () => {
-        mockedAssign.mockReturnValue({ ok: true } as never);
+        mockedAssign.mockReturnValue({
+            ok: true,
+            status: 'written',
+            assignment: { consumerType: 'clip', consumerId: 'c1', templateId: 'g1', amount: 1 },
+        });
         handleApplyGroove.execute(baseAction);
         expect(mockedAssign).toHaveBeenCalledTimes(1);
         const arg = mockedAssign.mock.calls[0]?.[0];
@@ -40,12 +44,16 @@ describe('handleApplyGroove — execute', () => {
     });
 
     it('throws when assignment is rejected', () => {
-        mockedAssign.mockReturnValue({ ok: false, error: { code: 'invalid-template' } } as never);
+        mockedAssign.mockReturnValue({ ok: false, error: { code: 'missing-template', templateId: 'missing' } });
         expect(() => handleApplyGroove.execute(baseAction)).toThrow(/Groove assignment rejected/);
     });
 
     it('defaults amount to 1 when not provided', () => {
-        mockedAssign.mockReturnValue({ ok: true } as never);
+        mockedAssign.mockReturnValue({
+            ok: true,
+            status: 'written',
+            assignment: { consumerType: 'clip', consumerId: 'c1', templateId: 'g1', amount: 1 },
+        });
         handleApplyGroove.execute({ type: 'applyGroove', payload: { clipId: 'c1', grooveId: 'g1' } });
         const arg = mockedAssign.mock.calls[0]?.[0];
         expect(arg?.amount).toBe(1);
@@ -54,9 +62,9 @@ describe('handleApplyGroove — execute', () => {
 
 describe('handleApplyGroove — isNoop', () => {
     it('returns true when canonical matches current', () => {
-        const assignment = { consumerType: 'clip', consumerId: 'c1', templateId: 'g1', amount: 0.8 };
-        mockedCanonicalize.mockReturnValue(assignment as never);
-        mockedGetAssignment.mockReturnValue(assignment as never);
+        const assignment = { consumerType: 'clip' as const, consumerId: 'c1', templateId: 'g1', amount: 0.8 };
+        mockedCanonicalize.mockReturnValue(assignment);
+        mockedGetAssignment.mockReturnValue(assignment);
         expect(handleApplyGroove.isNoop!(baseAction)).toBe(true);
     });
 
@@ -72,13 +80,13 @@ describe('handleApplyGroove — isNoop', () => {
             consumerId: 'c1',
             templateId: 'g1',
             amount: 0.8,
-        } as never);
+        });
         mockedGetAssignment.mockReturnValue({
             consumerType: 'clip',
             consumerId: 'c1',
             templateId: 'g2',
             amount: 0.5,
-        } as never);
+        });
         expect(handleApplyGroove.isNoop!(baseAction)).toBe(false);
     });
 });
@@ -90,7 +98,7 @@ describe('handleApplyGroove — describe', () => {
             consumerId: 'c1',
             templateId: 'g1',
             amount: 0.8,
-        } as never);
+        });
         mockedGetAssignment.mockReturnValue(undefined);
         const result = handleApplyGroove.describe(baseAction);
         expect(result.label).toBe('Assign groove "g1"');
@@ -102,7 +110,7 @@ describe('handleApplyGroove — describe', () => {
             consumerId: 'c1',
             templateId: 'g1',
             amount: 0.8,
-        } as never);
+        });
         mockedGetAssignment.mockReturnValue(undefined);
         const result = handleApplyGroove.describe(baseAction);
         expect(result.inverseAction?.type).toBe('restoreGrooveAssignment');

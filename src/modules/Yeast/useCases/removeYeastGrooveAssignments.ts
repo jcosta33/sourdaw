@@ -3,12 +3,13 @@ import { getScopedGrooveConsumerId, restoreGrooveAssignment } from '#/modules/MI
 
 import { YEAST_GROOVE_OWNER_ID } from './getYeastGrooveAssignment';
 
-export function removeYeastGrooveAssignments(processorId: string): void {
+export function removeYeastGrooveAssignments(processorId: string): boolean {
     const state = grooveTemplateStore.value;
     if (!state) {
-        return;
+        return false;
     }
 
+    let grooveChanged = false;
     const consumerIds = new Set([
         processorId,
         getScopedGrooveConsumerId({ ownerId: YEAST_GROOVE_OWNER_ID, localId: processorId }),
@@ -17,10 +18,12 @@ export function removeYeastGrooveAssignments(processorId: string): void {
         if (assignment.consumerType !== 'yeast-processor' || !consumerIds.has(assignment.consumerId)) {
             continue;
         }
-        restoreGrooveAssignment({
+        const result = restoreGrooveAssignment({
             consumerType: assignment.consumerType,
             consumerId: assignment.consumerId,
             assignment: null,
         });
+        grooveChanged = result.status === 'written' || grooveChanged;
     }
+    return grooveChanged;
 }
