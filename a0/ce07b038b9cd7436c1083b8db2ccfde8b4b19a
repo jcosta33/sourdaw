@@ -1,0 +1,21 @@
+scripts/test-health-gate-scripts.sh
+  s_6584878ed83d04::t_7071088285e527 1415-1429
+scripts/__tests__/healthGatesWorkflow.spec.ts
+  s_6584878ed83d04::t_36c552b45745b4 5099-5109
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a0ce07b038b9cd7436c1083b8db2ccfde8b4b19a",
+  "prompts": {},
+  "sessions": {
+    "s_6584878ed83d04": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "eb8dc258-27ed-45aa-b77a-54b7a029172e",
+        "model": "grok-4.7"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
