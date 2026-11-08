@@ -9,6 +9,7 @@ import { type PlanningRejectionEvidence } from './PlanningRejectionEvidence';
 import { type ProposalGroundingBasis, type ProposalProtectionFacts } from './ProposalGroundingBasis';
 import { type AdoptedRecipe } from './RetainedCompilation';
 import { type SemanticCommandListMatchSelectorRecord } from './SemanticCommandList';
+import { type VibeRunInitialBaselineRefusal } from './VibeRunPlan';
 import { type WorkflowCapabilityId } from './WorkflowCapability';
 
 export type IntentResult = {
@@ -31,6 +32,8 @@ export type IntentResult = {
     workflowCapabilityId?: WorkflowCapabilityId;
     /** Correlated, bounded receipts produced by application-owned read tools during provider planning. */
     applicationToolReceipts?: ApplicationToolReceipt[];
+    /** App-produced classification of optional initial read failures for a brief with no executable recipe schedule. */
+    initialBaselineRefusal?: VibeRunInitialBaselineRefusal;
     /** Bounded application-owned settlement of deferred terminal controls, separate from metric proof. */
     terminalMeasurementSettlement?: string;
     /** Bounded metadata retained from the normalized provider proposal; never authority on its own. */
