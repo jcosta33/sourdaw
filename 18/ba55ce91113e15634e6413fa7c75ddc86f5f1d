@@ -1,0 +1,24 @@
+src/modules/WorkspaceShell/presentations/views/__tests__/AgentWorkspace.spec.tsx
+  s_1052c2a2231ded::t_73228dbe922964 350-354,365-367,372-378,382-384
+  s_1052c2a2231ded::t_955d9cc10f1aea 344-349,355-364,368-371,379-381,385-389
+src/modules/WorkspaceShell/presentations/components/agentWorkspace/AgentRunHistorySection.tsx
+  s_1052c2a2231ded::t_07fcd207797989 81-82
+src/modules/WorkspaceShell/presentations/components/agentWorkspace/AgentApprovalSection.tsx
+  s_1052c2a2231ded::t_07fcd207797989 410-411
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "18ba55ce91113e15634e6413fa7c75ddc86f5f1d",
+  "prompts": {},
+  "sessions": {
+    "s_1052c2a2231ded": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b349-24b6-7622-8534-09f171c780d5",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
