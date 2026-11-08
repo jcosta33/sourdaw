@@ -34,10 +34,14 @@ export function useTrackMuteToggle(trackId: string, muted: boolean): () => Promi
         if (!scope || scope.id !== trackId) {
             return Promise.resolve();
         }
-        let sequence = sequenceRef.current?.scope === scope ? sequenceRef.current.sequence : null;
+        const identity = captureProjectIdentity();
+        let sequence =
+            sequenceRef.current?.scope === scope && sequenceRef.current.sequence.identity === identity
+                ? sequenceRef.current.sequence
+                : null;
         if (!sequence) {
             sequence = {
-                identity: captureProjectIdentity(),
+                identity,
                 expected: muted,
                 tail: null,
                 valid: true,

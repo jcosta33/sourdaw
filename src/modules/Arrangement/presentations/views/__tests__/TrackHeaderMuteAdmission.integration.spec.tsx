@@ -400,13 +400,15 @@ describe('track header mute admission', () => {
             const history = captureUndoHistory();
             const sharedHistory = structuredClone(rawRoot().actionHistory);
             const sameProject = () => captureProjectIdentity() === identity;
-            const fresh =
-                route === 'hook'
-                    ? hook.result.current()
-                    : executeUserAppAction(
-                          { type: 'muteTrack', payload: { trackId: 'target', muted: true, expectedMuted: false } },
-                          { skipUndo: true, shouldExecute: sameProject, shouldCommit: sameProject }
-                      );
+            let fresh: Promise<void>;
+            if (route === 'hook') {
+                fresh = hook.result.current();
+            } else {
+                fresh = executeUserAppAction(
+                    { type: 'muteTrack', payload: { trackId: 'target', muted: true, expectedMuted: false } },
+                    { skipUndo: true, shouldExecute: sameProject, shouldCommit: sameProject }
+                );
+            }
             held.resolve();
             await snapshot;
             await Promise.all([first, second, fresh]);
