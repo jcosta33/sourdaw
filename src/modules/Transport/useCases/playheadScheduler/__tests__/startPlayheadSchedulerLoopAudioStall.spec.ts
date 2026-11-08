@@ -308,11 +308,14 @@ async function tickAt(relativeFrame: number): Promise<void> {
     });
     // Admission is synchronous; settlement and clock publication are observable.
     expect(schedulerSession.tickInFlight).toBe(true);
-    await vi.waitFor(() => {
-        expect(schedulerSession.tickInFlight).toBe(false);
-        expect(playheadClockRef.audioTimeSeconds).toBe(ctxTime.now);
-        expect(loggedError).not.toHaveBeenCalled();
-    });
+    await vi.waitFor(
+        () => {
+            expect(schedulerSession.tickInFlight).toBe(false);
+            expect(playheadClockRef.audioTimeSeconds).toBe(ctxTime.now);
+            expect(loggedError).not.toHaveBeenCalled();
+        },
+        { interval: 1 }
+    );
 }
 
 function seedTrack(id: string, loopEnd: number, frozen: boolean, sourceEntry: number) {
