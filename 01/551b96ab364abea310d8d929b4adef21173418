@@ -1,0 +1,27 @@
+src/modules/Automation/handlers/automation/__tests__/restoreAutomationLanePointsBatch.integration.spec.ts
+  s_1052c2a2231ded::t_6edf53ad41617e 58-60
+src/modules/Automation/useCases/automationRecording/__tests__/touchRecordingUndoBaseline.spec.ts
+  s_1052c2a2231ded::t_6edf53ad41617e 76-78,152-154,177-179,202-204
+src/modules/Automation/useCases/automationRecording/__tests__/stopAutomationRecording.spec.ts
+  s_1052c2a2231ded::t_6edf53ad41617e 114,116,231-233
+src/modules/Automation/useCases/automationRecording/__tests__/recordedRidePeerReplay.integration.spec.ts
+  s_1052c2a2231ded::t_6edf53ad41617e 101-103,126-128,324-326
+src/modules/Automation/useCases/automationRecording/__tests__/heldBoundaryCommit.spec.ts
+  s_1052c2a2231ded::t_6edf53ad41617e 30-32
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "01551b96ab364abea310d8d929b4adef21173418",
+  "prompts": {},
+  "sessions": {
+    "s_1052c2a2231ded": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b349-24b6-7622-8534-09f171c780d5",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
