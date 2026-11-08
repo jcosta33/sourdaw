@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { runInNewContext } from 'node:vm';
 
 import ts from 'typescript';
 import { resolveConfig } from 'vite';
@@ -21,7 +22,8 @@ function runtimeExpression(expression: ts.Expression): ts.Expression {
         ts.isSatisfiesExpression(expression) ||
         ts.isAsExpression(expression) ||
         ts.isTypeAssertionExpression(expression) ||
-        ts.isNonNullExpression(expression)
+        ts.isNonNullExpression(expression) ||
+        ts.isExpressionWithTypeArguments(expression)
     ) {
         expression = expression.expression;
     }
@@ -55,6 +57,27 @@ function isSafeDirectProjectEntry(entry: string): boolean {
     if (bindings.length !== 1) {
         return false;
     }
+    const runtimeBindings = new Set<string>();
+    for (const statement of source.statements) {
+        if (ts.isFunctionDeclaration(statement) && statement.name) {
+            runtimeBindings.add(statement.name.text);
+        }
+        if (ts.isImportDeclaration(statement) && statement.importClause && !statement.importClause.isTypeOnly) {
+            const clause = statement.importClause;
+            if (clause.name) {
+                runtimeBindings.add(clause.name.text);
+            }
+            if (clause.namedBindings && ts.isNamespaceImport(clause.namedBindings)) {
+                runtimeBindings.add(clause.namedBindings.name.text);
+            } else if (clause.namedBindings) {
+                for (const element of clause.namedBindings.elements) {
+                    if (!element.isTypeOnly) {
+                        runtimeBindings.add(element.name.text);
+                    }
+                }
+            }
+        }
+    }
     let aliasFound = false;
     for (const statement of source.statements) {
         if (
@@ -80,12 +103,13 @@ function isSafeDirectProjectEntry(entry: string): boolean {
                 }
                 aliasFound = true;
             } else if (
-                !ts.isIdentifier(initializer) &&
+                !(ts.isIdentifier(initializer) && runtimeBindings.has(initializer.text)) &&
                 !ts.isArrowFunction(initializer) &&
                 !ts.isFunctionExpression(initializer)
             ) {
                 return false;
             }
+            runtimeBindings.add(declaration.name.text);
         }
     }
     return aliasFound;
@@ -130,12 +154,46 @@ describe('same-build persistence inspection entry', () => {
         );
     });
 
+    it('accepts runtime bindings and erased generic instantiation without invoking them', () => {
+        const entry = `import { newProject as _newProject } from '../../src/modules/Project/useCases';
+            import { inspect as imported } from './inspection';
+            function identity<T>(value: T) { return value; }
+            const inspect = identity<string>;
+            const next = inspect;
+            const external = imported;
+            export const newProject = _newProject;`;
+        expect(isSafeDirectProjectEntry(entry)).toBe(true);
+        expect(ts.transpileModule(entry, { compilerOptions: { module: ts.ModuleKind.ESNext } }).outputText).toMatch(
+            /const inspect = \(*identity\)*/
+        );
+    });
+
+    it('rejects an ambient getter read during module initialization', () => {
+        const base = `import { newProject as _newProject } from '../../src/modules/Project/useCases';
+            export const newProject = _newProject;`;
+        const observeReads = (entry: string) => {
+            let reads = 0;
+            const sandbox = { exports: {}, require: () => ({ newProject: () => true }) };
+            Object.defineProperty(sandbox, 'localStorage', { get: () => ++reads });
+            const emitted = ts.transpileModule(entry, {
+                compilerOptions: { module: ts.ModuleKind.CommonJS },
+            }).outputText;
+            runInNewContext(emitted, sandbox);
+            return reads;
+        };
+        expect(observeReads(base)).toBe(0);
+        const entry = `${base}\nconst inspect = localStorage;`;
+        expect(observeReads(entry)).toBe(1);
+        expect(isSafeDirectProjectEntry(entry)).toBe(false);
+    });
+
     it.each([
         ['top-level call', 'newProject();'],
         ['constructor with arguments', 'const value = new Set([1]);'],
         ['constructor without arguments', 'const value = new Set();'],
         ['wrapped call', 'const value = (newProject() as unknown)!;'],
         ['wrapped constructor', 'const value = (new Set() satisfies Set<unknown>);'],
+        ['generic call', 'const value = identity<string>("x");'],
         ['dynamic import', "const lazy = () => import('other');"],
         ['dynamic import with comment', "const lazy = () => import /* comment */ ('other');"],
         ['createProject', 'const lazy = () => createProject();'],
