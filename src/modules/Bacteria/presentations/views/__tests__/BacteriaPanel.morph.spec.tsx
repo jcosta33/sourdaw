@@ -92,10 +92,10 @@ describe('BacteriaPanel morph wiring', () => {
 
     it('keeps capture one-shot actions while highlighting populated corners', () => {
         const state = makeState();
-        state.patch.snapshots = state.patch.snapshots.map((snapshot, index) => ({
-            ...snapshot,
-            paramValues: index === 0 ? { mix: 0.5 } : {},
-        }));
+        state.patch.snapshots = state.patch.snapshots.map((snapshot, index) => {
+            const paramValues: Record<string, number> = index === 0 ? { mix: 0.5 } : {};
+            return { ...snapshot, paramValues };
+        });
         bacteriaStore.set({ 'dev-1': state });
         render(<BacteriaPanel deviceId="dev-1" />);
 
