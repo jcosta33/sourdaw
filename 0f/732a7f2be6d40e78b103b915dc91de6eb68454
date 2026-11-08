@@ -1,0 +1,21 @@
+src/modules/AiRuntime/useCases/agentReference/proposalCommandShape.ts
+  s_68423a2adea8d2::t_552bf83b328543 376-383
+src/modules/AiRuntime/useCases/agentReference/__tests__/plainTempoClipProtection.spec.ts
+  s_68423a2adea8d2::t_552bf83b328543 9,134-151
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0f732a7f2be6d40e78b103b915dc91de6eb68454",
+  "prompts": {},
+  "sessions": {
+    "s_68423a2adea8d2": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34b-f305-7c03-beb2-57afa678cda5",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
