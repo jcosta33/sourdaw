@@ -162,6 +162,10 @@ function sourdawE2ePersistenceEntryPlugin(): Plugin {
 // eslint-disable-next-line import-x/no-default-export
 export default defineConfig({
     base: './',
+    optimizeDeps: {
+        // ORT pthreads reuse their module URL; late optimization invalidates that URL during session creation.
+        include: ['onnxruntime-web'],
+    },
     worker: {
         // Force IIFE format for all worker bundles so each processor file is
         // compiled into a single self-contained script. ES module format (the
