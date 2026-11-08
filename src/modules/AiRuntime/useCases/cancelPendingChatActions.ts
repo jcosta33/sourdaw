@@ -6,6 +6,7 @@ import {
     updatePendingActionConfirmationStatus,
 } from '../stores/pendingActionConfirmationStore';
 
+import { describeAppliedBatches } from './agentRequestOrchestration/describeAppliedBatches';
 import { agentRunLifecycle } from './agentRunLifecycle';
 import { agentRunCancellation } from './cancelAgentRun';
 import { stopMeasuredPreviewAudition } from './stopMeasuredPreviewAudition';
@@ -59,9 +60,12 @@ export async function cancelPendingChatActions(
         disposition: 'discard',
     });
     updatePendingActionConfirmationStatus({ confirmationId: confirmation.id, status: 'cancelled' });
+    const cancelled = `Cancelled pending actions:\n\n${confirmation.actionLabels.map((label) => `- ${label}`).join('\n')}`;
+    // A later batch of a schedule stops the run there; the batches before it committed and stay.
+    const batchIndex = confirmation.approvalSnapshot.batchPosition?.index ?? 1;
     updateChatMessage(confirmation.assistantMessageId, {
         pendingActionConfirmationStatus: 'cancelled',
-        content: `Cancelled pending actions:\n\n${confirmation.actionLabels.map((label) => `- ${label}`).join('\n')}`,
+        content: batchIndex > 1 ? `${cancelled}\n\n${describeAppliedBatches(batchIndex)}` : cancelled,
     });
 
     return { status: 'cancelled' };

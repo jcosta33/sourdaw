@@ -246,3 +246,29 @@ describe('versionedCommandArgumentKeys — guarded solo replay (#5643)', () => {
         ).toBe(false);
     });
 });
+
+describe('Reverse optional beat alias capture', () => {
+    const payload = { clipId: 'clip', expectedAudioBufferId: 'reversed', audioBufferId: 'original', name: 'Original' };
+    it.each([{ present: false }, { present: true, value: 0 }, { present: true, value: 1.25 }])(
+        'admits explicit captured optional state $present/$value',
+        (audioOffsetBeatsCapture) => {
+            expect(
+                validateVersionedCommandArguments('restoreReversedClip', { ...payload, audioOffsetBeatsCapture })
+            ).toBe(true);
+        }
+    );
+    it.each([{ present: false, value: 1 }, { present: true }, { present: true, value: 'wrong' }, { present: 'false' }])(
+        'refuses malformed captured optional state',
+        (audioOffsetBeatsCapture) => {
+            expect(
+                validateVersionedCommandArguments('restoreReversedClip', { ...payload, audioOffsetBeatsCapture })
+            ).toBe(false);
+        }
+    );
+    it('keeps old omitted and explicit zero alias payloads readable', () => {
+        expect(validateVersionedCommandArguments('restoreReversedClip', payload)).toBe(true);
+        expect(validateVersionedCommandArguments('restoreReversedClip', { ...payload, audioOffsetBeats: 0 })).toBe(
+            true
+        );
+    });
+});

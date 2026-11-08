@@ -1,7 +1,7 @@
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
 import { requiresAppActionConfirmation } from '#/modules/Command/useCases';
-import { captureProjectIdentity, captureProjectRevision } from '#/modules/CrdtDocument/useCases';
+import { captureProjectIdentity } from '#/modules/CrdtDocument/useCases';
 import { doesProductionBriefAllowActionBatch } from '#/modules/Project/useCases';
 import { canonicalJson, digest } from '#/utils/canonicalDigest';
 
@@ -129,8 +129,11 @@ import { prepareWorkflowMetricScopes } from './prepareWorkflowMetricScopes';
 import { projectDeclarativeTransformSnapshot } from './projectDeclarativeTransformSnapshot';
 import { projectPlanningProviderToolSchemas, type PlanningAnswerPhase } from './projectPlanningProviderToolSchemas';
 import { projectWorkflowMetricToolSchemas } from './projectWorkflowMetricToolSchemas';
+import { readBriefMixIntent } from './readBriefMixIntent';
+import { settledProjectContentMatches } from './settledProjectContentMatches';
 import { splitCompiledCommandList } from './splitCompiledCommandList';
 import { validateActions } from './validateActions';
+import { planVibeRunSchedule } from './vibeRun/planVibeRunSchedule';
 
 type ParsePromptToActionsInput = {
     prompt: string;
@@ -1076,7 +1079,7 @@ const planPromptIntent = inject({ logger })(
                             turn: metricAuthority.turn,
                             revision: metricAuthority.revision,
                             required: metricAuthority.kind === 'perceptual' || metricAuthority.kind === 'comparative',
-                            available: metricAuthority.revision === captureProjectRevision(),
+                            available: settledProjectContentMatches(metricAuthority.revision),
                         };
                     },
                     transientOnsetRead: transientRead,
@@ -1607,8 +1610,9 @@ const planPromptIntent = inject({ logger })(
                         refinedRequest: refinedCard?.prompt ?? null,
                     });
 
-                // A brief request ends at its card: the one composed brief, confirmed alone, never
-                // grounded beside other commands and never shortcut past the user by a trust ceiling.
+                // A brief request is confirmed alone: the one composed brief, never grounded beside
+                // other commands and never shortcut past the user by a trust ceiling. The run of
+                // recipe batches the request asks for follows it, each batch on its own card.
                 if (
                     creativeAuthority?.mode === 'brief' ||
                     selectedCompilations.some((compiled) => compiled.kind === 'brief')
@@ -1629,6 +1633,19 @@ const planPromptIntent = inject({ logger })(
                             rejectionReason: `Provider action rejected: ${brief.reason}`,
                         };
                     }
+                    const selectedBrief = selectedCompilations[0];
+                    const mixIntent =
+                        selectedBrief?.kind === 'brief' ? readBriefMixIntent(selectedBrief.mixIntent) : null;
+                    if (mixIntent === null) {
+                        return {
+                            actions: [],
+                            rawText: prompt,
+                            requiresConfirmation: false,
+                            ...applicationToolReceiptFields,
+                            ...creativeAuthorityFields,
+                            rejectionReason: 'Provider action rejected: the adopted brief has no valid mix intent.',
+                        };
+                    }
                     const briefMetricGoalState = serializeMetricGoalState([brief.action]);
                     if (metricGoalStateCodec(briefMetricGoalState) === null) {
                         return {
@@ -1640,6 +1657,17 @@ const planPromptIntent = inject({ logger })(
                             rejectionReason: UNREADABLE_VERIFICATION_RECORD,
                         };
                     }
+                    const vibeRun = await planBriefVibeRun({
+                        prompt,
+                        context,
+                        compilations: selectedCompilations,
+                        mixIntent,
+                        runId: streamIdentity?.runId,
+                        sourceRevision: projectRevision,
+                        signal,
+                        admit: onMeasurementAttempt,
+                        priorReceipts: planningOutcome.receipts,
+                    });
                     return {
                         metricGoalState: briefMetricGoalState,
                         actions: [brief.action],
@@ -1653,6 +1681,7 @@ const planPromptIntent = inject({ logger })(
                         // One singleton command has nothing to compensate: it writes whole or not
                         // at all, and its own undo entry restores the brief it replaced.
                         ...(providerProposal === null ? {} : { providerProposal }),
+                        ...vibeRun,
                     };
                 }
 
@@ -2167,6 +2196,75 @@ const planPromptIntent = inject({ logger })(
  * passes no thread) and a decision resume keep the tools and interpretation modes they had, so no
  * profile is offered a mode its tools cannot complete.
  */
+/**
+ * The vibe run a brief carries: planned from the brief the user is about to confirm, with no provider
+ * call, and scheduled behind it only when it fits the run. A request that plans no batch adds nothing,
+ * so its brief result is exactly what it was before runs were planned.
+ */
+async function planBriefVibeRun(input: {
+    prompt: string;
+    context: ProjectContext;
+    compilations: readonly RetainedCompilation[];
+    mixIntent: NonNullable<ReturnType<typeof readBriefMixIntent>>;
+    runId: string | undefined;
+    sourceRevision: string | undefined;
+    signal: AbortSignal | undefined;
+    admit: MeasurementAdmitter | undefined;
+    priorReceipts: readonly ApplicationToolReceipt[];
+}): Promise<
+    Pick<IntentResult, 'batchSchedule' | 'plannedRunLines' | 'applicationToolReceipts' | 'initialBaselineRefusal'>
+> {
+    const compiled = input.compilations.find(
+        (compilation): compilation is Extract<RetainedCompilation, { kind: 'brief' }> => compilation.kind === 'brief'
+    );
+    if (compiled === undefined) {
+        return {};
+    }
+    if (
+        input.runId === undefined ||
+        input.sourceRevision === undefined ||
+        input.signal === undefined ||
+        input.admit === undefined
+    ) {
+        return {
+            plannedRunLines: [
+                'No batches were scheduled after the brief: initial measurements require a live run, original revision, cancellation signal and budget admission.',
+            ],
+        };
+    }
+    const run = agentRunLifecycle.get(input.runId);
+    if (run === null) {
+        return {};
+    }
+    const planned = await planVibeRunSchedule({
+        prompt: input.prompt,
+        context: input.context,
+        brief: compiled.brief,
+        mixIntent: input.mixIntent,
+        budgets: run.budgets,
+        runId: input.runId,
+        sourceRevision: input.sourceRevision,
+        signal: input.signal,
+        admit: input.admit,
+        priorReceipts: input.priorReceipts,
+    });
+    if (planned.status === 'none') {
+        return {};
+    }
+    if (planned.status === 'unscheduled') {
+        return {
+            plannedRunLines: planned.lines,
+            applicationToolReceipts: [...input.priorReceipts, ...(planned.receipts ?? [])],
+            initialBaselineRefusal: planned.refusal,
+        };
+    }
+    return {
+        batchSchedule: planned.schedule,
+        plannedRunLines: planned.lines,
+        applicationToolReceipts: [...input.priorReceipts, ...planned.receipts],
+    };
+}
+
 function isBriefWritingRequest(
     thread: ThreadContext | null | undefined,
     runId: string | undefined,

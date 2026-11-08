@@ -11,8 +11,9 @@ async function add_track(page: import('@playwright/test').Page, kind: string): P
 
 // The Crust limiter's Attack *time* knob (AutoKnob → RotaryKnob in
 // CrustControlZone Level2Core) is a role="slider" bound to patch.attack. The
-// attack-auto *toggle* is covered by crustAttackAutoTestId.spec.ts; this test
-// exercises the manual time value itself. The RotaryKnob's accessible name
+// attack-auto *toggle* round trip is covered by
+// CrustControls.integration.spec.tsx; this test exercises the manual time
+// value itself. The RotaryKnob's accessible name
 // falls back to "Parameter control" (AutoKnob passes no aria-label), so there
 // are three identically-named knobs in the panel — the slider is scoped to the
 // Attack AutoKnob container via its uniquely-named "Attack auto" switch sibling.

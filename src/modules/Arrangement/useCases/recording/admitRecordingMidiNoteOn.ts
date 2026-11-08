@@ -3,6 +3,8 @@ import { transportStore } from '#/modules/Transport/stores';
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { activeRecordingRef, type RecordingMidiAdmission } from '../../stores/activeRecordingRef';
 
+import { recordingCommitGroups } from './recordingCommitGroup';
+import { recordingMidiBound } from './recordingMidiBound';
 import { recordingMidiSourceBeatAt } from './recordingMidiSourceBeatAt';
 import { recordingPassIndex } from './recordingPassIndex';
 import { takeOwnsRecordingRoot } from './takeOwnsRecordingRoot';
@@ -18,14 +20,25 @@ export function admitRecordingMidiNoteOn(input: {
     position: EventPosition;
     initialExpression?: RecordingMidiAdmission['initialExpression'];
 }): RecordingMidiAdmission | null {
-    if (transportStore.value?.isRecording !== true || !takeOwnsRecordingRoot()) {
+    if (!recordingCommitGroups.reconcileAdmission(undefined, input.trackId)) {
+        return null;
+    }
+    if (
+        transportStore.value?.isRecording !== true ||
+        !takeOwnsRecordingRoot() ||
+        recordingMidiBound.excludes(input.audioTime, input.trackId)
+    ) {
         return null;
     }
     const track = getTrackState()?.tracks.find((candidate) => candidate.id === input.trackId && candidate.armed);
     const clip = track?.clips.find(
         (candidate) => candidate.type === 'midi' && activeRecordingRef.current.includes(candidate.id)
     );
-    if (!clip || !Number.isFinite(input.audioTime)) {
+    if (
+        !clip ||
+        !Number.isFinite(input.audioTime) ||
+        recordingMidiBound.excludes(input.audioTime, input.trackId, clip.id)
+    ) {
         return null;
     }
     const onsetSourceBeat = recordingMidiSourceBeatAt(clip.id, input.position);

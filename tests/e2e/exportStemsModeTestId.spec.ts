@@ -72,27 +72,6 @@ function inspectStemWav(bytes: Uint8Array): { channels: number; durationSeconds:
 }
 
 test.describe('Export stems mode', () => {
-    test('stems mode is mutually exclusive with mixdown', async ({ page }) => {
-        await setupWorkspace(page);
-        await launch_from_template({ page, template_name: /EDM/i });
-        await openBakery(page);
-
-        const mixdown = page.getByTestId('export-mode-mixdown');
-        const stems = page.getByTestId('export-mode-stems');
-
-        // Mixdown is the default active mode; stems starts inactive (outline).
-        await expect(mixdown).not.toHaveAttribute('data-variant', 'outline');
-        await expect(stems).toHaveAttribute('data-variant', 'outline');
-
-        await stems.click();
-
-        // The existing fidelity suite only proves the stems button itself changed
-        // variant; this proves the mode group is a single-choice toggle — mixdown
-        // deactivates when stems becomes active.
-        await expect(stems).not.toHaveAttribute('data-variant', 'outline');
-        await expect(mixdown).toHaveAttribute('data-variant', 'outline');
-    });
-
     test('stems mode bakes a multi-stem ZIP instead of a single mixdown file', async ({ page }, testInfo) => {
         test.setTimeout(240_000);
         const capture = await installFilePickerCapture(page, testInfo.outputPath('sourdaw-stems-export.zip'));

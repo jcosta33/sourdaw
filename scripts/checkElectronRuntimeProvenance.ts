@@ -24,6 +24,12 @@ function sameValue(left: unknown, right: unknown): boolean {
     return JSON.stringify(left) === JSON.stringify(right);
 }
 
+function lockedElectronVersion(locked: string | undefined, version: string): boolean {
+    // pnpm appends `(peer@version)` when a transitive peer is present. The tarball
+    // identity stays `electron@<version>`.
+    return locked === version || (locked?.startsWith(`${version}(`) === true && locked.endsWith(')'));
+}
+
 function lockHasExactElectron(lock: string, contract: ElectronRuntimeContract): boolean {
     const document = parseDocument(lock, { uniqueKeys: true });
     if (document.errors.length > 0) {
@@ -37,7 +43,7 @@ function lockHasExactElectron(lock: string, contract: ElectronRuntimeContract): 
     const resolution = parsed.packages?.[`electron@${contract.version}`]?.resolution;
     return (
         dependency?.specifier === contract.specifier &&
-        dependency.version === contract.version &&
+        lockedElectronVersion(dependency?.version, contract.version) &&
         resolution?.integrity === contract.integrity
     );
 }

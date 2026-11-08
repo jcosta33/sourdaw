@@ -192,7 +192,7 @@ function Layout({ displayed, driveAvailable = true }: { displayed?: Device; driv
 function curve(): HTMLCanvasElement {
     const element = screen.getByRole('img', { name: 'Distortion transfer curve' });
     if (!(element instanceof HTMLCanvasElement)) {
-        throw new Error('Required real Distortion canvas is absent');
+        throw new TypeError('Required real Distortion canvas is absent');
     }
     return element;
 }

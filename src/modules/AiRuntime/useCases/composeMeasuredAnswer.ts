@@ -18,12 +18,14 @@ import {
 } from './answerContractTypes';
 import { CANONICAL_ROLE_OPTIONS, CANONICAL_ROLE_TO_RECIPE_ROLE } from './canonicalRoleFamilies';
 import { type RecipeDiscoveryReceiptData } from './discoverMixRecipes';
+import { formatAnswerQueryScope } from './formatAnswerQueryScope';
 import { objectiveMetricProjection, OBJECTIVE_METRIC_LABELS } from './objectiveMetricProjection';
+import { type AnswerQueryPageSource } from './readAnswerProjectQuery';
 
 export type AnswerReadSource =
     | { kind: 'measurement'; value: AnswerMeasurement }
     | { kind: 'recipe'; value: RecipeDiscoveryReceiptData }
-    | { kind: 'query-page'; value: { queryType: string; itemCount: number; total: number } }
+    | { kind: 'query-page'; value: AnswerQueryPageSource }
     | { kind: 'source-onsets'; value: AnswerOnsets };
 export type AdmittedAnswerRead = { receipt: ApplicationToolReceipt; source: AnswerReadSource };
 export type AdmittedAnswerIntake = { callId: string; turn: number; authority: AnswerRequestAuthority };
@@ -443,8 +445,24 @@ function composeReadStatement(
         return null;
     }
     if (statement.kind === 'query-page' && read.source.kind === 'query-page') {
+        const source = read.source.value;
+        // Project's receipt revision token is a semantic-index hash; the bounded revision
+        // object preserves the captured CRDT revision and refuses truncated identities.
+        if (
+            read.receipt.turn <= intake.turn ||
+            (source.sourceRevision !== intake.authority.revision &&
+                source.equivalentRevision !== intake.authority.revision) ||
+            (source.input.type === 'diff' &&
+                source.warnings.some((warning) => warning.includes('outside the retained semantic diff window')))
+        ) {
+            return null;
+        }
+        const scope = formatAnswerQueryScope(source.input);
+        if (scope === null) {
+            return null;
+        }
         return {
-            text: `The ${quoteSourceData(read.source.value.queryType)} query returned ${String(read.source.value.itemCount)} item(s) on this page out of ${String(read.source.value.total)} matching item(s).`,
+            text: `The ${quoteSourceData(read.source.value.queryType)} query${scope} returned ${String(read.source.value.itemCount)} item(s) on this page out of ${String(read.source.value.total)} matching item(s).`,
             callIds: [statement.callId],
         };
     }

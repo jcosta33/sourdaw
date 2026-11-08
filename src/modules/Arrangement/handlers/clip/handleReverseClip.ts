@@ -39,8 +39,20 @@ function resolveReversedSource(clip: Clip) {
             stretchMode: clip.stretchMode,
             stretchRatio: clip.stretchRatio,
         }),
-        audioSource: reversedClipAudioSource(clip, buffer.length / buffer.sampleRate, liveTempoTimeline.secondsAtBeat),
+        audioSource: reversedClipAudioSource(
+            clip,
+            buffer.length / buffer.sampleRate,
+            liveTempoTimeline.secondsAtBeat,
+            clipTempo
+        ),
     };
+}
+
+function captureBeatAlias(value: number | undefined): { present: false } | { present: true; value: number } {
+    if (value === undefined) {
+        return { present: false };
+    }
+    return { present: true, value };
 }
 
 export const handleReverseClip = createHandler<'reverseClip'>({
@@ -77,7 +89,7 @@ export const handleReverseClip = createHandler<'reverseClip'>({
                     name: clip.name,
                     fadeInBeats: clip.fadeInBeats,
                     fadeOutBeats: clip.fadeOutBeats,
-                    audioOffsetBeats: clip.audioOffsetBeats ?? 0,
+                    audioOffsetBeatsCapture: captureBeatAlias(clip.audioOffsetBeats),
                     // The forward run restamps the anchor at the clip's own start (the
                     // mirrored buffer is a fresh media basis), so undo must put the
                     // pre-reverse anchor back. Absent when the source was unanchored:
@@ -101,7 +113,7 @@ export const handleReverseClip = createHandler<'reverseClip'>({
                     // Redo replays the forward restamp: an anchored source re-anchors
                     // at its start; an unanchored one stays unanchored, so no key.
                     ...(clip.loopOriginBeat !== undefined ? { loopOriginBeat: clip.startBeat } : {}),
-                    ...(remappedAudioOffsetBeats === undefined ? {} : { audioOffsetBeats: remappedAudioOffsetBeats }),
+                    audioOffsetBeatsCapture: captureBeatAlias(remappedAudioOffsetBeats),
                     ...(reversed.audioSource ? { audioSource: reversed.audioSource } : {}),
                     // The forward path clears pitch analysis, so redo restores none.
                 },

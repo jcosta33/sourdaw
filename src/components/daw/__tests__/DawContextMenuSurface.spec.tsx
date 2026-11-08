@@ -129,7 +129,7 @@ describe('DawContextMenuSurface', () => {
         );
 
         const menu = screen.getByRole('menu');
-        expect(menu.style.maxHeight).toBe('calc(100vh - 28px)');
+        expect(menu.style.maxHeight).toBe('calc(-28px + 100vh)');
         expect(menu.style.overflowY).toBe('auto');
     });
 
@@ -139,21 +139,21 @@ describe('DawContextMenuSurface', () => {
             y: 20,
             top: '20px',
             bottom: '',
-            maxHeight: 'calc(100vh - 28px)',
+            maxHeight: 'calc(-28px + 100vh)',
         },
         {
             name: 'above a mid-viewport pointer',
             y: 200,
             top: '',
             bottom: '160px',
-            maxHeight: 'calc(100vh - 168px)',
+            maxHeight: 'calc(-168px + 100vh)',
         },
         {
             name: 'above a near-bottom pointer',
             y: 340,
             top: '',
             bottom: '20px',
-            maxHeight: 'calc(100vh - 28px)',
+            maxHeight: 'calc(-28px + 100vh)',
         },
     ])('keeps an oversized default menu attached $name', ({ y, top, bottom, maxHeight }) => {
         vi.stubGlobal('innerHeight', 360);
@@ -183,7 +183,7 @@ describe('DawContextMenuSurface', () => {
         const menu = screen.getByRole('menu');
         expect(menu.style.top).toBe('');
         expect(menu.style.bottom).toBe('340px');
-        expect(menu.style.maxHeight).toBe('calc(100vh - 348px)');
+        expect(menu.style.maxHeight).toBe('calc(-348px + 100vh)');
         expect(menu.style.overflowY).toBe('auto');
     });
 
@@ -199,6 +199,6 @@ describe('DawContextMenuSurface', () => {
         const menu = screen.getByRole('menu');
         expect(menu.style.top).toBe('');
         expect(menu.style.bottom).toBe('160px');
-        expect(menu.style.maxHeight).toBe('calc(100vh - 168px)');
+        expect(menu.style.maxHeight).toBe('calc(-168px + 100vh)');
     });
 });

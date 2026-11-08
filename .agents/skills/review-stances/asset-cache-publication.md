@@ -40,3 +40,32 @@ from the `state-and-write-paths` skill.
    authority at mutation admission, before it waits for the storage lock; recapturing inside the queued storage
    phase can authenticate an intervening ordinary replacement as the older prepared commit. Queue an ordinary
    replacement behind the lock and require the older prepared commit to refuse.
+
+7. **Two accepted bounces must not reuse clock-based material identity (#226).** The selection-bounce owner
+   extracted by #226 retained `bounce-sel-${trackId}-${Date.now()}`. This identifies the available owner
+   extraction, not proof of where the earlier clock-based algorithm originated; that PR has no public review.
+   The missing probe is two successful typed bounces on one track while `Date.now()` is fixed, with distinct
+   nonperiodic first PCM and second PCM. Undo the second and authenticate the first cached material through the
+   actual retained clip/history reference; Redo must recover the second. An ID-inequality assertion alone is
+   insufficient: reinstating the timestamp producer must fail the restored first-PCM comparison. Use the
+   platform's unique identity producer and retain unrelated source PCM. This is runtime/history material proof,
+   not a durability receipt or saved-session replay claim.
+
+8. **Decoded imports stay resident until their clip owner commits (#6038 missed manual import lifetimes).**
+   #6038 introduced scoped holds for decoded buffers awaiting placement, but its manual import callers still
+   decoded without a hold. Its public review describes the takes and stem-import protections; the missing probe
+   is manual import under competing cache writes while original-asset staging or the actual snapshot transaction
+   queue holds placement. Staging yields were already present in #3895 and #4255; #4962 routed creation through
+   awaited typed batches. Retain before the decoder's cache write, through the awaited retained batch outcome,
+   and release in `finally` after transfer or terminal cleanup. Exercise existing-track import, new-track import,
+   file drop and the empty-timeline menu through their real producers. Require exact PCM and matching raw/projected
+   clip identity plus actual typed history and grouped Undo. Removing only the lifetime hold must lose the pending
+   source under cache pressure. Cancellation and staging failure must release leases, decoded material and holds;
+   re-cache the now-unowned ID and pressure it to prove a leaked hold cannot hide behind deletion. For a committed
+   source, retire the real clip and history owners before proving the temporary hold ended. Mere residency while
+   the live clip still protects it proves no release, and a readiness wait cannot repair an evicted source.
+   A published imported buffer ID requires PCM on its first material read: decode caches synchronously before
+   returning. #6342 wrapped the Audio-to-MIDI evidence read in a retry, accepting a one-shot source miss as
+   transient; its public review reported permanent-absence/deadline attacks. Inject one null read result for
+   a real cached buffer, then permit subsequent actual reads: the case must fail at that first missing source.
+   Permanent absence alone cannot expose this masking. Historical private prompts and reviewer tiers are unknown.

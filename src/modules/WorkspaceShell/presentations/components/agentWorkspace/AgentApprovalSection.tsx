@@ -407,8 +407,8 @@ const ApprovalCard = ({
             )}
             {renderPreviousProposalDiff(view.previousProposalDiff)}
             <ul aria-label="Proposed actions" className="list-inside list-disc text-foreground">
-                {view.actionLabels.map((label) => (
-                    <li key={label}>{label}</li>
+                {view.actionLabels.map((label, index) => (
+                    <li key={`${index}:${label}`}>{label}</li>
                 ))}
             </ul>
             {renderRecipes(view.recipes)}

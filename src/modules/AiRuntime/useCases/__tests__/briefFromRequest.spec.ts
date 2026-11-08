@@ -7,6 +7,7 @@ import {
 } from '#/infra/store/storage/createAutomergeStorage';
 import { markerStore, trackStore } from '#/modules/Arrangement/stores';
 import { getArrangementHandlers, setArrangementEventBus } from '#/modules/Arrangement/useCases';
+import { type renderTrackSubgraphOffline } from '#/modules/AudioEngine/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import { getAutomationHandlers } from '#/modules/Automation/useCases';
 import { clearHandlerRegistry, macroStore, registerHandlerMap } from '#/modules/Command/stores';
@@ -45,6 +46,7 @@ import { compileAgentActionExecution } from '../compileAgentActionExecution';
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
 import { executeBriefCompile } from '../executeBriefCompile';
 import { getAgentApprovalView } from '../getAgentApprovalView';
+import { getBriefMixIntentCatalog } from '../getBriefMixIntentCatalog';
 import { getProjectContext } from '../getProjectContext';
 import { generateToolPlanningOutcome } from '../llmOrchestration/inference';
 import { metricGoalStateCodec } from '../metricGoalStateCodec';
@@ -60,7 +62,7 @@ import {
     selectCreativeInterpretationCall,
 } from './highLevelIntentWorkflowFixture';
 import { landProjectEdit } from './landProjectEdit';
-import { literalMetricIntakeTurn } from './metricGoalWorkflowFixture';
+import { literalMetricIntakeTurn, metricGoalAudioBuffer } from './metricGoalWorkflowFixture';
 import { decodeReceiptContext, readReceiptSummary } from './receiptContextFixture';
 
 registerDeviceEnginePorts();
@@ -71,7 +73,7 @@ registerDeviceEnginePorts();
  * alone; the user confirms one `setProductionBrief` card.
  */
 const VIBE_PROMPT = 'Make this record feel like a rainy late-night drive.';
-const CONSTRAINED_VIBE_PROMPT = 'make this a late-night lo-fi record but keep the vocal intimate';
+const CONSTRAINED_VIBE_PROMPT = 'make this a late-night record but keep the vocal intimate';
 const LITERAL_PROMPT = 'turn the vocal down 2 dB';
 const VISION = 'A rainy late-night drive';
 
@@ -81,6 +83,13 @@ const KEYS_ID = 'track-keys';
 const CHORUS_ID = 'section-chorus';
 
 const runtimeMocks = vi.hoisted(() => ({ backend: { value: 'cloud' } }));
+
+// Only a planned vibe-run batch renders here, for its measured preview; no other row reaches a render.
+const audio = vi.hoisted(() => ({ renderTrackSubgraphOffline: vi.fn() }));
+vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
+    ...audio,
+}));
 
 vi.mock('../llmOrchestration/backendResolution/getBackendChain', () => ({
     getBackendChain: () => [runtimeMocks.backend.value],
@@ -151,8 +160,17 @@ const briefIntake: ScriptedPlanningTurn = ({ userMessage, schemas }) => {
 const literalIntake: ScriptedPlanningTurn = ({ userMessage, schemas }) =>
     literalMetricIntakeTurn(userMessage, schemas).map((call) => ({ ...call, id: 'literal-intake' }));
 
-function compileBrief(update: Record<string, unknown>): ScriptedPlanningTurn {
-    return () => [{ id: 'brief-compile', name: 'brief.compile', arguments: update }];
+function compileBrief(update: Record<string, unknown>, requestedDescriptors: readonly string[]): ScriptedPlanningTurn {
+    return () => [
+        {
+            id: 'brief-compile',
+            name: 'brief.compile',
+            arguments: {
+                ...update,
+                mixIntent: { catalogId: getBriefMixIntentCatalog().catalogId, requestedDescriptors },
+            },
+        },
+    ];
 }
 
 const VIBE_UPDATE = {
@@ -193,7 +211,7 @@ const decline: ScriptedPlanningTurn = () => [
     },
 ];
 
-const BRIEF_ROUTE = [briefIntake, compileBrief(VIBE_UPDATE), proposeCompiled()];
+const BRIEF_ROUTE = [briefIntake, compileBrief(VIBE_UPDATE, []), proposeCompiled()];
 
 function readReceipt(userMessage: string, callId: string): Record<string, unknown> {
     const receipt = decodeReceiptContext(readReceiptSummary(userMessage).value).find(
@@ -276,6 +294,44 @@ function seededBrief(): ProductionBrief {
     };
 }
 
+type RenderInput = Parameters<typeof renderTrackSubgraphOffline>[0];
+
+function audioClip(trackId: string): StoredTrack['clips'][number] {
+    return {
+        id: `${trackId}-clip`,
+        trackId,
+        name: 'Take',
+        type: 'audio',
+        audioBufferId: `${trackId}-buffer`,
+        startBeat: 0,
+        endBeat: 4,
+        fadeInBeats: 0,
+        fadeOutBeats: 0,
+        gain: 1,
+        color: '#ffffff',
+        locked: false,
+        muted: false,
+    };
+}
+
+/** A 100 Hz body and a 3 kHz top, each scaled by the low and high shelves of the track's EQs. */
+function renderShelvedTone(input: RenderInput): AudioBuffer {
+    const track = input.renderTracks.find((candidate) => candidate.id === input.targetTrackId);
+    if (track === undefined) {
+        throw new Error('The render target is absent.');
+    }
+    const parameter = (id: string) =>
+        track.devices.reduce((total, device) => total + (device.parameterValues[id] ?? 0), 0);
+    const low = 10 ** (parameter('eq-low-gain') / 20);
+    const high = 10 ** (parameter('eq-high-gain') / 20);
+    // The spec's project runs at 90 bpm.
+    const seconds = ((input.endBeat - input.startBeat) * 60) / 90;
+    return metricGoalAudioBuffer(
+        (time) => 0.4 * low * Math.sin(2 * Math.PI * 100 * time) + 0.2 * high * Math.sin(2 * Math.PI * 3000 * time),
+        seconds
+    );
+}
+
 function readBrief(): ProductionBrief {
     const brief = projectStore.value?.productionBrief;
     if (brief === undefined) {
@@ -307,6 +363,7 @@ describe('writing the production brief from a whole-project request (AC-001 of #
     beforeEach(() => {
         configureAiWorkflowCommandPreflightFixture();
         vi.mocked(generateToolPlanningOutcome).mockReset();
+        audio.renderTrackSubgraphOffline.mockReset();
         runtimeMocks.backend.value = 'cloud';
         configureAutomergeStoragePort(null);
         resetCrdtProjectAuthority('brief from request test');
@@ -436,7 +493,7 @@ describe('writing the production brief from a whole-project request (AC-001 of #
     });
 
     it('answers brief.compile on a literal request with brief-not-requested and writes nothing', async () => {
-        const requests = scriptPlanningTurns([literalIntake, compileBrief(VIBE_UPDATE), decline]);
+        const requests = scriptPlanningTurns([literalIntake, compileBrief(VIBE_UPDATE, []), decline]);
         const before = readBrief();
 
         await sendChatMessage(LITERAL_PROMPT);
@@ -536,7 +593,7 @@ describe('writing the production brief from a whole-project request (AC-001 of #
     );
 
     it('refuses a pending card at Confirm once the track its hard constraint names is removed', async () => {
-        scriptPlanningTurns([briefIntake, compileBrief({ vision: 'A late-night lo-fi record' }), proposeCompiled()]);
+        scriptPlanningTurns([briefIntake, compileBrief({ vision: 'A late-night record' }, []), proposeCompiled()]);
         await sendChatMessage(CONSTRAINED_VIBE_PROMPT);
         const { confirmation } = getPendingProposal();
         await executeAppAction({ type: 'removeTrack', payload: { trackId: VOCAL_ID } });
@@ -588,7 +645,7 @@ describe('writing the production brief from a whole-project request (AC-001 of #
     });
 
     it('proposes a brief card for a constrained vibe that is confirmable with no measurement', async () => {
-        scriptPlanningTurns([briefIntake, compileBrief({ vision: 'A late-night lo-fi record' }), proposeCompiled()]);
+        scriptPlanningTurns([briefIntake, compileBrief({ vision: 'A late-night record' }, []), proposeCompiled()]);
 
         await sendChatMessage(CONSTRAINED_VIBE_PROMPT);
 
@@ -632,12 +689,73 @@ describe('writing the production brief from a whole-project request (AC-001 of #
                 authority.goals.flatMap((goal) => (goal.source.kind === 'constraint' ? [goal.source.clause] : []))
             );
         };
-        const brief = { ...seededBrief(), revision: 5, vision: 'A late-night lo-fi record' };
+        const brief = { ...seededBrief(), revision: 5, vision: 'A late-night record' };
 
         expect(
             heldClausesOf({ type: 'setTrackGain', payload: { trackId: VOCAL_ID, gain: 0.7, expectedGain: 0.8 } })
         ).toEqual(['keep the vocal intimate', 'keep the vocal intimate']);
         expect(heldClausesOf({ type: 'setProductionBrief', payload: { expectedRevision: 4, brief } })).toEqual([]);
+    });
+
+    // Nine staged renders run real objective DSP, which needs CPU time on loaded runners.
+    it('grounds a later batch on a track whose role only the confirmed brief gives', async () => {
+        const STEM_ID = 'track-stem';
+        landProjectEdit(() => {
+            trackStore.set({
+                tracks: [{ ...createTrack(STEM_ID, 'Stem 7'), clips: [audioClip(STEM_ID)] }],
+                selectedTrackId: null,
+                ghostClips: [],
+            });
+        });
+        audio.renderTrackSubgraphOffline.mockImplementation(async (input: RenderInput) => renderShelvedTone(input));
+        const stemRole = { vision: 'A warmer low end', trackRoles: [{ trackId: STEM_ID, role: 'bass' }] };
+        scriptPlanningTurns([briefIntake, compileBrief(stemRole, ['warm']), proposeCompiled()]);
+
+        await sendChatMessage('make it warmer');
+
+        const brief = getPendingProposal();
+        // The stem's name gives no role; only the brief this card writes does, and the plan reads it.
+        expect(getProjectContext().tracks[0]?.canonicalRole?.source).not.toBe('authored');
+        expect(brief.message.content).toContain('- Batch 2 of 2: warm bass — Stem 7');
+        await expect(confirmPendingChatActions({ confirmationId: brief.confirmation.id })).resolves.toEqual({
+            status: 'executed',
+        });
+
+        const batch = pendingActionConfirmationStore.value?.confirmations.find(
+            (card) => card.status === 'proposed' && card.runId === brief.confirmation.runId
+        );
+        expect(batch?.approvalSnapshot.batchPosition).toEqual({ index: 2, total: 2 });
+        expect(batch?.approvalSnapshot.adoptedRecipes).toEqual([
+            expect.objectContaining({ recipeId: 'bass-warm', targetId: STEM_ID }),
+        ]);
+        expect(batch?.actions.map((action) => action.type)).toContain('addDevice');
+    }, 15_000);
+
+    it('leaves a request whose plan holds no batch exactly the brief alone', async () => {
+        // Every track the request could warm is the locked Drums, so its plan holds no batch at all.
+        landProjectEdit(() => {
+            trackStore.set({ tracks: [createTrack(DRUMS_ID, 'Drums')], selectedTrackId: null, ghostClips: [] });
+        });
+        const visionOnly = [briefIntake, compileBrief({ vision: VISION }, []), proposeCompiled()];
+        scriptPlanningTurns(visionOnly);
+        await sendChatMessage(VIBE_PROMPT);
+        const briefOnly = getPendingProposal();
+        await cancelPendingChatActions({ confirmationId: briefOnly.confirmation.id });
+        const briefOnlyContent = briefOnly.message.content;
+        chatStore.set({ messages: [], isGenerating: false, enableReasoning: true, chatMode: 'prompt' });
+        clearPendingActionConfirmations();
+
+        scriptPlanningTurns([briefIntake, compileBrief({ vision: VISION }, ['warm']), proposeCompiled()]);
+        await sendChatMessage('make it warmer');
+
+        const { message, confirmation } = getPendingProposal();
+        expect(message.content).toBe(briefOnlyContent);
+        expect(agentRunLifecycle.get(confirmation.runId)?.plan?.batchSchedule).toBeUndefined();
+        await expect(confirmPendingChatActions({ confirmationId: confirmation.id })).resolves.toEqual({
+            status: 'executed',
+        });
+        expect(countCards()).toBe(1);
+        expect(agentRunLifecycle.get(confirmation.runId)?.phase).toBe('completed');
     });
 });
 
@@ -693,7 +811,10 @@ describe('brief.compile refusals', () => {
     ])('refuses %s with a receipt naming %s', (_label, field, update) => {
         const before = readBrief();
 
-        const result = compileWith(update);
+        const result = compileWith({
+            ...update,
+            mixIntent: { catalogId: getBriefMixIntentCatalog().catalogId, requestedDescriptors: [] },
+        });
 
         expect(result.commands).toBeNull();
         expect(result.receipt).toMatchObject({ status: 'failure', error: { code: 'invalid-tool-arguments' } });
@@ -701,9 +822,50 @@ describe('brief.compile refusals', () => {
         expect(readBrief()).toEqual(before);
     });
 
+    it('refuses malformed mix selections without composing a brief', () => {
+        const catalog = getBriefMixIntentCatalog();
+        const valid = { catalogId: catalog.catalogId, requestedDescriptors: ['warm'] };
+        const invalid: unknown[] = [
+            null,
+            {},
+            { ...valid, catalogId: 'foreign' },
+            { ...valid, extra: true },
+            { ...valid, requestedDescriptors: ['unknown'] },
+            { ...valid, requestedDescriptors: ['warm', 'warm'] },
+            { ...valid, requestedDescriptors: [...catalog.descriptors, 'warm'] },
+        ];
+        for (const mixIntent of invalid) {
+            const result = compileWith({ vision: VISION, mixIntent });
+            expect(result.commands).toBeNull();
+            expect(result.receipt).toMatchObject({
+                status: 'failure',
+                error: { code: 'invalid-tool-arguments', retryable: true },
+            });
+        }
+        expect(compileWith({ vision: VISION, mixIntent: valid }).receipt.status).toBe('success');
+        expect(compileWith({ vision: VISION, mixIntent: { ...valid, requestedDescriptors: [] } }).receipt.status).toBe(
+            'success'
+        );
+    });
+
+    it('refuses an omitted mix intent as invalid tool arguments', () => {
+        const result = compileWith({ vision: VISION });
+        expect(result.receipt).toMatchObject({
+            status: 'failure',
+            error: { code: 'invalid-tool-arguments', retryable: true },
+        });
+    });
+
     it('refuses a request the brief was not offered to, as the Prompt Bar is', () => {
         const result = executeBriefCompile({
-            call: { id: 'brief-compile', name: 'brief.compile', arguments: { vision: VISION } },
+            call: {
+                id: 'brief-compile',
+                name: 'brief.compile',
+                arguments: {
+                    vision: VISION,
+                    mixIntent: { catalogId: getBriefMixIntentCatalog().catalogId, requestedDescriptors: [] },
+                },
+            },
             callId: 'brief-compile',
             turn: 2,
             revision: captureProjectRevision(),

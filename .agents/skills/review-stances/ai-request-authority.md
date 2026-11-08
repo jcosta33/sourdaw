@@ -50,3 +50,20 @@ Report the concrete break or none.
    test absolute and relative decibels, the owning ceiling, silence and legacy linear values at actual
    execution (#4366); VCA and metronome fell outside the first enumerated family list, so a passing
    sample of those families cannot prove the remaining catalog.
+7. **Read-only planning keeps the captured content authority across saves (#1989, #5852, #6240).** Hold a
+   paused decision and a selected preset's planner across a real save timestamp and active-arrangement copy;
+   require the original revision and intent to survive. Require saved and unflushed fader edits, edit then
+   revert, child-document changes and root replacement to refuse before handoff. Replacing the save-aware
+   content comparison with raw heads must fail the save case; accepting only the final snapshot must fail
+   the reverted edit. A storage-owner write authorization is not read-only content admission; execution
+   still requires its own write authority.
+
+8. **Whole-owner protections apply before measured-run inventory (#6311).** Feed the original
+   request a whole-track preservation clause and require that owner to be absent from both the recipe
+   inventory and every initial measurement. Keep a compatible fader-only or pan-only protection
+   eligible for processing, keep clip ownership separate, and refuse an unresolved explicit owner.
+   Retain the later grounding guards: a candidate-stage exclusion never replaces them. Mutating the
+   planner to consult only brief locks while ignoring the original request must fail the production
+   brief-to-measured-run case. The omission reached main in [#6311](https://github.com/jcosta33/sourdaw/pull/6311);
+   its public later-approval target-effects review probed continuation, which did not establish
+   exclusion before initial collection.

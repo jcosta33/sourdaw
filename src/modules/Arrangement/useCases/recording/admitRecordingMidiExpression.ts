@@ -1,5 +1,7 @@
 import { activeRecordingRef, type RecordingMidiAdmission } from '../../stores/activeRecordingRef';
 
+import { recordingCommitGroups } from './recordingCommitGroup';
+import { recordingMidiBound } from './recordingMidiBound';
 import { recordingMidiSourceBeatAt } from './recordingMidiSourceBeatAt';
 import { takeOwnsRecordingRoot } from './takeOwnsRecordingRoot';
 
@@ -16,7 +18,13 @@ export function admitRecordingMidiExpression(input: {
     const admitted = activeRecordingRef.midiAdmissions.findLast(
         (candidate) => candidate.channel === input.channel && candidate.releaseAudioTime === undefined
     );
-    if (!admitted || !takeOwnsRecordingRoot() || input.audioTime < admitted.onsetAudioTime) {
+    if (
+        !admitted ||
+        !recordingCommitGroups.reconcileAdmission(admitted.clipId) ||
+        !takeOwnsRecordingRoot() ||
+        input.audioTime < admitted.onsetAudioTime ||
+        recordingMidiBound.excludes(input.audioTime, admitted.trackId, admitted.clipId)
+    ) {
         return;
     }
     const sourcePosition = recordingMidiSourceBeatAt(admitted.clipId, input.position);

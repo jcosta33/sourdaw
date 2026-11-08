@@ -276,7 +276,7 @@ async function expectCommitted(
 function sliderTrack(): HTMLElement {
     const root = screen.getByRole('slider', { name: 'Threshold' }).closest('[data-slot="slider"]');
     if (!(root instanceof HTMLElement)) {
-        throw new Error('Missing real Slider root');
+        throw new TypeError('Missing real Slider root');
     }
     capturePointer(root);
     vi.spyOn(root, 'getBoundingClientRect').mockReturnValue({

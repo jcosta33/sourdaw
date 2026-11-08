@@ -114,6 +114,12 @@ vi.mock('#/modules/Automation/useCases', () => ({
 }));
 const stageSpy = vi.hoisted(() => vi.fn<(input: Parameters<typeof stageRecordingTake>[0]) => undefined>());
 vi.mock('#/modules/Arrangement/useCases', () => ({
+    captureRecordingCommitRetirement: () => {
+        throw new Error('This playback fixture must not admit a recording commit');
+    },
+    hasAutomaticRecordingMidiCapture: () => {
+        throw new Error('This playback fixture must not query an automatic MIDI owner');
+    },
     takeOwnsRecordingRoot: vi.fn(() => true),
     prepareRecoveredRecording: vi.fn(),
     admitRecordingCaptureClock: vi.fn(),

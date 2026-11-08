@@ -1,7 +1,13 @@
-import { clone as cloneAutomergeDoc, load as loadAutomergeDoc, save as saveAutomergeDoc } from '@automerge/automerge';
+import {
+    getHeads,
+    clone as cloneAutomergeDoc,
+    load as loadAutomergeDoc,
+    save as saveAutomergeDoc,
+} from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { registerProjectSlotProjections } from '#/app/registerProjectSlotProjections';
+import { createMockAudioContext } from '#/helpers/__tests__/audioContext.mock';
 import { createEventBus } from '#/infra/events/createEventBus';
 import {
     configureAutomergeStoragePort,
@@ -9,14 +15,25 @@ import {
 } from '#/infra/store/storage/createAutomergeStorage';
 import { activeRecordingRef, takeLaneStore, trackStore } from '#/modules/Arrangement/stores';
 import {
+    admitRecordingMidiExpression,
+    admitRecordingMidiNoteOff,
+    admitRecordingMidiNoteOn,
     discardRecording,
+    findOpenRecordingMidiAdmission,
+    findOpenRecordingMidiMemberAdmission,
+    getRecordingMidiAdmission,
     getArrangementHandlers,
+    recordingMidiSourceBeatAt,
+    isRecordingMidiInputExcluded,
     resolveClipsWithComping,
+    retireRecordingMidiAdmission,
     setArrangementEventBus,
     stageRecordingTake,
+    takeOwnsRecordingRoot,
 } from '#/modules/Arrangement/useCases';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
 import {
+    audioEngine,
     builtinSynthVoice,
     configureOfflineMidiEventProjection,
     configureOfflinePpqEndpointProjection,
@@ -27,6 +44,7 @@ import { clearHandlerRegistry, registerHandlerMap, undoHistoryStore } from '#/mo
 import {
     clearUndoHistory,
     executeAppAction,
+    executeAppActionBatch,
     redo,
     resetActionReplayAuthority,
     setActionHistoryMetadataPort,
@@ -35,6 +53,7 @@ import {
 import {
     createCrdtDoc,
     getCrdtDoc,
+    mutateCrdtDoc,
     projectCrdtToStores,
     registerCrdtStorageRuntime,
     removeCrdtDoc,
@@ -42,7 +61,18 @@ import {
     replaceCrdtDocInLineage,
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
+import { midiStore } from '#/modules/MIDI/stores';
+import {
+    captureEventPositionAt,
+    projectMidiClipPlayback,
+    isValidMidiNoteSnapshot,
+    setMidiInputTrack,
+    setRecordingMidiAdmissionPort,
+    triggerLiveNoteOff,
+    triggerLiveNoteOn,
+} from '#/modules/MIDI/useCases';
 import * as synthVoices from '#/modules/Synth/useCases';
+import { CLIP_LOOP_WINDOW_BEAT_TOLERANCE } from '#/utils/clipLoopOrigin';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { secondsBetweenBeats } from '../../../models/TempoMap';
@@ -94,6 +124,7 @@ const hardware = vi.hoisted(() => ({
     tornFirstFrame: false,
     hideFirstFrame: false,
     starts: 0,
+    refuseCapture: false,
     buffer: null as AudioBuffer | null,
     correlation: null as { beat: number; contextSeconds: number } | null,
     flushGate: null as Promise<void> | null,
@@ -104,6 +135,7 @@ const hardware = vi.hoisted(() => ({
     nativeCursorBeat: null as ((now: number) => number) | null,
     captureLag: 0,
     nativePresentationLead: 0,
+    nativeAudibleNow: null as number | null,
     nativeSampleOffset: 0,
     nativeTimingUnavailable: false,
     forwardAuthorized: true,
@@ -221,7 +253,7 @@ vi.mock('#/modules/AudioEngine/useCases', async (original) => {
                     // observation. Its parser/feed/correlation are independently
                     // exercised in AudioEngine's owning real-feed spec.
                     const raw: Snapshot = {
-                        songSeconds: beat / 2,
+                        songSeconds: geometry.secondsAtBeat(beat),
                         contextSeconds:
                             hardware.now +
                             hardware.outputContextOffset +
@@ -229,7 +261,7 @@ vi.mock('#/modules/AudioEngine/useCases', async (original) => {
                                 hardware.nativeSampleOffset -
                                 calibrationAnchor +
                                 (calibrationAnchor - hardware.now)),
-                        audibleContextSeconds: hardware.now + hardware.outputContextOffset,
+                        audibleContextSeconds: hardware.nativeAudibleNow ?? hardware.now + hardware.outputContextOffset,
                         loopWraps: hardware.nativeWraps,
                         admission: {
                             geometry,
@@ -264,6 +296,8 @@ vi.mock('#/modules/AudioEngine/useCases', async (original) => {
         },
         audioEngine: {
             ...real.audioEngine,
+            ensureTrackStrip: real.audioEngine.ensureTrackStrip.bind(real.audioEngine),
+            getTrackStrip: real.audioEngine.getTrackStrip.bind(real.audioEngine),
             beginAudioPreviewIntent: () => ({
                 signal: new AbortController().signal,
                 isCurrent: () => true,
@@ -283,6 +317,9 @@ vi.mock('#/modules/AudioEngine/useCases', async (original) => {
             onCaptureClock?: Parameters<typeof real.startAudioRecording>[3]
         ) => {
             hardware.starts++;
+            if (hardware.refuseCapture) {
+                return false;
+            }
             if (hardware.inputs.size > 0) {
                 const input = hardware.inputs.get(id);
                 if (!input || input.inputId !== inputId) {
@@ -295,7 +332,11 @@ vi.mock('#/modules/AudioEngine/useCases', async (original) => {
                     if (input.zeroFrame === 0) {
                         return { status: 'pending' };
                     }
-                    return { status: 'captured', contextSeconds: input.zeroFrame / hardware.sampleRate };
+                    return {
+                        status: 'captured',
+                        contextSeconds: input.zeroFrame / hardware.sampleRate,
+                        capturedThroughContextSeconds: hardware.captureEndSeconds ?? hardware.now,
+                    };
                 });
                 input.readerPublished = true;
                 return true;
@@ -316,6 +357,7 @@ vi.mock('#/modules/AudioEngine/useCases', async (original) => {
                 return {
                     status: 'captured',
                     contextSeconds: hardware.zeroFrame / hardware.sampleRate,
+                    capturedThroughContextSeconds: hardware.captureEndSeconds ?? hardware.now,
                 };
             });
             hardware.correlation = { beat: playheadClockRef.beat, contextSeconds: playheadClockRef.audioTimeSeconds };
@@ -374,7 +416,10 @@ vi.mock('#/modules/AudioEngine/useCases', async (original) => {
         },
         readNativeEnginePlayheadSeconds: () => {
             const beat = hardware.nativeCursorBeat?.(hardware.now);
-            return beat === undefined || !Number.isFinite(beat) ? null : beat / 2;
+            if (beat === undefined || !Number.isFinite(beat)) {
+                return null;
+            }
+            return captureNativeRecordingContext().recordingGeometry.secondsAtBeat(beat);
         },
     };
 });
@@ -510,7 +555,8 @@ function expectProjectProjection(): void {
     expect(raw.takeLanes.lanes).toEqual(takeLaneStore.value!.lanes);
 }
 
-function reloadSavedRecordingProject(): void {
+/** Reloads Automerge geometry while retaining live Undo objects; this is not a session-mirror hydration oracle. */
+function reloadSavedRecordingGeometryWithLiveHistory(): void {
     flushAutomergeStorageWrites();
     const current = getCrdtDoc<Project>('root');
     if (!current) {
@@ -570,6 +616,7 @@ describe('punch audio capture loop placement', () => {
         hardware.drainSeconds = 0;
         hardware.captureEndSeconds = null;
         hardware.starts = 0;
+        hardware.refuseCapture = false;
         hardware.deferFirstFrame = false;
         hardware.tornFirstFrame = false;
         hardware.hideFirstFrame = false;
@@ -585,6 +632,7 @@ describe('punch audio capture loop placement', () => {
         hardware.nativeCursorBeat = null;
         hardware.captureLag = 0;
         hardware.nativePresentationLead = 0;
+        hardware.nativeAudibleNow = null;
         hardware.nativeSampleOffset = 0;
         hardware.nativeTimingUnavailable = false;
         hardware.forwardAuthorized = true;
@@ -714,14 +762,14 @@ describe('punch audio capture loop placement', () => {
         expect(hardware.sourceStarts[0]!.durationSeconds).toBeCloseTo(0.2, 10);
         expect(undoHistoryStore.value?.past).toHaveLength(1);
         expectProjectProjection();
-        reloadSavedRecordingProject();
+        reloadSavedRecordingGeometryWithLiveHistory();
         expect(recordedClips()).toEqual(clips);
         expect(lane().takes).toEqual(takes);
         await undo();
         expect(recordedClips()).toEqual([]);
         expect(takeLaneStore.value?.lanes).toEqual([]);
         expectProjectProjection();
-        reloadSavedRecordingProject();
+        reloadSavedRecordingGeometryWithLiveHistory();
         await redo();
         expect(recordedClips()).toEqual(clips);
         expect(lane().takes).toEqual(takes);
@@ -817,7 +865,7 @@ describe('punch audio capture loop placement', () => {
         expect(second.buffer!.getChannelData(0)[9600]).toBeUndefined();
         expect(undoHistoryStore.value?.past).toHaveLength(2);
         expectProjectProjection();
-        reloadSavedRecordingProject();
+        reloadSavedRecordingGeometryWithLiveHistory();
         expect(trackStore.value!.tracks).toEqual(tracks);
         expect(takeLaneStore.value!.lanes).toEqual(lanes);
         await undo();
@@ -827,7 +875,7 @@ describe('punch audio capture loop placement', () => {
         expect(trackStore.value!.tracks.every((track) => track.clips.length === 0)).toBe(true);
         expect(takeLaneStore.value!.lanes).toEqual([]);
         expectProjectProjection();
-        reloadSavedRecordingProject();
+        reloadSavedRecordingGeometryWithLiveHistory();
         await redo();
         expect(recordedClips()).toEqual([firstClip]);
         expectProjectProjection();
@@ -2198,7 +2246,9 @@ describe('punch audio capture loop placement', () => {
             const originalTakeId = lane().takes[0]!.id;
             hardware.nativeTimingUnavailable = false;
             if (route === 'punch') {
-                await advanceUntil(() => hardware.flushes === 1);
+                await advanceUntil(() => hardware.now >= 51.9);
+                expect(hardware.flushes).toBe(0);
+                expect(transportStore.value?.isRecording).toBe(true);
             } else {
                 await advanceUntil(() => hardware.now >= 51.75);
                 hardware.now = 51.9;
@@ -2819,151 +2869,216 @@ describe('punch audio capture loop placement', () => {
         expectProjectProjection();
     });
 
+    it('closes an initially unreachable punch at its original out on the first qualifying loop occurrence', async () => {
+        hardware.latencySeconds = 0;
+        await executeAppAction({ type: 'setPunchIn', payload: { beat: 10 } }, { skipUndo: true });
+        await executeAppAction({ type: 'setPunchOut', payload: { beat: 14 } }, { skipUndo: true });
+        await executeAppAction({ type: 'togglePunch' }, { skipUndo: true });
+        transportStore.set({ ...transportStore.value!, isPlaying: true });
+        startPlayheadScheduler();
+        await advanceUntil(() => hardware.starts === 1);
+        const initial = schedulerSession.automaticPunch?.read();
+        if (initial?.status !== 'open') {
+            throw new Error('Valid capture did not admit an open start');
+        }
+        await advanceUntil(() => playheadWrapCountRef.current >= 2);
+        expect(hardware.flushes).toBe(0);
+        expect(schedulerSession.automaticPunch?.read()).toMatchObject({
+            status: 'open',
+            startContextSeconds: initial.startContextSeconds,
+        });
+        await executeAppAction({ type: 'setLoopRegion', payload: { startBeat: 8, endBeat: 16 } }, { skipUndo: true });
+        await tick();
+        const bound = schedulerSession.automaticPunch?.read();
+        if (bound?.status !== 'bounded') {
+            throw new Error('The expanded loop did not admit the original punch out');
+        }
+        expect(bound.startContextSeconds).toBe(initial.startContextSeconds);
+        expect(bound.ending.midiPosition.beat).toBe(14);
+        await executeAppAction({ type: 'setPunchOut', payload: { beat: 15 } }, { skipUndo: true });
+        await advanceUntil(() => hardware.buffer !== null);
+        await recordingLifecycle.waitForCommits();
+        const clip = recordedClips()[0]!;
+        expect(clip.endBeat).toBe(14);
+        expect(lane().takes.filter((take) => take.sourceOffsetBeats !== undefined).length).toBeGreaterThanOrEqual(2);
+        const lastRequiredFrame =
+            Math.round(bound.ending.contextSeconds * hardware.sampleRate) - hardware.zeroFrame - 1;
+        expect(hardware.buffer!.getChannelData(0)[lastRequiredFrame]).toBe(lastRequiredFrame);
+        expect(undoHistoryStore.value?.past).toHaveLength(1);
+        expectProjectProjection();
+        const takes = structuredClone(lane().takes);
+        await undo();
+        expect(recordedClips()).toEqual([]);
+        await redo();
+        expect(recordedClips()).toEqual([clip]);
+        expect(lane().takes).toEqual(takes);
+        expectProjectProjection();
+    });
+
     it.each([
         { route: 'manual', boundary: 'ordinary' },
         { route: 'punch', boundary: 'ordinary' },
         { route: 'punch', boundary: 'seam' },
         { route: 'punch', boundary: 'late wrap' },
-    ] as const)('$route terminal places its second pass after $boundary finalization', async ({ route, boundary }) => {
-        if (route === 'punch') {
-            await executeAppAction({ type: 'setPunchIn', payload: { beat: 10 } }, { skipUndo: true });
-            await executeAppAction({ type: 'setPunchOut', payload: { beat: 14 } }, { skipUndo: true });
-            await executeAppAction({ type: 'togglePunch' }, { skipUndo: true });
-            expect(transportStore.value).toMatchObject({
-                punchInEnabled: true,
-                punchInBeat: 10,
-                punchOutBeat: 14,
-                loopStart: 8,
-                loopEnd: 12,
+    ] as const)(
+        '$route manual terminal places its second pass after $boundary marker edit',
+        async ({ route, boundary }) => {
+            if (route === 'punch') {
+                await executeAppAction({ type: 'setPunchIn', payload: { beat: 10 } }, { skipUndo: true });
+                await executeAppAction({ type: 'setPunchOut', payload: { beat: 14 } }, { skipUndo: true });
+                await executeAppAction({ type: 'togglePunch' }, { skipUndo: true });
+                expect(transportStore.value).toMatchObject({
+                    punchInEnabled: true,
+                    punchInBeat: 10,
+                    punchOutBeat: 14,
+                    loopStart: 8,
+                    loopEnd: 12,
+                });
+                transportStore.set({ ...transportStore.value!, isPlaying: true });
+                startPlayheadScheduler();
+                await advanceUntil(() => hardware.starts === 1);
+            } else {
+                hardware.now = 51;
+                transportStore.set({ ...transportStore.value!, isPlaying: true, playheadPosition: 10 });
+                playheadPositionRef.current = 10;
+                playheadClockRef.beat = 10;
+                playheadClockRef.audioTimeSeconds = 51;
+                toggleRecording();
+                await vi.waitFor(() => expect(activeRecordingRef.current).toHaveLength(1));
+                startPlayheadScheduler();
+            }
+            expect(hardware.zeroFrame / hardware.sampleRate).toBe(51);
+            expect(hardware.correlation).toEqual({ beat: 10, contextSeconds: 51 });
+            // Counter is emitted by the real scheduler; two completed pass takes prove staging routes ran.
+            await advanceUntil(
+                () =>
+                    playheadWrapCountRef.current >= 2 &&
+                    lane().takes.filter((take) => take.sourceOffsetBeats !== undefined).length >= 2
+            );
+            const second = lane().takes.find((take) => take.sourceOffsetBeats === 2);
+            expect(second).toBeDefined();
+            expect(
+                lane()
+                    .takes.filter((take) => take.sourceOffsetBeats !== undefined)
+                    .map((take) => take.sourceOffsetBeats)
+            ).toEqual([0, 2]);
+            expect(second).not.toHaveProperty('passStartBeats');
+            expect(undoHistoryStore.value?.past).toHaveLength(0);
+            const punchOut = { ordinary: 11, seam: 11.9, 'late wrap': 11.79 }[boundary];
+            await executeAppAction({ type: 'setPunchOut', payload: { beat: punchOut } }, { skipUndo: true });
+            expect(transportStore.value?.punchOutBeat).toBe(punchOut);
+            if (route === 'punch') {
+                if (boundary === 'late wrap') {
+                    // Move the loop end onto a rolling playhead below the seam
+                    // band. The next ordinary tick takes the real late-wrap arm.
+                    await advanceUntil(() => playheadPositionRef.current >= 11.75);
+                    expect(schedulerSession.pendingSeam).toBeNull();
+                    await executeAppAction(
+                        { type: 'setLoopRegion', payload: { startBeat: 8, endBeat: 11.8 } },
+                        { skipUndo: true }
+                    );
+                    await tick();
+                    expect(playheadWrapCountRef.current).toBeGreaterThan(2);
+                }
+                if (boundary === 'ordinary') {
+                    await advanceUntil(() => playheadPositionRef.current >= punchOut);
+                } else if (boundary === 'seam') {
+                    await advanceUntil(() => playheadPositionRef.current >= 11.875);
+                    hardware.now += 0.025;
+                }
+                expect(hardware.buffer).toBeNull();
+                expect(transportStore.value?.isRecording).toBe(true);
+                if (boundary === 'seam') {
+                    expect(schedulerSession.pendingSeam).not.toBeNull();
+                }
+                await stopActiveRecording();
+                await recordingLifecycle.waitForCommits();
+            } else {
+                await advanceUntil(() => playheadPositionRef.current >= 11);
+                await stopActiveRecording();
+            }
+            flushAutomergeStorageWrites();
+            const clips = trackStore.value!.tracks.find((track) => track.id === TRACK_ID)!.clips;
+            const raw = getCrdtDoc<Project>('root')!;
+            expect(raw.tracks.tracks.find((track) => track.id === TRACK_ID)!.clips).toEqual(clips);
+            expect(raw.takeLanes.lanes).toEqual(takeLaneStore.value!.lanes);
+            expect(undoHistoryStore.value?.past).toHaveLength(1);
+            expect(undoHistoryStore.value?.past[0]).toMatchObject({
+                kind: 'action',
+                action: { type: 'commitRecording' },
             });
-            transportStore.set({ ...transportStore.value!, isPlaying: true });
-            startPlayheadScheduler();
-            await advanceUntil(() => hardware.starts === 1);
-        } else {
-            hardware.now = 51;
-            transportStore.set({ ...transportStore.value!, isPlaying: true, playheadPosition: 10 });
-            playheadPositionRef.current = 10;
-            playheadClockRef.beat = 10;
-            playheadClockRef.audioTimeSeconds = 51;
-            toggleRecording();
-            await vi.waitFor(() => expect(activeRecordingRef.current).toHaveLength(1));
-            startPlayheadScheduler();
-        }
-        expect(hardware.zeroFrame / hardware.sampleRate).toBe(51);
-        expect(hardware.correlation).toEqual({ beat: 10, contextSeconds: 51 });
-        // Counter is emitted by the real scheduler; two completed pass takes prove staging routes ran.
-        await advanceUntil(
-            () =>
-                playheadWrapCountRef.current >= 2 &&
-                lane().takes.filter((take) => take.sourceOffsetBeats !== undefined).length >= 2
-        );
-        const second = lane().takes.find((take) => take.sourceOffsetBeats === 2);
-        expect(second).toBeDefined();
-        expect(
-            lane()
-                .takes.filter((take) => take.sourceOffsetBeats !== undefined)
-                .map((take) => take.sourceOffsetBeats)
-        ).toEqual([0, 2]);
-        expect(second).not.toHaveProperty('passStartBeats');
-        expect(undoHistoryStore.value?.past).toHaveLength(0);
-        const punchOut = { ordinary: 11, seam: 11.9, 'late wrap': 11.79 }[boundary];
-        await executeAppAction({ type: 'setPunchOut', payload: { beat: punchOut } }, { skipUndo: true });
-        expect(transportStore.value?.punchOutBeat).toBe(punchOut);
-        if (route === 'punch') {
-            if (boundary === 'late wrap') {
-                // Move the loop end onto a rolling playhead below the seam
-                // band. The next ordinary tick takes the real late-wrap arm.
-                await advanceUntil(() => playheadPositionRef.current >= 11.75);
-                expect(schedulerSession.pendingSeam).toBeNull();
-                await executeAppAction(
-                    { type: 'setLoopRegion', payload: { startBeat: 8, endBeat: 11.8 } },
-                    { skipUndo: true }
-                );
-                await tick();
-                expect(playheadWrapCountRef.current).toBeGreaterThan(2);
+            await executeAppAction(
+                {
+                    type: 'setCompRegion',
+                    payload: { trackId: TRACK_ID, takeId: second!.id, startBeat: 8, endBeat: 12 },
+                },
+                { skipUndo: true }
+            );
+            const resolved = resolveClipsWithComping(TRACK_ID, clips);
+            const fragment = resolved.find((clip) => clip.regionEndBeat === 12)!;
+            const originSeconds =
+                5 +
+                (hardware.zeroFrame / hardware.sampleRate - hardware.correlation!.contextSeconds) -
+                hardware.latencySeconds;
+            const expectedSourceSeconds = 6 - 5 + 5 - originSeconds;
+            const actualSourceSeconds = ((fragment.audioOffsetBeats ?? 0) * 60) / 120;
+            expect(originSeconds).toBeCloseTo(4.9, 10);
+            expect(clips).toHaveLength(1);
+            expect(clips[0]?.startBeat).toBe(8);
+            expect(clips[0]?.audioOffsetBeats).toBeCloseTo(-1.8, 10);
+            expect(activeRecordingRef.current).toEqual([]);
+            expect(clips[0]?.endBeat).toBe(12);
+            expect(fragment.regionStartBeat).toBe(8);
+            expect(actualSourceSeconds).toBeCloseTo(expectedSourceSeconds, 10);
+            const frame = Math.round(actualSourceSeconds * hardware.sampleRate);
+            expect(frame).toBe(52800);
+            const media = fragment.audioBufferId && audioBufferCache.get(fragment.audioBufferId);
+            expect(media).toBe(hardware.buffer);
+            if (!media) {
+                throw new Error('Resolved pass has no captured media');
             }
-            await advanceUntil(() => hardware.buffer !== null);
-            if (boundary === 'seam') {
-                expect(schedulerSession.pendingSeam).not.toBeNull();
-            }
-            await recordingLifecycle.waitForCommits();
-        } else {
-            await advanceUntil(() => playheadPositionRef.current >= 11);
-            await stopActiveRecording();
-        }
-        flushAutomergeStorageWrites();
-        const clips = trackStore.value!.tracks.find((track) => track.id === TRACK_ID)!.clips;
-        const raw = getCrdtDoc<Project>('root')!;
-        expect(raw.tracks.tracks.find((track) => track.id === TRACK_ID)!.clips).toEqual(clips);
-        expect(raw.takeLanes.lanes).toEqual(takeLaneStore.value!.lanes);
-        expect(undoHistoryStore.value?.past).toHaveLength(1);
-        expect(undoHistoryStore.value?.past[0]).toMatchObject({ kind: 'action', action: { type: 'commitRecording' } });
-        await executeAppAction(
-            { type: 'setCompRegion', payload: { trackId: TRACK_ID, takeId: second!.id, startBeat: 8, endBeat: 12 } },
-            { skipUndo: true }
-        );
-        const resolved = resolveClipsWithComping(TRACK_ID, clips);
-        const fragment = resolved.find((clip) => clip.regionEndBeat === 12)!;
-        const originSeconds =
-            5 +
-            (hardware.zeroFrame / hardware.sampleRate - hardware.correlation!.contextSeconds) -
-            hardware.latencySeconds;
-        const expectedSourceSeconds = 6 - 5 + 5 - originSeconds;
-        const actualSourceSeconds = ((fragment.audioOffsetBeats ?? 0) * 60) / 120;
-        expect(originSeconds).toBeCloseTo(4.9, 10);
-        expect(clips).toHaveLength(1);
-        expect(clips[0]?.startBeat).toBe(8);
-        expect(clips[0]?.audioOffsetBeats).toBeCloseTo(-1.8, 10);
-        if (route === 'punch') {
-            // The real finalizer must close the live clip and its active set
-            // before the capture flush can invoke the commit terminal.
-            expect(hardware.finalizedAtFlush).toEqual({ active: [], endBeat: 12 });
-        }
-        expect(fragment.regionStartBeat).toBe(8);
-        expect(actualSourceSeconds).toBeCloseTo(expectedSourceSeconds, 10);
-        const frame = Math.round(actualSourceSeconds * hardware.sampleRate);
-        expect(frame).toBe(52800);
-        const media = fragment.audioBufferId && audioBufferCache.get(fragment.audioBufferId);
-        expect(media).toBe(hardware.buffer);
-        if (!media) {
-            throw new Error('Resolved pass has no captured media');
-        }
-        expect(media.getChannelData(0)[frame]).toBe(52800);
-        const placedPass = lane().takes.find((take) => take.id === second!.id)!;
-        expect(placedPass.passAnchorSeconds).toBeCloseTo(-0.9, 10);
-        expect(placedPass.passDepthSeconds).toBeCloseTo(1.1, 10);
-        expect(getCrdtDoc<Project>('root')!.takeLanes.lanes).toEqual(takeLaneStore.value!.lanes);
-        expect(undoHistoryStore.value?.past).toHaveLength(1);
-        expectProjectProjection();
+            expect(media.getChannelData(0)[frame]).toBe(52800);
+            const placedPass = lane().takes.find((take) => take.id === second!.id)!;
+            expect(placedPass.passAnchorSeconds).toBeCloseTo(-0.9, 10);
+            expect(placedPass.passDepthSeconds).toBeCloseTo(1.1, 10);
+            expect(getCrdtDoc<Project>('root')!.takeLanes.lanes).toEqual(takeLaneStore.value!.lanes);
+            expect(undoHistoryStore.value?.past).toHaveLength(1);
+            expectProjectProjection();
 
-        // Comp selection is deliberately outside history. One undo still owns
-        // the complete recording, and redo retains its clip and pass placement.
-        const committedClip = structuredClone(clips[0]);
-        const committedTakes = structuredClone(lane().takes);
-        await undo();
-        flushAutomergeStorageWrites();
-        expect(recordedClips()).toEqual([]);
-        expect(takeLaneStore.value?.lanes).toEqual([]);
-        expect(undoHistoryStore.value?.past).toHaveLength(0);
-        expect(undoHistoryStore.value?.future).toHaveLength(1);
-        expectProjectProjection();
-        await redo();
-        flushAutomergeStorageWrites();
-        expect(recordedClips()).toEqual([committedClip]);
-        expect(lane().takes).toEqual(committedTakes);
-        expect(undoHistoryStore.value?.past).toHaveLength(1);
-        expect(undoHistoryStore.value?.future).toHaveLength(0);
-        expectProjectProjection();
-        await executeAppAction(
-            { type: 'setCompRegion', payload: { trackId: TRACK_ID, takeId: second!.id, startBeat: 8, endBeat: 12 } },
-            { skipUndo: true }
-        );
-        const replayed = resolveClipsWithComping(TRACK_ID, recordedClips()).find((clip) => clip.regionEndBeat === 12)!;
-        expect(replayed.regionStartBeat).toBe(8);
-        expect(replayed.audioOffsetBeats).toBeCloseTo(2.2, 10);
-        expect(replayed.audioBufferId).toBe(fragment.audioBufferId);
-        expectProjectProjection();
-    });
+            // Comp selection is deliberately outside history. One undo still owns
+            // the complete recording, and redo retains its clip and pass placement.
+            const committedClip = structuredClone(clips[0]);
+            const committedTakes = structuredClone(lane().takes);
+            await undo();
+            flushAutomergeStorageWrites();
+            expect(recordedClips()).toEqual([]);
+            expect(takeLaneStore.value?.lanes).toEqual([]);
+            expect(undoHistoryStore.value?.past).toHaveLength(0);
+            expect(undoHistoryStore.value?.future).toHaveLength(1);
+            expectProjectProjection();
+            await redo();
+            flushAutomergeStorageWrites();
+            expect(recordedClips()).toEqual([committedClip]);
+            expect(lane().takes).toEqual(committedTakes);
+            expect(undoHistoryStore.value?.past).toHaveLength(1);
+            expect(undoHistoryStore.value?.future).toHaveLength(0);
+            expectProjectProjection();
+            await executeAppAction(
+                {
+                    type: 'setCompRegion',
+                    payload: { trackId: TRACK_ID, takeId: second!.id, startBeat: 8, endBeat: 12 },
+                },
+                { skipUndo: true }
+            );
+            const replayed = resolveClipsWithComping(TRACK_ID, recordedClips()).find(
+                (clip) => clip.regionEndBeat === 12
+            )!;
+            expect(replayed.regionStartBeat).toBe(8);
+            expect(replayed.audioOffsetBeats).toBeCloseTo(2.2, 10);
+            expect(replayed.audioBufferId).toBe(fragment.audioBufferId);
+            expectProjectProjection();
+        }
+    );
 
     it.each([8, 10])(
         'keeps the rolling run-up on its physical clock through tempo and loop-entry %s edits',
@@ -3797,6 +3912,683 @@ describe('punch audio capture loop placement', () => {
         }
     );
 
+    it.each<{
+        editOut: boolean;
+        nativeCursor: boolean;
+        latency: number;
+        mixed: boolean;
+        interleave: boolean;
+        nearOut?: 'release' | 'held';
+        openEnding?: 'manual' | 'reachable' | 'native-pending' | 'delayed-start';
+        settlement?:
+            | 'remove-before'
+            | 'remove-after'
+            | 'edit'
+            | 'all-remove'
+            | 'remove-abort'
+            | 'replace'
+            | 'ambiguous'
+            | 'replace-before'
+            | 'root-aba'
+            | 'audio-failed'
+            | 'unstarted'
+            | 'recovery'
+            | 'recovery-unsounded'
+            | 'recovery-unsounded-stop';
+    }>([
+        { editOut: false, nativeCursor: false, latency: 0, mixed: false, interleave: false },
+        { editOut: true, nativeCursor: false, latency: 0, mixed: false, interleave: false },
+        { editOut: false, nativeCursor: true, latency: 0, mixed: false, interleave: false },
+        { editOut: true, nativeCursor: true, latency: 0, mixed: false, interleave: false },
+        { editOut: true, nativeCursor: false, latency: 0.03, mixed: false, interleave: false },
+        { editOut: true, nativeCursor: false, latency: 0, mixed: true, interleave: false },
+        { editOut: true, nativeCursor: false, latency: 0, mixed: true, interleave: true },
+        { editOut: false, nativeCursor: false, latency: 0, mixed: true, interleave: true, settlement: 'remove-before' },
+        { editOut: false, nativeCursor: false, latency: 0, mixed: true, interleave: true, settlement: 'remove-after' },
+        { editOut: false, nativeCursor: false, latency: 0, mixed: true, interleave: true, settlement: 'edit' },
+        { editOut: false, nativeCursor: false, latency: 0, mixed: true, interleave: false, settlement: 'all-remove' },
+        { editOut: false, nativeCursor: false, latency: 0, mixed: false, interleave: false, settlement: 'all-remove' },
+        { editOut: false, nativeCursor: false, latency: 0, mixed: true, interleave: true, settlement: 'remove-abort' },
+        { editOut: false, nativeCursor: false, latency: 0, mixed: true, interleave: true, settlement: 'replace' },
+        { editOut: false, nativeCursor: false, latency: 0, mixed: true, interleave: true, settlement: 'ambiguous' },
+        {
+            editOut: false,
+            nativeCursor: false,
+            latency: 0,
+            mixed: true,
+            interleave: true,
+            settlement: 'replace-before',
+        },
+        { editOut: false, nativeCursor: false, latency: 0, mixed: true, interleave: true, settlement: 'root-aba' },
+        { editOut: false, nativeCursor: false, latency: 0, mixed: true, interleave: false, settlement: 'audio-failed' },
+        { editOut: false, nativeCursor: false, latency: 0, mixed: true, interleave: false, settlement: 'unstarted' },
+        { editOut: false, nativeCursor: true, latency: 0, mixed: true, interleave: false, settlement: 'recovery' },
+        { editOut: false, nativeCursor: false, latency: 0, mixed: false, interleave: false, nearOut: 'release' },
+        { editOut: false, nativeCursor: false, latency: 0, mixed: false, interleave: false, nearOut: 'held' },
+        { editOut: false, nativeCursor: false, latency: 0.03, mixed: false, interleave: false, nearOut: 'release' },
+        { editOut: false, nativeCursor: false, latency: 0.03, mixed: false, interleave: false, nearOut: 'held' },
+        { editOut: false, nativeCursor: false, latency: 0, mixed: false, interleave: false, openEnding: 'manual' },
+        { editOut: false, nativeCursor: false, latency: 0, mixed: false, interleave: false, openEnding: 'reachable' },
+        { editOut: false, nativeCursor: true, latency: 0, mixed: false, interleave: false, openEnding: 'manual' },
+        { editOut: false, nativeCursor: true, latency: 0, mixed: false, interleave: false, openEnding: 'reachable' },
+        {
+            editOut: false,
+            nativeCursor: true,
+            latency: 0,
+            mixed: false,
+            interleave: false,
+            openEnding: 'native-pending',
+        },
+        {
+            editOut: false,
+            nativeCursor: false,
+            latency: 0,
+            mixed: true,
+            interleave: false,
+            openEnding: 'delayed-start',
+        },
+        {
+            editOut: false,
+            nativeCursor: true,
+            latency: 0,
+            mixed: true,
+            interleave: false,
+            settlement: 'recovery-unsounded',
+        },
+        {
+            editOut: false,
+            nativeCursor: true,
+            latency: 0,
+            mixed: true,
+            interleave: false,
+            settlement: 'recovery-unsounded-stop',
+        },
+    ])(
+        'seals a held MIDI note at the admitted automatic punch out with edited out=$editOut native=$nativeCursor latency=$latency mixed=$mixed interleave=$interleave settlement=$settlement near=$nearOut open=$openEnding',
+        async ({ editOut, nativeCursor, latency, mixed, interleave, settlement, nearOut, openEnding }) => {
+            const midiId = `held-punch-midi-${editOut}-${nativeCursor}-${latency}-${mixed}-${interleave}`;
+            const terminalGate = interleave ? Promise.withResolvers<void>() : null;
+            const initialReady = openEnding === 'delayed-start' ? Promise.withResolvers<void>() : null;
+            let pendingPlayback: Promise<void> | null = null;
+            let foreignEntryId: string | undefined;
+            let successorDocument: string | null = null;
+            const admittedOut = openEnding ? 14 : 11.03;
+            let expectedRecoveryMidiEnd = admittedOut - 10;
+            hardware.latencySeconds = latency;
+            hardware.refuseCapture = settlement === 'unstarted';
+            await executeAppAction(
+                { type: 'armTrack', payload: { trackId: TRACK_ID, armed: mixed } },
+                { skipUndo: true }
+            );
+            await executeAppAction(
+                { type: 'addTrack', payload: { id: midiId, kind: 'midi', name: 'Held punch MIDI' } },
+                { skipUndo: true }
+            );
+            await executeAppAction({ type: 'armTrack', payload: { trackId: midiId, armed: true } }, { skipUndo: true });
+            await executeAppAction({ type: 'setPunchIn', payload: { beat: 10 } }, { skipUndo: true });
+            await executeAppAction({ type: 'setPunchOut', payload: { beat: admittedOut } }, { skipUndo: true });
+            await executeAppAction({ type: 'togglePunch' }, { skipUndo: true });
+            const disposeAdmission = setRecordingMidiAdmissionPort({
+                admitRecordingMidiNoteOn,
+                admitRecordingMidiNoteOff,
+                admitRecordingMidiExpression,
+                findOpenRecordingMidiAdmission,
+                findOpenRecordingMidiMemberAdmission,
+                getRecordingMidiAdmission,
+                retireRecordingMidiAdmission,
+                takeOwnsRecordingRoot,
+                recordingMidiSourceBeatAt,
+                isRecordingMidiInputExcluded,
+            });
+            const contextDescriptors = Object.getOwnPropertyDescriptors(audioEngine.context);
+            const platform = createMockAudioContext();
+            Object.defineProperties(audioEngine.context, Object.getOwnPropertyDescriptors(platform));
+            Object.defineProperties(audioEngine.context, {
+                currentTime: { configurable: true, get: () => hardware.now },
+                baseLatency: { configurable: true, value: latency },
+                outputLatency: { configurable: true, value: 0 },
+            });
+            setMidiInputTrack(midiId);
+            try {
+                if (nativeCursor) {
+                    hardware.nativeCursorBeat = (now) => 10.25 + (now - 51) * 2;
+                    if (openEnding) {
+                        hardware.nativeCursorBeat = (now) => 8 + ((2.25 + (now - 51) * 2) % 4);
+                    }
+                    hardware.nativeTimingUnavailable = openEnding === 'native-pending';
+                    setGestureClockSource({
+                        getAudioTimeSeconds: () => hardware.now,
+                        readNativeCursorBeats: () =>
+                            hardware.nativeCursorBeat!(hardware.nativeAudibleNow ?? hardware.now),
+                    });
+                }
+                if (initialReady) {
+                    hardware.admissionGate = initialReady.promise;
+                    transportStore.set({ ...transportStore.value!, isPlaying: false, playheadPosition: 10 });
+                    playheadClockRef.beat = 10;
+                    playheadClockRef.audioTimeSeconds = hardware.now;
+                    playheadPositionRef.current = 10;
+                    pendingPlayback = startPlayback();
+                    await vi.waitFor(() => expect(hardware.starts).toBe(1));
+                    expect(schedulerSession.automaticPunch?.read().status).toBe('pending');
+                    await triggerLiveNoteOn(0, 63, 100);
+                    await triggerLiveNoteOff(0, 63);
+                    expect(activeRecordingRef.midiAdmissions).toEqual([]);
+                    initialReady.resolve();
+                    await pendingPlayback;
+                    expect(isRecordingMidiInputExcluded(hardware.now, midiId)).toBe(true);
+                    await tick(0.125);
+                } else {
+                    transportStore.set({ ...transportStore.value!, isPlaying: true });
+                    startPlayheadScheduler();
+                    await advanceUntil(() => transportStore.value?.isRecording === true);
+                }
+                if (nearOut) {
+                    // Thirty milliseconds of lead-in needs a closer physical onset to
+                    // discriminate the same 1/16-beat floor after compensation.
+                    const inputBeat = latency > 0 ? 11.0299 : 11.02;
+                    const current = captureEventPositionAt({ audioTime: hardware.now });
+                    await tick((inputBeat - current.beat) / 2);
+                    expect(captureEventPositionAt({ audioTime: hardware.now }).beat).toBeCloseTo(inputBeat, 10);
+                } else if (latency === 0) {
+                    await tick(0.125);
+                }
+                if (openEnding === 'native-pending') {
+                    await triggerLiveNoteOn(0, 63, 100);
+                    await triggerLiveNoteOff(0, 63);
+                    expect(activeRecordingRef.midiAdmissions).toEqual([]);
+                    expect(midiStore.value!.notesByClipId[activeRecordingRef.current[0]!] ?? []).toEqual([]);
+                    hardware.nativeTimingUnavailable = false;
+                    await tick();
+                }
+                const onsetBeat = nativeCursor ? hardware.nativeCursorBeat!(hardware.now) : null;
+                if (nativeCursor) {
+                    // Input must retain its accepted native cursor even when the
+                    // browser scheduling position deliberately names another beat.
+                    playheadClockRef.beat = 8;
+                    playheadClockRef.audioTimeSeconds = hardware.now;
+                    if (!openEnding) {
+                        expect(onsetBeat).toBeCloseTo(10.5, 10);
+                    }
+                }
+                await triggerLiveNoteOn(0, 64, 100);
+                expect(activeRecordingRef.midiAdmissions).toHaveLength(1);
+                if (openEnding) {
+                    const clipId = trackStore.value!.tracks.find((track) => track.id === midiId)!.clips[0]!.id;
+                    await tick(0.125);
+                    await triggerLiveNoteOff(0, 64);
+                    const firstWrap = playheadWrapCountRef.current;
+                    await advanceUntil(
+                        () =>
+                            playheadWrapCountRef.current > firstWrap &&
+                            captureEventPositionAt({ audioTime: hardware.now }).beat >= 8.25
+                    );
+                    await triggerLiveNoteOn(0, 67, 100);
+                    expect(activeRecordingRef.midiAdmissions).toHaveLength(1);
+                    let expectedEnd: number;
+                    if (openEnding === 'reachable') {
+                        const adoptedAt = hardware.now;
+                        const adoptedBeat = captureEventPositionAt({ audioTime: hardware.now }).beat;
+                        await executeAppAction(
+                            { type: 'setLoopRegion', payload: { startBeat: 8, endBeat: 16 } },
+                            { skipUndo: true }
+                        );
+                        if (nativeCursor) {
+                            hardware.nativeCursorBeat = (now) => adoptedBeat + (now - adoptedAt) * 2;
+                        }
+                        await tick();
+                        await executeAppAction({ type: 'setPunchOut', payload: { beat: 15 } }, { skipUndo: true });
+                        await advanceUntil(() => transportStore.value?.isRecording === false);
+                        expectedEnd = 2 + (14 - 8);
+                    } else {
+                        await tick(0.125);
+                        const stopPosition = captureEventPositionAt({ audioTime: hardware.now });
+                        expectedEnd = 2 + (stopPosition.beat - 8);
+                        await stopActiveRecording();
+                    }
+                    await recordingLifecycle.waitForCommits();
+                    const clips = structuredClone(trackStore.value!.tracks.find((track) => track.id === midiId)!.clips);
+                    const notes = structuredClone(midiStore.value!.notesByClipId[clipId]!);
+                    expect(notes.map((note) => [note.pitch, note.recordingPassIndex])).toEqual([
+                        [64, 0],
+                        [67, 1],
+                    ]);
+                    expect(notes[1]!.startBeat + notes[1]!.duration).toBeCloseTo(expectedEnd, 10);
+                    if (openEnding === 'reachable') {
+                        expect(clips[0]!.endBeat).toBe(14);
+                    }
+                    expect(undoHistoryStore.value!.past).toHaveLength(mixed ? 2 : 1);
+                    await triggerLiveNoteOff(0, 67);
+                    expect(midiStore.value!.notesByClipId[clipId]).toEqual(notes);
+                    expectProjectProjection();
+                    const audio = mixed ? structuredClone(recordedClips()) : null;
+                    await undo();
+                    if (mixed) {
+                        expect(recordedClips()).toEqual([]);
+                    }
+                    expect(trackStore.value!.tracks.find((track) => track.id === midiId)!.clips).toEqual([]);
+                    expect(midiStore.value!.notesByClipId[clipId] ?? []).toEqual([]);
+                    await redo();
+                    expect(trackStore.value!.tracks.find((track) => track.id === midiId)!.clips).toEqual(clips);
+                    expect(midiStore.value!.notesByClipId[clipId]).toEqual(notes);
+                    if (audio) {
+                        expect(recordedClips()).toEqual(audio);
+                    }
+                    return;
+                }
+                if (nearOut === 'release') {
+                    hardware.now += latency > 0 ? 0.000025 : 0.001;
+                    await triggerLiveNoteOff(0, 64);
+                }
+                if (editOut) {
+                    await executeAppAction({ type: 'setPunchOut', payload: { beat: 11.53 } }, { skipUndo: true });
+                }
+                if (latency > 0) {
+                    const bound = schedulerSession.automaticPunch?.read();
+                    if (bound?.status !== 'bounded') {
+                        throw new Error('Missing latency punch ending');
+                    }
+                    hardware.now = bound.ending.contextSeconds + 0.01;
+                    await triggerLiveNoteOn(0, 65, 100);
+                    await triggerLiveNoteOff(0, 65);
+                    await triggerLiveNoteOff(0, 64);
+                }
+                const ownedMidiClipId = trackStore.value!.tracks.find((track) => track.id === midiId)!.clips[0]!.id;
+                if (settlement === 'audio-failed') {
+                    const terminal = hardware.terminal;
+                    expect(terminal).not.toBeNull();
+                    hardware.terminal = null;
+                    terminal!({ kind: 'failed', reason: 'worker-error' });
+                }
+                if (
+                    settlement === 'recovery' ||
+                    settlement === 'recovery-unsounded' ||
+                    settlement === 'recovery-unsounded-stop'
+                ) {
+                    hardware.nativeWraps += 1;
+                    hardware.nativeAdmissionSerial += 1;
+                    if (settlement === 'recovery-unsounded' || settlement === 'recovery-unsounded-stop') {
+                        const bound = schedulerSession.automaticPunch?.read();
+                        if (bound?.status !== 'bounded') {
+                            throw new Error('Missing native MIDI target');
+                        }
+                        hardware.nativeAudibleNow = bound.ending.contextSeconds - 0.1;
+                        if (settlement === 'recovery-unsounded-stop') {
+                            hardware.now = bound.ending.contextSeconds + TICK_SECONDS;
+                            const accepted = captureEventPositionAt({ audioTime: hardware.now });
+                            expect(accepted.beat).toBeLessThan(admittedOut);
+                            expectedRecoveryMidiEnd = accepted.beat - 10;
+                            await stopActiveRecording();
+                        } else {
+                            await tick(bound.ending.contextSeconds - hardware.now + TICK_SECONDS);
+                        }
+                        expect(hardware.now).toBeGreaterThan(bound.ending.contextSeconds);
+                        expect(captureEventPositionAt({ audioTime: hardware.now }).beat).toBeLessThan(admittedOut);
+                        if (settlement !== 'recovery-unsounded-stop') {
+                            expect(transportStore.value!.isRecording).toBe(true);
+                            expect(hardware.flushes).toBe(0);
+                            hardware.nativeAudibleNow = hardware.now;
+                        }
+                    }
+                }
+                if (settlement === 'remove-abort') {
+                    const result = await executeAppActionBatch(
+                        [
+                            { type: 'removeTrack', payload: { trackId: midiId } },
+                            { type: 'setTrackColor', payload: { trackId: TRACK_ID, color: '#123456' } },
+                        ],
+                        { shouldExecute: () => trackStore.value!.tracks.some((track) => track.id === midiId) }
+                    );
+                    expect(result.status).toBe('cancelled');
+                    expect(getCrdtDoc<Project>('root')!.tracks.tracks.some((track) => track.id === midiId)).toBe(true);
+                    await triggerLiveNoteOn(0, 65, 100);
+                    expect(
+                        activeRecordingRef.midiAdmissions.filter((admission) => admission.clipId === ownedMidiClipId)
+                    ).toHaveLength(2);
+                    await triggerLiveNoteOff(0, 65);
+                }
+                if (settlement === 'replace-before') {
+                    flushAutomergeStorageWrites();
+                    await executeAppAction({ type: 'removeClip', payload: { clipId: ownedMidiClipId } });
+                    await executeAppAction({
+                        type: 'addClip',
+                        payload: {
+                            id: ownedMidiClipId,
+                            trackId: midiId,
+                            startBeat: 20,
+                            endBeat: 24,
+                            name: 'Replacement same ID',
+                            type: 'midi',
+                        },
+                    });
+                    await triggerLiveNoteOn(0, 65, 100);
+                    await triggerLiveNoteOff(0, 65);
+                    await triggerLiveNoteOff(0, 64);
+                    expect(midiStore.value!.notesByClipId[ownedMidiClipId] ?? []).toEqual([]);
+                }
+                if (settlement === 'all-remove') {
+                    await executeAppAction({ type: 'removeTrack', payload: { trackId: midiId } });
+                    if (mixed) {
+                        await executeAppAction({ type: 'removeTrack', payload: { trackId: TRACK_ID } });
+                    }
+                    await stopActiveRecording();
+                    expect(transportStore.value!.isRecording).toBe(false);
+                    expect(activeRecordingRef.current).toEqual([]);
+                    expect(undoHistoryStore.value!.past).toHaveLength(mixed ? 2 : 1);
+                    expect(trackStore.value!.tracks.flatMap((track) => track.clips)).toEqual([]);
+                    expect(midiStore.value!.notesByClipId[ownedMidiClipId]).toBeUndefined();
+                    expect(takeLaneStore.value!.lanes).toEqual([]);
+                    expectProjectProjection();
+                    return;
+                }
+                if (settlement === 'remove-before') {
+                    await executeAppAction({ type: 'removeTrack', payload: { trackId: midiId } });
+                }
+                if (terminalGate) {
+                    const bound = schedulerSession.automaticPunch?.read();
+                    if (bound?.status !== 'bounded') {
+                        throw new Error('Missing mixed punch ending');
+                    }
+                    hardware.flushGate = terminalGate.promise;
+                    const closingTick = tick(bound.ending.contextSeconds - hardware.now + TICK_SECONDS);
+                    await vi.waitFor(() => expect(hardware.flushes).toBe(1));
+                    if (settlement === 'root-aba') {
+                        flushAutomergeStorageWrites();
+                        replaceCrdtDoc({ id: 'root', doc: cloneAutomergeDoc(getCrdtDoc('root')!) });
+                        replaceCrdtDoc({ id: 'root', doc: cloneAutomergeDoc(getCrdtDoc('root')!) });
+                        successorDocument = JSON.stringify(getCrdtDoc('root'));
+                    } else if (settlement === 'ambiguous') {
+                        let failNextPublication = true;
+                        configureAutomergeStoragePort({
+                            getDoc: (docId) => getCrdtDoc<Record<string, unknown>>(docId),
+                            getDocHeads: (docId) => getHeads(getCrdtDoc<Record<string, unknown>>(docId)!),
+                            hasDoc: (docId) => !!getCrdtDoc(docId),
+                            getSemanticMessage: () => undefined,
+                            mutateDoc: ({
+                                docId,
+                                changedKeys,
+                                changeFn,
+                                beforeChange,
+                                message,
+                                snapshotTransaction,
+                            }) => {
+                                mutateCrdtDoc({
+                                    id: docId,
+                                    changeFn,
+                                    beforeChange,
+                                    message,
+                                    snapshotTransaction,
+                                    localSlots: changedKeys,
+                                });
+                                if (failNextPublication) {
+                                    failNextPublication = false;
+                                    throw new Error(
+                                        'controlled observer failure after actual mixed recording publication'
+                                    );
+                                }
+                            },
+                        });
+                    } else if (settlement === 'replace') {
+                        await executeAppAction({ type: 'removeClip', payload: { clipId: ownedMidiClipId } });
+                        await executeAppAction({
+                            type: 'addClip',
+                            payload: {
+                                id: ownedMidiClipId,
+                                trackId: midiId,
+                                startBeat: 20,
+                                endBeat: 24,
+                                name: 'Replacement same ID',
+                                type: 'midi',
+                            },
+                        });
+                    } else if (settlement === 'remove-after') {
+                        await executeAppAction({ type: 'removeTrack', payload: { trackId: midiId } });
+                    } else if (settlement === 'edit') {
+                        await executeAppAction({
+                            type: 'moveClip',
+                            payload: { clipId: ownedMidiClipId, trackId: midiId, startBeat: 20 },
+                        });
+                    } else if (!settlement) {
+                        await executeAppAction({
+                            type: 'setTrackColor',
+                            payload: { trackId: midiId, color: '#123456' },
+                        });
+                        foreignEntryId = undoHistoryStore.value?.past.at(-1)?.id;
+                    }
+                    terminalGate.resolve();
+                    await closingTick;
+                }
+                await advanceUntil(() => transportStore.value?.isRecording === false);
+                await recordingLifecycle.waitForCommits();
+                flushAutomergeStorageWrites();
+                if (
+                    settlement === 'audio-failed' ||
+                    settlement === 'unstarted' ||
+                    settlement === 'recovery' ||
+                    settlement === 'recovery-unsounded' ||
+                    settlement === 'recovery-unsounded-stop'
+                ) {
+                    const midiClips = structuredClone(
+                        trackStore.value!.tracks.find((track) => track.id === midiId)!.clips
+                    );
+                    const notes = structuredClone(midiStore.value!.notesByClipId[ownedMidiClipId] ?? []);
+                    expect(midiClips).toHaveLength(1);
+                    expect(notes).toHaveLength(1);
+                    expect(notes[0]!.startBeat + notes[0]!.duration).toBeCloseTo(expectedRecoveryMidiEnd, 10);
+                    let audio = null;
+                    if (
+                        settlement === 'recovery' ||
+                        settlement === 'recovery-unsounded' ||
+                        settlement === 'recovery-unsounded-stop'
+                    ) {
+                        audio = structuredClone(recordedClips()[0]!);
+                        expect(audio).toMatchObject({ startBeat: 0, muted: true, audioOffsetBeats: 0 });
+                        const media = audioBufferCache.get(audio.audioBufferId!)!;
+                        expect(media).toBe(hardware.buffer);
+                        expect(media.getChannelData(0)[media.length - 1]).toBe(media.length - 1);
+                        expect(notifyUser).toHaveBeenCalledWith(
+                            'Audio kept as a muted recording. Align it before playback, then save your project.',
+                            'warning'
+                        );
+                    } else {
+                        expect(recordedClips()).toEqual([]);
+                        expect(hardware.buffer).toBeNull();
+                    }
+                    expect(undoHistoryStore.value!.past).toHaveLength(
+                        settlement === 'recovery' ||
+                            settlement === 'recovery-unsounded' ||
+                            settlement === 'recovery-unsounded-stop'
+                            ? 2
+                            : 1
+                    );
+                    await undo();
+                    expect(recordedClips()).toEqual([]);
+                    expect(trackStore.value!.tracks.find((track) => track.id === midiId)!.clips).toEqual([]);
+                    expect(takeLaneStore.value!.lanes).toEqual([]);
+                    await redo();
+                    expect(trackStore.value!.tracks.find((track) => track.id === midiId)!.clips).toEqual(midiClips);
+                    expect(midiStore.value!.notesByClipId[ownedMidiClipId]).toEqual(notes);
+                    if (audio) {
+                        expect(recordedClips()).toEqual([audio]);
+                    }
+                    expectProjectProjection();
+                    return;
+                }
+                if (settlement === 'root-aba') {
+                    expect(JSON.stringify(getCrdtDoc('root'))).toBe(successorDocument);
+                    expect(undoHistoryStore.value!.past).toEqual([]);
+                    expect(notifyUser).toHaveBeenCalledWith(
+                        'Recording stopped — the project switched branches while the take was landing, so it was not kept.',
+                        'warning'
+                    );
+                    return;
+                }
+                if (settlement === 'remove-abort') {
+                    // The aborted removal owns no history and the original gesture still publishes.
+                    expect(undoHistoryStore.value!.past).toHaveLength(2);
+                    const groupIds = undoHistoryStore.value!.past.map((entry) => entry.groupId);
+                    expect(groupIds[0]).toMatch(/^recording-/);
+                    expect(new Set(groupIds).size).toBe(1);
+                }
+                if (settlement && settlement !== 'remove-abort') {
+                    expect(recordedClips()).toHaveLength(1);
+                    const audio = structuredClone(recordedClips()[0]!);
+                    expect(audio.endBeat).toBe(admittedOut);
+                    const frame = Math.round(((admittedOut - 10) / 2) * hardware.sampleRate) - 1;
+                    expect(hardware.buffer!.getChannelData(0)[frame]).toBe(frame);
+                    if (settlement === 'ambiguous') {
+                        expect(trackStore.value!.tracks.find((track) => track.id === midiId)!.clips).toHaveLength(1);
+                        expect(midiStore.value!.notesByClipId[ownedMidiClipId]).toHaveLength(1);
+                        expect(notifyUser).toHaveBeenCalledWith(
+                            'Recording was kept, but its save or history could not be verified. Keep the project open and check it before continuing.',
+                            'warning'
+                        );
+                        expect(
+                            vi
+                                .mocked(notifyUser)
+                                .mock.calls.filter(([message]) => message.startsWith('Recording was kept'))
+                        ).toHaveLength(1);
+                        registerCrdtStorageRuntime();
+                        expectProjectProjection();
+                        return;
+                    }
+                    if (settlement === 'replace' || settlement === 'replace-before') {
+                        expect(trackStore.value!.tracks.find((track) => track.id === midiId)!.clips).toMatchObject([
+                            { id: ownedMidiClipId, startBeat: 20, endBeat: 24, name: 'Replacement same ID' },
+                        ]);
+                        expect(midiStore.value!.notesByClipId[ownedMidiClipId] ?? []).toEqual([]);
+                        expect(undoHistoryStore.value!.past).toHaveLength(3);
+                        expectProjectProjection();
+                        return;
+                    }
+                    if (settlement === 'edit') {
+                        expect(trackStore.value!.tracks.find((track) => track.id === midiId)!.clips[0]).toMatchObject({
+                            id: ownedMidiClipId,
+                            startBeat: 20,
+                            endBeat: 21.03,
+                        });
+                        expect(midiStore.value!.notesByClipId[ownedMidiClipId]).toHaveLength(1);
+                        expect(notifyUser).toHaveBeenCalledWith(
+                            'Recording changed while it was finishing; your current edit was kept.',
+                            'warning'
+                        );
+                    } else {
+                        expect(trackStore.value!.tracks.some((track) => track.id === midiId)).toBe(false);
+                        expect(midiStore.value!.notesByClipId[ownedMidiClipId]).toBeUndefined();
+                    }
+                    const history = undoHistoryStore.value!.past;
+                    expect(history).toHaveLength(2);
+                    await undo();
+                    expect(recordedClips()).toEqual([]);
+                    await redo();
+                    expect(recordedClips()).toEqual([audio]);
+                    expectProjectProjection();
+                    return;
+                }
+                const clips = trackStore.value!.tracks.find((track) => track.id === midiId)!.clips;
+                expect(clips).toHaveLength(1);
+                const clip = clips[0]!;
+                const notes = midiStore.value?.notesByClipId[clip.id] ?? [];
+                expect(notes).toHaveLength(settlement === 'remove-abort' ? 2 : 1);
+                const note = notes.find((candidate) => candidate.pitch === 64)!;
+                if (onsetBeat !== null) {
+                    expect(note.startBeat).toBeCloseTo(onsetBeat - clip.startBeat, 10);
+                }
+                if (latency > 0) {
+                    expect(clip.midiOffsetBeats).toBeCloseTo(latency * 2, 10);
+                    if (!nearOut) {
+                        expect(note.startBeat).toBeCloseTo(0, 10);
+                    }
+                }
+                const sourceOut = admittedOut - clip.startBeat + (clip.midiOffsetBeats ?? 0);
+                expect(note.startBeat + note.duration).toBeCloseTo(sourceOut, 10);
+                if (nearOut) {
+                    expect(note.duration).toBeGreaterThan(0);
+                    expect(isValidMidiNoteSnapshot(notes)).toBe(true);
+                    const raw = getCrdtDoc<{ midi: NonNullable<typeof midiStore.value> }>('root')!;
+                    expect(raw.midi.notesByClipId[clip.id]).toEqual(notes);
+                    const exported = projectMidiClipPlayback({ notes, controlChanges: [], clip });
+                    expect(exported.notes).toHaveLength(1);
+                    expect(exported.notes[0]!.startBeat + exported.notes[0]!.duration).toBeLessThanOrEqual(
+                        admittedOut + CLIP_LOOP_WINDOW_BEAT_TOLERANCE
+                    );
+                }
+                expect(clip.endBeat).toBe(admittedOut);
+                const takes = takeLaneStore.value!.lanes.find((row) => row.trackId === midiId)!.takes;
+                expect(takes).toHaveLength(1);
+                expect(takes[0]).toMatchObject({
+                    clipId: clip.id,
+                    endBeat: admittedOut,
+                    recordingPassIndex: note.recordingPassIndex,
+                });
+                if (!mixed) {
+                    expect(undoHistoryStore.value?.past).toHaveLength(1);
+                }
+                const audio = mixed ? structuredClone(recordedClips()[0]) : null;
+                if (audio) {
+                    expect(audio.endBeat).toBe(admittedOut);
+                    const sourceOutFrame = Math.round(((admittedOut - 10) / 2) * hardware.sampleRate) - 1;
+                    expect(hardware.buffer!.getChannelData(0)[sourceOutFrame]).toBe(sourceOutFrame);
+                }
+                expectProjectProjection();
+                const committedNotes = structuredClone(notes);
+                const committedClips = structuredClone(clips);
+                const committedTakes = structuredClone(takeLaneStore.value);
+                await triggerLiveNoteOff(0, 64);
+                expect(midiStore.value?.notesByClipId[clip.id]).toEqual(committedNotes);
+                await undo();
+                if (foreignEntryId) {
+                    expect(undoHistoryStore.value?.past.some((entry) => entry.id === foreignEntryId)).toBe(true);
+                    expect(trackStore.value!.tracks.find((track) => track.id === midiId)!.color).toBe('#123456');
+                }
+                expect(trackStore.value!.tracks.find((track) => track.id === midiId)!.clips).toEqual([]);
+                if (mixed) {
+                    expect(recordedClips()).toEqual([]);
+                }
+                expect(midiStore.value?.notesByClipId[clip.id] ?? []).toEqual([]);
+                expect(takeLaneStore.value!.lanes).toEqual([]);
+                if (foreignEntryId) {
+                    await undo();
+                    expect(trackStore.value!.tracks.find((track) => track.id === midiId)!.color).not.toBe('#123456');
+                    await redo();
+                    expect(trackStore.value!.tracks.find((track) => track.id === midiId)!.color).toBe('#123456');
+                }
+                await redo();
+                expect(trackStore.value!.tracks.find((track) => track.id === midiId)!.clips).toEqual(committedClips);
+                expect(midiStore.value?.notesByClipId[clip.id]).toEqual(committedNotes);
+                expect(takeLaneStore.value).toEqual(committedTakes);
+                if (audio) {
+                    expect(recordedClips()).toEqual([audio]);
+                }
+                expectProjectProjection();
+                if (foreignEntryId) {
+                    reloadSavedRecordingGeometryWithLiveHistory();
+                    await undo();
+                    expect(recordedClips()).toEqual([]);
+                    expect(trackStore.value!.tracks.find((track) => track.id === midiId)!.clips).toEqual([]);
+                    expect(trackStore.value!.tracks.find((track) => track.id === midiId)!.color).toBe('#123456');
+                    await redo();
+                    expect(recordedClips()).toEqual([audio]);
+                    expect(midiStore.value?.notesByClipId[clip.id]).toEqual(committedNotes);
+                    expect(takeLaneStore.value).toEqual(committedTakes);
+                }
+            } finally {
+                initialReady?.resolve();
+                await pendingPlayback;
+                terminalGate?.resolve();
+                await triggerLiveNoteOff(0, 64);
+                setMidiInputTrack(null);
+                disposeAdmission();
+                for (const key of Object.keys(audioEngine.context)) {
+                    if (!Object.hasOwn(contextDescriptors, key)) {
+                        Reflect.deleteProperty(audioEngine.context, key);
+                    }
+                }
+                Object.defineProperties(audioEngine.context, contextDescriptors);
+            }
+        }
+    );
+
     it('finalizes a MIDI punch without an audio capture and keeps one undoable entry', async () => {
         const midiId = 'punch-midi';
         await executeAppAction({ type: 'armTrack', payload: { trackId: TRACK_ID, armed: false } }, { skipUndo: true });
@@ -4209,8 +5001,191 @@ describe('punch audio capture loop placement', () => {
         }
     );
 
+    it('retains the owned browser out through an adopted mid-take tempo epoch', async () => {
+        hardware.latencySeconds = 0;
+        await executeAppAction({ type: 'setLoopRegion', payload: { startBeat: 8, endBeat: 16 } }, { skipUndo: true });
+        await executeAppAction({ type: 'setPunchIn', payload: { beat: 10 } }, { skipUndo: true });
+        await executeAppAction({ type: 'setPunchOut', payload: { beat: 14 } }, { skipUndo: true });
+        await executeAppAction({ type: 'togglePunch' }, { skipUndo: true });
+        transportStore.set({ ...transportStore.value!, isPlaying: true });
+        startPlayheadScheduler();
+        await advanceUntil(() => hardware.starts === 1);
+        const original = schedulerSession.automaticPunch?.read();
+        if (original?.status !== 'bounded') {
+            throw new Error('Missing original browser punch ending');
+        }
+        await advanceUntil(() => hardware.now >= 51.5);
+        const epoch = { beat: playheadClockRef.beat, contextSeconds: playheadClockRef.audioTimeSeconds };
+        await executeAppAction({ type: 'setTempo', payload: { bpm: 60 } }, { skipUndo: true });
+        const soundedOut = epoch.contextSeconds + (14 - epoch.beat);
+        expect(soundedOut).toBeGreaterThan(original.ending.contextSeconds);
+        await advanceUntil(() => hardware.now >= original.ending.contextSeconds);
+        expect(hardware.flushes).toBe(0);
+        expect(transportStore.value?.isRecording).toBe(true);
+        await advanceUntil(() => hardware.flushes === 1);
+        await recordingLifecycle.waitForCommits();
+        const lastRequired = Math.round(soundedOut * hardware.sampleRate) - hardware.zeroFrame - 1;
+        expect(hardware.buffer!.getChannelData(0)[lastRequired]).toBe(lastRequired);
+        expect(recordedClips()[0]!.endBeat).toBe(14);
+        expectProjectProjection();
+    });
+
+    it.each(['tempo', 'future tempo', 'loop only'] as const)(
+        'keeps the native owned occurrence through %s adoption',
+        async (route) => {
+            hardware.now = 51;
+            hardware.latencySeconds = 0;
+            hardware.nativeCursorBeat = (now) => 10 + (now - 51) * 2;
+            await executeAppAction(
+                { type: 'setLoopRegion', payload: { startBeat: 8, endBeat: 16 } },
+                { skipUndo: true }
+            );
+            await executeAppAction({ type: 'setPunchIn', payload: { beat: 10 } }, { skipUndo: true });
+            await executeAppAction({ type: 'setPunchOut', payload: { beat: 14 } }, { skipUndo: true });
+            await executeAppAction({ type: 'togglePunch' }, { skipUndo: true });
+            transportStore.set({ ...transportStore.value!, isPlaying: true, playheadPosition: 10 });
+            playheadClockRef.beat = 10;
+            playheadClockRef.audioTimeSeconds = 51;
+            playheadPositionRef.current = 10;
+            startPlayheadScheduler();
+            await advanceUntil(() => hardware.starts === 1);
+            const original = schedulerSession.automaticPunch?.read();
+            if (original?.status !== 'bounded') {
+                throw new Error('Missing native admitted out');
+            }
+            await advanceUntil(() => hardware.now >= 51.5);
+            let soundedOut = original.ending.contextSeconds;
+            if (route === 'loop only') {
+                await executeAppAction(
+                    { type: 'setLoopRegion', payload: { startBeat: 8, endBeat: 12 } },
+                    { skipUndo: true }
+                );
+                hardware.nativeCursorBeat = (now) => (now < 52 ? 10 + (now - 51) * 2 : 8 + (((now - 52) * 2) % 4));
+            } else {
+                const adopted = route === 'future tempo' ? 51.75 : hardware.now;
+                const adoptedBeat = 10 + (adopted - 51) * 2;
+                hardware.nativeCursorBeat = (now) =>
+                    now < adopted ? 10 + (now - 51) * 2 : adoptedBeat + now - adopted;
+                hardware.nativePresentationLead = route === 'future tempo' ? 0.25 : 0;
+                await executeAppAction({ type: 'setTempo', payload: { bpm: 60 } }, { skipUndo: true });
+                soundedOut = adopted + 14 - adoptedBeat;
+            }
+            await tick();
+            if (route === 'future tempo' || route === 'loop only') {
+                const bound = schedulerSession.automaticPunch?.read();
+                expect(bound?.status === 'bounded' && bound.ending.contextSeconds).toBeCloseTo(
+                    original.ending.contextSeconds,
+                    10
+                );
+            }
+            await advanceUntil(() => hardware.flushes === 1);
+            await recordingLifecycle.waitForCommits();
+            const lastRequired = Math.round(soundedOut * hardware.sampleRate) - hardware.zeroFrame - 1;
+            expect(hardware.buffer!.getChannelData(0)[lastRequired]).toBe(lastRequired);
+            expect(hardware.buffer!.length).toBeLessThan(
+                Math.round((soundedOut + TICK_SECONDS * 2) * hardware.sampleRate) - hardware.zeroFrame
+            );
+            expect(recordedClips()[0]!.muted).toBe(false);
+            expectProjectProjection();
+        }
+    );
+
+    it.each([0, 0.1])('waits for native audible out and the input frontier with latency %s', async (latency) => {
+        hardware.now = 51;
+        hardware.latencySeconds = latency;
+        hardware.nativeCursorBeat = (now) => 10 + (now - 51) * 2;
+        await executeAppAction({ type: 'setPunchIn', payload: { beat: 10 } }, { skipUndo: true });
+        await executeAppAction({ type: 'setPunchOut', payload: { beat: 11.53 } }, { skipUndo: true });
+        await executeAppAction({ type: 'togglePunch' }, { skipUndo: true });
+        transportStore.set({ ...transportStore.value!, isPlaying: true, playheadPosition: 10 });
+        playheadClockRef.beat = 10;
+        playheadClockRef.audioTimeSeconds = 51;
+        playheadPositionRef.current = 10;
+        startPlayheadScheduler();
+        await advanceUntil(() => hardware.starts === 1);
+        const bound = schedulerSession.automaticPunch?.read();
+        if (bound?.status !== 'bounded') {
+            throw new Error('Native punch did not admit a dated ending');
+        }
+        hardware.nativeAudibleNow = hardware.now;
+        await advanceUntil(() => hardware.now > bound.ending.contextSeconds + 0.05);
+        expect(transportStore.value?.isRecording).toBe(true);
+        expect(hardware.flushes).toBe(0);
+        hardware.captureEndSeconds = bound.ending.contextSeconds + latency - 0.01;
+        hardware.nativeAudibleNow = bound.ending.contextSeconds;
+        await tick();
+        expect(transportStore.value?.isRecording).toBe(true);
+        expect(hardware.flushes).toBe(0);
+        hardware.captureEndSeconds = bound.ending.contextSeconds + latency;
+        await tick();
+        await recordingLifecycle.waitForCommits();
+        expect(transportStore.value?.isRecording).toBe(false);
+        expect(hardware.flushes).toBe(1);
+        const clip = recordedClips()[0]!;
+        expect(clip.endBeat).toBeCloseTo(11.53, 10);
+        expect(clip.muted).toBe(false);
+        const lastFrame = Math.round(hardware.captureEndSeconds * hardware.sampleRate) - hardware.zeroFrame - 1;
+        expect(hardware.buffer!.getChannelData(0)[lastFrame]).toBe(lastFrame);
+        const { scheduleAudioClips } = await vi.importActual<typeof import('../../scheduling/scheduleAudioClips')>(
+            '../../scheduling/scheduleAudioClips'
+        );
+        hardware.sourceStarts = [];
+        scheduleAudioClips(clip.startBeat, clip.endBeat, clip.startBeat, new Set(), new Set(), [], {
+            ...transportStore.value!,
+            isLooping: false,
+        });
+        expect(hardware.sourceStarts).toHaveLength(1);
+        const playback = hardware.sourceStarts[0]!;
+        expect(playback.sourceSeconds + playback.durationSeconds).toBeCloseTo(hardware.buffer!.duration, 10);
+        expect(undoHistoryStore.value?.past).toHaveLength(1);
+        expectProjectProjection();
+    });
+
+    it('automatically recovers full muted native PCM after a proven owned history gap', async () => {
+        hardware.now = 51;
+        hardware.latencySeconds = 0;
+        hardware.nativeCursorBeat = (now) => 10 + (now - 51) * 2;
+        await executeAppAction({ type: 'setPunchIn', payload: { beat: 10 } }, { skipUndo: true });
+        await executeAppAction({ type: 'setPunchOut', payload: { beat: 11.5 } }, { skipUndo: true });
+        await executeAppAction({ type: 'togglePunch' }, { skipUndo: true });
+        transportStore.set({ ...transportStore.value!, isPlaying: true, playheadPosition: 10 });
+        playheadClockRef.beat = 10;
+        playheadClockRef.audioTimeSeconds = 51;
+        playheadPositionRef.current = 10;
+        startPlayheadScheduler();
+        await advanceUntil(() => hardware.starts === 1);
+        const clipId = activeRecordingRef.current[0]!;
+        // The producer counter proves an unobserved wrap across a new admission.
+        // Its missing occurrence cannot be repaired by a later forward snapshot.
+        hardware.nativeWraps += 1;
+        hardware.nativeAdmissionSerial += 1;
+        await tick();
+        await advanceUntil(() => transportStore.value?.isRecording === false);
+        await recordingLifecycle.waitForCommits();
+        expect(hardware.flushes).toBe(1);
+        const clip = recordedClips()[0]!;
+        expect(clip).toMatchObject({ id: clipId, startBeat: 0, muted: true, audioOffsetBeats: 0 });
+        const media = audioBufferCache.get(clip.audioBufferId!)!;
+        expect(media).toBe(hardware.buffer);
+        expect(media.length).toBeGreaterThan(0);
+        expect(media.getChannelData(0)[0]).toBe(0);
+        expect(media.getChannelData(0)[media.length - 1]).toBe(media.length - 1);
+        expect(lane().takes).toHaveLength(1);
+        expect(lane().takes[0]).not.toHaveProperty('passSourceEndSeconds');
+        expect(notifyUser).toHaveBeenCalledWith(
+            'Audio kept as a muted recording. Align it before playback, then save your project.',
+            'warning'
+        );
+        expect(undoHistoryStore.value?.past).toHaveLength(1);
+        await undo();
+        expect(recordedClips()).toEqual([]);
+        await redo();
+        expect(recordedClips()).toEqual([clip]);
+        expectProjectProjection();
+    });
+
     it.each(['manual', 'punch'] as const)(
-        '%s retains full muted PCM after native forward placement becomes unknown',
+        '%s Stop retains full muted PCM after forecast-only native projection stays pending',
         async (route) => {
             hardware.now = 51;
             hardware.latencySeconds = 0;
@@ -4237,7 +5212,9 @@ describe('punch audio capture loop placement', () => {
             hardware.forwardAuthorized = false;
             await tick();
             if (route === 'punch') {
-                await advanceUntil(() => !transportStore.value!.isRecording);
+                await advanceUntil(() => hardware.now >= 52);
+                expect(transportStore.value?.isRecording).toBe(true);
+                expect(hardware.flushes).toBe(0);
             } else {
                 hardware.now = 51.25;
             }

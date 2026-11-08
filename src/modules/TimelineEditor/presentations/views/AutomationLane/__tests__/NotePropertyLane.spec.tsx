@@ -37,6 +37,9 @@ vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
 }));
 
 vi.mock('#/modules/Command/useCases', () => ({
+    resetActionReplayAuthority: () => {
+        throw new Error('Unexpected replay-authority reset in this lane fixture');
+    },
     executeAppAction: vi.fn(),
     getExecutableAppActionEffect: vi.fn(),
     executeUserAppAction: vi.fn(),
