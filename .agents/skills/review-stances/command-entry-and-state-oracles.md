@@ -92,10 +92,10 @@ boundaries.
    replays the mutation. The introducing helper's completed-press test missed overlap; prior review stances are not
    established by that test.
 
-10. **Default names are planned at the owning write boundary (#6202, `ede18f12ad`).** Its public review named
-    duplicate-name and numbering-spec stances and marked them clean; sequential completed additions missed the
-    overlap. Historical private prompts are unavailable. Hold a real snapshot transaction, start two nameless UI
-    dispatches and observe both admissions before release: distinct committed IDs, complete raw/projected tracks
+10. **Default names are planned at the owning write boundary (#6202, `ede18f12ad`).** The retained head-bound review
+    record names duplicate-name and numbering-spec stances and marks them clean; sequential completed additions missed
+    overlap. The historical reviewer brief was not established by that record. Hold a real snapshot transaction,
+    start two nameless UI dispatches and observe both admissions before release: distinct committed IDs, complete raw/projected tracks
     and recorded history names must agree before requiring consecutive names. Undo/Redo/Undo keeps each row's
     recorded identity and name; explicit names remain verbatim and a peer's higher number never renumbers Redo.
     The owner opts fresh singleton naming into the post-wait synchronous read/write continuation; reverting that
