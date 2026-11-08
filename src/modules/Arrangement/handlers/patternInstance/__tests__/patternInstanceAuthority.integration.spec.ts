@@ -357,6 +357,19 @@ describe('pattern instance project and replay authority', () => {
     it('preserves a peer note on the FIRST Undo of the initial creation without any Redo refreshing its guard', async () => {
         await priorEdit();
         const instance = await createLinkedInstance();
+        expect(replayHistory().past.at(-1)).toMatchObject({
+            action: { type: 'createPatternInstance' },
+            inverseAction: {
+                type: 'discardDuplicatedClip',
+                payload: {
+                    clipId: instance.id,
+                    generatedMidiStateGuard: {
+                        entityJson: expect.stringContaining(instance.id),
+                        midiByClipIdJson: expect.stringContaining('source-low'),
+                    },
+                },
+            },
+        });
         mergePeer((draft) => {
             draft.midi.notesByClipId[instance.id]!.push({
                 id: 'first-undo-peer-note',
