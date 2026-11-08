@@ -1,0 +1,23 @@
+src/modules/CrdtDocument/useCases/crdtBranching/__tests__/forkKeepsPlaybackProgress.integration.spec.ts
+  s_68423a2adea8d2::t_48e63307ddf40a 12
+  s_68423a2adea8d2::t_b2b865294e852c 1-11,13-28,30-32,52-65,67-121,127-134,145-148,162-163,166-170,172,174-177,180-182,192-197,202-210,215-236,248-300
+  s_68423a2adea8d2::t_2112e857c30428 33-51,66,135-144,149-155,157-161,237-247
+  s_68423a2adea8d2::t_3591d3236c524c 29,122-126,156,164-165,171,173,178-179,183-191,198-201
+  s_68423a2adea8d2::t_34b7c0f0955d56 211-214
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "47b6eb0c822b9e24df6c38ab4fa3f03836f01680",
+  "prompts": {},
+  "sessions": {
+    "s_68423a2adea8d2": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34b-f305-7c03-beb2-57afa678cda5",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
