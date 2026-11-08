@@ -1,0 +1,52 @@
+src/modules/Arrangement/presentations/views/__tests__/TrackHeader.spec.tsx
+  s_977061c47f01dd::t_43c2c8053a1556 320-321,328
+  s_977061c47f01dd::t_5275d5542e6064 322-327
+  s_977061c47f01dd::t_1731a7e0b33cd7 34
+.agents/skills/review-stances/command-entry-and-state-oracles.md
+  s_977061c47f01dd::t_81ed5defb618a0 31
+  s_977061c47f01dd::t_34bbb477e31ac8 32
+  s_977061c47f01dd::t_5275d5542e6064 33
+src/modules/Arrangement/presentations/views/__tests__/TrackHeaderMuteAdmission.integration.spec.tsx
+  s_977061c47f01dd::t_3427c930cc65d2 149,154,177,428,433-436
+  s_977061c47f01dd::t_30a767b6cc20c8 53,130-132,460-462
+  s_977061c47f01dd::t_eca84c730038f6 8-11,13-16,18-22,24,26-34,36,38-43,55-60,62-67,86-90,97-101,111-115,121-128,139-143,150-153,178-192,429-432,437-445,451-455
+  s_977061c47f01dd::t_326dd1790b1fc8 1-2,4-7,12,23,37,44-48,50-52,54,61,68-74,78-82,91-96,105-110,116-120,129,133-138,144,155,158,164,173,175,195,425,446-450,456-459,463-464
+  s_977061c47f01dd::t_6a1e707ee7fa69 145-146,156-157,159-163,165-172,174,176,193-194
+  s_977061c47f01dd::t_23147dbfa2aaf0 258-260,265-279
+  s_977061c47f01dd::t_9b968af8c85da7 3,35,49,298-322
+  s_977061c47f01dd::t_0d1afcbad6f85c 222-224,230-231,233-257
+  s_977061c47f01dd::t_734a795b4b0901 324-331,335,350-355,357-363,367-368
+  s_977061c47f01dd::t_5275d5542e6064 199-206,208-210,212-217,261-264,282-284
+  s_977061c47f01dd::t_5c7b879ef91fe4 147-148,426-427
+  s_977061c47f01dd::t_0124e2622bf844 207
+  s_977061c47f01dd::t_50d834e05062d2 280-281,285-297
+  s_977061c47f01dd::t_23e8ad47072369 75-77,83-85,102-104
+  s_977061c47f01dd::t_f2f21cacdd7ce8 196-198,218-221,225-228,232
+  s_977061c47f01dd::t_02bf9636855a9f 25,323,332-334,336-349,356,364-366
+  s_977061c47f01dd::t_1731a7e0b33cd7 211,229
+src/modules/Arrangement/presentations/hooks/useTrackMuteToggle.ts
+  s_977061c47f01dd::t_5275d5542e6064 43,45-49,59-62,69-76
+  s_977061c47f01dd::t_9b968af8c85da7 13,82
+  s_977061c47f01dd::t_4bab46474fc01c 11,54,84-85
+  s_977061c47f01dd::t_23e8ad47072369 1-10,12,14-15,18-19,22,25,29,31-32,42,51-52,55-58,63-68,77-81,83,86-87,90-93
+  s_977061c47f01dd::t_6eb72d458519fc 28,30,35-36
+  s_977061c47f01dd::t_ffe8f1cf0c5a6e 16-17,20-21,23-24,26-27,33-34,50,53,88-89
+src/modules/Arrangement/presentations/views/TrackHeader.tsx
+  s_977061c47f01dd::t_23e8ad47072369 35-36,63,327
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a5adb5880d912f406779bba0666acb7baaa27eec",
+  "prompts": {},
+  "sessions": {
+    "s_977061c47f01dd": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34d-123d-7452-a6e7-60608388b6d7",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
