@@ -1,0 +1,64 @@
+package.json
+  s_e1a45d2f3be59d::t_afb5b008c43164 118
+  s_e1a45d2f3be59d::t_666ec084d2cc25 127
+  s_e1a45d2f3be59d::t_8f3428c2ee433e 172
+  s_e1a45d2f3be59d::t_1cdfe9c8e414bf 150-151
+  s_e1a45d2f3be59d::t_a6bce88ffade29 180-181
+  s_e1a45d2f3be59d::t_bae1f0c2f1a71c 139
+pnpm-lock.yaml
+  s_e1a45d2f3be59d::t_705d1ad2e563e4 33-34,60-61,96-97,124-125,127-128,188,190-191,214-215,217-218,849-850,855-856,861-862,867-868,873-874,879-880,885-886,891-892,898-899,905-906,912-913,919-920,926-927,933-934,940-941,947-948,953-954,959-960,965-966,1107-1108,1113-1114,1119-1120,1125-1126,1131-1132,1137-1138,1143-1144,1149-1150,1156-1157,1163-1164,1170-1171,1177-1178,1184-1185,1191-1192,1198-1199,1205-1206,1211-1212,1217-1218,1223-1224,2258-2259,2261-2262,2267-2268,2273-2274,2279-2280,2285-2286,2291-2292,2298-2299,2305-2306,2312-2313,2319-2320,2330-2331,2336-2337,2342-2343,2346-2347,2351-2352,2364-2365,2367-2368,3250-3252,3531-3533,3590-3591,4192-4193,4324-4325,4632-4633,4643-4644,5184-5185,6293,6296,6299,6302,6305,6308,6311,6314,6317,6320,6323,6326,6329,6332,6335,6338,6341,6344,6347,6431,6434,6437,6440,6443,6446,6449,6452,6455,6458,6461,6464,6467,6470,6473,6476,6479,6482,6485,7462,7470,7472,7475,7478,7481,7484,7487,7490,7493,7496,7499,7502,7505,7508,7510-7527,7530,7541,7543,7545,8430-8431,8735-8736,8798,8809,8813,8816,8819,9504,9509,9611,10127,10129,10131-10149,10182,10184-10202,10829
+public/legal/DEPENDENCY-LICENSES.txt
+  s_e1a45d2f3be59d::t_91291ec59527f8 10,416-417,549,655,7748,12825,16505-16520,20222-20223,22038
+release/dependency-license-proofs.json
+  s_e1a45d2f3be59d::t_688c9a2889e4b4 64
+release/open-source-inventory.json
+  s_e1a45d2f3be59d::t_5b4fc26a1681f8 171-172,284,1825,1837
+src/modules/AudioEngine/engine/BusNode.ts
+  s_eb75e34cb86146::t_d12accff568713 2
+src/modules/AudioEngine/engine/TrackNode.ts
+  s_eb75e34cb86146::t_d9d2d819a22f64 13-16
+src/modules/Levain/repositories/sampleLoader/createDecodedBankResource.ts
+  s_eb75e34cb86146::t_72af9e0eda15bf 12
+src/modules/MIDI/repositories/webMidi/releaseActiveToasterNote.ts
+  s_eb75e34cb86146::t_e94804b84af104 2
+src/modules/MIDI/repositories/webMidi/releaseAllActiveNotes.ts
+  s_eb75e34cb86146::t_4838835c3f2ddf 6
+src/modules/Project/useCases/projectPersistence/helpers/collectProjectOriginalHashes.ts
+  s_eb75e34cb86146::t_370f61322d3009 2
+src/modules/Transport/useCases/scheduling/prepareInitialMidiWindow.ts
+  s_eb75e34cb86146::t_81174e4d8f1254 8
+src/modules/Transport/useCases/scheduling/prepareYeastTrackNotes.ts
+  s_eb75e34cb86146::t_7165261347584c 27-28
+src/modules/Yeast/presentations/createYeastPreviewCanvasRenderer.ts
+  s_eb75e34cb86146::t_4b287898bc931c 2
+src/modules/Yeast/presentations/createYeastPreviewPresenter.ts
+  s_eb75e34cb86146::t_2d72e1da986747 3-7
+src/modules/Yeast/workers/BaseMidiProcessor.ts
+  s_eb75e34cb86146::t_34d63c1c6a5c00 13
+src/modules/Yeast/workers/MidiProcessor.ts
+  s_eb75e34cb86146::t_f1446494961e2a 11
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a4a5225d6c944944a9398464420db7ca7bffda4e",
+  "prompts": {},
+  "sessions": {
+    "s_e1a45d2f3be59d": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "af700fae-1b67-4674-96e5-1aaa5e88f431",
+        "model": "composer-2.5-fast"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_eb75e34cb86146": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "s_eb75e34cb86146",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
