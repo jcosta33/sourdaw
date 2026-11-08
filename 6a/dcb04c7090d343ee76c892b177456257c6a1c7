@@ -1,0 +1,19 @@
+src/modules/AiRuntime/useCases/__tests__/backingVocalPlateWorkflow.spec.ts
+  s_1052c2a2231ded::t_6d75d9b61a9748 4,1547-1548,1564-1568,1573,1590,1620
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "6adcb04c7090d343ee76c892b177456257c6a1c7",
+  "prompts": {},
+  "sessions": {
+    "s_1052c2a2231ded": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b349-24b6-7622-8534-09f171c780d5",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
