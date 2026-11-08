@@ -35,6 +35,7 @@ import { agentWorkBudget } from '../agentWorkBudget';
 import { agentRunCancellation } from '../cancelAgentRun';
 import { cancelPendingChatActions } from '../cancelPendingChatActions';
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
+import { getAgentApprovalView } from '../getAgentApprovalView';
 import { getBriefMixIntentCatalog } from '../getBriefMixIntentCatalog';
 import { getProjectContext } from '../getProjectContext';
 import { generateToolPlanningOutcome } from '../llmOrchestration/inference';
@@ -264,7 +265,7 @@ function seededBrief(): ProductionBrief {
  * Every track sounds a 100 Hz body beside a 3 kHz top, each scaled by the low and high shelf gains
  * of the EQs it carries, so a warming recipe raises the bass band and lowers the centroid.
  */
-function renderTrack(input: RenderInput): AudioBuffer {
+function renderTrack(input: RenderInput, chorusStart = 2): AudioBuffer {
     const track = input.renderTracks.find((candidate) => candidate.id === input.targetTrackId);
     if (track === undefined) {
         throw new Error('The render target is absent.');
@@ -275,7 +276,7 @@ function renderTrack(input: RenderInput): AudioBuffer {
     const high = 10 ** (parameter('eq-high-gain') / 20);
     const seconds = (input.endBeat - input.startBeat) / 2;
     const frequency = input.targetTrackId === DRUMS_ID ? 100 : 220;
-    const brightness = input.startBeat === 2 ? 0.35 : 0.15;
+    const brightness = input.startBeat === chorusStart ? 0.35 : 0.15;
     return metricGoalAudioBuffer(
         (time) =>
             0.4 * low * Math.sin(2 * Math.PI * frequency * time) +
@@ -398,6 +399,59 @@ function keepDrumsOnly() {
         throw new Error('Missing tracks.');
     }
     landProjectEdit(() => trackStore.set({ ...state, tracks: state.tracks.filter((track) => track.id === DRUMS_ID) }));
+}
+
+function useShortMeasuredSections() {
+    const tracks = trackStore.value;
+    if (tracks === null) {
+        throw new Error('Missing tracks.');
+    }
+    landProjectEdit(() => {
+        trackStore.set({
+            ...tracks,
+            tracks: tracks.tracks.map((track) => ({
+                ...track,
+                clips: track.clips.map((item) => ({ ...item, endBeat: 2 })),
+            })),
+        });
+        markerStore.set({
+            markers: [],
+            sections: [
+                { id: 'verse', name: 'Verse', startBeat: 0, endBeat: 1, color: '#ffffff' },
+                { id: 'chorus', name: 'Chorus', startBeat: 1, endBeat: 2, color: '#ffffff' },
+            ],
+        });
+    });
+    audio.renderTrackSubgraphOffline.mockImplementation(async (input: RenderInput) => renderTrack(input, 1));
+}
+
+function expectMeasuredBatch(card: Confirmation, trackId: string) {
+    const view = getAgentApprovalView({ confirmationId: card.id });
+    expect(view?.canConfirm).toBe(true);
+    expect(view?.metricGoals.status).toBe('verified');
+    expect(
+        view?.metricGoals.criteria.map(({ metricId, relation, targetIds, range, status }) => ({
+            metricId,
+            relation,
+            targetIds,
+            range,
+            status,
+        }))
+    ).toEqual(
+        ['frequencyBandEnergy', 'spectralCentroid'].flatMap((metricId) =>
+            [
+                { startBeat: 0, endBeat: 2, sectionId: null },
+                { startBeat: 0, endBeat: 1, sectionId: 'verse' },
+                { startBeat: 1, endBeat: 2, sectionId: 'chorus' },
+            ].map((range) => ({
+                metricId,
+                relation: metricId === 'frequencyBandEnergy' ? 'increase' : 'decrease',
+                targetIds: [trackId],
+                range,
+                status: 'verified',
+            }))
+        )
+    );
 }
 
 describe('initial role and exact-section baselines through the brief pipeline', () => {
@@ -673,10 +727,14 @@ describe('initial role and exact-section baselines through the brief pipeline', 
     });
 
     it('retains historical provenance through brief and two batch commits and rejects tampered restoration', async () => {
+        useShortMeasuredSections();
         const brief = await confirmBrief();
         const initial = structuredClone(measuredPlan(brief).initial);
+        expect(initial.receipts).toHaveLength(3);
+        expect(initialFigures(measuredPlan(brief))).toHaveLength(9);
         for (let index = 0; index < 2; index += 1) {
             const batch = requireOnlyProposedCard();
+            expectMeasuredBatch(batch, index === 0 ? DRUMS_ID : VOCAL_ID);
             expect(batch.projectRevision).not.toBe(initial.sourceRevision);
             await expect(confirmPendingChatActions({ confirmationId: batch.id })).resolves.toEqual({
                 status: 'executed',
@@ -707,6 +765,7 @@ describe('initial role and exact-section baselines through the brief pipeline', 
         ]) {
             expect(readScheduledVibeRunPlan(JSON.stringify(tamper(structuredClone(plan))))).toBeNull();
         }
+        expect(audio.renderTrackSubgraphOffline).toHaveBeenCalledTimes(27);
     });
 
     it.each([
@@ -1096,17 +1155,22 @@ describe('initial role and exact-section baselines through the brief pipeline', 
     });
 
     it('keeps processing eligible under an original control-only fader protection', async () => {
+        useShortMeasuredSections();
         const gain = trackStore.value?.tracks.find((track) => track.id === VOCAL_ID)?.gain;
         const brief = await confirmBrief('make this mix warmer and keep Vocal fader unchanged');
         expect(measuredPlan(brief).batches.flatMap((batch) => batch.targetIds)).toContain(VOCAL_ID);
         expect(initialFigures(measuredPlan(brief)).filter((figure) => figure.targetId === VOCAL_ID)).toHaveLength(3);
-        await expect(confirmPendingChatActions({ confirmationId: requireOnlyProposedCard().id })).resolves.toEqual({
+        const drums = requireOnlyProposedCard();
+        expectMeasuredBatch(drums, DRUMS_ID);
+        await expect(confirmPendingChatActions({ confirmationId: drums.id })).resolves.toEqual({
             status: 'executed',
         });
         const vocal = requireOnlyProposedCard();
+        expectMeasuredBatch(vocal, VOCAL_ID);
         await expect(confirmPendingChatActions({ confirmationId: vocal.id })).resolves.toEqual({ status: 'executed' });
         expect(trackDeviceTypes(VOCAL_ID)).toEqual(['builtin-eq']);
         expect(trackStore.value?.tracks.find((track) => track.id === VOCAL_ID)?.gain).toBe(gain);
+        expect(audio.renderTrackSubgraphOffline).toHaveBeenCalledTimes(27);
     });
 
     it('refuses an unresolved original whole-object protection before any initial render', async () => {
