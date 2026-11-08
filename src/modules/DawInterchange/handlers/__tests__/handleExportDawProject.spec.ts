@@ -344,7 +344,7 @@ describe('handleExportDawProject', () => {
         const loggedError = vi.mocked(logger.error).mock.calls.at(0)?.[0];
         expect(loggedError).toBeInstanceOf(Error);
         if (!(loggedError instanceof Error)) {
-            throw new Error('Expected logger.error to receive an Error');
+            throw new TypeError('Expected logger.error to receive an Error');
         }
         expect(loggedError.message).toBe('DAWproject export failed');
     });

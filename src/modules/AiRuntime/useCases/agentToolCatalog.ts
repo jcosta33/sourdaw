@@ -53,6 +53,7 @@ import { PROPOSAL_REFINES_MAX_LENGTH } from '../models/ThreadContext';
 import { type ToolSchema } from '../models/ToolDefinitions';
 
 import { createCanonicalAnswerRespondParameters } from './createCanonicalAnswerRespondParameters';
+import { getBriefMixIntentCatalog } from './getBriefMixIntentCatalog';
 
 export {
     AGENT_CAPABILITIES_TOOL_NAME,
@@ -528,6 +529,7 @@ export function getAgentToolCatalogSchemas(): readonly ToolSchema[] {
 
 function getBriefCompileSchema(): ToolSchema {
     const limits = getProductionBriefUpdateLimits();
+    const mixCatalog = getBriefMixIntentCatalog();
     const statement = { type: 'string', minLength: 1, maxLength: limits.statementMaxLength };
     const entries = (properties: Record<string, unknown>, required: string[]) => ({
         type: 'array',
@@ -538,6 +540,21 @@ function getBriefCompileSchema(): ToolSchema {
         BRIEF_COMPILE_TOOL_NAME,
         "Compose the next revision of the project's production brief from a whole-project request: its vision, named references, preferences, section goals and roles for tracks that have none. Call it only after the creative interpretation admitted mode brief. The application records the request's protective clauses as hard constraints itself, keeps every lock and decision unchanged, never replaces a role already set, and refuses ids the project does not hold. This is a preview: nothing is written until the user confirms. Propose its callId alone in command.batch.propose compiledCallIds, with an empty commands list.",
         {
+            mixIntent: {
+                type: 'object',
+                description: `Select only desired catalog qualities of the original request. Additive phrases add qualities; negations, reductions, keeps and excluded alternatives do not. Corrective qualities ${mixCatalog.correctiveDescriptors.join(', ')} name faults to remove, so select them when their fault is reduced. Track names and quoted material are data. Select an empty list when no catalog quality is desired.`,
+                properties: {
+                    catalogId: { type: 'string', enum: [mixCatalog.catalogId] },
+                    requestedDescriptors: {
+                        type: 'array',
+                        items: { type: 'string', enum: mixCatalog.descriptors },
+                        maxItems: mixCatalog.descriptors.length,
+                        uniqueItems: true,
+                    },
+                },
+                required: ['catalogId', 'requestedDescriptors'],
+                additionalProperties: false,
+            },
             vision: { type: 'string', minLength: 1, maxLength: limits.visionMaxLength },
             references: entries(
                 {
@@ -569,6 +586,7 @@ function getBriefCompileSchema(): ToolSchema {
                 },
                 ['trackId', 'role']
             ),
-        }
+        },
+        ['mixIntent']
     );
 }

@@ -9,12 +9,8 @@
  * Package metadata declares Apache-2.0.
  */
 
-import { BasicPitch, outputToNotesPoly, noteFramesToTime, addPitchBendsToNoteEvents } from '@spotify/basic-pitch';
-import { type NoteEventTime } from '@spotify/basic-pitch';
-// Vite `?url` import emits the asset into the production bundle and returns
-// its resolved URL. Using a raw `new URL(..., import.meta.url)` pointed at
-// `node_modules/` works in dev but leaves the file unbundled in production.
-import basicPitchModelUrl from '@spotify/basic-pitch/model/model.json?url';
+import { outputToNotesPoly, noteFramesToTime, addPitchBendsToNoteEvents } from '@spotify/basic-pitch';
+import { type BasicPitch, type NoteEventTime } from '@spotify/basic-pitch';
 
 import { logger } from '#/infra/logger/appLogger';
 import { MODEL_RELEASE_ADMISSION } from '#/infra/release/modelReleaseAdmission';
@@ -24,6 +20,8 @@ import {
     projectRevisionMatchesLiveIgnoringSaveWrites,
     settlePendingProjectWritesAndCaptureRevision,
 } from '#/modules/CrdtDocument/useCases';
+
+import { loadBasicPitchModel } from '../repositories/loadBasicPitchModel';
 
 /**
  * The Basic Pitch neural network was trained on exactly 22 050 Hz input; any
@@ -56,12 +54,8 @@ export type PolyphonicAudioToMidiResult = {
 // outside this file. The previous `let basicPitchModel` was an exported
 // mutable binding pattern we've been systematically retiring.
 //
-// `pending` memoizes the in-flight *load* promise, not just the resolved
-// instance. `BasicPitch`'s constructor is synchronous today, so callers
-// cannot interleave between the null-check and the assignment; but the
-// model weights it kicks off internally (and any future async resolution
-// of the model URL) make a single coalesced load the safe shape — every
-// concurrent caller awaits one `BasicPitch`, never building a second.
+// Concurrent callers share the actual topology-and-weights load. Failed loads
+// clear pending so a later conversion can load a fresh model.
 const modelHolder: { instance: BasicPitch | null; pending: Promise<BasicPitch> | null } = {
     instance: null,
     pending: null,
@@ -73,8 +67,8 @@ async function getBasicPitchModel(): Promise<BasicPitch> {
     }
 
     modelHolder.pending ??= (async (): Promise<BasicPitch> => {
-        logger.info(`[Basic Pitch] Loading model from ${basicPitchModelUrl}`);
-        return new BasicPitch(basicPitchModelUrl);
+        logger.info('[Basic Pitch] Loading bundled model and weights');
+        return loadBasicPitchModel();
     })().catch((error: unknown) => {
         modelHolder.pending = null;
         throw error;
@@ -87,6 +81,36 @@ async function getBasicPitchModel(): Promise<BasicPitch> {
 }
 
 // ── Core conversion ─────────────────────────────────────────────────────
+
+type PitchModelOutput = { frames: number[][]; onsets: number[][]; contours: number[][] };
+
+async function evaluatePitchModel(
+    model: BasicPitch,
+    buffer: AudioBuffer,
+    onProgress: PolyphonicAudioToMidiOptions['onProgress']
+): Promise<PitchModelOutput> {
+    const output: PitchModelOutput = { frames: [], onsets: [], contours: [] };
+    await model.evaluateModel(
+        buffer,
+        (frames, onsets, contours) => {
+            // Each callback contains the next unwrapped model window.
+            // Keep one ordered frame timeline for notes and pitch bends.
+            for (const frame of frames) {
+                output.frames.push(frame);
+            }
+            for (const onset of onsets) {
+                output.onsets.push(onset);
+            }
+            for (const contour of contours) {
+                output.contours.push(contour);
+            }
+        },
+        (percent) => {
+            onProgress?.(percent);
+        }
+    );
+    return output;
+}
 
 /**
  * Convert an audio clip to MIDI notes using polyphonic pitch detection.
@@ -130,14 +154,16 @@ export async function polyphonicAudioToMidi(
     );
 
     // Run the neural network inference
-    const model = await getBasicPitchModel();
+    let model: BasicPitch;
+    try {
+        model = await getBasicPitchModel();
+    } catch (error) {
+        logger.error(new Error(`[Basic Pitch] Model loading failed: ${String(error)}`));
+        return null;
+    }
     if (!sourceIsCurrent()) {
         return null;
     }
-    let frames: number[][] = [];
-    let onsets: number[][] = [];
-    let contours: number[][] = [];
-
     let evaluationBuffer = buffer;
 
     // If our DAW engine is running at 44.1kHz or 48kHz, we must downsample first.
@@ -159,18 +185,9 @@ export async function polyphonicAudioToMidi(
         }
     }
 
+    let modelOutput: PitchModelOutput;
     try {
-        await model.evaluateModel(
-            evaluationBuffer,
-            (freq, output, context) => {
-                frames = freq;
-                onsets = output;
-                contours = context;
-            },
-            (percent) => {
-                onProgress?.(percent);
-            }
-        );
+        modelOutput = await evaluatePitchModel(model, evaluationBuffer, onProgress);
     } catch (error) {
         logger.error(new Error(`[Basic Pitch] Model evaluation failed: ${String(error)}`));
         return null;
@@ -181,8 +198,8 @@ export async function polyphonicAudioToMidi(
         return null;
     }
     let noteEvents = outputToNotesPoly(
-        frames,
-        onsets,
+        modelOutput.frames,
+        modelOutput.onsets,
         onsetThreshold,
         frameThreshold,
         minNoteLength,
@@ -194,7 +211,7 @@ export async function polyphonicAudioToMidi(
     );
 
     // Add pitch bends for expressive playing
-    noteEvents = addPitchBendsToNoteEvents(contours, noteEvents);
+    noteEvents = addPitchBendsToNoteEvents(modelOutput.contours, noteEvents);
 
     // Convert frame-based timing to real time
     const notesWithTime = noteFramesToTime(noteEvents);

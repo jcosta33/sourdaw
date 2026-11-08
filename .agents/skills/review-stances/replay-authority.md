@@ -89,6 +89,11 @@ boundaries.
    A same-lineage replacement or snapshot restore whose new active heads drop a prior head records a discard epoch
    that rejects earlier approvals. Checkpoint-only descendants of two captured heads stay eligible, compared at their
    own dependency frontier; an unresolved whole-map checkpoint conflict refuses at confirmation.
+   Hold a paused decision or read-only preset plan across a real save timestamp and active-arrangement copy:
+   the captured revision and authority survive. Saved and unflushed fader edits, edit then revert, child-document
+   changes and root replacement refuse before handoff (#1989, #5852, #6240). Raw-head equality fails the save
+   control; comparing only the final content fails the reverted edit. Read-only content admission does not grant
+   storage-owner write authority, and execution retains its own guards.
 6. **Identity-scoped undo must survive peer edits (#3757).** Failure: whole-aggregate snapshot restore erases peer
    work an isolated round trip never sees. Probe: peer edit after the operation and again after Undo, then real
    Undo/Redo through Command, reading raw CRDT and projection. Field order alone never conflicts; changed values,
@@ -116,6 +121,15 @@ boundaries.
    pending entries, stale inverses, replaced history and authority resets must refuse the binding. Payload or id
    equality never grants replay authority. Required CI on #6302 exposed both the missing net-zero composition and
    the distinction between requested and canonical identities.
+   #4564 introduced private commitRecording/discardRecording/restoreRecording without the already required session
+   contracts: live Undo passed while the production mirror serialized zero recording entries. Require two real mixed
+   entries/same group in serialized bytes BEFORE reload; production registration plus genuine project/witness must
+   hydrate both past and future through two Undo/Redo cycles, preserving raw rows/takes/PCM and older reachable history.
+   Keep this family private, pair exact forward/inverse/redo ownership and current versions, and decode full note/CC/bend
+   snapshots through their required owner (neutral carriers contain only IDs). Missing forward/owner contract or an invalid
+   sibling must fail/refuse the whole group, including malformed shape/source, wrong track/family and missing redo.
+   A binary document reload retaining live Undo objects is no session-hydration oracle; fresh-tab data is no cross-tab
+   history proof. Historical private reviewer prompts and tiers for this escape are unestablished.
 
 ## Retired lessons
 

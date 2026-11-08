@@ -423,7 +423,7 @@ export function withPathAddressedDigest(inventory: string, path: string, sha256:
     if ((inventory.match(pattern) ?? []).length !== 1) {
         fail(`release inventory does not carry exactly one path-addressed digest for ${path}`);
     }
-    return inventory.replace(pattern, `sha256:${sha256}:${path}`);
+    return inventory.replaceAll(pattern, `sha256:${sha256}:${path}`);
 }
 
 /**

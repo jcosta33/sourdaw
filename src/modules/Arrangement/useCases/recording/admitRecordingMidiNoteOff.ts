@@ -1,7 +1,7 @@
-import { getTrackState } from '../../repositories/track/getTrackState';
-
 import { findOpenRecordingMidiAdmission } from './findOpenRecordingMidiAdmission';
-import { sourceBeat } from './sourceBeat';
+import { recordingCommitGroups } from './recordingCommitGroup';
+import { recordingMidiBound } from './recordingMidiBound';
+import { recordingMidiSourceBeatAt } from './recordingMidiSourceBeatAt';
 import { takeOwnsRecordingRoot } from './takeOwnsRecordingRoot';
 
 type EventPosition = { beat: number; passIndex: number };
@@ -16,19 +16,28 @@ export function admitRecordingMidiNoteOff(input: {
         return;
     }
     const admitted = findOpenRecordingMidiAdmission(input.channel, input.note);
-    if (!admitted || input.audioTime < admitted.onsetAudioTime) {
+    if (
+        !admitted ||
+        !recordingCommitGroups.reconcileAdmission(admitted.clipId) ||
+        input.audioTime < admitted.onsetAudioTime
+    ) {
         return;
     }
-    const clip = getTrackState()
-        ?.tracks.find((track) => track.id === admitted.trackId)
-        ?.clips.find((candidate) => candidate.id === admitted.clipId);
-    if (!clip) {
-        return;
+    const bound = recordingMidiBound.read();
+    if (bound.status === 'bounded') {
+        const exclusiveEnd = recordingMidiSourceBeatAt(admitted.clipId, bound.ending.midiPosition);
+        if (exclusiveEnd !== null) {
+            admitted.exclusiveSourceEndBeat = exclusiveEnd;
+        }
     }
-    const releaseSourceBeat = sourceBeat(clip.startBeat, input.position);
+    const endsAtBound = bound.status === 'bounded' && input.audioTime >= bound.ending.contextSeconds;
+    const releaseSourceBeat = recordingMidiSourceBeatAt(
+        admitted.clipId,
+        endsAtBound ? bound.ending.midiPosition : input.position
+    );
     if (releaseSourceBeat === null) {
         return;
     }
-    admitted.releaseAudioTime = input.audioTime;
+    admitted.releaseAudioTime = endsAtBound ? bound.ending.contextSeconds : input.audioTime;
     admitted.releaseSourceBeat = releaseSourceBeat;
 }

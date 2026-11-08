@@ -237,6 +237,8 @@ export { stopRecording } from './recording/stopRecording';
 export { takeOwnsRecordingRoot } from './recording/takeOwnsRecordingRoot';
 export { recordingMidiSourceBeatAt } from './recording/recordingMidiSourceBeatAt';
 export { admitRecordingMidiNoteOn } from './recording/admitRecordingMidiNoteOn';
+export { isRecordingMidiInputExcluded } from './recording/isRecordingMidiInputExcluded';
+export { captureRecordingCommitRetirement } from './recording/captureRecordingCommitRetirement';
 export { admitRecordingMidiExpression } from './recording/admitRecordingMidiExpression';
 export { admitRecordingMidiNoteOff } from './recording/admitRecordingMidiNoteOff';
 export { findOpenRecordingMidiAdmission } from './recording/findOpenRecordingMidiAdmission';
@@ -344,3 +346,5 @@ export { setDeviceState } from './device/setDeviceState';
 export { getSongStructureHandlers } from './getSongStructureHandlers';
 export { initStalenessDetection } from './freezeBounce/initStalenessDetection';
 export { isImportedStemSetApplied } from './stemImport/isImportedStemSetApplied';
+
+export { hasAutomaticRecordingMidiCapture } from './recording/hasAutomaticRecordingMidiCapture';

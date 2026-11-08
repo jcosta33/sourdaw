@@ -13,7 +13,9 @@ import { playheadPositionRef } from '../../stores/playheadPositionRef';
 import { forgetHeldNoteExpression } from '../scheduling/forgetHeldNoteExpression';
 import { releaseStoredControllers } from '../scheduling/releaseStoredControllers';
 import { resetMetronomeBeat } from '../scheduling/resetMetronomeBeat';
+import { captureManualRecordingEnd } from '../transportControls/captureManualRecordingEnd';
 import { finalizeAutomaticRecording } from '../transportControls/finalizeAutomaticRecording';
+import { manualClosingBeat } from '../transportControls/manualClosingBeat';
 
 import { schedulerSession, stopActiveSources } from './schedulerSession';
 
@@ -24,6 +26,9 @@ export function stopPlayheadScheduler(): void {
     // reaches here while the position is still live, and each of them assigns
     // the next position only after this returns.
     const boundaryBeat = captureGestureBeat();
+    const ending = schedulerSession.punchRecordingActive ? captureManualRecordingEnd() : undefined;
+    const punch = schedulerSession.automaticPunch;
+    schedulerSession.automaticPunch = null;
     releasePlayheadClockHold(schedulerSession.generation);
     schedulerSession.generation += 1;
     stopAutomationRecording(boundaryBeat);
@@ -42,9 +47,10 @@ export function stopPlayheadScheduler(): void {
         // `executePlayheadSeek` only assign the new position *after* this call —
         // so the store still holds the beat playback started at, and the ref is
         // the one value that is correct on all three paths.
-        finalizeAutomaticRecording(playheadPositionRef.current);
+        finalizeAutomaticRecording(manualClosingBeat(ending) ?? playheadPositionRef.current, ending);
         schedulerSession.punchRecordingActive = false;
     }
+    punch?.dispose();
     schedulerSession.lastTickTime = 0;
     schedulerSession.accumulatedPosition = 0;
     playheadClockRef.beat = 0;

@@ -177,6 +177,9 @@ describe('miscCommands', () => {
         runAction('enable-warping');
 
         expect(executeUserAppAction).toHaveBeenCalledWith({ type: 'enableWarping', payload: { clipId: 'clip-1' } });
+        expect(miscCommands.find((command) => command.id === 'enable-warping')?.description).toBe(
+            'Enable repitch on the selected audio clip; pitch follows playback speed'
+        );
     });
 
     it('does not dispatch clip-scoped actions when no clip is selected', async () => {

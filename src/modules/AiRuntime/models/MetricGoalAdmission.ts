@@ -49,14 +49,16 @@ export type MetricRequestAuthority<MetricId extends string> = {
      * Who admitted the request's meaning: the complete literal parser, the configured joint intake, an
      * admitted workflow, or the user taking up a suggestion an answer offered, which names one recipe on
      * one track and states no objective of its own, or the application's reader of the request's
-     * perceptual constraints, which only restricts the batch and grants nothing.
+     * perceptual constraints, which only restricts the batch and grants nothing, or the vibe-run plan
+     * the application built for a whole-project request, whose batch promises its recipes' expectations.
      */
     readonly origin:
         | 'complete-literal-parser'
         | 'configured-joint-intake'
         | 'admitted-workflow'
         | 'answer-suggestion'
-        | 'perceptual-constraint-reader';
+        | 'perceptual-constraint-reader'
+        | 'vibe-run-plan';
     readonly callId: string | null;
     readonly turn: number | null;
     readonly catalogId: string;

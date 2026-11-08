@@ -59,12 +59,15 @@ export function recordChannelEvent(
         return;
     }
     const eventTime = resolveInputEventTime({ timeStamp });
+    if (recordingMidiAdmissionPort.isRecordingMidiInputExcluded(eventTime, trackId)) {
+        return;
+    }
     const admittedPosition = resolveAdmittedEventPosition({ timeStamp, eventTime });
     const placement = resolveRecordingPlacement(deps, {
         trackId,
         admittedBeat: admittedPosition.beat,
     });
-    if (!placement) {
+    if (!placement || recordingMidiAdmissionPort.isRecordingMidiInputExcluded(eventTime, trackId, placement.clipId)) {
         return;
     }
     try {

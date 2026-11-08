@@ -3,6 +3,7 @@ import type { RecordingMidiAdmission } from '#/modules/Arrangement/stores';
 type EventPosition = { beat: number; passIndex: number };
 
 export type RecordingMidiAdmissionPort = {
+    isRecordingMidiInputExcluded(audioTime: number, trackId?: string | null, clipId?: string): boolean;
     admitRecordingMidiNoteOn(input: {
         trackId: string;
         channel: number;
@@ -35,6 +36,7 @@ export type RecordingMidiAdmissionPort = {
 };
 
 const inactive: RecordingMidiAdmissionPort = {
+    isRecordingMidiInputExcluded: () => false,
     admitRecordingMidiNoteOn: () => null,
     admitRecordingMidiNoteOff: () => undefined,
     admitRecordingMidiExpression: () => undefined,
@@ -50,6 +52,8 @@ let configured = inactive;
 
 /** Registered synchronously by app bootstrap before live input starts. */
 export const recordingMidiAdmissionPort: RecordingMidiAdmissionPort = {
+    isRecordingMidiInputExcluded: (audioTime, trackId, clipId) =>
+        configured.isRecordingMidiInputExcluded(audioTime, trackId, clipId),
     admitRecordingMidiNoteOn: (input) => configured.admitRecordingMidiNoteOn(input),
     admitRecordingMidiNoteOff: (input) => configured.admitRecordingMidiNoteOff(input),
     admitRecordingMidiExpression: (input) => configured.admitRecordingMidiExpression(input),

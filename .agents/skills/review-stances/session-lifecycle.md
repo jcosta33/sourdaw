@@ -157,6 +157,35 @@ recording first frame, rings, stop fence and artifact identity in `input-monitor
     already-applied host response. Native output peaks supplement; they cannot count all attacks/releases or prove
     zero callback refusals when the wire omits those counters.
 
+12. **An admitted punch keeps its original ending (#4564, #4897, #5891; unpublished #5381).** Edit markers/loop
+    after admission: require the same first qualifying original out, not its opening seam tick or an extra lap.
+    Out14 beyond loop8..12 is an admitted OPEN take: real MIDI through wraps/manual Stop survives; later authorized
+    geometry first reaches original14, while marker edits cannot retarget it. Pending/future start and native
+    unavailability still exclude input. Pair browser scheduling with a deliberately different native input cursor:
+    onset, out exclusion, held/late release and Stop use one accepted carrier/pass. Refused audio recovery cannot
+    certify surviving unsounded MIDI; hold native before out while browser time passes, require waiting, then sound
+    it. Provider/root/original raw target incarnations decide debt, including genuine overdub candidates; a removed,
+    recreated or freshly armed target cannot inherit it. Early manual Stop uses accepted position, not future out.
+    Preserve cancellation, late wrap, seek, failed input, root replacement and teardown; staging cannot count twice.
+    Removing frozen ownership/accepted MIDI ending must fail. Producer PCM: `input-monitoring-ownership.md` probe14;
+    tempo/media law: `audio-timing-format-laws.md` probes1/12. Historical private prompts/tiers are unestablished.
+13. **Sibling terminals publish one contiguous recording gesture (#4564).** Hold real audio while MIDI submits,
+    interleave foreign color, then require one Undo to remove every new clip/row/take but preserve color, next Undo
+    color, and reverse Redo order. Group ID alone cannot join noncontiguous history. Pair failed/missing/unstarted
+    inputs and full muted recovery with a valid sibling. Actual production serialization and both past/future
+    hydration, not retained live Undo objects, must preserve the group (`replay-authority.md` probe7).
+14. **Pending controller consumption waits for publication (#5338).** Fail/cancel a real second child after first
+    CRDT controller writes: raw/history roll back and exact runtime owner survives. Describe/execute share one full
+    current-buffer plan, including the delayed-overdub closing lift; publication consumes that prefix only. Later
+    suffix survives root/buffer/carry/seed replacement and, if already stopped, lands through existing serialized
+    overdub AFTER primary history. Published observer failure keeps data/ambiguity, never discard/retry or confirmed
+    history claims. Moving consumption back before commit must fail these controls.
+15. **Optimistic removal cannot retire active input (`341896bf4b`, introducing PR unestablished).** Cancel typed
+    removal after its first write, then drive actual MIDI and Stop. Reattach only this automatic gesture's exact
+    unsubmitted root/raw-row/buffer owner at admission/Stop; no projection sweep or successor attachment. Same-ID
+    replacements cannot receive old note/expression/controller input. Committed removal before/after submission
+    and all-slots-removed Stop remain separate positives. Historical private prompts/tiers are unestablished.
+
 ## Browser MIDI denial must remain retryable through teardown
 
 Commit `8b0050b90f2b8e18956c16edd20c9afea3ddbd2b` treated a rejected Web MIDI request

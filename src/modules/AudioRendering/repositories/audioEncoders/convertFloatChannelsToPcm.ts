@@ -56,7 +56,7 @@ export function convertFloatChannelsToPcm(input: ConvertFloatChannelsToPcmInput)
     if (input.bitDepth === 32) {
         const channels = block.channels.map((channel) => {
             if (!(channel instanceof Float32Array)) {
-                throw new Error('Expected float PCM.');
+                throw new TypeError('Expected float PCM.');
             }
             return channel;
         });
@@ -64,7 +64,7 @@ export function convertFloatChannelsToPcm(input: ConvertFloatChannelsToPcmInput)
     }
     const channels = block.channels.map((channel) => {
         if (!(channel instanceof Int32Array)) {
-            throw new Error('Expected integer PCM.');
+            throw new TypeError('Expected integer PCM.');
         }
         return channel;
     });

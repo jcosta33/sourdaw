@@ -24,6 +24,7 @@ const schedule_device_key_on = vi.hoisted(() => vi.fn());
 const faust_instrument_types = vi.hoisted(() => ({ value: new Set<string>() }));
 
 vi.mock('#/modules/Arrangement/useCases', () => ({
+    isRecordingMidiInputExcluded: () => false,
     admitRecordingMidiNoteOff: () => undefined,
     admitRecordingMidiNoteOn: () => undefined,
     admitRecordingMidiExpression: () => undefined,
@@ -36,6 +37,7 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
 
 vi.mock('../recordingMidiAdmissionPort', () => ({
     recordingMidiAdmissionPort: {
+        isRecordingMidiInputExcluded: () => false,
         admitRecordingMidiNoteOn: () => null,
         admitRecordingMidiNoteOff: () => undefined,
         admitRecordingMidiExpression: () => undefined,
