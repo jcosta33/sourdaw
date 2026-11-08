@@ -1,4 +1,4 @@
-import { decodeAudioFile, discardDecodedAudioFile } from '#/modules/AudioEngine/useCases';
+import { decodeAudioFile, discardDecodedAudioFile, openCachedAudioBufferHold } from '#/modules/AudioEngine/useCases';
 import { executeAppActionBatch } from '#/modules/Command/useCases';
 import { DEFAULT_TEMPO_BPM, transportStore } from '#/modules/Transport/stores';
 import { notifyUser } from '#/utils/Notification/notifyUser';
@@ -99,92 +99,97 @@ export async function importAudioClipToTrack(
     file: File,
     { shouldContinue }: ImportAudioClipToTrackOptions
 ): Promise<ImportAudioClipToTrackOutput> {
-    let bufferId: string;
-    let buffer: AudioBuffer;
-
+    const hold = openCachedAudioBufferHold();
     try {
-        const result = await decodeAudioFile(file);
-        bufferId = result.id;
-        buffer = result.buffer;
-    } catch {
-        if (!shouldContinue()) {
-            return 'superseded';
-        }
-        notifyUser(`Failed to import "${file.name}" — unsupported format or corrupt file`, 'error');
-        return 'completed';
-    }
+        let bufferId: string;
+        let buffer: AudioBuffer;
 
-    if (!shouldContinue()) {
-        discardDecodedAudioFile(bufferId);
-        return 'superseded';
-    }
-
-    const track = getTrackById(trackId);
-    if (!track) {
-        discardDecodedAudioFile(bufferId);
-        return 'completed';
-    }
-
-    const transport = transportStore.value;
-    const tempo = transport?.tempo ?? DEFAULT_TEMPO_BPM;
-    const durationBeats = Math.ceil((buffer.duration / 60) * tempo);
-    const lastClipEnd = Math.max(0, ...track.clips.map((context) => context.endBeat));
-    const name = file.name.replace(/\.[^.]+$/, '');
-
-    const assetTransfer = collaborationAssetTransfer.read('importAudioClipToTrack').current();
-    const stagedResult = await stageImportAsset(assetTransfer, file);
-    if (stagedResult === 'failed') {
-        discardDecodedAudioFile(bufferId);
-        if (!shouldContinue()) {
-            return 'superseded';
-        }
-        notifyUser(`Failed to import "${file.name}" — asset registration failed`, 'error');
-        return 'completed';
-    }
-    const stagedAsset = stagedResult;
-
-    const releasePreparedResources = (): void => {
-        if (stagedAsset) {
-            assetTransfer?.releaseStagedAsset(stagedAsset.leaseId);
-        }
-        discardDecodedAudioFile(bufferId);
-    };
-
-    if (!shouldContinue()) {
-        releasePreparedResources();
-        return 'superseded';
-    }
-
-    const batchOutcome = await runClipImportBatch({
-        trackId,
-        startBeat: lastClipEnd,
-        endBeat: lastClipEnd + durationBeats,
-        name,
-        bufferId,
-        stagedAsset,
-        shouldContinue,
-    });
-    if (retainedClipImport(batchOutcome)) {
-        let assetFinalizationFailed = false;
-        if (stagedAsset) {
-            try {
-                assetTransfer?.promoteStagedAsset(stagedAsset.leaseId);
-            } catch {
-                assetFinalizationFailed = true;
+        try {
+            const result = await decodeAudioFile(file, hold);
+            bufferId = result.id;
+            buffer = result.buffer;
+        } catch {
+            if (!shouldContinue()) {
+                return 'superseded';
             }
+            notifyUser(`Failed to import "${file.name}" — unsupported format or corrupt file`, 'error');
+            return 'completed';
         }
-        if (assetFinalizationFailed && shouldContinue()) {
-            notifyUser(`Imported "${file.name}", but its audio asset could not be finalized`, 'warning');
+
+        if (!shouldContinue()) {
+            discardDecodedAudioFile(bufferId);
+            return 'superseded';
         }
+
+        const track = getTrackById(trackId);
+        if (!track) {
+            discardDecodedAudioFile(bufferId);
+            return 'completed';
+        }
+
+        const transport = transportStore.value;
+        const tempo = transport?.tempo ?? DEFAULT_TEMPO_BPM;
+        const durationBeats = Math.ceil((buffer.duration / 60) * tempo);
+        const lastClipEnd = Math.max(0, ...track.clips.map((context) => context.endBeat));
+        const name = file.name.replace(/\.[^.]+$/, '');
+
+        const assetTransfer = collaborationAssetTransfer.read('importAudioClipToTrack').current();
+        const stagedResult = await stageImportAsset(assetTransfer, file);
+        if (stagedResult === 'failed') {
+            discardDecodedAudioFile(bufferId);
+            if (!shouldContinue()) {
+                return 'superseded';
+            }
+            notifyUser(`Failed to import "${file.name}" — asset registration failed`, 'error');
+            return 'completed';
+        }
+        const stagedAsset = stagedResult;
+
+        const releasePreparedResources = (): void => {
+            if (stagedAsset) {
+                assetTransfer?.releaseStagedAsset(stagedAsset.leaseId);
+            }
+            discardDecodedAudioFile(bufferId);
+        };
+
+        if (!shouldContinue()) {
+            releasePreparedResources();
+            return 'superseded';
+        }
+
+        const batchOutcome = await runClipImportBatch({
+            trackId,
+            startBeat: lastClipEnd,
+            endBeat: lastClipEnd + durationBeats,
+            name,
+            bufferId,
+            stagedAsset,
+            shouldContinue,
+        });
+        if (retainedClipImport(batchOutcome)) {
+            let assetFinalizationFailed = false;
+            if (stagedAsset) {
+                try {
+                    assetTransfer?.promoteStagedAsset(stagedAsset.leaseId);
+                } catch {
+                    assetFinalizationFailed = true;
+                }
+            }
+            if (assetFinalizationFailed && shouldContinue()) {
+                notifyUser(`Imported "${file.name}", but its audio asset could not be finalized`, 'warning');
+            }
+            return 'completed';
+        }
+
+        releasePreparedResources();
+        if (shouldContinue()) {
+            notifyUser(`Failed to import "${file.name}" — project state could not be updated`, 'error');
+        } else {
+            return 'superseded';
+        }
+
         return 'completed';
+    } finally {
+        hold.release();
     }
-
-    releasePreparedResources();
-    if (shouldContinue()) {
-        notifyUser(`Failed to import "${file.name}" — project state could not be updated`, 'error');
-    } else {
-        return 'superseded';
-    }
-
-    return 'completed';
 }

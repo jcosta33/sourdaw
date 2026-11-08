@@ -391,7 +391,7 @@ class HarnessAudioNode {
             );
         }
         if (!(destination instanceof HarnessAudioNode)) {
-            throw new Error(
+            throw new TypeError(
                 'nullTestRenderHarness models no connect() to an AudioParam or foreign node; the edge ' +
                     'would silently not exist. Model param-rate modulation before fixturing a device that needs it.'
             );

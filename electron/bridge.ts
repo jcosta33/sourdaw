@@ -97,8 +97,8 @@ const asBytes = (command: string, payload: unknown): Uint8Array => {
  * response bodies, which is the corruption the bounded queue exists to prevent.
  *
  * `globalThis.crypto` rather than `node:crypto`: the preload is bundled for
- * Electron's sandbox, where only `electron`, `events`, `timers` and `url`
- * resolve. The `app://sourdaw` scheme is registered `secure`, so Web Crypto is
+ * Electron's sandbox, where only `electron` resolves. The `app://sourdaw`
+ * scheme is registered `secure`, so Web Crypto is
  * available; a missing `randomUUID` throws here at boot rather than producing
  * colliding ids in the dark.
  */

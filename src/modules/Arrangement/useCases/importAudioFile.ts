@@ -1,4 +1,4 @@
-import { decodeAudioFile, discardDecodedAudioFile } from '#/modules/AudioEngine/useCases';
+import { decodeAudioFile, discardDecodedAudioFile, openCachedAudioBufferHold } from '#/modules/AudioEngine/useCases';
 import { executeAppActionBatch } from '#/modules/Command/useCases';
 import { DEFAULT_TEMPO_BPM, transportStore } from '#/modules/Transport/stores';
 import { notifyUser } from '#/utils/Notification/notifyUser';
@@ -137,99 +137,104 @@ export async function importAudioFile(
     file: File,
     { shouldContinue }: ImportAudioFileOptions
 ): Promise<ImportAudioFileOutput> {
-    let bufferId: string;
-    let buffer: AudioBuffer;
-
+    const hold = openCachedAudioBufferHold();
     try {
-        const result = await decodeAudioFile(file);
-        bufferId = result.id;
-        buffer = result.buffer;
-    } catch {
+        let bufferId: string;
+        let buffer: AudioBuffer;
+
+        try {
+            const result = await decodeAudioFile(file, hold);
+            bufferId = result.id;
+            buffer = result.buffer;
+        } catch {
+            if (!shouldContinue()) {
+                return 'superseded';
+            }
+            notifyUser(`Failed to import "${file.name}" — unsupported format or corrupt file`, 'error');
+            return 'completed';
+        }
+
         if (!shouldContinue()) {
+            discardDecodedAudioFile(bufferId);
             return 'superseded';
         }
-        notifyUser(`Failed to import "${file.name}" — unsupported format or corrupt file`, 'error');
-        return 'completed';
-    }
 
-    if (!shouldContinue()) {
-        discardDecodedAudioFile(bufferId);
-        return 'superseded';
-    }
+        const state = getTrackState();
+        if (!state) {
+            discardDecodedAudioFile(bufferId);
+            return 'completed';
+        }
 
-    const state = getTrackState();
-    if (!state) {
-        discardDecodedAudioFile(bufferId);
-        return 'completed';
-    }
+        const transport = transportStore.value;
+        const tempo = transport?.tempo ?? DEFAULT_TEMPO_BPM;
+        const durationBeats = (buffer.duration / 60) * tempo;
+        const endBeat = Math.ceil(durationBeats / 4) * 4;
+        const name = file.name.replace(/\.[^.]+$/, '');
 
-    const transport = transportStore.value;
-    const tempo = transport?.tempo ?? DEFAULT_TEMPO_BPM;
-    const durationBeats = (buffer.duration / 60) * tempo;
-    const endBeat = Math.ceil(durationBeats / 4) * 4;
-    const name = file.name.replace(/\.[^.]+$/, '');
+        const assetTransfer = collaborationAssetTransfer.read('importAudioFile').current();
+        const stagedAssetResult = await stageAudioAsset(assetTransfer, file);
+        if (stagedAssetResult === 'failed') {
+            discardDecodedAudioFile(bufferId);
+            if (!shouldContinue()) {
+                return 'superseded';
+            }
+            notifyUser(`Failed to import "${file.name}" — asset registration failed`, 'error');
+            return 'completed';
+        }
+        const stagedAsset = stagedAssetResult;
 
-    const assetTransfer = collaborationAssetTransfer.read('importAudioFile').current();
-    const stagedAssetResult = await stageAudioAsset(assetTransfer, file);
-    if (stagedAssetResult === 'failed') {
-        discardDecodedAudioFile(bufferId);
+        const releasePreparedResources = () => {
+            if (stagedAsset) {
+                assetTransfer?.releaseStagedAsset(stagedAsset.leaseId);
+            }
+            discardDecodedAudioFile(bufferId);
+        };
+
         if (!shouldContinue()) {
+            releasePreparedResources();
             return 'superseded';
         }
-        notifyUser(`Failed to import "${file.name}" — asset registration failed`, 'error');
-        return 'completed';
-    }
-    const stagedAsset = stagedAssetResult;
 
-    const releasePreparedResources = () => {
-        if (stagedAsset) {
-            assetTransfer?.releaseStagedAsset(stagedAsset.leaseId);
+        const track = createTrack({ name, kind: 'audio' });
+
+        // Re-read the track state after the staged asset hash so a
+        // concurrent write that landed during the asset hash (another import, a
+        // clip/device edit, a remote CRDT apply) is not clobbered by a stale
+        // snapshot. importMidiFile re-reads the same way before its write.
+        if (!getTrackState()) {
+            releasePreparedResources();
+            return 'completed';
         }
-        discardDecodedAudioFile(bufferId);
-    };
 
-    if (!shouldContinue()) {
-        releasePreparedResources();
-        return 'superseded';
-    }
-
-    const track = createTrack({ name, kind: 'audio' });
-
-    // Re-read the track state after the staged asset hash so a
-    // concurrent write that landed during the asset hash (another import, a
-    // clip/device edit, a remote CRDT apply) is not clobbered by a stale
-    // snapshot. importMidiFile re-reads the same way before its write.
-    if (!getTrackState()) {
-        releasePreparedResources();
-        return 'completed';
-    }
-
-    const groupLabel = `Import audio: ${name}`;
-    const actions = createAudioImportActions({ track, name, endBeat, bufferId, stagedAsset });
-    const batchResult = await runAudioImportBatch(actions, groupLabel, shouldContinue);
-    if (!batchResult) {
-        releasePreparedResources();
-        if (!shouldContinue()) {
-            return 'superseded';
+        const groupLabel = `Import audio: ${name}`;
+        const actions = createAudioImportActions({ track, name, endBeat, bufferId, stagedAsset });
+        const batchResult = await runAudioImportBatch(actions, groupLabel, shouldContinue);
+        if (!batchResult) {
+            releasePreparedResources();
+            if (!shouldContinue()) {
+                return 'superseded';
+            }
+            notifyUser(`Failed to import "${file.name}" — project state could not be updated`, 'error');
+            return 'completed';
         }
-        notifyUser(`Failed to import "${file.name}" — project state could not be updated`, 'error');
-        return 'completed';
-    }
 
-    const retainsImportedMedia =
-        batchResult.status === 'committed' ||
-        batchResult.status === 'committed-with-warning' ||
-        batchResult.status === 'ambiguous';
-    if (!retainsImportedMedia) {
-        releasePreparedResources();
-        if (!shouldContinue()) {
-            return 'superseded';
+        const retainsImportedMedia =
+            batchResult.status === 'committed' ||
+            batchResult.status === 'committed-with-warning' ||
+            batchResult.status === 'ambiguous';
+        if (!retainsImportedMedia) {
+            releasePreparedResources();
+            if (!shouldContinue()) {
+                return 'superseded';
+            }
+            notifyUser(
+                `Failed to import "${file.name}" — project state could not be updated: ${getBatchFailureReason(batchResult)}`,
+                'error'
+            );
+            return 'completed';
         }
-        notifyUser(
-            `Failed to import "${file.name}" — project state could not be updated: ${getBatchFailureReason(batchResult)}`,
-            'error'
-        );
-        return 'completed';
+        return finalizeCommittedAudioImport({ file, batchResult, assetTransfer, stagedAsset, shouldContinue });
+    } finally {
+        hold.release();
     }
-    return finalizeCommittedAudioImport({ file, batchResult, assetTransfer, stagedAsset, shouldContinue });
 }

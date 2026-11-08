@@ -472,31 +472,46 @@ describe('pnpm modules preflight against a real filesystem', () => {
             settings: { enableGlobalVirtualStore: false },
             projects: { [root]: {} },
         });
+        // pnpm 11.28 re-stamps the validation time in the workspace state on every run. The stamp
+        // is a freshness record, not an install, so only the facts the validation was made against
+        // have to hold still: the projects, the settings and the file mtimes it recorded.
+        const asRecord = (value: unknown): Record<string, unknown> => {
+            if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+                throw new TypeError('workspace state must be made of objects');
+            }
+            return Object.fromEntries(Object.entries(value));
+        };
+        const validatedWorkspaceFacts = () => {
+            const state = asRecord(JSON.parse(readFileSync(join(root, 'node_modules', PNPM_WORKSPACE_STATE), 'utf8')));
+            return {
+                projects: state.projects,
+                settings: state.settings,
+                files: asRecord(state.validation).files,
+            };
+        };
         const metadata = () =>
             Object.fromEntries(
-                [
-                    'pnpm-lock.yaml',
-                    `node_modules/${PNPM_MODULES_MANIFEST}`,
-                    `node_modules/${PNPM_WORKSPACE_STATE}`,
-                    'node_modules/.pnpm/lock.yaml',
-                ].map((path) => {
-                    const descriptor = openSync(join(root, path), 'r');
-                    try {
-                        const stat = fstatSync(descriptor);
-                        return [
-                            path,
-                            {
-                                sha256: createHash('sha256').update(readFileSync(descriptor)).digest('hex'),
-                                ino: stat.ino,
-                                mtimeMs: stat.mtimeMs,
-                            },
-                        ];
-                    } finally {
-                        closeSync(descriptor);
+                ['pnpm-lock.yaml', `node_modules/${PNPM_MODULES_MANIFEST}`, 'node_modules/.pnpm/lock.yaml'].map(
+                    (path) => {
+                        const descriptor = openSync(join(root, path), 'r');
+                        try {
+                            const stat = fstatSync(descriptor);
+                            return [
+                                path,
+                                {
+                                    sha256: createHash('sha256').update(readFileSync(descriptor)).digest('hex'),
+                                    ino: stat.ino,
+                                    mtimeMs: stat.mtimeMs,
+                                },
+                            ];
+                        } finally {
+                            closeSync(descriptor);
+                        }
                     }
-                })
+                )
             );
         const before = metadata();
+        const workspaceFactsBefore = validatedWorkspaceFacts();
         for (const ci of ['false', 'true']) {
             for (const freshness of [['--config.verify-deps-before-run=error'], []]) {
                 const result = runPnpm(ci, [...freshness, 'run', 'probe']);
@@ -505,6 +520,7 @@ describe('pnpm modules preflight against a real filesystem', () => {
                 expect(output).toContain('PRIVATE_STORE_PROBE');
                 expect(output).not.toMatch(/Lockfile is up to date|Already up to date|Packages:|Done in /);
                 expect(metadata()).toEqual(before);
+                expect(validatedWorkspaceFacts()).toEqual(workspaceFactsBefore);
                 expect(() => assertCheckoutModulesBelongToCheckout(root)).not.toThrow();
             }
         }

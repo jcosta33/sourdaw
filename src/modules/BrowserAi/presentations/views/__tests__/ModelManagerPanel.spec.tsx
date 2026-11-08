@@ -268,7 +268,7 @@ describe('ModelManagerPanel', () => {
         });
         const logged = logger_error_spy.mock.calls[0]?.[0];
         if (!(logged instanceof Error)) {
-            throw new Error('Expected logger.error to receive an Error');
+            throw new TypeError('Expected logger.error to receive an Error');
         }
         expect(logged.message).toContain(`Failed to download model "${KOKORO_MODEL_ENTRY.id}"`);
         expect(logged.cause).toBe(download_failure);
@@ -291,7 +291,7 @@ describe('ModelManagerPanel', () => {
         });
         const logged = logger_error_spy.mock.calls[0]?.[0];
         if (!(logged instanceof Error)) {
-            throw new Error('Expected logger.error to receive an Error');
+            throw new TypeError('Expected logger.error to receive an Error');
         }
         expect(logged.message).toContain(`Failed to download model "${KOKORO_MODEL_ENTRY.id}"`);
         expect(logged.cause).toBe(download_failure);
@@ -346,7 +346,7 @@ describe('ModelManagerPanel', () => {
         });
         const logged = logger_error_spy.mock.calls[0]?.[0];
         if (!(logged instanceof Error)) {
-            throw new Error('Expected logger.error to receive an Error');
+            throw new TypeError('Expected logger.error to receive an Error');
         }
         expect(logged.message).toContain(`Failed to remove model "${KOKORO_MODEL_ENTRY.id}"`);
         expect(logged.cause).toBe(removal_failure);
