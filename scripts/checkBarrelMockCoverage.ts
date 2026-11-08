@@ -162,14 +162,7 @@ const exemptions: ReadonlyArray<ExemptionRow> = [
     {
         spec: 'src/modules/Crust/useCases/crustParamBridge/__tests__/loadCrustPatchWithAudio.spec.ts',
         barrel: '#/modules/Arrangement/stores',
-        missingKeys: [
-            'appendClipToTrack',
-            'clipSelectionStore',
-            'getTrackEligibility',
-            'markerStore',
-            'resolveEligibleClipWriteTarget',
-            'updateClipInStore',
-        ],
+        missingKeys: ['clipSelectionStore', 'getTrackEligibility', 'markerStore', 'updateClipInStore'],
         reason: "Reachable via this spec's graph but never read by its tests (verified passing).",
     },
     {
@@ -207,49 +200,49 @@ const exemptions: ReadonlyArray<ExemptionRow> = [
     {
         spec: 'src/modules/Transport/useCases/__tests__/ensureTrackStrips.spec.ts',
         barrel: '#/modules/Arrangement/stores',
-        missingKeys: ['appendClipToTrack', 'clipSelectionStore', 'resolveEligibleClipWriteTarget', 'updateClipInStore'],
+        missingKeys: ['clipSelectionStore', 'updateClipInStore'],
         reason: "Reachable via this spec's graph but never read by its tests (verified passing).",
     },
     {
         spec: 'src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerSeamNotes.spec.ts',
         barrel: '#/modules/Arrangement/stores',
-        missingKeys: ['appendClipToTrack', 'clipSelectionStore', 'resolveEligibleClipWriteTarget', 'updateClipInStore'],
+        missingKeys: ['clipSelectionStore'],
         reason: "Reachable via this spec's graph but never read by its tests (verified passing).",
     },
     {
         spec: 'src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerLoopSeamTiming.spec.ts',
         barrel: '#/modules/Arrangement/stores',
-        missingKeys: ['appendClipToTrack', 'clipSelectionStore', 'resolveEligibleClipWriteTarget', 'updateClipInStore'],
+        missingKeys: ['clipSelectionStore'],
         reason: "Seam-notes harness family; reachable via this spec's graph but never read by its tests (verified passing).",
     },
     {
         spec: 'src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerTempoChangePosition.spec.ts',
         barrel: '#/modules/Arrangement/stores',
-        missingKeys: ['appendClipToTrack', 'clipSelectionStore', 'resolveEligibleClipWriteTarget', 'updateClipInStore'],
+        missingKeys: ['clipSelectionStore'],
         reason: "Seam-notes harness family; reachable via this spec's graph but never read by its tests (verified passing).",
     },
     {
         spec: 'src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerSeamHandover.spec.ts',
         barrel: '#/modules/Arrangement/stores',
-        missingKeys: ['appendClipToTrack', 'clipSelectionStore', 'resolveEligibleClipWriteTarget', 'updateClipInStore'],
+        missingKeys: ['clipSelectionStore'],
         reason: "Seam-notes harness family; reachable via this spec's graph but never read by its tests (verified passing).",
     },
     {
         spec: 'src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerSeamEdit.spec.ts',
         barrel: '#/modules/Arrangement/stores',
-        missingKeys: ['appendClipToTrack', 'clipSelectionStore', 'resolveEligibleClipWriteTarget', 'updateClipInStore'],
+        missingKeys: ['clipSelectionStore'],
         reason: "Seam-notes harness family; reachable via this spec's graph but never read by its tests (verified passing).",
     },
     {
         spec: 'src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerSeamPunch.spec.ts',
         barrel: '#/modules/Arrangement/stores',
-        missingKeys: ['appendClipToTrack', 'clipSelectionStore', 'resolveEligibleClipWriteTarget', 'updateClipInStore'],
+        missingKeys: ['clipSelectionStore'],
         reason: "Seam-notes harness family; reachable via this spec's graph but never read by its tests (verified passing).",
     },
     {
         spec: 'src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotesYeastContentOffset.spec.ts',
         barrel: '#/modules/Arrangement/stores',
-        missingKeys: ['appendClipToTrack', 'clipSelectionStore', 'resolveEligibleClipWriteTarget', 'updateClipInStore'],
+        missingKeys: ['clipSelectionStore'],
         reason: 'Yeast offset harness; the omitted Arrangement keys are never read by its tests (verified passing).',
     },
     {
@@ -261,7 +254,7 @@ const exemptions: ReadonlyArray<ExemptionRow> = [
     {
         spec: 'src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotesYeastGrooveWindowAdmission.spec.ts',
         barrel: '#/modules/Arrangement/stores',
-        missingKeys: ['appendClipToTrack', 'clipSelectionStore', 'resolveEligibleClipWriteTarget', 'updateClipInStore'],
+        missingKeys: ['clipSelectionStore'],
         reason: 'Yeast groove-admission harness; the omitted Arrangement keys are never read by its tests (verified passing).',
     },
     {

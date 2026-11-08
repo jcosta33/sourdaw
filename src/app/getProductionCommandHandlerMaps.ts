@@ -19,7 +19,6 @@ import {
     getChordTrackHandlers,
     getMidiGrooveHandlers,
     getMidiNoteTransformHandlers,
-    getPatternInstanceHandlers,
     getWebMidiInputHandlers,
 } from '#/modules/MIDI/useCases';
 import { getPluginHostHandlers } from '#/modules/PluginHost/useCases';
@@ -57,7 +56,6 @@ export function getProductionCommandHandlerMaps(input: { canMutateBranchMetadata
         getMidiGrooveHandlers(),
         getControlSurfaceHandlers(),
         getScratchPadHandlers(),
-        getPatternInstanceHandlers(),
         getMacroHandlers(),
         getUndoRedoHandlers(),
         getUndoTreeHandlers(),
