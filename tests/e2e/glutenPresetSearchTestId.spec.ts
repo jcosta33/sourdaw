@@ -89,6 +89,7 @@ test.describe('Gluten panel — preset search filtering', () => {
         await page.setViewportSize({ width: 1440, height: 900 });
         const faceplate = page.locator('.gluten-faceplate');
         const workspace = faceplate.locator(':scope > div').first();
+        const panelBody = page.getByTestId('instrument-bottom-panel-body').filter({ has: faceplate });
         const defaultGeometry = await faceplate.evaluate((element) => ({
             width: element.getBoundingClientRect().width,
             columns: getComputedStyle(element.firstElementChild as Element).gridTemplateColumns,
@@ -100,6 +101,24 @@ test.describe('Gluten panel — preset search filtering', () => {
                 workspace.evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(' ').length)
             )
             .toBe(3);
+
+        const disclosure = page.getByRole('group', { name: 'Effect control detail' });
+        await disclosure.getByRole('button', { name: 'lab', exact: true }).click();
+        await expect(page.getByRole('slider', { name: 'SC HPF', exact: true })).toBeVisible();
+
+        for (const label of ['Gluten dynamics overview', 'Gluten controls']) {
+            const column = page.getByLabel(label, { exact: true });
+            await expect.poll(() => column.evaluate((element) => element.clientHeight)).toBeGreaterThanOrEqual(440);
+        }
+
+        const controls = page.getByLabel('Gluten controls', { exact: true });
+        await expect
+            .poll(() => controls.evaluate((element) => element.scrollHeight - element.clientHeight))
+            .toBeGreaterThan(0);
+        await controls.evaluate((element) => {
+            element.scrollTop = element.scrollHeight;
+        });
+        await expect.poll(() => controls.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
 
         await page.setViewportSize({ width: 900, height: 700 });
         await expect
@@ -118,5 +137,8 @@ test.describe('Gluten panel — preset search filtering', () => {
                 })
             )
             .toBeGreaterThanOrEqual(-1);
+        await expect
+            .poll(() => panelBody.evaluate((element) => element.scrollWidth - element.clientWidth))
+            .toBeLessThanOrEqual(0);
     });
 });

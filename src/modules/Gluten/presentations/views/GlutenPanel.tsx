@@ -625,8 +625,8 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
         );
     }
 
-    return (
-        <div className="@container gluten-faceplate min-h-[440px] rounded-[26px] p-3">
+    const faceplate = (
+        <div className="gluten-faceplate min-h-[440px] rounded-[26px] p-3 @4xl:h-full">
             <div className="grid min-h-[440px] grid-cols-1 gap-3 @4xl:h-full @4xl:grid-cols-[15rem_minmax(0,1fr)_19rem]">
                 <DawPluginRail
                     aria-label="Gluten presets"
@@ -1612,7 +1612,10 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                             label={TOPOLOGY_META[topology].label}
                                             active={active}
                                             accentColor={accentColor}
-                                            gate={glutenStageTwoOptionGate({ patch: currentPatch, option: topology })}
+                                            gate={glutenStageTwoOptionGate({
+                                                patch: currentPatch,
+                                                option: topology,
+                                            })}
                                             onClick={() =>
                                                 setGlutenParamWithAudio(
                                                     deviceId,
@@ -1630,4 +1633,6 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
             </div>
         </div>
     );
+
+    return <div className="@container h-full min-h-[440px]">{faceplate}</div>;
 };

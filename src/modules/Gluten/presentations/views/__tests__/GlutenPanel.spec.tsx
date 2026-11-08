@@ -71,11 +71,13 @@ describe('GlutenPanel', () => {
 
     it('stacks the device rails in narrow workspaces and scopes their scrolling when wide', () => {
         const { container } = render(<GlutenPanel deviceId={DEVICE_ID} />);
+        const viewport = container.firstElementChild;
         const faceplate = container.querySelector('.gluten-faceplate');
         const workspace = faceplate?.firstElementChild;
 
-        expect(faceplate).toHaveClass('@container');
-        expect(faceplate).not.toHaveClass('h-full');
+        expect(viewport).toHaveClass('@container', 'h-full');
+        expect(faceplate).not.toHaveClass('@container', 'h-full');
+        expect(faceplate).toHaveClass('@4xl:h-full');
         expect(workspace).not.toHaveClass('h-full');
         expect(workspace).toHaveClass('grid-cols-1', '@4xl:h-full', '@4xl:grid-cols-[15rem_minmax(0,1fr)_19rem]');
         expect(screen.getByLabelText('Gluten presets')).toHaveClass('h-80', '@4xl:h-auto');
