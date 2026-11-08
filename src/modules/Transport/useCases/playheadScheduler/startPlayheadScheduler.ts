@@ -1621,6 +1621,7 @@ export function startPlayheadScheduler(
             }
         }
 
+        const eventSchedulingAnchor = now;
         if (!initial) {
             loopAudioSchedule.refill({ transport: current, changes, position: publishedBeat, audioTime: now });
         }
@@ -1702,13 +1703,7 @@ export function startPlayheadScheduler(
             // Dying pass: the window remainder up to the seam, emitted against
             // the position the dying pass holds at `now`, so its last events
             // land at their own grid times — all at or before the seam instant.
-            scheduleMetronome(
-                seam.passHighWater,
-                seam.passUpTo,
-                seam.passPosition,
-                current,
-                initial ? initialSchedulingAnchor : undefined
-            );
+            scheduleMetronome(seam.passHighWater, seam.passUpTo, seam.passPosition, current, eventSchedulingAnchor);
             const retainDyingFrozen = loopAudioSchedule.watchFrozenMidiWindow(
                 dyingBufferPool,
                 seam.passHighWater,
@@ -1729,7 +1724,8 @@ export function startPlayheadScheduler(
                     // this window a relocation; an ordinary seam tick continues.
                     reemitAfterEdit || skipsStalledSpan || seam.afterLateWrap,
                     initial ? preparedMidi?.midiWindow(seam.passHighWater, seam.passUpTo) : undefined,
-                    initial ? initialSchedulingAnchor : undefined
+                    initial ? initialSchedulingAnchor : undefined,
+                    eventSchedulingAnchor
                 )
             );
             if (initial) {
@@ -1791,13 +1787,7 @@ export function startPlayheadScheduler(
             // clicks there with its own accent, or nothing does when
             // loopStart is not a beat.
             resetMetronomeBeat(current.loopStart);
-            scheduleMetronome(
-                current.loopStart,
-                seam.wrappedUpTo,
-                newPosition,
-                current,
-                initial ? initialSchedulingAnchor : undefined
-            );
+            scheduleMetronome(current.loopStart, seam.wrappedUpTo, newPosition, current, eventSchedulingAnchor);
             // The incoming pass opens at the loop start: a relocation, so the
             // stored controllers are restored to what is in force there. The
             // dying window above already posted everything up to the seam, which
@@ -1819,7 +1809,8 @@ export function startPlayheadScheduler(
                     cancellation,
                     true,
                     initial ? preparedMidi?.midiWindow(current.loopStart, seam.wrappedUpTo) : undefined,
-                    initial ? initialSchedulingAnchor : undefined
+                    initial ? initialSchedulingAnchor : undefined,
+                    eventSchedulingAnchor
                 )
             );
             if (initial) {
@@ -1860,7 +1851,7 @@ export function startPlayheadScheduler(
                 scheduleUpTo,
                 schedulerSession.accumulatedPosition,
                 current,
-                initial ? initialSchedulingAnchor : undefined
+                eventSchedulingAnchor
             );
             // A late wrap, a follow-action jump, an edit's re-emit and a stall's
             // skip open this window at their destination, so it restores the
@@ -1882,7 +1873,8 @@ export function startPlayheadScheduler(
                     cancellation,
                     lateWrap || jumpToPosition !== null || reemitAfterEdit || skipsStalledSpan,
                     initial ? preparedMidi?.midiWindow(schedulerSession.lastScheduledBeat, scheduleUpTo) : undefined,
-                    initial ? initialSchedulingAnchor : undefined
+                    initial ? initialSchedulingAnchor : undefined,
+                    eventSchedulingAnchor
                 )
             );
             if (initial) {

@@ -40,6 +40,7 @@ const midiStoreState: {
     } | null;
 } = { value: null };
 const ctxTime = { now: 0 };
+const sourceStartClockAdvance = { armed: false, seconds: 0, invocations: 0 };
 const gainFailure = { enabled: false };
 const compensation = { seconds: 0 };
 
@@ -230,6 +231,11 @@ function createSource() {
             ledger.bufferDuration = source.buffer.duration;
             ledger.buffer = source.buffer;
             ledger.start = { when, offset, duration, rate: source.playbackRate.value, requestedAt: ctxTime.now };
+            if (sourceStartClockAdvance.armed) {
+                sourceStartClockAdvance.armed = false;
+                sourceStartClockAdvance.invocations++;
+                ctxTime.now += sourceStartClockAdvance.seconds;
+            }
         },
         stop(when = ctxTime.now) {
             if (!ledger.start || !Number.isFinite(when)) {
@@ -358,6 +364,7 @@ function effectiveEnd(source: SourceSnapshot): number {
 
 async function tickAt(relativeFrame: number, expectedError?: string, clockIsReset = false): Promise<void> {
     ctxTime.now = (ANCHOR_FRAME + relativeFrame) / SAMPLE_RATE;
+    const dispatchAudioTime = ctxTime.now;
     const receivedAtMs = performance.timeOrigin + performance.now();
     if (!workerHarness?.onmessage) {
         throw new Error('The real scheduler must have installed its worker callback');
@@ -376,7 +383,7 @@ async function tickAt(relativeFrame: number, expectedError?: string, clockIsRese
     await vi.waitFor(
         () => {
             expect(schedulerSession.tickInFlight).toBe(false);
-            expect(playheadClockRef.audioTimeSeconds).toBe(clockIsReset ? 0 : ctxTime.now);
+            expect(playheadClockRef.audioTimeSeconds).toBe(clockIsReset ? 0 : dispatchAudioTime);
             if (expectedError) {
                 expect(loggedError).toHaveBeenCalledOnce();
                 expect(loggedError.mock.calls[0]?.[0]?.cause?.message).toBe(expectedError);
@@ -529,6 +536,9 @@ async function reproduceSeamStall(
 beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(processYeastMidi).mockImplementation(async (block) => [...block.events]);
+    sourceStartClockAdvance.armed = false;
+    sourceStartClockAdvance.seconds = 0;
+    sourceStartClockAdvance.invocations = 0;
     gainFailure.enabled = false;
     compensation.seconds = 0;
     disposePlayheadScheduler();
@@ -678,6 +688,9 @@ describe('queued loop audio preservation and retirement', () => {
                 { id: 'waiting-rack', name: 'waiting', type: 'yeast', bypassed: false, parameterValues: {} },
             ];
             waiting.clips = [{ ...frozen.clips[0]!, id: 'waiting-clip', type: 'midi' }];
+            midiStoreState.value!.notesByClipId['waiting-clip'] = [
+                { id: 'awaited', pitch: 72, startBeat: 0.1, duration: 0.05, velocity: 100, probability: 100 },
+            ];
             trackStoreState.value = { tracks: [waiting, frozen] };
             buffers.delete('left-buffer');
             const input = {
@@ -712,13 +725,28 @@ describe('queued loop audio preservation and retirement', () => {
             });
             const watch = owner.watchFrozenMidiWindow(pool, 0, 0.2);
             const emission = watch(
-                scheduleMidiNotes(0, 0.2, incoming ? -0.1 : 0, pool.frozen, pool.sources, input.transport, 120)
+                scheduleMidiNotes(
+                    0,
+                    0.2,
+                    incoming ? -0.1 : 0,
+                    pool.frozen,
+                    pool.sources,
+                    input.transport,
+                    120,
+                    undefined,
+                    false,
+                    undefined,
+                    undefined,
+                    10
+                )
             );
             await vi.waitFor(() => expect(processYeastMidi).toHaveBeenCalledOnce(), { interval: 1 });
             ctxTime.now = 10.01;
             buffers.set('left-buffer', { duration: 16, sampleRate: SAMPLE_RATE } as AudioBuffer);
             release();
             await emission;
+            expect(scheduleNoteSpy.mock.calls.map((call) => call[2])).toEqual([72]);
+            expect(frame(scheduleNoteSpy.mock.calls[0]![3])).toBe(incoming ? 508_800 : 506_400);
             const admitted = snapshotSources();
             const physicalStart = incoming ? 10.56 : 10.51;
             expect(admitted).toHaveLength(1);
@@ -839,6 +867,9 @@ describe('queued loop audio preservation and retirement', () => {
         const before = snapshotSources();
         gainFailure.enabled = true;
         await tickAt(2_400, 'Fixture gain submission failed');
+        sourceStartClockAdvance.armed = false;
+        sourceStartClockAdvance.seconds = 0;
+        sourceStartClockAdvance.invocations = 0;
         gainFailure.enabled = false;
         const after = snapshotSources();
         expect(after).toHaveLength(before.length + 1);
@@ -1058,6 +1089,102 @@ describe('queued loop audio preservation and retirement', () => {
         expect(scheduleNoteSpy.mock.calls.map((call) => call[2])).toEqual([60, 67]);
         expect(scheduleNoteSpy.mock.calls[1]![3]).toBeCloseTo(10.25, 12);
     });
+    it.each([
+        { label: 'without refill delay', looping: true, sourceStartBeat: 0.96, delay: 0, expectedTime: 10.225 },
+        {
+            label: 'with delay inside loop refill',
+            looping: true,
+            sourceStartBeat: 0.96,
+            delay: 0.04,
+            expectedTime: 10.225,
+        },
+        {
+            label: 'with delay after MIDI in the legacy path',
+            looping: false,
+            sourceStartBeat: 0.45,
+            delay: 0.04,
+            expectedTime: 10.225,
+        },
+    ] as const)('binds normal MIDI and clicks to the tick clock $label', async (scenario) => {
+        const audio = seedTrack('left', 4, false, 0.375);
+        audio.clips[0]!.startBeat = scenario.sourceStartBeat;
+        const midi = createTrack({ id: 'live', kind: 'midi', name: 'live', withoutDefaultDevice: true });
+        midi.clips = [{ ...audio.clips[0]!, id: 'live-clip', trackId: 'live', type: 'midi', startBeat: 0 }];
+        trackStoreState.value = { tracks: [audio, midi] };
+        midiStoreState.value!.notesByClipId['live-clip'] = [
+            { id: 'due', pitch: 60, startBeat: 0.45, duration: 0.05, velocity: 100, probability: 100 },
+        ];
+        transportStoreState.value = {
+            ...defaultTransportState,
+            isPlaying: true,
+            tempo: 120,
+            isLooping: scenario.looping,
+            loopStart: 0,
+            loopEnd: 4,
+            metronomeEnabled: true,
+            timeSignatureDenominator: 8,
+        };
+        startPlayheadScheduler();
+        await tickAt(0);
+        await tickAt(4_800);
+        expect(scheduleNoteSpy).not.toHaveBeenCalled();
+        expect(snapshotSources()).toHaveLength(0);
+
+        sourceStartClockAdvance.armed = true;
+        sourceStartClockAdvance.seconds = scenario.delay;
+        await tickAt(7_200);
+
+        expect(sourceStartClockAdvance.invocations).toBe(1);
+        expect(scheduleNoteSpy.mock.calls.map((call) => call[2])).toEqual([60]);
+        expect.soft(frame(scheduleNoteSpy.mock.calls[0]![3])).toBe(490_800);
+        expect.soft(scheduleNoteSpy.mock.calls[0]![3]).toBeCloseTo(scenario.expectedTime, 12);
+        expect.soft(scheduleClickSpy.mock.calls.map((call) => frame(call[0]))).toEqual([480_000, 492_000]);
+        expect(playheadClockRef.audioTimeSeconds).toBe(10.15);
+        expect(playheadClockRef.beat).toBeCloseTo(0.3, 12);
+        expect(schedulerSession.lastScheduledBeat).toBeCloseTo(0.5, 12);
+        expect(snapshotSources()).toHaveLength(1);
+    });
+    it.each([0, 0.04])(
+        'binds dying and incoming MIDI and clicks to the tick clock with %ss preparation',
+        async (delay) => {
+            const audio = seedTrack('left', 4, false, 0.375);
+            audio.clips[0]!.startBeat = 3.9;
+            const midi = createTrack({ id: 'live', kind: 'midi', name: 'live', withoutDefaultDevice: true });
+            midi.clips = [{ ...audio.clips[0]!, id: 'live-clip', trackId: 'live', type: 'midi', startBeat: 0 }];
+            trackStoreState.value = { tracks: [audio, midi] };
+            midiStoreState.value!.notesByClipId['live-clip'] = [
+                { id: 'incoming', pitch: 60, startBeat: 0, duration: 0.05, velocity: 100, probability: 100 },
+                { id: 'dying', pitch: 67, startBeat: 3.9, duration: 0.05, velocity: 100, probability: 100 },
+            ];
+            transportStoreState.value = {
+                ...defaultTransportState,
+                isPlaying: true,
+                tempo: 120,
+                isLooping: true,
+                loopStart: 0,
+                loopEnd: 4,
+                metronomeEnabled: true,
+                timeSignatureDenominator: 32,
+            };
+            startPlayheadScheduler();
+            await tickAt(0);
+            expect(scheduleNoteSpy.mock.calls.map((call) => call[2])).toEqual([60]);
+            expect(snapshotSources()).toHaveLength(0);
+            scheduleNoteSpy.mockClear();
+            scheduleClickSpy.mockClear();
+            sourceStartClockAdvance.armed = true;
+            sourceStartClockAdvance.seconds = delay;
+            await tickAt(92_400);
+            expect(sourceStartClockAdvance.invocations).toBe(1);
+            expect(scheduleNoteSpy.mock.calls.map((call) => call[2])).toEqual([67, 60]);
+            // 3.9 and the incoming 0 land at 11.95 and 12 on the unchanged 120 BPM map.
+            expect.soft(scheduleNoteSpy.mock.calls.map((call) => frame(call[3]))).toEqual([573_600, 576_000]);
+            expect.soft(scheduleClickSpy.mock.calls.map((call) => frame(call[0]))).toEqual([573_000, 576_000]);
+            expect(playheadClockRef.audioTimeSeconds).toBe(11.925);
+            expect(schedulerSession.pendingSeam?.seamAudioTime).toBe(12);
+            expect(schedulerSession.lastScheduledBeat).toBeCloseTo(0.05, 12);
+        }
+    );
     it('uses the integrated nonzero loop ramp for every pass anchor and source end', async () => {
         const track = seedTrack('left', 4.5, false, 0.375);
         track.clips[0]!.startBeat = 4;
