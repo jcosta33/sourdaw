@@ -1,39 +1,48 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { createMockAudioContext, createMockAudioNode, MockAudioBuffer } from '#/helpers/__tests__/audioContext.mock';
 import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
-import { takeLaneStore, trackStore, type Clip } from '#/modules/Arrangement/stores';
-import { createTrack, runtimeGraphTopology } from '#/modules/Arrangement/useCases';
-import {
-    audioEngine,
-    cacheAudioBuffer,
-    configureRuntimeGraphProjectRevisionValidator,
-    configureRuntimeGraphTopologyValidator,
-    initEngineDeviceCollaborators,
-    removeTrackStrip,
-} from '#/modules/AudioEngine/useCases';
-import {
-    captureProjectRevision,
-    createCrdtDoc,
-    registerCrdtStorageRuntime,
-    removeCrdtDoc,
-    resetCrdtProjectAuthority,
-} from '#/modules/CrdtDocument/useCases';
+import type { Clip } from '#/modules/Arrangement/stores';
 
 import { defaultTransportState } from '../../../models/TransportState';
-import { playheadClockRef } from '../../../stores/playheadClockRef';
-import { tempoMapStore } from '../../../stores/tempoMapStore';
-import { transportStore } from '../../../stores/transportStore';
-import { startPlayback } from '../../transportControls/startPlayback';
-import { stopPlayback } from '../../transportControls/stopPlayback';
-import { disposePlayheadScheduler } from '../disposePlayheadScheduler';
-import { schedulerSession } from '../schedulerSession';
 
-registerDeviceEnginePorts();
+async function importRuntime() {
+    // Construct the real singleton only after its external AudioContext exists.
+    // Enter one graph before its barrels, as the Scoring composition test does.
+    await import('#/app/registerProjectLifecycle');
+    const devices = await import('#/app/registerDeviceEnginePorts');
+    const arrangement = await import('#/modules/Arrangement/useCases');
+    const arrangementStores = await import('#/modules/Arrangement/stores');
+    const audio = await import('#/modules/AudioEngine/useCases');
+    const crdt = await import('#/modules/CrdtDocument/useCases');
+    const clock = await import('../../../stores/playheadClockRef');
+    const tempo = await import('../../../stores/tempoMapStore');
+    const transport = await import('../../../stores/transportStore');
+    const start = await import('../../transportControls/startPlayback');
+    const stop = await import('../../transportControls/stopPlayback');
+    const disposal = await import('../disposePlayheadScheduler');
+    const session = await import('../schedulerSession');
+    return {
+        devices,
+        arrangement,
+        arrangementStores,
+        audio,
+        crdt,
+        clock,
+        tempo,
+        transport,
+        start,
+        stop,
+        disposal,
+        session,
+    };
+}
+
+let runtime: Awaited<ReturnType<typeof importRuntime>>;
+let setupComplete = false;
 
 class SchedulerWorker {
     onmessage: ((event: MessageEvent) => void) | null = null;
@@ -87,27 +96,20 @@ function clip(id: string, startBeat: number, endBeat: number): Clip {
 }
 
 describe('audio admission at an off-grid transport loop end', () => {
-    const originalContext = audioEngine.context;
     const context = createMockAudioContext();
     const sources: ReturnType<typeof context.createBufferSource>[] = [];
     const workers: SchedulerWorker[] = [];
-    let currentTime = 8;
 
-    beforeEach(() => {
-        configureAutomergeStoragePort(null);
-        resetCrdtProjectAuthority('audio loop-end admission');
-        removeCrdtDoc('root');
-        createCrdtDoc('root');
-        registerCrdtStorageRuntime();
-        Object.defineProperty(context, 'currentTime', { configurable: true, get: () => currentTime });
+    beforeAll(async () => {
+        context.currentTime = 8;
         context.createBufferSource.mockImplementation(() => {
             const source = createMockAudioNode('buffer-source');
             sources.push(source);
             return source;
         });
-        // The external Web Audio boundary is controlled; engine accessors,
-        // strip creation, playback admission and both schedulers stay real.
-        audioEngine.context = context as AudioContext;
+        vi.stubGlobal('AudioContext', function ConstructionContext() {
+            return context;
+        });
         vi.stubGlobal(
             'AudioWorkletNode',
             class {
@@ -116,6 +118,21 @@ describe('audio admission at an off-grid transport loop end', () => {
                 }
             }
         );
+        runtime = await importRuntime();
+        runtime.devices.registerDeviceEnginePorts();
+        setupComplete = true;
+    }, 30_000);
+
+    beforeEach(() => {
+        sources.length = 0;
+        workers.length = 0;
+        context.currentTime = 8;
+        configureAutomergeStoragePort(null);
+        runtime.crdt.resetCrdtProjectAuthority('audio loop-end admission');
+        runtime.crdt.removeCrdtDoc('root');
+        runtime.crdt.createCrdtDoc('root');
+        runtime.crdt.registerCrdtStorageRuntime();
+        expect(runtime.audio.audioEngine.context).toBe(context);
         vi.stubGlobal(
             'Worker',
             class extends SchedulerWorker {
@@ -125,38 +142,58 @@ describe('audio admission at an off-grid transport loop end', () => {
                 }
             }
         );
-        configureRuntimeGraphProjectRevisionValidator((revision) => captureProjectRevision() === revision);
-        configureRuntimeGraphTopologyValidator(runtimeGraphTopology.matchesCurrentProject);
-        initEngineDeviceCollaborators();
-        takeLaneStore.set({ lanes: [] });
-        tempoMapStore.set({ changes: [] });
+        runtime.audio.configureRuntimeGraphProjectRevisionValidator(
+            (revision) => runtime.crdt.captureProjectRevision() === revision
+        );
+        runtime.audio.configureRuntimeGraphTopologyValidator(
+            runtime.arrangement.runtimeGraphTopology.matchesCurrentProject
+        );
+        runtime.audio.initEngineDeviceCollaborators();
+        runtime.arrangementStores.takeLaneStore.set({ lanes: [] });
+        runtime.tempo.tempoMapStore.set({ changes: [] });
     });
 
     afterEach(async () => {
-        await stopPlayback();
-        disposePlayheadScheduler();
-        removeTrackStrip('seam-audio');
-        audioEngine.setUseCaseDeviceCollaborators(null);
-        configureRuntimeGraphProjectRevisionValidator(null);
-        configureRuntimeGraphTopologyValidator(null);
-        audioEngine.context = originalContext;
-        trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
-        transportStore.set(defaultTransportState);
+        if (!setupComplete) {
+            return;
+        }
+        await runtime.stop.stopPlayback();
+        runtime.disposal.disposePlayheadScheduler();
+        runtime.audio.removeTrackStrip('seam-audio');
+        runtime.audio.audioEngine.setUseCaseDeviceCollaborators(null);
+        runtime.audio.configureRuntimeGraphProjectRevisionValidator(null);
+        runtime.audio.configureRuntimeGraphTopologyValidator(null);
+        runtime.arrangementStores.trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
+        runtime.transport.transportStore.set(defaultTransportState);
         flushAutomergeStorageWrites();
         configureAutomergeStoragePort(null);
-        removeCrdtDoc('root');
-        vi.unstubAllGlobals();
+        runtime.crdt.removeCrdtDoc('root');
+    });
+
+    afterAll(async () => {
+        try {
+            if (setupComplete) {
+                await runtime.audio.audioEngine.dispose();
+            }
+        } finally {
+            vi.unstubAllGlobals();
+        }
     });
 
     it('excludes the loopEnd clip from the dying pass and starts loopStart once in the incoming pass', async () => {
         const dying = MockAudioBuffer.create(1, 48_000, 48_000);
         const incoming = MockAudioBuffer.create(1, 24_000, 48_000);
         const excluded = MockAudioBuffer.create(1, 12_000, 48_000);
-        cacheAudioBuffer({ bufferId: 'dying', buffer: dying });
-        cacheAudioBuffer({ bufferId: 'incoming', buffer: incoming });
-        cacheAudioBuffer({ bufferId: 'excluded', buffer: excluded });
-        const track = createTrack({ id: 'seam-audio', name: 'Seam audio', kind: 'audio', withoutDefaultDevice: true });
-        trackStore.set({
+        runtime.audio.cacheAudioBuffer({ bufferId: 'dying', buffer: dying });
+        runtime.audio.cacheAudioBuffer({ bufferId: 'incoming', buffer: incoming });
+        runtime.audio.cacheAudioBuffer({ bufferId: 'excluded', buffer: excluded });
+        const track = runtime.arrangement.createTrack({
+            id: 'seam-audio',
+            name: 'Seam audio',
+            kind: 'audio',
+            withoutDefaultDevice: true,
+        });
+        runtime.arrangementStores.trackStore.set({
             tracks: [
                 {
                     ...track,
@@ -166,7 +203,7 @@ describe('audio admission at an off-grid transport loop end', () => {
             selectedTrackId: track.id,
             ghostClips: [],
         });
-        transportStore.set({
+        runtime.transport.transportStore.set({
             ...defaultTransportState,
             tempo: 120,
             playheadPosition: 1.525,
@@ -178,9 +215,9 @@ describe('audio admission at an off-grid transport loop end', () => {
         flushAutomergeStorageWrites();
         const onRoll = vi.fn<(seconds: number, beat: number) => void>();
 
-        await startPlayback(onRoll);
+        await runtime.start.startPlayback(onRoll);
 
-        expect(transportStore.value?.isPlaying).toBe(true);
+        expect(runtime.transport.transportStore.value?.isPlaying).toBe(true);
         expect(onRoll).toHaveBeenCalledExactlyOnceWith(8.1, 1.525);
         expect(sources).toHaveLength(2);
         expect(sources[0]?.buffer).toBe(dying);
@@ -192,16 +229,20 @@ describe('audio admission at an off-grid transport loop end', () => {
         expect(sources.map((source) => Math.round(Number(source.start.mock.calls[0]?.[0]) * 48_000))).toEqual([
             388_800, 392_400,
         ]);
-        expect(playheadClockRef.pendingLoopSeam).toMatchObject({ loopStart: 0.125, loopEnd: 1.675, passIndex: 1 });
+        expect(runtime.clock.playheadClockRef.pendingLoopSeam).toMatchObject({
+            loopStart: 0.125,
+            loopEnd: 1.675,
+            passIndex: 1,
+        });
         expect(workers).toHaveLength(1);
 
-        currentTime = 8.175;
+        context.currentTime = 8.175;
         workers[0]!.deliver();
-        expect(schedulerSession.tickInFlight).toBe(true);
-        await vi.waitFor(() => expect(schedulerSession.tickInFlight).toBe(false));
+        expect(runtime.session.schedulerSession.tickInFlight).toBe(true);
+        await vi.waitFor(() => expect(runtime.session.schedulerSession.tickInFlight).toBe(false));
 
-        expect(playheadClockRef.pendingLoopSeam).toBeNull();
-        expect(playheadClockRef.beat).toBeCloseTo(0.125, 12);
+        expect(runtime.clock.playheadClockRef.pendingLoopSeam).toBeNull();
+        expect(runtime.clock.playheadClockRef.beat).toBeCloseTo(0.125, 12);
         expect(sources).toHaveLength(2);
         expect(sources.map((source) => source.start.mock.calls.length)).toEqual([1, 1]);
         expect(sources.map((source) => source.buffer)).not.toContain(excluded);

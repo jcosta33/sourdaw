@@ -110,7 +110,7 @@ describe('mounted mixer snapshot project truth and history', () => {
             </TooltipProvider>
         );
         const saved = mix();
-        fireEvent.click(screen.getByRole('button', { name: 'Save mixer snapshot', exact: true }));
+        fireEvent.click(screen.getByRole('button', { name: 'Save mixer snapshot' }));
         expect(runtime.arrangement.getMixerSnapshots()).toHaveLength(1);
 
         await act(async () => {
@@ -143,9 +143,9 @@ describe('mounted mixer snapshot project truth and history', () => {
         });
         const beforeRecall = mix();
         expectAuthority();
-        fireEvent.click(screen.getByRole('button', { name: 'Recall mixer snapshot', exact: true }));
-        fireEvent.click(screen.getByRole('button', { name: 'Snapshot 1', exact: true }));
-        expect(screen.queryByRole('button', { name: 'Snapshot 1', exact: true })).not.toBeInTheDocument();
+        fireEvent.click(screen.getByRole('button', { name: 'Recall mixer snapshot' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Snapshot 1' }));
+        expect(screen.queryByRole('button', { name: 'Snapshot 1' })).not.toBeInTheDocument();
         expect(mix()).toEqual([...saved, beforeRecall[2]]);
         expect(runtime.history.undoHistoryStore.value?.past).toEqual([
             expect.objectContaining({ kind: 'callback', label: 'Recall mixer snapshot' }),
