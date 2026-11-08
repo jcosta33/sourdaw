@@ -6,7 +6,7 @@ import { TooltipProvider } from '#/components/ui/tooltip';
 import { LevelMeter } from '../LevelMeter';
 
 const mocks = vi.hoisted(() => ({
-    getMasterPeakLevel: vi.fn<() => number | null>(() => 0),
+    getMasterPeakLevel: vi.fn<(frameTime?: number) => number | null>(() => 0),
     getTrackPeakLevel: vi.fn(() => 0),
     register: vi.fn(),
     unregister: vi.fn(),
@@ -275,5 +275,17 @@ describe('LevelMeter', () => {
             // unavailable case must not produce.
             expect(fillRectSpy.mock.calls).toContainEqual([0, 0, 8, 100]);
         });
+    });
+    it.each([null, 'track-17'])('forwards the exact scheduler frame to the %s peak query', (trackId) => {
+        renderWithTooltip(<LevelMeter trackId={trackId} />);
+        expect(mocks.scheduledTick).not.toBeNull();
+        mocks.scheduledTick!(123.456, 16);
+        if (trackId === null) {
+            expect(mocks.getMasterPeakLevel).toHaveBeenCalledExactlyOnceWith(123.456);
+            expect(mocks.getTrackPeakLevel).not.toHaveBeenCalled();
+        } else {
+            expect(mocks.getTrackPeakLevel).toHaveBeenCalledExactlyOnceWith(trackId, 123.456);
+            expect(mocks.getMasterPeakLevel).not.toHaveBeenCalled();
+        }
     });
 });
