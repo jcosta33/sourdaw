@@ -6,7 +6,7 @@ import { resetMetricGoalProject } from './metricGoalWorkflowFixture';
 afterEach(resetMetricGoalProject);
 
 describe('metric proof structure', () => {
-    it.each(['duplicate target', 'missing provenance', 'baseline route', 'preview route'] as const)(
+    it.each(['missing provenance', 'baseline route', 'preview route'] as const)(
         'rejects %s while accepting the unmodified proof',
         (defect) => {
             const f = metricGuardFixture();
@@ -20,10 +20,7 @@ describe('metric proof structure', () => {
                     : defect === 'preview route'
                       ? { ...artifacts, preview: { ...artifacts.preview, route: 'mixdown' as const } }
                       : artifacts;
-            const targets =
-                defect === 'duplicate target'
-                    ? [proof.preview.targets[0]!, proof.preview.targets[0]!]
-                    : proof.preview.targets;
+            const targets = proof.preview.targets;
             const provenanceTargets =
                 defect === 'missing provenance'
                     ? [{ ...artifacts, targetId: 'other' }, provenance.targets[1]!]
@@ -48,6 +45,37 @@ describe('metric proof structure', () => {
             });
         }
     );
+    it('rejects duplicate preview targets even when a separate proof supplies the reference', () => {
+        const f = metricGuardFixture();
+        expect(f.evaluate(f.state).status).toBe('verified');
+        const proof = f.state.proofs[0]!;
+        const provenance = proof.preview.provenance!;
+        const bass = proof.preview.targets[0]!;
+        const bassArtifact = provenance.targets[0]!;
+        const drums = proof.preview.targets[1]!;
+        const drumsArtifact = provenance.targets[1]!;
+        const duplicate = {
+            ...proof,
+            preview: {
+                ...proof.preview,
+                scope: { kind: 'tracks' as const, ids: ['bass', 'bass'] },
+                targets: [bass, bass],
+                provenance: { ...provenance, targets: [bassArtifact, bassArtifact] },
+            },
+        };
+        const reference = {
+            ...proof,
+            receiptDigest: 'reference',
+            preview: {
+                ...proof.preview,
+                scope: { kind: 'tracks' as const, ids: ['drums'] },
+                targets: [drums],
+                provenance: { ...provenance, callId: 'reference', targets: [drumsArtifact] },
+            },
+        };
+        const state = f.bind({ ...f.state, proofs: [duplicate, reference] });
+        expect(f.evaluate(state)).toMatchObject({ status: 'blocked', failure: 'incomparable' });
+    });
     it.each(['before', 'after'] as const)('rejects a rebound prefix with altered %s', (field) => {
         const f = metricGuardFixture();
         expect(f.evaluate(f.state).status).toBe('verified');
