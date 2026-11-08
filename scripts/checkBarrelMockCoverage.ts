@@ -754,7 +754,14 @@ export function readFileFacts(absolutePath: string, contents: string): FileFacts
                         }
                     }
                 }
-                addImport(node.moduleSpecifier.text, names);
+                const hasOnlyInlineTypeBindings =
+                    clause.namedBindings !== undefined &&
+                    ts.isNamedImports(clause.namedBindings) &&
+                    clause.namedBindings.elements.length > 0 &&
+                    names.length === 0;
+                if (!hasOnlyInlineTypeBindings) {
+                    addImport(node.moduleSpecifier.text, names);
+                }
             } else if (!clause) {
                 addImport(node.moduleSpecifier.text, []);
             }
@@ -766,7 +773,10 @@ export function readFileFacts(absolutePath: string, contents: string): FileFacts
                     const names = node.exportClause.elements
                         .filter((element) => !element.isTypeOnly)
                         .map((element) => (element.propertyName ?? element.name).text);
-                    addImport(node.moduleSpecifier.text, names);
+                    const hasOnlyInlineTypeBindings = node.exportClause.elements.length > 0 && names.length === 0;
+                    if (!hasOnlyInlineTypeBindings) {
+                        addImport(node.moduleSpecifier.text, names);
+                    }
                 } else {
                     addImport(node.moduleSpecifier.text, ['*']);
                 }

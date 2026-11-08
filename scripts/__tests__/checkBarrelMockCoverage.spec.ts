@@ -43,6 +43,7 @@
 import { join } from 'node:path';
 
 import { beforeAll, describe, expect, it } from 'vitest';
+import { loadConfigFromFile, resolveConfig, transformWithOxc } from 'vite';
 
 import {
     allBarrelKinds,
@@ -150,6 +151,84 @@ describe('checkBarrelMockCoverage — planted broken fixtures', () => {
         });
 
         expect(violationsOf(fixture).map((violation) => violation.missing)).toEqual([['Beta']]);
+    });
+});
+
+describe('checkBarrelMockCoverage — Vite-erased type-only module edges', () => {
+    const projectConfig = loadConfigFromFile(
+        { command: 'serve', mode: 'test' },
+        join(repoRoot, 'vite.config.ts'),
+        repoRoot
+    ).then((loaded) => {
+        if (!loaded) {
+            throw new Error('Unable to load the project Vite config for the transform oracle');
+        }
+        return resolveConfig(loaded.config, 'serve');
+    });
+
+    async function executeTransformedModule(source: string): Promise<void> {
+        const transformed = await transformWithOxc(
+            source,
+            join(repoRoot, 'src/modules/Host/presentations/views/HostPanel.tsx'),
+            undefined,
+            undefined,
+            await projectConfig
+        );
+        const moduleUrl = `data:text/javascript,${encodeURIComponent(transformed.code)}`;
+        await import(moduleUrl);
+    }
+
+    function typeEdgeFixture(edge: string): Fixture {
+        return buildFixture({
+            [barrel]: "export { Alpha } from './Alpha';\n",
+            [secondBarrel]: "export { Beta } from './Beta';\n",
+            'src/modules/Host/presentations/views/Bridge.ts': `import { Beta } from '${secondBarrelSpecifier}';\nexport const Bridge = Beta;\n`,
+            'src/modules/Host/presentations/views/HostPanel.tsx': `${edge}\nexport const HostPanel = true;\n`,
+            'src/modules/Host/presentations/views/__tests__/HostPanel.spec.tsx': [
+                `vi.mock('${barrelSpecifier}', () => ({ Alpha: true }));`,
+                `vi.mock('${secondBarrelSpecifier}', () => ({ Gamma: true }));`,
+                "import { HostPanel } from '../HostPanel';",
+                '',
+            ].join('\n'),
+        });
+    }
+
+    it.each([
+        ['an all-inline type import', "import { type PreviewHandle } from './Bridge';"],
+        ['an all-inline type re-export', "export { type PreviewHandle } from './Bridge';"],
+    ])('%s is erased and does not make its downstream mock key reachable', async (_label, edge) => {
+        const marker = `__barrel_inline_type_${crypto.randomUUID().replaceAll('-', '')}`;
+        const downstreamUrl = `data:text/javascript,${encodeURIComponent(`globalThis.${marker} = true; export const Beta = true;`)}`;
+        const bridgeSource = `import { Beta } from ${JSON.stringify(downstreamUrl)}; globalThis.${marker}Bridge = Beta; export const Bridge = Beta;`;
+        const bridgeUrl = `data:text/javascript,${encodeURIComponent(bridgeSource)}`;
+        const runtimeEdge = edge.replace("'./Bridge'", JSON.stringify(bridgeUrl));
+
+        await executeTransformedModule(`${runtimeEdge}\nexport const HostPanel = true;`);
+
+        expect(Reflect.get(globalThis, marker)).toBeUndefined();
+        expect(violationsOf(typeEdgeFixture(edge))).toEqual([]);
+    });
+
+    it.each([
+        ['a mixed value and inline type import', "import { type PreviewHandle, Bridge } from './Bridge';"],
+        ['an explicit empty import', "import {} from './Bridge';"],
+        ['a bare side-effect import', "import './Bridge';"],
+        ['an explicit empty re-export', "export {} from './Bridge';"],
+    ])('%s retains module evaluation and its downstream missing key', async (_label, edge) => {
+        const marker = `__barrel_runtime_edge_${crypto.randomUUID().replaceAll('-', '')}`;
+        const downstreamUrl = `data:text/javascript,${encodeURIComponent(`globalThis.${marker} = true; export const Beta = true;`)}`;
+        const bridgeSource = `import { Beta } from ${JSON.stringify(downstreamUrl)}; globalThis.${marker}Bridge = Beta; export const Bridge = Beta;`;
+        const bridgeUrl = `data:text/javascript,${encodeURIComponent(bridgeSource)}`;
+        const runtimeEdge = edge.replace("'./Bridge'", JSON.stringify(bridgeUrl));
+
+        await executeTransformedModule(
+            `${runtimeEdge}\n${edge.includes(', Bridge }') ? 'void Bridge;' : ''}\nexport const HostPanel = true;`
+        );
+
+        expect(Reflect.get(globalThis, marker)).toBe(true);
+        expect(violationsOf(typeEdgeFixture(edge))).toEqual([
+            expect.objectContaining({ barrel: secondBarrelSpecifier, missing: ['Beta'] }),
+        ]);
     });
 });
 
