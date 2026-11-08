@@ -47,53 +47,12 @@ import {
     configureAiWorkflowCommandPreflightFixture,
     resetAiWorkflowCommandPreflightFixture,
 } from './aiWorkflowCommandPreflightFixture';
-import { advertisedAnswerSchema } from './answerWireFixture';
-import {
-    type ScriptedTurn,
-    readCreativeInterpretationCatalog,
-    selectCreativeInterpretationCall,
-} from './highLevelIntentWorkflowFixture';
-import { literalMetricIntakeTurn, metricGoalProviderPlan, readMetricPublication } from './metricGoalWorkflowFixture';
+import { literalMetricIntakeTurn, metricGoalProviderPlan } from './metricGoalWorkflowFixture';
 import { withWorkflowCapabilitySelection } from './workflowCapabilitySelectionFixture';
 
 registerDeviceEnginePorts();
 registerSupportingServicePorts();
 
-const startingMixMetricIntake: ScriptedTurn = (userMessage, providerView) => {
-    const call = selectCreativeInterpretationCall({
-        catalog: readCreativeInterpretationCatalog(userMessage, providerView),
-        modeId: 'create',
-        creationSlotObjectTypes: ['track'],
-        dimensions: ['processing', 'arrangement'],
-    });
-    const objective = readMetricPublication({ function: advertisedAnswerSchema(providerView) }).find(
-        (candidate) => candidate.kind === 'unsupported'
-    );
-    if (objective === undefined) {
-        throw new TypeError('Expected the published unsupported starting-mix objective.');
-    }
-    return [
-        {
-            ...call,
-            arguments: {
-                ...call.arguments,
-                answer: null,
-                metricIntent: {
-                    kind: 'perceptual',
-                    uncertainty: 'none',
-                    objectives: [
-                        {
-                            objectiveId: objective.id,
-                            scopeCandidateId: null,
-                            referenceScopeCandidateId: null,
-                            rangeCandidateId: null,
-                        },
-                    ],
-                },
-            },
-        },
-    ];
-};
 const STEM_SOURCE_NAMES = [
     'Kick_120.wav',
     'Snare_120.wav',
@@ -102,58 +61,34 @@ const STEM_SOURCE_NAMES = [
     'Guitar_R_120.wav',
     'Lead_Vocal_120.wav',
 ] as const;
-const REPLACEMENT_SOURCE_NAMES = ['Replacement_Kick_120.wav', 'Replacement_Snare_120.wav'] as const;
 
 type ProviderCall = { name: string; arguments: Record<string, unknown> };
 
 const mocks = vi.hoisted(() => {
-    const backend: { value: 'cloud' | 'webllm' } = { value: 'webllm' };
     return {
-        backend,
-        analyzeAgentAuditionBuffer: vi.fn(),
-        analyzeCurrentMix: vi.fn(() => ({ status: 'unavailable', reason: 'no-program-audio' })),
-        summarizeFeatures: vi.fn(),
         stageDurableAsset:
             vi.fn<(file: File, name: string, leaseId: string) => Promise<{ hash: string; leaseId: string }>>(),
         commitDurablePromotionRecovery: vi.fn().mockResolvedValue({ status: 'committed' }),
         completeDurableCleanupRecovery: vi.fn().mockResolvedValue({ status: 'completed' }),
         completeDurablePromotionRecovery: vi.fn().mockResolvedValue({ status: 'completed' }),
         decodeAudioFile: vi.fn(),
-        detectTempo: vi.fn<() => number | null>(() => 120),
         arrangementEventEmit: vi.fn(() => Promise.resolve()),
-        executeBatchError: { value: null as Error | null },
         fetch: vi.fn<typeof fetch>(),
-        generateWebLlmCompletion: vi.fn(),
         pickFiles: vi.fn<() => Promise<File[] | null>>(),
         prepareDurableCleanupRecovery: vi.fn().mockResolvedValue({ status: 'prepared' }),
         prepareDurablePromotionRecovery: vi.fn().mockResolvedValue({ status: 'prepared' }),
         promoteDurableStagedAsset: vi.fn().mockResolvedValue({ status: 'promoted' }),
         reopenDurableAsset: vi.fn().mockResolvedValue({ status: 'opened' }),
-        releasePreviewAudioBuffer: vi.fn(),
-        removeTrackStrip: vi.fn(),
-        setTrackGain: vi.fn(),
-        setTrackMute: vi.fn(),
-        setTrackOutput: vi.fn(),
-        setTrackPan: vi.fn(),
-        setTrackSoloGate: vi.fn(),
         transitionDurablePromotionRecoveryToCleanup: vi.fn().mockResolvedValue({ status: 'prepared' }),
     };
 });
 
 vi.mock('../llmOrchestration/backendResolution/getBackendChain', () => ({
-    getBackendChain: () => [mocks.backend.value],
+    getBackendChain: () => ['cloud'],
 }));
 
 vi.mock('../llmOrchestration/backendResolution/helpers', () => ({
-    resolveBackend: () => mocks.backend.value,
-}));
-
-vi.mock('../../repositories/webLlm/generateWebLlmCompletion', () => ({
-    generateWebLlmCompletion: mocks.generateWebLlmCompletion,
-}));
-
-vi.mock('../../repositories/webLlm/isWebLlmLoaded', () => ({
-    isWebLlmLoaded: () => true,
+    resolveBackend: () => 'cloud',
 }));
 
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
@@ -321,8 +256,6 @@ function createProviderPlan(userMessage: string): ProviderCall[] {
         'Guitar_L_120.wav': 'guitar-left',
         'Guitar_R_120.wav': 'guitar-right',
         'Lead_Vocal_120.wav': 'lead-vocal',
-        [REPLACEMENT_SOURCE_NAMES[0]]: 'kick',
-        [REPLACEMENT_SOURCE_NAMES[1]]: 'snare',
     };
     const stems = capability.stems.map((stem) => {
         if (!isRecord(stem) || typeof stem.stemId !== 'string' || typeof stem.sourceName !== 'string') {
@@ -336,44 +269,6 @@ function createProviderPlan(userMessage: string): ProviderCall[] {
             arguments: { selectionId: capability.selectionId, groupName: 'Imported Stems', stems },
         },
     ];
-}
-
-function getApplicationToolReceipts(userMessage: string): unknown[] {
-    const evidence = getProviderSection(userMessage, 'relevant_evidence');
-    if (!Array.isArray(evidence.receipts)) {
-        throw new TypeError('Expected serialized application tool receipts in provider request');
-    }
-    const receiptSummary = evidence.receipts.find(
-        (receipt) =>
-            isRecord(receipt) &&
-            receipt.id === 'application-tool-loop' &&
-            isRecord(receipt.summary) &&
-            receipt.summary.truncated === false &&
-            typeof receipt.summary.value === 'string'
-    );
-    if (!isRecord(receiptSummary) || !isRecord(receiptSummary.summary)) {
-        throw new TypeError('Expected application tool receipt context in provider request');
-    }
-    const parsed: unknown = JSON.parse(String(receiptSummary.summary.value).split('\n').at(-1) ?? '');
-    if (!isRecord(parsed) || !Array.isArray(parsed.receipts)) {
-        throw new TypeError('Expected serialized application tool receipt list');
-    }
-    return parsed.receipts;
-}
-
-function hasApplicationToolReceiptContext(userMessage: string): boolean {
-    const evidence = getProviderSection(userMessage, 'relevant_evidence');
-    return (
-        Array.isArray(evidence.receipts) &&
-        evidence.receipts.some(
-            (receipt) =>
-                isRecord(receipt) &&
-                receipt.id === 'application-tool-loop' &&
-                isRecord(receipt.summary) &&
-                receipt.summary.truncated === false &&
-                typeof receipt.summary.value === 'string'
-        )
-    );
 }
 
 function getExpectedCatalogCommandNames(finalCalls: readonly ProviderCall[]): string[] {
@@ -521,23 +416,10 @@ function toolCallsResponse(calls: readonly ProviderCall[]): Response {
     );
 }
 
-function getFinalStemImportCalls(
-    userMessage: string,
-    transformPlan: (plan: ProviderCall[]) => ProviderCall[]
-): ProviderCall[] {
-    const plan = transformPlan(createProviderPlan(userMessage));
-    return withWorkflowCapabilitySelection(
-        'stem-import-starting-mix',
-        plan.length === 0 ? [] : asCommandBatchProposal(userMessage, plan)
-    );
-}
-
 function getProviderCallsForUserMessage(
     userMessage: string,
-    transformPlan: (plan: ProviderCall[]) => ProviderCall[],
     receipts: readonly unknown[],
-    providerView: string | readonly ToolSchema[],
-    intake: ScriptedTurn = literalMetricIntakeTurn
+    providerView: readonly ToolSchema[]
 ): ProviderCall[] {
     if (
         !receipts.some(
@@ -545,78 +427,20 @@ function getProviderCallsForUserMessage(
                 isRecord(receipt) && receipt.toolName === 'selectCreativeInterpretation' && receipt.status === 'success'
         )
     ) {
-        return intake(userMessage, providerView);
-    }
-    if (
-        intake === startingMixMetricIntake &&
-        receipts.some(
-            (receipt) =>
-                isRecord(receipt) &&
-                receipt.toolName === 'selectWorkflowCapability' &&
-                isRecord(receipt.error) &&
-                receipt.error.code === 'measurement-required'
-        ) &&
-        !receipts.some((receipt) => isRecord(receipt) && receipt.toolName === 'analysis.measure')
-    ) {
-        return [
-            {
-                name: 'analysis.measure',
-                arguments: { scope: { kind: 'master' }, range: { sectionId: 'missing-section' } },
-            },
-        ];
+        return literalMetricIntakeTurn(userMessage, providerView);
     }
     if (getProviderContext(userMessage).stemImportCapability === undefined) {
         return withWorkflowCapabilitySelection('stem-import-starting-mix', []);
     }
-    const finalCalls = getFinalStemImportCalls(userMessage, transformPlan);
+    const calls = withWorkflowCapabilitySelection(
+        'stem-import-starting-mix',
+        asCommandBatchProposal(userMessage, createProviderPlan(userMessage))
+    );
     if (!receipts.some((receipt) => isRecord(receipt) && receipt.toolName === 'agent.catalog.discover')) {
-        const discovery = catalogDiscoveryPlan(finalCalls);
-        if (intake === startingMixMetricIntake) {
-            discovery.push({
-                name: 'analysis.measure',
-                arguments: { scope: { kind: 'master' }, range: { sectionId: 'missing-section' } },
-            });
-        }
-        return discovery;
+        return catalogDiscoveryPlan(calls);
     }
-    assertDiscoveredCommandSchemas(receipts, finalCalls);
-    return finalCalls;
-}
-
-function createWebLlmResponder(
-    transformPlan: (plan: ProviderCall[]) => ProviderCall[] = (plan) => plan,
-    intake: ScriptedTurn = literalMetricIntakeTurn
-) {
-    return (systemPrompt: string, userMessage: string) => {
-        const receipts = hasApplicationToolReceiptContext(userMessage) ? getApplicationToolReceipts(userMessage) : [];
-        return Promise.resolve(
-            JSON.stringify(getProviderCallsForUserMessage(userMessage, transformPlan, receipts, systemPrompt, intake))
-        );
-    };
-}
-
-function createHostedResponder(
-    transformPlan: (plan: ProviderCall[]) => ProviderCall[] = (plan) => plan
-): (...args: Parameters<typeof fetch>) => ReturnType<typeof fetch> {
-    return (_input, init) => {
-        if (typeof init?.body !== 'string') {
-            throw new TypeError('Expected hosted provider request body');
-        }
-        const userMessage = getHostedUserMessage(init.body);
-        const request = JSON.parse(init.body) as { tools: ToolSchema[] };
-        // A hosted turn answers the turns behind it natively, so its receipts arrive as tool
-        // messages rather than as text folded into the user message.
-        return Promise.resolve(
-            toolCallsResponse(
-                getProviderCallsForUserMessage(
-                    userMessage,
-                    transformPlan,
-                    getReplayedToolReceipts(init.body),
-                    request.tools
-                )
-            )
-        );
-    };
+    assertDiscoveredCommandSchemas(receipts, calls);
+    return calls;
 }
 
 function getHostedUserMessage(body: string): string {
@@ -633,17 +457,10 @@ function getHostedUserMessage(body: string): string {
     return message.content;
 }
 
-function useHostedFixture(): void {
-    mocks.backend.value = 'cloud';
-    mocks.fetch.mockImplementation(createHostedResponder());
-}
-
 describe('stem import and starting mix workflow', () => {
     beforeEach(async () => {
         configureAiWorkflowCommandPreflightFixture();
         vi.clearAllMocks();
-        mocks.backend.value = 'webllm';
-        mocks.executeBatchError.value = null;
         vi.stubGlobal('fetch', mocks.fetch);
         // jsdom has no navigator.locks; the durable project checkpoint is
         // written under that lock.
@@ -719,7 +536,6 @@ describe('stem import and starting mix workflow', () => {
         mocks.stageDurableAsset.mockImplementation((_file, name) =>
             Promise.resolve({ hash: `hash-${name}`, leaseId: `lease-${name}` })
         );
-        mocks.generateWebLlmCompletion.mockImplementation(createWebLlmResponder());
     });
 
     afterEach(async () => {
@@ -744,7 +560,6 @@ describe('stem import and starting mix workflow', () => {
         ['short', 'Raise Guide Mix by 1 dB while keeping true peak below -1 dBTP'],
         ['long', `Raise Guide Mix by 1 dB while keeping true peak below -1 dBTP ${'please '.repeat(1200)}end`],
     ] as const)('plans a staged refinement of the %s predecessor', async (kind, originalPrompt) => {
-        useHostedFixture();
         let predecessorId = '';
         mocks.fetch.mockImplementation((_input, init) => {
             if (typeof init?.body !== 'string') {
@@ -787,7 +602,7 @@ describe('stem import and starting mix workflow', () => {
                     ])
                 );
             }
-            const calls = getProviderCallsForUserMessage(message, (plan) => plan, receipts, schemas);
+            const calls = getProviderCallsForUserMessage(message, receipts, schemas);
             return Promise.resolve(
                 toolCallsResponse(
                     calls.map((call) => {
@@ -817,13 +632,15 @@ describe('stem import and starting mix workflow', () => {
         expect(mocks.stageDurableAsset).toHaveBeenCalledTimes(STEM_SOURCE_NAMES.length);
         if (kind === 'long') {
             const serialized = plans.at(-1)?.metricGoalState;
+            let diagnostic = 'No verification record returned';
             if (serialized !== undefined) {
                 const stored = JSON.parse(serialized) as { refinedRequests?: string[] };
-                expect({
+                diagnostic = JSON.stringify({
                     retainedOriginal: stored.refinedRequests?.includes(originalPrompt),
                     codecRejected: metricGoalStateCodec(serialized) === null,
-                }).toBeNull();
+                });
             }
+            expect(serialized, diagnostic).toBeUndefined();
             expect(plans.at(-1)).toMatchObject({
                 actions: [],
                 rejectionReason: "This proposal's verification record can no longer be read; start a fresh request.",

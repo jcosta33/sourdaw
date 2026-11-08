@@ -151,7 +151,10 @@ async function proposeLiteralCard(
     const { planned, context, revision } = await planLiteralRequest(input);
     expect(planned.rejectionReason, JSON.stringify(planned.applicationToolReceipts)).toBeUndefined();
     expect(planned.refines).toBe(input.refines);
+    expect(planned.requiresConfirmation).toBe(input.refines !== undefined);
     const assistantMessageId = `${input.runId}-assistant`;
+    // Construct a conservative pending-card fixture through the real owner API. A fresh literal
+    // proposal can auto-commit; the override does not claim parity with that initial policy.
     const materialized = materializePromptCommandPlan({
         userText: input.prompt,
         runId: input.runId,
