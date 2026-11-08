@@ -111,6 +111,21 @@ describe('IOSection', () => {
         expect(screen.queryByRole('option', { name: 'Reverb' })).not.toBeInTheDocument();
     });
 
+    it('dispatches one undoable setTrackOutput action for the chosen target, then closes the listbox', () => {
+        mocks.tracks = [makeBus({ id: 'bus-1', name: 'Reverb' })];
+        const track: Track = { ...baseTrack, id: 'track-9', outputId: 'master' };
+
+        render(<IOSection track={track} />);
+        fireEvent.click(screen.getByRole('button', { name: 'Master' }));
+        fireEvent.click(screen.getByRole('option', { name: 'Reverb' }));
+
+        expect(executeAppAction).toHaveBeenCalledExactlyOnceWith({
+            type: 'setTrackOutput',
+            payload: { trackId: 'track-9', outputId: 'bus-1', expectedOutputId: 'master' },
+        });
+        expect(screen.queryByRole('listbox', { name: 'Output routing' })).not.toBeInTheDocument();
+    });
+
     it('shows a human-readable hardware output label and preserves the raw output ID when routing', () => {
         mocks.tracks = [makeBus({ id: 'bus-1', name: 'Reverb' })];
         const track: Track = { ...baseTrack, id: 'track-9', outputId: 'hw_out' };
