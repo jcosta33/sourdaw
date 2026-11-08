@@ -196,8 +196,8 @@ const { assertWorkflowSecuritySurface } = await import(
     `${process.env.REPO_ROOT}/scripts/workflowSecuritySurfaceContract.ts`
 );
 const { assertHostedWasmWorkflow } = await import(`${process.env.REPO_ROOT}/scripts/hostedWasmWorkflowContract.ts`);
-const { assertApprovalGatedRequiredCheck } = await import(
-    `${process.env.REPO_ROOT}/scripts/approvalGatedWorkflowContract.ts`
+const { assertPullRequestGateWorkflows } = await import(
+    `${process.env.REPO_ROOT}/scripts/pullRequestGateWorkflowContract.ts`
 );
 const { assertHostedQuantumMeasurementWorkflow } = await import(
     `${process.env.REPO_ROOT}/scripts/hostedQuantumMeasurementWorkflowContract.ts`
@@ -466,9 +466,9 @@ expect(
     JSON.stringify(Object.keys(events ?? {})) === JSON.stringify(['pull_request']),
     'health-gates.yml must answer to pull_request alone, because any other event can skip Gate and a skipped Gate satisfies the required check'
 );
-let approvalGateError;
+let gateBoundaryError;
 try {
-    assertApprovalGatedRequiredCheck({
+    assertPullRequestGateWorkflows({
         'health-gates.yml': workflow,
         'validation.yml': validationWorkflow,
         'heavy-gates.yml': heavyWorkflow,
@@ -477,9 +477,9 @@ try {
         'wasm-artifacts.yml': hostedWasm,
     });
 } catch (error) {
-    approvalGateError = error;
+    gateBoundaryError = error;
 }
-expect(approvalGateError === undefined, `the approval-gated Gate boundary must hold: ${approvalGateError?.message ?? ''}`);
+expect(gateBoundaryError === undefined, `the required Gate boundary must hold: ${gateBoundaryError?.message ?? ''}`);
 expect(gate?.if === '${{ always() }}', 'Gate must evaluate cancelled upstream jobs rather than become a skipped required check');
 expect(gateStep?.if === '${{ always() }}', 'Gate assertion must run even after cancellation');
 // The heavy lane is reusable and only the pull-request workflow calls it.

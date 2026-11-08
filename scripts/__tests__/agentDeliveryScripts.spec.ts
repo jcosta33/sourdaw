@@ -3563,8 +3563,6 @@ describe('package scripts and gitignore', () => {
                     unresolvedThreads: 0,
                 }),
                 postReview: () => expect.fail('review creation should not start'),
-                applyApprovalLabel: () => expect.fail('review creation should not start'),
-                removeApprovalLabel: () => expect.fail('review creation should not start'),
                 log: () => undefined,
             }),
             publish: () => {
