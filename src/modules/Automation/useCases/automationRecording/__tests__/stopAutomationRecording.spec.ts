@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { handleRestoreAutomationLanePoints } from '../../../handlers/automation/handleRestoreAutomationLanePoints';
 import { type AutomationPoint } from '../../../models/Automation';
 import { stopAutomationRecording } from '../stopAutomationRecording';
 
@@ -16,7 +17,7 @@ type TestLane = {
     points: AutomationPoint[];
 };
 
-type UndoEntry = { label: string; undo: () => void; redo: () => void };
+type UndoEntry = ReturnType<typeof import('#/modules/Command/useCases').createUndoEntry>;
 
 const {
     activeRecording,
@@ -68,13 +69,14 @@ vi.mock('#/modules/Command/useCases', async (importOriginal) => {
     return {
         ...actual,
         executeUserAppAction: vi.fn(),
-        pushUndoEntry: (label: string, undo: () => void, redo: () => void) => {
-            undoEntries.push({ label, undo, redo });
+        commitUndoEntry: (entry: UndoEntry) => {
+            undoEntries.push(entry);
         },
     };
 });
 
-vi.mock('../../../stores/automationStore', () => ({
+vi.mock('../../../stores/automationStore', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('../../../stores/automationStore')>()),
     automationStore: {
         get value() {
             return automationSnapshot.value;
@@ -106,6 +108,12 @@ vi.mock('../flushPendingPoints', () => ({
 
 function setTracks(tracks: TestTrack[]): void {
     trackSnapshot.value = { tracks };
+}
+
+function replayInverse(entry: UndoEntry): void {
+    if (entry.inverseAction?.type !== 'restoreAutomationLanePoints')
+        throw new Error('Expected recorded points inverse');
+    expect(handleRestoreAutomationLanePoints.execute(entry.inverseAction)).toEqual({ status: 'written' });
 }
 
 describe('stopAutomationRecording', () => {
@@ -216,8 +224,10 @@ describe('stopAutomationRecording', () => {
 
         stopAutomationRecording();
 
-        expect(undoEntries).toHaveLength(1);
-        undoEntries[0]!.undo();
+        expect(undoEntries).toHaveLength(2);
+        expect(undoEntries[0]?.groupId).toBeTruthy();
+        expect(undoEntries[1]?.groupId).toBe(undoEntries[0]?.groupId);
+        for (const entry of undoEntries) replayInverse(entry);
         const laneA = automationSnapshot.value?.lanes.find((lane) => lane.id === 'lane-a');
         const laneB = automationSnapshot.value?.lanes.find((lane) => lane.id === 'lane-b');
         expect(laneA?.points[0]?.cp1).toEqual({ x: 0.2, y: 0.3 });
@@ -277,7 +287,7 @@ describe('stopAutomationRecording', () => {
         };
 
         // Undoing the recording must revert lane-a only, leaving lane-b's edit intact.
-        undoEntries[0]!.undo();
+        replayInverse(undoEntries[0]!);
 
         const afterUndo = automationSnapshot.value;
         const laneA = afterUndo.lanes.find((lane) => lane.id === 'lane-a');
