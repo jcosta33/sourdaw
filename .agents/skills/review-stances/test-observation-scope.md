@@ -28,6 +28,13 @@ Report a probe that cannot run with its exact mutation, named check and limitati
 3. **A flag, setter or presence stands for what the musician consumes.**
    Probe: observe PCM against an independent input, decoded bytes, painted pixels and console output during
    load, never a flag, setter, DOM presence, returned length or metadata.
+   Preset audition must inspect the PCM of a successful live buffer start, excluding offline sources,
+   and distinguish real catalog instrument envelopes/spectra and an effects tail under identical excitation.
+   Restoring the common oscillator route must fail buffer admission; substituting one common PCM buffer
+   across presets must fail musical discrimination. Admit project/history preservation only after the
+   inspection bridge observes a genuine UI edit in the same app singleton; an empty bridge must fail.
+   The original preset placeholder asserted its common tone rather than the sound it claimed to audition
+   (introduced in `22a84b216658f593391e7e141d90f7c84d13648b`, retained through #6180).
    (#187, #5013, #4904, #5812)
 
 4. **Fixtures or history bytes the real producer would never write.**
