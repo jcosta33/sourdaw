@@ -942,9 +942,9 @@ export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement =
                                         className="toaster-window h-9 w-14 px-2 text-center text-[11px] text-foreground outline-none"
                                     />
                                     <DawPluginChip
-                                        active
                                         tone="peach"
                                         size="sm"
+                                        className="border-[var(--color-accent-peach)]/60 bg-[var(--color-accent-peach)]/12 text-[var(--color-accent-peach)]"
                                         onClick={() =>
                                             applyEuclideanToTrack(deviceId, selectedPadIndex, eucHits, eucSteps, 0)
                                         }

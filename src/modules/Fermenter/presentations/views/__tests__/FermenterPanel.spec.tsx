@@ -659,6 +659,13 @@ describe('FermenterPanel', () => {
     });
 
     describe('accessible toolbar actions', () => {
+        it('renders the current Scene eyebrow as static text', () => {
+            renderPanel();
+
+            expect(screen.getByText('Scene')).toBeInTheDocument();
+            expect(screen.queryByRole('button', { name: 'Scene', exact: true })).not.toBeInTheDocument();
+        });
+
         it('renders accessible patch and preset action buttons', () => {
             renderPanel();
             expect(screen.getByRole('button', { name: 'Open save preset dialog' })).toBeInTheDocument();

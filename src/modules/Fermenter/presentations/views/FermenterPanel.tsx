@@ -681,9 +681,9 @@ export const FermenterPanel = ({ deviceId }: { deviceId: string }): ReactElement
                     className="fermenter-window min-h-[32px] px-2.5 py-1"
                 >
                     <Row align="center" gap={1.5} shrink={false}>
-                        <DawPluginChip active tone="sage" size="xs">
+                        <DawPluginLed tone="sage">
                             {LEVELS.find((level) => level.id === uiLevel)?.eyebrow ?? 'Scene'}
-                        </DawPluginChip>
+                        </DawPluginLed>
                         <DawPluginLed tone="sage">{ENGINE_NAMES[patch.oscEngine] ?? 'Wavetable'}</DawPluginLed>
                     </Row>
 
