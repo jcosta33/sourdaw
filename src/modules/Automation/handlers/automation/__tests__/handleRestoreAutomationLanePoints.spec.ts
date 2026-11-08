@@ -86,8 +86,7 @@ describe('handleRestoreAutomationLanePoints — batch payload admission', () => 
     );
 
     it('rejects an own undefined expected control even when its known fields match live points', () => {
-        const expected = { ...valid };
-        Object.assign(expected, { cp1: undefined });
+        const expected = { ...valid, cp1: undefined };
         const action = {
             type: 'restoreAutomationLanePoints',
             payload: { laneId: 'lane1', points: [{ ...valid, value: 0.75 }], expectedPoints: [expected] },
