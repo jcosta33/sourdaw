@@ -1,0 +1,399 @@
+src/modules/AiRuntime/useCases/agentReference/proposalCommandShape.ts
+  s_68423a2adea8d2::t_67c053670d6e09 365-369,371-375,384-387,393
+  s_68423a2adea8d2::t_4ec45b99f7da8b 370
+  s_68423a2adea8d2::t_552bf83b328543 376-383
+src/modules/AiRuntime/useCases/agentReference/__tests__/plainTempoClipProtection.spec.ts
+  s_68423a2adea8d2::t_7d0af036635df3 417-447
+  s_68423a2adea8d2::t_01f8a9645c8bae 232,323-331,333
+  s_68423a2adea8d2::t_408157df27c23a 152-229
+  s_68423a2adea8d2::t_643e6641b6c252 110,230,233,239-262,264-277,293-299,305-322,332,334-416,448-504
+  s_68423a2adea8d2::t_85fec94458df98 300-304
+  s_68423a2adea8d2::t_13dedaec02be73 107-109
+  s_68423a2adea8d2::t_eee09cd6f02715 111-113
+  s_68423a2adea8d2::t_2fd98edcde25b9 231
+  s_68423a2adea8d2::t_9fa34caab754ed 234-238
+  s_68423a2adea8d2::t_bc6ef21ff86a2a 282
+  s_68423a2adea8d2::t_4ec45b99f7da8b 263,278-281,283-286
+  s_68423a2adea8d2::t_5b38f1a90c39cb 287-289
+  s_68423a2adea8d2::t_552bf83b328543 9,134-151
+.agents/skills/review-stances/ai-request-authority.md
+  s_68423a2adea8d2::t_6139f0fbea94f6 70-76,79-82
+  s_68423a2adea8d2::t_4ec45b99f7da8b 77-78
+src/modules/AiRuntime/useCases/__tests__/briefFromRequest.spec.ts
+  s_68423a2adea8d2::t_da085b87353c0e 709-715,722,731,741-766
+  s_68423a2adea8d2::t_07c382c1f5449d 700,767
+src/modules/AiRuntime/useCases/__tests__/vibeRunInitialBaselines.spec.ts
+  s_68423a2adea8d2::t_8495ba65ea00c5 435-443
+  s_68423a2adea8d2::t_2e39a8a6b4caa0 38,271,282,407-434,444-459
+  s_68423a2adea8d2::t_b6a2f589d9d057 74-76
+  s_68423a2adea8d2::t_5255c71b75692e 732-776,1164-1189
+src/modules/Arrangement/handlers/recording/__tests__/recordingSessionMirrorRoundTrip.integration.spec.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 1-460
+src/modules/Arrangement/useCases/comping/__tests__/targetedTakeLaneUndo.spec.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 22-24
+.agents/skills/review-stances/bundled-model-assets.md
+  s_68423a2adea8d2::t_07c382c1f5449d 1-41
+src/modules/Transport/useCases/__tests__/playheadScheduler.spec.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 10,98-100,128-129,167,340,419-420,427,431,777-782,945-953,965,979,981-982,984-985,999
+src/modules/MIDI/useCases/webMidiInput/recordingMidiAdmissionPort.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 6,39,55-56
+src/modules/Metering/presentations/views/__tests__/Wavetable3D.spec.tsx
+  s_68423a2adea8d2::t_07c382c1f5449d 1-2,6-7,9-95
+src/modules/AudioAnalysis/useCases/polyphonicAudioToMidi.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 12-13,24-25,57-58,70-71,85-114,157-163,188,190,201-202,214
+src/modules/Transport/useCases/transportControls/__tests__/pausePlayback.spec.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 72-74
+src/modules/Arrangement/useCases/recording/getRecordingMidiAdmission.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 3,10-11
+src/modules/Arrangement/useCases/recording/readRecordingClipOwner.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 1-19
+src/modules/Arrangement/presentations/views/__tests__/trackCreateUndo.integration.spec.tsx
+  s_68423a2adea8d2::t_07c382c1f5449d 92-93
+src/modules/MIDI/useCases/webMidiInput/__tests__/stopHeldMidiNote.integration.spec.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 4,14-15,24,64-65,71,240,257-258,435-579
+  s_68423a2adea8d2::t_7c0135c2e8d477 580
+src/modules/Transport/useCases/transportControls/createAutomaticPunchEnding.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 1-256
+tests/e2e/library.spec.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 2-6,9,17-85,90,93-95,140-184
+src/modules/Transport/useCases/transportControls/__tests__/recordingTerminalRealQueue.integration.spec.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 61-65
+src/app/__tests__/bootstrap.spec.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 178,319,384,1133
+src/modules/Command/useCases/__tests__/canReportConflictRegistry.spec.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 312-323,672-681
+  s_68423a2adea8d2::t_c8474345f623df 682
+src/modules/Command/useCases/getInternalUndoSessionReplayContracts.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 9-10,41,66-74
+.agents/skills/review-stances/input-monitoring-ownership.md
+  s_68423a2adea8d2::t_07c382c1f5449d 159-171
+tests/e2e/punchLoopTakeAcceptance.spec.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 10,113,116,118,120-124,214-222,224-240,1623-2053
+  s_68423a2adea8d2::t_adac361570e6f0 2054
+src/modules/Arrangement/useCases/recording/stopRecording.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 2-7,9,22-27,203-207,231,267-270,281-291,293-296,310,321-341,347,351-352,363-364,378,428,434-435
+src/modules/TimelineEditor/presentations/views/AutomationLane/__tests__/CCLane.spec.tsx
+  s_68423a2adea8d2::t_07c382c1f5449d 66-68
+src/modules/Arrangement/handlers/isRetiredTakeLanes.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 1-62
+src/modules/Transport/useCases/transportControls/__tests__/recordStartSetupFailure.spec.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 79-81
+src/modules/Arrangement/handlers/recording/handleRestoreRecording.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 9,20
+src/modules/Arrangement/useCases/recording/recordingMidiSourceBeatAt.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 4,11-15,21-23
+src/modules/CvGate/AGENTS.md
+  s_68423a2adea8d2::t_07c382c1f5449d 3,12,14,18-19
+src/modules/MIDI/useCases/webMidiInput/createRecordedAdmittedMidiNote.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 11-37,42-44,58-62
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerSeamNotes.spec.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 111-116
+src/modules/Transport/useCases/playheadScheduler/__tests__/audioLoopEndAdmission.integration.spec.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 1-251
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerStoredControllerStaleMoves.spec.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 233-238
+src/modules/Transport/useCases/playheadScheduler/startPlayheadScheduler.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 5,48,1219-1248,1258-1269,1271,1273-1278,1288,1311,1362,1370,1415-1419,1446-1455,1498,1507,1537-1542,1551,1559-1560
+src/modules/ControlSurface/useCases/controlSurface/__tests__/mcuSetFader.spec.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 1,3,7,10-36,39-40
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadScheduler.spec.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 246-264,383-385,1722-1726,1761,1786,1839,2058,2070,2072,2090,2161-2162,2178-2181,2236,2244-2247,2257-2260,2263,2374,2385-2389
+src/modules/Arrangement/handlers/recording/handleCommitRecording.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 1,12-13,15-24,80-83,88-89,107-109,126
+src/modules/MIDI/useCases/webMidiInput/__tests__/setMpeEnabled.spec.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 19
+src/modules/Transport/useCases/playheadScheduler/__tests__/punchLoopCapturePlacement.integration.spec.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 1-6,10,18-20,22-24,26-27,29,32,36,47,56,64-73,75,127,138,256,264,299-300,320-322,335-339,360,419-422,558-559,619,635,765,772,868,878,2249-2251,2872-2882,2884-2894,2896-2906,2909,2913-2914,2918-3082,3915-4591,5004-5186,5188,5215-5217
+.agents/skills/review-stances/asset-cache-publication.md
+  s_68423a2adea8d2::t_07c382c1f5449d 67-71
+src/modules/Arrangement/handlers/recording/__tests__/recordedControllerTake.integration.spec.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 1,21,30-31,41-42,63,71,79,138,293-516,703-705,714,717,789-795
+src/modules/Metering/presentations/views/__tests__/Oscilloscope.spec.tsx
+  s_68423a2adea8d2::t_07c382c1f5449d 1-2,5,9-26,30-75,78-115,118-133
+src/modules/MIDI/useCases/webMidiInput/__tests__/handleWebMidiMessage.spec.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 35
+src/modules/MIDI/useCases/webMidiInput/handleWebMidiNoteOff.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 386-388,394,396-398,409-412
+.agents/skills/review-stances/session-lifecycle.md
+  s_68423a2adea8d2::t_07c382c1f5449d 160-188
+src/modules/Transport/useCases/transportControls/__tests__/schedulerTerminalRealQueue.integration.spec.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 85
+src/modules/Transport/useCases/scheduling/__tests__/controllerTakePlayback.integration.spec.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 81,208
+src/modules/Transport/useCases/playheadScheduler/schedulerSession.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 6-24,95
+src/modules/Arrangement/useCases/prepareStripSilence.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 251,264-269,368-369,373
+src/modules/Arrangement/useCases/recording/commitRecording.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 14,154,163-164,183-184
+src/modules/WorkspaceShell/presentations/components/agentWorkspace/AgentApprovalSection.tsx
+  s_68423a2adea8d2::t_07c382c1f5449d 410-411
+src/modules/MIDI/useCases/index.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 199-200
+src/modules/MIDI/useCases/recordedControllerTake/prepareRecordedControllersCommit.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 1-84
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerStoredControllers.spec.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 127-132
+.agents/skills/review-stances/audio-timing-format-laws.md
+  s_68423a2adea8d2::t_07c382c1f5449d 19-22,94-102
+src/modules/Transport/workers/__tests__/schedulerWorkerTimerPhaseStall.spec.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 133-138
+src/modules/MIDI/useCases/webMidiInput/__tests__/handleWebMidiReleaseOwnership.spec.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 37
+.agents/skills/review-stances/replay-authority.md
+  s_68423a2adea8d2::t_07c382c1f5449d 133-141
+src/modules/MIDI/useCases/webMidiInput/sealHeldRecordedMidiNotes.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 12,22,32,39-42,45-50,60-64
+src/modules/MIDI/useCases/webMidiInput/recordChannelEvent.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 62-64,70
+src/modules/Transport/useCases/transportControls/__tests__/nativeRecordingCaptureHistory.spec.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 1-87
+src/modules/Transport/useCases/playheadScheduler/disposePlayheadScheduler.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 27-28
+src/modules/MIDI/useCases/webMidiInput/__tests__/createRecordedAdmittedMidiNote.spec.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 20-38
+src/modules/Transport/useCases/transportControls/__tests__/recordingTerminalBranchWitness.integration.spec.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 65-69,592-599
+src/modules/WorkspaceShell/presentations/components/agentWorkspace/AgentRunHistorySection.tsx
+  s_68423a2adea8d2::t_07c382c1f5449d 81-82
+src/modules/AudioEngine/repositories/audioRecorder/recording.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 55-56,174-175
+src/modules/AudioAnalysis/useCases/__tests__/polyphonicAudioToMidi.realModel.integration.spec.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 1-112
+src/modules/GrandBoule/useCases/__tests__/grandBouleParameterPersistence.integration.spec.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 86-87
+src/modules/MIDI/useCases/webMidiInput/__tests__/handleWebMidiNoteOff.spec.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 27,40
+src/modules/MixerConsole/presentations/views/Mixer/__tests__/mixerStripUndo.integration.spec.tsx
+  s_68423a2adea8d2::t_07c382c1f5449d 146-147
+src/modules/Arrangement/useCases/getArrangementHandlers.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 14,227
+tests/e2e/tempoSourcePhysicalFixtures.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 4-6,12,14-15,18,20-22,69-78
+src/modules/TimelineEditor/presentations/views/AutomationLane/__tests__/PitchBendLane.spec.tsx
+  s_68423a2adea8d2::t_07c382c1f5449d 52-54
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerSeamEdit.spec.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 124-126,180-185,187-205
+src/modules/Arrangement/useCases/recording/__tests__/recordingMidiSourceBeatAt.spec.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 1-102
+src/modules/AiRuntime/useCases/__tests__/backingVocalPlateWorkflow.spec.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 4,1547-1548,1564-1568,1573,1590,1620
+src/modules/CommandInterface/useCases/commands/__tests__/MiscCommands.spec.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 232-234
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerLoopSeamTiming.spec.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 113-118
+.agents/skills/review-stances/repeated-action-rows.md
+  s_68423a2adea8d2::t_07c382c1f5449d 1-18
+src/modules/Transport/useCases/transportControls/__tests__/toggleRecordingPreRoll.spec.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 62-64
+src/modules/AiGeneration/useCases/actions/__tests__/generateMidiPromptProjectTruth.integration.spec.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 1-354
+src/modules/MIDI/useCases/webMidiInput/__tests__/handleWebMidiNoteOffTempoMap.spec.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 12,20
+src/modules/MIDI/useCases/webMidiInput/handleWebMidiNoteOn.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 123-124
+src/modules/Arrangement/useCases/comping/__tests__/compingUndo.spec.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 27-29
+src/modules/Arrangement/useCases/recording/isRecordingMidiInputExcluded.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 1-9
+src/modules/Transport/useCases/transportControls/createRecordingCaptureClocks.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 29,128-219,223-224,243,263,273,285,325,330-334,523-525,546,549,568-569,571
+src/modules/Transport/useCases/transportControls/stopActiveRecording.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 7,35-36
+src/modules/Arrangement/useCases/recording/recordingOverdubMidiTargets.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 1-28
+src/modules/Arrangement/handlers/recording/recordingSessionEntry.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 1-105
+tests/e2e/voiceDraftBoundaryWorkflow.spec.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 1-314
+src/modules/Arrangement/handlers/clipStretch/handleEnableWarping.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 1-39
+src/modules/Automation/useCases/automationRecording/__tests__/recordedRideAuthority.integration.spec.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 1-289
+src/modules/MixerConsole/presentations/views/__tests__/mixerSnapshotTruth.integration.spec.tsx
+  s_68423a2adea8d2::t_07c382c1f5449d 1-190
+src/modules/Arrangement/useCases/recording/hasAutomaticRecordingMidiCapture.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 1-8
+src/modules/Transport/useCases/playheadScheduler/__tests__/initialPlaybackWindow.integration.spec.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 148-150,803-812,833-844
+src/app/__tests__/main.spec.tsx
+  s_68423a2adea8d2::t_07c382c1f5449d 152-157
+src/modules/AudioAnalysis/repositories/__tests__/loadBasicPitchModel.assets.spec.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 1-48
+src/modules/MIDI/useCases/webMidiInput/__tests__/handleWebMidiCC.spec.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 21
+src/modules/MIDI/useCases/recordedControllerTake/__tests__/prepareRecordedControllersCommit.spec.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 1-135
+src/modules/Arrangement/stores/activeRecordingRef.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 25-26
+src/modules/MIDI/useCases/webMidiInput/__tests__/handleWebMidiPitchBend.spec.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 17
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerPunchHandover.spec.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 164-166,227-229
+src/modules/AudioEngine/handlers/finalFeature/__tests__/publicWarpActionsAuthority.integration.spec.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 1-276
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerSeamHandover.spec.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 137-142
+src/modules/Arrangement/useCases/index.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 240-241,349-350
+src/modules/MIDI/useCases/recordedControllerTake/captureRecordedControllerRetirement.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 1-52
+src/modules/Arrangement/useCases/__tests__/prepareStripSilence.spec.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 53-58,60-61,63-64,67,69,165-236
+  s_68423a2adea8d2::t_4ac41eef9ffd5c 237-238
+src/modules/Transport/useCases/transportControls/finalizeAutomaticRecording.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 23,25
+release/dependency-license-proofs.json
+  s_68423a2adea8d2::t_07c382c1f5449d 64
+src/modules/TimelineEditor/presentations/views/AutomationLane/__tests__/PressureSlideLaneExpressionCurve.spec.tsx
+  s_68423a2adea8d2::t_07c382c1f5449d 45-47
+README.md
+  s_68423a2adea8d2::t_07c382c1f5449d 24,38
+src/modules/MIDI/useCases/triggerLiveNoteOn.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 47,56-57
+  s_68423a2adea8d2::t_5d9608289ad656 58
+src/modules/Transport/useCases/playheadScheduler/stopPlayheadScheduler.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 16,18,29-31,50,53
+tests/e2e/devServerOnlySpecs.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 36
+src/modules/AudioEngine/worklets/__tests__/crumbsProcessorShippedSampleAudio.integration.spec.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 1-132
+src/modules/Arrangement/useCases/recording/startRecording.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 12-14,64-65,142-143,145,150,155-156,164
+src/modules/Arrangement/useCases/recording/recordingMidiBound.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 1-112
+src/modules/Transport/useCases/transportControls/captureManualRecordingEnd.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 1-3,13-15,26-40
+src/modules/Arrangement/useCases/__tests__/stripSilence.integration.spec.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 1-2,69-74,76-77,79-80,83,85,208-329
+  s_68423a2adea8d2::t_5da1c9032b5d9c 330-331
+src/modules/AudioEngine/engine/__tests__/scoringReferenceAuthority.integration.spec.tsx
+  s_68423a2adea8d2::t_07c382c1f5449d 1-417
+src/modules/Transport/useCases/playheadScheduler/__tests__/punchPausePlayCommand.integration.spec.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 168,689-699,702,706-708,710-711
+package.json
+  s_68423a2adea8d2::t_07c382c1f5449d 120
+src/modules/Transport/useCases/transportControls/redateNativePunchEnding.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 1-35
+src/modules/AudioAnalysis/repositories/loadBasicPitchModel.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 1-18
+tests/e2e/preferencesDialogDeepTestId.spec.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 28,54-68
+  s_68423a2adea8d2::t_6837239c8e63ef 69-70
+src/modules/Transport/useCases/transportControls/nativeRecordingCaptureHistory.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 7-8,37-39,91,94-153,155-161
+tests/e2e/onboardingTour.spec.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 1-2,6-7,11-14,32-36,74-103
+  s_68423a2adea8d2::t_f8120b10f164ee 104
+src/modules/MIDI/models/WebMidiTypes.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 100-101
+src/modules/CrdtDocument/useCases/crdtBranching/__tests__/recordingTerminalRealBranches.integration.spec.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 90-94
+src/modules/MIDI/useCases/webMidiInput/resolveInputEventTime.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 22
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerSupersededSeamRecordingPass.spec.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 117-122
+src/modules/MixerConsole/presentations/views/Mixer/__tests__/DeviceChainSection.spec.tsx
+  s_68423a2adea8d2::t_07c382c1f5449d 33-35
+src/modules/Arrangement/useCases/recording/captureRecordingCommitRetirement.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 1-6
+src/modules/AudioEngine/useCases/audioAnalysis/__tests__/committedKneadAudioAuthority.integration.spec.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 1-384
+src/modules/Transport/useCases/playheadScheduler/__tests__/initialPlaybackWitnessInputs.integration.spec.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 151
+src/modules/Transport/useCases/transportControls/__tests__/stopActiveRecordingCommit.integration.spec.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 30,348
+src/modules/Arrangement/handlers/clip/validateClipEditSessionEntries.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 19
+tests/e2e/tempoSourceTimeAcceptance.spec.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 2,1681-1895
+  s_68423a2adea8d2::t_9a3ab48c3ae481 1896-1903
+src/modules/Arrangement/useCases/recording/admitRecordingMidiExpression.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 3-4,21-27
+src/modules/MIDI/useCases/webMidiInput/handleWebMidiMessage.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 249,258-259
+  s_68423a2adea8d2::t_5a61627d89ddc2 260
+src/modules/Project/useCases/projectPersistence/helpers/__tests__/resetCrdtProjectWithTransportStopped.recording.integration.spec.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 72-76
+evidence/agent-campaign/manifest.json
+  s_68423a2adea8d2::t_07c382c1f5449d 748
+.agents/skills/review-stances/test-timing-and-isolation.md
+  s_68423a2adea8d2::t_07c382c1f5449d 23-27
+src/modules/AudioAnalysis/useCases/__tests__/polyphonicAudioToMidi.spec.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 1,13-15,42-43,46-47,54-58,78-80,194-221
+src/modules/Project/useCases/__tests__/projectPersistence.spec.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 138-143
+src/modules/DawInterchange/useCases/__tests__/importDawProject.projectTruth.integration.spec.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 1-342
+src/modules/MIDI/useCases/webMidiInput/__tests__/handleWebMidiNoteOffAdmissionClip.spec.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 16,24
+.agents/skills/review-stances/test-validity.md
+  s_68423a2adea8d2::t_07c382c1f5449d 81-91
+src/modules/Transport/useCases/transportControls/__tests__/stopActiveRecording.spec.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 27-29
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerStall.spec.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 130-135
+src/modules/WorkspaceShell/presentations/views/__tests__/AgentWorkspace.spec.tsx
+  s_68423a2adea8d2::t_07c382c1f5449d 344-389
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerTempoChangePosition.spec.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 112-117
+src/modules/Arrangement/handlers/clipStretch/__tests__/handleSetClipStretchMode.integration.spec.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 3-7,12,19,21-23,28,90-121
+  s_68423a2adea8d2::t_c8d59f1568bbc5 122
+src/modules/Project/useCases/__tests__/arrangement.spec.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 179-180,258-259
+src/modules/CommandInterface/useCases/commands/MiscCommands.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 339
+src/modules/Arrangement/useCases/recording/admitRecordingMidiNoteOff.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 2-4,19-23,26-31,33-37,41
+src/modules/Arrangement/presentations/views/__tests__/trackDeleteUndo.integration.spec.tsx
+  s_68423a2adea8d2::t_07c382c1f5449d 80-81
+src/modules/Transport/useCases/transportControls/commitRecoveredAudioRecording.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 52-55
+src/modules/AudioEngine/useCases/offlineRender/__tests__/controllerTakeExport.integration.spec.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 41,148
+src/modules/TimelineEditor/presentations/views/AutomationLane/__tests__/NotePropertyLane.spec.tsx
+  s_68423a2adea8d2::t_07c382c1f5449d 40-42
+crates/sourdaw-native/src/commands/filesystem/mod.rs
+  s_68423a2adea8d2::t_07c382c1f5449d 854-872,876,1017,2680-2834,3026-3027
+src/modules/AudioEngine/repositories/audioRecorder/__tests__/recordingCapturePlacement.integration.spec.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 748-808,1037-1041,1055-1059
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerSeamPunch.spec.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 127-129,191-196,198-216,316,415-416,433,435-436,440-446,595
+src/modules/Transport/useCases/transportControls/captureRecordingEnd.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 9-13,18-19
+  s_68423a2adea8d2::t_1ff6e0bfcf7001 20
+src/app/bootstrap.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 52,420
+src/modules/Arrangement/useCases/recording/admitRecordingMidiNoteOn.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 6-7,23-30,37-41
+src/modules/TimelineEditor/presentations/views/AutomationLane/__tests__/laneUndoRoundTrip.spec.tsx
+  s_68423a2adea8d2::t_07c382c1f5449d 21-23
+release/open-source-inventory.json
+  s_68423a2adea8d2::t_07c382c1f5449d 171-172,284,1825,1837
+src/modules/Arrangement/useCases/recording/recordingCommitGroup.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 1-343
+src/modules/Arrangement/handlers/recording/__tests__/overdubControllerUndo.integration.spec.ts
+  s_68423a2adea8d2::t_07c382c1f5449d 20,26,31,51,65,73-74,142,220-445
+  s_68423a2adea8d2::t_2edb7beceba7e0 446
+pnpm-lock.yaml
+  s_68423a2adea8d2::t_04593131cdf86e 38-40
+public/legal/DEPENDENCY-LICENSES.txt
+  s_68423a2adea8d2::t_1f36d411570ef2 10
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "8af673fa43ef5cdbfd16321244efcc1280a05bbb",
+  "prompts": {},
+  "sessions": {
+    "s_68423a2adea8d2": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34b-f305-7c03-beb2-57afa678cda5",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
