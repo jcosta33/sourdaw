@@ -1,0 +1,21 @@
+src/modules/AiRuntime/useCases/__tests__/vibeRunInitialBaselines.spec.ts
+  s_68423a2adea8d2::t_8495ba65ea00c5 432-440
+  s_68423a2adea8d2::t_2e39a8a6b4caa0 38,268,279,404-431,441-456,730,737,768,1158,1163-1165,1169,1173
+  s_68423a2adea8d2::t_d83a552c802f99 733-734
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "86fdb053ccdd74ea9c9151cde1cce28c8679a873",
+  "prompts": {},
+  "sessions": {
+    "s_68423a2adea8d2": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34b-f305-7c03-beb2-57afa678cda5",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
