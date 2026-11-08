@@ -130,6 +130,12 @@ vi.mock('#/modules/Automation/useCases', () => ({
     isRecordingAutomation: vi.fn(() => false),
 }));
 vi.mock('#/modules/Arrangement/useCases', () => ({
+    captureRecordingCommitRetirement: () => {
+        throw new Error('This timer fixture must not publish a recording clip');
+    },
+    hasAutomaticRecordingMidiCapture: () => {
+        throw new Error('The unreachable original out must remain admitted-open');
+    },
     takeOwnsRecordingRoot: vi.fn(() => true),
     prepareRecoveredRecording: vi.fn(),
     admitRecordingCaptureClock: vi.fn(),

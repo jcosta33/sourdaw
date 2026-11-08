@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
+import { MockAudioBuffer } from '#/helpers/__tests__/audioContext.mock';
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
 import { markerStore, trackStore, type Track } from '#/modules/Arrangement/stores';
 import {
@@ -882,14 +883,6 @@ function createTestAudioBuffer(sampleRate = 44_100): AudioBuffer {
     };
 }
 
-function createRetentionSizedTestAudioBuffer(frameCount: number): AudioBuffer {
-    return {
-        ...createTestAudioBuffer(),
-        duration: frameCount / 44_100,
-        length: frameCount,
-    };
-}
-
 function getExpectedPlateTailSeconds(): number {
     const descriptor = getPluginById('dutch-oven');
     if (!descriptor?.tail) {
@@ -1551,6 +1544,8 @@ describe('backing-vocal plate workflow', () => {
         expect(undoStore.value?.future).toHaveLength(11);
     });
 
+    // The real 512 MiB policy requires two 384 MiB content-address inputs;
+    // give their serialization and SHA-256 work a case-specific wall-clock budget.
     it('requires manual repair without evicting a completed artifact when the approved retry set exceeds retention', async () => {
         await sendChatMessage(PROMPT);
         const confirmation = getPendingActionConfirmation(getConfirmationId());
@@ -1566,11 +1561,16 @@ describe('backing-vocal plate workflow', () => {
             throw new Error('Expected two materialized render jobs');
         }
         const frameCount = Math.floor((512 * 1024 * 1024 * 3) / (4 * 2 * Float32Array.BYTES_PER_ELEMENT));
+        // Rendering consumers only read this PCM, so both artifacts can share one fixture allocation.
+        const buffer = MockAudioBuffer.create(2, frameCount, 44_100);
+        for (let channel = 0; channel < buffer.numberOfChannels; channel++) {
+            expect(buffer.getChannelData(channel)).toHaveLength(buffer.length);
+        }
         runtimeMocks.renderOffline.mockImplementation((options: { startBeat?: number }) => {
             if (options.startBeat === missingJob.startBeat) {
                 return Promise.reject(new Error('chorus two renderer unavailable'));
             }
-            return Promise.resolve(createRetentionSizedTestAudioBuffer(frameCount));
+            return Promise.resolve(buffer);
         });
 
         await expect(confirmPendingChatActions({ confirmationId: confirmation.id })).resolves.toMatchObject({
@@ -1587,7 +1587,7 @@ describe('backing-vocal plate workflow', () => {
                 )
         ).toBe(true);
 
-        runtimeMocks.renderOffline.mockResolvedValue(createRetentionSizedTestAudioBuffer(frameCount));
+        runtimeMocks.renderOffline.mockResolvedValue(buffer);
         const retry = await confirmPendingChatActions({ confirmationId: confirmation.id });
 
         expect(retry).toMatchObject({
@@ -1617,7 +1617,7 @@ describe('backing-vocal plate workflow', () => {
         });
         expect(getPendingActionConfirmation(confirmation.id)?.error).toBe(retainedError);
         expect(runtimeMocks.renderOffline).toHaveBeenCalledTimes(renderCallsBeforeBlockedRetry);
-    });
+    }, 30_000);
 
     it('keeps the whole undo and redo group retryable across collaborator lane and freeze conflicts', async () => {
         await sendChatMessage(PROMPT);

@@ -357,6 +357,9 @@ export function resolveLevelArgument(argument: LevelArgument, current: number, l
             reason: `A change of ${describeDb(argument.deltaDb)} from ${describeDb(currentDb)} lands out of range: ${resolved.reason}`,
         };
     }
+    if (argument.deltaDb === 0) {
+        return { ok: true, linear: current };
+    }
     return resolved;
 }
 

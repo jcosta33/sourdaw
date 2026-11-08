@@ -99,7 +99,7 @@ const A4_SCROLL_TOP = 958 - 161;
 const scroller = (container: HTMLElement): HTMLElement => {
     const element = container.querySelector('canvas')?.parentElement?.parentElement;
     if (!(element instanceof HTMLElement)) {
-        throw new Error('piano roll scroll container not found');
+        throw new TypeError('piano roll scroll container not found');
     }
     return element;
 };

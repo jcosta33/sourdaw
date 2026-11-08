@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
+import { createMockAudioContext } from '#/helpers/__tests__/audioContext.mock';
 import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
@@ -10,6 +11,8 @@ import {
     admitRecordingMidiExpression,
     admitRecordingMidiNoteOff,
     admitRecordingMidiNoteOn,
+    discardRecording,
+    captureRecordingCommitRetirement,
     findOpenRecordingMidiAdmission,
     findOpenRecordingMidiMemberAdmission,
     getRecordingMidiAdmission,
@@ -18,6 +21,7 @@ import {
     startRecording,
     takeOwnsRecordingRoot,
     recordingMidiSourceBeatAt,
+    isRecordingMidiInputExcluded,
     stageRecordingTake,
     selectTake,
     resolveClipsWithComping,
@@ -57,11 +61,14 @@ import { processRealtimeMidiInput } from '../../../repositories/webMidi/processR
 import { setMpeEnabledInternal } from '../../../repositories/webMidi/setMpeEnabledInternal';
 import { activeNotes } from '../../../repositories/webMidi/state';
 import { handleWebMidiMessage } from '../handleWebMidiMessage';
+import { midiMessageHandlerDependencies } from '../midiMessageHandlerDependencies';
+import { recordChannelEvent } from '../recordChannelEvent';
 
 registerDeviceEnginePorts();
 
 const TRACK_ID = 'track-recording';
 let disposeRecordingAdmission = (): void => {};
+let restorePunchHardware = (): void => {};
 
 type RecordingTerminal = (result: {
     kind: 'completed';
@@ -230,6 +237,7 @@ describe('stopActiveRecording commit ordering (issue #4439)', () => {
             retireRecordingMidiAdmission,
             takeOwnsRecordingRoot,
             recordingMidiSourceBeatAt,
+            isRecordingMidiInputExcluded,
         });
         activeNotes.clear();
         playheadClockRef.pendingLoopSeam = null;
@@ -246,6 +254,8 @@ describe('stopActiveRecording commit ordering (issue #4439)', () => {
     afterEach(() => {
         vi.restoreAllMocks();
         Reflect.deleteProperty(audioEngine.context, 'currentTime');
+        restorePunchHardware();
+        restorePunchHardware = () => {};
         commitGate.beforeClipId = null;
         commitGate.beforePending = null;
         liveMidiGate.pending = null;
@@ -419,6 +429,152 @@ describe('stopActiveRecording commit ordering (issue #4439)', () => {
             expect(notes[0]?.startBeat).toBeCloseTo(2.03 - compensation * 2, 9);
             expect(committedEntryCount()).toBe(1);
             expect(incomingRows.map((row) => row.pitch)).toEqual([60, 62]);
+        }
+    );
+
+    it.each([
+        { release: false, latency: 0 },
+        { release: true, latency: 0 },
+        { release: false, latency: 0.03 },
+        { release: true, latency: 0.03 },
+    ])(
+        'bounds pending and late MIDI contributions with late release=$release latency=$latency',
+        async ({ release, latency }) => {
+            const descriptors = Object.getOwnPropertyDescriptors(audioEngine.context);
+            Object.defineProperties(audioEngine.context, Object.getOwnPropertyDescriptors(createMockAudioContext()));
+            restorePunchHardware = () => {
+                for (const key of Object.keys(audioEngine.context)) {
+                    if (!Object.hasOwn(descriptors, key)) {
+                        Reflect.deleteProperty(audioEngine.context, key);
+                    }
+                }
+                Object.defineProperties(audioEngine.context, descriptors);
+            };
+            trackStore.set({
+                tracks: [
+                    {
+                        ...recordingTrack('midi'),
+                        devices: [
+                            { id: 'yeast-bound', name: 'Yeast', type: 'yeast', bypassed: false, parameterValues: {} },
+                        ],
+                    },
+                ],
+                selectedTrackId: TRACK_ID,
+                ghostClips: [],
+            });
+            let published = false;
+            const ending = { contextSeconds: 1.515, midiPosition: { beat: 7.03, passIndex: 0 } };
+            const [clip] = startRecording(4, undefined, undefined, () =>
+                published ? { status: 'bounded', startContextSeconds: 0, ending } : { status: 'pending' }
+            );
+            if (!clip) {
+                throw new Error('Missing bounded recording clip');
+            }
+            let beat = 4;
+            Object.defineProperty(audioEngine.context, 'currentTime', {
+                configurable: true,
+                get: () => mocks.audioClock.currentTime,
+            });
+            Object.defineProperties(audioEngine.context, {
+                baseLatency: { configurable: true, value: latency },
+                outputLatency: { configurable: true, value: 0 },
+            });
+            setGestureClockSource({
+                getAudioTimeSeconds: () => mocks.audioClock.currentTime,
+                readNativeCursorBeats: () => beat,
+            });
+            transportStore.set({ ...transportStore.value!, isPlaying: true, playheadPosition: 4 });
+            setMpeEnabledInternal(true);
+            const event = (bytes: number[]) => ({ data: new Uint8Array(bytes), timeStamp: undefined });
+            mocks.audioClock.currentTime = 0.1;
+            await handleWebMidiMessage(event([0x91, 61, 100]));
+            expect(activeNotes.get(createWebMidiNoteKey(1, 61))?.recordingExcluded).toBe(true);
+            await handleWebMidiMessage(event([0x81, 61, 0]));
+            published = true;
+            mocks.audioClock.currentTime = 0.5;
+            beat = 5;
+            await handleWebMidiMessage(event([0x91, 60, 100]));
+            await handleWebMidiMessage(event([0xd1, 40]));
+            expect(activeRecordingRef.midiAdmissions).toHaveLength(1);
+            expect(activeRecordingRef.midiAdmissions[0]?.expressionChanges).toHaveLength(1);
+            const channelEvent = (value: number) => {
+                const timeStamp = {
+                    audioTime: mocks.audioClock.currentTime,
+                    recordingBeat: beat,
+                    recordingPassIndex: 0,
+                };
+                recordChannelEvent(midiMessageHandlerDependencies, {
+                    trackId: TRACK_ID,
+                    channel: 1,
+                    timeStamp,
+                    event: { kind: 'controlChange', controller: 1, value },
+                });
+                recordChannelEvent(midiMessageHandlerDependencies, {
+                    trackId: TRACK_ID,
+                    channel: 1,
+                    timeStamp,
+                    event: { kind: 'pitchBend', value },
+                });
+            };
+            channelEvent(100);
+            mocks.audioClock.currentTime = 1.525;
+            beat = 7.05;
+            await handleWebMidiMessage(event([0x92, 62, 100]));
+            expect(activeNotes.get(createWebMidiNoteKey(2, 62))?.recordingExcluded).toBe(true);
+            await handleWebMidiMessage(event([0x82, 62, 0]));
+            await handleWebMidiMessage(event([0xd1, 100]));
+            expect(activeRecordingRef.midiAdmissions).toHaveLength(1);
+            expect(activeRecordingRef.midiAdmissions[0]?.expressionChanges).toHaveLength(1);
+            channelEvent(101);
+            if (release) {
+                await handleWebMidiMessage(event([0x81, 60, 0]));
+            }
+            await stopPlayback();
+            const notes = midiStore.value?.notesByClipId[clip.id] ?? [];
+            expect(notes).toHaveLength(1);
+            expect(notes[0]?.pitch).toBe(60);
+            expect(notes[0]?.startBeat).toBeCloseTo(1 - latency * 2, 10);
+            expect(notes[0]!.startBeat + notes[0]!.duration).toBeCloseTo(3.03, 10);
+            expect(
+                midiStore.value?.ccByClipId[clip.id]?.filter((row) => row.controller === 1).map((row) => row.value)
+            ).toEqual([100]);
+            expect(midiStore.value?.pitchBendByClipId[clip.id]?.map((row) => row.value)).toEqual([100]);
+            expect(committedEntryCount()).toBe(1);
+            await handleWebMidiMessage(event([0x81, 60, 0]));
+            expect(midiStore.value?.notesByClipId[clip.id]).toEqual(notes);
+            await undo();
+            expect(midiStore.value?.notesByClipId[clip.id] ?? []).toEqual([]);
+            await redo();
+            expect(midiStore.value?.notesByClipId[clip.id]).toEqual(notes);
+            expect(isRecordingMidiInputExcluded(2)).toBe(false);
+        }
+    );
+
+    it.each(['discard', 'root'] as const)(
+        'retires the punch input bound after its captured %s terminal and clears it at Stop',
+        async (route) => {
+            const [clip] = startRecording(4, undefined, undefined, () => ({
+                status: 'bounded',
+                startContextSeconds: 0,
+                ending: { contextSeconds: 1, midiPosition: { beat: 6, passIndex: 0 } },
+            }));
+            if (!clip) {
+                throw new Error('Missing owned MIDI clip');
+            }
+            expect(isRecordingMidiInputExcluded(0.5)).toBe(false);
+            if (route === 'discard') {
+                const retire = captureRecordingCommitRetirement(clip.id);
+                expect(discardRecording(clip.id)).toBe(true);
+                retire();
+            } else {
+                resetCrdtProjectAuthority('replace the owned punch root');
+            }
+            expect(isRecordingMidiInputExcluded(0.5)).toBe(true);
+            await stopPlayback();
+            expect(isRecordingMidiInputExcluded(0.5)).toBe(false);
+            startRecording(4);
+            expect(isRecordingMidiInputExcluded(2)).toBe(false);
+            await stopPlayback();
         }
     );
 

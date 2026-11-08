@@ -16,7 +16,7 @@ vi.mock('../../../repositories/webMidi/getTargetTrackId', () => ({
 }));
 
 vi.mock('../recordingMidiAdmissionPort', () => ({
-    recordingMidiAdmissionPort: { takeOwnsRecordingRoot: () => true },
+    recordingMidiAdmissionPort: { takeOwnsRecordingRoot: () => true, isRecordingMidiInputExcluded: () => false },
 }));
 
 // The switch happens at the transport's beat 6, two beats into the recording clip.

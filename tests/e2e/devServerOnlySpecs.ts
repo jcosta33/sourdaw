@@ -33,4 +33,5 @@ export const devServerOnlySpecs: readonly string[] = [
     'tests/e2e/transientOnsetRead.spec.ts',
     'tests/e2e/tempoSourceTimeAcceptance.spec.ts',
     'tests/e2e/transientShaperEffect.spec.ts',
+    'tests/e2e/voiceDraftBoundaryWorkflow.spec.ts',
 ];

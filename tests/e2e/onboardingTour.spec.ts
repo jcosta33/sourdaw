@@ -1,8 +1,16 @@
+import { env } from 'node:process';
+
 import { type Page } from '@playwright/test';
 import { stringify as superjsonStringify } from 'superjson';
 
+import { isBuiltE2eShardRun } from '../../scripts/e2eServerIdentity';
+
 import { test, expect } from './e2eTest';
 import { enable_direct_e2e_viewport, launch_new_project } from './e2eUtils';
+
+const HYDRATION_ENTRY = isBuiltE2eShardRun(env)
+    ? '/e2e/persisted-hydration.js'
+    : '/tests/e2e/persistedHydrationEntry.ts';
 
 /**
  * `setupWorkspace()` (see e2eUtils.ts) deliberately seeds
@@ -21,8 +29,11 @@ async function setup_fresh_onboarding_workspace(page: Page): Promise<void> {
     await enable_direct_e2e_viewport(page);
     await page.addInitScript(
         ({ alphaDismissed: dismissed }) => {
-            window.localStorage.clear();
-            window.localStorage.setItem('sourdaw-alpha-notice-dismissed', dismissed);
+            if (!window.sessionStorage.getItem('onboarding-test-initialized')) {
+                window.localStorage.clear();
+                window.localStorage.setItem('sourdaw-alpha-notice-dismissed', dismissed);
+                window.sessionStorage.setItem('onboarding-test-initialized', '1');
+            }
         },
         { alphaDismissed }
     );
@@ -59,5 +70,36 @@ test.describe('Onboarding tour (fresh profile, no bypass)', () => {
 
         await expect(tour.getByRole('heading', { name: 'Transport' })).toBeVisible();
         await expect(tour.getByText('Step 1 of 10')).toBeVisible();
+    });
+
+    test('skipping the tour remains completed after a new document', async ({ page }) => {
+        const tour = page.getByRole('dialog', { name: 'Onboarding tour' });
+        await expect(tour).toBeVisible();
+        await tour.getByRole('button', { name: 'Skip tour' }).click();
+        await expect(tour).toHaveCount(0);
+        expect(await page.evaluate(() => localStorage.getItem('wd:onboarding-completed'))).toBe('1');
+
+        await page.reload({ waitUntil: 'domcontentloaded' });
+        await launch_new_project(page);
+        await expect(page.getByText('Add your first track')).toBeVisible();
+        const state = await page.evaluate(async (entryPath) => {
+            const { arrangement, project }: typeof import('./persistedHydrationEntry') = await import(entryPath);
+            return {
+                initialized: project.projectStore.value?.initialized,
+                kinds: arrangement.trackStore.value?.tracks.map((track) => track.kind),
+            };
+        }, HYDRATION_ENTRY);
+        expect(state.initialized).toBe(true);
+        expect(state.kinds).toContain('master');
+        expect(await page.evaluate(() => localStorage.getItem('wd:onboarding-completed'))).toBe('1');
+        await expect(tour).toHaveCount(0);
+        await page.getByRole('button', { name: 'MIDI Keys & synths' }).click();
+        await expect(
+            page
+                .getByRole('grid', { name: /Track list/i })
+                .getByRole('row')
+                .first()
+        ).toBeVisible();
+        await expect(tour).toHaveCount(0);
     });
 });

@@ -2,6 +2,7 @@ import { digest } from '#/utils/canonicalDigest';
 
 import {
     type AgentPlanUncertainty,
+    type PlannedAgentRunBatchSchedule,
     type AgentRunBudgets,
     type AgentRunGrants,
     type AgentRunPlan,
@@ -16,10 +17,12 @@ import {
 } from '../models/ApplicationOwnedTool';
 import { CREATIVE_INTERPRETATION_TOOL_NAME } from '../models/CreativeInterpretation';
 import { RUNTIME_ACTION_TYPES } from '../models/RuntimeAction';
+import { type VibeRunInitialBaselineRefusal } from '../models/VibeRunPlan';
 import { WORKFLOW_CAPABILITY_TOOL_NAME } from '../models/WorkflowCapability';
 
 import { ANALYSIS_MEASURE_TOOL_NAME } from './agentToolCatalog';
 import { metricGoalStateCodec } from './metricGoalStateCodec';
+import { readVibeRunInitialRefusal } from './vibeRun/readVibeRunInitialRefusal';
 
 type AgentRunSemanticEvidence = { uncertainty: AgentPlanUncertainty[] };
 
@@ -51,6 +54,8 @@ type PlanAgentRunInput = {
     budgets: AgentRunBudgets;
     requiresConfirmation: boolean;
     applicationToolReceipts?: readonly ApplicationToolReceipt[];
+    initialBaselineRefusal?: VibeRunInitialBaselineRefusal;
+    batchSchedule?: PlannedAgentRunBatchSchedule;
     terminalMeasurementSettlement?: string;
     providerProposal?: AgentRunProviderProposal;
     /** Application-derived scope containing only the direct targets the provider was required to name. */
@@ -395,6 +400,20 @@ export function planAgentRun(input: PlanAgentRunInput): PlanAgentRunResult {
             reason: 'Terminal measurement settlement does not match the original intake and admitted receipts.',
         };
     }
+    const initialRefusal = readVibeRunInitialRefusal({
+        metadata: input.initialBaselineRefusal,
+        revision: input.revision,
+        receipts: input.applicationToolReceipts ?? [],
+        actions: input.actions,
+        metricGoalState: input.metricGoalState,
+        batchSchedule: input.batchSchedule,
+        scheduledCommandCount: input.scheduledCommandCount,
+    });
+    const remainingCommands =
+        (input.budgets.limits.maxCommands ?? Number.POSITIVE_INFINITY) - (input.budgets.consumed.maxCommands ?? 0);
+    if (initialRefusal !== null && remainingCommands < 1) {
+        return { status: 'rejected', reason: "The brief needs one command within this run's maxCommands budget." };
+    }
     const capabilities = deriveCapabilities(input, settledControls);
     const goals = metricGoalStateCodec(input.metricGoalState);
     const blockedMetricProposal =
@@ -405,6 +424,13 @@ export function planAgentRun(input: PlanAgentRunInput): PlanAgentRunResult {
         capabilities.some(
             (capability) =>
                 capability.status === 'unavailable' &&
+                !(
+                    initialRefusal !== null &&
+                    ((capability.source === 'application-tool-catalog' &&
+                        capability.id === ANALYSIS_MEASURE_TOOL_NAME) ||
+                        (capability.source === 'budget' &&
+                            (capability.id === 'budget:maxRenderJobs' || capability.id === 'budget:localAnalysis')))
+                ) &&
                 !(
                     blockedMetricProposal &&
                     capability.source === 'application-tool-catalog' &&

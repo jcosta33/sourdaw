@@ -22,6 +22,8 @@ export type RecordingMidiAdmission = {
     onsetPassIndex?: number;
     releaseAudioTime?: number;
     releaseSourceBeat?: number;
+    /** Transient automatic-owner cap, never copied into a stored MidiNote. */
+    exclusiveSourceEndBeat?: number;
     initialExpression?: {
         pressure?: number;
         slide?: number;

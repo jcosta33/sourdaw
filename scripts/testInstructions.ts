@@ -248,7 +248,7 @@ function isAnnotationParenthetical(parenthetical: string): boolean {
     const tokens = parenthetical
         .slice(1, -1)
         .split(/\s+/)
-        .map((token) => token.replace(TOKEN_EDGE_PUNCTUATION, '').toLowerCase());
+        .map((token) => token.replaceAll(TOKEN_EDGE_PUNCTUATION, '').toLowerCase());
     return tokens.every((token) => token === '' || REMAINDER_VOCABULARY.has(token) || isNumberOrPunctuation(token));
 }
 
@@ -287,13 +287,13 @@ function opensArgumentRun(launch: PeeledLaunch, segment: string): boolean {
     if (isEnglishWordLead(launch, segment)) {
         return false;
     }
-    const lead = launch.lead.replace(TOKEN_EDGE_PUNCTUATION, '').toLowerCase();
+    const lead = launch.lead.replaceAll(TOKEN_EDGE_PUNCTUATION, '').toLowerCase();
     return (COMMAND_HEADS.has(lead) || ENV_ASSIGNMENT_TOKEN.test(lead)) && !ARTICLES.includes(launchFollower(launch));
 }
 
 /** The token directly behind the peeled head, edge punctuation stripped and lower-cased. */
 function launchFollower(launch: PeeledLaunch): string {
-    return launch.follower.replace(TOKEN_EDGE_PUNCTUATION, '').toLowerCase();
+    return launch.follower.replaceAll(TOKEN_EDGE_PUNCTUATION, '').toLowerCase();
 }
 
 /**
@@ -311,7 +311,7 @@ function launchFollower(launch: PeeledLaunch): string {
  * syntax (`Find the new file`, `Go to 1.1.1`, `Echo is still on`).
  */
 function isEnglishWordLead(launch: PeeledLaunch, segment: string): boolean {
-    if (launch.spanLead || !ENGLISH_WORD_HEADS.has(launch.lead.replace(TOKEN_EDGE_PUNCTUATION, '').toLowerCase())) {
+    if (launch.spanLead || !ENGLISH_WORD_HEADS.has(launch.lead.replaceAll(TOKEN_EDGE_PUNCTUATION, '').toLowerCase())) {
         return false;
     }
     return !carriesCommandShapedToken(segment);
@@ -387,7 +387,7 @@ function closesAtRunEndingWord(
 function proseRemainderWords(segment: string): string[] {
     const remainder = proseRemainder(segment)
         .replaceAll(QUOTED_SPAN, ' ')
-        .replace(PARENTHETICAL, (parenthetical) => (isAnnotationParenthetical(parenthetical) ? ' ' : parenthetical));
+        .replaceAll(PARENTHETICAL, (parenthetical) => (isAnnotationParenthetical(parenthetical) ? ' ' : parenthetical));
     const tokens = remainder.split(/\s+/).map(remainderToken);
     const words: string[] = [];
     // Seeded from the launch the peel exposes — a leading span's content included — not from
@@ -463,7 +463,7 @@ function proseRemainderWords(segment: string): string[] {
  * like a removed quoted span, so the scan skips it and the run-ending check finds no material in it.
  */
 function remainderToken(token: string): string {
-    const bare = token.replace(TOKEN_EDGE_PUNCTUATION, '').toLowerCase();
+    const bare = token.replaceAll(TOKEN_EDGE_PUNCTUATION, '').toLowerCase();
     return DOTTED_ABBREVIATION_TOKEN.test(bare) ? '' : bare;
 }
 
@@ -480,14 +480,14 @@ function leadsWithCommandMaterial(segment: string): boolean {
     if (isEnglishWordLead(launch, segment)) {
         return !CLOSED_CLASS_FUNCTION_WORDS.has(launchFollower(launch)) || reportsOnlyCheckVerdict(launch, segment);
     }
-    const lead = launch.lead.replace(TOKEN_EDGE_PUNCTUATION, '').toLowerCase();
+    const lead = launch.lead.replaceAll(TOKEN_EDGE_PUNCTUATION, '').toLowerCase();
     return COMMAND_HEADS.has(lead) || isCommandToken(lead);
 }
 
 /** Whether every word behind the peeled lead is one check verdict: `is clean`, `is still green`. */
 function reportsOnlyCheckVerdict(launch: PeeledLaunch, segment: string): boolean {
     const tokens = unwrappedTokens(segment);
-    const lead = launch.lead.replace(TOKEN_EDGE_PUNCTUATION, '').toLowerCase();
+    const lead = launch.lead.replaceAll(TOKEN_EDGE_PUNCTUATION, '').toLowerCase();
     return CHECK_VERDICT_ONLY.test(tokens.slice(tokens.indexOf(lead) + 1).join(' '));
 }
 
@@ -518,7 +518,7 @@ function unwrappedTokens(segment: string): string[] {
 
 /** The segment's tokens in their written letter case, quoted spans unwrapped and edge punctuation stripped. */
 function spelledTokens(segment: string): string[] {
-    const unwrapped = segment.replace(QUOTED_SPAN, (span, _capture: string, offset: number) => {
+    const unwrapped = segment.replaceAll(QUOTED_SPAN, (span, _capture: string, offset: number) => {
         const beforeQuote = segment.slice(0, offset);
         const precedingToken = beforeQuote.trimEnd().split(/\s+/).at(-1) ?? '';
         if (precedingToken.endsWith('=') && isPrefixValueOption(precedingToken.slice(0, -1))) {
@@ -531,7 +531,7 @@ function spelledTokens(segment: string): string[] {
         }
         return ` ${span.slice(1, -1)} `;
     });
-    return unwrapped.split(/\s+/).map((token) => token.replace(TOKEN_EDGE_PUNCTUATION, ''));
+    return unwrapped.split(/\s+/).map((token) => token.replaceAll(TOKEN_EDGE_PUNCTUATION, ''));
 }
 
 /**
@@ -848,7 +848,7 @@ const TEST_RUNNER_NAMES = /\b(?:Vitest|Playwright)\b/;
 const CI_WORD = /\bCI\b/;
 
 function namesTestSuite(segment: string): boolean {
-    const plain = segment.replace(EMPHASIS_AND_BACKTICKS, '').trim();
+    const plain = segment.replaceAll(EMPHASIS_AND_BACKTICKS, '').trim();
     return (
         TEST_SUITE_WORDS.test(segment) ||
         EXISTING_TEST_WITH_VERDICT.test(segment) ||

@@ -4,7 +4,7 @@ import { type Clip, type Track, trackStore } from './trackStore';
 /**
  * Efficient single-clip update. Owned by Arrangement (mutates `trackStore`'s
  * authoritative state). Colocated with the store — NOT in `useCases/` — so
- * cross-module writers (Knead, MIDI pattern-instance ops) can update a clip
+ * cross-module writers (Knead) can update a clip
  * without importing `Arrangement/useCases` and re-forming the barrel cycles
  * those writers previously closed.
  *

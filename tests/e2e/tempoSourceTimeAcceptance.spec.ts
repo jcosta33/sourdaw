@@ -1,5 +1,5 @@
 // A browser-carrier check: Web Audio starts and exported PCM are observable here; a native device clock is not.
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { realpathSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
@@ -1670,6 +1670,229 @@ test('strips literal source islands through interior tempo at rate2 and preserve
                 satellites,
                 historyLimit:
                     'Undo/Redo is proved before Save. Binary fragments/PCM survive reload; persisted Strip history is separate issue#5740.',
+            },
+            null,
+            2
+        ),
+        contentType: 'application/json',
+    });
+});
+
+test('retains stereo-only Strip Silence islands through menu export and saved UndoRedo', async ({
+    page: initialPage,
+}, info) => {
+    test.setTimeout(480_000);
+    let page = await bootOwnedSourceProject(initialPage, info);
+    let state = await importSourceFixture(page, physicalSourceFixture.stereoIslands(), 'stereo-strip-islands.wav');
+    const source = onlyClip(state);
+    expect([source.startBeat, source.endBeat, sourceEntrySeconds(source)]).toEqual([0, 10, 0]);
+    expect(source.hasSourceSeconds).toBe(false);
+    expect(state.raw.tempo).toEqual([]);
+    await page.evaluate(async (clipId) => {
+        const { executeUserAppAction } = await import('/src/modules/Command/useCases/index.ts');
+        await executeUserAppAction({ type: 'addGainEnvelopePoint', payload: { clipId, beatOffset: 5, gainDb: 0 } });
+    }, source.id);
+
+    const sourcePcm = async () => {
+        const decoded = await page.evaluate(async (bufferId) => {
+            const { audioBufferCache } = await import('/src/modules/AudioEngine/stores/audioBufferCache.ts');
+            const buffer = audioBufferCache.get(bufferId);
+            if (!buffer || buffer.numberOfChannels !== 2 || buffer.sampleRate !== 48_000 || buffer.length !== 240_000) {
+                throw new Error('The stereo fixture did not decode into two complete 48 kHz source planes');
+            }
+            const planes = [];
+            for (let channel = 0; channel < 2; channel += 1) {
+                const samples = buffer.getChannelData(channel);
+                let maxError = 0;
+                for (let frame = 0; frame < samples.length; frame += 1) {
+                    const sounding =
+                        channel === 0 ? frame < 48_000 || frame >= 192_000 : frame >= 96_000 && frame < 144_000;
+                    maxError = Math.max(maxError, Math.abs(samples[frame] - (sounding ? 0.5 : 0)));
+                }
+                const digest = await crypto.subtle.digest('SHA-256', new Float32Array(samples).buffer);
+                planes.push({
+                    maxError,
+                    digest: Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join(''),
+                });
+            }
+            return planes;
+        }, source.audioBufferId!);
+        for (const plane of decoded) {
+            expect(
+                plane.maxError,
+                'every decoded frame follows the literal independent stereo oracle'
+            ).toBeLessThanOrEqual(1 / 32_768);
+        }
+        return decoded;
+    };
+    const satellites = () =>
+        page.evaluate(async () => {
+            const [{ getCrdtDoc }, { gainEnvelopeStore, warpStateStore }, { automationStore }] = await Promise.all([
+                import('/src/modules/CrdtDocument/useCases/index.ts'),
+                import('/src/modules/Arrangement/stores/index.ts'),
+                import('/src/modules/Automation/stores/index.ts'),
+            ]);
+            const document = getCrdtDoc<{
+                gainEnvelopes?: NonNullable<typeof gainEnvelopeStore.value>;
+                warpStates?: NonNullable<typeof warpStateStore.value>;
+                automation?: NonNullable<typeof automationStore.value>;
+            }>('root')!;
+            return {
+                raw: {
+                    gain: document.gainEnvelopes ?? { envelopes: {} },
+                    warp: document.warpStates ?? { states: {} },
+                    automation: document.automation ?? { lanes: [] },
+                },
+                projected: {
+                    gain: gainEnvelopeStore.value!,
+                    warp: warpStateStore.value!,
+                    automation: automationStore.value!,
+                },
+            };
+        });
+    const exported = async () => {
+        const pcm = await exportPcm(page);
+        expect(pcm.frames).toBeGreaterThanOrEqual(240_000);
+        const body = Buffer.alloc(pcm.frames * 6);
+        for (let channel = 0; channel < 2; channel += 1) {
+            let wrongFrame: { frame: number; value: number } | null = null;
+            for (let frame = 0; frame < pcm.frames; frame += 1) {
+                const sample = pcm.at(frame, channel);
+                body.writeIntLE(sample, frame * 6 + channel * 3, 3);
+                const sounding =
+                    channel === 0
+                        ? frame < 48_000 || (frame >= 192_000 && frame < 240_000)
+                        : frame >= 96_000 && frame < 144_000;
+                // Leave 10ms at each segment edge for the shipped anti-click envelope.
+                // Interior PCM must sound on its original channel; every silent frame stays zero.
+                const interior = frame % 48_000 >= 480 && frame % 48_000 < 47_520;
+                if ((!sounding && sample !== 0) || (sounding && interior && sample <= 100_000)) {
+                    wrongFrame ??= { frame, value: sample };
+                }
+            }
+            expect(wrongFrame, `export channel ${channel} must retain its own islands and silent windows`).toBeNull();
+        }
+        return { frames: pcm.frames, digest: createHash('sha256').update(body).digest('hex') };
+    };
+    const unrelatedTracks = () =>
+        page.evaluate(async (audioTrackId) => {
+            const [{ getCrdtDoc }, { trackStore }] = await Promise.all([
+                import('/src/modules/CrdtDocument/useCases/index.ts'),
+                import('/src/modules/Arrangement/stores/index.ts'),
+            ]);
+            const document = getCrdtDoc<{
+                tracks?: Pick<NonNullable<typeof trackStore.value>, 'tracks'>;
+            }>('root');
+            if (!document?.tracks || !trackStore.value) {
+                throw new Error('The unrelated-track owners are absent');
+            }
+            return {
+                raw: document.tracks.tracks.filter((track) => track.id !== audioTrackId),
+                projected: trackStore.value.tracks.filter((track) => track.id !== audioTrackId),
+            };
+        }, state.trackId);
+    await palette(page, 'Add MIDI Track');
+    const unrelatedBefore = await unrelatedTracks();
+    expect(unrelatedBefore.raw.length, 'the replay control requires an actual unrelated track').toBeGreaterThan(0);
+    expect(unrelatedBefore.raw.filter((track) => track.kind === 'midi')).toHaveLength(1);
+    expect(unrelatedBefore.raw).toEqual(unrelatedBefore.projected);
+    const before = await readSnapshot(page);
+    const beforeSatellites = await satellites();
+    expect(beforeSatellites.raw).toEqual(beforeSatellites.projected);
+    const originalPcm = await sourcePcm();
+    const beforeExport = await exported();
+    const point = await canvasPoint(page, source, 1);
+    await expectCanvasAdmission(page, point.x, point.y);
+    await page.mouse.click(point.x, point.y, { button: 'right' });
+    const strip = page.getByRole('menuitem', { name: 'Strip Silence', exact: true });
+    await expect(strip).toBeVisible();
+    await strip.click();
+    await expect.poll(async () => (await readSnapshot(page)).raw.clips.length).toBe(3);
+    state = await readSnapshot(page);
+    expect(await unrelatedTracks()).toEqual(unrelatedBefore);
+    expect(state.raw).toEqual(state.projected);
+    const children = [...state.raw.clips].sort((a, b) => a.startBeat - b.startBeat);
+    expect(children.map((clip) => [clip.startBeat, clip.endBeat, clip.audioOffsetSeconds, clip.audioBufferId])).toEqual(
+        [
+            [0, 2, 0, source.audioBufferId],
+            [4, 6, 2, source.audioBufferId],
+            [8, 10, 4, source.audioBufferId],
+        ]
+    );
+    expect(new Set(children.map((clip) => clip.id)).size).toBe(3);
+    expect(children.map((clip) => clip.id)).not.toContain(source.id);
+    const committedSatellites = await satellites();
+    expect(committedSatellites.raw).toEqual(committedSatellites.projected);
+    const originalEnvelope = beforeSatellites.projected.gain.envelopes[source.id];
+    expect(originalEnvelope.points.map((point) => [point.beatOffset, point.gainDb])).toEqual([
+        [0, 0],
+        [5, 0],
+    ]);
+    expect(committedSatellites.projected.gain.envelopes[source.id]).toBeUndefined();
+    for (const [index, child] of children.entries()) {
+        const first = [0, 96_000, 192_000][index];
+        const end = [48_000, 144_000, 240_000][index];
+        const rendered = await waveform(page, state.trackId, child.id);
+        expectFrame(rendered.occurrences[0].startSample, first, 'common stereo child first source frame');
+        expectFrame(rendered.occurrences.at(-1)?.endSample ?? -1, end, 'common stereo child exclusive source frame');
+        expect(committedSatellites.projected.gain.envelopes[child.id]).toEqual({
+            ...originalEnvelope,
+            clipId: child.id,
+            points: originalEnvelope.points.map((point) => ({
+                ...point,
+                beatOffset: point.beatOffset - child.startBeat,
+            })),
+        });
+    }
+    expect(await sourcePcm()).toEqual(originalPcm);
+    await observeStarts(page, state.buffer.id, 0, [
+        [0, 1],
+        [2, 1],
+        [4, 1],
+    ]);
+    const committedExport = await exported();
+    const committed = state;
+    const assertReplay = async (expected: Snapshot, expectedSatellites: unknown, expectedPcm: typeof beforeExport) => {
+        const actual = await readSnapshot(page);
+        expect(actual.raw).toEqual(expected.raw);
+        expect(actual.projected).toEqual(expected.projected);
+        expect(await unrelatedTracks()).toEqual(unrelatedBefore);
+        expect(await satellites()).toEqual(expectedSatellites);
+        expect(await sourcePcm()).toEqual(originalPcm);
+        expect(await exported()).toEqual(expectedPcm);
+        return actual;
+    };
+    await page.getByRole('button', { name: 'Undo', exact: true }).click();
+    await expect.poll(async () => (await readSnapshot(page)).raw.clips.length).toBe(1);
+    await assertReplay(before, beforeSatellites, beforeExport);
+    await page.getByRole('button', { name: 'Redo', exact: true }).click();
+    await expect.poll(async () => (await readSnapshot(page)).raw.clips.length).toBe(3);
+    state = await assertReplay(committed, committedSatellites, committedExport);
+    page = await saveAndReopen(page, info, state);
+    expect(await unrelatedTracks()).toEqual(unrelatedBefore);
+    await page.getByRole('button', { name: 'Undo', exact: true }).click();
+    await expect.poll(async () => (await readSnapshot(page)).raw.clips.length).toBe(1);
+    state = await assertReplay(before, beforeSatellites, beforeExport);
+    page = await saveAndReopen(page, info, state);
+    expect(await unrelatedTracks()).toEqual(unrelatedBefore);
+    await page.getByRole('button', { name: 'Redo', exact: true }).click();
+    await expect.poll(async () => (await readSnapshot(page)).raw.clips.length).toBe(3);
+    state = await assertReplay(committed, committedSatellites, committedExport);
+    await info.attach('stereo-strip-source-export-and-saved-replay', {
+        body: JSON.stringify(
+            {
+                before,
+                committed,
+                replayed: state,
+                originalPcm,
+                beforeExport,
+                committedExport,
+                committedSatellites,
+                unrelatedBefore,
+                unrelatedReplayed: await unrelatedTracks(),
+                replayObligation:
+                    'Saved same-tab Strip Silence Undo then another Save/reload Redo; distinct from all-channel detection.',
+                carrier: 'Chromium source starts and Bakery PCM; no physical listening or native device-clock claim.',
             },
             null,
             2

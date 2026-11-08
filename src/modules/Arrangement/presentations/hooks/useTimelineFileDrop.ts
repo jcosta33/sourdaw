@@ -1,6 +1,11 @@
 import { type DragEvent, useState } from 'react';
 
-import { decodeAudioFile, discardDecodedAudioFile, getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
+import {
+    decodeAudioFile,
+    discardDecodedAudioFile,
+    getCachedAudioBuffer,
+    openCachedAudioBufferHold,
+} from '#/modules/AudioEngine/useCases';
 import { getAssetTransfer } from '#/modules/Collaboration/useCases';
 import { executeAppActionBatch } from '#/modules/Command/useCases';
 import { LIBRARY_SAMPLE_MALFORMED_MESSAGE, placeLibrarySample } from '#/modules/ContentBrowser/useCases';
@@ -310,8 +315,9 @@ export const useTimelineFileDrop = ({
                 let stagedAssetLeaseId: string | undefined;
                 let committed = false;
                 const assetTransfer = getAssetTransfer();
+                const hold = openCachedAudioBufferHold();
                 try {
-                    const { id: bufferId, buffer } = await decodeAudioFile(file);
+                    const { id: bufferId, buffer } = await decodeAudioFile(file, hold);
                     decodedBufferId = bufferId;
                     if (!authority.isCurrent()) {
                         discardDecodedAudioFile(bufferId);
@@ -385,6 +391,8 @@ export const useTimelineFileDrop = ({
                     if (authority.isCurrent()) {
                         notifyUser(`Failed to import "${file.name}" — unsupported format or corrupt file`, 'error');
                     }
+                } finally {
+                    hold.release();
                 }
             }
         } finally {
