@@ -161,6 +161,9 @@ vi.mock('#/modules/Automation/useCases', () => ({
     isRecordingAutomation: vi.fn(() => false),
 }));
 vi.mock('#/modules/Arrangement/useCases', () => ({
+    // This component fixture owns audio capture only; no Arrangement publication or MIDI target exists.
+    captureRecordingCommitRetirement: () => () => {},
+    hasAutomaticRecordingMidiCapture: () => false,
     collaborationAssetTransfer: {
         read: () => ({ isSessionActive: () => false, current: () => null }),
     },
@@ -221,6 +224,9 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     registerScheduledSource: vi.fn(),
     scheduleFaustNote: vi.fn(),
     audioEngine: {
+        get context() {
+            return audioContextStub;
+        },
         beginAudioPreviewIntent: () => ({
             signal: new AbortController().signal,
             isCurrent: () => true,

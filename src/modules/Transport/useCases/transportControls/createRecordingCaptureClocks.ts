@@ -26,6 +26,7 @@ type CaptureClock = {
     sampleZeroContextSeconds: number | null;
     latencySeconds: number;
     readStart: Parameters<NonNullable<Parameters<typeof startAudioRecording>[3]>>[0] | null;
+    readProgress: Parameters<NonNullable<Parameters<typeof startAudioRecording>[3]>>[0] | null;
     relocation: CaptureRelocation | null;
     pendingRelocations: CaptureRelocation[];
     frozen: boolean;
@@ -124,10 +125,103 @@ class RecordingCaptureClocks {
     private readonly endings = new Map<CaptureClock, CaptureEnding>();
     private readonly boundClips = new Map<CaptureClock, string>();
 
+    readAutomaticCarrier() {
+        return this.readNative();
+    }
+
+    isAutomaticEndingSounded(
+        ending: NonNullable<CaptureEnding>,
+        native: boolean,
+        carrier = this.readNative()
+    ): boolean {
+        if (this.context.currentTime < ending.contextSeconds) {
+            return false;
+        }
+        return (
+            !native ||
+            (carrier.carrier === 'native' &&
+                carrier.status === 'available' &&
+                carrier.snapshot.forwardAuthorized !== false &&
+                carrier.snapshot.audibleContextSeconds >= ending.contextSeconds)
+        );
+    }
+
+    private automaticInputEnding(
+        clock: CaptureClock,
+        outBeat: number,
+        ownedEnding: NonNullable<CaptureEnding>,
+        carrier: ReturnType<RecordingCaptureClocks['readAutomaticCarrier']>
+    ): CaptureEnding | 'refused' | null {
+        if (!clock.nativeOwned) {
+            return ownedEnding;
+        }
+        const native = clock.nativeHistory.readAutomaticEnding(outBeat);
+        if (native.status === 'refused') {
+            return 'refused';
+        }
+        if (
+            native.status !== 'dated' ||
+            carrier.carrier !== 'native' ||
+            carrier.status !== 'available' ||
+            carrier.snapshot.audibleContextSeconds < native.ending.contextSeconds
+        ) {
+            return null;
+        }
+        return native.ending;
+    }
+
+    readyForAutomaticEnding(outBeat: number, ownedEnding: NonNullable<CaptureEnding>, nativeEnding = false): boolean {
+        if (!this.isActiveObserver()) {
+            return false;
+        }
+        const carrier = this.readNative();
+        if (this.context.currentTime < ownedEnding.contextSeconds) {
+            return false;
+        }
+        const refusedNative = Array.from(this.clocks.values()).some(
+            (clock) => clock.nativeOwned && clock.nativeHistory.projectionState() === 'refused'
+        );
+        if (
+            nativeEnding &&
+            !refusedNative &&
+            (carrier.carrier !== 'native' ||
+                carrier.status !== 'available' ||
+                carrier.snapshot.forwardAuthorized === false ||
+                carrier.snapshot.audibleContextSeconds < ownedEnding.contextSeconds)
+        ) {
+            return false;
+        }
+        for (const clock of this.clocks.values()) {
+            if (this.endings.has(clock)) {
+                continue;
+            }
+            const ending = this.automaticInputEnding(clock, outBeat, ownedEnding, carrier);
+            if (ending === 'refused') {
+                continue;
+            }
+            if (!ending) {
+                return false;
+            }
+            const progress = clock.readProgress?.();
+            if (
+                progress?.status !== 'captured' ||
+                progress.capturedThroughContextSeconds < ending.contextSeconds + clock.latencySeconds
+            ) {
+                return false;
+            }
+            if (clock.nativeOwned) {
+                this.endings.set(clock, ending);
+                clock.nativeHistory.freezeAutomaticEnding();
+            }
+        }
+        return true;
+    }
+
     constructor(
         private readonly context: CaptureContext,
         private readonly songSecondsAtBeat: (beat: number) => number,
-        private readonly onEnding?: () => void
+        private readonly onEnding?: () => void,
+        private readonly retainUntilEnding = false
     ) {}
 
     get size() {
@@ -146,7 +240,7 @@ class RecordingCaptureClocks {
         return this.isOwnerCurrent() && !this.ended;
     }
 
-    private endingFor(clock: CaptureClock): CaptureEnding {
+    private endingFor(clock: CaptureClock, finalizing = false): CaptureEnding {
         const carrier = this.nativeClock.read(this.context);
         const snapshot = this.nativeClock.last;
         if (carrier.carrier === 'browser' || !snapshot) {
@@ -166,7 +260,7 @@ class RecordingCaptureClocks {
         const contextSeconds = Math.min(this.context.currentTime - clock.latencySeconds, audibleNow);
         const terminalEntry = clock.nativeHistory.entryAt(contextSeconds + clock.latencySeconds);
         if (!terminalEntry) {
-            clock.nativeHistory.refuseProjection();
+            clock.nativeHistory.refuseProjection(finalizing ? 'ending' : 'unavailable');
             return undefined;
         }
         return {
@@ -176,7 +270,7 @@ class RecordingCaptureClocks {
                 if (!entry) {
                     // A provisional ending may still close while its full PCM
                     // must be recovered. It cannot authorize final placement.
-                    clock.nativeHistory.refuseProjection();
+                    clock.nativeHistory.refuseProjection(finalizing ? 'ending' : 'unavailable');
                     return terminalEntry.beat;
                 }
                 return entry.beat;
@@ -188,6 +282,7 @@ class RecordingCaptureClocks {
         this.ended = true;
         for (const clock of this.clocks.values()) {
             clock.readStart = null;
+            clock.readProgress = null;
         }
         this.unregisterClock();
         this.unregisterNative();
@@ -227,12 +322,16 @@ class RecordingCaptureClocks {
             bind: (clipId) => this.bind(clock, clipId),
             latencySeconds,
             readStart: null,
+            readProgress: null,
             relocation: null,
             pendingRelocations: [],
             frozen: false,
             setReader: (readStart) => {
-                if (this.isOwnerCurrent() && !this.ended && !clock.frozen && this.clocks.get(trackId) === clock) {
-                    clock.readStart = readStart;
+                if (this.isOwnerCurrent() && !this.ended && this.clocks.get(trackId) === clock) {
+                    clock.readProgress = this.retainUntilEnding ? readStart : null;
+                    if (!clock.frozen) {
+                        clock.readStart = readStart;
+                    }
                 }
             },
             freeze: (sampleZero, duration) => {
@@ -421,7 +520,9 @@ class RecordingCaptureClocks {
         }
         observeSoundedTerminalSeam(this.context, this.retainClock);
         for (const clock of this.clocks.values()) {
-            this.endings.set(clock, this.endingFor(clock));
+            if (!this.endings.has(clock)) {
+                this.endings.set(clock, this.endingFor(clock, true));
+            }
         }
         const terminal = this.nativeClock.read(this.context);
         if (
@@ -442,9 +543,10 @@ class RecordingCaptureClocks {
         const clock = this.clocks.get(trackId);
         if (clock) {
             clock.readStart = null;
+            clock.readProgress = null;
         }
         this.clocks.delete(trackId);
-        if (this.clocks.size === 0) {
+        if (this.clocks.size === 0 && !this.retainUntilEnding) {
             this.dispose();
         }
     }
@@ -463,7 +565,8 @@ class RecordingCaptureClocks {
 export function createRecordingCaptureClocks(
     context: CaptureContext,
     songSecondsAtBeat: (beat: number) => number,
-    onEnding?: () => void
+    onEnding?: () => void,
+    retainUntilEnding = false
 ) {
-    return new RecordingCaptureClocks(context, songSecondsAtBeat, onEnding);
+    return new RecordingCaptureClocks(context, songSecondsAtBeat, onEnding, retainUntilEnding);
 }

@@ -108,6 +108,12 @@ vi.mock('#/modules/Automation/useCases', () => ({
     isRecordingAutomation: vi.fn(() => false),
 }));
 vi.mock('#/modules/Arrangement/useCases', () => ({
+    captureRecordingCommitRetirement: () => {
+        throw new Error('This playback fixture must not admit a recording commit');
+    },
+    hasAutomaticRecordingMidiCapture: () => {
+        throw new Error('This playback fixture must not query an automatic MIDI owner');
+    },
     takeOwnsRecordingRoot: vi.fn(() => true),
     prepareRecoveredRecording: vi.fn(),
     admitRecordingCaptureClock: vi.fn(),

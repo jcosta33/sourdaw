@@ -697,6 +697,7 @@ describe('writing the production brief from a whole-project request (AC-001 of #
         expect(heldClausesOf({ type: 'setProductionBrief', payload: { expectedRevision: 4, brief } })).toEqual([]);
     });
 
+    // Nine staged renders run real objective DSP, which needs CPU time on loaded runners.
     it('grounds a later batch on a track whose role only the confirmed brief gives', async () => {
         const STEM_ID = 'track-stem';
         landProjectEdit(() => {
@@ -728,7 +729,7 @@ describe('writing the production brief from a whole-project request (AC-001 of #
             expect.objectContaining({ recipeId: 'bass-warm', targetId: STEM_ID }),
         ]);
         expect(batch?.actions.map((action) => action.type)).toContain('addDevice');
-    });
+    }, 15_000);
 
     it('leaves a request whose plan holds no batch exactly the brief alone', async () => {
         // Every track the request could warm is the locked Drums, so its plan holds no batch at all.

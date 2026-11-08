@@ -121,6 +121,9 @@ vi.mock('#/modules/Automation/useCases', () => ({
     isRecordingAutomation: vi.fn(() => false),
 }));
 vi.mock('#/modules/Arrangement/useCases', () => ({
+    // This component fixture owns audio capture only; no Arrangement publication or MIDI target exists.
+    captureRecordingCommitRetirement: () => () => {},
+    hasAutomaticRecordingMidiCapture: () => false,
     takeOwnsRecordingRoot: vi.fn(() => true),
     prepareRecoveredRecording: vi.fn(),
     admitRecordingCaptureClock: vi.fn(),
@@ -174,9 +177,32 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     relocateNoteExpression: vi.fn(),
     registerScheduledSource: vi.fn(),
     scheduleFaustNote: vi.fn(),
-    audioEngine: { setTransportInfo: vi.fn() },
+    audioEngine: {
+        get context() {
+            return audioContextStub;
+        },
+        setTransportInfo: vi.fn(),
+    },
     stopAllScheduled: vi.fn(),
-    startAudioRecording: vi.fn(),
+    // A continuously published recorder clock below this scheduler component seam.
+    // PCM retention itself is observed by recordingCapturePlacement.integration.
+    startAudioRecording: vi.fn<typeof import('#/modules/AudioEngine/useCases').startAudioRecording>(
+        async (_track, _terminal, _input, admit) => {
+            const sampleZero = Math.round(ctxTime.now * audioContextStub.sampleRate);
+            admit?.(() => {
+                const frontier = Math.round(ctxTime.now * audioContextStub.sampleRate);
+                if (frontier <= sampleZero) {
+                    return { status: 'pending' };
+                }
+                return {
+                    status: 'captured',
+                    contextSeconds: sampleZero / audioContextStub.sampleRate,
+                    capturedThroughContextSeconds: frontier / audioContextStub.sampleRate,
+                };
+            });
+            return true;
+        }
+    ),
     stopAudioRecording: vi.fn(),
     cacheAudioBuffer: vi.fn(),
     refreshSidechainAlignment: vi.fn(),

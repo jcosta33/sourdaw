@@ -97,6 +97,8 @@ export type ActiveNoteData = {
     recordingClipId?: string;
     /** Owner-bound onset admission, retained through queued and worker work. */
     recordingAdmissionId?: string;
+    /** This onset sounded live outside its owning punch and cannot enter legacy recording later. */
+    recordingExcluded?: boolean;
     /** Scheduler pass traversed at onset, captured with the admitted beat before queued work. */
     recordingPassIndex?: number;
     /** Instrument owner resolved at note-on; source-track changes must not retarget release. */

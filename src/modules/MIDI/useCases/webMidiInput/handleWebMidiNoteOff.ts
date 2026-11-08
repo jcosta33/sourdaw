@@ -383,16 +383,19 @@ export const handleWebMidiNoteOff = inject(midiMessageHandlerDependencies)((deps
             }
         }
 
+        if (noteData.recordingExcluded) {
+            return;
+        }
         if (noteData.recordingAdmissionId) {
             const admission = getRecordingMidiAdmission(noteData.recordingAdmissionId);
             if (!admission || !isRecordingOnArmedTrack(deps, targetTrackId)) {
                 return;
             }
-            deps.appendRecordedMidiNote({
-                clipId: admission.clipId,
-                note: createRecordedAdmittedMidiNote(admission, eventTime),
-            });
+            const recorded = createRecordedAdmittedMidiNote(admission, eventTime);
             retireRecordingMidiAdmission(admission.id);
+            if (recorded) {
+                deps.appendRecordedMidiNote({ clipId: admission.clipId, note: recorded });
+            }
             return;
         }
 
@@ -403,7 +406,10 @@ export const handleWebMidiNoteOff = inject(midiMessageHandlerDependencies)((deps
             trackId: targetTrackId,
             admittedBeat: noteData.startBeat,
         });
-        if (!placement) {
+        if (
+            !placement ||
+            recordingMidiAdmissionPort.isRecordingMidiInputExcluded(noteData.startTime, targetTrackId, placement.clipId)
+        ) {
             return;
         }
         const {
