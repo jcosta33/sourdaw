@@ -1,0 +1,20 @@
+src/modules/AudioEngine/worklets/__tests__/crumbsProcessorShippedSampleAudio.integration.spec.ts
+  s_1052c2a2231ded::t_d138f5a305ec3b 1-15,17-101,107-123,127-132
+  s_1052c2a2231ded::t_c474199b93167c 16,102-106,124-126
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7531f45af3aab943b74fdf25d24ffdf7ed6edae5",
+  "prompts": {},
+  "sessions": {
+    "s_1052c2a2231ded": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b349-24b6-7622-8534-09f171c780d5",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
