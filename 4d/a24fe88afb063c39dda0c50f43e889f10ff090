@@ -1,0 +1,25 @@
+src/modules/ContentBrowser/presentations/views/__tests__/Sidebar.spec.tsx
+  s_02903fa7eb13ea::t_0127c6a2038e04 125
+  s_02903fa7eb13ea::t_8ddd7db93ca34a 8-10
+  s_02903fa7eb13ea::t_217fab8941e78c 283-290
+  s_02903fa7eb13ea::t_4644198184bfe5 102,107-117
+  s_02903fa7eb13ea::t_ccf76eeefcfbce 118
+  s_02903fa7eb13ea::t_b1937acf31e899 291-293
+  s_02903fa7eb13ea::t_c355fd9354d3d5 294
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4da24fe88afb063c39dda0c50f43e889f10ff090",
+  "prompts": {},
+  "sessions": {
+    "s_02903fa7eb13ea": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "09ad8230-37d3-4b52-835c-e4a4f9483b9c",
+        "model": "composer-2.5-fast"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
