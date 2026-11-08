@@ -66,6 +66,6 @@ from the `state-and-write-paths` skill.
    the live clip still protects it proves no release, and a readiness wait cannot repair an evicted source.
    A published imported buffer ID requires PCM on its first material read: decode caches synchronously before
    returning. #6342 wrapped the Audio-to-MIDI evidence read in a retry, accepting a one-shot source miss as
-   transient; its public review attacked permanent absence and retry deadlines. Inject one null read result for
+   transient; its public review reported permanent-absence/deadline attacks. Inject one null read result for
    a real cached buffer, then permit subsequent actual reads: the case must fail at that first missing source.
    Permanent absence alone cannot expose this masking. Historical private prompts and reviewer tiers are unknown.

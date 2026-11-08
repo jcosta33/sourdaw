@@ -24,7 +24,7 @@ Report a probe that cannot run with its exact mutation, named check and limitati
    retry still hid a first-read PCM miss even though permanent absence failed with the right message. Return null
    once at the actual cached-buffer read while retaining the real PCM, then allow later reads: the case must fail
    on the one-shot miss, with hydration and document-witness refusals also remaining strict. Its public review
-   tested permanent absence/deadlines; historical private prompts and reviewer tiers are unknown.
+   reported permanent-absence/deadline attacks; historical private prompts and reviewer tiers are unknown.
    (#5661, #5874, #5363, #5849, #5520, #5613, #5517, #3318, #5464)
 
 2. **The case's deadline pays for work it does not observe.**
