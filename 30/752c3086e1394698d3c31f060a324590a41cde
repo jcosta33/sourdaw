@@ -1,0 +1,22 @@
+src/modules/Transport/useCases/playheadScheduler/__tests__/audioLoopEndAdmission.integration.spec.ts
+  s_1052c2a2231ded::t_9b10726c0fc5e4 1,8,12-27,42-45,103-104,110-112,121-135,145-146,151-153,157-167,170-180,187-189,196,206,218,220,239,241-242,244-245
+  s_1052c2a2231ded::t_3418bcfc2a89cb 28-41,147-150,190-195,232-236
+src/modules/MixerConsole/presentations/views/__tests__/mixerSnapshotTruth.integration.spec.tsx
+  s_1052c2a2231ded::t_9b10726c0fc5e4 113,146-148
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "30752c3086e1394698d3c31f060a324590a41cde",
+  "prompts": {},
+  "sessions": {
+    "s_1052c2a2231ded": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b349-24b6-7622-8534-09f171c780d5",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
