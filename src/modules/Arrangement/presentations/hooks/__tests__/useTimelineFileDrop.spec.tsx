@@ -1587,6 +1587,11 @@ describe('useTimelineFileDrop', () => {
             mocks.executeAppActionBatch.mockResolvedValue({ status, actions: [] });
             await dispatchRawLibraryDrop();
             const transfer = mocks.getAssetTransfer();
+            const stagedFile = transfer.stageLocalAsset.mock.calls[0]?.[0];
+            if (!(stagedFile instanceof File)) {
+                throw new TypeError('Expected the staged original raw library File');
+            }
+            expect(new TextDecoder().decode(await stagedFile.arrayBuffer())).toBe('original raw library bytes');
             expect(transfer.stageLocalAsset).toHaveBeenCalledExactlyOnceWith(file, 'kick.wav');
             expect(transfer.promoteStagedAsset).toHaveBeenCalledExactlyOnceWith('lease');
             expect(mocks.rememberLibraryAssetMapping).toHaveBeenCalledExactlyOnceWith({
