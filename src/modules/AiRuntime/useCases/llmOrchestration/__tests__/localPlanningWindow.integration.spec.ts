@@ -22,9 +22,6 @@ import { llmStatusStore } from '../../../stores/llmStatusStore';
 import { budgetLocalPlanningRequest } from '../../../transformers/budgetLocalPlanningRequest';
 import { estimateConservativePromptTokens } from '../../../transformers/estimateConservativePromptTokens';
 import { serializeWebLlmToolPlanningPrompt } from '../../../transformers/serializeWebLlmToolPlanningPrompt';
-import { agentRunLifecycle } from '../../agentRunLifecycle';
-import { getProjectContext } from '../../getProjectContext';
-import { parsePromptToActions } from '../../parsePromptToActions';
 import { advertisedAnswerIntake, structuralAnswerArguments } from '../../__tests__/answerWireFixture';
 import {
     configureMetricGoalProject,
@@ -35,8 +32,11 @@ import {
 import { createPlanningProject, fixtureUuid } from '../../__tests__/planningProjectFixture';
 import { decodeReceiptContext, readReceiptSummary } from '../../__tests__/receiptContextFixture';
 import { createFullThreadContext, threadRequest } from '../../__tests__/threadContextFixture';
-import { type ProviderAttemptAdmission } from '../inference';
+import { agentRunLifecycle } from '../../agentRunLifecycle';
+import { getProjectContext } from '../../getProjectContext';
+import { parsePromptToActions } from '../../parsePromptToActions';
 import { getBackendChain } from '../backendResolution/getBackendChain';
+import { type ProviderAttemptAdmission } from '../inference';
 
 registerDeviceEnginePorts();
 
@@ -60,6 +60,83 @@ const grants = {
 };
 const scope = { targetIds: [], targetRanges: [], protectedTargetIds: [], protectedRanges: [] };
 const bufferId = `buffer-${fixtureUuid('local-window-onsets')}`;
+type PlanningInput = Parameters<typeof parsePromptToActions>[0];
+
+function createResumedPlanningRun(prompt: string, projectRevision: string) {
+    const resume = {
+        sourceRunId: `agent-run-${fixtureUuid('earlier-decision')}`,
+        decisionId: 'decision-vocal-width',
+        selectedAlternativeId: 'vocal-width',
+        selectedAlternative: {
+            id: 'vocal-width',
+            label: 'Preserve vocal edits and widen only the chorus',
+            changesAuthority: false,
+        },
+        proposalIdentity: 'proposal-vocal-width',
+        capabilitySchemaIdentity: 'catalog-v1',
+        revision: projectRevision,
+        scope,
+        grants,
+        budgets: { limits: { localAnalysis: 100 }, consumed: { localAnalysis: 1 } },
+    };
+    agentRunLifecycle.create({
+        runId,
+        request: prompt,
+        mode: 'plan',
+        createdRevision: projectRevision,
+        scope,
+        grants,
+        resume,
+    });
+    return resume;
+}
+
+function assertResumedPlanningContext(input: {
+    prompt: string;
+    projectRevision: string;
+    resume: ReturnType<typeof createResumedPlanningRun>;
+    thread: ReturnType<typeof createFullThreadContext>;
+}): void {
+    for (const [system, user] of completion.mock.calls) {
+        expect(system).toContain(JSON.stringify(input.resume));
+        expect(user).toContain(input.prompt);
+        expect(user).toContain(JSON.stringify(grants));
+        expect(user).toContain('metronomeVolumeDb');
+        expect(user).toContain(groupId);
+        expect(user).toContain(threadRequest(input.thread.requests.length));
+        expect(user).toContain(input.thread.pendingProposal!.confirmationId);
+        expect(user).toContain('Keep the master below -1 dBTP.');
+    }
+    const run = agentRunLifecycle.get(runId)!;
+    const lastMessage = completion.mock.calls.at(-1)![1];
+    const threadJson = lastMessage.split('thread_context:\n')[1].split('\n\n')[0];
+    const sentThread = JSON.parse(threadJson);
+    const localEvidence = {
+        requestCount: sentThread.requests.length,
+        omittedRequestCount: sentThread.omittedRequestCount,
+        pendingProposal: sentThread.pendingProposal !== null,
+        pendingCommandCount: sentThread.pendingProposal.commands.length,
+        omittedPendingCommandCount: sentThread.pendingProposal.omittedCommandCount,
+        lastCommit: sentThread.lastCommit !== null,
+        commitStanding: sentThread.lastCommit.standing,
+        committedCommandCount: sentThread.lastCommit.commands.length,
+        omittedCommittedCommandCount: sentThread.lastCommit.omittedCommandCount,
+        measuredDeltaCount: sentThread.lastCommit.measuredDeltas.length,
+        omittedMeasuredDeltaCount: sentThread.lastCommit.omittedMeasuredDeltaCount,
+        bytes: new TextEncoder().encode(`thread_context:\n${threadJson}`).byteLength,
+    };
+    expect(run.contextEvidence).toMatchObject({
+        revision: input.projectRevision,
+        grants,
+        budgets: run.budgets,
+        included: { trackCount: 5, receiptCount: 1 },
+    });
+    expect(run.contextEvidence!.included.thread!.local).toEqual(localEvidence);
+    const authority = JSON.parse(lastMessage.split('run_authority:\n')[1].split('\n\n')[0]);
+    expect(authority).toEqual({ grants: run.grants, budgets: run.budgets });
+    expect(run.grants.allowedOperationPrefixes).not.toHaveLength(0);
+    expect(Object.keys(run.budgets.limits)).not.toHaveLength(0);
+}
 
 function toolsFrom(attempt: ProviderAttemptAdmission) {
     return (attempt.request.tools ?? []).map((tool) => ({ type: 'function' as const, function: tool }));
@@ -146,7 +223,9 @@ beforeEach(() => {
         label: 'production local planning window',
         sections: (seed.sections ?? []).map((section) => ({ ...section, color: '#4a90d9' })),
         tracks: seed.tracks.map((track) => {
-            if (track.kind !== 'audio' && track.kind !== 'midi') throw new Error('Expected a source track.');
+            if (track.kind !== 'audio' && track.kind !== 'midi') {
+                throw new Error('Expected a source track.');
+            }
             return {
                 ...createTrack({ id: track.id, name: track.name, kind: track.kind }),
                 clips: track.clips.map((clip) => {
@@ -157,8 +236,9 @@ beforeEach(() => {
                         clip.color === undefined ||
                         clip.locked === undefined ||
                         clip.muted === undefined
-                    )
+                    ) {
                         throw new Error('Expected a complete planning clip fixture.');
+                    }
                     return {
                         ...clip,
                         trackId: track.id,
@@ -171,8 +251,9 @@ beforeEach(() => {
                     };
                 }),
                 devices: track.devices.map((device) => {
-                    if (device.name === undefined || device.parameters === undefined)
+                    if (device.name === undefined || device.parameters === undefined) {
                         throw new Error('Expected a complete planning device fixture.');
+                    }
                     return {
                         id: device.id,
                         name: device.name,
@@ -187,8 +268,9 @@ beforeEach(() => {
         }),
     });
     const project = projectStore.value;
-    if (!project || seed.productionBrief?.schemaVersion !== 1)
+    if (!project || seed.productionBrief?.schemaVersion !== 1) {
         throw new Error('Expected the configured project and brief.');
+    }
     projectStore.set({
         ...structuredClone(defaultProjectStoreState),
         projectId: fixtureUuid('local-window-project'),
@@ -220,36 +302,15 @@ it('fits the production planning turn with live authority, resume, receipts and 
     expect(querySemanticProject({ type: 'project-summary' }).items).not.toHaveLength(0);
     const projectRevision = captureProjectRevision();
     const thread = createFullThreadContext();
-    const resume = {
-        sourceRunId: `agent-run-${fixtureUuid('earlier-decision')}`,
-        decisionId: 'decision-vocal-width',
-        selectedAlternativeId: 'vocal-width',
-        selectedAlternative: {
-            id: 'vocal-width',
-            label: 'Preserve vocal edits and widen only the chorus',
-            changesAuthority: false,
-        },
-        proposalIdentity: 'proposal-vocal-width',
-        capabilitySchemaIdentity: 'catalog-v1',
-        revision: projectRevision,
-        scope,
-        grants,
-        budgets: { limits: { localAnalysis: 100 }, consumed: { localAnalysis: 1 } },
-    };
-    agentRunLifecycle.create({
-        runId,
-        request: prompt,
-        mode: 'plan',
-        createdRevision: projectRevision,
-        scope,
-        grants,
-        resume,
-    });
+    const resume = createResumedPlanningRun(prompt, projectRevision);
     const attempts: ProviderAttemptAdmission[] = [];
     completion.mockImplementation(async (system: string, user: string) => {
-        if (completion.mock.calls.length === 1) return JSON.stringify(literalMetricIntakeTurn(user, system));
-        if (completion.mock.calls.length === 2)
+        if (completion.mock.calls.length === 1) {
+            return JSON.stringify(literalMetricIntakeTurn(user, system));
+        }
+        if (completion.mock.calls.length === 2) {
             return JSON.stringify([{ id: 'query', name: 'project.query', arguments: { type: 'project-summary' } }]);
+        }
         return JSON.stringify(clarification);
     });
     const result = await parsePromptToActions({
@@ -267,17 +328,7 @@ it('fits the production planning turn with live authority, resume, receipts and 
     expect(completion).toHaveBeenCalledTimes(3);
     expect(attempts).toHaveLength(3);
     assertSentWindow(attempts, 'resumed-planning');
-    for (const [system, user] of completion.mock.calls) {
-        expect(system).toContain(JSON.stringify(resume));
-        expect(user).toContain(prompt);
-        expect(user).toContain('run_authority:');
-        expect(user).toContain(JSON.stringify(grants));
-        expect(user).toContain('metronomeVolumeDb');
-        expect(user).toContain(groupId);
-        expect(user).toContain(threadRequest(thread.requests.length));
-        expect(user).toContain(thread.pendingProposal!.confirmationId);
-        expect(user).toContain('Keep the master below -1 dBTP.');
-    }
+    assertResumedPlanningContext({ prompt, projectRevision, resume, thread });
     const summary = readReceiptSummary(completion.mock.calls[2]![1]);
     expect(summary.truncated).toBe(false);
     expect(decodeReceiptContext(summary.value)).toEqual(result.applicationToolReceipts);
@@ -286,42 +337,26 @@ it('fits the production planning turn with live authority, resume, receipts and 
             expect.objectContaining({ callId: 'query', toolName: 'project.query', status: 'success' }),
         ])
     );
-    const run = agentRunLifecycle.get(runId)!;
-    const lastMessage = completion.mock.calls[2]![1];
-    const threadSection = `thread_context:\n${lastMessage.split('thread_context:\n')[1].split('\n\n')[0]}`;
-    expect(run.contextEvidence).toMatchObject({
-        revision: projectRevision,
-        grants,
-        budgets: run.budgets,
-        included: {
-            trackCount: 5,
-            receiptCount: 1,
-            thread: { local: { bytes: new TextEncoder().encode(threadSection).byteLength } },
-        },
-    });
-    const authority = JSON.parse(lastMessage.split('run_authority:\n')[1].split('\n\n')[0]);
-    expect(authority).toEqual({ grants: run.grants, budgets: run.budgets });
     expect(context.tracks).toHaveLength(5);
     expect(context.sections).toHaveLength(5);
     expect(trackStore.value!.tracks).toHaveLength(5);
 });
 
-it('keeps a discovered 64-onset receipt on the real planning route with its advertised tool', async () => {
+it('fits a discovered 64-onset receipt with live authority, resume and a full bounded thread', async () => {
     const state = trackStore.value!;
     const vocal = state.tracks[2]!;
     const clipId = vocal.clips[0]!.id;
     trackStore.set({
         ...state,
-        tracks: state.tracks.map((track) =>
-            track.id !== vocal.id
-                ? track
-                : {
-                      ...track,
-                      clips: track.clips.map((clip) =>
-                          clip.id !== clipId ? clip : { ...clip, audioBufferId: bufferId }
-                      ),
-                  }
-        ),
+        tracks: state.tracks.map((track) => {
+            if (track.id !== vocal.id) {
+                return track;
+            }
+            return {
+                ...track,
+                clips: track.clips.map((clip) => (clip.id !== clipId ? clip : { ...clip, audioBufferId: bufferId })),
+            };
+        }),
     });
     // The OS worker is the I/O seam; source selection, revision checks, paging and receipts stay real.
     const hits = Array.from({ length: 65 }, (_, index) => ({
@@ -343,11 +378,17 @@ it('keeps a discovered 64-onset receipt on the real planning route with its adve
         .spyOn(audioBufferCache, 'get')
         .mockImplementation((id) => (id === bufferId ? source : undefined));
     flushAutomergeStorageWrites();
+    const prompt = 'Find source transients on the lead vocal before proposing edits.';
+    const projectRevision = captureProjectRevision();
+    const thread = createFullThreadContext();
+    const resume = createResumedPlanningRun(prompt, projectRevision);
     const attempts: ProviderAttemptAdmission[] = [];
     completion.mockImplementation(async (system: string, user: string) => {
         const turn = completion.mock.calls.length;
-        if (turn === 1) return JSON.stringify(literalMetricIntakeTurn(user, system));
-        if (turn === 2)
+        if (turn === 1) {
+            return JSON.stringify(literalMetricIntakeTurn(user, system));
+        }
+        if (turn === 2) {
             return JSON.stringify([
                 {
                     id: 'discover',
@@ -355,15 +396,22 @@ it('keeps a discovered 64-onset receipt on the real planning route with its adve
                     arguments: { category: 'analysis', names: ['analysis.detectTransients'] },
                 },
             ]);
-        if (turn === 3)
+        }
+        if (turn === 3) {
             return JSON.stringify([{ id: 'onsets', name: 'analysis.detectTransients', arguments: { clipId } }]);
+        }
         return JSON.stringify(clarification);
     });
     const result = await parsePromptToActions({
-        prompt: 'Find source transients on the lead vocal before proposing edits.',
+        prompt,
         context: getProjectContext(),
-        projectRevision: captureProjectRevision(),
-        thread: createFullThreadContext(),
+        projectRevision,
+        thread,
+        streamIdentity: {
+            runId,
+            requestId: `request-${fixtureUuid('local-window-onsets')}`,
+            cancellationGeneration: 0,
+        },
         onProviderAttempt: (attempt) => {
             attempts.push(attempt);
             return { status: 'admitted' };
@@ -372,7 +420,8 @@ it('keeps a discovered 64-onset receipt on the real planning route with its adve
     });
     expect(result.rejectionReason, JSON.stringify(result)).toBeUndefined();
     expect(attempts).toHaveLength(4);
-    assertSentWindow(attempts, 'planning-discovered-onsets');
+    assertSentWindow(attempts, 'resumed-planning-discovered-onsets');
+    assertResumedPlanningContext({ prompt, projectRevision, resume, thread });
     expect(result.applicationToolReceipts).toEqual(
         expect.arrayContaining([expect.objectContaining({ callId: 'onsets', status: 'success' })])
     );
@@ -408,22 +457,28 @@ it.each([false, true])('fits answer entry, intake and answer projections: Explai
     const attempts: ProviderAttemptAdmission[] = [];
     completion.mockImplementation(async (system: string) => {
         const turn = completion.mock.calls.length;
-        if (!explain && turn === 1)
+        if (!explain && turn === 1) {
             return JSON.stringify([{ id: 'enter-answer', name: 'answer.respond', arguments: {} }]);
-        if (turn === (explain ? 1 : 2)) return JSON.stringify([advertisedAnswerIntake(system)]);
+        }
+        if (turn === (explain ? 1 : 2)) {
+            return JSON.stringify([advertisedAnswerIntake(system)]);
+        }
         return JSON.stringify([{ id: 'answer', name: 'answer.respond', arguments: structuralAnswerArguments }]);
     });
-    const result = await parsePromptToActions({
+    const input: PlanningInput = {
         prompt: 'Describe the project structure.',
         context: getProjectContext(),
         projectRevision: captureProjectRevision(),
         thread: createFullThreadContext(),
-        ...(explain ? { profile: 'readonly-answer' as const } : {}),
         onProviderAttempt: (attempt) => {
             attempts.push(attempt);
             return { status: 'admitted' };
         },
-    });
+    };
+    if (explain) {
+        input.profile = 'readonly-answer';
+    }
+    const result = await parsePromptToActions(input);
     expect(result.rejectionReason, JSON.stringify(result)).toBeUndefined();
     expect(result.planningOutcome).toMatchObject({ kind: 'answer' });
     expect(result.actions).toEqual([]);
@@ -439,7 +494,9 @@ it.each([false, true])('fits answer entry, intake and answer projections: Explai
     expect(names.at(-1)).toContain('answer.respond');
     expect(names.at(-1)).not.toContain('selectCreativeInterpretation');
     expect(names.at(-1)).not.toContain('command.batch.propose');
-    if (explain) expect(attempts.every((attempt) => attempt.request.limits.maxOutputTokens === 2048)).toBe(true);
+    if (explain) {
+        expect(attempts.every((attempt) => attempt.request.limits.maxOutputTokens === 2048)).toBe(true);
+    }
 });
 
 it.each(['intake', 'answer', 'Explain'] as const)('refuses an unadvertised proposal in the %s phase', async (phase) => {
@@ -448,9 +505,12 @@ it.each(['intake', 'answer', 'Explain'] as const)('refuses an unadvertised propo
     const tracks = structuredClone(trackStore.value);
     completion.mockImplementation(async (system: string) => {
         const turn = completion.mock.calls.length;
-        if (phase !== 'Explain' && turn === 1)
+        if (phase !== 'Explain' && turn === 1) {
             return JSON.stringify([{ id: 'enter-answer', name: 'answer.respond', arguments: {} }]);
-        if (phase === 'answer' && turn === 2) return JSON.stringify([advertisedAnswerIntake(system)]);
+        }
+        if (phase === 'answer' && turn === 2) {
+            return JSON.stringify([advertisedAnswerIntake(system)]);
+        }
         return JSON.stringify([
             {
                 id: 'forbidden-proposal',
@@ -459,16 +519,19 @@ it.each(['intake', 'answer', 'Explain'] as const)('refuses an unadvertised propo
             },
         ]);
     });
-    const result = await parsePromptToActions({
+    const input: PlanningInput = {
         prompt: 'Describe the project structure.',
         context: getProjectContext(),
         projectRevision,
-        ...(phase === 'Explain' ? { profile: 'readonly-answer' as const } : {}),
         onProviderAttempt: (attempt) => {
             attempts.push(attempt);
             return { status: 'admitted' };
         },
-    });
+    };
+    if (phase === 'Explain') {
+        input.profile = 'readonly-answer';
+    }
+    const result = await parsePromptToActions(input);
     expect(result.rejectionReason).toContain('not advertised');
     expect(result.actions).toEqual([]);
     expect(result.requiresConfirmation).toBe(false);
@@ -494,11 +557,12 @@ it('carries real workflow capability data for ordinary whole-project local plann
     });
     flushAutomergeStorageWrites();
     const attempts: ProviderAttemptAdmission[] = [];
-    completion.mockImplementation(async (system: string, user: string) =>
-        completion.mock.calls.length === 1
-            ? JSON.stringify(literalMetricIntakeTurn(user, system))
-            : JSON.stringify(clarification)
-    );
+    completion.mockImplementation(async (system: string, user: string) => {
+        if (completion.mock.calls.length === 1) {
+            return JSON.stringify(literalMetricIntakeTurn(user, system));
+        }
+        return JSON.stringify(clarification);
+    });
     const result = await parsePromptToActions({
         prompt: 'Help me improve the whole project.',
         context: getProjectContext(),
