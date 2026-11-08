@@ -1,0 +1,19 @@
+src/modules/Transport/useCases/playheadScheduler/__tests__/audioLoopEndAdmission.integration.spec.ts
+  s_1052c2a2231ded::t_2e8d2b862562be 1-209
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "528b6373e0d641e6cbd2bab786f88ae6bfea4326",
+  "prompts": {},
+  "sessions": {
+    "s_1052c2a2231ded": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b349-24b6-7622-8534-09f171c780d5",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
