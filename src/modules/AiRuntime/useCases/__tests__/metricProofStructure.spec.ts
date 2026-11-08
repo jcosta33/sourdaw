@@ -2,8 +2,8 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import { type MeasuredPreview } from '../../models/MeasuredPreview';
 
-import { metricGuardFixture } from './metricGuardFixture';
 import { resetMetricGoalProject } from './metricGoalWorkflowFixture';
+import { metricGuardFixture } from './metricGuardFixture';
 
 afterEach(resetMetricGoalProject);
 
@@ -16,17 +16,17 @@ describe('metric proof structure', () => {
             const proof = f.state.proofs[0]!;
             const provenance = proof.preview.provenance!;
             const artifacts = provenance.targets[0]!;
-            const changedArtifacts =
-                defect === 'baseline route'
-                    ? { ...artifacts, baseline: { ...artifacts.baseline, route: 'mixdown' as const } }
-                    : defect === 'preview route'
-                      ? { ...artifacts, preview: { ...artifacts.preview, route: 'mixdown' as const } }
-                      : artifacts;
+            let changedArtifacts = artifacts;
+            if (defect === 'baseline route') {
+                changedArtifacts = { ...artifacts, baseline: { ...artifacts.baseline, route: 'mixdown' } };
+            } else if (defect === 'preview route') {
+                changedArtifacts = { ...artifacts, preview: { ...artifacts.preview, route: 'mixdown' } };
+            }
             const targets = proof.preview.targets;
-            const provenanceTargets =
-                defect === 'missing provenance'
-                    ? [{ ...artifacts, targetId: 'other' }, provenance.targets[1]!]
-                    : [changedArtifacts, provenance.targets[1]!];
+            let provenanceTargets = [changedArtifacts, provenance.targets[1]!];
+            if (defect === 'missing provenance') {
+                provenanceTargets = [{ ...artifacts, targetId: 'other' }, provenance.targets[1]!];
+            }
             const state = f.bind({
                 ...f.state,
                 proofs: [

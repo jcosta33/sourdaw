@@ -97,7 +97,9 @@ export function metricGuardFixture() {
             ],
         },
     });
-    if (opposed.status !== 'admitted') throw new Error(opposed.reason);
+    if (opposed.status !== 'admitted') {
+        throw new Error(opposed.reason);
+    }
     const opposedOtherAxis = admitMetricIntent({
         catalog,
         creativeAuthority: null,
@@ -119,9 +121,13 @@ export function metricGuardFixture() {
             ],
         },
     });
-    if (opposedOtherAxis.status !== 'admitted') throw new Error(opposedOtherAxis.reason);
+    if (opposedOtherAxis.status !== 'admitted') {
+        throw new Error(opposedOtherAxis.reason);
+    }
     const masterScope = catalog.scopes.find((entry) => entry.kind === 'master');
-    if (!masterScope) throw new Error('Expected master scope');
+    if (!masterScope) {
+        throw new Error('Expected master scope');
+    }
     const master = admitMetricIntent({
         catalog,
         creativeAuthority: null,
@@ -143,7 +149,9 @@ export function metricGuardFixture() {
             ],
         },
     });
-    if (master.status !== 'admitted') throw new Error(master.reason);
+    if (master.status !== 'admitted') {
+        throw new Error(master.reason);
+    }
     const recipeObjective = catalog.objectives.find((entry) =>
         entry.goals.some(
             (goal) =>
@@ -153,7 +161,9 @@ export function metricGuardFixture() {
                 goal.relation === 'decrease'
         )
     );
-    if (!recipeObjective) throw new Error('Expected published Bass warm criterion');
+    if (!recipeObjective) {
+        throw new Error('Expected published Bass warm criterion');
+    }
     const recipe = admitMetricIntent({
         catalog,
         creativeAuthority: null,
@@ -173,7 +183,9 @@ export function metricGuardFixture() {
             ],
         },
     });
-    if (recipe.status !== 'admitted') throw new Error(recipe.reason);
+    if (recipe.status !== 'admitted') {
+        throw new Error(recipe.reason);
+    }
     const commandBatch = compilePlannedActionCommandBatch({
         actions: [
             { type: 'setTrackGain', payload: { trackId: 'bass', gain: 0.8, expectedGain: 1 } },
@@ -188,7 +200,9 @@ export function metricGuardFixture() {
         runId: 'guard',
     }).commandBatch;
     const parsed = parseVersionedCommandBatchEnvelope(commandBatch.serialized, commandBatch.authority);
-    if (parsed.status !== 'valid') throw new Error(parsed.reason);
+    if (parsed.status !== 'valid') {
+        throw new Error(parsed.reason);
+    }
     const initial: MetricGoalState = {
         schemaVersion: 1,
         authorities: [admitted.authority],
@@ -204,7 +218,9 @@ export function metricGuardFixture() {
         binding: null,
     };
     const bound = bindMetricGoalsToBatch({ commandBatch, state: initial });
-    if (!bound.binding) throw new Error('Expected binding');
+    if (!bound.binding) {
+        throw new Error('Expected binding');
+    }
     const metric = (value: number) => ({
         status: 'measured' as const,
         metricVersion: 1,
@@ -245,7 +261,9 @@ export function metricGuardFixture() {
     function bind(value: MetricGoalState) {
         const rebound = bindMetricGoalsToBatch({ commandBatch, state: value });
         const decoded = metricGoalStateCodec(JSON.stringify(rebound));
-        if (!decoded) throw new Error('Codec refused fixture');
+        if (!decoded) {
+            throw new Error('Codec refused fixture');
+        }
         return decoded;
     }
     function evaluate(value: MetricGoalState) {

@@ -3,10 +3,10 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { createTrack } from '#/modules/Arrangement/useCases';
 import { registerHandlerMap } from '#/modules/Command/stores';
+import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
 import { defaultProjectStoreState } from '#/modules/Project/stores';
 import { getProjectHandlers } from '#/modules/Project/useCases';
 import { getTransportHandlers } from '#/modules/Transport/useCases';
-import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
 import { type AppAction } from '#/utils/handlerContract';
 
 import { admitPlanningInterpretation } from '../admitPlanningInterpretation';
@@ -58,7 +58,9 @@ function evaluate(prompt: string, action: AppAction, literal = false) {
     const metric = prepareMetricIntentCatalog({ prompt, answer });
     const target = creative.targets.find((entry) => entry.objectIds.includes('drums'));
     const dimension = creative.dimensions.find((entry) => entry.dimension === 'arrangement');
-    if (!target || !dimension) throw new Error('Expected published target and arrangement dimension');
+    if (!target || !dimension) {
+        throw new Error('Expected published target and arrangement dimension');
+    }
     const admitted = admitPlanningInterpretation({
         creative,
         answer,
@@ -86,8 +88,9 @@ function evaluate(prompt: string, action: AppAction, literal = false) {
         admitted.kind !== 'creative' ||
         !('metricAuthority' in admitted) ||
         !admitted.metricAuthority
-    )
+    ) {
         throw new Error('Expected genuine non-acoustic intake');
+    }
     const commandBatch = compilePlannedActionCommandBatch({
         actions: [action],
         actionLabels: [action.type],
@@ -98,23 +101,26 @@ function evaluate(prompt: string, action: AppAction, literal = false) {
         projectRevision: revision,
         runId: 'clip-guard',
     }).commandBatch;
-    const state = literal
-        ? metricGoalStateCodec(configuredLiteralMetricState(commandBatch))
-        : metricGoalStateCodec(
-              JSON.stringify(
-                  bindMetricGoalsToBatch({
-                      commandBatch,
-                      state: {
-                          schemaVersion: 1,
-                          authorities: [admitted.metricAuthority],
-                          steps: [],
-                          proofs: [],
-                          binding: null,
-                      },
-                  })
-              )
-          );
-    if (!state) throw new Error('Codec refused bound state');
+    let state = metricGoalStateCodec(
+        JSON.stringify(
+            bindMetricGoalsToBatch({
+                commandBatch,
+                state: {
+                    schemaVersion: 1,
+                    authorities: [admitted.metricAuthority],
+                    steps: [],
+                    proofs: [],
+                    binding: null,
+                },
+            })
+        )
+    );
+    if (literal) {
+        state = metricGoalStateCodec(configuredLiteralMetricState(commandBatch));
+    }
+    if (!state) {
+        throw new Error('Codec refused bound state');
+    }
     return evaluateMetricGoalAdmission({ state, commandBatch, currentRevision: revision });
 }
 
@@ -163,8 +169,9 @@ describe('non-acoustic authority and Command effects', () => {
             admitted.kind !== 'creative' ||
             !('metricAuthority' in admitted) ||
             !admitted.metricAuthority
-        )
+        ) {
             throw new Error('Expected genuine brief admission');
+        }
         const brief = structuredClone(defaultProjectStoreState.productionBrief);
         const action: AppAction = {
             type: 'setProductionBrief',

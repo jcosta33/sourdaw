@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { metricGuardFixture } from './metricGuardFixture';
 import { resetMetricGoalProject } from './metricGoalWorkflowFixture';
+import { metricGuardFixture } from './metricGuardFixture';
 
 afterEach(resetMetricGoalProject);
 
