@@ -741,8 +741,9 @@ describe('real recorder first-frame capture placement', () => {
                             Math.round((started.sourceSeconds + started.durationSeconds) * 48000) - 1
                         ]
                     ).toBe(selection.firstFrame + Math.round(selection.durationSeconds * 48000) - 1);
+                    const previousStopCount = hardware.sourceStops.length;
                     await stopPlayback();
-                    expect(hardware.sourceStops).toContain(hardware.now);
+                    expect(hardware.sourceStops.slice(previousStopCount)).toContain(hardware.now);
                 }
                 if (emptyFinalLap) {
                     expect(finalPass).toBeUndefined();
