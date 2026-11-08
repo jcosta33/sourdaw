@@ -91,3 +91,13 @@ boundaries.
    A committed-error or ambiguous result uses preallocated live copy IDs as witnesses, reports the error and never
    replays the mutation. The introducing helper's completed-press test missed overlap; prior review stances are not
    established by that test.
+
+10. **Default names are planned at the owning write boundary (#6202, `ede18f12ad`).** Its public review named
+    duplicate-name and numbering-spec stances and marked them clean; sequential completed additions missed the
+    overlap. Historical private prompts are unavailable. Hold a real snapshot transaction, start two nameless UI
+    dispatches and observe both admissions before release: distinct committed IDs, complete raw/projected tracks
+    and recorded history names must agree before requiring consecutive names. Undo/Redo/Undo keeps each row's
+    recorded identity and name; explicit names remain verbatim and a peer's higher number never renumbers Redo.
+    The owner opts fresh singleton naming into the post-wait synchronous read/write continuation; reverting that
+    phase must fail the overlap case. Preserve highest-per-kind numbering, compiler and supplied-envelope digests,
+    early admission/runtime captures, isolated materialized observers and authenticated pending-Redo bindings.

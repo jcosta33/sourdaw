@@ -145,6 +145,20 @@ describe('addTrack default names', () => {
         });
         expect(recorded).toEqual(created.map(({ id, name }) => ({ id, name })));
         expect(created.map((track) => track.name)).toEqual(['MIDI 1', 'MIDI 2']);
+
+        const committedTracks = structuredClone(trackStore.value?.tracks ?? []);
+        await undo();
+        expect(trackStore.value?.tracks).toEqual(committedTracks.slice(0, 3));
+        await undo();
+        expect(trackStore.value?.tracks).toEqual(committedTracks.slice(0, 2));
+        await redo();
+        expect(trackStore.value?.tracks).toEqual(committedTracks.slice(0, 3));
+        await redo();
+        expect(trackStore.value?.tracks).toEqual(committedTracks);
+        await undo();
+        expect(trackStore.value?.tracks).toEqual(committedTracks.slice(0, 3));
+        const replayedRaw = getCrdtDoc<{ tracks: Pick<NonNullable<typeof trackStore.value>, 'tracks'> }>('root');
+        expect(replayedRaw?.tracks.tracks).toEqual(trackStore.value?.tracks);
     });
 
     it('continues from the highest default number of the kind, counting a bare label as 1', async () => {
