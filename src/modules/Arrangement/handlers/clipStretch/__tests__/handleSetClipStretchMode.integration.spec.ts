@@ -1,22 +1,31 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
-import { trackStore } from '#/modules/Arrangement/stores';
+import {
+    configureAutomergeStoragePort,
+    flushAutomergeStorageWrites,
+} from '#/infra/store/storage/createAutomergeStorage';
+import { trackStore, type TrackStoreState } from '#/modules/Arrangement/stores';
 import { getArrangementHandlers } from '#/modules/Arrangement/useCases';
 import { clearHandlerRegistry, macroStore, registerHandlerMap } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
+    executeAppAction,
     executeAppActionBatch,
     resetActionReplayAuthority,
     setActionHistoryMetadataPort,
     undo,
 } from '#/modules/Command/useCases';
 import {
+    clearActionHistory,
     createCrdtDoc,
+    getCrdtDoc,
+    markActionHistoryEntryReverted,
+    recordActionHistoryEntry,
     registerCrdtStorageRuntime,
     removeCrdtDoc,
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
+import { type AppAction } from '#/utils/handlerContract';
 
 import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
@@ -77,5 +86,38 @@ describe('handleSetClipStretchMode atomic integration', () => {
         const restored = trackStore.value?.tracks[0]?.clips[0];
         expect(restored).toMatchObject({ startBeat: 2, endBeat: 10, stretchRatio: 1.5 });
         expect(restored && Object.hasOwn(restored, 'stretchMode')).toBe(false);
+    });
+
+    it('enableWarping writes repitch to audio authority and projection, then undo restores both exactly', async () => {
+        setActionHistoryMetadataPort({
+            record: recordActionHistoryEntry,
+            markReverted: markActionHistoryEntryReverted,
+            clear: clearActionHistory,
+        });
+        clearActionHistory();
+        flushAutomergeStorageWrites();
+        const before = structuredClone(trackStore.value);
+        const readRawTracks = () => getCrdtDoc<{ tracks: Pick<TrackStoreState, 'tracks'> }>('root')?.tracks.tracks;
+        const rawBefore = structuredClone(readRawTracks());
+        if (!before || !rawBefore) {
+            throw new Error('Expected the real audio clip project fixture');
+        }
+        expect(before.tracks[0]?.clips[0]).toMatchObject({ type: 'audio', stretchRatio: 1.5 });
+        expect(Object.hasOwn(before.tracks[0]!.clips[0]!, 'stretchMode')).toBe(false);
+        const action = { type: 'enableWarping', payload: { clipId: 'clip-1' } } satisfies AppAction;
+
+        await executeAppAction(action);
+
+        const expected = structuredClone(before);
+        expected.tracks[0]!.clips[0]!.stretchMode = 'repitch';
+        const rawExpected = structuredClone(rawBefore);
+        rawExpected[0]!.clips[0]!.stretchMode = 'repitch';
+        expect(trackStore.value).toStrictEqual(expected);
+        expect(readRawTracks()).toStrictEqual(rawExpected);
+
+        await undo();
+
+        expect(trackStore.value).toStrictEqual(before);
+        expect(readRawTracks()).toStrictEqual(rawBefore);
     });
 });

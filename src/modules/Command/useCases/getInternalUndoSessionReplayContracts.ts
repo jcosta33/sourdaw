@@ -6,6 +6,8 @@ import type { SessionActionContract } from '../stores/undoSessionMirror';
 
 function createInternalReplayContract(
     actionType:
+        | 'discardRecording'
+        | 'restoreRecording'
         | 'discardCreatedTrack'
         | 'discardDuplicatedClip'
         | 'discardDrawnClip'
@@ -36,6 +38,7 @@ function createInternalReplayContract(
             // their neutral Command snapshots. Their owner validators decode
             // the complete shapes without widening executable discovery.
             if (
+                actionType === 'restoreRecording' ||
                 actionType === 'restoreClip' ||
                 actionType === 'restoreTimeOperationState' ||
                 actionType === 'restoreAudioClipStartTrim' ||
@@ -60,6 +63,15 @@ function createInternalReplayContract(
  */
 export function getInternalUndoSessionReplayContracts(): readonly SessionActionContract[] {
     return [
+        {
+            actionType: 'commitRecording',
+            operationVersion: 1,
+            role: 'forward',
+            validateArguments: (payload: unknown) => validateVersionedCommandArguments('commitRecording', payload),
+            validateEntry: (entry) => getHandlerByType('commitRecording')?.validateSessionEntry?.(entry) === true,
+        },
+        createInternalReplayContract('discardRecording', 1, 'optional'),
+        createInternalReplayContract('restoreRecording', 1, 'required'),
         {
             actionType: 'editTempoMap',
             operationVersion: 1,

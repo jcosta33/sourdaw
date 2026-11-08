@@ -316,7 +316,7 @@ export const miscCommands: CallableCommandEntry[] = [
     {
         id: 'enable-warping',
         label: 'Enable Audio Warping',
-        description: 'Enable time-stretch/pitch-shift warping on the selected clip',
+        description: 'Enable repitch on the selected audio clip; pitch follows playback speed',
         category: 'Editing',
         action: () => {
             const clipId = getSelectedClipId();

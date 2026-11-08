@@ -248,7 +248,7 @@ function migrateAutomationLanesToSegments(
 }
 
 function detectSoundRegions(
-    channelData: Float32Array,
+    channels: readonly Float32Array[],
     threshold: number,
     sampleRate: number,
     window: PlayedWindow
@@ -261,10 +261,12 @@ function detectSoundRegions(
     for (let index = window.startSample; index < window.endSample; index += windowSize) {
         let peak = 0;
         const end = Math.min(index + windowSize, window.endSample);
-        for (let jIndex = index; jIndex < end; jIndex++) {
-            const abs = Math.abs(channelData[jIndex]!);
-            if (abs > peak) {
-                peak = abs;
+        for (const channelData of channels) {
+            for (let jIndex = index; jIndex < end; jIndex++) {
+                const abs = Math.abs(channelData[jIndex]!);
+                if (abs > peak) {
+                    peak = abs;
+                }
             }
         }
 
@@ -363,12 +365,12 @@ export function prepareStripSilence({
     }
 
     const thresholdLinear = 10 ** (threshold / 20);
-    const channelData = buffer.getChannelData(0);
-    const playedWindows = resolvePlayedWindows(targetClip, buffer, channelData.length);
+    const channels = Array.from({ length: buffer.numberOfChannels }, (_, channel) => buffer.getChannelData(channel));
+    const playedWindows = resolvePlayedWindows(targetClip, buffer, buffer.length);
     const stretchRatio = consumedStretchFactor(targetClip);
     const regions = playedWindows
         .flatMap((window) =>
-            detectSoundRegions(channelData, thresholdLinear, buffer.sampleRate, window).map((region) =>
+            detectSoundRegions(channels, thresholdLinear, buffer.sampleRate, window).map((region) =>
                 timelineRegion(region, window, buffer.sampleRate, stretchRatio)
             )
         )
