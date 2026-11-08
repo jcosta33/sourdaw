@@ -7,7 +7,7 @@ import { MockAudioBuffer } from '#/helpers/__tests__/audioContext.mock';
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
 import { createControlledLockManager } from '#/infra/testing/createControlledLockManager';
 import { installTransactionalIndexedDb } from '#/infra/testing/installTransactionalIndexedDb';
-import { isDesktopRuntime } from '#/utils/desktopBridge';
+import { isDesktopRuntime } from '#/utils/desktopRuntime';
 
 const SAMPLE_RATE = 44_100;
 const SOURCE_HZ = 220;
@@ -116,7 +116,14 @@ function sourceChannels(): Float32Array<ArrayBuffer>[] {
             let value = 0;
             for (let harmonic = 1; harmonic <= 8; harmonic++) {
                 const phase = (2 * Math.PI * SOURCE_HZ * harmonic * frame) / SAMPLE_RATE;
-                const weight = channel === 0 ? 1 : harmonic % 2 === 0 ? 0.35 : 0.7;
+                let weight: number;
+                if (channel === 0) {
+                    weight = 1;
+                } else if (harmonic % 2 === 0) {
+                    weight = 0.35;
+                } else {
+                    weight = 0.7;
+                }
                 value += (Math.sin(phase + channel * harmonic * 0.31) * weight) / harmonic;
             }
             return value * 0.2;
@@ -238,7 +245,9 @@ describe('Knead committed pitch audio and project authority', () => {
         const channels = sourceChannels();
         const originalSnapshots = channels.map((channel) => channel.slice());
         const original = new AudioBuffer({ length: SAMPLE_RATE, numberOfChannels: 2, sampleRate: SAMPLE_RATE });
-        channels.forEach((channel, index) => original.copyToChannel(channel, index));
+        for (const [index, channel] of channels.entries()) {
+            original.copyToChannel(channel, index);
+        }
         runtime.audio.cacheAudioBuffer({ buffer: original, bufferId: SOURCE_BUFFER_ID });
         publishedBufferIds.add(SOURCE_BUFFER_ID);
         await settlePublishedPcm([SOURCE_BUFFER_ID]);
@@ -321,10 +330,10 @@ describe('Knead committed pitch audio and project authority', () => {
         expect(runtime.kneadStores.kneadStore.value?.contours[CLIP_ID]).toBeUndefined();
         expect(runtime.kneadStores.kneadStore.value?.clips[CLIP_ID]?.blobs).toEqual([]);
         expect(rawClip().kneadState?.blobs).toEqual([]);
-        originalSnapshots.forEach((snapshot, channel) => {
+        for (const [channel, snapshot] of originalSnapshots.entries()) {
             expect(original.getChannelData(channel)).toEqual(snapshot);
             expect(channels[channel]).toEqual(snapshot);
-        });
+        }
 
         await runtime.command.undo();
         expect(rawClip()).toMatchObject({ audioBufferId: SOURCE_BUFFER_ID, fileId: SOURCE_FILE });
@@ -341,9 +350,9 @@ describe('Knead committed pitch audio and project authority', () => {
         const rerendered = expectShiftedPcm(renderedId);
         expect(rerendered).not.toBe(rendered);
         expect(historyDepth()).toBe(before + 1);
-        originalSnapshots.forEach((snapshot, channel) => {
+        for (const [channel, snapshot] of originalSnapshots.entries()) {
             expect(original.getChannelData(channel)).toEqual(snapshot);
-        });
+        }
 
         // Read actual committed IDB records after dropping runtime material;
         // this is a PCM persistence witness, not a project-reopen simulation.
@@ -364,12 +373,12 @@ describe('Knead committed pitch audio and project authority', () => {
         } finally {
             stored.cancel();
         }
-        originalSnapshots.forEach((snapshot, channel) => {
+        for (const [channel, snapshot] of originalSnapshots.entries()) {
             expect(runtime.cache.audioBufferCache.get(SOURCE_BUFFER_ID)?.getChannelData(channel)).toEqual(snapshot);
             expect(runtime.cache.audioBufferCache.get(renderedId)?.getChannelData(channel)).toEqual(
                 shiftedSnapshots[channel]
             );
-        });
+        }
         expect(rawClip().audioBufferId).toBe(renderedId);
     });
 });

@@ -7,7 +7,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { createMockAudioContext } from '#/helpers/__tests__/audioContext.mock';
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
 
-import type { ScoringNodeResult, TunerTelemetry } from '../../engine/ScoringNode';
+import type { ScoringNodeResult, TunerTelemetry } from '../ScoringNode';
 
 // Only the asset-fetch seam is replaced. Both generated bindings and the
 // production processor execute the committed Scoring binary below.
@@ -113,7 +113,7 @@ async function importRuntime() {
     const tunerStores = await import('#/modules/Tuner/stores');
     const audio = await import('../../useCases');
     const engine = await import('../../repositories/createWebAudioEngine');
-    const scoring = await import('../../engine/ScoringNode');
+    const scoring = await import('../ScoringNode');
     return {
         projections,
         arrangement,
@@ -233,8 +233,8 @@ beforeAll(async () => {
     Element.prototype.setPointerCapture = () => {};
     Element.prototype.releasePointerCapture = () => {};
     runtime = await importRuntime();
-    await import('../meteringProcessor');
-    await import('../scoringProcessor');
+    await import('../../worklets/meteringProcessor');
+    await import('../../worklets/scoringProcessor');
     runtime.projections.registerProjectSlotProjections();
     runtime.audio.initEngineDeviceCollaborators();
     setupComplete = true;
