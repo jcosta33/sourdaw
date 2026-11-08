@@ -1,0 +1,26 @@
+scripts/__tests__/viteE2ePersistenceEntry.spec.ts
+  s_977061c47f01dd::t_bd130535b58755 121-122,124-129,257-258
+  s_977061c47f01dd::t_2fbdf4443b31e0 6,12-18,33-59,86-103,105-110,112-116,118-120,130-138,225-228,232-244,246-256,303
+  s_977061c47f01dd::t_b895ec4008c9f1 19-24,27-32,104,139-161,229-230,245
+  s_977061c47f01dd::t_c9a15bbbc5d5b0 4,25-26,60-61,68-85,111,117,162-182,186-194,231
+  s_977061c47f01dd::t_92cbd34ca8b0f1 183-185
+  s_977061c47f01dd::t_25cc2da1eb92bb 207-209
+  s_977061c47f01dd::t_a505009bdc6037 195-206,210-216,220-224
+  s_977061c47f01dd::t_a6d860caf4b80d 62-67,217-219
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "310386c6ac74ac12e2e647d57af325ccce2c9cb3",
+  "prompts": {},
+  "sessions": {
+    "s_977061c47f01dd": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34d-123d-7452-a6e7-60608388b6d7",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
