@@ -101,3 +101,8 @@ boundaries.
     The owner opts fresh singleton naming into the post-wait synchronous read/write continuation; reverting that
     phase must fail the overlap case. Preserve highest-per-kind numbering, compiler and supplied-envelope digests,
     early admission/runtime captures, isolated materialized observers and authenticated pending-Redo bindings.
+    Addition-only prefixes also miss renamed, removed and restored name sets. Project identity/kind/name in order:
+    actual captured restore rows, exact non-master removals with children surviving, and anonymous raw additions
+    kept separately without minted IDs. Prefer canonical prepared prefixes and preserve supplied names. Require
+    real remove/rename-then-add batches to agree in raw tracks, projection and recorded names through Undo/Redo/Undo;
+    restoring the append-only planner must fail. Singleton-only operations remain rejected in multi-action batches.

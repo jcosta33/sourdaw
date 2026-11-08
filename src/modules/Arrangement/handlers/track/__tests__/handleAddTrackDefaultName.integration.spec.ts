@@ -28,6 +28,7 @@ import {
     resetCrdtProjectAuthority,
     transactSnapshot,
 } from '#/modules/CrdtDocument/useCases';
+import { type AppAction } from '#/utils/handlerContract';
 
 // Real production handlers, dispatch, CRDT authority and undo history: a
 // nameless addTrack is named by the track owner, once, before it is recorded.
@@ -67,8 +68,8 @@ describe('addTrack default names', () => {
         resetActionReplayAuthority();
         setActionHistoryMetadataPort(noActionHistoryMetadataPort);
         seedTracks([
-            createTrack({ id: 't-audio', name: 'Audio 1', kind: 'audio' }),
-            createTrack({ id: 't-lead', name: 'Lead', kind: 'midi' }),
+            createTrack({ id: 't-audio', name: 'Audio 1', kind: 'audio', color: '#123456' }),
+            createTrack({ id: 't-lead', name: 'Lead', kind: 'midi', color: '#123456' }),
         ]);
     });
 
@@ -193,6 +194,56 @@ describe('addTrack default names', () => {
         expect(result.status).toBe('committed');
         expect(trackNames().slice(2)).toEqual(['MIDI 1', 'Pad', 'MIDI 2', 'Bus 1']);
     });
+
+    it.each(['remove', 'rename'] as const)(
+        'names an addition from the actual %s prefix and replays the batch',
+        async (change) => {
+            const first = createTrack({ id: 'audio-1', name: 'Audio 1', kind: 'audio', color: '#123456' });
+            let prior: AppAction;
+            let expected: string[];
+            if (change === 'remove') {
+                seedTracks([first, createTrack({ id: 'audio-2', name: 'Audio 2', kind: 'audio', color: '#123456' })]);
+                prior = { type: 'removeTrack', payload: { trackId: 'audio-2' } };
+                expected = ['Audio 1', 'Audio 2'];
+            } else {
+                seedTracks([first]);
+                prior = { type: 'renameTrack', payload: { trackId: first.id, name: 'Drums' } };
+                expected = ['Drums', 'Audio 1'];
+            }
+            const before = structuredClone(trackStore.value?.tracks ?? []);
+            const beforeIds = new Set(before.map((track) => track.id));
+            const result = await executeAppActionBatch([prior, { type: 'addTrack', payload: { kind: 'audio' } }], {
+                groupId: 'ordered-track-names',
+                groupLabel: 'Edit and add track',
+            });
+
+            expect(result.status).toBe('committed');
+            const created = trackStore.value?.tracks.filter((track) => !beforeIds.has(track.id)) ?? [];
+            expect(created).toHaveLength(1);
+            const raw = getCrdtDoc<{ tracks: Pick<NonNullable<typeof trackStore.value>, 'tracks'> }>('root');
+            expect(raw?.tracks.tracks).toEqual(trackStore.value?.tracks);
+            const history = captureUndoHistory();
+            expect(history.past).toHaveLength(2);
+            expect(history.future).toEqual([]);
+            expect(history.past[0]?.groupId).toBe(history.past[1]?.groupId);
+            const added = history.past[1];
+            if (added?.kind !== 'action' || added.action.type !== 'addTrack') {
+                throw new Error('Expected the real batch to record its materialized addition');
+            }
+            expect(added.action.payload).toMatchObject({ id: created[0]?.id, name: created[0]?.name });
+            expect(trackNames()).toEqual(expected);
+
+            const committed = structuredClone(trackStore.value?.tracks ?? []);
+            await undo();
+            expect(trackStore.value?.tracks).toEqual(before);
+            await redo();
+            expect(trackStore.value?.tracks).toEqual(committed);
+            await undo();
+            expect(trackStore.value?.tracks).toEqual(before);
+            const replayed = getCrdtDoc<{ tracks: Pick<NonNullable<typeof trackStore.value>, 'tracks'> }>('root');
+            expect(replayed?.tracks.tracks).toEqual(trackStore.value?.tracks);
+        }
+    );
 
     it('restores the recorded name on redo even after the project gained a higher number', async () => {
         await executeAppAction({ type: 'addTrack', payload: { kind: 'midi' } });

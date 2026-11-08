@@ -104,6 +104,9 @@ Report a probe that cannot run with its exact mutation, named check and limitati
    consecutive names; transient selection and ghost state are not persisted-slot fields. Reverting only the owner's
    late naming phase must fail `handleAddTrackDefaultName.integration.spec.ts`. Cleanup releases and settles every
    created promise even when an earlier assertion fails; a later await preserves the original command failure.
+   A batch materializes arguments before member writes: addition-only prefixes miss earlier renames, removals and
+   restorations. Exercise real rename/remove-then-add groups and producer-captured restore tuples, distinguishing
+   actual stored names from event metadata; a terminal name assertion without raw/history agreement cannot prove it.
    (#2357, #4420, #5615, #5639, #4586, #5677, #2747, #5461, #5091, #5556, #5520, #806, #576, #5227, #187)
 
 5. **The spec collects only where an optional native binary happens to be installed.**
