@@ -1,0 +1,19 @@
+src/modules/MixerConsole/presentations/views/Mixer/__tests__/IOSection.spec.tsx
+  s_977061c47f01dd::t_f3a18c54136a39 114,116,119-120,124
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "714b6f6d6ee766fdf7f1c38fe4df7db212f78a49",
+  "prompts": {},
+  "sessions": {
+    "s_977061c47f01dd": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34d-123d-7452-a6e7-60608388b6d7",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
