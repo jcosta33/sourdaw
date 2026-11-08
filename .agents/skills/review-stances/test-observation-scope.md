@@ -86,6 +86,15 @@ Report a probe that cannot run with its exact mutation, named check and limitati
     missing key. Reverting the classification or dropping every empty-name edge must fail these planted
     cases. (#1572)
 
+    A module-initialization guard must distinguish lazy function bodies from executed initializers (#6307, #6367).
+    The retired whole-file constructor regex rejected a lazy `new Set()` in the real inspection reader; restoring
+    it must fail the positive entry case. Classify AST initializers after normalizing erased assertions,
+    `satisfies`, non-null and generic-instantiation wrappers. Accept identifier aliases only to imported runtime
+    bindings, implemented local functions or prior validated bindings. Type-only imports and `declare function`
+    declarations emit no binding: read an ambient getter with the emitted JavaScript and require that control to
+    fail admission. Keep actual top-level calls/constructors, wrapped work, dynamic imports and wrong aliases as
+    negative controls; passing a handwritten text fixture alone does not prove the served entry's runtime boundary.
+
 7. **A configuration value, snapshot or count stands for runtime behavior.**
    Probe: a configuration value, successful scan, snapshot, literal checkout depth or request count proves no
    runtime behavior, object availability, upload or comparison coverage: paginate every main analysis
