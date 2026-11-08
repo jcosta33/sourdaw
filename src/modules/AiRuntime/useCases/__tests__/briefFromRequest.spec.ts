@@ -706,12 +706,20 @@ describe('writing the production brief from a whole-project request (AC-001 of #
                 selectedTrackId: null,
                 ghostClips: [],
             });
+            markerStore.set({
+                markers: [],
+                sections: [
+                    { id: 'section-verse', name: 'Verse', startBeat: 0, endBeat: 2, color: '#ffffff' },
+                    { id: CHORUS_ID, name: 'Chorus', startBeat: 2, endBeat: 4, color: '#ffffff' },
+                ],
+            });
         });
         audio.renderTrackSubgraphOffline.mockImplementation(async (input: RenderInput) => renderShelvedTone(input));
         const stemRole = { vision: 'A warmer low end', trackRoles: [{ trackId: STEM_ID, role: 'bass' }] };
         scriptPlanningTurns([briefIntake, compileBrief(stemRole, ['warm']), proposeCompiled()]);
 
         await sendChatMessage('make it warmer');
+        expect(audio.renderTrackSubgraphOffline).toHaveBeenCalledTimes(3);
 
         const brief = getPendingProposal();
         // The stem's name gives no role; only the brief this card writes does, and the plan reads it.
@@ -720,6 +728,7 @@ describe('writing the production brief from a whole-project request (AC-001 of #
         await expect(confirmPendingChatActions({ confirmationId: brief.confirmation.id })).resolves.toEqual({
             status: 'executed',
         });
+        expect(audio.renderTrackSubgraphOffline).toHaveBeenCalledTimes(9);
 
         const batch = pendingActionConfirmationStore.value?.confirmations.find(
             (card) => card.status === 'proposed' && card.runId === brief.confirmation.runId
@@ -729,6 +738,32 @@ describe('writing the production brief from a whole-project request (AC-001 of #
             expect.objectContaining({ recipeId: 'bass-warm', targetId: STEM_ID }),
         ]);
         expect(batch?.actions.map((action) => action.type)).toContain('addDevice');
+        const view = getAgentApprovalView({ confirmationId: batch?.id ?? '' });
+        expect(view?.canConfirm).toBe(true);
+        expect(view?.metricGoals.status).toBe('verified');
+        expect(
+            view?.metricGoals.criteria.map(({ metricId, relation, targetIds, range, status }) => ({
+                metricId,
+                relation,
+                targetIds,
+                range,
+                status,
+            }))
+        ).toEqual(
+            ['frequencyBandEnergy', 'spectralCentroid'].flatMap((metricId) =>
+                [
+                    { startBeat: 0, endBeat: 4, sectionId: null },
+                    { startBeat: 0, endBeat: 2, sectionId: 'section-verse' },
+                    { startBeat: 2, endBeat: 4, sectionId: CHORUS_ID },
+                ].map((range) => ({
+                    metricId,
+                    relation: metricId === 'frequencyBandEnergy' ? 'increase' : 'decrease',
+                    targetIds: [STEM_ID],
+                    range,
+                    status: 'verified',
+                }))
+            )
+        );
     }, 15_000);
 
     it('leaves a request whose plan holds no batch exactly the brief alone', async () => {
