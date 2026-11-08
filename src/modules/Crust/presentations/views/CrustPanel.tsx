@@ -422,6 +422,9 @@ export const CrustPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                         }}
                         onChange={(event) => {
                             const value = event.target.value;
+                            if (ceilingDraft === null) {
+                                numeric.start('ceiling');
+                            }
                             setCeilingDraft(value);
                             if (value.trim() !== '' && Number.isFinite(Number(value))) {
                                 handleSetParam(CRUST_PARAM_IDS.ceiling, Number(value), true);
