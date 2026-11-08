@@ -1,0 +1,24 @@
+src/modules/Command/useCases/commandProjectRevisionPort.ts
+  s_68423a2adea8d2::t_40f3c505d6b7eb 29-32,52-64
+src/modules/Command/useCases/__tests__/commandProjectRevisionPort.spec.ts
+  s_68423a2adea8d2::t_40f3c505d6b7eb 94-99
+src/modules/AiRuntime/useCases/__tests__/commandCommitAfterSaveFinalization.spec.ts
+  s_68423a2adea8d2::t_e2628eb5db7c63 227-229
+  s_68423a2adea8d2::t_40f3c505d6b7eb 230-246
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d14414436d7876227c44e42bdd6d30b1529d36b3",
+  "prompts": {},
+  "sessions": {
+    "s_68423a2adea8d2": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34b-f305-7c03-beb2-57afa678cda5",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
