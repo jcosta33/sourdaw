@@ -1,4 +1,4 @@
-import { type ReactElement, useEffect, useState } from 'react';
+import { type ReactElement, useState } from 'react';
 
 import { ChevronDown } from 'lucide-react';
 
@@ -14,7 +14,6 @@ import { DawReadoutRow } from '#/components/daw/DawReadoutRow';
 import { Grid, Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { useStore } from '#/infra/store/useStore';
-import { trackStore } from '#/modules/Arrangement/stores';
 import {
     effectDisclosureLevel,
     effectDisclosureTierFromLevel,
@@ -24,7 +23,6 @@ import {
 import { CRUST_PARAM_IDS } from '../../models/CrustParamIds';
 import { CRUST_OVERSAMPLE_FACTORS, type CrustPatch, type CrustStreamingPreset } from '../../models/CrustPatch';
 import { crustStore, getCrustState } from '../../stores/crustStore';
-import { hydrateCrustPatchFromProject } from '../../useCases/crustParamBridge/hydrateCrustPatchFromProject';
 import { loadCrustPatchWithAudio } from '../../useCases/crustParamBridge/loadCrustPatchWithAudio';
 import { setCrustParamWithAudio } from '../../useCases/crustParamBridge/setCrustParamWithAudio';
 import { CRUST_PRESETS } from '../../useCases/crustPresets';
@@ -36,6 +34,7 @@ import { CrustGainStrip } from '../components/CrustGainStrip';
 import { CrustMeteringStrip } from '../components/CrustMeteringStrip';
 import { CrustWaveformDisplay } from '../components/CrustWaveformDisplay';
 import { useCrustMeters } from '../hooks/useCrustMeters';
+import { useCrustParameterGesture } from '../hooks/useCrustParameterGesture';
 
 // `satisfies` ties every row's `id` to the model's CrustStreamingPreset union at
 // compile time while preserving the literal `as const` types the menu relies on.
@@ -108,7 +107,6 @@ const MetricTile = ({ label, value, detail }: { label: string; value: string; de
 // per-device accessors fall back to the default patch rather than crashing the
 // panel (§209.1).
 const defaultCrustInstances: Record<string, never> = {};
-const defaultTrackState = { tracks: [], selectedTrackId: null, ghostClips: [] };
 
 export const CrustPanel = ({ deviceId }: { deviceId: string }): ReactElement => {
     // Per-device patch state (#3672): the panel renders the slice keyed by its
@@ -118,7 +116,6 @@ export const CrustPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
     // on mount and on every relevant project change (#3673), so commands, undo,
     // and collaborator writes that bypass this panel's setter still arrive.
     const allInstances = useStore(crustStore, defaultCrustInstances);
-    const trackState = useStore(trackStore, defaultTrackState);
     const { patch } = allInstances[deviceId] ?? getCrustState(deviceId);
     const disclosureTier = effectDisclosureTierFromLevel(patch.uiLevel);
     const meters = useCrustMeters(deviceId);
@@ -135,19 +132,37 @@ export const CrustPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
     const truepeakMax = meters.truepeakMax;
     const truepeakExceeded = meters.truepeakExceeded;
 
-    const projectDevice = trackState.tracks.flatMap((track) => track.devices).find((device) => device.id === deviceId);
-
-    useEffect(() => {
-        hydrateCrustPatchFromProject(deviceId);
-    }, [deviceId, projectDevice?.parameterValues, projectDevice?.deviceState]);
-
+    const numeric = useCrustParameterGesture(deviceId);
     const lufsTarget = getLufsTarget(patch.streamingPreset);
     const activeStreamingPreset = STREAMING_PRESETS.find((preset) => preset.id === patch.streamingPreset);
     const normalizationLoss = lufsTarget !== null ? Math.max(0, lufsShortTerm - lufsTarget) : 0;
     const streamingLabel = activeStreamingPreset ? activeStreamingPreset.label : 'Custom';
 
-    function handleSetParam<TKey extends keyof CrustPatch>(key: TKey, value: CrustPatch[TKey]): void {
+    const [ceilingDraft, setCeilingDraft] = useState<string | null>(null);
+
+    function handleSetParam<TKey extends keyof CrustPatch>(
+        key: TKey,
+        value: CrustPatch[TKey],
+        transient?: boolean,
+        recordingSample = true
+    ): void {
+        if (typeof value === 'number') {
+            if (transient === undefined) {
+                numeric.start(key);
+            }
+            void numeric.change(key, value, transient ?? false, recordingSample);
+            return;
+        }
         setCrustParamWithAudio(deviceId, key, value);
+    }
+
+    function finishCeiling(value: string): void {
+        if (value.trim() === '' || !Number.isFinite(Number(value))) {
+            numeric.cancel('ceiling');
+        } else {
+            void numeric.settle('ceiling');
+        }
+        setCeilingDraft(null);
     }
 
     return (
@@ -286,7 +301,12 @@ export const CrustPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
             </Row>
 
             <Row align="stretch" grow gap={2.5} className="min-h-0">
-                <CrustGainStrip value={patch.gain} onChange={(value) => handleSetParam(CRUST_PARAM_IDS.gain, value)} />
+                <CrustGainStrip
+                    value={patch.gain}
+                    gestureAuthority={numeric.authority('gain')}
+                    onCancel={() => numeric.cancel('gain')}
+                    onChange={(value, transient) => handleSetParam(CRUST_PARAM_IDS.gain, value, transient)}
+                />
 
                 <Stack grow gap={2.5} className="min-w-0 overflow-y-auto pr-1 [&>*]:shrink-0">
                     <Grid cols={4} gap={2.5} className="shrink-0">
@@ -355,6 +375,8 @@ export const CrustPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                         <CrustControlZone
                             patch={patch}
                             setParam={handleSetParam}
+                            gestureAuthority={numeric.authority}
+                            onCancel={numeric.cancel}
                             lufsIntegrated={lufsIntegrated}
                             lufsShortTerm={lufsShortTerm}
                             lufsMomentary={lufsMomentary}
@@ -393,8 +415,29 @@ export const CrustPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                         min={-6}
                         max={0}
                         step={0.1}
-                        value={patch.ceiling}
-                        onChange={(event) => handleSetParam(CRUST_PARAM_IDS.ceiling, Number(event.target.value))}
+                        value={ceilingDraft ?? patch.ceiling}
+                        onFocus={() => {
+                            numeric.start('ceiling');
+                            setCeilingDraft(String(patch.ceiling));
+                        }}
+                        onChange={(event) => {
+                            const value = event.target.value;
+                            setCeilingDraft(value);
+                            if (value.trim() !== '' && Number.isFinite(Number(value))) {
+                                handleSetParam(CRUST_PARAM_IDS.ceiling, Number(value), true);
+                            }
+                        }}
+                        onBlur={(event) => finishCeiling(event.currentTarget.value)}
+                        onKeyDown={(event) => {
+                            if (event.key === 'Enter') {
+                                event.preventDefault();
+                                finishCeiling(event.currentTarget.value);
+                            } else if (event.key === 'Escape') {
+                                event.preventDefault();
+                                numeric.cancel('ceiling');
+                                setCeilingDraft(null);
+                            }
+                        }}
                         className="crust-window w-16"
                         align="center"
                         monospace

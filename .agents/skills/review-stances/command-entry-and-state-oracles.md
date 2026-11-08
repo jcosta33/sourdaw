@@ -36,6 +36,15 @@ boundaries.
    choices (filter type/model) restore an absent leaf on first-selection Undo, a hidden non-SVF Type stays stored,
    Model and Type each own pending authority by device and parameter, and an old queued direct parameter frame
    cannot overwrite the newer choice.
+   Crust's initial numeric panel bridge (`cd59903255`, no associated PR returned by commit lookup) persisted
+   preview samples outside semantic history; its historical review brief and stance coverage are unestablished.
+   Drive keyboard and multi-sample pointer gestures through the real panel, Command and CRDT: previews leave
+   complete project/history unchanged, one physical terminal records one action/inverse, and Undo/Redo keeps the
+   device installed. Preserve exact original leaf absence and hydrate its default without erasing a still-owned
+   preview after an unrelated edit. Hold snapshot admission across replacement, cancel and unmount; stale work
+   cannot commit or restore over newer runtime. Observe event-time automation samples at movement and physical
+   release, with synthetic settlement and canonical/replay writes suppressed; real controller call-through is not
+   audible-output proof. Restoring the direct bridge must fail history, inverse and raw/projection assertions.
 3. **A multi-unit edit half-applies or a linked follower write never reaches the sampler (#4506; #931, #4392).**
    Failure: a generator or batch leaves partial items, or a follower point is stored where playback ignores it. Probe:
    a generator spanning pads or lanes submits one compensated batch bound to project and document identity: fail a

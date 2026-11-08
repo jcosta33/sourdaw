@@ -3,13 +3,16 @@
  * Pointer-capture based, no drag events — smooth cross-platform.
  * Ctrl/Cmd = fine-mode (0.1× sensitivity).
  */
-import { type ReactElement, type KeyboardEvent, useRef } from 'react';
+import { type ReactElement, type KeyboardEvent, useRef, useLayoutEffect, useEffect } from 'react';
 
+import { type GestureAuthority } from '#/components/daw/RotaryKnob';
 import { Row, Stack } from '#/components/layout';
 
 type Props = {
     value: number; // 0 – 18 dB
-    onChange: (v: number) => void;
+    onChange: (v: number, transient?: boolean) => void;
+    gestureAuthority?: GestureAuthority;
+    onCancel?: () => void;
 };
 
 const MIN = 0;
@@ -22,39 +25,136 @@ function clamp(v: number): number {
     return Math.max(MIN, Math.min(MAX, v));
 }
 
-export const CrustGainStrip = ({ value, onChange }: Props): ReactElement => {
+export const CrustGainStrip = ({ value, onChange, gestureAuthority, onCancel }: Props): ReactElement => {
     const trackRef = useRef<HTMLDivElement>(null);
-    const drag = useRef({ active: false, startY: 0, startValue: 0 });
+    const drag = useRef<{
+        active: boolean;
+        pointerId: number | null;
+        startY: number;
+        startValue: number;
+        latest: number;
+        token?: string | number;
+        moved: boolean;
+    }>({ active: false, pointerId: null, startY: 0, startValue: 0, latest: value, moved: false });
+    const callbacks = useRef({ onChange, onCancel, gestureAuthority });
+    useLayoutEffect(() => {
+        callbacks.current = { onChange, onCancel, gestureAuthority };
+        if (!drag.current.active) {
+            drag.current.latest = value;
+        }
+    });
+
+    function clearDrag(): void {
+        const pointerId = drag.current.pointerId;
+        drag.current.active = false;
+        drag.current.pointerId = null;
+        if (pointerId !== null) {
+            try {
+                trackRef.current?.releasePointerCapture(pointerId);
+            } catch {
+                /* Capture may already be lost. */
+            }
+        }
+    }
+
+    function ownsDrag(): boolean {
+        const authority = callbacks.current.gestureAuthority;
+        const token = drag.current.token;
+        return !authority || (token !== undefined && authority.isCurrent(token));
+    }
+
+    function cancelDrag(): void {
+        if (!drag.current.active) {
+            return;
+        }
+        clearDrag();
+        callbacks.current.onCancel?.();
+    }
+
+    function finishDrag(): void {
+        if (!drag.current.active) {
+            return;
+        }
+        const { latest, moved } = drag.current;
+        const current = ownsDrag();
+        clearDrag();
+        if (current && moved) {
+            callbacks.current.onChange(latest, false);
+        }
+    }
+
+    useEffect(() => {
+        window.addEventListener('blur', cancelDrag);
+        return () => {
+            window.removeEventListener('blur', cancelDrag);
+            cancelDrag();
+        };
+    }, []);
 
     function handlePointerDown(e: React.PointerEvent): void {
-        drag.current = { active: true, startY: e.clientY, startValue: value };
-        (e.target as HTMLElement).setPointerCapture(e.pointerId);
+        if (drag.current.active || e.button !== 0) {
+            return;
+        }
+        const authority = callbacks.current.gestureAuthority;
+        const token = authority?.acquire(finishDrag);
+        if (authority && (token === undefined || !authority.isCurrent(token))) {
+            return;
+        }
+        drag.current = {
+            active: true,
+            pointerId: e.pointerId,
+            startY: e.clientY,
+            startValue: value,
+            latest: value,
+            token,
+            moved: false,
+        };
+        e.currentTarget.setPointerCapture(e.pointerId);
     }
 
     function handlePointerMove(e: React.PointerEvent): void {
-        if (!drag.current.active || !trackRef.current) {
+        if (!drag.current.active || drag.current.pointerId !== e.pointerId || !trackRef.current) {
+            return;
+        }
+        if (!ownsDrag()) {
+            cancelDrag();
             return;
         }
         const trackH = trackRef.current.getBoundingClientRect().height;
-        const dy = drag.current.startY - e.clientY; // upward = more gain
+        if (trackH <= 0) {
+            return;
+        }
+        const dy = drag.current.startY - e.clientY;
         const scale = e.ctrlKey || e.metaKey ? 0.1 : 1;
-        const delta = (dy / trackH) * MAX * scale;
-        onChange(clamp(drag.current.startValue + delta));
+        const next = clamp(drag.current.startValue + (dy / trackH) * MAX * scale);
+        if (next === drag.current.latest) {
+            return;
+        }
+        drag.current.latest = next;
+        drag.current.moved = true;
+        callbacks.current.onChange(next, true);
     }
 
-    function handlePointerUp(): void {
-        drag.current.active = false;
+    function handlePointerUp(e: React.PointerEvent): void {
+        if (drag.current.pointerId === e.pointerId) {
+            finishDrag();
+        }
     }
 
     function handleKeyDown(e: KeyboardEvent): void {
-        const step = e.shiftKey ? 1 : 0.1;
-        if (e.key === 'ArrowUp') {
-            e.preventDefault();
-            onChange(clamp(value + step));
+        if (drag.current.active || (e.key !== 'ArrowUp' && e.key !== 'ArrowDown')) {
+            return;
         }
-        if (e.key === 'ArrowDown') {
-            e.preventDefault();
-            onChange(clamp(value - step));
+        e.preventDefault();
+        const authority = callbacks.current.gestureAuthority;
+        const token = authority?.acquire(finishDrag);
+        if (authority && (token === undefined || !authority.isCurrent(token))) {
+            return;
+        }
+        const step = e.shiftKey ? 1 : 0.1;
+        const next = clamp(value + (e.key === 'ArrowUp' ? step : -step));
+        if (next !== value) {
+            callbacks.current.onChange(next, false);
         }
     }
 
@@ -101,6 +201,9 @@ export const CrustGainStrip = ({ value, onChange }: Props): ReactElement => {
                 onPointerDown={handlePointerDown}
                 onPointerMove={handlePointerMove}
                 onPointerUp={handlePointerUp}
+                onPointerCancel={cancelDrag}
+                onLostPointerCapture={cancelDrag}
+                onBlur={cancelDrag}
                 role="slider"
                 aria-label="Input gain"
                 aria-valuemin={MIN}

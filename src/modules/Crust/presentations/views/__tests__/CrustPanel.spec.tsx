@@ -1,5 +1,5 @@
 import { fireEvent, render, screen } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { CRUST_OVERSAMPLE_FACTORS, DEFAULT_CRUST_PATCH } from '../../../models/CrustPatch';
 import {
@@ -10,6 +10,7 @@ import {
     type CrustInstanceState,
     type CrustMeterState,
 } from '../../../stores/crustStore';
+import * as gestureUseCase from '../../../useCases/createCrustParameterGesture';
 import { CrustPanel } from '../CrustPanel';
 
 const useCaseMocks = vi.hoisted(() => ({
@@ -85,6 +86,7 @@ function instanceWith(patchPartial: Partial<typeof DEFAULT_CRUST_PATCH>): CrustI
 }
 
 describe('CrustPanel', () => {
+    afterEach(() => vi.restoreAllMocks());
     beforeEach(() => {
         vi.clearAllMocks();
         crustStoreRef.current = crustStore;
@@ -246,13 +248,26 @@ describe('CrustPanel', () => {
         }
     });
 
-    it('writes the 2x factor the panel could not previously reach', () => {
+    it('dispatches the 2x numeric choice through the private gesture adapter', () => {
         crustInstancesForTest = { 'crust-1': instanceWith({ uiLevel: 2 }) };
+        const start = vi.fn(() => 1);
+        const change = vi.fn(() => Promise.resolve());
+        const create = vi.spyOn(gestureUseCase, 'createCrustParameterGesture').mockReturnValueOnce({
+            start,
+            change,
+            isCurrent: () => true,
+            settle: () => Promise.resolve(),
+            cancel: () => undefined,
+            dispose: () => undefined,
+        });
         render(<CrustPanel deviceId="crust-1" />);
 
         fireEvent.click(screen.getByRole('button', { name: '2×' }));
 
-        expect(useCaseMocks.setCrustParamWithAudio).toHaveBeenCalledWith('crust-1', 'oversampling', 2);
+        expect(create).toHaveBeenCalledWith('crust-1');
+        expect(start).toHaveBeenCalledExactlyOnceWith('oversampling');
+        expect(change).toHaveBeenCalledExactlyOnceWith('oversampling', 2, false, true);
+        expect(useCaseMocks.setCrustParamWithAudio).not.toHaveBeenCalled();
     });
 
     it('claims no contentinfo landmark for its control strip', () => {
