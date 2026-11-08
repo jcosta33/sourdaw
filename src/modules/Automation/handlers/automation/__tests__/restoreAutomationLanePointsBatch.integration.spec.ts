@@ -123,7 +123,7 @@ describe('guarded automation point restores through real atomic batches', () => 
     });
 
     it.each(['points', 'expectedPoints'] as const)(
-        'refuses a malformed later %s before any sibling writes',
+        'refuses a malformed later %s without committing sibling changes',
         async (field) => {
             const before = material();
             const heads = Automerge.getHeads(getCrdtDoc('root')!);
