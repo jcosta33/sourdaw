@@ -78,8 +78,8 @@ export const AgentRunHistorySection = ({
                             aria-label={`Actions for ${group.prompt}`}
                             className="list-inside list-disc text-foreground"
                         >
-                            {group.actions.map((action) => (
-                                <li key={`${action.actionType}-${action.label}`}>{action.label}</li>
+                            {group.actions.map((action, index) => (
+                                <li key={`${index}:${action.actionType}:${action.label}`}>{action.label}</li>
                             ))}
                         </ul>
                         <p className="text-muted-foreground">{new Date(group.timestamp).toISOString()}</p>
