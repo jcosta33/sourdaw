@@ -136,6 +136,19 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
 }));
 
 describe('Sidebar', () => {
+    const importedOpusFile = (name: string): File =>
+        new File([new Uint8Array([0])], name, { type: 'application/octet-stream' });
+
+    const openImportedFileInput = (): HTMLInputElement => {
+        fireEvent.click(screen.getByText('Library'));
+        fireEvent.click(screen.getByText('Imported'));
+        const fileInput = document.querySelector('input[type="file"]');
+        if (!fileInput) {
+            throw new Error('Expected the Imported tab to render a file input');
+        }
+        return fileInput;
+    };
+
     beforeEach(() => {
         vi.clearAllMocks();
         window.localStorage.clear();
@@ -307,36 +320,31 @@ describe('Sidebar', () => {
         await waitFor(() => expect(screen.getByText('2 samples')).toBeInTheDocument());
     });
 
-    it('stops a multi-file import after unmount without opening another hold or notifying', async () => {
+    it('does not decode the files after the one in flight when the sidebar unmounts', async () => {
         let finishFast!: () => void;
-        const unmountAfterFastRetain: { fn: () => void } = { fn: () => {} };
         const fastDone = new Promise<void>((resolve) => {
             finishFast = resolve;
         });
-
-        const { unmount } = render(<Sidebar />);
-        unmountAfterFastRetain.fn = unmount;
+        let unmountSidebar = (): void => {
+            throw new Error('Expected render to assign unmountSidebar');
+        };
 
         audioEngineMocks.decodeAudioFileMock.mockImplementation(async (file, residencyHold) => {
             if (file.name === 'fast.opus') {
                 await fastDone;
                 const decoded = await audioEngineMocks.decodeImportedFile(file, residencyHold);
-                unmountAfterFastRetain.fn();
+                unmountSidebar();
                 return decoded;
             }
             throw new Error('Expected the import loop to stop before decoding another file after unmount');
         });
 
-        fireEvent.click(screen.getByText('Library'));
-        fireEvent.click(screen.getByText('Imported'));
+        const { unmount } = render(<Sidebar />);
+        unmountSidebar = unmount;
 
-        const fileInput = document.querySelector('input[type="file"]');
-        if (!fileInput) {
-            throw new Error('Expected the Imported tab to render a file input');
-        }
-
-        const fast = new File([new Uint8Array([0])], 'fast.opus', { type: 'application/octet-stream' });
-        const after = new File([new Uint8Array([0])], 'after.opus', { type: 'application/octet-stream' });
+        const fileInput = openImportedFileInput();
+        const fast = importedOpusFile('fast.opus');
+        const after = importedOpusFile('after.opus');
 
         await act(async () => {
             fireEvent.change(fileInput, { target: { files: [fast, after] } });
@@ -358,14 +366,9 @@ describe('Sidebar', () => {
             expect.anything()
         );
         expect(vi.mocked(notifyUser)).not.toHaveBeenCalled();
+    });
 
-        holdLifecycle.released = false;
-        vi.mocked(decodeAudioFile).mockClear();
-        vi.mocked(notifyUser).mockClear();
-        audioEngineMocks.hold.retain.mockClear();
-        audioEngineMocks.hold.release.mockClear();
-        audioEngineMocks.openCachedAudioBufferHold.mockClear();
-
+    it('stays silent when the hold is released while an import is decoding', async () => {
         let releaseInFlight!: () => void;
         const inFlightGate = new Promise<void>((resolve) => {
             releaseInFlight = resolve;
@@ -378,22 +381,16 @@ describe('Sidebar', () => {
             return audioEngineMocks.decodeImportedFile(file, residencyHold);
         });
 
-        const { unmount: unmountDuringDecode } = render(<Sidebar />);
-        fireEvent.click(screen.getByText('Library'));
-        fireEvent.click(screen.getByText('Imported'));
-
-        const inFlightInput = document.querySelector('input[type="file"]');
-        if (!inFlightInput) {
-            throw new Error('Expected the Imported tab to render a file input');
-        }
-
-        const pending = new File([new Uint8Array([0])], 'pending.opus', { type: 'application/octet-stream' });
+        const { unmount } = render(<Sidebar />);
+        const fileInput = openImportedFileInput();
+        const pending = importedOpusFile('pending.opus');
+        const after = importedOpusFile('after.opus');
 
         await act(async () => {
-            fireEvent.change(inFlightInput, { target: { files: [pending, after] } });
+            fireEvent.change(fileInput, { target: { files: [pending, after] } });
         });
         await waitFor(() => expect(decodeAudioFile).toHaveBeenCalledTimes(1));
-        unmountDuringDecode();
+        unmount();
         await act(async () => {
             releaseInFlight();
             await Promise.resolve();
@@ -401,6 +398,10 @@ describe('Sidebar', () => {
 
         expect(audioEngineMocks.openCachedAudioBufferHold).toHaveBeenCalledTimes(1);
         expect(decodeAudioFile).toHaveBeenCalledTimes(1);
+        expect(decodeAudioFile).not.toHaveBeenCalledWith(
+            expect.objectContaining({ name: 'after.opus' }),
+            expect.anything()
+        );
         expect(audioEngineMocks.hold.retain).toHaveBeenCalledWith('buffer-pending.opus');
         expect(vi.mocked(notifyUser)).not.toHaveBeenCalled();
     });
