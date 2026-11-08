@@ -9,14 +9,14 @@
         "performanceCores": "8",
         "efficiencyCores": "4",
         "os": "macOS 27.2 (26B123)",
-        "gitSha": "372903f78da52b92bea9929c6e14f3adb8448721",
+        "gitSha": "5893703c189c1950b56d1725840e7e13f2e18619",
         "gitBase": "c167d364563882f008198c96d22a85c21c2d4651",
         "workingTree": "clean",
-        "takenAt": "2026-11-08T17:21:36.780Z"
+        "takenAt": "2026-10-29T17:53:46.594Z"
     },
-    "sourceRevision": "372903f78da52b92bea9929c6e14f3adb8448721",
+    "sourceRevision": "5893703c189c1950b56d1725840e7e13f2e18619",
     "sourceDigests": {
-        "crates/daw-dsp/Cargo.toml": "f69e67dd0cc510bffade481440d0448cc9fc1eb3ddde3a4f6446e9df4d226dda",
+        "crates/daw-dsp/Cargo.toml": "682e35160f2e0492ef5d9ad320cf1fb2708298da6359366c674466e73817bcc7",
         "crates/daw-dsp/benches/quantum.rs": "0de57088cce2094f76dd9d3eb567552692bdc0146eddbc8b5e15c7c8d9b6b873",
         "crates/daw-dsp/benches/wasm/deviceRecipes.js": "0d108da667a7c0c3d8e5f72145ec325b1ff223a09a341294501c830a073c7300",
         "crates/daw-dsp/benches/wasm/quantumCostProcessor.js": "e40d5159e7bfad103b6b6bd93351632a86f3a7951962308acea8a9f8f1f50713",
@@ -56,7 +56,7 @@
         "crates/daw-dsp/src/primitives/time_stretch/ratio.rs": "4796871f652824d6df239ac9ca5e34c1a1488968274e963aa4fe8f63a137c1fa",
         "rust-toolchain.toml": "bae4e26ab3ac14ac537b8d09c3577c55b94cd39c781fb9ac3d291e5e12f72a82",
         "scripts/quantumMeasurementCalibration.ts": "05b231d8fac89843d3ea93a4ed3db0e6feea0d85cc3bcc90d729bf5a6dc28ff1",
-        "scripts/wasmToolchainPins.ts": "c54eec5a9e399a15e8288bf6b94bc72473354d2102fa2a99baed199d71cb3d13"
+        "scripts/wasmToolchainPins.ts": "444f2f5fcf296f5e2b831b5c938ec9ac1e150f1cd7b3251b1ff40dd638424990"
     },
     "browser": "156.0.8078.49",
     "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.0.0 Safari/537.36",
@@ -76,64 +76,21 @@
     },
     "referenceProject": {
         "audioThread": [
-            [
-                "grand_boule_ring_consumer",
-                1
-            ],
-            [
-                "fermenter",
-                1
-            ],
-            [
-                "levain",
-                1
-            ],
-            [
-                "toaster",
-                1
-            ],
-            [
-                "crumbs",
-                1
-            ],
-            [
-                "grinder",
-                1
-            ],
-            [
-                "knead",
-                1
-            ],
-            [
-                "bacteria",
-                1
-            ],
-            [
-                "proof",
-                1
-            ],
-            [
-                "gluten",
-                3
-            ],
-            [
-                "proof_chamber_plate",
-                1
-            ]
+            ["grand_boule_ring_consumer", 1],
+            ["fermenter", 1],
+            ["levain", 1],
+            ["toaster", 1],
+            ["crumbs", 1],
+            ["grinder", 1],
+            ["knead", 1],
+            ["bacteria", 1],
+            ["proof", 1],
+            ["gluten", 3],
+            ["proof_chamber_plate", 1]
         ],
-        "worker": [
-            [
-                "grand_boule",
-                1
-            ]
-        ],
+        "worker": [["grand_boule", 1]],
         "audioFloorMs": 0.6006471406749431,
-        "audioFloorPartialFrom": [
-            "knead",
-            "proof",
-            "gluten",
-            "proof_chamber_plate"
-        ],
+        "audioFloorPartialFrom": ["knead", "proof", "gluten", "proof_chamber_plate"],
         "audioUpperBoundMs": 1.1551877353795879,
         "audioWorstQuantumUpperMs": 2.2766552128900273,
         "audioMedianMs": 1.0851072610428079,

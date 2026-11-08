@@ -144,17 +144,17 @@ the floor doctrine working: on a clock that cannot stall, contention leaves the 
 | OS | macOS 27.2 (26B123), arm64 |
 | Browser | **156.0.8078.49** (Google Chrome stable, headless) |
 | User agent | `Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.0.0 Safari/537.36` |
-| **Commit measured** | **`372903f78da52b92bea9929c6e14f3adb8448721`** |
+| **Commit measured** | **`5893703c189c1950b56d1725840e7e13f2e18619`** |
 | Base it sits on | `c167d364563882f008198c96d22a85c21c2d4651` |
 | Working tree | clean |
-| Taken | 2026-11-08T17:21:36.780Z |
+| Taken | 2026-10-29T17:53:46.594Z |
 | Machine load | 18.22 before, 10.88 after — **recorded, not gated** |
 | Warm-up / samples | 4000 discarded, 20000 timed quanta per row |
 | Budget | 2.6667 ms = 128 frames ÷ 48 kHz |
 
 Measured-source digests:
 
-- `crates/daw-dsp/Cargo.toml`: `sha256:f69e67dd0cc510bffade481440d0448cc9fc1eb3ddde3a4f6446e9df4d226dda`
+- `crates/daw-dsp/Cargo.toml`: `sha256:682e35160f2e0492ef5d9ad320cf1fb2708298da6359366c674466e73817bcc7`
 - `crates/daw-dsp/benches/quantum.rs`: `sha256:0de57088cce2094f76dd9d3eb567552692bdc0146eddbc8b5e15c7c8d9b6b873`
 - `crates/daw-dsp/benches/wasm/deviceRecipes.js`: `sha256:0d108da667a7c0c3d8e5f72145ec325b1ff223a09a341294501c830a073c7300`
 - `crates/daw-dsp/benches/wasm/quantumCostProcessor.js`: `sha256:e40d5159e7bfad103b6b6bd93351632a86f3a7951962308acea8a9f8f1f50713`
@@ -194,7 +194,7 @@ Measured-source digests:
 - `crates/daw-dsp/src/primitives/time_stretch/ratio.rs`: `sha256:4796871f652824d6df239ac9ca5e34c1a1488968274e963aa4fe8f63a137c1fa`
 - `rust-toolchain.toml`: `sha256:bae4e26ab3ac14ac537b8d09c3577c55b94cd39c781fb9ac3d291e5e12f72a82`
 - `scripts/quantumMeasurementCalibration.ts`: `sha256:05b231d8fac89843d3ea93a4ed3db0e6feea0d85cc3bcc90d729bf5a6dc28ff1`
-- `scripts/wasmToolchainPins.ts`: `sha256:c54eec5a9e399a15e8288bf6b94bc72473354d2102fa2a99baed199d71cb3d13`
+- `scripts/wasmToolchainPins.ts`: `sha256:444f2f5fcf296f5e2b831b5c938ec9ac1e150f1cd7b3251b1ff40dd638424990`
 
 ### On the audio thread — these share the one 2.667 ms deadline
 
