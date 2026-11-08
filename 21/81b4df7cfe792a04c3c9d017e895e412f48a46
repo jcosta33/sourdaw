@@ -1,0 +1,43 @@
+src/modules/ContentBrowser/presentations/views/Sidebar/__tests__/SamplesTab.spec.tsx
+  s_977061c47f01dd::t_34f3979158e6a4 104-106
+  s_977061c47f01dd::t_d33dd6c43017ba 95,98,100,103,107-109
+src/modules/ContentBrowser/presentations/hooks/__tests__/usePreviewAudio.spec.tsx
+  s_977061c47f01dd::t_36baf0e9d1a55e 962-986,998,1007,1025,1038,1054,1056-1061,1066-1079,1084-1095,1099-1146
+  s_977061c47f01dd::t_34f3979158e6a4 987-997,999-1006,1008-1024,1026-1037,1039-1053,1055,1062-1065,1080-1083,1096-1098
+  s_977061c47f01dd::t_067bf22da8f9b6 2,4-6,28-29,161-166,179,182-184,192-193
+  s_977061c47f01dd::t_22080435b71015 33
+  s_977061c47f01dd::t_db58696fa6ffb0 139-159
+.agents/skills/review-stances/test-observation-scope.md
+  s_977061c47f01dd::t_826a89db91d33c 38-44
+src/modules/ContentBrowser/presentations/hooks/usePreviewAudio.ts
+  s_977061c47f01dd::t_2ef1608335d1bb 7,24-27,33,59,61-62,68-69,115,135,179-180,185,200,245,248,250,252,258-260,266,282,301,303,313-315,320-321,323
+  s_977061c47f01dd::t_34f3979158e6a4 12-18,261-265,316-319
+tests/e2e/importedSamplePreview.spec.ts
+  s_977061c47f01dd::t_2171bef26e5065 1-46,50-68,73-89,99-101,119,127-130,163-169
+  s_977061c47f01dd::t_59092759f3b156 47-49,69-72,90-98,102-118,120-126,131-162
+src/modules/ContentBrowser/useCases/prepareImportedSamplePreview.ts
+  s_977061c47f01dd::t_56f185adf63926 1-49
+src/modules/ContentBrowser/presentations/views/Sidebar/SamplesTab.tsx
+  s_977061c47f01dd::t_34f3979158e6a4 80-85
+src/modules/ContentBrowser/useCases/__tests__/prepareImportedSamplePreview.spec.ts
+  s_977061c47f01dd::t_c0a4c6d088a875 58-69,88-90,94,107-108,113-119,229-230,232-238,240-259
+  s_977061c47f01dd::t_98f7d0def848b9 1-9,13-23,28-29,32-56,120-123,127-187,219,221-223,227-228,260-276
+  s_977061c47f01dd::t_34f3979158e6a4 10-12,24-27,30-31,70-72,82-83,87,124-126,188-218,220,224-226
+  s_977061c47f01dd::t_1bfa4d7f71281f 57,73-81,84-86,91-93,95-106,109-112,231,239
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2181b4df7cfe792a04c3c9d017e895e412f48a46",
+  "prompts": {},
+  "sessions": {
+    "s_977061c47f01dd": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34d-123d-7452-a6e7-60608388b6d7",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
