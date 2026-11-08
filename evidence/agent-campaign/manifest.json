@@ -560,7 +560,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/AiRuntime/useCases/__tests__/compileArbitraryCommandList.spec.ts",
-                    "digest": "f5c45eb9d3be0ffa908586764dc9b6bd9fc8315789aa7e802fdb2f59a19e9804"
+                    "digest": "000164555199ee8a4acd1f1690cb6dd45bc212785f3d7613c62fc1cb856f90b8"
                 }
             ]
         },
