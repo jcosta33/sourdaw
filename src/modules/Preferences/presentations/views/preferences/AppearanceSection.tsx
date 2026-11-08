@@ -6,7 +6,6 @@ import { Row } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { Separator } from '#/components/ui/separator';
 import { Slider } from '#/components/ui/slider';
-
 import { applyDocumentTheme } from '#/utils/UI/applyDocumentTheme';
 
 import { SectionTitle, FieldGroup, ToggleRow } from '../preferencesShared';
