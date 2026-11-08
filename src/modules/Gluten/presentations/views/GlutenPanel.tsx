@@ -626,7 +626,7 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
     }
 
     const faceplate = (
-        <div className="gluten-faceplate min-h-[440px] rounded-[26px] p-3 @4xl:h-full">
+        <div className="gluten-faceplate min-h-[464px] rounded-[26px] p-3 @4xl:h-full">
             <div className="grid min-h-[440px] grid-cols-1 gap-3 @4xl:h-full @4xl:grid-cols-[15rem_minmax(0,1fr)_19rem]">
                 <DawPluginRail
                     aria-label="Gluten presets"

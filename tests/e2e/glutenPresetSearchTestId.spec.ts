@@ -106,6 +106,18 @@ test.describe('Gluten panel — preset search filtering', () => {
         await disclosure.getByRole('button', { name: 'lab', exact: true }).click();
         await expect(page.getByRole('slider', { name: 'SC HPF', exact: true })).toBeVisible();
 
+        await expect
+            .poll(() =>
+                faceplate.evaluate((element) => {
+                    const content = element.firstElementChild;
+                    if (!content) {
+                        throw new Error('Expected the Gluten workspace grid');
+                    }
+                    return element.getBoundingClientRect().bottom - content.getBoundingClientRect().bottom;
+                })
+            )
+            .toBeGreaterThanOrEqual(11);
+
         for (const label of ['Gluten dynamics overview', 'Gluten controls']) {
             const column = page.getByLabel(label, { exact: true });
             await expect.poll(() => column.evaluate((element) => element.clientHeight)).toBeGreaterThanOrEqual(440);
