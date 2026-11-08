@@ -1,0 +1,23 @@
+.github/workflows/heavy-gates.yml
+  s_6584878ed83d04::t_c8f876f32221f4 3-4
+scripts/__tests__/healthGatesWorkflow.spec.ts
+  s_6584878ed83d04::t_27554d514c4bda 2028-2030
+  s_6584878ed83d04::t_b7a993a3fcaae4 2153-2154
+  s_6584878ed83d04::t_143a26b555512a 56
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7634c6e3d4ba366ea20f1b4e990f7a39d9a27d49",
+  "prompts": {},
+  "sessions": {
+    "s_6584878ed83d04": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "eb8dc258-27ed-45aa-b77a-54b7a029172e",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
