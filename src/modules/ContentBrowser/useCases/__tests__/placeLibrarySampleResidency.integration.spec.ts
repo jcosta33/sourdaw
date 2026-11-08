@@ -96,8 +96,8 @@ let burst = 0;
 
 function deferred<T>() {
     let resolve!: (value: T) => void;
-    const promise = new Promise<T>((complete) => {
-        resolve = complete;
+    const promise = new Promise<T>((_resolve) => {
+        resolve = _resolve;
     });
     return { promise, resolve };
 }
@@ -563,7 +563,7 @@ describe('imported sample placement after real cache eviction', () => {
             const entered = deferred<void>();
             const continueStaging = deferred<void>();
             let current = true;
-            let staged: Awaited<ReturnType<typeof stageAudioBufferAsset>>;
+            let staged: Awaited<ReturnType<typeof stageAudioBufferAsset>> | undefined;
             setClipAudioAssetStager(async (buffer, name) => {
                 entered.resolve();
                 await continueStaging.promise;
