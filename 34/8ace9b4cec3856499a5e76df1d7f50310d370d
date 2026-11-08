@@ -1,0 +1,25 @@
+scripts/__tests__/trustedGitleaksInstaller.spec.ts
+  s_68423a2adea8d2::t_a0e237d17f18ca 197-211,215-219,258-260,264-265,332-342,345-356,359-361,366-368
+  s_68423a2adea8d2::t_9d6c1832656594 9
+  s_68423a2adea8d2::t_483bd53d1416fb 25,32,52,225-231,383-391
+  s_68423a2adea8d2::t_d3a0a698ec73fb 113-114,120-161,182-188,247-253,314,327,427
+  s_68423a2adea8d2::t_628abde08194e6 1-8,10-12,15-24,26-31,33-51,53-112,162-181,189-196,212-214,220-224,232-246,254-257,261-263,266-313,315-326,328,331,343-344,357-358,362-365,369-382,392-426,428-440
+  s_68423a2adea8d2::t_3a0bdf047c798b 13-14
+  s_68423a2adea8d2::t_1a05a21dfd3276 115-119,329-330
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "348ace9b4cec3856499a5e76df1d7f50310d370d",
+  "prompts": {},
+  "sessions": {
+    "s_68423a2adea8d2": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34b-f305-7c03-beb2-57afa678cda5",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
