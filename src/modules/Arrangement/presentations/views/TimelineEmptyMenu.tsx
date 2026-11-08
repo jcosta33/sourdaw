@@ -5,7 +5,7 @@ import { DawMenuButton, DawMenuMutedRow, DawMenuSeparator } from '#/components/d
 import { DawSwatchButton } from '#/components/daw/DawSwatchButton';
 import { Row } from '#/components/layout';
 import { useStore } from '#/infra/store/useStore';
-import { decodeAudioFile, discardDecodedAudioFile } from '#/modules/AudioEngine/useCases';
+import { decodeAudioFile, discardDecodedAudioFile, openCachedAudioBufferHold } from '#/modules/AudioEngine/useCases';
 import { executeAppActionBatch, executeUserAppAction } from '#/modules/Command/useCases';
 import { captureProjectTransitionAuthority } from '#/modules/Project/useCases';
 import { DEFAULT_TEMPO_BPM, transportStore } from '#/modules/Transport/stores';
@@ -108,8 +108,9 @@ export const TimelineEmptyMenu = ({ x, y, trackId, beat, onClose }: TimelineEmpt
                 return;
             }
             let decodedBufferId: string | undefined;
+            const hold = openCachedAudioBufferHold();
             try {
-                const result = await decodeAudioFile(file);
+                const result = await decodeAudioFile(file, hold);
                 decodedBufferId = result.id;
                 if (!authority.isCurrent()) {
                     discardDecodedAudioFile(result.id);
@@ -171,6 +172,8 @@ export const TimelineEmptyMenu = ({ x, y, trackId, beat, onClose }: TimelineEmpt
                 if (authority.isCurrent()) {
                     notifyUser(`Failed to import "${file.name}" — unsupported format or corrupt file`, 'error');
                 }
+            } finally {
+                hold.release();
             }
         };
         input.click();

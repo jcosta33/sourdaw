@@ -1,9 +1,4 @@
-import {
-    commitRecordedControllers,
-    discardRecordedControllers,
-    getMidiStoreState,
-    planRecordedControllers,
-} from '#/modules/MIDI/useCases';
+import { prepareRecordedControllersCommit, getMidiStoreState } from '#/modules/MIDI/useCases';
 import { createHandler } from '#/utils/createHandler';
 import { type AppAction, type ClipStateSnapshot } from '#/utils/handlerContract';
 
@@ -14,7 +9,19 @@ import { withMinimumRecordingLength } from '../../useCases/recording/withMinimum
 import { updateTrack } from '../../useCases/updateTrack';
 import { toHandlerExecutionResult } from '../toHandlerExecutionResult';
 
+import { isRecordingSessionEntry } from './recordingSessionEntry';
+
 type CommitRecordingAction = Extract<AppAction, { type: 'commitRecording' }>;
+const preparedControllers = new WeakMap<CommitRecordingAction, ReturnType<typeof prepareRecordedControllersCommit>>();
+
+function controllerCommit(action: CommitRecordingAction) {
+    let prepared = preparedControllers.get(action);
+    if (!prepared) {
+        prepared = prepareRecordedControllersCommit({ clip: withMinimumRecordingLength(action.payload.clip) });
+        preparedControllers.set(action, prepared);
+    }
+    return prepared;
+}
 
 function owningTrackExists(action: CommitRecordingAction): boolean {
     return getTrackStoreState()?.tracks.some((candidate) => candidate.id === action.payload.clip.trackId) === true;
@@ -70,13 +77,16 @@ function snapshotRows<TRow>(stored: readonly TRow[] | undefined, planned: readon
  * survive the forward write and the later restoration alike.
  */
 export const handleCommitRecording = createHandler<'commitRecording'>({
+    previewExecution: 'unsupported-external',
+    validateSessionEntry: isRecordingSessionEntry,
+    // Runtime consumption is deferred; every execute write belongs to the CRDT transaction.
+    requiresAbortCompensation: false,
     validate: owningTrackExists,
     execute: (action) => {
         const { clip } = action.payload;
         if (!owningTrackExists(action)) {
-            // The commit will never land, so nothing will claim the take's
-            // buffered controllers; they are dropped, never written.
-            discardRecordedControllers(clip.id);
+            // Refusal publishes nothing and cannot consume runtime capture.
+            // The captured terminal retires only its committed missing owner.
             return toHandlerExecutionResult(false);
         }
         updateTrack(clip.trackId, (time) => {
@@ -94,7 +104,9 @@ export const handleCommitRecording = createHandler<'commitRecording'>({
         // inside the commit's storage transaction, so a commit that does not
         // land leaves none of them in the store.
         if (clip.type === 'midi') {
-            commitRecordedControllers({ clip: withMinimumRecordingLength(clip) });
+            const prepared = controllerCommit(action);
+            prepared.write();
+            return { status: 'written', afterCommit: prepared.finish, afterAmbiguousCommit: prepared.finish };
         }
         return toHandlerExecutionResult(true);
     },
@@ -111,8 +123,7 @@ export const handleCommitRecording = createHandler<'commitRecording'>({
         // are not in the store yet; they are added from the buffer, which this
         // only reads, so the snapshot holds the rows `execute` then writes.
         const midiState = getMidiStoreState();
-        const planned =
-            clip.type === 'midi' ? planRecordedControllers({ clip: withMinimumRecordingLength(clip) }) : null;
+        const planned = clip.type === 'midi' ? controllerCommit(action).rows : null;
         const notes = midiState?.notesByClipId[clip.id];
         const cc = snapshotRows(midiState?.ccByClipId[clip.id], planned?.cc ?? []);
         const pitchBend = snapshotRows(midiState?.pitchBendByClipId[clip.id], planned?.pitchBend ?? []);

@@ -18,6 +18,7 @@ const audio_clock = vi.hoisted(() => ({ currentTime: 2, sampleRate: 48000, baseL
 
 vi.mock('../recordingMidiAdmissionPort', () => ({
     recordingMidiAdmissionPort: {
+        isRecordingMidiInputExcluded: () => false,
         getRecordingMidiAdmission: () => undefined,
         retireRecordingMidiAdmission: () => undefined,
         takeOwnsRecordingRoot: () => true,

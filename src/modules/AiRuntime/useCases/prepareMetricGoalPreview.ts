@@ -5,7 +5,6 @@ import {
 } from '#/modules/Command/useCases';
 import { projectRevisionMatchesLiveIgnoringSaveWrites } from '#/modules/CrdtDocument/useCases';
 
-import { ANALYSIS_MEASURE_MAX_TARGETS } from '../models/AnalysisMeasureLimits';
 import { type ApplicationToolReceipt } from '../models/ApplicationOwnedTool';
 import { type ProjectContext } from '../models/ProjectContext';
 import { type RetainedCompilation } from '../models/RetainedCompilation';
@@ -24,6 +23,7 @@ import { collectMetricGoalProof } from './collectMetricGoalProof';
 import { digestCommandBatchContent } from './digestCommandBatchContent';
 import { executeAnalysisMeasure } from './executeAnalysisMeasure';
 import { type MetricGoal, type MetricGoalState } from './metricGoalContractTypes';
+import { planMetricMeasurementRequests } from './planMetricMeasurementRequests';
 import { readGoalPrefix } from './readGoalPrefix';
 
 type PreviewInput = {
@@ -48,12 +48,6 @@ type PreviewRequest = {
 };
 /** One prefix admission reads a goal at, and the subjects of that goal it reads there. */
 type GoalRead = { hash: string; goal: PreviewGoal; ids: readonly string[] };
-/** Subjects of one scope kind and range at one prefix, each with the metrics its goals read. */
-type ScopeGroup = {
-    kind: PreviewRequest['scope']['kind'];
-    range: PreviewGoal['range'];
-    metricsById: Map<string, Set<PreviewGoal['metricId']>>;
-};
 type PreviewRun = NonNullable<ReturnType<typeof agentRunLifecycle.get>>;
 type ProviderSnapshot = {
     cloudRuntime: ReturnType<typeof getCloudProviderRuntime>;
@@ -136,23 +130,6 @@ function currentPreviewGoal(goal: MetricGoal, context: ProjectContext): goal is 
     );
 }
 
-function scopeMembers(ids: string[], kind: PreviewRequest['scope']['kind'], context: ProjectContext): string[] {
-    return ids.filter((id) => {
-        if (id === 'master') {
-            return kind === 'master';
-        }
-        return context.tracks.some((track) => {
-            if (track.id !== id) {
-                return false;
-            }
-            if (kind === 'buses') {
-                return track.kind === 'bus';
-            }
-            return kind === 'tracks' && (track.kind === 'audio' || track.kind === 'midi');
-        });
-    });
-}
-
 /**
  * The batch prefixes admission reads a goal's figures at, and the subjects it reads there
  * (`targetComparison` and `goalReferences` in evaluateMetricGoalAdmission): each target at its
@@ -175,83 +152,6 @@ function goalReads(goal: PreviewGoal, binding: Binding): GoalRead[] {
 function subjectReads(goal: PreviewGoal, hashes: readonly string[], binding: Binding): GoalRead[] {
     const targetReads = hashes.map((hash) => ({ hash, goal, ids: goal.targetIds }));
     return [...targetReads, { hash: binding.contentHash, goal, ids: goal.referenceTargetIds }];
-}
-
-function readScopeGroup(
-    groups: Map<string, ScopeGroup>,
-    kind: PreviewRequest['scope']['kind'],
-    range: PreviewGoal['range']
-): ScopeGroup {
-    const key = JSON.stringify([kind, range]);
-    const existing = groups.get(key);
-    if (existing !== undefined) {
-        return existing;
-    }
-    const created: ScopeGroup = { kind, range, metricsById: new Map<string, Set<PreviewGoal['metricId']>>() };
-    groups.set(key, created);
-    return created;
-}
-
-function addSubjectMetric(group: ScopeGroup, id: string, metricId: PreviewGoal['metricId']): void {
-    const metrics = group.metricsById.get(id);
-    if (metrics === undefined) {
-        group.metricsById.set(id, new Set([metricId]));
-        return;
-    }
-    metrics.add(metricId);
-}
-
-/** Every metric a goal reads on any subject of one chunk, in first-read order. */
-function chunkMetrics(metricsById: ScopeGroup['metricsById'], chunk: readonly string[]): PreviewGoal['metricId'][] {
-    const metrics = new Set<PreviewGoal['metricId']>();
-    for (const id of chunk) {
-        const subjectMetrics = metricsById.get(id);
-        if (subjectMetrics === undefined) {
-            continue;
-        }
-        for (const metricId of subjectMetrics) {
-            metrics.add(metricId);
-        }
-    }
-    return [...metrics];
-}
-
-/**
- * The measurements one prefix needs. Goals of one scope kind and range share their requests: their
- * subjects are measured once, in chunks of at most `ANALYSIS_MEASURE_MAX_TARGETS`, each chunk with
- * every metric a goal on one of its subjects reads, since admission finds a subject's figure by its
- * target id inside any proof at that prefix and range.
- */
-function sharedScopeRequests(
-    reads: readonly GoalRead[],
-    hash: string,
-    envelope: PreviewEnvelope,
-    context: ProjectContext
-): PreviewRequest[] {
-    const groups = new Map<string, ScopeGroup>();
-    for (const { goal, ids } of reads) {
-        for (const kind of ['master', 'tracks', 'buses'] as const) {
-            const members = scopeMembers([...ids], kind, context);
-            if (members.length === 0) {
-                continue;
-            }
-            const group = readScopeGroup(groups, kind, goal.range);
-            for (const id of members) {
-                addSubjectMetric(group, id, goal.metricId);
-            }
-        }
-    }
-    return [...groups.values()].flatMap(({ kind, range, metricsById }) => {
-        const members = [...metricsById.keys()];
-        const requests: PreviewRequest[] = [];
-        for (let start = 0; start < members.length; start += ANALYSIS_MEASURE_MAX_TARGETS) {
-            const chunk = members.slice(start, start + ANALYSIS_MEASURE_MAX_TARGETS);
-            const metrics = chunkMetrics(metricsById, chunk);
-            const scope = kind === 'master' ? { kind } : { kind, ids: chunk };
-            requests.push({ hash, envelope, scope, range, metrics });
-        }
-        return requests;
-    });
 }
 
 function buildPreviewRequests(
@@ -283,7 +183,17 @@ function buildPreviewRequests(
         if (prepared === null) {
             continue;
         }
-        requests.push(...sharedScopeRequests(atPrefix, prefix.after, prepared, context));
+        requests.push(
+            ...planMetricMeasurementRequests({
+                reads: atPrefix.map(({ hash, goal, ids }) => ({
+                    prefix: hash,
+                    range: goal.range,
+                    metricId: goal.metricId,
+                    targetIds: ids,
+                })),
+                context,
+            }).map(({ prefix: hash, ...request }) => ({ hash, envelope: prepared, ...request }))
+        );
     }
     return requests;
 }

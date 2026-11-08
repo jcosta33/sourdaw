@@ -179,7 +179,7 @@ describe('SendsSection', () => {
         renderInProject({ ...baseTrack, id: 'track-9', sends: [{ busId: 'bus-1', level: 0.2, preFader: false }] });
         const root = screen.getByRole('slider', { name: 'Send to Reverb' }).closest('[data-slot="slider"]');
         if (!(root instanceof HTMLElement)) {
-            throw new Error('Missing Slider root');
+            throw new TypeError('Missing Slider root');
         }
         // jsdom has no pointer capture; hold it as a browser does, so a cancel
         // releases it and Radix sees the later pointerup without capture.
@@ -228,7 +228,7 @@ describe('SendsSection', () => {
         });
         const root = screen.getByRole('slider', { name: 'Send to Reverb' }).closest('[data-slot="slider"]');
         if (!(root instanceof HTMLElement)) {
-            throw new Error('Missing Slider root');
+            throw new TypeError('Missing Slider root');
         }
         Object.defineProperties(root, {
             setPointerCapture: { configurable: true, value: vi.fn() },
@@ -279,7 +279,7 @@ describe('SendsSection', () => {
         const view = renderInProject(track);
         const root = screen.getByRole('slider', { name: 'Send to Reverb' }).closest('[data-slot="slider"]');
         if (!(root instanceof HTMLElement)) {
-            throw new Error('Missing Slider root');
+            throw new TypeError('Missing Slider root');
         }
         let captured = false;
         Object.defineProperties(root, {

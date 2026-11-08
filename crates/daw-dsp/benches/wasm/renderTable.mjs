@@ -280,7 +280,7 @@ export function renderGeneratedRegion(data) {
             lines.push(
                 `| ${row.id} | ${row.calibration.segments} | ${sig2(row.calibration.medianTicksPerMs)} | ` +
                     `${row.calibration.spreadPct.toFixed(1)}% | ${(row.wallRatio * 100).toFixed(0)}% | ` +
-                    `${us(row.stats.min)} µs | ${row.floorMeasurable ? us(row.stats.floor) + ' µs' : 'withheld'} |`
+                    `${us(row.stats.min)} µs | ${row.floorMeasurable ? `${us(row.stats.floor)} µs` : 'withheld'} |`
             );
         }
         return lines.join('\n');

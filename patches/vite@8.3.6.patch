@@ -1,8 +1,7 @@
 diff --git a/dist/client/bundledDevClient.mjs b/dist/client/bundledDevClient.mjs
-index ceb0ca308d8631ba8f9d10c6a51f57eb200eaed2..1b9fa12745677b96c5f5de619eab5d75fcd10783 100644
 --- a/dist/client/bundledDevClient.mjs
 +++ b/dist/client/bundledDevClient.mjs
-@@ -1223,6 +1223,7 @@ const socketHost = `${__HMR_HOSTNAME__ || importMetaUrl.hostname}:${hmrPort || i
+@@ -1231,6 +1231,7 @@
  const directSocketHost = __HMR_DIRECT_TARGET__;
  const base = __BASE__ || "/";
  const hmrTimeout = __HMR_TIMEOUT__;
@@ -10,7 +9,7 @@ index ceb0ca308d8631ba8f9d10c6a51f57eb200eaed2..1b9fa12745677b96c5f5de619eab5d75
  const wsToken = __WS_TOKEN__;
  const forwardConsole = __SERVER_FORWARD_CONSOLE__;
  const transport = normalizeModuleRunnerTransport((() => {
-@@ -1360,7 +1361,7 @@ async function handleMessage(payload) {
+@@ -1368,7 +1369,7 @@
  		case "custom":
  			await activeHmrClient.notifyListeners(payload.event, payload.data);
  			if (payload.event === "vite:ws:disconnect") {
@@ -20,10 +19,9 @@ index ceb0ca308d8631ba8f9d10c6a51f57eb200eaed2..1b9fa12745677b96c5f5de619eab5d75
  					const socket = payload.data.webSocket;
  					const url = new URL(socket.url);
 diff --git a/dist/client/client.mjs b/dist/client/client.mjs
-index 62df91b57c8510b34fa26472a94b771263bd90d5..cc50d491dee031c40509d907659b613dbd5a2875 100644
 --- a/dist/client/client.mjs
 +++ b/dist/client/client.mjs
-@@ -952,6 +952,7 @@ const socketHost = `${__HMR_HOSTNAME__ || importMetaUrl.hostname}:${hmrPort || i
+@@ -940,6 +940,7 @@
  const directSocketHost = __HMR_DIRECT_TARGET__;
  const base = __BASE__ || "/";
  const hmrTimeout = __HMR_TIMEOUT__;
@@ -31,7 +29,7 @@ index 62df91b57c8510b34fa26472a94b771263bd90d5..cc50d491dee031c40509d907659b613d
  const wsToken = __WS_TOKEN__;
  const forwardConsole = __SERVER_FORWARD_CONSOLE__;
  const transport = normalizeModuleRunnerTransport((() => {
-@@ -1086,7 +1087,7 @@ async function handleMessage(payload) {
+@@ -1074,7 +1075,7 @@
  		case "custom":
  			await activeHmrClient.notifyListeners(payload.event, payload.data);
  			if (payload.event === "vite:ws:disconnect") {
@@ -41,10 +39,9 @@ index 62df91b57c8510b34fa26472a94b771263bd90d5..cc50d491dee031c40509d907659b613d
  					const socket = payload.data.webSocket;
  					const url = new URL(socket.url);
 diff --git a/dist/node/chunks/node.js b/dist/node/chunks/node.js
-index 797794fd975e746a691212c9fe265fca28167242..ec9d5f4360ec3261a91b8da117da3660f35b7128 100644
 --- a/dist/node/chunks/node.js
 +++ b/dist/node/chunks/node.js
-@@ -17265,12 +17265,13 @@ async function createClientConfigValueReplacer(config) {
+@@ -17241,12 +17241,13 @@
  	const hmrDirectTargetReplacement = escapeReplacement(directTarget);
  	const hmrBaseReplacement = escapeReplacement(hmrBase);
  	const hmrTimeoutReplacement = escapeReplacement(timeout);

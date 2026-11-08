@@ -38,25 +38,27 @@ export function readVibeBatchRecipeGoals(input: {
             if (metricId === undefined) {
                 continue;
             }
-            goals.push({
-                goalId: `vibe:${input.batch.id}:${pair.targetId}:${pair.recipeId}:${String(expectationIndex)}`,
-                stepId: pair.stepId,
-                metricId,
-                band: expectation.band ?? null,
-                targetIds: [pair.targetId],
-                referenceTargetIds: [],
-                range: input.range,
-                relation: expectation.direction,
-                targetValue: null,
-                tolerance: 0,
-                source: {
-                    kind: 'recipe',
-                    recipeId: recipe.id,
-                    catalogVersion: input.catalog.version,
-                    recipeDigest,
-                    expectationIndex,
-                },
-            });
+            for (const range of input.batch.verificationRanges ?? [input.range]) {
+                goals.push({
+                    goalId: `vibe:${input.batch.id}:${pair.targetId}:${pair.recipeId}:${String(expectationIndex)}:${digest(range)}`,
+                    stepId: pair.stepId,
+                    metricId,
+                    band: expectation.band ?? null,
+                    targetIds: [pair.targetId],
+                    referenceTargetIds: [],
+                    range,
+                    relation: expectation.direction,
+                    targetValue: null,
+                    tolerance: 0,
+                    source: {
+                        kind: 'recipe',
+                        recipeId: recipe.id,
+                        catalogVersion: input.catalog.version,
+                        recipeDigest,
+                        expectationIndex,
+                    },
+                });
+            }
         }
     }
     return { status: 'read', pairs, goals };

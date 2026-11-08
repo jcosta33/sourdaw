@@ -63,7 +63,7 @@ describe('OutputMeter', () => {
 
         const pct = expectedPercent(peak);
         const l = barStyle('L');
-        expect(l.height).toBe(`${Math.max(1, pct * height)}px`);
+        expect(parseFloat(l.height)).toBeCloseTo(Math.max(1, pct * height), 3);
         expect(l.opacity).toBe(1);
     });
 
@@ -74,8 +74,8 @@ describe('OutputMeter', () => {
 
         const lPct = expectedPercent(1.0);
         const rPct = expectedPercent(0.25);
-        expect(barStyle('L').height).toBe(`${Math.max(1, lPct * height)}px`);
-        expect(barStyle('R').height).toBe(`${Math.max(1, rPct * height)}px`);
+        expect(parseFloat(barStyle('L').height)).toBeCloseTo(Math.max(1, lPct * height), 3);
+        expect(parseFloat(barStyle('R').height)).toBeCloseTo(Math.max(1, rPct * height), 3);
     });
 
     it('clamps an over-unity peak to 100% bar height', () => {

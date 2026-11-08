@@ -66,7 +66,7 @@ path yet.
 ### Prerequisites
 
 - Node.js `>=24.15.0 <25`
-- pnpm `11.6.0`
+- pnpm `11.28.11`
 - Rust nightly `nightly-2026-04-14` for desktop and native work
 
 ### Browser app

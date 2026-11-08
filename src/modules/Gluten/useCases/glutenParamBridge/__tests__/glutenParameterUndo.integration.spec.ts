@@ -40,6 +40,9 @@ import { setGlutenParamWithAudio } from '../setGlutenParamWithAudio';
 const engineWrites: { trackId: string; deviceId: string; paramId: string; value: number }[] = [];
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    openCachedAudioBufferHold: vi.fn(() => {
+        throw new Error('Unexpected audio buffer residency hold in this fixture');
+    }),
     captureOfflineRenderProjectSource: vi.fn(() => {
         throw new Error('Unexpected selection render capture in this fixture');
     }),
