@@ -1,13 +1,15 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createMockAudioContext, createMockAudioNode, MockAudioBuffer } from '#/helpers/__tests__/audioContext.mock';
+
 import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
-import type { Clip } from '#/modules/Arrangement/stores';
 
 import { defaultTransportState } from '../../../models/TransportState';
+
+import type { Clip } from '#/modules/Arrangement/stores';
 
 async function importRuntime() {
     // Construct the real singleton only after its external AudioContext exists.
