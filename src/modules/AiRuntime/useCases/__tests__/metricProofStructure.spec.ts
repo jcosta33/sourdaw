@@ -76,6 +76,39 @@ describe('metric proof structure', () => {
         const state = f.bind({ ...f.state, proofs: [duplicate, reference] });
         expect(f.evaluate(state)).toMatchObject({ status: 'blocked', failure: 'incomparable' });
     });
+    it('admits broadcast and pairwise references but rejects a third reference for two targets', () => {
+        const f = metricGuardFixture();
+        const authority = f.state.authorities[0]!;
+        const goal = authority.goals[0]!;
+        const proof = f.state.proofs[0]!;
+        const provenance = proof.preview.provenance!;
+        const ids = ['bass', 'drums', 'reference-a', 'reference-b', 'reference-c'];
+        const targets = ids.map((targetId, index) => ({ ...proof.preview.targets[index < 2 ? 0 : 1]!, targetId }));
+        const artifacts = ids.map((targetId) => ({ ...provenance.targets[0]!, targetId }));
+        const expandedProof = {
+            ...proof,
+            preview: {
+                ...proof.preview,
+                scope: { kind: 'tracks' as const, ids },
+                targets,
+                provenance: { ...provenance, targets: artifacts },
+            },
+        };
+        function withReferences(referenceTargetIds: string[]) {
+            return f.bind({
+                ...f.state,
+                authorities: [{ ...authority, goals: [{ ...goal, targetIds: ids.slice(0, 2), referenceTargetIds }] }],
+                proofs: [expandedProof],
+            });
+        }
+        expect(f.evaluate(withReferences(ids.slice(2, 3))).status).toBe('verified');
+        expect(f.evaluate(withReferences(ids.slice(2, 4))).status).toBe('verified');
+        expect(f.evaluate(withReferences(ids.slice(2, 5)))).toMatchObject({
+            status: 'blocked',
+            failure: 'incomparable',
+            reason: expect.stringContaining('Compatible actual baseline'),
+        });
+    });
     it.each(['before', 'after'] as const)('rejects a rebound prefix with altered %s', (field) => {
         const f = metricGuardFixture();
         expect(f.evaluate(f.state).status).toBe('verified');

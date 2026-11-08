@@ -6,6 +6,7 @@ import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
 import { admitMetricIntent } from '../admitMetricIntent';
 import { bindMetricGoalsToBatch } from '../bindMetricGoalsToBatch';
 import { compilePlannedActionCommandBatch } from '../compilePlannedActionCommandBatch';
+import { digestCommandBatchContent } from '../digestCommandBatchContent';
 import { evaluateMetricGoalAdmission } from '../evaluateMetricGoalAdmission';
 import { getProjectContext } from '../getProjectContext';
 import { type MetricGoalState } from '../metricGoalContractTypes';
@@ -97,6 +98,36 @@ export function metricGuardFixture() {
         },
     });
     if (opposed.status !== 'admitted') throw new Error(opposed.reason);
+    const recipeObjective = catalog.objectives.find((entry) =>
+        entry.goals.some(
+            (goal) =>
+                goal.source.kind === 'recipe' &&
+                goal.source.recipeId === 'bass-warm' &&
+                goal.metricId === 'spectralCentroid' &&
+                goal.relation === 'decrease'
+        )
+    );
+    if (!recipeObjective) throw new Error('Expected published Bass warm criterion');
+    const recipe = admitMetricIntent({
+        catalog,
+        creativeAuthority: null,
+        workflowTargetIds: ['bass'],
+        callId: 'recipe',
+        turn: 1,
+        value: {
+            kind: 'perceptual',
+            uncertainty: 'none',
+            objectives: [
+                {
+                    objectiveId: recipeObjective.id,
+                    scopeCandidateId: scope.candidateId,
+                    referenceScopeCandidateId: null,
+                    rangeCandidateId: range.candidateId,
+                },
+            ],
+        },
+    });
+    if (recipe.status !== 'admitted') throw new Error(recipe.reason);
     const commandBatch = compilePlannedActionCommandBatch({
         actions: [
             { type: 'setTrackGain', payload: { trackId: 'bass', gain: 0.8, expectedGain: 1 } },
@@ -174,5 +205,20 @@ export function metricGuardFixture() {
     function evaluate(value: MetricGoalState) {
         return evaluateMetricGoalAdmission({ state: value, commandBatch, currentRevision: revision });
     }
-    return { state: bind(state), bind, evaluate, opposed: opposed.authority };
+    const firstCommands = parsed.envelope.commands.slice(0, 1);
+    const firstIds = new Set(firstCommands.map((command) => command.commandId));
+    const firstHash = digestCommandBatchContent({
+        ...parsed.envelope,
+        commands: firstCommands,
+        batchLocalBindings: parsed.envelope.batchLocalBindings.filter((entry) => firstIds.has(entry.producerCommandId)),
+    });
+    return {
+        state: bind(state),
+        bind,
+        evaluate,
+        opposed: opposed.authority,
+        recipe: recipe.authority,
+        firstHash,
+        operations: parsed.envelope.commands.map((command) => command.operation),
+    };
 }
