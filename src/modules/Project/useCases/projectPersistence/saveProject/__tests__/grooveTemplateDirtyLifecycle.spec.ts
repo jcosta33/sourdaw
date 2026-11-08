@@ -247,11 +247,13 @@ describe('groove template project dirty lifecycle', () => {
     it('cancels a real singleton batch after the handler candidate without dirtying', async () => {
         const controller = new AbortController();
         const handlers = getMidiGrooveHandlers();
+        expect(handlers.createGrooveTemplate.previewExecution).toBeUndefined();
         clearHandlerRegistry();
         registerHandlerMap({
             ...handlers,
             createGrooveTemplate: {
                 ...handlers.createGrooveTemplate,
+                previewExecution: undefined,
                 execute: (action) => {
                     const result = handlers.createGrooveTemplate.execute(action);
                     controller.abort();
