@@ -6,6 +6,7 @@ import { normalizeTrack } from '#/modules/Arrangement/useCases';
 
 import { type ProjectContext } from '../../../models/ProjectContext';
 import { type ProposalProtectionFacts } from '../../../models/ProposalGroundingBasis';
+import { type SemanticCommandListItem } from '../../../models/SemanticCommandList';
 import {
     pendingActionConfirmationStore,
     proposePendingActionConfirmation,
@@ -130,23 +131,24 @@ function compile(calls: readonly Call[], prompt: string) {
                     },
                     list: {
                         schemaVersion: 1,
-                        items: calls.map((call, index) => ({
-                            id: `item-${index}`,
-                            name: call.name,
-                            arguments: Object.fromEntries(
-                                Object.entries(call.arguments).filter(([key]) => key !== 'trackId')
-                            ),
-                            ...(call.arguments.trackId === undefined
-                                ? {}
-                                : {
-                                      selector: {
-                                          targetArgument: 'trackId',
-                                          entity: 'track',
-                                          where: { name: 'Guitar' },
-                                          quantity: { unit: 'targets', exactly: 1 },
-                                      },
-                                  }),
-                        })),
+                        items: calls.map((call, index) => {
+                            const item: SemanticCommandListItem = {
+                                id: `item-${index}`,
+                                name: call.name,
+                                arguments: Object.fromEntries(
+                                    Object.entries(call.arguments).filter(([key]) => key !== 'trackId')
+                                ),
+                            };
+                            if (call.arguments.trackId !== undefined) {
+                                item.selector = {
+                                    targetArgument: 'trackId',
+                                    entity: 'track',
+                                    where: { name: 'Guitar' },
+                                    quantity: { unit: 'targets', exactly: 1 },
+                                };
+                            }
+                            return item;
+                        }),
                     },
                 },
             },

@@ -373,8 +373,14 @@ function getProjectClipEffectObjectIds(actionType: string, context: ProjectConte
     }
     return context.tracks.flatMap((track) => {
         // Alternative identities carry no content type, so they cannot prove an unaffected source.
-        const clipIds = [...track.clips.map((clip) => clip.id), ...(track.alternativeClipIds ?? [])];
-        return clipIds.length === 0 ? [] : [track.id, ...clipIds];
+        const clipIds = track.clips.map((clip) => clip.id);
+        if (track.alternativeClipIds !== undefined) {
+            clipIds.push(...track.alternativeClipIds);
+        }
+        if (clipIds.length === 0) {
+            return [];
+        }
+        return [track.id, ...clipIds];
     });
 }
 
