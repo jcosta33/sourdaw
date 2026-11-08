@@ -8,8 +8,8 @@ import {
     getCurrentTime,
 } from '#/modules/AudioEngine/useCases';
 
-import { scheduleFrozenTrack } from '../scheduleFrozenTrack';
 import { type SourceWithFade } from '../../../models/SourceWithFade';
+import { scheduleFrozenTrack } from '../scheduleFrozenTrack';
 
 // A stable createGain spy: the fade gain is the node that leaked, so the tests
 // need the same identity the module calls, not a fresh fn per getAudioContext().

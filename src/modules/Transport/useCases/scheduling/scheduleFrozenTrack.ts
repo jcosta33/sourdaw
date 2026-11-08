@@ -11,6 +11,18 @@ import { type SourceWithFade } from '../../models/SourceWithFade';
 import { secondsBetweenBeats } from '../../models/TempoMap';
 import { tempoMapStore } from '../../stores/tempoMapStore';
 
+import { projectFrozenTrackWindow } from './projectFrozenTrackWindow';
+
+function retainFrozenSource(source: AudioBufferSourceNode, activeAudioSources: AudioBufferSourceNode[]): void {
+    activeAudioSources.push(source);
+    source.onended = () => {
+        const idx = activeAudioSources.indexOf(source);
+        if (idx >= 0) {
+            activeAudioSources.splice(idx, 1);
+        }
+    };
+}
+
 export function scheduleFrozenTrack(
     track: {
         id: string;
@@ -90,26 +102,23 @@ export function scheduleFrozenTrack(
     // that beat must not sound — the earliest content is the window's first
     // beat, held until its due instant. A floor at or before the buffer's own
     // start changes nothing.
-    let floorSeconds = initialFloor ? Math.max(startTime, schedulingAnchor + compensation) : startTime;
-    if (windowStartBeat !== null && windowStartBeat > trackStartBeat) {
-        floorSeconds = Math.max(
-            floorSeconds,
-            floorAnchorTime +
-                secondsBetweenBeats(changes, accumulatedPosition, windowStartBeat, defaultTempo) +
-                compensation
-        );
-    }
-    const audibleStartSeconds = Math.max(startTime, floorSeconds);
-    const skipSeconds = audibleStartSeconds - startTime;
-
-    // Resolve the timing before building anything. The buffer can already have
-    // played out in full by the time this tick fires, and there is then nothing
-    // to start — creating the source and its fade gain first left a GainNode
-    // wired into the track strip on every such call, with no source to end and
-    // release it. A window floor that skips past the rendered content is the
-    // same outcome. The track still counts as scheduled: `true` is what stops
-    // the caller from retrying it every grain.
-    if ((startTime < now && elapsed >= buffer.duration) || skipSeconds >= buffer.duration) {
+    const { audibleStartSeconds, skipSeconds, exhausted } = projectFrozenTrackWindow({
+        changes,
+        accumulatedPosition,
+        trackStartBeat,
+        defaultTempo,
+        startTime,
+        schedulingAnchor,
+        compensation,
+        now,
+        elapsed,
+        windowStartBeat,
+        floorAnchorTime,
+        initialFloor,
+        duration: buffer.duration,
+    });
+    // Exhausted content is admitted without allocating a strip, source or gain.
+    if (exhausted) {
         return true;
     }
 
@@ -165,13 +174,7 @@ export function scheduleFrozenTrack(
         });
     }
 
-    activeAudioSources.push(source);
-    source.onended = () => {
-        const idx = activeAudioSources.indexOf(source);
-        if (idx >= 0) {
-            activeAudioSources.splice(idx, 1);
-        }
-    };
+    retainFrozenSource(source, activeAudioSources);
 
     return true;
 }

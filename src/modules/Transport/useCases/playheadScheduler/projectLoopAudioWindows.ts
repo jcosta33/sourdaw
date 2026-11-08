@@ -24,11 +24,8 @@ type AudioWindow = {
     passEndTime: number;
 };
 
-/** Project at most the admitted work allowance, never allocate the requested H/L passes. */
-export function projectLoopAudioWindows(input: ProjectionInput) {
+function readLoopGeometry(input: ProjectionInput) {
     const { transport, changes, anchorBeat, anchorTime, fromTime, toTime, maxWindows } = input;
-    const windows: AudioWindow[] = [];
-    const refused = () => ({ windows, coveredThrough: fromTime, shortfall: 'unrepresentable' as const });
     const duration = secondsBetweenBeats(changes, transport.loopStart, transport.loopEnd, transport.tempo);
     const firstEnd = anchorTime + secondsBetweenBeats(changes, anchorBeat, transport.loopEnd, transport.tempo);
     if (
@@ -39,11 +36,15 @@ export function projectLoopAudioWindows(input: ProjectionInput) {
         !Number.isSafeInteger(maxWindows) ||
         maxWindows <= 0
     ) {
-        return refused();
+        return null;
     }
+    return { duration, firstEnd };
+}
+
+function locatePass(fromTime: number, firstEnd: number, duration: number): number | null {
     let passIndex = fromTime < firstEnd ? 0 : Math.floor((fromTime - firstEnd) / duration) + 1;
     if (!Number.isSafeInteger(passIndex) || passIndex < 0) {
-        return refused();
+        return null;
     }
     // Division can round an exact boundary just below its integer. Compare
     // the projected endpoints once; never enumerate the crossed passes.
@@ -54,6 +55,23 @@ export function projectLoopAudioWindows(input: ProjectionInput) {
         passIndex--;
     }
     if (!Number.isSafeInteger(passIndex)) {
+        return null;
+    }
+    return passIndex;
+}
+
+/** Project at most the admitted work allowance, never allocate the requested H/L passes. */
+export function projectLoopAudioWindows(input: ProjectionInput) {
+    const { transport, changes, anchorBeat, anchorTime, fromTime, toTime, maxWindows } = input;
+    const windows: AudioWindow[] = [];
+    const refused = () => ({ windows, coveredThrough: fromTime, shortfall: 'unrepresentable' as const });
+    const geometry = readLoopGeometry(input);
+    if (!geometry) {
+        return refused();
+    }
+    const { duration, firstEnd } = geometry;
+    let passIndex = locatePass(fromTime, firstEnd, duration);
+    if (passIndex === null) {
         return refused();
     }
     let cursor = fromTime;

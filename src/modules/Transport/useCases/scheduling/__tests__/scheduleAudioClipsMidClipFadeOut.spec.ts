@@ -20,6 +20,7 @@ const { createdGains } = vi.hoisted(() => ({
     createdGains: [] as Array<{ gain: { linearRampToValueAtTime: ReturnType<typeof vi.fn> } }>,
 }));
 vi.mock('#/modules/Arrangement/stores', () => ({
+    gainEnvelopeStore: { value: null },
     trackStore: {
         get value() {
             return trackStoreState.value;

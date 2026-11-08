@@ -21,8 +21,8 @@ import {
 } from '#/utils/clipGainEnvelopeSchedule';
 import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
 import { notifyUser } from '#/utils/Notification/notifyUser';
-import { valuesEqual } from '#/utils/structuralEquality';
 import { boundStretchRatio } from '#/utils/stretchRatioBound';
+import { valuesEqual } from '#/utils/structuralEquality';
 
 import { type SourceWithFade } from '../../models/SourceWithFade';
 import { getTempoAtBeat, secondsBetweenBeats } from '../../models/TempoMap';

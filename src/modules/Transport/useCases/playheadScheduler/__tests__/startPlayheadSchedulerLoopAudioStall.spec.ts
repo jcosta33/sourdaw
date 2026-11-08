@@ -3,15 +3,15 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createTrack } from '#/modules/Arrangement/useCases';
 import { processYeastMidi } from '#/modules/Yeast/useCases';
 
-import { notePanicParticipants } from '../../transportControls/notePanicParticipants';
-import { executePlayheadSeek } from '../../transportControls/executePlayheadSeek';
-import { pausePlayback } from '../../transportControls/pausePlayback';
 import { defaultTransportState } from '../../../models/TransportState';
 import { playheadClockRef } from '../../../stores/playheadClockRef';
 import { playheadWrapCountRef } from '../../../stores/playheadWrapCountRef';
+import { liveMidiProcessor } from '../../scheduling/liveMidiProcessor';
 import { metronomeSchedulingState } from '../../scheduling/metronomeSchedulingState';
 import { scheduleMidiNotes } from '../../scheduling/scheduleMidiNotes';
-import { liveMidiProcessor } from '../../scheduling/liveMidiProcessor';
+import { executePlayheadSeek } from '../../transportControls/executePlayheadSeek';
+import { notePanicParticipants } from '../../transportControls/notePanicParticipants';
+import { pausePlayback } from '../../transportControls/pausePlayback';
 import { createLoopAudioSchedule } from '../createLoopAudioSchedule';
 import { disposePlayheadScheduler } from '../disposePlayheadScheduler';
 import { schedulerSession } from '../schedulerSession';
@@ -74,12 +74,14 @@ const trackStripStub = {
 
 const loggedError = vi.hoisted(() => vi.fn());
 vi.mock('#/infra/logger/appLogger', () => ({ logger: { error: loggedError, warn: vi.fn(), info: vi.fn() } }));
-vi.mock('#/modules/CrdtDocument/useCases', () => ({
+vi.mock('#/modules/CrdtDocument/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/CrdtDocument/useCases')>()),
     captureProjectRootIdentity: vi.fn<typeof import('#/modules/CrdtDocument/useCases').captureProjectRootIdentity>(
         () => 'root-identity'
     ),
 }));
-vi.mock('#/modules/Arrangement/stores', () => ({
+vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Arrangement/stores')>()),
     appendClipToTrack: vi.fn<typeof import('#/modules/Arrangement/stores').appendClipToTrack>(),
     clipSelectionStore: { value: null },
     resolveEligibleClipWriteTarget: vi.fn<typeof import('#/modules/Arrangement/stores').resolveEligibleClipWriteTarget>(
@@ -148,7 +150,8 @@ vi.mock('#/modules/Automation/stores', () => ({
     modulationStore: { value: null },
     automationStore: { value: null },
 }));
-vi.mock('#/modules/Automation/useCases', () => ({
+vi.mock('#/modules/Automation/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Automation/useCases')>()),
     startAutomationRecording: vi.fn(),
     stopAutomationRecording: vi.fn(),
     applyModulation: vi.fn(),
@@ -159,6 +162,7 @@ vi.mock('#/modules/Automation/useCases', () => ({
 vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/Arrangement/useCases')>();
     return {
+        ...actual,
         createTrack: actual.createTrack,
         resolveClipsWithComping: actual.resolveClipsWithComping,
         captureRecordingCommitRetirement: () => {
@@ -238,7 +242,8 @@ function createSource() {
     return source;
 }
 
-vi.mock('#/modules/AudioEngine/useCases', () => ({
+vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
     builtinSynthVoice: { read: () => synthVoices },
     ensureCachedAudioBuffersDurable: vi.fn(),
     createNativeRecordingCaptureClock: () => ({ last: null, read: () => ({ carrier: 'browser' as const }) }),
@@ -294,7 +299,10 @@ const synthVoices = vi.hoisted(() => ({
     scheduleNote: scheduleNoteSpy,
     getSynthParamsFromDevices: vi.fn(() => ({})),
 }));
-vi.mock('#/modules/PluginHost/useCases', () => ({ isFaustInstrumentModule: () => false }));
+vi.mock('#/modules/PluginHost/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/PluginHost/useCases')>()),
+    isFaustInstrumentModule: () => false,
+}));
 vi.mock('#/modules/Yeast/useCases', () => ({
     hydrateYeastCrdtProjection: vi.fn(),
     processYeastMidi: vi.fn(),
