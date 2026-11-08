@@ -1,0 +1,20 @@
+.agents/skills/review-stances/command-entry-and-state-oracles.md
+  s_977061c47f01dd::t_74fa9cc4bc3b11 95-96
+  s_977061c47f01dd::t_cad24d84c6b0c4 97-98
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ccc214546c80fca4d77cb7d00902e5d74f0c8a9d",
+  "prompts": {},
+  "sessions": {
+    "s_977061c47f01dd": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34d-123d-7452-a6e7-60608388b6d7",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
