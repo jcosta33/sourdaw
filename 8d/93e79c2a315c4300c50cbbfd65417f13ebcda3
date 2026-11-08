@@ -1,0 +1,33 @@
+.agents/skills/review-stances/test-timing-and-isolation.md
+  s_977061c47f01dd::t_fef1305f3dc7e5 107-109
+src/modules/Arrangement/handlers/track/__tests__/handleAddTrackDefaultName.integration.spec.ts
+  s_977061c47f01dd::t_71f98721d733cb 198-218,220-234,236-246
+  s_977061c47f01dd::t_1b7a57de1a134e 31,71-72,219,235
+  s_977061c47f01dd::t_fe8a251df1dc87 247
+src/modules/Arrangement/handlers/__tests__/planDefaultTrackName.spec.ts
+  s_977061c47f01dd::t_71f98721d733cb 142-148,151-156,164-166,178-186
+  s_977061c47f01dd::t_1b7a57de1a134e 192-197,199
+  s_977061c47f01dd::t_b7cb84e5a65888 7,14,19-35,94-141,149-150,157-163,167-177,187-191,198,200-206
+src/modules/Arrangement/handlers/planDefaultTrackName.ts
+  s_977061c47f01dd::t_fef1305f3dc7e5 46-51
+  s_977061c47f01dd::t_4809e6777afdcd 1,7-34,43-45,52-63,74
+  s_977061c47f01dd::t_e26b149a318965 35-42,65-69
+.agents/skills/review-stances/command-entry-and-state-oracles.md
+  s_977061c47f01dd::t_fef1305f3dc7e5 104-108
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "8d93e79c2a315c4300c50cbbfd65417f13ebcda3",
+  "prompts": {},
+  "sessions": {
+    "s_977061c47f01dd": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34d-123d-7452-a6e7-60608388b6d7",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
