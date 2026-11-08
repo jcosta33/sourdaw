@@ -1,0 +1,24 @@
+src/modules/AiRuntime/useCases/__tests__/metricGoalGuardContracts.spec.ts
+  s_68423a2adea8d2::t_31fe5ecfa77365 106-112
+src/modules/AiRuntime/useCases/__tests__/metricGuardFixture.ts
+  s_68423a2adea8d2::t_0224967b178839 123-146,267
+  s_68423a2adea8d2::t_31fe5ecfa77365 101-122,266
+src/modules/AiRuntime/useCases/__tests__/metricProofStructure.spec.ts
+  s_68423a2adea8d2::t_f757251862f818 3-4,81-127
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "db8be9d89219b1d9debd259c8f19eacf52b1cbb6",
+  "prompts": {},
+  "sessions": {
+    "s_68423a2adea8d2": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34b-f305-7c03-beb2-57afa678cda5",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
