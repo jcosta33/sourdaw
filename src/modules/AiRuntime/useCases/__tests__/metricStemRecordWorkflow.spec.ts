@@ -737,7 +737,14 @@ describe('stem import and starting mix workflow', () => {
         await sendChatMessage(
             'Remove the Guide Mix gain from the pending proposal and import the selected stems using the published role-based gain and pan values.'
         );
-        const plans = await Promise.all(planning.mock.results.map((entry) => entry.value));
+        const plans = await Promise.all(
+            planning.mock.results.map((entry) => {
+                if (entry.type !== 'return') {
+                    throw new Error('Expected the planning call to return');
+                }
+                return entry.value;
+            })
+        );
         planning.mockRestore();
         expect(mocks.stageDurableAsset).toHaveBeenCalledTimes(STEM_SOURCE_NAMES.length);
         expect(replayedIds.size).toBeGreaterThan(0);

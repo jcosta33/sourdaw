@@ -83,12 +83,11 @@ function evaluate(prompt: string, action: AppAction, literal = false) {
             },
         },
     });
-    if (
-        admitted.status !== 'admitted' ||
-        admitted.kind !== 'creative' ||
-        !('metricAuthority' in admitted) ||
-        !admitted.metricAuthority
-    ) {
+    if (admitted.status !== 'admitted') {
+        throw new Error('Expected genuine non-acoustic intake');
+    }
+    const metricAuthority = 'metricAuthority' in admitted ? admitted.metricAuthority : undefined;
+    if (admitted.kind !== 'creative' || !metricAuthority) {
         throw new Error('Expected genuine non-acoustic intake');
     }
     const commandBatch = compilePlannedActionCommandBatch({
@@ -107,7 +106,7 @@ function evaluate(prompt: string, action: AppAction, literal = false) {
                 commandBatch,
                 state: {
                     schemaVersion: 1,
-                    authorities: [admitted.metricAuthority],
+                    authorities: [metricAuthority],
                     steps: [],
                     proofs: [],
                     binding: null,
@@ -164,12 +163,11 @@ describe('non-acoustic authority and Command effects', () => {
                 },
             },
         });
-        if (
-            admitted.status !== 'admitted' ||
-            admitted.kind !== 'creative' ||
-            !('metricAuthority' in admitted) ||
-            !admitted.metricAuthority
-        ) {
+        if (admitted.status !== 'admitted') {
+            throw new Error('Expected genuine brief admission');
+        }
+        const metricAuthority = 'metricAuthority' in admitted ? admitted.metricAuthority : undefined;
+        if (admitted.kind !== 'creative' || !metricAuthority) {
             throw new Error('Expected genuine brief admission');
         }
         const brief = structuredClone(defaultProjectStoreState.productionBrief);
@@ -196,7 +194,7 @@ describe('non-acoustic authority and Command effects', () => {
                     commandBatch,
                     state: {
                         schemaVersion: 1,
-                        authorities: [admitted.metricAuthority],
+                        authorities: [metricAuthority],
                         steps: [],
                         proofs: [],
                         binding: null,

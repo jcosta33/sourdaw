@@ -55,7 +55,7 @@ describe('bound measured-goal completeness', () => {
         const target = proof.preview.targets[0]!;
         const figure = (value: number) => ({
             status: 'measured' as const,
-            metricVersion: 1,
+            metricVersion: 1 as const,
             unit: 'hertz',
             value,
             confidence: 'exact' as const,
@@ -133,7 +133,7 @@ describe('bound measured-goal completeness', () => {
                         preview: {
                             spectralCentroid: {
                                 status: 'measured' as const,
-                                metricVersion: 1,
+                                metricVersion: 1 as const,
                                 unit: 'hertz',
                                 value: 950,
                                 confidence: 'exact' as const,
