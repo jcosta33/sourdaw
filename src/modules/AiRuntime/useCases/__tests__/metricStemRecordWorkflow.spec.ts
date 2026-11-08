@@ -1,14 +1,27 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { initAudioBufferCacheAccess } from '#/app/initAudioBufferCacheAccess';
 import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { registerSupportingServicePorts } from '#/app/registerSupportingServicePorts';
+import { withProjectAudioStorageLock } from '#/infra/storage/withProjectAudioStorageLock';
 import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
+import { createControlledLockManager } from '#/infra/testing/createControlledLockManager';
+import {
+    installTransactionalIndexedDb,
+    type TransactionalIndexedDbInstallation,
+} from '#/infra/testing/installTransactionalIndexedDb';
 import { trackStore, type Track } from '#/modules/Arrangement/stores';
 import { getArrangementHandlers, setArrangementEventBus } from '#/modules/Arrangement/useCases';
-import { cacheAudioBuffer, getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
+import {
+    cacheAudioBuffer,
+    getCachedAudioBuffer,
+    configureDurableAudioBufferOwnership,
+    configureHistoryAudioBufferReferences,
+    configureLiveAudioBufferReferences,
+} from '#/modules/AudioEngine/useCases';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
@@ -16,7 +29,7 @@ import {
     commandProjectRevisionPort,
     configureCommandBatchIdempotency,
     resetActionReplayAuthority,
-    setActionHistoryMetadataPort,
+    undoReplayPreparationPort,
 } from '#/modules/Command/useCases';
 import {
     captureProjectIdentity,
@@ -27,6 +40,7 @@ import {
     removeCrdtDoc,
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
+import { arrangementStore, projectLoadFailureStore, projectStore } from '#/modules/Project/stores';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
 import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
@@ -39,6 +53,7 @@ import {
     getPendingActionConfirmation,
     pendingActionConfirmationStore,
 } from '../../stores/pendingActionConfirmationStore';
+import { cancelPendingChatActions } from '../cancelPendingChatActions';
 import { metricGoalStateCodec } from '../metricGoalStateCodec';
 import * as promptParser from '../parsePromptToActions';
 import { sendChatMessage } from '../sendChatMessage';
@@ -481,19 +496,38 @@ function getHostedUserMessage(body: string): string {
     return message.content;
 }
 
+async function storedBuffer(id: string): Promise<unknown> {
+    const database = await new Promise<IDBDatabase>((resolve, reject) => {
+        const request = indexedDB.open('sourdaw-audio', 5);
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+    });
+    try {
+        return await new Promise((resolve, reject) => {
+            const request = database.transaction('buffers', 'readonly').objectStore('buffers').get(id);
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = () => reject(request.error);
+        });
+    } finally {
+        database.close();
+    }
+}
+
 describe('stem import and starting mix workflow', () => {
+    let installation: TransactionalIndexedDbInstallation;
+    beforeAll(() => {
+        vi.stubGlobal('navigator', { ...navigator, locks: createControlledLockManager().locks });
+        installation = installTransactionalIndexedDb();
+    });
+    afterAll(async () => {
+        await withProjectAudioStorageLock(() => Promise.resolve());
+        await installation.dispose();
+        vi.unstubAllGlobals();
+    });
     beforeEach(async () => {
         configureAiWorkflowCommandPreflightFixture();
         vi.clearAllMocks();
         vi.stubGlobal('fetch', mocks.fetch);
-        // jsdom has no navigator.locks; the durable project checkpoint is
-        // written under that lock.
-        vi.stubGlobal('navigator', {
-            ...navigator,
-            locks: {
-                request: (_name: string, _options: LockOptions, task: () => unknown) => Promise.resolve(task()),
-            },
-        });
         // Production shape, from `src/app/bootstrap.ts`. Only a batch executed
         // under the durable idempotency ledger reaches a project checkpoint, and
         // only a configured revision provider can expose that checkpoint's exact
@@ -518,11 +552,6 @@ describe('stem import and starting mix workflow', () => {
         registerHandlerMap(getArrangementHandlers());
         clearUndoHistory();
         resetActionReplayAuthority();
-        setActionHistoryMetadataPort({
-            record: () => [],
-            markReverted: () => ({ status: 'unavailable' as const }),
-            clear: () => undefined,
-        });
         commandBatchPreflightPort.setProvider(({ assetReferences, targetIds }) => ({
             audioGraphValid: true,
             availableAssetHashes: assetReferences.flatMap((reference) =>
@@ -547,22 +576,43 @@ describe('stem import and starting mix workflow', () => {
         trackStore.set({ tracks: [createTrack('track-guide', 'Guide Mix')], selectedTrackId: null, ghostClips: [] });
         transportStore.set({ ...defaultTransportState, tempo: 100 });
         chatStore.set({ messages: [], isGenerating: false, enableReasoning: true, chatMode: 'prompt' });
+        const project = projectStore.value;
+        if (!project) {
+            throw new Error('Expected open project');
+        }
+        projectStore.set({ ...project, loading: false });
+        arrangementStore.set({ arrangements: [], activeArrangementId: 'active' });
+        projectLoadFailureStore.set(null);
         flushAutomergeStorageWrites();
+        initAudioBufferCacheAccess();
 
         const files = STEM_SOURCE_NAMES.map((name) => new File([name], name, { type: 'audio/wav' }));
         mocks.pickFiles.mockResolvedValue(files);
-        mocks.decodeAudioFile.mockImplementation((file: File) => {
+        mocks.decodeAudioFile.mockImplementation((file: File, hold) => {
             const id = `buffer-${file.name}`;
             const buffer = audioBuffer();
+            hold?.retain(id);
             cacheAudioBuffer({ buffer, bufferId: id });
             return Promise.resolve({ id, buffer });
         });
-        mocks.stageDurableAsset.mockImplementation((_file, name) =>
-            Promise.resolve({ hash: `hash-${name}`, leaseId: `lease-${name}` })
-        );
+        mocks.stageDurableAsset.mockImplementation(async (_file, name) => {
+            const id = `buffer-${name}`;
+            await vi.waitFor(async () => expect(await storedBuffer(id)).toBeDefined());
+            return { hash: `hash-${name}`, leaseId: `lease-${name}` };
+        });
     });
 
     afterEach(async () => {
+        const live =
+            pendingActionConfirmationStore.value?.confirmations.filter((entry) => entry.status === 'proposed') ?? [];
+        for (const entry of live) {
+            await cancelPendingChatActions({ confirmationId: entry.id });
+        }
+        await withProjectAudioStorageLock(() => Promise.resolve());
+        configureDurableAudioBufferOwnership(null);
+        configureLiveAudioBufferReferences(null);
+        configureHistoryAudioBufferReferences(null);
+        undoReplayPreparationPort.setProvider(null);
         resetAiWorkflowCommandPreflightFixture();
         clearPendingActionConfirmations();
         await cloudSession.clear();
@@ -577,7 +627,6 @@ describe('stem import and starting mix workflow', () => {
         commandProjectRevisionPort.setProvider(null);
         removeCrdtDoc('root');
         localStorage.removeItem('sourdaw:command-batch-idempotency:v1');
-        vi.unstubAllGlobals();
     });
 
     it.each([
@@ -675,6 +724,9 @@ describe('stem import and starting mix workflow', () => {
             });
             expectPreparedStemResourcesReleased(1);
             for (const name of STEM_SOURCE_NAMES) {
+                await vi.waitFor(async () => expect(await storedBuffer(`buffer-${name}`)).toBeUndefined());
+            }
+            for (const name of STEM_SOURCE_NAMES) {
                 expect(mocks.completeDurableCleanupRecovery).toHaveBeenCalledWith(`stem-cleanup:["lease-${name}"]`);
             }
             expect(
@@ -687,6 +739,10 @@ describe('stem import and starting mix workflow', () => {
         } else {
             expect(plans.at(-1)?.rejectionReason).toBeUndefined();
             expect(plans.at(-1)?.actions.map((action) => action.type)).toEqual(['importStemSet']);
+            for (const name of STEM_SOURCE_NAMES) {
+                expect(await storedBuffer(`buffer-${name}`)).toBeDefined();
+                expect(getCachedAudioBuffer({ bufferId: `buffer-${name}` })).not.toBeNull();
+            }
             expect(metricGoalStateCodec(plans.at(-1)?.metricGoalState)?.refinedRequests).toEqual([originalPrompt]);
             expect(getPendingActionConfirmation(predecessorId)).toMatchObject({
                 status: 'invalidated',
