@@ -7,6 +7,8 @@ import { Button } from '#/components/ui/button';
 import { Separator } from '#/components/ui/separator';
 import { Slider } from '#/components/ui/slider';
 
+import { applyDocumentTheme } from '#/utils/UI/applyDocumentTheme';
+
 import { SectionTitle, FieldGroup, ToggleRow } from '../preferencesShared';
 
 import type { Preferences } from '../../../models/Preferences';
@@ -36,8 +38,7 @@ export const AppearanceSection = ({ prefs, update }: SectionProps): ReactElement
                             size="sm"
                             onClick={() => {
                                 update({ theme: time });
-                                document.documentElement.classList.toggle('dark', time === 'dark');
-                                document.documentElement.classList.toggle('light', time === 'light');
+                                applyDocumentTheme(time);
                             }}
                             className="capitalize gap-1"
                         >

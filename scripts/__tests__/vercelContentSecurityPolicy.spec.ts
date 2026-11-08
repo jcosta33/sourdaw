@@ -36,6 +36,7 @@ type VercelHeaderRule = { source: string; headers: VercelHeaderEntry[] };
 type VercelConfig = { headers?: VercelHeaderRule[] };
 
 const MAGENTA_DDSP_CSP_SOURCE = 'https://storage.googleapis.com/magentadata/js/checkpoints/ddsp/';
+const indexHtml = readFileSync(join(import.meta.dirname, '../../index.html'), 'utf8');
 
 /**
  * `PRODUCTION_CSP`'s `connect-src`, copied here rather than imported. This is
@@ -153,6 +154,10 @@ describe('the hosted web build Content-Security-Policy', () => {
         expect(directives.get('script-src')).toEqual(["'self'", "'wasm-unsafe-eval'", 'blob:']);
         expect([...directives.values()].flat()).not.toContain("'unsafe-eval'");
         expect(directives.get('script-src')).not.toContain("'unsafe-inline'");
+
+        const themeScript = /<script id="sourdaw-theme"([^>]*)>([\s\S]*?)<\/script>/u.exec(indexHtml);
+        expect(themeScript?.[1]).toContain('src="/themePrepaint.js"');
+        expect(themeScript?.[2]?.trim()).toBe('');
     });
 
     it('scopes worker-src to bundled workers -- the app creates no blob workers', () => {

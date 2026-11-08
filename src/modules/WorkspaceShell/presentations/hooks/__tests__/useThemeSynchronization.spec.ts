@@ -27,13 +27,17 @@ describe('useThemeSynchronization', () => {
         mocks.listeners.clear();
         mocks.preferences.current = { theme: 'light' };
         document.documentElement.classList.remove('dark', 'light');
+        document.documentElement.style.colorScheme = '';
+        document.head.innerHTML = '<meta name="theme-color" content="#020100" />';
     });
 
-    it('applies the stored theme after mount and follows preference changes until cleanup', () => {
+    it('applies every browser theme channel after mount and follows preference changes until cleanup', () => {
         const { unmount } = renderHook(() => useThemeSynchronization());
 
         expect(document.documentElement).toHaveClass('light');
         expect(document.documentElement).not.toHaveClass('dark');
+        expect(document.documentElement.style.colorScheme).toBe('light');
+        expect(document.querySelector('meta[name="theme-color"]')).toHaveAttribute('content', '#f0ece5');
 
         mocks.preferences.current = { theme: 'dark' };
         act(() => {
@@ -44,6 +48,8 @@ describe('useThemeSynchronization', () => {
 
         expect(document.documentElement).toHaveClass('dark');
         expect(document.documentElement).not.toHaveClass('light');
+        expect(document.documentElement.style.colorScheme).toBe('dark');
+        expect(document.querySelector('meta[name="theme-color"]')).toHaveAttribute('content', '#020100');
         unmount();
         expect(mocks.listeners.size).toBe(0);
     });

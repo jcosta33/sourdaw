@@ -1,13 +1,12 @@
 import { useEffect } from 'react';
 
 import { preferencesStore } from '#/modules/Preferences/stores';
+import { applyDocumentTheme } from '#/utils/UI/applyDocumentTheme';
 
 export function useThemeSynchronization(): void {
     useEffect(() => {
         const syncTheme = (): void => {
-            const theme = preferencesStore.value?.theme ?? 'dark';
-            document.documentElement.classList.toggle('dark', theme === 'dark');
-            document.documentElement.classList.toggle('light', theme === 'light');
+            applyDocumentTheme(preferencesStore.value?.theme ?? 'dark');
         };
 
         syncTheme();

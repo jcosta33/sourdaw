@@ -43,6 +43,7 @@ vi.mock('electron', () => ({
 
 const DEV_SERVER = 'http://localhost:5173';
 const MAGENTA_DDSP_CSP_SOURCE = 'https://storage.googleapis.com/magentadata/js/checkpoints/ddsp/';
+const indexHtml = readFileSync(join(import.meta.dirname, '../../index.html'), 'utf8');
 const origins = [APP_ORIGIN, DEV_SERVER];
 
 const parseCsp = (policy: string): Map<string, string[]> => {
@@ -89,6 +90,10 @@ describe('the production Content-Security-Policy', () => {
         expect(directives.get('script-src')).toEqual(["'self'", "'wasm-unsafe-eval'", 'blob:']);
         expect([...directives.values()].flat()).not.toContain("'unsafe-eval'");
         expect(directives.get('script-src')).not.toContain("'unsafe-inline'");
+
+        const themeScript = /<script id="sourdaw-theme"([^>]*)>([\s\S]*?)<\/script>/u.exec(indexHtml);
+        expect(themeScript?.[1]).toContain('src="/themePrepaint.js"');
+        expect(themeScript?.[2]?.trim()).toBe('');
     });
 
     it('admits only bundled workers and the enumerated provider and model hosts', () => {

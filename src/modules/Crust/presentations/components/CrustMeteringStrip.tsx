@@ -31,16 +31,16 @@ function dbToNorm(db: number, min = -60, max = 6): number {
 
 function lufsColor(lufs: number, target: number | null): string {
     if (target === null) {
-        return '#E8E6E0';
+        return 'var(--color-text-primary)';
     }
     const diff = lufs - target;
     if (Math.abs(diff) <= 0.5) {
-        return '#7FC8A0';
+        return 'var(--color-state-play)';
     }
     if (lufs > target) {
-        return '#C44030';
+        return 'var(--color-state-danger)';
     }
-    return '#E8E6E0';
+    return 'var(--color-text-primary)';
 }
 
 const MeterBar = ({ value, id }: { value: number; id: string }): ReactElement => {
@@ -111,12 +111,12 @@ export const CrustMeteringStrip = ({
 
     const targetDiff = lufsTarget !== null ? lufsIntegrated - lufsTarget : null;
 
-    let targetDiffColor = '#D4A847';
+    let targetDiffColor = 'var(--color-state-warning)';
     if (targetDiff !== null) {
         if (Math.abs(targetDiff) <= 0.5) {
-            targetDiffColor = '#7FC8A0';
+            targetDiffColor = 'var(--color-state-play)';
         } else if (targetDiff > 0) {
-            targetDiffColor = '#C44030';
+            targetDiffColor = 'var(--color-state-danger)';
         }
     }
 
@@ -167,7 +167,7 @@ export const CrustMeteringStrip = ({
                     >
                         {lufsIntegrated > -99 ? lufsIntegrated.toFixed(1) : '—'}
                     </span>
-                    <span className="text-micro text-muted-foreground/50">LUFS</span>
+                    <span className="text-micro text-muted-foreground">LUFS</span>
                     {targetDiff !== null ? (
                         <span
                             className="text-micro font-mono"
