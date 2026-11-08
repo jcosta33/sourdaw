@@ -55,7 +55,9 @@ function lane(id: string): AutomationLane {
 function material() {
     flushAutomergeStorageWrites();
     const root = getCrdtDoc<Root>('root');
-    if (!root) throw new Error('Expected automation batch authority');
+    if (!root) {
+        throw new Error('Expected automation batch authority');
+    }
     const raw = Automerge.toJS(root);
     expect(raw.automation).toEqual(structuredClone(automationStore.value));
     return raw;

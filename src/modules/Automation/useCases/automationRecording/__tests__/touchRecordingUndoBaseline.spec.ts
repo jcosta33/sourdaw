@@ -73,7 +73,9 @@ async function loadSubjectModules(): Promise<SubjectModules> {
         releaseTouchAutomation,
         stopAutomationRecording,
         replay: (action) => {
-            if (action?.type !== 'restoreAutomationLanePoints') throw new Error('Expected recorded points replay');
+            if (action?.type !== 'restoreAutomationLanePoints') {
+                throw new Error('Expected recorded points replay');
+            }
             expect(handleRestoreAutomationLanePoints.execute(action)).toEqual({ status: 'written' });
         },
     };
@@ -147,7 +149,9 @@ describe('undoing a touch automation pass released before stop', () => {
         const [entry] = mocks.commitUndoEntry.mock.calls[0]!;
         expect(entry.label).toBe('Record Automation');
 
-        if (entry.kind !== 'action') throw new Error('Expected typed recording history');
+        if (entry.kind !== 'action') {
+            throw new Error('Expected typed recording history');
+        }
         subject.replay(entry.inverseAction);
 
         expect(lanePoints(subject.automationStore)).toEqual([
@@ -170,7 +174,9 @@ describe('undoing a touch automation pass released before stop', () => {
         const recorded = lanePoints(subject.automationStore);
         const [entry] = mocks.commitUndoEntry.mock.calls[0]!;
 
-        if (entry.kind !== 'action') throw new Error('Expected typed recording history');
+        if (entry.kind !== 'action') {
+            throw new Error('Expected typed recording history');
+        }
         subject.replay(entry.inverseAction);
         subject.replay(entry.action);
 
@@ -193,7 +199,9 @@ describe('undoing a touch automation pass released before stop', () => {
 
         expect(mocks.commitUndoEntry).toHaveBeenCalledOnce();
         const [entry] = mocks.commitUndoEntry.mock.calls[0]!;
-        if (entry.kind !== 'action') throw new Error('Expected typed recording history');
+        if (entry.kind !== 'action') {
+            throw new Error('Expected typed recording history');
+        }
         subject.replay(entry.inverseAction);
 
         expect(lanePoints(subject.automationStore)).toEqual([

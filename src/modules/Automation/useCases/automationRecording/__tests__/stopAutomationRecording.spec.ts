@@ -111,8 +111,9 @@ function setTracks(tracks: TestTrack[]): void {
 }
 
 function replayInverse(entry: UndoEntry): void {
-    if (entry.inverseAction?.type !== 'restoreAutomationLanePoints')
+    if (entry.inverseAction?.type !== 'restoreAutomationLanePoints') {
         throw new Error('Expected recorded points inverse');
+    }
     expect(handleRestoreAutomationLanePoints.execute(entry.inverseAction)).toEqual({ status: 'written' });
 }
 
@@ -227,7 +228,9 @@ describe('stopAutomationRecording', () => {
         expect(undoEntries).toHaveLength(2);
         expect(undoEntries[0]?.groupId).toBeTruthy();
         expect(undoEntries[1]?.groupId).toBe(undoEntries[0]?.groupId);
-        for (const entry of undoEntries) replayInverse(entry);
+        for (const entry of undoEntries) {
+            replayInverse(entry);
+        }
         const laneA = automationSnapshot.value?.lanes.find((lane) => lane.id === 'lane-a');
         const laneB = automationSnapshot.value?.lanes.find((lane) => lane.id === 'lane-b');
         expect(laneA?.points[0]?.cp1).toEqual({ x: 0.2, y: 0.3 });

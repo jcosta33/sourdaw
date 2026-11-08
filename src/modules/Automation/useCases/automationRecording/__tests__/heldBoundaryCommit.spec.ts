@@ -27,7 +27,9 @@ vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
 }));
 
 function replay(action: (typeof undoEntries)[number]['inverseAction']): void {
-    if (action?.type !== 'restoreAutomationLanePoints') throw new Error('Expected recorded points replay');
+    if (action?.type !== 'restoreAutomationLanePoints') {
+        throw new Error('Expected recorded points replay');
+    }
     expect(handleRestoreAutomationLanePoints.execute(action)).toEqual({ status: 'written' });
 }
 

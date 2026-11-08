@@ -98,7 +98,9 @@ const initialLanes = [
 
 function root() {
     const document = getCrdtDoc<Root>('root');
-    if (!document) throw new Error('Expected recording authority');
+    if (!document) {
+        throw new Error('Expected recording authority');
+    }
     return document;
 }
 
@@ -121,7 +123,9 @@ function mergePeer(change: Automerge.ChangeFn<Root>) {
 
 function peerEdit(draft: Root, laneId: string) {
     const target = draft.automation.lanes.find((candidate) => candidate.id === laneId);
-    if (!target) throw new Error('Expected the peer target lane');
+    if (!target) {
+        throw new Error('Expected the peer target lane');
+    }
     target.points.push({
         id: 'peer-tail',
         beat: 9.25,
@@ -317,7 +321,9 @@ describe('recorded ride replay against actual peer lane changes', () => {
         const after = recordTwoLanes();
         mergePeer((draft) => {
             const gain = draft.automation.lanes[0];
-            if (!gain) throw new Error('Expected recorded gain lane');
+            if (!gain) {
+                throw new Error('Expected recorded gain lane');
+            }
             gain.color = '#123abc';
             gain.collapsed = true;
         });
