@@ -1,0 +1,31 @@
+electron/__tests__/webviewSecurity.spec.ts
+  s_68423a2adea8d2::t_c4136dca23c652 96-97
+index.html
+  s_68423a2adea8d2::t_8acbc6a90f29e8 19
+public/themePrepaint.js
+  s_68423a2adea8d2::t_c29aa80a9d14ec 17
+src/modules/Crust/presentations/components/CrustMeteringStrip.tsx
+  s_68423a2adea8d2::t_627d4d64d757ff 83
+src/styles/tokens.css
+  s_68423a2adea8d2::t_99f80858df05a7 296,298,304
+src/utils/UI/__tests__/applyDocumentTheme.spec.ts
+  s_68423a2adea8d2::t_a1ec902ac9519d 1-44
+src/utils/UI/applyDocumentTheme.ts
+  s_68423a2adea8d2::t_712e9c5c4351ce 5,8-9,13-25
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d35d30e2cf78271c0539946239a281b68a504e0d",
+  "prompts": {},
+  "sessions": {
+    "s_68423a2adea8d2": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34b-f305-7c03-beb2-57afa678cda5",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
