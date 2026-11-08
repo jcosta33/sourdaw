@@ -46,7 +46,7 @@ test.describe('Fermenter panel deep — knobs, macros', () => {
         await expect(brightness).toHaveAttribute('aria-valuenow', '0.01');
 
         const panel = page.locator('.fermenter-faceplate');
-        await panel.getByRole('button', { name: 'Effects', exact: true }).click();
+        await panel.getByRole('tab', { name: 'Effects', exact: true }).click();
         await expect(panel.getByRole('button', { name: 'Dist', exact: true })).toHaveAttribute('aria-pressed', 'true');
     });
 

@@ -133,7 +133,7 @@ export const EffectsTab = ({
                         badge="Mastering"
                         description="EQ · Multiband Dynamics · Imager"
                         onClick={() => {
-                            addSelectedTrackDevice('Proof', (deviceId) => panelActions?.showProof(deviceId));
+                            addSelectedTrackDevice('proof', (deviceId) => panelActions?.showProof(deviceId));
                         }}
                         theme={PROOF_THEME}
                     />

@@ -63,6 +63,17 @@ export const ArrangementSelector = (): ReactElement | null => {
         setEditingId(null);
     };
 
+    const handleSwitch = (id: string, name: string): void => {
+        void switchArrangement(id).catch((error: unknown) => {
+            logger.error(
+                new Error(`Failed to switch arrangement "${id}"`, {
+                    cause: error,
+                })
+            );
+            notifyUser(`Failed to switch to "${name}"`, 'error');
+        });
+    };
+
     return (
         <div className="relative">
             <Popover
@@ -120,6 +131,9 @@ export const ArrangementSelector = (): ReactElement | null => {
                             return (
                                 <div
                                     key={arr.id}
+                                    role="menuitemradio"
+                                    aria-checked={isActive}
+                                    tabIndex={isEditing ? -1 : 0}
                                     className={cn(
                                         'group mx-1 rounded-sm px-2 py-1 cursor-pointer',
                                         isActive
@@ -128,15 +142,22 @@ export const ArrangementSelector = (): ReactElement | null => {
                                     )}
                                     onClick={() => {
                                         if (!isEditing) {
-                                            void switchArrangement(arr.id).catch((error: unknown) => {
-                                                logger.error(
-                                                    new Error(`Failed to switch arrangement "${arr.id}"`, {
-                                                        cause: error,
-                                                    })
-                                                );
-                                                notifyUser(`Failed to switch to "${arr.name}"`, 'error');
-                                            });
+                                            handleSwitch(arr.id, arr.name);
                                         }
+                                    }}
+                                    onKeyDown={(event) => {
+                                        // The rename action inside the row owns
+                                        // its own Enter/Space; only a key pressed
+                                        // on the row itself switches.
+                                        if (event.target !== event.currentTarget) {
+                                            return;
+                                        }
+                                        if (isEditing || (event.key !== 'Enter' && event.key !== ' ')) {
+                                            return;
+                                        }
+                                        event.preventDefault();
+                                        event.stopPropagation();
+                                        handleSwitch(arr.id, arr.name);
                                     }}
                                 >
                                     {isEditing ? (
@@ -175,6 +196,7 @@ export const ArrangementSelector = (): ReactElement | null => {
                                                     variant="bare"
                                                     size="bare"
                                                     type="button"
+                                                    aria-label={`Rename ${arr.name}`}
                                                     className={cn(
                                                         'rounded p-0.5 transition-all hover:bg-background/80',
                                                         isActive ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'

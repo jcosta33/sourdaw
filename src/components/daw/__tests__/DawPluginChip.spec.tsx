@@ -16,6 +16,25 @@ describe('DawPluginChip', () => {
         expect(onClick).toHaveBeenCalled();
     });
 
+    it('reports a pressed state only when the caller declares one', () => {
+        render(
+            <>
+                <DawPluginChip active>Selected</DawPluginChip>
+                <DawPluginChip active={false}>Unselected</DawPluginChip>
+                <DawPluginChip>Unstated</DawPluginChip>
+                <DawPluginChip aria-pressed={true}>Explicitly pressed</DawPluginChip>
+            </>
+        );
+
+        expect(screen.getByRole('button', { name: 'Selected' })).toHaveAttribute('aria-pressed', 'true');
+        expect(screen.getByRole('button', { name: 'Unselected' })).toHaveAttribute('aria-pressed', 'false');
+        expect(screen.getByRole('button', { name: 'Unstated' })).not.toHaveAttribute('aria-pressed');
+        // Only a caller-supplied value can distinguish a spread-order
+        // regression: the computed value is absent here, so `{...props}` must
+        // still land after it for this to stay pressed.
+        expect(screen.getByRole('button', { name: 'Explicitly pressed' })).toHaveAttribute('aria-pressed', 'true');
+    });
+
     /**
      * An `aria-disabled` chip has to *look* different from a live one.
      *
