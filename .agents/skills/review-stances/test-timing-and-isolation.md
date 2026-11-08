@@ -107,7 +107,8 @@ Report a probe that cannot run with its exact mutation, named check and limitati
    native package entry cannot run: it must collect and execute assertions without evaluating that entry, since a
    cached host binary conceals a CI install that skips native downloads. Trace every direct and transitive pure-spec importer of a shared native-adjacent constant module, not just the
    first fixture repaired. `rendererSessionLifecycle.spec.ts` reaches the coordinator and its real `APP_TITLE`
-   transitively; isolate only the native boundary there too, preserving the real modules and assertions. #5700
+   transitively, and `appIpc.spec.ts` reaches the same title through `appIpc.ts`; isolate only the native
+   boundary in both, preserving the real modules and assertions. #5700
    repaired the coordinator fixture but missed this caller; its public record does not establish the prior reviewer
    stance, prompt or tier. #4289 introduced the coordinator import of `APP_TITLE`, and #3141 introduced the
    lifecycle spec. `windowCloseCoordinator.spec.ts` imported
