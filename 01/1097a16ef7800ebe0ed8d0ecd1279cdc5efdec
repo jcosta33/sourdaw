@@ -1,0 +1,44 @@
+src/utils/createHandler.ts
+  s_977061c47f01dd::t_5c9e617940c67c 38
+src/modules/Command/useCases/__tests__/executeAppActionMaterializedObserver.spec.ts
+  s_977061c47f01dd::t_bd5d6fa8327e0b 224,226-230,236,238,324-325,327-331,338,340
+  s_977061c47f01dd::t_927ec38d7fb280 137-141,188-192,247-251,268-271,306-309,357-361
+  s_977061c47f01dd::t_a555fc788db7c9 8-10,12,31-62,123-136,142-187,193-223,225,231-235,237,239-246,252-267,272-305,310-323,326,332-337,339,341-356,362-384
+.agents/skills/review-stances/command-entry-and-state-oracles.md
+  s_977061c47f01dd::t_6015b71a6cee87 94-103
+.agents/skills/review-stances/test-timing-and-isolation.md
+  s_977061c47f01dd::t_6015b71a6cee87 101-106
+src/utils/handlerContract.ts
+  s_977061c47f01dd::t_5c9e617940c67c 3722-3728
+src/modules/Arrangement/handlers/track/__tests__/handleAddTrackDefaultName.integration.spec.ts
+  s_977061c47f01dd::t_6015b71a6cee87 148-161
+src/modules/Arrangement/handlers/track/handleAddTrack.ts
+  s_977061c47f01dd::t_5c9e617940c67c 96
+src/modules/Command/useCases/executeAppAction.ts
+  s_977061c47f01dd::t_5c9e617940c67c 201-209,302-304
+  s_68423a2adea8d2::t_c01cefb22292c8 305
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "011097a16ef7800ebe0ed8d0ecd1279cdc5efdec",
+  "prompts": {},
+  "sessions": {
+    "s_68423a2adea8d2": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34b-f305-7c03-beb2-57afa678cda5",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_977061c47f01dd": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34d-123d-7452-a6e7-60608388b6d7",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
