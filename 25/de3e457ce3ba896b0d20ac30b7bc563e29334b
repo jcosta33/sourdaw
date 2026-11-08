@@ -1,0 +1,36 @@
+src/modules/TimelineEditor/presentations/views/Inspector/TrackClipsSection.tsx
+  s_977061c47f01dd::t_426214e9d4c4cc 11,17,25-26,74-75
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/TrackClipsSection.spec.tsx
+  s_977061c47f01dd::t_cc8773f2d5d346 1,4-5,26-27,29-32,184-214
+  s_977061c47f01dd::t_8bf00e29437ed5 152-153
+  s_977061c47f01dd::t_13122a4f6de712 28
+  s_eb3cd86b0cee6e::t_2333ae23c6d243 33-35,215
+  s_977061c47f01dd::t_9ba562349257bd 6
+  s_977061c47f01dd::t_65c649a035e58d 7
+.agents/skills/review-stances/audio-timing-format-laws.md
+  s_977061c47f01dd::t_c5947290660a63 28-33
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "25de3e457ce3ba896b0d20ac30b7bc563e29334b",
+  "prompts": {},
+  "sessions": {
+    "s_977061c47f01dd": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34d-123d-7452-a6e7-60608388b6d7",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_eb3cd86b0cee6e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34c-a4d8-7523-838e-1cd1a0a25d78",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
