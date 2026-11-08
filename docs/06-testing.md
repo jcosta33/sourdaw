@@ -888,12 +888,14 @@ A stopped `pnpm dev` command cannot prove recovery by exiting zero on its own. S
 finite proof after `--`, for example `pnpm guard --recover --profile broad -- pnpm test:e2e
 tests/e2e/launchFlows.spec.ts`. The guard runs that proof instead of replaying the server, from the
 receipt's canonical in-lane directory and under the receipt's resource limits unless explicitly
-overridden. A Playwright-managed proof owns server readiness and orderly shutdown; the guard still
-owns resource enforcement and process-tree cleanup. Only a zero exit without a guard-failure reason
-clears the unchanged original receipt. A failed proof, signal, timeout, resource stop, cleanup leak,
-or concurrently replaced receipt preserves the stop. Explicit proofs are refused for finite-command
-receipts and cannot be combined with lint-target replacement; ordinary `--recover` replay is
-unchanged.
+overridden. A Playwright-managed proof owns server readiness and orderly shutdown; its checkout
+identity check emits a one-time guard proof bound to the recorded loopback origin and lane root.
+The guard still owns resource enforcement and process-tree cleanup, and verifies that proof before
+clearing the unchanged original receipt. An unrelated command's zero exit, a missing or mismatched
+proof, a failed proof, signal, timeout, resource stop, cleanup leak, or concurrently replaced
+receipt preserves the stop. Explicit proofs require a recorded `pnpm dev` or `pnpm run dev` receipt;
+other scripts, including `dev:no-hmr`, are ineligible. Explicit proofs cannot be combined with
+lint-target replacement; ordinary `--recover` replay is unchanged.
 
 Existing running commands and old lane copies keep their original guard. After this change lands,
 their next verification must invoke the updated guard, or merge the fix into the owned lane when

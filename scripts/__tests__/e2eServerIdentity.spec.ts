@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { spawn } from 'node:child_process';
 import { getDefaultResultOrder, setDefaultResultOrder } from 'node:dns';
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync } from 'node:fs';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -9,6 +9,12 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { devServerOnlySpecs } from '../../tests/e2e/devServerOnlySpecs.ts';
+import {
+    assertGuardRecoveryProof,
+    GUARD_RECOVERY_PROOF_ORIGIN_ENV,
+    GUARD_RECOVERY_PROOF_PATH_ENV,
+    GUARD_RECOVERY_PROOF_TOKEN_ENV,
+} from '../guardRecoveryProof.ts';
 import {
     DEFAULT_E2E_PORT,
     SOURDAW_E2E_PORT_ENV,
@@ -479,6 +485,54 @@ describe('serving-checkout identity', () => {
             response.end('ok');
         });
         await expect(assertServingCheckoutIdentity(origin, makeTempRoot('expected'))).resolves.toBeUndefined();
+    });
+
+    it('writes a valid recovery proof after a real marked server answers at the recorded origin', async () => {
+        const root = makeTempRoot('proof-lane');
+        const origin = await startServingServer(markerHandler(root));
+        const proofPath = join(makeTempRoot('proof'), 'recovery.json');
+        const token = 'one-time-proof-token';
+        vi.stubEnv(GUARD_RECOVERY_PROOF_PATH_ENV, proofPath);
+        vi.stubEnv(GUARD_RECOVERY_PROOF_TOKEN_ENV, token);
+        vi.stubEnv(GUARD_RECOVERY_PROOF_ORIGIN_ENV, origin);
+
+        await expect(assertServingCheckoutIdentity(origin, root)).resolves.toBeUndefined();
+
+        expect(JSON.parse(readFileSync(proofPath, 'utf8'))).toEqual({
+            version: 1,
+            token,
+            origin,
+            servingRoot: root,
+            expectedRoot: root,
+        });
+        expect(() => assertGuardRecoveryProof(proofPath, { token, origin, expectedRoot: root })).not.toThrow();
+    });
+
+    it('rejects an unmarked server instead of writing recovery proof for the recorded origin', async () => {
+        const origin = await startServingServer((_request, response) => {
+            response.end('ok');
+        });
+        const proofPath = join(makeTempRoot('proof'), 'recovery.json');
+        vi.stubEnv(GUARD_RECOVERY_PROOF_PATH_ENV, proofPath);
+        vi.stubEnv(GUARD_RECOVERY_PROOF_TOKEN_ENV, 'one-time-proof-token');
+        vi.stubEnv(GUARD_RECOVERY_PROOF_ORIGIN_ENV, origin);
+
+        await expect(assertServingCheckoutIdentity(origin, makeTempRoot('expected'))).rejects.toThrow(
+            'guard recovery requires an e2e checkout marker'
+        );
+        expect(existsSync(proofPath)).toBe(false);
+    });
+
+    it('does not write recovery proof while verifying a different origin', async () => {
+        const root = makeTempRoot('other-origin-lane');
+        const origin = await startServingServer(markerHandler(root));
+        const proofPath = join(makeTempRoot('proof'), 'recovery.json');
+        vi.stubEnv(GUARD_RECOVERY_PROOF_PATH_ENV, proofPath);
+        vi.stubEnv(GUARD_RECOVERY_PROOF_TOKEN_ENV, 'one-time-proof-token');
+        vi.stubEnv(GUARD_RECOVERY_PROOF_ORIGIN_ENV, 'http://127.0.0.1:1');
+
+        await expect(assertServingCheckoutIdentity(origin, root)).resolves.toBeUndefined();
+        expect(existsSync(proofPath)).toBe(false);
     });
 
     it('serves two distinct checkouts on two distinct ports without cross-talk', async () => {

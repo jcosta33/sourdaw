@@ -1,7 +1,6 @@
-import { realpathSync } from 'node:fs';
-import { resolve } from 'node:path';
-
 import type { IncomingMessage, ServerResponse } from 'node:http';
+
+import { sameCheckoutRoot, writeGuardRecoveryProof } from './guardRecoveryProof.ts';
 
 /**
  * Lane-scoped browser verification. Two agent lanes share one machine, so a
@@ -113,25 +112,10 @@ export async function originAnswers(origin: string): Promise<boolean> {
 }
 
 /**
- * Compare roots the way two spellings of one directory stay equal: a worktree
- * path can be reached through symlinked directories, and Vite reports its
- * cwd-lexical root while the importing module may hold the realpath. A false
- * mismatch here would abort every run, so both sides go through realpath
- * before comparison. The reported mismatch message keeps the raw strings.
- */
-function comparableRoot(root: string): string {
-    try {
-        return realpathSync(root);
-    } catch {
-        return resolve(root);
-    }
-}
-
-/**
  * Assert that the server at `origin` belongs to `expectedRoot` before this
  * run reuses it. A marker naming a different checkout aborts with both roots
- * and the origin, naming the port. A missing marker passes: only e2e-mode
- * servers carry one (see isSourdawE2eServeMode).
+ * and the origin, naming the port. A missing marker passes outside recovery:
+ * only e2e-mode servers carry one (see isSourdawE2eServeMode).
  */
 export async function assertServingCheckoutIdentity(origin: string, expectedRoot: string): Promise<void> {
     let servingRoot: string | null;
@@ -140,16 +124,13 @@ export async function assertServingCheckoutIdentity(origin: string, expectedRoot
     } catch (error) {
         throw new Error(`Cannot verify the serving checkout: no server answered at ${origin}.`, { cause: error });
     }
-    if (servingRoot === null) {
-        return;
+    if (servingRoot !== null && !sameCheckoutRoot(servingRoot, expectedRoot)) {
+        throw new Error(
+            `Refusing to reuse a dev server from another checkout: ${origin} serves ${servingRoot}, but this browser verification runs from ${expectedRoot}. ` +
+                `Stop that server or set ${SOURDAW_E2E_PORT_ENV} to a lane-unique port.`
+        );
     }
-    if (comparableRoot(servingRoot) === comparableRoot(expectedRoot)) {
-        return;
-    }
-    throw new Error(
-        `Refusing to reuse a dev server from another checkout: ${origin} serves ${servingRoot}, but this browser verification runs from ${expectedRoot}. ` +
-            `Stop that server or set ${SOURDAW_E2E_PORT_ENV} to a lane-unique port.`
-    );
+    writeGuardRecoveryProof(process.env, origin, servingRoot, expectedRoot);
 }
 
 /** The required affected shard already owns an e2e build and preview. */

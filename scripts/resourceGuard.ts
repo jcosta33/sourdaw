@@ -21,6 +21,12 @@ import { basename, dirname, extname, join, parse, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { resolvePrimaryRoot, spawnCapture } from './githubAppIdentity.ts';
+import {
+    assertGuardRecoveryProof,
+    GUARD_RECOVERY_PROOF_ORIGIN_ENV,
+    GUARD_RECOVERY_PROOF_PATH_ENV,
+    GUARD_RECOVERY_PROOF_TOKEN_ENV,
+} from './guardRecoveryProof.ts';
 import { assertCurrentCheckoutModulesBelongToCheckout } from './pnpmModulesPreflight.ts';
 import {
     GUARD_FAILURES_DIR,
@@ -212,6 +218,39 @@ export function pnpmScriptName(command: string, args: readonly string[]): string
         return arg;
     }
     return undefined;
+}
+
+type ExplicitRecoveryProof = {
+    path: string;
+    token: string;
+    origin: string;
+};
+
+function createExplicitRecoveryProof(lane: DetectedLane, receipt: GuardFailureReceipt): ExplicitRecoveryProof {
+    let port = 5173;
+    for (let index = 0; index < receipt.args.length; index++) {
+        const argument = receipt.args[index];
+        if (argument === undefined) {
+            continue;
+        }
+        const inlinePort = argument.startsWith('--port=') ? argument.slice('--port='.length) : undefined;
+        const rawPort = argument === '--port' ? receipt.args[index + 1] : inlinePort;
+        if (rawPort === undefined) {
+            if (argument === '--port') {
+                throw new Error('recorded pnpm dev command has a missing port');
+            }
+            continue;
+        }
+        port = Number(rawPort);
+        if (!Number.isInteger(port) || port < 1 || port > 65535) {
+            throw new Error(`recorded pnpm dev command has an invalid port: ${rawPort}`);
+        }
+    }
+    return {
+        path: join(dirname(guardFailureReceiptPath(lane.primaryRoot, lane.laneName)), `recovery-${randomUUID()}.json`),
+        token: randomUUID(),
+        origin: `http://127.0.0.1:${port}`,
+    };
 }
 
 export function resolveDefaultMaxRssBytes(input: {
@@ -3190,6 +3229,7 @@ export async function main(
             if (hasExplicitProof && input.lintTargetReplacements.length > 0) {
                 throw new Error('--replace-lint-target cannot be combined with an explicit recovery proof');
             }
+            const explicitProof = hasExplicitProof ? createExplicitRecoveryProof(lane, receipt) : undefined;
             const recoveryCommand = hasExplicitProof ? input.command : receipt.command;
             const recoveryArgs = hasExplicitProof
                 ? input.args
@@ -3218,7 +3258,40 @@ export async function main(
                 diskReserveBytes: input.diskReserveBytes,
                 showOutput: input.showOutput,
                 cwd: recoveryCwd,
+                ...(explicitProof === undefined
+                    ? {}
+                    : {
+                          env: {
+                              ...process.env,
+                              [GUARD_RECOVERY_PROOF_PATH_ENV]: explicitProof.path,
+                              [GUARD_RECOVERY_PROOF_TOKEN_ENV]: explicitProof.token,
+                              [GUARD_RECOVERY_PROOF_ORIGIN_ENV]: explicitProof.origin,
+                          },
+                      }),
             });
+            if (explicitProof !== undefined) {
+                let proofFailure: string | undefined;
+                try {
+                    if (result.code === 0 && result.reason === undefined) {
+                        assertGuardRecoveryProof(explicitProof.path, {
+                            token: explicitProof.token,
+                            origin: explicitProof.origin,
+                            expectedRoot: recoveryCwd,
+                        });
+                    }
+                } catch (proofError) {
+                    proofFailure = proofError instanceof Error ? proofError.message : String(proofError);
+                } finally {
+                    rmSync(explicitProof.path, { force: true });
+                }
+                if (proofFailure !== undefined) {
+                    emitGuardedResult(recoveryCommand, result, input.showOutput);
+                    error(
+                        `guard: explicit recovery proof did not verify the recorded dev server at ${explicitProof.origin}; lane ${lane.laneName} remains stopped: ${proofFailure}`
+                    );
+                    return 1;
+                }
+            }
             if (result.code === 0 && result.reason === undefined) {
                 emitGuardedResult(recoveryCommand, result, input.showOutput);
                 const cleared = clearGuardFailureReceiptIfUnchanged(
