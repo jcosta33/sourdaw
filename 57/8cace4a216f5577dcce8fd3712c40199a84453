@@ -1,0 +1,71 @@
+tests/e2e/crustParameterUndo.spec.ts
+  s_977061c47f01dd::t_cdd028d7af2f19 1-68,71-72,74-90,95-98,101-102,106-120,122-162,164-171,173-180,182-197,199-206,208-212,214-218,220-221
+  s_977061c47f01dd::t_69b647fcf0fc60 91-94
+  s_977061c47f01dd::t_991df9218e37b2 198,219
+  s_977061c47f01dd::t_b51e56febb9dfc 69-70,121,163,172,181,207,213
+  s_977061c47f01dd::t_4e0146f37735db 73,99-100,103-105
+src/modules/Crust/presentations/components/__tests__/CrustGainStripInteraction.spec.tsx
+  s_977061c47f01dd::t_3a15ad1062bad2 54,65,74,83,119,132,144
+src/modules/Crust/useCases/crustParamBridge/__tests__/hydrateCrustPatchFromProject.spec.ts
+  s_977061c47f01dd::t_6717242a901452 5-6,50-97
+src/modules/Crust/presentations/views/CrustPanel.tsx
+  s_977061c47f01dd::t_6b8c9a753ac8dc 37,141-142,149-155,159-165,307,378-379,418,423-440
+  s_977061c47f01dd::t_dba46461e420de 135,143-148,304-306,308-309,419-422
+  s_977061c47f01dd::t_d578554ec3cb9b 1
+  s_977061c47f01dd::t_86addb2c5903de 166-167
+src/modules/Crust/presentations/components/CrustGainStrip.tsx
+  s_977061c47f01dd::t_dba46461e420de 30-38,52-56,67-69,75-77,81-83,88-91,95-97,100-111,116-120,124-126,130-132,139-141,145-147,151-152,156-157
+  s_977061c47f01dd::t_78bf70f94e57c9 6,8,13-15,28,39-51,57-66,70-74,78-80,84-87,92,98-99,112,127,129,133-135,138,148-150,155,204-206
+  s_977061c47f01dd::t_320643a0c4a053 154
+src/modules/Crust/presentations/views/__tests__/crustParameterUndo.integration.spec.tsx
+  s_977061c47f01dd::t_f07ac97513d0cf 1-4,9-12,22,33-34,41,43-54,58-65,69-74,86-87,93-106,112-113,128-141,147-150,155-156,161-169,171-172,178-183,254,257,298-299
+  s_977061c47f01dd::t_8a092475db29cb 42,75-85,184-196,201-202,215-222,226-227,233-238,245-253,255-256,258-260,278-297
+  s_977061c47f01dd::t_d578554ec3cb9b 170
+  s_977061c47f01dd::t_731528e84df0dd 208-213
+  s_977061c47f01dd::t_36b5263b86e331 223-225,228-232,239-244,261-277
+  s_977061c47f01dd::t_82003110beefbb 5-8,13-21,23-32,35-40,55-57,66-68,88-92,107-111,114-127,142-146,151-154,157-160,173-177
+  s_977061c47f01dd::t_f5c95e4566b265 197-200,203-207,214
+src/modules/Crust/presentations/components/__tests__/CrustGainStripBranches.spec.tsx
+  s_977061c47f01dd::t_3a15ad1062bad2 64,71,78,85,92,99
+src/modules/Crust/useCases/__tests__/createCrustParameterGesture.spec.ts
+  s_977061c47f01dd::t_36b5263b86e331 12-14,40,138-145,149-151,156,214-246,283-286,301-303,314-317,331,333-352,359-361,363-364
+  s_977061c47f01dd::t_c1fabf239d2647 27
+  s_977061c47f01dd::t_731528e84df0dd 332,353-358,362
+  s_977061c47f01dd::t_8ea6c11388b621 1-4,6-11,15-26,28-39,41-137,146-148,152-155,157-213,247-251,254-256,259,267-272,274-282,287-300,304-313,318-330,365
+  s_977061c47f01dd::t_f5c95e4566b265 5,252-253,257-258,260-266,273
+src/modules/Crust/useCases/crustParamBridge/hydrateCrustPatchFromProject.ts
+  s_977061c47f01dd::t_6b8c9a753ac8dc 81
+  s_977061c47f01dd::t_dba46461e420de 4-9,153-156,171-187
+src/modules/Crust/useCases/createCrustParameterGesture.ts
+  s_977061c47f01dd::t_d578554ec3cb9b 74-78,276,278
+  s_977061c47f01dd::t_7d0ce1d163cc3e 102-104
+  s_977061c47f01dd::t_731528e84df0dd 247
+  s_977061c47f01dd::t_dba46461e420de 46-53,56-61,67-73,79-81,87-96,98,101,108,115,118,130-131,134,137-140,148-155,157-158,161-162,169-171,178,183-197,199-212,216,238,244-246,250,261,273,285-286,290-292,298-303,307-309
+  s_977061c47f01dd::t_56c3e33bca8d72 1-45,54-55,62-66,82-86,97,99-100,105-107,109-114,116-117,119-129,132-133,135-136,141-147,156,159-160,163-168,172-177,179-182,198,213-215,217-237,239-243,248-249,251-260,262-272,274-275,277,279-284,287-289,293-297,304-306,310-312
+src/modules/Crust/presentations/hooks/useCrustParameterGesture.ts
+  s_977061c47f01dd::t_8048ba0ee7abac 1-29
+.agents/skills/review-stances/command-entry-and-state-oracles.md
+  s_977061c47f01dd::t_c1fabf239d2647 39-47
+src/modules/Crust/presentations/views/__tests__/CrustPanel.spec.tsx
+  s_977061c47f01dd::t_c1fabf239d2647 13
+  s_977061c47f01dd::t_cdd028d7af2f19 251
+  s_977061c47f01dd::t_731528e84df0dd 2,89,253-262,267-270
+src/modules/Crust/presentations/components/CrustControlZone.tsx
+  s_977061c47f01dd::t_dba46461e420de 17,29-39,41,84,87-88,104-105,135,140-141,153-154,183-184,188-190,201-217,221,312,339-340,352-353,365-366,381-385,390-394,400,447-448,463-464,505,560-561,665-666,683-685,689,694-696
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "578cace4a216f5577dcce8fd3712c40199a84453",
+  "prompts": {},
+  "sessions": {
+    "s_977061c47f01dd": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34d-123d-7452-a6e7-60608388b6d7",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
