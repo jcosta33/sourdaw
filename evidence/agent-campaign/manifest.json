@@ -259,7 +259,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/Command/useCases/__tests__/verifiedBatchReceipt.spec.ts",
-                    "digest": "25ee4896c2664d0f46aac859de674f7f75afb63b14fba52cc87cb2f9cd93715e"
+                    "digest": "79ca48419a433685091b69623e4398c0e84c50c65923c2bb76ac5b00e14b5785"
                 }
             ]
         },
@@ -271,7 +271,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/Command/useCases/__tests__/commandBatchIdempotency.spec.ts",
-                    "digest": "b15e99ffde5fe4079768391f966e48bb60c91eebbdd9eb064fc7904776c223ac"
+                    "digest": "e336ec5f7ba0bb22c77831bb49146b836ee0d1f4d0504a0bcb8ec19d02f17a26"
                 }
             ]
         },
