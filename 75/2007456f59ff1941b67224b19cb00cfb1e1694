@@ -1,0 +1,21 @@
+src/modules/Crust/presentations/views/CrustPanel.tsx
+  s_977061c47f01dd::t_435dbdfb9e1f97 425-427
+src/modules/Crust/presentations/views/__tests__/crustParameterUndo.integration.spec.tsx
+  s_977061c47f01dd::t_8a5521eac058fc 299-344
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "752007456f59ff1941b67224b19cb00cfb1e1694",
+  "prompts": {},
+  "sessions": {
+    "s_977061c47f01dd": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34d-123d-7452-a6e7-60608388b6d7",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
