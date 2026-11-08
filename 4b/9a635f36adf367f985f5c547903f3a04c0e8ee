@@ -1,0 +1,32 @@
+src/modules/AiRuntime/useCases/__tests__/protectedTargetCollaboratorDrift.spec.ts
+  s_68423a2adea8d2::t_0f0a2fd2bad131 294-302,307
+  s_68423a2adea8d2::t_9ef9a3689e0932 390-393,437-439
+  s_68423a2adea8d2::t_bfa4a54bc424d2 290-291,293,372,386,395-436,440-441,449
+  s_68423a2adea8d2::t_bf0e64bd5e7e74 394
+src/modules/Command/useCases/__tests__/verifiedBatchReceipt.spec.ts
+  s_68423a2adea8d2::t_392e99764f0fda 168,321,332-335,1051,1053,1064-1072,1075-1076,1079-1080,1087-1091,1093-1105,1110-1116
+  s_68423a2adea8d2::t_0f0a2fd2bad131 1054-1055,1073-1074,1078,1092,1106,1109
+  s_68423a2adea8d2::t_237d1602dad8ca 1107-1108
+src/modules/Command/useCases/__tests__/commandBatchIdempotency.spec.ts
+  s_68423a2adea8d2::t_0f0a2fd2bad131 15,2535,2550,2556,2572,2591,2593
+  s_68423a2adea8d2::t_237d1602dad8ca 2592
+  s_68423a2adea8d2::t_3daa74ec6976c2 167,189,297-300,2529,2534,2546-2549,2551-2555,2557-2571,2573-2590,2595
+evidence/agent-campaign/manifest.json
+  s_68423a2adea8d2::t_4eaf889b2dccbb 262,274
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4b9a635f36adf367f985f5c547903f3a04c0e8ee",
+  "prompts": {},
+  "sessions": {
+    "s_68423a2adea8d2": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34b-f305-7c03-beb2-57afa678cda5",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
