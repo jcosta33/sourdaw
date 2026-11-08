@@ -9,8 +9,8 @@
 
 import { posix } from 'node:path';
 
-import { workflowJobCheckName } from './pullRequestGateWorkflowContract.ts';
 import { HEALTH_GATE_WORKFLOW_FILES } from './healthGateWorkflowContract.ts';
+import { workflowJobCheckName } from './pullRequestGateWorkflowContract.ts';
 
 type JobPins<Value> = Readonly<Record<string, Readonly<Record<string, Value>>>>;
 
