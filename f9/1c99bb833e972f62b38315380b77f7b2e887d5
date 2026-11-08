@@ -1,0 +1,21 @@
+crates/sourdaw-native/src/commands/filesystem/mod.rs
+  s_977061c47f01dd::t_1b08a5d6c208c6 2681-2694,2696-2700,2705-2707,2712-2727,2732-2751,2753-2757,2762-2788,2833-2834,3026-3027
+  s_977061c47f01dd::t_983918ad2e4a5e 854-872,876,1017,2680,2695,2752,2789-2832
+  s_977061c47f01dd::t_5a6defedf737f9 2701-2704,2708-2711,2728-2731,2758-2761
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f91c99bb833e972f62b38315380b77f7b2e887d5",
+  "prompts": {},
+  "sessions": {
+    "s_977061c47f01dd": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34d-123d-7452-a6e7-60608388b6d7",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
