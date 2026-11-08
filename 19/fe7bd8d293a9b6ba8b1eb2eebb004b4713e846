@@ -1,0 +1,25 @@
+src/modules/Automation/handlers/automation/automationTransformUndo.ts
+  s_1052c2a2231ded::t_81195a3cdca8a7 1,3,7-12,14-26
+.agents/skills/review-stances/replay-authority.md
+  s_1052c2a2231ded::t_81195a3cdca8a7 122-126
+src/modules/Automation/handlers/automation/__tests__/transformHandlersUndo.spec.ts
+  s_1052c2a2231ded::t_e1b2fa29852aa1 52,163-167
+src/modules/Automation/handlers/automation/__tests__/handleRestoreAutomationLanePoints.spec.ts
+  s_1052c2a2231ded::t_81195a3cdca8a7 87-101
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "19fe7bd8d293a9b6ba8b1eb2eebb004b4713e846",
+  "prompts": {},
+  "sessions": {
+    "s_1052c2a2231ded": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b349-24b6-7622-8534-09f171c780d5",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
