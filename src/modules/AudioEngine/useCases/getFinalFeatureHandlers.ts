@@ -5,7 +5,6 @@ import { handleElasticRemoveMarker } from '../handlers/finalFeature/handleElasti
 import { handleElasticSetSensitivity } from '../handlers/finalFeature/handleElasticSetSensitivity';
 import { handleElasticSetTool } from '../handlers/finalFeature/handleElasticSetTool';
 import { handleElasticToggleMarkerLock } from '../handlers/finalFeature/handleElasticToggleMarkerLock';
-import { handleEnableWarping } from '../handlers/finalFeature/handleEnableWarping';
 import { handleGetLatencyReport } from '../handlers/finalFeature/handleGetLatencyReport';
 import { handleOpenElasticEditor } from '../handlers/finalFeature/handleOpenElasticEditor';
 import { handleSetWarpAlgorithm } from '../handlers/finalFeature/handleSetWarpAlgorithm';
@@ -19,7 +18,6 @@ export type FinalFeatureHandlersMap = {
     elasticSetSensitivity: typeof handleElasticSetSensitivity;
     elasticSetTool: typeof handleElasticSetTool;
     elasticToggleMarkerLock: typeof handleElasticToggleMarkerLock;
-    enableWarping: typeof handleEnableWarping;
     getLatencyReport: typeof handleGetLatencyReport;
     openElasticEditor: typeof handleOpenElasticEditor;
     setWarpAlgorithm: typeof handleSetWarpAlgorithm;
@@ -39,7 +37,6 @@ export function getFinalFeatureHandlers(): FinalFeatureHandlersMap {
         elasticRemoveMarker: handleElasticRemoveMarker,
         elasticToggleMarkerLock: handleElasticToggleMarkerLock,
         elasticSetTool: handleElasticSetTool,
-        enableWarping: handleEnableWarping,
         setWarpAlgorithm: handleSetWarpAlgorithm,
         setWarpPitchShift: handleSetWarpPitchShift,
         getLatencyReport: handleGetLatencyReport,
