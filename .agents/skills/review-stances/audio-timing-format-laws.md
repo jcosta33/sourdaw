@@ -25,7 +25,12 @@ none.
    DAW reproduces is a finding unless a decision record names the difference (#4788). Mapped ruler
    paint must follow the model's physical bar origins, not an inverse over bar names (Insert 2 at 4 in
    4/4 carries the origin to 6 and moves the clip at 8 to 10; two partial pieces can share a number);
-   cover partial bars, denominators other than 4 and a later meter change.
+   cover partial bars, denominators other than 4 and a later meter change. Track clip-list bar endpoints
+   must use the live default meter and time-signature map: beats 18–27 read 5–7 in 4/4, 7–10 in 3/4
+   or 6/8, and 7–10 with a 5/8 change at beat 8 over a 4/4 default. Changing either meter source while
+   the list is mounted must update its labels. Restore quarter-note arithmetic or remove the subscription;
+   `TrackClipsSection.spec.tsx` must fail. Follow the view's `useMeterInput` to the public
+   `getBarNumberAtBeat` query so the display shares the ruler's snapped meter law.
 3. **Fresh instance, highest rate, whole signal.** Render a fresh instance without setting the
    parameter under test and compare with explicit values (default routing); measure the actual engine
    at the highest admitted context rate for late tail and silence after the physical duration; compare
