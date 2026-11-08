@@ -153,6 +153,7 @@ export const GOVERNANCE_TRANSITION_PATHS = [
     'scripts/findingLineage.ts',
     'scripts/gitAncestry.ts',
     'scripts/githubAppIdentity.ts',
+    'scripts/guardRecoveryProof.ts',
     'scripts/laneActivity.ts',
     'scripts/laneStackForkMarkers.ts',
     'scripts/pnpmModulesPreflight.ts',
