@@ -1,0 +1,34 @@
+src/modules/ContentBrowser/presentations/views/__tests__/Sidebar.spec.tsx
+  s_02903fa7eb13ea::t_850b585f956e97 288,292
+  s_02903fa7eb13ea::t_0305e3545885c3 102,104-105,113-115,117-118,123-124
+  s_02903fa7eb13ea::t_a6a94aeafe6b7c 300-342
+  s_02903fa7eb13ea::t_94ea5b24ed5f6e 5
+  s_02903fa7eb13ea::t_ffafe0b02db98d 131-134
+src/modules/ContentBrowser/presentations/views/Sidebar.tsx
+  s_02903fa7eb13ea::t_df0fb336189d2d 120-123
+  s_02903fa7eb13ea::t_fe69bc9c4c9a2b 131-133
+  s_02903fa7eb13ea::t_a35255e04402b6 130,147-149
+src/modules/ContentBrowser/presentations/hooks/__tests__/useImportedSampleResidency.spec.ts
+  s_02903fa7eb13ea::t_da370a21c7ed66 1
+  s_02903fa7eb13ea::t_4988ede282aeeb 73
+  s_02903fa7eb13ea::t_33a91143b40639 2,25-34,38-40,53-57,61-72,74-82
+src/modules/ContentBrowser/presentations/hooks/useImportedSampleResidency.ts
+  s_02903fa7eb13ea::t_70339d45d842a5 22-24
+  s_02903fa7eb13ea::t_a561534513e8f5 8,10,12-15,18-19
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "161360be361a2efe10f4c46f8865c5e81a561cf3",
+  "prompts": {},
+  "sessions": {
+    "s_02903fa7eb13ea": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "09ad8230-37d3-4b52-835c-e4a4f9483b9c",
+        "model": "composer-2.5-fast"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
