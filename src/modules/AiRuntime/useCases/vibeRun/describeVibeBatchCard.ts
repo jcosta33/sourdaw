@@ -37,7 +37,7 @@ export function describeVibeBatchCard(input: {
         }
         const target = criterion.targetIds.map((id) => readVibeTargetName(input.context, id)).join(', ');
         lines.push(
-            `Measured on ${target}: ${readVibeMetricLabel(criterion.metricId, criterion.band)} ${formatVibeFigure(criterion.baseline[0], criterion.unit)} → ${formatVibeFigure(criterion.observed[0], criterion.unit)} (${criterion.status}).`
+            `Fresh approval preview on ${target}, ${criterion.range?.sectionId ?? 'arrangement'} [${String(criterion.range?.startBeat)}, ${String(criterion.range?.endBeat)}]: ${readVibeMetricLabel(criterion.metricId, criterion.band)} ${formatVibeFigure(criterion.baseline[0], criterion.unit)} → ${formatVibeFigure(criterion.observed[0], criterion.unit)} (${criterion.status}).`
         );
     }
     return lines;
