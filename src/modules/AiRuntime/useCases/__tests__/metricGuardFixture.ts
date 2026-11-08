@@ -223,7 +223,7 @@ export function metricGuardFixture() {
     }
     const metric = (value: number) => ({
         status: 'measured' as const,
-        metricVersion: 1,
+        metricVersion: 1 as const,
         unit: 'hertz',
         value,
         confidence: 'exact' as const,
