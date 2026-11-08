@@ -1,0 +1,19 @@
+src/modules/AiRuntime/useCases/__tests__/briefFromRequest.spec.ts
+  s_68423a2adea8d2::t_da085b87353c0e 708-714,721,730,740-765
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9fcafe3dd9de61be5b82932e9814e36c5cc432d5",
+  "prompts": {},
+  "sessions": {
+    "s_68423a2adea8d2": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34b-f305-7c03-beb2-57afa678cda5",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
