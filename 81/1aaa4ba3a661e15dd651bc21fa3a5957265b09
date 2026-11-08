@@ -1,0 +1,39 @@
+src/modules/Gluten/presentations/views/GlutenPanel.tsx
+  s_8dd2ba9e498da7::t_5610a5fc34a554 628-629,1615-1618,1636-1637
+src/modules/Gluten/presentations/views/__tests__/GlutenPanel.spec.tsx
+  s_1052c2a2231ded::t_fad74d4f5fa7bf 74,78-80
+tests/e2e/glutenPresetSearchTestId.spec.ts
+  s_977061c47f01dd::t_663b7c31468ab2 92,105-122,140-142
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "811aaa4ba3a661e15dd651bc21fa3a5957265b09",
+  "prompts": {},
+  "sessions": {
+    "s_1052c2a2231ded": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b349-24b6-7622-8534-09f171c780d5",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_8dd2ba9e498da7": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34a-1f45-7430-80af-58acd6c4b831",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_977061c47f01dd": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34d-123d-7452-a6e7-60608388b6d7",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
