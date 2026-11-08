@@ -125,7 +125,7 @@ describe('Oscilloscope waveform', () => {
         expect(getTrackAnalyser).toHaveBeenCalledWith('missing');
         expect(getMasterAnalyser).toHaveBeenCalledOnce();
         expect(master.getFloatTimeDomainData).toHaveBeenCalledOnce();
-        expect(strokes.filter((stroke) => stroke.color === '#336699' && stroke.width === 1.5)[0]?.points).toEqual([
+        expect(strokes.find((stroke) => stroke.color === '#336699' && stroke.width === 1.5)?.points).toEqual([
             [0, 76],
             [50, 40],
             [100, 4],

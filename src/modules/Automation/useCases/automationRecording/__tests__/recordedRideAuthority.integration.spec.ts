@@ -186,7 +186,7 @@ describe('recorded automation ride project authority and callback history', () =
         clearHandlerRegistry();
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
         automationStore.set({ lanes: [] });
-        transportStore.set({ ...defaultTransportState });
+        transportStore.set(defaultTransportState);
         flushAutomergeStorageWrites();
         configureAutomergeStoragePort(null);
         removeCrdtDoc('root');

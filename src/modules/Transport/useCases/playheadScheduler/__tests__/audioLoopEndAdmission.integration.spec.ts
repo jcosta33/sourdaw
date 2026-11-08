@@ -107,7 +107,7 @@ describe('audio admission at an off-grid transport loop end', () => {
         });
         // The external Web Audio boundary is controlled; engine accessors,
         // strip creation, playback admission and both schedulers stay real.
-        audioEngine.context = context as unknown as AudioContext;
+        audioEngine.context = context as AudioContext;
         vi.stubGlobal(
             'AudioWorkletNode',
             class {
@@ -141,7 +141,7 @@ describe('audio admission at an off-grid transport loop end', () => {
         configureRuntimeGraphTopologyValidator(null);
         audioEngine.context = originalContext;
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
-        transportStore.set({ ...defaultTransportState });
+        transportStore.set(defaultTransportState);
         flushAutomergeStorageWrites();
         configureAutomergeStoragePort(null);
         removeCrdtDoc('root');

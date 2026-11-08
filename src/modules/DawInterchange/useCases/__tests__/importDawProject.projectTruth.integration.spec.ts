@@ -44,7 +44,9 @@ function createBuffer(numberOfChannels: number, length: number, sampleRate: numb
 
 function decodedStereo(): AudioBuffer {
     const buffer = createBuffer(2, CHANNELS[0]!.length, SAMPLE_RATE);
-    CHANNELS.forEach((channel, index) => buffer.copyToChannel(channel, index));
+    for (const [index, channel] of CHANNELS.entries()) {
+        buffer.copyToChannel(channel, index);
+    }
     return buffer;
 }
 
@@ -202,7 +204,9 @@ describe('DAWproject import project truth and PCM publication', () => {
         if (!setupComplete) {
             return;
         }
-        stopAutosaves.splice(0).forEach((stop) => stop());
+        for (const stop of stopAutosaves.splice(0)) {
+            stop();
+        }
         unsubscribeNotifications();
         runtime.command.clearUndoHistory();
         runtime.commandStores.clearHandlerRegistry();
@@ -233,7 +237,8 @@ describe('DAWproject import project truth and PCM publication', () => {
             outgoingProject: 'discard',
         });
         expect(result).toEqual({ ok: true, warnings: [] });
-        expect(decode).toHaveBeenCalledExactlyOnceWith(expect.any(ArrayBuffer));
+        expect(decode).toHaveBeenCalledTimes(1);
+        expect(Array.from(new Uint8Array(decode.mock.calls[0]![0]))).toEqual([82, 73, 70, 70, 1, 2, 3, 4]);
         flushAutomergeStorageWrites();
 
         const tracks = runtime.arrangementStores.trackStore.value?.tracks;
@@ -274,7 +279,9 @@ describe('DAWproject import project truth and PCM publication', () => {
         });
         const buffer = runtime.audio.getCachedAudioBuffer({ bufferId });
         expect(buffer).toMatchObject({ numberOfChannels: 2, sampleRate: SAMPLE_RATE, length: 4 });
-        CHANNELS.forEach((channel, index) => expect(buffer?.getChannelData(index)).toEqual(channel));
+        for (const [index, channel] of CHANNELS.entries()) {
+            expect(buffer?.getChannelData(index)).toEqual(channel);
+        }
         expect(runtime.projectStores.projectStore.value).toMatchObject({
             name: 'Committed import',
             initialized: true,
@@ -295,6 +302,7 @@ describe('DAWproject import project truth and PCM publication', () => {
         ).toEqual({ ok: true, warnings: [] });
         const { bufferId } = currentAudioClip();
         const successorBuffer = runtime.audio.getCachedAudioBuffer({ bufferId });
+        decode.mockClear();
         const decoding = Promise.withResolvers<AudioBuffer>();
         const enteredDecoder = Promise.withResolvers<void>();
         decode.mockImplementationOnce(() => {
@@ -307,6 +315,8 @@ describe('DAWproject import project truth and PCM publication', () => {
             outgoingProject: 'discard',
         });
         await enteredDecoder.promise;
+        expect(decode).toHaveBeenCalledTimes(1);
+        expect(Array.from(new Uint8Array(decode.mock.calls[0]![0]))).toEqual([82, 73, 70, 70, 1, 2, 3, 4]);
         const successor = runtime.project.runProjectLoadTransaction();
         expect(await successor.prepare()).toBe(true);
         expect(successor.activate()).toBe(true);
@@ -324,7 +334,9 @@ describe('DAWproject import project truth and PCM publication', () => {
         expect(captureSuccessor()).toEqual(before);
         expect(imports).not.toHaveBeenCalled();
         expect(runtime.audio.getCachedAudioBuffer({ bufferId })).toBe(successorBuffer);
-        CHANNELS.forEach((channel, index) => expect(successorBuffer?.getChannelData(index)).toEqual(channel));
+        for (const [index, channel] of CHANNELS.entries()) {
+            expect(successorBuffer?.getChannelData(index)).toEqual(channel);
+        }
         expect(successor.isCurrent()).toBe(true);
     });
 });
