@@ -71,6 +71,9 @@ const DRUMS_ID = 'track-drums';
 const VOCAL_ID = 'track-vocal';
 const BASS_ID = 'track-bass';
 
+// Complete-run cases perform 27 real PCM reads and three history transactions under concurrent CI.
+const MULTI_BATCH_TEST_TIMEOUT_MS = 15_000;
+
 const runtimeMocks = vi.hoisted(() => ({ backend: { value: 'cloud' } }));
 
 vi.mock('../llmOrchestration/backendResolution/getBackendChain', () => ({
@@ -726,47 +729,51 @@ describe('initial role and exact-section baselines through the brief pipeline', 
         expect(liveBriefRevision()).toBe(BRIEF_REVISION);
     });
 
-    it('retains historical provenance through brief and two batch commits and rejects tampered restoration', async () => {
-        useShortMeasuredSections();
-        const brief = await confirmBrief();
-        const initial = structuredClone(measuredPlan(brief).initial);
-        expect(initial.receipts).toHaveLength(3);
-        expect(initialFigures(measuredPlan(brief))).toHaveLength(9);
-        for (let index = 0; index < 2; index += 1) {
-            const batch = requireOnlyProposedCard();
-            expectMeasuredBatch(batch, index === 0 ? DRUMS_ID : VOCAL_ID);
-            expect(batch.projectRevision).not.toBe(initial.sourceRevision);
-            await expect(confirmPendingChatActions({ confirmationId: batch.id })).resolves.toEqual({
-                status: 'executed',
-            });
-            expect(measuredPlan(brief).initial).toEqual(initial);
-        }
-        const serializedState = JSON.stringify(readAgentRunState());
-        const state: unknown = JSON.parse(serializedState);
-        expect(sanitizeAgentRunState(state).runs.find((run) => run.runId === brief.runId)?.plan?.batchSchedule).toEqual(
-            agentRunLifecycle.get(brief.runId)?.plan?.batchSchedule
-        );
-        const plan = measuredPlan(brief);
-        for (const tamper of [
-            (value: typeof plan) => ({ ...value, schemaVersion: 3 }),
-            (value: typeof plan) => ({ ...value, initial: { ...value.initial, sourceRevisionDigest: 'wrong' } }),
-            (value: typeof plan) => ({
-                ...value,
-                initial: { ...value.initial, witnesses: value.initial.witnesses.slice(1) },
-            }),
-            (value: typeof plan) => ({
-                ...value,
-                initial: { ...value.initial, witnesses: [...value.initial.witnesses, value.initial.witnesses[0]] },
-            }),
-            (value: typeof plan) => ({
-                ...value,
-                batches: value.batches.map((batch) => ({ ...batch, witnessIds: [] })),
-            }),
-        ]) {
-            expect(readScheduledVibeRunPlan(JSON.stringify(tamper(structuredClone(plan))))).toBeNull();
-        }
-        expect(audio.renderTrackSubgraphOffline).toHaveBeenCalledTimes(27);
-    });
+    it(
+        'retains historical provenance through brief and two batch commits and rejects tampered restoration',
+        async () => {
+            useShortMeasuredSections();
+            const brief = await confirmBrief();
+            const initial = structuredClone(measuredPlan(brief).initial);
+            expect(initial.receipts).toHaveLength(3);
+            expect(initialFigures(measuredPlan(brief))).toHaveLength(9);
+            for (let index = 0; index < 2; index += 1) {
+                const batch = requireOnlyProposedCard();
+                expectMeasuredBatch(batch, index === 0 ? DRUMS_ID : VOCAL_ID);
+                expect(batch.projectRevision).not.toBe(initial.sourceRevision);
+                await expect(confirmPendingChatActions({ confirmationId: batch.id })).resolves.toEqual({
+                    status: 'executed',
+                });
+                expect(measuredPlan(brief).initial).toEqual(initial);
+            }
+            const serializedState = JSON.stringify(readAgentRunState());
+            const state: unknown = JSON.parse(serializedState);
+            expect(
+                sanitizeAgentRunState(state).runs.find((run) => run.runId === brief.runId)?.plan?.batchSchedule
+            ).toEqual(agentRunLifecycle.get(brief.runId)?.plan?.batchSchedule);
+            const plan = measuredPlan(brief);
+            for (const tamper of [
+                (value: typeof plan) => ({ ...value, schemaVersion: 3 }),
+                (value: typeof plan) => ({ ...value, initial: { ...value.initial, sourceRevisionDigest: 'wrong' } }),
+                (value: typeof plan) => ({
+                    ...value,
+                    initial: { ...value.initial, witnesses: value.initial.witnesses.slice(1) },
+                }),
+                (value: typeof plan) => ({
+                    ...value,
+                    initial: { ...value.initial, witnesses: [...value.initial.witnesses, value.initial.witnesses[0]] },
+                }),
+                (value: typeof plan) => ({
+                    ...value,
+                    batches: value.batches.map((batch) => ({ ...batch, witnessIds: [] })),
+                }),
+            ]) {
+                expect(readScheduledVibeRunPlan(JSON.stringify(tamper(structuredClone(plan))))).toBeNull();
+            }
+            expect(audio.renderTrackSubgraphOffline).toHaveBeenCalledTimes(27);
+        },
+        MULTI_BATCH_TEST_TIMEOUT_MS
+    );
 
     it.each([
         'missing section',
@@ -1154,24 +1161,32 @@ describe('initial role and exact-section baselines through the brief pipeline', 
         expect(audio.renderTrackSubgraphOffline).toHaveBeenCalledTimes(3);
     });
 
-    it('keeps processing eligible under an original control-only fader protection', async () => {
-        useShortMeasuredSections();
-        const gain = trackStore.value?.tracks.find((track) => track.id === VOCAL_ID)?.gain;
-        const brief = await confirmBrief('make this mix warmer and keep Vocal fader unchanged');
-        expect(measuredPlan(brief).batches.flatMap((batch) => batch.targetIds)).toContain(VOCAL_ID);
-        expect(initialFigures(measuredPlan(brief)).filter((figure) => figure.targetId === VOCAL_ID)).toHaveLength(3);
-        const drums = requireOnlyProposedCard();
-        expectMeasuredBatch(drums, DRUMS_ID);
-        await expect(confirmPendingChatActions({ confirmationId: drums.id })).resolves.toEqual({
-            status: 'executed',
-        });
-        const vocal = requireOnlyProposedCard();
-        expectMeasuredBatch(vocal, VOCAL_ID);
-        await expect(confirmPendingChatActions({ confirmationId: vocal.id })).resolves.toEqual({ status: 'executed' });
-        expect(trackDeviceTypes(VOCAL_ID)).toEqual(['builtin-eq']);
-        expect(trackStore.value?.tracks.find((track) => track.id === VOCAL_ID)?.gain).toBe(gain);
-        expect(audio.renderTrackSubgraphOffline).toHaveBeenCalledTimes(27);
-    });
+    it(
+        'keeps processing eligible under an original control-only fader protection',
+        async () => {
+            useShortMeasuredSections();
+            const gain = trackStore.value?.tracks.find((track) => track.id === VOCAL_ID)?.gain;
+            const brief = await confirmBrief('make this mix warmer and keep Vocal fader unchanged');
+            expect(measuredPlan(brief).batches.flatMap((batch) => batch.targetIds)).toContain(VOCAL_ID);
+            expect(initialFigures(measuredPlan(brief)).filter((figure) => figure.targetId === VOCAL_ID)).toHaveLength(
+                3
+            );
+            const drums = requireOnlyProposedCard();
+            expectMeasuredBatch(drums, DRUMS_ID);
+            await expect(confirmPendingChatActions({ confirmationId: drums.id })).resolves.toEqual({
+                status: 'executed',
+            });
+            const vocal = requireOnlyProposedCard();
+            expectMeasuredBatch(vocal, VOCAL_ID);
+            await expect(confirmPendingChatActions({ confirmationId: vocal.id })).resolves.toEqual({
+                status: 'executed',
+            });
+            expect(trackDeviceTypes(VOCAL_ID)).toEqual(['builtin-eq']);
+            expect(trackStore.value?.tracks.find((track) => track.id === VOCAL_ID)?.gain).toBe(gain);
+            expect(audio.renderTrackSubgraphOffline).toHaveBeenCalledTimes(27);
+        },
+        MULTI_BATCH_TEST_TIMEOUT_MS
+    );
 
     it('refuses an unresolved original whole-object protection before any initial render', async () => {
         const revision = captureProjectRevision();
