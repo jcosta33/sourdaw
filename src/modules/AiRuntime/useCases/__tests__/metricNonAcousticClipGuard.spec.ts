@@ -3,6 +3,8 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { createTrack } from '#/modules/Arrangement/useCases';
 import { registerHandlerMap } from '#/modules/Command/stores';
+import { defaultProjectStoreState } from '#/modules/Project/stores';
+import { getProjectHandlers } from '#/modules/Project/useCases';
 import { getTransportHandlers } from '#/modules/Transport/useCases';
 import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
 import { type AppAction } from '#/utils/handlerContract';
@@ -44,6 +46,7 @@ beforeEach(() => {
     ];
     configureMetricGoalProject({ label: 'non acoustic clip', tracks: [track], sections: [] });
     registerHandlerMap(getTransportHandlers());
+    registerHandlerMap(getProjectHandlers());
 });
 afterEach(resetMetricGoalProject);
 
@@ -120,6 +123,84 @@ describe('non-acoustic authority and Command effects', () => {
         expect(
             evaluate('Rename Drums', { type: 'renameTrack', payload: { trackId: 'drums', name: 'Kit' } }).status
         ).toBe('not-required');
+    });
+    it('keeps a genuine brief intake and production brief command goal-free', () => {
+        const prompt = 'Create a production brief';
+        const revision = captureProjectRevision();
+        const context = getProjectContext();
+        const creative = prepareCreativeInterpretationCatalog({
+            prompt,
+            context,
+            projectRevision: revision,
+            offersBrief: true,
+        });
+        const answer = prepareAnswerInterpretationCatalog({ prompt, context, projectRevision: revision });
+        const metric = prepareMetricIntentCatalog({ prompt, answer });
+        const admitted = admitPlanningInterpretation({
+            creative,
+            answer,
+            metric,
+            projectRevision: revision,
+            turn: 1,
+            call: {
+                id: 'brief-intake',
+                name: 'selectCreativeInterpretation',
+                arguments: {
+                    catalogId: creative.catalogId,
+                    modeId: 'brief',
+                    targetCandidateIds: [],
+                    editDimensionCandidateIds: [],
+                    constraintCandidateIds: [],
+                    creationSlotIds: [],
+                    uncertainty: 'none',
+                    answer: null,
+                    metricIntent: { kind: 'non-acoustic', objectives: [], uncertainty: 'none' },
+                },
+            },
+        });
+        if (
+            admitted.status !== 'admitted' ||
+            admitted.kind !== 'creative' ||
+            !('metricAuthority' in admitted) ||
+            !admitted.metricAuthority
+        )
+            throw new Error('Expected genuine brief admission');
+        const brief = structuredClone(defaultProjectStoreState.productionBrief);
+        const action: AppAction = {
+            type: 'setProductionBrief',
+            payload: {
+                expectedRevision: brief.revision,
+                brief: { ...brief, revision: brief.revision + 1, vision: 'Warm and close' },
+            },
+        };
+        const commandBatch = compilePlannedActionCommandBatch({
+            actions: [action],
+            actionLabels: [action.type],
+            autoCommit: false,
+            context,
+            group: { groupId: 'brief-guard', groupLabel: prompt },
+            intent: prompt,
+            projectRevision: revision,
+            runId: 'brief-guard',
+        }).commandBatch;
+        const state = metricGoalStateCodec(
+            JSON.stringify(
+                bindMetricGoalsToBatch({
+                    commandBatch,
+                    state: {
+                        schemaVersion: 1,
+                        authorities: [admitted.metricAuthority],
+                        steps: [],
+                        proofs: [],
+                        binding: null,
+                    },
+                })
+            )
+        );
+        expect(state).not.toBeNull();
+        expect(evaluateMetricGoalAdmission({ state, commandBatch, currentRevision: revision }).status).toBe(
+            'not-required'
+        );
     });
     it('blocks clip normalization while preserving a literal normalization', () => {
         const action: AppAction = { type: 'normalizeClip', payload: { clipId: 'intro', mode: 'lufs', targetDb: -14 } };
