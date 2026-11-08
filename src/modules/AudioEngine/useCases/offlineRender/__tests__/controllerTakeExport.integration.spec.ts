@@ -38,6 +38,7 @@ import {
     retireRecordingMidiAdmission,
     takeOwnsRecordingRoot,
     recordingMidiSourceBeatAt,
+    isRecordingMidiInputExcluded,
 } from '#/modules/Arrangement/useCases';
 import { audioEngine } from '#/modules/AudioEngine/useCases';
 import { clearHandlerRegistry, registerHandlerMap, undoHistoryStore } from '#/modules/Command/stores';
@@ -144,6 +145,7 @@ describe('a recorded controller-only take, rendered by the offline export schedu
             retireRecordingMidiAdmission,
             takeOwnsRecordingRoot,
             recordingMidiSourceBeatAt,
+            isRecordingMidiInputExcluded,
         });
         transportStore.set({
             ...transportStore.value!,

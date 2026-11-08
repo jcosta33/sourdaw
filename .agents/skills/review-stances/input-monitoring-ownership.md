@@ -156,6 +156,19 @@ hardware audibility. Runtime-session companions live in `session-lifecycle.md`.
     name at worker initialization. Run two isolated workers sharing a filename-keyed staged OPFS at one timestamp:
     each delivered WAV keeps its own PCM, and removing one staging entry does not remove the other's.
 
+14. **Automatic punch retains its physical terminal frame (#4897, #5891; unpublished #5381).** Drive the actual
+    recording processor/session-owned ring with frame-coded input through off-tick out; require the last exclusive
+    out frame and stored source window, including held MIDI in one group. A synthesized terminal buffer or scheduled
+    stop proves neither. Removing the frontier wait must lose that frame. Keep first-frame handle release separate
+    from automatic progress-reader lifetime; retired sessions cannot adopt successor publications. Native inputs
+    wait for their own sounded target and latency-adjusted frontier; first publication/forecast-only observations
+    stay pending, while a genuine refusal retains full muted PCM and its visible diagnostic without certifying native
+    placement or borrowing browser timing. Pair pending→valid,
+    real Stop, history-gap recovery and teardown; no hardware audibility claim. Historical private tiers/prompts
+    are unestablished. Authenticate the actual chosen MIDI row incarnation after fresh arm/recreation/insertion,
+    preserving original second-clip/loop-nearest candidates and original-onset late release. See
+    `session-lifecycle.md` probe12 for carrier/occurrence ownership.
+
 ## Retired lessons
 
 - Aborted graph repair must rearm committed monitoring intent (#5286) -> enforced by

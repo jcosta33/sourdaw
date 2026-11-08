@@ -10,6 +10,9 @@ vi.mock('#/utils/Notification/notifyUser', () => ({
 // here is what project truth holds after undo, so the engine seam is stubbed
 // rather than exercised.
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    openCachedAudioBufferHold: vi.fn(() => {
+        throw new Error('Unexpected audio buffer residency hold in this fixture');
+    }),
     captureOfflineRenderProjectSource: vi.fn(() => {
         throw new Error('Unexpected selection render capture in this fixture');
     }),

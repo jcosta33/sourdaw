@@ -16,6 +16,8 @@ import {
     METER_FLOOR_DB,
     PAN_SCALE_MAX,
     resolveLevelArgument,
+    resolveLevelFields,
+    TRACK_FADER_LAW,
     sendPositionToLevel,
     toStereoPan,
 } from '../audioLevelLaw';
@@ -266,5 +268,28 @@ describe('METER_FLOOR_DB', () => {
         // deliberate future divergence is a conscious edit, not drift.
         expect(METER_FLOOR_DB).toBe(-60);
         expect(METER_FLOOR_DB).toBe(SEND_MIN_DB);
+    });
+});
+
+describe('relative level identity', () => {
+    it.each([0.3, 0.0123, 0.5, 1])('preserves %s exactly for either signed zero', (current) => {
+        for (const deltaDb of [0, -0]) {
+            expect(resolveLevelArgument({ deltaDb }, current, TRACK_FADER_LAW)).toEqual({ ok: true, linear: current });
+        }
+    });
+
+    it('preserves validation and does not absorb a representable nonzero change', () => {
+        for (const current of [0, Number.NaN, Number.POSITIVE_INFINITY, 0.0001, 3]) {
+            expect(resolveLevelArgument({ deltaDb: 0 }, current, TRACK_FADER_LAW).ok).toBe(false);
+        }
+        expect(resolveLevelArgument({ deltaDb: Number.NaN }, 0.3, TRACK_FADER_LAW).ok).toBe(false);
+        expect(resolveLevelFields({ linear: 0.3, deltaDb: 0 }, 0.3, TRACK_FADER_LAW).ok).toBe(false);
+        const tiny = resolveLevelArgument({ deltaDb: 1e-12 }, 0.3, TRACK_FADER_LAW);
+        expect(tiny.ok).toBe(true);
+        if (tiny.ok) {
+            expect(tiny.linear).not.toBe(0.3);
+        }
+        expect(resolveLevelArgument({ linear: 0.3 }, 0.5, TRACK_FADER_LAW)).toEqual({ ok: true, linear: 0.3 });
+        expect(resolveLevelArgument({ absoluteDb: 0 }, 0.3, TRACK_FADER_LAW)).toEqual({ ok: true, linear: 1 });
     });
 });

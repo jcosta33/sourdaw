@@ -9,6 +9,9 @@ import { getTrackEligibility } from '../../stores/trackEligibility';
 import { type Clip, type Track } from '../../stores/trackStore';
 import { getTakeLaneForTrack } from '../comping/getTakeLaneForTrack';
 
+import { recordingCommitGroups } from './recordingCommitGroup';
+import { recordingMidiBound } from './recordingMidiBound';
+import { recordingOverdubMidiTargets } from './recordingOverdubMidiTargets';
 import { recordingPassTiming } from './recordingPassTiming';
 import { stageRecordingTake } from './stageRecordingTake';
 
@@ -58,26 +61,8 @@ function stageRecording(
         // Native audio capture can join a different audible phase from the
         // browser/MIDI scheduler. Retain the entry and clock as one pair.
         const trackRecordBeat = trackRecordingBeat(track.kind, recordBeat, audioClock);
-        if (track.kind === 'midi' && transportState.overdubEnabled) {
-            const ph = recordBeat;
-            const intersecting = track.clips.find(
-                (context) => context.type === 'midi' && ph >= context.startBeat && ph < context.endBeat
-            );
-
-            const inLoop = transportState.isLooping && ph >= transportState.loopStart && ph <= transportState.loopEnd;
-            const loopClip = inLoop
-                ? track.clips.find(
-                      (context) =>
-                          context.type === 'midi' &&
-                          context.startBeat >= transportState.loopStart &&
-                          context.endBeat <= transportState.loopEnd
-                  )
-                : undefined;
-
-            if (intersecting || loopClip) {
-                // Skip creating a new clip (overdub merges into existing clip)
-                continue;
-            }
+        if (recordingOverdubMidiTargets(track, recordBeat, transportState).length > 0) {
+            continue;
         }
 
         const clipId = `rec-clip-${crypto.randomUUID()}`;
@@ -154,16 +139,21 @@ function stageRecording(
 export function startRecording(
     atBeat?: number,
     firstPassClock?: () => number | null,
-    audioClock?: AudioRecordingClock | null
+    audioClock?: AudioRecordingClock | null,
+    bound?: Parameters<typeof recordingMidiBound.begin>[0]
 ): Clip[] {
+    recordingMidiBound.begin(bound);
     const transaction = runWithAutomergeStorageTransaction(undefined, () =>
         stageRecording(atBeat, firstPassClock, audioClock)
     );
     if (transaction.status === 'threw') {
+        recordingMidiBound.clear();
         throw transaction.error;
     }
     try {
         transaction.commit();
+        recordingMidiBound.captureMidiTargets(transaction.value, atBeat);
+        recordingCommitGroups.begin(bound ? transaction.value : []);
         return transaction.value;
     } catch (error) {
         for (const clip of transaction.value) {
@@ -171,6 +161,7 @@ export function startRecording(
         }
         activeRecordingRef.current = [];
         activeRecordingRef.capturedRootIdentity = null;
+        recordingMidiBound.clear();
         throw error;
     }
 }

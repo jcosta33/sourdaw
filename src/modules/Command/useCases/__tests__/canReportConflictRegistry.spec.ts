@@ -309,6 +309,18 @@ async function createDivergedAudioSourceAction(actionType: AudioSourceConflictAc
 }
 
 const CONFLICT_CAPABLE_FIXTURES: readonly DivergedFixture[] = [
+    {
+        title: 'enableWarping refuses a missing audio target',
+        actionType: 'enableWarping',
+        divergedAction: { type: 'enableWarping', payload: { clipId: 'clip-missing' } },
+        reason: 'Audio warping requires an existing audio clip.',
+    },
+    {
+        title: 'enableWarping refuses an existing MIDI target',
+        actionType: 'enableWarping',
+        divergedAction: { type: 'enableWarping', payload: { clipId: 'clip-midi' } },
+        reason: 'Audio warping requires an existing audio clip.',
+    },
     ...(['trimClipStart', 'restoreAudioClipStartTrim', 'restoreAudioClipSlip'] as const).map((actionType) => ({
         title: `${actionType} refuses a captured edit after its media owner diverges`,
         actionType,
@@ -656,6 +668,17 @@ function seedLiveProjectState(): void {
     });
     if (clip === null) {
         throw new Error('Expected live clip fixture');
+    }
+    const midiClip = addClip({
+        id: 'clip-midi',
+        trackId: 'track-live',
+        startBeat: 0,
+        endBeat: 8,
+        name: 'MIDI clip',
+        type: 'midi',
+    });
+    if (midiClip === null) {
+        throw new Error('Expected live MIDI clip fixture');
     }
     takeLaneStore.set({
         lanes: [

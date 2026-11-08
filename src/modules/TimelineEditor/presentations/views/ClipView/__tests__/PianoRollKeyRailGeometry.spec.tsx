@@ -112,7 +112,7 @@ const renderRoll = (): { rail: HTMLElement; scroller: HTMLElement } => {
     const rail = canvas?.parentElement?.previousElementSibling;
     const scroller = rail?.parentElement;
     if (!(rail instanceof HTMLElement) || !(scroller instanceof HTMLElement)) {
-        throw new Error('piano roll key rail not found beside the canvas');
+        throw new TypeError('piano roll key rail not found beside the canvas');
     }
     return { rail, scroller };
 };
@@ -159,7 +159,7 @@ describe('PianoRoll key rail geometry', () => {
         const { rail } = renderRoll();
         const header = rail.firstElementChild;
         if (!(header instanceof HTMLElement)) {
-            throw new Error('ruler header missing');
+            throw new TypeError('ruler header missing');
         }
         expect(header.classList.contains('absolute')).toBe(true);
         expect(pxOf(header.style.height)).toBe(RULER_HEIGHT);

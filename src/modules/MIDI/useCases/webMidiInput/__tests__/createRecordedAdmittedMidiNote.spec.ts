@@ -17,6 +17,25 @@ const admission = {
 describe('createRecordedAdmittedMidiNote', () => {
     // Stored playback bends a note only by its own channel's recorded wheel, as the live input does, so the note
     // keeps the channel it was admitted on.
+    it('preserves the ordinary manual minimum for a short released or stopped note', () => {
+        const short = { ...admission, releaseSourceBeat: 2.01 };
+        expect(createRecordedAdmittedMidiNote(short, 1.005)).toMatchObject({ duration: 0.0625 });
+        expect(createRecordedAdmittedMidiNote({ ...short, releaseSourceBeat: undefined }, 1.005, 2.01)).toMatchObject({
+            duration: 0.0625,
+        });
+    });
+
+    it('caps only an owned automatic minimum and refuses a nonpositive or invalid interval', () => {
+        const short = createRecordedAdmittedMidiNote(
+            { ...admission, releaseSourceBeat: 2.005, exclusiveSourceEndBeat: 2.01 },
+            1.005
+        );
+        expect(short).not.toBeNull();
+        expect(short?.duration).toBeCloseTo(0.01, 12);
+        expect(createRecordedAdmittedMidiNote(admission, 2, undefined, 2)).toBeNull();
+        expect(createRecordedAdmittedMidiNote(admission, 2, undefined, Number.NaN)).toBeNull();
+    });
+
     it('keeps the channel the note was admitted on', () => {
         expect(createRecordedAdmittedMidiNote(admission, 2)).toMatchObject({
             pitch: 62,

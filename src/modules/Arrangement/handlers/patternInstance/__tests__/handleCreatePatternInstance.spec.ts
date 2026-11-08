@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { handleCreatePatternInstance } from '../handleCreatePatternInstance';
 import { type AppAction } from '#/utils/handlerContract';
+
+import { handleCreatePatternInstance } from '../handleCreatePatternInstance';
 
 const mocks = vi.hoisted(() => ({
     createPatternInstance:

@@ -175,6 +175,7 @@ const {
     agentProjectInspectionSetProviderMock,
     setArrangementEventBusMock,
     setRecordingMidiAdmissionPortMock,
+    isRecordingMidiInputExcludedMock,
     configureRuntimeGraphProjectRevisionValidatorMock,
     configureRuntimeGraphTopologyValidatorMock,
     initEngineDeviceCollaboratorsMock,
@@ -315,6 +316,7 @@ const {
         agentProjectInspectionSetProviderMock: vi.fn(),
         setArrangementEventBusMock: vi.fn<(eventBus: ArrangementEventBus) => void>(),
         setRecordingMidiAdmissionPortMock: vi.fn(),
+        isRecordingMidiInputExcludedMock: vi.fn(() => false),
         setProjectIdentityTransitionDependenciesMock:
             vi.fn<(dependencies: ProjectIdentityTransitionDependencies) => void>(),
         configureRuntimeGraphProjectRevisionValidatorMock:
@@ -379,6 +381,7 @@ vi.mock('#/modules/Arrangement/stores', () => ({
 }));
 
 vi.mock('#/modules/Arrangement/useCases', () => ({
+    isRecordingMidiInputExcluded: isRecordingMidiInputExcludedMock,
     admitRecordingMidiNoteOn: noop,
     admitRecordingMidiNoteOff: noop,
     admitRecordingMidiExpression: noop,
@@ -1127,6 +1130,7 @@ describe('bootstrap', () => {
         );
         expect(setArrangementEventBusMock).toHaveBeenCalledExactlyOnceWith(eventBusMock);
         expect(setRecordingMidiAdmissionPortMock).toHaveBeenCalledExactlyOnceWith({
+            isRecordingMidiInputExcluded: isRecordingMidiInputExcludedMock,
             admitRecordingMidiNoteOn: noop,
             admitRecordingMidiNoteOff: noop,
             admitRecordingMidiExpression: noop,

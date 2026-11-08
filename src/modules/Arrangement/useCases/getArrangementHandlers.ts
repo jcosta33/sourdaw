@@ -11,6 +11,7 @@ import { handleRemoveGainEnvelopePoint } from '../handlers/clipGainEnvelope/hand
 import { handleResetClipGainEnvelope } from '../handlers/clipGainEnvelope/handleResetClipGainEnvelope';
 import { handleSetClipGainEnvelope } from '../handlers/clipGainEnvelope/handleSetClipGainEnvelope';
 import { handleToggleClipGainEnvelope } from '../handlers/clipGainEnvelope/handleToggleClipGainEnvelope';
+import { handleEnableWarping } from '../handlers/clipStretch/handleEnableWarping';
 import { handleFitClipToBeats } from '../handlers/clipStretch/handleFitClipToBeats';
 import { handleRestoreClipStretchState } from '../handlers/clipStretch/handleRestoreClipStretchState';
 import { handleSetClipStretchMode } from '../handlers/clipStretch/handleSetClipStretchMode';
@@ -223,6 +224,7 @@ export function getArrangementHandlers() {
         removeFromVca: handleRemoveFromVca,
         setVcaGain: handleSetVcaGain,
         restoreLegacyVcaState: handleRestoreLegacyVcaState,
+        enableWarping: handleEnableWarping,
         setClipStretchMode: handleSetClipStretchMode,
         setClipStretchRatio: handleSetClipStretchRatio,
         restoreClipStretchState: handleRestoreClipStretchState,

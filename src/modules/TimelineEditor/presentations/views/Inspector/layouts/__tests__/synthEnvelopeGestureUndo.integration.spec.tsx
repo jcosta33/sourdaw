@@ -252,7 +252,7 @@ function Layout({ displayed, parameters }: { displayed?: Device; parameters?: De
 function curve(): HTMLCanvasElement {
     const canvas = screen.getByRole('img', { name: 'ADSR envelope shape' });
     if (!(canvas instanceof HTMLCanvasElement)) {
-        throw new Error('Required actual Synth envelope canvas is absent');
+        throw new TypeError('Required actual Synth envelope canvas is absent');
     }
     return canvas;
 }

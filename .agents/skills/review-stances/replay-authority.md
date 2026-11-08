@@ -130,6 +130,15 @@ boundaries.
    pending entries, stale inverses, replaced history and authority resets must refuse the binding. Payload or id
    equality never grants replay authority. Required CI on #6302 exposed both the missing net-zero composition and
    the distinction between requested and canonical identities.
+   #4564 introduced private commitRecording/discardRecording/restoreRecording without the already required session
+   contracts: live Undo passed while the production mirror serialized zero recording entries. Require two real mixed
+   entries/same group in serialized bytes BEFORE reload; production registration plus genuine project/witness must
+   hydrate both past and future through two Undo/Redo cycles, preserving raw rows/takes/PCM and older reachable history.
+   Keep this family private, pair exact forward/inverse/redo ownership and current versions, and decode full note/CC/bend
+   snapshots through their required owner (neutral carriers contain only IDs). Missing forward/owner contract or an invalid
+   sibling must fail/refuse the whole group, including malformed shape/source, wrong track/family and missing redo.
+   A binary document reload retaining live Undo objects is no session-hydration oracle; fresh-tab data is no cross-tab
+   history proof. Historical private reviewer prompts and tiers for this escape are unestablished.
 
 ## Retired lessons
 

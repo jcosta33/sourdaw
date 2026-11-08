@@ -25,11 +25,11 @@ describe('downloadAudioWav', () => {
         expect(createElement).toHaveBeenCalledExactlyOnceWith('a');
         const anchor = createElement.mock.results[0]?.value;
         if (!(anchor instanceof HTMLAnchorElement)) {
-            throw new Error('Expected an HTML anchor download element.');
+            throw new TypeError('Expected an HTML anchor download element.');
         }
         const blob = vi.mocked(URL.createObjectURL).mock.calls[0]?.[0];
         if (!(blob instanceof Blob)) {
-            throw new Error('Expected exact WAV bytes to be wrapped in a Blob.');
+            throw new TypeError('Expected exact WAV bytes to be wrapped in a Blob.');
         }
         expect(blob.type).toBe('audio/wav');
         expect(blob.size).toBe(bytes.byteLength);

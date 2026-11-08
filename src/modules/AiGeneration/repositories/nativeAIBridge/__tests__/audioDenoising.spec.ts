@@ -43,7 +43,7 @@ describe('denoiseAudio native payload', () => {
         });
         const samples = args.samples;
         if (!(samples instanceof Uint8Array)) {
-            throw new Error('expected samples to be a Uint8Array');
+            throw new TypeError('expected samples to be a Uint8Array');
         }
         expect(Array.isArray(samples)).toBe(false);
         expect([...samples]).toEqual([...ONE_LE, ...NEGATIVE_ONE_LE]);
