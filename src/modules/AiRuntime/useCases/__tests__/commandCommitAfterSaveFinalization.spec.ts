@@ -224,22 +224,26 @@ describe('command commit save finalization', () => {
             }
 
             await writeProjectSave();
-            const result =
-                route === 'Confirm'
-                    ? await confirmPendingChatActions({ confirmationId: CONFIRMATION_ID })
-                    : await executePlannedActions({
-                          prompt: 'color the vocals orange',
-                          actions: planned.actions,
-                          projectRevision: planned.projectRevision,
-                          executionMode: 'atomic',
-                          commandBatch: {
-                              ...planned.commandBatch,
-                              approvalBinding: issueAgentCommandApprovalBinding({
-                                  approval,
-                                  commandBatch: planned.commandBatch,
-                              }),
-                          },
-                      });
+            let result: Awaited<
+                ReturnType<typeof confirmPendingChatActions> | ReturnType<typeof executePlannedActions>
+            >;
+            if (route === 'Confirm') {
+                result = await confirmPendingChatActions({ confirmationId: CONFIRMATION_ID });
+            } else {
+                result = await executePlannedActions({
+                    prompt: 'color the vocals orange',
+                    actions: planned.actions,
+                    projectRevision: planned.projectRevision,
+                    executionMode: 'atomic',
+                    commandBatch: {
+                        ...planned.commandBatch,
+                        approvalBinding: issueAgentCommandApprovalBinding({
+                            approval,
+                            commandBatch: planned.commandBatch,
+                        }),
+                    },
+                });
+            }
 
             const root = getCrdtDoc<ProjectRoot>('root');
             if (!root) {

@@ -26,7 +26,10 @@ export const commandProjectRevisionPort = {
     },
     configureMutationAuthority(authority: CommandProjectMutationAuthority): void {
         if (mutationAuthority === null) {
-            mutationAuthority = { ...authority };
+            mutationAuthority = {
+                revisionProvider: authority.revisionProvider,
+                captureMutationAuthorization: authority.captureMutationAuthorization,
+            };
             return;
         }
         if (
@@ -46,14 +49,19 @@ export const commandProjectRevisionPort = {
         const capturedProvider = provider;
         const capturedGeneration = configurationGeneration;
         const capturedRevision = provider();
-        const ownsMutations =
-            mutationAuthority?.revisionProvider === capturedProvider
-                ? mutationAuthority.captureMutationAuthorization({ rejectForeignPendingWrites: true })
-                : null;
-        return () =>
-            configurationGeneration === capturedGeneration &&
-            provider === capturedProvider &&
-            (ownsMutations ? ownsMutations() : provider() === capturedRevision);
+        let ownsMutations: (() => boolean) | null = null;
+        if (mutationAuthority?.revisionProvider === capturedProvider) {
+            ownsMutations = mutationAuthority.captureMutationAuthorization({ rejectForeignPendingWrites: true });
+        }
+        return () => {
+            if (configurationGeneration !== capturedGeneration || provider !== capturedProvider) {
+                return false;
+            }
+            if (ownsMutations) {
+                return ownsMutations();
+            }
+            return provider() === capturedRevision;
+        };
     },
     /**
      * A registered matcher answers alone, even for the exact live revision: the provider reads heads

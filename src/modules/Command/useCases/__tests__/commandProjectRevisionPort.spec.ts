@@ -91,7 +91,12 @@ describe('commandProjectRevisionPort captured mutation authority', () => {
         const capture = vi.fn((_options: { rejectForeignPendingWrites: true }) => () => authorized);
         const descriptor = { revisionProvider: source, captureMutationAuthorization: capture };
         port.configureMutationAuthority(descriptor);
-        expect(() => port.configureMutationAuthority({ ...descriptor })).not.toThrow();
+        expect(() =>
+            port.configureMutationAuthority({
+                revisionProvider: descriptor.revisionProvider,
+                captureMutationAuthorization: descriptor.captureMutationAuthorization,
+            })
+        ).not.toThrow();
         port.setProvider(source);
         const isAuthorized = port.captureMutationAuthorization();
         expect(capture).toHaveBeenCalledExactlyOnceWith({ rejectForeignPendingWrites: true });
