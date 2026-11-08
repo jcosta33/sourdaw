@@ -1,0 +1,23 @@
+src/modules/Command/useCases/__tests__/canReportConflictRegistry.spec.ts
+  s_1052c2a2231ded::t_bcb7bb72ef57f1 312-323,672-681
+  s_1052c2a2231ded::t_d9abb22a07d8f8 682
+src/modules/Arrangement/handlers/clipStretch/__tests__/handleSetClipStretchMode.integration.spec.ts
+  s_1052c2a2231ded::t_bcb7bb72ef57f1 3-7,12,19,21-23,28,90-121
+  s_1052c2a2231ded::t_42043613ebf3d7 122
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0de1bc199aa4c21f237dad5ff3c84e2eefd00c68",
+  "prompts": {},
+  "sessions": {
+    "s_1052c2a2231ded": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b349-24b6-7622-8534-09f171c780d5",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
