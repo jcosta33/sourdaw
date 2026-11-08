@@ -1,0 +1,33 @@
+scripts/__tests__/e2eServerIdentity.spec.ts
+  s_68423a2adea8d2::t_6260266690e716 4,12-17,490-537
+scripts/__tests__/resourceGuard.spec.ts
+  s_977061c47f01dd::t_700aa826d58043 19-23,71-79,2199,2215-2337,2365-2391,2432-2439
+scripts/e2eServerIdentity.ts
+  s_977061c47f01dd::t_65d0ffa2e17587 3-4,117-118,127-131,133
+scripts/resourceGuard.ts
+  s_977061c47f01dd::t_130d1228847f76 24-29,223-255,3232,3261-3270,3272-3294
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a05a75a6136278715f6a4285fb18e978a31c94a6",
+  "prompts": {},
+  "sessions": {
+    "s_68423a2adea8d2": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34b-f305-7c03-beb2-57afa678cda5",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_977061c47f01dd": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34d-123d-7452-a6e7-60608388b6d7",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
