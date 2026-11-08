@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
+import { type MeasuredPreview } from '../../models/MeasuredPreview';
+
 import { metricGuardFixture } from './metricGuardFixture';
 import { resetMetricGoalProject } from './metricGoalWorkflowFixture';
 
@@ -75,6 +77,53 @@ describe('metric proof structure', () => {
         };
         const state = f.bind({ ...f.state, proofs: [duplicate, reference] });
         expect(f.evaluate(state)).toMatchObject({ status: 'blocked', failure: 'incomparable' });
+    });
+    it.each(['baseline', 'preview'] as const)('requires the master %s mixdown route', (side) => {
+        const f = metricGuardFixture();
+        const proof = f.state.proofs[0]!;
+        const provenance = proof.preview.provenance!;
+        const target = { ...proof.preview.targets[0]!, targetId: 'master', targetKind: 'master' as const };
+        const mixdown = { ...provenance.targets[0]!.baseline, route: 'mixdown' as const };
+        const masterArtifacts = { targetId: 'master', baseline: mixdown, preview: mixdown };
+        const masterProof = {
+            ...proof,
+            preview: {
+                ...proof.preview,
+                scope: { kind: 'master' as const },
+                targets: [target],
+                provenance: { ...provenance, targets: [masterArtifacts] },
+            },
+        };
+        const referenceTarget = { ...proof.preview.targets[1]!, targetId: 'bass' };
+        const referenceArtifacts = { ...provenance.targets[1]!, targetId: 'bass' };
+        const referenceProof = {
+            ...proof,
+            receiptDigest: 'reference',
+            preview: {
+                ...proof.preview,
+                scope: { kind: 'tracks' as const, ids: ['bass'] },
+                targets: [referenceTarget],
+                provenance: { ...provenance, callId: 'reference', targets: [referenceArtifacts] },
+            },
+        };
+        const makeState = (entry: NonNullable<MeasuredPreview['provenance']>['targets'][number]) =>
+            f.bind({
+                ...f.state,
+                authorities: [f.master],
+                proofs: [
+                    {
+                        ...masterProof,
+                        preview: {
+                            ...masterProof.preview,
+                            provenance: { ...masterProof.preview.provenance, targets: [entry] },
+                        },
+                    },
+                    referenceProof,
+                ],
+            });
+        expect(f.evaluate(makeState(masterArtifacts)).status).toBe('verified');
+        const wrong = { ...masterArtifacts, [side]: { ...mixdown, route: 'isolated-subgraph' as const } };
+        expect(f.evaluate(makeState(wrong))).toMatchObject({ status: 'blocked', failure: 'incomparable' });
     });
     it('admits broadcast and pairwise references but rejects a third reference for two targets', () => {
         const f = metricGuardFixture();

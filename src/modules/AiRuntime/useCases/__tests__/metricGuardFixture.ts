@@ -98,6 +98,52 @@ export function metricGuardFixture() {
         },
     });
     if (opposed.status !== 'admitted') throw new Error(opposed.reason);
+    const opposedOtherAxis = admitMetricIntent({
+        catalog,
+        creativeAuthority: null,
+        workflowTargetIds: ['drums'],
+        callId: 'other-axis',
+        turn: 1,
+        value: {
+            kind: 'comparative',
+            uncertainty: 'none',
+            objectives: [
+                {
+                    objectiveId: catalog.objectives.find((entry) =>
+                        entry.goals.some((goal) => goal.relation === 'less-than-current')
+                    )!.id,
+                    scopeCandidateId: reference.candidateId,
+                    referenceScopeCandidateId: scope.candidateId,
+                    rangeCandidateId: range.candidateId,
+                },
+            ],
+        },
+    });
+    if (opposedOtherAxis.status !== 'admitted') throw new Error(opposedOtherAxis.reason);
+    const masterScope = catalog.scopes.find((entry) => entry.kind === 'master');
+    if (!masterScope) throw new Error('Expected master scope');
+    const master = admitMetricIntent({
+        catalog,
+        creativeAuthority: null,
+        workflowTargetIds: ['master'],
+        callId: 'master',
+        turn: 1,
+        value: {
+            kind: 'comparative',
+            uncertainty: 'none',
+            objectives: [
+                {
+                    objectiveId: catalog.objectives.find((entry) =>
+                        entry.goals.some((goal) => goal.relation === 'greater-than-current')
+                    )!.id,
+                    scopeCandidateId: masterScope.candidateId,
+                    referenceScopeCandidateId: scope.candidateId,
+                    rangeCandidateId: range.candidateId,
+                },
+            ],
+        },
+    });
+    if (master.status !== 'admitted') throw new Error(master.reason);
     const recipeObjective = catalog.objectives.find((entry) =>
         entry.goals.some(
             (goal) =>
@@ -217,6 +263,8 @@ export function metricGuardFixture() {
         bind,
         evaluate,
         opposed: opposed.authority,
+        opposedOtherAxis: opposedOtherAxis.authority,
+        master: master.authority,
         recipe: recipe.authority,
         firstHash,
         operations: parsed.envelope.commands.map((command) => command.operation),

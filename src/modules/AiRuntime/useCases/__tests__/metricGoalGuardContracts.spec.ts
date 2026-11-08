@@ -103,6 +103,13 @@ describe('bound measured-goal completeness', () => {
     it('rejects independently admitted opposed goals on the same subjects', () => {
         const f = metricGuardFixture();
         expect(f.evaluate(f.state).status).toBe('verified');
+        const sameDirection = { ...f.state.authorities[0]!, authorityId: 'compatible' };
+        expect(f.evaluate(f.bind({ ...f.state, authorities: [...f.state.authorities, sameDirection] })).status).toBe(
+            'verified'
+        );
+        expect(
+            f.evaluate(f.bind({ ...f.state, authorities: [...f.state.authorities, f.opposedOtherAxis] })).status
+        ).toBe('verified');
         const state = f.bind({ ...f.state, authorities: [...f.state.authorities, f.opposed] });
         expect(f.evaluate(state)).toMatchObject({
             status: 'blocked',
