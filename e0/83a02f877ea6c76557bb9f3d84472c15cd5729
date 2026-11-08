@@ -1,0 +1,23 @@
+src/modules/AiRuntime/useCases/__tests__/metricStemRecordWorkflow.spec.ts
+  s_68423a2adea8d2::t_b452923ae2a43b 635,638,641
+  s_68423a2adea8d2::t_60222366d8a8d2 50,87,91,422,430,435-438,440,442-443,605,643
+src/modules/AiRuntime/useCases/__tests__/metricRefinementRecordWorkflow.spec.ts
+  s_68423a2adea8d2::t_52eacb2205a6d1 154
+  s_68423a2adea8d2::t_60222366d8a8d2 156-157
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e083a02f877ea6c76557bb9f3d84472c15cd5729",
+  "prompts": {},
+  "sessions": {
+    "s_68423a2adea8d2": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34b-f305-7c03-beb2-57afa678cda5",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
