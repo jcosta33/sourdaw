@@ -3,9 +3,7 @@ import { type Clip, type Track, trackStore } from './trackStore';
 
 /**
  * Append a clip to a specific track. Owned by Arrangement, colocated with
- * `trackStore` so MIDI's pattern-instance creation can add a clip without
- * pulling `Arrangement/useCases`' broader graph (which would re-form
- * MIDI ↔ Arrangement cycles).
+ * `trackStore` for the owning pattern-instance creation path.
  */
 export function appendClipToTrack(trackId: string, clip: Clip): boolean {
     const target = resolveEligibleClipWriteTarget({ trackId });

@@ -71,6 +71,14 @@ Report a probe that cannot run with its exact mutation, named check and limitati
    beyond ten seconds (#5239).
    (#5639, #4271, #5615, #5705, #5595, #5363, #5284, #2097, #4496, #1949, #4577, #5649, #474, #2597, #2811, #2035, #5239)
 
+    For a module-graph checker, compare its edges with actual installed Vite transforms and ESM execution
+    under the checked project transform policy. All-inline named type imports and re-exports are erased;
+    mixed value/type imports, explicit empty imports and re-exports, and bare side-effect imports retain
+    evaluation. Give each runtime control a unique module identity and assert its target sentinel, then
+    require erased-edge cases to stay out of the graph and every retained-edge case to expose a downstream
+    missing key. Reverting the classification or dropping every empty-name edge must fail these planted
+    cases. (#1572)
+
 7. **A configuration value, snapshot or count stands for runtime behavior.**
    Probe: a configuration value, successful scan, snapshot, literal checkout depth or request count proves no
    runtime behavior, object availability, upload or comparison coverage: paginate every main analysis

@@ -1,14 +1,22 @@
-import { appendClipToTrack, resolveEligibleClipWriteTarget, trackStore } from '#/modules/Arrangement/stores';
+import { getNotesForClip, setNotesForClip } from '#/modules/MIDI/useCases';
 
-import { type Clip } from '../../models/TrackViewTypes';
-import { getNotesForClip } from '../midiNoteCrud/getNotesForClip';
-import { setNotesForClip } from '../midiNoteCrud/setNotesForClip';
+import { appendClipToTrack } from '../../stores/appendClipToTrack';
+import { resolveEligibleClipWriteTarget } from '../../stores/resolveEligibleClipWriteTarget';
+import { type Clip, trackStore } from '../../stores/trackStore';
 
 /**
  * Create a pattern instance linked to a source clip.
  * The instance inherits MIDI notes and properties from the parent.
  */
-export function createPatternInstance(sourceClipId: string, targetTrackId: string, startBeat: number): string | null {
+export function createPatternInstance(
+    sourceClipId: string,
+    targetTrackId: string,
+    startBeat: number,
+    targetClipId: string
+): string | null {
+    if (typeof targetClipId !== 'string' || targetClipId.length === 0 || !Number.isFinite(startBeat) || startBeat < 0) {
+        return null;
+    }
     const sourceTarget = resolveEligibleClipWriteTarget({ clipId: sourceClipId });
     if (sourceTarget.status !== 'eligible' || !('clipId' in sourceTarget)) {
         return null;
@@ -23,17 +31,27 @@ export function createPatternInstance(sourceClipId: string, targetTrackId: strin
     if (!state) {
         return null;
     }
+    const targetExists =
+        state.ghostClips?.some((clip) => clip.id === targetClipId) === true ||
+        state.tracks.some(
+            (track) =>
+                track.clips.some((clip) => clip.id === targetClipId) ||
+                track.alternatives.some((alternative) => alternative.clips.some((clip) => clip.id === targetClipId))
+        );
+    if (targetExists) {
+        return null;
+    }
 
     const sourceTrack = state.tracks.find((track) => track.id === sourceTarget.trackId);
     const sourceClip = sourceTrack?.clips.find((clip) => clip.id === sourceTarget.clipId);
-    if (!sourceClip) {
+    if (!sourceClip || sourceClip.type !== 'midi') {
         return null;
     }
 
     const parentId = sourceClip.parentClipId ?? sourceClipId;
     const duration = sourceClip.endBeat - sourceClip.startBeat;
 
-    const instanceId = `clip-inst-${crypto.randomUUID()}`;
+    const instanceId = targetClipId;
     const instance: Clip = {
         id: instanceId,
         trackId: destinationTarget.trackId,

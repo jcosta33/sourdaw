@@ -46,6 +46,9 @@ import { handleResizeSection } from '../handlers/marker/handleResizeSection';
 import { handleRestoreSectionBeats } from '../handlers/marker/handleRestoreSectionBeats';
 import { handleSetMarkerColor } from '../handlers/marker/handleSetMarkerColor';
 import { handleSetSectionColor } from '../handlers/marker/handleSetSectionColor';
+import { handleCreatePatternInstance } from '../handlers/patternInstance/handleCreatePatternInstance';
+import { handleDetachPatternInstance } from '../handlers/patternInstance/handleDetachPatternInstance';
+import { handleRestorePatternInstanceLink } from '../handlers/patternInstance/handleRestorePatternInstanceLink';
 import { handleLoadPreset, handleRestorePresetDeviceChain } from '../handlers/preset/handleLoadPreset';
 import { handleSavePreset } from '../handlers/preset/handleSavePreset';
 import { handleCommitRecording } from '../handlers/recording/handleCommitRecording';
@@ -129,6 +132,9 @@ import { handleSetVcaGain } from '../handlers/vca/handleSetVcaGain';
  */
 export function getArrangementHandlers() {
     return {
+        createPatternInstance: handleCreatePatternInstance,
+        detachPatternInstance: handleDetachPatternInstance,
+        restorePatternInstanceLink: handleRestorePatternInstanceLink,
         importStemSet: handleImportStemSet,
         discardImportedStemSet: handleDiscardImportedStemSet,
         addTrack: handleAddTrack,

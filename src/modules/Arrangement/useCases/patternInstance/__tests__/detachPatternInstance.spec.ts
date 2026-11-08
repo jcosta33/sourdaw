@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { detachPatternInstance } from '../detachPatternInstance';
 
-import type { Clip } from '../../../models/TrackViewTypes';
+import type { Clip } from '../../../stores/trackStore';
 
 type TargetResolution =
     | { status: 'eligible'; trackId: string; clipId: string }
@@ -19,13 +19,17 @@ const mocks = vi.hoisted(() => {
     };
 });
 
-vi.mock('#/modules/Arrangement/stores', () => ({
+vi.mock('../../../stores/trackStore', () => ({
     trackStore: {
         get value() {
             return mocks.trackStoreValue.current;
         },
     },
+}));
+vi.mock('../../../stores/resolveEligibleClipWriteTarget', () => ({
     resolveEligibleClipWriteTarget: mocks.resolveEligibleClipWriteTarget,
+}));
+vi.mock('../../../stores/updateClipInStore', () => ({
     updateClipInStore: mocks.updateClipInStore,
 }));
 
