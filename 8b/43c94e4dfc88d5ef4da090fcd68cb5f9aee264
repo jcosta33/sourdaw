@@ -1,0 +1,31 @@
+scripts/__tests__/trustedGitleaksInstaller.spec.ts
+  s_68423a2adea8d2::t_a0e237d17f18ca 196-210,214-218,257-259,263-264,331-341,345-351,363-366,369-371,376-378
+  s_68423a2adea8d2::t_9d6c1832656594 9
+  s_68423a2adea8d2::t_483bd53d1416fb 25,32,52,224-230,393-401
+  s_68423a2adea8d2::t_d3a0a698ec73fb 113-114,120-121,123-125,126-160,181-187,246-247,249-252,313,326,437
+  s_68423a2adea8d2::t_628abde08194e6 1-8,10-12,15-24,26-31,33-51,53-112,161-180,188-195,211-213,219-223,231-245,253-256,260-262,265-312,314-325,327,330,342-343,367-368,372-375,379-392,402-407,409-436,438-450
+  s_68423a2adea8d2::t_3a0bdf047c798b 13-14
+  s_68423a2adea8d2::t_1a05a21dfd3276 115-119,328-329
+  s_68423a2adea8d2::t_23f775aed4d095 122,248
+  s_68423a2adea8d2::t_8f33e2adb132fe 344,352-362,408
+.github/workflows/validation.yml
+  s_68423a2adea8d2::t_713240eafe3053 1088
+scripts/__tests__/fixtures/health-gate-workflows.snapshot.json
+  s_68423a2adea8d2::t_adf50f0f69ba11 1372
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "8b43c94e4dfc88d5ef4da090fcd68cb5f9aee264",
+  "prompts": {},
+  "sessions": {
+    "s_68423a2adea8d2": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34b-f305-7c03-beb2-57afa678cda5",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
