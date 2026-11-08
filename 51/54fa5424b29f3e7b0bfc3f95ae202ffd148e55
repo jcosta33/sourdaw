@@ -1,0 +1,25 @@
+src/modules/CrdtDocument/useCases/createCommandPreviewWorkspace.ts
+  s_68423a2adea8d2::t_bdf126a8da943b 3-7,19-24
+  s_68423a2adea8d2::t_2eb01379094dd6 25-26
+src/modules/CrdtDocument/useCases/__tests__/previewCommandBatchSave.spec.ts
+  s_68423a2adea8d2::t_b6c47330d1b735 236-238,242-251,259-267,269,271-276,278-280
+  s_68423a2adea8d2::t_b7b4807d35950d 5-10,31,88-180
+  s_68423a2adea8d2::t_de43f118c78c46 182-235,239-241,252-258,268,270,277
+  s_68423a2adea8d2::t_2349dd70acb308 181
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5154fa5424b29f3e7b0bfc3f95ae202ffd148e55",
+  "prompts": {},
+  "sessions": {
+    "s_68423a2adea8d2": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34b-f305-7c03-beb2-57afa678cda5",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
