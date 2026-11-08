@@ -160,7 +160,9 @@ async function startSettledPlayback(): Promise<SchedulerWorkerHardware> {
         { interval: 1 }
     );
     const worker = workers[0];
-    if (!worker) throw new Error('Expected the admitted scheduler worker');
+    if (!worker) {
+        throw new Error('Expected the admitted scheduler worker');
+    }
     await tickAt(worker, fixtureSeconds(6_000));
     expect(playheadClockRef.audioTimeSeconds).toBe(fixtureSeconds(6_000));
     expect(playheadClockRef.beat).toBeCloseTo(0.05, 12);

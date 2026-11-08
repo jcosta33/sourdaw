@@ -5,8 +5,9 @@ export function fenceSource(source: SourceWithFade, context: BaseAudioContext, s
     if (
         source.scheduledStopTime === stopAt ||
         (source.scheduledEndTime !== undefined && source.scheduledEndTime <= stopAt)
-    )
+    ) {
         return;
+    }
     const now = context.currentTime;
     const end = Math.max(now, stopAt);
     if (source.fadeGainNode) {

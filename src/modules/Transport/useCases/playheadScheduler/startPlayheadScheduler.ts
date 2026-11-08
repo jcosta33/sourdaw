@@ -1626,9 +1626,10 @@ export function startPlayheadScheduler(
         }
         const dyingBufferPool = loopAudioSchedule.poolAt(now);
         const incomingBufferPool = seam ? loopAudioSchedule.poolAt(seam.seamAudioTime, true) : null;
-        const windowBufferPool = schedulerSession.pendingSeam
-            ? loopAudioSchedule.poolAt(schedulerSession.pendingSeam.seamAudioTime, true)
-            : dyingBufferPool;
+        let windowBufferPool = dyingBufferPool;
+        if (schedulerSession.pendingSeam) {
+            windowBufferPool = loopAudioSchedule.poolAt(schedulerSession.pendingSeam.seamAudioTime, true);
+        }
         const bufferInput = { transport: current, changes, position: publishedBeat, audioTime: now };
         const initialMidiEmissions: Promise<void>[] = [];
         const initialEmissionErrors: unknown[] = [];

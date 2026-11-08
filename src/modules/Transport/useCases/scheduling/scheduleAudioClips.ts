@@ -95,28 +95,33 @@ function audioPartKey(part: ResolvedAudioPart, bufferId: string): string {
 
 function partProgramme(part: ResolvedAudioPart) {
     const envelope = gainEnvelopeStore.value?.envelopes[part.id];
+    const source = [
+        part.startBeat,
+        part.endBeat,
+        part.audioOffsetSeconds,
+        part.audioOffsetBeats,
+        part.audioUnwrappedOffsetSeconds,
+        part.audioLoopStartSeconds,
+        part.audioLoopPassEntrySeconds,
+        part.audioLoopPassOriginBeat,
+        part.loopEnabled,
+        part.loopLength,
+        part.loopOriginBeat,
+        part.stretchMode,
+        part.stretchRatio,
+        part.gain,
+        part.fadeInBeats,
+        part.fadeOutBeats,
+    ];
+    if (!envelope) {
+        return { source, envelope: null };
+    }
     return {
-        source: [
-            part.startBeat,
-            part.endBeat,
-            part.audioOffsetSeconds,
-            part.audioOffsetBeats,
-            part.audioUnwrappedOffsetSeconds,
-            part.audioLoopStartSeconds,
-            part.audioLoopPassEntrySeconds,
-            part.audioLoopPassOriginBeat,
-            part.loopEnabled,
-            part.loopLength,
-            part.loopOriginBeat,
-            part.stretchMode,
-            part.stretchRatio,
-            part.gain,
-            part.fadeInBeats,
-            part.fadeOutBeats,
-        ],
-        envelope: envelope
-            ? { enabled: envelope.enabled, points: envelope.points.map((point) => [point.beatOffset, point.gainDb]) }
-            : null,
+        source,
+        envelope: {
+            enabled: envelope.enabled,
+            points: envelope.points.map((point) => [point.beatOffset, point.gainDb]),
+        },
     };
 }
 
@@ -162,9 +167,10 @@ function cutSupersededParts(
                 part.audioBufferId !== undefined &&
                 audioPartKey(part, part.audioBufferId) === tag.partKey
         );
-        const replacementBuffer = replacement?.audioBufferId
-            ? getCachedAudioBuffer({ bufferId: replacement.audioBufferId })
-            : null;
+        let replacementBuffer: AudioBuffer | null = null;
+        if (replacement?.audioBufferId) {
+            replacementBuffer = getCachedAudioBuffer({ bufferId: replacement.audioBufferId });
+        }
         const replacedBuffer = replacementBuffer !== null && replacementBuffer !== source.buffer;
         const changedCompensation = source.compensationSeconds !== getCompensationDelay(trackId);
         if (resolvesSamePart(parts, tag) && !replacedBuffer && !changedCompensation) {

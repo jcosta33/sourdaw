@@ -58,7 +58,9 @@ const audioContextStub = {
             setValueAtTime: () => {},
             exponentialRampToValueAtTime: () => {},
             linearRampToValueAtTime: () => {
-                if (gainFailure.enabled) throw new Error('Fixture gain submission failed');
+                if (gainFailure.enabled) {
+                    throw new Error('Fixture gain submission failed');
+                }
             },
         },
     }),
@@ -312,11 +314,26 @@ let workerHarness: SchedulerWorkerHarness | null = null;
 let tickSequence = 0;
 
 function snapshotSources(): SourceSnapshot[] {
-    return sourceLedger.flatMap((source) =>
-        source.start
-            ? [{ ...source, start: { ...source.start }, stops: source.stops.map((stop) => ({ ...stop })) }]
-            : []
-    );
+    return sourceLedger.flatMap((source): SourceSnapshot[] => {
+        if (!source.start) {
+            return [];
+        }
+        return [
+            {
+                bufferId: source.bufferId,
+                buffer: source.buffer,
+                bufferDuration: source.bufferDuration,
+                start: {
+                    when: source.start.when,
+                    offset: source.start.offset,
+                    duration: source.start.duration,
+                    rate: source.start.rate,
+                    requestedAt: source.start.requestedAt,
+                },
+                stops: source.stops.map((stop) => ({ when: stop.when, requestedAt: stop.requestedAt })),
+            },
+        ];
+    });
 }
 
 function frame(seconds: number): number {
@@ -525,7 +542,12 @@ beforeEach(() => {
         class {
             onmessage: ((event: { data: unknown }) => void) | null = null;
             constructor() {
-                workerHarness = this;
+                const readCallback = () => this.onmessage;
+                workerHarness = {
+                    get onmessage() {
+                        return readCallback();
+                    },
+                };
             }
             postMessage = vi.fn();
             terminate = vi.fn();
@@ -558,7 +580,9 @@ describe('browser buffer admission before a loop-seam main-thread stall (#6277)'
 
 async function startShortLoop(frozen = false, loopEnd = 0.25) {
     const track = seedTrack('left', loopEnd, frozen, 0.375);
-    if (frozen) track.freezeState.compensationSeconds = compensation.seconds;
+    if (frozen) {
+        track.freezeState.compensationSeconds = compensation.seconds;
+    }
     trackStoreState.value = { tracks: [track] };
     transportStoreState.value = {
         ...defaultTransportState,
@@ -598,8 +622,16 @@ describe('queued loop audio preservation and retirement', () => {
         const owner = createLoopAudioSchedule({
             context: audioContextStub as unknown as BaseAudioContext,
             isCurrent: () => true,
-            monotonicTime: () =>
-                phase === 'ordinary' ? 0 : phase === 'shortfall' ? (++reads === 1 ? 0 : 40) : ++reads === 1 ? 50 : 57,
+            monotonicTime: () => {
+                if (phase === 'ordinary') {
+                    return 0;
+                }
+                reads++;
+                if (phase === 'shortfall') {
+                    return reads === 1 ? 0 : 40;
+                }
+                return reads === 1 ? 50 : 57;
+            },
         });
         expect(owner.refill(input).shortfall).toBe('time-budget');
         expect(snapshotSources()).toEqual([]);
@@ -849,8 +881,11 @@ describe('queued loop audio preservation and retirement', () => {
     it.each(['stop', 'dispose'] as const)('cancels a future source less than5ms away through %s', async (action) => {
         await startShortLoop(true);
         ctxTime.now = (ANCHOR_FRAME + 5_952) / SAMPLE_RATE;
-        if (action === 'stop') stopPlayheadScheduler();
-        else disposePlayheadScheduler();
+        if (action === 'stop') {
+            stopPlayheadScheduler();
+        } else {
+            disposePlayheadScheduler();
+        }
         const future = snapshotSources().filter((source) => frame(source.start.when) > ANCHOR_FRAME + 5_952);
         expect(future).toHaveLength(2);
         expect(future.map((source) => frame(source.stops.at(-1)!.when))).toEqual([
@@ -912,13 +947,20 @@ describe('queued loop audio preservation and retirement', () => {
         async (edit) => {
             await startShortLoop(true);
             const before = snapshotSources();
-            if (edit === 'loop off') transportStoreState.value!.isLooping = false;
-            if (edit === 'region') transportStoreState.value!.loopEnd = 0.5;
-            if (edit === 'base tempo') transportStoreState.value!.tempo = 90;
-            if (edit === 'map tempo')
+            if (edit === 'loop off') {
+                transportStoreState.value!.isLooping = false;
+            }
+            if (edit === 'region') {
+                transportStoreState.value!.loopEnd = 0.5;
+            }
+            if (edit === 'base tempo') {
+                transportStoreState.value!.tempo = 90;
+            }
+            if (edit === 'map tempo') {
                 tempoMapStoreState.value = {
                     changes: [{ id: 'slower', beat: 0, tempo: 90, curve: 'instant' }],
                 };
+            }
             await tickAt(1_200);
             const after = snapshotSources();
             for (const [index, source] of before.entries()) {
@@ -936,9 +978,15 @@ describe('queued loop audio preservation and retirement', () => {
         async (edit) => {
             const track = await startShortLoop(true);
             const before = snapshotSources();
-            if (edit === 'origin') track.clips[0]!.startBeat = 0.1;
-            if (edit === 'compensation') track.freezeState.compensationSeconds = 0.02;
-            if (edit === 'unfreeze') track.freezeState = { status: 'unfrozen' };
+            if (edit === 'origin') {
+                track.clips[0]!.startBeat = 0.1;
+            }
+            if (edit === 'compensation') {
+                track.freezeState.compensationSeconds = 0.02;
+            }
+            if (edit === 'unfreeze') {
+                track.freezeState = { status: 'unfrozen' };
+            }
             if (edit === 'refreeze') {
                 buffers.set('refrozen', { duration: 16, sampleRate: SAMPLE_RATE } as AudioBuffer);
                 track.freezeState = { status: 'frozen', frozenBufferId: 'refrozen', compensationSeconds: 0 };
@@ -952,9 +1000,15 @@ describe('queued loop audio preservation and retirement', () => {
             }
             const next = after.slice(before.length);
             expect(next.length).toBeGreaterThan(0);
-            if (edit === 'refreeze') expect(next.every((source) => source.bufferId === 'refrozen')).toBe(true);
-            if (edit === 'origin') expect(next[0]!.start.when).toBeCloseTo(10.05, 12);
-            if (edit === 'compensation') expect(next[1]!.start.when).toBeCloseTo(10.145, 12);
+            if (edit === 'refreeze') {
+                expect(next.every((source) => source.bufferId === 'refrozen')).toBe(true);
+            }
+            if (edit === 'origin') {
+                expect(next[0]!.start.when).toBeCloseTo(10.05, 12);
+            }
+            if (edit === 'compensation') {
+                expect(next[1]!.start.when).toBeCloseTo(10.145, 12);
+            }
         }
     );
     it('excludes a clip whose only head is exactly loopEnd', async () => {
@@ -1076,8 +1130,11 @@ describe('queued loop audio preservation and retirement', () => {
             expect(snapshotSources()).toHaveLength(1);
             expect(snapshotSources()[0]!.start).toMatchObject({ when: 10, offset: 0.375, duration: 2 });
             ctxTime.now = 10.001;
-            if (action === 'stop') stopPlayheadScheduler();
-            else disposePlayheadScheduler();
+            if (action === 'stop') {
+                stopPlayheadScheduler();
+            } else {
+                disposePlayheadScheduler();
+            }
             expect(schedulerSession.activeAudioSources).toEqual([]);
             expect(frame(effectiveEnd(snapshotSources()[0]!))).toBe(frame(10.006));
         }
@@ -1116,8 +1173,11 @@ describe('queued loop audio preservation and retirement', () => {
             expect(recovered[0]!.start).toMatchObject({ when: 100, offset: 0.375, duration: 2 });
             expect(schedulerSession.activeAudioSources).toHaveLength(1);
             ctxTime.now = 100.001;
-            if (action === 'stop') stopPlayheadScheduler();
-            else disposePlayheadScheduler();
+            if (action === 'stop') {
+                stopPlayheadScheduler();
+            } else {
+                disposePlayheadScheduler();
+            }
             expect(schedulerSession.activeAudioSources).toEqual([]);
             expect(frame(effectiveEnd(snapshotSources().at(-1)!))).toBe(frame(100.006));
         }
@@ -1134,17 +1194,31 @@ describe('queued loop audio preservation and retirement', () => {
                 (source) => source.bufferId === 'right-buffer' && source.start.when === 10.025
             );
             const clip = changed.clips[0]!;
-            if (edit === 'gain') clip.gain = 0.5;
-            if (edit === 'fade') clip.fadeInBeats = 0.1;
-            if (edit === 'entry') clip.audioOffsetSeconds = 2;
+            if (edit === 'gain') {
+                clip.gain = 0.5;
+            }
+            if (edit === 'fade') {
+                clip.fadeInBeats = 0.1;
+            }
+            if (edit === 'entry') {
+                clip.audioOffsetSeconds = 2;
+            }
             if (edit === 'stretch') {
                 clip.stretchRatio = 2;
                 clip.stretchMode = 'repitch';
             }
-            if (edit === 'mute') changed.muted = true;
-            if (edit === 'remove') trackStoreState.value!.tracks.splice(0, 1);
-            if (edit === 'buffer') buffers.set('left-buffer', { duration: 16, sampleRate: SAMPLE_RATE } as AudioBuffer);
-            if (edit === 'move') clip.startBeat = 0.125;
+            if (edit === 'mute') {
+                changed.muted = true;
+            }
+            if (edit === 'remove') {
+                trackStoreState.value!.tracks.splice(0, 1);
+            }
+            if (edit === 'buffer') {
+                buffers.set('left-buffer', { duration: 16, sampleRate: SAMPLE_RATE } as AudioBuffer);
+            }
+            if (edit === 'move') {
+                clip.startBeat = 0.125;
+            }
             await tickAt(2_400);
             const after = snapshotSources();
             const oldFuture = after.filter(

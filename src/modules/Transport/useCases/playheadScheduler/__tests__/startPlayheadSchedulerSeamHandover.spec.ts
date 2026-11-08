@@ -584,10 +584,7 @@ describe('startPlayheadScheduler seam handover', () => {
         const third = recordedSourceStarts[2]!;
         expect(third.at).toBeGreaterThan(ctxTime.now);
         disposePlayheadScheduler();
-        expect(recordedSourceStops.filter((stop) => stop.source === third.source).at(-1)?.at).toBeCloseTo(
-            ctxTime.now,
-            12
-        );
+        expect(recordedSourceStops.findLast((stop) => stop.source === third.source)?.at).toBeCloseTo(ctxTime.now, 12);
     });
 
     type ExpectedClick = { time: number; accent: boolean };

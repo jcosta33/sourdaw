@@ -42,12 +42,20 @@ export function projectLoopAudioWindows(input: ProjectionInput) {
         return refused();
     }
     let passIndex = fromTime < firstEnd ? 0 : Math.floor((fromTime - firstEnd) / duration) + 1;
-    if (!Number.isSafeInteger(passIndex) || passIndex < 0) return refused();
+    if (!Number.isSafeInteger(passIndex) || passIndex < 0) {
+        return refused();
+    }
     // Division can round an exact boundary just below its integer. Compare
     // the projected endpoints once; never enumerate the crossed passes.
-    if (firstEnd + passIndex * duration <= fromTime) passIndex++;
-    if (passIndex > 0 && firstEnd + (passIndex - 1) * duration > fromTime) passIndex--;
-    if (!Number.isSafeInteger(passIndex)) return refused();
+    if (firstEnd + passIndex * duration <= fromTime) {
+        passIndex++;
+    }
+    if (passIndex > 0 && firstEnd + (passIndex - 1) * duration > fromTime) {
+        passIndex--;
+    }
+    if (!Number.isSafeInteger(passIndex)) {
+        return refused();
+    }
     let cursor = fromTime;
     while (cursor < toTime && windows.length < maxWindows) {
         const passAnchorTime = passIndex === 0 ? anchorTime : firstEnd + (passIndex - 1) * duration;
@@ -57,26 +65,29 @@ export function projectLoopAudioWindows(input: ProjectionInput) {
         }
         const passAnchorBeat = passIndex === 0 ? anchorBeat : transport.loopStart;
         const end = Math.min(toTime, passEndTime);
+        let fromBeat = passAnchorBeat;
+        if (cursor !== passAnchorTime) {
+            fromBeat = beatAtSecondsFromAnchor(changes, passAnchorBeat, cursor - passAnchorTime, transport.tempo);
+        }
+        let toBeat = transport.loopEnd;
+        if (end !== passEndTime) {
+            toBeat = beatAtSecondsFromAnchor(changes, passAnchorBeat, end - passAnchorTime, transport.tempo);
+        }
         windows.push({
             passIndex,
             anchorBeat: passAnchorBeat,
             anchorTime: passAnchorTime,
-            fromBeat:
-                cursor === passAnchorTime
-                    ? passAnchorBeat
-                    : beatAtSecondsFromAnchor(changes, passAnchorBeat, cursor - passAnchorTime, transport.tempo),
-            toBeat:
-                end === passEndTime
-                    ? transport.loopEnd
-                    : beatAtSecondsFromAnchor(changes, passAnchorBeat, end - passAnchorTime, transport.tempo),
+            fromBeat,
+            toBeat,
             fromTime: cursor,
             toTime: end,
             passEndTime,
         });
         cursor = end;
         passIndex++;
-        if (!Number.isSafeInteger(passIndex))
+        if (!Number.isSafeInteger(passIndex)) {
             return { windows, coveredThrough: cursor, shortfall: 'unrepresentable' as const };
+        }
     }
     return { windows, coveredThrough: cursor, shortfall: cursor < toTime ? ('pass-budget' as const) : null };
 }

@@ -4,6 +4,7 @@ import { getCachedAudioBuffer, getCompensationDelay } from '#/modules/AudioEngin
 import { midiStore } from '#/modules/MIDI/stores';
 import { valuesEqual } from '#/utils/structuralEquality';
 
+import { type LoopAudioScheduleLifetime } from '../../models/LoopAudioScheduleLifetime';
 import { type SourceWithFade } from '../../models/SourceWithFade';
 import { secondsBetweenBeats, type TempoChange } from '../../models/TempoMap';
 import { type TransportState } from '../../models/TransportState';
@@ -32,21 +33,7 @@ type Pass = {
     externalFrozenTracks: Set<string>;
 };
 type Reconciliation = { pass: Pass; windows: OwnedWindow[]; next: number };
-type Coverage = {
-    from: number;
-    through: number;
-    target: number;
-    completionAudioTime: number;
-    windows: number;
-    shortfall:
-        | 'pass-budget'
-        | 'time-budget'
-        | 'unrepresentable'
-        | 'media-unavailable'
-        | 'retired'
-        | 'coverage-expired'
-        | 'noncanonical-frozen-window'
-        | null;
+type Coverage = LoopAudioScheduleLifetime['coverage'] & {
     recovery?: { window: OwnedWindow; elapsedMilliseconds: number };
 };
 type Input = { context: BaseAudioContext; isCurrent: () => boolean; monotonicTime?: () => number };
@@ -107,14 +94,18 @@ export function createLoopAudioSchedule({ context, isCurrent, monotonicTime = ()
     }
 
     function retirePass(pass: Pass): void {
-        for (const source of pass.sources) retireSource(source);
+        for (const source of pass.sources) {
+            retireSource(source);
+        }
         pass.sources.length = 0;
         pass.audio.clear();
         pass.frozen.clear();
     }
 
     function reset(): void {
-        for (const pass of passes.values()) retirePass(pass);
+        for (const pass of passes.values()) {
+            retirePass(pass);
+        }
         passes.clear();
         dirtyPasses.clear();
         anchor = null;
@@ -134,12 +125,18 @@ export function createLoopAudioSchedule({ context, isCurrent, monotonicTime = ()
     }
 
     function indexAt(time: number, boundary: boolean): number {
-        if (!anchor || time < anchor.firstEnd) return 0;
+        if (!anchor || time < anchor.firstEnd) {
+            return 0;
+        }
         const offset = (time - anchor.firstEnd) / anchor.duration;
         let index = (boundary ? Math.round(offset) : Math.floor(offset)) + 1;
         if (!boundary) {
-            if (anchor.firstEnd + index * anchor.duration <= time) index++;
-            if (index > 0 && anchor.firstEnd + (index - 1) * anchor.duration > time) index--;
+            if (anchor.firstEnd + index * anchor.duration <= time) {
+                index++;
+            }
+            if (index > 0 && anchor.firstEnd + (index - 1) * anchor.duration > time) {
+                index--;
+            }
         }
         return index;
     }
@@ -160,13 +157,19 @@ export function createLoopAudioSchedule({ context, isCurrent, monotonicTime = ()
     }
 
     function poolAt(time: number, boundary = false): Pass | null {
-        if (!active || !anchor) return null;
+        if (!active || !anchor) {
+            return null;
+        }
         const index = indexAt(time, boundary);
-        if (!Number.isSafeInteger(index) || index < 0) return null;
+        if (!Number.isSafeInteger(index) || index < 0) {
+            return null;
+        }
         let pass = passes.get(index);
         if (!pass) {
             const end = anchor.firstEnd + index * anchor.duration;
-            if (!Number.isFinite(end)) return null;
+            if (!Number.isFinite(end)) {
+                return null;
+            }
             pass = {
                 index,
                 end,
@@ -203,15 +206,16 @@ export function createLoopAudioSchedule({ context, isCurrent, monotonicTime = ()
         let hasMaterial = false;
         const view = eligible.map((track) => {
             const frozen = track.freezeState.status === 'frozen' ? track.freezeState.frozenBufferId : undefined;
-            const parts = frozen
-                ? []
-                : resolveClipsWithComping(track.id, track.clips).filter(
-                      (part) =>
-                          part.type === 'audio' &&
-                          !part.muted &&
-                          part.startBeat < transport.loopEnd &&
-                          part.endBeat > Math.min(anchor?.beat ?? transport.loopStart, transport.loopStart)
-                  );
+            let parts: ReturnType<typeof resolveClipsWithComping> = [];
+            if (!frozen) {
+                parts = resolveClipsWithComping(track.id, track.clips).filter(
+                    (part) =>
+                        part.type === 'audio' &&
+                        !part.muted &&
+                        part.startBeat < transport.loopEnd &&
+                        part.endBeat > Math.min(anchor?.beat ?? transport.loopStart, transport.loopStart)
+                );
+            }
             const media = frozen ? [frozen] : parts.flatMap((part) => (part.audioBufferId ? [part.audioBufferId] : []));
             for (const bufferId of media) {
                 const buffer = getCachedAudioBuffer({ bufferId });
@@ -219,23 +223,28 @@ export function createLoopAudioSchedule({ context, isCurrent, monotonicTime = ()
                 available = available && buffer !== null;
                 hasMaterial = true;
             }
+            let compensation: number;
+            if (frozen) {
+                compensation = track.freezeState.compensationSeconds ?? getCompensationDelay(track.id);
+            } else {
+                compensation = getCompensationDelay(track.id);
+            }
             return {
                 id: track.id,
                 kind: track.kind,
                 frozen,
-                compensation: frozen
-                    ? (track.freezeState.compensationSeconds ?? getCompensationDelay(track.id))
-                    : getCompensationDelay(track.id),
+                compensation,
                 origin: frozen ? track.clips.map((clip) => clip.startBeat) : [],
                 parts: parts.map((part) => CLIP_FIELDS.map((field) => part[field])),
                 envelopes: parts.map((part) => {
                     const envelope = gainEnvelopeStore.value?.envelopes[part.id];
-                    return envelope
-                        ? {
-                              enabled: envelope.enabled,
-                              points: envelope.points.map((point) => [point.beatOffset, point.gainDb]),
-                          }
-                        : null;
+                    if (!envelope) {
+                        return null;
+                    }
+                    return {
+                        enabled: envelope.enabled,
+                        points: envelope.points.map((point) => [point.beatOffset, point.gainDb]),
+                    };
                 }),
             };
         });
@@ -251,30 +260,42 @@ export function createLoopAudioSchedule({ context, isCurrent, monotonicTime = ()
                 track?.freezeState.status === 'frozen' && track.freezeState.frozenBufferId
                     ? `${track.id}:${track.freezeState.frozenBufferId}`
                     : undefined;
-            const obsolete =
-                !track ||
-                (source.scheduledFrozenKey !== undefined
-                    ? source.scheduledFrozenKey !== frozenKey ||
-                      source.scheduledFrozenOriginBeat !==
-                          (track.clips.length > 0 ? Math.min(...track.clips.map((clip) => clip.startBeat)) : 0) ||
-                      source.compensationSeconds !==
-                          (track.freezeState.compensationSeconds ?? getCompensationDelay(track.id)) ||
-                      (track.freezeState.frozenBufferId !== undefined &&
-                          getCachedAudioBuffer({ bufferId: track.freezeState.frozenBufferId }) !== null &&
-                          getCachedAudioBuffer({ bufferId: track.freezeState.frozenBufferId }) !== source.buffer)
-                    : frozenKey !== undefined);
-            if (!obsolete) continue;
+            let obsolete = !track;
+            if (track) {
+                if (source.scheduledFrozenKey !== undefined) {
+                    obsolete =
+                        source.scheduledFrozenKey !== frozenKey ||
+                        source.scheduledFrozenOriginBeat !==
+                            (track.clips.length > 0 ? Math.min(...track.clips.map((clip) => clip.startBeat)) : 0) ||
+                        source.compensationSeconds !==
+                            (track.freezeState.compensationSeconds ?? getCompensationDelay(track.id)) ||
+                        (track.freezeState.frozenBufferId !== undefined &&
+                            getCachedAudioBuffer({ bufferId: track.freezeState.frozenBufferId }) !== null &&
+                            getCachedAudioBuffer({ bufferId: track.freezeState.frozenBufferId }) !== source.buffer);
+                } else {
+                    obsolete = frozenKey !== undefined;
+                }
+            }
+            if (!obsolete) {
+                continue;
+            }
             retireSource(source);
             pass.sources.splice(index, 1);
-            if (source.scheduledAudioKey) pass.audio.delete(source.scheduledAudioKey);
-            if (source.scheduledFrozenKey) pass.frozen.delete(source.scheduledFrozenKey);
+            if (source.scheduledAudioKey) {
+                pass.audio.delete(source.scheduledAudioKey);
+            }
+            if (source.scheduledFrozenKey) {
+                pass.frozen.delete(source.scheduledFrozenKey);
+            }
         }
     }
 
     function emit(window: OwnedWindow, input: Refill, eligible: ReturnType<typeof readProgramme>['eligible']): void {
         const pass = passes.get(window.passIndex) ?? poolAt(window.anchorTime, window.passIndex !== 0);
-        if (!pass) throw new Error('Loop audio window has no representable pass owner');
-        if (!window.frozenMidi)
+        if (!pass) {
+            throw new Error('Loop audio window has no representable pass owner');
+        }
+        if (!window.frozenMidi) {
             scheduleAudioClips(
                 window.fromBeat,
                 window.toBeat,
@@ -285,13 +306,18 @@ export function createLoopAudioSchedule({ context, isCurrent, monotonicTime = ()
                 input.transport,
                 window.anchorTime
             );
+        }
         for (const track of eligible) {
-            if (track.kind !== 'midi' || track.freezeState.status !== 'frozen' || !track.freezeState.frozenBufferId)
+            if (track.kind !== 'midi' || track.freezeState.status !== 'frozen' || !track.freezeState.frozenBufferId) {
                 continue;
-            if (window.frozenMidi ? track.id !== window.frozenMidi.trackId : pass.externalFrozenTracks.has(track.id))
+            }
+            if (window.frozenMidi ? track.id !== window.frozenMidi.trackId : pass.externalFrozenTracks.has(track.id)) {
                 continue;
+            }
             const key = `${track.id}:${track.freezeState.frozenBufferId}`;
-            if (pass.frozen.has(key)) continue;
+            if (pass.frozen.has(key)) {
+                continue;
+            }
             if (
                 scheduleFrozenTrack(
                     track,
@@ -302,11 +328,13 @@ export function createLoopAudioSchedule({ context, isCurrent, monotonicTime = ()
                     window.frozenMidi ? undefined : window.anchorTime,
                     window.frozenMidi?.clock
                 )
-            )
+            ) {
                 pass.frozen.add(key);
+            }
         }
-        for (const source of pass.sources as SourceWithFade[])
+        for (const source of pass.sources as SourceWithFade[]) {
             fenceSource(source, context, pass.end + (source.compensationSeconds ?? 0));
+        }
     }
 
     function prepareWindow(
@@ -320,7 +348,9 @@ export function createLoopAudioSchedule({ context, isCurrent, monotonicTime = ()
         const audioBefore = new Set(existing?.audio ?? []);
         const frozenBefore = new Set(existing?.frozen ?? []);
         try {
-            if (reconcile) reconcileCurrent(reconcile, eligible);
+            if (reconcile) {
+                reconcileCurrent(reconcile, eligible);
+            }
             emit(window, input, eligible);
         } catch (error) {
             const pass = passes.get(window.passIndex);
@@ -334,15 +364,25 @@ export function createLoopAudioSchedule({ context, isCurrent, monotonicTime = ()
                 }
                 pass.audio.clear();
                 pass.frozen.clear();
-                for (const key of audioBefore) pass.audio.add(key);
-                for (const key of frozenBefore) pass.frozen.add(key);
+                for (const key of audioBefore) {
+                    pass.audio.add(key);
+                }
+                for (const key of frozenBefore) {
+                    pass.frozen.add(key);
+                }
                 for (const source of sourcesBefore as Set<SourceWithFade>) {
                     if (!pass.sources.includes(source)) {
-                        if (source.scheduledAudioKey) pass.audio.delete(source.scheduledAudioKey);
-                        if (source.scheduledFrozenKey) pass.frozen.delete(source.scheduledFrozenKey);
+                        if (source.scheduledAudioKey) {
+                            pass.audio.delete(source.scheduledAudioKey);
+                        }
+                        if (source.scheduledFrozenKey) {
+                            pass.frozen.delete(source.scheduledFrozenKey);
+                        }
                     }
                 }
-                if (!existing) passes.delete(window.passIndex);
+                if (!existing) {
+                    passes.delete(window.passIndex);
+                }
             }
             throw error;
         }
@@ -371,7 +411,9 @@ export function createLoopAudioSchedule({ context, isCurrent, monotonicTime = ()
 
     function reportCoverage(): Coverage {
         for (const pass of passes.values()) {
-            if (pass.externalFrozenTracks.size === 0) continue;
+            if (pass.externalFrozenTracks.size === 0) {
+                continue;
+            }
             const noncanonical = new Set(
                 pass.windows.flatMap((window) => (window.frozenMidi?.noncanonical ? [window.frozenMidi.trackId] : []))
             );
@@ -402,10 +444,13 @@ export function createLoopAudioSchedule({ context, isCurrent, monotonicTime = ()
             passes.get(pool.index) !== pool ||
             !isCurrent() ||
             coverage.through > Math.max(input.audioTime, context.currentTime)
-        )
+        ) {
             return false;
+        }
         const endBeat = Math.min(toBeat, input.transport.loopEnd);
-        if (fromBeat > endBeat) return false;
+        if (fromBeat > endBeat) {
+            return false;
+        }
         recoveredThisRefill = true;
         const started = monotonicTime();
         const anchorBeat = pool.index === 0 ? anchor.beat : input.transport.loopStart;
@@ -433,11 +478,15 @@ export function createLoopAudioSchedule({ context, isCurrent, monotonicTime = ()
     function watchFrozenMidiWindow(pool: Pass | null, fromBeat: number, toBeat: number) {
         const before = new Set(pool?.sources ?? []);
         function retain(failed: boolean): void {
-            if (!pool) return;
+            if (!pool) {
+                return;
+            }
             const current = active && isCurrent() && passes.get(pool.index) === pool;
             for (let index = pool.sources.length - 1; index >= 0; index--) {
                 const source: SourceWithFade = pool.sources[index]!;
-                if (before.has(source) || !source.scheduledFrozenKey) continue;
+                if (before.has(source) || !source.scheduledFrozenKey) {
+                    continue;
+                }
                 if (failed || !current) {
                     retireSource(source);
                     pool.sources.splice(index, 1);
@@ -445,10 +494,16 @@ export function createLoopAudioSchedule({ context, isCurrent, monotonicTime = ()
                     continue;
                 }
                 const clock = source.scheduledFrozenWindow;
-                if (!clock || !source.scheduledTrackId) throw new Error('Frozen MIDI source has no admitted clock');
-                if (source.scheduledBufferId && source.buffer) buffers.set(source.scheduledBufferId, source.buffer);
+                if (!clock || !source.scheduledTrackId) {
+                    throw new Error('Frozen MIDI source has no admitted clock');
+                }
+                if (source.scheduledBufferId && source.buffer) {
+                    buffers.set(source.scheduledBufferId, source.buffer);
+                }
                 pool.externalFrozenTracks.add(source.scheduledTrackId);
-                if (!anchor || !currentInput) throw new Error('Frozen MIDI window has no loop anchor');
+                if (!anchor || !currentInput) {
+                    throw new Error('Frozen MIDI window has no loop anchor');
+                }
                 const canonicalBeat = pool.index === 0 ? anchor.beat : currentInput.transport.loopStart;
                 const canonicalTime =
                     pool.index === 0 ? anchor.time : anchor.firstEnd + (pool.index - 1) * anchor.duration;
@@ -471,7 +526,17 @@ export function createLoopAudioSchedule({ context, isCurrent, monotonicTime = ()
                     fromTime: source.scheduledStartTime!,
                     toTime: Math.min(source.scheduledEndTime!, pool.end + (source.compensationSeconds ?? 0)),
                     passEndTime: pool.end,
-                    frozenMidi: { trackId: source.scheduledTrackId, clock: { ...clock }, noncanonical },
+                    frozenMidi: {
+                        trackId: source.scheduledTrackId,
+                        clock: {
+                            anchorBeat: clock.anchorBeat,
+                            anchorTime: clock.anchorTime,
+                            floorAnchorTime: clock.floorAnchorTime,
+                            floorBeat: clock.floorBeat,
+                            initialFloor: clock.initialFloor,
+                        },
+                        noncanonical,
+                    },
                 });
                 fenceSource(source, context, pool.end + (source.compensationSeconds ?? 0));
             }
@@ -499,7 +564,9 @@ export function createLoopAudioSchedule({ context, isCurrent, monotonicTime = ()
         }
         const enabled = transport.isLooping && transport.loopEnd > transport.loopStart && position < transport.loopEnd;
         if (!enabled) {
-            if (active) reset();
+            if (active) {
+                reset();
+            }
             return reportCoverage();
         }
         const nextGeometry = [
@@ -508,7 +575,9 @@ export function createLoopAudioSchedule({ context, isCurrent, monotonicTime = ()
             transport.loopEnd,
             changes.map((change) => [change.beat, change.tempo, change.curve]),
         ];
-        if (!valuesEqual(nextGeometry, geometry)) reset();
+        if (!valuesEqual(nextGeometry, geometry)) {
+            reset();
+        }
         if (!anchor) {
             const duration = secondsBetweenBeats(changes, transport.loopStart, transport.loopEnd, transport.tempo);
             const firstEnd = audioTime + secondsBetweenBeats(changes, position, transport.loopEnd, transport.tempo);
@@ -563,19 +632,33 @@ export function createLoopAudioSchedule({ context, isCurrent, monotonicTime = ()
                     }
                     retireSource(source);
                     pass.sources.splice(sourceIndex, 1);
-                    if (source.scheduledAudioKey) pass.audio.delete(source.scheduledAudioKey);
-                    if (source.scheduledFrozenKey) pass.frozen.delete(source.scheduledFrozenKey);
+                    if (source.scheduledAudioKey) {
+                        pass.audio.delete(source.scheduledAudioKey);
+                    }
+                    if (source.scheduledFrozenKey) {
+                        pass.frozen.delete(source.scheduledFrozenKey);
+                    }
                 }
-                if (pass.windows.length > 0) retained.push({ pass, deadline });
+                if (pass.windows.length > 0) {
+                    retained.push({ pass, deadline });
+                }
             }
             retained.sort((left, right) => left.deadline - right.deadline || left.pass.index - right.pass.index);
-            for (const { pass } of retained) dirtyPasses.set(pass, { pass, windows: [...pass.windows], next: 0 });
+            for (const { pass } of retained) {
+                dirtyPasses.set(pass, { pass, windows: [...pass.windows], next: 0 });
+            }
             coverage.through = audioTime;
             preparedThrough = audioTime;
             programme = read.view;
         }
-        if (programmeChanged) buffers = new Map();
-        for (const [id, buffer] of read.cached) if (buffer !== null) buffers.set(id, buffer);
+        if (programmeChanged) {
+            buffers = new Map();
+        }
+        for (const [id, buffer] of read.cached) {
+            if (buffer !== null) {
+                buffers.set(id, buffer);
+            }
+        }
         const from = Math.max(audioTime, preparedThrough);
         coverage = {
             from: audioTime,
@@ -594,7 +677,9 @@ export function createLoopAudioSchedule({ context, isCurrent, monotonicTime = ()
         }
         refreshTarget();
         if (!read.hasMaterial) {
-            for (const pass of passes.values()) retirePass(pass);
+            for (const pass of passes.values()) {
+                retirePass(pass);
+            }
             passes.clear();
             dirtyPasses.clear();
             coverage.through = coverage.target;
@@ -611,17 +696,18 @@ export function createLoopAudioSchedule({ context, isCurrent, monotonicTime = ()
                 coverage.shortfall = 'time-budget';
                 return reportCoverage();
             }
-            const projected = dirty
-                ? null
-                : projectLoopAudioWindows({
-                      transport,
-                      changes,
-                      anchorBeat: anchor.beat,
-                      anchorTime: anchor.time,
-                      fromTime: Math.max(coverage.through, coverage.completionAudioTime),
-                      toTime: coverage.target,
-                      maxWindows: 1,
-                  });
+            let projected: ReturnType<typeof projectLoopAudioWindows> | null = null;
+            if (!dirty) {
+                projected = projectLoopAudioWindows({
+                    transport,
+                    changes,
+                    anchorBeat: anchor.beat,
+                    anchorTime: anchor.time,
+                    fromTime: Math.max(coverage.through, coverage.completionAudioTime),
+                    toTime: coverage.target,
+                    maxWindows: 1,
+                });
+            }
             const window: OwnedWindow | undefined = dirty ? dirty.windows[dirty.next] : projected?.windows[0];
             if (!window) {
                 if (projected?.shortfall === 'unrepresentable') {
@@ -644,7 +730,9 @@ export function createLoopAudioSchedule({ context, isCurrent, monotonicTime = ()
             if (dirty) {
                 dirtyPasses.delete(dirty.pass);
                 dirty.next++;
-                if (dirty.next < dirty.windows.length) dirtyPasses.set(dirty.pass, dirty);
+                if (dirty.next < dirty.windows.length) {
+                    dirtyPasses.set(dirty.pass, dirty);
+                }
             } else {
                 rememberWindow(pass, window);
             }
@@ -666,7 +754,7 @@ export function createLoopAudioSchedule({ context, isCurrent, monotonicTime = ()
         return reportCoverage();
     }
 
-    return {
+    const schedule = {
         refill,
         poolAt,
         fence,
@@ -677,7 +765,19 @@ export function createLoopAudioSchedule({ context, isCurrent, monotonicTime = ()
             return active;
         },
         get coverage() {
-            return { ...coverage };
+            const snapshot: Coverage = {
+                from: coverage.from,
+                through: coverage.through,
+                target: coverage.target,
+                completionAudioTime: coverage.completionAudioTime,
+                windows: coverage.windows,
+                shortfall: coverage.shortfall,
+            };
+            if (Object.hasOwn(coverage, 'recovery')) {
+                snapshot.recovery = coverage.recovery;
+            }
+            return snapshot;
         },
     };
+    return schedule satisfies LoopAudioScheduleLifetime;
 }

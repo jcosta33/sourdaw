@@ -48,11 +48,13 @@ vi.mock('../../scheduling/scheduleAudioClips', () => ({
         audio: Set<string>,
         _frozen: Set<string>,
         active: SourceWithFade[],
-        transport: typeof defaultTransportState,
+        _transport: typeof defaultTransportState,
         anchor: number
     ) => {
         windows.push({ from, to, anchor });
-        if (audio.has('source')) return;
+        if (audio.has('source')) {
+            return;
+        }
         const source = {
             scheduledTrackId: 'track',
             scheduledAudioKey: 'source',
@@ -76,7 +78,9 @@ vi.mock('../../scheduling/scheduleAudioClips', () => ({
         audio.add('source');
         fixture.time += fixture.advanceOnNextEmit + fixture.advancePerEmit;
         fixture.advanceOnNextEmit = 0;
-        if (fixture.fail) throw new Error('Source emission failed');
+        if (fixture.fail) {
+            throw new Error('Source emission failed');
+        }
     },
 }));
 
@@ -200,8 +204,9 @@ describe('loop buffer work and lifetime ownership', () => {
         expect(owner.coverage.through).toBe(10.375);
         expect(owner.poolAt(10.375, true)?.sources).toEqual([]);
         expect(emitted.at(-1)?.stop).toHaveBeenLastCalledWith(10);
-        for (const [index, source] of completed.entries())
+        for (const [index, source] of completed.entries()) {
             expect(vi.mocked(source.stop).mock.calls).toEqual(stops[index]);
+        }
     });
     it('reconciles only the retained admitted window rather than widening it to the whole pass', () => {
         const owner = make();

@@ -282,7 +282,14 @@ vi.mock('../../evaluateFollowActions', () => ({
     evaluateFollowActions: (...args: unknown[]) => (evaluateFollowActionsMock as (...a: unknown[]) => unknown)(...args),
 }));
 
-type SourceStart = { start: ReturnType<typeof vi.fn<(when: number, offset: number, duration: number) => void>> };
+type SourceStart = {
+    buffer: AudioBuffer | null;
+    playbackRate: { value: number };
+    connect: ReturnType<typeof vi.fn>;
+    disconnect: ReturnType<typeof vi.fn>;
+    stop: ReturnType<typeof vi.fn>;
+    start: ReturnType<typeof vi.fn<(when: number, offset: number, duration: number) => void>>;
+};
 const sources: SourceStart[] = [];
 const transportPublications: unknown[][] = [];
 const notes: { pitch: number; time: number }[] = [];
