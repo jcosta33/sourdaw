@@ -258,7 +258,7 @@ describe('targetless project clip effect protections', () => {
         [[tempo], 'set tempo to 96 bpm'],
         [[tempo, gain], 'set tempo to 96 bpm and make Guitar quieter'],
     ] satisfies Array<[Call[], string]>)(
-        'refuses the real compiled batch %j after final grounding',
+        'refuses retained compiler evidence %j when a clip protection is added later',
         (calls, prompt) => {
             const evidence = compile(calls, prompt);
             expect(ground(evidence.commands, prompt, { compilerEvidence: evidence })).toMatchObject({
@@ -267,6 +267,21 @@ describe('targetless project clip effect protections', () => {
             expect(
                 ground(evidence.commands, `${prompt}; leave Guitar Take unchanged`, { compilerEvidence: evidence })
             ).toMatchObject({
+                status: 'rejected',
+                rejectionReason: expect.stringContaining('Request changes "Guitar Take"'),
+            });
+        }
+    );
+
+    it.each([
+        [[tempo], 'set tempo to 96 bpm; leave Guitar Take unchanged'],
+        [[tempo, gain], 'set tempo to 96 bpm and make Guitar quieter; leave Guitar Take unchanged'],
+    ] satisfies Array<[Call[], string]>)(
+        'refuses the original protected request %j after compiling that same request',
+        (calls, prompt) => {
+            const evidence = compile(calls, prompt);
+            expect(evidence.commands).toEqual(calls);
+            expect(ground(evidence.commands, prompt, { compilerEvidence: evidence })).toMatchObject({
                 status: 'rejected',
                 rejectionReason: expect.stringContaining('Request changes "Guitar Take"'),
             });

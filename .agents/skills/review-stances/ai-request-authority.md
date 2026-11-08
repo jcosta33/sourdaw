@@ -74,7 +74,8 @@ Report the concrete break or none.
    request, a tempo-only whole-track protection, retained refinement facts, inactive alternative
    identities and approval-time checks. Read unconditional scope and dimensions from Command; target
    arguments alone cannot describe the reach. Keep clip protection separate from its track's fader,
-   preserve facet-only restrictions, and admit unrelated project-timing and conditional effects.
+   preserve facet-only restrictions, and admit unrelated project-timing effects. Conditional metadata
+   does not establish unconditional content reach; its execution-time policy still applies.
    Removing project-effect expansion must fail `plainTempoClipProtection.spec.ts`. Source promotion
    and tempo's arrangement/audio declaration landed in [#5888](https://github.com/jcosta33/sourdaw/pull/5888);
    its public approvals attacked source/history and seam behavior, which did not establish the

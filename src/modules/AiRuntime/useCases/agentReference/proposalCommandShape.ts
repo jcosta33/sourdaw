@@ -367,9 +367,7 @@ function getProjectClipEffectObjectIds(actionType: string, context: ProjectConte
     const effect = getExecutableAppActionEffect(actionType);
     if (
         effect?.scope !== 'project' ||
-        !effect.dimensions.some(
-            (dimension) => dimension === 'arrangement' || dimension === 'clip-audio' || dimension === 'midi-content'
-        )
+        !effect.dimensions.some((dimension) => dimension === 'arrangement' || dimension === 'clip-audio')
     ) {
         return [];
     }
