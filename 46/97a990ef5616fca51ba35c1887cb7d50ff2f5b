@@ -1,0 +1,19 @@
+src/modules/Automation/handlers/automation/__tests__/handleRestoreAutomationLanePoints.spec.ts
+  s_1052c2a2231ded::t_ad6ef5bba1ca87 89
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4697a990ef5616fca51ba35c1887cb7d50ff2f5b",
+  "prompts": {},
+  "sessions": {
+    "s_1052c2a2231ded": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b349-24b6-7622-8534-09f171c780d5",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
