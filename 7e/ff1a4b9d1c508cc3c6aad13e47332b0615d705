@@ -1,0 +1,25 @@
+src/modules/Transport/useCases/transportControls/__tests__/pausePlayback.spec.ts
+  s_68423a2adea8d2::t_b83aab1dd4584b 81
+src/modules/MIDI/__tests__/groovePreviewCommitParity.spec.ts
+  s_68423a2adea8d2::t_b83aab1dd4584b 132
+src/modules/Transport/useCases/transportControls/__tests__/stopPlayback.spec.ts
+  s_68423a2adea8d2::t_b83aab1dd4584b 71
+src/modules/Transport/useCases/transportControls/__tests__/seekPlayhead.spec.ts
+  s_68423a2adea8d2::t_b83aab1dd4584b 52
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7eff1a4b9d1c508cc3c6aad13e47332b0615d705",
+  "prompts": {},
+  "sessions": {
+    "s_68423a2adea8d2": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34b-f305-7c03-beb2-57afa678cda5",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
