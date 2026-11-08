@@ -2,6 +2,7 @@ import { logger } from '#/infra/logger/appLogger';
 import { trackStore, takeLaneStore, activeRecordingRef } from '#/modules/Arrangement/stores';
 import {
     startRecording,
+    captureRecordingCommitRetirement,
     updateClip,
     discardRecording,
     commitRecording,
@@ -44,6 +45,7 @@ import { scheduleAudioClips } from '../scheduling/scheduleAudioClips';
 import { scheduleMetronome } from '../scheduling/scheduleMetronome';
 import { scheduleMidiNotes } from '../scheduling/scheduleMidiNotes';
 import { commitRecoveredAudioRecording } from '../transportControls/commitRecoveredAudioRecording';
+import { createAutomaticPunchEnding } from '../transportControls/createAutomaticPunchEnding';
 import { createRecordingCaptureClocks } from '../transportControls/createRecordingCaptureClocks';
 import { finalizeAutomaticRecording } from '../transportControls/finalizeAutomaticRecording';
 import { panicYeastRuntime } from '../transportControls/panicYeastRuntime';
@@ -411,11 +413,6 @@ export function startPlayheadScheduler(
     resetMetronomeBeat(state.playheadPosition);
 
     let previousTempo = state.tempo;
-    // The audio-clock instant a punch-out falls due for a punch recording that
-    // a late-wrap tick opened in a pass it handed over at its own seam: that
-    // tick cannot close it (the capture has only just begun), and the ticks
-    // after it scan the incoming pass, which never reaches the punch-out beat.
-    let lateWrapPunchOutAudioTime: number | null = null;
     const grainMs = state.scheduleGrainMs;
     schedulerTimingDiagnostics.reset(grainMs);
 
@@ -1203,39 +1200,6 @@ export function startPlayheadScheduler(
         if (seam && !seam.afterLateWrap) {
             punchScanWindowStart = dyingTickStartPosition;
         }
-        // The punch checks below may open a recording this tick, so read the
-        // recording state BEFORE that block runs. A punch-out is due at the seam
-        // only for a recording that was already open when the tick began — the
-        // same law that keeps an ordinary tick from opening and finalizing a
-        // punch in one pass, where the scan beat cannot be both inside the
-        // region and past its end. Ungated, a punch-in whose crossing lands on
-        // the seam tick was finalized empty in the same tick, every pass.
-        const recordingOpenAtTickStart = schedulerSession.punchRecordingActive;
-        const punchOutDueAtSeam = seam !== null && recordingOpenAtTickStart && current.punchOutBeat <= seam.passUpTo;
-        // #4905 — on a wrap tick (the seam-edit re-anchor or the late wrap) the
-        // scanned position is already the incoming pass's, and a region at or
-        // below the look-ahead never presents a scan at or past the punch-out
-        // beat afterwards: the crossing of the punch-out point happened inside
-        // the pass that just died, so the punch-out is due at the wrap itself.
-        // Same gating law as the seam arm — only for a recording already open
-        // when the tick began, so a punch-in opened this tick is never
-        // finalized empty.
-        const punchOutDueAtWrap = lateWrap && recordingOpenAtTickStart && current.punchOutBeat <= current.loopEnd;
-        // A punch recording opened by an earlier late-wrap tick in the pass
-        // that tick handed over is due once the audio clock reaches its
-        // punch-out, as a scan reaching that beat would make it; a relocation
-        // before then moves the playhead away from the punch-out it was due at.
-        const punchOutDueAfterLateWrap =
-            recordingOpenAtTickStart && lateWrapPunchOutAudioTime !== null && now >= lateWrapPunchOutAudioTime;
-        if (
-            !recordingOpenAtTickStart ||
-            punchOutDueAfterLateWrap ||
-            jumpToPosition !== null ||
-            reemitAfterEdit ||
-            lateWrap
-        ) {
-            lateWrapPunchOutAudioTime = null;
-        }
         if (opensPunchIn(current, punchScanBeat)) {
             openedRecording = true;
             schedulerSession.punchRecordingActive = true;
@@ -1252,6 +1216,36 @@ export function startPlayheadScheduler(
             // playhead) is wrong on both paths — nothing writes it during
             // playback.
             const punchAnchorBeat = Math.max(current.punchInBeat, punchScanWindowStart);
+            const captureClocks = createRecordingCaptureClocks(
+                ctx,
+                (beat) =>
+                    secondsBetweenBeats(
+                        tempoMapStore.value?.changes ?? [],
+                        0,
+                        beat,
+                        transportStore.value?.tempo ?? current.tempo
+                    ),
+                undefined,
+                true
+            );
+            const openingContextSeconds = now;
+            const punch = createAutomaticPunchEnding(
+                current.punchOutBeat,
+                () => {
+                    if (initial && initialSchedulingAnchor === undefined) {
+                        return null;
+                    }
+                    return {
+                        beat: punchAnchorBeat,
+                        contextSeconds:
+                            (initial ? initialSchedulingAnchor! : openingContextSeconds) +
+                            secondsBetweenBeats(changes, publishedBeat, punchAnchorBeat, current.tempo),
+                    };
+                },
+                captureClocks
+            );
+            schedulerSession.automaticPunch?.dispose();
+            schedulerSession.automaticPunch = punch;
             let clips: ReturnType<typeof startRecording>;
             let nativeEntry: ReturnType<typeof nativeRecordingEntry> | null = null;
             if (
@@ -1261,31 +1255,37 @@ export function startPlayheadScheduler(
             ) {
                 nativeEntry = nativeRecordingEntry(captureRead.snapshot);
             }
-            if (browserCapture) {
-                if (initial) {
-                    clips = startRecording(punchAnchorBeat, () => initialSchedulingAnchor ?? null);
+            try {
+                if (browserCapture) {
+                    if (initial) {
+                        clips = startRecording(
+                            punchAnchorBeat,
+                            () => initialSchedulingAnchor ?? null,
+                            undefined,
+                            punch.read
+                        );
+                    } else {
+                        clips = startRecording(punchAnchorBeat, undefined, undefined, punch.read);
+                    }
                 } else {
-                    clips = startRecording(punchAnchorBeat);
+                    clips = startRecording(punchAnchorBeat, undefined, nativeEntry, punch.read);
                 }
-            } else {
-                clips = startRecording(punchAnchorBeat, undefined, nativeEntry);
+            } catch (error) {
+                captureClocks.dispose();
+                punch.dispose();
+                schedulerSession.automaticPunch = null;
+                schedulerSession.punchRecordingActive = false;
+                throw error;
             }
             updateTransportState({ isRecording: true });
 
-            const captureClocks = createRecordingCaptureClocks(ctx, (beat) =>
-                secondsBetweenBeats(
-                    tempoMapStore.value?.changes ?? [],
-                    0,
-                    beat,
-                    transportStore.value?.tempo ?? current.tempo
-                )
-            );
             captureClocks.register();
             const armedTracks = trackStore.value?.tracks.filter((time) => time.armed) ?? [];
             for (const track of armedTracks) {
                 if (track.kind === 'midi') {
                     const recClip = clips.find((context) => context.trackId === track.id);
                     if (recClip) {
+                        captureRecordingCommitRetirement(recClip.id);
                         // Input-latency compensation shifts a recorded note
                         // earlier by the round-trip time. With the clip origin
                         // sitting exactly on the anchor, a note played on the
@@ -1308,6 +1308,7 @@ export function startPlayheadScheduler(
                 }
                 if (track.kind === 'audio') {
                     const recClip = clips.find((context) => context.trackId === track.id);
+                    const retireCommit = recClip ? captureRecordingCommitRetirement(recClip.id) : () => {};
                     const latencySeconds =
                         (ctx.baseLatency || 0) + (ctx.outputLatency || 0) + getCompensationDelay(track.id);
                     const captureClock = captureClocks.create(track.id, latencySeconds);
@@ -1358,6 +1359,7 @@ export function startPlayheadScheduler(
                             (result) => {
                                 captureClocks.remove(track.id);
                                 if (!ownsCapture()) {
+                                    retireCommit();
                                     notifyUser(
                                         'Punch-in recording stopped — the take was not kept on this branch.',
                                         'warning'
@@ -1365,6 +1367,7 @@ export function startPlayheadScheduler(
                                     return;
                                 }
                                 if (result.kind === 'failed') {
+                                    retireCommit();
                                     // A capture that dies mid-punch (ring overrun,
                                     // worker crash, a WAV that never decoded) must
                                     // not strand an empty provisional clip on the
@@ -1409,6 +1412,11 @@ export function startPlayheadScheduler(
                                     // edit, or stop has replaced the published pair.
                                     const occurrence = captureClock.relocation ?? captureAnchor;
                                     if (!occurrence) {
+                                        void commitRecoveredAudioRecording(
+                                            { ...recClip, audioBufferId: bufferId },
+                                            beatAtSecondsFromAnchor(changes, 0, buffer.duration, current.tempo),
+                                            ownsCapture
+                                        );
                                         return;
                                     }
                                     const capture = {
@@ -1435,6 +1443,16 @@ export function startPlayheadScheduler(
                                             { ...capture, sourceDurationSeconds: buffer.duration },
                                             { shouldExecute: ownsCapture }
                                         ).catch((error: unknown) => {
+                                            if (
+                                                error instanceof Error &&
+                                                error.name === 'RecordingCommitOwnershipRefusal'
+                                            ) {
+                                                notifyUser(
+                                                    'Recording changed while it was finishing; your current edit was kept.',
+                                                    'warning'
+                                                );
+                                                return;
+                                            }
                                             if (error instanceof Error && error.name === 'RecordingRootMovedRefusal') {
                                                 notifyUser(
                                                     'Punch-in recording stopped — the take was not kept on this branch.',
@@ -1477,6 +1495,7 @@ export function startPlayheadScheduler(
                             // input that failed to open rejects into the `.catch`
                             // below (#6009).
                             captureClocks.remove(track.id);
+                            retireCommit();
                             initialEmissionRetirements.defer(() => {
                                 if (ownsCapture()) {
                                     retireUnstartedCapture();
@@ -1485,6 +1504,7 @@ export function startPlayheadScheduler(
                         })
                         .catch((error: unknown) => {
                             captureClocks.remove(track.id);
+                            retireCommit();
                             logger.error(new Error('Punch-in audio recording failed to start', { cause: error }));
                             // Decided when the failure arrives: a start whose
                             // recording a stop gesture closed after it was
@@ -1514,29 +1534,12 @@ export function startPlayheadScheduler(
             }
         }
 
-        // A late wrap that opened this recording in a pass it hands over at its
-        // own seam leaves the punch-out to a later tick, since no later scan
-        // reaches the dying pass's band: it is due when the audio clock gets
-        // there. The scheduled seam's own incoming scan never takes this path
-        // (its punch-in captures across the seam, see `punchOutDueAtSeam`).
-        if (openedRecording && seam?.afterLateWrap && current.punchOutBeat <= seam.passUpTo) {
-            lateWrapPunchOutAudioTime =
-                now + secondsBetweenBeats(changes, seam.passPosition, current.punchOutBeat, current.tempo);
-        }
-
-        // `punchOutDueAtSeam`: the punch-out point sits inside the dying pass's
-        // last look-ahead band — above where it stands at the seam tick but at
-        // or below where the seam instant lands it. The crossing will happen
-        // before the seam and no later tick scans that band, so the punch-out
-        // is due at the seam instant and fires here.
-        if (
-            schedulerSession.punchRecordingActive &&
-            current.punchInEnabled &&
-            (punchScanBeat >= current.punchOutBeat ||
-                punchOutDueAtSeam ||
-                punchOutDueAtWrap ||
-                punchOutDueAfterLateWrap)
-        ) {
+        const punch = schedulerSession.automaticPunch;
+        if (schedulerSession.punchRecordingActive && punch?.ready()) {
+            const bound = punch.read();
+            if (bound.status !== 'bounded') {
+                throw new Error('Ready automatic punch has no owned ending');
+            }
             // Finalize BEFORE the flush. The flush runs the capture terminal that
             // commits the take, and the commit captures the live clip and takes;
             // running it first would capture the pre-finalization anchor — a
@@ -1545,7 +1548,7 @@ export function startPlayheadScheduler(
             // this neither blocks the scheduler nor reorders the audio flush.
             // Same anchoring as punch-in: the region's own end beat, not the
             // overshooting tick position and not the stale store playhead.
-            finalizeAutomaticRecording(current.punchOutBeat);
+            finalizeAutomaticRecording(punch.outBeat, bound.ending);
             await Promise.resolve(stopAudioRecording()).catch((error: unknown) => {
                 logger.error(new Error('Punch-out audio recording failed to stop', { cause: error }));
             });
@@ -1553,6 +1556,8 @@ export function startPlayheadScheduler(
                 return;
             }
             schedulerSession.punchRecordingActive = false;
+            punch.dispose();
+            schedulerSession.automaticPunch = null;
             updateTransportState({ isRecording: false });
         }
 

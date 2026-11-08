@@ -58,7 +58,11 @@ const mocks = vi.hoisted(() => {
         getAudioContext: vi.fn(() => audioClock),
         getCompensationDelay: vi.fn(() => 0),
         cacheAudioBuffer: vi.fn(),
-        readCaptureStart: vi.fn(() => ({ status: 'captured' as const, contextSeconds: 0 })),
+        readCaptureStart: vi.fn(() => ({
+            status: 'captured' as const,
+            contextSeconds: 0,
+            capturedThroughContextSeconds: audioClock.currentTime,
+        })),
         notifyUser: vi.fn<(message: string, level: string) => void>(),
         startPlayback: vi.fn<(onRoll?: (contextSeconds: number, beat: number) => void) => Promise<void>>(
             async (onRoll) => {
