@@ -8,6 +8,10 @@ import { describe, expect, it } from 'vitest';
 const tokens = readFileSync(resolve(process.cwd(), 'src/styles/tokens.css'), 'utf8');
 const indexHtml = readFileSync(resolve(process.cwd(), 'index.html'), 'utf8');
 const chipSource = readFileSync(resolve(process.cwd(), 'src/components/daw/DawPluginChip.tsx'), 'utf8');
+const meteringSource = readFileSync(
+    resolve(process.cwd(), 'src/modules/Crust/presentations/components/CrustMeteringStrip.tsx'),
+    'utf8'
+);
 const lightBlock = /:root\.light\s*\{([^}]*)\}/u.exec(tokens)?.[1] ?? '';
 const startupThemeMatch = /<script id="sourdaw-theme"([^>]*)>([\s\S]*?)<\/script>/u.exec(indexHtml);
 const startupThemeSource = /\bsrc="([^"]+)"/u.exec(startupThemeMatch?.[1] ?? '')?.[1];
@@ -116,7 +120,8 @@ describe('semantic light theme', () => {
 
     it('loads the prepaint theme from an external classic script before the entry module', () => {
         expect(startupThemeMatch?.[1]).toContain('src="/themePrepaint.js"');
-        expect(startupThemeMatch?.[1]).not.toContain('defer');
+        expect(startupThemeMatch?.[1]).not.toMatch(/\btype\s*=\s*(["'])module\1/iu);
+        expect(startupThemeMatch?.[1]).not.toMatch(/\b(?:async|defer)\b/u);
         expect(startupThemeMatch?.[2]?.trim()).toBe('');
         expect(indexHtml.indexOf('id="sourdaw-theme"')).toBeLessThan(indexHtml.indexOf('id="sourdaw-entry"'));
         expect(indexHtml).toContain(':root.light');
@@ -127,7 +132,8 @@ describe('semantic light theme', () => {
 
         expect(startup.classes).toEqual(new Set(['light']));
         expect(startup.colorScheme).toBe('light');
-        expect(startup.themeColor).toBe('#f0ece5');
+        expect(startup.themeColor).toBe('#ded8cf');
+        expect(indexHtml).toContain('--entry-startup-background: #ded8cf;');
     });
 
     it('falls back to the dark startup when persisted preferences are corrupt', () => {
@@ -138,24 +144,39 @@ describe('semantic light theme', () => {
         expect(startup.themeColor).toBe('#020100');
     });
 
-    it.each(['--color-accent-cyan', '--color-accent-amber', '--color-accent-steel', '--color-accent-copper'])(
-        'keeps %s active-chip text above 4.75:1 on its actual tinted backgrounds',
-        (accentToken) => {
-            const alphaSource = new RegExp(`bg-\\[var\\(${accentToken}\\)\\]/(\\d+)`, 'u').exec(chipSource)?.[1];
-            if (alphaSource === undefined) {
-                throw new Error(`Missing active-chip background for ${accentToken}`);
-            }
-            const accent = readToken(lightBlock, accentToken);
-            for (const surfaceToken of [
-                '--surface-deep',
-                '--surface-base',
-                '--surface-default',
-                '--surface-raised',
-                '--color-bg-well',
-            ]) {
-                const background = composite(accent, readToken(lightBlock, surfaceToken), Number(alphaSource) / 100);
-                expect(contrast(accent, background)).toBeGreaterThanOrEqual(4.75);
-            }
+    it('keeps Crust loudness text readable on its actual raised light surface', () => {
+        const meterSectionClass = /<section className=\{`([^`]*)`\}/u.exec(meteringSource)?.[1] ?? '';
+        expect(meterSectionClass).toContain('bg-surface-raised');
+        expect(meterSectionClass).not.toContain('bg-black');
+        const background = readToken(lightBlock, '--surface-raised');
+        for (const foreground of ['--color-state-play', '--color-accent-amber', '--color-accent-red']) {
+            expect(contrast(readToken(lightBlock, foreground), background)).toBeGreaterThanOrEqual(4.5);
         }
-    );
+    });
+
+    it.each([
+        '--color-accent-cyan',
+        '--color-accent-amber',
+        '--color-accent-steel',
+        '--color-accent-copper',
+        '--color-accent-peach',
+        '--color-accent-mint',
+        '--color-accent-sage',
+    ])('keeps %s active-chip text above 4.75:1 on its actual tinted backgrounds', (accentToken) => {
+        const alphaSource = new RegExp(`bg-\\[var\\(${accentToken}\\)\\]/(\\d+)`, 'u').exec(chipSource)?.[1];
+        if (alphaSource === undefined) {
+            throw new Error(`Missing active-chip background for ${accentToken}`);
+        }
+        const accent = readToken(lightBlock, accentToken);
+        for (const surfaceToken of [
+            '--surface-deep',
+            '--surface-base',
+            '--surface-default',
+            '--surface-raised',
+            '--color-bg-well',
+        ]) {
+            const background = composite(accent, readToken(lightBlock, surfaceToken), Number(alphaSource) / 100);
+            expect(contrast(accent, background)).toBeGreaterThanOrEqual(4.75);
+        }
+    });
 });

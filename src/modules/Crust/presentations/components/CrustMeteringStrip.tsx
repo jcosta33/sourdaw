@@ -80,7 +80,7 @@ const MeterSection = ({
     actions?: ReactElement;
     className?: string;
 }): ReactElement => (
-    <section className={`rounded-[14px] border border-white/8 bg-black/[0.22] px-3 py-2 ${className}`}>
+    <section className={`rounded-[14px] border border-white/8 bg-surface-raised px-3 py-2 ${className}`}>
         <DawPluginSectionHeader
             title={title}
             actions={actions}

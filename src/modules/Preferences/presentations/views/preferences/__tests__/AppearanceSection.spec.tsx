@@ -57,7 +57,7 @@ describe('AppearanceSection', () => {
         expect(document.documentElement.classList.contains('light')).toBe(true);
         expect(document.documentElement.classList.contains('dark')).toBe(false);
         expect(document.documentElement.style.colorScheme).toBe('light');
-        expect(document.querySelector('meta[name="theme-color"]')).toHaveAttribute('content', '#f0ece5');
+        expect(document.querySelector('meta[name="theme-color"]')).toHaveAttribute('content', '#ded8cf');
     });
 
     it('reflects colorblindMode in the ToggleRow and calls update on toggle', () => {

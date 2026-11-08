@@ -37,7 +37,7 @@ describe('useThemeSynchronization', () => {
         expect(document.documentElement).toHaveClass('light');
         expect(document.documentElement).not.toHaveClass('dark');
         expect(document.documentElement.style.colorScheme).toBe('light');
-        expect(document.querySelector('meta[name="theme-color"]')).toHaveAttribute('content', '#f0ece5');
+        expect(document.querySelector('meta[name="theme-color"]')).toHaveAttribute('content', '#ded8cf');
 
         mocks.preferences.current = { theme: 'dark' };
         act(() => {

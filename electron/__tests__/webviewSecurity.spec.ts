@@ -93,6 +93,8 @@ describe('the production Content-Security-Policy', () => {
 
         const themeScript = /<script id="sourdaw-theme"([^>]*)>([\s\S]*?)<\/script>/u.exec(indexHtml);
         expect(themeScript?.[1]).toContain('src="/themePrepaint.js"');
+        expect(themeScript?.[1]).not.toMatch(/\btype\s*=\s*(["'])module\1/iu);
+        expect(themeScript?.[1]).not.toMatch(/\b(?:async|defer)\b/u);
         expect(themeScript?.[2]?.trim()).toBe('');
     });
 

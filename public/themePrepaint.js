@@ -14,5 +14,5 @@
     root.style.colorScheme = theme;
     document
         .querySelector('meta[name="theme-color"]')
-        ?.setAttribute('content', theme === 'light' ? '#f0ece5' : '#020100');
+        ?.setAttribute('content', theme === 'light' ? '#ded8cf' : '#020100');
 })();
