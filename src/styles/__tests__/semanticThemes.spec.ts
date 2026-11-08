@@ -11,10 +11,10 @@ const chipSource = readFileSync(resolve(process.cwd(), 'src/components/daw/DawPl
 const lightBlock = /:root\.light\s*\{([^}]*)\}/u.exec(tokens)?.[1] ?? '';
 const startupThemeMatch = /<script id="sourdaw-theme"([^>]*)>([\s\S]*?)<\/script>/u.exec(indexHtml);
 const startupThemeSource = /\bsrc="([^"]+)"/u.exec(startupThemeMatch?.[1] ?? '')?.[1];
-const startupThemeScript =
-    startupThemeSource === '/themePrepaint.js'
-        ? readFileSync(resolve(process.cwd(), 'public/themePrepaint.js'), 'utf8')
-        : '';
+let startupThemeScript = '';
+if (startupThemeSource === '/themePrepaint.js') {
+    startupThemeScript = readFileSync(resolve(process.cwd(), 'public/themePrepaint.js'), 'utf8');
+}
 
 const runStartupTheme = (stored: string | null) => {
     const classes = new Set<string>(['dark']);
