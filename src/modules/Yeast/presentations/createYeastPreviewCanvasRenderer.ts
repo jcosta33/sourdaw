@@ -1,5 +1,5 @@
-import type { DenseRenderer, YeastPreviewRenderModel } from './YeastPreviewTypes';
 import type { YeastPreviewEvent } from '../models/YeastPreviewSnapshot';
+import type { DenseRenderer, YeastPreviewRenderModel } from './YeastPreviewTypes';
 
 type YeastPreviewGeometryInput = YeastPreviewRenderModel;
 
