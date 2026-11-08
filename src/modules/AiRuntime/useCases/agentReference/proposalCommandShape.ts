@@ -362,12 +362,31 @@ function getControlOperations(
     );
 }
 
-/** Whole-object protection retains broad target coverage and includes actual linked-control owners. */
+/** Project-wide content effects reach clips even when the command declares no target argument. */
+function getProjectClipEffectObjectIds(actionType: string, context: ProjectContext): string[] {
+    const effect = getExecutableAppActionEffect(actionType);
+    if (
+        effect?.scope !== 'project' ||
+        !effect.dimensions.some(
+            (dimension) => dimension === 'arrangement' || dimension === 'clip-audio' || dimension === 'midi-content'
+        )
+    ) {
+        return [];
+    }
+    return context.tracks.flatMap((track) => {
+        // Alternative identities carry no content type, so they cannot prove an unaffected source.
+        const clipIds = [...track.clips.map((clip) => clip.id), ...(track.alternativeClipIds ?? [])];
+        return clipIds.length === 0 ? [] : [track.id, ...clipIds];
+    });
+}
+
+/** Whole-object protection includes content effects without widening separate control facets. */
 function getTouchedObjectIds(actionType: string, payload: Readonly<Record<string, unknown>>, context: ProjectContext) {
     return [
         ...new Set([
             ...getDeclaredTouchedObjectIds(actionType, payload, context),
             ...getControlOwnerIds(actionType, payload, context),
+            ...getProjectClipEffectObjectIds(actionType, context),
         ]),
     ];
 }
