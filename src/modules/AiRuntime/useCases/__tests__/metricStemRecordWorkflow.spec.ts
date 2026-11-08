@@ -63,23 +63,47 @@ const STEM_SOURCE_NAMES = [
 ] as const;
 
 type ProviderCall = { name: string; arguments: Record<string, unknown> };
+type AssetTransfer = NonNullable<ReturnType<typeof import('#/modules/Collaboration/useCases').getAssetTransfer>>;
+type DecodeAudioFile = typeof import('#/modules/AudioEngine/useCases').decodeAudioFile;
 
 const mocks = vi.hoisted(() => {
     return {
-        stageDurableAsset:
-            vi.fn<(file: File, name: string, leaseId: string) => Promise<{ hash: string; leaseId: string }>>(),
-        commitDurablePromotionRecovery: vi.fn().mockResolvedValue({ status: 'committed' }),
-        completeDurableCleanupRecovery: vi.fn().mockResolvedValue({ status: 'completed' }),
-        completeDurablePromotionRecovery: vi.fn().mockResolvedValue({ status: 'completed' }),
-        decodeAudioFile: vi.fn(),
+        stageDurableAsset: vi.fn<AssetTransfer['stageDurableAsset']>(),
+        commitDurablePromotionRecovery: vi
+            .fn<AssetTransfer['commitDurablePromotionRecovery']>()
+            .mockImplementation(async (recoveryId) => ({ status: 'committed', recoveryId })),
+        completeDurableCleanupRecovery: vi
+            .fn<AssetTransfer['completeDurableCleanupRecovery']>()
+            .mockImplementation(async (recoveryId) => ({ status: 'completed', recoveryId, releasedHashes: [] })),
+        completeDurablePromotionRecovery: vi
+            .fn<AssetTransfer['completeDurablePromotionRecovery']>()
+            .mockImplementation(async (recoveryId) => ({ status: 'completed', recoveryId, promotedHashes: [] })),
+        decodeAudioFile: vi.fn<DecodeAudioFile>(),
         arrangementEventEmit: vi.fn(() => Promise.resolve()),
         fetch: vi.fn<typeof fetch>(),
-        pickFiles: vi.fn<() => Promise<File[] | null>>(),
-        prepareDurableCleanupRecovery: vi.fn().mockResolvedValue({ status: 'prepared' }),
-        prepareDurablePromotionRecovery: vi.fn().mockResolvedValue({ status: 'prepared' }),
-        promoteDurableStagedAsset: vi.fn().mockResolvedValue({ status: 'promoted' }),
-        reopenDurableAsset: vi.fn().mockResolvedValue({ status: 'opened' }),
-        transitionDurablePromotionRecoveryToCleanup: vi.fn().mockResolvedValue({ status: 'prepared' }),
+        pickFiles: vi.fn<typeof import('#/modules/Project/useCases').pickFiles>(),
+        prepareDurableCleanupRecovery: vi
+            .fn<AssetTransfer['prepareDurableCleanupRecovery']>()
+            .mockImplementation(async (recoveryId) => ({ status: 'prepared', recoveryId, ownerId: 'fixture-owner' })),
+        prepareDurablePromotionRecovery: vi
+            .fn<AssetTransfer['prepareDurablePromotionRecovery']>()
+            .mockImplementation(async (recoveryId) => ({ status: 'prepared', recoveryId, ownerId: 'fixture-owner' })),
+        promoteDurableStagedAsset: vi
+            .fn<AssetTransfer['promoteDurableStagedAsset']>()
+            .mockImplementation(async (leaseId, hash) => ({
+                status: 'promoted',
+                leaseId,
+                hash,
+                blob: new Blob(),
+                name: 'fixture',
+            })),
+        protectDurableStagedAssetAcrossTransfer: vi.fn<AssetTransfer['protectDurableStagedAssetAcrossTransfer']>(),
+        reopenDurableAsset: vi
+            .fn<AssetTransfer['reopenDurableAsset']>()
+            .mockImplementation(async (hash) => ({ status: 'opened', hash, blob: new Blob(), name: 'fixture' })),
+        transitionDurablePromotionRecoveryToCleanup: vi
+            .fn<AssetTransfer['transitionDurablePromotionRecoveryToCleanup']>()
+            .mockImplementation(async (recoveryId) => ({ status: 'prepared', recoveryId, ownerId: 'fixture-owner' })),
     };
 });
 
@@ -105,7 +129,7 @@ vi.mock('#/modules/Collaboration/useCases', async (importOriginal) => ({
         prepareDurableCleanupRecovery: mocks.prepareDurableCleanupRecovery,
         prepareDurablePromotionRecovery: mocks.prepareDurablePromotionRecovery,
         promoteDurableStagedAsset: mocks.promoteDurableStagedAsset,
-        protectDurableStagedAssetAcrossTransfer: vi.fn(),
+        protectDurableStagedAssetAcrossTransfer: mocks.protectDurableStagedAssetAcrossTransfer,
         reopenDurableAsset: mocks.reopenDurableAsset,
         stageDurableAsset: mocks.stageDurableAsset,
         transitionDurablePromotionRecoveryToCleanup: mocks.transitionDurablePromotionRecoveryToCleanup,
@@ -136,7 +160,7 @@ function expectPreparedStemResourcesReleased(timesPerStem: number): void {
         ...mocks.prepareDurableCleanupRecovery.mock.calls,
         ...mocks.transitionDurablePromotionRecoveryToCleanup.mock.calls,
     ];
-    const bindings = cleanupCalls.flatMap(([, entries]) => entries as Array<{ leaseId: string }>);
+    const bindings = cleanupCalls.flatMap(([, entries]) => entries);
     expect(bindings.map(({ leaseId }) => leaseId).sort()).toEqual(expectedAssetLeaseIds);
 }
 

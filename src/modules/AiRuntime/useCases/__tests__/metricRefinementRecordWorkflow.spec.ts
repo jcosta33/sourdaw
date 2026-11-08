@@ -142,8 +142,8 @@ function persistedMetricGoalState(stored: string | null | undefined, compiled: s
 }
 
 /**
- * Plans one literal request and persists its actual approval card. `storedMetricGoalState` replaces
- * the record the card persists (`null` persists none), standing in for one an earlier build wrote.
+ * Plans a literal request and retains a conservative card through the owner API. The absent-record
+ * case clears the stored snapshot after persistence, which otherwise falls back to compiled state.
  */
 async function proposeLiteralCard(
     input: LiteralRequest & { storedMetricGoalState?: string | null }
