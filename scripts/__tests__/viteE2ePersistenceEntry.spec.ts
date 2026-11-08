@@ -2,15 +2,80 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
+import ts from 'typescript';
 import { resolveConfig } from 'vite';
 import { describe, expect, it } from 'vitest';
 
 const root = resolve(import.meta.dirname, '../..');
 
-function expectSafeDirectProjectEntry(entry: string): void {
-    expect(entry).toContain("from '../../src/modules/Project/useCases'");
-    expect(entry).toMatch(/export\s+const\s+newProject\b/);
-    expect(entry).not.toMatch(/import\s*\(|new\s+\w+\(\)|createProject|projectStore\.set/);
+function hasDynamicImport(node: ts.Node): boolean {
+    return (
+        (ts.isCallExpression(node) && node.expression.kind === ts.SyntaxKind.ImportKeyword) ||
+        ts.forEachChild(node, hasDynamicImport) === true
+    );
+}
+
+function isSafeDirectProjectEntry(entry: string): boolean {
+    if (/createProject|projectStore\.set/.test(entry)) {
+        return false;
+    }
+    const source = ts.createSourceFile('entry.ts', entry, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+    if (hasDynamicImport(source)) {
+        return false;
+    }
+    const bindings = source.statements.flatMap((statement) => {
+        if (
+            !ts.isImportDeclaration(statement) ||
+            !ts.isStringLiteral(statement.moduleSpecifier) ||
+            statement.moduleSpecifier.text !== '../../src/modules/Project/useCases' ||
+            !statement.importClause ||
+            statement.importClause.isTypeOnly ||
+            !statement.importClause.namedBindings ||
+            !ts.isNamedImports(statement.importClause.namedBindings)
+        ) {
+            return [];
+        }
+        return statement.importClause.namedBindings.elements
+            .filter((element) => !element.isTypeOnly && (element.propertyName ?? element.name).text === 'newProject')
+            .map((element) => element.name.text);
+    });
+    if (bindings.length !== 1) {
+        return false;
+    }
+    let aliasFound = false;
+    for (const statement of source.statements) {
+        if (
+            ts.isImportDeclaration(statement) ||
+            ts.isTypeAliasDeclaration(statement) ||
+            ts.isInterfaceDeclaration(statement) ||
+            ts.isFunctionDeclaration(statement)
+        ) {
+            continue;
+        }
+        if (!ts.isVariableStatement(statement) || !(statement.declarationList.flags & ts.NodeFlags.Const)) {
+            return false;
+        }
+        const exported = statement.modifiers?.some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword);
+        for (const declaration of statement.declarationList.declarations) {
+            if (!ts.isIdentifier(declaration.name) || !declaration.initializer) {
+                return false;
+            }
+            const initializer = declaration.initializer;
+            if (declaration.name.text === 'newProject') {
+                if (!exported || !ts.isIdentifier(initializer) || initializer.text !== bindings[0]) {
+                    return false;
+                }
+                aliasFound = true;
+            } else if (
+                !ts.isIdentifier(initializer) &&
+                !ts.isArrowFunction(initializer) &&
+                !ts.isFunctionExpression(initializer)
+            ) {
+                return false;
+            }
+        }
+    }
+    return aliasFound;
 }
 
 describe('same-build persistence inspection entry', () => {
@@ -20,7 +85,43 @@ describe('same-build persistence inspection entry', () => {
             export const newProject = _newProject;
             export const inspectProject = () => new Set();
         `;
-        expectSafeDirectProjectEntry(entry);
+        expect(isSafeDirectProjectEntry(entry)).toBe(true);
+    });
+
+    it('accepts an equivalent named import alias', () => {
+        const entry = `import { newProject as makeProject } from '../../src/modules/Project/useCases';
+            export const newProject = makeProject;`;
+        expect(isSafeDirectProjectEntry(entry)).toBe(true);
+    });
+
+    it.each([
+        ['top-level call', 'newProject();'],
+        ['constructor with arguments', 'const value = new Set([1]);'],
+        ['constructor without arguments', 'const value = new Set();'],
+        ['dynamic import', "const lazy = () => import('other');"],
+        ['dynamic import with comment', "const lazy = () => import /* comment */ ('other');"],
+        ['createProject', 'const lazy = () => createProject();'],
+        ['projectStore.set', 'const lazy = () => projectStore.set({});'],
+    ])('rejects %s in an otherwise valid entry', (_name, addition) => {
+        const entry = `import { newProject as _newProject } from '../../src/modules/Project/useCases';
+            export const newProject = _newProject;\n${addition}`;
+        expect(isSafeDirectProjectEntry(entry)).toBe(false);
+    });
+
+    it.each([
+        ['wrapped alias', 'export const newProject = () => _newProject();'],
+        ['wrong alias', 'export const newProject = other;'],
+    ])('rejects %s', (_name, declaration) => {
+        const entry = `import { newProject as _newProject } from '../../src/modules/Project/useCases';\n${declaration}`;
+        expect(isSafeDirectProjectEntry(entry)).toBe(false);
+    });
+
+    it.each([
+        ['wrong import target', "import { newProject as _newProject } from './other';"],
+        ['type-only binding', "import type { newProject as _newProject } from '../../src/modules/Project/useCases';"],
+    ])('rejects %s', (_name, declaration) => {
+        const entry = `${declaration}\nexport const newProject = _newProject;`;
+        expect(isSafeDirectProjectEntry(entry)).toBe(false);
     });
 
     it('keeps the real index entry and eight direct namespaces only in e2e builds', async () => {
@@ -67,7 +168,7 @@ describe('same-build persistence inspection entry', () => {
             })
         ).toBe('e2e/direct-project-setup.js');
         const entry = readFileSync(resolve(root, 'tests/e2e/directProjectSetupEntry.ts'), 'utf8');
-        expectSafeDirectProjectEntry(entry);
+        expect(isSafeDirectProjectEntry(entry)).toBe(true);
     });
 
     it('does not add the inspection entry or change entry signatures in a shipping build', async () => {
