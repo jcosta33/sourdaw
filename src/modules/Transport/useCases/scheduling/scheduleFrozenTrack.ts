@@ -37,7 +37,8 @@ export function scheduleFrozenTrack(
      * layer the incoming pass's pre-window content underneath it.
      */
     windowStartBeat: number | null,
-    initialSchedulingAnchor?: number
+    initialSchedulingAnchor?: number,
+    replayClock?: NonNullable<SourceWithFade['scheduledFrozenWindow']>
 ): boolean {
     if (track.freezeState.status !== 'frozen' || !track.freezeState.frozenBufferId) {
         return false;
@@ -74,11 +75,14 @@ export function scheduleFrozenTrack(
     // tempo map across the offset. A flat rate here would leave a frozen track
     // drifting against the un-frozen tracks around it the moment a tempo change
     // sat between the playhead and the track's first clip.
+    const schedulingAnchor = replayClock?.anchorTime ?? initialSchedulingAnchor ?? getCurrentTime();
     const startTime =
-        (initialSchedulingAnchor ?? getCurrentTime()) +
+        schedulingAnchor +
         secondsBetweenBeats(changes, accumulatedPosition, trackStartBeat, defaultTempo) +
         compensation;
     const now = getCurrentTime();
+    const floorAnchorTime = replayClock?.floorAnchorTime ?? initialSchedulingAnchor ?? now;
+    const initialFloor = replayClock?.initialFloor ?? initialSchedulingAnchor !== undefined;
     const elapsed = now - startTime;
 
     // The live clip path's window floor (#4784): on an emission whose window
@@ -86,12 +90,11 @@ export function scheduleFrozenTrack(
     // that beat must not sound — the earliest content is the window's first
     // beat, held until its due instant. A floor at or before the buffer's own
     // start changes nothing.
-    let floorSeconds =
-        initialSchedulingAnchor === undefined ? startTime : Math.max(startTime, initialSchedulingAnchor + compensation);
+    let floorSeconds = initialFloor ? Math.max(startTime, schedulingAnchor + compensation) : startTime;
     if (windowStartBeat !== null && windowStartBeat > trackStartBeat) {
         floorSeconds = Math.max(
             floorSeconds,
-            (initialSchedulingAnchor ?? now) +
+            floorAnchorTime +
                 secondsBetweenBeats(changes, accumulatedPosition, windowStartBeat, defaultTempo) +
                 compensation
         );
@@ -117,6 +120,17 @@ export function scheduleFrozenTrack(
     // fence sample-accurately, and its own shift is the compensation above —
     // the same figure the seam fence spares its tail by (#4784).
     (source as SourceWithFade).compensationSeconds = compensation;
+    (source as SourceWithFade).scheduledTrackId = track.id;
+    (source as SourceWithFade).scheduledBufferId = track.freezeState.frozenBufferId;
+    (source as SourceWithFade).scheduledFrozenKey = `${track.id}:${track.freezeState.frozenBufferId}`;
+    (source as SourceWithFade).scheduledFrozenOriginBeat = trackStartBeat;
+    (source as SourceWithFade).scheduledFrozenWindow = {
+        anchorBeat: accumulatedPosition,
+        anchorTime: schedulingAnchor,
+        floorAnchorTime,
+        floorBeat: windowStartBeat,
+        initialFloor,
+    };
 
     const fadeGain = getAudioContext().createGain();
     (source as SourceWithFade).fadeGainNode = fadeGain;
@@ -127,10 +141,28 @@ export function scheduleFrozenTrack(
         // Held to the window's first beat: the sound begins at that beat's due
         // instant, with the skipped content wound past.
         source.start(audibleStartSeconds, skipSeconds);
+        Object.assign(source, {
+            scheduledStartTime: audibleStartSeconds,
+            scheduledBufferOffset: skipSeconds,
+            scheduledPlaybackRate: 1,
+            scheduledEndTime: audibleStartSeconds + buffer.duration - skipSeconds,
+        });
     } else if (startTime >= now) {
         source.start(startTime);
+        Object.assign(source, {
+            scheduledStartTime: startTime,
+            scheduledBufferOffset: 0,
+            scheduledPlaybackRate: 1,
+            scheduledEndTime: startTime + buffer.duration,
+        });
     } else {
         source.start(now, elapsed);
+        Object.assign(source, {
+            scheduledStartTime: now,
+            scheduledBufferOffset: elapsed,
+            scheduledPlaybackRate: 1,
+            scheduledEndTime: now + buffer.duration - elapsed,
+        });
     }
 
     activeAudioSources.push(source);

@@ -100,3 +100,16 @@ none.
     minimum cannot extend the automatic-owned source cap. Both key-up and sealing emit no zero/malformed note
     when no positive interval remains; ordinary manual/no-cap minimum stays a control. Historical private review
     prompts and tiers are unestablished. Owner lifetime: `session-lifecycle.md` probe12; no hardware MIDI claim.
+13. **Recovered clocks do not prove rendered loop continuity (#6277).** The100ms tick-driven buffer window
+    and stop/clear seam route appear in direct commit `4f410257b2`; no associated introducing PR is established.
+    Later public#4897 seam checks and#6004 clock-gap/wrap checks do not establish pre-block successor admission
+    or a rendered interval through a blocked main thread. Withhold200ms of ticks across a2s seam and multiple
+    125ms seams, retaining a source ledger copied before the block and an independent source-time reference.
+    `startPlayheadSchedulerLoopAudioStall.spec.ts` must fail if admission waits for the old100ms window or
+    prepares only one successor. Require the actual completed coverage, recorded completion audio timestamp,
+    250ms endpoint, one-frame-beyond retained-lead control and mapped recovery beyond coverage. Advance the
+    context clock during preparation: tick-entry time cannot certify350ms remaining at completion. Bound
+    work even under an unmoving monotonic clock and tiny legal loops; shortfall must name actual unadmitted
+    coverage. Separately capture real Chromium programme PCM through the block and compare an unstalled
+    reference for missing intervals, phase and duplicates, including existing fades. API calls, positive meters,
+    recovered wrap counts and a+2s-anchor admission benchmark cannot replace that rendered-signal proof.

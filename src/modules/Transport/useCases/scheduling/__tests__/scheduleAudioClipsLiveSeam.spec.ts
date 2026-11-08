@@ -33,6 +33,7 @@ import { scheduleAudioClips } from '../scheduleAudioClips';
 
 const trackStoreState: { value: { tracks: unknown[] } } = { value: { tracks: [] } };
 vi.mock('#/modules/Arrangement/stores', () => ({
+    gainEnvelopeStore: { value: null },
     trackStore: {
         get value() {
             return trackStoreState.value;

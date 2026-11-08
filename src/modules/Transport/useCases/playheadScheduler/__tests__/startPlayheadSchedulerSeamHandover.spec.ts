@@ -36,6 +36,7 @@ const audioContextStub = {
         gain: {
             value: 1,
             cancelScheduledValues: () => {},
+            cancelAndHoldAtTime: () => {},
             setValueAtTime: () => {},
             linearRampToValueAtTime: () => {},
         },
@@ -180,15 +181,16 @@ const panicYeastRuntimeSpy = vi.hoisted(() => vi.fn<() => Promise<void>>(() => P
  * handover's whole-buffer duty is decided by whether a start is future-anchored
  * or an immediate mid-buffer restart.
  */
-type RecordedSourceStart = { at: number; args: unknown[]; requestedAt: number };
+type RecordedSourceStart = { at: number; args: unknown[]; requestedAt: number; source: object; buffer: unknown };
 const recordedSourceStarts = vi.hoisted(() => [] as RecordedSourceStart[]);
 /**
  * Third observation point: every `stop` the fence (or any teardown) puts on a
  * scheduled source, with the clock reading at which it was asked. The seam
  * fence's whole contract is the instant it stops at.
  */
-type RecordedSourceStop = { at: number; requestedAt: number };
+type RecordedSourceStop = { at: number; requestedAt: number; source: object };
 const recordedSourceStops = vi.hoisted(() => [] as RecordedSourceStop[]);
+const frozenBuffer = vi.hoisted(() => ({ duration: 8 }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     builtinSynthVoice: { read: () => synthVoices },
     ensureCachedAudioBuffersDurable: vi.fn(),
@@ -227,19 +229,28 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     cacheAudioBuffer: vi.fn(),
     refreshSidechainAlignment: vi.fn(),
     scheduleAdjustmentLayers: vi.fn(),
-    createBufferSource: () => ({
-        buffer: null,
-        connect: () => {},
-        playbackRate: { value: 1 },
-        start: (...args: unknown[]) => {
-            recordedSourceStarts.push({ at: args[0] as number, args, requestedAt: ctxTime.now });
-        },
-        stop: (...args: unknown[]) => {
-            recordedSourceStops.push({ at: args[0] as number, requestedAt: ctxTime.now });
-        },
-        onended: null,
-    }),
-    getCachedAudioBuffer: ({ bufferId }: { bufferId: string }) => (bufferId === 'frozen-buf' ? { duration: 8 } : null),
+    createBufferSource: () => {
+        const source = {
+            buffer: null as AudioBuffer | null,
+            connect: () => {},
+            playbackRate: { value: 1 },
+            start: (...args: unknown[]) => {
+                recordedSourceStarts.push({
+                    at: args[0] as number,
+                    args,
+                    requestedAt: ctxTime.now,
+                    source,
+                    buffer: source.buffer,
+                });
+            },
+            stop: (...args: unknown[]) => {
+                recordedSourceStops.push({ at: args[0] as number, requestedAt: ctxTime.now, source });
+            },
+            onended: null,
+        };
+        return source;
+    },
+    getCachedAudioBuffer: ({ bufferId }: { bufferId: string }) => (bufferId === 'frozen-buf' ? frozenBuffer : null),
     getFactoryDrumKitByIndex: vi.fn(),
     // No native engine here: the cursor these seams are about follows the
     // scheduler's own integration.
@@ -556,12 +567,27 @@ describe('startPlayheadScheduler seam handover', () => {
         const worker = schedulerWorker();
         await runUntilWraps(worker, 2);
 
-        // Exactly one fence per seam — nothing else stops a scheduled source in
-        // a steady looping session — and each stop lands on the seam instant
-        // itself, not one grain after the clock.
-        expect(recordedSourceStops).toHaveLength(2);
+        // Every admitted pass owns its future fence, including the queued pass
+        // beyond the two seams already crossed. No fence moves to the tick.
+        expect(recordedSourceStops).toHaveLength(3);
         expect(recordedSourceStops[0]!.at).toBeCloseTo(LOOP_SECONDS, 3);
         expect(recordedSourceStops[1]!.at).toBeCloseTo(2 * LOOP_SECONDS, 3);
+        expect(recordedSourceStops[2]!.at).toBeCloseTo(3 * LOOP_SECONDS, 3);
+        for (const [index, start] of recordedSourceStarts.entries()) {
+            const fence = recordedSourceStops[index]!;
+            expect(fence.source).toBe(start.source);
+            expect(start.buffer).toBe(frozenBuffer);
+            expect(start.args.slice(1)).toEqual(index === 0 ? [start.requestedAt] : []);
+            expect(fence.at).toBeCloseTo((index + 1) * LOOP_SECONDS, 12);
+            expect(fence.requestedAt).toBeLessThan(fence.at);
+        }
+        const third = recordedSourceStarts[2]!;
+        expect(third.at).toBeGreaterThan(ctxTime.now);
+        disposePlayheadScheduler();
+        expect(recordedSourceStops.filter((stop) => stop.source === third.source).at(-1)?.at).toBeCloseTo(
+            ctxTime.now,
+            12
+        );
     });
 
     type ExpectedClick = { time: number; accent: boolean };

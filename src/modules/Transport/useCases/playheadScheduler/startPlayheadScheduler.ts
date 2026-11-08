@@ -53,6 +53,7 @@ import { recordingLifecycle } from '../transportControls/recordingLifecycle';
 
 import { advanceSchedulerDiscontinuityEpoch } from './advanceSchedulerDiscontinuityEpoch';
 import { beatAtSecondsFromAnchor } from './beatAtSecondsFromAnchor';
+import { createLoopAudioSchedule } from './createLoopAudioSchedule';
 import { createNativeRecordingPassClock } from './createNativeRecordingPassClock';
 import { disposePlayheadScheduler } from './disposePlayheadScheduler';
 import { initialEmissionRetirements } from './initialEmissionRetirements';
@@ -338,6 +339,7 @@ export function startPlayheadScheduler(
     }
     advanceSchedulerDiscontinuityEpoch();
     const schedulerGeneration = schedulerSession.generation;
+    const schedulerRootIdentity = captureProjectRootIdentity();
     let initialEmissionPending = preparedInitial !== undefined;
     let preparedMidi: Awaited<ReturnType<PreparedInitialBrowserPlayback['prepareMidiWindows']>> = null;
     schedulerSession.tickInFlight = false;
@@ -349,6 +351,7 @@ export function startPlayheadScheduler(
         isCurrent: () =>
             schedulerSession.generation === schedulerGeneration &&
             transportStore.value?.isPlaying === true &&
+            captureProjectRootIdentity() === schedulerRootIdentity &&
             (!initialEmissionPending || (preparedMidi?.isCurrent() ?? preparedInitial?.isCurrent()) === true),
         yeastRouteLineage: preparedInitial?.yeastRouteLineage ?? new Map<string, LiveYeastIteration>(),
     };
@@ -356,6 +359,9 @@ export function startPlayheadScheduler(
     startAutomationRecording();
 
     const ctx = getAudioContext();
+    schedulerSession.loopAudioSchedule?.reset();
+    const loopAudioSchedule = createLoopAudioSchedule({ context: ctx, isCurrent: cancellation.isCurrent });
+    schedulerSession.loopAudioSchedule = loopAudioSchedule;
     const captureClock = createNativeRecordingPassClock();
     const rootIdentity = captureProjectRootIdentity();
     const idleNativeClock = createNativeRecordingCaptureClock({
@@ -554,6 +560,7 @@ export function startPlayheadScheduler(
         const baseTempoChanged = current.tempo !== priorTempo && changes.length === 0;
         let soundedTempoAdoptionBeat: number | null = null;
         if (tempoMapChanged || baseTempoChanged || loopChanged) {
+            loopAudioSchedule.reset();
             if (tempoMapChanged || baseTempoChanged) {
                 // Pending input follows the effective beat/time epoch. Owners
                 // whose first frame already sounded keep their frozen epoch.
@@ -918,6 +925,7 @@ export function startPlayheadScheduler(
         let capturedJumpBoundary: { endBeat: number; nextPassStartBeat: number } | null = null;
         let jumpClosedRecordingPasses = 0;
         if (jumpToPosition !== null) {
+            loopAudioSchedule.reset();
             const pending = schedulerSession.pendingSeam;
             if (pending !== null && activeRecordingRef.current.length > 0) {
                 let endingBeat = newPosition;
@@ -1602,6 +1610,7 @@ export function startPlayheadScheduler(
                 };
                 schedulerSession.lastLoopSeamAudioTime = seam.seamAudioTime;
             }
+            loopAudioSchedule.refill({ transport: current, changes, position: publishedBeat, audioTime: now });
             if (!publishClock()) {
                 return;
             }
@@ -1614,6 +1623,15 @@ export function startPlayheadScheduler(
             }
         }
 
+        if (!initial) {
+            loopAudioSchedule.refill({ transport: current, changes, position: publishedBeat, audioTime: now });
+        }
+        const dyingBufferPool = loopAudioSchedule.poolAt(now);
+        const incomingBufferPool = seam ? loopAudioSchedule.poolAt(seam.seamAudioTime, true) : null;
+        const windowBufferPool = schedulerSession.pendingSeam
+            ? loopAudioSchedule.poolAt(schedulerSession.pendingSeam.seamAudioTime, true)
+            : dyingBufferPool;
+        const bufferInput = { transport: current, changes, position: publishedBeat, audioTime: now };
         const initialMidiEmissions: Promise<void>[] = [];
         const initialEmissionErrors: unknown[] = [];
         function observeInitialMidi(emission: Promise<void>): void {
@@ -1646,6 +1664,7 @@ export function startPlayheadScheduler(
                 !current ||
                 !lateWrap ||
                 lateWrapSeamAudioTime === null ||
+                activeRecordingRef.current.length === 0 ||
                 capturedJumpBoundary !== null ||
                 capturedEditBoundary !== null
             ) {
@@ -1691,21 +1710,28 @@ export function startPlayheadScheduler(
                 current,
                 initial ? initialSchedulingAnchor : undefined
             );
-            const dyingMidi = scheduleMidiNotes(
+            const retainDyingFrozen = loopAudioSchedule.watchFrozenMidiWindow(
+                dyingBufferPool,
                 seam.passHighWater,
-                seam.passUpTo,
-                seam.passPosition,
-                schedulerSession.scheduledFrozenTracks,
-                schedulerSession.activeAudioSources,
-                current,
-                currentTempo,
-                cancellation,
-                // An edit's re-emit (it opens where the cut look-ahead began), a
-                // stall's skip and a late wrap (it opens at the loop start) make
-                // this window a relocation; an ordinary seam tick continues.
-                reemitAfterEdit || skipsStalledSpan || seam.afterLateWrap,
-                initial ? preparedMidi?.midiWindow(seam.passHighWater, seam.passUpTo) : undefined,
-                initial ? initialSchedulingAnchor : undefined
+                seam.passUpTo
+            );
+            const dyingMidi = retainDyingFrozen(
+                scheduleMidiNotes(
+                    seam.passHighWater,
+                    seam.passUpTo,
+                    seam.passPosition,
+                    dyingBufferPool?.frozen ?? schedulerSession.scheduledFrozenTracks,
+                    dyingBufferPool?.sources ?? schedulerSession.activeAudioSources,
+                    current,
+                    currentTempo,
+                    cancellation,
+                    // An edit's re-emit (it opens where the cut look-ahead began), a
+                    // stall's skip and a late wrap (it opens at the loop start) make
+                    // this window a relocation; an ordinary seam tick continues.
+                    reemitAfterEdit || skipsStalledSpan || seam.afterLateWrap,
+                    initial ? preparedMidi?.midiWindow(seam.passHighWater, seam.passUpTo) : undefined,
+                    initial ? initialSchedulingAnchor : undefined
+                )
             );
             if (initial) {
                 observeInitialMidi(dyingMidi);
@@ -1720,16 +1746,20 @@ export function startPlayheadScheduler(
             // material and must not be started by the dying pass — the seam
             // instant it would start at is the instant the incoming pass's own
             // events are due.
-            scheduleAudioClips(
-                seam.passHighWater,
-                seam.passUpTo - BEAT_EPSILON,
-                seam.passPosition,
-                schedulerSession.scheduledAudioClips,
-                schedulerSession.scheduledFrozenTracks,
-                schedulerSession.activeAudioSources,
-                current,
-                initial ? initialSchedulingAnchor : undefined
-            );
+            if (!loopAudioSchedule.active) {
+                scheduleAudioClips(
+                    seam.passHighWater,
+                    seam.passUpTo - BEAT_EPSILON,
+                    seam.passPosition,
+                    dyingBufferPool?.audio ?? schedulerSession.scheduledAudioClips,
+                    dyingBufferPool?.frozen ?? schedulerSession.scheduledFrozenTracks,
+                    dyingBufferPool?.sources ?? schedulerSession.activeAudioSources,
+                    current,
+                    initial ? initialSchedulingAnchor : undefined
+                );
+            } else {
+                loopAudioSchedule.recoverMappedWindow(dyingBufferPool, seam.passHighWater, seam.passUpTo, bufferInput);
+            }
             // Incoming pass: the window past the seam, emitted against the
             // incoming pass's own position at `now`, so its first beat lands
             // exactly at the seam instant — ahead of the audio clock on every
@@ -1773,18 +1803,25 @@ export function startPlayheadScheduler(
             // stored controllers are restored to what is in force there. The
             // dying window above already posted everything up to the seam, which
             // is why this path lifts nothing frameless.
-            const incomingMidi = scheduleMidiNotes(
+            const retainIncomingFrozen = loopAudioSchedule.watchFrozenMidiWindow(
+                incomingBufferPool,
                 current.loopStart,
-                seam.wrappedUpTo,
-                newPosition,
-                schedulerSession.scheduledFrozenTracks,
-                schedulerSession.activeAudioSources,
-                current,
-                currentTempo,
-                cancellation,
-                true,
-                initial ? preparedMidi?.midiWindow(current.loopStart, seam.wrappedUpTo) : undefined,
-                initial ? initialSchedulingAnchor : undefined
+                seam.wrappedUpTo
+            );
+            const incomingMidi = retainIncomingFrozen(
+                scheduleMidiNotes(
+                    current.loopStart,
+                    seam.wrappedUpTo,
+                    newPosition,
+                    incomingBufferPool?.frozen ?? schedulerSession.scheduledFrozenTracks,
+                    incomingBufferPool?.sources ?? schedulerSession.activeAudioSources,
+                    current,
+                    currentTempo,
+                    cancellation,
+                    true,
+                    initial ? preparedMidi?.midiWindow(current.loopStart, seam.wrappedUpTo) : undefined,
+                    initial ? initialSchedulingAnchor : undefined
+                )
             );
             if (initial) {
                 observeInitialMidi(incomingMidi);
@@ -1794,16 +1831,25 @@ export function startPlayheadScheduler(
             if (!cancellation.isCurrent()) {
                 return;
             }
-            scheduleAudioClips(
-                current.loopStart,
-                seam.wrappedUpTo,
-                newPosition,
-                schedulerSession.scheduledAudioClips,
-                schedulerSession.scheduledFrozenTracks,
-                schedulerSession.activeAudioSources,
-                current,
-                initial ? initialSchedulingAnchor : undefined
-            );
+            if (!loopAudioSchedule.active) {
+                scheduleAudioClips(
+                    current.loopStart,
+                    seam.wrappedUpTo,
+                    newPosition,
+                    incomingBufferPool?.audio ?? schedulerSession.scheduledAudioClips,
+                    incomingBufferPool?.frozen ?? schedulerSession.scheduledFrozenTracks,
+                    incomingBufferPool?.sources ?? schedulerSession.activeAudioSources,
+                    current,
+                    initial ? initialSchedulingAnchor : undefined
+                );
+            } else {
+                loopAudioSchedule.recoverMappedWindow(
+                    incomingBufferPool,
+                    current.loopStart,
+                    seam.wrappedUpTo,
+                    bufferInput
+                );
+            }
             schedulerSession.lastScheduledBeat = seam.wrappedUpTo;
         } else {
             stageLateWrapPassTakes(newPosition);
@@ -1820,18 +1866,25 @@ export function startPlayheadScheduler(
             // A late wrap, a follow-action jump, an edit's re-emit and a stall's
             // skip open this window at their destination, so it restores the
             // stored controllers there too.
-            const windowMidi = scheduleMidiNotes(
+            const retainWindowFrozen = loopAudioSchedule.watchFrozenMidiWindow(
+                windowBufferPool,
                 schedulerSession.lastScheduledBeat,
-                scheduleUpTo,
-                schedulerSession.accumulatedPosition,
-                schedulerSession.scheduledFrozenTracks,
-                schedulerSession.activeAudioSources,
-                current,
-                currentTempo,
-                cancellation,
-                lateWrap || jumpToPosition !== null || reemitAfterEdit || skipsStalledSpan,
-                initial ? preparedMidi?.midiWindow(schedulerSession.lastScheduledBeat, scheduleUpTo) : undefined,
-                initial ? initialSchedulingAnchor : undefined
+                scheduleUpTo
+            );
+            const windowMidi = retainWindowFrozen(
+                scheduleMidiNotes(
+                    schedulerSession.lastScheduledBeat,
+                    scheduleUpTo,
+                    schedulerSession.accumulatedPosition,
+                    windowBufferPool?.frozen ?? schedulerSession.scheduledFrozenTracks,
+                    windowBufferPool?.sources ?? schedulerSession.activeAudioSources,
+                    current,
+                    currentTempo,
+                    cancellation,
+                    lateWrap || jumpToPosition !== null || reemitAfterEdit || skipsStalledSpan,
+                    initial ? preparedMidi?.midiWindow(schedulerSession.lastScheduledBeat, scheduleUpTo) : undefined,
+                    initial ? initialSchedulingAnchor : undefined
+                )
             );
             if (initial) {
                 observeInitialMidi(windowMidi);
@@ -1841,18 +1894,28 @@ export function startPlayheadScheduler(
             if (!cancellation.isCurrent()) {
                 return;
             }
-            scheduleAudioClips(
-                schedulerSession.lastScheduledBeat,
-                scheduleUpTo,
-                schedulerSession.accumulatedPosition,
-                schedulerSession.scheduledAudioClips,
-                schedulerSession.scheduledFrozenTracks,
-                schedulerSession.activeAudioSources,
-                current,
-                initial ? initialSchedulingAnchor : undefined
-            );
+            if (!loopAudioSchedule.active) {
+                scheduleAudioClips(
+                    schedulerSession.lastScheduledBeat,
+                    scheduleUpTo,
+                    schedulerSession.accumulatedPosition,
+                    windowBufferPool?.audio ?? schedulerSession.scheduledAudioClips,
+                    windowBufferPool?.frozen ?? schedulerSession.scheduledFrozenTracks,
+                    windowBufferPool?.sources ?? schedulerSession.activeAudioSources,
+                    current,
+                    initial ? initialSchedulingAnchor : undefined
+                );
+            } else {
+                loopAudioSchedule.recoverMappedWindow(
+                    windowBufferPool,
+                    schedulerSession.lastScheduledBeat,
+                    scheduleUpTo,
+                    bufferInput
+                );
+            }
             schedulerSession.lastScheduledBeat = scheduleUpTo;
         }
+        loopAudioSchedule.fence();
         // Prepared MIDI has no external await: both passes and all audio were
         // emitted in this turn. Observe its error receipts only after emission.
         if (initial) {
@@ -1932,6 +1995,7 @@ export function startPlayheadScheduler(
     }
     const cancelInitialEmission = () => {
         if (preparedInitial.ownsSession()) {
+            loopAudioSchedule.reset();
             stopActiveSources(schedulerSession.activeAudioSources, ctx);
             stopAllScheduled();
         }

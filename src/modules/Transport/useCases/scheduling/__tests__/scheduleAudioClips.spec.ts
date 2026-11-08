@@ -29,6 +29,7 @@ import { scheduleFrozenTrack } from '../scheduleFrozenTrack';
 // the clip(s) under test so the clip shape is controlled directly by each test.
 const trackStoreState: { value: { tracks: unknown[] } } = { value: { tracks: [] } };
 vi.mock('#/modules/Arrangement/stores', () => ({
+    gainEnvelopeStore: { value: null },
     trackStore: {
         get value() {
             return trackStoreState.value;

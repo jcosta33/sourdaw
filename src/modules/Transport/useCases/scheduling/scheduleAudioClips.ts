@@ -1,4 +1,4 @@
-import { getGainEnvelopeSeries, trackStore } from '#/modules/Arrangement/stores';
+import { getGainEnvelopeSeries, gainEnvelopeStore, trackStore } from '#/modules/Arrangement/stores';
 import { collaborationAssetTransfer, resolveClipsWithComping } from '#/modules/Arrangement/useCases';
 import {
     createBufferSource,
@@ -21,6 +21,7 @@ import {
 } from '#/utils/clipGainEnvelopeSchedule';
 import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
 import { notifyUser } from '#/utils/Notification/notifyUser';
+import { valuesEqual } from '#/utils/structuralEquality';
 import { boundStretchRatio } from '#/utils/stretchRatioBound';
 
 import { type SourceWithFade } from '../../models/SourceWithFade';
@@ -68,6 +69,7 @@ type ScheduledPartTag = {
     clipId: string;
     partKey: string;
     scheduledKey: string;
+    programme: ReturnType<typeof partProgramme>;
 };
 
 type ScheduledPartSource = SourceWithFade & { scheduledPart?: ScheduledPartTag };
@@ -91,13 +93,44 @@ function audioPartKey(part: ResolvedAudioPart, bufferId: string): string {
     return `${part.id}:${part.regionStartBeat}:${part.regionEndBeat}:${bufferId}:${entry}`;
 }
 
+function partProgramme(part: ResolvedAudioPart) {
+    const envelope = gainEnvelopeStore.value?.envelopes[part.id];
+    return {
+        source: [
+            part.startBeat,
+            part.endBeat,
+            part.audioOffsetSeconds,
+            part.audioOffsetBeats,
+            part.audioUnwrappedOffsetSeconds,
+            part.audioLoopStartSeconds,
+            part.audioLoopPassEntrySeconds,
+            part.audioLoopPassOriginBeat,
+            part.loopEnabled,
+            part.loopLength,
+            part.loopOriginBeat,
+            part.stretchMode,
+            part.stretchRatio,
+            part.gain,
+            part.fadeInBeats,
+            part.fadeOutBeats,
+        ],
+        envelope: envelope
+            ? { enabled: envelope.enabled, points: envelope.points.map((point) => [point.beatOffset, point.gainDb]) }
+            : null,
+    };
+}
+
 function resolvesSamePart(parts: readonly ResolvedAudioPart[], tag: ScheduledPartTag): boolean {
     return parts.some((part) => {
         if (part.id !== tag.clipId) {
             return false;
         }
         const bufferId = playableAudioBufferId(part);
-        return bufferId !== null && audioPartKey(part, bufferId) === tag.partKey;
+        return (
+            bufferId !== null &&
+            audioPartKey(part, bufferId) === tag.partKey &&
+            valuesEqual(partProgramme(part), tag.programme)
+        );
     });
 }
 
@@ -120,10 +153,30 @@ function cutSupersededParts(
     for (let index = activeAudioSources.length - 1; index >= 0; index--) {
         const source: ScheduledPartSource = activeAudioSources[index]!;
         const tag = source.scheduledPart;
-        if (!tag || tag.trackId !== trackId || resolvesSamePart(parts, tag)) {
+        if (!tag || tag.trackId !== trackId) {
             continue;
         }
-        cutSource(source, ctx);
+        const replacement = parts.find(
+            (part) =>
+                part.id === tag.clipId &&
+                part.audioBufferId !== undefined &&
+                audioPartKey(part, part.audioBufferId) === tag.partKey
+        );
+        const replacementBuffer = replacement?.audioBufferId
+            ? getCachedAudioBuffer({ bufferId: replacement.audioBufferId })
+            : null;
+        const replacedBuffer = replacementBuffer !== null && replacementBuffer !== source.buffer;
+        const changedCompensation = source.compensationSeconds !== getCompensationDelay(trackId);
+        if (resolvesSamePart(parts, tag) && !replacedBuffer && !changedCompensation) {
+            continue;
+        }
+        if (source.scheduledStartTime !== undefined && source.scheduledStartTime >= ctx.currentTime) {
+            source.stop(ctx.currentTime);
+            source.scheduledStopTime = ctx.currentTime;
+        } else {
+            cutSource(source, ctx);
+            source.scheduledStopTime = ctx.currentTime + 0.005;
+        }
         activeAudioSources.splice(index, 1);
         scheduledAudioClipsSet.delete(tag.scheduledKey);
         cutAny = true;
@@ -280,6 +333,7 @@ function emitAudioPart(
             clipId: clip.id,
             partKey: clipKey,
             scheduledKey: scheduledIterationKey,
+            programme: partProgramme(clip),
         };
 
         const remainingBeats = clip.endBeat - iterStartBeat;
@@ -426,6 +480,9 @@ function emitAudioPart(
             (source as SourceWithFade).compensationSeconds = compensation;
             (source as SourceWithFade).fadeGainNode = fadeGain;
             (source as ScheduledPartSource).scheduledPart = partTag;
+            (source as SourceWithFade).scheduledTrackId = trackId;
+            (source as SourceWithFade).scheduledBufferId = clip.audioBufferId;
+            (source as SourceWithFade).scheduledAudioKey = scheduledIterationKey;
             source.connect(outputNode);
 
             if (audibleStartTime >= now) {
@@ -435,6 +492,12 @@ function emitAudioPart(
                     continue;
                 }
                 source.start(audibleStartTime, startBufferOffset, startDuration);
+                Object.assign(source, {
+                    scheduledStartTime: audibleStartTime,
+                    scheduledBufferOffset: startBufferOffset,
+                    scheduledPlaybackRate: source.playbackRate.value,
+                    scheduledEndTime: audibleStartTime + startDuration / source.playbackRate.value,
+                });
             } else {
                 const elapsed = now - soundStartTime;
                 const bufferOffset = elapsed * stretchRatio + sourceOffsetSeconds;
@@ -446,10 +509,36 @@ function emitAudioPart(
                     // release below if no segment started at all.
                     continue;
                 }
-                source.start(now, bufferOffset, playDuration * stretchRatio + sourceOffsetSeconds - bufferOffset);
+                const remainingDuration = playDuration * stretchRatio + sourceOffsetSeconds - bufferOffset;
+                source.start(now, bufferOffset, remainingDuration);
+                Object.assign(source, {
+                    scheduledStartTime: now,
+                    scheduledBufferOffset: bufferOffset,
+                    scheduledPlaybackRate: source.playbackRate.value,
+                    scheduledEndTime: now + remainingDuration / source.playbackRate.value,
+                });
             }
 
             startedSources.push(source);
+            // Publish each successful start before another segment or gain
+            // write can throw, so its pass owner can retire partial work.
+            activeAudioSources.push(source);
+            source.onended = () => {
+                const activeIndex = activeAudioSources.indexOf(source);
+                if (activeIndex >= 0) {
+                    activeAudioSources.splice(activeIndex, 1);
+                }
+                const startedIndex = startedSources.indexOf(source);
+                if (startedIndex >= 0) {
+                    startedSources.splice(startedIndex, 1);
+                }
+                if (startedSources.length === 0) {
+                    releaseGainNode(fadeGain, ctx);
+                    if (envGainNode) {
+                        releaseGainNode(envGainNode, ctx);
+                    }
+                }
+            };
             startedSegments.push({ soundStartTime, playDuration, audibleStartTime, preRollSeconds });
         }
 
@@ -582,28 +671,6 @@ function emitAudioPart(
                 Math.max(audibleStartTime, now)
             );
             applyGainCurveAnchorsToParam(envGainNode.gain, anchors);
-        }
-
-        // The pass's segments share the fade and envelope nodes; the
-        // last source to end releases them.
-        let sourcesStillPlaying = startedSources.length;
-        for (const source of startedSources) {
-            activeAudioSources.push(source);
-            source.onended = () => {
-                const idx = activeAudioSources.indexOf(source);
-                if (idx >= 0) {
-                    activeAudioSources.splice(idx, 1);
-                }
-                sourcesStillPlaying -= 1;
-                if (sourcesStillPlaying === 0) {
-                    if (fadeGain) {
-                        releaseGainNode(fadeGain, ctx);
-                    }
-                    if (envGainNode) {
-                        releaseGainNode(envGainNode, ctx);
-                    }
-                }
-            };
         }
     }
     return continuation;
@@ -759,6 +826,9 @@ export function scheduleAudioClips(
         };
 
         for (const clip of resolvedAudioClips) {
+            if (reachesTransportLoopEnd(emission, clip.startBeat)) {
+                continue;
+            }
             const bufferId = playableAudioBufferId(clip);
             if (bufferId === null) {
                 continue;

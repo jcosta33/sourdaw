@@ -9,6 +9,7 @@ import {
 } from '#/modules/AudioEngine/useCases';
 
 import { scheduleFrozenTrack } from '../scheduleFrozenTrack';
+import { type SourceWithFade } from '../../../models/SourceWithFade';
 
 // A stable createGain spy: the fade gain is the node that leaked, so the tests
 // need the same identity the module calls, not a fresh fn per getAudioContext().
@@ -36,7 +37,41 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
 describe('scheduleFrozenTrack', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        vi.mocked(createBufferSource).mockReset();
         tempoMapStore.value = { changes: [] };
+    });
+    it('replays the actual head and window-floor clock reads independently across a render quantum', () => {
+        const first = { start: vi.fn(), connect: vi.fn(), onended: null };
+        const replay = { start: vi.fn(), connect: vi.fn(), onended: null };
+        vi.mocked(createBufferSource)
+            .mockReturnValueOnce(first as unknown as AudioBufferSourceNode)
+            .mockReturnValueOnce(replay as unknown as AudioBufferSourceNode);
+        vi.mocked(getCachedAudioBuffer).mockReturnValue({ duration: 100 } as AudioBuffer);
+        vi.mocked(getCompensationDelay).mockReturnValue(0);
+        const quantum = 128 / 48_000;
+        vi.mocked(getCurrentTime)
+            .mockReturnValueOnce(10)
+            .mockReturnValueOnce(10 + quantum);
+        const track = {
+            id: 'track',
+            freezeState: { status: 'frozen', frozenBufferId: 'buffer' },
+            clips: [{ startBeat: 0 }],
+        };
+        scheduleFrozenTrack(track, 1, [], 120, 2);
+        const clock = (first as unknown as SourceWithFade).scheduledFrozenWindow!;
+        expect(clock).toEqual({
+            anchorBeat: 1,
+            anchorTime: 10,
+            floorAnchorTime: 10 + quantum,
+            floorBeat: 2,
+            initialFloor: false,
+        });
+        expect(first.start).toHaveBeenCalledOnce();
+        expect(first.start.mock.calls[0]?.map((time: number) => Math.round(time * 48_000))).toEqual([504_128, 48_128]);
+        vi.mocked(getCurrentTime).mockReturnValue(10.1);
+        scheduleFrozenTrack(track, 1, [], 120, 2, undefined, clock);
+        expect(replay.start).toHaveBeenCalledOnce();
+        expect(replay.start.mock.calls[0]?.map((time: number) => Math.round(time * 48_000))).toEqual([504_128, 48_128]);
     });
 
     // §5 — A frozen buffer is rendered starting at the track's earliest clip
