@@ -182,7 +182,9 @@ describe('imported project names at the actual native menu boundary', () => {
                     result.value();
                 }
             }
-            await crdt.runCrdtPersistenceBarrier(({ persistCurrentProject }) => persistCurrentProject());
+            await crdt.runCrdtPersistenceBarrier(async ({ persistCurrentProject }) => {
+                await persistCurrentProject();
+            });
             stopDirtyTracking();
             stopHistory();
             project.projectOriginalMediaPort.configure(null);
