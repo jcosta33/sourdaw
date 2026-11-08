@@ -1,8 +1,15 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
+import { logger } from '#/infra/logger/appLogger';
 import { type Store } from '#/infra/store/types';
-import { type commitRecording, type startRecording, type stopRecording } from '#/modules/Arrangement/useCases';
+import { type Track, type Clip } from '#/modules/Arrangement/stores';
+import {
+    createTrack,
+    type commitRecording,
+    type startRecording,
+    type stopRecording,
+} from '#/modules/Arrangement/useCases';
 import { type startAudioRecording } from '#/modules/AudioEngine/useCases';
 import { animationScheduler } from '#/utils/DOM/AnimationScheduler';
 
@@ -67,6 +74,7 @@ const invokeNative: SourdawDesktopBridge['invoke'] = async (command, args) => {
     throw new Error(`Unexpected scheduler native command: ${command}`);
 };
 
+import { type SourceWithFade } from '../../../models/SourceWithFade';
 import { secondsBetweenBeats } from '../../../models/TempoMap';
 import { defaultTransportState } from '../../../models/TransportState';
 import { playheadClockRef } from '../../../stores/playheadClockRef';
@@ -428,7 +436,34 @@ function playingState(overrides: Partial<typeof defaultTransportState> = {}): ty
     return { ...defaultTransportState, isPlaying: true, playheadPosition: 0, ...overrides };
 }
 
-function installRetainedSource(context: AudioContext) {
+function recordingTrack(
+    input: Omit<Partial<Track>, 'clips'> &
+        Pick<Track, 'id' | 'kind'> & {
+            clips: (Partial<Clip> & Pick<Clip, 'id'>)[];
+        }
+): Track {
+    const track = createTrack({ id: input.id, name: input.id, kind: input.kind, withoutDefaultDevice: true });
+    return {
+        ...track,
+        ...input,
+        clips: input.clips.map((clip) => ({
+            trackId: input.id,
+            name: clip.id,
+            type: input.kind === 'midi' ? 'midi' : 'audio',
+            startBeat: 0,
+            endBeat: clip.startBeat ?? 0,
+            fadeInBeats: 0,
+            fadeOutBeats: 0,
+            gain: 1,
+            color: track.color,
+            locked: false,
+            muted: false,
+            ...clip,
+        })),
+    };
+}
+
+function retainedAudioBuffer(): AudioBuffer {
     const pcm = new Float32Array([0.1, -0.2, 0.3, -0.4]);
     const channel = (index: number) => {
         if (index !== 0) {
@@ -445,6 +480,57 @@ function installRetainedSource(context: AudioContext) {
         copyFromChannel: (destination, index, start = 0) => destination.set(channel(index).subarray(start)),
         copyToChannel: (input, index, start = 0) => channel(index).set(input, start),
     };
+    return buffer;
+}
+
+function scheduledSource(
+    context: AudioContext,
+    buffer: AudioBuffer,
+    startTime: number,
+    compensationSeconds: number
+): SourceWithFade {
+    const parameter = (): AudioParam => ({
+        automationRate: 'a-rate',
+        defaultValue: 1,
+        minValue: -Infinity,
+        maxValue: Infinity,
+        value: 1,
+        cancelAndHoldAtTime: vi.fn<AudioParam['cancelAndHoldAtTime']>(),
+        cancelScheduledValues: vi.fn<AudioParam['cancelScheduledValues']>(),
+        exponentialRampToValueAtTime: vi.fn<AudioParam['exponentialRampToValueAtTime']>(),
+        linearRampToValueAtTime: vi.fn<AudioParam['linearRampToValueAtTime']>(),
+        setTargetAtTime: vi.fn<AudioParam['setTargetAtTime']>(),
+        setValueAtTime: vi.fn<AudioParam['setValueAtTime']>(),
+        setValueCurveAtTime: vi.fn<AudioParam['setValueCurveAtTime']>(),
+    });
+    return Object.assign(new EventTarget(), {
+        context,
+        buffer,
+        onended: null,
+        numberOfInputs: 0,
+        numberOfOutputs: 1,
+        channelCount: 2,
+        channelCountMode: 'max' as const,
+        channelInterpretation: 'speakers' as const,
+        playbackRate: parameter(),
+        detune: parameter(),
+        loop: false,
+        loopStart: 0,
+        loopEnd: 0,
+        connect: vi.fn<AudioBufferSourceNode['connect']>(),
+        disconnect: vi.fn<AudioBufferSourceNode['disconnect']>(),
+        start: vi.fn<AudioBufferSourceNode['start']>(),
+        stop: vi.fn<AudioBufferSourceNode['stop']>(),
+        compensationSeconds,
+        scheduledTrackId: 'fenced-programme',
+        scheduledBufferId: 'fenced-programme-buffer',
+        scheduledStartTime: startTime + compensationSeconds,
+        scheduledEndTime: Infinity,
+    });
+}
+
+function installRetainedSource(context: AudioContext) {
+    const buffer = retainedAudioBuffer();
     const source = {
         buffer: null,
         onended: null,
@@ -488,12 +574,33 @@ function emitSchedulerTick(worker: SchedulerWorkerHarness, generation = schedule
     });
 }
 
+async function runSchedulerTick(worker: SchedulerWorkerHarness): Promise<void> {
+    const generation = schedulerSession.generation;
+    const settled = schedulerTimingDiagnostics.snapshot().ticksSettled;
+    emitSchedulerTick(worker, generation);
+    await vi.waitFor(
+        () => {
+            expect(schedulerSession.generation).toBe(generation);
+            expect(schedulerTimingDiagnostics.snapshot().ticksSettled).toBe(settled + 1);
+        },
+        { interval: 1 }
+    );
+    expect(
+        vi
+            .mocked(logger.error)
+            .mock.calls.filter(
+                ([error]) => error instanceof Error && error.message === 'Transport scheduler tick failed'
+            )
+    ).toEqual([]);
+}
+
 describe('startPlayheadScheduler', () => {
     beforeEach(() => {
         // Clear the relative-path mocks (resolved to shared spies) and reset
         // every holder spy individually — vi.clearAllMocks() does not reach the
         // holder-held fns behind the forwarder wrappers.
         vi.clearAllMocks();
+        vi.mocked(scheduleAudioClips).mockReset();
         for (const fn of [
             ...Object.values(audioEngineMocks),
             ...Object.values(arrangementMocks),
@@ -1022,9 +1129,7 @@ describe('startPlayheadScheduler', () => {
         const worker = schedulerSession.worker as unknown as {
             onmessage: ((event: { data: unknown }) => void) | null;
         };
-        emitSchedulerTick(worker);
-        await new Promise((resolve) => setTimeout(resolve, 0));
-        await new Promise((resolve) => setTimeout(resolve, 0));
+        await runSchedulerTick(worker);
 
         // Wrapped back into the loop region: 0 + (4.1 % 4) = 0.1.
         expect(schedulerSession.accumulatedPosition).toBeCloseTo(0.1, 5);
@@ -1038,8 +1143,22 @@ describe('startPlayheadScheduler', () => {
     // late, so that tail is due past the seam instant). The wrap must fence at
     // the seam it just crossed, per source.
     it('fences each dying-pass source at the late wrap’s seam plus its own compensation (#4784)', async () => {
-        const compensated = { stop: vi.fn(), compensationSeconds: 0.25 };
-        const plain = { stop: vi.fn() };
+        const audio = nativeRuntime.audio;
+        if (!audio) {
+            throw new Error('The public audio fixture did not initialize.');
+        }
+        const buffer = retainedAudioBuffer();
+        audio.cacheAudioBuffer({ bufferId: 'fenced-programme-buffer', buffer });
+        trackStoreState.value = {
+            tracks: [
+                recordingTrack({
+                    id: 'fenced-programme',
+                    kind: 'audio',
+                    clips: [{ id: 'fenced-clip', startBeat: 0, endBeat: 4, audioBufferId: 'fenced-programme-buffer' }],
+                }),
+            ],
+        };
+        const sources = new Map<number, { compensated: SourceWithFade; plain: SourceWithFade }>();
         vi.mocked(scheduleAudioClips).mockImplementation(
             (
                 _fromBeat: number,
@@ -1047,10 +1166,23 @@ describe('startPlayheadScheduler', () => {
                 _accumulatedPosition: number,
                 _scheduled: Set<string>,
                 _frozen: Set<string>,
-                activeSources: AudioBufferSourceNode[]
+                activeSources: AudioBufferSourceNode[],
+                _transport,
+                anchorTime
             ) => {
-                activeSources.push(compensated as unknown as AudioBufferSourceNode);
-                activeSources.push(plain as unknown as AudioBufferSourceNode);
+                if (_scheduled.has('fenced-programme')) {
+                    return;
+                }
+                if (anchorTime === undefined || sources.has(anchorTime)) {
+                    throw new Error('The fixture requires one source pair per admitted pass.');
+                }
+                _scheduled.add('fenced-programme');
+                const compensated = scheduledSource(audio.audioEngine.context, buffer, anchorTime, 0.25);
+                const plain = scheduledSource(audio.audioEngine.context, buffer, anchorTime, 0);
+                compensated.start(anchorTime + 0.25);
+                plain.start(anchorTime);
+                sources.set(anchorTime, { compensated, plain });
+                activeSources.push(compensated, plain);
             }
         );
         // A region at or below the look-ahead (0.2 beats at 120 BPM) never arms
@@ -1067,16 +1199,22 @@ describe('startPlayheadScheduler', () => {
             onmessage: ((event: { data: unknown }) => void) | null;
         };
 
-        // Tick 1 wraps (0 → 0.125 beats) and its post-wrap emission plants the
-        // sources; tick 2 wraps again, and its fence is the one under test.
+        // The owner admits each future pass and fences it eagerly. The pass
+        // opening at 0.3125 ends at the physical seam 0.375.
         ctxTime.now = 0.3125;
-        emitSchedulerTick(worker);
-        await new Promise((resolve) => setTimeout(resolve, 0));
-        await new Promise((resolve) => setTimeout(resolve, 0));
+        await runSchedulerTick(worker);
         ctxTime.now = 0.375;
-        emitSchedulerTick(worker);
-        await new Promise((resolve) => setTimeout(resolve, 0));
-        await new Promise((resolve) => setTimeout(resolve, 0));
+        await runSchedulerTick(worker);
+        const dyingPass = sources.get(0.3125);
+        expect(dyingPass).toBeDefined();
+        const { plain, compensated } = dyingPass!;
+        expect(plain.start).toHaveBeenCalledWith(0.3125);
+        expect(compensated.start).toHaveBeenCalledWith(0.5625);
+        expect(new Set([...sources.values()].flatMap((pair) => [pair.plain, pair.compensated])).size).toBe(
+            sources.size * 2
+        );
+        expect(schedulerSession.activeAudioSources).not.toContain(plain);
+        expect(schedulerSession.activeAudioSources).not.toContain(compensated);
 
         // Each 0.0625 s tick (exact in binary, so no rounding moves the seam)
         // advances exactly the region's 0.125 beats and lands the playhead on
@@ -1100,9 +1238,7 @@ describe('startPlayheadScheduler', () => {
         const worker = schedulerSession.worker as unknown as {
             onmessage: ((event: { data: unknown }) => void) | null;
         };
-        emitSchedulerTick(worker);
-        await new Promise((resolve) => setTimeout(resolve, 0));
-        await new Promise((resolve) => setTimeout(resolve, 0));
+        await runSchedulerTick(worker);
 
         // Advance linearly past 4.5 by 0.2 beats to 4.7, NOT wrapping to 0.7.
         expect(schedulerSession.accumulatedPosition).toBeCloseTo(4.7, 5);
@@ -1123,9 +1259,7 @@ describe('startPlayheadScheduler', () => {
         const worker = schedulerSession.worker as unknown as {
             onmessage: ((event: { data: unknown }) => void) | null;
         };
-        emitSchedulerTick(worker);
-        await new Promise((resolve) => setTimeout(resolve, 0));
-        await new Promise((resolve) => setTimeout(resolve, 0));
+        await runSchedulerTick(worker);
 
         // Advance linearly from 4.0 by 0.2 beats to 4.2, NOT wrapping to 0.2.
         expect(schedulerSession.accumulatedPosition).toBeCloseTo(4.2, 5);
@@ -1135,7 +1269,14 @@ describe('startPlayheadScheduler', () => {
 
     it('opens a take lane and adds a take referencing the recording clip for each armed track on a loop wrap while recording', async () => {
         trackStoreState.value = {
-            tracks: [{ id: 'rec-1', armed: true, kind: 'audio', clips: [{ id: 'clip-rec-1', startBeat: 0 }] }],
+            tracks: [
+                recordingTrack({
+                    id: 'rec-1',
+                    armed: true,
+                    kind: 'audio',
+                    clips: [{ id: 'clip-rec-1', startBeat: 0 }],
+                }),
+            ],
         };
         activeRecordingRefState.current = ['clip-rec-1'];
         takeLaneStoreState.value = null;
@@ -1152,9 +1293,7 @@ describe('startPlayheadScheduler', () => {
         const worker = schedulerSession.worker as unknown as {
             onmessage: ((event: { data: unknown }) => void) | null;
         };
-        emitSchedulerTick(worker);
-        await new Promise((resolve) => setTimeout(resolve, 0));
-        await new Promise((resolve) => setTimeout(resolve, 0));
+        await runSchedulerTick(worker);
 
         expect(arrangementMocks.addTakeLane).not.toHaveBeenCalled();
         // The take names the clip that is actually recording the pass — the id
@@ -1175,7 +1314,14 @@ describe('startPlayheadScheduler', () => {
 
     it('skips the take-lane open when the armed track already has a lane on a loop wrap', async () => {
         trackStoreState.value = {
-            tracks: [{ id: 'rec-1', armed: true, kind: 'audio', clips: [{ id: 'clip-rec-1', startBeat: 0 }] }],
+            tracks: [
+                recordingTrack({
+                    id: 'rec-1',
+                    armed: true,
+                    kind: 'audio',
+                    clips: [{ id: 'clip-rec-1', startBeat: 0 }],
+                }),
+            ],
         };
         activeRecordingRefState.current = ['clip-rec-1'];
         takeLaneStoreState.value = { lanes: [{ trackId: 'rec-1', takes: [] }] };
@@ -1193,9 +1339,7 @@ describe('startPlayheadScheduler', () => {
         const worker = schedulerSession.worker as unknown as {
             onmessage: ((event: { data: unknown }) => void) | null;
         };
-        emitSchedulerTick(worker);
-        await new Promise((resolve) => setTimeout(resolve, 0));
-        await new Promise((resolve) => setTimeout(resolve, 0));
+        await runSchedulerTick(worker);
 
         // Lane already exists → no new lane created, but a take referencing the
         // recording clip is still added, at the pass's own buffer offset.
@@ -1213,7 +1357,7 @@ describe('startPlayheadScheduler', () => {
 
     it('adds no take and no lane on a loop wrap for an armed track with no actively recording clip', async () => {
         trackStoreState.value = {
-            tracks: [{ id: 'rec-1', armed: true, kind: 'audio', clips: [{ id: 'clip-rec-1' }] }],
+            tracks: [recordingTrack({ id: 'rec-1', armed: true, kind: 'audio', clips: [{ id: 'clip-rec-1' }] })],
         };
         // Armed, but `startRecording` never opened a clip (overdub merged into
         // an existing clip, or the track is not recording-eligible): a take here
@@ -1232,9 +1376,7 @@ describe('startPlayheadScheduler', () => {
         const worker = schedulerSession.worker as unknown as {
             onmessage: ((event: { data: unknown }) => void) | null;
         };
-        emitSchedulerTick(worker);
-        await new Promise((resolve) => setTimeout(resolve, 0));
-        await new Promise((resolve) => setTimeout(resolve, 0));
+        await runSchedulerTick(worker);
 
         expect(arrangementMocks.addTakeLane).not.toHaveBeenCalled();
         expect(arrangementMocks.addTake).not.toHaveBeenCalled();
@@ -1252,18 +1394,18 @@ describe('startPlayheadScheduler', () => {
         // clip.
         trackStoreState.value = {
             tracks: [
-                {
+                recordingTrack({
                     id: 'rec-a',
                     armed: true,
                     kind: 'audio',
                     clips: [{ id: 'clip-old-a1' }, { id: 'clip-rec-a', startBeat: 0 }, { id: 'clip-old-a2' }],
-                },
-                {
+                }),
+                recordingTrack({
                     id: 'rec-b',
                     armed: true,
                     kind: 'midi',
                     clips: [{ id: 'clip-old-b1' }, { id: 'clip-rec-b', startBeat: 0 }, { id: 'clip-old-b2' }],
-                },
+                }),
             ],
         };
         activeRecordingRefState.current = ['clip-rec-b', 'clip-rec-a'];
@@ -1281,9 +1423,7 @@ describe('startPlayheadScheduler', () => {
         const worker = schedulerSession.worker as unknown as {
             onmessage: ((event: { data: unknown }) => void) | null;
         };
-        emitSchedulerTick(worker);
-        await new Promise((resolve) => setTimeout(resolve, 0));
-        await new Promise((resolve) => setTimeout(resolve, 0));
+        await runSchedulerTick(worker);
 
         // Both armed tracks stage their wrap take; neither opens take-lane
         // history, because the whole recording commits as one entry.
@@ -1318,8 +1458,18 @@ describe('startPlayheadScheduler', () => {
         // and a lane + take it never asked for.
         trackStoreState.value = {
             tracks: [
-                { id: 'rec-armed', armed: true, kind: 'audio', clips: [{ id: 'clip-rec-armed', startBeat: 0 }] },
-                { id: 'rec-unarmed', armed: false, kind: 'audio', clips: [{ id: 'clip-rec-unarmed', startBeat: 0 }] },
+                recordingTrack({
+                    id: 'rec-armed',
+                    armed: true,
+                    kind: 'audio',
+                    clips: [{ id: 'clip-rec-armed', startBeat: 0 }],
+                }),
+                recordingTrack({
+                    id: 'rec-unarmed',
+                    armed: false,
+                    kind: 'audio',
+                    clips: [{ id: 'clip-rec-unarmed', startBeat: 0 }],
+                }),
             ],
         };
         activeRecordingRefState.current = ['clip-rec-armed', 'clip-rec-unarmed'];
@@ -1337,9 +1487,7 @@ describe('startPlayheadScheduler', () => {
         const worker = schedulerSession.worker as unknown as {
             onmessage: ((event: { data: unknown }) => void) | null;
         };
-        emitSchedulerTick(worker);
-        await new Promise((resolve) => setTimeout(resolve, 0));
-        await new Promise((resolve) => setTimeout(resolve, 0));
+        await runSchedulerTick(worker);
 
         // The armed track alone gets its staged take; no lane history is opened.
         expect(arrangementMocks.addTakeLane).not.toHaveBeenCalled();
@@ -1365,7 +1513,14 @@ describe('startPlayheadScheduler', () => {
         // the first wrap mints pass 1's take at the clip origin, the second
         // mints pass 2's take one loop length deeper into the same buffer.
         trackStoreState.value = {
-            tracks: [{ id: 'rec-1', armed: true, kind: 'audio', clips: [{ id: 'clip-rec-1', startBeat: 0 }] }],
+            tracks: [
+                recordingTrack({
+                    id: 'rec-1',
+                    armed: true,
+                    kind: 'audio',
+                    clips: [{ id: 'clip-rec-1', startBeat: 0 }],
+                }),
+            ],
         };
         activeRecordingRefState.current = ['clip-rec-1'];
         // The lane as `startRecording` left it: the initial take covering the
@@ -1387,9 +1542,7 @@ describe('startPlayheadScheduler', () => {
 
         // Wrap 1: pass 1 just completed; its material sits at the clip origin.
         ctxTime.now = 0.2;
-        emitSchedulerTick(worker);
-        await new Promise((resolve) => setTimeout(resolve, 0));
-        await new Promise((resolve) => setTimeout(resolve, 0));
+        await runSchedulerTick(worker);
         expect(arrangementMocks.stageRecordingTake).toHaveBeenCalledTimes(1);
         expect(arrangementMocks.stageRecordingTake).toHaveBeenCalledWith({
             trackId: 'rec-1',
@@ -1418,9 +1571,7 @@ describe('startPlayheadScheduler', () => {
         // into the continuous buffer, so the take must carry that offset.
         schedulerSession.accumulatedPosition = 3.9;
         ctxTime.now = 0.3;
-        emitSchedulerTick(worker);
-        await new Promise((resolve) => setTimeout(resolve, 0));
-        await new Promise((resolve) => setTimeout(resolve, 0));
+        await runSchedulerTick(worker);
         expect(arrangementMocks.stageRecordingTake).toHaveBeenCalledTimes(2);
         expect(arrangementMocks.stageRecordingTake).toHaveBeenLastCalledWith({
             trackId: 'rec-1',
@@ -1438,7 +1589,14 @@ describe('startPlayheadScheduler', () => {
         // incomplete pass — the finalized whole-recording take is the only
         // witness of it, exactly as for a flat recording.
         trackStoreState.value = {
-            tracks: [{ id: 'rec-1', armed: true, kind: 'audio', clips: [{ id: 'clip-rec-1', startBeat: 0 }] }],
+            tracks: [
+                recordingTrack({
+                    id: 'rec-1',
+                    armed: true,
+                    kind: 'audio',
+                    clips: [{ id: 'clip-rec-1', startBeat: 0 }],
+                }),
+            ],
         };
         activeRecordingRefState.current = ['clip-rec-1'];
         const initialTake = { id: 'take-initial', clipId: 'clip-rec-1', name: 'Take 1', startBeat: 0, endBeat: 0 };
@@ -1464,9 +1622,7 @@ describe('startPlayheadScheduler', () => {
         // The playhead sits mid pass 3; the tick advances within the loop.
         schedulerSession.accumulatedPosition = 2;
         ctxTime.now = 0.2;
-        emitSchedulerTick(worker);
-        await new Promise((resolve) => setTimeout(resolve, 0));
-        await new Promise((resolve) => setTimeout(resolve, 0));
+        await runSchedulerTick(worker);
 
         expect(schedulerSession.accumulatedPosition).toBeCloseTo(2.2, 5);
         expect(arrangementMocks.addTake).not.toHaveBeenCalled();
@@ -1477,7 +1633,14 @@ describe('startPlayheadScheduler', () => {
         // Recording began at beat 1 with the loop at [2,6): the first pass's
         // [2,6) material sits one beat into the buffer, after the run-up.
         trackStoreState.value = {
-            tracks: [{ id: 'rec-1', armed: true, kind: 'audio', clips: [{ id: 'clip-rec-1', startBeat: 1 }] }],
+            tracks: [
+                recordingTrack({
+                    id: 'rec-1',
+                    armed: true,
+                    kind: 'audio',
+                    clips: [{ id: 'clip-rec-1', startBeat: 1 }],
+                }),
+            ],
         };
         activeRecordingRefState.current = ['clip-rec-1'];
         takeLaneStoreState.value = {
@@ -1501,9 +1664,7 @@ describe('startPlayheadScheduler', () => {
         const worker = schedulerSession.worker as unknown as {
             onmessage: ((event: { data: unknown }) => void) | null;
         };
-        emitSchedulerTick(worker);
-        await new Promise((resolve) => setTimeout(resolve, 0));
-        await new Promise((resolve) => setTimeout(resolve, 0));
+        await runSchedulerTick(worker);
 
         expect(arrangementMocks.stageRecordingTake).toHaveBeenCalledWith({
             trackId: 'rec-1',
@@ -1521,7 +1682,14 @@ describe('startPlayheadScheduler', () => {
         // [0,4) span only exists from beat 2, so its take reads from the clip
         // origin — a negative offset would name PCM before the buffer.
         trackStoreState.value = {
-            tracks: [{ id: 'rec-1', armed: true, kind: 'audio', clips: [{ id: 'clip-rec-1', startBeat: 2 }] }],
+            tracks: [
+                recordingTrack({
+                    id: 'rec-1',
+                    armed: true,
+                    kind: 'audio',
+                    clips: [{ id: 'clip-rec-1', startBeat: 2 }],
+                }),
+            ],
         };
         activeRecordingRefState.current = ['clip-rec-1'];
         takeLaneStoreState.value = {
@@ -1545,9 +1713,7 @@ describe('startPlayheadScheduler', () => {
         const worker = schedulerSession.worker as unknown as {
             onmessage: ((event: { data: unknown }) => void) | null;
         };
-        emitSchedulerTick(worker);
-        await new Promise((resolve) => setTimeout(resolve, 0));
-        await new Promise((resolve) => setTimeout(resolve, 0));
+        await runSchedulerTick(worker);
 
         expect(arrangementMocks.stageRecordingTake).toHaveBeenCalledWith({
             trackId: 'rec-1',
@@ -1565,7 +1731,14 @@ describe('startPlayheadScheduler', () => {
         // [0,4) (loopEnd - record start), so pass 2 begins at media 4 — not at
         // one full loop length, which would name pass 3's opening.
         trackStoreState.value = {
-            tracks: [{ id: 'rec-1', armed: true, kind: 'audio', clips: [{ id: 'clip-rec-1', startBeat: 12 }] }],
+            tracks: [
+                recordingTrack({
+                    id: 'rec-1',
+                    armed: true,
+                    kind: 'audio',
+                    clips: [{ id: 'clip-rec-1', startBeat: 12 }],
+                }),
+            ],
         };
         activeRecordingRefState.current = ['clip-rec-1'];
         takeLaneStoreState.value = {
@@ -1599,9 +1772,7 @@ describe('startPlayheadScheduler', () => {
         const worker = schedulerSession.worker as unknown as {
             onmessage: ((event: { data: unknown }) => void) | null;
         };
-        emitSchedulerTick(worker);
-        await new Promise((resolve) => setTimeout(resolve, 0));
-        await new Promise((resolve) => setTimeout(resolve, 0));
+        await runSchedulerTick(worker);
 
         expect(arrangementMocks.stageRecordingTake).toHaveBeenCalledWith({
             trackId: 'rec-1',
@@ -1685,7 +1856,7 @@ describe('startPlayheadScheduler', () => {
             }
         );
         trackStoreState.value = {
-            tracks: [{ id: 'rec-1', armed: true, kind: 'audio', inputId: 'dev-punch', clips: [] }],
+            tracks: [recordingTrack({ id: 'rec-1', armed: true, kind: 'audio', inputId: 'dev-punch', clips: [] })],
         };
         transportStoreState.value = playingState({
             punchInEnabled: true,
@@ -1740,7 +1911,7 @@ describe('startPlayheadScheduler', () => {
     // clip belongs at the punch point, not at the tick — and least of all at the
     // transport store's playhead, which has not moved since playback started.
     it('anchors the punched clip at punchInBeat when the tick lands past it', async () => {
-        trackStoreState.value = { tracks: [{ id: 'rec-1', armed: true, kind: 'audio', clips: [] }] };
+        trackStoreState.value = { tracks: [recordingTrack({ id: 'rec-1', armed: true, kind: 'audio', clips: [] })] };
         transportStoreState.value = playingState({
             playheadPosition: 15.9,
             punchInEnabled: true,
@@ -1766,7 +1937,7 @@ describe('startPlayheadScheduler', () => {
     // at punchInBeat would displace the take backwards by the whole distance
     // already covered and leave the tail of the clip silent.
     it('anchors the punched clip at the entry beat when playback starts inside the region', async () => {
-        trackStoreState.value = { tracks: [{ id: 'rec-1', armed: true, kind: 'audio', clips: [] }] };
+        trackStoreState.value = { tracks: [recordingTrack({ id: 'rec-1', armed: true, kind: 'audio', clips: [] })] };
         transportStoreState.value = playingState({
             playheadPosition: 20,
             punchInEnabled: true,
@@ -1791,7 +1962,7 @@ describe('startPlayheadScheduler', () => {
     // same tick satisfies punch-in and punch-out, stamping a full-width clip and
     // take across the region that captured nothing.
     it('does not punch in when playback starts past the punch region', async () => {
-        trackStoreState.value = { tracks: [{ id: 'rec-1', armed: true, kind: 'audio', clips: [] }] };
+        trackStoreState.value = { tracks: [recordingTrack({ id: 'rec-1', armed: true, kind: 'audio', clips: [] })] };
         transportStoreState.value = playingState({
             playheadPosition: 30,
             punchInEnabled: true,
@@ -1816,7 +1987,7 @@ describe('startPlayheadScheduler', () => {
     // lead-in. midiOffsetBeats supplies it: the media origin sits at
     // `startBeat - midiOffsetBeats`, leaving the clip start on the punch point.
     it('gives a punched MIDI clip a media lead-in the size of the round-trip latency', async () => {
-        trackStoreState.value = { tracks: [{ id: 'rec-1', armed: true, kind: 'midi', clips: [] }] };
+        trackStoreState.value = { tracks: [recordingTrack({ id: 'rec-1', armed: true, kind: 'midi', clips: [] })] };
         transportStoreState.value = playingState({
             playheadPosition: 15.9,
             punchInEnabled: true,
@@ -1854,7 +2025,7 @@ describe('startPlayheadScheduler', () => {
     });
 
     it('leaves a punched audio clip without a MIDI lead-in', async () => {
-        trackStoreState.value = { tracks: [{ id: 'rec-1', armed: true, kind: 'audio', clips: [] }] };
+        trackStoreState.value = { tracks: [recordingTrack({ id: 'rec-1', armed: true, kind: 'audio', clips: [] })] };
         transportStoreState.value = playingState({
             playheadPosition: 15.9,
             punchInEnabled: true,
@@ -1875,7 +2046,7 @@ describe('startPlayheadScheduler', () => {
     });
 
     it('routes the punch-in recording buffer through cacheAudioBuffer + commitRecording', async () => {
-        trackStoreState.value = { tracks: [{ id: 'rec-1', armed: true, kind: 'audio', clips: [] }] };
+        trackStoreState.value = { tracks: [recordingTrack({ id: 'rec-1', armed: true, kind: 'audio', clips: [] })] };
         transportStoreState.value = playingState({
             punchInEnabled: true,
             punchInBeat: 0,
@@ -1928,8 +2099,8 @@ describe('startPlayheadScheduler', () => {
     it('captures each track latency and mapped clock before recorder admission can await', async () => {
         trackStoreState.value = {
             tracks: [
-                { id: 'rec-1', armed: true, kind: 'audio', clips: [] },
-                { id: 'rec-2', armed: true, kind: 'audio', clips: [] },
+                recordingTrack({ id: 'rec-1', armed: true, kind: 'audio', clips: [] }),
+                recordingTrack({ id: 'rec-2', armed: true, kind: 'audio', clips: [] }),
             ],
         };
         transportStoreState.value = playingState({
@@ -2014,7 +2185,7 @@ describe('startPlayheadScheduler', () => {
     });
 
     it('retires the punched take and tells the user when the recording commit fails', async () => {
-        trackStoreState.value = { tracks: [{ id: 'rec-1', armed: true, kind: 'audio', clips: [] }] };
+        trackStoreState.value = { tracks: [recordingTrack({ id: 'rec-1', armed: true, kind: 'audio', clips: [] })] };
         transportStoreState.value = playingState({
             punchInEnabled: true,
             punchInBeat: 0,
@@ -2050,7 +2221,12 @@ describe('startPlayheadScheduler', () => {
     it('commits the punched clip at its finalized span, not the pre-finalization anchor', async () => {
         trackStoreState.value = {
             tracks: [
-                { id: 'rec-1', armed: true, kind: 'audio', clips: [{ id: 'clip-rec-1', startBeat: 0, endBeat: 0 }] },
+                recordingTrack({
+                    id: 'rec-1',
+                    armed: true,
+                    kind: 'audio',
+                    clips: [{ id: 'clip-rec-1', startBeat: 0, endBeat: 0 }],
+                }),
             ],
         };
         transportStoreState.value = playingState({ punchInEnabled: true, punchInBeat: 0, punchOutBeat: 8 });
@@ -2112,7 +2288,12 @@ describe('startPlayheadScheduler', () => {
     it('owns the punched commit on the recording lifecycle so a stop can await it', async () => {
         trackStoreState.value = {
             tracks: [
-                { id: 'rec-1', armed: true, kind: 'audio', clips: [{ id: 'clip-rec-1', startBeat: 0, endBeat: 0 }] },
+                recordingTrack({
+                    id: 'rec-1',
+                    armed: true,
+                    kind: 'audio',
+                    clips: [{ id: 'clip-rec-1', startBeat: 0, endBeat: 0 }],
+                }),
             ],
         };
         transportStoreState.value = playingState({ punchInEnabled: true, punchInBeat: 0, punchOutBeat: 8 });
@@ -2151,7 +2332,7 @@ describe('startPlayheadScheduler', () => {
     });
 
     it('registers the automatic punch-out finalizer on the lifecycle without blocking the tick', async () => {
-        trackStoreState.value = { tracks: [{ id: 'rec-1', armed: true, kind: 'audio', clips: [] }] };
+        trackStoreState.value = { tracks: [recordingTrack({ id: 'rec-1', armed: true, kind: 'audio', clips: [] })] };
         transportStoreState.value = playingState({
             playheadPosition: 7.9,
             punchInEnabled: true,
@@ -2196,7 +2377,7 @@ describe('startPlayheadScheduler', () => {
     });
 
     it('does not cache or update a punched clip for a failed recording result', async () => {
-        trackStoreState.value = { tracks: [{ id: 'rec-1', armed: true, kind: 'audio', clips: [] }] };
+        trackStoreState.value = { tracks: [recordingTrack({ id: 'rec-1', armed: true, kind: 'audio', clips: [] })] };
         transportStoreState.value = playingState({
             punchInEnabled: true,
             punchInBeat: 0,
@@ -2226,7 +2407,7 @@ describe('startPlayheadScheduler', () => {
     });
 
     it('stops punch-out recording and clears the flag once the playhead crosses punchOutBeat', async () => {
-        trackStoreState.value = { tracks: [{ id: 'rec-1', armed: true, kind: 'audio', clips: [] }] };
+        trackStoreState.value = { tracks: [recordingTrack({ id: 'rec-1', armed: true, kind: 'audio', clips: [] })] };
         transportStoreState.value = playingState({
             playheadPosition: 7.9,
             punchInEnabled: true,
@@ -2364,7 +2545,7 @@ describe('startPlayheadScheduler', () => {
     });
 
     it('aborts after punch-out when the scheduler generation goes stale', async () => {
-        trackStoreState.value = { tracks: [{ id: 'rec-1', armed: true, kind: 'audio', clips: [] }] };
+        trackStoreState.value = { tracks: [recordingTrack({ id: 'rec-1', armed: true, kind: 'audio', clips: [] })] };
         transportStoreState.value = playingState({
             playheadPosition: 7.9,
             punchInEnabled: true,

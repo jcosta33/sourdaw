@@ -78,6 +78,7 @@ const hardware = vi.hoisted(() => ({
     rollGate: Promise.resolve(),
     buffer: null as AudioBuffer | null,
     sourceStarts: [] as { when: number; sourceSeconds: number; durationSeconds: number }[],
+    sourceStops: [] as number[],
     schedulerWorker: null as {
         onmessage: ((event: { data: unknown }) => void) | null;
         generation: number;
@@ -103,7 +104,13 @@ const context = {
     createGain: () => ({
         connect: vi.fn(),
         disconnect: vi.fn(),
-        gain: { cancelScheduledValues: vi.fn(), setValueAtTime: vi.fn(), linearRampToValueAtTime: vi.fn() },
+        gain: {
+            value: 1,
+            cancelScheduledValues: vi.fn(),
+            cancelAndHoldAtTime: vi.fn(),
+            setValueAtTime: vi.fn(),
+            linearRampToValueAtTime: vi.fn(),
+        },
     }),
     createMediaStreamSource: () => ({ connect: vi.fn(), disconnect: vi.fn() }),
     decodeAudioData: () => {
@@ -140,6 +147,7 @@ vi.mock('#/modules/AudioEngine/useCases', async (original) => {
             start: (when: number, sourceSeconds: number, durationSeconds: number) => {
                 hardware.sourceStarts.push({ when, sourceSeconds, durationSeconds });
             },
+            stop: (when: number) => hardware.sourceStops.push(when),
         }),
         resumeEngine: () => Promise.resolve(),
         nativeLiveGraphSessionOffered: () => true,
@@ -278,6 +286,7 @@ describe('real recorder first-frame capture placement', () => {
         hardware.rollStarts = 0;
         hardware.buffer = null;
         hardware.sourceStarts = [];
+        hardware.sourceStops = [];
         hardware.schedulerWorker = null;
         setGestureClockSource({ getAudioTimeSeconds: () => hardware.now, readNativeCursorBeats: () => null });
         Object.defineProperty(navigator, 'mediaDevices', {
@@ -733,6 +742,7 @@ describe('real recorder first-frame capture placement', () => {
                         ]
                     ).toBe(selection.firstFrame + Math.round(selection.durationSeconds * 48000) - 1);
                     await stopPlayback();
+                    expect(hardware.sourceStops).toContain(hardware.now);
                 }
                 if (emptyFinalLap) {
                     expect(finalPass).toBeUndefined();
