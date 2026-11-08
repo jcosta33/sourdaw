@@ -59,6 +59,9 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('#/modules/MIDI/useCases', () => ({
+    captureEventPositionAt: () => {
+        throw new Error('This manual pre-roll fixture has no automatic MIDI capture position');
+    },
     isOverdubLanding: () => false,
     countSettledOverdubPasses: () => 0,
     waitForOverdubLanding: () => Promise.resolve(),

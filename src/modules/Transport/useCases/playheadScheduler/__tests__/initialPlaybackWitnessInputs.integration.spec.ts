@@ -148,6 +148,7 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     stopAudioRecording: mocks.stopAudioRecording,
     readNativeEnginePlayheadSeconds: () => null,
     audioEngine: {
+        context: mocks.audioClock,
         beginAudioPreviewIntent: () => ({
             signal: new AbortController().signal,
             isCurrent: () => true,

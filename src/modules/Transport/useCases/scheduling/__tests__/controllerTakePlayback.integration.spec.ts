@@ -78,6 +78,7 @@ import {
     stopRecording,
     takeOwnsRecordingRoot,
     recordingMidiSourceBeatAt,
+    isRecordingMidiInputExcluded,
 } from '#/modules/Arrangement/useCases';
 import { audioEngine, builtinSynthVoice } from '#/modules/AudioEngine/useCases';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
@@ -204,6 +205,7 @@ describe('a recorded controller-only take, played by the window scheduler', () =
             retireRecordingMidiAdmission,
             takeOwnsRecordingRoot,
             recordingMidiSourceBeatAt,
+            isRecordingMidiInputExcluded,
         });
         transportStore.set({
             ...transportStore.value!,

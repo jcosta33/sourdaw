@@ -4,6 +4,7 @@ import { stopAudioRecording } from '#/modules/AudioEngine/useCases';
 import { waitForOverdubLanding } from '#/modules/MIDI/useCases';
 
 import { updateTransportState } from '../../repositories/transport/updateTransportState';
+import { schedulerSession } from '../playheadScheduler/schedulerSession';
 
 import { captureManualRecordingEnd, type ManualRecordingEnd } from './captureManualRecordingEnd';
 import { manualClosingBeat } from './manualClosingBeat';
@@ -31,6 +32,8 @@ async function closeActiveRecording(stillOwns?: () => boolean, gestureEnding?: M
     // position is the last tick's beat, not the gesture's.
     const closesTake = activeRecordingRef.current.length > 0 && takeOwnsRecordingRoot();
     const recordingCommit = stopRecording(manualClosingBeat(ending), ending, true);
+    schedulerSession.automaticPunch?.dispose();
+    schedulerSession.automaticPunch = null;
     if (closesTake) {
         // Counted as a settled take commit, which a project replacement reads to
         // know that the project it is leaving gained a take. A stop the root
