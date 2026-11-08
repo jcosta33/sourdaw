@@ -1,0 +1,31 @@
+src/modules/ContentBrowser/presentations/views/__tests__/Sidebar.spec.tsx
+  s_02903fa7eb13ea::t_99ed5decf14757 105-112,125
+  s_02903fa7eb13ea::t_782b734c819f27 102-103,113-116,118-122,124
+  s_02903fa7eb13ea::t_7d416fcfeb59f5 392,395,398
+  s_02903fa7eb13ea::t_5a5a7695641265 361-377,379-390,393,396,402-404
+  s_02903fa7eb13ea::t_80976ae221375a 378
+  s_02903fa7eb13ea::t_a15c8ab79519b2 117
+  s_02903fa7eb13ea::t_214c0c3fe763c4 143
+  s_02903fa7eb13ea::t_54d98c1292b9a2 311,313-314,320-322,338,342,353,360,391,394,397,399-401
+  s_02903fa7eb13ea::t_9db63e4aea950b 142
+  s_02903fa7eb13ea::t_edfb5d7119863b 312,318,324
+  s_02903fa7eb13ea::t_dac455fae4745a 317,319,323,325,327,356-358
+  s_02903fa7eb13ea::t_7c88543b6e1cd4 341,344,346
+  s_02903fa7eb13ea::t_36e5e85120a5e9 359
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "6a18eb7215311c1085f29831114530acb0e1e852",
+  "prompts": {},
+  "sessions": {
+    "s_02903fa7eb13ea": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "09ad8230-37d3-4b52-835c-e4a4f9483b9c",
+        "model": "composer-2.5-fast"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
