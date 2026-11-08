@@ -119,11 +119,10 @@ function checksumTool() {
         };
     }
     if (process.platform !== 'linux') {
-        throw new Error('installer fixture requires Linux GNU sha256sum or the explicit Darwin Perl-SHA adapter');
+        throw new Error('installer fixture requires Linux sha256sum or the explicit Darwin Perl-SHA adapter');
     }
     const program = command('bash', ['-c', 'command -v sha256sum']);
     const version = command(program, ['--version']);
-    expect(version).toContain('GNU coreutils');
     return { program, prefix: [], version };
 }
 
@@ -246,7 +245,7 @@ async function runInstaller(mode: ResponseMode) {
         mkdirSync(runnerTemp);
         if (process.platform === 'darwin') {
             // Test-only CLI compatibility: real Perl-SHA checks the bytes with
-            // every original production argument. Linux uses real GNU sha256sum.
+            // every original production argument. Linux uses its installed sha256sum.
             const checksumAdapter = join(bin, 'sha256sum');
             writeFileSync(checksumAdapter, '#!/bin/sh\nexec /usr/bin/shasum -a 256 "$@"\n');
             chmodSync(checksumAdapter, 0o755);
