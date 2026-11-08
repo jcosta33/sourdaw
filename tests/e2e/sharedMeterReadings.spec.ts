@@ -85,7 +85,7 @@ async function observePlayback(page: Page, endBeat: number) {
                         reject(new Error('Musical cursor is unavailable'));
                         return;
                     }
-                    // This fixture asserts 4/4. PlayheadDisplay quantizes each beat to 480 ticks.
+                    // This fixture proves 4/4 with no meter-map changes. PlayheadDisplay uses 480 display ticks.
                     const beat = (Number(position[1]) - 1) * 4 + Number(position[2]) - 1 + Number(position[3]) / 480;
                     analyser.getFloatTimeDomainData(data);
                     let peak = 0;
@@ -174,11 +174,25 @@ test('Mixer Master and Out show real in-clip C4 playback without consuming each 
             tracks: { tracks: NonNullable<typeof tracks> };
             midi: NonNullable<typeof midi.midiStore.value>;
             transport: { timeSignatureNumerator: number; timeSignatureDenominator: number };
+            timeSignatureMap?: unknown;
         }>('root');
         const track = tracks?.find((track) => track.devices.some((device) => device.type === 'fermenter'));
         const clip = track?.clips.find((clip) => clip.type === 'midi');
         if (!track || !clip || !root) {
             throw new Error('The UI-created instrument/clip has no live project authority');
+        }
+        const meterMap = root.timeSignatureMap;
+        let timeSignatureMapChanges: unknown[] = [];
+        if (meterMap !== undefined) {
+            if (
+                typeof meterMap !== 'object' ||
+                meterMap === null ||
+                !('changes' in meterMap) ||
+                !Array.isArray(meterMap.changes)
+            ) {
+                throw new Error('The raw meter-map shape is not the declared changes record');
+            }
+            timeSignatureMapChanges = meterMap.changes;
         }
         return {
             track,
@@ -187,6 +201,8 @@ test('Mixer Master and Out show real in-clip C4 playback without consuming each 
             rawTrack: root.tracks.tracks.find((row) => row.id === track.id),
             rawNotes: root.midi.notesByClipId[clip.id],
             transport: root.transport,
+            timeSignatureMapPresent: meterMap !== undefined,
+            timeSignatureMapChanges,
         };
     }, ENTRY);
     expect(music.rawTrack).toEqual(music.track);
@@ -204,6 +220,7 @@ test('Mixer Master and Out show real in-clip C4 playback without consuming each 
     expect(note.duration).toBeGreaterThan(0);
     expect(music.transport.timeSignatureNumerator).toBe(4);
     expect(music.transport.timeSignatureDenominator).toBe(4);
+    expect(music.timeSignatureMapChanges).toEqual([]);
     await page.locator('#bottom-dock-tab-mixer').click();
     const mixer = page.getByRole('region', { name: 'Mixer panel', exact: true });
     await expect(mixer).toBeVisible();
