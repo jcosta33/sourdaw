@@ -1,0 +1,124 @@
+src/modules/Command/useCases/__tests__/commandPreviewContentAuthority.spec.ts
+  s_68423a2adea8d2::t_2b64862ef98308 1-184
+src/modules/AiRuntime/useCases/agentRequestOrchestration/executePromptCommandPreview.ts
+  s_68423a2adea8d2::t_a5d17073083dd7 10
+  s_68423a2adea8d2::t_219e33f78ef753 69
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/executePromptCommandPreviewSave.spec.ts
+  s_68423a2adea8d2::t_18317441661c71 1-2,10-15,23-24,26-145,147,153,158-169,183,204,242
+  s_68423a2adea8d2::t_a5d17073083dd7 3-9,16-22,25,148-152,154-157,170-182,184-188,190,194-203,205-218,222-223,227-241
+  s_68423a2adea8d2::t_0c35f181b5dc0a 189,191-193,219-221,224-226
+  s_68423a2adea8d2::t_2049710e70cfe8 146
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/executePromptCommandPreview.spec.ts
+  s_68423a2adea8d2::t_a5d17073083dd7 204-206
+  s_68423a2adea8d2::t_330f21a33e8d26 43-44,203,212,226
+src/modules/CrdtDocument/useCases/__tests__/previewCommandBatchSave.spec.ts
+  s_68423a2adea8d2::t_85b7c4483f07f2 1-4,11-30,32-87,281-490
+  s_68423a2adea8d2::t_b6c47330d1b735 236-238,242-251,259-267,269,271-276,278-280
+  s_68423a2adea8d2::t_b7b4807d35950d 5-10,31,88-180
+  s_68423a2adea8d2::t_de43f118c78c46 182-235,239-241,252-258,268,270,277
+  s_68423a2adea8d2::t_2349dd70acb308 181
+src/modules/Command/useCases/__tests__/commandBatchPreflightSave.spec.ts
+  s_68423a2adea8d2::t_85b7c4483f07f2 1-5,12-14,16-21,24-28,30-33,35-37,43-44,46-87,103-105,107-109,111-122,127-143,145-193,203-208,217-222,224-231,586
+  s_68423a2adea8d2::t_fd014a951fff06 10-11,88-90,95,97-102,106,110,123,125,144,223,232-249,253-276,288-291,296,298-314,390,392,548,584-585
+  s_68423a2adea8d2::t_eb4aebab982d30 22-23,45,315-389,391,393-396,528-547,549-583
+  s_68423a2adea8d2::t_25e4eba087783a 194-202,209-216
+  s_68423a2adea8d2::t_f71067c32fad02 15,38-42,91-94,96,124,126,250-252,277-287,292,294-295,297
+  s_68423a2adea8d2::t_7fdfd9f0e6afe1 34
+  s_68423a2adea8d2::t_f9093280ee8ea3 29
+src/modules/Command/useCases/prepareCommandBatchPreflight.ts
+  s_68423a2adea8d2::t_7e5845c8dc71b6 148-157,165,167,192
+  s_68423a2adea8d2::t_fd014a951fff06 326
+  s_68423a2adea8d2::t_f71067c32fad02 251-254,258-261,264-267,272-323
+  s_68423a2adea8d2::t_44b0d28abb8d08 219,237-238,240-242,327-328
+  s_68423a2adea8d2::t_8c531b3d3e05bb 215-218,220-225,227-228,230-232,234-235,239,243-250,255-257,262-263,268-271,324-325
+src/modules/Command/useCases/previewVersionedCommandBatchEnvelope.ts
+  s_68423a2adea8d2::t_77274ee70525e5 27-29
+  s_68423a2adea8d2::t_8c531b3d3e05bb 158-163,222
+  s_68423a2adea8d2::t_44b0d28abb8d08 223-226,228
+src/modules/CrdtDocument/useCases/createCommandPreviewWorkspace.ts
+  s_68423a2adea8d2::t_43a2adc057cbd4 12,15
+  s_68423a2adea8d2::t_bdf126a8da943b 3-7,19-24
+  s_68423a2adea8d2::t_2eb01379094dd6 25-26
+src/modules/Command/useCases/registerHandlerCommitValidation.ts
+  s_68423a2adea8d2::t_44b0d28abb8d08 7-8,14
+src/modules/Command/useCases/commandProjectRevisionPort.ts
+  s_68423a2adea8d2::t_f71067c32fad02 39-41
+  s_68423a2adea8d2::t_962f98734335d0 3-4,6,17-18,27-28,33-38,42-51,65,77,85
+  s_68423a2adea8d2::t_40f3c505d6b7eb 29-32,52-64
+src/modules/Command/useCases/executeAppActionBatch.ts
+  s_68423a2adea8d2::t_44b0d28abb8d08 35-38,1050,1055-1058,1073,1080,1087
+  s_68423a2adea8d2::t_fd014a951fff06 1074-1079
+  s_68423a2adea8d2::t_8c531b3d3e05bb 972-991,1009-1011,1017
+src/app/__tests__/registerKernelPorts.spec.ts
+  s_68423a2adea8d2::t_33fafcd6da5073 110,112,115-118,125,139-146,148,151-152,167-171
+  s_68423a2adea8d2::t_eb4aebab982d30 13-24,111,119-124,126-138,147,153-166,172-177,180-210
+  s_68423a2adea8d2::t_1ebace6d435622 211
+src/modules/Command/useCases/__tests__/handlerCommitValidation.integration.spec.ts
+  s_68423a2adea8d2::t_6580feb7b6872b 114-115,117-120,143-146,164,171-190,195-201
+  s_68423a2adea8d2::t_f71067c32fad02 150-160,191-194
+  s_68423a2adea8d2::t_fd014a951fff06 148-149,161
+  s_68423a2adea8d2::t_3ff9be74983edc 202-203
+src/app/registerKernelPorts.ts
+  s_68423a2adea8d2::t_962f98734335d0 3,16,51
+  s_68423a2adea8d2::t_f71067c32fad02 4-8,30-33
+src/modules/AiRuntime/useCases/__tests__/promptStemImportRecovery.spec.ts
+  s_68423a2adea8d2::t_8c531b3d3e05bb 19,506-508
+  s_68423a2adea8d2::t_0c89885f7751b2 509
+src/modules/AiRuntime/useCases/__tests__/commandCommitAfterSaveFinalization.spec.ts
+  s_68423a2adea8d2::t_fd014a951fff06 6-226,247-278
+  s_68423a2adea8d2::t_b8daf8e26629e9 1-5,279
+  s_68423a2adea8d2::t_e2628eb5db7c63 227-229
+  s_68423a2adea8d2::t_40f3c505d6b7eb 230-246
+src/modules/Command/useCases/commandBatchValidation.ts
+  s_68423a2adea8d2::t_f71067c32fad02 18
+  s_68423a2adea8d2::t_44b0d28abb8d08 1
+  s_68423a2adea8d2::t_962f98734335d0 6-11,16-17
+src/modules/AiRuntime/useCases/__tests__/confirmPendingChatActions.spec.ts
+  s_68423a2adea8d2::t_bd8c3dfcd4792a 3911,3913
+  s_68423a2adea8d2::t_fd014a951fff06 14,3943
+  s_68423a2adea8d2::t_b06e186d73928b 3893-3910,3912,3914-3942,3944-3953,3956-3975,3977-3990,3993-4026
+src/modules/AiRuntime/useCases/__tests__/aiWorkflowCommandCheckpointRuntime.ts
+  s_68423a2adea8d2::t_8c531b3d3e05bb 9,37-40
+src/modules/Arrangement/handlers/track/__tests__/handleRemoveAllTracks.modulation.integration.spec.ts
+  s_68423a2adea8d2::t_b06e186d73928b 452,459
+  s_68423a2adea8d2::t_f71067c32fad02 451,453-458
+src/modules/Command/useCases/__tests__/commandProjectRevisionPort.spec.ts
+  s_68423a2adea8d2::t_eb4aebab982d30 53-55,75-77,106-108
+  s_68423a2adea8d2::t_33fafcd6da5073 1,38-52,56-74,78-90,92-93,100-101,103-105,109
+  s_68423a2adea8d2::t_3141f5d2a93452 110
+  s_68423a2adea8d2::t_40f3c505d6b7eb 94-99
+src/modules/AiRuntime/useCases/__tests__/compileArbitraryCommandList.spec.ts
+  s_68423a2adea8d2::t_7063cfb896afde 8,237,2267,4296,5533
+evidence/agent-campaign/manifest.json
+  s_68423a2adea8d2::t_81a698016b6dd0 563
+  s_68423a2adea8d2::t_4eaf889b2dccbb 262,274
+src/modules/AiRuntime/useCases/__tests__/protectedTargetCollaboratorDrift.spec.ts
+  s_68423a2adea8d2::t_0f0a2fd2bad131 294-302,307
+  s_68423a2adea8d2::t_9ef9a3689e0932 390-393,437-439
+  s_68423a2adea8d2::t_bfa4a54bc424d2 290-291,293,372,386,395-436,440-441,449
+  s_68423a2adea8d2::t_bf0e64bd5e7e74 394
+src/modules/Command/useCases/__tests__/verifiedBatchReceipt.spec.ts
+  s_68423a2adea8d2::t_392e99764f0fda 168,321,332-335,1051,1053,1064-1072,1075-1076,1079-1080,1087-1091,1093-1105,1110-1116
+  s_68423a2adea8d2::t_0f0a2fd2bad131 1054-1055,1073-1074,1078,1092,1106,1109
+  s_68423a2adea8d2::t_237d1602dad8ca 1107-1108
+src/modules/Command/useCases/__tests__/commandBatchIdempotency.spec.ts
+  s_68423a2adea8d2::t_0f0a2fd2bad131 15,2535,2550,2556,2572,2591,2593
+  s_68423a2adea8d2::t_237d1602dad8ca 2592
+  s_68423a2adea8d2::t_3daa74ec6976c2 167,189,297-300,2529,2534,2546-2549,2551-2555,2557-2571,2573-2590,2595
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "cfdde45c9a9c515ee1b4a680c55f7ba40fbf469c",
+  "prompts": {},
+  "sessions": {
+    "s_68423a2adea8d2": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34b-f305-7c03-beb2-57afa678cda5",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
