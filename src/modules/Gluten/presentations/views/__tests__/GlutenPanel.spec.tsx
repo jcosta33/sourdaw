@@ -53,7 +53,7 @@ describe('GlutenPanel', () => {
     it('applies minimum height floor and does not clip overflow at root', () => {
         const { container } = render(<GlutenPanel deviceId={DEVICE_ID} />);
         const faceplate = container.querySelector('.gluten-faceplate');
-        expect(faceplate).toHaveClass('min-h-[440px]');
+        expect(faceplate).toHaveClass('min-h-[464px]');
         expect(faceplate).not.toHaveClass('overflow-hidden');
     });
 
@@ -69,7 +69,7 @@ describe('GlutenPanel', () => {
         }
     });
 
-    it('stacks the device rails in narrow workspaces and scopes their scrolling when wide', () => {
+    it('applies responsive rail layout and scoped scrolling class contracts', () => {
         const { container } = render(<GlutenPanel deviceId={DEVICE_ID} />);
         const viewport = container.firstElementChild;
         const faceplate = container.querySelector('.gluten-faceplate');
