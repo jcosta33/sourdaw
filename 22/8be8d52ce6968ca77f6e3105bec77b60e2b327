@@ -1,0 +1,26 @@
+src/modules/ControlSurface/useCases/controlSurface/__tests__/mcuSetFader.spec.ts
+  s_1052c2a2231ded::t_6c25acb87ab788 1,3,7,10-11,14,24-36,39-40
+  s_1052c2a2231ded::t_e94b0f6c661cdf 12-13,15-23
+src/modules/Metering/presentations/views/__tests__/Oscilloscope.spec.tsx
+  s_1052c2a2231ded::t_6c25acb87ab788 1-2,5,9-26,30-38,60-62,70-75,78,84-86,95-98,111-115,118-119,125-127
+  s_1052c2a2231ded::t_e94b0f6c661cdf 39-59,63-69,79-83,87-94,99-110,120-124,128-133
+src/modules/Metering/presentations/views/__tests__/Wavetable3D.spec.tsx
+  s_1052c2a2231ded::t_aeeb72780cd59c 1-2,6-7,9-19,43-57,70-76,89-91
+  s_1052c2a2231ded::t_e94b0f6c661cdf 20-42,58-69,77-88,92-95
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "228be8d52ce6968ca77f6e3105bec77b60e2b327",
+  "prompts": {},
+  "sessions": {
+    "s_1052c2a2231ded": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b349-24b6-7622-8534-09f171c780d5",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
