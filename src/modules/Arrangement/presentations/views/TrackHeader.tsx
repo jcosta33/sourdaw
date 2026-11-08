@@ -27,12 +27,12 @@ import { cn } from '#/utils/Styles/cn';
 import { type Track, type InputMonitoring } from '../../models/Track';
 import { toggleFolderCollapse } from '../../useCases/folder/toggleFolderCollapse';
 import { setInputMonitoring } from '../../useCases/setTrackGainPan/setInputMonitoring';
-import { muteTrack } from '../../useCases/toggleTrackState/muteTrack';
 import { selectTrack } from '../../useCases/toggleTrackState/selectTrack';
 import { soloTrack } from '../../useCases/toggleTrackState/soloTrack';
 import { soloTrackExclusive } from '../../useCases/toggleTrackState/soloTrackExclusive';
 import { INPUT_MONITORING_CYCLE } from '../../useCases/toggleTrackState/toggleInputMonitoring';
 import { toggleVariationLanes } from '../../useCases/toggleTrackState/toggleVariationLanes';
+import { useTrackMuteToggle } from '../hooks/useTrackMuteToggle';
 
 import { TrackContextMenu } from './TrackContextMenu';
 import { InlineTrackName } from './TrackHeader/InlineTrackName';
@@ -60,6 +60,7 @@ type TrackHeaderProps = {
 };
 
 export const TrackHeader = ({ track, isSelected }: TrackHeaderProps): ReactElement => {
+    const toggleMute = useTrackMuteToggle(track.id, track.muted);
     const trackHeight = track.height;
     const isFreezing = track.freezeState.status === 'freezing';
     const isStale = track.freezeState.status === 'stale';
@@ -323,7 +324,7 @@ export const TrackHeader = ({ track, isSelected }: TrackHeaderProps): ReactEleme
                                     className="font-bold text-[9px]"
                                     onClick={(event) => {
                                         event.stopPropagation();
-                                        muteTrack(track.id, !track.muted);
+                                        void toggleMute();
                                     }}
                                 >
                                     M

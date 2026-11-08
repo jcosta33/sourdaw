@@ -157,6 +157,17 @@ shared Git publication in `trusted-script-delivery.md`.
     no chunk before that release, and an eight-chunk healthy successor must finish with no more than four
     chunks outstanding across both ports.
 
+15. **Output filtering is not a requested-work bound (#4757 `2e744b8f`; historical stance unknown).** The full
+    producer legitimately serves complete receipts; subset callers must execute only their actual dependency closure.
+    In `measureAgentScopeRender.spec.ts`, “measures the exact spectral subset once without running unrelated families”
+    and “adds real integrated loudness for preview matching without running unrelated families” first prove real
+    call-through family observations, then clear counts and require omitted families to stay uncalled.
+    Preserve exact values, units, confidence, unavailable reasons, canonical key order and unchanged PCM;
+    compare selected entries to the full producer while independent calibrated laws remain green.
+    Restoring eager full computation must fail avoidance; shared numerical corruption must fail calibrated
+    `agentObjectiveAnalysis.spec.ts` laws. Keep full reference/render/audition output and private preview
+    integrated loudness complete; output equality alone cannot prove omitted work.
+
 ## Retired lessons
 
 - Optional-effect probe throwing in a Faust compiler upgrade (#4904) → enforced by `compileFaustDSP.spec.ts` "compiles the registered Supersaw voice without probing an absent effect".

@@ -114,40 +114,65 @@ type LoudnessMetricId =
     | 'crestFactor'
     | 'dynamicRangeEstimate';
 
-function buildLoudnessEntries(context: RenderMeasurementContext): MetricEntries<LoudnessMetricId> {
-    const { channels, length, sampleRate, durationSeconds, dynamicRangeDb, levels, silent } = context;
+function buildAmplitudeEntries({ levels, silent }: RenderMeasurementContext) {
     const silence = unavailable('silent');
     if (silent) {
         return {
             samplePeak: silence,
-            truePeak: silence,
-            integratedLoudness: silence,
-            shortTermLoudnessMax: silence,
-            momentaryLoudnessMax: silence,
             rms: silence,
             crestFactor: silence,
-            dynamicRangeEstimate: silence,
         };
     }
-
-    const window = { channels, length, sampleRate };
     return {
         samplePeak: measured('dBFS', levels.samplePeakDbfs, 'exact'),
-        truePeak: measured('dBTP', 20 * Math.log10(measureTruePeak({ channels, length })), 'exact'),
-        integratedLoudness: integratedLoudnessEntry(measureIntegratedLoudness(window), durationSeconds),
-        shortTermLoudnessMax: windowedLoudnessEntry(
-            measureMaxWindowedLoudness({ ...window, windowSeconds: SHORT_TERM_WINDOW_SECONDS }),
-            durationSeconds,
-            SHORT_TERM_WINDOW_SECONDS
-        ),
-        momentaryLoudnessMax: windowedLoudnessEntry(
-            measureMaxWindowedLoudness({ ...window, windowSeconds: MOMENTARY_WINDOW_SECONDS }),
-            durationSeconds,
-            MOMENTARY_WINDOW_SECONDS
-        ),
         rms: measured('dBFS', levels.rmsDbfs, 'exact'),
         crestFactor: measured('dB', levels.samplePeakDbfs - levels.rmsDbfs, 'exact'),
-        dynamicRangeEstimate: dynamicRangeEntry(length, dynamicRangeDb),
+    };
+}
+
+function buildTruePeakEntry({ channels, length, silent }: RenderMeasurementContext): AgentObjectiveMetricEntry {
+    if (silent) {
+        return unavailable('silent');
+    }
+    return measured('dBTP', 20 * Math.log10(measureTruePeak({ channels, length })), 'exact');
+}
+
+function buildIntegratedEntry(context: RenderMeasurementContext): AgentObjectiveMetricEntry {
+    if (context.silent) {
+        return unavailable('silent');
+    }
+    return integratedLoudnessEntry(measureIntegratedLoudness(context), context.durationSeconds);
+}
+
+function buildWindowedEntry(context: RenderMeasurementContext, windowSeconds: number): AgentObjectiveMetricEntry {
+    if (context.silent) {
+        return unavailable('silent');
+    }
+    return windowedLoudnessEntry(
+        measureMaxWindowedLoudness({ ...context, windowSeconds }),
+        context.durationSeconds,
+        windowSeconds
+    );
+}
+
+function buildDynamicRangeEntry(context: RenderMeasurementContext): AgentObjectiveMetricEntry {
+    if (context.silent) {
+        return unavailable('silent');
+    }
+    return dynamicRangeEntry(context.length, context.dynamicRangeDb);
+}
+
+function buildLoudnessEntries(context: RenderMeasurementContext): MetricEntries<LoudnessMetricId> {
+    const amplitude = buildAmplitudeEntries(context);
+    return {
+        samplePeak: amplitude.samplePeak,
+        truePeak: buildTruePeakEntry(context),
+        integratedLoudness: buildIntegratedEntry(context),
+        shortTermLoudnessMax: buildWindowedEntry(context, SHORT_TERM_WINDOW_SECONDS),
+        momentaryLoudnessMax: buildWindowedEntry(context, MOMENTARY_WINDOW_SECONDS),
+        rms: amplitude.rms,
+        crestFactor: amplitude.crestFactor,
+        dynamicRangeEstimate: buildDynamicRangeEntry(context),
     };
 }
 
@@ -233,13 +258,16 @@ function buildTransientEntries(context: RenderMeasurementContext): MetricEntries
     };
 }
 
+function measurementContext(input: BuildAgentObjectiveMeasurementsInput): RenderMeasurementContext {
+    const { channels, length, sampleRate } = input;
+    const levels = measureRenderLevels({ channels, length, sampleRate });
+    return { ...input, levels, silent: levels.peak <= RENDER_SILENCE_LINEAR };
+}
+
 export function buildAgentObjectiveMeasurements(
     input: BuildAgentObjectiveMeasurementsInput
 ): Record<AgentObjectiveMetricId, AgentObjectiveMetricEntry> {
-    const { channels, length, sampleRate } = input;
-    const levels = measureRenderLevels({ channels, length, sampleRate });
-    const context = { ...input, levels, silent: levels.peak <= RENDER_SILENCE_LINEAR };
-
+    const context = measurementContext(input);
     return {
         ...buildLoudnessEntries(context),
         ...buildLevelEntries(context),
@@ -255,4 +283,51 @@ export function buildAgentObjectiveMeasurements(
         busHeadroom: unavailable('needs-project-state'),
         gainStagingAnomalies: unavailable('needs-project-state'),
     };
+}
+
+function requestsAny(
+    requested: ReadonlySet<AgentObjectiveMetricId>,
+    family: readonly AgentObjectiveMetricId[]
+): boolean {
+    return family.some((metric) => requested.has(metric));
+}
+
+/** Related figures share their existing constructor; independent numerical work stays demand-driven. */
+export function buildRequestedAgentObjectiveMeasurements(
+    input: BuildAgentObjectiveMeasurementsInput,
+    requested: ReadonlySet<AgentObjectiveMetricId>
+): Partial<Record<AgentObjectiveMetricId, AgentObjectiveMetricEntry>> {
+    const context = measurementContext(input);
+    const measurements: Partial<Record<AgentObjectiveMetricId, AgentObjectiveMetricEntry>> = {};
+    if (requestsAny(requested, ['samplePeak', 'rms', 'crestFactor'])) {
+        Object.assign(measurements, buildAmplitudeEntries(context));
+    }
+    if (requested.has('truePeak')) {
+        measurements.truePeak = buildTruePeakEntry(context);
+    }
+    if (requested.has('integratedLoudness')) {
+        measurements.integratedLoudness = buildIntegratedEntry(context);
+    }
+    if (requested.has('shortTermLoudnessMax')) {
+        measurements.shortTermLoudnessMax = buildWindowedEntry(context, SHORT_TERM_WINDOW_SECONDS);
+    }
+    if (requested.has('momentaryLoudnessMax')) {
+        measurements.momentaryLoudnessMax = buildWindowedEntry(context, MOMENTARY_WINDOW_SECONDS);
+    }
+    if (requested.has('dynamicRangeEstimate')) {
+        measurements.dynamicRangeEstimate = buildDynamicRangeEntry(context);
+    }
+    if (requestsAny(requested, ['dcOffset', 'clippingCount', 'silentFraction', 'tailTruncation'])) {
+        Object.assign(measurements, buildLevelEntries(context));
+    }
+    if (requestsAny(requested, ['spectralCentroid', 'spectralRolloff', 'frequencyBandEnergy'])) {
+        Object.assign(measurements, buildSpectralEntries(context));
+    }
+    if (requestsAny(requested, ['stereoCorrelation', 'sideEnergyFraction', 'lowFrequencyStereoContent'])) {
+        Object.assign(measurements, buildStereoEntries(context));
+    }
+    if (requestsAny(requested, ['transientDensity', 'onsetTimes'])) {
+        Object.assign(measurements, buildTransientEntries(context));
+    }
+    return measurements;
 }
