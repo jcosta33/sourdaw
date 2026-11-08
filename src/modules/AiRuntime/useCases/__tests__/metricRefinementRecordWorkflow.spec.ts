@@ -296,6 +296,14 @@ describe('stored verification records during actual refinement', () => {
             commands: [{ name: 'setTrackGain', arguments: { trackId: 'drums', deltaDb: 1 } }],
             storedMetricGoalState: '{bad',
         });
+        const predecessor = pendingActionConfirmationStore.value?.confirmations.find(
+            (entry) => entry.id === original.confirmationId
+        );
+        if (!predecessor) {
+            throw new Error('Expected the persisted predecessor');
+        }
+        const approvalBefore = structuredClone(predecessor.approvalSnapshot);
+        expect(approvalBefore.metricGoalState).toBe('{bad');
         const before = structuredClone(trackStore.value);
         const revision = captureProjectRevision();
         const rawBefore = JSON.stringify(getCrdtDoc('root'));
@@ -312,9 +320,10 @@ describe('stored verification records during actual refinement', () => {
         expect(trackStore.value).toEqual(before);
         expect(JSON.stringify(getCrdtDoc('root'))).toBe(rawBefore);
         expect(captureProjectRevision()).toBe(revision);
-        expect(
-            pendingActionConfirmationStore.value?.confirmations.find((entry) => entry.id === original.confirmationId)
-                ?.status
-        ).toBe('proposed');
+        const retained = pendingActionConfirmationStore.value?.confirmations.find(
+            (entry) => entry.id === original.confirmationId
+        );
+        expect(retained?.status).toBe('proposed');
+        expect(retained?.approvalSnapshot).toEqual(approvalBefore);
     });
 });
