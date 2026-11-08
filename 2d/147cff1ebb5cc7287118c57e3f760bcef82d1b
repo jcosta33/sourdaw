@@ -1,0 +1,42 @@
+src/modules/ContentBrowser/useCases/__tests__/registerBrowserImportedSampleAudio.spec.ts
+  s_02903fa7eb13ea::t_86dd50d82728f3 1-43
+src/modules/ContentBrowser/presentations/views/Sidebar.tsx
+  s_02903fa7eb13ea::t_7d81af7cd43f9a 17
+  s_02903fa7eb13ea::t_4481f669db02dc 126
+src/modules/ContentBrowser/useCases/__tests__/addBrowserSample.spec.ts
+  s_02903fa7eb13ea::t_7739146059a8fb 47
+src/modules/ContentBrowser/presentations/views/__tests__/Sidebar.spec.tsx
+  s_02903fa7eb13ea::t_441f47c1765181 104
+  s_02903fa7eb13ea::t_cff7562cf728dc 98-101,103
+  s_02903fa7eb13ea::t_03828d5802a18f 272-274
+  s_02903fa7eb13ea::t_e1029488c72231 102
+  s_02903fa7eb13ea::t_6e83b2019157cd 105
+src/modules/ContentBrowser/useCases/placeLibrarySample.ts
+  s_02903fa7eb13ea::t_4350d2c4bda3ba 233-245,253
+  s_02903fa7eb13ea::t_e1ac9c53dc0a2d 8-13
+src/modules/ContentBrowser/useCases/__tests__/placeLibrarySample.spec.ts
+  s_02903fa7eb13ea::t_70cac5d380269f 21
+  s_02903fa7eb13ea::t_51e261a3370d88 111-114
+  s_02903fa7eb13ea::t_667fb7edbe7948 119-153
+  s_02903fa7eb13ea::t_3cceadba61e022 58
+src/modules/ContentBrowser/useCases/registerBrowserImportedSampleAudio.ts
+  s_02903fa7eb13ea::t_c025a8985c3dbf 3
+  s_02903fa7eb13ea::t_bd9f54ac808d63 1
+  s_02903fa7eb13ea::t_f06cc28675f610 2,4-9
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2d147cff1ebb5cc7287118c57e3f760bcef82d1b",
+  "prompts": {},
+  "sessions": {
+    "s_02903fa7eb13ea": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "09ad8230-37d3-4b52-835c-e4a4f9483b9c",
+        "model": "composer-2.5-fast"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
