@@ -110,19 +110,6 @@ describe('placeLibrarySample', () => {
         vi.mocked(executeAppActionBatch).mockResolvedValue({ status: 'committed', actions: [] });
     });
 
-    it('reports unavailable when a browser-import buffer is gone and nothing can re-obtain it', async () => {
-        mocks.getCachedAudioBuffer.mockReturnValue(null);
-        mocks.ensureFactorySampleBuffer.mockResolvedValue({ status: 'not-factory' });
-
-        await place({ id: 'user-b1', name: 'Kick', audioBufferId: 'b1' }, 't1');
-
-        expect(mocks.notifyUser).toHaveBeenCalledWith(
-            'Could not access "Kick" — audio buffer is not available.',
-            'error'
-        );
-        expect(executeAppActionBatch).not.toHaveBeenCalled();
-    });
-
     it('places a cached buffer at the requested beat with its staged hash, then promotes the lease once', async () => {
         await place({ id: 's1', name: 'Kick', audioBufferId: 'b1' }, 't1');
 

@@ -5,6 +5,9 @@ import { decodeAudioFile } from '#/modules/AudioEngine/useCases';
 
 import { Sidebar } from '../Sidebar';
 
+type DecodeAudioFileFn = typeof import('#/modules/AudioEngine/useCases').decodeAudioFile;
+type ImportedSampleDecodeHold = NonNullable<Parameters<DecodeAudioFileFn>[1]>;
+
 // Mock hooks
 vi.mock('../../hooks/useTracks', () => ({
     useTracks: vi.fn(() => ({
@@ -96,10 +99,22 @@ vi.mock('#/modules/SampleLibrary/presentations/views', () => ({
 }));
 
 const sidebarImportMocks = vi.hoisted(() => {
-    const hold = { retain: vi.fn(), release: vi.fn() };
+    const hold: ImportedSampleDecodeHold = { retain: vi.fn(), release: vi.fn() };
     const importedSampleHold = vi.fn(() => hold);
     return { hold, importedSampleHold };
 });
+
+const decodeAudioFileMock = vi.hoisted(() =>
+    vi.fn(
+        async (
+            file: File,
+            _hold?: ImportedSampleDecodeHold
+        ): Promise<{ id: string; buffer: { duration: number } }> => ({
+            id: `buffer-${file.name}`,
+            buffer: { duration: 1.5 },
+        })
+    )
+);
 
 vi.mock('../../hooks/useImportedSampleResidency', () => ({
     useImportedSampleResidency: () => sidebarImportMocks.importedSampleHold,
@@ -107,10 +122,7 @@ vi.mock('../../hooks/useImportedSampleResidency', () => ({
 
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
-    decodeAudioFile: vi.fn(async (file: File) => ({
-        id: `buffer-${file.name}`,
-        buffer: { duration: 1.5 },
-    })),
+    decodeAudioFile: decodeAudioFileMock,
 }));
 
 describe('Sidebar', () => {
@@ -268,10 +280,18 @@ describe('Sidebar', () => {
         });
 
         expect(decodeAudioFile).toHaveBeenCalledTimes(2);
-        const decodeCalls = vi.mocked(decodeAudioFile).mock.calls;
-        expect(decodeCalls.some((call) => (call[0] as File).name === 'notes.txt')).toBe(false);
-        expect(decodeCalls.map((call) => (call[0] as File).name).sort()).toEqual(['beat.opus', 'loop.wave']);
-        expect(decodeCalls.every((call) => call[1] === sidebarImportMocks.hold)).toBe(true);
+        expect(decodeAudioFile).toHaveBeenCalledWith(
+            expect.objectContaining({ name: 'beat.opus' }),
+            sidebarImportMocks.hold
+        );
+        expect(decodeAudioFile).toHaveBeenCalledWith(
+            expect.objectContaining({ name: 'loop.wave' }),
+            sidebarImportMocks.hold
+        );
+        expect(decodeAudioFile).not.toHaveBeenCalledWith(
+            expect.objectContaining({ name: 'notes.txt' }),
+            expect.anything()
+        );
         await waitFor(() => expect(screen.getByText('2 samples')).toBeInTheDocument());
     });
 });
