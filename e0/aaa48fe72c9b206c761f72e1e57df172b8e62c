@@ -1,0 +1,149 @@
+src/modules/AudioEngine/repositories/masterLoudness/__tests__/createMasterLoudnessCollector.spec.ts
+  s_1052c2a2231ded::t_05b0c8aca126d1 50-52,65-75,77-92
+  s_1052c2a2231ded::t_f380be03662795 1-8,10-31,33-49,53-64,93-106,108-118,120-132,134-155,157-208
+  s_1052c2a2231ded::t_2cb479fb7889db 9,32,76,107,119,133,156
+.agents/skills/review-stances/programme-loudness-clock.md
+  s_1052c2a2231ded::t_d064b823f4009f 10-12,17,21
+  s_1052c2a2231ded::t_c75a298f6b45fd 1-9,13-16,18-20,22-30
+src/modules/AudioEngine/useCases/engineAccess/resetMasterIntegratedLoudness.ts
+  s_1052c2a2231ded::t_4f0451c08a42f1 1-6
+src/utils/audioMetering/__tests__/computeIntegratedLoudness.spec.ts
+  s_1052c2a2231ded::t_05b0c8aca126d1 28
+  s_1052c2a2231ded::t_a8499a2ecfb1ce 1,3,5-10,12,16,18-22,24-27
+  s_1052c2a2231ded::t_085cfc66ea575a 13-15
+src/modules/AudioEngine/useCases/engineAccess/getMasterLoudnessReading.ts
+  s_1052c2a2231ded::t_4f0451c08a42f1 1-6
+src/modules/Metering/presentations/views/__tests__/LUFSMeterBranches.spec.tsx
+  s_1052c2a2231ded::t_0097005712c154 17-24
+  s_1052c2a2231ded::t_391d416fb13f57 2,4,8-9,11-16,25-36,38-39,42-45,47-48,51-54,56-57,59-65,67-68,70,72-77,79-83
+  s_1052c2a2231ded::t_5d2b73dfd3354a 10,37,55
+src/modules/AiRuntime/useCases/__tests__/agentChangeComparisonBlockFeeder.spec.ts
+  s_1052c2a2231ded::t_7d184d2927d42d 1,10-11,39,47-49,58-59,64,73,97,102,113,207-210,213,216
+  s_1052c2a2231ded::t_3d9b7d0c5024af 121-122,125,127-136,144-145,148-169,171-177
+  s_1052c2a2231ded::t_ba5824c86ea9de 141
+  s_1052c2a2231ded::t_21783053d288fd 140,142-143,146-147,170,178-179
+  s_1052c2a2231ded::t_0c9f680c2e6e0b 51-55,77-96,180-204,206,211-212,214-215,218-234
+  s_1052c2a2231ded::t_ba7e5956eeda1d 114-119,123-124,126,137-139
+  s_1052c2a2231ded::t_3e4cda34cc41df 57
+src/modules/AudioEngine/repositories/createWebAudioEngine.ts
+  s_1052c2a2231ded::t_e725588dd25e80 960-961
+  s_1052c2a2231ded::t_4f0451c08a42f1 30,47,441-456,1007-1008,1035-1036,1048-1057,1067-1073,2996-2998,3013
+  s_1052c2a2231ded::t_ebc81b1c951f25 359-360,1045-1046
+  s_1052c2a2231ded::t_c69a8cb18725ae 2014,2899
+  s_1052c2a2231ded::t_e31f57d018e0d6 1074
+src/modules/AudioEngine/worklets/__tests__/meteringProcessor.spec.ts
+  s_1052c2a2231ded::t_177fd41d14787c 133-140,142-149
+  s_1052c2a2231ded::t_900f1af858f30d 141
+src/modules/AudioEngine/worklets/__tests__/masterLoudnessAuthority.integration.spec.tsx
+  s_1052c2a2231ded::t_3d9b7d0c5024af 84-90
+  s_1052c2a2231ded::t_35f80f516fe4aa 1-11,13-21,23-67,69-77,80-83,91-94,100-101,107,113,123-129,187-244,249-264,280-289,291-302,304-307,309-314,316-319,321-331,333-336
+  s_1052c2a2231ded::t_9e7efbd297e77c 265-273,275-279
+  s_1052c2a2231ded::t_05b0c8aca126d1 130-135,137-141,143-163,165-171,173-183
+  s_1052c2a2231ded::t_f37a26721603e0 97,303,308,315,320
+  s_1052c2a2231ded::t_b87dff31e43ce1 78,108,110-112
+  s_1052c2a2231ded::t_8b59979e307d29 115,245
+  s_1052c2a2231ded::t_a4f21bbf2024bd 95-96,98-99,102-106
+  s_1052c2a2231ded::t_4fd091e3969a58 116-120,246-248
+  s_1052c2a2231ded::t_58fc6ccd28457a 79,121-122,184-186
+  s_1052c2a2231ded::t_fd00a0370af363 12,22,68,109,114,136,142,164,172,274,290,332
+src/modules/Metering/presentations/views/__tests__/LUFSMeter.spec.tsx
+  s_1052c2a2231ded::t_67c3034181c957 17-24
+  s_1052c2a2231ded::t_4e224bf5a152a6 1
+  s_1052c2a2231ded::t_63d6f806066cff 2,4,8-9,11-16,25-36,38-39,41-49,51-57,59-62
+  s_1052c2a2231ded::t_9d08a8dcb03360 10,37
+src/utils/audioMetering/computeIntegratedLoudness.ts
+  s_1052c2a2231ded::t_c75a298f6b45fd 14-16,29-31
+  s_1052c2a2231ded::t_46be5de263da30 1,3-10,12-13,17,20-28,32-33,35
+src/modules/AudioEngine/worklets/meteringProcessor.ts
+  s_1052c2a2231ded::t_b0fee05bfaaa34 37-40
+  s_1052c2a2231ded::t_f0aa1ab3827ec1 18-20,25,33,52-53,57-58,63-77
+  s_1052c2a2231ded::t_43661fb0ab252d 78
+src/modules/Metering/presentations/views/__tests__/LUFSMeterBlockFeeder.spec.tsx
+  s_1052c2a2231ded::t_f06c63b8636e55 1
+  s_1052c2a2231ded::t_4b9fe55d3675f1 2,4,6,8-9,11-16,26-36,39,41-43,46-48,51-57,59-69,71-79
+  s_1052c2a2231ded::t_3e42d53529f05b 17-23
+  s_1052c2a2231ded::t_1dda97361cfb54 10,37,70
+src/modules/AiRuntime/useCases/agentChangeComparison.ts
+  s_1052c2a2231ded::t_3d9b7d0c5024af 149-158,169-171,207
+  s_1052c2a2231ded::t_a8499a2ecfb1ce 59
+  s_1052c2a2231ded::t_0c9f680c2e6e0b 167,213,217
+  s_1052c2a2231ded::t_dad7cba70b5753 20,64,203,210,216
+  s_1052c2a2231ded::t_ba5824c86ea9de 65,173,192-193,274,276-277
+  s_1052c2a2231ded::t_96d10e5533ed32 36,161-166,168,172,190-191,194-197,215,297
+  s_1052c2a2231ded::t_805e59e39b4351 214
+src/modules/AiRuntime/useCases/__tests__/agentChangeComparisonLoudnessPath.spec.ts
+  s_1052c2a2231ded::t_0c9f680c2e6e0b 54-58,80-98,122-124,129-134,137-139,145-146,152
+  s_1052c2a2231ded::t_8366eb964cfea8 121,128
+  s_1052c2a2231ded::t_1fa0beed5b82ff 1,4-6,13-14,42,50-52,61-62,67,76-79,105,116-120,125-127,135-136,140-141,143-144,147-149,151,154-155
+  s_1052c2a2231ded::t_9e262a5daa90a4 60
+src/modules/AiRuntime/stores/agentChangeComparisonStore.ts
+  s_1052c2a2231ded::t_96d10e5533ed32 118-127
+src/modules/Metering/presentations/views/__tests__/LUFSMeterWindow.spec.tsx
+  s_1052c2a2231ded::t_b83ca04312aff1 1
+  s_1052c2a2231ded::t_f235647f2228c7 17-24
+  s_1052c2a2231ded::t_ccad722968e640 2,4,6,8-9,11-16,26-36,39,41-43,46-48,51-59
+  s_1052c2a2231ded::t_1421b5e0e4ae35 10,37
+src/modules/AudioEngine/repositories/masterLoudness/createMasterLoudnessCollector.ts
+  s_1052c2a2231ded::t_6e9e9e8fde67c4 10-13,16,22,24-76,78-83,85-90,92-97,100-106,108,110-120,122-143,145-170,172-205,207-218,220,224-229,231-232,234,237-243,245-263,265-266,268-273,275-278,280-284
+  s_1052c2a2231ded::t_66b368891df073 1-9,14-15,17-21,23,77,84,91,99,121,219,221-223,230,233,235-236,285
+  s_1052c2a2231ded::t_b0fee05bfaaa34 244,267,274,279
+  s_1052c2a2231ded::t_c69a8cb18725ae 98,109,144,206
+  s_1052c2a2231ded::t_d8b2ec06030dce 107,171,264
+src/utils/audioMetering/__tests__/ProgrammeLoudnessWindows.spec.ts
+  s_1052c2a2231ded::t_a8499a2ecfb1ce 3-4,6-8,10-12,14-16,19-26,28-30,32-33,35-39,41-43,45,47-59,61-71,73-85
+  s_1052c2a2231ded::t_8009278ae09015 13,31,44
+src/modules/AudioEngine/models/AudioEngineState.ts
+  s_1052c2a2231ded::t_4f0451c08a42f1 4,591-592
+src/modules/Metering/presentations/views/__tests__/LUFSMeterAudioClock.integration.spec.tsx
+  s_1052c2a2231ded::t_af162a09d880eb 1-2,8,23,26-31,50,53-54,72,74-75,83-84
+  s_1052c2a2231ded::t_b01733721e87f3 4-6,10-16,18-21,24-25,32-49,51-52,55,57-59,73,76-82
+  s_1052c2a2231ded::t_8366eb964cfea8 60-63,65-69,71
+  s_1052c2a2231ded::t_9a29f5cee1cdec 56,64,70
+src/modules/AudioEngine/repositories/__tests__/createWebAudioEngine.spec.ts
+  s_1052c2a2231ded::t_3fad7533e0c2db 1,14,554-556,558-559,562-564,569,3212-3237,3239-3244,3283-3295,3297-3302,3313-3342,3344-3351,3353,3355-3371,3373-3387
+  s_1052c2a2231ded::t_ebc81b1c951f25 3372
+  s_1052c2a2231ded::t_ab719934944c16 3303-3304,3308-3312
+  s_1052c2a2231ded::t_f02065fe103d85 3305-3307
+  s_1052c2a2231ded::t_c69a8cb18725ae 3352,3354
+  s_1052c2a2231ded::t_177fd41d14787c 3388-3397
+  s_1052c2a2231ded::t_7adc7d9b2e55e4 557,3238,3296,3343
+src/modules/Metering/presentations/views/LUFSMeter.tsx
+  s_1052c2a2231ded::t_ca3222b08eea7d 10,20-33,37,71-74,76-77,188,195,197,199-209
+  s_1052c2a2231ded::t_a4f21bbf2024bd 38-43,198
+src/modules/AudioEngine/models/MasterLoudnessProtocol.ts
+  s_1052c2a2231ded::t_c75a298f6b45fd 183,199-204,209
+  s_1052c2a2231ded::t_edefd1ec504219 1-105,126-131,135-152,162-182,184-198,205-208,210,213-215,219-222,224-256,258-273
+  s_1052c2a2231ded::t_dbd0ac3b3b628d 106-112,114-122,124-125,153-161
+  s_1052c2a2231ded::t_b0fee05bfaaa34 132-134,212,216-218
+  s_1052c2a2231ded::t_8cc412700f0341 113,123,211,223,257
+src/modules/AiRuntime/useCases/__tests__/agentChangeComparison.spec.ts
+  s_1052c2a2231ded::t_064d060cca71ca 6-8,55-56,65-66,78-82,120,122,124,149-150,329,348,350-353
+  s_1052c2a2231ded::t_0c9f680c2e6e0b 67-77,125-128
+src/utils/audioMetering/ProgrammeLoudnessWindows.ts
+  s_1052c2a2231ded::t_46be5de263da30 1,19-27,54-59,61-65,68-72,74-78,80-82,86,90,92-100,102-104,106-126
+src/modules/AudioEngine/models/__tests__/MasterLoudnessProtocol.spec.ts
+  s_1052c2a2231ded::t_085cfc66ea575a 3-14,42-49,51-65,67-69,88-97,101-118,121
+  s_1052c2a2231ded::t_ba5824c86ea9de 15-22,26,31-32,36
+  s_1052c2a2231ded::t_a4f21bbf2024bd 71-86
+  s_1052c2a2231ded::t_3d9b7d0c5024af 23-24,27-30,33-34,37-40
+  s_1052c2a2231ded::t_9e7efbd297e77c 98-100
+  s_1052c2a2231ded::t_79beb38ce1e5e8 66,119
+src/modules/AudioEngine/useCases/index.ts
+  s_1052c2a2231ded::t_ca3222b08eea7d 2-3
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e0aaa48fe72c9b206c761f72e1e57df172b8e62c",
+  "prompts": {},
+  "sessions": {
+    "s_1052c2a2231ded": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b349-24b6-7622-8534-09f171c780d5",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
