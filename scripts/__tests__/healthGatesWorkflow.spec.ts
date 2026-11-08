@@ -53,9 +53,7 @@ const SCOPE_OUTPUT_REFERENCES = {
     tooling: '${{ steps.scope.outputs.tooling }}',
 };
 const CODE_CONDITION = "needs.decide.outputs.code == 'true'";
-// An approving review validates the same pull-request head under a different
-// event, but it must wait behind any in-flight push run instead of cancelling
-// it. Every Gate member reading a pull request keys off the payload instead.
+// Every Gate member reading a pull request keys off the payload, never the event name.
 const PULL_REQUEST_PAYLOAD_CONDITION = 'github.event.pull_request != null';
 const SMOKE_CONDITION = `${PULL_REQUEST_PAYLOAD_CONDITION} && needs.decide.outputs.e2e == 'true'`;
 const EVENT_GATED_SMOKE_CONDITION = "github.event_name == 'pull_request' && needs.decide.outputs.e2e == 'true'";
@@ -2027,9 +2025,9 @@ function assertValidationScopeConditions(candidate: UnknownRecord): void {
 
 // The single invariant the whole split exists to hold: `Gate` is the required
 // context, GitHub counts a `skipped` conclusion as satisfying a required check,
-// and it prefers the newest run of that name. So only a labeled `pull_request`
-// run of `health-gates.yml` may mint that name, `gate` must be unable to skip,
-// and it must fail unless the reviewer App approved the exact head.
+// and it prefers the newest run of that name. So only a `pull_request` run of
+// `health-gates.yml` may mint that name, `gate` must be unable to skip, and it
+// must fail for a draft, a cancellation, or any failed selected check.
 function assertRequiredCheckIsolation(set: WorkflowSet): void {
     assertPullRequestGateWorkflows(Object.fromEntries(workflowFiles(set)));
     if (JSON.stringify(Object.keys(recordAt(set.heavy, 'on')).sort()) !== JSON.stringify([...HEAVY_GATES_TRIGGERS])) {
@@ -2152,8 +2150,8 @@ function assertDeviceWriteBoundaryCensus(set: WorkflowSet): void {
     }
 }
 
-// The nightly reporter is the only thing that observes what path filters and
-// path filters and draft refusal skip, so a leg missing from its needs is a class of failure
+// The nightly reporter is the only thing that observes what path filters
+// skip, so a leg missing from its needs is a class of failure
 // that reports nowhere a person looks.
 function assertNightlyReportCoverage(set: WorkflowSet): void {
     const nightlyReport = jobAt(set.nightly, 'nightly-report');
