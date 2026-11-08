@@ -1,6 +1,6 @@
-import type { IncomingMessage, ServerResponse } from 'node:http';
-
 import { sameCheckoutRoot, writeGuardRecoveryProof } from './guardRecoveryProof.ts';
+
+import type { IncomingMessage, ServerResponse } from 'node:http';
 
 /**
  * Lane-scoped browser verification. Two agent lanes share one machine, so a

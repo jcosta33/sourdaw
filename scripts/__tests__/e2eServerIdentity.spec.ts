@@ -10,12 +10,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { devServerOnlySpecs } from '../../tests/e2e/devServerOnlySpecs.ts';
 import {
-    assertGuardRecoveryProof,
-    GUARD_RECOVERY_PROOF_ORIGIN_ENV,
-    GUARD_RECOVERY_PROOF_PATH_ENV,
-    GUARD_RECOVERY_PROOF_TOKEN_ENV,
-} from '../guardRecoveryProof.ts';
-import {
     DEFAULT_E2E_PORT,
     SOURDAW_E2E_PORT_ENV,
     SOURDAW_E2E_ROOT_HEADER,
@@ -27,6 +21,12 @@ import {
     readServingCheckoutRoot,
     resolveE2ePort,
 } from '../e2eServerIdentity.ts';
+import {
+    assertGuardRecoveryProof,
+    GUARD_RECOVERY_PROOF_ORIGIN_ENV,
+    GUARD_RECOVERY_PROOF_PATH_ENV,
+    GUARD_RECOVERY_PROOF_TOKEN_ENV,
+} from '../guardRecoveryProof.ts';
 
 import type { PlaywrightTestConfig } from '@playwright/test';
 
