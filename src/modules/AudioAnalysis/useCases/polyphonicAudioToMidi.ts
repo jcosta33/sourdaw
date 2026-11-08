@@ -82,6 +82,36 @@ async function getBasicPitchModel(): Promise<BasicPitch> {
 
 // ── Core conversion ─────────────────────────────────────────────────────
 
+type PitchModelOutput = { frames: number[][]; onsets: number[][]; contours: number[][] };
+
+async function evaluatePitchModel(
+    model: BasicPitch,
+    buffer: AudioBuffer,
+    onProgress: PolyphonicAudioToMidiOptions['onProgress']
+): Promise<PitchModelOutput> {
+    const output: PitchModelOutput = { frames: [], onsets: [], contours: [] };
+    await model.evaluateModel(
+        buffer,
+        (frames, onsets, contours) => {
+            // Each callback contains the next unwrapped model window.
+            // Keep one ordered frame timeline for notes and pitch bends.
+            for (const frame of frames) {
+                output.frames.push(frame);
+            }
+            for (const onset of onsets) {
+                output.onsets.push(onset);
+            }
+            for (const contour of contours) {
+                output.contours.push(contour);
+            }
+        },
+        (percent) => {
+            onProgress?.(percent);
+        }
+    );
+    return output;
+}
+
 /**
  * Convert an audio clip to MIDI notes using polyphonic pitch detection.
  * This is significantly more accurate than the simple onset-detection
@@ -134,10 +164,6 @@ export async function polyphonicAudioToMidi(
     if (!sourceIsCurrent()) {
         return null;
     }
-    const frames: number[][] = [];
-    const onsets: number[][] = [];
-    const contours: number[][] = [];
-
     let evaluationBuffer = buffer;
 
     // If our DAW engine is running at 44.1kHz or 48kHz, we must downsample first.
@@ -159,26 +185,9 @@ export async function polyphonicAudioToMidi(
         }
     }
 
+    let modelOutput: PitchModelOutput;
     try {
-        await model.evaluateModel(
-            evaluationBuffer,
-            (freq, output, context) => {
-                // Each callback contains the next unwrapped model window.
-                // Keep one ordered frame timeline for notes and pitch bends.
-                for (const frame of freq) {
-                    frames.push(frame);
-                }
-                for (const onset of output) {
-                    onsets.push(onset);
-                }
-                for (const contour of context) {
-                    contours.push(contour);
-                }
-            },
-            (percent) => {
-                onProgress?.(percent);
-            }
-        );
+        modelOutput = await evaluatePitchModel(model, evaluationBuffer, onProgress);
     } catch (error) {
         logger.error(new Error(`[Basic Pitch] Model evaluation failed: ${String(error)}`));
         return null;
@@ -189,8 +198,8 @@ export async function polyphonicAudioToMidi(
         return null;
     }
     let noteEvents = outputToNotesPoly(
-        frames,
-        onsets,
+        modelOutput.frames,
+        modelOutput.onsets,
         onsetThreshold,
         frameThreshold,
         minNoteLength,
@@ -202,7 +211,7 @@ export async function polyphonicAudioToMidi(
     );
 
     // Add pitch bends for expressive playing
-    noteEvents = addPitchBendsToNoteEvents(contours, noteEvents);
+    noteEvents = addPitchBendsToNoteEvents(modelOutput.contours, noteEvents);
 
     // Convert frame-based timing to real time
     const notesWithTime = noteFramesToTime(noteEvents);
