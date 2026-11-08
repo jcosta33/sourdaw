@@ -10,16 +10,18 @@ import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 async function loadFreshModules() {
     vi.resetModules();
-    const [arrangement, automationStores, command, crdtDocument, transport, transportStores, app] = await Promise.all([
-        import('#/modules/Arrangement/useCases'),
-        import('#/modules/Automation/stores'),
-        import('#/modules/Command/useCases'),
-        import('#/modules/CrdtDocument/useCases'),
-        import('#/modules/Transport/useCases'),
-        import('#/modules/Transport/stores'),
-        import('../registerKernelPorts'),
-    ]);
-    return { arrangement, automationStores, command, crdtDocument, transport, transportStores, app };
+    const [arrangement, automationStores, command, crdtDocument, transport, transportStores, app, storage] =
+        await Promise.all([
+            import('#/modules/Arrangement/useCases'),
+            import('#/modules/Automation/stores'),
+            import('#/modules/Command/useCases'),
+            import('#/modules/CrdtDocument/useCases'),
+            import('#/modules/Transport/useCases'),
+            import('#/modules/Transport/stores'),
+            import('../registerKernelPorts'),
+            import('#/infra/store/storage/createAutomergeStorage'),
+        ]);
+    return { arrangement, automationStores, command, crdtDocument, transport, transportStores, app, storage };
 }
 
 type FreshModules = Awaited<ReturnType<typeof loadFreshModules>>;
@@ -104,6 +106,108 @@ describe('registerKernelPorts after registration', () => {
         expect(switchTransport.isIdle).toBe(transport.isTransportIdle);
         expect(switchTransport.stop).toBe(transport.stopPlayback);
     });
+
+    it('binds the real command mutation authority before owned publications and rejects a foreign listener', () => {
+        const { command, crdtDocument, storage } = modules;
+        crdtDocument.createCrdtDoc('root');
+        crdtDocument.registerCrdtStorageRuntime();
+        storage.flushAutomergeStorageWrites();
+        command.commandProjectRevisionPort.setProvider(crdtDocument.captureProjectRevision);
+        const results: boolean[] = [];
+        const unsubscribe = crdtDocument.subscribeToCrdtChanges(() => {
+            unsubscribe();
+            crdtDocument.mutateCrdtDoc<Record<string, unknown>>({
+                id: 'root',
+                changeFn: (draft) => {
+                    draft.peer = true;
+                },
+            });
+        });
+        const transaction = storage.runWithAutomergeStorageTransaction(undefined, (scope) =>
+            scope(() => {
+                const isAuthorized = command.commandProjectRevisionPort.captureMutationAuthorization();
+                results.push(isAuthorized());
+                crdtDocument.mutateCrdtDoc<Record<string, unknown>>({
+                    id: 'root',
+                    changeFn: (draft) => {
+                        draft.owned = true;
+                    },
+                });
+                results.push(isAuthorized());
+            })
+        );
+        transaction.commit();
+        unsubscribe();
+        expect(transaction.status).toBe('returned');
+        expect(results).toEqual([true, false]);
+        expect(crdtDocument.getCrdtDoc('root')).toMatchObject({ owned: true, peer: true });
+    });
+
+    it('keeps the bound owner authorized across its root and child publications', () => {
+        const { command, crdtDocument, storage } = modules;
+        crdtDocument.createCrdtDoc('root');
+        crdtDocument.registerCrdtStorageRuntime();
+        storage.flushAutomergeStorageWrites();
+        command.commandProjectRevisionPort.setProvider(crdtDocument.captureProjectRevision);
+        const results: boolean[] = [];
+        const transaction = storage.runWithAutomergeStorageTransaction(undefined, (scope) =>
+            scope(() => {
+                const isAuthorized = command.commandProjectRevisionPort.captureMutationAuthorization();
+                results.push(isAuthorized());
+                crdtDocument.mutateCrdtDoc<Record<string, unknown>>({
+                    id: 'root',
+                    changeFn: (draft) => {
+                        draft.owned = true;
+                    },
+                });
+                crdtDocument.createCrdtDoc('owned-child');
+                results.push(isAuthorized());
+            })
+        );
+        transaction.commit();
+        expect(transaction.status).toBe('returned');
+        expect(results).toEqual([true, true]);
+    });
+
+    it.each(['root', 'child'] as const)(
+        'rejects a foreign %s identity or content ABA even when visible content returns',
+        (target) => {
+            const { command, crdtDocument, storage } = modules;
+            crdtDocument.createCrdtDoc('root');
+            crdtDocument.createCrdtDoc('child');
+            crdtDocument.registerCrdtStorageRuntime();
+            storage.flushAutomergeStorageWrites();
+            command.commandProjectRevisionPort.setProvider(crdtDocument.captureProjectRevision);
+            const original = crdtDocument.getCrdtDoc<Record<string, unknown>>(target);
+            if (!original) {
+                throw new Error('Expected original document');
+            }
+            const transaction = storage.runWithAutomergeStorageTransaction(undefined, (scope) =>
+                scope(() => {
+                    const isAuthorized = command.commandProjectRevisionPort.captureMutationAuthorization();
+                    expect(isAuthorized()).toBe(true);
+                    storage.runOutsideAutomergeStoragePublisherScope(() => {
+                        if (target === 'root') {
+                            crdtDocument.mutateCrdtDoc<Record<string, unknown>>({
+                                id: target,
+                                changeFn: (draft) => {
+                                    draft.peer = true;
+                                },
+                            });
+                            crdtDocument.replaceCrdtDocInLineage({ id: target, doc: original });
+                        } else {
+                            crdtDocument.removeCrdtDoc(target);
+                            crdtDocument.createCrdtDoc(target);
+                        }
+                    });
+                    expect(crdtDocument.getCrdtDoc(target)).toEqual(original);
+                    expect(isAuthorized()).toBe(false);
+                })
+            );
+            transaction.commit();
+            expect(transaction.status).toBe('returned');
+        }
+    );
 
     it('treats a repeated registration as a no-op', () => {
         const { app, command, crdtDocument } = modules;

@@ -16,6 +16,7 @@ import {
 } from '#/modules/Command/useCases';
 import {
     captureProjectIdentity,
+    captureProjectMutationAuthorization,
     captureProjectRevision,
     createCrdtDoc,
     getCrdtDoc,
@@ -501,6 +502,10 @@ describe('prompt stem import recovery', () => {
                 canReapplyAfterDivergence: () => true,
                 undoable: true,
             },
+        });
+        commandProjectRevisionPort.configureMutationAuthority({
+            revisionProvider: captureProjectRevision,
+            captureMutationAuthorization: captureProjectMutationAuthorization,
         });
         commandProjectRevisionPort.setProvider(captureProjectRevision);
         resetActionReplayAuthority();
