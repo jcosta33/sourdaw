@@ -67,11 +67,29 @@ class PlatformWindow {
         return Promise.resolve();
     }
     destroy(): void {
+        if (this.destroyed) {
+            return;
+        }
         this.destroyed = true;
+        for (const listener of this.listeners.get('closed') ?? []) {
+            listener();
+        }
     }
     close(): void {
+        if (this.destroyed) {
+            return;
+        }
+        let prevented = false;
+        const event = {
+            preventDefault: () => {
+                prevented = true;
+            },
+        };
         for (const listener of this.listeners.get('close') ?? []) {
-            listener({ preventDefault: () => undefined });
+            listener(event);
+        }
+        if (!prevented) {
+            this.destroy();
         }
     }
 }

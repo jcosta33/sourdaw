@@ -138,6 +138,46 @@ afterEach(async () => {
     platform.reset();
 });
 
+describe('native window close adapter', () => {
+    it('destroys the window and publishes closed when close is not prevented', () => {
+        const window = new platform.electron.BrowserWindow({});
+        const onClose = vi.fn();
+        const onClosed = vi.fn(() => {
+            expect(window.isDestroyed()).toBe(true);
+        });
+        window.on('close', onClose);
+        window.once('closed', onClosed);
+
+        window.close();
+
+        expect(onClose).toHaveBeenCalledExactlyOnceWith({ preventDefault: expect.any(Function) });
+        expect(window.isDestroyed()).toBe(true);
+        expect(onClosed).toHaveBeenCalledExactlyOnceWith();
+    });
+
+    it('keeps the window open when a close listener prevents the default action', () => {
+        const window = new platform.electron.BrowserWindow({});
+        const onClosed = vi.fn();
+        window.on('close', (event) => {
+            if (
+                typeof event !== 'object' ||
+                event === null ||
+                !('preventDefault' in event) ||
+                typeof event.preventDefault !== 'function'
+            ) {
+                throw new Error('Close event is not preventable');
+            }
+            event.preventDefault();
+        });
+        window.once('closed', onClosed);
+
+        window.close();
+
+        expect(window.isDestroyed()).toBe(false);
+        expect(onClosed).not.toHaveBeenCalled();
+    });
+});
+
 describe('imported project names at the actual native menu boundary', () => {
     it('preserves imported CRDT truth while confining title, Recent and close-dialog strings', async () => {
         const crdt = await import('#/modules/CrdtDocument/useCases');
