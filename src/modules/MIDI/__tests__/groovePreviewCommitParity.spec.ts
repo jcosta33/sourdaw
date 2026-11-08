@@ -129,6 +129,7 @@ describe('groove preview and commit parity', () => {
 
         expect(assignment).toEqual({
             ok: true,
+            status: 'written',
             assignment: {
                 consumerType: 'clip',
                 consumerId: 'clip-nan',
