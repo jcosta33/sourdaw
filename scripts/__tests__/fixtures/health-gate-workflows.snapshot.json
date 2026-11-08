@@ -1538,7 +1538,7 @@
           {
             "name": "Install trusted Gitleaks",
             "working-directory": "${{ github.workspace }}",
-            "run": "set -euo pipefail\numask 077\ngitleaks_archive=\"$RUNNER_TEMP/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz\"\ngitleaks_dir=\"$RUNNER_TEMP/gitleaks-${GITLEAKS_VERSION}\"\ngitleaks_url=\"https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz\"\n\ncurl --fail --location --proto '=https' --tlsv1.2 --silent --show-error \\\n  --output \"$gitleaks_archive\" \\\n  \"$gitleaks_url\"\nprintf '%s  %s\\n' \"$GITLEAKS_SHA256\" \"$gitleaks_archive\" | sha256sum --check --status\nmkdir -p \"$gitleaks_dir\"\ntar -xzf \"$gitleaks_archive\" -C \"$gitleaks_dir\" gitleaks\nprintf '%s\\n' \"$gitleaks_dir\" >> \"$GITHUB_PATH\"\n"
+            "run": "set -euo pipefail\numask 077\ngitleaks_archive=\"$RUNNER_TEMP/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz\"\ngitleaks_dir=\"$RUNNER_TEMP/gitleaks-${GITLEAKS_VERSION}\"\ngitleaks_url=\"https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz\"\n\ncurl --fail --location --proto '=https' --tlsv1.2 --silent --show-error \\\n  --retry 3 --retry-max-time 120 --connect-timeout 10 --max-time 60 \\\n  --output \"$gitleaks_archive\" \\\n  \"$gitleaks_url\"\nprintf '%s  %s\\n' \"$GITLEAKS_SHA256\" \"$gitleaks_archive\" | sha256sum --check --status\nmkdir -p \"$gitleaks_dir\"\ntar -xzf \"$gitleaks_archive\" -C \"$gitleaks_dir\" gitleaks\nprintf '%s\\n' \"$gitleaks_dir\" >> \"$GITHUB_PATH\"\n"
           },
           {
             "name": "Validate PR merge diff secret scanner",
