@@ -1,0 +1,31 @@
+src/modules/AiRuntime/useCases/__tests__/metricStemRecordWorkflow.spec.ts
+  s_68423a2adea8d2::t_1c65ae9a57fc7b 40,828-835,842-847
+  s_68423a2adea8d2::t_2bd099c99d73ca 744-745,804
+  s_68423a2adea8d2::t_6478c15ecf0e6c 1-10,13-35,37-39,41-196,201-202,206-244,253-254,258-259,261-387,397-712,719-734,736-743,746-749,753-764,766,769-776,778-792,799-803,805-827,836-841,848-850
+  s_68423a2adea8d2::t_97afe80b5fd1b6 11,197-199,245-252,255-257,260,713-718
+  s_68423a2adea8d2::t_9d7f085562355b 388-396,751
+  s_68423a2adea8d2::t_9fe654f8efd616 12,36,200,203-205,735,750,752,765,767-768,777,793-798
+src/modules/AiRuntime/useCases/__tests__/metricRefinementRecordWorkflow.spec.ts
+  s_68423a2adea8d2::t_aa4328f3ef5d18 9,96,108,120,240-241,245-246,253-277,298-310,313
+  s_68423a2adea8d2::t_b1c68a038afeb1 2-4,10-24
+  s_68423a2adea8d2::t_8dda08c852c424 7-8,279-287,312
+  s_68423a2adea8d2::t_efade483667b15 195,223,278
+  s_68423a2adea8d2::t_9fe654f8efd616 68,84,137,140,171,196-222,224,242-244,247-252
+  s_68423a2adea8d2::t_9238f7151bd20e 1,5-6,25-67,69-83,85-95,97-107,109-119,121-136,138-139,141-170,172-194,225-239,288-297,311,314-317
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1b4e64a9e4acd6fd5e16ea3b9747610db6a6c8ac",
+  "prompts": {},
+  "sessions": {
+    "s_68423a2adea8d2": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34b-f305-7c03-beb2-57afa678cda5",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
