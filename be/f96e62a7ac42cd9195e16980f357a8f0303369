@@ -1,0 +1,24 @@
+src/modules/AiRuntime/useCases/llmOrchestration/__tests__/localPlanningWindow.integration.spec.ts
+  s_68423a2adea8d2::t_f3e1f126a4bec3 468,477,481,522,530,534
+  s_68423a2adea8d2::t_511b481b73c38c 357
+  s_68423a2adea8d2::t_82cc7edb7be4dd 226-228,239,241,254,256,271,273,308-311,313,351-356,358-359,388-391,399-400,402,460,462-465,478-480,497-499,508,510-513,531-533,560-565
+  s_68423a2adea8d2::t_c16b71a6af37cf 82-90,410-414
+  s_68423a2adea8d2::t_c1f46879b774cf 35-37,39
+  s_68423a2adea8d2::t_7e525be6d5f370 63-81,91-139,305,331,345,381-384,406,408-409,423-424
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "bef96e62a7ac42cd9195e16980f357a8f0303369",
+  "prompts": {},
+  "sessions": {
+    "s_68423a2adea8d2": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34b-f305-7c03-beb2-57afa678cda5",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
