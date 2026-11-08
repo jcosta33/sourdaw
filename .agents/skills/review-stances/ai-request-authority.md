@@ -67,3 +67,15 @@ Report the concrete break or none.
    brief-to-measured-run case. The omission reached main in [#6311](https://github.com/jcosta33/sourdaw/pull/6311);
    its public later-approval target-effects review probed continuation, which did not establish
    exclusion before initial collection.
+
+9. **Project content effects reach protected clips without target arguments (#5971).** Drive plain
+   and real compiler-backed tempo proposals beside a named clip protection, with an admitted
+   unprotected control. Require a whole-batch protection refusal, including a mixed tempo-and-gain
+   request, a tempo-only whole-track protection, retained refinement facts, inactive alternative
+   identities and approval-time checks. Read unconditional scope and dimensions from Command; target
+   arguments alone cannot describe the reach. Keep clip protection separate from its track's fader,
+   preserve facet-only restrictions, and admit unrelated project-timing and conditional effects.
+   Removing project-effect expansion must fail `plainTempoClipProtection.spec.ts`. Source promotion
+   and tempo's arrangement/audio declaration landed in [#5888](https://github.com/jcosta33/sourdaw/pull/5888);
+   its public approvals attacked source/history and seam behavior, which did not establish the
+   original-request protection boundary for targetless writes.
