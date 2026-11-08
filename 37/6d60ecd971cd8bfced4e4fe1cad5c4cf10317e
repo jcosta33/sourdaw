@@ -1,0 +1,46 @@
+src/modules/AiRuntime/useCases/expandMixRecipe.ts
+  s_68423a2adea8d2::t_c7ae8206858155 129-133,149-151,318,321-323,326-330,332
+  s_68423a2adea8d2::t_9dbd851b64ec61 128
+  s_68423a2adea8d2::t_671c663689bc2e 148,152,311,313,319,324,333,349
+  s_68423a2adea8d2::t_fe3c90bb114e54 317,320,325,331
+src/modules/AiRuntime/useCases/__tests__/presetRecipeLibrary.spec.ts
+  s_68423a2adea8d2::t_9dbd851b64ec61 418
+  s_68423a2adea8d2::t_cd93683c198771 47-55,57,59,64,285
+  s_68423a2adea8d2::t_c033746dd7c370 411-413,417,436-437
+  s_68423a2adea8d2::t_91b572bb2806c6 46,56,58,60-63,65,128-130,154-155,264,284,335
+  s_68423a2adea8d2::t_af9bb59b5fc7aa 4,17,346-351,359-364,374-377,391-392,397-401,419,427,432,445-446,462-463,465-469,476-480,484-486,502,504-506
+  s_68423a2adea8d2::t_c7ae8206858155 5-11,27-31,33-37,39-43,75-89,92-94,104-109,113-115,120-124,139-151,156-163,166-184,187-193,195,198,201,204,206-213,216-218,220-238,240-263,265-274,278-283,287-288,292-295,299-307,318-326,338-345,352-358,365-373,378-390,393-396,402-410,414-416,420-426,428-431,434-435,438-444,447-461,470-475,481-483,487-501,507-509,513-514,516-523,525-536
+  s_68423a2adea8d2::t_8855b95489e2e3 14-15,20,127,194,196-197,199-200,202-203,205,433,464,503
+src/modules/AiRuntime/useCases/discoverMixRecipes.ts
+  s_68423a2adea8d2::t_671c663689bc2e 68
+  s_68423a2adea8d2::t_b90c1ac43c36c0 196-198
+src/modules/Arrangement/useCases/__tests__/getMixRecipeCatalog.spec.ts
+  s_68423a2adea8d2::t_c7ae8206858155 1,10-12,15-16,18-22,27-28,32-76
+  s_68423a2adea8d2::t_e05cdf8911c125 17
+src/modules/AiRuntime/useCases/discoverPresetRecipes.ts
+  s_68423a2adea8d2::t_9dbd851b64ec61 85
+  s_68423a2adea8d2::t_cd93683c198771 41-46,79
+  s_68423a2adea8d2::t_c7ae8206858155 17-19,22-34,37-39,48-53,60,71,87-99,120-124,134-136,140-142,145-153,161-179,187-190,193-205,213-217
+  s_68423a2adea8d2::t_671c663689bc2e 54,56,58,63,70,73,76,82,127,181
+  s_68423a2adea8d2::t_af40fa08ac7126 65,103-118,132,154-160
+  s_68423a2adea8d2::t_cff8d02d1daeb1 40,57,59,62,64,66-67,69,72,74-75,77-78,80,130-131,180,206-208
+src/modules/AiRuntime/useCases/applicationOwnedToolLoop.ts
+  s_68423a2adea8d2::t_671c663689bc2e 1322,1331,1352,1365,1374-1376
+  s_68423a2adea8d2::t_c7ae8206858155 1323-1330,1333-1340,1366-1373
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "376d60ecd971cd8bfced4e4fe1cad5c4cf10317e",
+  "prompts": {},
+  "sessions": {
+    "s_68423a2adea8d2": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34b-f305-7c03-beb2-57afa678cda5",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
