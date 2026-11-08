@@ -14,6 +14,7 @@ import {
     captureUndoHistory,
     clearUndoHistory,
     executeAppAction,
+    executeUserAppAction,
     redo,
     resetActionReplayAuthority,
     setActionHistoryMetadataPort,
@@ -365,6 +366,60 @@ describe('track header mute admission', () => {
         expect(trackStore.value?.tracks[0]?.muted).toBe(true);
         hook.unmount();
     });
+    it.each(['hook', 'owner'] as const)(
+        'admits a fresh successor gesture through %s while old requests are held',
+        async (route) => {
+            const entered = Promise.withResolvers<void>();
+            const held = Promise.withResolvers<void>();
+            const snapshot = transactSnapshot(async () => {
+                entered.resolve();
+                await held.promise;
+            });
+            await entered.promise;
+            const hook = renderHook(() => useTrackMuteToggle('target', false));
+            const oldIdentity = captureProjectIdentity();
+            const first = hook.result.current();
+            const second = hook.result.current();
+            removeCrdtDoc('root');
+            createCrdtDoc('root');
+            trackStore.set({
+                tracks: [
+                    TrackDummy.create({ id: 'target', name: 'Successor', kind: 'midi', muted: false }),
+                    TrackDummy.create({ id: 'other', name: 'Successor other', kind: 'midi', muted: true }),
+                ],
+                selectedTrackId: 'target',
+                ghostClips: [],
+            });
+            flushAutomergeStorageWrites();
+            const identity = captureProjectIdentity();
+            expect(identity).not.toBe(oldIdentity);
+            expect(agentProjectRepairStateStore.value).toBeNull();
+            expect(rawRoot().tracks.tracks).toEqual(trackStore.value?.tracks);
+            expect(trackStore.value?.tracks[0]).toMatchObject({ id: 'target', name: 'Successor', muted: false });
+            const other = structuredClone(rawRoot().tracks.tracks[1]);
+            const history = captureUndoHistory();
+            const sharedHistory = structuredClone(rawRoot().actionHistory);
+            const sameProject = () => captureProjectIdentity() === identity;
+            const fresh =
+                route === 'hook'
+                    ? hook.result.current()
+                    : executeUserAppAction(
+                          { type: 'muteTrack', payload: { trackId: 'target', muted: true, expectedMuted: false } },
+                          { skipUndo: true, shouldExecute: sameProject, shouldCommit: sameProject }
+                      );
+            held.resolve();
+            await snapshot;
+            await Promise.all([first, second, fresh]);
+            expect(rawRoot().tracks.tracks[0]).toMatchObject({ id: 'target', name: 'Successor', muted: true });
+            expect(trackStore.value?.tracks[0]).toMatchObject({ id: 'target', name: 'Successor', muted: true });
+            expect(rawRoot().tracks.tracks[1]).toEqual(other);
+            expect(trackStore.value?.tracks[1]).toEqual(other);
+            expect(captureUndoHistory()).toEqual(history);
+            expect(rawRoot().actionHistory).toEqual(sharedHistory);
+            expect(notices).toEqual([]);
+            hook.unmount();
+        }
+    );
     it('refuses a real click when project repair is required without changing project or engine', async () => {
         render(<Header />);
         expect(screen.getByRole('button', { name: 'Mute Target' })).toBeInTheDocument();
