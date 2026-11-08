@@ -1,0 +1,19 @@
+tests/e2e/kokoroNeuralPipeline.spec.ts
+  s_1052c2a2231ded::t_d3422808b4a415 2,4,86,97,100,103-104,109-116,149,152,161,187
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f24cf92ab01f937a8929e97cfbf698242772d0bb",
+  "prompts": {},
+  "sessions": {
+    "s_1052c2a2231ded": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b349-24b6-7622-8534-09f171c780d5",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
