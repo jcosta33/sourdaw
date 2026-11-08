@@ -15,6 +15,19 @@ function hasDynamicImport(node: ts.Node): boolean {
     );
 }
 
+function runtimeExpression(expression: ts.Expression): ts.Expression {
+    while (
+        ts.isParenthesizedExpression(expression) ||
+        ts.isSatisfiesExpression(expression) ||
+        ts.isAsExpression(expression) ||
+        ts.isTypeAssertionExpression(expression) ||
+        ts.isNonNullExpression(expression)
+    ) {
+        expression = expression.expression;
+    }
+    return expression;
+}
+
 function isSafeDirectProjectEntry(entry: string): boolean {
     if (/createProject|projectStore\.set/.test(entry)) {
         return false;
@@ -60,7 +73,7 @@ function isSafeDirectProjectEntry(entry: string): boolean {
             if (!ts.isIdentifier(declaration.name) || !declaration.initializer) {
                 return false;
             }
-            const initializer = declaration.initializer;
+            const initializer = runtimeExpression(declaration.initializer);
             if (declaration.name.text === 'newProject') {
                 if (!exported || !ts.isIdentifier(initializer) || initializer.text !== bindings[0]) {
                     return false;
@@ -95,9 +108,34 @@ describe('same-build persistence inspection entry', () => {
     });
 
     it.each([
+        ['satisfies', '_newProject satisfies typeof _newProject'],
+        ['nested assertions', '((<_T>(_newProject as _T))!)'],
+    ])('accepts an erased %s alias wrapper', (_name, initializer) => {
+        const entry = `import { newProject as _newProject } from '../../src/modules/Project/useCases';
+            type _T = typeof _newProject;
+            export const newProject = ${initializer};`;
+        expect(isSafeDirectProjectEntry(entry)).toBe(true);
+        expect(ts.transpileModule(entry, { compilerOptions: { module: ts.ModuleKind.ESNext } }).outputText).toMatch(
+            /export const newProject = \(*_newProject\)*/
+        );
+    });
+
+    it('accepts an erased wrapper around a lazy function', () => {
+        const entry = `import { newProject as _newProject } from '../../src/modules/Project/useCases';
+            export const newProject = _newProject;
+            const inspect = (((() => new Set()) satisfies () => Set<unknown>)!);`;
+        expect(isSafeDirectProjectEntry(entry)).toBe(true);
+        expect(ts.transpileModule(entry, { compilerOptions: { module: ts.ModuleKind.ESNext } }).outputText).toContain(
+            '() => new Set()'
+        );
+    });
+
+    it.each([
         ['top-level call', 'newProject();'],
         ['constructor with arguments', 'const value = new Set([1]);'],
         ['constructor without arguments', 'const value = new Set();'],
+        ['wrapped call', 'const value = (newProject() as unknown)!;'],
+        ['wrapped constructor', 'const value = (new Set() satisfies Set<unknown>);'],
         ['dynamic import', "const lazy = () => import('other');"],
         ['dynamic import with comment', "const lazy = () => import /* comment */ ('other');"],
         ['createProject', 'const lazy = () => createProject();'],
@@ -111,6 +149,7 @@ describe('same-build persistence inspection entry', () => {
     it.each([
         ['wrapped alias', 'export const newProject = () => _newProject();'],
         ['wrong alias', 'export const newProject = other;'],
+        ['wrapped wrong alias', 'export const newProject = (other as typeof _newProject)!;'],
     ])('rejects %s', (_name, declaration) => {
         const entry = `import { newProject as _newProject } from '../../src/modules/Project/useCases';\n${declaration}`;
         expect(isSafeDirectProjectEntry(entry)).toBe(false);
