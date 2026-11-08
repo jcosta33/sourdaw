@@ -1,0 +1,21 @@
+src/modules/WorkspaceShell/presentations/hooks/__tests__/nativeMenuImportedProjectConfinement.integration.spec.tsx
+  s_68423a2adea8d2::t_9c6786834223f1 141-180
+src/modules/WorkspaceShell/presentations/hooks/__tests__/helpers/nativeMenuImportPlatform.ts
+  s_68423a2adea8d2::t_5012757cfa8119 70-72,74-76,79-87,89-92
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "dcde0c56ab3fae7dc36e5b0b3578a2c23098847d",
+  "prompts": {},
+  "sessions": {
+    "s_68423a2adea8d2": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34b-f305-7c03-beb2-57afa678cda5",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
