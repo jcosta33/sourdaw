@@ -182,7 +182,7 @@ describe('checkBarrelMockCoverage — Vite-erased type-only module edges', () =>
         return buildFixture({
             [barrel]: "export { Alpha } from './Alpha';\n",
             [secondBarrel]: "export { Beta } from './Beta';\n",
-            'src/modules/Host/presentations/views/Bridge.ts': `import { Beta } from '${secondBarrelSpecifier}';\nexport const Bridge = Beta;\n`,
+            'src/modules/Host/presentations/views/Bridge.ts': `import { Beta } from '${secondBarrelSpecifier}';\nexport default true;\nexport const Bridge = Beta;\n`,
             'src/modules/Host/presentations/views/HostPanel.tsx': `${edge}\nexport const HostPanel = true;\n`,
             'src/modules/Host/presentations/views/__tests__/HostPanel.spec.tsx': [
                 `vi.mock('${barrelSpecifier}', () => ({ Alpha: true }));`,
@@ -199,7 +199,7 @@ describe('checkBarrelMockCoverage — Vite-erased type-only module edges', () =>
     ])('%s is erased and does not make its downstream mock key reachable', async (_label, edge) => {
         const marker = `__barrel_inline_type_${crypto.randomUUID().replaceAll('-', '')}`;
         const downstreamUrl = `data:text/javascript,${encodeURIComponent(`globalThis.${marker} = true; export const Beta = true;`)}`;
-        const bridgeSource = `import { Beta } from ${JSON.stringify(downstreamUrl)}; globalThis.${marker}Bridge = Beta; export const Bridge = Beta;`;
+        const bridgeSource = `import { Beta } from ${JSON.stringify(downstreamUrl)}; globalThis.${marker}Bridge = Beta; export default true; export const Bridge = Beta;`;
         const bridgeUrl = `data:text/javascript,${encodeURIComponent(bridgeSource)}`;
         const runtimeEdge = edge.replace("'./Bridge'", JSON.stringify(bridgeUrl));
 
@@ -210,20 +210,28 @@ describe('checkBarrelMockCoverage — Vite-erased type-only module edges', () =>
     });
 
     it.each([
-        ['a mixed value and inline type import', "import { type PreviewHandle, Bridge } from './Bridge';"],
-        ['an explicit empty import', "import {} from './Bridge';"],
-        ['a bare side-effect import', "import './Bridge';"],
-        ['an explicit empty re-export', "export {} from './Bridge';"],
-    ])('%s retains module evaluation and its downstream missing key', async (_label, edge) => {
+        [
+            'a mixed value and inline type import',
+            "import { type PreviewHandle, Bridge } from './Bridge';",
+            'void Bridge;',
+        ],
+        [
+            'a default import alongside inline type bindings',
+            "import Bridge, { type PreviewHandle } from './Bridge';",
+            'void Bridge;',
+        ],
+        ['a mixed value and inline type re-export', "export { type PreviewHandle, Bridge } from './Bridge';", ''],
+        ['an explicit empty import', "import {} from './Bridge';", ''],
+        ['a bare side-effect import', "import './Bridge';", ''],
+        ['an explicit empty re-export', "export {} from './Bridge';", ''],
+    ])('%s retains module evaluation and its downstream missing key', async (_label, edge, valueUse) => {
         const marker = `__barrel_runtime_edge_${crypto.randomUUID().replaceAll('-', '')}`;
         const downstreamUrl = `data:text/javascript,${encodeURIComponent(`globalThis.${marker} = true; export const Beta = true;`)}`;
-        const bridgeSource = `import { Beta } from ${JSON.stringify(downstreamUrl)}; globalThis.${marker}Bridge = Beta; export const Bridge = Beta;`;
+        const bridgeSource = `import { Beta } from ${JSON.stringify(downstreamUrl)}; globalThis.${marker}Bridge = Beta; export default true; export const Bridge = Beta;`;
         const bridgeUrl = `data:text/javascript,${encodeURIComponent(bridgeSource)}`;
         const runtimeEdge = edge.replace("'./Bridge'", JSON.stringify(bridgeUrl));
 
-        await executeTransformedModule(
-            `${runtimeEdge}\n${edge.includes(', Bridge }') ? 'void Bridge;' : ''}\nexport const HostPanel = true;`
-        );
+        await executeTransformedModule(`${runtimeEdge}\n${valueUse}\nexport const HostPanel = true;`);
 
         expect(Reflect.get(globalThis, marker)).toBe(true);
         expect(violationsOf(typeEdgeFixture(edge))).toEqual([
