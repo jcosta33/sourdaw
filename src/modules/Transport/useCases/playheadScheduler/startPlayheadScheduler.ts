@@ -339,7 +339,6 @@ export function startPlayheadScheduler(
     }
     advanceSchedulerDiscontinuityEpoch();
     const schedulerGeneration = schedulerSession.generation;
-    const schedulerRootIdentity = captureProjectRootIdentity();
     let initialEmissionPending = preparedInitial !== undefined;
     let preparedMidi: Awaited<ReturnType<PreparedInitialBrowserPlayback['prepareMidiWindows']>> = null;
     schedulerSession.tickInFlight = false;
@@ -351,7 +350,6 @@ export function startPlayheadScheduler(
         isCurrent: () =>
             schedulerSession.generation === schedulerGeneration &&
             transportStore.value?.isPlaying === true &&
-            captureProjectRootIdentity() === schedulerRootIdentity &&
             (!initialEmissionPending || (preparedMidi?.isCurrent() ?? preparedInitial?.isCurrent()) === true),
         yeastRouteLineage: preparedInitial?.yeastRouteLineage ?? new Map<string, LiveYeastIteration>(),
     };
