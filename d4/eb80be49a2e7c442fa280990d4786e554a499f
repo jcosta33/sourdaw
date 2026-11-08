@@ -1,0 +1,238 @@
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerLoopAudioStall.spec.ts
+  s_68423a2adea8d2::t_3cf1ced36f400c 167-190,403-420,443-455,509-511,524-531,558-562,569-575
+  s_68423a2adea8d2::t_3a0199d22b8335 1-3,5,6-8,10,16-18,20-30,34-42,46-57,59,66-77,80-83,86-92,98-109,114-124,129-153,156,158-165,191-201,209-215,217-231,233,239-250,253-269,271-281,285,287-307,312-318,321-330,351-364,366,368-381,396-397,400-402,421-442,456-464,471-472,477-508,512-523,532-537,544-551,553-557,576-592,1398
+  s_68423a2adea8d2::t_75ceb35d204184 383-385,393-395
+  s_68423a2adea8d2::t_f92a35ff272c24 62-64,335-347,349,601-603,923-927,989-998,1002,1020-1028,1042-1050,1268-1272,1311-1315,1332-1340,1345-1356
+  s_68423a2adea8d2::t_4322d8c3998013 331-334,348,350,563-568,643-652
+  s_68423a2adea8d2::t_46dd3aea60c17e 309-311
+  s_68423a2adea8d2::t_ece349b2c6c7d3 9,12-14,78-79,84-85,154-155,166,251-252,308
+  s_68423a2adea8d2::t_394433edde0950 43,234-238,367,386,539-541,691-693,728-741,748-749,870-872,1092-1187
+src/modules/CrdtDocument/useCases/crdtBranching/__tests__/forkKeepsPlaybackProgress.integration.spec.ts
+  s_68423a2adea8d2::t_48e63307ddf40a 12
+  s_68423a2adea8d2::t_b2b865294e852c 1-11,13-28,30-32,52-65,67-121,127-134,145-148,162,168-172,174,176-179,182-184,194-199,204-212,217-238,250-302
+  s_68423a2adea8d2::t_2112e857c30428 33-51,66,135-144,149-155,157-161,239-249
+  s_68423a2adea8d2::t_3591d3236c524c 29,122-126,156,166-167,173,175,180-181,185-193,200-203
+  s_68423a2adea8d2::t_34b7c0f0955d56 213-216
+  s_68423a2adea8d2::t_f92a35ff272c24 163-165
+src/modules/Transport/useCases/scheduling/scheduleAudioClips.ts
+  s_68423a2adea8d2::t_4322d8c3998013 94,112-114,116,166-169
+  s_68423a2adea8d2::t_f92a35ff272c24 95-111,117-120
+  s_68423a2adea8d2::t_ece349b2c6c7d3 20
+src/modules/Transport/useCases/playheadScheduler/projectLoopAudioWindows.ts
+  s_68423a2adea8d2::t_f92a35ff272c24 46,48,51-57,75-76,106,108
+  s_68423a2adea8d2::t_28e6125373ea10 86-93,98-99
+  s_68423a2adea8d2::t_46dd3aea60c17e 41,59-60,69-72,74
+  s_68423a2adea8d2::t_ea8be224103f6f 27,39,42-44,47,58,61-68,73
+src/modules/Transport/useCases/playheadScheduler/schedulerSession.ts
+  s_68423a2adea8d2::t_753a4bb8c299c4 1,83
+src/modules/Transport/useCases/playheadScheduler/createLoopAudioSchedule.ts
+  s_68423a2adea8d2::t_753a4bb8c299c4 1
+  s_68423a2adea8d2::t_556c8edd1c9004 43,57
+  s_68423a2adea8d2::t_b77fa2499819ae 12-16
+  s_68423a2adea8d2::t_ea732ad772e1d7 2,4-5,7-10,33-42,44-49,54
+  s_68423a2adea8d2::t_1ccf0fcc27b540 31-32
+  s_68423a2adea8d2::t_84c095538f68a4 6,17-30,51
+  s_68423a2adea8d2::t_b6a4b3e491f684 3
+src/modules/Transport/useCases/playheadScheduler/startPlayheadScheduler.ts
+  s_68423a2adea8d2::t_28e6125373ea10 1630-1633
+  s_68423a2adea8d2::t_8428abed5e7e8b 1624,1706,1727-1728,1790,1812-1813,1854,1876-1877
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerSeamHandover.spec.ts
+  s_68423a2adea8d2::t_f92a35ff272c24 587
+src/modules/Transport/useCases/playheadScheduler/__tests__/initialPlaybackWindow.integration.spec.ts
+  s_68423a2adea8d2::t_753a4bb8c299c4 285-292
+src/modules/Transport/useCases/playheadScheduler/__tests__/createLoopAudioSchedule.spec.ts
+  s_68423a2adea8d2::t_753a4bb8c299c4 51
+  s_68423a2adea8d2::t_f92a35ff272c24 55-57,81-83,207,209
+src/modules/Transport/models/LoopAudioScheduleLifetime.ts
+  s_68423a2adea8d2::t_753a4bb8c299c4 1-21
+src/modules/Transport/useCases/playheadScheduler/fenceSource.ts
+  s_68423a2adea8d2::t_f92a35ff272c24 8,10
+src/modules/Transport/useCases/scheduling/__tests__/scheduleAudioClipsLoopOrigin.spec.ts
+  s_68423a2adea8d2::t_ece349b2c6c7d3 38
+src/modules/Transport/useCases/playheadScheduler/loopAudio/createLoopAudioPasses.ts
+  s_68423a2adea8d2::t_a5a8b25e2567c5 10
+  s_68423a2adea8d2::t_84c095538f68a4 1-9,11-155
+src/modules/Transport/useCases/transportControls/__tests__/toggleRecordingPreRoll.spec.ts
+  s_68423a2adea8d2::t_ece349b2c6c7d3 89
+src/modules/Transport/useCases/scheduling/projectFrozenTrackWindow.ts
+  s_68423a2adea8d2::t_46dd3aea60c17e 3-17,19-33,47
+  s_68423a2adea8d2::t_ea8be224103f6f 1-2,18,34-46,48
+src/modules/Transport/useCases/playheadScheduler/loopAudio/createLoopFrozenWindows.ts
+  s_68423a2adea8d2::t_b6a4b3e491f684 5,7
+  s_68423a2adea8d2::t_925a7a3588599d 1,8-9
+  s_68423a2adea8d2::t_a5a8b25e2567c5 10
+  s_68423a2adea8d2::t_ea732ad772e1d7 2-4,6,11-127
+src/modules/Transport/useCases/scheduling/scheduleFrozenTrack.ts
+  s_68423a2adea8d2::t_ea8be224103f6f 14-15,120
+  s_68423a2adea8d2::t_b6a4b3e491f684 16-25,177
+  s_68423a2adea8d2::t_46dd3aea60c17e 105-119,121
+src/modules/Transport/useCases/scheduling/__tests__/scheduleFrozenTrack.spec.ts
+  s_68423a2adea8d2::t_ece349b2c6c7d3 12
+src/modules/Transport/models/LoopAudioScheduleState.ts
+  s_68423a2adea8d2::t_84c095538f68a4 1-56
+src/modules/Transport/useCases/playheadScheduler/loopAudio/createLoopAudioEmitter.ts
+  s_68423a2adea8d2::t_b6a4b3e491f684 9-12,14
+  s_68423a2adea8d2::t_1ccf0fcc27b540 1-8,13,16-148
+  s_68423a2adea8d2::t_a5a8b25e2567c5 15
+src/modules/Transport/useCases/playheadScheduler/loopAudio/createLoopAudioProgramme.ts
+  s_68423a2adea8d2::t_b6a4b3e491f684 6,14-15
+  s_68423a2adea8d2::t_1ccf0fcc27b540 1-5,7-13,16,18-206
+  s_68423a2adea8d2::t_a5a8b25e2567c5 17
+src/modules/Transport/useCases/playheadScheduler/loopAudio/createLoopAudioRefill.ts
+  s_68423a2adea8d2::t_ea732ad772e1d7 3-11,19-22,24-118,121,123-187,189,192-194,196-209,221-242
+  s_68423a2adea8d2::t_b6a4b3e491f684 1-2,13,15-17,119-120,122,188,190-191,195,210-220
+  s_68423a2adea8d2::t_925a7a3588599d 12,14
+  s_68423a2adea8d2::t_a5a8b25e2567c5 18,23
+src/modules/Transport/useCases/playheadScheduler/loopAudio/createLoopAudioCoverage.ts
+  s_68423a2adea8d2::t_a5a8b25e2567c5 15
+  s_68423a2adea8d2::t_ea732ad772e1d7 1-10,13-14,16-146
+  s_68423a2adea8d2::t_b6a4b3e491f684 11-12
+src/modules/Transport/useCases/__tests__/playheadScheduler.spec.ts
+  s_68423a2adea8d2::t_925a7a3588599d 932-935
+  s_68423a2adea8d2::t_46dd3aea60c17e 196-203,902-908
+  s_68423a2adea8d2::t_ece349b2c6c7d3 192-195
+  s_68423a2adea8d2::t_c78b46e1e5574f 920,928
+src/modules/Transport/useCases/scheduling/__tests__/scheduleAudioClipsMidClipFadeOut.spec.ts
+  s_68423a2adea8d2::t_ece349b2c6c7d3 23
+src/modules/Transport/useCases/scheduling/scheduleMetronome.ts
+  s_68423a2adea8d2::t_15377112d2d525 35,86
+src/modules/Transport/useCases/scheduling/scheduleMidiNotes.ts
+  s_68423a2adea8d2::t_3374d298748a6f 474-480,495-496,543,578,750,1234,1248,1360,1477
+release/open-source-inventory.json
+  s_68423a2adea8d2::t_6a6384c9def8f2 1215
+  s_68423a2adea8d2::t_92a406bf98be76 284,1825,1837
+  s_68423a2adea8d2::t_06afab8cf56b15 1215
+src/modules/Yeast/presentations/createYeastPreviewCanvasRenderer.ts
+  s_68423a2adea8d2::t_92a406bf98be76 2
+src/modules/Yeast/workers/MidiProcessor.ts
+  s_68423a2adea8d2::t_92a406bf98be76 11
+.agents/skills/review-stances/bundled-model-assets.md
+  s_68423a2adea8d2::t_92a406bf98be76 35-50
+scripts/__tests__/agentDeliveryScripts.spec.ts
+  s_68423a2adea8d2::t_92a406bf98be76 1043,1049
+scripts/publishReview.ts
+  s_68423a2adea8d2::t_92a406bf98be76 555
+scripts/workflowSecuritySurfaceContract.ts
+  s_68423a2adea8d2::t_92a406bf98be76 42,63
+scripts/__tests__/healthGatesWorkflow.spec.ts
+  s_68423a2adea8d2::t_92a406bf98be76 17,84,106,198,337,348-351,650-651,710,2064,2069,2076-2077,2092-2093,2796-2799,2818-2819,2822,2826-2827,2831,2838-2841,2845,2848-2852,2858,2862,2864,3024-3036,3038,3528-3530,3579-3582,3585-3588,3594,3599-3602,3616,3621-3624,3725-3727,4308,4310,4338-4339,4341,4359-4360,4438,5071,5082-5083,5086,5091,5098-5109,5111-5115,5220,5236,5271-5273
+src/modules/ContentBrowser/presentations/views/__tests__/Sidebar.spec.tsx
+  s_68423a2adea8d2::t_92a406bf98be76 5,9-11,102-131,134-135,139-151,155-156,308-319,322-407
+src/modules/ContentBrowser/presentations/views/Sidebar.tsx
+  s_68423a2adea8d2::t_92a406bf98be76 20,113,120-123,130,144-146
+src/modules/MIDI/repositories/webMidi/releaseAllActiveNotes.ts
+  s_68423a2adea8d2::t_92a406bf98be76 6
+.github/workflows/validation.yml
+  s_68423a2adea8d2::t_92a406bf98be76 3-5,482,648,680,786,888,930,1088,1211,1221,1223-1227
+package.json
+  s_68423a2adea8d2::t_92a406bf98be76 118,127,139,150-151,172,180-181
+tests/e2e/e2eUtils.ts
+  s_68423a2adea8d2::t_92a406bf98be76 122-124
+src/modules/AudioEngine/engine/TrackNode.ts
+  s_68423a2adea8d2::t_92a406bf98be76 13-16
+vite.config.ts
+  s_68423a2adea8d2::t_92a406bf98be76 165-168
+electron/__tests__/bridge.spec.ts
+  s_68423a2adea8d2::t_92a406bf98be76 264-314
+scripts/__tests__/publishReview.spec.ts
+  s_68423a2adea8d2::t_92a406bf98be76 250,6010-6012
+scripts/__tests__/fetchE2eCoverageMap.spec.ts
+  s_68423a2adea8d2::t_92a406bf98be76 132
+release/dependency-license-proofs.json
+  s_68423a2adea8d2::t_92a406bf98be76 64
+scripts/approvalGatedWorkflowContract.ts
+  s_68423a2adea8d2::t_92a406bf98be76 2-5,9-10,14-16,57-59,61-63,65-68,70-75,77-92,97-100,103-105,109,114
+electron/__tests__/agentWebviewBoundary.spec.ts
+  s_68423a2adea8d2::t_92a406bf98be76 9-11,58,77-87
+src/modules/AudioEngine/engine/BusNode.ts
+  s_68423a2adea8d2::t_92a406bf98be76 2
+electron/commands.ts
+  s_68423a2adea8d2::t_92a406bf98be76 216-222,228-230,232-234
+scripts/__tests__/fixtures/health-gate-workflows.snapshot.json
+  s_68423a2adea8d2::t_92a406bf98be76 17-21,36,129,194,252-253,255,635,842,1013,1051,1127,1208,1247,1372,1416,1418
+scripts/test-health-gate-scripts.sh
+  s_68423a2adea8d2::t_92a406bf98be76 419,455-456,462-464,572,579-580,585,685,689,693,697,1372,1397-1403,1406,1411-1428
+src/modules/MIDI/repositories/webMidi/releaseActiveToasterNote.ts
+  s_68423a2adea8d2::t_92a406bf98be76 2
+src/modules/Project/useCases/projectPersistence/helpers/collectProjectOriginalHashes.ts
+  s_68423a2adea8d2::t_92a406bf98be76 2
+src/modules/Transport/useCases/scheduling/prepareYeastTrackNotes.ts
+  s_68423a2adea8d2::t_92a406bf98be76 27-28
+AGENTS.md
+  s_68423a2adea8d2::t_92a406bf98be76 521-528,530-531,535
+src/modules/Yeast/workers/BaseMidiProcessor.ts
+  s_68423a2adea8d2::t_92a406bf98be76 13
+src/modules/Transport/useCases/scheduling/prepareInitialMidiWindow.ts
+  s_68423a2adea8d2::t_92a406bf98be76 8
+scripts/__tests__/trustedGitleaksInstaller.spec.ts
+  s_68423a2adea8d2::t_92a406bf98be76 1-450
+tests/e2e/kokoroNeuralPipeline.spec.ts
+  s_68423a2adea8d2::t_92a406bf98be76 1-354
+tests/e2e/devServerOnlySpecs.ts
+  s_68423a2adea8d2::t_92a406bf98be76 25
+tests/e2e/kokoroRenderProbe.html
+  s_68423a2adea8d2::t_92a406bf98be76 1-11
+electron/__tests__/router.spec.ts
+  s_68423a2adea8d2::t_92a406bf98be76 11,96-120
+scripts/__tests__/viteE2ePersistenceEntry.spec.ts
+  s_68423a2adea8d2::t_92a406bf98be76 4,6,12-122,124-258,303
+src/modules/ContentBrowser/presentations/hooks/__tests__/useImportedSampleResidency.spec.ts
+  s_68423a2adea8d2::t_92a406bf98be76 1-83
+.agents/skills/delivery-orchestration/SKILL.md
+  s_68423a2adea8d2::t_92a406bf98be76 201-203,414,440-441,466
+src/modules/Levain/repositories/sampleLoader/createDecodedBankResource.ts
+  s_68423a2adea8d2::t_92a406bf98be76 12
+.github/workflows/health-gates.yml
+  s_68423a2adea8d2::t_92a406bf98be76 6-8,11,17-20,28,98,146-148,197,200-203,210
+src/modules/ContentBrowser/presentations/hooks/useImportedSampleResidency.ts
+  s_68423a2adea8d2::t_92a406bf98be76 1-28
+electron/__tests__/commands.spec.ts
+  s_68423a2adea8d2::t_92a406bf98be76 112-125,437-448
+docs/06-testing.md
+  s_68423a2adea8d2::t_92a406bf98be76 917-919
+src/modules/Yeast/presentations/createYeastPreviewPresenter.ts
+  s_68423a2adea8d2::t_92a406bf98be76 4-7
+  s_68423a2adea8d2::t_8b1d6dedceed0c 3
+src/modules/BrowserAi/useCases/__tests__/kokoroRenderProbe.ts
+  s_68423a2adea8d2::t_92a406bf98be76 1-135
+pnpm-lock.yaml
+  s_68423a2adea8d2::t_9a40212081c7e5 33-34,60-61,96-97,124-125,127-128,188,190-191,214-215,217-218,849-850,855-856,861-862,867-868,873-874,879-880,885-886,891-892,898-899,905-906,912-913,919-920,926-927,933-934,940-941,947-948,953-954,959-960,965-966,1107-1108,1113-1114,1119-1120,1125-1126,1131-1132,1137-1138,1143-1144,1149-1150,1156-1157,1163-1164,1170-1171,1177-1178,1184-1185,1191-1192,1198-1199,1205-1206,1211-1212,1217-1218,1223-1224,2258-2259,2261-2262,2267-2268,2273-2274,2279-2280,2285-2286,2291-2292,2298-2299,2305-2306,2312-2313,2319-2320,2330-2331,2336-2337,2342-2343,2346-2347,2351-2352,2364-2365,2367-2368,3250-3252,3531-3533,3590-3591,4192-4193,4324-4325,4632-4633,4643-4644,5184-5185,6293,6296,6299,6302,6305,6308,6311,6314,6317,6320,6323,6326,6329,6332,6335,6338,6341,6344,6347,6431,6434,6437,6440,6443,6446,6449,6452,6455,6458,6461,6464,6467,6470,6473,6476,6479,6482,6485,7462,7470,7472,7475,7478,7481,7484,7487,7490,7493,7496,7499,7502,7505,7508,7510-7527,7530,7541,7543,7545,8430-8431,8735-8736,8798,8809,8813,8816,8819,9504,9509,9611,10127,10129,10131-10149,10182,10184-10202,10829
+public/legal/DEPENDENCY-LICENSES.txt
+  s_68423a2adea8d2::t_6921704f138132 10,416-417,549,655,7748,12825,16505-16520,20222-20223,22038
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerSeamEdit.spec.ts
+  s_68423a2adea8d2::t_8c6a47cc776b9a 3-4,13,339-340,349,504,605,609-610,621,687-688,690-691,700-719,725-728,733-737,742,744,746-750,756
+  s_68423a2adea8d2::t_c73dffb1504753 342-348,487-493,507,509-535,537-552,729-732,738-741
+  s_68423a2adea8d2::t_c6a85baec9fe5e 751,754
+  s_68423a2adea8d2::t_eff44b002f168a 7,72,483-484,617,720-724,743,745,752-753,755
+  s_68423a2adea8d2::t_1143e20c69c37f 757
+src/modules/AudioEngine/repositories/audioRecorder/__tests__/recordingCapturePlacement.integration.spec.ts
+  s_68423a2adea8d2::t_659292acf5ee84 81,107-113,150,289
+  s_68423a2adea8d2::t_366d76628bf750 744,746
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadScheduler.spec.ts
+  s_68423a2adea8d2::t_54f5f0a39e44bf 4,6,439,444-465,595-598
+  s_68423a2adea8d2::t_c73dffb1504753 7-12,440-443,486-491,599-612,1170-1178,1231-1233,1290-1297,1335-1342,1479-1490,1534-1541,1610-1617,1654-1661,1703-1710,1752-1759,2242-2247,2309-2314
+  s_68423a2adea8d2::t_359b0f1cc35f9c 77,466,483-485,510-537,540-551,613,1164-1169,1179,1187-1189,1194-1196,1198-1199,1202-1203,1220-1221,1226-1228,1234-1235
+  s_68423a2adea8d2::t_7705a059c0676d 621
+  s_68423a2adea8d2::t_08b0d02743b62a 1150,1223,1225,1259,1280,1314,1360,1378,1397,1415,1420-1421,1426,1444,1508,1563,1592,1643,1685,1734,1793,1877,1932,1958,1983,2008,2046,2067,2120-2121,2206,2353,2398,2428,2566
+  s_68423a2adea8d2::t_8c6a47cc776b9a 1191-1193,1197
+  s_68423a2adea8d2::t_0966a8dbdc9055 1200-1201,1229-1230
+  s_68423a2adea8d2::t_251a445af86419 614
+  s_68423a2adea8d2::t_d0878ab28a4c85 492-493,495-497,499-506,509,538-539
+  s_68423a2adea8d2::t_72ee13ebcc510e 494,498,507-508
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d4eb80be49a2e7c442fa280990d4786e554a499f",
+  "prompts": {},
+  "sessions": {
+    "s_68423a2adea8d2": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34b-f305-7c03-beb2-57afa678cda5",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
