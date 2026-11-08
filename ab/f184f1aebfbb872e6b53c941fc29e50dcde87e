@@ -1,0 +1,31 @@
+src/modules/CommandInterface/presentations/views/__tests__/patternPaletteWorkflow.integration.spec.tsx
+  s_1052c2a2231ded::t_286bd30d4ac446 69-72,76-80,88-90,313,318,336,342
+  s_1052c2a2231ded::t_8fd265f7772bbe 81-87
+src/modules/Arrangement/handlers/patternInstance/__tests__/patternInstanceAuthority.integration.spec.ts
+  s_1052c2a2231ded::t_8fd265f7772bbe 347-353
+  s_1052c2a2231ded::t_286bd30d4ac446 162-163,165-166,411,430,489
+  s_1052c2a2231ded::t_07315f83e231ef 342-346,354-383
+src/modules/CommandInterface/useCases/commands/MiscCommands.ts
+  s_1052c2a2231ded::t_286bd30d4ac446 87-88
+src/modules/Command/useCases/__tests__/versionedCommandArgumentKeys.spec.ts
+  s_1052c2a2231ded::t_8fd265f7772bbe 38-40
+  s_1052c2a2231ded::t_286bd30d4ac446 25
+src/modules/Arrangement/useCases/patternInstance/getPatternInstanceLinkState.ts
+  s_1052c2a2231ded::t_286bd30d4ac446 19-26
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "abf184f1aebfbb872e6b53c941fc29e50dcde87e",
+  "prompts": {},
+  "sessions": {
+    "s_1052c2a2231ded": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b349-24b6-7622-8534-09f171c780d5",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
