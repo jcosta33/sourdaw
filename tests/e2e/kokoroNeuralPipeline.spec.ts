@@ -1,8 +1,7 @@
 import { createHash } from 'node:crypto';
-import { createReadStream } from 'node:fs';
-import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
-import { dirname, join } from 'node:path';
+import { join } from 'node:path';
 
 import { type BrowserContext, type Page, type TestInfo } from '@playwright/test';
 
@@ -84,53 +83,37 @@ async function fetchBounded(artifact: Artifact): Promise<Uint8Array> {
     return bytes;
 }
 
-async function acquireArtifact(artifact: Artifact, testInfo: TestInfo): Promise<string> {
+async function acquireArtifact(artifact: Artifact): Promise<Uint8Array> {
     const fixtureDirectory = process.env.SOURDAW_KOKORO_FIXTURE_DIR;
     let bytes: Uint8Array;
     if (fixtureDirectory !== undefined) {
         const source = join(fixtureDirectory, artifact.name);
-        expect((await stat(source)).size, source).toBe(artifact.size);
         bytes = await readFile(source);
     } else {
         bytes = await fetchBounded(artifact);
     }
     expect(bytes.byteLength, artifact.name).toBe(artifact.size);
     expect(createHash('sha256').update(bytes).digest('hex'), artifact.name).toBe(artifact.sha256);
-    const output = testInfo.outputPath('kokoro-fixtures', artifact.name);
-    await mkdir(dirname(output), { recursive: true });
-    await writeFile(output, bytes, { flag: 'wx' });
-    return output;
+    return bytes;
 }
 
-async function startFixtureServer(files: Map<string, string>) {
+async function startFixtureServer(snapshots: ReadonlyMap<string, Uint8Array>) {
     const errors: string[] = [];
     const server = createServer((request, response) => {
-        const path = files.get(request.url ?? '');
-        if (request.method !== 'GET' || !path) {
+        const bytes = snapshots.get(request.url ?? '');
+        if (request.method !== 'GET' || !bytes) {
             errors.push(`Unexpected fixture request: ${request.method ?? ''} ${request.url ?? ''}`);
             response.writeHead(404).end();
             return;
         }
-        void stat(path).then(
-            (file) => {
-                response.writeHead(200, {
-                    'content-length': file.size,
-                    'content-type': 'application/octet-stream',
-                    'access-control-allow-origin': '*',
-                    'cross-origin-resource-policy': 'cross-origin',
-                });
-                const stream = createReadStream(path);
-                stream.on('error', (error) => {
-                    errors.push(error.message);
-                    response.destroy(error);
-                });
-                stream.pipe(response);
-            },
-            (error: unknown) => {
-                errors.push(String(error));
-                response.destroy(error instanceof Error ? error : new Error(String(error)));
-            }
-        );
+        response.on('error', (error) => errors.push(error.message));
+        response.writeHead(200, {
+            'content-length': bytes.byteLength,
+            'content-type': 'application/octet-stream',
+            'access-control-allow-origin': '*',
+            'cross-origin-resource-policy': 'cross-origin',
+        });
+        response.end(bytes);
     });
     server.on('error', (error) => errors.push(error.message));
     await new Promise<void>((resolve, reject) => {
@@ -163,10 +146,10 @@ async function startFixtureServer(files: Map<string, string>) {
 
 async function routeArtifacts(context: BrowserContext, testInfo: TestInfo, origin: string) {
     const paths = new Map<string, string>();
-    const fixtureFiles = new Map<string, string>();
+    const fixtureSnapshots = new Map<string, Uint8Array>();
     for (const artifact of artifacts) {
         const path = `/kokoro/${artifact.name}`;
-        fixtureFiles.set(path, await acquireArtifact(artifact, testInfo));
+        fixtureSnapshots.set(path, await acquireArtifact(artifact));
         paths.set(artifact.url, path);
     }
     await testInfo.attach('verified-pinned-fixtures', {
@@ -175,7 +158,7 @@ async function routeArtifacts(context: BrowserContext, testInfo: TestInfo, origi
     });
     const entered = Promise.withResolvers<void>();
     const held = Promise.withResolvers<void>();
-    const server = await startFixtureServer(fixtureFiles);
+    const server = await startFixtureServer(fixtureSnapshots);
     let voiceRequests = 0;
     const unexpected: string[] = [];
     await context.route('**/*', async (route) => {
@@ -201,7 +184,7 @@ async function routeArtifacts(context: BrowserContext, testInfo: TestInfo, origi
             return;
         }
         const fixtureUrl = new URL(url);
-        if (fixtureUrl.origin === server.origin && fixtureFiles.has(fixtureUrl.pathname) && !fixtureUrl.search) {
+        if (fixtureUrl.origin === server.origin && fixtureSnapshots.has(fixtureUrl.pathname) && !fixtureUrl.search) {
             await route.continue();
             return;
         }
