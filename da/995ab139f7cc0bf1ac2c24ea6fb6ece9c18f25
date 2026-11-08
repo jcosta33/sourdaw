@@ -1,0 +1,25 @@
+src/modules/AiRuntime/useCases/agentReference/__tests__/plainTempoClipProtection.spec.ts
+  s_68423a2adea8d2::t_bc6ef21ff86a2a 280
+  s_68423a2adea8d2::t_4ec45b99f7da8b 261,276-279,281-284
+  s_68423a2adea8d2::t_5b38f1a90c39cb 285-287
+src/modules/AiRuntime/useCases/agentReference/proposalCommandShape.ts
+  s_68423a2adea8d2::t_4ec45b99f7da8b 370
+.agents/skills/review-stances/ai-request-authority.md
+  s_68423a2adea8d2::t_4ec45b99f7da8b 77-78
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "da995ab139f7cc0bf1ac2c24ea6fb6ece9c18f25",
+  "prompts": {},
+  "sessions": {
+    "s_68423a2adea8d2": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34b-f305-7c03-beb2-57afa678cda5",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
