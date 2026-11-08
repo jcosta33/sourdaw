@@ -1,0 +1,20 @@
+scripts/checkBarrelMockCoverage.ts
+  s_1052c2a2231ded::t_a8cab07c7a39ff 203,209,215,221,227,233,239,245,257
+  s_1052c2a2231ded::t_e0233538eda9a4 165
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ba40056336d042de44e2421183bf0e979f3167a7",
+  "prompts": {},
+  "sessions": {
+    "s_1052c2a2231ded": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b349-24b6-7622-8534-09f171c780d5",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
