@@ -18,7 +18,9 @@ function expectTheme(target: Document, theme: 'dark' | 'light', color: string): 
 
 afterEach(() => {
     document.body.replaceChildren();
-    document.head.querySelectorAll('meta[name="theme-color"]').forEach((meta) => meta.remove());
+    for (const meta of document.head.querySelectorAll('meta[name="theme-color"]')) {
+        meta.remove();
+    }
     document.documentElement.classList.remove('dark', 'light');
     document.documentElement.style.colorScheme = '';
 });
