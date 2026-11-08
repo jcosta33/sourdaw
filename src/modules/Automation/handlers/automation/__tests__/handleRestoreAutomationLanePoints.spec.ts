@@ -84,6 +84,21 @@ describe('handleRestoreAutomationLanePoints — batch payload admission', () => 
             expect(mockedRestore).not.toHaveBeenCalled();
         }
     );
+
+    it('rejects an own undefined expected control even when its known fields match live points', () => {
+        const expected = { ...valid };
+        Object.assign(expected, { cp1: undefined });
+        const action = {
+            type: 'restoreAutomationLanePoints',
+            payload: { laneId: 'lane1', points: [{ ...valid, value: 0.75 }], expectedPoints: [expected] },
+        } satisfies AppAction;
+        setLane([makePoint()]);
+
+        expect(handleRestoreAutomationLanePoints.validate?.(action, { actions: [action], actionIndex: 0 })).toBe(false);
+        expect(handleRestoreAutomationLanePoints.execute(action)).toEqual({ status: 'conflict' });
+        expect(handleRestoreAutomationLanePoints.isNoop?.(action)).toBe(false);
+        expect(mockedRestore).not.toHaveBeenCalled();
+    });
 });
 
 describe('handleRestoreAutomationLanePoints — execute', () => {

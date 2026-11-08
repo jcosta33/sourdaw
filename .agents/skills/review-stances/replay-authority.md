@@ -119,6 +119,11 @@ boundaries.
    against the initial live state falsely refuses its staged prefix. Point-only restore handlers use transaction
    rollback, not runtime inverse compensation; a refused later restore must report conflict without a missing-inverse
    error. Removing the point-snapshot guard must fail the peer and late-conflict cases.
+   Keep inverse producers on that same exact point shape: absent optional controls or stair fields stay absent,
+   never own properties valued `undefined`. A malformed expected point whose known fields match live state must
+   still refuse, so a value mismatch cannot mask missing shape admission. Drive normal Reverse/Invert through
+   registered Command, raw CRDT, projection and Undo/Redo as well as direct handlers. Caller fixtures must register
+   the real Automation handler map used by bootstrap when recording now replays through typed restores.
 7. **Grouped inverse capture must read the owning action prefix (#4083, #4073, #4071).** Failure:
    `executeAppActionBatch` describes members before executing, so later inverses capture pre-batch state. Probe: real
    grouped Undo/Redo against raw CRDT and projection; swap the earlier-sibling projection for live pre-batch state and
