@@ -109,6 +109,20 @@ const readProductionTypescript = (directory: string, skip: (path: string) => boo
         .join('\n');
 
 describe('the Electron command surface', () => {
+    it.each([
+        'collab_apply_change',
+        'collab_create_project',
+        'collab_get_document_state',
+        'collab_load_bundle',
+        'collab_merge_bundle',
+        'collab_save_bundle',
+    ])('retains %s in the addon without granting renderer access', (command) => {
+        expect(registeredCommands()).toContain(command);
+        expect(DENIED_COMMANDS).toContain(command);
+        expect(EXPOSED_COMMANDS).not.toContain(command);
+        expect(isExposedCommand(command)).toBe(false);
+    });
+
     it('pins only plumbing names the addon actually publishes', () => {
         // A renamed plumbing method would otherwise fall into the registered
         // set as a phantom new command, and the stale pin would keep excusing
@@ -361,12 +375,6 @@ const COMMAND_ARGUMENTS: ReadonlyMap<string, readonly string[]> = new Map([
     ['close_plugin_gui', ['instance_id']],
     ['close_provider_gateway_session', ['session_id']],
     ['close_push_transport', []],
-    ['collab_apply_change', ['doc_id', 'change_bytes']],
-    ['collab_create_project', ['name', 'sample_rate']],
-    ['collab_get_document_state', ['doc_id']],
-    ['collab_load_bundle', ['path']],
-    ['collab_merge_bundle', ['path']],
-    ['collab_save_bundle', ['path']],
     ['commit_export_files', ['tokens']],
     ['commit_levain_bank', ['bank_key', 'layout']],
     ['commit_pitch_edit', ['request']],
@@ -426,6 +434,18 @@ const COMMAND_ARGUMENTS: ReadonlyMap<string, readonly string[]> = new Map([
 ]);
 
 describe('positional argument contract', () => {
+    it.each([
+        'collab_apply_change',
+        'collab_create_project',
+        'collab_get_document_state',
+        'collab_load_bundle',
+        'collab_merge_bundle',
+        'collab_save_bundle',
+    ])('gives the private %s command no renderer argument mapping', (command) => {
+        expect(COMMAND_ARGUMENTS.has(command)).toBe(false);
+        expect(SOURDAW_COMMAND_ARGUMENTS.has(command)).toBe(false);
+    });
+
     it('matches the addon signature for every exposed command, in order', () => {
         const signatures = addonSignatures();
         const derived = EXPOSED_COMMANDS.map((command): [string, readonly string[]] => [
