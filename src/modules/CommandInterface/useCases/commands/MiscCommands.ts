@@ -84,8 +84,8 @@ export const miscCommands: CallableCommandEntry[] = [
         description: 'Create a linked copy of the selected MIDI clip',
         category: 'Clips',
         action: () => {
-            void createPatternInstanceFromSelection().catch((error) => {
-                logger.error(error);
+            void createPatternInstanceFromSelection().catch((error: unknown) => {
+                logger.error(new Error('Pattern instance creation failed', { cause: error }));
             });
         },
     },

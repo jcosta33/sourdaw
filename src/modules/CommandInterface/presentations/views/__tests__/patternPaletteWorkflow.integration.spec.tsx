@@ -60,20 +60,32 @@ type ArrangementEvents = {
 type NotificationEvents = { 'ui.notify': NotifyPayload; 'ui.confirm': ConfirmPayload; 'ui.prompt': PromptPayload };
 type Root = { tracks: NonNullable<typeof trackStore.value>; midi: NonNullable<typeof midiStore.value> };
 
-function plain<T>(value: T): T {
-    return JSON.parse(JSON.stringify(value));
-}
-
 function material() {
     settlePendingProjectWritesAndCaptureRevision();
     const root = getCrdtDoc<Root>('root');
     if (!root) {
         throw new Error('Expected actual project root');
     }
-    const actual = plain({ tracks: root.tracks, midi: root.midi });
-    expect(actual.tracks.tracks).toEqual(plain(trackStore.value?.tracks));
-    expect(actual.midi).toEqual(plain(midiStore.value));
+    const copied = Automerge.toJS(root);
+    const actual = { tracks: copied.tracks, midi: copied.midi };
+    expect(actual.tracks.tracks).toEqual(structuredClone(trackStore.value?.tracks));
+    expect(actual.midi).toEqual(structuredClone(midiStore.value));
     return actual;
+}
+
+function replayHistory() {
+    const history = undoHistoryStore.value;
+    if (!history) {
+        throw new Error('Expected actual replay history');
+    }
+    const capture = (entries: typeof history.past) =>
+        entries.map((entry) => {
+            if (entry.kind !== 'action') {
+                throw new Error('Expected serializable typed action history');
+            }
+            return structuredClone(entry);
+        });
+    return { past: capture(history.past), future: capture(history.future) };
 }
 
 function readClip(clipId: string) {
@@ -298,12 +310,12 @@ describe('mounted pattern palette project workflow', () => {
     it('leaves missing selection without project or history effects', async () => {
         clearClipSelection();
         const before = material();
-        const past = plain(undoHistoryStore.value);
+        const past = replayHistory();
         render(<CommandPalette />);
         await invokeCommand('Create Pattern Instance');
         await invokeCommand('Detach Pattern Instance');
         expect(material()).toEqual(before);
-        expect(undoHistoryStore.value).toEqual(past);
+        expect(replayHistory()).toEqual(past);
     });
 
     it('leaves a selected audio clip without pattern, link, selection or history effects', async () => {
@@ -321,12 +333,12 @@ describe('mounted pattern palette project workflow', () => {
         });
         selectClipWithFocus('audio-selected');
         const before = material();
-        const past = plain(undoHistoryStore.value);
+        const past = replayHistory();
         render(<CommandPalette />);
         await invokeCommand('Create Pattern Instance');
         await invokeCommand('Detach Pattern Instance');
         expect(material()).toEqual(before);
         expect(clipSelectionStore.value?.selectedClipId).toBe('audio-selected');
-        expect(undoHistoryStore.value).toEqual(past);
+        expect(replayHistory()).toEqual(past);
     });
 });

@@ -22,7 +22,7 @@ describe('versioned linked pattern replay arguments', () => {
         expect(validateVersionedCommandArguments('createPatternInstance', { ...payload, targetClipId: 4 })).toBe(false);
     });
 
-    it('round trips exact absent, empty and false-valued link fields and rejects malformed presence claims', () => {
+    it('admits exact absent, empty and false-valued link fields and rejects malformed presence claims', () => {
         const expected = { parentClipId: { present: false }, overrides: { present: false } };
         for (const overrides of [
             { present: false },
@@ -35,9 +35,9 @@ describe('versioned linked pattern replay arguments', () => {
                 expected,
                 replacement: { parentClipId: { present: true, value: 'source' }, overrides },
             };
-            expect(
-                validateVersionedCommandArguments('restorePatternInstanceLink', JSON.parse(JSON.stringify(payload)))
-            ).toBe(true);
+            expect(validateVersionedCommandArguments('restorePatternInstanceLink', structuredClone(payload))).toBe(
+                true
+            );
         }
         const payload = { clipId: 'instance', trackId: 'destination', expected, replacement: expected };
         expect(

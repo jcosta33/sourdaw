@@ -37,10 +37,6 @@ type Root = {
 };
 type NotificationEvents = { 'ui.notify': NotifyPayload; 'ui.confirm': ConfirmPayload; 'ui.prompt': PromptPayload };
 
-function plain<T>(value: T): T {
-    return JSON.parse(JSON.stringify(value));
-}
-
 describe('pattern instance project and replay authority', () => {
     let events: ReturnType<typeof createEventBus<ArrangementEvents>>;
     let notifications: ReturnType<typeof createEventBus<NotificationEvents>>;
@@ -163,10 +159,11 @@ describe('pattern instance project and replay authority', () => {
 
     function material() {
         const document = root();
-        const actual = plain({ tracks: document.tracks, midi: document.midi });
+        const copied = Automerge.toJS(document);
+        const actual = { tracks: copied.tracks, midi: copied.midi };
         // Selection and ghost clips are local runtime fields, absent from persisted truth.
-        expect(actual.tracks.tracks).toEqual(plain(arrangementStores.trackStore.value?.tracks));
-        expect(actual.midi).toEqual(plain(midiStores.midiStore.value));
+        expect(actual.tracks.tracks).toEqual(structuredClone(arrangementStores.trackStore.value?.tracks));
+        expect(actual.midi).toEqual(structuredClone(midiStores.midiStore.value));
         return actual;
     }
 
@@ -342,6 +339,48 @@ describe('pattern instance project and replay authority', () => {
         return clip('linked-instance');
     }
 
+    function replayHistory() {
+        const history = commandStores.undoHistoryStore.value;
+        if (!history) {
+            throw new Error('Expected actual replay history');
+        }
+        const capture = (entries: typeof history.past) =>
+            entries.map((entry) => {
+                if (entry.kind !== 'action') {
+                    throw new Error('Expected serializable typed action history');
+                }
+                return structuredClone(entry);
+            });
+        return { past: capture(history.past), future: capture(history.future) };
+    }
+
+    it('preserves a peer note on the FIRST Undo of the initial creation without any Redo refreshing its guard', async () => {
+        await priorEdit();
+        const instance = await createLinkedInstance();
+        mergePeer((draft) => {
+            draft.midi.notesByClipId[instance.id]!.push({
+                id: 'first-undo-peer-note',
+                pitch: 83,
+                startBeat: 4.125,
+                duration: 0.375,
+                velocity: 49,
+            });
+        });
+        const changed = material();
+        const raw = Automerge.toJS(root());
+        const history = replayHistory();
+        expect(history.past).toHaveLength(2);
+        expect(history.future).toEqual([]);
+        await command.undo();
+        expect(Automerge.toJS(root())).toEqual(raw);
+        expect(material()).toEqual(changed);
+        expect(replayHistory()).toEqual(history);
+        await notifications.waitForIdle();
+        expect(warnings).toEqual([
+            { message: 'Cannot undo "Create Pattern Instance": project state has changed', level: 'warning' },
+        ]);
+    });
+
     it('reuses the canonical versioned identity through repeated real replay and refuses to discard peer notes after Redo', async () => {
         const instance = await createLinkedInstance();
         const performance = notes(instance.id);
@@ -369,7 +408,7 @@ describe('pattern instance project and replay authority', () => {
             });
         });
         const changed = material();
-        const past = plain(commandStores.undoHistoryStore.value?.past);
+        const past = replayHistory().past;
         await command.undo();
         expect(material()).toEqual(changed);
         expect(commandStores.undoHistoryStore.value?.past).toEqual(past);
@@ -388,7 +427,7 @@ describe('pattern instance project and replay authority', () => {
                 .find((track) => track.id === 'destination-track')!
                 .clips.find((candidate) => candidate.id === 'keeper')!.name = 'Peer keeper';
         });
-        const expected = plain(before);
+        const expected = structuredClone(before);
         expected.tracks.tracks
             .find((track) => track.id === 'destination-track')!
             .clips.find((candidate) => candidate.id === 'keeper')!.name = 'Peer keeper';
@@ -447,7 +486,7 @@ describe('pattern instance project and replay authority', () => {
             linked.overrides = { notes: false };
         });
         const changed = material();
-        const past = plain(commandStores.undoHistoryStore.value?.past);
+        const past = replayHistory().past;
         await command.undo();
         expect(material()).toEqual(changed);
         expect(commandStores.undoHistoryStore.value?.past).toEqual(past);
@@ -485,7 +524,6 @@ describe('pattern instance project and replay authority', () => {
                 startBeat: 12,
                 endBeat: 16,
                 audioBufferId: 'audio-source-buffer',
-                audioOffsetSeconds: 1.75,
             },
         });
         command.clearUndoHistory();

@@ -16,15 +16,12 @@ export function getPatternInstanceLinkState(clipId: string): { trackId: string; 
     if (!clip) {
         return null;
     }
-    return {
-        trackId: target.trackId,
-        state: {
-            parentClipId:
-                clip.parentClipId === undefined ? { present: false } : { present: true, value: clip.parentClipId },
-            overrides:
-                clip.overrides === undefined
-                    ? { present: false }
-                    : { present: true, value: structuredClone(clip.overrides) },
-        },
-    };
+    const state: LinkState = { parentClipId: { present: false }, overrides: { present: false } };
+    if (clip.parentClipId !== undefined) {
+        state.parentClipId = { present: true, value: clip.parentClipId };
+    }
+    if (clip.overrides !== undefined) {
+        state.overrides = { present: true, value: structuredClone(clip.overrides) };
+    }
+    return { trackId: target.trackId, state };
 }
