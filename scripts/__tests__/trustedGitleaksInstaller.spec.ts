@@ -341,7 +341,7 @@ exec "$INSTALLER_TEST_CURL" --connect-to "github.com:443:127.0.0.1:$INSTALLER_TE
         );
         expect(result.signal).toBeNull();
         expect(result.elapsedMs).toBeLessThan(MAX_CHILD_MS);
-        expect(args.slice(0, 7)).toEqual([
+        expect(args).toEqual([
             '--fail',
             '--location',
             '--proto',
@@ -349,6 +349,17 @@ exec "$INSTALLER_TEST_CURL" --connect-to "github.com:443:127.0.0.1:$INSTALLER_TE
             '--tlsv1.2',
             '--silent',
             '--show-error',
+            '--retry',
+            '3',
+            '--retry-max-time',
+            '120',
+            '--connect-timeout',
+            '10',
+            '--max-time',
+            '60',
+            '--output',
+            join(runnerTemp, `gitleaks_${subject.version}_linux_x64.tar.gz`),
+            `https://github.com/gitleaks/gitleaks/releases/download/v${RELEASE_VERSION}/gitleaks_${RELEASE_VERSION}_linux_x64.tar.gz`,
         ]);
         expect(args[args.indexOf('--output') + 1]).toBe(
             join(runnerTemp, `gitleaks_${subject.version}_linux_x64.tar.gz`)
@@ -394,7 +405,7 @@ exec "$INSTALLER_TEST_CURL" --connect-to "github.com:443:127.0.0.1:$INSTALLER_TE
 }
 
 describe('actual trusted Gitleaks inline installer over HTTPS', () => {
-    it('retains finite curl recovery and transfer bounds', () => {
+    it('declares finite curl recovery and transfer bounds', () => {
         const { run } = installer();
         for (const option of ['--retry 3', '--retry-max-time 120', '--connect-timeout 10', '--max-time 60']) {
             expect(run).toContain(option);
