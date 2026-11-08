@@ -27,7 +27,8 @@ describe('reorderYeastProcessor', () => {
     });
 
     it('moves the processor at fromIdx to toIdx, shifting the ones in between', () => {
-        reorderYeastProcessor(0, 2);
+        reconcileGrooveAssignments.mockReturnValueOnce(true);
+        expect(reorderYeastProcessor(0, 2)).toBe(true);
 
         expect(yeastStore.value?.processors.map((processor) => processor.id)).toEqual([
             'filter-1',
@@ -75,7 +76,7 @@ describe('reorderYeastProcessor', () => {
         ['negative toIdx', 0, -1],
         ['toIdx past the end', 0, 3],
     ])('guards out-of-range indices without writing or issuing a runtime command (%s)', (_label, fromIdx, toIdx) => {
-        reorderYeastProcessor(fromIdx, toIdx);
+        expect(reorderYeastProcessor(fromIdx, toIdx)).toBe(false);
 
         expect(yeastStore.value?.processors.map((processor) => processor.id)).toEqual([
             'arp-1',

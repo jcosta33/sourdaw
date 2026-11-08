@@ -39,6 +39,7 @@ const { reconcileYeastGrooveAssignments } = await import('../reconcileYeastGroov
 describe('reconcileYeastGrooveAssignments', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        mocks.restoreGrooveAssignment.mockReturnValue({ status: 'written' });
         mocks.racks = [
             {
                 processors: [{ id: 'groove-live', type: 'groove', name: 'Groove', bypassed: false }],
@@ -92,13 +93,13 @@ describe('reconcileYeastGrooveAssignments', () => {
             },
         ];
 
-        reconcileYeastGrooveAssignments();
+        expect(reconcileYeastGrooveAssignments()).toBe(false);
 
         expect(mocks.restoreGrooveAssignment).not.toHaveBeenCalled();
     });
 
     it('removes orphan assignments while preserving live Yeast and foreign consumers', () => {
-        reconcileYeastGrooveAssignments();
+        expect(reconcileYeastGrooveAssignments()).toBe(true);
 
         expect(mocks.restoreGrooveAssignment).toHaveBeenCalledOnce();
         expect(mocks.restoreGrooveAssignment).toHaveBeenCalledWith({

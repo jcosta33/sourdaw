@@ -15,14 +15,14 @@ export function addYeastProcessor(
     type: ProcessorType,
     processorId = `${type}-${crypto.randomUUID()}`,
     name?: string
-): void {
+): boolean {
     const state = yeastStore.value;
     if (!state) {
-        return;
+        return false;
     }
 
     const id = processorId;
     const catalogEntry = PROCESSOR_TYPES.find((entry) => entry.type === type);
     const resolvedName = name ?? catalogEntry?.name ?? type;
-    commitYeastProjection([...state.processors, { id, type, name: resolvedName, bypassed: false, params: {} }]);
+    return commitYeastProjection([...state.processors, { id, type, name: resolvedName, bypassed: false, params: {} }]);
 }

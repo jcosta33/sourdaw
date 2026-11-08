@@ -1,3 +1,4 @@
+import { markGrooveTemplateProjectWrite } from '#/modules/MIDI/useCases';
 import { createHandler } from '#/utils/createHandler';
 
 import { readYeastGrooveAssignments } from '../useCases/readYeastGrooveAssignments';
@@ -29,8 +30,15 @@ export const handleRemoveYeastProcessor = createHandler<'removeYeastProcessor'>(
         }
         // Also deletes the processor's groove assignments in the MIDI store;
         // the addYeastProcessor restore leg re-binds the ones captured below.
-        removeYeastProcessor(action.payload.processorId);
-        return { status: 'written' };
+        const grooveChanged = removeYeastProcessor(action.payload.processorId);
+        if (!grooveChanged) {
+            return { status: 'written' };
+        }
+        return {
+            status: 'written',
+            afterCommit: markGrooveTemplateProjectWrite,
+            afterAmbiguousCommit: markGrooveTemplateProjectWrite,
+        };
     },
     isNoop: (action) => {
         const state = readYeastRackState();
