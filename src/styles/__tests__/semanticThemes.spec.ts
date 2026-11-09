@@ -364,10 +364,10 @@ describe('semantic light theme', () => {
             const alphaSource = /\/(\d+)$/u.exec(foregroundClass)?.[1];
             const baseForeground = readLightColor(token);
             for (const [stop, background] of Object.entries(crustWindowStops())) {
-                const foreground =
-                    alphaSource === undefined
-                        ? baseForeground
-                        : composite(baseForeground, background, Number(alphaSource) / 100);
+                let foreground = baseForeground;
+                if (alphaSource !== undefined) {
+                    foreground = composite(baseForeground, background, Number(alphaSource) / 100);
+                }
                 expect(contrast(foreground, background), `${role} on Crust ${stop}`).toBeGreaterThanOrEqual(4.5);
             }
         }
@@ -637,7 +637,7 @@ describe('semantic light theme', () => {
         for (const [index, toneClass] of toneClasses.entries()) {
             const glowSource = glowSources[index];
             const stateName = stateNames[index];
-            if (glowSource === undefined || stateName === undefined) {
+            if (toneClass === undefined || glowSource === undefined || stateName === undefined) {
                 throw new Error('Missing Tuner main-read state');
             }
             const token = /^text-\[var\((--[a-z-]+)\)\]$/u.exec(toneClass)?.[1];
