@@ -1,0 +1,14 @@
+src/components/daw/__tests__/DawTabStrip.spec.tsx
+  h_beb54bf43b47b7 306,322
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b321988a4954fe17b5bfeb8594fb7a9d476b68e5",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
