@@ -240,16 +240,14 @@ const LevelTile = ({
             'flex h-full flex-1 flex-col items-center justify-center rounded-[14px] border px-3 py-4 transition-all',
             active
                 ? 'border-[var(--color-accent-cyan)]/45 border-l-[3px] bg-white/[0.045] text-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]'
-                : 'border-white/8 bg-black/20 text-white/36 hover:border-white/14 hover:text-white/80'
+                : 'border-white/8 bg-black/20 text-foreground hover:border-white/14'
         )}
         onClick={onClick}
         aria-pressed={active}
         aria-label={`Style ${label}`}
     >
         <span className="text-compact font-semibold leading-tight">{label}</span>
-        <span className="mt-1 whitespace-pre-line text-center text-micro leading-snug text-muted-foreground/45">
-            {subtitle}
-        </span>
+        <span className="mt-1 whitespace-pre-line text-center text-micro leading-snug text-foreground">{subtitle}</span>
     </Button>
 );
 
@@ -596,7 +594,7 @@ const Level5Stats = ({
                     label={label}
                     value={value}
                     className="gap-2"
-                    labelClassName="text-nano text-muted-foreground/40"
+                    labelClassName="text-nano text-muted-foreground"
                     valueClassName="text-micro text-foreground/70"
                 />
             ))}

@@ -69,11 +69,11 @@ export const CrustGainStrip = ({ value, onChange }: Props): ReactElement => {
         return '#5B8FC4';
     })();
 
-    let valueColor = '#E8E6E0';
+    let valueColor = 'var(--color-text-primary)';
     if (value > 12) {
-        valueColor = '#C44030';
+        valueColor = 'var(--color-state-danger)';
     } else if (value > 6) {
-        valueColor = '#D4A847';
+        valueColor = 'var(--color-state-warning)';
     }
 
     return (
@@ -88,7 +88,7 @@ export const CrustGainStrip = ({ value, onChange }: Props): ReactElement => {
                 borderRight: '1px solid var(--color-border-soft)',
             }}
         >
-            <span className="text-nano font-semibold text-muted-foreground/40 uppercase tracking-widest">Gain</span>
+            <span className="text-nano font-semibold text-muted-foreground uppercase tracking-widest">Gain</span>
 
             {/* Drag track */}
             <Row
@@ -163,7 +163,7 @@ export const CrustGainStrip = ({ value, onChange }: Props): ReactElement => {
                     className="absolute pointer-events-none"
                     style={{ bottom: 0, left: '50%', transform: 'translate(8px, 0)' }}
                 >
-                    <span className="text-[6px] font-mono text-muted-foreground/30">0</span>
+                    <span className="text-[6px] font-mono text-muted-foreground">0</span>
                 </div>
             </Row>
 
@@ -176,7 +176,7 @@ export const CrustGainStrip = ({ value, onChange }: Props): ReactElement => {
                 {value > 0 ? '+' : ''}
                 {value.toFixed(1)}
             </span>
-            <span className="text-[6px] text-muted-foreground/30 font-mono">dB</span>
+            <span className="text-[6px] text-muted-foreground font-mono">dB</span>
         </Stack>
     );
 };

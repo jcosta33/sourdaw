@@ -28,9 +28,9 @@ describe('DawPanelSurface', () => {
                 'shrink-0',
                 'flex-col',
                 'border-t',
-                'border-black/60',
+                'border-border-soft',
                 'bg-surface-base',
-                'shadow-[inset_0_1px_4px_rgba(0,0,0,0.5)]',
+                'shadow-elevation-inset',
             ],
         ],
         [
@@ -53,7 +53,9 @@ describe('DawPanelSurface', () => {
             </DawPanelSurface>
         );
 
-        expect(screen.getByTestId('panel-surface')).toHaveClass(...expectedClassNames);
+        const panel = screen.getByTestId('panel-surface');
+        expect(panel).toHaveClass(...expectedClassNames);
+        expect(panel).not.toHaveClass('daw-panel-surface');
     });
 
     it('renders as an aside and forwards native props, events, and styles', () => {

@@ -1405,6 +1405,42 @@
             ]
         },
         {
+            "id": "theme-prepaint-source",
+            "kind": "project-source",
+            "retention": "keep-with-obligations",
+            "owner": "OS-10",
+            "releaseModes": [
+                "source",
+                "web",
+                "desktop"
+            ],
+            "paths": [
+                "public/themePrepaint.js"
+            ],
+            "sources": [
+                "public/themePrepaint.js"
+            ],
+            "revisions": [
+                "not-applicable:direct-project-source"
+            ],
+            "digests": [
+                "sha256:114807e0bd81f0674c1bf0b22fcf86ad5528dc565800be81788f30f8c258b719:public/themePrepaint.js"
+            ],
+            "licenses": [
+                "Apache-2.0"
+            ],
+            "productSurfaces": [
+                "browser startup theme restoration",
+                "desktop webview startup theme restoration"
+            ],
+            "evidence": [
+                "The startup script is direct project source; no generator or second source tree exists."
+            ],
+            "obligations": [
+                "Ship the project LICENSE and NOTICE with every distribution."
+            ]
+        },
+        {
             "id": "audio-worklet-sources",
             "kind": "project-source",
             "retention": "keep-with-obligations",

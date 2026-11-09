@@ -136,17 +136,25 @@ function useFocusReturn({
     };
 }
 
+const DIALOG_SIZE_CLASS_NAMES = {
+    default: '',
+    workspace:
+        'h-[680px] max-h-[calc(100dvh-4rem)] w-[920px] max-w-[calc(100vw-4rem)] gap-0 overflow-hidden bg-surface-raised p-0 sm:max-w-[calc(100vw-4rem)]',
+} as const;
+
 export function DialogContent({
     className,
     children,
     overlayClassName,
     showCloseButton = true,
+    size = 'default',
     onCloseAutoFocus,
     ...props
 }: ComponentProps<typeof DialogPrimitive.Content> & {
     /** Classes for the scrim, which has to share a raised layer with its content. */
     overlayClassName?: string;
     showCloseButton?: boolean;
+    size?: keyof typeof DIALOG_SIZE_CLASS_NAMES;
 }) {
     const focusReturn = useFocusReturn({ onCloseAutoFocus });
 
@@ -158,6 +166,7 @@ export function DialogContent({
                 {...focusReturn}
                 className={cn(
                     'fixed top-[50%] left-[50%] z-50 grid w-full max-w-[calc(100%-2rem)] translate-x-[-50%] translate-y-[-50%] gap-4 rounded-md border border-black/40 border-t-[var(--color-light-edge)] bg-surface-dialog p-6 shadow-elevation-modal duration-200 outline-none data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 sm:max-w-lg',
+                    DIALOG_SIZE_CLASS_NAMES[size],
                     className
                 )}
                 {...props}

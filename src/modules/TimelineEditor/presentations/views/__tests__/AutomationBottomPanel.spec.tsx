@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { scrollTimelineViewportHorizontallyFromWheel } from '#/modules/Arrangement/useCases';
@@ -36,10 +36,19 @@ vi.mock('#/components/daw/DawBlockedState', () => ({
 }));
 
 vi.mock('#/components/daw/DawEmptyState', () => ({
-    DawEmptyState: ({ title, description }: { title: string; description: string }) => (
+    DawEmptyState: ({
+        title,
+        description,
+        action,
+    }: {
+        title: string;
+        description: string;
+        action?: React.ReactNode;
+    }) => (
         <div data-testid="empty-state">
             <span>{title}</span>
             <span>{description}</span>
+            {action}
         </div>
     ),
 }));
@@ -116,10 +125,18 @@ vi.mock('../AutomationView/AutomationSidebarCell', () => ({
 }));
 
 vi.mock('../AutomationView/AutomationControls', () => ({
-    AutomationAddLaneControl: ({ params }: { params: { id: string; name: string }[] }) => (
+    AutomationAddLaneControl: ({
+        params,
+        onAdd,
+    }: {
+        params: { id: string; name: string }[];
+        onAdd: (paramId: string, paramName: string) => void;
+    }) => (
         <div data-testid="add-lane-control">
             {params.map((param) => (
-                <span key={param.id}>{param.name}</span>
+                <button key={param.id} type="button" onClick={() => onAdd(param.id, param.name)}>
+                    Add {param.name}
+                </button>
             ))}
         </div>
     ),
@@ -233,6 +250,23 @@ describe('AutomationBottomPanel', () => {
         render(<AutomationBottomPanel />);
         expect(screen.getByTestId('blocked-state')).toBeInTheDocument();
         expect(screen.getByText('No track selected')).toBeInTheDocument();
+    });
+
+    it('puts the add-lane action inside the empty state it explains', () => {
+        const clientWidth = vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(400);
+        try {
+            renderSelectedTrack();
+
+            const emptyState = screen.getByTestId('empty-state');
+            expect(emptyState).toHaveTextContent('No automation lanes yet');
+            expect(emptyState.querySelector('[data-testid="add-lane-control"]')).toHaveTextContent('Volume');
+
+            fireEvent.click(within(emptyState).getByRole('button', { name: 'Add Volume' }));
+
+            expect(mocks.addAutomationLane).toHaveBeenCalledWith('track-1', 'volume', 'Volume');
+        } finally {
+            clientWidth.mockRestore();
+        }
     });
 
     it('should route horizontal wheel movement through the Arrangement horizontal scroll use case', () => {

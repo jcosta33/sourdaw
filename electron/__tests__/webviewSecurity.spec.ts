@@ -43,6 +43,7 @@ vi.mock('electron', () => ({
 
 const DEV_SERVER = 'http://localhost:5173';
 const MAGENTA_DDSP_CSP_SOURCE = 'https://storage.googleapis.com/magentadata/js/checkpoints/ddsp/';
+const indexHtml = readFileSync(join(import.meta.dirname, '../../index.html'), 'utf8');
 const origins = [APP_ORIGIN, DEV_SERVER];
 
 const parseCsp = (policy: string): Map<string, string[]> => {
@@ -55,6 +56,44 @@ const parseCsp = (policy: string): Map<string, string[]> => {
     }
     return directives;
 };
+
+type ParsedScript = {
+    namespaceURI: string | null;
+    textContent: string | null;
+    getAttribute(name: string): string | null;
+    hasAttribute(name: string): boolean;
+};
+
+type ParsedDocument = {
+    open(): void;
+    write(html: string): void;
+    close(): void;
+    querySelectorAll(selector: string): Iterable<ParsedScript>;
+};
+
+const browserDocument = (
+    globalThis as {
+        document: {
+            implementation: {
+                createHTMLDocument(title: string): ParsedDocument;
+            };
+        };
+    }
+).document;
+
+/** Parse with the browser's scripting flag so noscript contents stay inert. */
+const parseActiveHtml = (html: string): ParsedDocument => {
+    const parsed = browserDocument.implementation.createHTMLDocument('');
+    parsed.open();
+    parsed.write(html);
+    parsed.close();
+    return parsed;
+};
+
+const findThemeScript = (html: string): ParsedScript | null =>
+    [...parseActiveHtml(html).querySelectorAll('script#sourdaw-theme')].find(
+        (script) => script.namespaceURI === 'http://www.w3.org/1999/xhtml'
+    ) ?? null;
 
 /** Every production TypeScript source under a directory, concatenated. */
 const readProductionTypescript = (directory: string): string =>
@@ -89,6 +128,39 @@ describe('the production Content-Security-Policy', () => {
         expect(directives.get('script-src')).toEqual(["'self'", "'wasm-unsafe-eval'", 'blob:']);
         expect([...directives.values()].flat()).not.toContain("'unsafe-eval'");
         expect(directives.get('script-src')).not.toContain("'unsafe-inline'");
+
+        const themeScript = findThemeScript(indexHtml);
+        expect(themeScript?.getAttribute('src')).toBe('/themePrepaint.js');
+        // The prepaint must run as a classic inline-order script: an absent or
+        // non-JavaScript type can suppress execution, while module, async or
+        // defer spelling defers it past first paint and restores the dark flash.
+        expect(themeScript?.getAttribute('type')?.toLowerCase()).toBe('text/javascript');
+        expect(themeScript?.getAttribute('type')?.toLowerCase()).not.toBe('module');
+        expect(themeScript?.hasAttribute('async')).toBe(false);
+        expect(themeScript?.hasAttribute('defer')).toBe(false);
+        expect(themeScript?.textContent?.trim()).toBe('');
+    });
+
+    it.each([
+        {
+            name: 'commented-out markup',
+            html: '<!-- <script id="sourdaw-theme" type="text/javascript" src="/themePrepaint.js"></script> -->',
+        },
+        {
+            name: 'a scripting-inert head noscript ancestor',
+            html: '<head><noscript><script id="sourdaw-theme" type="text/javascript" src="/themePrepaint.js"></script></noscript></head>',
+        },
+        {
+            name: 'a scripting-inert body noscript ancestor',
+            html: '<body><noscript><script id="sourdaw-theme" type="text/javascript" src="/themePrepaint.js"></script></noscript></body>',
+        },
+        {
+            name: 'an SVG script',
+            html: '<svg><script id="sourdaw-theme" type="text/javascript" src="/themePrepaint.js"></script></svg>',
+        },
+    ])('does not accept $name as active markup', ({ html }) => {
+        expect(findThemeScript(html)).toBeNull();
+        expect(findThemeScript(indexHtml)).not.toBeNull();
     });
 
     it('admits only bundled workers and the enumerated provider and model hosts', () => {

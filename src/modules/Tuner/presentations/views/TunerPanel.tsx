@@ -88,7 +88,7 @@ function SectionCard({
             title={title}
             detail={detail}
             detailMode="badge"
-            titleClassName="text-[var(--color-accent-indigo)]/72"
+            titleClassName="text-[var(--color-accent-indigo)]"
             detailClassName="text-[var(--color-accent-indigo)]"
         >
             {children}
@@ -122,13 +122,13 @@ export const TunerPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
     const absoluteCents = Math.abs(cents);
     let toneColor: string;
     if (!active) {
-        toneColor = 'text-white/28';
+        toneColor = 'text-text-secondary';
     } else if (absoluteCents <= 2) {
-        toneColor = 'text-emerald-400';
+        toneColor = 'text-[var(--color-accent-mint)]';
     } else if (absoluteCents <= 10) {
-        toneColor = 'text-yellow-400';
+        toneColor = 'text-[var(--color-state-warning)]';
     } else {
-        toneColor = 'text-red-400';
+        toneColor = 'text-[var(--color-state-danger)]';
     }
     let centerGlow: string;
     if (!active) {
@@ -165,8 +165,8 @@ export const TunerPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
             <Stack as="aside" gap={3} shrink={false} className="h-full w-[232px] overflow-y-auto pr-1">
                 <SectionCard title="Display" detail={mode}>
                     <div>
-                        <div className="text-[18px] font-semibold text-white/92">Scoring</div>
-                        <div className="mt-1 text-[11px] text-white/44">
+                        <div className="text-[18px] font-semibold text-text-primary">Scoring</div>
+                        <div className="mt-1 text-[11px] text-text-secondary">
                             Tuning mode, reference pitch, and quick read stay docked here.
                         </div>
                     </div>
@@ -189,8 +189,8 @@ export const TunerPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                                     onClick={() => setDisplayMode(deviceId, entry.id)}
                                 >
                                     <div>
-                                        <div className="text-[11px] font-medium text-white/88">{entry.label}</div>
-                                        <div className="text-[9px] text-white/42">{entry.detail}</div>
+                                        <div className="text-[11px] font-medium text-text-primary">{entry.label}</div>
+                                        <div className="text-[9px] text-text-secondary">{entry.detail}</div>
                                     </div>
                                     {selected ? <DawPluginLed tone="mint">Live</DawPluginLed> : null}
                                 </Button>
@@ -226,8 +226,8 @@ export const TunerPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                         />
                     </Row>
                     <div className="text-center">
-                        <div className="font-mono text-[16px] text-white/88">{a4Reference} Hz</div>
-                        <div className="text-[10px] uppercase tracking-[0.22em] text-white/42">Concert A</div>
+                        <div className="font-mono text-[16px] text-text-primary">{a4Reference} Hz</div>
+                        <div className="text-[10px] uppercase tracking-[0.22em] text-text-secondary">Concert A</div>
                     </div>
                 </SectionCard>
 
@@ -235,12 +235,14 @@ export const TunerPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                     <Stack gap={2}>
                         <div className="text-center">
                             <div
-                                className="font-mono text-[13px] text-white/88 truncate"
+                                className="font-mono text-[13px] text-text-primary truncate"
                                 title={state.scaleName || '12-TET (Standard)'}
                             >
                                 {state.scaleName || '12-TET (Standard)'}
                             </div>
-                            <div className="text-[10px] uppercase tracking-[0.22em] text-white/42">Temperament</div>
+                            <div className="text-[10px] uppercase tracking-[0.22em] text-text-secondary">
+                                Temperament
+                            </div>
                         </div>
                         <input
                             ref={fileInputRef}
@@ -274,14 +276,14 @@ export const TunerPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                             variant="bare"
                             size="bare"
                             type="button"
-                            className="scoring-window flex items-center justify-center gap-2 px-3 py-2 text-left text-[11px] font-medium text-white/88 hover:border-white/12 hover:bg-white/[0.02] transition-all"
+                            className="scoring-window flex items-center justify-center gap-2 px-3 py-2 text-left text-[11px] font-medium text-text-primary hover:border-white/12 hover:bg-white/[0.02] transition-all"
                             onClick={() => fileInputRef.current?.click()}
                         >
                             <FileUp className="h-3.5 w-3.5 text-[var(--color-accent-indigo)]" />
                             <span>Import Scale (.scl, .tun)</span>
                         </Button>
                         {importError ? (
-                            <div role="alert" className="text-[10px] text-red-400">
+                            <div role="alert" className="text-[10px] text-state-danger">
                                 {importError}
                             </div>
                         ) : null}
@@ -292,37 +294,37 @@ export const TunerPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
             <Stack as="section" gap={3} grow className="min-w-0 overflow-y-auto pr-1">
                 <Row as="header" wrap gap={2.5} shrink={false} className="scoring-window px-3 py-2">
                     <Stack gap={1}>
-                        <div className="text-[8px] uppercase tracking-[0.28em] text-[var(--color-accent-indigo)]/72">
+                        <div className="text-[8px] uppercase tracking-[0.28em] text-[var(--color-accent-indigo)]">
                             Tuning deck
                         </div>
-                        <div className="text-[14px] font-semibold text-white/92">
+                        <div className="text-[14px] font-semibold text-text-primary">
                             {active ? `${noteName}${octave}` : 'Waiting for pitch'}
                         </div>
                     </Stack>
                     <Row wrap align="stretch" gap={2} className="ml-auto">
                         <DawPluginMetricTile
                             className="scoring-window min-w-[88px]"
-                            labelClassName="text-white/48"
-                            valueClassName="text-white/88"
-                            detailClassName="text-white/42"
+                            labelClassName="text-text-secondary"
+                            valueClassName="text-text-primary"
+                            detailClassName="text-text-secondary"
                             label="Cents"
                             value={active ? `${cents >= 0 ? '+' : ''}${cents.toFixed(1)}` : '—'}
                             detail="Offset"
                         />
                         <DawPluginMetricTile
                             className="scoring-window min-w-[88px]"
-                            labelClassName="text-white/48"
-                            valueClassName="text-white/88"
-                            detailClassName="text-white/42"
+                            labelClassName="text-text-secondary"
+                            valueClassName="text-text-primary"
+                            detailClassName="text-text-secondary"
                             label="Pitch"
                             value={active ? `${frequency.toFixed(1)} Hz` : '—'}
                             detail="Detected"
                         />
                         <DawPluginMetricTile
                             className="scoring-window min-w-[88px]"
-                            labelClassName="text-white/48"
-                            valueClassName="text-white/88"
-                            detailClassName="text-white/42"
+                            labelClassName="text-text-secondary"
+                            valueClassName="text-text-primary"
+                            detailClassName="text-text-secondary"
                             label="Conf"
                             value={`${Math.round(displayConfidence * 100)}%`}
                             detail="Tracker"
@@ -339,7 +341,9 @@ export const TunerPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                             }}
                         >
                             <Row justify="between" gap={3} className="mb-3">
-                                <div className="text-[9px] uppercase tracking-[0.24em] text-white/42">Main read</div>
+                                <div className="text-[9px] uppercase tracking-[0.24em] text-text-secondary">
+                                    Main read
+                                </div>
                                 <DawPluginLed tone="mint">{active ? 'Tracking' : 'Idle'}</DawPluginLed>
                             </Row>
                             <div className="grid min-h-0 flex-1 grid-cols-[140px_minmax(0,1fr)_120px] items-center gap-4">
@@ -349,7 +353,7 @@ export const TunerPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                                     >
                                         {active ? noteName : '—'}
                                     </div>
-                                    <div className="text-xl text-white/42">{active ? octave : ''}</div>
+                                    <div className="text-xl text-text-secondary">{active ? octave : ''}</div>
                                 </Stack>
 
                                 <div className="min-h-0">{displayComponent}</div>
@@ -360,8 +364,10 @@ export const TunerPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                                     >
                                         {active ? `${cents >= 0 ? '+' : ''}${cents.toFixed(1)}` : '—'}
                                     </div>
-                                    <div className="text-[9px] uppercase tracking-[0.24em] text-white/42">Cents</div>
-                                    <div className="font-mono text-[10px] text-white/38">
+                                    <div className="text-[9px] uppercase tracking-[0.24em] text-text-secondary">
+                                        Cents
+                                    </div>
+                                    <div className="font-mono text-[10px] text-text-secondary">
                                         {active ? `${frequency.toFixed(1)} Hz` : 'No input'}
                                     </div>
                                 </Stack>
@@ -374,19 +380,19 @@ export const TunerPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
 
                     <Stack gap={3} className="overflow-y-auto pr-1">
                         <SectionCard title="Quick read" detail={active ? 'Signal up' : 'No signal'}>
-                            <Stack gap={2} className="text-[10px] leading-4 text-white/56">
+                            <Stack gap={2} className="text-[10px] leading-4 text-text-secondary">
                                 <Row justify="between" gap={2}>
                                     <span>Mode</span>
-                                    <span className="font-mono text-white/84">{mode}</span>
+                                    <span className="font-mono text-text-primary">{mode}</span>
                                 </Row>
                                 <Row justify="between" gap={2}>
                                     <span>Reference</span>
-                                    <span className="font-mono text-white/84">{a4Reference} Hz</span>
+                                    <span className="font-mono text-text-primary">{a4Reference} Hz</span>
                                 </Row>
                                 <Row justify="between" gap={2}>
                                     <span>Tuning</span>
                                     <span
-                                        className="font-mono text-white/84 truncate max-w-[110px]"
+                                        className="font-mono text-text-primary truncate max-w-[110px]"
                                         title={state.scaleName ?? '12-TET'}
                                     >
                                         {state.scaleName ?? '12-TET'}
@@ -394,7 +400,9 @@ export const TunerPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                                 </Row>
                                 <Row justify="between" gap={2}>
                                     <span>Status</span>
-                                    <span className="font-mono text-white/84">{active ? 'Locked' : 'Listening'}</span>
+                                    <span className="font-mono text-text-primary">
+                                        {active ? 'Locked' : 'Listening'}
+                                    </span>
                                 </Row>
                             </Stack>
                         </SectionCard>
@@ -402,18 +410,18 @@ export const TunerPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                         <SectionCard title="Guide" detail="Center">
                             <div className="grid gap-2">
                                 <Row justify="between" gap={2} className="scoring-window px-3 py-2">
-                                    <Row gap={2} className="text-[10px] text-white/56">
+                                    <Row gap={2} className="text-[10px] text-text-secondary">
                                         <Activity className="size-3.5 text-[var(--color-accent-mint)]" />
                                         Tight zone
                                     </Row>
-                                    <div className="font-mono text-[11px] text-white/82">±2c</div>
+                                    <div className="font-mono text-[11px] text-text-primary">±2c</div>
                                 </Row>
                                 <Row justify="between" gap={2} className="scoring-window px-3 py-2">
-                                    <Row gap={2} className="text-[10px] text-white/56">
+                                    <Row gap={2} className="text-[10px] text-text-secondary">
                                         <Waves className="size-3.5 text-[var(--color-accent-cyan)]" />
                                         Usable zone
                                     </Row>
-                                    <div className="font-mono text-[11px] text-white/82">±10c</div>
+                                    <div className="font-mono text-[11px] text-text-primary">±10c</div>
                                 </Row>
                             </div>
                         </SectionCard>
@@ -824,7 +832,7 @@ const PolyDisplay = ({ strings }: { strings: readonly TunerPolyStringState[] }):
                 const stringCents = reading?.cents ?? 0;
                 return (
                     <Row key={label} gap={2}>
-                        <span className="w-6 text-right font-mono text-[10px] text-white/52">{label}</span>
+                        <span className="w-6 text-right font-mono text-[10px] text-text-secondary">{label}</span>
                         <div className="relative h-3 flex-1 overflow-hidden rounded-full bg-black/28">
                             <div className="absolute bottom-0 left-1/2 top-0 w-px bg-emerald-500/20" />
                             {sounding ? (
@@ -834,13 +842,13 @@ const PolyDisplay = ({ strings }: { strings: readonly TunerPolyStringState[] }):
                                 />
                             ) : null}
                         </div>
-                        <span className="w-10 text-right font-mono text-[8px] text-white/36">
+                        <span className="w-10 text-right font-mono text-[8px] text-text-secondary">
                             {sounding ? `${stringCents >= 0 ? '+' : ''}${stringCents.toFixed(1)}c` : '—'}
                         </span>
                     </Row>
                 );
             })}
-            <span className="mt-1 text-center text-[8px] text-white/34">Strum all open strings</span>
+            <span className="mt-1 text-center text-[8px] text-text-secondary">Strum all open strings</span>
         </Stack>
     );
 };
