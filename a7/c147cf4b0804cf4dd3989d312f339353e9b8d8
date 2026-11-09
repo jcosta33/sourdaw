@@ -1,0 +1,19 @@
+src/components/daw/__tests__/DawPluginChip.spec.tsx
+  s_977061c47f01dd::t_3462bbc2531e63 26-28,39
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a7c147cf4b0804cf4dd3989d312f339353e9b8d8",
+  "prompts": {},
+  "sessions": {
+    "s_977061c47f01dd": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34d-123d-7452-a6e7-60608388b6d7",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
