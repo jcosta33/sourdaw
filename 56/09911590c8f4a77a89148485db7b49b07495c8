@@ -1,0 +1,68 @@
+electron/__tests__/webviewSecurity.spec.ts
+  h_beb54bf43b47b7 46,60-76,110-120
+index.html
+  h_beb54bf43b47b7 12-22,33-34
+public/themePrepaint.js
+  h_beb54bf43b47b7 1-18
+release/open-source-inventory.json
+  h_beb54bf43b47b7 1407-1442
+scripts/__tests__/vercelContentSecurityPolicy.spec.ts
+  h_beb54bf43b47b7 39,100-116,174-184
+src/components/daw/DawPluginChip.tsx
+  h_beb54bf43b47b7 32,48-54,88,98,105,111
+src/components/daw/__tests__/DawPluginChip.spec.tsx
+  h_beb54bf43b47b7 19-26
+src/components/daw/__tests__/DawPluginChipBranches.spec.tsx
+  h_beb54bf43b47b7 17,19-20,48,50-51,54,56-57
+src/components/ui/__tests__/button.spec.tsx
+  h_beb54bf43b47b7 48-59
+src/components/ui/button.tsx
+  h_beb54bf43b47b7 19
+src/modules/ControlSurface/presentations/views/MidiLearnButton.tsx
+  h_beb54bf43b47b7 93
+src/modules/ControlSurface/presentations/views/__tests__/MidiLearnButton.spec.tsx
+  h_beb54bf43b47b7 81-85
+src/modules/Crust/presentations/components/CrustMeteringStrip.tsx
+  h_beb54bf43b47b7 34,38,41,43,83,114,117,119,162,170,173,189,196,206
+src/modules/Crust/presentations/components/__tests__/CrustMeteringStripBranches.spec.tsx
+  h_beb54bf43b47b7 109-134
+src/modules/Preferences/presentations/views/preferences/AppearanceSection.tsx
+  h_beb54bf43b47b7 9,40
+src/modules/Preferences/presentations/views/preferences/__tests__/AppearanceSection.spec.tsx
+  h_beb54bf43b47b7 39-40,50,59-60
+src/modules/TimelineEditor/presentations/views/Inspector/DeviceParameterControl.tsx
+  h_beb54bf43b47b7 652,668-676,691,698,709,715
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/DeviceParameterControl.spec.tsx
+  h_beb54bf43b47b7 635-642
+src/modules/WorkspaceShell/presentations/hooks/__tests__/useThemeSynchronization.spec.ts
+  h_beb54bf43b47b7 1-56
+src/modules/WorkspaceShell/presentations/hooks/useThemeSynchronization.ts
+  h_beb54bf43b47b7 1-15
+src/modules/WorkspaceShell/presentations/views/WorkspaceMobileGate.tsx
+  h_beb54bf43b47b7 5,11,13,30,32,38
+src/modules/WorkspaceShell/presentations/views/__tests__/WorkspaceMobileGate.spec.tsx
+  h_beb54bf43b47b7 231,244-245
+src/styles/__tests__/semanticThemes.spec.ts
+  h_beb54bf43b47b7 1-217
+src/styles/testing/__tests__/mainStylesheetRules.spec.ts
+  h_beb54bf43b47b7 140-149
+src/styles/tokens.css
+  h_beb54bf43b47b7 251-344
+src/utils/UI/__tests__/applyDocumentTheme.spec.ts
+  h_beb54bf43b47b7 1-46
+src/utils/UI/applyDocumentTheme.ts
+  h_beb54bf43b47b7 1-26
+tests/e2e/crustMeteringLayoutTestId.spec.ts
+  h_beb54bf43b47b7 1-63
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5609911590c8f4a77a89148485db7b49b07495c8",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
