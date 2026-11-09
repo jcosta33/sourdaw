@@ -1,0 +1,636 @@
+.agents/skills/delivery-orchestration/SKILL.md
+  h_beb54bf43b47b7 201-203,414,440-441,466
+.agents/skills/review-stances/audio-source-time.md
+  h_beb54bf43b47b7 153-162
+.agents/skills/review-stances/audio-timing-format-laws.md
+  h_beb54bf43b47b7 74-84,114-126
+.agents/skills/review-stances/meter-reading-ownership.md
+  h_beb54bf43b47b7 1-30
+.agents/skills/review-stances/replay-authority.md
+  h_beb54bf43b47b7 110-126
+.agents/skills/review-stances/test-timing-and-isolation.md
+  h_beb54bf43b47b7 108-114
+.github/workflows/health-gates.yml
+  h_beb54bf43b47b7 6-8,11,17-20,28,98,146-148,197,200-203,210
+.github/workflows/heavy-gates.yml
+  h_beb54bf43b47b7 3-4
+.github/workflows/validation.yml
+  h_beb54bf43b47b7 3-5,482,648,680,786,888,930,1088,1211,1221,1223-1227
+AGENTS.md
+  h_beb54bf43b47b7 521-528,530-531,535
+Cargo.lock
+  h_beb54bf43b47b7 1388,1390,2492,2494,3092,3094,3158,3160,3220,3222,3232,3234,3237,3243,3245,3253,3255,3260,3266,3268,3288,3290
+crates/daw-dsp/Cargo.toml
+  h_beb54bf43b47b7 18
+crates/daw-dsp/benches/quantum-cost-table.json
+  h_beb54bf43b47b7 12-13,15,17,19,59,61,73-74,92-99,117-123,125-126,130,133-136,138-139,145-147,151-155,158-159,163-165,184-190,192-193,197,200-203,205-206,211-212,214-216,220-224,227-231,234-235,238-241,260-266,268-269,273,278-279,281-282,288-290,294-298,301-303,306-308,327-333,335-336,340,344-346,348-349,355-357,361-365,368-370,373-375,394-400,402-403,407,410-413,415-416,422-425,428-432,435-437,440-442,461,463-467,469-470,474,477-480,482-483,488-489,491-493,498-501,504-508,511-512,515-518,537-546,550,553-556,558-559,565-568,571-575,578-579,582-585,604-610,612-613,617,620-623,625-626,632-635,638-642,645-646,650-652,671-677,679-680,684,687-690,692-693,699-702,705-709,712-713,717-719,738-747,751,754-757,759-760,766-769,772-776,779-780,784-786,805-814,818,823-824,826-827,833-836,839-843,846-847,851-853,872-881,885,891,893,899-903,906-910,913-914,918-920,939-948,952,958,960,966-970,973-977,980-981,984-987,1006-1012,1014-1015,1019,1022-1025,1027-1028,1034-1036,1040-1044,1047-1048,1052-1054,1073-1082,1101-1104,1107-1111,1119-1121,1140-1149,1153,1156-1159,1161-1162,1168-1170,1174-1178,1181-1182,1186-1188,1207-1216,1220,1226,1228-1229,1234-1238,1241-1245,1248-1249,1252-1255,1274-1280,1282-1283,1287,1291-1293,1295,1302-1304,1308-1313,1315-1317,1320-1322,1341-1347,1349-1350,1354,1358-1360,1362-1363,1369-1371,1375-1379,1382-1383,1387-1389,1408,1410-1414,1416-1417,1421,1425-1427,1429-1430,1435-1436,1438-1440,1445-1447,1451-1455,1458-1459,1463-1465
+crates/daw-dsp/benches/quantum-cost-table.md
+  h_beb54bf43b47b7 145,147-148,150-151,157,197,206-224,230,237-239,247,252-255,287-306
+crates/daw-wasm-decoder/Cargo.toml
+  h_beb54bf43b47b7 14
+crates/proof-chamber/Cargo.toml
+  h_beb54bf43b47b7 14
+crates/scoring/Cargo.toml
+  h_beb54bf43b47b7 16
+docs/06-testing.md
+  h_beb54bf43b47b7 917-919
+electron/__tests__/agentWebviewBoundary.spec.ts
+  h_beb54bf43b47b7 9-11,58,77-87
+electron/__tests__/appIpc.spec.ts
+  h_beb54bf43b47b7 43-50
+electron/__tests__/bridge.spec.ts
+  h_beb54bf43b47b7 264-314
+electron/__tests__/commands.spec.ts
+  h_beb54bf43b47b7 112-125,437-448
+electron/__tests__/rendererSessionLifecycle.spec.ts
+  h_beb54bf43b47b7 1,6-13
+electron/__tests__/router.spec.ts
+  h_beb54bf43b47b7 11,96-120
+electron/commands.ts
+  h_beb54bf43b47b7 216-222,228-230,232-234
+evidence/agent-campaign/manifest.json
+  h_beb54bf43b47b7 262,274,563
+package.json
+  h_beb54bf43b47b7 118,127,139,150-151,172,180-181
+pnpm-lock.yaml
+  h_beb54bf43b47b7 33-34,60-61,96-97,124-125,127-128,188,190-191,214-215,217-218,849-850,855-856,861-862,867-868,873-874,879-880,885-886,891-892,898-899,905-906,912-913,919-920,926-927,933-934,940-941,947-948,953-954,959-960,965-966,1107-1108,1113-1114,1119-1120,1125-1126,1131-1132,1137-1138,1143-1144,1149-1150,1156-1157,1163-1164,1170-1171,1177-1178,1184-1185,1191-1192,1198-1199,1205-1206,1211-1212,1217-1218,1223-1224,2258-2259,2261-2262,2267-2268,2273-2274,2279-2280,2285-2286,2291-2292,2298-2299,2305-2306,2312-2313,2319-2320,2330-2331,2336-2337,2342-2343,2346-2347,2351-2352,2364-2365,2367-2368,3250-3252,3531-3533,3590-3591,4192-4193,4324-4325,4632-4633,4643-4644,5184-5185,5318-5319,6293,6296,6299,6302,6305,6308,6311,6314,6317,6320,6323,6326,6329,6332,6335,6338,6341,6344,6347,6431,6434,6437,6440,6443,6446,6449,6452,6455,6458,6461,6464,6467,6470,6473,6476,6479,6482,6485,7462,7470,7472,7475,7478,7481,7484,7487,7490,7493,7496,7499,7502,7505,7508,7510-7527,7530,7541,7543,7545,8430-8431,8735-8736,8798,8809,8813,8816,8819,9504,9509,9611,10085,10127,10129,10131-10149,10182,10184-10202,10829,10974
+public/legal/DEPENDENCY-LICENSES.txt
+  h_beb54bf43b47b7 9-10,118,211,262,271,276-280,282,416-417,549,655,1633,7574,7577-7582,7748,8483,9691,12825,16505-16520,20222-20223,20397,20422,20430,20432-20437,22038
+public/wasm/daw-dsp/daw_dsp.d.ts
+  h_beb54bf43b47b7 1,129,729,1137,1139,1154-1155,1157-1158,1160-1166,1182-1214,1233-1269,1293,1376-1394
+public/wasm/daw-dsp/daw_dsp.js
+  h_beb54bf43b47b7 158,161,214,220-221,224,329,332,490,493,690,693,844,847,1122,1125,1332,1335,1538,1545-1547,1550,1952,1955,2250,2253,2362-2363,2366,2398,2401,2471,2476-2477,2479,2482-2484,2487,2492,2501-2519,2521,2536,2550,2554,2558-2559,2561,2569-2572,2653-2654,2723,2727-2728,2730,2732,2734,2824,2827-2832,2834
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  h_beb54bf43b47b7 1,6-7,9-10,12-18,34-66,85-121,145,228-246
+public/wasm/daw-wasm-decoder/daw_wasm_decoder.js
+  h_beb54bf43b47b7 85,110,114,128,132,136-137,142-145,180-181,242,246-247,249,251,253,342,345-350,352
+public/wasm/manifest.json
+  h_beb54bf43b47b7 4-5,7,12-13,15-18,20-21,26-27,29-32,34-35,40-41,43-46,48-49,54-55,57-58
+public/wasm/proof-chamber/proof_chamber.d.ts
+  h_beb54bf43b47b7 1,27,31
+public/wasm/proof-chamber/proof_chamber.js
+  h_beb54bf43b47b7 66,70,73,93,96-97,100,103-107,124,138,142,146-147,152-155,185-186,241,245-246,248,250,252,341,344-349,351
+public/wasm/proof-chamber/proof_chamber_bg.wasm.d.ts
+  h_beb54bf43b47b7 1
+public/wasm/scoring/scoring.d.ts
+  h_beb54bf43b47b7 1
+public/wasm/scoring/scoring.js
+  h_beb54bf43b47b7 192,195,212,226,230,234-235,240-243,265-266,314,318-319,321,323,325,413,416-421,423
+public/wasm/scoring/scoring_bg.wasm.d.ts
+  h_beb54bf43b47b7 1
+release/dependency-license-proofs.json
+  h_beb54bf43b47b7 4,24,40,44,48,64,2567,4886,5972,6222,6368,6394,6420,6446,6472,6524
+release/open-source-inventory.json
+  h_beb54bf43b47b7 171-172,284,407,1215,1218,1346-1352,1355,1825,1837,1845,1853
+scripts/__tests__/agentDeliveryScripts.spec.ts
+  h_beb54bf43b47b7 1043,1049
+scripts/__tests__/fetchE2eCoverageMap.spec.ts
+  h_beb54bf43b47b7 132
+scripts/__tests__/fixtures/health-gate-workflows.snapshot.json
+  h_beb54bf43b47b7 17-21,36,129,194,252-253,255,635,842,1013,1051,1127,1208,1247,1372,1416,1418
+scripts/__tests__/healthGatesWorkflow.spec.ts
+  h_beb54bf43b47b7 31,56,82,104,196,335,346-349,648-649,708,2028-2030,2032,2062,2067,2074-2075,2090-2091,2153-2154,2794-2797,2816-2817,2820,2824-2825,2829,2836-2839,2843,2846-2850,2856,2860,2862,3022-3034,3036,3526-3528,3577-3580,3583-3586,3592,3597-3600,3614,3619-3622,3723-3725,4306,4308,4336-4337,4339,4357-4358,4436,5069,5080-5081,5084,5089,5096-5107,5109-5113,5218,5234,5269-5271
+scripts/__tests__/publishReview.spec.ts
+  h_beb54bf43b47b7 250,6010-6012
+scripts/__tests__/trustedGitleaksInstaller.spec.ts
+  h_beb54bf43b47b7 1-450
+scripts/__tests__/viteE2ePersistenceEntry.spec.ts
+  h_beb54bf43b47b7 259,283
+scripts/publishReview.ts
+  h_beb54bf43b47b7 555
+scripts/pullRequestGateWorkflowContract.ts
+  h_beb54bf43b47b7 2-5,9-10,14-16,57-59,61-63,65-68,70-75,77-92,97-100,102-105,109,114
+scripts/test-health-gate-scripts.sh
+  h_beb54bf43b47b7 199-200,419,455-456,462-464,469,471,480,482,572,579-580,585,685,689,693,697,1372,1397-1403,1406,1411-1428
+scripts/wasmToolchainPins.ts
+  h_beb54bf43b47b7 12-13
+scripts/workflowSecuritySurfaceContract.ts
+  h_beb54bf43b47b7 13,42,63
+src/app/__tests__/main.spec.tsx
+  h_beb54bf43b47b7 238-239
+src/app/__tests__/registerDeviceEnginePorts.spec.ts
+  h_beb54bf43b47b7 333,339-361
+src/app/__tests__/registerKernelPorts.spec.ts
+  h_beb54bf43b47b7 13-24,110-211
+src/app/registerDeviceEnginePorts.ts
+  h_beb54bf43b47b7 66-69,120
+src/app/registerKernelPorts.ts
+  h_beb54bf43b47b7 3-8,16,30-33,51
+src/components/daw/DawPluginChip.tsx
+  h_beb54bf43b47b7 6-11,77,91
+src/components/daw/DawTabStrip.tsx
+  h_beb54bf43b47b7 141,144-145,147-154,157,252,258
+src/components/daw/__tests__/DawPluginChip.spec.tsx
+  h_beb54bf43b47b7 19-61
+src/components/daw/__tests__/DawTabStrip.spec.tsx
+  h_beb54bf43b47b7 294-324
+src/modules/AiRuntime/useCases/__tests__/aiPanelActions.spec.ts
+  h_beb54bf43b47b7 10-11
+src/modules/AiRuntime/useCases/__tests__/aiWorkflowCommandCheckpointRuntime.ts
+  h_beb54bf43b47b7 9,37-40
+src/modules/AiRuntime/useCases/__tests__/bassCompressorParameterPromptWorkflow.spec.ts
+  h_beb54bf43b47b7 21,528
+src/modules/AiRuntime/useCases/__tests__/commandCommitAfterSaveFinalization.spec.ts
+  h_beb54bf43b47b7 1-279
+src/modules/AiRuntime/useCases/__tests__/compileArbitraryCommandList.spec.ts
+  h_beb54bf43b47b7 8,237,2267,4296,5533
+src/modules/AiRuntime/useCases/__tests__/confirmPendingChatActions.spec.ts
+  h_beb54bf43b47b7 14,3893-3953,3956-3975,3977-3990,3993-4026
+src/modules/AiRuntime/useCases/__tests__/promptStemImportRecovery.spec.ts
+  h_beb54bf43b47b7 19,506-509
+src/modules/AiRuntime/useCases/__tests__/protectedTargetCollaboratorDrift.spec.ts
+  h_beb54bf43b47b7 290-291,293-302,307,372,386,390-441,449
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/executePromptCommandPreview.spec.ts
+  h_beb54bf43b47b7 43-44,203-206,212,226
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/executePromptCommandPreviewSave.spec.ts
+  h_beb54bf43b47b7 1-242
+src/modules/AiRuntime/useCases/agentRequestOrchestration/executePromptCommandPreview.ts
+  h_beb54bf43b47b7 10,69
+src/modules/AiRuntime/useCases/aiPanelActions/__tests__/runAppAction.spec.ts
+  h_beb54bf43b47b7 42-43
+src/modules/Arrangement/handlers/clip/__tests__/handleRemoveClip.spec.ts
+  h_beb54bf43b47b7 72-73
+src/modules/Arrangement/handlers/track/__tests__/handleRemoveAllTracks.modulation.integration.spec.ts
+  h_beb54bf43b47b7 451-459
+src/modules/Arrangement/presentations/hooks/__tests__/useTimelineFileDrop.spec.tsx
+  h_beb54bf43b47b7 122-123
+src/modules/Arrangement/presentations/views/__tests__/TrackHeader.spec.tsx
+  h_beb54bf43b47b7 30-31
+src/modules/Arrangement/useCases/comping/__tests__/compingUndo.spec.ts
+  h_beb54bf43b47b7 27-28
+src/modules/Arrangement/useCases/comping/__tests__/targetedTakeLaneUndo.spec.ts
+  h_beb54bf43b47b7 22-23
+src/modules/Arrangement/useCases/device/sendManagement/__tests__/commitSendEdit.spec.ts
+  h_beb54bf43b47b7 17-18
+src/modules/Arrangement/useCases/freezeBounce/__tests__/bounceTrackTransactionScope.spec.ts
+  h_beb54bf43b47b7 41-42
+src/modules/AudioEngine/engine/BusNode.ts
+  h_beb54bf43b47b7 2
+src/modules/AudioEngine/engine/TrackNode.ts
+  h_beb54bf43b47b7 13-16
+src/modules/AudioEngine/repositories/audioRecorder/__tests__/recordingCapturePlacement.integration.spec.ts
+  h_beb54bf43b47b7 81,107-113,150,289,744,746
+src/modules/AudioEngine/useCases/engineAccess/__tests__/createMeterFrameReader.spec.ts
+  h_beb54bf43b47b7 1-75
+src/modules/AudioEngine/useCases/engineAccess/__tests__/getMasterPeakLevel.spec.ts
+  h_beb54bf43b47b7 65-86
+src/modules/AudioEngine/useCases/engineAccess/createMeterFrameReader.ts
+  h_beb54bf43b47b7 1-21
+src/modules/AudioEngine/useCases/engineAccess/getMasterPeakLevel.ts
+  h_beb54bf43b47b7 4-14,28,30-31
+src/modules/AudioEngine/useCases/trackAudioControls/__tests__/getTrackPeakLevel.spec.ts
+  h_beb54bf43b47b7 45-65
+src/modules/AudioEngine/useCases/trackAudioControls/getTrackPeakLevel.ts
+  h_beb54bf43b47b7 2,5-8,18,20-21
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  h_beb54bf43b47b7 1,129,729,1137,1139,1154-1155,1157-1158,1160-1166,1182-1214,1233-1269,1293,1376-1394
+src/modules/AudioEngine/wasm/daw_dsp.js
+  h_beb54bf43b47b7 335,338,391,397-398,401,506,509,667,670,867,870,1021,1024,1299,1302,1509,1512,1715,1722-1724,1727,2129,2132,2427,2430,2539-2540,2543,2575,2578,2648,2653-2654,2656,2659-2661,2664,2669,2678-2696,2698,2713,2727,2731,2735-2736,2738,2746-2749,2830-2831,2900,2904-2905,2907,2909,2911,3001,3004-3009,3011
+src/modules/AudioEngine/wasm/proof_chamber.d.ts
+  h_beb54bf43b47b7 1,27,31
+src/modules/AudioEngine/wasm/proof_chamber.js
+  h_beb54bf43b47b7 243,247,250,270,273-274,277,280-284,301,315,319,323-324,329-332,362-363,418,422-423,425,427,429,518,521-526,528
+src/modules/AudioEngine/wasm/scoring.d.ts
+  h_beb54bf43b47b7 1
+src/modules/AudioEngine/wasm/scoring.js
+  h_beb54bf43b47b7 369,372,389,403,407,411-412,417-420,442-443,491,495-496,498,500,502,590,593-598,600
+src/modules/Automation/handlers/automation/__tests__/handleRestoreAutomationLanePoints.spec.ts
+  h_beb54bf43b47b7 3-4,45-102
+src/modules/Automation/handlers/automation/__tests__/restoreAutomationLanePointsBatch.integration.spec.ts
+  h_beb54bf43b47b7 1-224
+src/modules/Automation/handlers/automation/__tests__/transformHandlersUndo.spec.ts
+  h_beb54bf43b47b7 52,163-167
+src/modules/Automation/handlers/automation/automationTransformUndo.ts
+  h_beb54bf43b47b7 1,3,7-12,14-26
+src/modules/Automation/handlers/automation/handleRestoreAutomationLanePoints.ts
+  h_beb54bf43b47b7 33-48,50,53,66,76-78
+src/modules/Automation/useCases/automation/__tests__/updateAutomationPoint.spec.ts
+  h_beb54bf43b47b7 1,3-4,7-38,40-47,53-193
+src/modules/Automation/useCases/automation/updateAutomationPoint.ts
+  h_beb54bf43b47b7 3-10,12-14,16-46,48-50,52,55
+src/modules/Automation/useCases/automationRecording/__tests__/heldBoundaryCommit.spec.ts
+  h_beb54bf43b47b7 6,17-19,21-24,29-35,286,292
+src/modules/Automation/useCases/automationRecording/__tests__/loopPassBoundary.spec.ts
+  h_beb54bf43b47b7 13-17
+src/modules/Automation/useCases/automationRecording/__tests__/recordedRideAuthority.integration.spec.ts
+  h_beb54bf43b47b7 149,253-268,271
+src/modules/Automation/useCases/automationRecording/__tests__/recordedRidePeerReplay.integration.spec.ts
+  h_beb54bf43b47b7 1-347
+src/modules/Automation/useCases/automationRecording/__tests__/stopAutomationRecording.spec.ts
+  h_beb54bf43b47b7 3,20,72-73,78-79,113-119,228-233,293
+src/modules/Automation/useCases/automationRecording/__tests__/touchRecordingUndoBaseline.spec.ts
+  h_beb54bf43b47b7 29,36-40,49,60-61,75-80,127,148-150,152-155,175,177-181,200-205,223
+src/modules/Automation/useCases/automationRecording/stopAutomationRecording.ts
+  h_beb54bf43b47b7 2,89-90,100-110,112-116
+src/modules/Bacteria/presentations/views/BacteriaPanel.tsx
+  h_beb54bf43b47b7 292,475-499
+src/modules/Bacteria/presentations/views/__tests__/BacteriaPanel.morph.spec.tsx
+  h_beb54bf43b47b7 92-115
+src/modules/Bacteria/useCases/__tests__/initBacteriaModAssignmentsPersistence.spec.ts
+  h_beb54bf43b47b7 17-18
+src/modules/Collaboration/useCases/__tests__/automergeSync.spec.ts
+  h_beb54bf43b47b7 72-73
+src/modules/Command/useCases/__tests__/canReportConflictRegistry.spec.ts
+  h_beb54bf43b47b7 434-445
+src/modules/Command/useCases/__tests__/commandBatchIdempotency.spec.ts
+  h_beb54bf43b47b7 15,167,189,297-300,2529,2534-2535,2546-2593,2595
+src/modules/Command/useCases/__tests__/commandBatchPreflightSave.spec.ts
+  h_beb54bf43b47b7 1-586
+src/modules/Command/useCases/__tests__/commandPreviewContentAuthority.spec.ts
+  h_beb54bf43b47b7 1-184
+src/modules/Command/useCases/__tests__/commandProjectRevisionPort.spec.ts
+  h_beb54bf43b47b7 1,38-110
+src/modules/Command/useCases/__tests__/handlerCommitValidation.integration.spec.ts
+  h_beb54bf43b47b7 114-115,117-120,143-146,148-161,164,171-203
+src/modules/Command/useCases/__tests__/verifiedBatchReceipt.spec.ts
+  h_beb54bf43b47b7 168,321,332-335,1051,1053-1055,1064-1076,1078-1080,1087-1116
+src/modules/Command/useCases/commandBatchValidation.ts
+  h_beb54bf43b47b7 1,6-11,16-18
+src/modules/Command/useCases/commandProjectRevisionPort.ts
+  h_beb54bf43b47b7 3-6,17-18,27-65,77,85
+src/modules/Command/useCases/executeAppActionBatch.ts
+  h_beb54bf43b47b7 35-38,972-991,1009-1011,1017,1050,1052-1058,1073-1080,1087
+src/modules/Command/useCases/prepareCommandBatchPreflight.ts
+  h_beb54bf43b47b7 148-157,165,167,192,215-225,227-228,230-232,234-235,237-328
+src/modules/Command/useCases/previewVersionedCommandBatchEnvelope.ts
+  h_beb54bf43b47b7 27-29,158-163,222-226,228
+src/modules/Command/useCases/registerHandlerCommitValidation.ts
+  h_beb54bf43b47b7 7-8,14
+src/modules/ContentBrowser/presentations/hooks/__tests__/useImportedSampleResidency.spec.ts
+  h_beb54bf43b47b7 1-83
+src/modules/ContentBrowser/presentations/hooks/useImportedSampleResidency.ts
+  h_beb54bf43b47b7 1-28
+src/modules/ContentBrowser/presentations/views/Sidebar.tsx
+  h_beb54bf43b47b7 20,113,120-123,130,144-146
+src/modules/ContentBrowser/presentations/views/Sidebar/EffectsTab.tsx
+  h_beb54bf43b47b7 99-103,140
+src/modules/ContentBrowser/presentations/views/Sidebar/__tests__/EffectsTab.spec.tsx
+  h_beb54bf43b47b7 196-258,260,266,272,275,342-369,375-376,381,383
+src/modules/ContentBrowser/presentations/views/__tests__/Sidebar.spec.tsx
+  h_beb54bf43b47b7 5,10-11,103-132,135-136,140-152,156-157,319-330,333-418
+src/modules/CrdtDocument/useCases/__tests__/captureProjectMutationAuthorization.spec.ts
+  h_beb54bf43b47b7 2,6-7,27,276-355
+src/modules/CrdtDocument/useCases/__tests__/previewCommandBatchSave.spec.ts
+  h_beb54bf43b47b7 1-490
+src/modules/CrdtDocument/useCases/captureProjectMutationAuthorization.ts
+  h_beb54bf43b47b7 1-4,16-17,19,21,36-40
+src/modules/CrdtDocument/useCases/crdtBranching/__tests__/forkKeepsPlaybackProgress.integration.spec.ts
+  h_beb54bf43b47b7 1-302
+src/modules/CrdtDocument/useCases/createCommandPreviewWorkspace.ts
+  h_beb54bf43b47b7 3-7,12,15,19-26
+src/modules/Crust/presentations/components/__tests__/CrustControlZoneLevels.spec.tsx
+  h_beb54bf43b47b7 52
+src/modules/Fermenter/presentations/components/SectionNav.tsx
+  h_beb54bf43b47b7 8,12-20,29-38
+src/modules/Fermenter/presentations/components/__tests__/SectionNav.spec.tsx
+  h_beb54bf43b47b7 6-11,15-51,58,62-69,71-74
+src/modules/Fermenter/presentations/views/FermenterPanel.tsx
+  h_beb54bf43b47b7 9,51-56,684,686,762-768
+src/modules/Fermenter/presentations/views/__tests__/FermenterControlKeyboard.integration.spec.tsx
+  h_beb54bf43b47b7 111,245
+src/modules/Fermenter/presentations/views/__tests__/FermenterPanel.spec.tsx
+  h_beb54bf43b47b7 166,171-185,188,194,200,245,252,436,448,460,497,512,522,667-687
+src/modules/Fermenter/presentations/views/__tests__/fermenterFilterSelectionUndo.integration.spec.tsx
+  h_beb54bf43b47b7 96,659,664
+src/modules/GrandBoule/useCases/__tests__/setGrandBouleMasterGain.spec.ts
+  h_beb54bf43b47b7 12-13
+src/modules/GrandBoule/useCases/__tests__/setGrandBouleSoundboardSend.spec.ts
+  h_beb54bf43b47b7 12-13
+src/modules/GrandBoule/useCases/__tests__/setGrandBouleSympatheticSend.spec.ts
+  h_beb54bf43b47b7 12-13
+src/modules/Levain/presentations/views/__tests__/LevainPanel.initialization.integration.spec.tsx
+  h_beb54bf43b47b7 103-114
+src/modules/Levain/repositories/sampleLoader/createDecodedBankResource.ts
+  h_beb54bf43b47b7 12
+src/modules/MIDI/__tests__/groovePreviewCommitParity.spec.ts
+  h_beb54bf43b47b7 132
+src/modules/MIDI/handlers/groove/__tests__/handleApplyGroove.spec.ts
+  h_beb54bf43b47b7 35-39,47,52-56,65-67,83,89,101,113
+src/modules/MIDI/handlers/groove/__tests__/handleAssignGrooveTemplate.spec.ts
+  h_beb54bf43b47b7 33-37,43,50-52,70
+src/modules/MIDI/handlers/groove/__tests__/handleCreateGrooveTemplate.spec.ts
+  h_beb54bf43b47b7 18,25-33,41,49,53-57,65,77,86,89,99
+src/modules/MIDI/handlers/groove/__tests__/handleExtractGroove.spec.ts
+  h_beb54bf43b47b7 6,170-174,257-261
+src/modules/MIDI/handlers/groove/__tests__/handleRenameGrooveTemplate.spec.ts
+  h_beb54bf43b47b7 11,19-27,39-44,56,61,68
+src/modules/MIDI/handlers/groove/handleApplyGroove.ts
+  h_beb54bf43b47b7 7,37-44
+src/modules/MIDI/handlers/groove/handleAssignGrooveTemplate.ts
+  h_beb54bf43b47b7 6,25-32
+src/modules/MIDI/handlers/groove/handleCreateGrooveTemplate.ts
+  h_beb54bf43b47b7 6,15-22
+src/modules/MIDI/handlers/groove/handleDeleteGrooveTemplate.ts
+  h_beb54bf43b47b7 4,11-18
+src/modules/MIDI/handlers/groove/handleExtractGroove.ts
+  h_beb54bf43b47b7 8,103-111
+src/modules/MIDI/handlers/groove/handleRenameGrooveTemplate.ts
+  h_beb54bf43b47b7 3,13-16,18-22
+src/modules/MIDI/handlers/groove/handleRestoreDeletedGrooveTemplate.ts
+  h_beb54bf43b47b7 3,8-16
+src/modules/MIDI/handlers/groove/handleRestoreGrooveAssignment.ts
+  h_beb54bf43b47b7 3,8-16
+src/modules/MIDI/handlers/groove/handleRestoreGrooveTemplateName.ts
+  h_beb54bf43b47b7 3,7-17
+src/modules/MIDI/repositories/webMidi/releaseActiveToasterNote.ts
+  h_beb54bf43b47b7 2
+src/modules/MIDI/repositories/webMidi/releaseAllActiveNotes.ts
+  h_beb54bf43b47b7 6
+src/modules/MIDI/useCases/grooveTemplates/__tests__/createGrooveTemplate.spec.ts
+  h_beb54bf43b47b7 53-58
+src/modules/MIDI/useCases/grooveTemplates/__tests__/restoreDeletedGrooveTemplate.spec.ts
+  h_beb54bf43b47b7 139,146,149,158-160,162,165,197
+src/modules/MIDI/useCases/grooveTemplates/__tests__/restoreGrooveAssignment.spec.ts
+  h_beb54bf43b47b7 69-88,100,167
+src/modules/MIDI/useCases/grooveTemplates/assignGrooveTemplate.ts
+  h_beb54bf43b47b7 17,44,53
+src/modules/MIDI/useCases/grooveTemplates/restoreDeletedGrooveTemplate.ts
+  h_beb54bf43b47b7 10-12,69-71,73
+src/modules/MIDI/useCases/grooveTemplates/restoreGrooveAssignment.ts
+  h_beb54bf43b47b7 22,25,37-39,47,56
+src/modules/MIDI/useCases/index.ts
+  h_beb54bf43b47b7 98
+src/modules/Metering/presentations/views/LevelMeter.tsx
+  h_beb54bf43b47b7 128
+src/modules/Metering/presentations/views/__tests__/LevelMeter.spec.tsx
+  h_beb54bf43b47b7 9,279-290
+src/modules/MixerConsole/presentations/views/Mixer/MixerLevelReadout.tsx
+  h_beb54bf43b47b7 54-55
+src/modules/MixerConsole/presentations/views/Mixer/__tests__/DeviceChainSection.spec.tsx
+  h_beb54bf43b47b7 33-34
+src/modules/MixerConsole/presentations/views/Mixer/__tests__/MixerLevelReadout.spec.tsx
+  h_beb54bf43b47b7 9,82,97
+src/modules/MixerConsole/presentations/views/Mixer/__tests__/meterPeakFanout.integration.spec.tsx
+  h_beb54bf43b47b7 1-135
+src/modules/Project/presentations/views/ArrangementSelector.tsx
+  h_beb54bf43b47b7 26,28-30,34-56,59-80,82-83,89-91,114-124,131-133,135,165-192,195,208,211,217,230-265,267-268,270-298,308,321,325
+src/modules/Project/presentations/views/__tests__/ArrangementSelector.spec.tsx
+  h_beb54bf43b47b7 52,58,60-69,108-109,172-616,691-734,737,748,753-777,792-795
+src/modules/Project/useCases/__tests__/arrangement.spec.ts
+  h_beb54bf43b47b7 157-158
+src/modules/Project/useCases/__tests__/projectPersistence.spec.ts
+  h_beb54bf43b47b7 120-121
+src/modules/Project/useCases/projectPersistence/__tests__/discardProjectChanges.realPath.spec.ts
+  h_beb54bf43b47b7 129-130
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/applyImportedProjectData.roundTrip.spec.ts
+  h_beb54bf43b47b7 142-143
+src/modules/Project/useCases/projectPersistence/helpers/collectProjectOriginalHashes.ts
+  h_beb54bf43b47b7 2
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/grooveTemplateDirtyLifecycle.spec.ts
+  h_beb54bf43b47b7 1,5-18,25,27-44,47-68,72-89,91-95,98,101-107,109-111,113,115,118-133,135-151,153-158,160-162,165-168,171-205,207-425,427
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/interruptedProjectLoadDirtyTracking.integration.spec.ts
+  h_beb54bf43b47b7 194-195
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/projectLoadDirtyTracking.integration.spec.ts
+  h_beb54bf43b47b7 150-151
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/saveProject.recentRoundTrip.spec.ts
+  h_beb54bf43b47b7 207-208
+src/modules/Project/useCases/projectTemplates/templateHelpers/__tests__/configureYeastArpeggiator.spec.ts
+  h_beb54bf43b47b7 27-29
+src/modules/Project/useCases/recentProjects/__tests__/loadRecentProject.spec.ts
+  h_beb54bf43b47b7 135-136
+src/modules/ProofChamber/presentations/views/__tests__/ProofChamberPanel.spec.tsx
+  h_beb54bf43b47b7 43-44
+src/modules/ProofChamber/presentations/views/__tests__/proofChamberAlgorithmGating.spec.tsx
+  h_beb54bf43b47b7 47-48
+src/modules/ProofChamber/presentations/views/__tests__/proofChamberDampingDefaultGrid.spec.tsx
+  h_beb54bf43b47b7 42-43
+src/modules/TimelineEditor/presentations/helpers/__tests__/automationDrag.spec.tsx
+  h_beb54bf43b47b7 4,19,113-117,122-123,384,389,415,459-620,651,657
+src/modules/TimelineEditor/presentations/helpers/__tests__/automationDragClickAddUndo.spec.tsx
+  h_beb54bf43b47b7 16-17
+src/modules/TimelineEditor/presentations/helpers/automationDrag.ts
+  h_beb54bf43b47b7 204-205,220-229,233,236-237,252-254,261-269,278,281,292
+src/modules/TimelineEditor/presentations/views/AutomationLane/__tests__/CCLane.spec.tsx
+  h_beb54bf43b47b7 66-67
+src/modules/TimelineEditor/presentations/views/AutomationLane/__tests__/PitchBendLane.spec.tsx
+  h_beb54bf43b47b7 52-53
+src/modules/TimelineEditor/presentations/views/AutomationLane/__tests__/PressureSlideLaneExpressionCurve.spec.tsx
+  h_beb54bf43b47b7 45-46
+src/modules/TimelineEditor/presentations/views/AutomationLane/__tests__/laneUndoRoundTrip.spec.tsx
+  h_beb54bf43b47b7 21-22
+src/modules/TimelineEditor/presentations/views/AutomationView/AutomationLaneRow.tsx
+  h_beb54bf43b47b7 632-633
+src/modules/TimelineEditor/presentations/views/AutomationView/__tests__/AutomationLaneRow.spec.tsx
+  h_beb54bf43b47b7 503-540
+src/modules/TimelineEditor/presentations/views/ClipView.tsx
+  h_beb54bf43b47b7 82,101,126,204-216,221
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/KneadEditor.spec.tsx
+  h_beb54bf43b47b7 121-122
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/PianoRollContextMenu.quantizeGridLabels.spec.tsx
+  h_beb54bf43b47b7 111-112
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/PianoRollContextMenu.spec.tsx
+  h_beb54bf43b47b7 79-80
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/ClipGainEnvelopeSection.spec.tsx
+  h_beb54bf43b47b7 100-101
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/ClipInspector.spec.tsx
+  h_beb54bf43b47b7 217-218
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/SendsEditor.spec.tsx
+  h_beb54bf43b47b7 19-20
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/TrackDevicesSection.spec.tsx
+  h_beb54bf43b47b7 83-84
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/TrackLevelSection.spec.tsx
+  h_beb54bf43b47b7 25-26
+src/modules/TimelineEditor/presentations/views/__tests__/ClipView.spec.tsx
+  h_beb54bf43b47b7 325-387,416-417,458-478
+src/modules/Toaster/presentations/views/ToasterPanel.tsx
+  h_beb54bf43b47b7 947
+src/modules/Toaster/presentations/views/__tests__/ToasterPanel.spec.tsx
+  h_beb54bf43b47b7 5,27-29,104-122
+src/modules/Transport/models/LoopAudioScheduleLifetime.ts
+  h_beb54bf43b47b7 1-21
+src/modules/Transport/models/LoopAudioScheduleState.ts
+  h_beb54bf43b47b7 1-56
+src/modules/Transport/models/SourceWithFade.ts
+  h_beb54bf43b47b7 6-26
+src/modules/Transport/useCases/__tests__/playheadScheduler.spec.ts
+  h_beb54bf43b47b7 192-203,902-908,920,928,932-935
+src/modules/Transport/useCases/playheadScheduler/__tests__/createLoopAudioSchedule.spec.ts
+  h_beb54bf43b47b7 1-248
+src/modules/Transport/useCases/playheadScheduler/__tests__/initialPlaybackWindow.integration.spec.ts
+  h_beb54bf43b47b7 45,53-59,76,233,285-292,682,692-705
+src/modules/Transport/useCases/playheadScheduler/__tests__/projectLoopAudioWindows.spec.ts
+  h_beb54bf43b47b7 1-76
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadScheduler.spec.ts
+  h_beb54bf43b47b7 4,6-12,77,439-466,483-551,595-614,621,1150,1164-1179,1187-1189,1191-1203,1220-1221,1223,1225-1235,1259,1280,1290-1297,1314,1335-1342,1360,1378,1397,1415,1420-1421,1426,1444,1479-1490,1508,1534-1541,1563,1592,1610-1617,1643,1654-1661,1685,1703-1710,1734,1752-1759,1793,1877,1932,1958,1983,2008,2046,2067,2120-2121,2206,2242-2247,2309-2314,2353,2398,2428,2566
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerLoopAudioStall.spec.ts
+  h_beb54bf43b47b7 1-1398
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerSeamEdit.spec.ts
+  h_beb54bf43b47b7 3-4,7,13,72,339-340,342-349,483-484,487-493,504,507,509-535,537-552,605,609-610,617,621,687-688,690-691,700-757
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerSeamHandover.spec.ts
+  h_beb54bf43b47b7 39,184,191,193,232-253,570-572,575-587
+src/modules/Transport/useCases/playheadScheduler/createLoopAudioSchedule.ts
+  h_beb54bf43b47b7 1-58
+src/modules/Transport/useCases/playheadScheduler/disposePlayheadScheduler.ts
+  h_beb54bf43b47b7 31-32
+src/modules/Transport/useCases/playheadScheduler/fenceSource.ts
+  h_beb54bf43b47b7 1-20
+src/modules/Transport/useCases/playheadScheduler/loopAudio/createLoopAudioCoverage.ts
+  h_beb54bf43b47b7 1-146
+src/modules/Transport/useCases/playheadScheduler/loopAudio/createLoopAudioEmitter.ts
+  h_beb54bf43b47b7 1-11,13-14,16-29,31-40,42-52,54-69,72-126,128-129,131-134,136,138-147
+src/modules/Transport/useCases/playheadScheduler/loopAudio/createLoopAudioPasses.ts
+  h_beb54bf43b47b7 1-9,11-16,18-23,27-29,31-33,36-38,40-60,62-66,68-69,72-77,79-81,83-100,103-108,111-125,129-142,144-154
+src/modules/Transport/useCases/playheadScheduler/loopAudio/createLoopAudioProgramme.ts
+  h_beb54bf43b47b7 1-206
+src/modules/Transport/useCases/playheadScheduler/loopAudio/createLoopAudioRefill.ts
+  h_beb54bf43b47b7 1-242
+src/modules/Transport/useCases/playheadScheduler/loopAudio/createLoopFrozenWindows.ts
+  h_beb54bf43b47b7 1-127
+src/modules/Transport/useCases/playheadScheduler/projectLoopAudioWindows.ts
+  h_beb54bf43b47b7 1-111
+src/modules/Transport/useCases/playheadScheduler/schedulerSession.ts
+  h_beb54bf43b47b7 1,83
+src/modules/Transport/useCases/playheadScheduler/startPlayheadScheduler.ts
+  h_beb54bf43b47b7 56,360-362,561,926,1611,1624-1634,1667,1706-1708,1710,1712-1729,1744-1757,1790,1795-1796,1798-1814,1824-1842,1854,1859-1860,1862-1878,1888-1906,1909,1989
+src/modules/Transport/useCases/playheadScheduler/stopPlayheadScheduler.ts
+  h_beb54bf43b47b7 34-35
+src/modules/Transport/useCases/scheduling/__tests__/projectAudioClipFadeSchedule.spec.ts
+  h_beb54bf43b47b7 3-26,30-45,49-52,55-60,62-66,69-72,76-85,89-92,95-102
+src/modules/Transport/useCases/scheduling/__tests__/scheduleAudioClips.spec.ts
+  h_beb54bf43b47b7 32,149,159-233,261-502
+src/modules/Transport/useCases/scheduling/__tests__/scheduleAudioClipsCompBoundaryStall.spec.ts
+  h_beb54bf43b47b7 16,185-186,351,417-418,478-482
+src/modules/Transport/useCases/scheduling/__tests__/scheduleAudioClipsLiveSeam.spec.ts
+  h_beb54bf43b47b7 7,37,298-335
+src/modules/Transport/useCases/scheduling/__tests__/scheduleAudioClipsLoopOrigin.spec.ts
+  h_beb54bf43b47b7 38
+src/modules/Transport/useCases/scheduling/__tests__/scheduleAudioClipsMidClipFadeOut.spec.ts
+  h_beb54bf43b47b7 23
+src/modules/Transport/useCases/scheduling/__tests__/scheduleFrozenTrack.spec.ts
+  h_beb54bf43b47b7 11,40,43-75
+src/modules/Transport/useCases/scheduling/prepareInitialMidiWindow.ts
+  h_beb54bf43b47b7 8
+src/modules/Transport/useCases/scheduling/prepareYeastTrackNotes.ts
+  h_beb54bf43b47b7 27-28
+src/modules/Transport/useCases/scheduling/projectAudioClipFadeSchedule.ts
+  h_beb54bf43b47b7 1-5,7-23,25-47,49-70,72-85
+src/modules/Transport/useCases/scheduling/projectFrozenTrackWindow.ts
+  h_beb54bf43b47b7 1-48
+src/modules/Transport/useCases/scheduling/scheduleAudioClips.ts
+  h_beb54bf43b47b7 1,20,31,68,92-123,130-134,157-172,175-181,249-383,473,525-529,531-577,579-582,584-592,594-609,611,613-640,665-669,671,674,849-851
+src/modules/Transport/useCases/scheduling/scheduleFrozenTrack.ts
+  h_beb54bf43b47b7 14-25,52-53,90,92,96-97,105-121,132-142,153-158,161-166,169-174,177
+src/modules/Transport/useCases/scheduling/scheduleMetronome.ts
+  h_beb54bf43b47b7 35,86
+src/modules/Transport/useCases/scheduling/scheduleMidiNotes.ts
+  h_beb54bf43b47b7 474-480,495-496,543,578,750,1234,1248,1360,1477
+src/modules/Transport/useCases/transportControls/__tests__/pausePlayback.spec.ts
+  h_beb54bf43b47b7 81
+src/modules/Transport/useCases/transportControls/__tests__/seekPlayhead.spec.ts
+  h_beb54bf43b47b7 52
+src/modules/Transport/useCases/transportControls/__tests__/stopPlayback.spec.ts
+  h_beb54bf43b47b7 71
+src/modules/Transport/useCases/transportControls/__tests__/toggleRecordingPreRoll.spec.ts
+  h_beb54bf43b47b7 89
+src/modules/WorkspaceShell/presentations/hooks/__tests__/helpers/nativeMenuImportFixture.ts
+  h_beb54bf43b47b7 1-32
+src/modules/WorkspaceShell/presentations/hooks/__tests__/helpers/nativeMenuImportPlatform.ts
+  h_beb54bf43b47b7 1-254
+src/modules/WorkspaceShell/presentations/hooks/__tests__/nativeMenuImportedProjectConfinement.integration.spec.tsx
+  h_beb54bf43b47b7 1-331
+src/modules/WorkspaceShell/presentations/hooks/__tests__/useStatusBarMetrics.spec.ts
+  h_beb54bf43b47b7 25,242,247-249,278,300,324,363,391,415,445,467,490,517,542,567,589,622-624,648,659,684,688,710,736,757,777,798,819,840,865,886,912,950,971,996,1032,1056,1081,1086,1091,1117,1121,1125,1145,1172
+src/modules/WorkspaceShell/presentations/hooks/useStatusBarMetrics.ts
+  h_beb54bf43b47b7 296,302
+src/modules/Yeast/handlers/__tests__/rackStructureHandlers.spec.ts
+  h_beb54bf43b47b7 3-6,72-95,99,127-214,291,299-301
+src/modules/Yeast/handlers/__tests__/yeastFirstParameterUndo.integration.spec.ts
+  h_beb54bf43b47b7 1-316
+src/modules/Yeast/handlers/__tests__/yeastGrooveAssignmentUndo.spec.ts
+  h_beb54bf43b47b7 2,9,12-23,25-27,35,37,39-49,95,98-120,123-124,138-140,154-155,159,161,187,198-199,211-212,214,347-595
+src/modules/Yeast/handlers/__tests__/yeastUndoSessionMirror.spec.ts
+  h_beb54bf43b47b7 1,10,14-15,26,32-61,75,78,100-101,124-126,159-162,167-180,202-306
+src/modules/Yeast/handlers/addYeastProcessor.ts
+  h_beb54bf43b47b7 2-3,5,8,21-126,136-142,151,156-159,162-165,170-180,193,198-200,202-222,225-229,240-241,258-265
+src/modules/Yeast/handlers/removeYeastProcessor.ts
+  h_beb54bf43b47b7 1,33-41
+src/modules/Yeast/handlers/reorderYeastProcessor.ts
+  h_beb54bf43b47b7 1,56-64
+src/modules/Yeast/handlers/setYeastArpPattern.ts
+  h_beb54bf43b47b7 1,61-69
+src/modules/Yeast/handlers/setYeastProcessorBypass.ts
+  h_beb54bf43b47b7 1,43-51
+src/modules/Yeast/handlers/setYeastProcessorParam.ts
+  h_beb54bf43b47b7 1,94-106
+src/modules/Yeast/models/YeastProcessorInitialParams.ts
+  h_beb54bf43b47b7 1-6
+src/modules/Yeast/presentations/createYeastPreviewCanvasRenderer.ts
+  h_beb54bf43b47b7 2
+src/modules/Yeast/presentations/createYeastPreviewPresenter.ts
+  h_beb54bf43b47b7 3-7
+src/modules/Yeast/useCases/__tests__/addYeastProcessor.spec.ts
+  h_beb54bf43b47b7 1,3-8,11-44
+src/modules/Yeast/useCases/__tests__/commitYeastProjection.spec.ts
+  h_beb54bf43b47b7 71,90,101,112,115
+src/modules/Yeast/useCases/__tests__/projectionRuntime.spec.ts
+  h_beb54bf43b47b7 3,46,56
+src/modules/Yeast/useCases/__tests__/reconcileYeastGrooveAssignments.spec.ts
+  h_beb54bf43b47b7 42,96,102
+src/modules/Yeast/useCases/__tests__/removeYeastGrooveAssignments.spec.ts
+  h_beb54bf43b47b7 31,46
+src/modules/Yeast/useCases/__tests__/removeYeastProcessor.spec.ts
+  h_beb54bf43b47b7 5,10,21,32-34,44
+src/modules/Yeast/useCases/__tests__/reorderYeastProcessor.spec.ts
+  h_beb54bf43b47b7 30-31,79
+src/modules/Yeast/useCases/__tests__/setYeastArpPattern.spec.ts
+  h_beb54bf43b47b7 68,78,119
+src/modules/Yeast/useCases/__tests__/setYeastProcessorBypass.spec.ts
+  h_beb54bf43b47b7 27,40-41,57,65
+src/modules/Yeast/useCases/__tests__/setYeastProcessorParam.spec.ts
+  h_beb54bf43b47b7 78-79,106,127-129
+src/modules/Yeast/useCases/addYeastProcessor.ts
+  h_beb54bf43b47b7 2,18-20,23,29-35
+src/modules/Yeast/useCases/applyYeastControlProjection.ts
+  h_beb54bf43b47b7 1-2,10,14
+src/modules/Yeast/useCases/commitYeastProjection.ts
+  h_beb54bf43b47b7 21,24,31,37,40
+src/modules/Yeast/useCases/reconcileYeastGrooveAssignments.ts
+  h_beb54bf43b47b7 9,12,31,37,42,45
+src/modules/Yeast/useCases/removeYeastGrooveAssignments.ts
+  h_beb54bf43b47b7 6,9,12,21,26,28
+src/modules/Yeast/useCases/removeYeastProcessor.ts
+  h_beb54bf43b47b7 8,11,13,15-17,19
+src/modules/Yeast/useCases/reorderYeastProcessor.ts
+  h_beb54bf43b47b7 5,8,14
+src/modules/Yeast/useCases/restoreYeastGrooveAssignments.ts
+  h_beb54bf43b47b7 13,16,19,22,27,30
+src/modules/Yeast/useCases/setYeastArpPattern.ts
+  h_beb54bf43b47b7 22,25,30,35,42,46
+src/modules/Yeast/useCases/setYeastProcessorBypass.ts
+  h_beb54bf43b47b7 5,8,13,15
+src/modules/Yeast/useCases/setYeastProcessorParam.ts
+  h_beb54bf43b47b7 52,55,60,63,68,74,84,88,92,99,103
+src/modules/Yeast/workers/BaseMidiProcessor.ts
+  h_beb54bf43b47b7 13
+src/modules/Yeast/workers/MidiProcessor.ts
+  h_beb54bf43b47b7 11
+src/modules/Yeast/workers/__tests__/processorFactory.spec.ts
+  h_beb54bf43b47b7 1,4-5,14-82
+tests/e2e/audioClipEditorTray.spec.ts
+  h_beb54bf43b47b7 1-268
+tests/e2e/automationPointNeighborIdentity.spec.ts
+  h_beb54bf43b47b7 1-264
+tests/e2e/e2eUtils.ts
+  h_beb54bf43b47b7 122-124
+tests/e2e/fermenterPanelDeepTestId.spec.ts
+  h_beb54bf43b47b7 49-53,55-88
+tests/e2e/persistedHydrationEntry.ts
+  h_beb54bf43b47b7 11
+tests/e2e/sharedMeterReadings.spec.ts
+  h_beb54bf43b47b7 1-256
+tests/e2e/spatialPannerArrangementTestId.spec.ts
+  h_beb54bf43b47b7 80-115
+tests/e2e/yeastProcessorFirstParameterUndo.spec.ts
+  h_beb54bf43b47b7 1-224
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "673250b4574b46a7c7b4bda9561a34616040d247",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
