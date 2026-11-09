@@ -124,3 +124,15 @@ none.
     coverage. Separately capture real Chromium programme PCM through the block and compare an unstalled
     reference for missing intervals, phase and duplicates, including existing fades. API calls, positive meters,
     recovered wrap counts and a+2s-anchor admission benchmark cannot replace that rendered-signal proof.
+14. **Audio admitted by a MIDI-track import must reach every browser playback route.** The existing track
+    menu can import an audio clip while retaining `kind: 'midi'`. Direct commit `e6cdfeec57` admitted that document
+    state, but the ordinary audio scheduler still filtered out every non-audio track; the loop programme's
+    separate admission repeated the omission (#6370). The missed review input was an unfrozen MIDI track
+    carrying an audio clip rather than a MIDI-only or frozen track. Import a nonzero WAV through that menu, keep the
+    MIDI track unfrozen and routed to Master, then run Play and a natural loop wrap. The Master analyser
+    must show signal inside the clip and on both sides of the wrap; Stop must settle to silence without
+    changing project material or history. `scheduleAudioClips.spec.ts` must fail if the direct route is
+    restricted to audio tracks, and `startPlayheadSchedulerLoopAudioStall.spec.ts` must fail if the real
+    loop source ledger omits the MIDI track's audio or duplicates a pass. Keep bus, muted, and frozen-bake
+    controls: a frozen MIDI track with a valid rendered buffer belongs to the MIDI frozen emitter and
+    cannot emit its original audio clip again. A mocked programme call proves eligibility only.

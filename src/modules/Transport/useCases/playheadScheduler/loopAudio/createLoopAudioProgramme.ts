@@ -47,7 +47,8 @@ function readProgramme(state: LoopAudioScheduleState, transport: TransportState)
     const eligible = tracks.filter(
         (track) =>
             (track.kind === 'audio' ||
-                (track.kind === 'midi' && midiStore.value && track.freezeState.status === 'frozen')) &&
+                (track.kind === 'midi' &&
+                    (track.freezeState.status !== 'frozen' || !track.freezeState.frozenBufferId || midiStore.value))) &&
             (!track.muted || track.sends.some((send) => send.preFader && buses.has(send.busId)))
     );
     const cached = new Map<string, AudioBuffer | null>();

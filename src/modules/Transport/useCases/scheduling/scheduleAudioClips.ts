@@ -765,7 +765,10 @@ export function scheduleAudioClips(
     const audioTracks: { track: (typeof tracks)[number]; parts: ResolvedAudioPart[] }[] = [];
     let cutAny = false;
     for (const track of tracks) {
-        if (track.kind !== 'audio') {
+        if (track.kind !== 'audio' && track.kind !== 'midi') {
+            continue;
+        }
+        if (track.kind === 'midi' && track.freezeState.status === 'frozen' && track.freezeState.frozenBufferId) {
             continue;
         }
         if (track.muted && !track.sends.some((send) => send.preFader && busTrackIds.has(send.busId))) {

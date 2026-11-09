@@ -469,11 +469,16 @@ async function reproduceSeamStall(
     frozenMidi = false
 ): Promise<void> {
     const loopEnd = passFrames / 24_000; // Fixed fixture:120BPM means24000frames per quarter-note beat.
+    const left = seedTrack('left', loopEnd, frozen, 0.375, frozenMidi);
+    const right = seedTrack('right', loopEnd, frozen, 1.125, frozenMidi);
+    if (frozenMidi && !frozen) {
+        left.clips.push({ ...left.clips[0]!, id: 'left-midi', type: 'midi', audioBufferId: undefined });
+        midiStoreState.value!.notesByClipId['left-midi'] = [
+            { id: 'mixed-note', pitch: 60, startBeat: 0, duration: 0.05, velocity: 100, probability: 100 },
+        ];
+    }
     trackStoreState.value = {
-        tracks: [
-            seedTrack('left', loopEnd, frozen, 0.375, frozenMidi),
-            seedTrack('right', loopEnd, frozen, 1.125, frozenMidi),
-        ],
+        tracks: [left, right],
     };
     transportStoreState.value = {
         ...defaultTransportState,
@@ -593,6 +598,10 @@ describe('browser buffer admission before a loop-seam main-thread stall (#6277)'
     it('shares frozen MIDI pass ownership with the real MIDI dispatcher', async () => {
         await reproduceSeamStall(6_000, 5_952, true, true);
         expect(scheduleNoteSpy).not.toHaveBeenCalled();
+    });
+    it('pre-submits mixed MIDI-track audio once per pass while retaining MIDI notes across a stall', async () => {
+        await reproduceSeamStall(6_000, 5_952, false, true);
+        expect(scheduleNoteSpy.mock.calls.some((call) => call[2] === 60)).toBe(true);
     });
 });
 
