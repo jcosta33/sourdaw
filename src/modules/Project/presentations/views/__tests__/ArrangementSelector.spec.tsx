@@ -105,6 +105,7 @@ const { useStore } = await import('#/infra/store/useStore');
 const { logger } = await import('#/infra/logger/appLogger');
 const { switchArrangement } = await import('#/modules/Project/useCases/arrangement/switchArrangement');
 const { notifyUser } = await import('#/utils/Notification/notifyUser');
+const { renameArrangement } = await import('../../../useCases/arrangement/renameArrangement');
 
 describe('ArrangementSelector', () => {
     beforeEach(() => {
@@ -350,6 +351,48 @@ describe('ArrangementSelector', () => {
         expect(arrangement3).toHaveAttribute('aria-checked', 'false');
     });
 
+    it('retains focus on the surviving radio when a focused two-arrangement menu falls to one', () => {
+        const { rerender } = render(<ArrangementSelector />);
+        fireEvent.click(screen.getByLabelText(/Arrangement selector/i));
+        const disappearingRadio = screen.getByRole('menuitemradio', { name: /Arrangement 2/i });
+        act(() => {
+            disappearingRadio.focus();
+        });
+        expect(disappearingRadio).toHaveFocus();
+        (useStore as ReturnType<typeof vi.fn>).mockReturnValue({
+            arrangements: [{ id: 'arr-1', name: 'Arrangement 1' }],
+            activeArrangementId: 'arr-1',
+        });
+
+        rerender(<ArrangementSelector />);
+
+        expect(screen.getByRole('menu', { name: 'Arrangement menu' })).toBeInTheDocument();
+        const survivingRadio = screen.getByRole('menuitemradio', { name: /Arrangement 1/i });
+        expect(survivingRadio).toBeVisible();
+        expect(survivingRadio).toHaveFocus();
+        expect(survivingRadio).toHaveAttribute('tabindex', '0');
+    });
+
+    it('retains focus on the surviving radio when an active rename editor falls to one arrangement', () => {
+        const { rerender } = render(<ArrangementSelector />);
+        fireEvent.click(screen.getByLabelText(/Arrangement selector/i));
+        fireEvent.click(screen.getByRole('button', { name: 'Rename Arrangement 2' }));
+        expect(screen.getByTestId('compact-input')).toHaveFocus();
+        (useStore as ReturnType<typeof vi.fn>).mockReturnValue({
+            arrangements: [{ id: 'arr-1', name: 'Arrangement 1' }],
+            activeArrangementId: 'arr-1',
+        });
+
+        rerender(<ArrangementSelector />);
+
+        expect(screen.queryByTestId('compact-input')).toBeNull();
+        expect(screen.getByRole('menu', { name: 'Arrangement menu' })).toBeInTheDocument();
+        const survivingRadio = screen.getByRole('menuitemradio', { name: /Arrangement 1/i });
+        expect(survivingRadio).toBeVisible();
+        expect(survivingRadio).toHaveFocus();
+        expect(survivingRadio).toHaveAttribute('tabindex', '0');
+    });
+
     it('switches the focused arrangement with Enter or Space', () => {
         render(<ArrangementSelector />);
         fireEvent.click(screen.getByLabelText(/Arrangement selector/i));
@@ -539,15 +582,21 @@ describe('ArrangementSelector', () => {
         },
     ])(
         'restores focus to an inactive arrangement after cancelling or submitting its rename with $exit',
-        ({ exitRename }) => {
+        ({ exit, exitRename }) => {
             render(<ArrangementSelector />);
             fireEvent.click(screen.getByLabelText(/Arrangement selector/i));
             fireEvent.click(screen.getByRole('button', { name: 'Rename Arrangement 2' }));
             const input = screen.getByTestId('compact-input');
             expect(input).toHaveFocus();
+            fireEvent.change(input, { target: { value: 'Renamed inactive arrangement' } });
 
             exitRename(input);
 
+            if (exit === 'Enter') {
+                expect(renameArrangement).toHaveBeenCalledExactlyOnceWith('arr-2', 'Renamed inactive arrangement');
+            } else {
+                expect(renameArrangement).not.toHaveBeenCalled();
+            }
             const arrangement2 = screen.getByRole('menuitemradio', { name: /Arrangement 2/i });
             expect(screen.queryByTestId('compact-input')).toBeNull();
             expect(arrangement2).toHaveFocus();

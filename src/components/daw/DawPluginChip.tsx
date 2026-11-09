@@ -5,8 +5,9 @@ import { cn } from '#/utils/Styles/cn';
 type DawPluginChipProps = ButtonHTMLAttributes<HTMLButtonElement> & {
     /**
      * Declares a selection state: both `true` and `false` render
-     * `aria-pressed`. Omit it for a one-shot action so the chip stays a plain
-     * button; an explicit caller `aria-pressed` still wins.
+     * `aria-pressed` on an ordinary button. Omit it for a one-shot action, or
+     * use a radio role for `aria-checked` semantics instead. An explicit caller
+     * `aria-pressed` still wins.
      */
     active?: boolean;
     tone?:
@@ -87,7 +88,7 @@ export const DawPluginChip = ({
     return (
         <button
             type={type}
-            aria-pressed={active}
+            aria-pressed={props.role === 'radio' ? undefined : active}
             className={cn(
                 'inline-flex items-center justify-center border font-medium transition-[background-color,border-color,color,box-shadow]',
                 'disabled:pointer-events-none disabled:opacity-45',

@@ -35,6 +35,26 @@ describe('DawPluginChip', () => {
         expect(screen.getByRole('button', { name: 'Explicitly pressed' })).toHaveAttribute('aria-pressed', 'true');
     });
 
+    it('omits computed pressed state from active and inactive radios', () => {
+        render(
+            <>
+                <DawPluginChip role="radio" active aria-checked={true}>
+                    Selected radio
+                </DawPluginChip>
+                <DawPluginChip role="radio" active={false} aria-checked={false}>
+                    Unselected radio
+                </DawPluginChip>
+            </>
+        );
+
+        const selected = screen.getByRole('radio', { name: 'Selected radio' });
+        const unselected = screen.getByRole('radio', { name: 'Unselected radio' });
+        expect(selected).toHaveAttribute('aria-checked', 'true');
+        expect(selected).not.toHaveAttribute('aria-pressed');
+        expect(unselected).toHaveAttribute('aria-checked', 'false');
+        expect(unselected).not.toHaveAttribute('aria-pressed');
+    });
+
     /**
      * An `aria-disabled` chip has to *look* different from a live one.
      *

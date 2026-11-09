@@ -31,6 +31,9 @@ export const ArrangementSelector = (): ReactElement | null => {
     const state = useStore(arrangementStore, defaultArrangementStoreState);
     const arrangements = state?.arrangements ?? [];
     const activeArrangementId = state?.activeArrangementId ?? null;
+    const [hasRenderedMultipleArrangements, setHasRenderedMultipleArrangements] = useState(
+        () => arrangements.length > 1
+    );
     const renderedEditingId = arrangements.some((arr) => arr.id === editingId) ? editingId : null;
     const navigableArrangements = arrangements.filter((arr) => arr.id !== renderedEditingId);
     const focusedRadioId = navigableArrangements.some((arr) => arr.id === focusedArrangementId)
@@ -50,6 +53,12 @@ export const ArrangementSelector = (): ReactElement | null => {
     }, [renderedEditingId]);
 
     useEffect(() => {
+        if (arrangements.length > 1) {
+            setHasRenderedMultipleArrangements(true);
+        }
+    }, [arrangements.length]);
+
+    useEffect(() => {
         if (editingId && !renderedEditingId) {
             setEditingId(null);
         }
@@ -63,8 +72,9 @@ export const ArrangementSelector = (): ReactElement | null => {
         return null;
     }
 
-    // Only show the selector when there are multiple arrangements
-    if (state.arrangements.length <= 1) {
+    // An initially single arrangement stays hidden. Once shown, keep the
+    // selector mounted so focus recovery retains a surviving radio target.
+    if (arrangements.length <= 1 && !hasRenderedMultipleArrangements) {
         return null;
     }
 

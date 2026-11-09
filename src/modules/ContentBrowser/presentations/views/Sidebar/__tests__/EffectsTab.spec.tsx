@@ -269,7 +269,7 @@ describe('EffectsTab', () => {
                 />
             );
 
-            fireEvent.click(screen.getByRole('button', { name: new RegExp(`^${cardName}`, 'i'), exact: true }));
+            fireEvent.click(screen.getByRole('button', { name: new RegExp(`^${cardName}`, 'i') }));
 
             expect(arrangementMocks.executeAddDeviceAction).toHaveBeenCalledWith('track-1', deviceType);
             await waitFor(() => expect(panelActions[panelAction]).toHaveBeenCalledWith(...expectedPanelArgs));

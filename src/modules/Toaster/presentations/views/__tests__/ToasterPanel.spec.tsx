@@ -105,7 +105,7 @@ describe('ToasterPanel', () => {
         render(<ToasterPanel deviceId="toaster-test" />);
         fireEvent.change(screen.getByRole('combobox', { name: 'Toaster view' }), { target: { value: 'full' } });
 
-        const toast = screen.getByRole('button', { name: 'Toast', exact: true });
+        const toast = screen.getByRole('button', { name: 'Toast' });
         expect(toast).not.toHaveAttribute('aria-pressed');
         expect(toast).toHaveClass(
             'border-[var(--color-accent-peach)]/60',
