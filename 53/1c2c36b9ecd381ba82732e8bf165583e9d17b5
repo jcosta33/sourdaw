@@ -1,0 +1,20 @@
+public/themePrepaint.js
+  h_beb54bf43b47b7 10-13
+release/open-source-inventory.json
+  h_beb54bf43b47b7 1427
+src/styles/__tests__/semanticThemes.spec.ts
+  h_beb54bf43b47b7 302-329
+tests/e2e/e2eStartupDiagnostics.spec.ts
+  h_beb54bf43b47b7 12,14-53,60-62
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "531c2c36b9ecd381ba82732e8bf165583e9d17b5",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
