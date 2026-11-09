@@ -42,6 +42,16 @@ function clipCount(tracks: unknown[]): number {
     }, 0);
 }
 
+async function selection(page: Page) {
+    return page.evaluate(async (entry) => {
+        const { arrangement }: typeof import('./persistedHydrationEntry') = await import(entry);
+        return {
+            trackId: arrangement.trackStore.value?.selectedTrackId,
+            clipId: arrangement.clipSelectionStore.value?.selectedClipId,
+        };
+    }, ENTRY);
+}
+
 async function addTrack(page: Page, kind: 'Audio' | 'MIDI') {
     await page.keyboard.press(`${process.platform === 'darwin' ? 'Meta' : 'Control'}+K`);
     const input = page.getByTestId('command-palette-input');
@@ -100,6 +110,37 @@ test('audio editor omits MIDI automation and preserves MIDI tray preference', as
     const midiMute = page.getByTestId(`track-mute-${midiTrack.id}`);
     await expect(audioMute).toBeVisible();
     await expect(midiMute).toBeVisible();
+    await midiMute.locator('xpath=ancestor::*[@role="row"][1]').click({ button: 'right' });
+    const midiChooser = page.waitForEvent('filechooser');
+    await page.getByRole('menuitem', { name: /Import Audio/i }).click();
+    await (await midiChooser).setFiles({ name: 'hybrid-tone.wav', mimeType: 'audio/wav', buffer: buildSineWav() });
+    await expect.poll(async () => clipCount((await snapshot(page)).raw)).toBe(2);
+    await expect.poll(async () => clipCount((await snapshot(page)).projected)).toBe(2);
+    const hybridImported = await snapshot(page);
+    expect(hybridImported.raw).toEqual(hybridImported.projected);
+    const hybridTrack = hybridImported.projected.find((track) => track.id === midiTrack.id);
+    const hybridClip = hybridTrack?.clips.find((clip) => clip.name === 'hybrid-tone');
+    if (
+        !hybridTrack ||
+        hybridTrack.kind !== 'midi' ||
+        !hybridClip ||
+        hybridClip.type !== 'audio' ||
+        !hybridClip.audioBufferId
+    ) {
+        throw new Error('MIDI track did not retain the imported audio clip');
+    }
+    const decoded = await page.evaluate(
+        async ({ entry, bufferId }) => {
+            const { audio }: typeof import('./persistedHydrationEntry') = await import(entry);
+            const buffer = audio.getCachedAudioBuffer({ bufferId });
+            if (!buffer) {
+                return null;
+            }
+            return { length: buffer.length, sampleRate: buffer.sampleRate, channels: buffer.numberOfChannels };
+        },
+        { entry: ENTRY, bufferId: hybridClip.audioBufferId }
+    );
+    expect(decoded?.length).toBeGreaterThan(0);
     const timelineBox = await timeline.boundingBox();
     const midiBox = await midiMute.boundingBox();
     const audioBox = await audioMute.boundingBox();
@@ -115,21 +156,37 @@ test('audio editor omits MIDI automation and preserves MIDI tray preference', as
     }
     const midiY = midiBox.y + midiBox.height / 2;
     const audioY = audioBox.y + audioBox.height / 2;
+    const hybridX = ((hybridClip.startBeat + hybridClip.endBeat) / 2) * view.pixelsPerBeat - view.scrollX;
+    await page.mouse.click(timelineBox.x + hybridX, midiY);
+    await expect.poll(() => selection(page)).toMatchObject({ trackId: midiTrack.id, clipId: hybridClip.id });
+    await expect(page.getByLabel('Waveform editor')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Knead (Pitch)' })).toBeVisible();
+    await expect(page.getByLabel('Piano roll editor')).toHaveCount(0);
+    await expect(page.getByTestId('clip-editor-tray')).toHaveCount(0);
+    await expect(page.getByTestId('toggle-automation-tray-button')).toHaveCount(0);
     await page.getByRole('radio', { name: 'Draw (D/B)' }).click();
-    const drawStartX = Math.max(1, view.pixelsPerBeat - view.scrollX);
+    const drawStartX = (Math.ceil(hybridClip.endBeat) + 1) * view.pixelsPerBeat - view.scrollX;
     const drawEndX = drawStartX + view.pixelsPerBeat * 2;
     const audioX = (audioTrack.clips[0]!.startBeat + 0.5) * view.pixelsPerBeat - view.scrollX;
-    if (drawEndX >= timelineBox.width || audioX <= 0 || audioX >= timelineBox.width) {
+    if (
+        drawEndX >= timelineBox.width ||
+        hybridX <= 0 ||
+        hybridX >= timelineBox.width ||
+        audioX <= 0 ||
+        audioX >= timelineBox.width
+    ) {
         throw new Error('Clips outside visible timeline');
     }
     await page.mouse.move(timelineBox.x + drawStartX, midiY);
     await page.mouse.down();
     await page.mouse.move(timelineBox.x + drawEndX, midiY);
     await page.mouse.up();
-    await expect.poll(async () => clipCount((await snapshot(page)).raw)).toBe(2);
-    await expect.poll(async () => clipCount((await snapshot(page)).projected)).toBe(2);
+    await expect.poll(async () => clipCount((await snapshot(page)).raw)).toBe(3);
+    await expect.poll(async () => clipCount((await snapshot(page)).projected)).toBe(3);
     const drawn = await snapshot(page);
-    const midiClip = drawn.projected.find((track) => track.id === midiTrack.id)?.clips[0];
+    const midiClip = drawn.projected
+        .find((track) => track.id === midiTrack.id)
+        ?.clips.find((clip) => clip.type === 'midi');
     if (!midiClip || midiClip.type !== 'midi') {
         throw new Error('Draw did not create a MIDI clip on the intended track');
     }
@@ -152,6 +209,10 @@ test('audio editor omits MIDI automation and preserves MIDI tray preference', as
         await expect(page.getByLabel('Waveform editor')).toBeVisible();
         await expect(toggle).toHaveCount(0);
         await expect(page.getByTestId('clip-editor-tray')).toHaveCount(0);
+        await expect
+            .poll(() => selection(page))
+            .toMatchObject({ trackId: audioTrack.id, clipId: audioTrack.clips[0]!.id });
+        const audioSelection = await selection(page);
         const audioSnapshot = await snapshot(page);
         expect(audioSnapshot).toEqual(before);
         const audioState = {
@@ -160,7 +221,24 @@ test('audio editor omits MIDI automation and preserves MIDI tray preference', as
             trayCount: await page.getByTestId('clip-editor-tray').count(),
             selectedStart: await page.getByTestId('selected-clip-start-beat').textContent(),
         };
+        await page.mouse.click(timelineBox.x + hybridX, midiY);
+        await expect.poll(() => selection(page)).toMatchObject({ trackId: midiTrack.id, clipId: hybridClip.id });
+        await expect(page.getByLabel('Waveform editor')).toBeVisible();
+        await expect(page.getByRole('button', { name: 'Knead (Pitch)' })).toBeVisible();
+        await expect(page.getByLabel('Piano roll editor')).toHaveCount(0);
+        await expect(toggle).toHaveCount(0);
+        await expect(page.getByTestId('clip-editor-tray')).toHaveCount(0);
+        const hybridSelection = await selection(page);
+        const hybridSnapshot = await snapshot(page);
+        expect(hybridSnapshot).toEqual(before);
+        const hybridState = {
+            waveform: await page.getByLabel('Waveform editor').isVisible(),
+            toggleCount: await toggle.count(),
+            trayCount: await page.getByTestId('clip-editor-tray').count(),
+        };
         await page.mouse.click(timelineBox.x + midiX, midiY);
+        await expect.poll(() => selection(page)).toMatchObject({ trackId: midiTrack.id, clipId: midiClip.id });
+        await expect(page.getByLabel('Piano roll editor')).toBeVisible();
         await expect(toggle).toHaveAttribute('aria-pressed', String(shown));
         await expect(page.getByTestId('clip-editor-tray')).toHaveCount(shown ? 1 : 0);
         const midiSnapshot = await snapshot(page);
@@ -170,10 +248,21 @@ test('audio editor omits MIDI automation and preserves MIDI tray preference', as
             trayCount: await page.getByTestId('clip-editor-tray').count(),
             selectedStart: await page.getByTestId('selected-clip-start-beat').textContent(),
         };
-        observations.push({ shown, audioSnapshot, audioState, midiSnapshot, midiState });
+        observations.push({
+            shown,
+            audioSelection,
+            audioSnapshot,
+            audioState,
+            hybridSelection,
+            hybridSnapshot,
+            hybridState,
+            midiSelection: await selection(page),
+            midiSnapshot,
+            midiState,
+        });
     }
     await testInfo.attach('tray-state.json', {
-        body: JSON.stringify({ before, observations }, null, 2),
+        body: JSON.stringify({ hybridImported, decoded, before, observations }, null, 2),
         contentType: 'application/json',
     });
 });

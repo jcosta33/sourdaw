@@ -323,7 +323,7 @@ describe('ClipView', () => {
     });
 
     it('does not offer MIDI automation for an audio clip even on a MIDI track', () => {
-        const clip = makeClip({ id: 'audio', name: 'Audio', type: 'audio' });
+        const clip = makeClip({ id: 'audio', name: 'Audio', type: 'audio', audioBufferId: 'buffer-a' });
         vi.mocked(useTracks).mockReturnValue({
             tracks: [makeTrack({ id: 'track-1', kind: 'midi', clips: [clip] })],
             selectedTrackId: 'track-1',
@@ -331,6 +331,11 @@ describe('ClipView', () => {
         renderWithTooltip(<ClipView />);
         expect(screen.queryByTestId('toggle-automation-tray-button')).not.toBeInTheDocument();
         expect(screen.queryByTestId('clip-editor-tray')).not.toBeInTheDocument();
+        expect(screen.queryByTestId('piano-roll')).not.toBeInTheDocument();
+        expect(screen.getByTestId('waveform-editor')).toHaveAttribute('data-clip-id', 'audio');
+        expect(screen.getByTestId('waveform-editor')).toHaveAttribute('data-audio-buffer-id', 'buffer-a');
+        expect(screen.getByText('Waveform')).toBeInTheDocument();
+        expect(screen.getByText('Knead (Pitch)')).toBeInTheDocument();
     });
 
     it.each([false, true])('preserves MIDI tray preference %s across audio and empty selections', (shown) => {
@@ -341,6 +346,8 @@ describe('ClipView', () => {
         clipSelectionMocks.store.value.selectedClipId = 'midi';
         const view = renderWithTooltip(<ClipView />);
         expect(screen.getByTestId('clip-editor-tray')).toBeInTheDocument();
+        expect(screen.getByTestId('piano-roll')).toHaveAttribute('data-clip-id', 'midi');
+        expect(screen.queryByText('Waveform')).not.toBeInTheDocument();
         if (!shown) {
             fireEvent.click(screen.getByTestId('toggle-automation-tray-button'));
         }
@@ -352,6 +359,8 @@ describe('ClipView', () => {
         );
         expect(screen.queryByTestId('toggle-automation-tray-button')).not.toBeInTheDocument();
         expect(screen.queryByTestId('clip-editor-tray')).not.toBeInTheDocument();
+        fireEvent.click(screen.getByText('Knead (Pitch)'));
+        expect(screen.getByTestId('knead-editor')).toHaveAttribute('data-clip-id', 'audio');
         vi.mocked(useTracks).mockReturnValue({
             tracks: [makeTrack({ id: 'track-1', kind: 'audio', clips: [] })],
             selectedTrackId: 'track-1',
@@ -369,6 +378,9 @@ describe('ClipView', () => {
                 <ClipView />
             </TooltipProvider>
         );
+        expect(screen.getByTestId('piano-roll')).toHaveAttribute('data-clip-id', 'midi');
+        expect(screen.queryByTestId('knead-editor')).not.toBeInTheDocument();
+        expect(screen.queryByText('Waveform')).not.toBeInTheDocument();
         expect(screen.getByTestId('toggle-automation-tray-button')).toHaveAttribute('aria-pressed', String(shown));
         expect(screen.queryByTestId('clip-editor-tray') !== null).toBe(shown);
     });
@@ -441,6 +453,27 @@ describe('ClipView', () => {
         renderWithTooltip(<ClipView />);
 
         expect(screen.getByText('Clip A')).toHaveAttribute('data-variant', 'secondary');
+    });
+
+    it('opens only selected MIDI clips in selection order regardless of track kind', () => {
+        const midiA = makeClip({ id: 'midi-a', name: 'MIDI A', type: 'midi', trackId: 'track-1' });
+        const audio = makeClip({ id: 'audio', name: 'Audio', type: 'audio', trackId: 'track-2' });
+        const midiB = makeClip({ id: 'midi-b', name: 'MIDI B', type: 'midi', trackId: 'track-2' });
+        clipSelectionMocks.store.value = {
+            selectedClipId: 'midi-a',
+            selectedClipIds: ['midi-b', 'audio', 'midi-a'],
+            marqueeSelection: null,
+        };
+        vi.mocked(useTracks).mockReturnValue({
+            tracks: [
+                makeTrack({ id: 'track-1', kind: 'audio', clips: [midiA] }),
+                makeTrack({ id: 'track-2', kind: 'midi', clips: [audio, midiB] }),
+            ],
+            selectedTrackId: 'track-1',
+        });
+        renderWithTooltip(<ClipView />);
+        expect(screen.getByTestId('piano-roll')).toHaveAttribute('data-opened-clip-ids', 'midi-b,midi-a');
+        expect(screen.queryByText('Waveform')).not.toBeInTheDocument();
     });
 
     it('should not pass openedClipIds when at most one clip is selected', () => {

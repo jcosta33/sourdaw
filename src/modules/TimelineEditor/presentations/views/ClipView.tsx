@@ -79,7 +79,7 @@ export const ClipView = (): ReactElement => {
             return undefined;
         }
         const midiClipIds = ids.filter((id) =>
-            tracks.some((time) => time.kind === 'midi' && time.clips.some((context) => context.id === id))
+            tracks.some((time) => time.clips.some((context) => context.id === id && context.type === 'midi'))
         );
         return midiClipIds.length > 1 ? midiClipIds : undefined;
     };
@@ -98,7 +98,7 @@ export const ClipView = (): ReactElement => {
         }
     };
     const renderAudioEditModeToggle = (): ReactElement | null => {
-        if (selectedTrack.kind !== 'audio' || !selectedClip) {
+        if (selectedClip?.type !== 'audio') {
             return null;
         }
         return (
@@ -123,7 +123,7 @@ export const ClipView = (): ReactElement => {
         );
     };
     const renderEditorBody = (): ReactElement => {
-        if (selectedTrack.kind === 'midi' && selectedClip) {
+        if (selectedClip?.type === 'midi') {
             return (
                 <PianoRoll
                     clipId={selectedClip.id}
