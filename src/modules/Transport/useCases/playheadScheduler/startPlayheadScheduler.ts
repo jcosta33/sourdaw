@@ -44,6 +44,7 @@ import { resetMetronomeBeat } from '../scheduling/resetMetronomeBeat';
 import { scheduleAudioClips } from '../scheduling/scheduleAudioClips';
 import { scheduleMetronome } from '../scheduling/scheduleMetronome';
 import { scheduleMidiNotes } from '../scheduling/scheduleMidiNotes';
+import { retireSupersededMidiMedia } from './retireSupersededMidiMedia';
 import { commitRecoveredAudioRecording } from '../transportControls/commitRecoveredAudioRecording';
 import { createAutomaticPunchEnding } from '../transportControls/createAutomaticPunchEnding';
 import { createRecordingCaptureClocks } from '../transportControls/createRecordingCaptureClocks';
@@ -1632,6 +1633,18 @@ export function startPlayheadScheduler(
             windowBufferPool = loopAudioSchedule.poolAt(schedulerSession.pendingSeam.seamAudioTime, true);
         }
         const bufferInput = { transport: current, changes, position: publishedBeat, audioTime: now };
+        function retireBeforeMidi(pool: typeof dyingBufferPool): void {
+            if (loopAudioSchedule.active || !cancellation.isCurrent()) {
+                return;
+            }
+            retireSupersededMidiMedia(
+                trackStore.value?.tracks.filter((track) => track.kind === 'midi') ?? [],
+                ctx,
+                pool?.audio ?? schedulerSession.scheduledAudioClips,
+                pool?.frozen ?? schedulerSession.scheduledFrozenTracks,
+                pool?.sources ?? schedulerSession.activeAudioSources
+            );
+        }
         const initialMidiEmissions: Promise<void>[] = [];
         const initialEmissionErrors: unknown[] = [];
         function observeInitialMidi(emission: Promise<void>): void {
@@ -1704,6 +1717,7 @@ export function startPlayheadScheduler(
             // the position the dying pass holds at `now`, so its last events
             // land at their own grid times — all at or before the seam instant.
             scheduleMetronome(seam.passHighWater, seam.passUpTo, seam.passPosition, current, eventSchedulingAnchor);
+            retireBeforeMidi(dyingBufferPool);
             const retainDyingFrozen = loopAudioSchedule.watchFrozenMidiWindow(
                 dyingBufferPool,
                 seam.passHighWater,
@@ -1792,6 +1806,7 @@ export function startPlayheadScheduler(
             // stored controllers are restored to what is in force there. The
             // dying window above already posted everything up to the seam, which
             // is why this path lifts nothing frameless.
+            retireBeforeMidi(incomingBufferPool);
             const retainIncomingFrozen = loopAudioSchedule.watchFrozenMidiWindow(
                 incomingBufferPool,
                 current.loopStart,
@@ -1856,6 +1871,7 @@ export function startPlayheadScheduler(
             // A late wrap, a follow-action jump, an edit's re-emit and a stall's
             // skip open this window at their destination, so it restores the
             // stored controllers there too.
+            retireBeforeMidi(windowBufferPool);
             const retainWindowFrozen = loopAudioSchedule.watchFrozenMidiWindow(
                 windowBufferPool,
                 schedulerSession.lastScheduledBeat,

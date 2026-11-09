@@ -24,6 +24,7 @@ import { getTempoAtBeat, secondsBetweenBeats } from '../../models/TempoMap';
 import { type TransportState } from '../../models/TransportState';
 import { type TempoChange, tempoMapStore } from '../../stores/tempoMapStore';
 import { cutSource } from '../playheadScheduler/cutSource';
+import { retireSupersededMidiMedia } from '../playheadScheduler/retireSupersededMidiMedia';
 import { schedulerSession } from '../playheadScheduler/schedulerSession';
 
 import { gainNodePool } from './audioClipSchedulingState';
@@ -763,25 +764,20 @@ export function scheduleAudioClips(
     // moved to another track, or nudged — and a dedup key dropped by a later
     // track's cut would otherwise still read as emitted to an earlier track.
     const audioTracks: { track: (typeof tracks)[number]; parts: ResolvedAudioPart[] }[] = [];
+    const unfrozenTracks: (typeof tracks)[number][] = [];
     let cutAny = false;
     for (const track of tracks) {
         if (track.kind !== 'audio' && track.kind !== 'midi') {
             continue;
         }
-        if (track.kind === 'midi' && track.freezeState.status === 'frozen' && track.freezeState.frozenBufferId) {
-            continue;
-        }
-        if (track.muted && !track.sends.some((send) => send.preFader && busTrackIds.has(send.busId))) {
-            continue;
-        }
-
         if (track.freezeState.status === 'frozen' && track.freezeState.frozenBufferId) {
             // Key by content, not just track.id (same contract as
             // scheduleMidiNotes): an unfreeze → refreeze keeps the track id but
             // replaces frozenBufferId, and a bare-id key would keep the dedup
             // entry and leave the refrozen track silent for the whole session.
             const frozenKey = `${track.id}:${track.freezeState.frozenBufferId}`;
-            if (!scheduledFrozenTracks.has(frozenKey)) {
+            const maySound = !track.muted || track.sends.some((send) => send.preFader && busTrackIds.has(send.busId));
+            if (track.kind === 'audio' && maySound && !scheduledFrozenTracks.has(frozenKey)) {
                 const scheduled = scheduleFrozenTrack(
                     track,
                     accumulatedPosition,
@@ -794,9 +790,21 @@ export function scheduleAudioClips(
                     scheduledFrozenTracks.add(frozenKey);
                 }
             }
+            cutAny =
+                retireSupersededMidiMedia(
+                    [track],
+                    ctx,
+                    scheduledAudioClipsSet,
+                    scheduledFrozenTracks,
+                    activeAudioSources
+                ) || cutAny;
             continue;
         }
 
+        unfrozenTracks.push(track);
+        if (track.muted && !track.sends.some((send) => send.preFader && busTrackIds.has(send.busId))) {
+            continue;
+        }
         const parts = resolveClipsWithComping(track.id, track.clips);
         cutAny = cutSupersededParts(track.id, parts, scheduledAudioClipsSet, activeAudioSources, ctx) || cutAny;
         audioTracks.push({ track, parts });
@@ -900,4 +908,5 @@ export function scheduleAudioClips(
             }
         }
     }
+    retireSupersededMidiMedia(unfrozenTracks, ctx, scheduledAudioClipsSet, scheduledFrozenTracks, activeAudioSources);
 }

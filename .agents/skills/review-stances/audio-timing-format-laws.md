@@ -135,4 +135,9 @@ none.
     restricted to audio tracks, and `startPlayheadSchedulerLoopAudioStall.spec.ts` must fail if the real
     loop source ledger omits the MIDI track's audio or duplicates a pass. Keep bus, muted, and frozen-bake
     controls: a frozen MIDI track with a valid rendered buffer belongs to the MIDI frozen emitter and
-    cannot emit its original audio clip again. A mocked programme call proves eligibility only.
+    cannot emit its original audio clip again. After live Freeze, Unfreeze and refreeze of the same bake ID,
+    each former owner must stop by the replacement's actual source onset and its dedup key must clear so the
+    source can rejoin at its current media phase. Hold an earlier MIDI rack's async work while advancing the
+    audio clock, and keep another track's future compensated source: `startPlayheadSchedulerLoopAudioStall.spec.ts`
+    must fail if retirement happens only after the MIDI await or cuts that other source. A mocked programme
+    call proves eligibility only.
