@@ -161,7 +161,10 @@ describe('ArrangementSelector', () => {
         fireEvent.click(screen.getByLabelText(/Arrangement selector/i));
         const arrangement = screen.getByRole('menuitemradio', { name: /Arrangement 2/i });
 
-        expect(arrangement).toHaveAttribute('tabindex', '0');
+        // Roving tab stop: only the checked row is tabbable; focus still lands
+        // on inactive rows through arrow navigation or a direct focus().
+        expect(arrangement).toHaveAttribute('tabindex', '-1');
+        expect(screen.getByRole('menuitemradio', { name: /Arrangement 1/i })).toHaveAttribute('tabindex', '0');
         arrangement.focus();
         expect(arrangement).toHaveFocus();
 
@@ -171,6 +174,50 @@ describe('ArrangementSelector', () => {
         expect(switchArrangement).toHaveBeenCalledTimes(2);
         expect(switchArrangement).toHaveBeenNthCalledWith(1, 'arr-2');
         expect(switchArrangement).toHaveBeenNthCalledWith(2, 'arr-2');
+    });
+
+    it('marks the checked arrangement and leaves the others unchecked', () => {
+        render(<ArrangementSelector />);
+        fireEvent.click(screen.getByLabelText(/Arrangement selector/i));
+
+        expect(screen.getByRole('menuitemradio', { name: /Arrangement 1/i })).toHaveAttribute('aria-checked', 'true');
+        expect(screen.getByRole('menuitemradio', { name: /Arrangement 2/i })).toHaveAttribute('aria-checked', 'false');
+    });
+
+    it('moves focus with ArrowUp and ArrowDown without switching arrangements', () => {
+        render(<ArrangementSelector />);
+        fireEvent.click(screen.getByLabelText(/Arrangement selector/i));
+        const first = screen.getByRole('menuitemradio', { name: /Arrangement 1/i });
+        const second = screen.getByRole('menuitemradio', { name: /Arrangement 2/i });
+        first.focus();
+
+        fireEvent.keyDown(first, { key: 'ArrowDown' });
+        expect(second).toHaveFocus();
+        expect(switchArrangement).not.toHaveBeenCalled();
+
+        fireEvent.keyDown(second, { key: 'ArrowUp' });
+        expect(first).toHaveFocus();
+        expect(switchArrangement).not.toHaveBeenCalled();
+    });
+
+    it('keeps the rename action a sibling of its radio, not a descendant', () => {
+        render(<ArrangementSelector />);
+        fireEvent.click(screen.getByLabelText(/Arrangement selector/i));
+        const radio = screen.getByRole('menuitemradio', { name: /Arrangement 2/i });
+        const rename = screen.getByRole('button', { name: 'Rename Arrangement 2' });
+
+        expect(radio.contains(rename)).toBe(false);
+        expect(rename.parentElement).toBe(radio.parentElement);
+    });
+
+    it('reveals the rename action on keyboard focus of an inactive row', () => {
+        render(<ArrangementSelector />);
+        fireEvent.click(screen.getByLabelText(/Arrangement selector/i));
+        const rename = screen.getByRole('button', { name: 'Rename Arrangement 2' });
+
+        rename.focus();
+        expect(rename).toHaveFocus();
+        expect(rename).toHaveClass('opacity-0', 'group-hover:opacity-100', 'focus-visible:opacity-100');
     });
 
     it('leaves Enter and Space on a rename action to its own button', () => {
@@ -274,12 +321,7 @@ describe('ArrangementSelector', () => {
     it('consumes the first Escape to cancel a rename without closing the menu', () => {
         render(<ArrangementSelector />);
         fireEvent.click(screen.getByLabelText(/Arrangement selector/i));
-        const firstRow = screen.getAllByTestId('picker-row')[0];
-        const editButton = firstRow?.querySelector('button');
-        if (!editButton) {
-            throw new Error('expected an arrangement rename button');
-        }
-        fireEvent.click(editButton);
+        fireEvent.click(screen.getByRole('button', { name: 'Rename Arrangement 1' }));
         const input = screen.getByTestId('compact-input');
         const parentDismiss = vi.fn();
         window.addEventListener('keydown', parentDismiss);

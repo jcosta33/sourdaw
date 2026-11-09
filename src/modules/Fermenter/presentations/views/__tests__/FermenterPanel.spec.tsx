@@ -176,6 +176,14 @@ describe('FermenterPanel', () => {
             const panel = screen.getByRole('tabpanel', { name: 'Filter' });
             expect(panel).toHaveAttribute('id', 'fermenter-section-panel');
             expect(filterTab).toHaveAttribute('aria-controls', panel.id);
+
+            // Selection state must follow the rendered section: the clicked tab
+            // becomes selected and tabbable, the previous tab unselected and untabbable.
+            expect(filterTab).toHaveAttribute('aria-selected', 'true');
+            expect(filterTab).toHaveAttribute('tabindex', '0');
+            const oscillatorTab = screen.getByRole('tab', { name: 'Oscillator' });
+            expect(oscillatorTab).toHaveAttribute('aria-selected', 'false');
+            expect(oscillatorTab).toHaveAttribute('tabindex', '-1');
         });
 
         it('switches to the envelopes section header when the Envelopes tab is clicked', () => {
@@ -663,7 +671,7 @@ describe('FermenterPanel', () => {
             renderPanel();
 
             expect(screen.getByText('Scene')).toBeInTheDocument();
-            expect(screen.queryByRole('button', { name: 'Scene', exact: true })).not.toBeInTheDocument();
+            expect(screen.queryByRole('button', { name: /^Scene$/ })).not.toBeInTheDocument();
         });
 
         it('renders accessible patch and preset action buttons', () => {
