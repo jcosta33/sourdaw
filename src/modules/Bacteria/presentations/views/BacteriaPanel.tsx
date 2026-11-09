@@ -289,7 +289,7 @@ const SectionHeader = ({
 );
 
 const BChip = ({
-    active = false,
+    active,
     size = 'sm',
     className,
     children,
@@ -479,7 +479,11 @@ const PlayHero = ({ deviceId, state }: { deviceId: string; state: BacteriaState 
                         </span>
                         <span className="truncate text-compact text-foreground">{snapshot.name}</span>
                         <BChip
-                            active={Object.keys(snapshot.paramValues).length > 0}
+                            className={
+                                Object.keys(snapshot.paramValues).length > 0
+                                    ? 'border-[var(--color-accent-mint)]/60 bg-[var(--color-accent-mint)]/12 text-[var(--color-accent-mint)]'
+                                    : undefined
+                            }
                             aria-label={`Capture snapshot ${snapshot.id}`}
                             onClick={() => captureBacteriaSnapshot(deviceId, index)}
                         >

@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
+    applyEuclideanToTrack: vi.fn(),
     assignToasterPatternGroove: vi.fn<() => Promise<void>>(),
     exportPatternToTimeline: vi.fn(),
     enter16Levels: vi.fn(),
@@ -22,6 +23,9 @@ import { ToasterPanel } from '../ToasterPanel';
 
 vi.mock('#/infra/store/useStore', () => ({
     useStore: vi.fn((_store, defaultValue) => defaultValue),
+}));
+vi.mock('../../../useCases/applyEuclidean', () => ({
+    applyEuclideanToTrack: mocks.applyEuclideanToTrack,
 }));
 vi.mock('../../../useCases/assignToasterPatternGroove', () => ({
     assignToasterPatternGroove: mocks.assignToasterPatternGroove,
@@ -95,6 +99,25 @@ describe('ToasterPanel', () => {
         fireEvent.change(screen.getByRole('combobox', { name: 'Toaster view' }), { target: { value: 'full' } });
         const buttons = screen.queryAllByRole('button');
         expect(buttons.length).toBeGreaterThanOrEqual(0);
+    });
+
+    it('keeps Toast a one-shot peach action without pressed state', () => {
+        render(<ToasterPanel deviceId="toaster-test" />);
+        fireEvent.change(screen.getByRole('combobox', { name: 'Toaster view' }), { target: { value: 'full' } });
+
+        const toast = screen.getByRole('button', { name: 'Toast', exact: true });
+        expect(toast).not.toHaveAttribute('aria-pressed');
+        expect(toast).toHaveClass(
+            'border-[var(--color-accent-peach)]/60',
+            'bg-[var(--color-accent-peach)]/12',
+            'text-[var(--color-accent-peach)]'
+        );
+        expect(screen.getByTestId('toaster-pad-0')).toHaveAttribute('aria-pressed', 'true');
+
+        fireEvent.click(toast);
+
+        expect(mocks.applyEuclideanToTrack).toHaveBeenCalledTimes(1);
+        expect(mocks.applyEuclideanToTrack).toHaveBeenCalledWith('toaster-test', 0, 4, 16, 0);
     });
 
     it('tells the musician Play is session-only and To timeline is what export/native playback sees', () => {
