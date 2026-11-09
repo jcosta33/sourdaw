@@ -85,7 +85,7 @@ const MeterSection = ({
             title={title}
             actions={actions}
             size="xs"
-            titleClassName="text-muted-foreground/70"
+            titleClassName="text-muted-foreground/80"
             className="mb-2"
         />
         {children}
@@ -187,14 +187,14 @@ export const CrustMeteringStrip = ({
                         value={lufsShortTerm > -99 ? lufsShortTerm.toFixed(1) : '—'}
                         aria-label={`Short-term LUFS: ${lufsShortTerm.toFixed(1)}`}
                         labelClassName="text-nano text-muted-foreground/80"
-                        valueClassName="text-[12px] tabular-nums text-foreground/70"
+                        valueClassName="text-[12px] tabular-nums text-foreground/80"
                     />
                     <DawReadoutRow
                         label="MOM"
                         value={lufsMomentary > -99 ? lufsMomentary.toFixed(1) : '—'}
                         aria-label={`Momentary LUFS: ${lufsMomentary.toFixed(1)}`}
                         labelClassName="text-nano text-muted-foreground/80"
-                        valueClassName="text-[12px] tabular-nums text-foreground/70"
+                        valueClassName="text-[12px] tabular-nums text-foreground/80"
                     />
                 </DawPluginReadoutList>
 
@@ -204,7 +204,7 @@ export const CrustMeteringStrip = ({
                         value={`${lra.toFixed(1)} LU`}
                         aria-label={`Loudness range: ${lra.toFixed(1)} LU`}
                         labelClassName="text-nano text-muted-foreground/80"
-                        valueClassName="text-dense text-foreground/60"
+                        valueClassName="text-dense text-foreground/80"
                     />
                 </div>
             </MeterSection>

@@ -111,9 +111,10 @@ describe('the production Content-Security-Policy', () => {
         const themeScript = /<script id="sourdaw-theme"([^>]*)>([\s\S]*?)<\/script>/u.exec(indexHtml);
         const themeAttributes = parseTagAttributes(themeScript?.[1] ?? '');
         expect(themeAttributes.get('src')).toBe('/themePrepaint.js');
-        // The prepaint must run as a classic inline-order script: any module,
-        // async or defer spelling defers it past first paint and restores the
-        // dark flash it exists to prevent.
+        // The prepaint must run as a classic inline-order script: an absent or
+        // non-JavaScript type can suppress execution, while module, async or
+        // defer spelling defers it past first paint and restores the dark flash.
+        expect(themeAttributes.get('type')?.toLowerCase()).toBe('text/javascript');
         expect(themeAttributes.get('type')?.toLowerCase()).not.toBe('module');
         expect(themeAttributes.has('async')).toBe(false);
         expect(themeAttributes.has('defer')).toBe(false);

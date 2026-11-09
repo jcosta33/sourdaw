@@ -133,8 +133,10 @@ describe('semantic light theme', () => {
     it('loads the prepaint theme from an external classic script before the entry module', () => {
         const themeAttributes = parseTagAttributes(startupThemeMatch?.[1] ?? '');
         expect(themeAttributes.get('src')).toBe('/themePrepaint.js');
-        // Any module, async or defer spelling defers the prepaint past first
-        // paint and restores the dark flash it exists to prevent.
+        // An absent or non-JavaScript type can suppress execution; module,
+        // async or defer spelling defers the prepaint past first paint and
+        // restores the dark flash it exists to prevent.
+        expect(themeAttributes.get('type')?.toLowerCase()).toBe('text/javascript');
         expect(themeAttributes.get('type')?.toLowerCase()).not.toBe('module');
         expect(themeAttributes.has('async')).toBe(false);
         expect(themeAttributes.has('defer')).toBe(false);
@@ -169,16 +171,31 @@ describe('semantic light theme', () => {
             expect(contrast(readToken(lightBlock, foreground), background)).toBeGreaterThanOrEqual(4.5);
         }
 
-        // The ST/MOM/LRA captions are muted text at an alpha: their composite
-        // over the raised surface is what the musician actually reads, and at
-        // 10-12px it must still reach the 4.5:1 floor.
-        const muted = readToken(lightBlock, '--color-text-secondary');
-        const labelAlphas = [...meteringSource.matchAll(/labelClassName="[^"]*text-muted-foreground\/(\d+)/gu)].map(
-            (match) => Number(match[1])
-        );
-        expect(labelAlphas.length).toBeGreaterThan(0);
-        for (const alpha of labelAlphas) {
-            expect(contrast(composite(muted, background, alpha / 100), background)).toBeGreaterThanOrEqual(4.5);
+        // Captions, section titles and values are small text at declared
+        // alphas: their composites over the raised surface are what the
+        // musician actually reads, so each must reach the 4.5:1 floor.
+        const textRoles = [
+            {
+                attributes: ['labelClassName', 'titleClassName'],
+                className: 'text-muted-foreground',
+                token: '--color-text-secondary',
+            },
+            { attributes: ['valueClassName'], className: 'text-foreground', token: '--color-text-primary' },
+        ];
+        for (const { attributes, className, token } of textRoles) {
+            const foreground = readToken(lightBlock, token);
+            for (const attribute of attributes) {
+                const alphas = Array.from(
+                    meteringSource.matchAll(new RegExp(`${attribute}="[^"]*${className}/(\\d+)`, 'gu')),
+                    (match) => Number(match[1])
+                );
+                expect(alphas.length, `${attribute} ${className} declarations`).toBeGreaterThan(0);
+                for (const alpha of alphas) {
+                    expect(contrast(composite(foreground, background, alpha / 100), background)).toBeGreaterThanOrEqual(
+                        4.5
+                    );
+                }
+            }
         }
     });
 
@@ -209,9 +226,79 @@ describe('semantic light theme', () => {
             '--surface-default',
             '--surface-raised',
             '--color-bg-well',
+            '--color-bg-panelInset',
         ]) {
             const background = composite(accent, readToken(lightBlock, surfaceToken), Number(alphaSource) / 100);
             expect(contrast(accent, background)).toBeGreaterThanOrEqual(4.75);
+        }
+    });
+
+    it('keeps Grinder chips and toggles readable on their real window and black-well backdrops', () => {
+        const grinderSource = readFileSync(
+            resolve(process.cwd(), 'src/modules/Grinder/presentations/views/GrinderPanel.tsx'),
+            'utf8'
+        );
+        const grinderStyles = readFileSync(resolve(process.cwd(), 'src/styles/utilities/modules/grinder.css'), 'utf8');
+        const toggleSource = readFileSync(resolve(process.cwd(), 'src/components/daw/DawPluginToggle.tsx'), 'utf8');
+        expect(toggleSource).toMatch(/<DawPluginChip active=\{pressed\}[^>]*tone=\{tone\}/u);
+
+        const windowBlock = /@utility grinder-window\s*\{([\s\S]*?)\n\}/u.exec(grinderStyles)?.[1] ?? '';
+        expect(windowBlock).toContain('var(--color-bg-panelInset)');
+        const rgbaLayers = Array.from(
+            windowBlock.matchAll(/rgba\(\s*(\d+),\s*(\d+),\s*(\d+),\s*([\d.]+)\)/gu),
+            (match) => ({
+                color: `#${match
+                    .slice(1, 4)
+                    .map((channel) => Number(channel).toString(16).padStart(2, '0'))
+                    .join('')}`,
+                alpha: Number(match[4]),
+            })
+        );
+        const [topWhite, , topAmber] = rgbaLayers;
+        if (topWhite === undefined || topAmber === undefined) {
+            throw new Error('Missing Grinder window gradient layers');
+        }
+
+        const panelInset = readToken(lightBlock, '--color-bg-panelInset');
+        const windowTop = composite(
+            topWhite.color,
+            composite(topAmber.color, panelInset, topAmber.alpha),
+            topWhite.alpha
+        );
+        const wellAlphaSource = /<div className="rounded-\[18px\][^"]*bg-black\/(\d+)[^"]*">/u.exec(grinderSource)?.[1];
+        if (wellAlphaSource === undefined) {
+            throw new Error('Missing Grinder snapshot well');
+        }
+        const blackWell = composite('#000000', windowTop, Number(wellAlphaSource) / 100);
+
+        const usages = Array.from(
+            grinderSource.matchAll(/<(DawPluginChip|DawPluginToggle)\b[^>]*?\btone="([a-z]+)"/gu),
+            (match) => ({ component: match[1], tone: match[2] })
+        ).filter(
+            (usage, index, all) =>
+                all.findIndex(
+                    (candidate) => candidate.component === usage.component && candidate.tone === usage.tone
+                ) === index
+        );
+        expect(usages).toContainEqual({ component: 'DawPluginChip', tone: 'amber' });
+        expect(usages).toContainEqual({ component: 'DawPluginChip', tone: 'cyan' });
+        expect(usages).toContainEqual({ component: 'DawPluginToggle', tone: 'cyan' });
+
+        for (const { component, tone } of usages) {
+            const token = `--color-accent-${tone}`;
+            const alphaSource = new RegExp(`bg-\\[var\\(${token}\\)\\]/(\\d+)`, 'u').exec(chipSource)?.[1];
+            if (alphaSource === undefined) {
+                throw new Error(`Missing active-chip background for ${token}`);
+            }
+            const accent = readToken(lightBlock, token);
+            const backdrops =
+                component === 'DawPluginToggle' && tone === 'cyan' ? { windowTop, blackWell } : { windowTop };
+            for (const [backdropName, backdrop] of Object.entries(backdrops)) {
+                const background = composite(accent, backdrop, Number(alphaSource) / 100);
+                expect(contrast(accent, background), `${component} ${tone} on ${backdropName}`).toBeGreaterThanOrEqual(
+                    4.5
+                );
+            }
         }
     });
 });
