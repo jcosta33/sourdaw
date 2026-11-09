@@ -887,7 +887,8 @@ stopped run into success.
 A stopped `pnpm dev` command cannot prove recovery by exiting zero on its own. Supply an explicit
 finite proof after `--`, for example `pnpm guard --recover --profile broad -- pnpm test:e2e
 tests/e2e/launchFlows.spec.ts`. The guard runs that proof instead of replaying the server, from the
-receipt's canonical in-lane directory and under the receipt's profile; the memory budget resolves
+receipt's canonical in-lane directory and under the receipt's profile unless `--profile` overrides
+it, as in that example; the memory budget resolves
 against the proof command itself, so a `pnpm test:e2e` proof runs under its measured budget unless
 `--max-rss-mib` overrides it. The proof child receives the recorded port as `SOURDAW_E2E_PORT` and
 nothing else: no token and no proof file the command tree could fabricate. While the proof runs,

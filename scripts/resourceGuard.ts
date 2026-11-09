@@ -22,7 +22,7 @@ import { fileURLToPath } from 'node:url';
 
 import { resolvePrimaryRoot, spawnCapture } from './githubAppIdentity.ts';
 import { sameCheckoutRoot } from './guardRecoveryProof.ts';
-import { readServingCheckoutRoot, SOURDAW_E2E_PORT_ENV } from './e2eServerIdentity.ts';
+import { readServingCheckoutRoot, SOURDAW_E2E_PORT_ENV, originAnswers } from './e2eServerIdentity.ts';
 import { assertCurrentCheckoutModulesBelongToCheckout } from './pnpmModulesPreflight.ts';
 import {
     GUARD_FAILURES_DIR,
@@ -3301,9 +3301,21 @@ export async function main(
             }
             // The guard itself watches the recorded origin while the proof runs: the proof
             // child receives the recorded port and nothing else, so no part of the command
-            // tree can fabricate the observation the guard requires.
+            // tree can fabricate the observation the guard requires. A server already
+            // answering before the proof starts could satisfy that watch without the tree
+            // running anything (a leftover e2e server), so the origin must be free first;
+            // the marker is compared with the lane root because the e2e server stamps the
+            // checkout root, which a receipt recorded from an in-lane subdirectory is not.
+            if (explicitProof !== undefined && (await originAnswers(explicitProof.origin))) {
+                error(
+                    `guard: explicit recovery proof requires the recorded origin unserved, but ${explicitProof.origin} already answers; stop that server and retry; lane ${lane.laneName} remains stopped`
+                );
+                return 1;
+            }
             const observation =
-                explicitProof === undefined ? undefined : observeRecoveryServer(explicitProof.origin, recoveryCwd);
+                explicitProof === undefined
+                    ? undefined
+                    : observeRecoveryServer(explicitProof.origin, lane.worktreePath);
             const result = await runCommand({
                 command: recoveryCommand,
                 args: recoveryArgs,
