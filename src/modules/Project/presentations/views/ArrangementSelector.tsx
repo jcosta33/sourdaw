@@ -158,7 +158,9 @@ export const ArrangementSelector = (): ReactElement | null => {
                         const openingRadioId = activeRadioId ?? navigableArrangements[0]?.id;
                         if (openingRadioId) {
                             radioRefs.current.get(openingRadioId)?.focus();
+                            return;
                         }
+                        newArrangementRef.current?.focus();
                     }}
                     onKeyDown={(event) => {
                         if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') {

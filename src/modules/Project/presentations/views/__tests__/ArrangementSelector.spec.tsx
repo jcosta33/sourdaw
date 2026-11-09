@@ -399,6 +399,33 @@ describe('ArrangementSelector', () => {
         expect(survivingRadio).toHaveAttribute('tabindex', '0');
     });
 
+    it('focuses New Arrangement when opening the retained empty menu', async () => {
+        const { rerender } = render(<ArrangementSelector />);
+        const trigger = screen.getByLabelText(/Arrangement selector/i);
+        fireEvent.click(trigger);
+        expect(screen.getByRole('menu', { name: 'Arrangement menu' })).toBeInTheDocument();
+        fireEvent.click(trigger);
+        expect(screen.queryByRole('menu', { name: 'Arrangement menu' })).toBeNull();
+        (useStore as ReturnType<typeof vi.fn>).mockReturnValue({
+            arrangements: [],
+            activeArrangementId: null,
+        });
+
+        rerender(<ArrangementSelector />);
+        act(() => {
+            trigger.focus();
+        });
+        fireEvent.click(trigger);
+
+        const newArrangement = screen.getByRole('menuitem', { name: 'New Arrangement' });
+        expect(newArrangement).toBeVisible();
+        await vi.waitFor(() => {
+            expect(newArrangement).toHaveFocus();
+        });
+        fireEvent.keyDown(newArrangement, { key: 'ArrowDown' });
+        expect(screen.getByRole('menuitem', { name: 'Duplicate Current' })).toHaveFocus();
+    });
+
     it('focuses New Arrangement when a focused two-arrangement menu becomes empty and recovers after growth', () => {
         const { rerender } = render(<ArrangementSelector />);
         fireEvent.click(screen.getByLabelText(/Arrangement selector/i));
