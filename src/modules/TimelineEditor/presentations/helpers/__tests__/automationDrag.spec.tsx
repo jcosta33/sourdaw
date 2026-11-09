@@ -1,7 +1,7 @@
 import { type ReactElement, type MouseEvent as ReactMouseEvent } from 'react';
 
 import { render, screen, fireEvent } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { type AutomationLane, type AutomationPoint } from '../../../models/AutomationViewTypes';
 import {
@@ -110,6 +110,11 @@ const renderSurface = (props: SurfaceProps): HTMLElement => {
 };
 
 describe('automationDrag', () => {
+    afterEach(() => {
+        // Assertions can fail before mouseup; retire any live global drag through its public cancel path.
+        fireEvent.keyDown(window, { key: 'Escape' });
+    });
+
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.automationState = { lanes: [] };
