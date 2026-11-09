@@ -23,6 +23,9 @@ describe('DawPluginChip', () => {
                 <DawPluginChip active={false}>Unselected</DawPluginChip>
                 <DawPluginChip>Unstated</DawPluginChip>
                 <DawPluginChip aria-pressed={true}>Explicitly pressed</DawPluginChip>
+                <DawPluginChip active aria-pressed={false}>
+                    Explicitly unpressed
+                </DawPluginChip>
             </>
         );
 
@@ -33,6 +36,7 @@ describe('DawPluginChip', () => {
         // regression: the computed value is absent here, so `{...props}` must
         // still land after it for this to stay pressed.
         expect(screen.getByRole('button', { name: 'Explicitly pressed' })).toHaveAttribute('aria-pressed', 'true');
+        expect(screen.getByRole('button', { name: 'Explicitly unpressed' })).toHaveAttribute('aria-pressed', 'false');
     });
 
     it('omits computed pressed state from active and inactive radios', () => {
