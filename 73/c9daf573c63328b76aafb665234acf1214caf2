@@ -1,0 +1,56 @@
+src/modules/MixerConsole/presentations/views/Mixer/__tests__/meterPeakFanout.integration.spec.tsx
+  s_977061c47f01dd::t_48c639e8224f1d 2-113,134-135
+  s_977061c47f01dd::t_07a4d041eee550 1,114-133
+src/modules/AudioEngine/useCases/trackAudioControls/getTrackPeakLevel.ts
+  s_977061c47f01dd::t_07a4d041eee550 5-6,18
+  s_977061c47f01dd::t_726582364ad010 2,7-8,20-21
+src/modules/AudioEngine/useCases/engineAccess/__tests__/createMeterFrameReader.spec.ts
+  s_977061c47f01dd::t_726582364ad010 1-6,11-62,68-75
+  s_977061c47f01dd::t_07a4d041eee550 7-10,63-67
+tests/e2e/sharedMeterReadings.spec.ts
+  s_977061c47f01dd::t_d6e6f7f5a99a58 105,243
+  s_977061c47f01dd::t_da36d68b7287b0 1-87,89-94,100-104,106-176,178-183,197-203,206-222,224-242,244-256
+  s_977061c47f01dd::t_3b8847ddb40d88 95-99
+  s_977061c47f01dd::t_f51a842d5e1c0c 88,177,184-196,204-205,223
+src/modules/AudioEngine/useCases/engineAccess/getMasterPeakLevel.ts
+  s_977061c47f01dd::t_07a4d041eee550 28
+  s_977061c47f01dd::t_726582364ad010 4-14,30-31
+src/modules/AudioEngine/useCases/engineAccess/__tests__/getMasterPeakLevel.spec.ts
+  s_977061c47f01dd::t_07a4d041eee550 65-86
+src/modules/WorkspaceShell/presentations/hooks/useStatusBarMetrics.ts
+  s_977061c47f01dd::t_726582364ad010 296,302
+src/modules/WorkspaceShell/presentations/hooks/__tests__/useStatusBarMetrics.spec.ts
+  s_977061c47f01dd::t_07a4d041eee550 25,242,247-249,278,300,324,363,391,415,445,467,490,517,542,567,589,622-624,648,659,684,688,710,736,757,777,798,819,840,865,886,912,950,971,996,1032,1056,1081,1086,1091,1117,1121,1125,1145,1172
+src/modules/Metering/presentations/views/LevelMeter.tsx
+  s_977061c47f01dd::t_726582364ad010 128
+src/modules/Metering/presentations/views/__tests__/LevelMeter.spec.tsx
+  s_977061c47f01dd::t_07a4d041eee550 9,279-289
+  s_977061c47f01dd::t_86c27bf3717b1e 290
+src/modules/MixerConsole/presentations/views/Mixer/__tests__/MixerLevelReadout.spec.tsx
+  s_977061c47f01dd::t_07a4d041eee550 9,82,97
+src/modules/AudioEngine/useCases/trackAudioControls/__tests__/getTrackPeakLevel.spec.ts
+  s_977061c47f01dd::t_07a4d041eee550 45-65
+src/modules/AudioEngine/useCases/engineAccess/createMeterFrameReader.ts
+  s_977061c47f01dd::t_726582364ad010 1-21
+.agents/skills/review-stances/meter-reading-ownership.md
+  s_977061c47f01dd::t_da36d68b7287b0 1-16,18-30
+  s_977061c47f01dd::t_9cd15028e0c089 17
+src/modules/MixerConsole/presentations/views/Mixer/MixerLevelReadout.tsx
+  s_977061c47f01dd::t_726582364ad010 54-55
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "73c9daf573c63328b76aafb665234acf1214caf2",
+  "prompts": {},
+  "sessions": {
+    "s_977061c47f01dd": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34d-123d-7452-a6e7-60608388b6d7",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
