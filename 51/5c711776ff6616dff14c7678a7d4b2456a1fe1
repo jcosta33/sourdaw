@@ -1,0 +1,19 @@
+src/modules/Yeast/handlers/__tests__/yeastUndoSessionMirror.spec.ts
+  s_977061c47f01dd::t_34a3bd99176d68 26,32,37-38,40-45,49,57-58,126,204-205,231,301,306
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "515c711776ff6616dff14c7678a7d4b2456a1fe1",
+  "prompts": {},
+  "sessions": {
+    "s_977061c47f01dd": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34d-123d-7452-a6e7-60608388b6d7",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
