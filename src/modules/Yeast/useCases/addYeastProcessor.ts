@@ -1,4 +1,5 @@
 import { PROCESSOR_TYPES, type ProcessorType } from '../models/ProcessorCatalog';
+import { createInitialYeastProcessorParams } from '../models/createInitialYeastProcessorParams';
 import { yeastStore } from '../stores/yeastStore';
 
 import { commitYeastProjection } from './commitYeastProjection';
@@ -14,7 +15,8 @@ import { commitYeastProjection } from './commitYeastProjection';
 export function addYeastProcessor(
     type: ProcessorType,
     processorId = `${type}-${crypto.randomUUID()}`,
-    name?: string
+    name?: string,
+    recordedInitialParams?: Readonly<Record<string, number>>
 ): boolean {
     const state = yeastStore.value;
     if (!state) {
@@ -24,5 +26,6 @@ export function addYeastProcessor(
     const id = processorId;
     const catalogEntry = PROCESSOR_TYPES.find((entry) => entry.type === type);
     const resolvedName = name ?? catalogEntry?.name ?? type;
-    return commitYeastProjection([...state.processors, { id, type, name: resolvedName, bypassed: false, params: {} }]);
+    const params = recordedInitialParams ? { ...recordedInitialParams } : createInitialYeastProcessorParams(type);
+    return commitYeastProjection([...state.processors, { id, type, name: resolvedName, bypassed: false, params }]);
 }
