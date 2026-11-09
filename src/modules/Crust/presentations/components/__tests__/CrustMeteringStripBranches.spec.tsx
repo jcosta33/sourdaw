@@ -98,6 +98,19 @@ describe('CrustMeteringStrip — GR display', () => {
     });
 });
 
+describe('CrustMeteringStrip — semantic meter text', () => {
+    it('uses theme-aware roles for neutral status, channel labels, and normal GR text', () => {
+        render(<CrustMeteringStrip {...defaultProps({ grDb: 0 })} />);
+
+        expect(screen.getByText('Clear')).toHaveClass('bg-surface-default', 'text-text-secondary');
+        for (const label of ['L', 'R']) {
+            expect(screen.getByText(label)).toHaveClass('text-muted-foreground');
+            expect(screen.getByText(label)).not.toHaveClass('text-muted-foreground/50');
+        }
+        expect(screen.getByLabelText('Gain reduction: 0.0 dB').style.color).toBe('var(--color-text-primary)');
+    });
+});
+
 describe('CrustMeteringStrip — section headers', () => {
     it('renders Output, Loudness, and TP max sections', () => {
         render(<CrustMeteringStrip {...defaultProps()} />);

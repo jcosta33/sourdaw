@@ -10,18 +10,30 @@ import { Fader } from './Fader';
 import { LED } from './LED';
 import { RotaryKnob } from './RotaryKnob';
 
-type DesignToken = { name: string; value: string };
+type DesignToken = { name: string; darkValue: string | undefined; lightValue: string | undefined };
 
-function readDesignTokens(source: string): DesignToken[] {
-    const tokens = new Map<string, string>();
-    for (const match of source.matchAll(/^\s*(--[\w-]+)\s*:\s*([^;]+);/gm)) {
+function readDesignTokenBlock(block: string): [string, string][] {
+    return Array.from(block.matchAll(/^\s*(--[\w-]+)\s*:\s*([^;]+);/gm), (match) => {
         const name = match[1];
         const value = match[2];
-        if (name !== undefined && value !== undefined) {
-            tokens.set(name, value.trim());
+        if (name === undefined || value === undefined) {
+            throw new Error('Expected a complete design token declaration');
         }
+        return [name, value.trim()];
+    });
+}
+
+function readDesignTokens(source: string): DesignToken[] {
+    const darkBlock = /^@theme\s*\{([^}]*)\}/mu.exec(source)?.[1] ?? '';
+    const lightBlock = /^:root\.light\s*\{([^}]*)\}/mu.exec(source)?.[1] ?? '';
+    const tokens = new Map<string, DesignToken>();
+    for (const [name, darkValue] of readDesignTokenBlock(darkBlock)) {
+        tokens.set(name, { name, darkValue, lightValue: undefined });
     }
-    return Array.from(tokens, ([name, value]) => ({ name, value }));
+    for (const [name, lightValue] of readDesignTokenBlock(lightBlock)) {
+        tokens.set(name, { name, darkValue: tokens.get(name)?.darkValue, lightValue });
+    }
+    return Array.from(tokens.values());
 }
 
 const DEFAULT_DESIGN_TOKENS = readDesignTokens(tokenSource);
@@ -180,16 +192,23 @@ function DesignTokenGallery({ tokens }: { tokens: DesignToken[] }): ReactElement
                 Names and values are parsed from <code>src/styles/tokens.css</code>.
             </p>
             <ul aria-label="Design tokens" className="grid gap-1 sm:grid-cols-2 lg:grid-cols-3">
-                {tokens.map(({ name, value }) => (
+                {tokens.map(({ name, darkValue, lightValue }) => (
                     <li
                         key={name}
                         data-token-name={name}
                         className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-2 rounded border border-border/50 px-2 py-1 text-xs"
                     >
                         <code className="truncate text-text-primary">{name}</code>
-                        <code className="truncate text-text-secondary" title={value}>
-                            {value}
-                        </code>
+                        <div className="flex min-w-0 flex-col gap-1 text-text-secondary">
+                            <span className="truncate" title={darkValue}>
+                                Dark <code data-theme-value="dark">{darkValue ?? '—'}</code>
+                            </span>
+                            {lightValue !== undefined ? (
+                                <span className="truncate" title={lightValue}>
+                                    Light <code data-theme-value="light">{lightValue}</code>
+                                </span>
+                            ) : null}
+                        </div>
                     </li>
                 ))}
             </ul>

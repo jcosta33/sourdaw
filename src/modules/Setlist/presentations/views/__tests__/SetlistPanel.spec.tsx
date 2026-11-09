@@ -246,8 +246,8 @@ describe('SetlistPanel', () => {
             render(<SetlistPanel />);
             const toggle = screen.getByRole('button', { name: 'Auto-advance: on' });
             expect(toggle.getAttribute('aria-pressed')).toBe('true');
-            // secondary variant maps to a filled surface with light text
-            expect(toggle.className).toContain('text-white');
+            // secondary variant maps to a filled surface with semantic primary text
+            expect(toggle.className).toContain('text-text-primary');
         });
 
         it('calls toggleAutoAdvance when clicked', () => {

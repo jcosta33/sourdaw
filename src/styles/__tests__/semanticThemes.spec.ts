@@ -2,19 +2,27 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { runInNewContext } from 'node:vm';
 
-import { stringify } from 'superjson';
+import { parse, stringify } from 'superjson';
 import { describe, expect, it } from 'vitest';
 
 const tokens = readFileSync(resolve(process.cwd(), 'src/styles/tokens.css'), 'utf8');
 const indexHtml = readFileSync(resolve(process.cwd(), 'index.html'), 'utf8');
 const chipSource = readFileSync(resolve(process.cwd(), 'src/components/daw/DawPluginChip.tsx'), 'utf8');
+const ledSource = readFileSync(resolve(process.cwd(), 'src/components/daw/DawPluginLed.tsx'), 'utf8');
 const meteringSource = readFileSync(
     resolve(process.cwd(), 'src/modules/Crust/presentations/components/CrustMeteringStrip.tsx'),
     'utf8'
 );
+const meterColorSource = readFileSync(
+    resolve(process.cwd(), 'src/modules/Crust/presentations/components/crustMeterColors.ts'),
+    'utf8'
+);
 const lightBlock = /:root\.light\s*\{([^}]*)\}/u.exec(tokens)?.[1] ?? '';
-const startupThemeMatch = /<script id="sourdaw-theme"([^>]*)>([\s\S]*?)<\/script>/u.exec(indexHtml);
-const startupThemeSource = /\bsrc="([^"]+)"/u.exec(startupThemeMatch?.[1] ?? '')?.[1];
+const indexDocument = new DOMParser().parseFromString(indexHtml, 'text/html');
+const findThemeScript = (html: string): HTMLScriptElement | null =>
+    new DOMParser().parseFromString(html, 'text/html').querySelector<HTMLScriptElement>('script#sourdaw-theme');
+const startupThemeMatch = indexDocument.querySelector<HTMLScriptElement>('script#sourdaw-theme');
+const startupThemeSource = startupThemeMatch?.getAttribute('src');
 let startupThemeScript = '';
 if (startupThemeSource === '/themePrepaint.js') {
     startupThemeScript = readFileSync(resolve(process.cwd(), 'public/themePrepaint.js'), 'utf8');
@@ -47,18 +55,6 @@ const runStartupTheme = (stored: string | null) => {
         },
     });
     return { classes, colorScheme: style.colorScheme, themeColor: metaAttributes.content };
-};
-
-const parseTagAttributes = (attributeSource: string): Map<string, string> => {
-    const attributes = new Map<string, string>();
-    const pattern = /([a-zA-Z][a-zA-Z0-9-]*)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+)))?/gu;
-    for (const match of attributeSource.matchAll(pattern)) {
-        const name = match[1]?.toLowerCase();
-        if (name !== undefined) {
-            attributes.set(name, match[2] ?? match[3] ?? match[4] ?? '');
-        }
-    }
-    return attributes;
 };
 
 const readToken = (source: string, name: string): string => {
@@ -131,18 +127,31 @@ describe('semantic light theme', () => {
     });
 
     it('loads the prepaint theme from an external classic script before the entry module', () => {
-        const themeAttributes = parseTagAttributes(startupThemeMatch?.[1] ?? '');
-        expect(themeAttributes.get('src')).toBe('/themePrepaint.js');
+        expect(startupThemeMatch?.getAttribute('src')).toBe('/themePrepaint.js');
         // An absent or non-JavaScript type can suppress execution; module,
         // async or defer spelling defers the prepaint past first paint and
         // restores the dark flash it exists to prevent.
-        expect(themeAttributes.get('type')?.toLowerCase()).toBe('text/javascript');
-        expect(themeAttributes.get('type')?.toLowerCase()).not.toBe('module');
-        expect(themeAttributes.has('async')).toBe(false);
-        expect(themeAttributes.has('defer')).toBe(false);
-        expect(startupThemeMatch?.[2]?.trim()).toBe('');
-        expect(indexHtml.indexOf('id="sourdaw-theme"')).toBeLessThan(indexHtml.indexOf('id="sourdaw-entry"'));
+        expect(startupThemeMatch?.getAttribute('type')?.toLowerCase()).toBe('text/javascript');
+        expect(startupThemeMatch?.getAttribute('type')?.toLowerCase()).not.toBe('module');
+        expect(startupThemeMatch?.hasAttribute('async')).toBe(false);
+        expect(startupThemeMatch?.hasAttribute('defer')).toBe(false);
+        expect(startupThemeMatch?.textContent?.trim()).toBe('');
+        const entryScript = indexDocument.querySelector<HTMLScriptElement>('script#sourdaw-entry');
+        if (startupThemeMatch === null || entryScript === null) {
+            throw new Error('Expected active theme and entry scripts');
+        }
+        expect(
+            startupThemeMatch.compareDocumentPosition(entryScript) & Node.DOCUMENT_POSITION_FOLLOWING
+        ).toBeGreaterThan(0);
         expect(indexHtml).toContain(':root.light');
+    });
+
+    it('does not accept a commented-out prepaint tag as active markup', () => {
+        const commented =
+            '<!-- <script id="sourdaw-theme" type="text/javascript" src="/themePrepaint.js"></script> -->';
+
+        expect(findThemeScript(commented)).toBeNull();
+        expect(findThemeScript(indexHtml)).not.toBeNull();
     });
 
     it('restores the persisted light theme before startup paint', () => {
@@ -160,6 +169,21 @@ describe('semantic light theme', () => {
         expect(startup.classes).toEqual(new Set(['dark']));
         expect(startup.colorScheme).toBe('dark');
         expect(startup.themeColor).toBe('#020100');
+    });
+
+    it('keeps every startup channel aligned with runtime SuperJSON theme decoding', () => {
+        const stored = '{"json":{"theme":"light"},"meta":{"values":{"theme":["number"]}}}';
+        const runtimeTheme = parse<{ theme?: unknown }>(stored).theme;
+        expect(Number.isNaN(runtimeTheme)).toBe(true);
+
+        const startup = runStartupTheme(stored);
+        const validatedTheme = runtimeTheme === 'light' ? 'light' : 'dark';
+        expect(startup).toEqual({
+            classes: new Set([validatedTheme]),
+            colorScheme: validatedTheme,
+            themeColor: validatedTheme === 'light' ? '#ded8cf' : '#020100',
+        });
+        expect(startup).toEqual({ classes: new Set(['dark']), colorScheme: 'dark', themeColor: '#020100' });
     });
 
     it('keeps Crust loudness text readable on its actual raised light surface', () => {
@@ -196,6 +220,56 @@ describe('semantic light theme', () => {
                     );
                 }
             }
+        }
+    });
+
+    it('keeps the nested neutral Crust status readable in both themes', () => {
+        const neutralClasses = /\bneutral:\s*'([^']+)'/u.exec(ledSource)?.[1] ?? '';
+        expect(neutralClasses).toContain('bg-surface-default');
+        expect(neutralClasses).toContain('text-text-secondary');
+        expect(neutralClasses).not.toContain('text-white');
+
+        for (const themeBlock of [tokens, lightBlock]) {
+            const foreground = readToken(themeBlock, '--color-text-secondary');
+            const background = readToken(themeBlock, '--surface-default');
+            expect(contrast(foreground, background)).toBeGreaterThanOrEqual(4.5);
+        }
+    });
+
+    it('keeps the plain-text Crust channel labels readable on their raised surface', () => {
+        const labels = Array.from(meteringSource.matchAll(/<span className="([^"]*)">([LR])<\/span>/gu), (match) => ({
+            className: match[1] ?? '',
+            label: match[2],
+        }));
+        expect(labels.map(({ label }) => label)).toEqual(['L', 'R']);
+
+        for (const { className } of labels) {
+            expect(className).toContain('text-muted-foreground');
+            expect(className).not.toContain('text-muted-foreground/');
+        }
+        for (const themeBlock of [tokens, lightBlock]) {
+            const foreground = readToken(themeBlock, '--color-text-secondary');
+            const background = readToken(themeBlock, '--surface-raised');
+            expect(contrast(foreground, background)).toBeGreaterThanOrEqual(4.5);
+        }
+    });
+
+    it('keeps normal Crust GR text readable while preserving semantic state colors', () => {
+        const grTextSource = /export function grTextColor\(gr: number\): string \{([\s\S]*?)\n\}/u.exec(
+            meterColorSource
+        )?.[1];
+        expect(grTextSource).toContain("return 'var(--color-text-primary)';");
+        expect(meteringSource).toContain('const grTextColorValue = grTextColor(grDb);');
+        expect(meteringSource).toContain('style={{ color: grTextColorValue }}');
+
+        for (const themeBlock of [tokens, lightBlock]) {
+            const foreground = readToken(themeBlock, '--color-text-primary');
+            const background = readToken(themeBlock, '--surface-raised');
+            expect(contrast(foreground, background)).toBeGreaterThanOrEqual(4.5);
+        }
+        const background = readToken(lightBlock, '--surface-raised');
+        for (const foreground of ['--color-accent-amber', '--color-accent-orange', '--color-accent-red']) {
+            expect(contrast(readToken(lightBlock, foreground), background)).toBeGreaterThanOrEqual(4.5);
         }
     });
 
@@ -283,6 +357,10 @@ describe('semantic light theme', () => {
         expect(usages).toContainEqual({ component: 'DawPluginChip', tone: 'amber' });
         expect(usages).toContainEqual({ component: 'DawPluginChip', tone: 'cyan' });
         expect(usages).toContainEqual({ component: 'DawPluginToggle', tone: 'cyan' });
+        expect(usages).toContainEqual({ component: 'DawPluginToggle', tone: 'amber' });
+        expect(grinderSource).toMatch(
+            /<div\s+key=\{`chain-[^`]+`\}\s+className="rounded-\[18px\][^"]*bg-black\/20[^"]*"[^>]*>[\s\S]*?<DawPluginToggle\b[^>]*?\btone="amber"/u
+        );
 
         for (const { component, tone } of usages) {
             const token = `--color-accent-${tone}`;
@@ -291,8 +369,8 @@ describe('semantic light theme', () => {
                 throw new Error(`Missing active-chip background for ${token}`);
             }
             const accent = readToken(lightBlock, token);
-            const backdrops =
-                component === 'DawPluginToggle' && tone === 'cyan' ? { windowTop, blackWell } : { windowTop };
+            const toggleInWell = component === 'DawPluginToggle' && (tone === 'cyan' || tone === 'amber');
+            const backdrops = toggleInWell ? { windowTop, blackWell } : { windowTop };
             for (const [backdropName, backdrop] of Object.entries(backdrops)) {
                 const background = composite(accent, backdrop, Number(alphaSource) / 100);
                 expect(contrast(accent, background), `${component} ${tone} on ${backdropName}`).toBeGreaterThanOrEqual(

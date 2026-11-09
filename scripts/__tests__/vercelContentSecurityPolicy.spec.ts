@@ -97,21 +97,9 @@ function parseCsp(policy: string): Map<string, string[]> {
     return directives;
 }
 
-/**
- * The attribute set of one HTML tag, names lowercased, values unquoted.
- * Regex matching a single spelling (`type="module"`) misses the equally valid
- * unquoted or single-quoted forms, so the guard parses the set instead.
- */
-function parseTagAttributes(attributeSource: string): Map<string, string> {
-    const attributes = new Map<string, string>();
-    const pattern = /([a-zA-Z][a-zA-Z0-9-]*)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+)))?/gu;
-    for (const match of attributeSource.matchAll(pattern)) {
-        const name = match[1]?.toLowerCase();
-        if (name !== undefined) {
-            attributes.set(name, match[2] ?? match[3] ?? match[4] ?? '');
-        }
-    }
-    return attributes;
+/** Locate executable markup, excluding comments, template contents, and script text. */
+function findThemeScript(html: string): HTMLScriptElement | null {
+    return new DOMParser().parseFromString(html, 'text/html').querySelector<HTMLScriptElement>('script#sourdaw-theme');
 }
 
 describe('the hosted web build Content-Security-Policy', () => {
@@ -172,17 +160,24 @@ describe('the hosted web build Content-Security-Policy', () => {
         expect([...directives.values()].flat()).not.toContain("'unsafe-eval'");
         expect(directives.get('script-src')).not.toContain("'unsafe-inline'");
 
-        const themeScript = /<script id="sourdaw-theme"([^>]*)>([\s\S]*?)<\/script>/u.exec(indexHtml);
-        const themeAttributes = parseTagAttributes(themeScript?.[1] ?? '');
-        expect(themeAttributes.get('src')).toBe('/themePrepaint.js');
+        const themeScript = findThemeScript(indexHtml);
+        expect(themeScript?.getAttribute('src')).toBe('/themePrepaint.js');
         // The prepaint must run as a classic inline-order script: an absent or
         // non-JavaScript type can suppress execution, while module, async or
         // defer spelling defers it past first paint and restores the dark flash.
-        expect(themeAttributes.get('type')?.toLowerCase()).toBe('text/javascript');
-        expect(themeAttributes.get('type')?.toLowerCase()).not.toBe('module');
-        expect(themeAttributes.has('async')).toBe(false);
-        expect(themeAttributes.has('defer')).toBe(false);
-        expect(themeScript?.[2]?.trim()).toBe('');
+        expect(themeScript?.getAttribute('type')?.toLowerCase()).toBe('text/javascript');
+        expect(themeScript?.getAttribute('type')?.toLowerCase()).not.toBe('module');
+        expect(themeScript?.hasAttribute('async')).toBe(false);
+        expect(themeScript?.hasAttribute('defer')).toBe(false);
+        expect(themeScript?.textContent?.trim()).toBe('');
+    });
+
+    it('does not accept a commented-out prepaint tag as active markup', () => {
+        const commented =
+            '<!-- <script id="sourdaw-theme" type="text/javascript" src="/themePrepaint.js"></script> -->';
+
+        expect(findThemeScript(commented)).toBeNull();
+        expect(findThemeScript(indexHtml)).not.toBeNull();
     });
 
     it('scopes worker-src to bundled workers -- the app creates no blob workers', () => {

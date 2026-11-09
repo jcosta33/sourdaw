@@ -2,7 +2,10 @@
     let theme = 'dark';
     try {
         const stored = JSON.parse(window.localStorage.getItem('sourdaw-preferences') ?? 'null');
-        if (stored?.json?.theme === 'light') {
+        // SuperJSON metadata can transform the raw string into a value that
+        // runtime preferences validation rejects; only an untransformed string
+        // is authoritative for the prepaint.
+        if (stored?.json?.theme === 'light' && stored?.meta?.values?.theme === undefined) {
             theme = 'light';
         }
     } catch {

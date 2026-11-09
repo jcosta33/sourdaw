@@ -100,7 +100,14 @@ describe('PreferencesDialog', () => {
         );
         expect(shell?.children).toHaveLength(2);
         expect(shell?.children[0]).toBe(sideRail);
-        expect(shell?.children[1]).toHaveClass('flex-1', 'gap-5', 'bg-surface-base/60', 'p-5', '[&>*]:shrink-0');
+        expect(shell?.children[1]).toHaveClass(
+            'flex-1',
+            'gap-5',
+            'bg-surface-base/60',
+            'p-5',
+            '[&>*]:shrink-0',
+            'overflow-y-auto'
+        );
         expect(sideRail).toHaveClass('overflow-y-auto');
 
         expect(navigation.tagName).toBe('NAV');

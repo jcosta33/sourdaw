@@ -10,7 +10,7 @@ import { DawReadoutRow } from '#/components/daw/DawReadoutRow';
 import { Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 
-import { grColor } from './crustMeterColors';
+import { grColor, grTextColor } from './crustMeterColors';
 
 type Props = {
     grDb: number;
@@ -108,6 +108,7 @@ export const CrustMeteringStrip = ({
     const grNorm = Math.min(1, Math.max(0, Math.abs(grDb) / 18));
     const intColor = lufsColor(lufsIntegrated, lufsTarget);
     const grc = grColor(grDb);
+    const grTextColorValue = grTextColor(grDb);
 
     const targetDiff = lufsTarget !== null ? lufsIntegrated - lufsTarget : null;
 
@@ -146,15 +147,15 @@ export const CrustMeteringStrip = ({
                     </div>
                 </Row>
                 <Row align="stretch" justify="between" className="mt-0.5">
-                    <span className="text-nano font-mono text-muted-foreground/50">L</span>
+                    <span className="text-nano font-mono text-muted-foreground">L</span>
                     <span
                         className="text-nano font-mono"
-                        style={{ color: grc }}
+                        style={{ color: grTextColorValue }}
                         aria-label={`Gain reduction: ${Math.abs(grDb).toFixed(1)} dB`}
                     >
                         GR
                     </span>
-                    <span className="text-nano font-mono text-muted-foreground/50">R</span>
+                    <span className="text-nano font-mono text-muted-foreground">R</span>
                 </Row>
             </MeterSection>
 

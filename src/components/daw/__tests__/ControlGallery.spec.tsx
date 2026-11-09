@@ -24,8 +24,33 @@ describe('ControlGallery', () => {
         render(<ControlGallery tokenCss={tokenSource} />);
         const tokenList = screen.getByRole('list', { name: 'Design tokens' });
         const rows = within(tokenList).getAllByRole('listitem');
-        expect(rows.map((row) => row.getAttribute('data-token-name'))).toEqual(tokenNamesFromSource(tokenSource));
-        expect(rows).toHaveLength(200);
+        const names = rows.map((row) => row.getAttribute('data-token-name'));
+        expect(names).toEqual(tokenNamesFromSource(tokenSource));
+        expect(names).toEqual(
+            expect.arrayContaining(['--text-metadata', '--text-label', '--text-value', '--text-body'])
+        );
+        expect(rows).toHaveLength(204);
+    });
+
+    it('preserves dark defaults and labels theme-scoped light values', () => {
+        render(<ControlGallery tokenCss={tokenSource} />);
+        const tokenList = screen.getByRole('list', { name: 'Design tokens' });
+        const rows = within(tokenList).getAllByRole('listitem');
+        const rowFor = (name: string) => {
+            const row = rows.find((candidate) => candidate.getAttribute('data-token-name') === name);
+            if (row === undefined) {
+                throw new Error(`Missing gallery row for ${name}`);
+            }
+            return row;
+        };
+
+        const surfaceDeep = rowFor('--surface-deep');
+        expect(surfaceDeep.querySelector('[data-theme-value="dark"]')).toHaveTextContent('#020100');
+        expect(surfaceDeep.querySelector('[data-theme-value="light"]')).toHaveTextContent('#ded8cf');
+
+        const textPrimary = rowFor('--color-text-primary');
+        expect(textPrimary.querySelector('[data-theme-value="dark"]')).toHaveTextContent('#eaeaea');
+        expect(textPrimary.querySelector('[data-theme-value="light"]')).toHaveTextContent('#292521');
     });
 
     it('renders the six real shared control categories in supported states', () => {
