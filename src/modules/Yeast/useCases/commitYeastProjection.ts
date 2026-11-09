@@ -18,22 +18,24 @@ import { reconcileYeastGrooveAssignments } from './reconcileYeastGrooveAssignmen
  * shrink the list, which previously relied on an unrelated document change
  * eventually triggering a full re-projection.
  */
-export function commitYeastProjection(processors: readonly YeastProcessorInfo[]): void {
+export function commitYeastProjection(processors: readonly YeastProcessorInfo[]): boolean {
     const state = yeastStore.value;
     if (!state) {
-        return;
+        return false;
     }
 
     const nextProcessors = processors.map((processor) => ({
         ...processor,
         params: createDurableYeastProcessorParams(processor.type, processor.params),
     }));
+    let grooveChanged = false;
     batchStoreUpdates(() => {
         yeastStore.set({
             ...state,
             processors: nextProcessors,
         });
-        reconcileYeastGrooveAssignments();
+        grooveChanged = reconcileYeastGrooveAssignments();
     });
     setYeastRuntimeProjection(createYeastRuntimeProjection(nextProcessors));
+    return grooveChanged;
 }

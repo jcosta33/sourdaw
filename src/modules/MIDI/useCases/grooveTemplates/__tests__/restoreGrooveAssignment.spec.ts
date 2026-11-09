@@ -66,6 +66,26 @@ describe('restoreGrooveAssignment', () => {
         expect(mockStore.set).not.toHaveBeenCalled();
     });
 
+    it('reports no-write without rewriting an absent or equal assignment', () => {
+        expect(restoreGrooveAssignment({ consumerType: 'clip', consumerId: 'clip-1', assignment: null })).toEqual({
+            status: 'no-write',
+        });
+        const value = assignment('clip', 'clip-1', 'swing-light', 0.5);
+        expect(restoreGrooveAssignment({ consumerType: 'clip', consumerId: 'clip-1', assignment: value })).toEqual({
+            status: 'written',
+        });
+        mockStore.set.mockClear();
+        expect(
+            restoreGrooveAssignment({
+                consumerType: 'clip',
+                consumerId: 'clip-1',
+                assignment: assignment('clip', 'clip-1', 'swing-light', 0.5),
+            })
+        ).toEqual({ status: 'no-write' });
+        expect(mockStore.set).not.toHaveBeenCalled();
+        expect(mockMarkWrite).not.toHaveBeenCalled();
+    });
+
     it('removes the assignment when assignment is null', () => {
         mockStore.value = {
             templates: [...defaultGrooveTemplateState.templates],
@@ -77,7 +97,7 @@ describe('restoreGrooveAssignment', () => {
             assignment: null,
         });
         expect(mockStore.set).toHaveBeenCalledTimes(1);
-        expect(mockMarkWrite).toHaveBeenCalledTimes(1);
+        expect(mockMarkWrite).not.toHaveBeenCalled();
         const calls1 = mockStore.set.mock.calls as Array<Array<typeof defaultGrooveTemplateState>>;
         const state1 = calls1[0]?.[0];
         if (!state1) {
@@ -144,7 +164,7 @@ describe('restoreGrooveAssignment', () => {
 
         expect(mockStore.set).toHaveBeenCalledTimes(1);
         expect(mockStore.value.assignments).toEqual([]);
-        expect(mockMarkWrite).toHaveBeenCalledTimes(1);
+        expect(mockMarkWrite).not.toHaveBeenCalled();
     });
 
     it.each([

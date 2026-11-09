@@ -33,7 +33,6 @@ import { parseDocument } from 'yaml';
 
 export const HEALTH_GATE_WORKFLOW_FILES = [
     'health-gates.yml',
-    'pr-checks.yml',
     'heavy-gates.yml',
     'validation.yml',
     'nightly.yml',
@@ -172,17 +171,12 @@ export const STEP_INVENTORY: Readonly<Record<string, Readonly<Record<string, rea
         ],
     },
     'health-gates.yml': {
-        admission: ['Checkout trusted admission', 'Set up Node', 'Read reviews', 'Decide admission'],
         scope: [...SETUP_PNPM_NODE, 'Fetch coverage map', 'Plan affected checks', 'Upload scope manifest'],
         'e2e-build': [...SETUP_NODE, 'Build shared E2E app', 'Upload shared E2E build'],
         validation: null,
         affected: null,
         codeql: ['Checkout', 'Initialise CodeQL', 'Analyse'],
         gate: ['Require selected checks to succeed'],
-    },
-    'pr-checks.yml': {
-        scope: [...SETUP_PNPM_NODE, 'Fetch coverage map', 'Plan affected checks', 'Upload scope manifest'],
-        validation: null,
     },
     'validation.yml': {
         decide: ['Filter changed paths', 'Retry changed-paths filter after a transient API failure', 'Resolve scope'],

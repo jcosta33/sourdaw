@@ -129,7 +129,7 @@ describe('nightly coverage map retrieval', () => {
         ['a pull-request run', { event: 'pull_request' }],
         ['a fork head repository', { headRepository: 'fork/sourdaw' }],
         ['another repository', { repository: 'other/sourdaw' }],
-        ['another workflow file', { path: '.github/workflows/pr-checks.yml' }],
+        ['another workflow file', { path: '.github/workflows/heavy-gates.yml' }],
         ['a run on another branch', { branch: 'feature' }],
     ])('rejects an artifact from %s and writes nothing', async (_, fixture: RunFixture) => {
         const artifacts = [artifact({ id: 2, runId: 12, createdAt: '2026-11-01T03:40:00Z', headSha: SHA('2') })];

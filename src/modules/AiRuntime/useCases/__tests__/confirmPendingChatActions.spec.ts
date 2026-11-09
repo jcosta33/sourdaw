@@ -11,6 +11,7 @@ import {
     configureAutomergeStoragePort,
     createAutomergeStorage,
     flushAutomergeStorageWrites,
+    runOutsideAutomergeStoragePublisherScope,
 } from '#/infra/store/storage/createAutomergeStorage';
 import { trackStore, type Track } from '#/modules/Arrangement/stores';
 import { getArrangementHandlers, setArrangementEventBus } from '#/modules/Arrangement/useCases';
@@ -3889,122 +3890,140 @@ describe('confirmPendingChatActions transaction admission', () => {
         expect(getPendingActionConfirmation('confirmation-self-revision')).toMatchObject({ status: 'executed' });
     });
 
-    it('invalidates and halts a confirmed batch when another owner flushes its unscoped pending write mid-action', async () => {
-        configureAiWorkflowCommandPreflightFixture();
-        configureCommandBatchIdempotency({ canExecute: () => true });
-        const ownedStorage = createAutomergeStorage<{ bpm: number }>('owned', 'transport');
-        const bufferedStorage = createAutomergeStorage<{ touched: number }>('owned', 'buffered');
-        const bufferedStore = createStore<{ touched: number }>({ storage: bufferedStorage });
-        const reactiveStore = createStore<{ selected: string }>();
-        const stopReacting = reactiveStore.subscribe(() => {
-            flushAutomergeStorageWrites();
-        });
-        const executedBpms: number[] = [];
-        const execute = vi.fn<ActionHandler<SetTempoAction>['execute']>((action) => {
-            executedBpms.push(action.payload.bpm);
-            ownedStorage.set({ bpm: action.payload.bpm });
-            if (action.payload.bpm === 128) {
-                reactiveStore.set({ selected: 'first action' });
+    it.each(['before batch admission', 'mid-action'] as const)(
+        'invalidates and preserves a foreign write queued %s',
+        async (when) => {
+            configureAiWorkflowCommandPreflightFixture();
+            configureCommandBatchIdempotency({ canExecute: () => true });
+            const ownedStorage = createAutomergeStorage<{ bpm: number }>('owned', 'transport');
+            const bufferedStorage = createAutomergeStorage<{ touched: number }>('owned', 'buffered');
+            const bufferedStore = createStore<{ touched: number }>({ storage: bufferedStorage });
+            const reactiveStore = createStore<{ selected: string }>();
+            const stopReacting = reactiveStore.subscribe(() => {
+                flushAutomergeStorageWrites();
+            });
+            const executedBpms: number[] = [];
+            const execute = vi.fn<ActionHandler<SetTempoAction>['execute']>((action) => {
+                executedBpms.push(action.payload.bpm);
+                ownedStorage.set({ bpm: action.payload.bpm });
+                if (action.payload.bpm === 128 && when === 'mid-action') {
+                    runOutsideAutomergeStoragePublisherScope(() => {
+                        const pendingBefore = countPendingAutomergeStorageWrites();
+                        bufferedStore.set({ touched: 1 });
+                        expect(countPendingAutomergeStorageWrites()).toBe(pendingBefore + 1);
+                    });
+                    reactiveStore.set({ selected: 'first action' });
+                }
+            });
+            registerHandlerMap({
+                setTempo: {
+                    canReapplyAfterDivergence: () => true,
+                    execute,
+                    describe: (action) => ({
+                        label: 'Set tempo',
+                        inverseAction: {
+                            type: 'setTempo',
+                            payload: { bpm: 120, expectedBpm: action.payload.bpm },
+                        },
+                    }),
+                    undoable: true,
+                    validate: () => true,
+                },
+            });
+            const firstAction = { type: 'setTempo', payload: { bpm: 128 } } satisfies SetTempoAction;
+            const secondAction = { type: 'setTempo', payload: { bpm: 132 } } satisfies SetTempoAction;
+            const scheduledAnimationFrames = new Map<number, FrameRequestCallback>();
+            let nextAnimationFrameId = 1;
+            const requestAnimationFrameSpy = vi
+                .spyOn(globalThis, 'requestAnimationFrame')
+                .mockImplementation((callback) => {
+                    const frameId = nextAnimationFrameId++;
+                    scheduledAnimationFrames.set(frameId, callback);
+                    return frameId;
+                });
+            const cancelAnimationFrameSpy = vi
+                .spyOn(globalThis, 'cancelAnimationFrame')
+                .mockImplementation((frameId) => {
+                    scheduledAnimationFrames.delete(frameId);
+                });
+            onTestFinished(() => {
+                stopReacting();
+                requestAnimationFrameSpy.mockRestore();
+                cancelAnimationFrameSpy.mockRestore();
+                scheduledAnimationFrames.clear();
+            });
+
+            expect(getCrdtDoc<Record<string, unknown>>('owned')).not.toHaveProperty('buffered');
+            const projectRevision = captureProjectRevision();
+            const unownedMutationBaseline = captureUnownedProjectMutations();
+            const commands = [firstAction, secondAction].map((action) =>
+                serializeVersionedCommandEnvelope(
+                    migrateLegacyAppActionToVersionedCommandEnvelope({
+                        action,
+                        expectedEffect: `Tempo changes to ${String(action.payload.bpm)} BPM.`,
+                        normalizedProjectRevision: projectRevision,
+                        options: { groupId: 'group-foreign-flush', groupLabel: 'Set tempo twice', source: 'prompt' },
+                    })
+                )
+            );
+            const commandBatch = compileVersionedCommandBatchEnvelope({
+                runId: 'confirmation-foreign-flush',
+                batchId: 'group-foreign-flush',
+                projectId: captureProjectIdentity(),
+                baseRevision: projectRevision,
+                intent: 'set tempo to 128 then 132',
+                commands,
+            });
+            const metricGoalState = configuredLiteralMetricState(commandBatch);
+            proposePendingActionConfirmation({
+                id: 'confirmation-foreign-flush',
+                prompt: 'set tempo to 128 then 132',
+                assistantMessageId: 'assistant-1',
+                actions: [firstAction, secondAction],
+                actionLabels: ['Set tempo to 128 BPM', 'Set tempo to 132 BPM'],
+                commandBatch,
+                metricGoalState,
+                agentApproval: compileAgentRiskApproval({ commandBatch, metricGoalState }),
+                executionMode: 'atomic',
+                groupId: 'group-foreign-flush',
+                groupLabel: 'Set tempo twice',
+                projectRevision,
+            });
+
+            const executeRealBatch = commandUseCases.executeVersionedCommandBatchEnvelope;
+            const executeBatch = vi
+                .spyOn(commandUseCases, 'executeVersionedCommandBatchEnvelope')
+                .mockImplementation((input) => {
+                    if (when === 'before batch admission') {
+                        bufferedStore.set({ touched: 1 });
+                        expect(scheduledAnimationFrames.size).toBe(1);
+                    }
+                    return executeRealBatch(input);
+                });
+            try {
+                await expect(
+                    confirmPendingChatActions({ confirmationId: 'confirmation-foreign-flush' })
+                ).resolves.toEqual({
+                    status: 'invalidated',
+                    reason: 'The project changed after this proposal was created. Review and submit the command again.',
+                });
+            } finally {
+                executeBatch.mockRestore();
             }
-        });
-        registerHandlerMap({
-            setTempo: {
-                canReapplyAfterDivergence: () => true,
-                execute,
-                describe: (action) => ({
-                    label: 'Set tempo',
-                    inverseAction: {
-                        type: 'setTempo',
-                        payload: { bpm: 120, expectedBpm: action.payload.bpm },
-                    },
-                }),
-                undoable: true,
-                validate: () => true,
-            },
-        });
-        const firstAction = { type: 'setTempo', payload: { bpm: 128 } } satisfies SetTempoAction;
-        const secondAction = { type: 'setTempo', payload: { bpm: 132 } } satisfies SetTempoAction;
-        const scheduledAnimationFrames = new Map<number, FrameRequestCallback>();
-        let nextAnimationFrameId = 1;
-        const requestAnimationFrameSpy = vi
-            .spyOn(globalThis, 'requestAnimationFrame')
-            .mockImplementation((callback) => {
-                const frameId = nextAnimationFrameId++;
-                scheduledAnimationFrames.set(frameId, callback);
-                return frameId;
-            });
-        const cancelAnimationFrameSpy = vi.spyOn(globalThis, 'cancelAnimationFrame').mockImplementation((frameId) => {
-            scheduledAnimationFrames.delete(frameId);
-        });
-        onTestFinished(() => {
-            stopReacting();
-            requestAnimationFrameSpy.mockRestore();
-            cancelAnimationFrameSpy.mockRestore();
-            scheduledAnimationFrames.clear();
-        });
 
-        expect(getCrdtDoc<Record<string, unknown>>('owned')).not.toHaveProperty('buffered');
-        const projectRevision = captureProjectRevision();
-        const unownedMutationBaseline = captureUnownedProjectMutations();
-        const commands = [firstAction, secondAction].map((action) =>
-            serializeVersionedCommandEnvelope(
-                migrateLegacyAppActionToVersionedCommandEnvelope({
-                    action,
-                    expectedEffect: `Tempo changes to ${String(action.payload.bpm)} BPM.`,
-                    normalizedProjectRevision: projectRevision,
-                    options: { groupId: 'group-foreign-flush', groupLabel: 'Set tempo twice', source: 'prompt' },
-                })
-            )
-        );
-        const commandBatch = compileVersionedCommandBatchEnvelope({
-            runId: 'confirmation-foreign-flush',
-            batchId: 'group-foreign-flush',
-            projectId: captureProjectIdentity(),
-            baseRevision: projectRevision,
-            intent: 'set tempo to 128 then 132',
-            commands,
-        });
-        const metricGoalState = configuredLiteralMetricState(commandBatch);
-        proposePendingActionConfirmation({
-            id: 'confirmation-foreign-flush',
-            prompt: 'set tempo to 128 then 132',
-            assistantMessageId: 'assistant-1',
-            actions: [firstAction, secondAction],
-            actionLabels: ['Set tempo to 128 BPM', 'Set tempo to 132 BPM'],
-            commandBatch,
-            metricGoalState,
-            agentApproval: compileAgentRiskApproval({ commandBatch, metricGoalState }),
-            executionMode: 'atomic',
-            groupId: 'group-foreign-flush',
-            groupLabel: 'Set tempo twice',
-            projectRevision,
-        });
-
-        const executeRealBatch = commandUseCases.executeVersionedCommandBatchEnvelope;
-        const executeBatch = vi
-            .spyOn(commandUseCases, 'executeVersionedCommandBatchEnvelope')
-            .mockImplementation((input) => {
-                bufferedStore.set({ touched: 1 });
-                expect(scheduledAnimationFrames.size).toBe(1);
-                return executeRealBatch(input);
-            });
-        try {
-            await expect(confirmPendingChatActions({ confirmationId: 'confirmation-foreign-flush' })).resolves.toEqual({
-                status: 'invalidated',
-                reason: 'The project changed after this proposal was created. Review and submit the command again.',
-            });
-        } finally {
-            executeBatch.mockRestore();
+            expect(captureUnownedProjectMutations()).toBe(unownedMutationBaseline + 1);
+            if (when === 'mid-action') {
+                expect(executedBpms).toContain(128);
+            } else {
+                expect(executedBpms).toEqual([]);
+            }
+            expect(executedBpms).not.toContain(132);
+            expect(getCrdtDoc<Record<string, unknown>>('owned')).toMatchObject({ buffered: { touched: 1 } });
+            expect(getCrdtDoc<Record<string, unknown>>('owned')).not.toHaveProperty('transport');
+            expect(getPendingActionConfirmation('confirmation-foreign-flush')).toMatchObject({ status: 'invalidated' });
+            expect(scheduledAnimationFrames.size).toBe(0);
         }
-
-        expect(captureUnownedProjectMutations()).toBe(unownedMutationBaseline + 1);
-        expect(executedBpms).toContain(128);
-        expect(executedBpms).not.toContain(132);
-        expect(getCrdtDoc<Record<string, unknown>>('owned')).toMatchObject({ buffered: { touched: 1 } });
-        expect(getCrdtDoc<Record<string, unknown>>('owned')).not.toHaveProperty('transport');
-        expect(getPendingActionConfirmation('confirmation-foreign-flush')).toMatchObject({ status: 'invalidated' });
-        expect(scheduledAnimationFrames.size).toBe(0);
-    });
+    );
 
     it('keeps callback evidence bound to the checkpoint before a later foreign app action', async () => {
         configureAiWorkflowCommandPreflightFixture();

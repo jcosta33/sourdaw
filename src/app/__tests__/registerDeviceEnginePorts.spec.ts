@@ -330,13 +330,35 @@ describe('registerDeviceEnginePorts after registration', () => {
         );
     });
 
-    it("authors a template's arpeggiator through Yeast's own rack writes", () => {
+    it("authors a template's arpeggiator through Yeast's own rack writes and preserves its void port", async () => {
         const { project, yeast, yeastStores } = modules;
         const authoring = project.templateArpeggiatorAuthoring.read('spec');
 
         expect(authoring.focusRack).toBe(yeastStores.setActiveYeastDevice);
         expect(authoring.addProcessor).toBe(yeast.addYeastProcessor);
-        expect(authoring.setProcessorParam).toBe(yeast.setYeastProcessorParam);
+        authoring.focusRack('template-arpeggiator-port');
+        authoring.addProcessor('arpeggiator', 'template-arp', 'Template arp');
+        const created = yeastStores.yeastStore.value?.processors.find((processor) => processor.id === 'template-arp');
+        if (!created) {
+            throw new Error('Expected the template Arpeggiator to be added');
+        }
+        const initialParams = structuredClone(created.params);
+        const result = await authoring.setProcessorParam('template-arp', 'rate_denom', 16);
+        expect(result).toBeUndefined();
+        expect(
+            yeastStores.yeastStore.value?.processors.find((processor) => processor.id === 'template-arp')?.params
+        ).toEqual({ ...initialParams, rate_denom: 16 });
+        expect(yeastStores.yeastStore.value?.processors).toContainEqual(
+            expect.objectContaining({
+                id: 'template-arp',
+                name: 'Template arp',
+                type: 'arpeggiator',
+                params: { ...initialParams, rate_denom: 16 },
+            })
+        );
+        const parameterWriter = authoring.setProcessorParam;
+        modules.app.registerDeviceEnginePorts();
+        expect(project.templateArpeggiatorAuthoring.read('spec').setProcessorParam).toBe(parameterWriter);
     });
 
     it("seeds template devices with Levain's section patches and Toaster's pad names", () => {

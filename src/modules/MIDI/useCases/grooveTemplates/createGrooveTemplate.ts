@@ -8,7 +8,6 @@ import {
 } from '../../models/GrooveTemplate';
 import { grooveTemplateStore } from '../../stores/grooveTemplateStore';
 
-import { markGrooveTemplateProjectWrite } from './markGrooveTemplateProjectWrite';
 import { prepareGrooveTemplateCreation } from './prepareGrooveTemplateCreation';
 
 type CreateGrooveTemplateInput = {
@@ -39,6 +38,5 @@ export function createGrooveTemplate(input: CreateGrooveTemplateInput): CreateGr
         return { status: 'no-write', template: existing };
     }
     grooveTemplateStore.set({ ...state, templates: [...state.templates, template] });
-    markGrooveTemplateProjectWrite();
     return { status: 'written', template };
 }

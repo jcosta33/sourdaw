@@ -1,6 +1,17 @@
 import { audioEngine } from '../../repositories/createWebAudioEngine';
 import { readNativeEngineMasterPeak } from '../livePlayback/readNativeEngineMasterPeak';
 
+import { createMeterFrameReader } from './createMeterFrameReader';
+
+const readFrame = createMeterFrameReader(() => {
+    const web = audioEngine.getMasterPeakLevel();
+    const native = readNativeEngineMasterPeak();
+    if (native === null) {
+        return web;
+    }
+    return web === null ? native : Math.max(web, native);
+});
+
 /**
  * Linear master peak, or `null` when nothing measured the output.
  *
@@ -14,13 +25,8 @@ import { readNativeEngineMasterPeak } from '../livePlayback/readNativeEngineMast
  *
  * `null` keeps its meaning of "nobody measured": Web Audio with no meter tap
  * and no audible native session. A measured zero is a level, and reports as
- * one.
+ * one. Omit frameTime for an immediate read; UI consumers pass their scheduler's RAF timestamp.
  */
-export function getMasterPeakLevel(): number | null {
-    const web = audioEngine.getMasterPeakLevel();
-    const native = readNativeEngineMasterPeak();
-    if (native === null) {
-        return web;
-    }
-    return web === null ? native : Math.max(web, native);
+export function getMasterPeakLevel(frameTime?: DOMHighResTimeStamp): number | null {
+    return readFrame(undefined, frameTime);
 }

@@ -9,8 +9,8 @@ import { type MidiEvent, type TransportInfo } from '../models/MidiEvent';
 
 import { type MidiProcessor, type MidiProcessorParams } from './MidiProcessor';
 
-import type { YeastPreviewDecisionSink } from './YeastPreviewSidecar';
 import type { YeastProcessorCommand } from '../models/YeastProcessorCommand';
+import type { YeastPreviewDecisionSink } from './YeastPreviewSidecar';
 
 export abstract class BaseMidiProcessor implements MidiProcessor {
     readonly id: string;

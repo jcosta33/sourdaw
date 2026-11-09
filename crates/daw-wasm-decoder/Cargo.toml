@@ -11,7 +11,7 @@ repository.workspace = true
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-wasm-bindgen = "=0.2.127"
+wasm-bindgen = "=0.2.130"
 daw-io = { path = "../daw-io" }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]

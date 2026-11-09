@@ -2,10 +2,13 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { decodeAudioFile } from '#/modules/AudioEngine/useCases';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { Sidebar } from '../Sidebar';
 
 const previewStop = vi.hoisted(() => vi.fn());
+type DecodeAudioFileFn = typeof import('#/modules/AudioEngine/useCases').decodeAudioFile;
+type ImportedSampleDecodeHold = NonNullable<Parameters<DecodeAudioFileFn>[1]>;
 
 // Mock hooks
 vi.mock('../../hooks/useTracks', () => ({
@@ -97,18 +100,61 @@ vi.mock('#/modules/SampleLibrary/presentations/views', () => ({
     LibraryBrowser: () => <div data-testid="library-browser">Library Browser</div>,
 }));
 
+const holdLifecycle = vi.hoisted(() => ({ released: false }));
+
+const audioEngineMocks = vi.hoisted(() => {
+    const decodeImportedFile = async (
+        file: File,
+        residencyHold?: ImportedSampleDecodeHold
+    ): Promise<{ id: string; buffer: { duration: number } }> => {
+        const id = `buffer-${file.name}`;
+        residencyHold?.retain(id);
+        return { id, buffer: { duration: 1.5 } };
+    };
+    const hold: ImportedSampleDecodeHold = {
+        release: vi.fn(() => {
+            holdLifecycle.released = true;
+        }),
+        retain: vi.fn((_id: string) => {
+            if (holdLifecycle.released) {
+                throw new Error('An audio buffer residency hold cannot retain after its release.');
+            }
+        }),
+    };
+    const openCachedAudioBufferHold = vi.fn(() => hold);
+    const decodeAudioFileMock = vi.fn(decodeImportedFile);
+    return { hold, openCachedAudioBufferHold, decodeAudioFileMock, decodeImportedFile };
+});
+
+vi.mock('#/utils/Notification/notifyUser', () => ({
+    notifyUser: vi.fn(),
+}));
+
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
-    decodeAudioFile: vi.fn(async (file: File) => ({
-        id: `buffer-${file.name}`,
-        buffer: { duration: 1.5 },
-    })),
+    decodeAudioFile: audioEngineMocks.decodeAudioFileMock,
+    openCachedAudioBufferHold: audioEngineMocks.openCachedAudioBufferHold,
 }));
 
 describe('Sidebar', () => {
+    const importedOpusFile = (name: string): File =>
+        new File([new Uint8Array([0])], name, { type: 'application/octet-stream' });
+
+    const openImportedFileInput = (): HTMLInputElement => {
+        fireEvent.click(screen.getByText('Library'));
+        fireEvent.click(screen.getByText('Imported'));
+        const fileInput = document.querySelector<HTMLInputElement>('input[type="file"]');
+        if (!fileInput) {
+            throw new Error('Expected the Imported tab to render a file input');
+        }
+        return fileInput;
+    };
+
     beforeEach(() => {
         vi.clearAllMocks();
         window.localStorage.clear();
+        holdLifecycle.released = false;
+        audioEngineMocks.decodeAudioFileMock.mockImplementation(audioEngineMocks.decodeImportedFile);
     });
 
     it('stops the active or preparing preview through the actual main-tab handler', () => {
@@ -270,9 +316,104 @@ describe('Sidebar', () => {
         });
 
         expect(decodeAudioFile).toHaveBeenCalledTimes(2);
-        expect(decodeAudioFile).toHaveBeenCalledWith(expect.objectContaining({ name: 'beat.opus' }));
-        expect(decodeAudioFile).toHaveBeenCalledWith(expect.objectContaining({ name: 'loop.wave' }));
-        expect(decodeAudioFile).not.toHaveBeenCalledWith(expect.objectContaining({ name: 'notes.txt' }));
+        expect(decodeAudioFile).toHaveBeenCalledWith(
+            expect.objectContaining({ name: 'beat.opus' }),
+            audioEngineMocks.hold
+        );
+        expect(decodeAudioFile).toHaveBeenCalledWith(
+            expect.objectContaining({ name: 'loop.wave' }),
+            audioEngineMocks.hold
+        );
+        expect(decodeAudioFile).not.toHaveBeenCalledWith(
+            expect.objectContaining({ name: 'notes.txt' }),
+            expect.anything()
+        );
         await waitFor(() => expect(screen.getByText('2 samples')).toBeInTheDocument());
+    });
+
+    it('does not decode the files after the one in flight when the sidebar unmounts', async () => {
+        let finishFast!: () => void;
+        const fastDone = new Promise<void>((resolve) => {
+            finishFast = resolve;
+        });
+        let unmountSidebar = (): void => {
+            throw new Error('Expected render to assign unmountSidebar');
+        };
+
+        audioEngineMocks.decodeAudioFileMock.mockImplementation(async (file, residencyHold) => {
+            if (file.name === 'fast.opus') {
+                await fastDone;
+                const decoded = await audioEngineMocks.decodeImportedFile(file, residencyHold);
+                unmountSidebar();
+                return decoded;
+            }
+            throw new Error('Expected the import loop to stop before decoding another file after unmount');
+        });
+
+        const { unmount } = render(<Sidebar />);
+        unmountSidebar = unmount;
+
+        const fileInput = openImportedFileInput();
+        const fast = importedOpusFile('fast.opus');
+        const after = importedOpusFile('after.opus');
+
+        await act(async () => {
+            fireEvent.change(fileInput, { target: { files: [fast, after] } });
+        });
+        await waitFor(() => expect(decodeAudioFile).toHaveBeenCalledTimes(1));
+        await act(async () => {
+            finishFast();
+            await Promise.resolve();
+        });
+
+        expect(audioEngineMocks.openCachedAudioBufferHold).toHaveBeenCalledTimes(1);
+        expect(decodeAudioFile).toHaveBeenCalledTimes(1);
+        expect(decodeAudioFile).toHaveBeenCalledWith(
+            expect.objectContaining({ name: 'fast.opus' }),
+            audioEngineMocks.hold
+        );
+        expect(decodeAudioFile).not.toHaveBeenCalledWith(
+            expect.objectContaining({ name: 'after.opus' }),
+            expect.anything()
+        );
+        expect(vi.mocked(notifyUser)).not.toHaveBeenCalled();
+    });
+
+    it('stays silent when the hold is released while an import is decoding', async () => {
+        let releaseInFlight!: () => void;
+        const inFlightGate = new Promise<void>((resolve) => {
+            releaseInFlight = resolve;
+        });
+
+        audioEngineMocks.decodeAudioFileMock.mockImplementation(async (file, residencyHold) => {
+            if (file.name === 'pending.opus') {
+                await inFlightGate;
+            }
+            return audioEngineMocks.decodeImportedFile(file, residencyHold);
+        });
+
+        const { unmount } = render(<Sidebar />);
+        const fileInput = openImportedFileInput();
+        const pending = importedOpusFile('pending.opus');
+        const after = importedOpusFile('after.opus');
+
+        await act(async () => {
+            fireEvent.change(fileInput, { target: { files: [pending, after] } });
+        });
+        await waitFor(() => expect(decodeAudioFile).toHaveBeenCalledTimes(1));
+        unmount();
+        await act(async () => {
+            releaseInFlight();
+            await Promise.resolve();
+        });
+
+        expect(audioEngineMocks.openCachedAudioBufferHold).toHaveBeenCalledTimes(1);
+        expect(decodeAudioFile).toHaveBeenCalledTimes(1);
+        expect(decodeAudioFile).not.toHaveBeenCalledWith(
+            expect.objectContaining({ name: 'after.opus' }),
+            expect.anything()
+        );
+        expect(audioEngineMocks.hold.retain).toHaveBeenCalledWith('buffer-pending.opus');
+        expect(vi.mocked(notifyUser)).not.toHaveBeenCalled();
     });
 });

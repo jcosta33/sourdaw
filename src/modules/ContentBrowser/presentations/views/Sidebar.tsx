@@ -17,6 +17,7 @@ import { addBrowserSample } from '../../useCases/addBrowserSample';
 import { loadSidebarFavorites } from '../../useCases/sidebar-favorites/load-sidebar-favorites';
 import { saveSidebarFavorites } from '../../useCases/sidebar-favorites/save-sidebar-favorites';
 import { RailBackBar } from '../components/Sidebar/RailBackBar';
+import { useImportedSampleResidency } from '../hooks/useImportedSampleResidency';
 import { usePreviewAudio } from '../hooks/usePreviewAudio';
 import { useTracks } from '../hooks/useTracks';
 
@@ -109,19 +110,24 @@ export const Sidebar = ({ style, onClose, panelActions }: SidebarProps): ReactEl
     const { tracks, selectedTrackId } = useTracks();
     const fileInputRef = useRef<HTMLInputElement>(null);
     const preview = usePreviewAudio();
+    const importedSampleHold = useImportedSampleResidency();
 
     const handleFileImport = async (files: FileList | null) => {
         if (!files) {
             return;
         }
         for (const file of Array.from(files)) {
+            const hold = importedSampleHold();
+            if (hold === null) {
+                break;
+            }
             const isAudio = file.type.startsWith('audio/') || isAudioFile(file.name);
             if (!isAudio) {
                 continue;
             }
 
             try {
-                const { id: bufferId, buffer } = await decodeAudioFile(file);
+                const { id: bufferId, buffer } = await decodeAudioFile(file, hold);
                 const name = file.name.replace(/\.[^.]+$/, '');
                 setUserSamples((prev) => [
                     ...prev,
@@ -135,6 +141,9 @@ export const Sidebar = ({ style, onClose, panelActions }: SidebarProps): ReactEl
                     },
                 ]);
             } catch {
+                if (importedSampleHold() === null) {
+                    break;
+                }
                 notifyUser(`Failed to import "${file.name}" — unsupported format or corrupt file`, 'error');
             }
         }

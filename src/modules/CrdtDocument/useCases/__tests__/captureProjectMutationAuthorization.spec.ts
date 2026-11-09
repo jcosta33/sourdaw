@@ -1,8 +1,10 @@
 import { change } from '@automerge/automerge';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
     configureAutomergeStoragePort,
+    countPendingAutomergeStorageWrites,
+    runOutsideAutomergeStoragePublisherScope,
     createAutomergeStorage,
     flushAutomergeStorageWrites,
     getCurrentAutomergeStorageMutationOwner,
@@ -22,6 +24,7 @@ afterEach(() => {
     configureAutomergeStoragePort(null);
     resetAutomergeStorageProjections('root');
     flushAutomergeStorageWrites();
+    vi.unstubAllGlobals();
 });
 
 function installRealStoragePort(): void {
@@ -269,5 +272,85 @@ describe('captureProjectMutationAuthorization', () => {
             listener: true,
             outerAfterListener: true,
         });
+    });
+    it.each(['root', 'peer-child'] as const)(
+        'opts into pure foreign pending-write refusal for %s while preserving the default',
+        (docId) => {
+            automergeRepository.createChildDoc('peer-child');
+            installRealStoragePort();
+            const own = createAutomergeStorage<{ value: number }>('root', 'owned');
+            const peer = createAutomergeStorage<{ value: number }>(docId, 'peer');
+            own.set({ value: 0 });
+            peer.set({ value: 0 });
+            flushAutomergeStorageWrites();
+            vi.stubGlobal(
+                'requestAnimationFrame',
+                vi.fn(() => 0)
+            );
+            vi.stubGlobal('cancelAnimationFrame', vi.fn());
+            const defaultAuthority = captureProjectMutationAuthorization();
+            const pendingAuthority = captureProjectMutationAuthorization({ rejectForeignPendingWrites: true });
+            const transaction = runWithAutomergeStorageTransaction(undefined, (scope) =>
+                scope(() => {
+                    expect(defaultAuthority()).toBe(true);
+                    expect(pendingAuthority()).toBe(true);
+                    own.set({ value: 1 });
+                    expect(pendingAuthority()).toBe(true);
+                    const mutations = automergeRepository.getMutationEpoch();
+                    const pendingBefore = countPendingAutomergeStorageWrites();
+                    runOutsideAutomergeStoragePublisherScope(() => peer.set({ value: 1 }));
+                    expect(countPendingAutomergeStorageWrites()).toBe(pendingBefore + 1);
+                    expect(peer.get()).toEqual({ value: 1 });
+                    expect(automergeRepository.getDoc(docId)?.peer).toEqual({ value: 0 });
+                    expect(defaultAuthority()).toBe(true);
+                    expect(pendingAuthority()).toBe(false);
+                    expect(automergeRepository.getMutationEpoch()).toBe(mutations);
+                    expect(countPendingAutomergeStorageWrites()).toBe(pendingBefore + 1);
+                })
+            );
+            expect(transaction.status).toBe('returned');
+            transaction.abort();
+            flushAutomergeStorageWrites();
+            expect(automergeRepository.getDoc('root')?.owned).toEqual({ value: 0 });
+            expect(automergeRepository.getDoc(docId)?.peer).toEqual({ value: 1 });
+            expect(defaultAuthority()).toBe(false);
+            expect(pendingAuthority()).toBe(false);
+        }
+    );
+
+    it('opts into refusal of an unscoped buffered write without publishing it', () => {
+        installRealStoragePort();
+        const peer = createAutomergeStorage<{ value: number }>('root', 'peer');
+        peer.set({ value: 0 });
+        flushAutomergeStorageWrites();
+        vi.stubGlobal(
+            'requestAnimationFrame',
+            vi.fn(() => 0)
+        );
+        vi.stubGlobal('cancelAnimationFrame', vi.fn());
+        const defaultAuthority = captureProjectMutationAuthorization();
+        const pendingAuthority = captureProjectMutationAuthorization({ rejectForeignPendingWrites: true });
+        expect(getCurrentAutomergeStorageMutationOwner()).toBeUndefined();
+        expect(defaultAuthority()).toBe(true);
+        expect(pendingAuthority()).toBe(true);
+        const mutations = automergeRepository.getMutationEpoch();
+        const heads = automergeRepository.getHeads('root');
+        const pendingBefore = countPendingAutomergeStorageWrites();
+
+        peer.set({ value: 1 });
+
+        expect(countPendingAutomergeStorageWrites()).toBe(pendingBefore + 1);
+        expect(peer.get()).toEqual({ value: 1 });
+        expect(automergeRepository.getDoc('root')?.peer).toEqual({ value: 0 });
+        expect(automergeRepository.getHeads('root')).toEqual(heads);
+        expect(defaultAuthority()).toBe(true);
+        expect(pendingAuthority()).toBe(false);
+        expect(automergeRepository.getMutationEpoch()).toBe(mutations);
+        expect(countPendingAutomergeStorageWrites()).toBe(pendingBefore + 1);
+
+        flushAutomergeStorageWrites();
+        expect(automergeRepository.getDoc('root')?.peer).toEqual({ value: 1 });
+        expect(defaultAuthority()).toBe(false);
+        expect(pendingAuthority()).toBe(false);
     });
 });

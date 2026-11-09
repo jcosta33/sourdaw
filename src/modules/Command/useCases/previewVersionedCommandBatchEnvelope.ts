@@ -24,10 +24,12 @@ export function previewVersionedCommandBatchEnvelope(envelope: VersionedCommandB
         (command) => ({ type: command.operation, payload: command.arguments }) as AppAction
     );
     const divergenceTargetIds = getVersionedCommandBatchDivergenceTargetIds(envelope);
+    const revisionDiverged =
+        commandProjectRevisionPort.isConfigured() &&
+        !commandProjectRevisionPort.matchesLiveIgnoringSaveWrites(envelope.baseRevision);
     const observedRevision = commandProjectRevisionPort.isConfigured()
         ? commandProjectRevisionPort.capture()
         : envelope.baseRevision;
-    const revisionDiverged = observedRevision !== envelope.baseRevision;
     let preparedValidation: ReturnType<typeof prepareCommandBatchPreflight> | null = null;
     if (!revisionDiverged) {
         preparedValidation = prepareCommandBatchPreflight(envelope);
@@ -153,6 +155,12 @@ export function previewVersionedCommandBatchEnvelope(envelope: VersionedCommandB
     const previewWorkspace = workspace;
 
     try {
+        const executionValidation = preparedValidation.prepareExecution();
+        if (executionValidation.status === 'rejected') {
+            workspace.release();
+            return { status: 'conflicted' as const, reason: executionValidation.reason, actions: [] as [] };
+        }
+
         const validationActions = preparedActions.map(({ action }) => action);
         for (const [actionIndex, prepared] of preparedActions.entries()) {
             const valid = workspace.scope(
@@ -211,8 +219,13 @@ export function previewVersionedCommandBatchEnvelope(envelope: VersionedCommandB
             return { status: 'no-op' as const, actions: [] as [] };
         }
 
+        const preparedPostconditions = executionValidation.validation.preparePostconditions();
+        if (preparedPostconditions.status === 'rejected') {
+            workspace.release();
+            return { status: 'conflicted' as const, reason: preparedPostconditions.reason, actions: [] as [] };
+        }
         const projectDocument = workspace.getProjectDocument();
-        const postconditionFailure = preparedValidation.postconditions.validate(projectDocument);
+        const postconditionFailure = preparedPostconditions.postconditions.validate(projectDocument);
         if (postconditionFailure) {
             workspace.release();
             return { status: 'conflicted' as const, reason: postconditionFailure, actions: [] as [] };

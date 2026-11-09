@@ -154,6 +154,8 @@ vi.mock('../projectPersistence/saveProject/markDirty', () => ({ markDirty: vi.fn
 vi.mock('#/modules/Command/useCases', async () => {
     const actual = await vi.importActual<typeof import('#/modules/Command/useCases')>('#/modules/Command/useCases');
     return {
+        commitUndoEntry: vi.fn(),
+        createUndoEntry: vi.fn(),
         commitRedoInverseCapture: vi.fn(),
         readUndoEntryForInverse: vi.fn<typeof actual.readUndoEntryForInverse>(() => null),
 

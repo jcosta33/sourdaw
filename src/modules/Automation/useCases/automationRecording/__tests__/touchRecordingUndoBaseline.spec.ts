@@ -26,14 +26,18 @@ const { mocks } = vi.hoisted(() => {
         mocks: {
             trackStore,
             transportStore,
-            pushUndoEntry: vi.fn<(label: string, undoFn: () => void, redoFn: () => void) => void>(),
+            commitUndoEntry: vi.fn<typeof import('#/modules/Command/useCases').commitUndoEntry>(),
         },
     };
 });
 
 vi.mock('#/modules/Arrangement/stores', () => ({ trackStore: mocks.trackStore }));
 vi.mock('#/modules/Transport/stores', () => ({ transportStore: mocks.transportStore }));
-vi.mock('#/modules/Command/useCases', () => ({ pushUndoEntry: mocks.pushUndoEntry, executeUserAppAction: vi.fn() }));
+vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Command/useCases')>()),
+    commitUndoEntry: mocks.commitUndoEntry,
+    executeUserAppAction: vi.fn(),
+}));
 
 type SubjectModules = {
     automationStore: typeof import('../../../stores/automationStore').automationStore;
@@ -42,6 +46,7 @@ type SubjectModules = {
     recordAutomationValue: typeof import('../recordAutomationValue').recordAutomationValue;
     releaseTouchAutomation: typeof import('../releaseTouchAutomation').releaseTouchAutomation;
     stopAutomationRecording: typeof import('../stopAutomationRecording').stopAutomationRecording;
+    replay: (action: ReturnType<typeof import('#/modules/Command/useCases').createUndoEntry>['inverseAction']) => void;
 };
 
 async function loadSubjectModules(): Promise<SubjectModules> {
@@ -52,6 +57,8 @@ async function loadSubjectModules(): Promise<SubjectModules> {
     const { recordAutomationValue } = await import('../recordAutomationValue');
     const { releaseTouchAutomation } = await import('../releaseTouchAutomation');
     const { stopAutomationRecording } = await import('../stopAutomationRecording');
+    const { handleRestoreAutomationLanePoints } =
+        await import('../../../handlers/automation/handleRestoreAutomationLanePoints');
     setAutomationRecordingDependencies({
         // Zero latency: this spec is about which snapshot the undo entry holds,
         // and a non-zero compensation would shift every recorded beat.
@@ -65,6 +72,12 @@ async function loadSubjectModules(): Promise<SubjectModules> {
         recordAutomationValue,
         releaseTouchAutomation,
         stopAutomationRecording,
+        replay: (action) => {
+            if (action?.type !== 'restoreAutomationLanePoints') {
+                throw new Error('Expected recorded points replay');
+            }
+            expect(handleRestoreAutomationLanePoints.execute(action)).toEqual({ status: 'written' });
+        },
     };
 }
 
@@ -111,7 +124,7 @@ function lanePoints(automationStore: SubjectModules['automationStore']): Array<{
 
 describe('undoing a touch automation pass released before stop', () => {
     beforeEach(() => {
-        mocks.pushUndoEntry.mockReset();
+        mocks.commitUndoEntry.mockReset();
         mocks.trackStore.value = { tracks: [{ id: TRACK_ID, automationMode: 'touch' }] };
         mocks.transportStore.value = { tempo: 120, playheadPosition: 0 };
     });
@@ -132,11 +145,14 @@ describe('undoing a touch automation pass released before stop', () => {
 
         subject.stopAutomationRecording();
 
-        expect(mocks.pushUndoEntry).toHaveBeenCalledOnce();
-        const [label, undoFn] = mocks.pushUndoEntry.mock.calls[0]!;
-        expect(label).toBe('Record Automation');
+        expect(mocks.commitUndoEntry).toHaveBeenCalledOnce();
+        const [entry] = mocks.commitUndoEntry.mock.calls[0]!;
+        expect(entry.label).toBe('Record Automation');
 
-        undoFn();
+        if (entry.kind !== 'action') {
+            throw new Error('Expected typed recording history');
+        }
+        subject.replay(entry.inverseAction);
 
         expect(lanePoints(subject.automationStore)).toEqual([
             { beat: 0, value: 0.1 },
@@ -156,10 +172,13 @@ describe('undoing a touch automation pass released before stop', () => {
         subject.stopAutomationRecording();
 
         const recorded = lanePoints(subject.automationStore);
-        const [, undoFn, redoFn] = mocks.pushUndoEntry.mock.calls[0]!;
+        const [entry] = mocks.commitUndoEntry.mock.calls[0]!;
 
-        undoFn();
-        redoFn();
+        if (entry.kind !== 'action') {
+            throw new Error('Expected typed recording history');
+        }
+        subject.replay(entry.inverseAction);
+        subject.replay(entry.action);
 
         expect(lanePoints(subject.automationStore)).toEqual(recorded);
     });
@@ -178,9 +197,12 @@ describe('undoing a touch automation pass released before stop', () => {
 
         subject.stopAutomationRecording();
 
-        expect(mocks.pushUndoEntry).toHaveBeenCalledOnce();
-        const [, undoFn] = mocks.pushUndoEntry.mock.calls[0]!;
-        undoFn();
+        expect(mocks.commitUndoEntry).toHaveBeenCalledOnce();
+        const [entry] = mocks.commitUndoEntry.mock.calls[0]!;
+        if (entry.kind !== 'action') {
+            throw new Error('Expected typed recording history');
+        }
+        subject.replay(entry.inverseAction);
 
         expect(lanePoints(subject.automationStore)).toEqual([
             { beat: 0, value: 0.1 },
@@ -198,7 +220,7 @@ describe('undoing a touch automation pass released before stop', () => {
         subject.releaseTouchAutomation(TRACK_ID, PARAMETER_ID);
         subject.stopAutomationRecording();
 
-        expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
+        expect(mocks.commitUndoEntry).not.toHaveBeenCalled();
         expect(lanePoints(subject.automationStore)).toEqual([
             { beat: 0, value: 0.1 },
             { beat: 32, value: 0.2 },
