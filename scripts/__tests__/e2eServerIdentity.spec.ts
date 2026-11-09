@@ -18,6 +18,7 @@ import {
     e2eOrigin,
     isSourdawE2eServeMode,
     originAnswers,
+    readServingCheckoutMarker,
     readServingCheckoutRoot,
     resolveE2ePort,
 } from '../e2eServerIdentity.ts';
@@ -60,8 +61,8 @@ async function startServingServer(
 }
 
 /** The handler shape a dev server gets: the marker middleware, then the response. */
-function markerHandler(root: string): (request: IncomingMessage, response: ServerResponse) => void {
-    const middleware = createSourdawRootHeaderMiddleware(root);
+function markerHandler(root: string, runToken?: string): (request: IncomingMessage, response: ServerResponse) => void {
+    const middleware = createSourdawRootHeaderMiddleware(root, runToken);
     return (request, response) => {
         middleware(request, response, () => {
             response.end('ok');
@@ -403,6 +404,15 @@ describe('serving-checkout identity', () => {
         expect(stamped).toBe(encodeURIComponent(root));
         expect(stamped).toMatch(/^[\x20-\x7E]*$/);
         await expect(readServingCheckoutRoot(origin)).resolves.toBe(root);
+    });
+
+    it('stamps the guard-issued run token only when the server started under one', async () => {
+        const root = makeTempRoot('tokened');
+        const tokenedOrigin = await startServingServer(markerHandler(root, 'run-token-1'));
+        await expect(readServingCheckoutMarker(tokenedOrigin)).resolves.toEqual({ root, runToken: 'run-token-1' });
+
+        const plainOrigin = await startServingServer(markerHandler(root));
+        await expect(readServingCheckoutMarker(plainOrigin)).resolves.toEqual({ root, runToken: null });
     });
 
     it('round-trips a non-latin1 checkout root and still refuses a foreign root', async () => {

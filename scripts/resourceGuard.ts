@@ -20,7 +20,12 @@ import { freemem, platform, tmpdir, totalmem } from 'node:os';
 import { basename, dirname, extname, join, parse, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { readServingCheckoutRoot, SOURDAW_E2E_PORT_ENV, originAnswers } from './e2eServerIdentity.ts';
+import {
+    readServingCheckoutMarker,
+    SOURDAW_E2E_PORT_ENV,
+    SOURDAW_E2E_RUN_TOKEN_ENV,
+    originAnswers,
+} from './e2eServerIdentity.ts';
 import { resolvePrimaryRoot, spawnCapture } from './githubAppIdentity.ts';
 import { sameCheckoutRoot } from './guardRecoveryProof.ts';
 import { assertCurrentCheckoutModulesBelongToCheckout } from './pnpmModulesPreflight.ts';
@@ -252,14 +257,20 @@ type RecoveryServerObservation = {
 /**
  * The guard's own view of the proof: while the proof command runs, poll the
  * recorded origin and accept only a response whose checkout marker belongs to
- * the recovery checkout. A file handed to the command tree could be written by
- * the tree itself, so the tree never sees a token — the guard verifies the
- * server directly. Only e2e-mode servers stamp a marker, which keeps the
- * accepted proof the same browser-verification server the receipt recorded.
+ * the recovery checkout AND whose run token is the one this run issued. A file
+ * handed to the command tree could be written by the tree itself, so the tree
+ * never sees a token file — the guard verifies the server directly, and the
+ * token only travels through the tree's environment into the server's marker.
+ * Only e2e-mode servers stamp markers, which keeps the accepted proof the same
+ * browser-verification server the receipt recorded. The run token binds the
+ * observation to this run: a leftover e2e server that binds after the
+ * unserved-origin check stamps the checkout root but no token, so it can no
+ * longer satisfy the watch without its startup ever running under the guard.
  */
 function observeRecoveryServer(
     origin: string,
-    expectedRoot: string
+    expectedRoot: string,
+    runToken: string
 ): { finish: () => Promise<RecoveryServerObservation> } {
     let observed = false;
     let mismatch: string | undefined;
@@ -270,14 +281,18 @@ function observeRecoveryServer(
             return;
         }
         try {
-            const servingRoot = await readServingCheckoutRoot(origin);
-            if (servingRoot === null) {
+            const marker = await readServingCheckoutMarker(origin);
+            if (marker.root === null) {
                 return;
             }
-            if (sameCheckoutRoot(servingRoot, expectedRoot)) {
+            if (!sameCheckoutRoot(marker.root, expectedRoot)) {
+                mismatch = `${origin} serves ${marker.root}, not ${expectedRoot}`;
+                return;
+            }
+            if (marker.runToken === runToken) {
                 observed = true;
             } else {
-                mismatch = `${origin} serves ${servingRoot}, not ${expectedRoot}`;
+                mismatch = `${origin} serves ${expectedRoot} without this run's marker; a server started outside this proof is occupying it`;
             }
         } catch {
             // The proof server is not answering yet; the next poll retries.
@@ -3300,22 +3315,26 @@ export async function main(
                 log(`guard: using explicit recovery proof '${recoveryCommand} ${recoveryArgs.join(' ')}'`);
             }
             // The guard itself watches the recorded origin while the proof runs: the proof
-            // child receives the recorded port and nothing else, so no part of the command
-            // tree can fabricate the observation the guard requires. A server already
-            // answering before the proof starts could satisfy that watch without the tree
-            // running anything (a leftover e2e server), so the origin must be free first;
-            // the marker is compared with the lane root because the e2e server stamps the
-            // checkout root, which a receipt recorded from an in-lane subdirectory is not.
+            // child receives the recorded port and a freshly issued run token, and the
+            // observation accepts only a server stamping both this checkout and that
+            // token. A server already answering before the proof starts could satisfy the
+            // watch without the tree running anything (a leftover e2e server), so the
+            // origin must be free first; the token closes the remaining window, where a
+            // leftover binds between that check and the observation and stamps the same
+            // checkout root without ever running under the guard. The root marker is
+            // compared with the lane root because the e2e server stamps the checkout
+            // root, which a receipt recorded from an in-lane subdirectory is not.
             if (explicitProof !== undefined && (await originAnswers(explicitProof.origin))) {
                 error(
                     `guard: explicit recovery proof requires the recorded origin unserved, but ${explicitProof.origin} already answers; stop that server and retry; lane ${lane.laneName} remains stopped`
                 );
                 return 1;
             }
+            const runToken = explicitProof === undefined ? undefined : randomUUID();
             const observation =
-                explicitProof === undefined
+                explicitProof === undefined || runToken === undefined
                     ? undefined
-                    : observeRecoveryServer(explicitProof.origin, lane.worktreePath);
+                    : observeRecoveryServer(explicitProof.origin, lane.worktreePath, runToken);
             const result = await runCommand({
                 command: recoveryCommand,
                 args: recoveryArgs,
@@ -3332,12 +3351,13 @@ export async function main(
                 diskReserveBytes: input.diskReserveBytes,
                 showOutput: input.showOutput,
                 cwd: recoveryCwd,
-                ...(explicitProof === undefined
+                ...(explicitProof === undefined || runToken === undefined
                     ? {}
                     : {
                           env: {
                               ...process.env,
                               [SOURDAW_E2E_PORT_ENV]: String(explicitProof.port),
+                              [SOURDAW_E2E_RUN_TOKEN_ENV]: runToken,
                           },
                       }),
             });

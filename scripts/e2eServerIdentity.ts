@@ -54,6 +54,15 @@ export function e2eOrigin(port: number): string {
 export const SOURDAW_E2E_ROOT_HEADER = 'X-Sourdaw-Root';
 
 /**
+ * Env var through which the guard hands a recovery proof its per-run token,
+ * and the response header the server stamps it on. A leftover e2e server that
+ * binds after the unserved-origin check carries no token, so the guard's
+ * observation can tell this run's server apart from one it never started.
+ */
+export const SOURDAW_E2E_RUN_TOKEN_ENV = 'SOURDAW_E2E_RUN_TOKEN';
+export const SOURDAW_E2E_RUN_TOKEN_HEADER = 'X-Sourdaw-Run-Token';
+
+/**
  * The identity marker exists only when the dev server runs `--mode e2e`. A
  * human's plain `pnpm dev` and the WebGPU admission proof's server
  * deliberately run without that mode, so they carry no marker and reuse of
@@ -74,9 +83,12 @@ export type RootHeaderMiddleware = (request: IncomingMessage, response: ServerRe
  * and a checkout path such as an accented macOS home directory in its
  * default NFD spelling would make every e2e-mode response throw.
  */
-export function createSourdawRootHeaderMiddleware(root: string): RootHeaderMiddleware {
+export function createSourdawRootHeaderMiddleware(root: string, runToken?: string): RootHeaderMiddleware {
     return (_request, response, next) => {
         response.setHeader(SOURDAW_E2E_ROOT_HEADER, encodeURIComponent(root));
+        if (runToken !== undefined && runToken !== '') {
+            response.setHeader(SOURDAW_E2E_RUN_TOKEN_HEADER, runToken);
+        }
         next();
     };
 }
@@ -94,12 +106,23 @@ function decodeSourdawRoot(stamped: string): string {
     }
 }
 
+export type ServingCheckoutMarker = {
+    root: string | null;
+    runToken: string | null;
+};
+
+/** Read both serving-checkout markers; either is null when the server omits it. */
+export async function readServingCheckoutMarker(origin: string): Promise<ServingCheckoutMarker> {
+    const response = await fetch(origin);
+    const stampedRoot = response.headers.get(SOURDAW_E2E_ROOT_HEADER);
+    const runToken = response.headers.get(SOURDAW_E2E_RUN_TOKEN_HEADER);
+    await response.body?.cancel();
+    return { root: stampedRoot === null ? null : decodeSourdawRoot(stampedRoot), runToken };
+}
+
 /** Read the serving checkout's marker, or null when the server carries none. */
 export async function readServingCheckoutRoot(origin: string): Promise<string | null> {
-    const response = await fetch(origin);
-    const stamped = response.headers.get(SOURDAW_E2E_ROOT_HEADER);
-    await response.body?.cancel();
-    return stamped === null ? null : decodeSourdawRoot(stamped);
+    return (await readServingCheckoutMarker(origin)).root;
 }
 
 export async function originAnswers(origin: string): Promise<boolean> {

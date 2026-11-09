@@ -17,7 +17,12 @@ import { delimiter, join } from 'node:path';
 
 import { afterAll, describe, expect, it } from 'vitest';
 
-import { SOURDAW_E2E_PORT_ENV, SOURDAW_E2E_ROOT_HEADER } from '../e2eServerIdentity';
+import {
+    SOURDAW_E2E_PORT_ENV,
+    SOURDAW_E2E_ROOT_HEADER,
+    SOURDAW_E2E_RUN_TOKEN_ENV,
+    SOURDAW_E2E_RUN_TOKEN_HEADER,
+} from '../e2eServerIdentity';
 import { GUARD_FAILURES_DIR, guardFailureReceiptPath, type GuardFailureReceipt } from '../prContract';
 import {
     acquireResourceLock,
@@ -65,9 +70,16 @@ function runIsolatedGuardedCommand(
     });
 }
 
-function startMarkerServer(root: string, port = 0): Promise<{ port: number; close: () => Promise<void> }> {
+function startMarkerServer(
+    root: string,
+    port = 0,
+    runToken?: string
+): Promise<{ port: number; close: () => Promise<void> }> {
     const server = createServer((_request, response) => {
         response.setHeader(SOURDAW_E2E_ROOT_HEADER, encodeURIComponent(root));
+        if (runToken !== undefined) {
+            response.setHeader(SOURDAW_E2E_RUN_TOKEN_HEADER, runToken);
+        }
         response.end('ok');
     });
     return new Promise((resolve, reject) => {
@@ -2211,14 +2223,17 @@ describe('guard failure stop enforcement', { timeout: GUARDED_CASE_TIMEOUT_MS },
 
         // The receipt's port is reserved but deliberately left unserved: the
         // guard refuses a proof whose recorded origin already answers, so the
-        // proof command itself must bring the marker server up.
+        // proof command itself must bring the marker server up. The run token
+        // the guard issued for the proof comes back through the command's
+        // environment, the same route vite.config.ts reads it on.
         async function createProofServedDevServerFixture(label: string) {
             const port = await reserveFreePort();
             const fixture = createStoppedDevServerFixture(label, port);
             return {
                 ...fixture,
                 port,
-                startProofServer: () => startMarkerServer(realpathSync(fixture.lane.worktreePath), port),
+                startProofServer: (runToken?: string) =>
+                    startMarkerServer(realpathSync(fixture.lane.worktreePath), port, runToken),
             };
         }
 
@@ -2235,7 +2250,7 @@ describe('guard failure stop enforcement', { timeout: GUARDED_CASE_TIMEOUT_MS },
                         detectLane: () => fixture.lane,
                         runCommand: async (input) => {
                             calls.push(input);
-                            marker = await fixture.startProofServer();
+                            marker = await fixture.startProofServer(input.env?.[SOURDAW_E2E_RUN_TOKEN_ENV]);
                             return fakeResult({ code: 0 });
                         },
                     }
@@ -2272,7 +2287,7 @@ describe('guard failure stop enforcement', { timeout: GUARDED_CASE_TIMEOUT_MS },
                     detectLane: () => fixture.lane,
                     runCommand: async (input) => {
                         replayInput = input;
-                        marker = await fixture.startProofServer();
+                        marker = await fixture.startProofServer(input.env?.[SOURDAW_E2E_RUN_TOKEN_ENV]);
                         return fakeResult({ code: 0 });
                     },
                 });
@@ -2397,6 +2412,36 @@ describe('guard failure stop enforcement', { timeout: GUARDED_CASE_TIMEOUT_MS },
             }
         });
 
+        it('preserves a stopped dev receipt when a leftover lane server binds during the proof', async () => {
+            const fixture = await createProofServedDevServerFixture('recover-dev-leftover-server');
+            const errors: string[] = [];
+            let marker: { close: () => Promise<void> } | undefined;
+
+            try {
+                const code = await runGuardCli(['--recover', '--', 'pnpm', 'test:e2e', 'launch.spec.ts'], {
+                    cwd: fixture.lane.worktreePath,
+                    detectLane: () => fixture.lane,
+                    runCommand: async () => {
+                        // A leftover e2e server for this same lane finishes
+                        // booting after the unserved-origin check: it stamps
+                        // the lane root, but the guarded tree never started it,
+                        // so it carries no run token and must not satisfy the
+                        // observation.
+                        marker = await startMarkerServer(realpathSync(fixture.lane.worktreePath), fixture.port);
+                        return fakeResult({ code: 0 });
+                    },
+                    error: (message) => errors.push(message),
+                });
+
+                expect(code).toBe(1);
+                expect(readGuardFailureReceipt(fixture.repoRoot, fixture.laneName)).toEqual(fixture.receipt);
+                expect(errors.join('\n')).toContain('did not verify the recorded dev server');
+            } finally {
+                await marker?.close();
+                rmSync(fixture.repoRoot, { recursive: true, force: true });
+            }
+        });
+
         it('verifies the marker against the lane root for a receipt recorded in a subdirectory', async () => {
             const fixture = await createProofServedDevServerFixture('recover-dev-subdir-receipt');
             const nestedCwd = join(fixture.lane.worktreePath, 'nested');
@@ -2409,10 +2454,10 @@ describe('guard failure stop enforcement', { timeout: GUARDED_CASE_TIMEOUT_MS },
                 const code = await runGuardCli(['--recover', '--', 'pnpm', 'test:e2e', 'launch.spec.ts'], {
                     cwd: fixture.lane.worktreePath,
                     detectLane: () => fixture.lane,
-                    runCommand: async () => {
+                    runCommand: async (input) => {
                         // The real e2e server stamps the checkout root, which a
                         // receipt recorded from an in-lane subdirectory is not.
-                        marker = await fixture.startProofServer();
+                        marker = await fixture.startProofServer(input.env?.[SOURDAW_E2E_RUN_TOKEN_ENV]);
                         return fakeResult({ code: 0 });
                     },
                 });
@@ -2556,9 +2601,11 @@ describe('guard failure stop enforcement', { timeout: GUARDED_CASE_TIMEOUT_MS },
                     "const { createServer } = require('node:http');",
                     "const { writeFileSync } = require('node:fs');",
                     '// The proof itself serves the checkout marker on the recorded port,',
-                    '// the way a Playwright-run e2e server does.',
+                    '// the way a Playwright-run e2e server does, including the run',
+                    '// token the guard handed this proof through the environment.',
                     'const server = createServer((request, response) => {',
                     "    response.setHeader('X-Sourdaw-Root', encodeURIComponent(process.cwd()));",
+                    "    response.setHeader('X-Sourdaw-Run-Token', process.env.SOURDAW_E2E_RUN_TOKEN);",
                     "    response.end('ok');",
                     '});',
                     "server.listen(Number(process.env.SOURDAW_E2E_PORT), '127.0.0.1', () => {",
