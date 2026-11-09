@@ -1,0 +1,14 @@
+scripts/__tests__/resourceGuard.spec.ts
+  h_beb54bf43b47b7 73,81,84-85,2201,2206-2207,2353,2365-2366
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "303f502c1c8b1b133def9eb27a9b79de41893a78",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
