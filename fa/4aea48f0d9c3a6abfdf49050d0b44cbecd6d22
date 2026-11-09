@@ -1,0 +1,16 @@
+src/modules/ContentBrowser/presentations/views/Sidebar.tsx
+  h_beb54bf43b47b7 266
+tests/e2e/controlGallery.spec.ts
+  h_beb54bf43b47b7 1-2,16
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "fa4aea48f0d9c3a6abfdf49050d0b44cbecd6d22",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
