@@ -1,0 +1,37 @@
+src/components/daw/DawPanelSurface.tsx
+  s_977061c47f01dd::t_817012e4b31541 15
+src/components/daw/__tests__/DawPanelSurface.spec.tsx
+  s_977061c47f01dd::t_5a29bdd9b8e500 31,33,56-58
+src/components/ui/__tests__/dialog.spec.tsx
+  s_977061c47f01dd::t_a3015ba952ebc0 25-42
+src/components/ui/dialog.tsx
+  s_977061c47f01dd::t_4a118a5db887bf 139-144,150,157,169
+src/modules/Preferences/presentations/views/PreferencesDialog.tsx
+  s_977061c47f01dd::t_68e2e4b3c1b4b9 90,94,104,120
+src/modules/Preferences/presentations/views/__tests__/PreferencesDialog.spec.tsx
+  s_977061c47f01dd::t_6c70128ee007f0 77-78,83-86
+src/modules/TimelineEditor/presentations/views/AutomationBottomPanel.tsx
+  s_977061c47f01dd::t_856d900e1bba12 238-239
+src/modules/TimelineEditor/presentations/views/__tests__/AutomationBottomPanel.spec.tsx
+  s_977061c47f01dd::t_676dfd4fcc3474 39-47,51,247-259
+src/modules/WorkspaceShell/presentations/views/AppShell.tsx
+  s_977061c47f01dd::t_adc02fe42244cc 15-16,1063-1065,1072,1092,1103
+src/modules/WorkspaceShell/presentations/views/__tests__/AppShell.spec.tsx
+  s_977061c47f01dd::t_b57c4a738ae08a 706-710
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d2a112731dc437aedffd109200c8e96ca01f0cb9",
+  "prompts": {},
+  "sessions": {
+    "s_977061c47f01dd": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34d-123d-7452-a6e7-60608388b6d7",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
