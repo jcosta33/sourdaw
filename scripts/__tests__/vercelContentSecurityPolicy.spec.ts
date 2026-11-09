@@ -36,6 +36,7 @@ type VercelHeaderRule = { source: string; headers: VercelHeaderEntry[] };
 type VercelConfig = { headers?: VercelHeaderRule[] };
 
 const MAGENTA_DDSP_CSP_SOURCE = 'https://storage.googleapis.com/magentadata/js/checkpoints/ddsp/';
+const indexHtml = readFileSync(join(import.meta.dirname, '../../index.html'), 'utf8');
 
 /**
  * `PRODUCTION_CSP`'s `connect-src`, copied here rather than imported. This is
@@ -96,6 +97,19 @@ function parseCsp(policy: string): Map<string, string[]> {
     return directives;
 }
 
+/** Parse with the browser's scripting flag so noscript contents stay inert. */
+function parseActiveHtml(html: string): Document {
+    const parsed = document.implementation.createHTMLDocument('');
+    parsed.open();
+    parsed.write(html);
+    parsed.close();
+    return parsed;
+}
+
+function findThemeScript(html: string): HTMLScriptElement | null {
+    return parseActiveHtml(html).querySelector<HTMLScriptElement>('script#sourdaw-theme');
+}
+
 describe('the hosted web build Content-Security-Policy', () => {
     const config = readVercelConfig();
     const headers = findCatchAllHeaders(config);
@@ -153,6 +167,35 @@ describe('the hosted web build Content-Security-Policy', () => {
         expect(directives.get('script-src')).toEqual(["'self'", "'wasm-unsafe-eval'", 'blob:']);
         expect([...directives.values()].flat()).not.toContain("'unsafe-eval'");
         expect(directives.get('script-src')).not.toContain("'unsafe-inline'");
+
+        const themeScript = findThemeScript(indexHtml);
+        expect(themeScript?.getAttribute('src')).toBe('/themePrepaint.js');
+        // The prepaint must run as a classic inline-order script: an absent or
+        // non-JavaScript type can suppress execution, while module, async or
+        // defer spelling defers it past first paint and restores the dark flash.
+        expect(themeScript?.getAttribute('type')?.toLowerCase()).toBe('text/javascript');
+        expect(themeScript?.getAttribute('type')?.toLowerCase()).not.toBe('module');
+        expect(themeScript?.hasAttribute('async')).toBe(false);
+        expect(themeScript?.hasAttribute('defer')).toBe(false);
+        expect(themeScript?.textContent?.trim()).toBe('');
+    });
+
+    it.each([
+        {
+            name: 'commented-out markup',
+            html: '<!-- <script id="sourdaw-theme" type="text/javascript" src="/themePrepaint.js"></script> -->',
+        },
+        {
+            name: 'a scripting-inert head noscript ancestor',
+            html: '<head><noscript><script id="sourdaw-theme" type="text/javascript" src="/themePrepaint.js"></script></noscript></head>',
+        },
+        {
+            name: 'a scripting-inert body noscript ancestor',
+            html: '<body><noscript><script id="sourdaw-theme" type="text/javascript" src="/themePrepaint.js"></script></noscript></body>',
+        },
+    ])('does not accept $name as active markup', ({ html }) => {
+        expect(findThemeScript(html)).toBeNull();
+        expect(findThemeScript(indexHtml)).not.toBeNull();
     });
 
     it('scopes worker-src to bundled workers -- the app creates no blob workers', () => {

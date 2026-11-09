@@ -29,7 +29,7 @@ type DawPluginChipProps = ButtonHTMLAttributes<HTMLButtonElement> & {
 };
 
 const ACTIVE_TONE_CLASS_NAMES: Record<NonNullable<DawPluginChipProps['tone']>, string> = {
-    neutral: 'border-white/18 bg-white/6 text-white/88',
+    neutral: 'border-border-active bg-surface-raised/60 text-text-primary',
     amber: 'border-[var(--color-accent-amber)]/60 bg-[var(--color-accent-amber)]/14 text-[var(--color-accent-amber)]',
     cyan: 'border-[var(--color-accent-cyan)]/60 bg-[var(--color-accent-cyan)]/12 text-[var(--color-accent-cyan)]',
     peach: 'border-[var(--color-accent-peach)]/60 bg-[var(--color-accent-peach)]/12 text-[var(--color-accent-peach)]',
@@ -45,8 +45,13 @@ const ACTIVE_TONE_CLASS_NAMES: Record<NonNullable<DawPluginChipProps['tone']>, s
 };
 
 const SIZE_CLASS_NAMES: Record<NonNullable<DawPluginChipProps['size']>, string> = {
-    xs: 'px-1.5 py-0.5 text-[7px]',
-    sm: 'px-3 py-1 text-[10px]',
+    xs: 'min-h-6 px-2 py-0.5',
+    sm: 'min-h-6 px-3 py-1',
+};
+
+const SIZE_FONT_SIZES: Record<NonNullable<DawPluginChipProps['size']>, string> = {
+    xs: 'var(--text-metadata)',
+    sm: 'var(--text-label)',
 };
 
 const SHAPE_CLASS_NAMES: Record<NonNullable<DawPluginChipProps['shape']>, string> = {
@@ -80,6 +85,7 @@ export const DawPluginChip = ({
     shape = 'pill',
     caps = true,
     className,
+    style,
     type = 'button',
     children,
     ...props
@@ -89,19 +95,20 @@ export const DawPluginChip = ({
         <button
             type={type}
             aria-pressed={props.role === 'radio' ? undefined : active}
+            style={{ fontSize: SIZE_FONT_SIZES[size], ...style }}
             className={cn(
                 'inline-flex items-center justify-center border font-medium transition-[background-color,border-color,color,box-shadow]',
                 'disabled:pointer-events-none disabled:opacity-45',
                 SIZE_CLASS_NAMES[size],
                 SHAPE_CLASS_NAMES[shape],
                 caps ? 'uppercase tracking-[0.18em]' : '',
-                active ? ACTIVE_TONE_CLASS_NAMES[tone] : 'border-white/8 bg-black/20 text-white/52',
+                active ? ACTIVE_TONE_CLASS_NAMES[tone] : 'border-border-soft bg-surface-well/50 text-text-secondary',
                 // Hover feedback is a promise that the control will respond, so
                 // an inert chip must not make it. Chosen here rather than with
                 // an `aria-disabled:hover:` variant because two variants of the
                 // same property resolve by stylesheet order, not by class-list
                 // order, and this has to win.
-                !active && !inert ? 'hover:border-white/14 hover:text-white/84' : '',
+                !active && !inert ? 'hover:border-border-active hover:text-text-primary' : '',
                 // Not `pointer-events-none`: the reason lives in `title`, and
                 // suppressing pointer events would take the explanation away
                 // with the interactivity.

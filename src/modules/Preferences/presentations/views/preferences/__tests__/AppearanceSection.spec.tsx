@@ -36,6 +36,8 @@ vi.mock('#/components/ui/slider', () => ({
 describe('AppearanceSection', () => {
     beforeEach(() => {
         document.documentElement.classList.remove('dark', 'light');
+        document.documentElement.style.colorScheme = '';
+        document.head.innerHTML = '<meta name="theme-color" content="#020100" />';
     });
 
     it('marks the active theme button as selected', () => {
@@ -45,7 +47,7 @@ describe('AppearanceSection', () => {
         expect(screen.getByRole('button', { name: /light/i })).toHaveAttribute('data-variant', 'outline');
     });
 
-    it('calls update with the clicked theme and toggles the root classList', () => {
+    it('calls update with the clicked theme and synchronizes every browser theme channel', () => {
         const update = vi.fn();
         render(<AppearanceSection prefs={{ ...defaultPreferences, theme: 'dark' }} update={update} />);
 
@@ -54,6 +56,8 @@ describe('AppearanceSection', () => {
         expect(update).toHaveBeenCalledWith({ theme: 'light' });
         expect(document.documentElement.classList.contains('light')).toBe(true);
         expect(document.documentElement.classList.contains('dark')).toBe(false);
+        expect(document.documentElement.style.colorScheme).toBe('light');
+        expect(document.querySelector('meta[name="theme-color"]')).toHaveAttribute('content', '#ded8cf');
     });
 
     it('reflects colorblindMode in the ToggleRow and calls update on toggle', () => {

@@ -16,6 +16,14 @@ describe('DawPluginChip', () => {
         expect(onClick).toHaveBeenCalled();
     });
 
+    it('uses theme-aware surface and foreground roles for an active neutral chip', () => {
+        render(<DawPluginChip active>Enabled</DawPluginChip>);
+
+        const chip = screen.getByRole('button', { name: 'Enabled' });
+        expect(chip).toHaveClass('bg-surface-raised/60', 'text-text-primary');
+        expect(chip.className).not.toContain('text-white');
+    });
+
     it('reports a pressed state only when the caller declares one', () => {
         render(
             <>
