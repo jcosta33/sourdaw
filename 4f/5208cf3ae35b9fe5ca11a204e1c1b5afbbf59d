@@ -1,0 +1,19 @@
+src/styles/__tests__/semanticThemes.spec.ts
+  s_977061c47f01dd::t_0b05e24dc77e78 52-63,134-140,171-182,186-201,203,205
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4f5208cf3ae35b9fe5ca11a204e1c1b5afbbf59d",
+  "prompts": {},
+  "sessions": {
+    "s_977061c47f01dd": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34d-123d-7452-a6e7-60608388b6d7",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
