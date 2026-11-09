@@ -1,20 +1,21 @@
 import { automationStore } from '../../stores/automationStore';
 
+/** Reports a store update admission, not the deferred CRDT publication outcome. */
 export function updateAutomationPoint(
     laneId: string,
     beat: number,
     newValue: number,
     newBeat?: number,
     pointId?: string
-): void {
+): boolean {
     const state = automationStore.value;
     const lanes = state?.lanes.filter((lane) => lane.id === laneId);
     if (!state || lanes?.length !== 1) {
-        return;
+        return false;
     }
     const lane = lanes[0];
     if (!lane) {
-        return;
+        return false;
     }
     const candidates = lane.points.filter((point) => {
         if (pointId !== undefined) {
@@ -23,11 +24,19 @@ export function updateAutomationPoint(
         return Math.abs(point.beat - beat) < 0.05;
     });
     if (candidates.length !== 1) {
-        return;
+        return false;
     }
     const target = candidates[0];
     if (!target) {
-        return;
+        return false;
+    }
+    const destination = newBeat ?? target.beat;
+    // An ID-less point must remain uniquely selectable for cancel and replay.
+    if (
+        pointId === undefined &&
+        lane.points.some((point) => point !== target && Math.abs(point.beat - destination) < 0.05)
+    ) {
+        return false;
     }
     const points = lane.points.map((point) => {
         if (point !== target) {
@@ -43,4 +52,5 @@ export function updateAutomationPoint(
             return { ...current, points: points.sort((a, b) => a.beat - b.beat) };
         }),
     });
+    return true;
 }

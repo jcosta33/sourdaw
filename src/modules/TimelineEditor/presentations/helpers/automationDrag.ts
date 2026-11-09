@@ -233,8 +233,8 @@ export const onPointMouseDown = (
     const capturedId = origPoint.id;
     const origBeat = origPoint.beat;
     const origValue = origPoint.value;
-    let currentBeat = pointBeat;
-    setDragPointBeat(pointBeat);
+    let currentBeat = origBeat;
+    setDragPointBeat(origBeat);
 
     return startMouseDrag(
         (me) => {
@@ -249,7 +249,9 @@ export const onPointMouseDown = (
                     newBeat = origBeat;
                 }
             }
-            updateAutomationPoint(lane.id, currentBeat, newValue, newBeat, capturedId);
+            if (!updateAutomationPoint(lane.id, currentBeat, newValue, newBeat, capturedId)) {
+                return;
+            }
             currentBeat = newBeat;
             setDragPointBeat(newBeat);
         },

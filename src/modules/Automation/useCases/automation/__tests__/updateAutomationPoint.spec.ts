@@ -40,6 +40,9 @@ describe('updateAutomationPoint', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.state.value = { lanes: [] };
+        mocks.set.mockImplementation((next: AutomationStoreState) => {
+            mocks.state.value = next;
+        });
     });
 
     it('should export updateAutomationPoint', () => {
@@ -79,7 +82,7 @@ describe('updateAutomationPoint', () => {
     it('keeps the unique nearby-beat fallback for a pixel-rounded input', () => {
         const point: AutomationPoint = { id: 'only', beat: 5, value: 0.2, curve: 'linear', tension: 0.1 };
         mocks.state.value = lane([point]);
-        subject.updateAutomationPoint('lane', 5.02, 0.9);
+        expect(subject.updateAutomationPoint('lane', 5.02, 0.9)).toBe(true);
         expect(mocks.set).toHaveBeenCalledOnce();
         expect(mocks.set).toHaveBeenCalledWith(lane([{ ...point, value: 0.9 }]));
     });
@@ -134,5 +137,58 @@ describe('updateAutomationPoint', () => {
         subject.updateAutomationPoint('missing', 5, 0.6, 6);
         subject.updateAutomationPoint('lane', 5, 0.6, 6);
         expect(mocks.set).not.toHaveBeenCalled();
+    });
+    it('refuses an unsafe ID-less destination before writing, then admits and restores a clear move', () => {
+        const target: AutomationPoint = {
+            beat: 2,
+            value: 0.3,
+            curve: 'bezier',
+            tension: 0.2,
+            cp1: { x: 0.2, y: 0.7 },
+            cp2: { x: 0.8, y: 0.9 },
+            stairSteps: 8,
+        };
+        const neighbor: AutomationPoint = { beat: 4.02, value: 0.8, curve: 'step', tension: -0.4 };
+        const initial = lane([target, neighbor]);
+        const original = structuredClone(initial);
+        mocks.state.value = initial;
+        expect(subject.updateAutomationPoint('lane', 2, 0.6, 4)).toBe(false);
+        expect(mocks.set).not.toHaveBeenCalled();
+        expect(mocks.state.value).toEqual(original);
+        expect(subject.updateAutomationPoint('lane', 2, 0.6, 5)).toBe(true);
+        expect(mocks.state.value).toEqual(lane([neighbor, { ...target, beat: 5, value: 0.6 }]));
+        expect(subject.updateAutomationPoint('lane', 5, 0.3, 2)).toBe(true);
+        expect(mocks.state.value).toEqual(original);
+        expect(initial).toEqual(original);
+    });
+
+    it('keeps the last accepted legacy pose after a later refused move and restores from it', () => {
+        const target: AutomationPoint = { beat: 2, value: 0.3, curve: 'linear', tension: 0.2 };
+        const neighbor: AutomationPoint = { beat: 4.02, value: 0.8, curve: 'step', tension: -0.4 };
+        const initial = lane([target, neighbor]);
+        mocks.state.value = initial;
+        expect(subject.updateAutomationPoint('lane', 2, 0.6, 3.5)).toBe(true);
+        const accepted = lane([{ ...target, beat: 3.5, value: 0.6 }, neighbor]);
+        expect(mocks.state.value).toEqual(accepted);
+        mocks.set.mockClear();
+        expect(subject.updateAutomationPoint('lane', 3.5, 0.7, 4)).toBe(false);
+        expect(mocks.set).not.toHaveBeenCalled();
+        expect(mocks.state.value).toEqual(accepted);
+        expect(subject.updateAutomationPoint('lane', 3.5, 0.3, 2)).toBe(true);
+        expect(mocks.state.value).toEqual(initial);
+    });
+
+    it('refuses a same-beat legacy destination while allowing an identified point to share it', () => {
+        const target: AutomationPoint = { id: 'target', beat: 2, value: 0.3, curve: 'linear', tension: 0.2 };
+        const neighbor: AutomationPoint = { id: 'neighbor', beat: 4, value: 0.8, curve: 'step', tension: -0.4 };
+        const initial = lane([target, neighbor]);
+        mocks.state.value = initial;
+        expect(subject.updateAutomationPoint('lane', 2, 0.6, 4)).toBe(false);
+        expect(mocks.set).not.toHaveBeenCalled();
+        expect(mocks.state.value).toEqual(initial);
+        expect(subject.updateAutomationPoint('lane', 2, 0.6, 4, 'target')).toBe(true);
+        expect(mocks.state.value).toEqual(lane([{ ...target, beat: 4, value: 0.6 }, neighbor]));
+        expect(subject.updateAutomationPoint('lane', 4, 0.3, 2, 'target')).toBe(true);
+        expect(mocks.state.value).toEqual(initial);
     });
 });

@@ -114,6 +114,8 @@ describe('automationDrag', () => {
         vi.clearAllMocks();
         mocks.automationState = { lanes: [] };
         mocks.selectPointsInRange.mockReturnValue([]);
+        mocks.updateAutomationPoint.mockReset();
+        mocks.updateAutomationPoint.mockReturnValue(true);
     });
 
     describe('onDrawMouseDown', () => {
@@ -544,6 +546,73 @@ describe('automationDrag', () => {
             mocks.automationState = { lanes: [{ id: lane.id, points: [makePoint(5, 0.9, { id: 'replacement' })] }] };
             fireEvent.mouseUp(window);
             expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
+        });
+
+        it('keeps the original pose after refusal and can later move past the ambiguous window', () => {
+            const target = makePoint(2, 0.3);
+            const neighbor = makePoint(4.02, 0.8);
+            const lane = makeLane([target, neighbor]);
+            mocks.updateAutomationPoint.mockReturnValueOnce(false).mockReturnValueOnce(true);
+            const surface = renderSurface({
+                onSurfaceMouseDown: (event) =>
+                    onPointMouseDown(2, event, lane, setDragPointBeat, setSelectedPoints, coords),
+            });
+            fireEvent.mouseDown(surface, { clientX: 20, clientY: 70 });
+            fireEvent.mouseMove(window, { clientX: 40, clientY: 40 });
+            expect(mocks.updateAutomationPoint).toHaveBeenLastCalledWith('lane-1', 2, 0.6, 4, undefined);
+            expect(setDragPointBeat.mock.calls).toEqual([[2]]);
+            fireEvent.mouseMove(window, { clientX: 50, clientY: 30 });
+            expect(mocks.updateAutomationPoint).toHaveBeenLastCalledWith('lane-1', 2, 0.7, 5, undefined);
+            expect(setDragPointBeat.mock.calls).toEqual([[2], [5]]);
+            mocks.automationState = {
+                lanes: [{ id: lane.id, points: [neighbor, { ...target, beat: 5, value: 0.7 }] }],
+            };
+            fireEvent.mouseUp(window);
+            expect(mocks.pushUndoEntry).toHaveBeenCalledOnce();
+            const entry = mocks.pushUndoEntry.mock.calls[0];
+            if (!entry) {
+                throw new Error('Accepted movement requires an entry');
+            }
+            entry[1]();
+            expect(mocks.updateAutomationPoint).toHaveBeenLastCalledWith('lane-1', 5, 0.3, 2, undefined);
+            entry[2]();
+            expect(mocks.updateAutomationPoint).toHaveBeenLastCalledWith('lane-1', 2, 0.7, 5, undefined);
+        });
+
+        it.each(['Escape', 'release'])('uses the last accepted pose on %s after a later refusal', (terminal) => {
+            const target = makePoint(2, 0.3);
+            const neighbor = makePoint(4.02, 0.8);
+            const lane = makeLane([target, neighbor]);
+            mocks.updateAutomationPoint.mockReturnValueOnce(true).mockReturnValueOnce(false);
+            const surface = renderSurface({
+                onSurfaceMouseDown: (event) =>
+                    onPointMouseDown(2, event, lane, setDragPointBeat, setSelectedPoints, coords),
+            });
+            fireEvent.mouseDown(surface, { clientX: 20, clientY: 70 });
+            fireEvent.mouseMove(window, { clientX: 35, clientY: 40 });
+            fireEvent.mouseMove(window, { clientX: 40, clientY: 30 });
+            expect(mocks.updateAutomationPoint).toHaveBeenLastCalledWith('lane-1', 3.5, 0.7, 4, undefined);
+            expect(setDragPointBeat.mock.calls).toEqual([[2], [3.5]]);
+            mocks.automationState = {
+                lanes: [{ id: lane.id, points: [{ ...target, beat: 3.5, value: 0.6 }, neighbor] }],
+            };
+            if (terminal === 'Escape') {
+                fireEvent.keyDown(window, { key: 'Escape' });
+                expect(mocks.updateAutomationPoint).toHaveBeenLastCalledWith('lane-1', 3.5, 0.3, 2, undefined);
+                expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
+                fireEvent.mouseUp(window);
+                return;
+            }
+            fireEvent.mouseUp(window);
+            expect(mocks.pushUndoEntry).toHaveBeenCalledOnce();
+            const entry = mocks.pushUndoEntry.mock.calls[0];
+            if (!entry) {
+                throw new Error('Accepted movement requires an entry');
+            }
+            entry[1]();
+            expect(mocks.updateAutomationPoint).toHaveBeenLastCalledWith('lane-1', 3.5, 0.3, 2, undefined);
+            entry[2]();
+            expect(mocks.updateAutomationPoint).toHaveBeenLastCalledWith('lane-1', 2, 0.6, 3.5, undefined);
         });
 
         it('releasing without movement records no undo entry', () => {
