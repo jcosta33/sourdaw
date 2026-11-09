@@ -1,7 +1,15 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { createRendererSessionLifecycle, isRendererReplacingNavigation } from '../rendererSessionLifecycle.js';
 import { createWindowCloseCoordinator } from '../windowCloseCoordinator.js';
+
+// Keep the production protocol module and title while isolating Electron's
+// optional native runtime at the test boundary.
+vi.mock('electron', () => ({
+    app: { isPackaged: false, getAppPath: () => '/app' },
+    net: { fetch: vi.fn() },
+    protocol: { handle: vi.fn(), registerSchemesAsPrivileged: vi.fn() },
+}));
 
 describe('renderer session lifecycle', () => {
     it('does not recreate a renderer that crashes while approved editor-detach teardown is still pending', () => {

@@ -40,6 +40,14 @@ import type { IpcMainLike, SenderFrameCarrier } from '../router.js';
 import type { ScanSupervisor } from '../scan.js';
 import type { MessageBoxOptions, OpenDialogOptions, SaveDialogOptions } from 'electron';
 
+// Keep the production protocol module and title while isolating Electron's
+// optional native runtime at the test boundary.
+vi.mock('electron', () => ({
+    app: { isPackaged: false, getAppPath: () => '/app' },
+    net: { fetch: vi.fn() },
+    protocol: { handle: vi.fn(), registerSchemesAsPrivileged: vi.fn() },
+}));
+
 const APP_FRAME: SenderFrameCarrier = { senderFrame: { url: 'app://sourdaw/index.html' } };
 const FOREIGN_FRAME: SenderFrameCarrier = { senderFrame: { url: 'https://evil.example/' } };
 const isTrustedFrameUrl = (url: string | undefined): boolean => url === APP_FRAME.senderFrame?.url;
