@@ -186,7 +186,7 @@ ignored with one log line. Re-publishing a head whose record already binds its
 publication replays that record unchanged, and records persisted under earlier contracts keep
 replaying and verifying.
 
-A pull request whose public history holds `REVIEW_ROUND_FREEZE_THRESHOLD` (five, in
+A pull request whose public history holds `REVIEW_ROUND_FREEZE_THRESHOLD` (ten, in
 `scripts/reviewRoundEscalation.ts`) reviewer `REQUEST_CHANGES` rounds is frozen: `review:publish`
 refuses every fresh reviewer publication on it, approve or request changes, and no caller document
 lifts the freeze. Respin the change as one consolidated pull request and close the frozen one with
