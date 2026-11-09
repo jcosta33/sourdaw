@@ -46,8 +46,40 @@ test.describe('Fermenter panel deep — knobs, macros', () => {
         await expect(brightness).toHaveAttribute('aria-valuenow', '0.01');
 
         const panel = page.locator('.fermenter-faceplate');
-        await panel.getByRole('button', { name: 'Effects', exact: true }).click();
+        await panel.getByRole('tab', { name: 'Effects', exact: true }).click();
         await expect(panel.getByRole('button', { name: 'Dist', exact: true })).toHaveAttribute('aria-pressed', 'true');
+    });
+
+    test('Fermenter manual tabs activate with Enter and Space', async ({ page }) => {
+        await openFermenter(page);
+
+        const tablist = page.getByRole('tablist', { name: 'Fermenter sections' });
+        const oscillator = tablist.getByRole('tab', { name: 'Oscillator', exact: true });
+        const filter = tablist.getByRole('tab', { name: 'Filter', exact: true });
+        const expectFilterSelected = async (): Promise<void> => {
+            const filterPanel = page.getByRole('tabpanel', { name: 'Filter', exact: true });
+            await expect(filter).toHaveAttribute('aria-selected', 'true');
+            await expect(filterPanel).toBeVisible();
+            await expect(filter).toHaveAttribute('id', 'fermenter-section-filter');
+            await expect(filter).toHaveAttribute('aria-controls', 'fermenter-section-panel');
+            await expect(filterPanel).toHaveAttribute('id', 'fermenter-section-panel');
+            await expect(filterPanel).toHaveAttribute('aria-labelledby', 'fermenter-section-filter');
+        };
+
+        await expect(oscillator).toHaveAttribute('aria-selected', 'true');
+        await oscillator.focus();
+        await page.keyboard.press('ArrowRight');
+        await expect(filter).toBeFocused();
+        await page.keyboard.press('Enter');
+        await expectFilterSelected();
+
+        await oscillator.click();
+        await expect(oscillator).toHaveAttribute('aria-selected', 'true');
+        await oscillator.focus();
+        await page.keyboard.press('ArrowRight');
+        await expect(filter).toBeFocused();
+        await page.keyboard.press('Space');
+        await expectFilterSelected();
     });
 
     test('Fermenter panel close button hides the panel', async ({ page }) => {
