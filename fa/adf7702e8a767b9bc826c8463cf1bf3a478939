@@ -1,0 +1,14 @@
+src/modules/Project/presentations/views/__tests__/ArrangementSelector.spec.tsx
+  h_beb54bf43b47b7 254-255
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "faadf7702e8a767b9bc826c8463cf1bf3a478939",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
