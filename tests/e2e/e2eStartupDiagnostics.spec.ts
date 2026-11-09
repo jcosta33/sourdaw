@@ -16,12 +16,28 @@ test('applies the persisted Light theme before the real entry module paints', as
                 document.open();
                 document.write(sourceHtml);
                 document.close();
-                return (
-                    [...document.querySelectorAll('script[type="module" i][src]')]
-                        .filter((script) => script.namespaceURI === 'http://www.w3.org/1999/xhtml')
-                        .at(0)
-                        ?.getAttribute('src') ?? null
+                const modules = [...document.querySelectorAll('script[type="module" i][src]')].filter(
+                    (script) => script.namespaceURI === 'http://www.w3.org/1999/xhtml'
                 );
+                const developmentEntries = modules.filter((script) => script.id === 'sourdaw-entry');
+                if (developmentEntries.length > 0) {
+                    if (
+                        developmentEntries.length !== 1 ||
+                        developmentEntries[0]?.getAttribute('src') !== '/src/app/main.tsx'
+                    ) {
+                        throw new Error('Served development HTML must have exactly one real entry module');
+                    }
+                    return developmentEntries[0]?.getAttribute('src') ?? null;
+                }
+                const builtEntries = modules.filter(
+                    (script) =>
+                        script.hasAttribute('crossorigin') &&
+                        /^\.\/assets\/index-[A-Za-z0-9_-]+\.js$/u.test(script.getAttribute('src') ?? '')
+                );
+                if (builtEntries.length !== 1) {
+                    throw new Error('Served built HTML must have exactly one real entry module');
+                }
+                return builtEntries[0]?.getAttribute('src') ?? null;
             };
             const realEntrySource = discoverEntry(html);
             if (realEntrySource === null) {
@@ -34,22 +50,30 @@ test('applies the persisted Light theme before the real entry module paints', as
                 throw new Error('Served HTML has no addressable entry module');
             }
             const sourceOffset = html.indexOf(sourceAttribute);
+            const scriptStart = html.lastIndexOf('<script', sourceOffset);
             const scriptEnd = html.indexOf('</script>', sourceOffset);
-            if (scriptEnd < 0) {
+            if (scriptStart < 0 || scriptEnd < 0) {
                 throw new Error('Served HTML has an unterminated entry module');
             }
             const insertionPoint = scriptEnd + '</script>'.length;
-            const withDecoy = (decoy: string): string =>
-                `${html.slice(0, insertionPoint)}${decoy}${html.slice(insertionPoint)}`;
+            const withDecoy = (decoy: string, position: 'leading' | 'trailing'): string => {
+                const offset = position === 'leading' ? scriptStart : insertionPoint;
+                return `${html.slice(0, offset)}${decoy}${html.slice(offset)}`;
+            };
+            const decoys = {
+                inertNoscript: '<noscript><script type="module" src="/startup-decoy.js"></script></noscript>',
+                svg: '<svg><script type="module" src="/startup-decoy.js"></script></svg>',
+                active: '<script type="module" src="/startup-decoy.js"></script>',
+                async: '<script async type="module" src="/startup-decoy.js"></script>',
+            };
             return {
                 entrySource: realEntrySource,
-                decoyEntrySources: {
-                    inertNoscript: discoverEntry(
-                        withDecoy('<noscript><script type="module" src="/startup-decoy.js"></script></noscript>')
-                    ),
-                    svg: discoverEntry(withDecoy('<svg><script type="module" src="/startup-decoy.js"></script></svg>')),
-                    trailingActive: discoverEntry(withDecoy('<script type="module" src="/startup-decoy.js"></script>')),
-                },
+                decoyEntrySources: Object.fromEntries(
+                    Object.entries(decoys).flatMap(([name, decoy]) => [
+                        [`leading-${name}`, discoverEntry(withDecoy(decoy, 'leading'))],
+                        [`trailing-${name}`, discoverEntry(withDecoy(decoy, 'trailing'))],
+                    ])
+                ),
             };
         },
         await response.text()
@@ -57,6 +81,7 @@ test('applies the persisted Light theme before the real entry module paints', as
     if (entrySource === null) {
         throw new Error('Served HTML has no entry module');
     }
+    expect(entrySource).toMatch(/^(?:\/src\/app\/main\.tsx|\.\/assets\/index-[A-Za-z0-9_-]+\.js)$/u);
     for (const [decoy, decoyEntrySource] of Object.entries(decoyEntrySources)) {
         expect.soft(decoyEntrySource, `${decoy} must not replace the real entry`).toBe(entrySource);
     }
@@ -87,6 +112,7 @@ test('applies the persisted Light theme before the real entry module paints', as
         await expect(page.locator('html')).toHaveCSS('color-scheme', 'light');
         await expect(page.locator('meta[name="theme-color"]')).toHaveAttribute('content', '#ded8cf');
         await expect(page.locator('#entry-startup')).toHaveCSS('background-color', 'rgb(222, 216, 207)');
+        await expect(page.getByLabel(LAUNCH_SCREEN_NAME)).toHaveCount(0);
         expect(entryRequests).toBe(1);
 
         gate.resolve('release entry');

@@ -2,9 +2,13 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { runInNewContext } from 'node:vm';
 
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 import { parse, stringify } from 'superjson';
 import { describe, expect, it } from 'vitest';
 
+import { DawPluginChip } from '#/components/daw/DawPluginChip';
+import { validateStoredPreferences } from '#/modules/Preferences/stores/preferencesStore';
 import { cn } from '#/utils/Styles/cn';
 
 const tokens = readFileSync(resolve(process.cwd(), 'src/styles/tokens.css'), 'utf8');
@@ -137,62 +141,11 @@ const composite = (foreground: string, background: string, alpha: number): strin
     return `#${channels.join('')}`;
 };
 
-const grinderWindowStops = (): Record<string, string> => {
-    const styles = readFileSync(resolve(process.cwd(), 'src/styles/utilities/modules/grinder.css'), 'utf8');
-    const windowBlock = /@utility grinder-window\s*\{([\s\S]*?)\n\}/u.exec(styles)?.[1] ?? '';
-    const rgbaLayers = Array.from(
-        windowBlock.matchAll(/rgba\(\s*(\d+),\s*(\d+),\s*(\d+),\s*([\d.]+)\)/gu),
-        (match) => ({
-            color: `#${match
-                .slice(1, 4)
-                .map((channel) => Number(channel).toString(16).padStart(2, '0'))
-                .join('')}`,
-            alpha: Number(match[4]),
-        })
-    );
-    const [topWhite, bottomWhite, topAmber] = rgbaLayers;
-    if (topWhite === undefined || bottomWhite === undefined || topAmber === undefined) {
-        throw new Error('Missing Grinder window gradient layers');
-    }
-    const panelInset = readToken(lightBlock, '--color-bg-panelInset');
-    const amberBase = (alpha: number) => composite(topAmber.color, panelInset, alpha);
-    return {
-        windowTop: composite(topWhite.color, amberBase(topAmber.alpha), topWhite.alpha),
-        windowMiddle: composite(
-            topWhite.color,
-            amberBase(topAmber.alpha / 2),
-            (topWhite.alpha + bottomWhite.alpha) / 2
-        ),
-        windowBottom: composite(bottomWhite.color, panelInset, bottomWhite.alpha),
-    };
-};
-
-const crustWindowStops = (): Record<string, string> => {
-    const styles = readFileSync(resolve(process.cwd(), 'src/styles/utilities/modules/crust.css'), 'utf8');
-    const windowBlock = /@utility crust-window\s*\{([\s\S]*?)\n\}/u.exec(styles)?.[1] ?? '';
-    const rgbaLayers = Array.from(
-        windowBlock.matchAll(/rgba\(\s*(\d+),\s*(\d+),\s*(\d+),\s*([\d.]+)\)/gu),
-        (match) => ({
-            color: `#${match
-                .slice(1, 4)
-                .map((channel) => Number(channel).toString(16).padStart(2, '0'))
-                .join('')}`,
-            alpha: Number(match[4]),
-        })
-    );
-    const [topWhite, bottomWhite, topAmber] = rgbaLayers;
-    if (topWhite === undefined || bottomWhite === undefined || topAmber === undefined) {
-        throw new Error('Missing Crust window gradient layers');
-    }
-    const panelInset = readToken(lightBlock, '--color-bg-panelInset');
-    return {
-        windowTop: composite(topWhite.color, composite(topAmber.color, panelInset, topAmber.alpha), topWhite.alpha),
-        windowBottom: composite(bottomWhite.color, panelInset, bottomWhite.alpha),
-    };
-};
+const utilityBlock = (utility: string): string =>
+    new RegExp(`@utility ${utility}\\s*\\{([\\s\\S]*?)\\n\\}`, 'u').exec(mainStyles)?.[1] ?? '';
 
 const mainWindowStops = (utility: string): Record<string, string> => {
-    const windowBlock = new RegExp(`@utility ${utility}\\s*\\{([\\s\\S]*?)\\n\\}`, 'u').exec(mainStyles)?.[1] ?? '';
+    const windowBlock = utilityBlock(utility);
     const rgbaLayers = Array.from(
         windowBlock.matchAll(/rgba\(\s*(\d+),\s*(\d+),\s*(\d+),\s*([\d.]+)\)/gu),
         (match) => ({
@@ -204,21 +157,28 @@ const mainWindowStops = (utility: string): Record<string, string> => {
         })
     );
     const [topWhite, bottomWhite, topAccent] = rgbaLayers;
-    if (topWhite === undefined || bottomWhite === undefined || topAccent === undefined) {
-        throw new Error(`Missing ${utility} gradient layers`);
+    const fadeEndpoint = Number(/transparent\s+([\d.]+)%/u.exec(windowBlock)?.[1]);
+    if (
+        topWhite === undefined ||
+        bottomWhite === undefined ||
+        topAccent === undefined ||
+        !Number.isFinite(fadeEndpoint)
+    ) {
+        throw new Error(`Missing ${utility} gradient layers or accent fade endpoint`);
     }
     const panelInset = readToken(lightBlock, '--color-bg-panelInset');
-    const accentBase = (alpha: number) => composite(topAccent.color, panelInset, alpha);
+    const fadeWhiteAlpha = topWhite.alpha + (bottomWhite.alpha - topWhite.alpha) * (fadeEndpoint / 100);
+    const overPanel = (white: { color: string; alpha: number }, accentAlpha: number): string =>
+        composite(white.color, composite(topAccent.color, panelInset, accentAlpha), white.alpha);
     return {
-        windowTop: composite(topWhite.color, accentBase(topAccent.alpha), topWhite.alpha),
-        windowMiddle: composite(
-            topWhite.color,
-            accentBase(topAccent.alpha / 2),
-            (topWhite.alpha + bottomWhite.alpha) / 2
-        ),
-        windowBottom: composite(bottomWhite.color, panelInset, bottomWhite.alpha),
+        windowTop: overPanel(topWhite, topAccent.alpha),
+        windowAccentFade: overPanel({ color: topWhite.color, alpha: fadeWhiteAlpha }, 0),
+        windowBottom: overPanel(bottomWhite, 0),
     };
 };
+
+const grinderWindowStops = (): Record<string, string> => mainWindowStops('grinder-window');
+const crustWindowStops = (): Record<string, string> => mainWindowStops('crust-window');
 
 describe('semantic light theme', () => {
     it('overrides the complete surface and text hierarchy and declares native control color scheme', () => {
@@ -433,6 +393,30 @@ describe('semantic light theme', () => {
             stored: stringify({ theme: 'light', elasticTransientSensitivity: Number.NaN }),
         },
         {
+            name: 'unrelated valid Date annotation',
+            stored: stringify({ theme: 'light', other: new Date('2026-01-02T03:04:05.000Z') }),
+        },
+        {
+            name: 'transformed alias source',
+            stored: '{"json":{"theme":"dark","other":"light"},"meta":{"values":{"other":["number"]},"referentialEqualities":{"other":["theme"]},"v":1}}',
+        },
+        {
+            name: 'unknown unrelated value annotation',
+            stored: '{"json":{"theme":"light","other":"value"},"meta":{"values":{"other":["unknown-transformation"]},"v":1}}',
+        },
+        {
+            name: 'malformed unrelated value annotation',
+            stored: '{"json":{"theme":"light","other":1},"meta":{"values":{"other":["set"]},"v":1}}',
+        },
+        {
+            name: 'null referential metadata',
+            stored: '{"json":{"theme":"light"},"meta":{"referentialEqualities":null,"v":1}}',
+        },
+        {
+            name: 'null nested referential metadata',
+            stored: '{"json":{"theme":"light"},"meta":{"referentialEqualities":[[],null],"v":1}}',
+        },
+        {
             name: 'unrelated referential metadata',
             stored: '{"json":{"theme":"light","other":{"value":1},"copy":null},"meta":{"referentialEqualities":{"other":["copy"]},"v":1}}',
         },
@@ -454,11 +438,10 @@ describe('semantic light theme', () => {
         try {
             decoded = parse(stored);
         } catch {
-            decoded = undefined;
+            // createLocalStorage returns the raw string when SuperJSON rejects it.
+            decoded = stored;
         }
-        const decodedTheme =
-            typeof decoded === 'object' && decoded !== null && 'theme' in decoded ? decoded.theme : undefined;
-        const validatedTheme = decodedTheme === 'light' ? 'light' : 'dark';
+        const validatedTheme = validateStoredPreferences(decoded).theme;
 
         expect(runStartupTheme(stored)).toEqual({
             classes: new Set([validatedTheme]),
@@ -753,54 +736,40 @@ describe('semantic light theme', () => {
             resolve(process.cwd(), 'src/modules/Grinder/presentations/components/ImportedNeuralLibraryCard.tsx'),
             'utf8'
         );
-        const grinderStyles = readFileSync(resolve(process.cwd(), 'src/styles/utilities/modules/grinder.css'), 'utf8');
         for (const source of [grinderSource, importedSource]) {
             expect(source).not.toMatch(/\btext-white\//u);
             expect(source).toContain('text-text-primary');
         }
         expect(grinderSource).toContain('text-text-secondary');
         expect(grinderSource).not.toMatch(/bg-black\/20 px-3 py-2\.5">\s*<div className="[^"]*text-text-secondary/u);
-        expect(grinderStyles).toMatch(/@utility grinder-tab\s*\{[^}]*color:\s*var\(--color-text-primary\);/u);
         expect(grinderSource).toContain('rounded-[20px] border border-white/8 bg-black/30 p-4');
+        expect(grinderSource).toContain("className={`grinder-tab ${active ? 'grinder-tab-active' : ''}`}");
+
+        const windowBlock = utilityBlock('grinder-window');
+        expect(windowBlock).toContain('linear-gradient(180deg, rgba(241, 165, 75, 0.06), transparent 22%)');
+        const tabBlock = utilityBlock('grinder-tab');
+        expect(tabBlock).toMatch(/color:\s*var\(--color-text-primary\);/u);
+        const tabBackground = /background:\s*rgba\(\s*(\d+),\s*(\d+),\s*(\d+),\s*([\d.]+)\)/u.exec(tabBlock);
+        expect(tabBackground?.slice(1, 4)).toEqual(['0', '0', '0']);
+        const tabAlpha = Number(tabBackground?.[4]);
+        expect(tabAlpha).toBe(0.22);
 
         const primary = readToken(lightBlock, '--color-text-primary');
         const secondary = readToken(lightBlock, '--color-text-secondary');
         const panelInset = readToken(lightBlock, '--color-bg-panelInset');
-        const windowBlock = /@utility grinder-window\s*\{([\s\S]*?)\n\}/u.exec(grinderStyles)?.[1] ?? '';
-        const rgbaLayers = Array.from(
-            windowBlock.matchAll(/rgba\(\s*(\d+),\s*(\d+),\s*(\d+),\s*([\d.]+)\)/gu),
-            (match) => ({
-                color: `#${match
-                    .slice(1, 4)
-                    .map((channel) => Number(channel).toString(16).padStart(2, '0'))
-                    .join('')}`,
-                alpha: Number(match[4]),
-            })
-        );
-        const [topWhite, bottomWhite, topAmber] = rgbaLayers;
-        if (topWhite === undefined || bottomWhite === undefined || topAmber === undefined) {
-            throw new Error('Missing Grinder window gradient layers');
-        }
-        const amberBase = (alpha: number) => composite(topAmber.color, panelInset, alpha);
-        const windowTop = composite(topWhite.color, amberBase(topAmber.alpha), topWhite.alpha);
-        const windowMiddle = composite(
-            topWhite.color,
-            amberBase(topAmber.alpha / 2),
-            (topWhite.alpha + bottomWhite.alpha) / 2
-        );
-        const windowBottom = composite(bottomWhite.color, panelInset, bottomWhite.alpha);
-        for (const [surfaceName, background] of Object.entries({
-            panelInset,
-            windowTop,
-            windowMiddle,
-            windowBottom,
-        })) {
+        const stops = grinderWindowStops();
+        for (const [surfaceName, background] of Object.entries({ panelInset, ...stops })) {
             for (const [role, foreground] of Object.entries({ primary, secondary })) {
                 expect(contrast(foreground, background), `${role} on ${surfaceName}`).toBeGreaterThanOrEqual(4.5);
             }
+            const inactiveTabBackground = composite('#000000', background, tabAlpha);
+            expect(
+                contrast(primary, inactiveTabBackground),
+                `inactive Grinder tab on ${surfaceName}`
+            ).toBeGreaterThanOrEqual(4.5);
         }
         for (const alpha of [16, 18, 20, 24, 25, 30]) {
-            const background = composite('#000000', windowTop, alpha / 100);
+            const background = composite('#000000', stops.windowTop, alpha / 100);
             expect(contrast(primary, background), `primary on black/${alpha} well`).toBeGreaterThanOrEqual(4.5);
         }
     });
@@ -810,33 +779,12 @@ describe('semantic light theme', () => {
             resolve(process.cwd(), 'src/modules/Grinder/presentations/views/GrinderPanel.tsx'),
             'utf8'
         );
-        const grinderStyles = readFileSync(resolve(process.cwd(), 'src/styles/utilities/modules/grinder.css'), 'utf8');
         const toggleSource = readFileSync(resolve(process.cwd(), 'src/components/daw/DawPluginToggle.tsx'), 'utf8');
         expect(toggleSource).toMatch(/<DawPluginChip active=\{pressed\}[^>]*tone=\{tone\}/u);
 
-        const windowBlock = /@utility grinder-window\s*\{([\s\S]*?)\n\}/u.exec(grinderStyles)?.[1] ?? '';
+        const windowBlock = utilityBlock('grinder-window');
         expect(windowBlock).toContain('var(--color-bg-panelInset)');
-        const rgbaLayers = Array.from(
-            windowBlock.matchAll(/rgba\(\s*(\d+),\s*(\d+),\s*(\d+),\s*([\d.]+)\)/gu),
-            (match) => ({
-                color: `#${match
-                    .slice(1, 4)
-                    .map((channel) => Number(channel).toString(16).padStart(2, '0'))
-                    .join('')}`,
-                alpha: Number(match[4]),
-            })
-        );
-        const [topWhite, , topAmber] = rgbaLayers;
-        if (topWhite === undefined || topAmber === undefined) {
-            throw new Error('Missing Grinder window gradient layers');
-        }
-
-        const panelInset = readToken(lightBlock, '--color-bg-panelInset');
-        const windowTop = composite(
-            topWhite.color,
-            composite(topAmber.color, panelInset, topAmber.alpha),
-            topWhite.alpha
-        );
+        const windowTop = grinderWindowStops().windowTop;
         const wellAlphaSource = /<div className="rounded-\[18px\][^"]*bg-black\/(\d+)[^"]*">/u.exec(grinderSource)?.[1];
         if (wellAlphaSource === undefined) {
             throw new Error('Missing Grinder snapshot well');
@@ -876,6 +824,44 @@ describe('semantic light theme', () => {
                 );
             }
         }
+    });
+
+    it('measures the Grinder category chip foreground after the real caller class merge', () => {
+        const grinderSource = readFileSync(
+            resolve(process.cwd(), 'src/modules/Grinder/presentations/views/GrinderPanel.tsx'),
+            'utf8'
+        );
+        const categoryChip =
+            /\{categories\.map\(\(item\) => \(\s*(<DawPluginChip\b[\s\S]*?<\/DawPluginChip>)\s*\)\)\}/u.exec(
+                grinderSource
+            )?.[1];
+        expect(categoryChip).toContain('active={category === item}');
+        expect(categoryChip).toContain('tone="amber"');
+        const callerClass = /\bclassName="([^"]*)"/u.exec(categoryChip ?? '')?.[1];
+        const markup = renderToStaticMarkup(
+            createElement(DawPluginChip, { active: true, tone: 'amber', size: 'sm', className: callerClass }, 'All')
+        );
+        const finalClasses =
+            parseActiveHtml(markup).querySelector('button')?.getAttribute('class')?.split(/\s+/u).filter(Boolean) ?? [];
+        const foregroundClass = finalClasses
+            .filter((name) => /^text-\[var\(--[a-z-]+\)\]$/u.test(name) || name === 'text-surface-raised')
+            .at(-1);
+        const foregroundToken =
+            /^text-\[var\((--[a-z-]+)\)\]$/u.exec(foregroundClass ?? '')?.[1] ??
+            (foregroundClass === 'text-surface-raised' ? '--surface-raised' : undefined);
+        const backgroundMatch = finalClasses
+            .map((name) => /^bg-\[var\((--[a-z-]+)\)\]\/(\d+)$/u.exec(name))
+            .find((match) => match !== null);
+        if (foregroundToken === undefined || backgroundMatch === undefined) {
+            throw new Error('Missing final Grinder category chip foreground or tinted background');
+        }
+        const windowBackground = grinderWindowStops().windowTop;
+        const background = composite(
+            readLightColor(backgroundMatch[1] ?? ''),
+            windowBackground,
+            Number(backgroundMatch[2]) / 100
+        );
+        expect(contrast(readLightColor(foregroundToken), background)).toBeGreaterThanOrEqual(4.75);
     });
 
     it('keeps Grinder Diagnostics orange readable on every real Light window stop', () => {
