@@ -1,0 +1,28 @@
+src/modules/Yeast/useCases/__tests__/projectionRuntime.spec.ts
+  s_977061c47f01dd::t_7124f32947e7fd 4
+src/modules/Yeast/handlers/__tests__/yeastUndoSessionMirror.spec.ts
+  s_977061c47f01dd::t_182878532c5e8c 37
+  s_977061c47f01dd::t_d85fc5da75809f 228-234,236,245-246,264-269,292-295,298,303
+  s_977061c47f01dd::t_188a7858d474ec 31-32,34-36,38-48,50-55,69,72,94-95,118-123
+  s_977061c47f01dd::t_ad6093dcafa9e0 33,49
+  s_977061c47f01dd::t_a30344df338d23 156-159,164-177,199-203
+src/modules/Yeast/handlers/__tests__/yeastFirstParameterUndo.integration.spec.ts
+  s_977061c47f01dd::t_a85ab9acfc10b0 10,40-46,48,172,188-191,251-254
+  s_977061c47f01dd::t_41223464e1a8db 39
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "172a138c9bd4a910d8ba75328c4e9e293b75bf4b",
+  "prompts": {},
+  "sessions": {
+    "s_977061c47f01dd": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34d-123d-7452-a6e7-60608388b6d7",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
