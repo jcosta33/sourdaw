@@ -510,14 +510,15 @@ describe('automationDrag', () => {
         });
 
         it.each(['missing', 'duplicate', 'ambiguous legacy'])('refuses a %s target before drag admission', (kind) => {
-            const points = [makePoint(2, 0.5, { id: 'target' }), makePoint(2.02, 0.8, { id: 'other' })];
+            const neighbor = makePoint(2.02, 0.8, { id: 'other' });
+            const points = [makePoint(2, 0.5, { id: 'target' }), neighbor];
             let id: string | undefined;
             if (kind === 'missing') {
                 id = 'absent';
             }
             if (kind === 'duplicate') {
                 id = 'target';
-                points[1].id = 'target';
+                neighbor.id = 'target';
             }
             const lane = makeLane(points);
             const surface = renderSurface({

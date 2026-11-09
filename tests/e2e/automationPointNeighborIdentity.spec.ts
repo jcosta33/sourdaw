@@ -125,6 +125,15 @@ async function prepareNearbyPoints(page: Page) {
     await expect.poll(async () => observer.evaluate((o) => o.snapshot().automation?.lanes[0]?.points.length)).toBe(1);
     await page.mouse.click(x + 1, box.y + box.height * 0.75);
     await expect.poll(async () => observer.evaluate((o) => o.snapshot().automation?.lanes[0]?.points.length)).toBe(2);
+    const expectedInitial = await observer.evaluate((o) => o.snapshot().automation);
+    await expect
+        .poll(async () =>
+            observer.evaluate((o) => {
+                const snapshot = o.snapshot();
+                return [snapshot.automation, snapshot.rawAutomation];
+            })
+        )
+        .toEqual([expectedInitial, expectedInitial]);
     const before = await observer.evaluate((o) => o.snapshot());
     const lane = before.automation?.lanes[0];
     if (!lane || !lane.points[0]?.id || !lane.points[1]?.id) {
@@ -158,14 +167,15 @@ test('dragging one nearby point preserves its neighbor through Undo and Redo', a
     await page.mouse.up();
     await expect.poll(async () => observer.evaluate((o) => o.snapshot().past)).toBe(before.past + 1);
     // Legacy store writes reach raw CRDT on its deferred publication frame.
+    const expectedMove = await observer.evaluate((o) => o.snapshot().automation);
     await expect
         .poll(async () =>
             observer.evaluate((o) => {
                 const snapshot = o.snapshot();
-                return JSON.stringify(snapshot.rawAutomation) === JSON.stringify(snapshot.automation);
+                return [snapshot.automation, snapshot.rawAutomation];
             })
         )
-        .toBe(true);
+        .toEqual([expectedMove, expectedMove]);
     const moved = await observer.evaluate((o) => o.snapshot());
     const movedLane = moved.automation?.lanes.find((item) => item.id === lane.id);
     const movedTarget = movedLane?.points.find((point) => point.id === target.id);
@@ -215,10 +225,21 @@ test('Escape restores only the dragged point and records no movement history', a
     await page.mouse.move(hit.x + hit.width / 2, hit.y + hit.height / 2);
     await page.mouse.down();
     await page.mouse.move(hit.x + hit.width / 2 + pixelsPerBeat * 0.5, hit.y + hit.height / 2 + 10);
+    const expectedPreview = await observer.evaluate((o) => o.snapshot().automation);
+    await expect
+        .poll(async () =>
+            observer.evaluate((o) => {
+                const snapshot = o.snapshot();
+                return [snapshot.automation, snapshot.rawAutomation];
+            })
+        )
+        .toEqual([expectedPreview, expectedPreview]);
     const preview = await observer.evaluate((o) => o.snapshot());
-    expect(preview.automation?.lanes[0]?.points.find((point) => point.id === lane.points[1].id)).toEqual(
-        lane.points[1]
-    );
+    const neighbor = lane.points[1];
+    if (!neighbor) {
+        throw new Error('The original neighbor is required');
+    }
+    expect(preview.automation?.lanes[0]?.points.find((point) => point.id === neighbor.id)).toEqual(neighbor);
     expect(preview.automation).not.toEqual(before.automation);
     expect(preview.rawAutomation).toEqual(preview.automation);
     expect(preview.history).toBe(before.history);
