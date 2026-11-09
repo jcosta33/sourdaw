@@ -1,0 +1,28 @@
+src/modules/Yeast/useCases/addYeastProcessor.ts
+  s_977061c47f01dd::t_a8ad94af783580 29-34
+  s_977061c47f01dd::t_495f5a94dc67ab 2
+src/modules/Yeast/workers/__tests__/processorFactory.spec.ts
+  s_977061c47f01dd::t_495f5a94dc67ab 68
+src/modules/Yeast/handlers/__tests__/yeastFirstParameterUndo.integration.spec.ts
+  s_977061c47f01dd::t_a661bb31a94347 272-282,287-288
+src/modules/Yeast/handlers/addYeastProcessor.ts
+  s_977061c47f01dd::t_495f5a94dc67ab 8,101,211-221
+src/modules/Yeast/models/YeastProcessorInitialParams.ts
+  s_977061c47f01dd::t_495f5a94dc67ab 5
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9fb60abc2063b3d350b608eb1bdb373f99eae781",
+  "prompts": {},
+  "sessions": {
+    "s_977061c47f01dd": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34d-123d-7452-a6e7-60608388b6d7",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
