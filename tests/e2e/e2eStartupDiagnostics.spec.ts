@@ -1,6 +1,7 @@
 import { rm } from 'node:fs/promises';
 
 import { createFixture, deferred, event } from '../../scripts/__tests__/fixtures/e2eStartupDiagnostics.ts';
+
 import { test, expect } from './e2eTest';
 import { enable_direct_e2e_viewport, LAUNCH_SCREEN_NAME, PREFERENCES_STORAGE_KEY } from './e2eUtils';
 
