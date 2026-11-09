@@ -87,11 +87,11 @@ export const PreferencesDialog = ({ open, onClose, requestedSection }: Preferenc
                 }
             }}
         >
-            <DialogContent className="h-[520px] max-h-[80%] w-[720px] max-w-[90%] overflow-hidden bg-surface-raised p-0 sm:max-w-[90%]">
+            <DialogContent size="workspace">
                 <Row align="stretch" className="h-full min-h-0 overflow-hidden">
                     {/* ── Sidebar navigation ── */}
                     <DawSideRail className="w-[180px] overflow-y-auto p-3">
-                        <Stack as="nav" gap={0.5} className="h-max min-h-full">
+                        <Stack as="nav" aria-label="Preferences sections" gap={0.5} className="h-max min-h-full">
                             <DialogHeader className="mb-3">
                                 <DialogTitle className="text-sm font-semibold">Preferences</DialogTitle>
                             </DialogHeader>
@@ -101,6 +101,7 @@ export const PreferencesDialog = ({ open, onClose, requestedSection }: Preferenc
                                     size="bare"
                                     type="button"
                                     key={item.id}
+                                    aria-current={section === item.id ? 'page' : undefined}
                                     className={cn(
                                         'flex items-center justify-start gap-2 rounded-md px-2.5 py-1.5 text-left text-xs transition-colors',
                                         section === item.id
@@ -116,7 +117,7 @@ export const PreferencesDialog = ({ open, onClose, requestedSection }: Preferenc
 
                             <DawDialogFooter
                                 align="start"
-                                className="mt-auto flex-col items-stretch gap-1.5 border-white/6 bg-transparent px-0 py-3 shadow-none"
+                                className="mt-auto flex-col items-stretch gap-1.5 border-border-soft bg-transparent px-0 py-3 shadow-none"
                             >
                                 <Separator className="daw-seam h-px" />
                                 <Button
