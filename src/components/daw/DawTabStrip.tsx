@@ -149,7 +149,7 @@ const ScrollEdgeButton = ({ direction, visible, onScroll, scrollRef }: ScrollEdg
         if (visible || document.activeElement !== buttonRef.current) {
             return;
         }
-        scrollRef.current?.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]')?.focus();
+        scrollRef.current?.querySelector<HTMLElement>('[role="tab"][tabindex="0"]')?.focus();
     }, [scrollRef, visible]);
 
     return (
