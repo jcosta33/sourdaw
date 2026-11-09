@@ -1,0 +1,21 @@
+src/components/daw/DawPluginChip.tsx
+  s_977061c47f01dd::t_d1b08730b57191 8-10,91
+src/modules/Project/presentations/views/ArrangementSelector.tsx
+  s_977061c47f01dd::t_918cd55c645e3b 34-36,55-60,75-77
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3602d69b016aef6ebc57ca43bfbfed4a584b5926",
+  "prompts": {},
+  "sessions": {
+    "s_977061c47f01dd": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34d-123d-7452-a6e7-60608388b6d7",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
