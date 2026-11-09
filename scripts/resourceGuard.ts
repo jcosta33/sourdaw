@@ -20,9 +20,9 @@ import { freemem, platform, tmpdir, totalmem } from 'node:os';
 import { basename, dirname, extname, join, parse, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { readServingCheckoutRoot, SOURDAW_E2E_PORT_ENV, originAnswers } from './e2eServerIdentity.ts';
 import { resolvePrimaryRoot, spawnCapture } from './githubAppIdentity.ts';
 import { sameCheckoutRoot } from './guardRecoveryProof.ts';
-import { readServingCheckoutRoot, SOURDAW_E2E_PORT_ENV, originAnswers } from './e2eServerIdentity.ts';
 import { assertCurrentCheckoutModulesBelongToCheckout } from './pnpmModulesPreflight.ts';
 import {
     GUARD_FAILURES_DIR,
