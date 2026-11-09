@@ -1,0 +1,21 @@
+src/modules/Project/presentations/views/ArrangementSelector.tsx
+  s_977061c47f01dd::t_200ee71e3622d8 29,66,69-73,163-181,297
+src/modules/Project/presentations/views/__tests__/ArrangementSelector.spec.tsx
+  s_977061c47f01dd::t_81566b09b1f692 201,205,207-209,215,217-229,236,248,251,253,255,285-286,323,353,402-455,694
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4106ea4fd29e35b65ce3c46f61d8af50496e2966",
+  "prompts": {},
+  "sessions": {
+    "s_977061c47f01dd": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34d-123d-7452-a6e7-60608388b6d7",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
