@@ -1,0 +1,28 @@
+.agents/decisions/0056-expand-review-round-freeze-to-ten.md
+  h_beb54bf43b47b7 1-26
+.agents/decisions/README.md
+  h_beb54bf43b47b7 17-72
+.agents/skills/delivery-orchestration/SKILL.md
+  h_beb54bf43b47b7 645
+.agents/skills/delivery-orchestration/references/review-records.md
+  h_beb54bf43b47b7 66
+AGENTS.md
+  h_beb54bf43b47b7 189
+scripts/__tests__/recoverPublishReviewLock5008.spec.ts
+  h_beb54bf43b47b7 864-865
+scripts/__tests__/reviewRoundEscalation.spec.ts
+  h_beb54bf43b47b7 63-64,108
+scripts/reviewRoundEscalation.ts
+  h_beb54bf43b47b7 19
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "cdfdeeb574d67cb58f2f6dab024992e58188221c",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
