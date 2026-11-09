@@ -30,10 +30,27 @@ function isRestorablePointSet(points: readonly AutomationPointSnapshot[]): point
     return is_sorted_by_beat(points);
 }
 
+type RestorePayload = {
+    laneId: string;
+    points: readonly AutomationPointSnapshot[];
+    expectedPoints?: readonly AutomationPointSnapshot[];
+};
+
+function isRestorablePayload(payload: RestorePayload): payload is RestorePayload & { points: AutomationPoint[] } {
+    return (
+        typeof payload.laneId === 'string' &&
+        payload.laneId.length > 0 &&
+        isRestorablePointSet(payload.points) &&
+        (!Object.hasOwn(payload, 'expectedPoints') ||
+            (payload.expectedPoints !== undefined && isRestorablePointSet(payload.expectedPoints)))
+    );
+}
+
 export const handleRestoreAutomationLanePoints = createHandler<'restoreAutomationLanePoints'>({
+    validate: (action) => isRestorablePayload(action.payload),
     execute: (action) => {
         const lane = getAutomationStoreState()?.lanes.find((candidate) => candidate.id === action.payload.laneId);
-        if (!isRestorablePointSet(action.payload.points)) {
+        if (!isRestorablePayload(action.payload)) {
             return { status: 'conflict' };
         }
         if (action.payload.expectedPoints && (!lane || !pointsMatch(lane.points, action.payload.expectedPoints))) {
@@ -46,7 +63,7 @@ export const handleRestoreAutomationLanePoints = createHandler<'restoreAutomatio
         return { status: 'written' };
     },
     isNoop: (action) => {
-        if (!isRestorablePointSet(action.payload.points)) {
+        if (!isRestorablePayload(action.payload)) {
             return false;
         }
         const lane = getAutomationStoreState()?.lanes.find((candidate) => candidate.id === action.payload.laneId);
@@ -56,5 +73,8 @@ export const handleRestoreAutomationLanePoints = createHandler<'restoreAutomatio
         return !lane || pointsMatch(lane.points, action.payload.points);
     },
     describe: () => ({ label: 'Restore automation points' }),
+    canReportConflict: true,
+    previewExecution: 'isolated-project',
+    requiresAbortCompensation: false,
     undoable: false,
 });

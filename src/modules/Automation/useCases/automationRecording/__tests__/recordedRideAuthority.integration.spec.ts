@@ -146,7 +146,7 @@ const cases = [
     { mode: 'touch', release: true, committed: touched },
 ] as const;
 
-describe('recorded automation ride project authority and callback history', () => {
+describe('recorded automation ride project authority and guarded action history', () => {
     beforeEach(() => {
         configureAutomergeStoragePort(null);
         resetCrdtProjectAuthority('recorded ride authority');
@@ -250,12 +250,25 @@ describe('recorded automation ride project authority and callback history', () =
             expectLanes(committed, true);
             expect(isRecordingAutomation('recording-track', 'gain')).toBe(false);
             const recordedEntry = undoHistoryStore.value?.past.at(-1);
-            expect(recordedEntry).toMatchObject({ kind: 'callback', label: 'Record Automation' });
-            expect(undoHistoryStore.value?.past.map((entry) => entry.kind)).toEqual(['action', 'callback']);
-            // Recording owns a local callback entry, not durable semantic action metadata.
+            expect(recordedEntry).toMatchObject({
+                kind: 'action',
+                label: 'Record Automation',
+                groupId: expect.any(String),
+                groupLabel: 'Record Automation',
+                action: {
+                    type: 'restoreAutomationLanePoints',
+                    payload: { laneId: 'recorded-gain', points: committed, expectedPoints: baseline },
+                },
+                inverseAction: {
+                    type: 'restoreAutomationLanePoints',
+                    payload: { laneId: 'recorded-gain', points: baseline, expectedPoints: committed },
+                },
+            });
+            expect(undoHistoryStore.value?.past.map((entry) => entry.kind)).toEqual(['action', 'action']);
+            // The recording's replay capability stays local; prior durable metadata survives.
             expect(actionHistoryStore.value).toStrictEqual(previousMetadata);
 
-            // A later real write must survive the callback's captured before/after
+            // A later real write must survive the ride's captured before/after
             // snapshots. Decline its history so the next Undo still targets the ride.
             const keeperEdit = {
                 type: 'setAutomationLaneEnabled',

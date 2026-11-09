@@ -107,6 +107,23 @@ boundaries.
    survive a valid discard. Detach replay owns only link fields: absent and present-empty overrides differ,
    false-valued keys survive, non-link peer edits remain, and a peer relink refuses the stale inverse. No introducing
    PR or historical review stance was established for this escape.
+   Recorded automation introduced callback snapshots in `2e2a16dbb9`; `0ca79dea60` narrowed them to touched lanes
+   but still replaced each lane's points blindly. The missed probe was a peer change to the same recorded lane:
+   another-lane preservation and an isolated round trip stayed green while callbacks erased peer points and curves,
+   reported success and consumed history. No introducing PR or historical review stance was established.
+   Merge a peer point and a Bezier/stairs shape edit before the FIRST Undo, and again after Undo before Redo.
+   Require exact raw/projected peer data, a conflict warning and the complete recording unit still pending. Record
+   two lanes and put the stale lane at both replay positions: a late conflict must roll back its earlier sibling.
+   A metadata-only peer edit must survive successful replay, and one normal user Undo/Redo must restore every
+   recorded lane together. Keep a real same-lane A-to-B-to-C restore batch: validating every expected snapshot
+   against the initial live state falsely refuses its staged prefix. Point-only restore handlers use transaction
+   rollback, not runtime inverse compensation; a refused later restore must report conflict without a missing-inverse
+   error. Removing the point-snapshot guard must fail the peer and late-conflict cases.
+   Keep inverse producers on that same exact point shape: absent optional controls or stair fields stay absent,
+   never own properties valued `undefined`. A malformed expected point whose known fields match live state must
+   still refuse, so a value mismatch cannot mask missing shape admission. Drive normal Reverse/Invert through
+   registered Command, raw CRDT, projection and Undo/Redo as well as direct handlers. Caller fixtures must register
+   the real Automation handler map used by bootstrap when recording now replays through typed restores.
 7. **Grouped inverse capture must read the owning action prefix (#4083, #4073, #4071).** Failure:
    `executeAppActionBatch` describes members before executing, so later inverses capture pre-batch state. Probe: real
    grouped Undo/Redo against raw CRDT and projection; swap the earlier-sibling projection for live pre-batch state and
