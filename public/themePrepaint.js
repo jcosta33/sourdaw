@@ -5,7 +5,21 @@
         // SuperJSON metadata can transform the raw string into a value that
         // runtime preferences validation rejects; only an untransformed string
         // is authoritative for the prepaint.
-        if (stored?.json?.theme === 'light' && stored?.meta?.values?.theme === undefined) {
+        const values = stored?.meta?.values;
+        const transformsTheme = Array.isArray(values) || Array.isArray(values?.theme);
+        const equalities = stored?.meta?.referentialEqualities;
+        const targets = Array.isArray(equalities)
+            ? equalities
+            : typeof equalities === 'object' && equalities !== null
+              ? Object.values(equalities)
+              : [];
+        const malformedTarget = targets.some(
+            (path) => !Array.isArray(path) || path.some((segment) => !['string', 'number'].includes(typeof segment))
+        );
+        const retargetsTheme = targets.some(
+            (path) => Array.isArray(path) && (path.length === 0 || (path.length === 1 && path[0] === 'theme'))
+        );
+        if (stored?.json?.theme === 'light' && !transformsTheme && !malformedTarget && !retargetsTheme) {
             theme = 'light';
         }
     } catch {

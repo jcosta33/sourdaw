@@ -99,7 +99,10 @@ function parseCsp(policy: string): Map<string, string[]> {
 
 /** Locate executable markup, excluding comments, template contents, and script text. */
 function findThemeScript(html: string): HTMLScriptElement | null {
-    return new DOMParser().parseFromString(html, 'text/html').querySelector<HTMLScriptElement>('script#sourdaw-theme');
+    const scripts = new DOMParser()
+        .parseFromString(html, 'text/html')
+        .querySelectorAll<HTMLScriptElement>('script#sourdaw-theme');
+    return [...scripts].find((script) => script.closest('noscript, template') === null) ?? null;
 }
 
 describe('the hosted web build Content-Security-Policy', () => {
@@ -172,11 +175,17 @@ describe('the hosted web build Content-Security-Policy', () => {
         expect(themeScript?.textContent?.trim()).toBe('');
     });
 
-    it('does not accept a commented-out prepaint tag as active markup', () => {
-        const commented =
-            '<!-- <script id="sourdaw-theme" type="text/javascript" src="/themePrepaint.js"></script> -->';
-
-        expect(findThemeScript(commented)).toBeNull();
+    it.each([
+        {
+            name: 'commented-out markup',
+            html: '<!-- <script id="sourdaw-theme" type="text/javascript" src="/themePrepaint.js"></script> -->',
+        },
+        {
+            name: 'a scripting-inert noscript ancestor',
+            html: '<body><noscript><script id="sourdaw-theme" type="text/javascript" src="/themePrepaint.js"></script></noscript></body>',
+        },
+    ])('does not accept $name as active markup', ({ html }) => {
+        expect(findThemeScript(html)).toBeNull();
         expect(findThemeScript(indexHtml)).not.toBeNull();
     });
 

@@ -8,15 +8,31 @@ import { ControlGallery } from '../ControlGallery';
 
 const tokenSource = readFileSync(resolve(process.cwd(), 'src/styles/tokens.css'), 'utf8');
 
-function tokenNamesFromSource(source: string): string[] {
-    const names = new Set<string>();
-    for (const match of source.matchAll(/^\s*(--[\w-]+)\s*:\s*[^;]+;/gm)) {
+type ExpectedToken = { name: string; darkValue: string | undefined; lightValue: string | undefined };
+
+function readDeclarations(block: string): [string, string][] {
+    return Array.from(block.matchAll(/^\s*(--[\w-]+)\s*:\s*([^;]+);/gm), (match) => {
         const name = match[1];
-        if (name !== undefined) {
-            names.add(name);
+        const value = match[2];
+        if (name === undefined || value === undefined) {
+            throw new Error('Expected a complete design token declaration');
         }
+        return [name, value.trim()];
+    });
+}
+
+function tokenValuesFromSource(source: string): ExpectedToken[] {
+    const uncommented = source.replace(/\/\*[\s\S]*?\*\//gu, '');
+    const darkBlock = /^@theme\s*\{([^}]*)\}/mu.exec(uncommented)?.[1] ?? '';
+    const lightBlock = /^:root\.light\s*\{([^}]*)\}/mu.exec(uncommented)?.[1] ?? '';
+    const tokens = new Map<string, ExpectedToken>();
+    for (const [name, darkValue] of readDeclarations(darkBlock)) {
+        tokens.set(name, { name, darkValue, lightValue: undefined });
     }
-    return Array.from(names);
+    for (const [name, lightValue] of readDeclarations(lightBlock)) {
+        tokens.set(name, { name, darkValue: tokens.get(name)?.darkValue, lightValue });
+    }
+    return [...tokens.values()];
 }
 
 describe('ControlGallery', () => {
@@ -25,14 +41,14 @@ describe('ControlGallery', () => {
         const tokenList = screen.getByRole('list', { name: 'Design tokens' });
         const rows = within(tokenList).getAllByRole('listitem');
         const names = rows.map((row) => row.getAttribute('data-token-name'));
-        expect(names).toEqual(tokenNamesFromSource(tokenSource));
+        expect(names).toEqual(tokenValuesFromSource(tokenSource).map(({ name }) => name));
         expect(names).toEqual(
             expect.arrayContaining(['--text-metadata', '--text-label', '--text-value', '--text-body'])
         );
         expect(rows).toHaveLength(204);
     });
 
-    it('preserves dark defaults and labels theme-scoped light values', () => {
+    it('renders every exact Dark value and only source-declared Light overrides', () => {
         render(<ControlGallery tokenCss={tokenSource} />);
         const tokenList = screen.getByRole('list', { name: 'Design tokens' });
         const rows = within(tokenList).getAllByRole('listitem');
@@ -44,13 +60,55 @@ describe('ControlGallery', () => {
             return row;
         };
 
-        const surfaceDeep = rowFor('--surface-deep');
-        expect(surfaceDeep.querySelector('[data-theme-value="dark"]')).toHaveTextContent('#020100');
-        expect(surfaceDeep.querySelector('[data-theme-value="light"]')).toHaveTextContent('#ded8cf');
+        for (const token of tokenValuesFromSource(tokenSource)) {
+            const row = rowFor(token.name);
+            expect(row.querySelector('[data-theme-value="dark"]')?.textContent, `${token.name} Dark`).toBe(
+                token.darkValue ?? '—'
+            );
+            const light = row.querySelector('[data-theme-value="light"]');
+            if (token.lightValue === undefined) {
+                expect(light, `${token.name} has no Light override`).toBeNull();
+            } else {
+                expect(light?.textContent, `${token.name} Light`).toBe(token.lightValue);
+            }
+        }
+        // Keep one fixed expectation outside the source-derived oracle so a
+        // shared source/parser regression cannot move both sides together.
+        expect(rowFor('--color-accent-pink').querySelector('[data-theme-value="light"]')?.textContent).toBe('#8a4257');
+    });
 
-        const textPrimary = rowFor('--color-text-primary');
-        expect(textPrimary.querySelector('[data-theme-value="dark"]')).toHaveTextContent('#eaeaea');
-        expect(textPrimary.querySelector('[data-theme-value="light"]')).toHaveTextContent('#292521');
+    it('ignores multiline comment blocks and commented token declarations', () => {
+        const fixture = `
+/*
+@theme {
+    --commented-dark: #000000;
+}
+:root.light {
+    --commented-light: #111111;
+}
+*/
+@theme {
+    --real-dark: #123456;
+    /* --commented-declaration: #badbad; */
+}
+/*
+:root.light {
+    --another-commented-light: #222222;
+}
+*/
+:root.light {
+    --real-dark: #abcdef;
+    --real-light-only: #fedcba;
+    /* --another-commented-declaration: #badbad; */
+}
+`;
+        render(<ControlGallery tokenCss={fixture} />);
+        const rows = within(screen.getByRole('list', { name: 'Design tokens' })).getAllByRole('listitem');
+        expect(rows.map((row) => row.getAttribute('data-token-name'))).toEqual(['--real-dark', '--real-light-only']);
+        expect(rows[0]?.querySelector('[data-theme-value="dark"]')?.textContent).toBe('#123456');
+        expect(rows[0]?.querySelector('[data-theme-value="light"]')?.textContent).toBe('#abcdef');
+        expect(rows[1]?.querySelector('[data-theme-value="dark"]')?.textContent).toBe('—');
+        expect(rows[1]?.querySelector('[data-theme-value="light"]')?.textContent).toBe('#fedcba');
     });
 
     it('renders the six real shared control categories in supported states', () => {

@@ -19,9 +19,13 @@ const meterColorSource = readFileSync(
 );
 const lightBlock = /:root\.light\s*\{([^}]*)\}/u.exec(tokens)?.[1] ?? '';
 const indexDocument = new DOMParser().parseFromString(indexHtml, 'text/html');
-const findThemeScript = (html: string): HTMLScriptElement | null =>
-    new DOMParser().parseFromString(html, 'text/html').querySelector<HTMLScriptElement>('script#sourdaw-theme');
-const startupThemeMatch = indexDocument.querySelector<HTMLScriptElement>('script#sourdaw-theme');
+const findThemeScript = (html: string): HTMLScriptElement | null => {
+    const scripts = new DOMParser()
+        .parseFromString(html, 'text/html')
+        .querySelectorAll<HTMLScriptElement>('script#sourdaw-theme');
+    return [...scripts].find((script) => script.closest('noscript, template') === null) ?? null;
+};
+const startupThemeMatch = findThemeScript(indexHtml);
 const startupThemeSource = startupThemeMatch?.getAttribute('src');
 let startupThemeScript = '';
 if (startupThemeSource === '/themePrepaint.js') {
@@ -146,11 +150,17 @@ describe('semantic light theme', () => {
         expect(indexHtml).toContain(':root.light');
     });
 
-    it('does not accept a commented-out prepaint tag as active markup', () => {
-        const commented =
-            '<!-- <script id="sourdaw-theme" type="text/javascript" src="/themePrepaint.js"></script> -->';
-
-        expect(findThemeScript(commented)).toBeNull();
+    it.each([
+        {
+            name: 'commented-out markup',
+            html: '<!-- <script id="sourdaw-theme" type="text/javascript" src="/themePrepaint.js"></script> -->',
+        },
+        {
+            name: 'a scripting-inert noscript ancestor',
+            html: '<body><noscript><script id="sourdaw-theme" type="text/javascript" src="/themePrepaint.js"></script></noscript></body>',
+        },
+    ])('does not accept $name as active markup', ({ html }) => {
+        expect(findThemeScript(html)).toBeNull();
         expect(findThemeScript(indexHtml)).not.toBeNull();
     });
 
@@ -171,19 +181,62 @@ describe('semantic light theme', () => {
         expect(startup.themeColor).toBe('#020100');
     });
 
-    it('keeps every startup channel aligned with runtime SuperJSON theme decoding', () => {
-        const stored = '{"json":{"theme":"light"},"meta":{"values":{"theme":["number"]}}}';
-        const runtimeTheme = parse<{ theme?: unknown }>(stored).theme;
-        expect(Number.isNaN(runtimeTheme)).toBe(true);
+    it.each([
+        { name: 'ordinary valid Light', stored: stringify({ theme: 'light' }) },
+        { name: 'ordinary valid Dark', stored: stringify({ theme: 'dark' }) },
+        {
+            name: 'direct theme value annotation',
+            stored: '{"json":{"theme":"light"},"meta":{"values":{"theme":["number"]}}}',
+        },
+        {
+            name: 'root value annotation',
+            stored: '{"json":{"theme":"light"},"meta":{"values":["number"],"v":1}}',
+        },
+        {
+            name: 'theme-affecting referential equality',
+            stored: '{"json":{"theme":"light","other":{"theme":"dark"}},"meta":{"referentialEqualities":{"other":["theme"]},"v":1}}',
+        },
+        {
+            name: 'root referential equality retargeting theme',
+            stored: '{"json":{"theme":"light","other":"dark"},"meta":{"referentialEqualities":[["theme"]],"v":1}}',
+        },
+        {
+            name: 'unrelated field value metadata',
+            stored: stringify({ theme: 'light', elasticTransientSensitivity: Number.NaN }),
+        },
+        {
+            name: 'unrelated referential metadata',
+            stored: '{"json":{"theme":"light","other":{"value":1},"copy":null},"meta":{"referentialEqualities":{"other":["copy"]},"v":1}}',
+        },
+        {
+            name: 'unrelated root referential metadata',
+            stored: '{"json":{"theme":"light","other":null},"meta":{"referentialEqualities":[["other"]],"v":1}}',
+        },
+        {
+            name: 'inert nested theme annotation shape',
+            stored: '{"json":{"theme":"light"},"meta":{"values":{"theme":null}}}',
+        },
+        { name: 'absent metadata envelope', stored: '{"json":{"theme":"light"},"meta":null}' },
+        {
+            name: 'malformed referential target',
+            stored: '{"json":{"theme":"light","other":null},"meta":{"referentialEqualities":{"other":null},"v":1}}',
+        },
+    ])('keeps every startup channel aligned with runtime validation for $name', ({ stored }) => {
+        let decoded: unknown;
+        try {
+            decoded = parse(stored);
+        } catch {
+            decoded = undefined;
+        }
+        const decodedTheme =
+            typeof decoded === 'object' && decoded !== null && 'theme' in decoded ? decoded.theme : undefined;
+        const validatedTheme = decodedTheme === 'light' ? 'light' : 'dark';
 
-        const startup = runStartupTheme(stored);
-        const validatedTheme = runtimeTheme === 'light' ? 'light' : 'dark';
-        expect(startup).toEqual({
+        expect(runStartupTheme(stored)).toEqual({
             classes: new Set([validatedTheme]),
             colorScheme: validatedTheme,
             themeColor: validatedTheme === 'light' ? '#ded8cf' : '#020100',
         });
-        expect(startup).toEqual({ classes: new Set(['dark']), colorScheme: 'dark', themeColor: '#020100' });
     });
 
     it('keeps Crust loudness text readable on its actual raised light surface', () => {
@@ -304,6 +357,67 @@ describe('semantic light theme', () => {
         ]) {
             const background = composite(accent, readToken(lightBlock, surfaceToken), Number(alphaSource) / 100);
             expect(contrast(accent, background)).toBeGreaterThanOrEqual(4.75);
+        }
+    });
+
+    it('keeps every Grinder plain-text route semantic and readable on its real Light surfaces', () => {
+        const grinderSource = readFileSync(
+            resolve(process.cwd(), 'src/modules/Grinder/presentations/views/GrinderPanel.tsx'),
+            'utf8'
+        );
+        const importedSource = readFileSync(
+            resolve(process.cwd(), 'src/modules/Grinder/presentations/components/ImportedNeuralLibraryCard.tsx'),
+            'utf8'
+        );
+        const grinderStyles = readFileSync(resolve(process.cwd(), 'src/styles/utilities/modules/grinder.css'), 'utf8');
+        for (const source of [grinderSource, importedSource]) {
+            expect(source).not.toMatch(/\btext-white\//u);
+            expect(source).toContain('text-text-primary');
+        }
+        expect(grinderSource).toContain('text-text-secondary');
+        expect(grinderSource).not.toMatch(/bg-black\/20 px-3 py-2\.5">\s*<div className="[^"]*text-text-secondary/u);
+        expect(grinderStyles).toMatch(/@utility grinder-tab\s*\{[^}]*color:\s*var\(--color-text-primary\);/u);
+        expect(grinderSource).toContain('rounded-[20px] border border-white/8 bg-black/30 p-4');
+
+        const primary = readToken(lightBlock, '--color-text-primary');
+        const secondary = readToken(lightBlock, '--color-text-secondary');
+        const panelInset = readToken(lightBlock, '--color-bg-panelInset');
+        const windowBlock = /@utility grinder-window\s*\{([\s\S]*?)\n\}/u.exec(grinderStyles)?.[1] ?? '';
+        const rgbaLayers = Array.from(
+            windowBlock.matchAll(/rgba\(\s*(\d+),\s*(\d+),\s*(\d+),\s*([\d.]+)\)/gu),
+            (match) => ({
+                color: `#${match
+                    .slice(1, 4)
+                    .map((channel) => Number(channel).toString(16).padStart(2, '0'))
+                    .join('')}`,
+                alpha: Number(match[4]),
+            })
+        );
+        const [topWhite, bottomWhite, topAmber] = rgbaLayers;
+        if (topWhite === undefined || bottomWhite === undefined || topAmber === undefined) {
+            throw new Error('Missing Grinder window gradient layers');
+        }
+        const amberBase = (alpha: number) => composite(topAmber.color, panelInset, alpha);
+        const windowTop = composite(topWhite.color, amberBase(topAmber.alpha), topWhite.alpha);
+        const windowMiddle = composite(
+            topWhite.color,
+            amberBase(topAmber.alpha / 2),
+            (topWhite.alpha + bottomWhite.alpha) / 2
+        );
+        const windowBottom = composite(bottomWhite.color, panelInset, bottomWhite.alpha);
+        for (const [surfaceName, background] of Object.entries({
+            panelInset,
+            windowTop,
+            windowMiddle,
+            windowBottom,
+        })) {
+            for (const [role, foreground] of Object.entries({ primary, secondary })) {
+                expect(contrast(foreground, background), `${role} on ${surfaceName}`).toBeGreaterThanOrEqual(4.5);
+            }
+        }
+        for (const alpha of [16, 18, 20, 24, 25, 30]) {
+            const background = composite('#000000', windowTop, alpha / 100);
+            expect(contrast(primary, background), `primary on black/${alpha} well`).toBeGreaterThanOrEqual(4.5);
         }
     });
 

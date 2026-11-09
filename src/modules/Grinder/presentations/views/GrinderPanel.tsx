@@ -448,7 +448,7 @@ function GrinderKnob({
                 aria-label={label}
             />
             <span className="text-dense uppercase tracking-[0.24em] text-[var(--color-accent-amber)]">{label}</span>
-            <span className="font-mono text-dense text-white/55">{formatValue(value, unit)}</span>
+            <span className="font-mono text-dense text-text-primary">{formatValue(value, unit)}</span>
         </Stack>
     );
 }
@@ -456,7 +456,7 @@ function GrinderKnob({
 function StatusMeter({ label, value, accent }: { label: string; value: number; accent: string }): ReactElement {
     return (
         <Stack gap={1.5} className="grinder-window min-w-[68px] px-2.5 py-2">
-            <div className="text-caption uppercase tracking-[0.24em] text-white/48">{label}</div>
+            <div className="text-caption uppercase tracking-[0.24em] text-text-primary">{label}</div>
             <div className="h-1.5 overflow-hidden rounded-full bg-white/6">
                 <div
                     className="h-full rounded-full transition-all duration-[40ms]"
@@ -510,10 +510,10 @@ function ToneResponseStage({ deviceId, patch }: { deviceId: string; patch: Grind
                     <div className="text-dense uppercase tracking-[0.28em] text-[var(--color-accent-amber)]">
                         Amp Stage
                     </div>
-                    <div className="mt-1 text-lg font-semibold text-white/90">
+                    <div className="mt-1 text-lg font-semibold text-text-primary">
                         {AMP_MODELS.find((model) => model.id === patch.ampModel)?.label ?? 'Custom'}
                     </div>
-                    <div className="text-xs text-white/45">
+                    <div className="text-xs text-text-secondary">
                         Channel {patch.channel + 1} · {patch.powerTubeType.toUpperCase()} · {patch.rectifierType}
                     </div>
                 </div>
@@ -595,7 +595,7 @@ function DriveStage({ patch }: { patch: GrinderPatch }): ReactElement {
                         <div className="text-dense uppercase tracking-[0.28em] text-[var(--color-accent-peach)]">
                             Drive Surface
                         </div>
-                        <div className="mt-1 text-lg font-semibold text-white/90">
+                        <div className="mt-1 text-lg font-semibold text-text-primary">
                             {drivePedal?.type ?? 'No drive block'}
                         </div>
                     </div>
@@ -631,7 +631,7 @@ function DriveStage({ patch }: { patch: GrinderPatch }): ReactElement {
                     <div className="text-dense uppercase tracking-[0.28em] text-[var(--color-accent-cyan)]">
                         Sustain
                     </div>
-                    <div className="mt-1 text-lg font-semibold text-white/90">Gate and squeeze</div>
+                    <div className="mt-1 text-lg font-semibold text-text-primary">Gate and squeeze</div>
                 </div>
                 <CompressorCurve
                     threshold={compressor?.params.threshold ?? patch.gateThreshold}
@@ -667,7 +667,7 @@ function CabStage({ deviceId, patch }: { deviceId: string; patch: GrinderPatch }
                         <div className="text-dense uppercase tracking-[0.28em] text-[var(--color-accent-cyan)]">
                             Cab stage
                         </div>
-                        <div className="mt-1 text-lg font-semibold text-white/90">Speaker field</div>
+                        <div className="mt-1 text-lg font-semibold text-text-primary">Speaker field</div>
                     </div>
                     <DawPluginLed tone="amber">{patch.cabEnabled ? 'Cab In' : 'Cab Out'}</DawPluginLed>
                 </Row>
@@ -709,7 +709,9 @@ function CabStage({ deviceId, patch }: { deviceId: string; patch: GrinderPatch }
                 </Grid>
                 <Row align="stretch" gap={2}>
                     <Stack gap={1}>
-                        <span className="text-caption uppercase text-white/30 tracking-wider font-semibold">Mic 1</span>
+                        <span className="text-caption uppercase text-text-secondary tracking-wider font-semibold">
+                            Mic 1
+                        </span>
                         <Row align="stretch" gap={2}>
                             <RotaryKnob
                                 value={patch.mic1.positionX}
@@ -742,7 +744,7 @@ function CabStage({ deviceId, patch }: { deviceId: string; patch: GrinderPatch }
                     </Stack>
                     {patch.mic2.enabled ? (
                         <Stack gap={1}>
-                            <span className="text-caption uppercase text-white/30 tracking-wider font-semibold">
+                            <span className="text-caption uppercase text-text-secondary tracking-wider font-semibold">
                                 Mic 2
                             </span>
                             <Row align="stretch" gap={2}>
@@ -781,8 +783,8 @@ function CabStage({ deviceId, patch }: { deviceId: string; patch: GrinderPatch }
             <Stack gap={3} className="grinder-window p-3">
                 <div className="text-dense uppercase tracking-[0.28em] text-[var(--color-accent-amber)]">Cab notes</div>
                 <div className="rounded-[20px] border border-white/8 bg-black/30 p-3">
-                    <div className="text-dense uppercase tracking-[0.2em] text-white/45">Readout</div>
-                    <Stack gap={1.5} className="mt-2 font-mono text-[12px] text-white/70">
+                    <div className="text-dense uppercase tracking-[0.2em] text-text-primary">Readout</div>
+                    <Stack gap={1.5} className="mt-2 font-mono text-[12px] text-text-primary">
                         <div>voice {get_cab_voice_label(patch.cabIrId)}</div>
                         <div>mode {get_cab_mode_label(patch.cabType)}</div>
                         <div>route {get_routing_preset_label(patch.routingMode)}</div>
@@ -809,16 +811,16 @@ function NeuralStage({ deviceId, patch }: { deviceId: string; patch: GrinderPatc
                         <div className="text-dense uppercase tracking-[0.28em] text-[var(--color-accent-lavender)]">
                             Capture engine
                         </div>
-                        <div className="mt-1 text-lg font-semibold text-white/90">{modelName}</div>
-                        <div className="text-xs text-white/45">
+                        <div className="mt-1 text-lg font-semibold text-text-primary">{modelName}</div>
+                        <div className="text-xs text-text-secondary">
                             {patch.neuralModelFamily} ·{' '}
                             {patch.neuralPlacement === 'amp-capture' ? 'Amp capture' : 'Rig capture'}
                         </div>
                     </div>
                     <DawPluginLed tone="amber">{statusLabel}</DawPluginLed>
                 </Row>
-                <div className="rounded-[20px] border border-white/8 bg-black/35 p-4">
-                    <Row justify="between" className="text-dense uppercase tracking-[0.24em] text-white/46">
+                <div className="rounded-[20px] border border-white/8 bg-black/30 p-4">
+                    <Row justify="between" className="text-dense uppercase tracking-[0.24em] text-text-primary">
                         <span>Blend</span>
                         <span>{Math.round(patch.neuralMix * 100)}%</span>
                     </Row>
@@ -851,22 +853,22 @@ function NeuralStage({ deviceId, patch }: { deviceId: string; patch: GrinderPatc
                 </div>
                 <div className="grid gap-2">
                     <div className="rounded-[16px] border border-white/8 bg-black/20 px-3 py-2.5">
-                        <div className="text-dense uppercase tracking-[0.2em] text-white/45">Mode</div>
-                        <div className="mt-1 text-sm font-medium text-white/88">
+                        <div className="text-dense uppercase tracking-[0.2em] text-text-primary">Mode</div>
+                        <div className="mt-1 text-sm font-medium text-text-primary">
                             {get_engine_mode_label(patch.engineMode)}
                         </div>
                     </div>
                     <div className="rounded-[16px] border border-white/8 bg-black/20 px-3 py-2.5">
-                        <div className="text-dense uppercase tracking-[0.2em] text-white/45">Placement</div>
-                        <div className="mt-1 text-sm font-medium text-white/88">
+                        <div className="text-dense uppercase tracking-[0.2em] text-text-primary">Placement</div>
+                        <div className="mt-1 text-sm font-medium text-text-primary">
                             {get_neural_placement_label(patch.neuralPlacement)}
                         </div>
                     </div>
                     <div className="rounded-[16px] border border-white/8 bg-black/20 px-3 py-2.5">
-                        <div className="text-dense uppercase tracking-[0.2em] text-white/45">Status</div>
-                        <div className="mt-1 text-xs leading-5 text-white/60">{get_neural_path_status(patch)}</div>
+                        <div className="text-dense uppercase tracking-[0.2em] text-text-primary">Status</div>
+                        <div className="mt-1 text-xs leading-5 text-text-primary">{get_neural_path_status(patch)}</div>
                     </div>
-                    <div className="rounded-[16px] border border-dashed border-[var(--color-accent-cyan)]/25 bg-[var(--color-accent-cyan)]/6 px-3 py-2.5 text-xs leading-5 text-white/62">
+                    <div className="rounded-[16px] border border-dashed border-[var(--color-accent-cyan)]/25 bg-[var(--color-accent-cyan)]/6 px-3 py-2.5 text-xs leading-5 text-text-primary">
                         Selecting a library voice now swaps the active built-in capture profile in the live DSP path.
                     </div>
                 </div>
@@ -901,9 +903,9 @@ function QuickTelemetryReadout({ deviceId }: { deviceId: string }): ReactElement
     const telemetry = allTelemetry?.[deviceId] ?? getGrinderTelemetry(deviceId);
     return (
         <>
-            <div className="font-mono text-sm text-white/62">gate {Math.round(telemetry.gateOpen * 100)}%</div>
-            <div className="font-mono text-sm text-white/62">sag {telemetry.sagVoltage.toFixed(2)}</div>
-            <div className="font-mono text-sm text-white/62">out {telemetry.outputDb.toFixed(1)} dB</div>
+            <div className="font-mono text-sm text-text-primary">gate {Math.round(telemetry.gateOpen * 100)}%</div>
+            <div className="font-mono text-sm text-text-primary">sag {telemetry.sagVoltage.toFixed(2)}</div>
+            <div className="font-mono text-sm text-text-primary">out {telemetry.outputDb.toFixed(1)} dB</div>
         </>
     );
 }
@@ -916,7 +918,7 @@ function LabStage({ deviceId, patch }: { deviceId: string; patch: GrinderPatch }
                     <div className="text-dense uppercase tracking-[0.28em] text-[var(--color-accent-orange)]">
                         Diagnostics
                     </div>
-                    <div className="mt-1 text-lg font-semibold text-white/90">Feel check</div>
+                    <div className="mt-1 text-lg font-semibold text-text-primary">Feel check</div>
                 </div>
                 <GrinderTelemetryMeter
                     deviceId={deviceId}
@@ -938,7 +940,7 @@ function LabStage({ deviceId, patch }: { deviceId: string; patch: GrinderPatch }
                     accent="var(--color-accent-peach)"
                     transform={toDbPercent}
                 />
-                <div className="rounded-[20px] border border-white/8 bg-black/25 p-3 font-mono text-[12px] text-white/62">
+                <div className="rounded-[20px] border border-white/8 bg-black/25 p-3 font-mono text-[12px] text-text-primary">
                     <TelemetryReadout deviceId={deviceId} />
                     <div>xformer {patch.transformerDrive.toFixed(2)}</div>
                     <div>nfb {patch.negFeedback.toFixed(2)}</div>
@@ -993,7 +995,7 @@ function BrowserRail({
         >
             <div>
                 <div className="text-dense uppercase tracking-[0.3em] text-[var(--color-accent-amber)]">Grinder</div>
-                <div className="mt-1 text-[22px] font-semibold tracking-[0.03em] text-white/92">Presets</div>
+                <div className="mt-1 text-[22px] font-semibold tracking-[0.03em] text-text-primary">Presets</div>
             </div>
             <Stack grow gap={2.5} className="grinder-window p-3">
                 <DawSearchInput
@@ -1004,7 +1006,7 @@ function BrowserRail({
                     variant="ghost"
                     className="rounded-[18px] border border-white/6 bg-black/20 px-3 py-2"
                 />
-                <Row justify="between" className="text-dense uppercase tracking-[0.22em] text-white/34">
+                <Row justify="between" className="text-dense uppercase tracking-[0.22em] text-text-primary">
                     <span>{category}</span>
                     <span>{filteredPresets.length} shown</span>
                 </Row>
@@ -1058,12 +1060,12 @@ function BrowserRail({
                                 onClick={() => replacePatch({ ...preset.patch, uiSection: patch.uiSection })}
                             >
                                 <Row justify="between" gap={3} className="w-full">
-                                    <span className="text-[13px] font-medium text-white/88">{preset.name}</span>
-                                    <span className="text-caption uppercase tracking-[0.2em] text-white/36">
+                                    <span className="text-[13px] font-medium text-text-primary">{preset.name}</span>
+                                    <span className="text-caption uppercase tracking-[0.2em] text-text-secondary">
                                         {preset.category}
                                     </span>
                                 </Row>
-                                <span className="text-compact text-white/45">
+                                <span className="text-compact text-text-secondary">
                                     {preset.patch.ampModel === 'clean-twin'
                                         ? 'Clean platform'
                                         : (AMP_MODELS.find((amp) => amp.id === preset.patch.ampModel)?.label ??
@@ -1072,7 +1074,7 @@ function BrowserRail({
                             </Button>
                         ))
                     ) : (
-                        <div className="rounded-[18px] border border-dashed border-white/10 bg-black/18 px-4 py-4 text-[13px] text-white/46">
+                        <div className="rounded-[18px] border border-dashed border-white/10 bg-black/18 px-4 py-4 text-[13px] text-text-primary">
                             Nothing matches that search. Clear it or try another tray.
                         </div>
                     )}
@@ -1093,13 +1095,13 @@ function BrowserRail({
                             onClick={() => replacePatch({ ...patch, ampModel: amp.id })}
                         >
                             <Row justify="between">
-                                <span className="text-[13px] font-medium text-white/90">{amp.label}</span>
+                                <span className="text-[13px] font-medium text-text-primary">{amp.label}</span>
                                 <span className="h-2 w-2 rounded-full" style={{ background: amp.accent }} />
                             </Row>
-                            <div className="mt-1 text-dense uppercase tracking-[0.22em] text-white/34">
+                            <div className="mt-1 text-dense uppercase tracking-[0.22em] text-text-primary">
                                 {amp.family} · {amp.tubes}
                             </div>
-                            <div className="mt-2 text-xs text-white/46">{amp.voicing}</div>
+                            <div className="mt-2 text-xs text-text-primary">{amp.voicing}</div>
                         </Button>
                     ))}
                 </div>
@@ -1154,7 +1156,7 @@ function DriveDeck({ deviceId, patch }: { deviceId: string; patch: GrinderPatch 
                         <div className="text-dense uppercase tracking-[0.28em] text-[var(--color-accent-cyan)]">
                             Chain order
                         </div>
-                        <div className="mt-1 text-sm text-white/56">
+                        <div className="mt-1 text-sm text-text-secondary">
                             Supported front-end pedals move in the live signal path.
                         </div>
                     </div>
@@ -1224,7 +1226,7 @@ function DriveDeck({ deviceId, patch }: { deviceId: string; patch: GrinderPatch 
                         })}
                     </div>
                 ) : (
-                    <div className="rounded-[18px] border border-dashed border-white/10 bg-black/18 px-4 py-4 text-[13px] text-white/46">
+                    <div className="rounded-[18px] border border-dashed border-white/10 bg-black/18 px-4 py-4 text-[13px] text-text-primary">
                         Front-end chain order appears here once a supported pedal exists in the pre-amp lane.
                     </div>
                 )}
@@ -1276,10 +1278,10 @@ function DriveDeck({ deviceId, patch }: { deviceId: string; patch: GrinderPatch 
                                         defaultValue={param.defaultValue}
                                         size="sm"
                                     />
-                                    <span className="text-dense uppercase tracking-[0.22em] text-white/56">
+                                    <span className="text-dense uppercase tracking-[0.22em] text-text-secondary">
                                         {param.label}
                                     </span>
-                                    <span className="font-mono text-dense text-white/40">
+                                    <span className="font-mono text-dense text-text-primary">
                                         {formatValue(pedal.params[param.key] ?? param.defaultValue, param.unit)}
                                     </span>
                                 </Stack>
@@ -1698,8 +1700,8 @@ function ControlDeck({
                                     })
                                 }
                             >
-                                <div className="text-sm font-medium text-white/88">{mode.label}</div>
-                                <div className="text-xs text-white/44">{mode.description}</div>
+                                <div className="text-sm font-medium text-text-primary">{mode.label}</div>
+                                <div className="text-xs text-text-primary">{mode.description}</div>
                             </Button>
                         ))}
                     </Grid>
@@ -1741,7 +1743,7 @@ function ControlDeck({
                                 className={`rounded-[14px] border px-3 py-2 text-left text-sm ${
                                     patch.neuralPlacement === placement.id
                                         ? 'border-[var(--color-accent-cyan)]/60 bg-[var(--color-accent-cyan)]/10 text-[var(--color-accent-cyan)]'
-                                        : 'border-white/8 bg-black/20 text-white/52'
+                                        : 'border-white/8 bg-black/20 text-text-primary'
                                 }`}
                                 onClick={() =>
                                     replacePatch({
@@ -1754,7 +1756,7 @@ function ControlDeck({
                             </Button>
                         ))}
                     </div>
-                    <div className="text-xs text-white/44">
+                    <div className="text-xs text-text-primary">
                         <NeuralTelemetryReadout deviceId={deviceId} />
                     </div>
                 </Stack>
@@ -1790,12 +1792,12 @@ function ControlDeck({
                                     }
                                 >
                                     <Row justify="between">
-                                        <span className="text-sm font-medium text-white/88">{model.name}</span>
-                                        <span className="text-dense uppercase tracking-[0.18em] text-white/34">
+                                        <span className="text-sm font-medium text-text-primary">{model.name}</span>
+                                        <span className="text-dense uppercase tracking-[0.18em] text-text-primary">
                                             {model.family}
                                         </span>
                                     </Row>
-                                    <div className="mt-1 text-xs text-white/44">{model.description}</div>
+                                    <div className="mt-1 text-xs text-text-primary">{model.description}</div>
                                 </Button>
                             );
                         })}
@@ -1823,7 +1825,7 @@ function ControlDeck({
                         </div>
                     ) : null}
                     {visible_imported_entries.length === 0 ? (
-                        <div className="rounded-[16px] border border-white/8 bg-black/20 px-4 py-4 text-sm text-white/44">
+                        <div className="rounded-[16px] border border-white/8 bg-black/20 px-4 py-4 text-sm text-text-primary">
                             Import one or more documented `.nam` captures to build a reusable Neural library.
                         </div>
                     ) : (
@@ -1861,7 +1863,7 @@ function ControlDeck({
                     >
                         {patch.gateEnabled ? 'Gate On' : 'Gate Off'}
                     </DawPluginToggle>
-                    <div className="text-xs text-white/44">
+                    <div className="text-xs text-text-primary">
                         Enable the gate before dialing threshold, attack, or release.
                     </div>
                 </Stack>
@@ -1980,8 +1982,8 @@ function ControlDeck({
                 <div className="text-dense uppercase tracking-[0.24em] text-[var(--color-accent-amber)]">
                     Current preset
                 </div>
-                <div className="text-xl font-semibold text-white/90">{patch.name}</div>
-                <div className="text-sm text-white/46">{engineModeText}</div>
+                <div className="text-xl font-semibold text-text-primary">{patch.name}</div>
+                <div className="text-sm text-text-primary">{engineModeText}</div>
             </Stack>
             <Stack gap={2} className="grinder-window min-w-[200px] px-3 py-3">
                 <div className="text-dense uppercase tracking-[0.24em] text-[var(--color-accent-cyan)]">Quick read</div>
@@ -2023,8 +2025,8 @@ function HeroStage({ deviceId, patch }: { deviceId: string; patch: GrinderPatch 
                 <div className="text-dense uppercase tracking-[0.28em] text-[var(--color-accent-amber)]">
                     Current preset
                 </div>
-                <div className="text-[26px] font-semibold text-white/92">{patch.name}</div>
-                <div className="max-w-[36rem] text-[14px] leading-6 text-white/54">
+                <div className="text-[26px] font-semibold text-text-primary">{patch.name}</div>
+                <div className="max-w-[36rem] text-[14px] leading-6 text-text-secondary">
                     Grab a preset on the left and shape its basic tone below. Raise the control detail to reveal the
                     amp, pedal chain, cabinet, captures, and engine controls.
                 </div>
@@ -2053,8 +2055,8 @@ function HeroStage({ deviceId, patch }: { deviceId: string; patch: GrinderPatch 
             </Stack>
             <Stack gap={3} className="grinder-window p-3">
                 <div className="text-dense uppercase tracking-[0.28em] text-[var(--color-accent-cyan)]">Loaded rig</div>
-                <div className="text-lg font-semibold text-white/90">{activeAmp?.label ?? 'Custom amp'}</div>
-                <Stack gap={2.5} className="text-[13px] text-white/56">
+                <div className="text-lg font-semibold text-text-primary">{activeAmp?.label ?? 'Custom amp'}</div>
+                <Stack gap={2.5} className="text-[13px] text-text-secondary">
                     <div>Engine: {heroEngineText}.</div>
                     <div>
                         Gate: {patch.gateEnabled ? 'enabled' : 'off'} · Cab: {patch.cabEnabled ? 'on' : 'off'} · Neural:{' '}

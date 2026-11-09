@@ -20,6 +20,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { net, protocol } from 'electron';
+import { JSDOM } from 'jsdom';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { MODEL_RELEASE_ADMISSION } from '../../src/infra/release/modelReleaseAdmission.js';
@@ -58,8 +59,10 @@ const parseCsp = (policy: string): Map<string, string[]> => {
 };
 
 /** Locate executable markup, excluding comments, template contents, and script text. */
-const findThemeScript = (html: string): HTMLScriptElement | null =>
-    new DOMParser().parseFromString(html, 'text/html').querySelector<HTMLScriptElement>('script#sourdaw-theme');
+const findThemeScript = (html: string) => {
+    const scripts = new JSDOM(html).window.document.querySelectorAll('script#sourdaw-theme');
+    return [...scripts].find((script) => script.closest('noscript, template') === null) ?? null;
+};
 
 /** Every production TypeScript source under a directory, concatenated. */
 const readProductionTypescript = (directory: string): string =>
@@ -107,11 +110,17 @@ describe('the production Content-Security-Policy', () => {
         expect(themeScript?.textContent?.trim()).toBe('');
     });
 
-    it('does not accept a commented-out prepaint tag as active markup', () => {
-        const commented =
-            '<!-- <script id="sourdaw-theme" type="text/javascript" src="/themePrepaint.js"></script> -->';
-
-        expect(findThemeScript(commented)).toBeNull();
+    it.each([
+        {
+            name: 'commented-out markup',
+            html: '<!-- <script id="sourdaw-theme" type="text/javascript" src="/themePrepaint.js"></script> -->',
+        },
+        {
+            name: 'a scripting-inert noscript ancestor',
+            html: '<body><noscript><script id="sourdaw-theme" type="text/javascript" src="/themePrepaint.js"></script></noscript></body>',
+        },
+    ])('does not accept $name as active markup', ({ html }) => {
+        expect(findThemeScript(html)).toBeNull();
         expect(findThemeScript(indexHtml)).not.toBeNull();
     });
 

@@ -24,8 +24,9 @@ function readDesignTokenBlock(block: string): [string, string][] {
 }
 
 function readDesignTokens(source: string): DesignToken[] {
-    const darkBlock = /^@theme\s*\{([^}]*)\}/mu.exec(source)?.[1] ?? '';
-    const lightBlock = /^:root\.light\s*\{([^}]*)\}/mu.exec(source)?.[1] ?? '';
+    const uncommented = source.replace(/\/\*[\s\S]*?\*\//gu, '');
+    const darkBlock = /^@theme\s*\{([^}]*)\}/mu.exec(uncommented)?.[1] ?? '';
+    const lightBlock = /^:root\.light\s*\{([^}]*)\}/mu.exec(uncommented)?.[1] ?? '';
     const tokens = new Map<string, DesignToken>();
     for (const [name, darkValue] of readDesignTokenBlock(darkBlock)) {
         tokens.set(name, { name, darkValue, lightValue: undefined });
