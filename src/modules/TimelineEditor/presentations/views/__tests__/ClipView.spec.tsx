@@ -322,6 +322,55 @@ describe('ClipView', () => {
         expect(screen.getByTestId('waveform-editor')).toBeInTheDocument();
     });
 
+    it('does not offer MIDI automation for an audio clip even on a MIDI track', () => {
+        const clip = makeClip({ id: 'audio', name: 'Audio', type: 'audio' });
+        vi.mocked(useTracks).mockReturnValue({
+            tracks: [makeTrack({ id: 'track-1', kind: 'midi', clips: [clip] })],
+            selectedTrackId: 'track-1',
+        });
+        renderWithTooltip(<ClipView />);
+        expect(screen.queryByTestId('toggle-automation-tray-button')).not.toBeInTheDocument();
+        expect(screen.queryByTestId('clip-editor-tray')).not.toBeInTheDocument();
+    });
+
+    it.each([false, true])('preserves MIDI tray preference %s across audio and empty selections', (shown) => {
+        const midi = makeClip({ id: 'midi', name: 'MIDI', type: 'midi' });
+        const audio = makeClip({ id: 'audio', name: 'Audio', type: 'audio' });
+        const tracks = [makeTrack({ id: 'track-1', kind: 'audio', clips: [midi, audio] })];
+        vi.mocked(useTracks).mockReturnValue({ tracks, selectedTrackId: 'track-1' });
+        clipSelectionMocks.store.value.selectedClipId = 'midi';
+        const view = renderWithTooltip(<ClipView />);
+        expect(screen.getByTestId('clip-editor-tray')).toBeInTheDocument();
+        if (!shown) fireEvent.click(screen.getByTestId('toggle-automation-tray-button'));
+        clipSelectionMocks.store.value.selectedClipId = 'audio';
+        view.rerender(
+            <TooltipProvider>
+                <ClipView />
+            </TooltipProvider>
+        );
+        expect(screen.queryByTestId('toggle-automation-tray-button')).not.toBeInTheDocument();
+        expect(screen.queryByTestId('clip-editor-tray')).not.toBeInTheDocument();
+        vi.mocked(useTracks).mockReturnValue({
+            tracks: [makeTrack({ id: 'track-1', kind: 'audio', clips: [] })],
+            selectedTrackId: 'track-1',
+        });
+        view.rerender(
+            <TooltipProvider>
+                <ClipView />
+            </TooltipProvider>
+        );
+        expect(screen.queryByTestId('toggle-automation-tray-button')).not.toBeInTheDocument();
+        vi.mocked(useTracks).mockReturnValue({ tracks, selectedTrackId: 'track-1' });
+        clipSelectionMocks.store.value.selectedClipId = 'midi';
+        view.rerender(
+            <TooltipProvider>
+                <ClipView />
+            </TooltipProvider>
+        );
+        expect(screen.getByTestId('toggle-automation-tray-button')).toHaveAttribute('aria-pressed', String(shown));
+        expect(screen.queryByTestId('clip-editor-tray') !== null).toBe(shown);
+    });
+
     it('should switch to the knead editor when the pitch mode button is clicked', () => {
         const clip = makeClip({ id: 'clip-audio', name: 'Audio Clip', type: 'audio', audioBufferId: 'buf-1' });
         vi.mocked(useTracks).mockReturnValue({
@@ -350,8 +399,8 @@ describe('ClipView', () => {
 
         expect(screen.getByTestId('empty-state')).toHaveTextContent('No clips on this track');
         expect(screen.queryByText('Waveform')).not.toBeInTheDocument();
-        const automationLane = screen.getByTestId('automation-lane');
-        expect(automationLane).toHaveAttribute('data-clip-id', 'null');
+        expect(screen.queryByTestId('toggle-automation-tray-button')).not.toBeInTheDocument();
+        expect(screen.queryByTestId('clip-editor-tray')).not.toBeInTheDocument();
     });
 
     it('should render a clip switcher when a track has multiple clips and select on click', () => {

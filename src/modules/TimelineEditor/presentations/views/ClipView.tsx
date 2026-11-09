@@ -201,22 +201,24 @@ export const ClipView = (): ReactElement => {
                     </Row>
                 ) : null}
                 {renderAudioEditModeToggle()}
-                <Button
-                    variant={showAutomationTray ? 'secondary' : 'ghost'}
-                    size="xs"
-                    className="ml-auto h-5 px-2 text-[10px]"
-                    onClick={() => setShowAutomationTray((prev) => !prev)}
-                    aria-label="Toggle automation lane"
-                    aria-pressed={showAutomationTray}
-                    data-testid="toggle-automation-tray-button"
-                >
-                    Automation
-                </Button>
+                {selectedClip?.type === 'midi' ? (
+                    <Button
+                        variant={showAutomationTray ? 'secondary' : 'ghost'}
+                        size="xs"
+                        className="ml-auto h-5 px-2 text-[10px]"
+                        onClick={() => setShowAutomationTray((prev) => !prev)}
+                        aria-label="Toggle automation lane"
+                        aria-pressed={showAutomationTray}
+                        data-testid="toggle-automation-tray-button"
+                    >
+                        Automation
+                    </Button>
+                ) : null}
             </DawControlStrip>
             <Row align="stretch" grow className="min-h-[102px] overflow-hidden" data-testid="clip-editor-body-row">
                 {renderEditorBody()}
             </Row>
-            {showAutomationTray ? (
+            {selectedClip?.type === 'midi' && showAutomationTray ? (
                 <ClipEditorTray className="h-28" data-testid="clip-editor-tray">
                     <AutomationLane
                         clipId={selectedClip?.id ?? null}
