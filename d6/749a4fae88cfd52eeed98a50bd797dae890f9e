@@ -1,0 +1,18 @@
+src/modules/Fermenter/presentations/views/__tests__/FermenterPanel.spec.tsx
+  h_beb54bf43b47b7 670-676
+src/modules/Project/presentations/views/ArrangementSelector.tsx
+  h_beb54bf43b47b7 50-57,127-133,199,203-205
+src/modules/Project/presentations/views/__tests__/ArrangementSelector.spec.tsx
+  h_beb54bf43b47b7 171-188,203-204,212-213,218-219,223-270,321,324-352,354
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d6749a4fae88cfd52eeed98a50bd797dae890f9e",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
