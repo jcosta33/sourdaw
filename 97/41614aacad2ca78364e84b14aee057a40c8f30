@@ -1,0 +1,18 @@
+src/components/ui/__tests__/dialog.spec.tsx
+  h_beb54bf43b47b7 37,39
+src/components/ui/dialog.tsx
+  h_beb54bf43b47b7 141-145,147
+src/modules/Preferences/presentations/views/__tests__/PreferencesDialog.spec.tsx
+  h_beb54bf43b47b7 84,86
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9741614aacad2ca78364e84b14aee057a40c8f30",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
