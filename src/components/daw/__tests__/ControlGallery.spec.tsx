@@ -5,6 +5,7 @@ import { fireEvent, render, screen, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 
 import { ControlGallery } from '../ControlGallery';
+
 import { EXPECTED_GALLERY_TOKENS } from './controlGalleryExpectedTokens';
 
 const tokenSource = readFileSync(resolve(process.cwd(), 'src/styles/tokens.css'), 'utf8');

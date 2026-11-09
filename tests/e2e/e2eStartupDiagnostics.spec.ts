@@ -3,7 +3,7 @@ import { rm } from 'node:fs/promises';
 import { createFixture, deferred, event } from '../../scripts/__tests__/fixtures/e2eStartupDiagnostics.ts';
 
 import { test, expect } from './e2eTest';
-import { enable_direct_e2e_viewport, LAUNCH_SCREEN_NAME, PREFERENCES_STORAGE_KEY } from './e2eUtils';
+import { enable_direct_e2e_viewport, PREFERENCES_STORAGE_KEY, wait_for_launch_first_paint } from './e2eUtils';
 
 test('applies the persisted Light theme before the real entry module paints', async ({ page }) => {
     await enable_direct_e2e_viewport(page);
@@ -49,7 +49,7 @@ test('applies the persisted Light theme before the real entry module paints', as
         expect(entryRequests).toBe(1);
 
         gate.resolve('release entry');
-        await expect(page.getByLabel(LAUNCH_SCREEN_NAME)).toBeVisible({ timeout: 30_000 });
+        await wait_for_launch_first_paint(page);
     } finally {
         gate.resolve('release entry');
         await page.unrouteAll({ behavior: 'ignoreErrors' });
