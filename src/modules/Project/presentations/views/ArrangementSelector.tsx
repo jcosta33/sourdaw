@@ -29,13 +29,28 @@ export const ArrangementSelector = (): ReactElement | null => {
 
     // §212.1 — Typed default instead of non-null assertion on live value.
     const state = useStore(arrangementStore, defaultArrangementStoreState);
+    const arrangements = state?.arrangements ?? [];
+    const activeArrangementId = state?.activeArrangementId ?? null;
+    const navigableArrangements = arrangements.filter((arr) => arr.id !== editingId);
+    const focusedRadioId = navigableArrangements.some((arr) => arr.id === focusedArrangementId)
+        ? focusedArrangementId
+        : null;
+    const activeRadioId = navigableArrangements.some((arr) => arr.id === activeArrangementId)
+        ? activeArrangementId
+        : null;
+    const radioTabStopId = focusedRadioId ?? activeRadioId ?? navigableArrangements[0]?.id;
 
     useEffect(() => {
         if (editingId && inputRef.current) {
             inputRef.current.focus();
             inputRef.current.select();
+            return;
         }
-    }, [editingId]);
+        if (!open || editingId || !radioTabStopId || document.activeElement !== document.body) {
+            return;
+        }
+        radioRefs.current.get(radioTabStopId)?.focus();
+    }, [editingId, open, radioTabStopId]);
 
     if (!state) {
         return null;
@@ -47,14 +62,6 @@ export const ArrangementSelector = (): ReactElement | null => {
     }
 
     const currentArrangement = state.arrangements.find((alpha) => alpha.id === state.activeArrangementId);
-    const navigableArrangements = state.arrangements.filter((arr) => arr.id !== editingId);
-    const focusedRadioId = navigableArrangements.some((arr) => arr.id === focusedArrangementId)
-        ? focusedArrangementId
-        : null;
-    const activeRadioId = navigableArrangements.some((arr) => arr.id === state.activeArrangementId)
-        ? state.activeArrangementId
-        : null;
-    const radioTabStopId = focusedRadioId ?? activeRadioId ?? navigableArrangements[0]?.id;
 
     const handleCreate = () => {
         createArrangement(`Arrangement ${state.arrangements.length + 1}`);

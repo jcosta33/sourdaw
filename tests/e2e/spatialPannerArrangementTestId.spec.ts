@@ -77,4 +77,28 @@ test.describe('SpatialPanner and ArrangementSelector', () => {
         await expect(menu).toHaveCount(0);
         await expect(selector).toHaveAttribute('aria-expanded', 'false');
     });
+
+    test('ArrangementSelector reveals an inactive Rename action on keyboard focus', async ({ page }) => {
+        const selector = page.getByRole('button', { name: 'Arrangement selector' });
+
+        await expect(selector).toHaveCount(0);
+        await page.evaluate(async () => {
+            const { createArrangement } =
+                await import('/src/modules/Project/useCases/arrangement/createArrangement.ts');
+            createArrangement('Arrangement 2');
+        });
+        await expect(selector).toBeVisible();
+        await expect(selector).toHaveText(/Arrangement 2/);
+
+        await selector.click();
+        const menu = page.getByRole('menu', { name: 'Arrangement menu' });
+        const activeRadio = menu.getByRole('menuitemradio', { name: 'Arrangement 2' });
+        await expect(activeRadio).toBeFocused();
+
+        await page.keyboard.press('Shift+Tab');
+
+        const inactiveRename = menu.getByRole('button', { name: 'Rename Arrangement 1' });
+        await expect(inactiveRename).toBeFocused();
+        await expect(inactiveRename).toHaveCSS('opacity', '1');
+    });
 });

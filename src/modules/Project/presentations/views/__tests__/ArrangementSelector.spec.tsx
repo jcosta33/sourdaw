@@ -49,13 +49,24 @@ vi.mock('#/components/daw/DawCompactInput', () => ({
         value,
         onChange,
         onKeyDown,
+        onBlur,
         ref,
     }: {
         value?: string;
         onChange?: React.ChangeEventHandler<HTMLInputElement>;
         onKeyDown?: React.KeyboardEventHandler<HTMLInputElement>;
+        onBlur?: React.FocusEventHandler<HTMLInputElement>;
         ref?: React.Ref<HTMLInputElement>;
-    }) => <input ref={ref} value={value} onChange={onChange} onKeyDown={onKeyDown} data-testid="compact-input" />,
+    }) => (
+        <input
+            ref={ref}
+            value={value}
+            onChange={onChange}
+            onKeyDown={onKeyDown}
+            onBlur={onBlur}
+            data-testid="compact-input"
+        />
+    ),
 }));
 
 vi.mock('#/components/daw/DawMenuParts', () => ({
@@ -234,9 +245,6 @@ describe('ArrangementSelector', () => {
         fireEvent.click(screen.getByRole('button', { name: 'Rename Arrangement 2' }));
         const arrangement1 = screen.getByRole('menuitemradio', { name: /Arrangement 1/i });
         const arrangement3 = screen.getByRole('menuitemradio', { name: /Arrangement 3/i });
-        act(() => {
-            arrangement1.focus();
-        });
 
         fireEvent.keyDown(arrangement1, { key: 'ArrowDown' });
 
@@ -246,7 +254,7 @@ describe('ArrangementSelector', () => {
         expect(switchArrangement).not.toHaveBeenCalled();
     });
 
-    it('derives a replacement radio tab stop after the focused id disappears', () => {
+    it('restores focus to a replacement radio after the focused id disappears', () => {
         const { rerender } = render(<ArrangementSelector />);
         fireEvent.click(screen.getByLabelText(/Arrangement selector/i));
         const disappearingRadio = screen.getByRole('menuitemradio', { name: /Arrangement 2/i });
@@ -264,8 +272,17 @@ describe('ArrangementSelector', () => {
 
         rerender(<ArrangementSelector />);
 
-        expect(screen.getByRole('menuitemradio', { name: /Replacement 1/i })).toHaveAttribute('tabindex', '-1');
-        expect(screen.getByRole('menuitemradio', { name: /Replacement 2/i })).toHaveAttribute('tabindex', '0');
+        const replacement1 = screen.getByRole('menuitemradio', { name: /Replacement 1/i });
+        const replacement2 = screen.getByRole('menuitemradio', { name: /Replacement 2/i });
+        expect(replacement1).toHaveAttribute('tabindex', '-1');
+        expect(replacement2).toHaveAttribute('tabindex', '0');
+        expect(replacement2).toHaveFocus();
+
+        fireEvent.keyDown(replacement2, { key: 'ArrowDown' });
+
+        expect(replacement1).toHaveFocus();
+        expect(replacement2).toHaveAttribute('aria-checked', 'true');
+        expect(replacement1).toHaveAttribute('aria-checked', 'false');
     });
 
     it('switches the focused arrangement with Enter or Space', () => {
@@ -439,7 +456,7 @@ describe('ArrangementSelector', () => {
         expect(escape.defaultPrevented).toBe(true);
     });
 
-    it('consumes the first Escape to cancel a rename without closing the menu', () => {
+    it('consumes the first Escape to cancel a rename and restores radio focus', () => {
         render(<ArrangementSelector />);
         fireEvent.click(screen.getByLabelText(/Arrangement selector/i));
         const editButton = screen.getByRole('button', { name: 'Rename Arrangement 1' });
@@ -453,11 +470,35 @@ describe('ArrangementSelector', () => {
             input.dispatchEvent(escape);
         });
 
+        window.removeEventListener('keydown', parentDismiss);
         expect(screen.queryByTestId('compact-input')).toBeNull();
         expect(screen.getByRole('menu', { name: 'Arrangement menu' })).toBeInTheDocument();
         expect(escape.defaultPrevented).toBe(true);
         expect(parentDismiss).not.toHaveBeenCalled();
-        window.removeEventListener('keydown', parentDismiss);
+        const arrangement1 = screen.getByRole('menuitemradio', { name: /Arrangement 1/i });
+        const arrangement2 = screen.getByRole('menuitemradio', { name: /Arrangement 2/i });
+        expect(arrangement1).toHaveFocus();
+
+        fireEvent.keyDown(arrangement1, { key: 'ArrowDown' });
+
+        expect(arrangement2).toHaveFocus();
+    });
+
+    it('does not steal focus when rename blur lands on another menu button', () => {
+        render(<ArrangementSelector />);
+        fireEvent.click(screen.getByLabelText(/Arrangement selector/i));
+        fireEvent.click(screen.getByRole('button', { name: 'Rename Arrangement 1' }));
+        const input = screen.getByTestId('compact-input');
+        const newArrangement = screen.getByRole('menuitem', { name: 'New Arrangement' });
+        expect(input).toHaveFocus();
+
+        act(() => {
+            newArrangement.focus();
+        });
+
+        expect(screen.queryByTestId('compact-input')).toBeNull();
+        expect(newArrangement).toHaveFocus();
+        expect(screen.getByRole('menu', { name: 'Arrangement menu' })).toBeInTheDocument();
     });
 
     it('should have New Arrangement button', () => {
