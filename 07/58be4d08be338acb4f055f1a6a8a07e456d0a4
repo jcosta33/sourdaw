@@ -1,0 +1,52 @@
+src/components/daw/DawPluginChip.tsx
+  h_beb54bf43b47b7 6-11,77,91
+src/components/daw/__tests__/DawPluginChip.spec.tsx
+  h_beb54bf43b47b7 19-61
+src/modules/Bacteria/presentations/views/BacteriaPanel.tsx
+  h_beb54bf43b47b7 292,482-486
+src/modules/Bacteria/presentations/views/__tests__/BacteriaPanel.morph.spec.tsx
+  h_beb54bf43b47b7 92-108
+src/modules/ContentBrowser/presentations/views/Sidebar/EffectsTab.tsx
+  h_beb54bf43b47b7 99-103,140
+src/modules/ContentBrowser/presentations/views/Sidebar/__tests__/EffectsTab.spec.tsx
+  h_beb54bf43b47b7 196-258,260,266,272,275,342-369,375-376,381,383
+src/modules/Crust/presentations/components/__tests__/CrustControlZoneLevels.spec.tsx
+  h_beb54bf43b47b7 52
+src/modules/Fermenter/presentations/components/SectionNav.tsx
+  h_beb54bf43b47b7 8,12-20,29-38
+src/modules/Fermenter/presentations/components/__tests__/SectionNav.spec.tsx
+  h_beb54bf43b47b7 6-11,15-51,58,62-69,71-74
+src/modules/Fermenter/presentations/views/FermenterPanel.tsx
+  h_beb54bf43b47b7 9,51-56,684,686,762-768
+src/modules/Fermenter/presentations/views/__tests__/FermenterControlKeyboard.integration.spec.tsx
+  h_beb54bf43b47b7 111,245
+src/modules/Fermenter/presentations/views/__tests__/FermenterPanel.spec.tsx
+  h_beb54bf43b47b7 166,171-185,188,194,200,245,252,436,448,460,497,512,522,667-687
+src/modules/Fermenter/presentations/views/__tests__/fermenterFilterSelectionUndo.integration.spec.tsx
+  h_beb54bf43b47b7 96,659,664
+src/modules/Levain/presentations/views/__tests__/LevainPanel.initialization.integration.spec.tsx
+  h_beb54bf43b47b7 103-114
+src/modules/Project/presentations/views/ArrangementSelector.tsx
+  h_beb54bf43b47b7 26,28-29,33-60,63-67,69-74,80-82,105-115,122-124,126,156-183,186,199,202,208,221-256,258-259,261-289,299,315
+src/modules/Project/presentations/views/__tests__/ArrangementSelector.spec.tsx
+  h_beb54bf43b47b7 52,58,60-69,108-109,172-584,659-702,705,716,721-745,760-763
+src/modules/Toaster/presentations/views/ToasterPanel.tsx
+  h_beb54bf43b47b7 947
+src/modules/Toaster/presentations/views/__tests__/ToasterPanel.spec.tsx
+  h_beb54bf43b47b7 5,27-29,104-122
+tests/e2e/fermenterPanelDeepTestId.spec.ts
+  h_beb54bf43b47b7 49,53-84
+tests/e2e/spatialPannerArrangementTestId.spec.ts
+  h_beb54bf43b47b7 80-115
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0758be4d08be338acb4f055f1a6a8a07e456d0a4",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
