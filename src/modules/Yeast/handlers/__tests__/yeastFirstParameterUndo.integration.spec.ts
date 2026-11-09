@@ -6,8 +6,8 @@ import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
-import { TrackDummy } from '#/modules/Arrangement/__tests__/TrackDummy';
 import { trackStore } from '#/modules/Arrangement/stores';
+import { createTrack } from '#/modules/Arrangement/useCases';
 import { clearHandlerRegistry, undoHistoryStore } from '#/modules/Command/stores';
 import {
     executeAppAction,
@@ -36,11 +36,16 @@ const PROCESSOR_ID = 'arp-first-rate';
 
 describe('first Yeast parameter edit undo', () => {
     let document: Doc<RootDocument>;
-    const track = TrackDummy.create({
-        id: 'midi-track',
-        kind: 'midi',
+    const track: ReturnType<typeof createTrack> = {
+        ...createTrack({
+            id: 'midi-track',
+            initialAlternativeId: 'alt-1',
+            name: 'Track 1',
+            kind: 'midi',
+            withoutDefaultDevice: true,
+        }),
         devices: [{ id: DEVICE_ID, name: 'Yeast', type: 'yeast', bypassed: false, parameterValues: {} }],
-    });
+    };
 
     beforeEach(() => {
         undoHistoryStore.set({ past: [], future: [] });
@@ -164,6 +169,7 @@ describe('first Yeast parameter edit undo', () => {
         expect(rawAfterRedo).toMatchObject({
             racks: { [DEVICE_ID]: { processors: { [PROCESSOR_ID]: { value: { params: {} } } } } },
         });
+        expect(rawAfterRedo).toHaveProperty(['racks', DEVICE_ID, 'processors', PROCESSOR_ID, 'value', 'params'], {});
         expect(
             readYeastRack(DEVICE_ID).processors.find((processor) => processor.id === PROCESSOR_ID)?.params ?? {}
         ).toEqual({});
@@ -179,6 +185,10 @@ describe('first Yeast parameter edit undo', () => {
         expect(structuredClone(document.yeast)).toMatchObject({
             racks: { [DEVICE_ID]: { processors: { [PROCESSOR_ID]: { deleted: true, value: { params: {} } } } } },
         });
+        expect(structuredClone(document.yeast)).toHaveProperty(
+            ['racks', DEVICE_ID, 'processors', PROCESSOR_ID, 'value', 'params'],
+            {}
+        );
         expect(readYeastRack(DEVICE_ID).processors.some((processor) => processor.id === PROCESSOR_ID)).toBe(false);
         expect(undoHistoryStore.value?.future).toHaveLength(1);
     });
@@ -238,6 +248,10 @@ describe('first Yeast parameter edit undo', () => {
         expect(structuredClone(document.yeast)).toMatchObject({
             racks: { [DEVICE_ID]: { processors: { [PROCESSOR_ID]: { value: { params: {} } } } } },
         });
+        expect(structuredClone(document.yeast)).toHaveProperty(
+            ['racks', DEVICE_ID, 'processors', PROCESSOR_ID, 'value', 'params'],
+            {}
+        );
         expect(readYeastRack(DEVICE_ID).processors.find((entry) => entry.id === 'neighbor')?.bypassed).toBe(true);
         const redoneAdd = undoHistoryStore.value?.past.find(
             (entry) => entry.kind === 'action' && entry.action.type === 'addYeastProcessor'

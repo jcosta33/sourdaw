@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { createYeastProcessorProjection } from '../../models/YeastProcessorProjection';
 import { PROCESSOR_PARAM_DEFAULTS } from '../../models/ProcessorCatalog';
+import { createYeastProcessorProjection } from '../../models/YeastProcessorProjection';
 
 const store = vi.hoisted(() => ({
     value: {

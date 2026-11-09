@@ -24,13 +24,33 @@ const DEVICE_ID = 'device-mirror';
 
 type RootDocument = { yeast?: unknown };
 
-async function flushPersistence(): Promise<void> {
-    await new Promise<void>((resolve) => queueMicrotask(() => resolve()));
-    await new Promise<void>((resolve) => queueMicrotask(() => resolve()));
-}
-
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function mirroredIds(entries: unknown): string[] {
+    if (!Array.isArray(entries)) {
+        throw new TypeError('Expected a mirrored history stack');
+    }
+    return entries.map((entry) => {
+        if (!isRecord(entry) || typeof entry.id !== 'string') {
+            throw new TypeError('Expected a mirrored history entry with an id');
+        }
+        return entry.id;
+    });
+}
+
+async function waitForMirroredHistory(pastIds: readonly string[], futureIds: readonly string[]): Promise<void> {
+    await vi.waitFor(() => {
+        const raw = sessionStorage.getItem(UNDO_SESSION_KEY);
+        expect(raw).not.toBeNull();
+        const persisted: unknown = JSON.parse(raw!);
+        if (!isRecord(persisted)) {
+            throw new TypeError('Expected a mirrored history record');
+        }
+        expect(mirroredIds(persisted.past)).toEqual(pastIds);
+        expect(mirroredIds(persisted.future)).toEqual(futureIds);
+    });
 }
 
 function configureInMemoryPort(getDocument: () => Doc<RootDocument>, setDocument: (doc: Doc<RootDocument>) => void) {
@@ -46,8 +66,10 @@ function configureInMemoryPort(getDocument: () => Doc<RootDocument>, setDocument
 
 describe('Yeast undo session mirror (#2111)', () => {
     let document: Doc<RootDocument>;
+    let cleanupReopenedGraph: (() => void) | null = null;
 
     beforeEach(() => {
+        cleanupReopenedGraph = null;
         sessionStorage.removeItem(UNDO_SESSION_KEY);
         undoHistoryStore.set({ past: [], future: [] });
         document = from({});
@@ -69,8 +91,8 @@ describe('Yeast undo session mirror (#2111)', () => {
         registerProductionCommandHandlers(getProductionCommandHandlerMaps({ canMutateBranchMetadata: () => true }));
     });
 
-    afterEach(async () => {
-        await flushPersistence();
+    afterEach(() => {
+        cleanupReopenedGraph?.();
         flushAutomergeStorageWrites();
         configureAutomergeStoragePort(null);
         setActiveYeastDevice(null);
@@ -93,7 +115,12 @@ describe('Yeast undo session mirror (#2111)', () => {
         );
         expect(yeastStore.value?.processors[0]?.params?.gate).toBe(1.2);
 
-        await flushPersistence();
+        const livePast = undoHistoryStore.value?.past ?? [];
+        expect(livePast).toHaveLength(2);
+        await waitForMirroredHistory(
+            livePast.map((entry) => entry.id),
+            []
+        );
 
         // The mirror carries both entries with their shared group and guarded
         // inverse/redo payloads.
@@ -126,17 +153,28 @@ describe('Yeast undo session mirror (#2111)', () => {
         const { getProductionCommandHandlerMaps: freshMaps } = await import('#/app/getProductionCommandHandlerMaps');
         const { registerProductionCommandHandlers: freshRegisterProduction } =
             await import('#/modules/Command/useCases');
-        const { undoHistoryStore: freshUndoHistoryStore } = await import('#/modules/Command/stores');
+        const { clearHandlerRegistry: freshClearRegistry, undoHistoryStore: freshUndoHistoryStore } =
+            await import('#/modules/Command/stores');
+        const { configureAutomergeStoragePort: freshConfigurePort, flushAutomergeStorageWrites: freshFlushWrites } =
+            await import('#/infra/store/storage/createAutomergeStorage');
         const { setActiveYeastDevice: freshPin, yeastStore: freshYeastStore } = await import('../../stores/yeastStore');
         const { undo: freshUndo } = await import('#/modules/Command/useCases');
 
         document = from({});
-        configureInMemoryPort(
-            () => document,
-            (doc) => {
-                document = doc;
-            }
-        );
+        freshConfigurePort({
+            getDoc: () => document,
+            getSemanticMessage: () => undefined,
+            hasDoc: () => true,
+            mutateDoc: ({ changeFn }) => {
+                document = change(document, (draft) => changeFn(draft as unknown as Record<string, unknown>));
+            },
+        });
+        cleanupReopenedGraph = () => {
+            freshFlushWrites();
+            freshConfigurePort(null);
+            freshPin(null);
+            freshClearRegistry();
+        };
         freshYeastStore.hydrate();
         freshPin(DEVICE_ID);
         // The reopened project carries the post-gesture rack state.
@@ -158,6 +196,11 @@ describe('Yeast undo session mirror (#2111)', () => {
         const result = await freshUndo();
         expect(result.headConsumed).toBe(true);
         expect(freshYeastStore.value?.processors[0]?.params?.gate).toBe(0.8);
+        freshFlushWrites();
+        await waitForMirroredHistory(
+            freshUndoHistoryStore.value?.past.map((entry) => entry.id) ?? [],
+            freshUndoHistoryStore.value?.future.map((entry) => entry.id) ?? []
+        );
     });
 
     it('rehydrates a saved empty Arpeggiator add capture and redoes its exact old shape', async () => {
@@ -182,24 +225,15 @@ describe('Yeast undo session mirror (#2111)', () => {
         };
         undoHistoryStore.set({ past: [], future: [oldEntry] });
         const savedProject = save(document);
-        await vi.waitFor(() => {
-            const raw = sessionStorage.getItem(UNDO_SESSION_KEY);
-            expect(raw).not.toBeNull();
-            const stored: unknown = JSON.parse(raw!);
-            if (!isRecord(stored) || !Array.isArray(stored.future)) {
-                throw new Error('Expected the saved future stack');
-            }
-            expect(stored.future).toHaveLength(1);
-            const entry = stored.future[0];
-            expect(isRecord(entry) && isRecord(entry.inverseAction)).toBe(true);
-            if (!isRecord(entry) || !isRecord(entry.inverseAction)) {
-                return;
-            }
-            expect(entry.inverseAction).toMatchObject({
-                type: 'removeYeastProcessor',
-                payload: { expectedProcessor: { params: {} } },
-            });
+        await waitForMirroredHistory([], [oldEntry.id]);
+        const stored: unknown = JSON.parse(sessionStorage.getItem(UNDO_SESSION_KEY)!);
+        if (!isRecord(stored) || !Array.isArray(stored.future)) {
+            throw new Error('Expected the saved future stack');
+        }
+        expect(stored.future[0]).toMatchObject({
+            inverseAction: { type: 'removeYeastProcessor', payload: { expectedProcessor: { params: {} } } },
         });
+        expect(stored.future[0]).toHaveProperty(['inverseAction', 'payload', 'expectedProcessor', 'params'], {});
 
         vi.resetModules();
         const { getProductionCommandHandlerMaps: freshMaps } = await import('#/app/getProductionCommandHandlerMaps');
@@ -208,7 +242,8 @@ describe('Yeast undo session mirror (#2111)', () => {
             registerProductionCommandHandlers: freshRegister,
             undo: freshUndo,
         } = await import('#/modules/Command/useCases');
-        const { undoHistoryStore: freshHistory } = await import('#/modules/Command/stores');
+        const { clearHandlerRegistry: freshClearRegistry, undoHistoryStore: freshHistory } =
+            await import('#/modules/Command/stores');
         const { configureAutomergeStoragePort: freshConfigurePort, flushAutomergeStorageWrites: freshFlushWrites } =
             await import('#/infra/store/storage/createAutomergeStorage');
         const {
@@ -226,6 +261,12 @@ describe('Yeast undo session mirror (#2111)', () => {
                 document = change(document, (draft) => changeFn(draft as unknown as Record<string, unknown>));
             },
         });
+        cleanupReopenedGraph = () => {
+            freshFlushWrites();
+            freshConfigurePort(null);
+            freshPin(null);
+            freshClearRegistry();
+        };
         freshYeastStore.hydrate();
         freshPin(DEVICE_ID);
         expect(freshYeastStore.value).not.toBeNull();
@@ -248,11 +289,17 @@ describe('Yeast undo session mirror (#2111)', () => {
         expect(structuredClone(document.yeast)).toMatchObject({
             racks: { [DEVICE_ID]: { processors: { 'old-arp': { deleted: false, value: { params: {} } } } } },
         });
+        expect(structuredClone(document.yeast)).toHaveProperty(
+            ['racks', DEVICE_ID, 'processors', 'old-arp', 'value', 'params'],
+            {}
+        );
         expect(freshHistory.value?.past.at(-1)).toBe(rehydrated);
         expect(rehydrated.inverseAction.payload.expectedProcessor.params).toEqual({});
+        await waitForMirroredHistory([rehydrated.id], []);
 
         await freshUndo();
         freshFlushWrites();
         expect(freshReadRack(DEVICE_ID).processors.some((entry) => entry.id === 'old-arp')).toBe(false);
+        await waitForMirroredHistory([], [rehydrated.id]);
     });
 });

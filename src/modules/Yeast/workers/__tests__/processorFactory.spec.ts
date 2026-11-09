@@ -3,7 +3,6 @@ import { describe, it, expect } from 'vitest';
 
 import { type MidiEvent, type TransportInfo } from '../../models/MidiEvent';
 import { PROCESSOR_PARAM_DEFAULTS } from '../../models/ProcessorCatalog';
-
 import * as subject from '../processorFactory';
 
 describe('processorFactory', () => {
