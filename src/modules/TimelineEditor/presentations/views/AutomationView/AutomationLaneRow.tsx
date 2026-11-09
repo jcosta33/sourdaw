@@ -629,7 +629,8 @@ export const AutomationLaneRow = ({
                                         lane,
                                         setDragPointBeat,
                                         setSelectedPoints,
-                                        coords
+                                        coords,
+                                        point.id
                                     );
                                 }}
                                 onDoubleClick={(event) => handlePointDoubleClick(point.beat, event)}

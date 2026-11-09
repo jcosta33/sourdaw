@@ -16,7 +16,7 @@ const mocks = vi.hoisted(() => ({
     automationState: {
         lanes: [] as Array<{
             id: string;
-            points: Array<{ beat: number; value: number; curve: string; tension: number }>;
+            points: Array<{ id?: string; beat: number; value: number; curve: string; tension: number }>;
         }>,
     },
     addAutomationPoint: vi.fn(),
@@ -374,12 +374,12 @@ describe('automationDrag', () => {
             expect(setDragPointBeat).toHaveBeenCalledWith(2);
 
             fireEvent.mouseMove(window, { clientX: 40, clientY: 30 });
-            expect(mocks.updateAutomationPoint).toHaveBeenCalledWith('lane-1', 2, 0.7, 4);
+            expect(mocks.updateAutomationPoint).toHaveBeenCalledWith('lane-1', 2, 0.7, 4, undefined);
             expect(setDragPointBeat).toHaveBeenLastCalledWith(4);
 
             // The next move addresses the point at its new beat
             fireEvent.mouseMove(window, { clientX: 50, clientY: 30 });
-            expect(mocks.updateAutomationPoint).toHaveBeenLastCalledWith('lane-1', 4, 0.7, 5);
+            expect(mocks.updateAutomationPoint).toHaveBeenLastCalledWith('lane-1', 4, 0.7, 5, undefined);
 
             mocks.automationState = {
                 lanes: [{ id: 'lane-1', points: [{ beat: 5, value: 0.7, curve: 'linear', tension: 0 }] }],
@@ -405,7 +405,7 @@ describe('automationDrag', () => {
             // dx (4 beats) dominates dy (0.05) → value stays at the original 0.5
             fireEvent.mouseMove(window, { clientX: 60, clientY: 45, shiftKey: true });
 
-            expect(mocks.updateAutomationPoint).toHaveBeenLastCalledWith('lane-1', 2, 0.5, 6);
+            expect(mocks.updateAutomationPoint).toHaveBeenLastCalledWith('lane-1', 2, 0.5, 6, undefined);
 
             // Tear down this gesture's window listeners — otherwise they outlive
             // the test and double-fire alongside a later test's own listeners.
@@ -449,7 +449,100 @@ describe('automationDrag', () => {
             // stationary point's (beat 4.98, value 0.9).
             const undoFn = mocks.pushUndoEntry.mock.calls[0]?.[1];
             undoFn();
-            expect(mocks.updateAutomationPoint).toHaveBeenLastCalledWith('lane-1', 5, 0.5, 2);
+            expect(mocks.updateAutomationPoint).toHaveBeenLastCalledWith('lane-1', 5, 0.5, 2, undefined);
+        });
+
+        it('pins the rendered ID through crossing, same-beat final read, Undo and Redo', () => {
+            const target = makePoint(2, 0.5, { id: 'target' });
+            const neighbor = makePoint(2, 0.9, { id: 'neighbor' });
+            const lane = makeLane([neighbor, target]);
+            const surface = renderSurface({
+                onSurfaceMouseDown: (event) =>
+                    onPointMouseDown(2, event, lane, setDragPointBeat, setSelectedPoints, coords, 'target'),
+            });
+            fireEvent.mouseDown(surface, { clientX: 20, clientY: 50 });
+            fireEvent.mouseMove(window, { clientX: 50, clientY: 30 });
+            expect(mocks.updateAutomationPoint).toHaveBeenLastCalledWith('lane-1', 2, 0.7, 5, 'target');
+            mocks.automationState = {
+                lanes: [
+                    {
+                        id: lane.id,
+                        points: [
+                            { ...neighbor, beat: 5 },
+                            { ...target, beat: 5, value: 0.7 },
+                        ],
+                    },
+                ],
+            };
+            fireEvent.mouseUp(window);
+            expect(mocks.pushUndoEntry).toHaveBeenCalledOnce();
+            const entry = mocks.pushUndoEntry.mock.calls[0];
+            if (!entry) {
+                throw new Error('Movement did not produce a history entry');
+            }
+            const [, undo, redo] = entry;
+            undo();
+            expect(mocks.updateAutomationPoint).toHaveBeenLastCalledWith('lane-1', 5, 0.5, 2, 'target');
+            redo();
+            expect(mocks.updateAutomationPoint).toHaveBeenLastCalledWith('lane-1', 2, 0.7, 5, 'target');
+        });
+
+        it('pins Escape to the captured ID even after another point occupies its beat', () => {
+            const lane = makeLane([makePoint(2, 0.5, { id: 'target' })]);
+            const surface = renderSurface({
+                onSurfaceMouseDown: (event) =>
+                    onPointMouseDown(2, event, lane, setDragPointBeat, setSelectedPoints, coords, 'target'),
+            });
+            fireEvent.mouseDown(surface, { clientX: 20, clientY: 50 });
+            fireEvent.mouseMove(window, { clientX: 40, clientY: 30 });
+            mocks.automationState = {
+                lanes: [
+                    {
+                        id: lane.id,
+                        points: [makePoint(4, 0.9, { id: 'neighbor' }), makePoint(4, 0.7, { id: 'target' })],
+                    },
+                ],
+            };
+            fireEvent.keyDown(window, { key: 'Escape' });
+            expect(mocks.updateAutomationPoint).toHaveBeenLastCalledWith('lane-1', 4, 0.5, 2, 'target');
+            expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
+            fireEvent.mouseUp(window);
+        });
+
+        it.each(['missing', 'duplicate', 'ambiguous legacy'])('refuses a %s target before drag admission', (kind) => {
+            const points = [makePoint(2, 0.5, { id: 'target' }), makePoint(2.02, 0.8, { id: 'other' })];
+            let id: string | undefined;
+            if (kind === 'missing') {
+                id = 'absent';
+            }
+            if (kind === 'duplicate') {
+                id = 'target';
+                points[1].id = 'target';
+            }
+            const lane = makeLane(points);
+            const surface = renderSurface({
+                onSurfaceMouseDown: (event) =>
+                    onPointMouseDown(2, event, lane, setDragPointBeat, setSelectedPoints, coords, id),
+            });
+            fireEvent.mouseDown(surface, { clientX: 20, clientY: 50 });
+            fireEvent.mouseMove(window, { clientX: 50, clientY: 30 });
+            fireEvent.mouseUp(window);
+            expect(setDragPointBeat).not.toHaveBeenCalled();
+            expect(mocks.updateAutomationPoint).not.toHaveBeenCalled();
+            expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
+        });
+
+        it('does not capture another point for history when the identified target disappears', () => {
+            const lane = makeLane([makePoint(2, 0.5, { id: 'target' })]);
+            const surface = renderSurface({
+                onSurfaceMouseDown: (event) =>
+                    onPointMouseDown(2, event, lane, setDragPointBeat, setSelectedPoints, coords, 'target'),
+            });
+            fireEvent.mouseDown(surface, { clientX: 20, clientY: 50 });
+            fireEvent.mouseMove(window, { clientX: 50, clientY: 30 });
+            mocks.automationState = { lanes: [{ id: lane.id, points: [makePoint(5, 0.9, { id: 'replacement' })] }] };
+            fireEvent.mouseUp(window);
+            expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
         });
 
         it('releasing without movement records no undo entry', () => {
@@ -480,13 +573,13 @@ describe('automationDrag', () => {
 
             fireEvent.mouseDown(surface, { clientX: 20, clientY: 50 });
             fireEvent.mouseMove(window, { clientX: 40, clientY: 30 }); // live-writes the point to beat 4, value 0.7
-            expect(mocks.updateAutomationPoint).toHaveBeenLastCalledWith('lane-1', 2, 0.7, 4);
+            expect(mocks.updateAutomationPoint).toHaveBeenLastCalledWith('lane-1', 2, 0.7, 4, undefined);
 
             fireEvent.keyDown(window, { key: 'Escape' });
 
             // Cancel must address the point at its current (moved-to) beat, and
             // write the original beat/value back — the same shape a commit uses.
-            expect(mocks.updateAutomationPoint).toHaveBeenLastCalledWith('lane-1', 4, 0.5, 2);
+            expect(mocks.updateAutomationPoint).toHaveBeenLastCalledWith('lane-1', 4, 0.5, 2, undefined);
             expect(setDragPointBeat).toHaveBeenLastCalledWith(null);
             expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
 

@@ -1,23 +1,46 @@
 import { automationStore } from '../../stores/automationStore';
 
-export function updateAutomationPoint(laneId: string, beat: number, newValue: number, newBeat?: number): void {
+export function updateAutomationPoint(
+    laneId: string,
+    beat: number,
+    newValue: number,
+    newBeat?: number,
+    pointId?: string
+): void {
     const state = automationStore.value;
-    if (!state) {
+    const lanes = state?.lanes.filter((lane) => lane.id === laneId);
+    if (!state || lanes?.length !== 1) {
         return;
     }
+    const lane = lanes[0];
+    if (!lane) {
+        return;
+    }
+    const candidates = lane.points.filter((point) => {
+        if (pointId !== undefined) {
+            return pointId.length > 0 && point.id === pointId;
+        }
+        return Math.abs(point.beat - beat) < 0.05;
+    });
+    if (candidates.length !== 1) {
+        return;
+    }
+    const target = candidates[0];
+    if (!target) {
+        return;
+    }
+    const points = lane.points.map((point) => {
+        if (point !== target) {
+            return point;
+        }
+        return { ...point, value: newValue, beat: newBeat ?? point.beat };
+    });
     automationStore.set({
-        lanes: state.lanes.map((length) => {
-            if (length.id !== laneId) {
-                return length;
+        lanes: state.lanes.map((current) => {
+            if (current !== lane) {
+                return current;
             }
-            // Match the target point by tolerance, not exact float equality:
-            // a beat round-tripped through pixel coordinates never compares
-            // exactly with `===`, so the edit would silently no-op. The 0.05
-            // window matches setAutomationPointCurve.
-            const updated = length.points.map((param) =>
-                Math.abs(param.beat - beat) < 0.05 ? { ...param, value: newValue, beat: newBeat ?? param.beat } : param
-            );
-            return { ...length, points: updated.sort((alpha, b) => alpha.beat - b.beat) };
+            return { ...current, points: points.sort((a, b) => a.beat - b.beat) };
         }),
     });
 }
