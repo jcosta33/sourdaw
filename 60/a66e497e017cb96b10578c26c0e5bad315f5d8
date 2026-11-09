@@ -1,0 +1,22 @@
+src/app/__tests__/registerDeviceEnginePorts.spec.ts
+  s_977061c47f01dd::t_63e5efa19f2766 341-345,356
+  s_977061c47f01dd::t_c5568751825f3c 348-350
+scripts/__tests__/viteE2ePersistenceEntry.spec.ts
+  s_977061c47f01dd::t_63e5efa19f2766 259,283
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "60a66e497e017cb96b10578c26c0e5bad315f5d8",
+  "prompts": {},
+  "sessions": {
+    "s_977061c47f01dd": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34d-123d-7452-a6e7-60608388b6d7",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
