@@ -1,0 +1,34 @@
+electron/__tests__/webviewSecurity.spec.ts
+  h_beb54bf43b47b7 70-72,133-136
+public/themePrepaint.js
+  h_beb54bf43b47b7 2,10,50,58,60,71,74-75,83,86,89
+release/open-source-inventory.json
+  h_beb54bf43b47b7 1427
+scripts/__tests__/vercelContentSecurityPolicy.spec.ts
+  h_beb54bf43b47b7 110-114,200-203
+src/modules/Crust/presentations/components/CrustControlZone.tsx
+  h_beb54bf43b47b7 599
+src/modules/Crust/presentations/components/CrustGainStrip.tsx
+  h_beb54bf43b47b7 72,74,76,91,166,179
+src/modules/Crust/presentations/components/__tests__/CrustControlZoneLevels.spec.tsx
+  h_beb54bf43b47b7 168-176
+src/modules/Crust/presentations/components/__tests__/CrustGainStripBranches.spec.tsx
+  h_beb54bf43b47b7 57-64
+src/modules/Crust/presentations/components/__tests__/CrustGainStripInteraction.spec.tsx
+  h_beb54bf43b47b7 29,31-33,37-39,43-45,49-51
+src/modules/Grinder/presentations/views/GrinderPanel.tsx
+  h_beb54bf43b47b7 1007
+src/styles/__tests__/semanticThemes.spec.ts
+  h_beb54bf43b47b7 8-9,14-22,40-43,45-46,54-56,161-184,245-247,266-269,295-336,404-474
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d9ffc36e3f8423866a9bd2bebdf7831ac5ad92f2",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
