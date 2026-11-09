@@ -285,6 +285,71 @@ describe('ArrangementSelector', () => {
         expect(replacement1).toHaveAttribute('aria-checked', 'false');
     });
 
+    it('recovers radio focus when replacement removes the arrangement being renamed', () => {
+        (useStore as ReturnType<typeof vi.fn>).mockReturnValue({
+            arrangements: [
+                { id: 'arr-1', name: 'Arrangement 1' },
+                { id: 'arr-2', name: 'Arrangement 2' },
+                { id: 'arr-3', name: 'Arrangement 3' },
+            ],
+            activeArrangementId: 'arr-1',
+        });
+        const { rerender } = render(<ArrangementSelector />);
+        fireEvent.click(screen.getByLabelText(/Arrangement selector/i));
+        fireEvent.click(screen.getByRole('button', { name: 'Rename Arrangement 2' }));
+        expect(screen.getByTestId('compact-input')).toHaveFocus();
+        (useStore as ReturnType<typeof vi.fn>).mockReturnValue({
+            arrangements: [
+                { id: 'arr-3', name: 'Arrangement 3' },
+                { id: 'arr-4', name: 'Arrangement 4' },
+            ],
+            activeArrangementId: 'arr-3',
+        });
+
+        rerender(<ArrangementSelector />);
+
+        expect(screen.queryByTestId('compact-input')).toBeNull();
+        expect(screen.getByRole('menu', { name: 'Arrangement menu' })).toBeInTheDocument();
+        const arrangement3 = screen.getByRole('menuitemradio', { name: /Arrangement 3/i });
+        const arrangement4 = screen.getByRole('menuitemradio', { name: /Arrangement 4/i });
+        expect(arrangement3).toHaveFocus();
+
+        fireEvent.keyDown(arrangement3, { key: 'ArrowDown' });
+
+        expect(arrangement4).toHaveFocus();
+        expect(arrangement3).toHaveAttribute('aria-checked', 'true');
+        expect(arrangement4).toHaveAttribute('aria-checked', 'false');
+    });
+
+    it('recovers radio focus when replacement removes a focused Rename button', () => {
+        const { rerender } = render(<ArrangementSelector />);
+        fireEvent.click(screen.getByLabelText(/Arrangement selector/i));
+        const rename = screen.getByRole('button', { name: 'Rename Arrangement 2' });
+        act(() => {
+            rename.focus();
+        });
+        expect(rename).toHaveFocus();
+        (useStore as ReturnType<typeof vi.fn>).mockReturnValue({
+            arrangements: [
+                { id: 'arr-1', name: 'Arrangement 1' },
+                { id: 'arr-3', name: 'Arrangement 3' },
+            ],
+            activeArrangementId: 'arr-1',
+        });
+
+        rerender(<ArrangementSelector />);
+
+        const arrangement1 = screen.getByRole('menuitemradio', { name: /Arrangement 1/i });
+        const arrangement3 = screen.getByRole('menuitemradio', { name: /Arrangement 3/i });
+        expect(arrangement1).toHaveFocus();
+
+        fireEvent.keyDown(arrangement1, { key: 'ArrowDown' });
+
+        expect(arrangement3).toHaveFocus();
+        expect(arrangement1).toHaveAttribute('aria-checked', 'true');
+        expect(arrangement3).toHaveAttribute('aria-checked', 'false');
+    });
+
     it('switches the focused arrangement with Enter or Space', () => {
         render(<ArrangementSelector />);
         fireEvent.click(screen.getByLabelText(/Arrangement selector/i));

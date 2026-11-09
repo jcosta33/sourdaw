@@ -31,7 +31,8 @@ export const ArrangementSelector = (): ReactElement | null => {
     const state = useStore(arrangementStore, defaultArrangementStoreState);
     const arrangements = state?.arrangements ?? [];
     const activeArrangementId = state?.activeArrangementId ?? null;
-    const navigableArrangements = arrangements.filter((arr) => arr.id !== editingId);
+    const renderedEditingId = arrangements.some((arr) => arr.id === editingId) ? editingId : null;
+    const navigableArrangements = arrangements.filter((arr) => arr.id !== renderedEditingId);
     const focusedRadioId = navigableArrangements.some((arr) => arr.id === focusedArrangementId)
         ? focusedArrangementId
         : null;
@@ -41,16 +42,22 @@ export const ArrangementSelector = (): ReactElement | null => {
     const radioTabStopId = focusedRadioId ?? activeRadioId ?? navigableArrangements[0]?.id;
 
     useEffect(() => {
-        if (editingId && inputRef.current) {
-            inputRef.current.focus();
-            inputRef.current.select();
+        if (!renderedEditingId || !inputRef.current) {
             return;
         }
-        if (!open || editingId || !radioTabStopId || document.activeElement !== document.body) {
+        inputRef.current.focus();
+        inputRef.current.select();
+    }, [renderedEditingId]);
+
+    useEffect(() => {
+        if (editingId && !renderedEditingId) {
+            setEditingId(null);
+        }
+        if (!open || renderedEditingId || !radioTabStopId || document.activeElement !== document.body) {
             return;
         }
         radioRefs.current.get(radioTabStopId)?.focus();
-    }, [editingId, open, radioTabStopId]);
+    }, [arrangements, editingId, open, radioTabStopId, renderedEditingId]);
 
     if (!state) {
         return null;
@@ -140,7 +147,7 @@ export const ArrangementSelector = (): ReactElement | null => {
                     }}
                     onEscapeKeyDown={(event) => {
                         event.stopPropagation();
-                        if (editingId) {
+                        if (renderedEditingId) {
                             event.preventDefault();
                             setEditingId(null);
                         }
@@ -153,7 +160,7 @@ export const ArrangementSelector = (): ReactElement | null => {
                     <div className="max-h-[300px] overflow-y-auto py-1">
                         {state.arrangements.map((arr) => {
                             const isActive = arr.id === state.activeArrangementId;
-                            const isEditing = editingId === arr.id;
+                            const isEditing = renderedEditingId === arr.id;
 
                             return (
                                 <div key={arr.id} className="group mx-1 flex items-center rounded-sm">
