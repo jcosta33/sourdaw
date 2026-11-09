@@ -1,0 +1,20 @@
+src/modules/Project/presentations/views/ArrangementSelector.tsx
+  h_beb54bf43b47b7 32-41,47-50,52-53
+src/modules/Project/presentations/views/__tests__/ArrangementSelector.spec.tsx
+  h_beb54bf43b47b7 52,58,60-69,257,275-285,459,473,478-501
+src/modules/Toaster/presentations/views/__tests__/ToasterPanel.spec.tsx
+  h_beb54bf43b47b7 5,27-29,115-120
+tests/e2e/spatialPannerArrangementTestId.spec.ts
+  h_beb54bf43b47b7 80-103
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "587680f626bdff7f3cb1b5620caa56ac991c9324",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
