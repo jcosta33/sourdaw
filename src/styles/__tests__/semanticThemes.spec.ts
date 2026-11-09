@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 import { createElement } from 'react';
+
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 
@@ -412,6 +413,76 @@ describe('semantic light theme', () => {
         const secondary = readToken(lightBlock, '--color-text-secondary');
         for (const [stop, background] of Object.entries(crustWindowStops())) {
             expect(contrast(secondary, background), `Level 5 labels on ${stop}`).toBeGreaterThanOrEqual(4.5);
+        }
+    });
+
+    it('keeps every remaining Crust control label and value opaque and readable on real window stops', () => {
+        expect(controlZoneSource).not.toMatch(/\btext-(?:muted-foreground|foreground)\/\d+/u);
+        expect(controlZoneSource).toContain('valueClassName="text-micro text-foreground"');
+
+        for (const token of ['--color-text-primary', '--color-text-secondary']) {
+            const foreground = readLightColor(token);
+            for (const [stop, background] of Object.entries(crustWindowStops())) {
+                expect(contrast(foreground, background), `${token} on Crust ${stop}`).toBeGreaterThanOrEqual(4.5);
+            }
+        }
+    });
+
+    it('keeps Crust desk, section, and choice-detail text opaque and readable on real window stops', () => {
+        expect(crustPanelSource).not.toMatch(/text-\[var\(--color-accent-copper\)\]\/\d+/u);
+        expect(crustPanelSource).toContain('titleClassName="text-muted-foreground"');
+
+        const choiceRowSource = readFileSync(
+            resolve(process.cwd(), 'src/components/daw/DawPluginChoiceRow.tsx'),
+            'utf8'
+        );
+        const detailClass = /<span className="([^"]*tracking-\[0\.2em\][^"]*)">/u.exec(choiceRowSource)?.[1] ?? '';
+        expect(detailClass).toContain('text-muted-foreground');
+        expect(detailClass).not.toMatch(/text-muted-foreground\//u);
+
+        for (const token of ['--color-accent-copper', '--color-text-secondary']) {
+            const foreground = readLightColor(token);
+            for (const [stop, background] of Object.entries(crustWindowStops())) {
+                expect(contrast(foreground, background), `${token} on Crust ${stop}`).toBeGreaterThanOrEqual(4.5);
+            }
+        }
+    });
+
+    it.each(['ghost', 'outline'])('keeps active %s text readable at every real Light inset stop', (variant) => {
+        const buttonSource = readFileSync(resolve(process.cwd(), 'src/components/ui/button.tsx'), 'utf8');
+        const variantClass = new RegExp(`\\b${variant}:\\s*'([^']+)'`, 'u').exec(buttonSource)?.[1] ?? '';
+        expect(variantClass).toContain('text-text-secondary');
+        expect(variantClass).toContain('active:daw-inset-surface');
+        expect(variantClass).toContain('active:text-text-primary');
+
+        const insetBlock = utilityBlock('daw-inset-surface');
+        const [topWhite, bottomWhite, topBlack] = Array.from(
+            insetBlock.matchAll(/rgba\(\s*\d+,\s*\d+,\s*\d+,\s*[\d.]+\)/gu),
+            (match) => parseCssColor(match[0])
+        );
+        const fadeEndpoint = Number(/transparent\s+([\d.]+)%/u.exec(insetBlock)?.[1]);
+        if (
+            topWhite === undefined ||
+            bottomWhite === undefined ||
+            topBlack === undefined ||
+            !Number.isFinite(fadeEndpoint)
+        ) {
+            throw new Error('Missing Light inset gradient stops');
+        }
+        const panelInset = readToken(lightBlock, '--color-bg-panelInset');
+        const fadeWhiteAlpha = topWhite.alpha + (bottomWhite.alpha - topWhite.alpha) * (fadeEndpoint / 100);
+        const overPanel = (white: CssColor, blackAlpha: number): string =>
+            composite(white.color, composite(topBlack.color, panelInset, blackAlpha), white.alpha);
+        const stops = {
+            top: overPanel(topWhite, topBlack.alpha),
+            fade: overPanel({ color: topWhite.color, alpha: fadeWhiteAlpha }, 0),
+            bottom: overPanel(bottomWhite, 0),
+        };
+        const primary = readToken(lightBlock, '--color-text-primary');
+        for (const [stop, background] of Object.entries(stops)) {
+            expect(contrast(primary, background), `${variant} active text on inset ${stop}`).toBeGreaterThanOrEqual(
+                4.5
+            );
         }
     });
 

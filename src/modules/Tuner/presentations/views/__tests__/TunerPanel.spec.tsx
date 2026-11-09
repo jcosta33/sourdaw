@@ -193,6 +193,7 @@ describe('TunerPanel', () => {
         fixtureState.confidence = 0.95;
         fixtureState.mode = 'needle';
         fixtureState.active = true;
+        fixtureState.cents = 0;
     });
 
     it('should render without crashing', () => {
@@ -341,6 +342,54 @@ describe('TunerPanel', () => {
         render(<TunerPanel deviceId={mockDeviceId} />);
         // We look for +0.0 or 0.0 or just 0
         expect(screen.getAllByText(/\+?0\.0/).length).toBeGreaterThan(0);
+    });
+
+    it.each([
+        {
+            state: 'inactive',
+            active: false,
+            cents: 0,
+            toneClass: 'text-text-secondary',
+            note: '—',
+            centsText: '—',
+        },
+        {
+            state: 'in-tune',
+            active: true,
+            cents: 0,
+            toneClass: 'text-[var(--color-accent-mint)]',
+            note: 'A',
+            centsText: '+0.0',
+        },
+        {
+            state: 'warning',
+            active: true,
+            cents: 6,
+            toneClass: 'text-[var(--color-state-warning)]',
+            note: 'A',
+            centsText: '+6.0',
+        },
+        {
+            state: 'danger',
+            active: true,
+            cents: -18,
+            toneClass: 'text-[var(--color-state-danger)]',
+            note: 'A',
+            centsText: '-18.0',
+        },
+    ])('routes both main readouts to the $state tone color', ({ active, cents, toneClass, note, centsText }) => {
+        fixtureState.active = active;
+        fixtureState.cents = cents;
+        const { container } = render(<TunerPanel deviceId={mockDeviceId} />);
+
+        const noteReadout = container.querySelector<HTMLElement>('.text-6xl');
+        const centsReadout = container.querySelector<HTMLElement>('.text-3xl');
+        expect(noteReadout).not.toBeNull();
+        expect(centsReadout).not.toBeNull();
+        expect(noteReadout).toHaveTextContent(note);
+        expect(centsReadout).toHaveTextContent(centsText);
+        expect(noteReadout).toHaveClass(toneClass);
+        expect(centsReadout).toHaveClass(toneClass);
     });
 
     it('should display confidence value', () => {

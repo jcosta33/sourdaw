@@ -57,6 +57,19 @@ describe('Button', () => {
         expect(button.className).not.toContain('text-white');
     });
 
+    it.each(['ghost', 'outline'] as const)('keeps %s text primary while its inset surface is active', (variant) => {
+        render(
+            <Button type="button" variant={variant}>
+                Press
+            </Button>
+        );
+
+        const button = screen.getByRole('button', { name: 'Press' });
+        expect(button).toHaveClass('text-text-secondary');
+        expect(button).toHaveClass('active:daw-inset-surface');
+        expect(button).toHaveClass('active:text-text-primary');
+    });
+
     it('should forward click handlers', () => {
         const onClick = vi.fn();
         render(

@@ -154,7 +154,7 @@ export const CrustPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
         <Stack gap={2.5} className="crust-faceplate h-full min-h-[440px] p-2.5 text-foreground">
             <Row as="header" wrap gap={2.5} shrink={false} className="crust-window px-3 py-2">
                 <Stack gap={1}>
-                    <div className="text-micro uppercase tracking-[0.28em] text-[var(--color-accent-copper)]/70">
+                    <div className="text-micro uppercase tracking-[0.28em] text-[var(--color-accent-copper)]">
                         Loudness desk
                     </div>
                     <div className="text-[13px] font-semibold text-foreground">Crust</div>
@@ -309,7 +309,7 @@ export const CrustPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                             className="px-1"
                             size="xs"
                             title="Mission control"
-                            titleClassName="text-muted-foreground/70"
+                            titleClassName="text-muted-foreground"
                             actions={
                                 <Row gap={2} className="text-caption text-muted-foreground">
                                     <Stack gap={0.5}>
