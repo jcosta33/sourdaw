@@ -35,8 +35,9 @@ async function snapshot(page: Page) {
 
 function clipCount(tracks: unknown[]): number {
     return tracks.reduce<number>((count, track) => {
-        if (typeof track !== 'object' || track === null || !('clips' in track) || !Array.isArray(track.clips))
+        if (typeof track !== 'object' || track === null || !('clips' in track) || !Array.isArray(track.clips)) {
             throw new Error('Invalid track clips');
+        }
         return count + track.clips.length;
     }, 0);
 }
@@ -64,7 +65,9 @@ test('audio editor omits MIDI automation and preserves MIDI tray preference', as
     const imported = await snapshot(page);
     expect(imported.raw).toEqual(imported.projected);
     const dock = page.getByTestId('toggle-bottom-dock');
-    if ((await dock.getAttribute('aria-pressed')) !== 'true') await dock.click();
+    if ((await dock.getAttribute('aria-pressed')) !== 'true') {
+        await dock.click();
+    }
     await page.getByRole('tab', { name: 'Editor' }).click();
     const timeline = page.getByLabel('Timeline editor surface');
     await timeline.click({ position: { x: 30, y: 20 } });
@@ -90,7 +93,7 @@ test('audio editor omits MIDI automation and preserves MIDI tray preference', as
     expect(tracks.projected.filter((track) => !existingIds.includes(track.id))).toHaveLength(1);
     const audioTrack = priorTracks.projected.find((track) => track.kind === 'audio');
     const midiTrack = tracks.projected.find((track) => track.kind === 'midi' && !existingIds.includes(track.id));
-    if (!audioTrack || !midiTrack || audioTrack.clips.length !== 1 || midiTrack.clips.length !== 0) {
+    if (!audioTrack || !midiTrack || audioTrack.clips.length !== 1 || midiTrack.clips.length > 0) {
         throw new Error('Expected one imported audio clip and an empty MIDI track');
     }
     const audioMute = page.getByTestId(`track-mute-${audioTrack.id}`);
@@ -100,20 +103,25 @@ test('audio editor omits MIDI automation and preserves MIDI tray preference', as
     const timelineBox = await timeline.boundingBox();
     const midiBox = await midiMute.boundingBox();
     const audioBox = await audioMute.boundingBox();
-    if (!timelineBox || !midiBox || !audioBox) throw new Error('Track or timeline geometry unavailable');
+    if (!timelineBox || !midiBox || !audioBox) {
+        throw new Error('Track or timeline geometry unavailable');
+    }
     const view = await page.evaluate(async (entry) => {
         const { arrangement }: typeof import('./persistedHydrationEntry') = await import(entry);
         return arrangement.timelineViewStore.value;
     }, ENTRY);
-    if (!view) throw new Error('Timeline view unavailable');
+    if (!view) {
+        throw new Error('Timeline view unavailable');
+    }
     const midiY = midiBox.y + midiBox.height / 2;
     const audioY = audioBox.y + audioBox.height / 2;
     await page.getByRole('radio', { name: 'Draw (D/B)' }).click();
     const drawStartX = Math.max(1, view.pixelsPerBeat - view.scrollX);
     const drawEndX = drawStartX + view.pixelsPerBeat * 2;
     const audioX = (audioTrack.clips[0]!.startBeat + 0.5) * view.pixelsPerBeat - view.scrollX;
-    if (drawEndX >= timelineBox.width || audioX <= 0 || audioX >= timelineBox.width)
+    if (drawEndX >= timelineBox.width || audioX <= 0 || audioX >= timelineBox.width) {
         throw new Error('Clips outside visible timeline');
+    }
     await page.mouse.move(timelineBox.x + drawStartX, midiY);
     await page.mouse.down();
     await page.mouse.move(timelineBox.x + drawEndX, midiY);
@@ -122,9 +130,13 @@ test('audio editor omits MIDI automation and preserves MIDI tray preference', as
     await expect.poll(async () => clipCount((await snapshot(page)).projected)).toBe(2);
     const drawn = await snapshot(page);
     const midiClip = drawn.projected.find((track) => track.id === midiTrack.id)?.clips[0];
-    if (!midiClip || midiClip.type !== 'midi') throw new Error('Draw did not create a MIDI clip on the intended track');
+    if (!midiClip || midiClip.type !== 'midi') {
+        throw new Error('Draw did not create a MIDI clip on the intended track');
+    }
     const midiX = ((midiClip.startBeat + midiClip.endBeat) / 2) * view.pixelsPerBeat - view.scrollX;
-    if (midiX <= 0 || midiX >= timelineBox.width) throw new Error('MIDI clip outside visible timeline');
+    if (midiX <= 0 || midiX >= timelineBox.width) {
+        throw new Error('MIDI clip outside visible timeline');
+    }
     await page.getByRole('radio', { name: 'Select (S)' }).click();
     await page.mouse.click(timelineBox.x + midiX, midiY);
     const toggle = page.getByTestId('toggle-automation-tray-button');

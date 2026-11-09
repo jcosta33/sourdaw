@@ -341,7 +341,9 @@ describe('ClipView', () => {
         clipSelectionMocks.store.value.selectedClipId = 'midi';
         const view = renderWithTooltip(<ClipView />);
         expect(screen.getByTestId('clip-editor-tray')).toBeInTheDocument();
-        if (!shown) fireEvent.click(screen.getByTestId('toggle-automation-tray-button'));
+        if (!shown) {
+            fireEvent.click(screen.getByTestId('toggle-automation-tray-button'));
+        }
         clipSelectionMocks.store.value.selectedClipId = 'audio';
         view.rerender(
             <TooltipProvider>
