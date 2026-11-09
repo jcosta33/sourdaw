@@ -7,7 +7,10 @@
         let segment = '';
         for (let index = 0; index < path.length; index += 1) {
             const character = path[index];
-            if (!legacyPaths && character === '\\') {
+            if (character === '\\' && path[index + 1] === '.') {
+                segment += '.';
+                index += 1;
+            } else if (!legacyPaths && character === '\\') {
                 const escaped = path[index + 1];
                 if (escaped !== '\\' && escaped !== '.') {
                     throw new Error('Invalid SuperJSON path escape');

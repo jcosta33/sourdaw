@@ -9,15 +9,56 @@ test('applies the persisted Light theme before the real entry module paints', as
     await enable_direct_e2e_viewport(page);
     const response = await page.request.get('/');
     expect(response.ok()).toBe(true);
-    const entrySource = await page.evaluate(
+    const { entrySource, decoyEntrySources } = await page.evaluate(
         (html) => {
-            const document = new DOMParser().parseFromString(html, 'text/html');
-            return [...document.querySelectorAll('script[type="module" i][src]')].at(-1)?.getAttribute('src') ?? null;
+            const discoverEntry = (sourceHtml: string): string | null => {
+                const document = window.document.implementation.createHTMLDocument('');
+                document.open();
+                document.write(sourceHtml);
+                document.close();
+                return (
+                    [...document.querySelectorAll('script[type="module" i][src]')]
+                        .filter((script) => script.namespaceURI === 'http://www.w3.org/1999/xhtml')
+                        .at(0)
+                        ?.getAttribute('src') ?? null
+                );
+            };
+            const realEntrySource = discoverEntry(html);
+            if (realEntrySource === null) {
+                return { entrySource: null, decoyEntrySources: {} };
+            }
+            const sourceAttribute = [`src="${realEntrySource}"`, `src='${realEntrySource}'`].find((attribute) =>
+                html.includes(attribute)
+            );
+            if (sourceAttribute === undefined) {
+                throw new Error('Served HTML has no addressable entry module');
+            }
+            const sourceOffset = html.indexOf(sourceAttribute);
+            const scriptEnd = html.indexOf('</script>', sourceOffset);
+            if (scriptEnd < 0) {
+                throw new Error('Served HTML has an unterminated entry module');
+            }
+            const insertionPoint = scriptEnd + '</script>'.length;
+            const withDecoy = (decoy: string): string =>
+                `${html.slice(0, insertionPoint)}${decoy}${html.slice(insertionPoint)}`;
+            return {
+                entrySource: realEntrySource,
+                decoyEntrySources: {
+                    inertNoscript: discoverEntry(
+                        withDecoy('<noscript><script type="module" src="/startup-decoy.js"></script></noscript>')
+                    ),
+                    svg: discoverEntry(withDecoy('<svg><script type="module" src="/startup-decoy.js"></script></svg>')),
+                    trailingActive: discoverEntry(withDecoy('<script type="module" src="/startup-decoy.js"></script>')),
+                },
+            };
         },
         await response.text()
     );
     if (entrySource === null) {
         throw new Error('Served HTML has no entry module');
+    }
+    for (const [decoy, decoyEntrySource] of Object.entries(decoyEntrySources)) {
+        expect.soft(decoyEntrySource, `${decoy} must not replace the real entry`).toBe(entrySource);
     }
     const entryUrl = new URL(entrySource, response.url()).href;
     const gate = deferred<string>();

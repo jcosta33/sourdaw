@@ -300,6 +300,34 @@ describe('semantic light theme', () => {
             }),
         },
         {
+            name: 'v0 nested equality with an escaped dot',
+            stored: JSON.stringify({
+                json: { theme: 'dark', 'other.value': 'light' },
+                meta: { referentialEqualities: { 'other\\.value': ['theme'] }, v: 0 },
+            }),
+        },
+        {
+            name: 'versionless nested equality with an escaped dot',
+            stored: JSON.stringify({
+                json: { theme: 'dark', 'other.value': 'light' },
+                meta: { referentialEqualities: { 'other\\.value': ['theme'] } },
+            }),
+        },
+        {
+            name: 'v0 root equality with an escaped dot',
+            stored: JSON.stringify({
+                json: { theme: 'light', 'other.value': null },
+                meta: { referentialEqualities: [['other\\.value']], v: 0 },
+            }),
+        },
+        {
+            name: 'versionless root equality with an escaped dot',
+            stored: JSON.stringify({
+                json: { theme: 'light', 'other.value': null },
+                meta: { referentialEqualities: [['other\\.value']] },
+            }),
+        },
+        {
             name: 'v0 nested equality with a literal backslash',
             stored: JSON.stringify({
                 json: { theme: 'dark', 'other\\value': 'light' },
