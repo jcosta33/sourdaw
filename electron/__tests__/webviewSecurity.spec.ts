@@ -57,8 +57,36 @@ const parseCsp = (policy: string): Map<string, string[]> => {
     return directives;
 };
 
-/** Parse with the browser's scripting flag so noscript contents stay inert. */
-const parseActiveHtml = (html: string): Document => {
+/**
+ * The vitest jsdom environment supplies `document` at runtime, but this
+ * project compiles Node-only (`lib: ES2024`, `types: node`), so the DOM names
+ * are not known here. Declare the small slice these checks use, structurally.
+ */
+type ParsedHtmlElement = {
+    closest(selector: string): ParsedHtmlElement | null;
+    getAttribute(name: string): string | null;
+    hasAttribute(name: string): boolean;
+    readonly textContent: string | null;
+};
+
+type ParsedHtmlDocument = {
+    open(): void;
+    write(markup: string): void;
+    close(): void;
+    querySelectorAll(selector: string): {
+        readonly length: number;
+        item(index: number): ParsedHtmlElement | null;
+    };
+};
+
+declare const document: {
+    implementation: {
+        createHTMLDocument(title: string): ParsedHtmlDocument;
+    };
+};
+
+/** Parse as a live document so a noscript-wrapped tag stays inert markup. */
+const parseActiveHtml = (html: string): ParsedHtmlDocument => {
     const parsed = document.implementation.createHTMLDocument('');
     parsed.open();
     parsed.write(html);
@@ -66,8 +94,18 @@ const parseActiveHtml = (html: string): Document => {
     return parsed;
 };
 
-const findThemeScript = (html: string): HTMLScriptElement | null =>
-    parseActiveHtml(html).querySelector<HTMLScriptElement>('script#sourdaw-theme');
+const findThemeScript = (html: string): ParsedHtmlElement | null => {
+    const scripts = parseActiveHtml(html).querySelectorAll('script#sourdaw-theme');
+    for (let index = 0; index < scripts.length; index += 1) {
+        const script = scripts.item(index);
+        // Belt and braces: whether or not the parser treats noscript as raw
+        // text, an inert ancestor never counts as active markup.
+        if (script !== null && script.closest('noscript, template') === null) {
+            return script;
+        }
+    }
+    return null;
+};
 
 /** Every production TypeScript source under a directory, concatenated. */
 const readProductionTypescript = (directory: string): string =>
