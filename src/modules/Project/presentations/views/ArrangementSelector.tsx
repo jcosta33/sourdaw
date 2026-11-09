@@ -312,6 +312,7 @@ export const ArrangementSelector = (): ReactElement | null => {
                         variant="bare"
                         size="bare"
                         type="button"
+                        disabled={!currentArrangement}
                         className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-foreground hover:bg-accent/50 transition-colors"
                         role="menuitem"
                         onClick={handleDuplicate}

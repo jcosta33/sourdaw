@@ -106,6 +106,7 @@ const { logger } = await import('#/infra/logger/appLogger');
 const { switchArrangement } = await import('#/modules/Project/useCases/arrangement/switchArrangement');
 const { notifyUser } = await import('#/utils/Notification/notifyUser');
 const { renameArrangement } = await import('../../../useCases/arrangement/renameArrangement');
+const { duplicateArrangement } = await import('../../../useCases/arrangement/duplicateArrangement');
 
 describe('ArrangementSelector', () => {
     beforeEach(() => {
@@ -422,8 +423,10 @@ describe('ArrangementSelector', () => {
         await vi.waitFor(() => {
             expect(newArrangement).toHaveFocus();
         });
+        const duplicate = screen.getByRole('menuitem', { name: 'Duplicate Current' });
+        expect(duplicate).toBeDisabled();
         fireEvent.keyDown(newArrangement, { key: 'ArrowDown' });
-        expect(screen.getByRole('menuitem', { name: 'Duplicate Current' })).toHaveFocus();
+        expect(newArrangement).toHaveFocus();
     });
 
     it('focuses New Arrangement when a focused two-arrangement menu becomes empty and recovers after growth', () => {
@@ -490,9 +493,11 @@ describe('ArrangementSelector', () => {
         });
         expect(arrangement).toHaveFocus();
 
-        fireEvent.keyDown(arrangement, { key: 'Enter' });
-        fireEvent.keyDown(arrangement, { key: ' ' });
+        const enterNotCancelled = fireEvent.keyDown(arrangement, { key: 'Enter', cancelable: true });
+        const spaceNotCancelled = fireEvent.keyDown(arrangement, { key: ' ', cancelable: true });
 
+        expect(enterNotCancelled).toBe(false);
+        expect(spaceNotCancelled).toBe(false);
         expect(switchArrangement).toHaveBeenCalledTimes(2);
         expect(switchArrangement).toHaveBeenNthCalledWith(1, 'arr-2');
         expect(switchArrangement).toHaveBeenNthCalledWith(2, 'arr-2');
@@ -752,5 +757,9 @@ describe('ArrangementSelector', () => {
         const button = screen.getByLabelText(/Arrangement selector/i);
         fireEvent.click(button);
         expect(screen.getByText(/Duplicate Current/i)).toBeInTheDocument();
+
+        fireEvent.click(screen.getByRole('menuitem', { name: 'Duplicate Current' }));
+
+        expect(duplicateArrangement).toHaveBeenCalledExactlyOnceWith('arr-1');
     });
 });
