@@ -1,0 +1,19 @@
+src/modules/Crust/presentations/components/CrustMeteringStrip.tsx
+  s_977061c47f01dd::t_573e4609b42709 88,190,197,207
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ac0de2564db14abbc4a6b4aa9580f86ad809a9c4",
+  "prompts": {},
+  "sessions": {
+    "s_977061c47f01dd": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34d-123d-7452-a6e7-60608388b6d7",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
