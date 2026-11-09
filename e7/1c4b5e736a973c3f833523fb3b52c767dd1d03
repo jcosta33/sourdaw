@@ -1,0 +1,30 @@
+docs/06-testing.md
+  h_beb54bf43b47b7 890-901
+scripts/__tests__/agentDeliveryScripts.spec.ts
+  h_beb54bf43b47b7 1161,1315
+scripts/__tests__/e2eServerIdentity.spec.ts
+  h_beb54bf43b47b7 4
+scripts/__tests__/resourceGuard.spec.ts
+  h_beb54bf43b47b7 14,20,68-91,2191,2195,2201-2211,2213,2233,2236,2241-2242,2263-2264,2266,2291-2306,2308-2314,2316-2325,2327-2354,2472,2485-2489,2509,2513
+scripts/e2eServerIdentity.ts
+  h_beb54bf43b47b7 1
+scripts/guardRecoveryProof.ts
+  h_beb54bf43b47b7 1
+scripts/resourceGuard.ts
+  h_beb54bf43b47b7 24-25,220,224,244-290,292-300,3280,3290-3292,3302-3306,3310-3319,3328,3332-3334,3337
+scripts/reviewRiskPolicy.ts
+  h_beb54bf43b47b7 152
+scripts/trustedGithubWriteBootstrap.ts
+  h_beb54bf43b47b7 179
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e71c4b5e736a973c3f833523fb3b52c767dd1d03",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
