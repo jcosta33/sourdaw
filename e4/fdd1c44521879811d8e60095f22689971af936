@@ -1,0 +1,18 @@
+src/modules/Project/presentations/views/ArrangementSelector.tsx
+  h_beb54bf43b47b7 34-35,45,48-56,60,150,163
+src/modules/Project/presentations/views/__tests__/ArrangementSelector.spec.tsx
+  h_beb54bf43b47b7 288-352
+tests/e2e/fermenterPanelDeepTestId.spec.ts
+  h_beb54bf43b47b7 53-84
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e4fdd1c44521879811d8e60095f22689971af936",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
