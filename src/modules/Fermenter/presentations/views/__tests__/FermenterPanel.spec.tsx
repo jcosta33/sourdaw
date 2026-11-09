@@ -171,11 +171,16 @@ describe('FermenterPanel', () => {
         it('connects the selected tab to its named section panel', () => {
             renderPanel();
             const filterTab = screen.getAllByRole('tab', { name: /^Filter$/ })[0]!;
+            const oscillatorTab = screen.getByRole('tab', { name: /^Oscillator$/ });
             fireEvent.click(filterTab);
 
             const panel = screen.getByRole('tabpanel', { name: 'Filter' });
             expect(panel).toHaveAttribute('id', 'fermenter-section-panel');
             expect(filterTab).toHaveAttribute('aria-controls', panel.id);
+            expect(filterTab).toHaveAttribute('aria-selected', 'true');
+            expect(filterTab).toHaveAttribute('tabindex', '0');
+            expect(oscillatorTab).toHaveAttribute('aria-selected', 'false');
+            expect(oscillatorTab).toHaveAttribute('tabindex', '-1');
         });
 
         it('switches to the envelopes section header when the Envelopes tab is clicked', () => {

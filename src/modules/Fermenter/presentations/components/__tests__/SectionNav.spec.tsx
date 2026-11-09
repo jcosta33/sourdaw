@@ -39,6 +39,15 @@ describe('SectionNav', () => {
                 `bg-[var(--color-accent-${accents[section]})]`,
                 'text-white'
             );
+            for (const [unselectedSection, unselectedLabel] of SECTION_LABELS) {
+                if (unselectedSection === section) {
+                    continue;
+                }
+                const unselectedTab = screen.getByRole('tab', { name: unselectedLabel });
+                expect(unselectedTab).not.toHaveClass(`bg-[var(--color-accent-${accents[unselectedSection]})]`);
+                expect(unselectedTab).not.toHaveClass('text-white');
+                expect(unselectedTab).toHaveClass('text-muted-foreground');
+            }
             unmount();
         }
     });
