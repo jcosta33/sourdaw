@@ -31,16 +31,16 @@ function dbToNorm(db: number, min = -60, max = 6): number {
 
 function lufsColor(lufs: number, target: number | null): string {
     if (target === null) {
-        return '#E8E6E0';
+        return 'var(--color-text-primary)';
     }
     const diff = lufs - target;
     if (Math.abs(diff) <= 0.5) {
-        return '#7FC8A0';
+        return 'var(--color-state-play)';
     }
     if (lufs > target) {
-        return '#C44030';
+        return 'var(--color-state-danger)';
     }
-    return '#E8E6E0';
+    return 'var(--color-text-primary)';
 }
 
 const MeterBar = ({ value, id }: { value: number; id: string }): ReactElement => {
@@ -80,7 +80,7 @@ const MeterSection = ({
     actions?: ReactElement;
     className?: string;
 }): ReactElement => (
-    <section className={`rounded-[14px] border border-white/8 bg-black/[0.22] px-3 py-2 ${className}`}>
+    <section className={`rounded-[14px] border border-white/8 bg-surface-raised px-3 py-2 ${className}`}>
         <DawPluginSectionHeader
             title={title}
             actions={actions}
@@ -111,12 +111,12 @@ export const CrustMeteringStrip = ({
 
     const targetDiff = lufsTarget !== null ? lufsIntegrated - lufsTarget : null;
 
-    let targetDiffColor = '#D4A847';
+    let targetDiffColor = 'var(--color-state-warning)';
     if (targetDiff !== null) {
         if (Math.abs(targetDiff) <= 0.5) {
-            targetDiffColor = '#7FC8A0';
+            targetDiffColor = 'var(--color-state-play)';
         } else if (targetDiff > 0) {
-            targetDiffColor = '#C44030';
+            targetDiffColor = 'var(--color-state-danger)';
         }
     }
 
@@ -159,7 +159,7 @@ export const CrustMeteringStrip = ({
             </MeterSection>
 
             <MeterSection title="Loudness" className="flex-1">
-                <div className="mb-1">
+                <div className="mb-1 flex flex-wrap items-baseline gap-x-1">
                     <span
                         className="font-mono font-bold tabular-nums"
                         style={{ fontSize: 20, color: intColor, letterSpacing: '-0.02em' }}
@@ -167,10 +167,10 @@ export const CrustMeteringStrip = ({
                     >
                         {lufsIntegrated > -99 ? lufsIntegrated.toFixed(1) : '—'}
                     </span>
-                    <span className="text-micro text-muted-foreground/50 ml-1">LUFS</span>
+                    <span className="text-micro text-muted-foreground">LUFS</span>
                     {targetDiff !== null ? (
                         <span
-                            className="text-micro font-mono ml-1"
+                            className="text-micro font-mono"
                             style={{
                                 color: targetDiffColor,
                             }}
@@ -186,14 +186,14 @@ export const CrustMeteringStrip = ({
                         label="ST"
                         value={lufsShortTerm > -99 ? lufsShortTerm.toFixed(1) : '—'}
                         aria-label={`Short-term LUFS: ${lufsShortTerm.toFixed(1)}`}
-                        labelClassName="text-nano text-muted-foreground/40"
+                        labelClassName="text-nano text-muted-foreground/80"
                         valueClassName="text-[12px] tabular-nums text-foreground/70"
                     />
                     <DawReadoutRow
                         label="MOM"
                         value={lufsMomentary > -99 ? lufsMomentary.toFixed(1) : '—'}
                         aria-label={`Momentary LUFS: ${lufsMomentary.toFixed(1)}`}
-                        labelClassName="text-nano text-muted-foreground/40"
+                        labelClassName="text-nano text-muted-foreground/80"
                         valueClassName="text-[12px] tabular-nums text-foreground/70"
                     />
                 </DawPluginReadoutList>
@@ -203,7 +203,7 @@ export const CrustMeteringStrip = ({
                         label="LRA"
                         value={`${lra.toFixed(1)} LU`}
                         aria-label={`Loudness range: ${lra.toFixed(1)} LU`}
-                        labelClassName="text-nano text-muted-foreground/40"
+                        labelClassName="text-nano text-muted-foreground/80"
                         valueClassName="text-dense text-foreground/60"
                     />
                 </div>
