@@ -22,10 +22,10 @@ import { addYeastLoopPhaseCandidates } from './yeastLoopPhaseIndex';
 
 import type { trackStore } from '#/modules/Arrangement/stores';
 import type { MidiStoreState } from '#/modules/MIDI/stores';
-import type { resolveMidiWindowClips } from './resolveMidiWindowClips';
-import type { SchedulerCancellation } from './schedulerCancellation';
 import type { TransportState } from '../../models/TransportState';
 import type { tempoMapStore } from '../../stores/tempoMapStore';
+import type { resolveMidiWindowClips } from './resolveMidiWindowClips';
+import type { SchedulerCancellation } from './schedulerCancellation';
 
 type SchedulerTrack = NonNullable<(typeof trackStore)['value']>['tracks'][number];
 type SelectYeastNotesForSchedulerWindowInput = {

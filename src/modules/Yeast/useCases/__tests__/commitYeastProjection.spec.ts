@@ -68,6 +68,7 @@ const { commitYeastProjection } = await import('../commitYeastProjection');
 describe('commitYeastProjection', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        mocks.restoreGrooveAssignment.mockReturnValue({ status: 'written' });
         mocks.yeastState = createProcessorPair();
         mocks.assignments = [
             {
@@ -86,7 +87,7 @@ describe('commitYeastProjection', () => {
     });
 
     it('drops the groove assignment of a processor the commit removed', () => {
-        commitYeastProjection([mocks.yeastState.processors[0]!]);
+        expect(commitYeastProjection([mocks.yeastState.processors[0]!])).toBe(true);
 
         expect(mocks.restoreGrooveAssignment).toHaveBeenCalledOnce();
         expect(mocks.restoreGrooveAssignment).toHaveBeenCalledWith({
@@ -97,7 +98,7 @@ describe('commitYeastProjection', () => {
     });
 
     it('keeps assignments whose processor survived the commit', () => {
-        commitYeastProjection(mocks.yeastState.processors);
+        expect(commitYeastProjection(mocks.yeastState.processors)).toBe(false);
 
         expect(mocks.restoreGrooveAssignment).not.toHaveBeenCalled();
         expect(mocks.yeastState.processors.map((processor) => processor.id)).toEqual(['groove-live', 'groove-dropped']);
@@ -108,9 +109,10 @@ describe('commitYeastProjection', () => {
         // would consider the dropped processor still live and no-op.
         mocks.restoreGrooveAssignment.mockImplementation(() => {
             expect(mocks.yeastState.processors.map((processor) => processor.id)).toEqual(['groove-live']);
+            return { status: 'written' };
         });
 
-        commitYeastProjection([mocks.yeastState.processors[0]!]);
+        expect(commitYeastProjection([mocks.yeastState.processors[0]!])).toBe(true);
 
         expect(mocks.restoreGrooveAssignment).toHaveBeenCalledOnce();
     });

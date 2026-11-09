@@ -1,5 +1,5 @@
-import type { TrackNode } from './TrackNode';
 import type { BusStrip } from '../models/AudioEngineState';
+import type { TrackNode } from './TrackNode';
 
 export class BusNode {
     public strip: BusStrip;

@@ -75,7 +75,8 @@ describe('setYeastProcessorParam', () => {
     });
 
     it('still persists durable Chord Memory parameters', async () => {
-        await setYeastProcessorParam('cm-1', 'transpose_mode', 0);
+        commit.mockReturnValueOnce(true);
+        expect(await setYeastProcessorParam('cm-1', 'transpose_mode', 0)).toBe(true);
 
         expect(commit).toHaveBeenCalledWith([
             {
@@ -102,7 +103,7 @@ describe('setYeastProcessorParam', () => {
     });
 
     it('previews a transient groove amount without creating an assignment or durable store write', async () => {
-        await setYeastProcessorParam('groove-1', 'amount', 0.75, true);
+        expect(await setYeastProcessorParam('groove-1', 'amount', 0.75, true)).toBe(false);
 
         expect(runtimeMocks.applyYeastRuntimeProjection).toHaveBeenCalledWith([
             {
@@ -123,8 +124,9 @@ describe('setYeastProcessorParam', () => {
             revisions.push(revision);
         });
 
-        await setYeastProcessorParam('cm-1', 'transpose_mode', 0);
-        await setYeastProcessorParam('groove-1', 'amount', 0.75, true);
+        commit.mockReturnValueOnce(true);
+        expect(await setYeastProcessorParam('cm-1', 'transpose_mode', 0)).toBe(true);
+        expect(await setYeastProcessorParam('groove-1', 'amount', 0.75, true)).toBe(false);
         unsubscribe();
 
         expect(revisions).toHaveLength(4);

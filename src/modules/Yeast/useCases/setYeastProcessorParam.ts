@@ -49,29 +49,29 @@ export async function setYeastProcessorParam(
     name: string,
     value: number,
     isTransient = false
-): Promise<void> {
+): Promise<boolean> {
     const state = yeastStore.value;
     if (!state) {
-        return;
+        return false;
     }
 
     const processor = state.processors.find((entry) => entry.id === id);
     if (!processor) {
-        return;
+        return false;
     }
     if (processor.type === 'chordMemory' && (name === 'learn' || name === 'clear')) {
-        return;
+        return false;
     }
     if (isTransient) {
         const projection = createPreviewYeastProcessorProjection(id, name, value);
         if (!projection) {
-            return;
+            return false;
         }
         const revisionDetails = { processorId: id, parameterName: name, transient: true };
         const revision = publishPendingYeastPreviewRevision(revisionDetails);
         await applyYeastControlProjection(projection);
         publishAppliedYeastPreviewRevision({ ...revisionDetails, revision });
-        return;
+        return false;
     }
     if (processor.type === 'groove' && name === GROOVE_AMOUNT_PARAM) {
         const assignment = getYeastGrooveAssignment(id);
@@ -81,23 +81,24 @@ export async function setYeastProcessorParam(
         await setYeastGrooveTemplate(id, assignment?.templateId ?? getStraightGrooveTemplateId(), clampedAmount);
         const currentState = yeastStore.value;
         if (!currentState) {
-            return;
+            return false;
         }
         await applyYeastControlProjection(createYeastRuntimeProjection(currentState.processors));
         publishAppliedYeastPreviewRevision({ ...revisionDetails, revision });
-        return;
+        return false;
     }
     const revisionDetails = { processorId: id, parameterName: name, transient: false };
     const revision = publishPendingYeastPreviewRevision(revisionDetails);
-    commitYeastProjection(
+    const grooveChanged = commitYeastProjection(
         state.processors.map((entry) =>
             entry.id === id ? { ...entry, params: { ...entry.params, [name]: value } } : entry
         )
     );
     const currentState = yeastStore.value;
     if (!currentState) {
-        return;
+        return grooveChanged;
     }
     await applyYeastControlProjection(createYeastRuntimeProjection(currentState.processors));
     publishAppliedYeastPreviewRevision({ ...revisionDetails, revision });
+    return grooveChanged;
 }

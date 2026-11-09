@@ -1,5 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { undoHistoryStore } from '#/modules/Command/stores';
+import { type AppAction } from '#/utils/handlerContract';
+
+import { PROCESSOR_PARAM_DEFAULTS } from '../../models/ProcessorCatalog';
 import { setActiveYeastDevice, type YeastProcessorInfo, type YeastState } from '../../stores/yeastStore';
 import { handleAddYeastProcessor } from '../addYeastProcessor';
 import { handleRemoveYeastProcessor } from '../removeYeastProcessor';
@@ -65,9 +69,34 @@ function rack(): YeastProcessorInfo[] {
     ];
 }
 
+function newArpAction(): Extract<AppAction, { type: 'addYeastProcessor' }> {
+    return { type: 'addYeastProcessor', payload: { processorId: 'new-arp', type: 'arpeggiator', name: 'Arp' } };
+}
+
+function oldArpInverse(expectedIndex: number): Extract<AppAction, { type: 'removeYeastProcessor' }> {
+    return {
+        type: 'removeYeastProcessor',
+        payload: {
+            processorId: 'new-arp',
+            expectedProcessor: { id: 'new-arp', type: 'arpeggiator', name: 'Arp', bypassed: false, params: {} },
+            expectedIndex,
+        },
+    };
+}
+
+const invalidCapturedAddCases: Array<
+    [string, Partial<Extract<AppAction, { type: 'removeYeastProcessor' }>['payload']>]
+> = [
+    ['wrong id', { processorId: 'different-arp' }],
+    ['wrong append slot', { expectedIndex: 1 }],
+    ['changed name', { expectedProcessor: { ...oldArpInverse(2).payload.expectedProcessor, name: 'Other' } }],
+    ['changed baseline', { expectedProcessor: { ...oldArpInverse(2).payload.expectedProcessor, params: { gate: 1 } } }],
+];
+
 describe('handleAddYeastProcessor', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        undoHistoryStore.set({ past: [], future: [] });
         setActiveYeastDevice(null);
     });
 
@@ -93,6 +122,94 @@ describe('handleAddYeastProcessor', () => {
 
         expect(result).toEqual({ status: 'conflict' });
         expect(mocks.addUseCase).not.toHaveBeenCalled();
+    });
+
+    it('refuses a direct add when no rack has hydrated', () => {
+        mocks.storeValue.value = null;
+        const result = handleAddYeastProcessor.execute({
+            type: 'addYeastProcessor',
+            payload: { processorId: 'new-arp', type: 'arpeggiator', name: 'Arp' },
+        });
+
+        expect(result).toEqual({ status: 'conflict' });
+        expect(mocks.addUseCase).not.toHaveBeenCalled();
+    });
+
+    it('rejects a forged recorded capture with no matching pending entry before a write', () => {
+        seedRack(rack());
+        const action = newArpAction();
+        const inverseAction = oldArpInverse(2);
+        const context = {
+            actions: [action],
+            actionIndex: 0,
+            recordedRedo: { inverseAction, isCurrent: () => true },
+        };
+
+        expect(handleAddYeastProcessor.describe(action, context).inverseAction).toBeNull();
+        expect(handleAddYeastProcessor.execute(action, context)).toEqual({ status: 'conflict' });
+        expect(mocks.addUseCase).not.toHaveBeenCalled();
+        expect(undoHistoryStore.value?.future).toEqual([]);
+    });
+
+    it.each(invalidCapturedAddCases)('rejects a recorded %s without changing pending history', (_label, patch) => {
+        seedRack(rack());
+        const action = newArpAction();
+        const base = oldArpInverse(2);
+        const inverseAction: Extract<AppAction, { type: 'removeYeastProcessor' }> = {
+            ...base,
+            payload: { ...base.payload, ...patch },
+        };
+        const entry = {
+            id: 'old-add',
+            kind: 'action' as const,
+            label: 'Add Yeast processor',
+            timestamp: 1,
+            source: 'manual' as const,
+            action,
+            inverseAction,
+        };
+        undoHistoryStore.set({ past: [], future: [entry] });
+        const context = {
+            actions: [action],
+            actionIndex: 0,
+            recordedRedo: { inverseAction, isCurrent: () => true },
+        };
+
+        expect(handleAddYeastProcessor.describe(action, context).inverseAction).toBeNull();
+        expect(handleAddYeastProcessor.execute(action, { ...context, undoEntryId: entry.id })).toEqual({
+            status: 'conflict',
+        });
+        expect(mocks.addUseCase).not.toHaveBeenCalled();
+        expect(undoHistoryStore.value?.future).toEqual([entry]);
+    });
+
+    it('rejects a capture retired after description before a write', () => {
+        seedRack(rack());
+        const action = newArpAction();
+        const inverseAction = oldArpInverse(2);
+        const entry = {
+            id: 'old-add',
+            kind: 'action' as const,
+            label: 'Add Yeast processor',
+            timestamp: 1,
+            source: 'manual' as const,
+            action,
+            inverseAction,
+        };
+        undoHistoryStore.set({ past: [], future: [entry] });
+        const context = {
+            actions: [action],
+            actionIndex: 0,
+            recordedRedo: { inverseAction, isCurrent: () => undoHistoryStore.value?.future.includes(entry) === true },
+        };
+        expect(handleAddYeastProcessor.describe(action, context).inverseAction).toBe(inverseAction);
+        undoHistoryStore.set({ past: [], future: [] });
+
+        expect(handleAddYeastProcessor.execute(action, { ...context, undoEntryId: entry.id })).toEqual({
+            status: 'conflict',
+        });
+        expect(mocks.addUseCase).not.toHaveBeenCalled();
+        expect(undoHistoryStore.value?.future).toEqual([]);
     });
 
     it('describes a remove inverse naming the processor it will create', () => {
@@ -171,12 +288,16 @@ describe('handleAddYeastProcessor', () => {
             throw new Error('Expected a remove inverse');
         }
         expect(described.inverseAction.payload.expectedProcessor.name).toBe('Custom Calliope');
+        expect(described.inverseAction.payload.expectedProcessor.params).toEqual(PROCESSOR_PARAM_DEFAULTS.arpeggiator);
 
         const result = await realAdd.execute({ type: 'addYeastProcessor', payload });
         expect(result).toEqual({ status: 'written' });
         // The write landed exactly the name the inverse guards.
         expect(mocks.storeValue.value?.processors.find((processor) => processor.id === 'arp-9')?.name).toBe(
             'Custom Calliope'
+        );
+        expect(mocks.storeValue.value?.processors.find((processor) => processor.id === 'arp-9')).toEqual(
+            described.inverseAction.payload.expectedProcessor
         );
 
         // Undo of the add: the guarded remove accepts the state the write

@@ -51,8 +51,8 @@ export const MixerLevelReadout = ({
     const maxPeakRef = useRef<number>(Number.NEGATIVE_INFINITY);
 
     useEffect(() => {
-        const tick = () => {
-            const rawPeak = trackId ? getTrackPeakLevel(trackId) : getMasterPeakLevel();
+        const tick = (frameTime: DOMHighResTimeStamp) => {
+            const rawPeak = trackId ? getTrackPeakLevel(trackId, frameTime) : getMasterPeakLevel(frameTime);
             if (rawPeak === null) {
                 // Master bus with no meter tap wired. "-∞" is the readout for a
                 // bus that was measured and found silent; printing it here claims

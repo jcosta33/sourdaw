@@ -8,8 +8,8 @@ import {
     type SampleManifest,
 } from './sampleManifest';
 
-import type { SampleLodConfig } from './helpers';
 import type { MicPositionType } from '../../models/LevainPatch';
+import type { SampleLodConfig } from './helpers';
 
 export type DecodedSample = {
     data: Float32Array<SharedArrayBuffer>;

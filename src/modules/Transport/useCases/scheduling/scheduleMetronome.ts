@@ -32,7 +32,7 @@ export function scheduleMetronome(
     toBeat: number,
     accumulatedPosition: number,
     transport: TransportState,
-    initialSchedulingAnchor?: number
+    eventSchedulingAnchor?: number
 ): void {
     if (!transport.metronomeEnabled) {
         return;
@@ -83,7 +83,7 @@ export function scheduleMetronome(
         // the look-ahead the click landed at the wrong instant and drifted
         // against the MIDI path, which has always integrated the map.
         const time =
-            (initialSchedulingAnchor ?? nowTime) +
+            (eventSchedulingAnchor ?? nowTime) +
             secondsBetweenBeats(tempoChanges, accumulatedPosition, beat, transport.tempo);
 
         // Suppress a second click at an instant this window already scheduled.

@@ -1,5 +1,5 @@
-import type { GetWebMidiTrackStrip } from './engineStripAccess';
 import type { ActiveNoteData } from '../../models/WebMidiTypes';
+import type { GetWebMidiTrackStrip } from './engineStripAccess';
 
 export function releaseActiveToasterNote(noteData: ActiveNoteData, getTrackStrip: GetWebMidiTrackStrip): void {
     const route = noteData.toasterRoute;

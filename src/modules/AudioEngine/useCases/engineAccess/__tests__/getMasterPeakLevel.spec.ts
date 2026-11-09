@@ -62,4 +62,26 @@ describe('getMasterPeakLevel', () => {
 
         expect(getMasterPeakLevel()).toBe(0);
     });
+    it('shares the combined carrier reading for one frame and refreshes zero/null next frame', () => {
+        webPeak.value = 0.25;
+        vi.mocked(readNativeEngineMasterPeak).mockReturnValue(0.75);
+        expect(getMasterPeakLevel(100)).toBe(0.75);
+        webPeak.value = 0;
+        vi.mocked(readNativeEngineMasterPeak).mockReturnValue(null);
+        expect(getMasterPeakLevel(100)).toBe(0.75);
+        expect(getMasterPeakLevel(101)).toBe(0);
+        webPeak.value = null;
+        expect(getMasterPeakLevel(102)).toBeNull();
+        webPeak.value = 0.5;
+        expect(getMasterPeakLevel(102)).toBeNull();
+        expect(getMasterPeakLevel(103)).toBe(0.5);
+    });
+
+    it('keeps no-frame calls immediate even after a shared frame reading', () => {
+        webPeak.value = 0.25;
+        expect(getMasterPeakLevel(200)).toBe(0.25);
+        webPeak.value = 0.75;
+        expect(getMasterPeakLevel()).toBe(0.75);
+        expect(getMasterPeakLevel(200)).toBe(0.25);
+    });
 });

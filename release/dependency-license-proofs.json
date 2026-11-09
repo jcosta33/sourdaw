@@ -1,7 +1,7 @@
 {
     "schemaVersion": 4,
     "cargoRuntimeInventory": {
-        "cargoLockSha256": "48588572a92db3a3dd8c60a1248f3eed04be68131ffe4e43ead0ed7d2381e0b1",
+        "cargoLockSha256": "9310e8f1debd75adf4b82f062948457313b89b0a18b02763ba531707344c4010",
         "sourceInputs": [
             {
                 "path": ".cargo/config.toml",
@@ -21,7 +21,7 @@
             },
             {
                 "path": "crates/daw-dsp/Cargo.toml",
-                "sha256": "682e35160f2e0492ef5d9ad320cf1fb2708298da6359366c674466e73817bcc7"
+                "sha256": "f69e67dd0cc510bffade481440d0448cc9fc1eb3ddde3a4f6446e9df4d226dda"
             },
             {
                 "path": "crates/daw-engine/Cargo.toml",
@@ -37,15 +37,15 @@
             },
             {
                 "path": "crates/daw-wasm-decoder/Cargo.toml",
-                "sha256": "6c36a228508458af121015475c36f1269aa8d3d91d2c31c7486b732686cb38df"
+                "sha256": "051f9dadf310c5119b83c89b46783d59912bd86559f2bac6783332b2271fb01c"
             },
             {
                 "path": "crates/proof-chamber/Cargo.toml",
-                "sha256": "f6833d75c9736ae25908e95ae474f005a6ca795c16bfbccb09b76acfee4cfdc1"
+                "sha256": "3c49d41fb38abcf3b276b443594207de3c394e32275c4fdc30765194d7edc3a0"
             },
             {
                 "path": "crates/scoring/Cargo.toml",
-                "sha256": "10b631fe6f0cc0a00fcbd6d2e6e566f8a227806d9d696e0ece9ba86eb6d53ee7"
+                "sha256": "006139e425f8247fee1ad86cc11056ad227eaf07c9b465b60e424ac21fdb8943"
             },
             {
                 "path": "crates/sourdaw-harness-tone/Cargo.toml",
@@ -61,7 +61,7 @@
             },
             {
                 "path": "package.json",
-                "sha256": "cfb1a079ac712ff2a413821221ce7259bbdf171c69ba2581b8b0fa5c793e6cac"
+                "sha256": "512ef1dcced4af1a094c156ff41e22b910aca3bdbba7e8fd5ed73aa2ff2d1cbf"
             },
             {
                 "path": "rust-toolchain.toml",
@@ -2564,7 +2564,7 @@
             },
             {
                 "name": "js-sys",
-                "version": "0.3.104",
+                "version": "0.3.107",
                 "source": "registry+https://github.com/rust-lang/crates.io-index",
                 "license": "MIT OR Apache-2.0",
                 "legalFiles": [
@@ -4883,7 +4883,7 @@
             },
             {
                 "name": "smallvec",
-                "version": "1.16.4",
+                "version": "1.16.5",
                 "source": "registry+https://github.com/rust-lang/crates.io-index",
                 "license": "MIT OR Apache-2.0",
                 "legalFiles": [
@@ -5969,7 +5969,7 @@
             },
             {
                 "name": "triple_buffer",
-                "version": "9.0.0",
+                "version": "9.0.1",
                 "source": "registry+https://github.com/rust-lang/crates.io-index",
                 "license": "MPL-2.0",
                 "legalFiles": [
@@ -6219,7 +6219,7 @@
             },
             {
                 "name": "uuid",
-                "version": "1.29.0",
+                "version": "1.29.1",
                 "source": "registry+https://github.com/rust-lang/crates.io-index",
                 "license": "Apache-2.0 OR MIT",
                 "legalFiles": [
@@ -6365,7 +6365,7 @@
             },
             {
                 "name": "wasm-bindgen",
-                "version": "0.2.127",
+                "version": "0.2.130",
                 "source": "registry+https://github.com/rust-lang/crates.io-index",
                 "license": "MIT OR Apache-2.0",
                 "legalFiles": [
@@ -6391,7 +6391,7 @@
             },
             {
                 "name": "wasm-bindgen-futures",
-                "version": "0.4.77",
+                "version": "0.4.80",
                 "source": "registry+https://github.com/rust-lang/crates.io-index",
                 "license": "MIT OR Apache-2.0",
                 "legalFiles": [
@@ -6417,7 +6417,7 @@
             },
             {
                 "name": "wasm-bindgen-macro",
-                "version": "0.2.127",
+                "version": "0.2.130",
                 "source": "registry+https://github.com/rust-lang/crates.io-index",
                 "license": "MIT OR Apache-2.0",
                 "legalFiles": [
@@ -6443,7 +6443,7 @@
             },
             {
                 "name": "wasm-bindgen-macro-support",
-                "version": "0.2.127",
+                "version": "0.2.130",
                 "source": "registry+https://github.com/rust-lang/crates.io-index",
                 "license": "MIT OR Apache-2.0",
                 "legalFiles": [
@@ -6469,7 +6469,7 @@
             },
             {
                 "name": "wasm-bindgen-shared",
-                "version": "0.2.127",
+                "version": "0.2.130",
                 "source": "registry+https://github.com/rust-lang/crates.io-index",
                 "license": "MIT OR Apache-2.0",
                 "legalFiles": [
@@ -6521,7 +6521,7 @@
             },
             {
                 "name": "web-sys",
-                "version": "0.3.104",
+                "version": "0.3.107",
                 "source": "registry+https://github.com/rust-lang/crates.io-index",
                 "license": "MIT OR Apache-2.0",
                 "legalFiles": [

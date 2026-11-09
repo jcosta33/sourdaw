@@ -49,6 +49,7 @@ vi.mock('#/modules/MIDI/useCases', () => ({
     getScopedGrooveAssignment: vi.fn(),
     getScopedGrooveConsumerId: vi.fn(),
     getStraightGrooveTemplateId: vi.fn(),
+    markGrooveTemplateProjectWrite: vi.fn(),
     restoreGrooveAssignment: vi.fn(),
 }));
 vi.mock('#/modules/Yeast/useCases', async (importOriginal) => ({
