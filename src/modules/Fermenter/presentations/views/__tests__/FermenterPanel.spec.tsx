@@ -675,8 +675,12 @@ describe('FermenterPanel', () => {
                 expect(element.tabIndex).toBeLessThan(0);
             }
 
+            loadFermenterPatchWithAudioMock.mockClear();
+            setFermenterParamWithAudioMock.mockClear();
             fireEvent.click(scene);
 
+            expect(loadFermenterPatchWithAudioMock).not.toHaveBeenCalled();
+            expect(setFermenterParamWithAudioMock).not.toHaveBeenCalled();
             expect(screen.getByRole('tab', { name: /^Oscillator$/ })).toHaveAttribute('aria-selected', 'true');
             expect(screen.getByText('Oscillator theater')).toBeInTheDocument();
         });

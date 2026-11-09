@@ -26,6 +26,7 @@ export const ArrangementSelector = (): ReactElement | null => {
     const [focusedArrangementId, setFocusedArrangementId] = useState<string | null>(null);
     const inputRef = useRef<HTMLInputElement>(null);
     const radioRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+    const newArrangementRef = useRef<HTMLButtonElement>(null);
 
     // §212.1 — Typed default instead of non-null assertion on live value.
     const state = useStore(arrangementStore, defaultArrangementStoreState);
@@ -62,10 +63,14 @@ export const ArrangementSelector = (): ReactElement | null => {
         if (editingId && !renderedEditingId) {
             setEditingId(null);
         }
-        if (!open || renderedEditingId || !radioTabStopId || document.activeElement !== document.body) {
+        if (!open || renderedEditingId || document.activeElement !== document.body) {
             return;
         }
-        radioRefs.current.get(radioTabStopId)?.focus();
+        if (radioTabStopId) {
+            radioRefs.current.get(radioTabStopId)?.focus();
+            return;
+        }
+        newArrangementRef.current?.focus();
     }, [arrangements, editingId, open, radioTabStopId, renderedEditingId]);
 
     if (!state) {
@@ -155,6 +160,25 @@ export const ArrangementSelector = (): ReactElement | null => {
                             radioRefs.current.get(openingRadioId)?.focus();
                         }
                     }}
+                    onKeyDown={(event) => {
+                        if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') {
+                            return;
+                        }
+                        const controls = Array.from(
+                            event.currentTarget.querySelectorAll<HTMLElement>(
+                                '[role="menuitemradio"], button:not(:disabled)'
+                            )
+                        );
+                        const currentIndex = controls.findIndex((control) => control === document.activeElement);
+                        if (currentIndex === -1) {
+                            return;
+                        }
+                        event.preventDefault();
+                        event.stopPropagation();
+                        const direction = event.key === 'ArrowUp' ? -1 : 1;
+                        const nextControl = controls[(currentIndex + direction + controls.length) % controls.length];
+                        nextControl?.focus();
+                    }}
                     onEscapeKeyDown={(event) => {
                         event.stopPropagation();
                         if (renderedEditingId) {
@@ -216,23 +240,6 @@ export const ArrangementSelector = (): ReactElement | null => {
                                                     if (event.target !== event.currentTarget) {
                                                         return;
                                                     }
-                                                    if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
-                                                        event.preventDefault();
-                                                        event.stopPropagation();
-                                                        const direction = event.key === 'ArrowUp' ? -1 : 1;
-                                                        const currentIndex = navigableArrangements.findIndex(
-                                                            (candidate) => candidate.id === arr.id
-                                                        );
-                                                        const nextIndex =
-                                                            (currentIndex + direction + navigableArrangements.length) %
-                                                            navigableArrangements.length;
-                                                        const nextArrangement = navigableArrangements[nextIndex];
-                                                        if (nextArrangement) {
-                                                            setFocusedArrangementId(nextArrangement.id);
-                                                            radioRefs.current.get(nextArrangement.id)?.focus();
-                                                        }
-                                                        return;
-                                                    }
                                                     if (event.key !== 'Enter' && event.key !== ' ') {
                                                         return;
                                                     }
@@ -287,6 +294,7 @@ export const ArrangementSelector = (): ReactElement | null => {
                     <DawMenuSeparator role="separator" />
 
                     <Button
+                        ref={newArrangementRef}
                         variant="bare"
                         size="bare"
                         type="button"
