@@ -152,5 +152,26 @@ test.describe('Gluten panel — preset search filtering', () => {
         await expect
             .poll(() => panelBody.evaluate((element) => element.scrollWidth - element.clientWidth))
             .toBeLessThanOrEqual(0);
+
+        // Narrow reachability: the stacked workspace stays scrollable to its
+        // last card. An overflow clip on the root wrapper would leave the card
+        // below the scrollport while every assertion above stays green.
+        await expect
+            .poll(() => panelBody.evaluate((element) => element.scrollHeight - element.clientHeight))
+            .toBeGreaterThan(0);
+        await panelBody.evaluate((element) => {
+            element.scrollTop = element.scrollHeight;
+        });
+        const lastCard = panelBody.locator('.gluten-window').last();
+        await expect
+            .poll(async () => {
+                const scrollerBox = await panelBody.boundingBox();
+                const cardBox = await lastCard.boundingBox();
+                if (scrollerBox === null || cardBox === null) {
+                    throw new Error('Expected the panel body and its last control card');
+                }
+                return cardBox.y + cardBox.height - (scrollerBox.y + scrollerBox.height);
+            })
+            .toBeLessThanOrEqual(1);
     });
 });
