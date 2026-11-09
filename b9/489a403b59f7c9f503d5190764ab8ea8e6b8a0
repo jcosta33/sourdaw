@@ -1,0 +1,90 @@
+src/modules/Yeast/models/YeastProcessorInitialParams.ts
+  s_977061c47f01dd::t_ca72760d75d5a8 1-4,6
+  s_977061c47f01dd::t_495f5a94dc67ab 5
+src/modules/Yeast/useCases/__tests__/addYeastProcessor.spec.ts
+  s_977061c47f01dd::t_0e42dd775783a1 4,7,30
+  s_977061c47f01dd::t_bd2d72fa7c8e87 3,22-28,33-45
+src/modules/Yeast/handlers/__tests__/rackStructureHandlers.spec.ts
+  s_977061c47f01dd::t_c839ad30f88164 6,127-134,211,213-214,291,299-300
+  s_977061c47f01dd::t_c36860bc8423ca 87-89
+  s_977061c47f01dd::t_6bbe83050cfe81 90-95,154
+  s_977061c47f01dd::t_47e16cdbf0aa71 3-5,72-85,99,135-153,155-210,212
+  s_977061c47f01dd::t_b98d4ab97cd040 86,301
+src/modules/Yeast/useCases/__tests__/projectionRuntime.spec.ts
+  s_977061c47f01dd::t_6733f7cd2e0bd7 3,46,56
+  s_977061c47f01dd::t_7124f32947e7fd 4
+src/modules/Yeast/handlers/__tests__/yeastUndoSessionMirror.spec.ts
+  s_977061c47f01dd::t_c36860bc8423ca 243-247,252-256
+  s_977061c47f01dd::t_851adbb23dcfe5 1,230,258,276
+  s_977061c47f01dd::t_1e275a6aa0bd27 10,208-229,238,240-242,257,273-274,277-278,284-288,291-294,299-300,302-303,305
+  s_977061c47f01dd::t_16b2ee0fe51920 14-15
+  s_977061c47f01dd::t_c1d7a1b925993d 279-283
+  s_977061c47f01dd::t_271eb9d0365ee6 250-251,259-266,275,289-290,304
+  s_977061c47f01dd::t_ec8d17a4c4cc8d 307
+  s_977061c47f01dd::t_d85fc5da75809f 232-237,239,248-249,267-272,295-298
+  s_977061c47f01dd::t_188a7858d474ec 33,35-36,39,46-48,50-54,56,59-61,75,78,100-101,124-125
+  s_977061c47f01dd::t_ad6093dcafa9e0 34,55
+  s_977061c47f01dd::t_a30344df338d23 159-162,167-180,202-203,206
+  s_977061c47f01dd::t_34a3bd99176d68 26,32,37-38,40-45,49,57-58,126,204-205,231,301,306
+tests/e2e/persistedHydrationEntry.ts
+  s_977061c47f01dd::t_9b553fa4f886bb 11
+src/modules/Yeast/handlers/__tests__/yeastFirstParameterUndo.integration.spec.ts
+  s_977061c47f01dd::t_15d6f644766cfb 1-8,9,11,19-38,47,49-75,77-86,89-104,108-120,134,316
+  s_977061c47f01dd::t_405e1dcea96b60 12-18,194-201,212-213,215-250,255-268
+  s_977061c47f01dd::t_e5784e1443b36e 76
+  s_977061c47f01dd::t_f8448db3e1e35a 121-133
+  s_977061c47f01dd::t_1ee06b31e29461 141,143,148-162,168-171,177
+  s_977061c47f01dd::t_f91aec128f4bde 135-140,142,144-147,163-167,176,178-184,192-193,269
+  s_977061c47f01dd::t_c4315bffe16abb 185-187
+  s_977061c47f01dd::t_11c47140e93eb2 202-211,214
+  s_977061c47f01dd::t_fbb8507eb09412 270-285,297-300,303-315
+  s_977061c47f01dd::t_c36860bc8423ca 173-175
+  s_977061c47f01dd::t_5d8ced608bf351 87-88,105-107
+  s_977061c47f01dd::t_a661bb31a94347 286-296,301-302
+  s_977061c47f01dd::t_a85ab9acfc10b0 10,40-46,48,172,188-191,251-254
+  s_977061c47f01dd::t_41223464e1a8db 39
+src/modules/Yeast/workers/__tests__/processorFactory.spec.ts
+  s_977061c47f01dd::t_0f064050cfdb10 1,66,68-70,81
+  s_977061c47f01dd::t_3b005a6469a3aa 4-5,14-65,71,78-80
+  s_977061c47f01dd::t_c36860bc8423ca 72-77
+  s_977061c47f01dd::t_bc09fb67d933ee 82
+  s_977061c47f01dd::t_495f5a94dc67ab 67
+tests/e2e/yeastProcessorFirstParameterUndo.spec.ts
+  s_977061c47f01dd::t_b94983769b0bc9 87,99
+  s_977061c47f01dd::t_d24d558059db3f 200-223
+  s_977061c47f01dd::t_1a734c63ae3467 1-9,11-43,46-50,53-67,70-86,88,98,100-113,115-159,161-199,224
+  s_977061c47f01dd::t_c36860bc8423ca 10,89-97
+  s_977061c47f01dd::t_57518f29e9a192 44-45,51-52,68-69,114,160
+src/modules/Yeast/handlers/addYeastProcessor.ts
+  s_977061c47f01dd::t_143ebb64db9c03 2,5,21-27,29-38,45-49,56-58,69-76,78-86,89,91-100,102-121,123-126,136-142,151,156-159,162-165,170-180,240-241,258-265
+  s_977061c47f01dd::t_583e936026b0ad 28,88
+  s_977061c47f01dd::t_7100a41b5e8fe4 77,87
+  s_977061c47f01dd::t_c36860bc8423ca 39-44,50-55
+  s_977061c47f01dd::t_4c5f76828cac72 59-68,90,122
+  s_977061c47f01dd::t_495f5a94dc67ab 8,101,211-221
+src/modules/Yeast/useCases/addYeastProcessor.ts
+  s_977061c47f01dd::t_ca72760d75d5a8 18-19,35
+  s_977061c47f01dd::t_a8ad94af783580 29-34
+  s_977061c47f01dd::t_495f5a94dc67ab 2
+src/app/__tests__/registerDeviceEnginePorts.spec.ts
+  s_977061c47f01dd::t_63e5efa19f2766 341-345,356
+  s_977061c47f01dd::t_c5568751825f3c 348-350
+scripts/__tests__/viteE2ePersistenceEntry.spec.ts
+  s_977061c47f01dd::t_63e5efa19f2766 259,283
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b9489a403b59f7c9f503d5190764ab8ea8e6b8a0",
+  "prompts": {},
+  "sessions": {
+    "s_977061c47f01dd": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34d-123d-7452-a6e7-60608388b6d7",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
