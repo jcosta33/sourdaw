@@ -1,0 +1,20 @@
+public/themePrepaint.js
+  h_beb54bf43b47b7 2-8,40-50,53-64,68-71,75-89,93-113,115,117-137,139-155,157-192,194-210,213,219-220,222-230
+src/styles/__tests__/semanticThemes.spec.ts
+  h_beb54bf43b47b7 5-6,10-11,144-145,148,160-167,170-172,174-176,180-182,395-418,441-442,444,746-755,760-761,765-769,772,785,787,829-866
+src/styles/main.css
+  h_beb54bf43b47b7 349,370
+tests/e2e/e2eStartupDiagnostics.spec.ts
+  h_beb54bf43b47b7 19-20,22-40,53,55,59-68,71-76,84,115
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "de5432d6663184a5c48c56d8eff5b34ccb6b27aa",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
