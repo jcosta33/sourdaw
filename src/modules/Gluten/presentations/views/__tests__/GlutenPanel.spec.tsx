@@ -52,7 +52,12 @@ describe('GlutenPanel', () => {
 
     it('applies minimum height floor and does not clip overflow at root', () => {
         const { container } = render(<GlutenPanel deviceId={DEVICE_ID} />);
+        const viewport = container.firstElementChild;
         const faceplate = container.querySelector('.gluten-faceplate');
+        // The height-constrained box is the root wrapper: an overflow clip
+        // there cuts the floored workspace off inside a shorter panel.
+        expect(viewport).toHaveClass('@container', 'h-full', 'min-h-[440px]');
+        expect(viewport).not.toHaveClass('overflow-hidden');
         expect(faceplate).toHaveClass('min-h-[464px]');
         expect(faceplate).not.toHaveClass('overflow-hidden');
     });
