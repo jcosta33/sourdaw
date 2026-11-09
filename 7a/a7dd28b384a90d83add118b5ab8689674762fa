@@ -1,0 +1,24 @@
+electron/__tests__/webviewSecurity.spec.ts
+  h_beb54bf43b47b7 60-83,85-86,93-94
+src/components/ui/__tests__/dialog.spec.tsx
+  h_beb54bf43b47b7 40
+src/modules/Crust/presentations/components/CrustControlZone.tsx
+  h_beb54bf43b47b7 243,250
+src/modules/ProofChamber/presentations/views/ProofChamberPanel.tsx
+  h_beb54bf43b47b7 183,205,308-309,653-654,772,775,813-815,874-875,880-881,886-887,892-893,972-975,977,1211,1229
+src/modules/Tuner/presentations/views/TunerPanel.tsx
+  h_beb54bf43b47b7 91,125,127,129,131,168-169,192-193,229-230,238,243-245,279,286,297,300,307-309,316-318,325-327,344-346,356,367-370,383,386,390,395,403-405,413,417,420,424,835,845,851
+src/styles/__tests__/semanticThemes.spec.ts
+  h_beb54bf43b47b7 23-31,194-222,484-485,627-661,663-679,683-746
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7aa7dd28b384a90d83add118b5ab8689674762fa",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
