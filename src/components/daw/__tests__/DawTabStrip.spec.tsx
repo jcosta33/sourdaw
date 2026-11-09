@@ -291,6 +291,21 @@ describe('DawTabStrip overflow affordance', () => {
         expect(screen.getByLabelText('Scroll tabs left')).toHaveAttribute('tabindex', '0');
     });
 
+    it('moves focus to the selected tab when a focused scroll affordance becomes hidden', async () => {
+        const metrics = mockScrollMetrics({ scrollWidth: 600, clientWidth: 300, scrollLeft: 0 });
+        renderStrip({ activeId: 'b' });
+        const scrollRight = screen.getByLabelText('Scroll tabs right');
+        await waitFor(() => expect(scrollRight).toHaveAttribute('tabindex', '0'));
+        scrollRight.focus();
+        expect(scrollRight).toHaveFocus();
+
+        metrics.scrollWidth = 300;
+        fireEvent.scroll(screen.getByRole('tablist'));
+
+        await waitFor(() => expect(scrollRight).toHaveAttribute('tabindex', '-1'));
+        expect(tab('Beta')).toHaveFocus();
+    });
+
     it('scrolls the strip by a step when a scroll button is used', async () => {
         mockScrollMetrics({ scrollWidth: 600, clientWidth: 300, scrollLeft: 0 });
         const scrollBy = vi.fn();
