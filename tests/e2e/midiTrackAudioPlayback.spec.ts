@@ -239,6 +239,8 @@ test('MIDI-track Import Audio reaches Master during Play and on both sides of a 
     await page.keyboard.up('Shift');
     await expect(page.getByTestId('transport-loop')).toHaveAttribute('aria-pressed', 'true');
     const baseline = await projectSnapshot(page);
+    expect(baseline.root).toHaveProperty('transport.loopStart', 0);
+    expect(baseline.root).toHaveProperty('transport.loopEnd', 6);
     await page.getByTestId('transport-play').click();
     const repeated = await observeSignal(page, 'loop');
     expect(repeated.contextState).toBe('running');
