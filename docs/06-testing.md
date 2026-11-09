@@ -887,15 +887,18 @@ stopped run into success.
 A stopped `pnpm dev` command cannot prove recovery by exiting zero on its own. Supply an explicit
 finite proof after `--`, for example `pnpm guard --recover --profile broad -- pnpm test:e2e
 tests/e2e/launchFlows.spec.ts`. The guard runs that proof instead of replaying the server, from the
-receipt's canonical in-lane directory and under the receipt's resource limits unless explicitly
-overridden. A Playwright-managed proof owns server readiness and orderly shutdown; its checkout
-identity check emits a one-time guard proof bound to the recorded loopback origin and lane root.
-The guard still owns resource enforcement and process-tree cleanup, and verifies that proof before
-clearing the unchanged original receipt. An unrelated command's zero exit, a missing or mismatched
-proof, a failed proof, signal, timeout, resource stop, cleanup leak, or concurrently replaced
-receipt preserves the stop. Explicit proofs require a recorded `pnpm dev` or `pnpm run dev` receipt;
-other scripts, including `dev:no-hmr`, are ineligible. Explicit proofs cannot be combined with
-lint-target replacement; ordinary `--recover` replay is unchanged.
+receipt's canonical in-lane directory and under the receipt's profile; the memory budget resolves
+against the proof command itself, so a `pnpm test:e2e` proof runs under its measured budget unless
+`--max-rss-mib` overrides it. The proof child receives the recorded port as `SOURDAW_E2E_PORT` and
+nothing else: no token and no proof file the command tree could fabricate. While the proof runs,
+the guard itself polls the recorded loopback origin and requires a response carrying this
+checkout's e2e marker before it clears the unchanged original receipt; the guard still owns
+resource enforcement and process-tree cleanup. An unrelated command's zero exit, an unmarked or
+foreign server at the recorded origin, a failed proof, signal, timeout, resource stop, cleanup
+leak, or concurrently replaced receipt preserves the stop. Explicit proofs require a recorded
+`pnpm dev` or `pnpm run dev` receipt; other scripts, including `dev:no-hmr`, are ineligible.
+Explicit proofs cannot be combined with lint-target replacement; ordinary `--recover` replay is
+unchanged.
 
 Existing running commands and old lane copies keep their original guard. After this change lands,
 their next verification must invoke the updated guard, or merge the fix into the owned lane when

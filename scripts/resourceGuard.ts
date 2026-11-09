@@ -21,12 +21,8 @@ import { basename, dirname, extname, join, parse, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { resolvePrimaryRoot, spawnCapture } from './githubAppIdentity.ts';
-import {
-    assertGuardRecoveryProof,
-    GUARD_RECOVERY_PROOF_ORIGIN_ENV,
-    GUARD_RECOVERY_PROOF_PATH_ENV,
-    GUARD_RECOVERY_PROOF_TOKEN_ENV,
-} from './guardRecoveryProof.ts';
+import { sameCheckoutRoot } from './guardRecoveryProof.ts';
+import { readServingCheckoutRoot, SOURDAW_E2E_PORT_ENV } from './e2eServerIdentity.ts';
 import { assertCurrentCheckoutModulesBelongToCheckout } from './pnpmModulesPreflight.ts';
 import {
     GUARD_FAILURES_DIR,
@@ -221,12 +217,11 @@ export function pnpmScriptName(command: string, args: readonly string[]): string
 }
 
 type ExplicitRecoveryProof = {
-    path: string;
-    token: string;
+    port: number;
     origin: string;
 };
 
-function createExplicitRecoveryProof(lane: DetectedLane, receipt: GuardFailureReceipt): ExplicitRecoveryProof {
+function createExplicitRecoveryProof(receipt: GuardFailureReceipt): ExplicitRecoveryProof {
     let port = 5173;
     for (let index = 0; index < receipt.args.length; index++) {
         const argument = receipt.args[index];
@@ -246,10 +241,63 @@ function createExplicitRecoveryProof(lane: DetectedLane, receipt: GuardFailureRe
             throw new Error(`recorded pnpm dev command has an invalid port: ${rawPort}`);
         }
     }
+    return { port, origin: `http://127.0.0.1:${port}` };
+}
+
+type RecoveryServerObservation = {
+    observed: boolean;
+    mismatch?: string;
+};
+
+/**
+ * The guard's own view of the proof: while the proof command runs, poll the
+ * recorded origin and accept only a response whose checkout marker belongs to
+ * the recovery checkout. A file handed to the command tree could be written by
+ * the tree itself, so the tree never sees a token — the guard verifies the
+ * server directly. Only e2e-mode servers stamp a marker, which keeps the
+ * accepted proof the same browser-verification server the receipt recorded.
+ */
+function observeRecoveryServer(
+    origin: string,
+    expectedRoot: string
+): { finish: () => Promise<RecoveryServerObservation> } {
+    let observed = false;
+    let mismatch: string | undefined;
+    let stopped = false;
+    let inFlight: Promise<void> = Promise.resolve();
+    const poll = async (): Promise<void> => {
+        if (stopped) {
+            return;
+        }
+        try {
+            const servingRoot = await readServingCheckoutRoot(origin);
+            if (servingRoot === null) {
+                return;
+            }
+            if (sameCheckoutRoot(servingRoot, expectedRoot)) {
+                observed = true;
+            } else {
+                mismatch = `${origin} serves ${servingRoot}, not ${expectedRoot}`;
+            }
+        } catch {
+            // The proof server is not answering yet; the next poll retries.
+        }
+    };
+    const tick = () => {
+        inFlight = inFlight.then(poll);
+    };
+    const timer = setInterval(tick, 250);
+    tick();
     return {
-        path: join(dirname(guardFailureReceiptPath(lane.primaryRoot, lane.laneName)), `recovery-${randomUUID()}.json`),
-        token: randomUUID(),
-        origin: `http://127.0.0.1:${port}`,
+        finish: async () => {
+            stopped = true;
+            clearInterval(timer);
+            await inFlight;
+            await poll();
+            return mismatch === undefined || observed
+                ? { observed, ...(mismatch === undefined ? {} : { mismatch }) }
+                : { observed, mismatch };
+        },
     };
 }
 
@@ -3229,7 +3277,7 @@ export async function main(
             if (hasExplicitProof && input.lintTargetReplacements.length > 0) {
                 throw new Error('--replace-lint-target cannot be combined with an explicit recovery proof');
             }
-            const explicitProof = hasExplicitProof ? createExplicitRecoveryProof(lane, receipt) : undefined;
+            const explicitProof = hasExplicitProof ? createExplicitRecoveryProof(receipt) : undefined;
             const recoveryCommand = hasExplicitProof ? input.command : receipt.command;
             const recoveryArgs = hasExplicitProof
                 ? input.args
@@ -3239,6 +3287,9 @@ export async function main(
                       cwd: recoveryCwd,
                       laneRoot: lane.worktreePath,
                   });
+            const resolvedProfile: ResourceProfile = input.explicitProfile
+                ? input.profile
+                : ((receipt.profile as ResourceProfile) ?? input.profile);
             for (const replacement of input.lintTargetReplacements) {
                 log(`guard: recovery lint target '${replacement.oldTarget}' -> '${replacement.newTarget}'`);
             }
@@ -3248,13 +3299,24 @@ export async function main(
             if (hasExplicitProof) {
                 log(`guard: using explicit recovery proof '${recoveryCommand} ${recoveryArgs.join(' ')}'`);
             }
+            // The guard itself watches the recorded origin while the proof runs: the proof
+            // child receives the recorded port and nothing else, so no part of the command
+            // tree can fabricate the observation the guard requires.
+            const observation =
+                explicitProof === undefined ? undefined : observeRecoveryServer(explicitProof.origin, recoveryCwd);
             const result = await runCommand({
                 command: recoveryCommand,
                 args: recoveryArgs,
-                profile: input.explicitProfile
-                    ? input.profile
-                    : ((receipt.profile as ResourceProfile) ?? input.profile),
-                maxRssBytes: input.maxRssBytes ?? receipt.maxRssBytes,
+                profile: resolvedProfile,
+                maxRssBytes:
+                    input.maxRssBytes ??
+                    (explicitProof === undefined
+                        ? receipt.maxRssBytes
+                        : resolveDefaultMaxRssBytes({
+                              profile: resolvedProfile,
+                              command: recoveryCommand,
+                              args: recoveryArgs,
+                          })),
                 diskReserveBytes: input.diskReserveBytes,
                 showOutput: input.showOutput,
                 cwd: recoveryCwd,
@@ -3263,31 +3325,16 @@ export async function main(
                     : {
                           env: {
                               ...process.env,
-                              [GUARD_RECOVERY_PROOF_PATH_ENV]: explicitProof.path,
-                              [GUARD_RECOVERY_PROOF_TOKEN_ENV]: explicitProof.token,
-                              [GUARD_RECOVERY_PROOF_ORIGIN_ENV]: explicitProof.origin,
+                              [SOURDAW_E2E_PORT_ENV]: String(explicitProof.port),
                           },
                       }),
             });
-            if (explicitProof !== undefined) {
-                let proofFailure: string | undefined;
-                try {
-                    if (result.code === 0 && result.reason === undefined) {
-                        assertGuardRecoveryProof(explicitProof.path, {
-                            token: explicitProof.token,
-                            origin: explicitProof.origin,
-                            expectedRoot: recoveryCwd,
-                        });
-                    }
-                } catch (proofError) {
-                    proofFailure = proofError instanceof Error ? proofError.message : String(proofError);
-                } finally {
-                    rmSync(explicitProof.path, { force: true });
-                }
-                if (proofFailure !== undefined) {
+            if (explicitProof !== undefined && observation !== undefined) {
+                const { observed, mismatch } = await observation.finish();
+                if (result.code === 0 && result.reason === undefined && !observed) {
                     emitGuardedResult(recoveryCommand, result, input.showOutput);
                     error(
-                        `guard: explicit recovery proof did not verify the recorded dev server at ${explicitProof.origin}; lane ${lane.laneName} remains stopped: ${proofFailure}`
+                        `guard: explicit recovery proof did not verify the recorded dev server at ${explicitProof.origin}; lane ${lane.laneName} remains stopped${mismatch === undefined ? '' : `: ${mismatch}`}`
                     );
                     return 1;
                 }

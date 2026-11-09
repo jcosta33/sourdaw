@@ -149,6 +149,7 @@ export const GOVERNANCE_TRANSITION_PATHS = [
     'scripts/deliverPullRequest.ts',
     'scripts/deliveryLockLegacyIncidents.ts',
     'scripts/deliveryRemoteInspection.ts',
+    'scripts/e2eServerIdentity.ts',
     'scripts/evidenceSafety.ts',
     'scripts/findingLineage.ts',
     'scripts/gitAncestry.ts',

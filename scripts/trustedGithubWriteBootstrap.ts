@@ -176,6 +176,7 @@ export const trustedDependencyGraphs: Record<TrustedGithubWriteCommand, readonly
         'scripts/cleanupLanes.ts',
         'scripts/deliveryLockLegacyIncidents.ts',
         'scripts/deliveryRemoteInspection.ts',
+        'scripts/e2eServerIdentity.ts',
         'scripts/evidenceSafety.ts',
         'scripts/githubAppIdentity.ts',
         'scripts/guardRecoveryProof.ts',

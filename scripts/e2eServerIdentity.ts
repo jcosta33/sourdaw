@@ -1,4 +1,4 @@
-import { sameCheckoutRoot, writeGuardRecoveryProof } from './guardRecoveryProof.ts';
+import { sameCheckoutRoot } from './guardRecoveryProof.ts';
 
 import type { IncomingMessage, ServerResponse } from 'node:http';
 
@@ -130,7 +130,6 @@ export async function assertServingCheckoutIdentity(origin: string, expectedRoot
                 `Stop that server or set ${SOURDAW_E2E_PORT_ENV} to a lane-unique port.`
         );
     }
-    writeGuardRecoveryProof(process.env, origin, servingRoot, expectedRoot);
 }
 
 /** The required affected shard already owns an e2e build and preview. */

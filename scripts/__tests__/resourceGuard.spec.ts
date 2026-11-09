@@ -11,16 +11,13 @@ import {
     symlinkSync,
     writeFileSync,
 } from 'node:fs';
+import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
 
 import { afterAll, describe, expect, it } from 'vitest';
 
-import {
-    GUARD_RECOVERY_PROOF_ORIGIN_ENV,
-    GUARD_RECOVERY_PROOF_PATH_ENV,
-    writeGuardRecoveryProof,
-} from '../guardRecoveryProof';
+import { SOURDAW_E2E_PORT_ENV, SOURDAW_E2E_ROOT_HEADER } from '../e2eServerIdentity';
 import { GUARD_FAILURES_DIR, guardFailureReceiptPath, type GuardFailureReceipt } from '../prContract';
 import {
     acquireResourceLock,
@@ -68,13 +65,30 @@ function runIsolatedGuardedCommand(
     });
 }
 
-function emitRecoveryProof(input: Parameters<typeof runGuardedCommand>[0]): void {
-    const env = input.env;
-    const origin = env?.[GUARD_RECOVERY_PROOF_ORIGIN_ENV];
-    if (env === undefined || origin === undefined || input.cwd === undefined) {
-        throw new Error('expected explicit recovery proof environment and cwd');
-    }
-    writeGuardRecoveryProof(env, origin, input.cwd, input.cwd);
+function startMarkerServer(root: string): Promise<{ port: number; close: () => Promise<void> }> {
+    const server = createServer((_request, response) => {
+        response.setHeader(SOURDAW_E2E_ROOT_HEADER, encodeURIComponent(root));
+        response.end('ok');
+    });
+    return new Promise((resolvePromise, reject) => {
+        server.once('error', reject);
+        server.listen(0, '127.0.0.1', () => {
+            const address = server.address();
+            if (address === null || typeof address === 'string') {
+                reject(new Error('marker server did not bind a port'));
+                return;
+            }
+            resolvePromise({
+                port: address.port,
+                close: () =>
+                    new Promise<void>((resolveClose, rejectClose) =>
+                        server.close((closeError) =>
+                            closeError === undefined ? resolveClose() : rejectClose(closeError)
+                        )
+                    ),
+            });
+        });
+    });
 }
 
 async function waitUntil(predicate: () => boolean, timeoutMs = 2_000): Promise<void> {
@@ -2174,18 +2188,29 @@ describe('guard failure stop enforcement', { timeout: GUARDED_CASE_TIMEOUT_MS },
             };
         }
 
-        function createStoppedDevServerFixture(label: string) {
+        function createStoppedDevServerFixture(label: string, port = 5387) {
             const fixture = createStoppedLaneFixture(label);
             const receipt: GuardFailureReceipt = {
                 ...fixture.receipt,
-                args: ['dev', '--host', '127.0.0.1', '--port', '5387'],
+                args: ['dev', '--host', '127.0.0.1', '--port', String(port)],
             };
             writeGuardFailureReceipt(fixture.repoRoot, receipt);
             return { ...fixture, receipt };
         }
 
+        async function createServedDevServerFixture(label: string) {
+            const fixture = createStoppedDevServerFixture(label);
+            const marker = await startMarkerServer(realpathSync(fixture.lane.worktreePath));
+            const receipt: GuardFailureReceipt = {
+                ...fixture.receipt,
+                args: ['dev', '--host', '127.0.0.1', '--port', String(marker.port)],
+            };
+            writeGuardFailureReceipt(fixture.repoRoot, receipt);
+            return { ...fixture, receipt, marker };
+        }
+
         it('runs an explicit finite dev-server recovery proof instead of replaying the server', async () => {
-            const fixture = createStoppedDevServerFixture('recover-dev-proof');
+            const fixture = await createServedDevServerFixture('recover-dev-proof');
             let replayInput: Parameters<typeof runGuardedCommand>[0] | undefined;
 
             try {
@@ -2196,7 +2221,6 @@ describe('guard failure stop enforcement', { timeout: GUARDED_CASE_TIMEOUT_MS },
                         detectLane: () => fixture.lane,
                         runCommand: async (input) => {
                             replayInput = input;
-                            emitRecoveryProof(input);
                             return fakeResult({ code: 0 });
                         },
                     }
@@ -2206,14 +2230,16 @@ describe('guard failure stop enforcement', { timeout: GUARDED_CASE_TIMEOUT_MS },
                 expect(replayInput?.command).toBe('pnpm');
                 expect(replayInput?.args).toEqual(['test:e2e', 'tests/e2e/launchFlows.spec.ts']);
                 expect(replayInput?.cwd).toBe(realpathSync(fixture.lane.worktreePath));
+                expect(replayInput?.env?.[SOURDAW_E2E_PORT_ENV]).toBe(String(fixture.marker.port));
                 expect(readGuardFailureReceipt(fixture.repoRoot, fixture.laneName)).toBeUndefined();
             } finally {
+                await fixture.marker.close();
                 rmSync(fixture.repoRoot, { recursive: true, force: true });
             }
         });
 
-        it('inherits the dev receipt profile and memory limit for an explicit proof', async () => {
-            const fixture = createStoppedDevServerFixture('recover-dev-proof-limits');
+        it('budgets an explicit proof against its own command instead of the dev receipt', async () => {
+            const fixture = await createServedDevServerFixture('recover-dev-proof-limits');
             const receipt: GuardFailureReceipt = {
                 ...fixture.receipt,
                 profile: 'broad',
@@ -2228,15 +2254,16 @@ describe('guard failure stop enforcement', { timeout: GUARDED_CASE_TIMEOUT_MS },
                     detectLane: () => fixture.lane,
                     runCommand: async (input) => {
                         replayInput = input;
-                        emitRecoveryProof(input);
                         return fakeResult({ code: 0 });
                     },
                 });
 
                 expect(code).toBe(0);
                 expect(replayInput?.profile).toBe('broad');
-                expect(replayInput?.maxRssBytes).toBe(7 * 1024 ** 3);
+                // The measured test:e2e budget, not the stopped dev receipt's 7 GiB cap.
+                expect(replayInput?.maxRssBytes).toBe(8 * 1024 ** 3);
             } finally {
+                await fixture.marker.close();
                 rmSync(fixture.repoRoot, { recursive: true, force: true });
             }
         });
@@ -2261,43 +2288,70 @@ describe('guard failure stop enforcement', { timeout: GUARDED_CASE_TIMEOUT_MS },
             }
         });
 
-        it.each(['token', 'servingRoot'] as const)(
-            'preserves a stopped dev receipt when the proof %s does not match',
-            async (mismatchedField) => {
-                const fixture = createStoppedDevServerFixture(`recover-dev-mismatched-${mismatchedField}`);
-                const errors: string[] = [];
-
-                try {
-                    const code = await runGuardCli(['--recover', '--', 'pnpm', 'test:e2e', 'launch.spec.ts'], {
-                        cwd: fixture.lane.worktreePath,
-                        detectLane: () => fixture.lane,
-                        runCommand: async (input) => {
-                            emitRecoveryProof(input);
-                            const proofPath = input.env?.[GUARD_RECOVERY_PROOF_PATH_ENV];
-                            if (proofPath === undefined) {
-                                throw new Error('expected the recovery proof path');
-                            }
-                            const proof = JSON.parse(readFileSync(proofPath, 'utf8')) as Record<string, unknown>;
-                            writeFileSync(
-                                proofPath,
-                                JSON.stringify({
-                                    ...proof,
-                                    [mismatchedField]: mismatchedField === 'token' ? 'wrong-token' : fixture.repoRoot,
-                                })
-                            );
-                            return fakeResult({ code: 0 });
-                        },
-                        error: (message) => errors.push(message),
-                    });
-
-                    expect(code).toBe(1);
-                    expect(readGuardFailureReceipt(fixture.repoRoot, fixture.laneName)).toEqual(fixture.receipt);
-                    expect(errors.join('\n')).toContain('proof does not match the recorded server and checkout');
-                } finally {
-                    rmSync(fixture.repoRoot, { recursive: true, force: true });
-                }
+        it('preserves a stopped dev receipt when an unmarked server answers at the recorded origin', async () => {
+            const fixture = createStoppedDevServerFixture('recover-dev-unmarked-server');
+            const unmarked = createServer((_request, response) => {
+                response.end('ok');
+            });
+            await new Promise<void>((resolveListen) => unmarked.listen(0, '127.0.0.1', resolveListen));
+            const address = unmarked.address();
+            if (address === null || typeof address === 'string') {
+                throw new Error('unmarked server did not bind a port');
             }
-        );
+            const receipt: GuardFailureReceipt = {
+                ...fixture.receipt,
+                args: ['dev', '--host', '127.0.0.1', '--port', String(address.port)],
+            };
+            writeGuardFailureReceipt(fixture.repoRoot, receipt);
+            const errors: string[] = [];
+
+            try {
+                const code = await runGuardCli(['--recover', '--', 'pnpm', 'test:e2e', 'launch.spec.ts'], {
+                    cwd: fixture.lane.worktreePath,
+                    detectLane: () => fixture.lane,
+                    runCommand: async () => fakeResult({ code: 0 }),
+                    error: (message) => errors.push(message),
+                });
+
+                expect(code).toBe(1);
+                expect(readGuardFailureReceipt(fixture.repoRoot, fixture.laneName)).toEqual(receipt);
+                expect(errors.join('\n')).toContain('did not verify the recorded dev server');
+            } finally {
+                await new Promise<void>((resolveClose, rejectClose) =>
+                    unmarked.close((closeError) =>
+                        closeError === undefined ? resolveClose() : rejectClose(closeError)
+                    )
+                );
+                rmSync(fixture.repoRoot, { recursive: true, force: true });
+            }
+        });
+
+        it('preserves a stopped dev receipt when the recorded origin serves another checkout', async () => {
+            const fixture = createStoppedDevServerFixture('recover-dev-foreign-server');
+            const marker = await startMarkerServer(fixture.repoRoot);
+            const receipt: GuardFailureReceipt = {
+                ...fixture.receipt,
+                args: ['dev', '--host', '127.0.0.1', '--port', String(marker.port)],
+            };
+            writeGuardFailureReceipt(fixture.repoRoot, receipt);
+            const errors: string[] = [];
+
+            try {
+                const code = await runGuardCli(['--recover', '--', 'pnpm', 'test:e2e', 'launch.spec.ts'], {
+                    cwd: fixture.lane.worktreePath,
+                    detectLane: () => fixture.lane,
+                    runCommand: async () => fakeResult({ code: 0 }),
+                    error: (message) => errors.push(message),
+                });
+
+                expect(code).toBe(1);
+                expect(readGuardFailureReceipt(fixture.repoRoot, fixture.laneName)).toEqual(receipt);
+                expect(errors.join('\n')).toContain('did not verify the recorded dev server');
+            } finally {
+                await marker.close();
+                rmSync(fixture.repoRoot, { recursive: true, force: true });
+            }
+        });
 
         it('refuses lint-target replacement combined with an explicit dev-server proof', async () => {
             const fixture = createStoppedDevServerFixture('recover-dev-proof-lint-replacement');
@@ -2415,7 +2469,7 @@ describe('guard failure stop enforcement', { timeout: GUARDED_CASE_TIMEOUT_MS },
         });
 
         it('discharges a stopped dev server through a real finite guarded proof', async () => {
-            const fixture = createStoppedDevServerFixture('recover-dev-real-proof');
+            const fixture = await createServedDevServerFixture('recover-dev-real-proof');
             writeFileSync(
                 join(fixture.lane.worktreePath, 'package.json'),
                 JSON.stringify({
@@ -2428,15 +2482,11 @@ describe('guard failure stop enforcement', { timeout: GUARDED_CASE_TIMEOUT_MS },
                 join(fixture.lane.worktreePath, 'proof.cjs'),
                 [
                     "const { writeFileSync } = require('node:fs');",
-                    "writeFileSync('observed.json', JSON.stringify({ cwd: process.cwd(), args: process.argv.slice(2) }));",
-                    'const proof = {',
-                    '    version: 1,',
-                    '    token: process.env.SOURDAW_GUARD_RECOVERY_PROOF_TOKEN,',
-                    '    origin: process.env.SOURDAW_GUARD_RECOVERY_PROOF_ORIGIN,',
-                    '    servingRoot: process.cwd(),',
-                    '    expectedRoot: process.cwd(),',
-                    '};',
-                    'writeFileSync(process.env.SOURDAW_GUARD_RECOVERY_PROOF_PATH, JSON.stringify(proof));',
+                    "writeFileSync('observed.json', JSON.stringify({",
+                    '    cwd: process.cwd(),',
+                    '    args: process.argv.slice(2),',
+                    '    port: process.env.SOURDAW_E2E_PORT,',
+                    '}));',
                 ].join('\n')
             );
 
@@ -2448,7 +2498,6 @@ describe('guard failure stop enforcement', { timeout: GUARDED_CASE_TIMEOUT_MS },
                         runIsolatedGuardedCommand({
                             ...input,
                             availableMemoryBytes: abundantMemoryBytes,
-                            maxRssBytes: 512 * 1024 ** 2,
                         }),
                     assertModulesPreflight: () => undefined,
                 });
@@ -2457,9 +2506,11 @@ describe('guard failure stop enforcement', { timeout: GUARDED_CASE_TIMEOUT_MS },
                 expect(JSON.parse(readFileSync(join(fixture.lane.worktreePath, 'observed.json'), 'utf8'))).toEqual({
                     cwd: realpathSync(fixture.lane.worktreePath),
                     args: ['launch.spec.ts'],
+                    port: String(fixture.marker.port),
                 });
                 expect(readGuardFailureReceipt(fixture.repoRoot, fixture.laneName)).toBeUndefined();
             } finally {
+                await fixture.marker.close();
                 rmSync(fixture.repoRoot, { recursive: true, force: true });
             }
         });
