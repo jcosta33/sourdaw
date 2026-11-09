@@ -1,0 +1,21 @@
+src/modules/Project/presentations/views/ArrangementSelector.tsx
+  s_977061c47f01dd::t_1c3e913b302620 30,48,68-75,83,321
+src/modules/Project/presentations/views/__tests__/ArrangementSelector.spec.tsx
+  s_977061c47f01dd::t_1a5100620bc86c 432-460
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1715d967635fd5f2f7e867e0acd51960cdcd3512",
+  "prompts": {},
+  "sessions": {
+    "s_977061c47f01dd": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34d-123d-7452-a6e7-60608388b6d7",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
