@@ -269,16 +269,23 @@ describe('first Yeast parameter edit undo', () => {
             if (entry?.kind !== 'action' || entry.inverseAction?.type !== 'removeYeastProcessor') {
                 throw new Error('Expected a pending add and its remove capture');
             }
+            let expectedProcessor = structuredClone(entry.inverseAction.payload.expectedProcessor);
+            if (mismatch === 'name') {
+                expectedProcessor = { ...expectedProcessor, name: 'Different Arp' };
+            }
+            if (mismatch === 'params') {
+                expectedProcessor = { ...expectedProcessor, params: { rate_denom: 11 } };
+            }
+            let expectedIndex = 0;
+            if (mismatch === 'append index') {
+                expectedIndex = 1;
+            }
             const inverseAction = {
                 ...entry.inverseAction,
                 payload: {
                     ...entry.inverseAction.payload,
-                    expectedProcessor: {
-                        ...entry.inverseAction.payload.expectedProcessor,
-                        ...(mismatch === 'name' ? { name: 'Different Arp' } : {}),
-                        ...(mismatch === 'params' ? { params: { rate_denom: 11 } } : {}),
-                    },
-                    expectedIndex: mismatch === 'append index' ? 1 : 0,
+                    expectedProcessor,
+                    expectedIndex,
                 },
             };
             const mismatchedEntry = { ...entry, inverseAction };

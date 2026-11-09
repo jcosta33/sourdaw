@@ -64,11 +64,8 @@ describe('processorFactory', () => {
         };
 
         const empty = play({});
-        const serializedDefaults: Record<string, number> = JSON.parse(
-            JSON.stringify(PROCESSOR_PARAM_DEFAULTS.arpeggiator)
-        );
         const binaryDefaults = load<{ params: Record<string, number> }>(
-            save(from({ params: serializedDefaults }))
+            save(from({ params: structuredClone(PROCESSOR_PARAM_DEFAULTS.arpeggiator) }))
         ).params;
         const materialized = play(binaryDefaults);
         const reversedOrder = play(Object.fromEntries(Object.entries(binaryDefaults).reverse()));

@@ -5,7 +5,7 @@ import { createHandler } from '#/utils/createHandler';
 import { type AppAction, type HandlerValidationContext, type YeastProcessorSnapshot } from '#/utils/handlerContract';
 
 import { type ProcessorType } from '../models/ProcessorCatalog';
-import { createInitialYeastProcessorParams } from '../models/createInitialYeastProcessorParams';
+import { createInitialYeastProcessorParams } from '../models/YeastProcessorInitialParams';
 import { addYeastProcessor } from '../useCases/addYeastProcessor';
 import { commitYeastProjection } from '../useCases/commitYeastProjection';
 import { restoreYeastGrooveAssignments } from '../useCases/restoreYeastGrooveAssignments';
@@ -98,7 +98,7 @@ function findRecordedAdd(action: AddAction, context: HandlerValidationContext | 
         action,
         inverseAction,
         snapshot: structuredClone(snapshot),
-        params: { ...params },
+        params: structuredClone(params),
         expectedIndex: inverseAction.payload.expectedIndex,
         isCurrent: recorded.isCurrent,
     };
@@ -208,9 +208,17 @@ export const handleAddYeastProcessor = createHandler<'addYeastProcessor'>({
                 afterAmbiguousCommit: markGrooveTemplateProjectWrite,
             };
         }
-        const grooveChanged = capture
-            ? addYeastProcessor(action.payload.type, action.payload.processorId, action.payload.name, capture.params)
-            : addYeastProcessor(action.payload.type, action.payload.processorId, action.payload.name);
+        let grooveChanged: boolean;
+        if (capture) {
+            grooveChanged = addYeastProcessor(
+                action.payload.type,
+                action.payload.processorId,
+                action.payload.name,
+                capture.params
+            );
+        } else {
+            grooveChanged = addYeastProcessor(action.payload.type, action.payload.processorId, action.payload.name);
+        }
         if (!grooveChanged) {
             return { status: 'written' };
         }
