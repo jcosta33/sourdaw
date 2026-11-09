@@ -70,7 +70,7 @@ function startMarkerServer(root: string, port = 0): Promise<{ port: number; clos
         response.setHeader(SOURDAW_E2E_ROOT_HEADER, encodeURIComponent(root));
         response.end('ok');
     });
-    return new Promise((resolvePromise, reject) => {
+    return new Promise((resolve, reject) => {
         server.once('error', reject);
         server.listen(port, '127.0.0.1', () => {
             const address = server.address();
@@ -78,13 +78,11 @@ function startMarkerServer(root: string, port = 0): Promise<{ port: number; clos
                 reject(new Error('marker server did not bind a port'));
                 return;
             }
-            resolvePromise({
+            resolve({
                 port: address.port,
                 close: () =>
-                    new Promise<void>((resolveClose, rejectClose) =>
-                        server.close((closeError) =>
-                            closeError === undefined ? resolveClose() : rejectClose(closeError)
-                        )
+                    new Promise<void>((resolve, reject) =>
+                        server.close((closeError) => (closeError === undefined ? resolve() : reject(closeError)))
                     ),
             });
         });
@@ -2200,13 +2198,13 @@ describe('guard failure stop enforcement', { timeout: GUARDED_CASE_TIMEOUT_MS },
 
         async function reserveFreePort(): Promise<number> {
             const probe = createServer();
-            await new Promise<void>((resolveListen) => probe.listen(0, '127.0.0.1', resolveListen));
+            await new Promise<void>((resolve) => probe.listen(0, '127.0.0.1', resolve));
             const address = probe.address();
             if (address === null || typeof address === 'string') {
                 throw new Error('port probe did not bind');
             }
-            await new Promise<void>((resolveClose, rejectClose) =>
-                probe.close((closeError) => (closeError === undefined ? resolveClose() : rejectClose(closeError)))
+            await new Promise<void>((resolve, reject) =>
+                probe.close((closeError) => (closeError === undefined ? resolve() : reject(closeError)))
             );
             return address.port;
         }
@@ -2352,9 +2350,7 @@ describe('guard failure stop enforcement', { timeout: GUARDED_CASE_TIMEOUT_MS },
                         unmarked = createServer((_request, response) => {
                             response.end('ok');
                         });
-                        await new Promise<void>((resolveListen) =>
-                            unmarked?.listen(fixture.port, '127.0.0.1', resolveListen)
-                        );
+                        await new Promise<void>((resolve) => unmarked?.listen(fixture.port, '127.0.0.1', resolve));
                         return fakeResult({ code: 0 });
                     },
                     error: (message) => errors.push(message),
@@ -2366,10 +2362,8 @@ describe('guard failure stop enforcement', { timeout: GUARDED_CASE_TIMEOUT_MS },
             } finally {
                 if (unmarked !== undefined) {
                     const server = unmarked;
-                    await new Promise<void>((resolveClose, rejectClose) =>
-                        server.close((closeError) =>
-                            closeError === undefined ? resolveClose() : rejectClose(closeError)
-                        )
+                    await new Promise<void>((resolve, reject) =>
+                        server.close((closeError) => (closeError === undefined ? resolve() : reject(closeError)))
                     );
                 }
                 rmSync(fixture.repoRoot, { recursive: true, force: true });
