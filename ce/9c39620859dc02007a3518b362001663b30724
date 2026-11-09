@@ -1,0 +1,37 @@
+tests/e2e/importedSampleKeyboardAdd.spec.ts
+  s_977061c47f01dd::t_5601cfd4b5ceb5 1-3,5-8,10-15,19,25-27,36,54-57,60-73,152-153,166,170-181,183-184,186-193,195-198,202-203,205-206
+  s_977061c47f01dd::t_c81fb0e6305f20 28-29,44,50-53,167-169,199-201
+  s_977061c47f01dd::t_ddb92ed3f747ce 182
+  s_977061c47f01dd::t_f99b6b1ead975b 214-216
+  s_977061c47f01dd::t_f587afac45eb94 76-83,88-94,96,98-99,113-114,133-134
+  s_977061c47f01dd::t_881d21b1c28ec7 102,218
+  s_977061c47f01dd::t_baaf5d2901881b 4,84-87,95,97,100-101,109,112,135-138,194,217,226-228,231
+  s_977061c47f01dd::t_573d91adb8e0a1 143
+  s_977061c47f01dd::t_a38d0c96648f31 115-132
+  s_977061c47f01dd::t_b6043582d4dd96 9,16-18,20-24,30-35,37-43,45-49,58-59,74-75,103-108,110-111,139-142,144-151,154-165,185,204,207-213,219-225,229-230,232-236
+src/modules/ContentBrowser/presentations/views/Sidebar/__tests__/SamplesTab.spec.tsx
+  s_977061c47f01dd::t_5ad201244953ee 200-231
+.agents/skills/review-stances/keyboard-action-accessibility.md
+  s_977061c47f01dd::t_98886cc47ff701 1-9,11
+  s_977061c47f01dd::t_cc800137270a89 10
+src/modules/ContentBrowser/presentations/views/Sidebar/SamplesTab.tsx
+  s_977061c47f01dd::t_38f9b42a02170b 91
+  s_977061c47f01dd::t_b94d264865dd07 88-90,92,94-106,114
+  s_977061c47f01dd::t_97d28c0e527531 93
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ce9c39620859dc02007a3518b362001663b30724",
+  "prompts": {},
+  "sessions": {
+    "s_977061c47f01dd": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34d-123d-7452-a6e7-60608388b6d7",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
