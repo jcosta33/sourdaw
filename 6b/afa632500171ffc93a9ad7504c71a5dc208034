@@ -1,0 +1,26 @@
+public/themePrepaint.js
+  h_beb54bf43b47b7 32-35,51,69,141
+src/components/daw/DawPluginMetricTile.tsx
+  h_beb54bf43b47b7 35,53
+src/components/daw/__tests__/DawPluginChip.spec.tsx
+  h_beb54bf43b47b7 19-30
+src/components/ui/__tests__/dialog.spec.tsx
+  h_beb54bf43b47b7 35-36,44
+src/modules/Crust/presentations/views/CrustPanel.tsx
+  h_beb54bf43b47b7 180,224,278,320,327,386
+src/modules/Preferences/stores/__tests__/themePrepaint.spec.ts
+  h_beb54bf43b47b7 1-269
+src/styles/__tests__/semanticThemes.spec.ts
+  h_beb54bf43b47b7 9,25-28,64-66,86-91,118-138,142-148,181-199,319-375,619-660,692-712,781,792,794,798-800
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "6bafa632500171ffc93a9ad7504c71a5dc208034",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
