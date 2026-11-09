@@ -1,0 +1,32 @@
+electron/__tests__/webviewSecurity.spec.ts
+  h_beb54bf43b47b7 23,62-65,113-123
+public/themePrepaint.js
+  h_beb54bf43b47b7 8-22
+scripts/__tests__/vercelContentSecurityPolicy.spec.ts
+  h_beb54bf43b47b7 102-105,178-188
+src/components/daw/ControlGallery.tsx
+  h_beb54bf43b47b7 27-29
+src/components/daw/__tests__/ControlGallery.spec.tsx
+  h_beb54bf43b47b7 11-14,16-18,20-30,32-35,44,51,63-78,80-111
+src/modules/Grinder/presentations/components/ImportedNeuralLibraryCard.tsx
+  h_beb54bf43b47b7 43-44,48-49,67,74
+src/modules/Grinder/presentations/views/GrinderPanel.tsx
+  h_beb54bf43b47b7 451,459,513,516,598,634,670,712-714,747,786-787,814-815,822-823,856-857,862-863,868-869,871,906-908,921,943,998,1009,1063-1064,1068,1077,1098,1101,1104,1159,1229,1281,1284,1703-1704,1746,1759,1795-1796,1800,1828,1866,1985-1986,2028-2029,2058-2059
+src/styles/__tests__/semanticThemes.spec.ts
+  h_beb54bf43b47b7 22-28,153-163,184-233,235,363-423
+src/styles/utilities/modules/grinder.css
+  h_beb54bf43b47b7 42
+tests/e2e/e2eStartupDiagnostics.spec.ts
+  h_beb54bf43b47b7 5-56
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "92521e90387cfea294aa82fe5e5da066675f69be",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
