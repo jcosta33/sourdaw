@@ -251,6 +251,8 @@ describe('ArrangementSelector', () => {
         fireEvent.click(screen.getByLabelText(/Arrangement selector/i));
         const rename = screen.getByRole('button', { name: 'Rename Arrangement 2' });
 
+        rename.focus();
+        expect(rename).toHaveFocus();
         expect(rename).toHaveClass('opacity-0', 'group-hover:opacity-100', 'focus-visible:opacity-100');
     });
 
