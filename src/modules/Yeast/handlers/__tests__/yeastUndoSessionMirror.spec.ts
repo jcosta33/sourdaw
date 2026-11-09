@@ -23,24 +23,30 @@ const UNDO_SESSION_KEY = 'sourdaw-undo-session';
 const DEVICE_ID = 'device-mirror';
 
 type RootDocument = { yeast?: unknown };
+type HistoryEntry = NonNullable<typeof undoHistoryStore.value>['past'][number];
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function mirroredIds(entries: unknown): string[] {
+function mirroredEntries(entries: unknown): Record<string, unknown>[] {
     if (!Array.isArray(entries)) {
         throw new TypeError('Expected a mirrored history stack');
     }
     return entries.map((entry) => {
-        if (!isRecord(entry) || typeof entry.id !== 'string') {
-            throw new TypeError('Expected a mirrored history entry with an id');
+        if (!isRecord(entry)) {
+            throw new TypeError('Expected a mirrored history entry');
         }
-        return entry.id;
+        // serializeSessionActionEntry adds only these operation-version fields.
+        const historyEntry = structuredClone(entry);
+        delete historyEntry.actionOperationVersion;
+        delete historyEntry.inverseActionOperationVersion;
+        delete historyEntry.redoActionOperationVersion;
+        return historyEntry;
     });
 }
 
-async function waitForMirroredHistory(pastIds: readonly string[], futureIds: readonly string[]): Promise<void> {
+async function waitForMirroredHistory(past: readonly HistoryEntry[], future: readonly HistoryEntry[]): Promise<void> {
     await vi.waitFor(() => {
         const raw = sessionStorage.getItem(UNDO_SESSION_KEY);
         expect(raw).not.toBeNull();
@@ -48,8 +54,8 @@ async function waitForMirroredHistory(pastIds: readonly string[], futureIds: rea
         if (!isRecord(persisted)) {
             throw new TypeError('Expected a mirrored history record');
         }
-        expect(mirroredIds(persisted.past)).toEqual(pastIds);
-        expect(mirroredIds(persisted.future)).toEqual(futureIds);
+        expect(mirroredEntries(persisted.past)).toEqual(past);
+        expect(mirroredEntries(persisted.future)).toEqual(future);
     });
 }
 
@@ -117,10 +123,7 @@ describe('Yeast undo session mirror (#2111)', () => {
 
         const livePast = undoHistoryStore.value?.past ?? [];
         expect(livePast).toHaveLength(2);
-        await waitForMirroredHistory(
-            livePast.map((entry) => entry.id),
-            []
-        );
+        await waitForMirroredHistory(livePast, []);
 
         // The mirror carries both entries with their shared group and guarded
         // inverse/redo payloads.
@@ -198,8 +201,8 @@ describe('Yeast undo session mirror (#2111)', () => {
         expect(freshYeastStore.value?.processors[0]?.params?.gate).toBe(0.8);
         freshFlushWrites();
         await waitForMirroredHistory(
-            freshUndoHistoryStore.value?.past.map((entry) => entry.id) ?? [],
-            freshUndoHistoryStore.value?.future.map((entry) => entry.id) ?? []
+            freshUndoHistoryStore.value?.past ?? [],
+            freshUndoHistoryStore.value?.future ?? []
         );
     });
 
@@ -225,7 +228,7 @@ describe('Yeast undo session mirror (#2111)', () => {
         };
         undoHistoryStore.set({ past: [], future: [oldEntry] });
         const savedProject = save(document);
-        await waitForMirroredHistory([], [oldEntry.id]);
+        await waitForMirroredHistory([], [oldEntry]);
         const stored: unknown = JSON.parse(sessionStorage.getItem(UNDO_SESSION_KEY)!);
         if (!isRecord(stored) || !Array.isArray(stored.future)) {
             throw new Error('Expected the saved future stack');
@@ -295,11 +298,11 @@ describe('Yeast undo session mirror (#2111)', () => {
         );
         expect(freshHistory.value?.past.at(-1)).toBe(rehydrated);
         expect(rehydrated.inverseAction.payload.expectedProcessor.params).toEqual({});
-        await waitForMirroredHistory([rehydrated.id], []);
+        await waitForMirroredHistory([rehydrated], []);
 
         await freshUndo();
         freshFlushWrites();
         expect(freshReadRack(DEVICE_ID).processors.some((entry) => entry.id === 'old-arp')).toBe(false);
-        await waitForMirroredHistory([], [rehydrated.id]);
+        await waitForMirroredHistory([], freshHistory.value?.future ?? []);
     });
 });
