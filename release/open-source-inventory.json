@@ -1424,7 +1424,7 @@
                 "not-applicable:direct-project-source"
             ],
             "digests": [
-                "sha256:e3da883ba2b8cb6b6a0f029ad59b3cd4b5d9d30b896a7056d278953e4c3368ed:public/themePrepaint.js"
+                "sha256:2102542c91ff11c3a307adf130afe4b034c411118f05e103ea055b4c09b40722:public/themePrepaint.js"
             ],
             "licenses": [
                 "Apache-2.0"

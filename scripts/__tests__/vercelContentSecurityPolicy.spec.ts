@@ -97,12 +97,17 @@ function parseCsp(policy: string): Map<string, string[]> {
     return directives;
 }
 
-/** Locate executable markup, excluding comments, template contents, and script text. */
+/** Parse with the browser's scripting flag so noscript contents stay inert. */
+function parseActiveHtml(html: string): Document {
+    const parsed = document.implementation.createHTMLDocument('');
+    parsed.open();
+    parsed.write(html);
+    parsed.close();
+    return parsed;
+}
+
 function findThemeScript(html: string): HTMLScriptElement | null {
-    const scripts = new DOMParser()
-        .parseFromString(html, 'text/html')
-        .querySelectorAll<HTMLScriptElement>('script#sourdaw-theme');
-    return [...scripts].find((script) => script.closest('noscript, template') === null) ?? null;
+    return parseActiveHtml(html).querySelector<HTMLScriptElement>('script#sourdaw-theme');
 }
 
 describe('the hosted web build Content-Security-Policy', () => {
@@ -181,7 +186,11 @@ describe('the hosted web build Content-Security-Policy', () => {
             html: '<!-- <script id="sourdaw-theme" type="text/javascript" src="/themePrepaint.js"></script> -->',
         },
         {
-            name: 'a scripting-inert noscript ancestor',
+            name: 'a scripting-inert head noscript ancestor',
+            html: '<head><noscript><script id="sourdaw-theme" type="text/javascript" src="/themePrepaint.js"></script></noscript></head>',
+        },
+        {
+            name: 'a scripting-inert body noscript ancestor',
             html: '<body><noscript><script id="sourdaw-theme" type="text/javascript" src="/themePrepaint.js"></script></noscript></body>',
         },
     ])('does not accept $name as active markup', ({ html }) => {

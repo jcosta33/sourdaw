@@ -20,7 +20,6 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { net, protocol } from 'electron';
-import { JSDOM } from 'jsdom';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { MODEL_RELEASE_ADMISSION } from '../../src/infra/release/modelReleaseAdmission.js';
@@ -58,11 +57,17 @@ const parseCsp = (policy: string): Map<string, string[]> => {
     return directives;
 };
 
-/** Locate executable markup, excluding comments, template contents, and script text. */
-const findThemeScript = (html: string) => {
-    const scripts = new JSDOM(html).window.document.querySelectorAll('script#sourdaw-theme');
-    return [...scripts].find((script) => script.closest('noscript, template') === null) ?? null;
+/** Parse with the browser's scripting flag so noscript contents stay inert. */
+const parseActiveHtml = (html: string): Document => {
+    const parsed = document.implementation.createHTMLDocument('');
+    parsed.open();
+    parsed.write(html);
+    parsed.close();
+    return parsed;
 };
+
+const findThemeScript = (html: string): HTMLScriptElement | null =>
+    parseActiveHtml(html).querySelector<HTMLScriptElement>('script#sourdaw-theme');
 
 /** Every production TypeScript source under a directory, concatenated. */
 const readProductionTypescript = (directory: string): string =>
@@ -116,7 +121,11 @@ describe('the production Content-Security-Policy', () => {
             html: '<!-- <script id="sourdaw-theme" type="text/javascript" src="/themePrepaint.js"></script> -->',
         },
         {
-            name: 'a scripting-inert noscript ancestor',
+            name: 'a scripting-inert head noscript ancestor',
+            html: '<head><noscript><script id="sourdaw-theme" type="text/javascript" src="/themePrepaint.js"></script></noscript></head>',
+        },
+        {
+            name: 'a scripting-inert body noscript ancestor',
             html: '<body><noscript><script id="sourdaw-theme" type="text/javascript" src="/themePrepaint.js"></script></noscript></body>',
         },
     ])('does not accept $name as active markup', ({ html }) => {

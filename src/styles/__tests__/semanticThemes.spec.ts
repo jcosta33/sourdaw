@@ -18,19 +18,36 @@ const meterColorSource = readFileSync(
     'utf8'
 );
 const lightBlock = /:root\.light\s*\{([^}]*)\}/u.exec(tokens)?.[1] ?? '';
-const indexDocument = new DOMParser().parseFromString(indexHtml, 'text/html');
-const findThemeScript = (html: string): HTMLScriptElement | null => {
-    const scripts = new DOMParser()
-        .parseFromString(html, 'text/html')
-        .querySelectorAll<HTMLScriptElement>('script#sourdaw-theme');
-    return [...scripts].find((script) => script.closest('noscript, template') === null) ?? null;
+/** Parse with the browser's scripting flag so noscript contents stay inert. */
+const parseActiveHtml = (html: string): Document => {
+    const parsed = document.implementation.createHTMLDocument('');
+    parsed.open();
+    parsed.write(html);
+    parsed.close();
+    return parsed;
 };
-const startupThemeMatch = findThemeScript(indexHtml);
+const indexDocument = parseActiveHtml(indexHtml);
+const findThemeScript = (html: string): HTMLScriptElement | null =>
+    parseActiveHtml(html).querySelector<HTMLScriptElement>('script#sourdaw-theme');
+const startupThemeMatch = indexDocument.querySelector<HTMLScriptElement>('script#sourdaw-theme');
 const startupThemeSource = startupThemeMatch?.getAttribute('src');
 let startupThemeScript = '';
 if (startupThemeSource === '/themePrepaint.js') {
     startupThemeScript = readFileSync(resolve(process.cwd(), 'public/themePrepaint.js'), 'utf8');
 }
+
+const entryModuleFrom = (parsed: Document): HTMLScriptElement | null =>
+    [...parsed.querySelectorAll<HTMLScriptElement>('script[type="module" i][src]')].at(-1) ?? null;
+const themePrecedesEntry = (theme: HTMLScriptElement | null, entry: HTMLScriptElement | null): boolean => {
+    if (theme === null || entry === null) {
+        throw new Error('Expected active theme and entry scripts');
+    }
+    const themeRoot = theme.getRootNode();
+    if (themeRoot !== entry.getRootNode() || themeRoot !== theme.ownerDocument) {
+        throw new Error('Theme and entry scripts must share one connected document');
+    }
+    return (theme.compareDocumentPosition(entry) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
+};
 
 const runStartupTheme = (stored: string | null) => {
     const classes = new Set<string>(['dark']);
@@ -95,6 +112,36 @@ const composite = (foreground: string, background: string, alpha: number): strin
     return `#${channels.join('')}`;
 };
 
+const grinderWindowStops = (): Record<string, string> => {
+    const styles = readFileSync(resolve(process.cwd(), 'src/styles/utilities/modules/grinder.css'), 'utf8');
+    const windowBlock = /@utility grinder-window\s*\{([\s\S]*?)\n\}/u.exec(styles)?.[1] ?? '';
+    const rgbaLayers = Array.from(
+        windowBlock.matchAll(/rgba\(\s*(\d+),\s*(\d+),\s*(\d+),\s*([\d.]+)\)/gu),
+        (match) => ({
+            color: `#${match
+                .slice(1, 4)
+                .map((channel) => Number(channel).toString(16).padStart(2, '0'))
+                .join('')}`,
+            alpha: Number(match[4]),
+        })
+    );
+    const [topWhite, bottomWhite, topAmber] = rgbaLayers;
+    if (topWhite === undefined || bottomWhite === undefined || topAmber === undefined) {
+        throw new Error('Missing Grinder window gradient layers');
+    }
+    const panelInset = readToken(lightBlock, '--color-bg-panelInset');
+    const amberBase = (alpha: number) => composite(topAmber.color, panelInset, alpha);
+    return {
+        windowTop: composite(topWhite.color, amberBase(topAmber.alpha), topWhite.alpha),
+        windowMiddle: composite(
+            topWhite.color,
+            amberBase(topAmber.alpha / 2),
+            (topWhite.alpha + bottomWhite.alpha) / 2
+        ),
+        windowBottom: composite(bottomWhite.color, panelInset, bottomWhite.alpha),
+    };
+};
+
 describe('semantic light theme', () => {
     it('overrides the complete surface and text hierarchy and declares native control color scheme', () => {
         for (const name of [
@@ -140,14 +187,30 @@ describe('semantic light theme', () => {
         expect(startupThemeMatch?.hasAttribute('async')).toBe(false);
         expect(startupThemeMatch?.hasAttribute('defer')).toBe(false);
         expect(startupThemeMatch?.textContent?.trim()).toBe('');
-        const entryScript = indexDocument.querySelector<HTMLScriptElement>('script#sourdaw-entry');
-        if (startupThemeMatch === null || entryScript === null) {
-            throw new Error('Expected active theme and entry scripts');
-        }
-        expect(
-            startupThemeMatch.compareDocumentPosition(entryScript) & Node.DOCUMENT_POSITION_FOLLOWING
-        ).toBeGreaterThan(0);
+        expect(themePrecedesEntry(startupThemeMatch, entryModuleFrom(indexDocument))).toBe(true);
         expect(indexHtml).toContain(':root.light');
+    });
+
+    it('detects reversed real theme and entry tags in one connected document', () => {
+        const themeTag = '<script id="sourdaw-theme" type="text/javascript" src="/themePrepaint.js"></script>';
+        const entryTag = '<script id="sourdaw-entry" type="module" src="/src/app/main.tsx"></script>';
+        expect(indexHtml).toContain(themeTag);
+        expect(indexHtml).toContain(entryTag);
+        const reversedHtml = indexHtml
+            .replace(themeTag, '__THEME_TAG__')
+            .replace(entryTag, themeTag)
+            .replace('__THEME_TAG__', entryTag);
+        const reversedDocument = parseActiveHtml(reversedHtml);
+
+        expect(
+            themePrecedesEntry(
+                reversedDocument.querySelector<HTMLScriptElement>('script#sourdaw-theme'),
+                entryModuleFrom(reversedDocument)
+            )
+        ).toBe(false);
+        expect(() => themePrecedesEntry(startupThemeMatch, entryModuleFrom(parseActiveHtml(indexHtml)))).toThrow(
+            'one connected document'
+        );
     });
 
     it.each([
@@ -156,7 +219,11 @@ describe('semantic light theme', () => {
             html: '<!-- <script id="sourdaw-theme" type="text/javascript" src="/themePrepaint.js"></script> -->',
         },
         {
-            name: 'a scripting-inert noscript ancestor',
+            name: 'a scripting-inert head noscript ancestor',
+            html: '<head><noscript><script id="sourdaw-theme" type="text/javascript" src="/themePrepaint.js"></script></noscript></head>',
+        },
+        {
+            name: 'a scripting-inert body noscript ancestor',
             html: '<body><noscript><script id="sourdaw-theme" type="text/javascript" src="/themePrepaint.js"></script></noscript></body>',
         },
     ])('does not accept $name as active markup', ({ html }) => {
@@ -199,6 +266,18 @@ describe('semantic light theme', () => {
         {
             name: 'root referential equality retargeting theme',
             stored: '{"json":{"theme":"light","other":"dark"},"meta":{"referentialEqualities":[["theme"]],"v":1}}',
+        },
+        {
+            name: 'mixed root and nested aliases',
+            stored: '{"json":{"theme":"light","other":null,"first":{"value":1},"second":{"value":1}},"meta":{"referentialEqualities":[["other"],{"first":["second"]}],"v":1}}',
+        },
+        {
+            name: 'root theme and sibling aliases',
+            stored: '{"json":{"theme":"light","other":null},"meta":{"referentialEqualities":[["theme","other"]],"v":1}}',
+        },
+        {
+            name: 'empty nested equality targets',
+            stored: '{"json":{"theme":"light","other":{}},"meta":{"referentialEqualities":{"other":[]},"v":1}}',
         },
         {
             name: 'unrelated field value metadata',
@@ -491,6 +570,57 @@ describe('semantic light theme', () => {
                     4.5
                 );
             }
+        }
+    });
+
+    it('keeps Grinder Diagnostics orange readable on every real Light window stop', () => {
+        const grinderSource = readFileSync(
+            resolve(process.cwd(), 'src/modules/Grinder/presentations/views/GrinderPanel.tsx'),
+            'utf8'
+        );
+        expect(grinderSource).toMatch(/text-\[var\(--color-accent-orange\)\][^"]*">\s*Diagnostics/u);
+        const orange = readToken(lightBlock, '--color-accent-orange');
+        for (const [stop, background] of Object.entries(grinderWindowStops())) {
+            expect(contrast(orange, background), `Diagnostics on ${stop}`).toBeGreaterThanOrEqual(4.5);
+        }
+    });
+
+    it('keeps imported Remove and Patch labels readable on their nested semantic Light wells', () => {
+        const importedSource = readFileSync(
+            resolve(process.cwd(), 'src/modules/Grinder/presentations/components/ImportedNeuralLibraryCard.tsx'),
+            'utf8'
+        );
+        const unselectedCard = /selected\s*\?\s*'[^']+'\s*:\s*'([^']+)'/u.exec(importedSource)?.[1] ?? '';
+        expect(unselectedCard).toContain('bg-bg-well');
+        const removeClass =
+            /className="([^"]+)"\s+onClick=\{\(\) => on_remove\(entry\)\}/u.exec(importedSource)?.[1] ?? '';
+        const patchClass = /<span className="([^"]+)">\s*Patch only/u.exec(importedSource)?.[1] ?? '';
+        const primary = readToken(lightBlock, '--color-text-primary');
+        const cardWell = readToken(lightBlock, '--color-bg-well');
+        const surface = readToken(lightBlock, '--surface-default');
+        for (const [route, className] of Object.entries({ Remove: removeClass, Patch: patchClass })) {
+            expect(className, `${route} text`).toContain('text-text-primary');
+            const alphaSource = /bg-surface-default\/(\d+)/u.exec(className)?.[1];
+            expect(alphaSource, `${route} semantic nested surface`).toBeDefined();
+            const nestedWell = composite(surface, cardWell, Number(alphaSource) / 100);
+            expect(contrast(primary, nestedWell), `${route} nested composite`).toBeGreaterThanOrEqual(4.5);
+        }
+    });
+
+    it('keeps the Neural import error readable on its resolved Light danger surface', () => {
+        const grinderSource = readFileSync(
+            resolve(process.cwd(), 'src/modules/Grinder/presentations/views/GrinderPanel.tsx'),
+            'utf8'
+        );
+        const errorClass = /<div className="([^"]+)">\s*\{neural_library_state.error\}/u.exec(grinderSource)?.[1] ?? '';
+        expect(errorClass).toContain('text-state-danger');
+        expect(errorClass).toContain('border-state-danger/30');
+        const alphaSource = /bg-state-danger\/(\d+)/u.exec(errorClass)?.[1];
+        expect(alphaSource).toBeDefined();
+        const danger = readToken(lightBlock, '--color-accent-red');
+        for (const [stop, windowBackground] of Object.entries(grinderWindowStops())) {
+            const background = composite(danger, windowBackground, Number(alphaSource) / 100);
+            expect(contrast(danger, background), `Neural import error on ${stop}`).toBeGreaterThanOrEqual(4.5);
         }
     });
 });

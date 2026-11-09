@@ -12,7 +12,7 @@ test('applies the persisted Light theme before the real entry module paints', as
     const entrySource = await page.evaluate(
         (html) => {
             const document = new DOMParser().parseFromString(html, 'text/html');
-            return document.querySelector('script#sourdaw-entry')?.getAttribute('src') ?? null;
+            return [...document.querySelectorAll('script[type="module" i][src]')].at(-1)?.getAttribute('src') ?? null;
         },
         await response.text()
     );

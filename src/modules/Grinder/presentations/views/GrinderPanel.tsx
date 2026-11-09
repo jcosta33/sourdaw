@@ -1820,7 +1820,7 @@ function ControlDeck({
                         </Button>
                     </Row>
                     {neural_library_state.error ? (
-                        <div className="rounded-[14px] border border-red-400/30 bg-red-400/8 px-3 py-2 text-xs text-red-200">
+                        <div className="rounded-[14px] border border-state-danger/30 bg-state-danger/8 px-3 py-2 text-xs text-state-danger">
                             {neural_library_state.error}
                         </div>
                     ) : null}

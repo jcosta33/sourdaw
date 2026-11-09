@@ -5,35 +5,9 @@ import { fireEvent, render, screen, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 
 import { ControlGallery } from '../ControlGallery';
+import { EXPECTED_GALLERY_TOKENS } from './controlGalleryExpectedTokens';
 
 const tokenSource = readFileSync(resolve(process.cwd(), 'src/styles/tokens.css'), 'utf8');
-
-type ExpectedToken = { name: string; darkValue: string | undefined; lightValue: string | undefined };
-
-function readDeclarations(block: string): [string, string][] {
-    return Array.from(block.matchAll(/^\s*(--[\w-]+)\s*:\s*([^;]+);/gm), (match) => {
-        const name = match[1];
-        const value = match[2];
-        if (name === undefined || value === undefined) {
-            throw new Error('Expected a complete design token declaration');
-        }
-        return [name, value.trim()];
-    });
-}
-
-function tokenValuesFromSource(source: string): ExpectedToken[] {
-    const uncommented = source.replace(/\/\*[\s\S]*?\*\//gu, '');
-    const darkBlock = /^@theme\s*\{([^}]*)\}/mu.exec(uncommented)?.[1] ?? '';
-    const lightBlock = /^:root\.light\s*\{([^}]*)\}/mu.exec(uncommented)?.[1] ?? '';
-    const tokens = new Map<string, ExpectedToken>();
-    for (const [name, darkValue] of readDeclarations(darkBlock)) {
-        tokens.set(name, { name, darkValue, lightValue: undefined });
-    }
-    for (const [name, lightValue] of readDeclarations(lightBlock)) {
-        tokens.set(name, { name, darkValue: tokens.get(name)?.darkValue, lightValue });
-    }
-    return [...tokens.values()];
-}
 
 describe('ControlGallery', () => {
     it('renders every unique CSS token declaration from the source', () => {
@@ -41,7 +15,7 @@ describe('ControlGallery', () => {
         const tokenList = screen.getByRole('list', { name: 'Design tokens' });
         const rows = within(tokenList).getAllByRole('listitem');
         const names = rows.map((row) => row.getAttribute('data-token-name'));
-        expect(names).toEqual(tokenValuesFromSource(tokenSource).map(({ name }) => name));
+        expect(names).toEqual(EXPECTED_GALLERY_TOKENS.map(({ name }) => name));
         expect(names).toEqual(
             expect.arrayContaining(['--text-metadata', '--text-label', '--text-value', '--text-body'])
         );
@@ -60,13 +34,13 @@ describe('ControlGallery', () => {
             return row;
         };
 
-        for (const token of tokenValuesFromSource(tokenSource)) {
+        for (const token of EXPECTED_GALLERY_TOKENS) {
             const row = rowFor(token.name);
             expect(row.querySelector('[data-theme-value="dark"]')?.textContent, `${token.name} Dark`).toBe(
                 token.darkValue ?? '—'
             );
             const light = row.querySelector('[data-theme-value="light"]');
-            if (token.lightValue === undefined) {
+            if (token.lightValue === null) {
                 expect(light, `${token.name} has no Light override`).toBeNull();
             } else {
                 expect(light?.textContent, `${token.name} Light`).toBe(token.lightValue);

@@ -27,7 +27,7 @@ export function ImportedNeuralLibraryCard({
             className={`rounded-[18px] border px-4 py-3 text-left ${
                 selected
                     ? 'border-[var(--color-accent-cyan)]/60 bg-[var(--color-accent-cyan)]/12'
-                    : 'border-white/8 bg-black/20'
+                    : 'border-white/8 bg-bg-well'
             }`}
         >
             <Row align="start" justify="between" gap={3}>
@@ -64,14 +64,14 @@ export function ImportedNeuralLibraryCard({
                                 variant="bare"
                                 size="bare"
                                 type="button"
-                                className="rounded-[12px] border border-white/12 bg-black/24 px-2 py-1 text-dense uppercase tracking-[0.16em] text-text-primary"
+                                className="rounded-[12px] border border-white/12 bg-surface-default/90 px-2 py-1 text-dense uppercase tracking-[0.16em] text-text-primary"
                                 onClick={() => on_remove(entry)}
                             >
                                 Remove capture
                             </Button>
                         </>
                     ) : (
-                        <span className="rounded-[12px] border border-white/10 bg-black/18 px-2 py-1 text-dense uppercase tracking-[0.16em] text-text-primary">
+                        <span className="rounded-[12px] border border-white/10 bg-surface-default/90 px-2 py-1 text-dense uppercase tracking-[0.16em] text-text-primary">
                             Patch only
                         </span>
                     )}
