@@ -1,0 +1,20 @@
+electron/__tests__/webviewSecurity.spec.ts
+  h_beb54bf43b47b7 60-89,97-108
+public/themePrepaint.js
+  h_beb54bf43b47b7 2-15,18,20,45-50,54-57,61-66,68,72-78,83,87-91,93-94,98,101,109,114-119,121-122,124,126
+release/open-source-inventory.json
+  h_beb54bf43b47b7 1427
+scripts/__tests__/vercelContentSecurityPolicy.spec.ts
+  h_beb54bf43b47b7 100-129,137-147
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "893fbb3215f25c03d652e904ba950ebb8dc0f0f4",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
