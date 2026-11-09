@@ -46,8 +46,14 @@ test.describe('Fermenter panel deep — knobs, macros', () => {
         await expect(brightness).toHaveAttribute('aria-valuenow', '0.01');
 
         const panel = page.locator('.fermenter-faceplate');
+        // Before the switch the Oscillator tab owns the tabpanel: its Level
+        // slider is present and the Effects chip is not rendered at all.
+        await expect(panel.getByRole('slider', { name: 'Level', exact: true })).toBeVisible();
+        await expect(panel.getByRole('button', { name: 'Dist', exact: true })).toHaveCount(0);
         await panel.getByRole('tab', { name: 'Effects', exact: true }).click();
         await expect(panel.getByRole('button', { name: 'Dist', exact: true })).toHaveAttribute('aria-pressed', 'true');
+        // After the switch the Oscillator content is gone, not merely hidden.
+        await expect(panel.getByRole('slider', { name: 'Level', exact: true })).toHaveCount(0);
     });
 
     test('Fermenter manual tabs activate with Enter and Space', async ({ page }) => {
