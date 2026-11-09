@@ -16,7 +16,7 @@ import {
     type ReviewReconstruction,
 } from './reconstructReviewRounds.ts';
 
-export const REVIEW_ROUND_FREEZE_THRESHOLD = 5;
+export const REVIEW_ROUND_FREEZE_THRESHOLD = 10;
 
 /**
  * The reviewer `REQUEST_CHANGES` rounds in a reconstruction — rounds, never findings. A round is its

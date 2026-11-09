@@ -642,7 +642,7 @@ author brief's approach and reasoning never reach a reviewer, the bundle, or the
 
 ## Freeze
 
-At five reviewer `REQUEST_CHANGES` rounds a PR is frozen to fresh publication under AGENTS.md
+At ten reviewer `REQUEST_CHANGES` rounds a PR is frozen to fresh publication under AGENTS.md
 [Review](../../../AGENTS.md#review); mechanics in [review records](references/review-records.md).
 
 ## References
