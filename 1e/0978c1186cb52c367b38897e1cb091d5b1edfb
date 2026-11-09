@@ -1,0 +1,19 @@
+src/components/daw/DawTabStrip.tsx
+  s_977061c47f01dd::t_5484e9b3a4b66a 152
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1e0978c1186cb52c367b38897e1cb091d5b1edfb",
+  "prompts": {},
+  "sessions": {
+    "s_977061c47f01dd": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34d-123d-7452-a6e7-60608388b6d7",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
