@@ -1,0 +1,36 @@
+electron/__tests__/webviewSecurity.spec.ts
+  h_beb54bf43b47b7 23,62-63,70-71
+src/components/daw/DawPluginChoiceRow.tsx
+  h_beb54bf43b47b7 40
+src/components/daw/__tests__/ControlGallery.spec.tsx
+  h_beb54bf43b47b7 8
+src/components/daw/__tests__/DawListRowComponents.spec.tsx
+  h_beb54bf43b47b7 61,63-66
+src/components/ui/__tests__/button.spec.tsx
+  h_beb54bf43b47b7 60-72
+src/components/ui/button.tsx
+  h_beb54bf43b47b7 18,20
+src/modules/Crust/presentations/components/CrustControlZone.tsx
+  h_beb54bf43b47b7 45,99,101,144-145,171,186,289,598
+src/modules/Crust/presentations/components/__tests__/CrustControlZoneLevels.spec.tsx
+  h_beb54bf43b47b7 177-208
+src/modules/Crust/presentations/views/CrustPanel.tsx
+  h_beb54bf43b47b7 157,312
+src/modules/Crust/presentations/views/__tests__/CrustPanel.spec.tsx
+  h_beb54bf43b47b7 276-287
+src/modules/Tuner/presentations/views/__tests__/TunerPanel.spec.tsx
+  h_beb54bf43b47b7 196,347-394
+src/styles/__tests__/semanticThemes.spec.ts
+  h_beb54bf43b47b7 5,419-488
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "cfc23b5154a2c58ee76a8b60b9002371d8ed4428",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
