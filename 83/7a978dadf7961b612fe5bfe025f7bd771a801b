@@ -1,0 +1,36 @@
+electron/__tests__/webviewSecurity.spec.ts
+  h_beb54bf43b47b7 60-66,69-71,124-128
+public/themePrepaint.js
+  h_beb54bf43b47b7 2-64,68-70,73-92
+release/open-source-inventory.json
+  h_beb54bf43b47b7 1427
+scripts/__tests__/vercelContentSecurityPolicy.spec.ts
+  h_beb54bf43b47b7 100-108,110,189-193
+src/components/daw/ControlGallery.tsx
+  h_beb54bf43b47b7 27
+src/components/daw/__tests__/ControlGallery.spec.tsx
+  h_beb54bf43b47b7 8,18,37,43
+src/components/daw/__tests__/controlGalleryExpectedTokens.ts
+  h_beb54bf43b47b7 1-267
+src/modules/Grinder/presentations/components/ImportedNeuralLibraryCard.tsx
+  h_beb54bf43b47b7 30,67,74
+src/modules/Grinder/presentations/views/GrinderPanel.tsx
+  h_beb54bf43b47b7 1823
+src/styles/__tests__/semanticThemes.spec.ts
+  h_beb54bf43b47b7 21-27,29-32,39-51,115-144,190,194-215,222-226,270-281,575-625
+src/styles/tokens.css
+  h_beb54bf43b47b7 301
+tests/e2e/e2eStartupDiagnostics.spec.ts
+  h_beb54bf43b47b7 15
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "837a978dadf7961b612fe5bfe025f7bd771a801b",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
