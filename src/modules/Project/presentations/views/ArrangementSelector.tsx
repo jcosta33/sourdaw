@@ -260,6 +260,7 @@ export const ArrangementSelector = (): ReactElement | null => {
                                                 )}
                                                 onClick={(event) => {
                                                     event.stopPropagation();
+                                                    setFocusedArrangementId(arr.id);
                                                     setEditName(arr.name);
                                                     setEditingId(arr.id);
                                                 }}

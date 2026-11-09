@@ -521,6 +521,43 @@ describe('ArrangementSelector', () => {
         expect(escape.defaultPrevented).toBe(true);
     });
 
+    it.each([
+        {
+            exit: 'Escape',
+            exitRename: (input: HTMLElement) => {
+                const escape = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+                act(() => {
+                    input.dispatchEvent(escape);
+                });
+            },
+        },
+        {
+            exit: 'Enter',
+            exitRename: (input: HTMLElement) => {
+                fireEvent.keyDown(input, { key: 'Enter' });
+            },
+        },
+    ])(
+        'restores focus to an inactive arrangement after cancelling or submitting its rename with $exit',
+        ({ exitRename }) => {
+            render(<ArrangementSelector />);
+            fireEvent.click(screen.getByLabelText(/Arrangement selector/i));
+            fireEvent.click(screen.getByRole('button', { name: 'Rename Arrangement 2' }));
+            const input = screen.getByTestId('compact-input');
+            expect(input).toHaveFocus();
+
+            exitRename(input);
+
+            const arrangement2 = screen.getByRole('menuitemradio', { name: /Arrangement 2/i });
+            expect(screen.queryByTestId('compact-input')).toBeNull();
+            expect(arrangement2).toHaveFocus();
+
+            fireEvent.keyDown(arrangement2, { key: 'Enter' });
+
+            expect(switchArrangement).toHaveBeenCalledExactlyOnceWith('arr-2');
+        }
+    );
+
     it('consumes the first Escape to cancel a rename and restores radio focus', () => {
         render(<ArrangementSelector />);
         fireEvent.click(screen.getByLabelText(/Arrangement selector/i));

@@ -674,6 +674,11 @@ describe('FermenterPanel', () => {
                 expect(element).not.toHaveAttribute('role', 'link');
                 expect(element.tabIndex).toBeLessThan(0);
             }
+
+            fireEvent.click(scene);
+
+            expect(screen.getByRole('tab', { name: /^Oscillator$/ })).toHaveAttribute('aria-selected', 'true');
+            expect(screen.getByText('Oscillator theater')).toBeInTheDocument();
         });
 
         it('renders accessible patch and preset action buttons', () => {

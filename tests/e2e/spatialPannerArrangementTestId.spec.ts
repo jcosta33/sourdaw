@@ -100,5 +100,17 @@ test.describe('SpatialPanner and ArrangementSelector', () => {
         const inactiveRename = menu.getByRole('button', { name: 'Rename Arrangement 1' });
         await expect(inactiveRename).toBeFocused();
         await expect(inactiveRename).toHaveCSS('opacity', '1');
+
+        await page.keyboard.press('Enter');
+        const renameEditor = menu.getByRole('textbox');
+        await expect(renameEditor).toHaveValue('Arrangement 1');
+        await page.keyboard.press('Escape');
+        const inactiveRadio = menu.getByRole('menuitemradio', { name: 'Arrangement 1' });
+        await expect(inactiveRadio).toBeFocused();
+
+        await page.keyboard.press('Tab');
+        await expect(inactiveRename).toBeFocused();
+        await page.keyboard.press('Space');
+        await expect(renameEditor).toHaveValue('Arrangement 1');
     });
 });
