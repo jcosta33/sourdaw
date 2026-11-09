@@ -165,6 +165,15 @@ describe('CrustControlZone level 5 (loudness stats)', () => {
         expect(stats).toHaveTextContent('-2.3 dB');
     });
 
+    it('uses an opaque semantic role for every loudness label', () => {
+        renderZone({ uiLevel: 5 });
+
+        for (const label of ['Integrated', 'ST Max', 'MOM Max', 'LRA', 'TP Max', 'GR Max']) {
+            expect(screen.getByText(label)).toHaveClass('text-muted-foreground');
+            expect(screen.getByText(label)).not.toHaveClass('text-muted-foreground/40');
+        }
+    });
+
     it('prevents loudness statistics grid from collapsing with shrink-0', () => {
         renderZone({ uiLevel: 5 });
         const stats = screen.getByRole('group', { name: /loudness statistics/i });

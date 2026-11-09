@@ -596,7 +596,7 @@ const Level5Stats = ({
                     label={label}
                     value={value}
                     className="gap-2"
-                    labelClassName="text-nano text-muted-foreground/40"
+                    labelClassName="text-nano text-muted-foreground"
                     valueClassName="text-micro text-foreground/70"
                 />
             ))}

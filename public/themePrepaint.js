@@ -1,5 +1,5 @@
 (() => {
-    const parsePath = (path) => {
+    const parsePath = (path, legacyPaths) => {
         if (typeof path !== 'string') {
             throw new Error('Invalid SuperJSON path');
         }
@@ -7,7 +7,7 @@
         let segment = '';
         for (let index = 0; index < path.length; index += 1) {
             const character = path[index];
-            if (character === '\\') {
+            if (!legacyPaths && character === '\\') {
                 const escaped = path[index + 1];
                 if (escaped !== '\\' && escaped !== '.') {
                     throw new Error('Invalid SuperJSON path escape');
@@ -47,7 +47,7 @@
             parent[lastKey] = value;
         }
     };
-    const applyNestedEqualities = (json, equalities) => {
+    const applyNestedEqualities = (json, equalities, legacyPaths) => {
         if (typeof equalities !== 'object' || equalities === null || Array.isArray(equalities)) {
             throw new Error('Invalid SuperJSON nested equalities');
         }
@@ -55,9 +55,9 @@
             if (!Array.isArray(targets)) {
                 throw new Error('Invalid SuperJSON equality targets');
             }
-            const value = getDeep(json, parsePath(source));
+            const value = getDeep(json, parsePath(source, legacyPaths));
             for (const target of targets) {
-                setDeep(json, parsePath(target), value);
+                setDeep(json, parsePath(target, legacyPaths), value);
             }
         }
     };
@@ -68,10 +68,11 @@
         // SuperJSON value metadata can transform the raw string into a value
         // runtime preferences validation rejects. Referential equalities then
         // apply afterwards, with root aliases stored in a separate tuple entry.
+        const json = stored?.json;
         const values = stored?.meta?.values;
         const transformsTheme = Array.isArray(values) || Array.isArray(values?.theme);
-        if (stored?.json?.theme === 'light' && !transformsTheme) {
-            const json = stored.json;
+        const legacyPaths = (stored?.meta?.v ?? 0) < 1;
+        if (typeof json === 'object' && json !== null && !Array.isArray(json) && !transformsTheme) {
             const equalities = stored?.meta?.referentialEqualities;
             if (Array.isArray(equalities)) {
                 const [rootAliases, nestedEqualities] = equalities;
@@ -79,13 +80,13 @@
                     throw new Error('Invalid SuperJSON root equalities');
                 }
                 for (const alias of rootAliases) {
-                    setDeep(json, parsePath(alias), json);
+                    setDeep(json, parsePath(alias, legacyPaths), json);
                 }
                 if (nestedEqualities !== undefined) {
-                    applyNestedEqualities(json, nestedEqualities);
+                    applyNestedEqualities(json, nestedEqualities, legacyPaths);
                 }
             } else if (equalities !== undefined) {
-                applyNestedEqualities(json, equalities);
+                applyNestedEqualities(json, equalities, legacyPaths);
             }
             if (json.theme === 'light') {
                 theme = 'light';

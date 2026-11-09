@@ -107,7 +107,11 @@ function parseActiveHtml(html: string): Document {
 }
 
 function findThemeScript(html: string): HTMLScriptElement | null {
-    return parseActiveHtml(html).querySelector<HTMLScriptElement>('script#sourdaw-theme');
+    return (
+        [...parseActiveHtml(html).querySelectorAll<HTMLScriptElement>('script#sourdaw-theme')].find(
+            (script) => script.namespaceURI === 'http://www.w3.org/1999/xhtml'
+        ) ?? null
+    );
 }
 
 describe('the hosted web build Content-Security-Policy', () => {
@@ -192,6 +196,10 @@ describe('the hosted web build Content-Security-Policy', () => {
         {
             name: 'a scripting-inert body noscript ancestor',
             html: '<body><noscript><script id="sourdaw-theme" type="text/javascript" src="/themePrepaint.js"></script></noscript></body>',
+        },
+        {
+            name: 'an SVG script',
+            html: '<svg><script id="sourdaw-theme" type="text/javascript" src="/themePrepaint.js"></script></svg>',
         },
     ])('does not accept $name as active markup', ({ html }) => {
         expect(findThemeScript(html)).toBeNull();

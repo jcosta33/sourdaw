@@ -5,10 +5,21 @@ import { runInNewContext } from 'node:vm';
 import { parse, stringify } from 'superjson';
 import { describe, expect, it } from 'vitest';
 
+import { cn } from '#/utils/Styles/cn';
+
 const tokens = readFileSync(resolve(process.cwd(), 'src/styles/tokens.css'), 'utf8');
 const indexHtml = readFileSync(resolve(process.cwd(), 'index.html'), 'utf8');
 const chipSource = readFileSync(resolve(process.cwd(), 'src/components/daw/DawPluginChip.tsx'), 'utf8');
 const ledSource = readFileSync(resolve(process.cwd(), 'src/components/daw/DawPluginLed.tsx'), 'utf8');
+const searchInputSource = readFileSync(resolve(process.cwd(), 'src/components/daw/DawSearchInput.tsx'), 'utf8');
+const gainSource = readFileSync(
+    resolve(process.cwd(), 'src/modules/Crust/presentations/components/CrustGainStrip.tsx'),
+    'utf8'
+);
+const controlZoneSource = readFileSync(
+    resolve(process.cwd(), 'src/modules/Crust/presentations/components/CrustControlZone.tsx'),
+    'utf8'
+);
 const meteringSource = readFileSync(
     resolve(process.cwd(), 'src/modules/Crust/presentations/components/CrustMeteringStrip.tsx'),
     'utf8'
@@ -26,10 +37,13 @@ const parseActiveHtml = (html: string): Document => {
     parsed.close();
     return parsed;
 };
+const htmlThemeScriptFrom = (parsed: Document): HTMLScriptElement | null =>
+    [...parsed.querySelectorAll<HTMLScriptElement>('script#sourdaw-theme')].find(
+        (script) => script.namespaceURI === 'http://www.w3.org/1999/xhtml'
+    ) ?? null;
 const indexDocument = parseActiveHtml(indexHtml);
-const findThemeScript = (html: string): HTMLScriptElement | null =>
-    parseActiveHtml(html).querySelector<HTMLScriptElement>('script#sourdaw-theme');
-const startupThemeMatch = indexDocument.querySelector<HTMLScriptElement>('script#sourdaw-theme');
+const findThemeScript = (html: string): HTMLScriptElement | null => htmlThemeScriptFrom(parseActiveHtml(html));
+const startupThemeMatch = htmlThemeScriptFrom(indexDocument);
 const startupThemeSource = startupThemeMatch?.getAttribute('src');
 let startupThemeScript = '';
 if (startupThemeSource === '/themePrepaint.js') {
@@ -37,7 +51,9 @@ if (startupThemeSource === '/themePrepaint.js') {
 }
 
 const entryModuleFrom = (parsed: Document): HTMLScriptElement | null =>
-    [...parsed.querySelectorAll<HTMLScriptElement>('script[type="module" i][src]')].at(-1) ?? null;
+    [...parsed.querySelectorAll<HTMLScriptElement>('script[type="module" i][src]')]
+        .filter((script) => script.namespaceURI === 'http://www.w3.org/1999/xhtml')
+        .at(-1) ?? null;
 const themePrecedesEntry = (theme: HTMLScriptElement | null, entry: HTMLScriptElement | null): boolean => {
     if (theme === null || entry === null) {
         throw new Error('Expected active theme and entry scripts');
@@ -142,6 +158,30 @@ const grinderWindowStops = (): Record<string, string> => {
     };
 };
 
+const crustWindowStops = (): Record<string, string> => {
+    const styles = readFileSync(resolve(process.cwd(), 'src/styles/utilities/modules/crust.css'), 'utf8');
+    const windowBlock = /@utility crust-window\s*\{([\s\S]*?)\n\}/u.exec(styles)?.[1] ?? '';
+    const rgbaLayers = Array.from(
+        windowBlock.matchAll(/rgba\(\s*(\d+),\s*(\d+),\s*(\d+),\s*([\d.]+)\)/gu),
+        (match) => ({
+            color: `#${match
+                .slice(1, 4)
+                .map((channel) => Number(channel).toString(16).padStart(2, '0'))
+                .join('')}`,
+            alpha: Number(match[4]),
+        })
+    );
+    const [topWhite, bottomWhite, topAmber] = rgbaLayers;
+    if (topWhite === undefined || bottomWhite === undefined || topAmber === undefined) {
+        throw new Error('Missing Crust window gradient layers');
+    }
+    const panelInset = readToken(lightBlock, '--color-bg-panelInset');
+    return {
+        windowTop: composite(topWhite.color, composite(topAmber.color, panelInset, topAmber.alpha), topWhite.alpha),
+        windowBottom: composite(bottomWhite.color, panelInset, bottomWhite.alpha),
+    };
+};
+
 describe('semantic light theme', () => {
     it('overrides the complete surface and text hierarchy and declares native control color scheme', () => {
         for (const name of [
@@ -202,12 +242,9 @@ describe('semantic light theme', () => {
             .replace('__THEME_TAG__', entryTag);
         const reversedDocument = parseActiveHtml(reversedHtml);
 
-        expect(
-            themePrecedesEntry(
-                reversedDocument.querySelector<HTMLScriptElement>('script#sourdaw-theme'),
-                entryModuleFrom(reversedDocument)
-            )
-        ).toBe(false);
+        expect(themePrecedesEntry(htmlThemeScriptFrom(reversedDocument), entryModuleFrom(reversedDocument))).toBe(
+            false
+        );
         expect(() => themePrecedesEntry(startupThemeMatch, entryModuleFrom(parseActiveHtml(indexHtml)))).toThrow(
             'one connected document'
         );
@@ -225,6 +262,10 @@ describe('semantic light theme', () => {
         {
             name: 'a scripting-inert body noscript ancestor',
             html: '<body><noscript><script id="sourdaw-theme" type="text/javascript" src="/themePrepaint.js"></script></noscript></body>',
+        },
+        {
+            name: 'an SVG script',
+            html: '<svg><script id="sourdaw-theme" type="text/javascript" src="/themePrepaint.js"></script></svg>',
         },
     ])('does not accept $name as active markup', ({ html }) => {
         expect(findThemeScript(html)).toBeNull();
@@ -251,6 +292,48 @@ describe('semantic light theme', () => {
     it.each([
         { name: 'ordinary valid Light', stored: stringify({ theme: 'light' }) },
         { name: 'ordinary valid Dark', stored: stringify({ theme: 'dark' }) },
+        {
+            name: 'Dark raw JSON resolved to Light by a v1 nested equality',
+            stored: JSON.stringify({
+                json: { theme: 'dark', other: 'light' },
+                meta: { referentialEqualities: { other: ['theme'] }, v: 1 },
+            }),
+        },
+        {
+            name: 'v0 nested equality with a literal backslash',
+            stored: JSON.stringify({
+                json: { theme: 'dark', 'other\\value': 'light' },
+                meta: { referentialEqualities: { 'other\\value': ['theme'] }, v: 0 },
+            }),
+        },
+        {
+            name: 'versionless nested equality with a literal backslash',
+            stored: JSON.stringify({
+                json: { theme: 'dark', 'other\\value': 'light' },
+                meta: { referentialEqualities: { 'other\\value': ['theme'] } },
+            }),
+        },
+        {
+            name: 'v0 root equality with a literal backslash',
+            stored: JSON.stringify({
+                json: { theme: 'light', 'other\\value': null },
+                meta: { referentialEqualities: [['other\\value']], v: 0 },
+            }),
+        },
+        {
+            name: 'versionless root equality with a literal backslash',
+            stored: JSON.stringify({
+                json: { theme: 'light', 'other\\value': null },
+                meta: { referentialEqualities: [['other\\value']] },
+            }),
+        },
+        {
+            name: 'dangerous v0 equality path',
+            stored: JSON.stringify({
+                json: { theme: 'light', constructor: 'dark' },
+                meta: { referentialEqualities: { constructor: ['theme'] }, v: 0 },
+            }),
+        },
         {
             name: 'direct theme value annotation',
             stored: '{"json":{"theme":"light"},"meta":{"values":{"theme":["number"]}}}',
@@ -316,6 +399,77 @@ describe('semantic light theme', () => {
             colorScheme: validatedTheme,
             themeColor: validatedTheme === 'light' ? '#ded8cf' : '#020100',
         });
+    });
+
+    it('keeps the Grinder preset search placeholder readable on every real nested window stop', () => {
+        const grinderSource = readFileSync(
+            resolve(process.cwd(), 'src/modules/Grinder/presentations/views/GrinderPanel.tsx'),
+            'utf8'
+        );
+        const searchRoute =
+            /<DawSearchInput\b[^>]*placeholder="Search presets"[^>]*\/>/u.exec(grinderSource)?.[0] ?? '';
+        expect(searchRoute).toContain('variant="ghost"');
+        const wellAlphaSource = /bg-black\/(\d+)/u.exec(searchRoute)?.[1];
+        expect(wellAlphaSource).toBeDefined();
+
+        const sharedInputClass = /className=\{cn\(\s*'([^']*placeholder:[^']*)'/u.exec(searchInputSource)?.[1] ?? '';
+        expect(sharedInputClass).toContain('placeholder:text-muted-foreground/45');
+        const routeInputClass = /\binputClassName="([^"]*)"/u.exec(searchRoute)?.[1] ?? '';
+        const effectivePlaceholderClass = (
+            cn(sharedInputClass, routeInputClass).match(/placeholder:text-[^\s]+/gu) ?? []
+        ).at(-1);
+        expect(effectivePlaceholderClass).toMatch(/^placeholder:text-text-primary(?:\/\d+)?$/u);
+
+        const alphaSource = /\/(\d+)$/u.exec(effectivePlaceholderClass)?.[1];
+        const primary = readToken(lightBlock, '--color-text-primary');
+        for (const [stop, windowBackground] of Object.entries(grinderWindowStops())) {
+            const background = composite('#000000', windowBackground, Number(wellAlphaSource) / 100);
+            const foreground =
+                alphaSource === undefined ? primary : composite(primary, background, Number(alphaSource) / 100);
+            expect(contrast(foreground, background), `Search presets on ${stop}`).toBeGreaterThanOrEqual(4.5);
+        }
+    });
+
+    it('keeps every Crust gain text state readable on both real gradient stops', () => {
+        expect(gainSource).toContain("let valueColor = 'var(--color-text-primary)';");
+        expect(gainSource).toContain("valueColor = 'var(--color-state-warning)';");
+        expect(gainSource).toContain("valueColor = 'var(--color-state-danger)';");
+
+        const secondary = readToken(lightBlock, '--color-text-secondary');
+        for (const label of ['Gain', '0', 'dB']) {
+            const labelClass = new RegExp(`<span className="([^"]*)">${label}</span>`, 'u').exec(gainSource)?.[1] ?? '';
+            expect(labelClass, `${label} semantic role`).toContain('text-muted-foreground');
+            expect(labelClass, `${label} opaque role`).not.toContain('text-muted-foreground/');
+        }
+
+        for (const surface of ['--surface-base', '--surface-default']) {
+            const background = readToken(lightBlock, surface);
+            expect(contrast(secondary, background), `Gain labels on ${surface}`).toBeGreaterThanOrEqual(4.5);
+            for (const { stateToken, colorToken } of [
+                { stateToken: '--color-text-primary', colorToken: '--color-text-primary' },
+                { stateToken: '--color-state-warning', colorToken: '--color-accent-amber' },
+                { stateToken: '--color-state-danger', colorToken: '--color-accent-red' },
+            ]) {
+                expect(
+                    contrast(readToken(lightBlock, colorToken), background),
+                    `${stateToken} on ${surface}`
+                ).toBeGreaterThanOrEqual(4.5);
+            }
+        }
+    });
+
+    it('keeps all six Level 5 labels readable on both real Crust window stops', () => {
+        const level5Source = /const Level5Stats =[\s\S]*?\n\};\n\n\/\/ ── Main/u.exec(controlZoneSource)?.[0] ?? '';
+        const labels = Array.from(level5Source.matchAll(/\['([^']+)',/gu), (match) => match[1]);
+        expect(labels).toEqual(['Integrated', 'ST Max', 'MOM Max', 'LRA', 'TP Max', 'GR Max']);
+        const labelClass = /labelClassName="([^"]*)"/u.exec(level5Source)?.[1] ?? '';
+        expect(labelClass).toContain('text-muted-foreground');
+        expect(labelClass).not.toContain('text-muted-foreground/');
+
+        const secondary = readToken(lightBlock, '--color-text-secondary');
+        for (const [stop, background] of Object.entries(crustWindowStops())) {
+            expect(contrast(secondary, background), `Level 5 labels on ${stop}`).toBeGreaterThanOrEqual(4.5);
+        }
     });
 
     it('keeps Crust loudness text readable on its actual raised light surface', () => {
