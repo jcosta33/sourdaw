@@ -303,7 +303,7 @@ describe('DawTabStrip overflow affordance', () => {
         fireEvent.scroll(screen.getByRole('tablist'));
 
         await waitFor(() => expect(scrollRight).toHaveAttribute('tabindex', '-1'));
-        expect(tab('Beta')).toHaveFocus();
+        await waitFor(() => expect(tab('Beta')).toHaveFocus());
     });
 
     it('moves focus to the first tab when the active id is absent and a focused scroll affordance becomes hidden', async () => {
@@ -319,7 +319,7 @@ describe('DawTabStrip overflow affordance', () => {
         fireEvent.scroll(screen.getByRole('tablist'));
 
         await waitFor(() => expect(scrollRight).toHaveAttribute('tabindex', '-1'));
-        expect(tab('Alpha')).toHaveFocus();
+        await waitFor(() => expect(tab('Alpha')).toHaveFocus());
     });
 
     it('scrolls the strip by a step when a scroll button is used', async () => {
