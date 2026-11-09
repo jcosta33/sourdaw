@@ -212,14 +212,14 @@ describe('ArrangementSelector', () => {
             arrangement1.focus();
         });
 
-        fireEvent.keyDown(arrangement1, { key: 'ArrowUp' });
+        expect(fireEvent.keyDown(arrangement1, { key: 'ArrowUp', cancelable: true })).toBe(false);
         expect(duplicate).toHaveFocus();
 
         act(() => {
             arrangement1.focus();
         });
         const advance = (from: HTMLElement, to: HTMLElement) => {
-            fireEvent.keyDown(from, { key: 'ArrowDown' });
+            expect(fireEvent.keyDown(from, { key: 'ArrowDown', cancelable: true })).toBe(false);
             expect(to).toHaveFocus();
         };
         advance(arrangement1, rename1);
@@ -251,7 +251,7 @@ describe('ArrangementSelector', () => {
         const arrangement3 = screen.getByRole('menuitemradio', { name: /Arrangement 3/i });
         expect(input).toHaveFocus();
 
-        fireEvent.keyDown(input, { key: 'ArrowDown' });
+        expect(fireEvent.keyDown(input, { key: 'ArrowDown', cancelable: true })).toBe(true);
 
         expect(input).toHaveFocus();
         expect(arrangement1).toHaveAttribute('aria-checked', 'true');
@@ -455,7 +455,10 @@ describe('ArrangementSelector', () => {
         rerender(<ArrangementSelector />);
 
         expect(duplicate).toBeDisabled();
-        expect(screen.getByRole('menuitem', { name: 'New Arrangement' })).toHaveFocus();
+        const newArrangement = screen.getByRole('menuitem', { name: 'New Arrangement' });
+        expect(newArrangement).toHaveFocus();
+        fireEvent.keyDown(newArrangement, { key: 'ArrowDown' });
+        expect(arrangement1).toHaveFocus();
     });
 
     it('focuses New Arrangement when a focused two-arrangement menu becomes empty and recovers after growth', () => {
