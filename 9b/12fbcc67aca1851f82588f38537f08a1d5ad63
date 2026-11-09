@@ -1,0 +1,22 @@
+src/modules/ContentBrowser/presentations/views/Sidebar/__tests__/EffectsTab.spec.tsx
+  h_beb54bf43b47b7 197-255,260,266,272,275,351,357
+src/modules/Fermenter/presentations/views/__tests__/FermenterPanel.spec.tsx
+  h_beb54bf43b47b7 677-681
+src/modules/Project/presentations/views/ArrangementSelector.tsx
+  h_beb54bf43b47b7 263
+src/modules/Project/presentations/views/__tests__/ArrangementSelector.spec.tsx
+  h_beb54bf43b47b7 524-560
+tests/e2e/spatialPannerArrangementTestId.spec.ts
+  h_beb54bf43b47b7 103-114
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9b12fbcc67aca1851f82588f38537f08a1d5ad63",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
