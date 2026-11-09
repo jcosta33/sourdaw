@@ -667,8 +667,13 @@ describe('FermenterPanel', () => {
         it('renders the current Scene eyebrow as static text', () => {
             renderPanel();
 
-            expect(screen.getByText('Scene')).toBeInTheDocument();
-            expect(screen.queryByRole('button', { name: 'Scene', exact: true })).not.toBeInTheDocument();
+            const scene = screen.getByText('Scene');
+            expect(scene).toBeInTheDocument();
+            for (let element: HTMLElement | null = scene; element; element = element.parentElement) {
+                expect(element).not.toHaveAttribute('role', 'button');
+                expect(element).not.toHaveAttribute('role', 'link');
+                expect(element.tabIndex).toBeLessThan(0);
+            }
         });
 
         it('renders accessible patch and preset action buttons', () => {

@@ -47,10 +47,14 @@ export const ArrangementSelector = (): ReactElement | null => {
     }
 
     const currentArrangement = state.arrangements.find((alpha) => alpha.id === state.activeArrangementId);
-    const focusedRadioId = focusedArrangementId === editingId ? null : focusedArrangementId;
-    const activeRadioId = state.activeArrangementId === editingId ? null : state.activeArrangementId;
-    const radioTabStopId =
-        focusedRadioId ?? activeRadioId ?? state.arrangements.find((arr) => arr.id !== editingId)?.id;
+    const navigableArrangements = state.arrangements.filter((arr) => arr.id !== editingId);
+    const focusedRadioId = navigableArrangements.some((arr) => arr.id === focusedArrangementId)
+        ? focusedArrangementId
+        : null;
+    const activeRadioId = navigableArrangements.some((arr) => arr.id === state.activeArrangementId)
+        ? state.activeArrangementId
+        : null;
+    const radioTabStopId = focusedRadioId ?? activeRadioId ?? navigableArrangements[0]?.id;
 
     const handleCreate = () => {
         createArrangement(`Arrangement ${state.arrangements.length + 1}`);
@@ -120,6 +124,13 @@ export const ArrangementSelector = (): ReactElement | null => {
                     role="menu"
                     aria-label="Arrangement menu"
                     className="daw-floating-surface w-56 rounded-md border border-border bg-surface-overlay py-1 select-none"
+                    onOpenAutoFocus={(event) => {
+                        event.preventDefault();
+                        const openingRadioId = activeRadioId ?? navigableArrangements[0]?.id;
+                        if (openingRadioId) {
+                            radioRefs.current.get(openingRadioId)?.focus();
+                        }
+                    }}
                     onEscapeKeyDown={(event) => {
                         event.stopPropagation();
                         if (editingId) {
@@ -185,13 +196,13 @@ export const ArrangementSelector = (): ReactElement | null => {
                                                         event.preventDefault();
                                                         event.stopPropagation();
                                                         const direction = event.key === 'ArrowUp' ? -1 : 1;
-                                                        const currentIndex = state.arrangements.findIndex(
+                                                        const currentIndex = navigableArrangements.findIndex(
                                                             (candidate) => candidate.id === arr.id
                                                         );
                                                         const nextIndex =
-                                                            (currentIndex + direction + state.arrangements.length) %
-                                                            state.arrangements.length;
-                                                        const nextArrangement = state.arrangements[nextIndex];
+                                                            (currentIndex + direction + navigableArrangements.length) %
+                                                            navigableArrangements.length;
+                                                        const nextArrangement = navigableArrangements[nextIndex];
                                                         if (nextArrangement) {
                                                             setFocusedArrangementId(nextArrangement.id);
                                                             radioRefs.current.get(nextArrangement.id)?.focus();
