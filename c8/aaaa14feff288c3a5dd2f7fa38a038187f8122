@@ -1,0 +1,20 @@
+src/modules/Bacteria/presentations/views/BacteriaPanel.tsx
+  h_beb54bf43b47b7 475-499
+src/modules/Bacteria/presentations/views/__tests__/BacteriaPanel.morph.spec.tsx
+  h_beb54bf43b47b7 108-114
+src/modules/Project/presentations/views/__tests__/ArrangementSelector.spec.tsx
+  h_beb54bf43b47b7 218-221
+tests/e2e/fermenterPanelDeepTestId.spec.ts
+  h_beb54bf43b47b7 49-52,55-56
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c8aaaa14feff288c3a5dd2f7fa38a038187f8122",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
