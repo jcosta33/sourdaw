@@ -429,6 +429,35 @@ describe('ArrangementSelector', () => {
         expect(newArrangement).toHaveFocus();
     });
 
+    it('moves focus from Duplicate Current when the active arrangement disappears', () => {
+        const arrangements = [
+            { id: 'arr-1', name: 'Arrangement 1' },
+            { id: 'arr-2', name: 'Arrangement 2' },
+        ];
+        (useStore as ReturnType<typeof vi.fn>).mockReturnValue({
+            arrangements,
+            activeArrangementId: 'arr-1',
+        });
+        const { rerender } = render(<ArrangementSelector />);
+        fireEvent.click(screen.getByLabelText(/Arrangement selector/i));
+        const arrangement1 = screen.getByRole('menuitemradio', { name: /Arrangement 1/i });
+        const duplicate = screen.getByRole('menuitem', { name: 'Duplicate Current' });
+        act(() => {
+            arrangement1.focus();
+        });
+        fireEvent.keyDown(arrangement1, { key: 'ArrowUp' });
+        expect(duplicate).toHaveFocus();
+        (useStore as ReturnType<typeof vi.fn>).mockReturnValue({
+            arrangements,
+            activeArrangementId: 'missing',
+        });
+
+        rerender(<ArrangementSelector />);
+
+        expect(duplicate).toBeDisabled();
+        expect(screen.getByRole('menuitem', { name: 'New Arrangement' })).toHaveFocus();
+    });
+
     it('focuses New Arrangement when a focused two-arrangement menu becomes empty and recovers after growth', () => {
         const { rerender } = render(<ArrangementSelector />);
         fireEvent.click(screen.getByLabelText(/Arrangement selector/i));

@@ -27,6 +27,7 @@ export const ArrangementSelector = (): ReactElement | null => {
     const inputRef = useRef<HTMLInputElement>(null);
     const radioRefs = useRef<Map<string, HTMLDivElement>>(new Map());
     const newArrangementRef = useRef<HTMLButtonElement>(null);
+    const duplicateArrangementRef = useRef<HTMLButtonElement>(null);
 
     // §212.1 — Typed default instead of non-null assertion on live value.
     const state = useStore(arrangementStore, defaultArrangementStoreState);
@@ -44,6 +45,7 @@ export const ArrangementSelector = (): ReactElement | null => {
         ? activeArrangementId
         : null;
     const radioTabStopId = focusedRadioId ?? activeRadioId ?? navigableArrangements[0]?.id;
+    const hasCurrentArrangement = arrangements.some((arr) => arr.id === activeArrangementId);
 
     useEffect(() => {
         if (!renderedEditingId || !inputRef.current) {
@@ -63,7 +65,14 @@ export const ArrangementSelector = (): ReactElement | null => {
         if (editingId && !renderedEditingId) {
             setEditingId(null);
         }
-        if (!open || renderedEditingId || document.activeElement !== document.body) {
+        if (!open || renderedEditingId) {
+            return;
+        }
+        if (!hasCurrentArrangement && document.activeElement === duplicateArrangementRef.current) {
+            newArrangementRef.current?.focus();
+            return;
+        }
+        if (document.activeElement !== document.body) {
             return;
         }
         if (radioTabStopId) {
@@ -71,7 +80,7 @@ export const ArrangementSelector = (): ReactElement | null => {
             return;
         }
         newArrangementRef.current?.focus();
-    }, [arrangements, editingId, open, radioTabStopId, renderedEditingId]);
+    }, [arrangements, editingId, hasCurrentArrangement, open, radioTabStopId, renderedEditingId]);
 
     if (!state) {
         return null;
@@ -309,6 +318,7 @@ export const ArrangementSelector = (): ReactElement | null => {
                     </Button>
 
                     <Button
+                        ref={duplicateArrangementRef}
                         variant="bare"
                         size="bare"
                         type="button"
