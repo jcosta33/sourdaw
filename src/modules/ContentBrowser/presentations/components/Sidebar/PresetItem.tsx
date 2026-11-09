@@ -61,7 +61,7 @@ export const PresetItem = ({
                 <PreviewButton
                     isPlaying={preview.playingId === preset.id}
                     itemName={preset.name}
-                    onPlay={() => preview.playTone(preset.id, 261.63, 0.5)}
+                    onPlay={() => preview.play(preset.id, { kind: 'preset', presetId: preset.id })}
                     onStop={preview.stop}
                 />
             </div>
