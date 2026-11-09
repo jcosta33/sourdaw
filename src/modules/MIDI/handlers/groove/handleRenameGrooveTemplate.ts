@@ -1,5 +1,6 @@
 import { createHandler } from '#/utils/createHandler';
 
+import { markGrooveTemplateProjectWrite } from '../../useCases/grooveTemplates/markGrooveTemplateProjectWrite';
 import { renameGrooveTemplate } from '../../useCases/grooveTemplates/renameGrooveTemplate';
 import { resolveGrooveTemplateRename } from '../../useCases/grooveTemplates/resolveGrooveTemplateRename';
 
@@ -9,7 +10,16 @@ export const handleRenameGrooveTemplate = createHandler<'renameGrooveTemplate'>(
         return !resolved || resolved.current.name === resolved.nextName;
     },
     execute: (action) => {
+        const resolved = resolveGrooveTemplateRename(action.payload);
+        if (!resolved || resolved.current.name === resolved.nextName) {
+            return { status: 'no-write' };
+        }
         renameGrooveTemplate(action.payload);
+        return {
+            status: 'written',
+            afterCommit: markGrooveTemplateProjectWrite,
+            afterAmbiguousCommit: markGrooveTemplateProjectWrite,
+        };
     },
     describe: (action) => {
         const resolved = resolveGrooveTemplateRename(action.payload);

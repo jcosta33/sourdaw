@@ -1,7 +1,13 @@
 import { AGENT_MEASUREMENT_METRIC_IDS, type AgentMeasurementMetricId } from '../models/AgentMeasurementMetricIds';
-import { type AgentObjectiveMetricEntry } from '../models/AgentObjectiveAnalysisTypes';
+import { type AgentObjectiveMetricEntry, type AgentObjectiveMetricId } from '../models/AgentObjectiveAnalysisTypes';
+import { buildRequestedAgentObjectiveMeasurements } from '../services/agentObjectiveAnalysis/buildAgentObjectiveMeasurements';
+import {
+    prepareAgentObjectiveBuffer,
+    prepareAgentObjectiveProgramme,
+} from '../services/agentObjectiveAnalysis/prepareAgentObjectiveBuffer';
 
-import { measureAgentObjectiveBuffer } from './measureAgentObjectiveBuffer';
+import { readAgentObjectiveOnsetTimes } from './readAgentObjectiveOnsetTimes';
+import { measureProgramAudio } from './referenceMixComparison/analyzeMix/measureProgramAudio';
 
 type AgentScopeMeasurements = Partial<Record<AgentMeasurementMetricId, AgentObjectiveMetricEntry>>;
 
@@ -22,6 +28,13 @@ function onsetCountEntry(onsetTimes: AgentObjectiveMetricEntry): AgentObjectiveM
     };
 }
 
+function objectiveMetricId(metric: AgentMeasurementMetricId): AgentObjectiveMetricId {
+    if (metric === 'onsetCount') {
+        return 'onsetTimes';
+    }
+    return metric;
+}
+
 /**
  * The requested agent measurement metrics of one rendered buffer, keyed in
  * `AGENT_MEASUREMENT_METRIC_IDS` order.
@@ -33,15 +46,34 @@ export function measureAgentScopeRender(
     buffer: AudioBuffer,
     metricIds: readonly AgentMeasurementMetricId[]
 ): AgentScopeMeasurements {
-    const { measurements } = measureAgentObjectiveBuffer(buffer);
     const requested = new Set(metricIds);
+    if (requested.size === 0) {
+        return {};
+    }
+    const objectives = new Set(metricIds.map(objectiveMetricId));
+    const prepared = prepareAgentObjectiveBuffer(buffer);
+    let dynamicRangeDb: number | null = null;
+    if (objectives.has('dynamicRangeEstimate') && prepared.channels.length > 0) {
+        dynamicRangeDb = measureProgramAudio([prepareAgentObjectiveProgramme(prepared)])?.dynamicRange ?? null;
+    }
+    let onsetTimesSec: number[] = [];
+    if (objectives.has('onsetTimes') || objectives.has('transientDensity')) {
+        onsetTimesSec = readAgentObjectiveOnsetTimes(prepared);
+    }
+    const measurements = buildRequestedAgentObjectiveMeasurements(
+        { ...prepared, onsetTimesSec, dynamicRangeDb },
+        objectives
+    );
     const result: AgentScopeMeasurements = {};
     for (const metricId of AGENT_MEASUREMENT_METRIC_IDS) {
         if (!requested.has(metricId)) {
             continue;
         }
-        result[metricId] =
-            metricId === 'onsetCount' ? onsetCountEntry(measurements.onsetTimes) : measurements[metricId];
+        const entry = measurements[objectiveMetricId(metricId)];
+        if (entry === undefined) {
+            throw new TypeError(`Requested objective metric ${metricId} was not measured.`);
+        }
+        result[metricId] = metricId === 'onsetCount' ? onsetCountEntry(entry) : entry;
     }
     return result;
 }

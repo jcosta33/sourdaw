@@ -30,22 +30,26 @@ beforeEach(() => {
 
 describe('handleAssignGrooveTemplate — execute', () => {
     it('calls assignGrooveTemplate with payload', () => {
-        mockedAssign.mockReturnValue({ ok: true } as never);
+        mockedAssign.mockReturnValue({
+            ok: true,
+            status: 'written',
+            assignment: { consumerType: 'clip', consumerId: 'c1', templateId: 'g1', amount: 1 },
+        });
         handleAssignGrooveTemplate.execute(action);
         expect(mockedAssign).toHaveBeenCalledWith(payload);
     });
 
     it('throws when assignment rejected', () => {
-        mockedAssign.mockReturnValue({ ok: false, error: { code: 'bad' } } as never);
+        mockedAssign.mockReturnValue({ ok: false, error: { code: 'missing-template', templateId: 'missing' } });
         expect(() => handleAssignGrooveTemplate.execute(action)).toThrow(/Groove assignment rejected/);
     });
 });
 
 describe('handleAssignGrooveTemplate — isNoop', () => {
     it('returns true when canonical matches current', () => {
-        const assignment = { consumerType: 'clip', consumerId: 'c1', templateId: 'g1', amount: 1 };
-        mockedCanonicalize.mockReturnValue(assignment as never);
-        mockedGetAssignment.mockReturnValue(assignment as never);
+        const assignment = { consumerType: 'clip' as const, consumerId: 'c1', templateId: 'g1', amount: 1 };
+        mockedCanonicalize.mockReturnValue(assignment);
+        mockedGetAssignment.mockReturnValue(assignment);
         expect(handleAssignGrooveTemplate.isNoop!(action)).toBe(true);
     });
 
@@ -63,7 +67,7 @@ describe('handleAssignGrooveTemplate — describe', () => {
             consumerId: 'c1',
             templateId: 'g1',
             amount: 1,
-        } as never);
+        });
         mockedGetAssignment.mockReturnValue(undefined);
         const result = handleAssignGrooveTemplate.describe(action);
         expect(result.label).toBe('Assign groove template');

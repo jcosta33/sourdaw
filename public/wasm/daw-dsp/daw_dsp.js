@@ -155,9 +155,10 @@ export class BacteriaInstance {
      * @param {number} value
      */
     set_param(name, value) {
+        const val2 = +value;
         const ptr0 = passStringToWasm0(name, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len0 = WASM_VECTOR_LEN;
-        wasm.bacteriainstance_set_param(this.__wbg_ptr, ptr0, len0, value);
+        wasm.bacteriainstance_set_param(this.__wbg_ptr, ptr0, len0, val2);
     }
 }
 if (Symbol.dispose) BacteriaInstance.prototype[Symbol.dispose] = BacteriaInstance.prototype.free;
@@ -210,15 +211,17 @@ export class CrumbsInstance {
      * call this during setup, never from `process`. Filing the finished
      * `Arc` in the pool — which is what `CrumbsCommand::AddSample` does on the
      * audio thread — allocates nothing.
-     * @param {Float32Array} data
+     * @param {Float32Array | number[]} data
      * @param {number} channels
      * @param {number} sample_rate
      * @returns {number}
      */
     add_sample(data, channels, sample_rate) {
+        const val2 = +channels;
+        const val3 = +sample_rate;
         const ptr0 = passArrayF32ToWasm0(data, wasm.__wbindgen_malloc);
         const len0 = WASM_VECTOR_LEN;
-        const ret = wasm.crumbsinstance_add_sample(this.__wbg_ptr, ptr0, len0, channels, sample_rate);
+        const ret = wasm.crumbsinstance_add_sample(this.__wbg_ptr, ptr0, len0, val2, val3);
         return ret >>> 0;
     }
     /**
@@ -323,9 +326,10 @@ export class CrumbsInstance {
      * @param {number} value
      */
     set_param(name, value) {
+        const val2 = +value;
         const ptr0 = passStringToWasm0(name, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len0 = WASM_VECTOR_LEN;
-        wasm.crumbsinstance_set_param(this.__wbg_ptr, ptr0, len0, value);
+        wasm.crumbsinstance_set_param(this.__wbg_ptr, ptr0, len0, val2);
     }
 }
 if (Symbol.dispose) CrumbsInstance.prototype[Symbol.dispose] = CrumbsInstance.prototype.free;
@@ -483,9 +487,10 @@ export class CrustInstance {
      * @param {number} value
      */
     set_param(name, value) {
+        const val2 = +value;
         const ptr0 = passStringToWasm0(name, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len0 = WASM_VECTOR_LEN;
-        wasm.crustinstance_set_param(this.__wbg_ptr, ptr0, len0, value);
+        wasm.crustinstance_set_param(this.__wbg_ptr, ptr0, len0, val2);
     }
 }
 if (Symbol.dispose) CrustInstance.prototype[Symbol.dispose] = CrustInstance.prototype.free;
@@ -682,9 +687,10 @@ export class FermenterInstance {
      * @param {number} value
      */
     set_param(name, value) {
+        const val2 = +value;
         const ptr0 = passStringToWasm0(name, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len0 = WASM_VECTOR_LEN;
-        wasm.fermenterinstance_set_param(this.__wbg_ptr, ptr0, len0, value);
+        wasm.fermenterinstance_set_param(this.__wbg_ptr, ptr0, len0, val2);
     }
     /**
      * Set a supported automation parameter without crossing the WASM string bridge.
@@ -835,9 +841,10 @@ export class GlutenInstance {
      * @param {number} value
      */
     set_param(name, value) {
+        const val2 = +value;
         const ptr0 = passStringToWasm0(name, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len0 = WASM_VECTOR_LEN;
-        wasm.gluteninstance_set_param(this.__wbg_ptr, ptr0, len0, value);
+        wasm.gluteninstance_set_param(this.__wbg_ptr, ptr0, len0, val2);
     }
 }
 if (Symbol.dispose) GlutenInstance.prototype[Symbol.dispose] = GlutenInstance.prototype.free;
@@ -1112,9 +1119,10 @@ export class GrandBouleInstance {
      * @param {number} value
      */
     set_param(name, value) {
+        const val2 = +value;
         const ptr0 = passStringToWasm0(name, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len0 = WASM_VECTOR_LEN;
-        wasm.grandbouleinstance_set_param(this.__wbg_ptr, ptr0, len0, value);
+        wasm.grandbouleinstance_set_param(this.__wbg_ptr, ptr0, len0, val2);
     }
     /**
      * Set the historical temperament (0 = Equal, 1 = Werckmeister III,
@@ -1321,9 +1329,10 @@ export class GrinderInstance {
      * @param {number} value
      */
     set_param(name, value) {
+        const val2 = +value;
         const ptr0 = passStringToWasm0(name, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len0 = WASM_VECTOR_LEN;
-        wasm.grinderinstance_set_param(this.__wbg_ptr, ptr0, len0, value);
+        wasm.grinderinstance_set_param(this.__wbg_ptr, ptr0, len0, val2);
     }
 }
 if (Symbol.dispose) GrinderInstance.prototype[Symbol.dispose] = GrinderInstance.prototype.free;
@@ -1526,16 +1535,19 @@ export class LevainInstance {
      * `commit_sample_frames` bound to one chunk. The native host (which builds
      * banks on a control thread) and the pinned wasm measurement recipes
      * (`benches/wasm/deviceRecipes.js`) still use this one.
-     * @param {Float32Array} data
+     * @param {Float32Array | number[]} data
      * @param {number} frame_count
      * @param {number} channels
      * @param {number} sample_rate
      * @returns {number | undefined}
      */
     add_sample(data, frame_count, channels, sample_rate) {
+        const val2 = +frame_count;
+        const val3 = +channels;
+        const val4 = +sample_rate;
         const ptr0 = passArrayF32ToWasm0(data, wasm.__wbindgen_malloc);
         const len0 = WASM_VECTOR_LEN;
-        const ret = wasm.levaininstance_add_sample(this.__wbg_ptr, ptr0, len0, frame_count, channels, sample_rate);
+        const ret = wasm.levaininstance_add_sample(this.__wbg_ptr, ptr0, len0, val2, val3, val4);
         return ret === Number.MAX_SAFE_INTEGER ? undefined : ret;
     }
     /**
@@ -1937,9 +1949,10 @@ export class LevainInstance {
      * @param {number} value
      */
     set_param(name, value) {
+        const val2 = +value;
         const ptr0 = passStringToWasm0(name, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len0 = WASM_VECTOR_LEN;
-        wasm.levaininstance_set_param(this.__wbg_ptr, ptr0, len0, value);
+        wasm.levaininstance_set_param(this.__wbg_ptr, ptr0, len0, val2);
     }
     /**
      * Address in this module's linear memory where the host writes the next
@@ -2234,9 +2247,10 @@ export class ProofInstance {
      * @param {number} value
      */
     set_param(name, value) {
+        const val2 = +value;
         const ptr0 = passStringToWasm0(name, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len0 = WASM_VECTOR_LEN;
-        wasm.proofinstance_set_param(this.__wbg_ptr, ptr0, len0, value);
+        wasm.proofinstance_set_param(this.__wbg_ptr, ptr0, len0, val2);
     }
 }
 if (Symbol.dispose) ProofInstance.prototype[Symbol.dispose] = ProofInstance.prototype.free;
@@ -2345,9 +2359,11 @@ export class ToasterInstance {
      * @param {number} value
      */
     set_pad_param(pad, name, value) {
+        const val2 = +pad;
+        const val3 = +value;
         const ptr0 = passStringToWasm0(name, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len0 = WASM_VECTOR_LEN;
-        wasm.toasterinstance_set_pad_param(this.__wbg_ptr, pad, ptr0, len0, value);
+        wasm.toasterinstance_set_pad_param(this.__wbg_ptr, val2, ptr0, len0, val3);
     }
     /**
      * Set a per-pad parameter without string marshaling. The scheduled-hit
@@ -2379,9 +2395,10 @@ export class ToasterInstance {
      * @param {number} value
      */
     set_param(name, value) {
+        const val2 = +value;
         const ptr0 = passStringToWasm0(name, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len0 = WASM_VECTOR_LEN;
-        wasm.toasterinstance_set_param(this.__wbg_ptr, ptr0, len0, value);
+        wasm.toasterinstance_set_param(this.__wbg_ptr, ptr0, len0, val2);
     }
     /**
      * Set an automatable global parameter without string marshaling.
@@ -2451,27 +2468,28 @@ export class TransientShaperInstance {
 if (Symbol.dispose) TransientShaperInstance.prototype[Symbol.dispose] = TransientShaperInstance.prototype.free;
 
 /**
- * @param {Float32Array} samples
+ * @param {Float32Array | number[]} samples
  * @param {number} sample_rate
  * @returns {string}
  */
 export function analyze_pitch_wasm(samples, sample_rate) {
-    let deferred2_0;
-    let deferred2_1;
+    let deferred3_0;
+    let deferred3_1;
     try {
+        const val2 = +sample_rate;
         const ptr0 = passArrayF32ToWasm0(samples, wasm.__wbindgen_malloc);
         const len0 = WASM_VECTOR_LEN;
-        const ret = wasm.analyze_pitch_wasm(ptr0, len0, sample_rate);
-        deferred2_0 = ret[0];
-        deferred2_1 = ret[1];
+        const ret = wasm.analyze_pitch_wasm(ptr0, len0, val2);
+        deferred3_0 = ret[0];
+        deferred3_1 = ret[1];
         return getStringFromWasm0(ret[0], ret[1]);
     } finally {
-        wasm.__wbindgen_free(deferred2_0, deferred2_1, 1);
+        wasm.__wbindgen_free(deferred3_0, deferred3_1, 1);
     }
 }
 
 /**
- * @param {Float32Array} samples
+ * @param {Float32Array | number[]} samples
  * @param {number} sample_rate
  * @param {string} segments_json
  * @param {string} contour_json
@@ -2480,16 +2498,27 @@ export function analyze_pitch_wasm(samples, sample_rate) {
  * @returns {Float32Array}
  */
 export function commit_pitch_edit_wasm(samples, sample_rate, segments_json, contour_json, retune_speed_ms, formant_preserve) {
-    const ptr0 = passArrayF32ToWasm0(samples, wasm.__wbindgen_malloc);
-    const len0 = WASM_VECTOR_LEN;
-    const ptr1 = passStringToWasm0(segments_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-    const len1 = WASM_VECTOR_LEN;
-    const ptr2 = passStringToWasm0(contour_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-    const len2 = WASM_VECTOR_LEN;
-    const ret = wasm.commit_pitch_edit_wasm(ptr0, len0, sample_rate, ptr1, len1, ptr2, len2, retune_speed_ms, formant_preserve);
-    var v4 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
+    const val4 = +sample_rate;
+    const val5 = +retune_speed_ms;
+    const val6 = +formant_preserve;
+    let ptr0, len0, ptr1, len1, ptr2, len2;
+    try {
+        ptr0 = passArrayF32ToWasm0(samples, wasm.__wbindgen_malloc);
+        len0 = WASM_VECTOR_LEN;
+        ptr1 = passStringToWasm0(segments_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        len1 = WASM_VECTOR_LEN;
+        ptr2 = passStringToWasm0(contour_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        len2 = WASM_VECTOR_LEN;
+    } catch (e) {
+        if (ptr2) { wasm.__wbindgen_free(ptr2, len2 * 1, 1); }
+        if (ptr1) { wasm.__wbindgen_free(ptr1, len1 * 1, 1); }
+        if (ptr0) { wasm.__wbindgen_free(ptr0, len0 * 4, 4); }
+        throw e;
+    }
+    const ret = wasm.commit_pitch_edit_wasm(ptr0, len0, val4, ptr1, len1, ptr2, len2, val5, val6);
+    var v7 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
     wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
-    return v4;
+    return v7;
 }
 
 /**
@@ -2504,7 +2533,7 @@ export function init_panic_hook() {
 function __wbg_get_imports() {
     const import0 = {
         __proto__: null,
-        __wbg___wbindgen_throw_bb96b2010945f0bc: function(arg0, arg1) {
+        __wbg___wbindgen_throw_4c88d8bf264fd984: function(arg0, arg1) {
             throw new Error(getStringFromWasm0(arg0, arg1));
         },
         __wbg_error_757e9472f8410341: function(arg0, arg1) {
@@ -2518,30 +2547,29 @@ function __wbg_get_imports() {
                 wasm.__wbindgen_free(deferred0_0, deferred0_1, 1);
             }
         },
-        __wbg_new_227d7c05414eb861: function() {
+        __wbg_new_bb74001155cb8ca8: function() {
             const ret = new Error();
             return ret;
         },
-        __wbg_stack_3b0d974bbf31e44f: function(arg0, arg1) {
+        __wbg_stack_575c4e0918581b9c: function(arg0, arg1) {
             const ret = arg1.stack;
             const ptr1 = passStringToWasm0(ret, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
             const len1 = WASM_VECTOR_LEN;
-            getDataViewMemory0().setInt32(arg0 + 4 * 1, len1, true);
-            getDataViewMemory0().setInt32(arg0 + 4 * 0, ptr1, true);
+            getDataViewMemory0().setInt32((arg0 >>> 0) + 4 * 1, len1, true);
+            getDataViewMemory0().setInt32((arg0 >>> 0) + 4 * 0, ptr1, true);
         },
-        __wbindgen_cast_0000000000000001: function(arg0, arg1) {
+        __wbindgen_generic_0000000000000001: function(arg0, arg1) {
             // Cast intrinsic for `Ref(String) -> Externref`.
             const ret = getStringFromWasm0(arg0, arg1);
             return ret;
         },
         __wbindgen_init_externref_table: function() {
             const table = wasm.__wbindgen_externrefs;
-            const offset = table.grow(4);
             table.set(0, undefined);
-            table.set(offset + 0, undefined);
-            table.set(offset + 1, null);
-            table.set(offset + 2, true);
-            table.set(offset + 3, false);
+            table.set(1024, undefined);
+            table.set(1025, null);
+            table.set(1026, true);
+            table.set(1027, false);
         },
     };
     return {
@@ -2622,7 +2650,8 @@ function getFloat32ArrayMemory0() {
 }
 
 function getStringFromWasm0(ptr, len) {
-    return decodeText(ptr >>> 0, len);
+    ptr = ptr >>> 0;
+    return decodeText(getUint8ArrayMemory0().subarray(ptr, ptr + len));
 }
 
 let cachedUint32ArrayMemory0 = null;
@@ -2691,18 +2720,18 @@ function takeFromExternrefTable0(idx) {
     return value;
 }
 
-let cachedTextDecoder = new TextDecoder('utf-8', { ignoreBOM: true, fatal: true });
+let cachedTextDecoder = new TextDecoder('utf-8', { ignoreBOM: true });
 cachedTextDecoder.decode();
 const MAX_SAFARI_DECODE_BYTES = 2146435072;
 let numBytesDecoded = 0;
-function decodeText(ptr, len) {
-    numBytesDecoded += len;
+function decodeText(bytes) {
+    numBytesDecoded += bytes.length;
     if (numBytesDecoded >= MAX_SAFARI_DECODE_BYTES) {
-        cachedTextDecoder = new TextDecoder('utf-8', { ignoreBOM: true, fatal: true });
+        cachedTextDecoder = new TextDecoder('utf-8', { ignoreBOM: true });
         cachedTextDecoder.decode();
-        numBytesDecoded = len;
+        numBytesDecoded = bytes.length;
     }
-    return cachedTextDecoder.decode(getUint8ArrayMemory0().subarray(ptr, ptr + len));
+    return cachedTextDecoder.decode(bytes);
 }
 
 const cachedTextEncoder = new TextEncoder();
@@ -2792,9 +2821,17 @@ function initSync(module) {
     return __wbg_finalize_init(instance, module);
 }
 
+let __wbg_init_promise;
 async function __wbg_init(module_or_path) {
     if (wasm !== undefined) return wasm;
+    if (__wbg_init_promise === undefined) {
+        __wbg_init_promise = __wbg_init_once(module_or_path);
+        __wbg_init_promise.catch(() => { __wbg_init_promise = undefined; });
+    }
+    return __wbg_init_promise;
+}
 
+async function __wbg_init_once(module_or_path) {
 
     if (module_or_path !== undefined) {
         if (Object.getPrototypeOf(module_or_path) === Object.prototype) {

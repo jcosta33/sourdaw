@@ -96,7 +96,11 @@ export const EffectsTab = ({
     };
 
     const addSelectedTrackDevice = (deviceType: string, afterApplied: (deviceId: string | null) => void): void => {
-        addDeviceThroughAction(selectedTrackId, deviceType, afterApplied);
+        addDeviceThroughAction(selectedTrackId, deviceType, (deviceId) => {
+            if (deviceId !== null) {
+                afterApplied(deviceId);
+            }
+        });
     };
 
     const groupedEffects = new Map<string, EffectPlugin[]>();
@@ -133,7 +137,7 @@ export const EffectsTab = ({
                         badge="Mastering"
                         description="EQ · Multiband Dynamics · Imager"
                         onClick={() => {
-                            addSelectedTrackDevice('Proof', (deviceId) => panelActions?.showProof(deviceId));
+                            addSelectedTrackDevice('proof', (deviceId) => panelActions?.showProof(deviceId));
                         }}
                         theme={PROOF_THEME}
                     />

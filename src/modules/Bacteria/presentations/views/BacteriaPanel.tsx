@@ -289,7 +289,7 @@ const SectionHeader = ({
 );
 
 const BChip = ({
-    active = false,
+    active,
     size = 'sm',
     className,
     children,
@@ -472,21 +472,31 @@ const PlayHero = ({ deviceId, state }: { deviceId: string; state: BacteriaState 
                 />
             </Stack>
             <Grid cols={4} gap={2}>
-                {state.patch.snapshots.slice(0, 4).map((snapshot, index) => (
-                    <Stack key={snapshot.id} gap={1} className="bacteria-window px-3 py-2">
-                        <span className="text-micro uppercase tracking-[0.24em] text-muted-foreground/55">
-                            Snap {snapshot.id}
-                        </span>
-                        <span className="truncate text-compact text-foreground">{snapshot.name}</span>
-                        <BChip
-                            active={Object.keys(snapshot.paramValues).length > 0}
-                            aria-label={`Capture snapshot ${snapshot.id}`}
-                            onClick={() => captureBacteriaSnapshot(deviceId, index)}
-                        >
-                            Capture
-                        </BChip>
-                    </Stack>
-                ))}
+                {state.patch.snapshots.slice(0, 4).map((snapshot, index) => {
+                    const populated = Object.keys(snapshot.paramValues).length > 0;
+                    return (
+                        <Stack key={snapshot.id} gap={1} className="bacteria-window px-3 py-2">
+                            <span className="text-micro uppercase tracking-[0.24em] text-muted-foreground/55">
+                                Snap {snapshot.id}
+                            </span>
+                            <span className="truncate text-compact text-foreground">{snapshot.name}</span>
+                            <BChip
+                                className={
+                                    populated
+                                        ? 'border-[var(--color-accent-mint)]/60 bg-[var(--color-accent-mint)]/12 text-[var(--color-accent-mint)]'
+                                        : undefined
+                                }
+                                aria-label={`Capture snapshot ${snapshot.id}`}
+                                aria-description={
+                                    populated ? 'Populated; capturing overwrites the stored snapshot' : undefined
+                                }
+                                onClick={() => captureBacteriaSnapshot(deviceId, index)}
+                            >
+                                Capture
+                            </BChip>
+                        </Stack>
+                    );
+                })}
             </Grid>
         </Stack>
 

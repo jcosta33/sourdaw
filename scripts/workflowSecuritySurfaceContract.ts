@@ -9,8 +9,8 @@
 
 import { posix } from 'node:path';
 
-import { workflowJobCheckName } from './approvalGatedWorkflowContract.ts';
 import { HEALTH_GATE_WORKFLOW_FILES } from './healthGateWorkflowContract.ts';
+import { workflowJobCheckName } from './pullRequestGateWorkflowContract.ts';
 
 type JobPins<Value> = Readonly<Record<string, Readonly<Record<string, Value>>>>;
 
@@ -25,7 +25,6 @@ const SCOPE_PERMISSIONS = { contents: 'read', 'pull-requests': 'read', actions: 
 // planners, which read the nightly coverage map artifact.
 export const JOB_PERMISSION_PINS: JobPins<Readonly<Record<string, string>>> = {
     'health-gates.yml': { codeql: CODEQL_PERMISSIONS, scope: SCOPE_PERMISSIONS },
-    'pr-checks.yml': { scope: SCOPE_PERMISSIONS },
     'nightly.yml': { codeql: CODEQL_PERMISSIONS, 'nightly-report': { contents: 'read', issues: 'write' } },
     'nightly-evidence-report.yml': {
         validate: { actions: 'read', contents: 'read', 'security-events': 'read' },
@@ -40,8 +39,7 @@ export const JOB_PERMISSION_PINS: JobPins<Readonly<Record<string, string>>> = {
 // to code that never needed one, and on a pull-request trigger to the head's code.
 export const SECRET_REFERENCE_PINS: JobPins<readonly string[]> = {
     'nightly-evidence-report.yml': { validate: ['GITHUB_TOKEN'], publish: ['GITHUB_TOKEN'] },
-    'health-gates.yml': { admission: ['GITHUB_TOKEN'], scope: ['GITHUB_TOKEN'] },
-    'pr-checks.yml': { scope: ['GITHUB_TOKEN'] },
+    'health-gates.yml': { scope: ['GITHUB_TOKEN'] },
     'nightly.yml': {
         'deploy-web': ['GITHUB_TOKEN', 'VERCEL_ORG_ID', 'VERCEL_PROJECT_ID', 'VERCEL_TOKEN'],
         'nightly-report': ['GITHUB_TOKEN'],
@@ -62,7 +60,7 @@ export const CREDENTIALLESS_CHECKOUTS: JobPins<readonly string[]> = {
         validate: ['Checkout trusted default-branch reporter'],
         publish: ['Checkout trusted default-branch repository context'],
     },
-    'health-gates.yml': { admission: ['Checkout trusted admission'], scope: ['Checkout'], 'e2e-build': ['Checkout'] },
+    'health-gates.yml': { scope: ['Checkout'], 'e2e-build': ['Checkout'] },
     'heavy-gates.yml': { e2e: ['Checkout'] },
     'nightly.yml': {
         unit: ['Checkout'],
@@ -70,7 +68,6 @@ export const CREDENTIALLESS_CHECKOUTS: JobPins<readonly string[]> = {
         'deploy-web': ['Checkout the validated revision'],
         'nightly-report': ['Checkout'],
     },
-    'pr-checks.yml': { scope: ['Checkout'] },
     'quantum-measurements.yml': { measure: ['Checkout source head'] },
     'validation.yml': {
         unit: ['Checkout'],

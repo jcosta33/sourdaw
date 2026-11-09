@@ -1,5 +1,7 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { act, render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
+import { defaultTransportState, timeSignatureMapStore, transportStore } from '#/modules/Transport/stores';
 
 import { TrackClipsSection } from '../TrackClipsSection';
 
@@ -18,6 +20,16 @@ vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
         dismissGhostClip: (clipId: string): void => {
             mockDismissGhostClip(clipId);
         },
+    };
+});
+
+vi.mock('#/modules/Transport/stores', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/Transport/stores')>();
+    const { createStore } = await import('#/infra/store/createStore');
+    return {
+        ...actual,
+        transportStore: createStore({ initialData: actual.defaultTransportState }),
+        timeSignatureMapStore: createStore({ initialData: { changes: [] } }),
     };
 });
 
@@ -137,6 +149,8 @@ describe('TrackClipsSection', () => {
 
     beforeEach(() => {
         vi.clearAllMocks();
+        transportStore.set(defaultTransportState);
+        timeSignatureMapStore.set({ changes: [] });
     });
 
     it('should render without crashing', () => {
@@ -165,6 +179,38 @@ describe('TrackClipsSection', () => {
         render(<TrackClipsSection track={mockTrack} onSelectClip={mockOnSelectClip} />);
         expect(screen.getByText(/bar 1–5/)).toBeInTheDocument();
         expect(screen.getByText(/bar 5–9/)).toBeInTheDocument();
+    });
+
+    it('uses the default meter for clip bar labels and updates when that meter changes', () => {
+        const clip = { ...mockTrack.clips[0]!, id: 'meter-clip', startBeat: 18, endBeat: 27 };
+        render(<TrackClipsSection track={{ ...mockTrack, clips: [clip] }} onSelectClip={mockOnSelectClip} />);
+
+        expect(screen.getByText('bar 5–7')).toBeInTheDocument();
+        act(() => {
+            transportStore.set({ ...defaultTransportState, timeSignatureNumerator: 3, timeSignatureDenominator: 4 });
+        });
+        expect(screen.getByText('bar 7–10')).toBeInTheDocument();
+    });
+
+    it('uses later meter changes for clip bar labels and updates when the map changes', () => {
+        const clip = { ...mockTrack.clips[0]!, id: 'mapped-meter-clip', startBeat: 18, endBeat: 27 };
+        render(<TrackClipsSection track={{ ...mockTrack, clips: [clip] }} onSelectClip={mockOnSelectClip} />);
+
+        expect(screen.getByText('bar 5–7')).toBeInTheDocument();
+        act(() => {
+            timeSignatureMapStore.set({ changes: [{ id: 'later-meter', beat: 8, numerator: 5, denominator: 8 }] });
+        });
+        expect(screen.getByText('bar 7–10')).toBeInTheDocument();
+    });
+
+    it('uses the current default 6/8 meter for clip bar labels', () => {
+        const clip = { ...mockTrack.clips[0]!, id: 'six-eight-clip', startBeat: 18, endBeat: 27 };
+        act(() => {
+            transportStore.set({ ...defaultTransportState, timeSignatureNumerator: 6, timeSignatureDenominator: 8 });
+        });
+        render(<TrackClipsSection track={{ ...mockTrack, clips: [clip] }} onSelectClip={mockOnSelectClip} />);
+
+        expect(screen.getByText('bar 7–10')).toBeInTheDocument();
     });
 
     it('should call onSelectClip when clip is clicked', () => {

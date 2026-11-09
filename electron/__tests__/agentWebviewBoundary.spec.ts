@@ -6,8 +6,9 @@
  * command surface and the shell's named channels never collide on a wire
  * name, that the plugin-runtime quit-time refusal set stays inside the
  * exposed command surface and names no command the trusted-sender gate
- * protects, that every privileged command (not just one) is behind that
- * gate, that a plugin editor window is built as a bare native window with no
+ * protects, that callerless native CRDT commands have no renderer grant,
+ * that every exposed privileged command (not just one) is behind that gate,
+ * that a plugin editor window is built as a bare native window with no
  * renderer bridge, that a renderer-authored project title and recent-project
  * name cannot reach a native menu label, window title, or close-dialog
  * message without bound, and that the stream cap actually tracks the
@@ -54,7 +55,7 @@ vi.mock('electron', () => ({
     },
 }));
 
-/** Every command that reaches file bytes, a directory listing, provider gateway credentials, a collaboration document, or the cached model store. */
+/** Exposed commands that reach file bytes, a directory listing, provider gateway credentials, or the cached model store. */
 const PRIVILEGED_COMMANDS = [
     'agent_asset_cleanup',
     'agent_asset_finalize_export',
@@ -70,15 +71,20 @@ const PRIVILEGED_COMMANDS = [
     'list_directory',
     'load_cached_whisper_model',
     'store_verified_whisper_model',
-    'collab_apply_change',
-    'collab_create_project',
-    'collab_get_document_state',
-    'collab_load_bundle',
-    'collab_merge_bundle',
-    'collab_save_bundle',
 ] as const;
 
 describe('the exposed command surface and the shell channels stay disjoint', () => {
+    it.each([
+        'collab_apply_change',
+        'collab_create_project',
+        'collab_get_document_state',
+        'collab_load_bundle',
+        'collab_merge_bundle',
+        'collab_save_bundle',
+    ])('withholds the callerless native project command %s from the renderer', (command) => {
+        expect(EXPOSED_COMMANDS).not.toContain(command);
+    });
+
     it('keeps PLUGIN_RUNTIME_COMMANDS inside the exposed command surface', () => {
         const exposed = new Set(EXPOSED_COMMANDS);
         for (const command of PLUGIN_RUNTIME_COMMANDS) {

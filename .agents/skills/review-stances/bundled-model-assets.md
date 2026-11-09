@@ -32,6 +32,22 @@ note results cannot establish packaged availability.
    restoring all three assignments must fail the absolute-time/coverage oracle in
    `polyphonicAudioToMidi.realModel.integration.spec.ts`. The introducing commit has no PR number established here.
 
+3. **Cold optimization invalidates a running neural worker's child-script URL.** With ORT 1.31.1 and Vite 8.3.6
+   (current pins from `e14fdb7a37`, #6285), lazy discovery changed the optimized module hash after its first response.
+   ORT pthreads reused that old `import.meta.url`; Vite's fresh-request hash guard rejected their requests while
+   session creation remained pending. The initial ONNX worker dates to `a2fca1fc7d`; its associated-PR lookup returned
+   none. Neither that commit nor #6285 is proven to be the first revision exposing this failure. The missed probe
+   was actual cold neural session and inference composition: mocked worker outputs and a warm graph cannot expose
+   invalidated child URLs. Keep the real verified model, voice, tokenizer, OPFS, workers, ORT, resampler and cache in
+   `tests/e2e/kokoroNeuralPipeline.spec.ts`. Require the actual session-created provider receipt and independently
+   bounded finite, nonconstant PCM; `navigator.gpu` does not establish GPU execution, and a WASM receipt claims CPU
+   execution only. On a clean exclusive reviewer handoff, remove the ORT startup preinclude and run that exact case
+   after the config change invalidates Vite's dependency hash; cold nested-worker loading must fail. Do not delete
+   caches, reload or retry into a warm pass, lower thread count, swap models/providers, or raise the case bound.
+   The observed failure exposed blocked child requests; a raw 504 response was inferred from Vite's exact loader
+   guard and error path, not captured directly. Real numerical output still makes no intelligibility or perceptual
+   quality claim.
+
 ## Scope
 
 This class covers the shipped inference boundary between model topology, emitted weight assets, the runtime that

@@ -35,6 +35,7 @@ const { createdGains } = vi.hoisted(() => ({
     }>,
 }));
 vi.mock('#/modules/Arrangement/stores', () => ({
+    gainEnvelopeStore: { value: null },
     trackStore: {
         get value() {
             return trackStoreState.value;

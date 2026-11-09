@@ -100,6 +100,18 @@ afterEach(() => {
     channel.port2.close();
 });
 
+it('exposes family filters as checked radios without pressed-button semantics', () => {
+    render(<LevainPanel deviceId={deviceId} />);
+    const familyFilters = screen.getByRole('radiogroup', { name: 'Filter instruments by family' });
+    const all = within(familyFilters).getByRole('radio', { name: 'All' });
+    const strings = within(familyFilters).getByRole('radio', { name: 'Strings' });
+
+    expect(all).toHaveAttribute('aria-checked', 'true');
+    expect(all).not.toHaveAttribute('aria-pressed');
+    expect(strings).toHaveAttribute('aria-checked', 'false');
+    expect(strings).not.toHaveAttribute('aria-pressed');
+});
+
 it('admits layout choices only after registration, even while the engine is loading', async () => {
     render(<LevainPanel deviceId={deviceId} />);
     const group = screen.getByRole('group', { name: 'Levain control detail' });

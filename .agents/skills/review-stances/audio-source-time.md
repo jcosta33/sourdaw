@@ -150,3 +150,13 @@ red and the mutation that must fail it. Report the concrete break or none.
     Modern inverses need an explicit present/value capture; an older restore payload that omits the alias
     still means leave live, not delete. Reject malformed capture unions at serialized argument admission.
     A default-zero fixture or equality that drops absent keys cannot prove this contract.
+15. **Queued loop passes retain their own media authority across a stall (#6277).** At48kHz/120BPM,
+    fill a2s loop with unequal canonical source entries, then complete the last refill125ms before its seam.
+    Freeze the actual `source.start(when, offset, duration)` and stop ledger BEFORE withholding ticks for200ms.
+    The successor must already own the mapped seam, original entry, rate and exclusive ending; recovery must
+    neither restart it late nor stop it with the dying pass. Repeat a125ms loop crossing multiple seams,
+    stretched/comped material and frozen audio/MIDI. Same clip/buffer IDs do not authenticate future content:
+    replace the actual cached buffer under its existing ID, or edit entry, comp, gain, fade or envelope, and
+    require retirement before each old future start, including one less than5ms away. Unchanged current
+    material survives. Removing future-input reconciliation or clearing promoted-pass keys must fail
+    `startPlayheadSchedulerLoopAudioStall.spec.ts`; source-call evidence remains distinct from rendered PCM.

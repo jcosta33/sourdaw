@@ -2,8 +2,8 @@ import { pendingYeastRelease } from './pendingYeastRelease';
 import { releaseActiveToasterNote } from './releaseActiveToasterNote';
 import { activeNotes, channelToNote } from './state';
 
-import type { GetWebMidiTrackStrip, ReleaseNativeLiveNote, WebMidiInstrumentStrip } from './engineStripAccess';
 import type { ActiveNoteData } from '../../models/WebMidiTypes';
+import type { GetWebMidiTrackStrip, ReleaseNativeLiveNote, WebMidiInstrumentStrip } from './engineStripAccess';
 
 type ReleaseAllActiveNotesInput = {
     /**
