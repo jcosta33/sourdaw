@@ -186,14 +186,14 @@ export const CrustMeteringStrip = ({
                         label="ST"
                         value={lufsShortTerm > -99 ? lufsShortTerm.toFixed(1) : '—'}
                         aria-label={`Short-term LUFS: ${lufsShortTerm.toFixed(1)}`}
-                        labelClassName="text-nano text-muted-foreground/40"
+                        labelClassName="text-nano text-muted-foreground/80"
                         valueClassName="text-[12px] tabular-nums text-foreground/70"
                     />
                     <DawReadoutRow
                         label="MOM"
                         value={lufsMomentary > -99 ? lufsMomentary.toFixed(1) : '—'}
                         aria-label={`Momentary LUFS: ${lufsMomentary.toFixed(1)}`}
-                        labelClassName="text-nano text-muted-foreground/40"
+                        labelClassName="text-nano text-muted-foreground/80"
                         valueClassName="text-[12px] tabular-nums text-foreground/70"
                     />
                 </DawPluginReadoutList>
@@ -203,7 +203,7 @@ export const CrustMeteringStrip = ({
                         label="LRA"
                         value={`${lra.toFixed(1)} LU`}
                         aria-label={`Loudness range: ${lra.toFixed(1)} LU`}
-                        labelClassName="text-nano text-muted-foreground/40"
+                        labelClassName="text-nano text-muted-foreground/80"
                         valueClassName="text-dense text-foreground/60"
                     />
                 </div>

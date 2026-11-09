@@ -49,6 +49,18 @@ const runStartupTheme = (stored: string | null) => {
     return { classes, colorScheme: style.colorScheme, themeColor: metaAttributes.content };
 };
 
+const parseTagAttributes = (attributeSource: string): Map<string, string> => {
+    const attributes = new Map<string, string>();
+    const pattern = /([a-zA-Z][a-zA-Z0-9-]*)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+)))?/gu;
+    for (const match of attributeSource.matchAll(pattern)) {
+        const name = match[1]?.toLowerCase();
+        if (name !== undefined) {
+            attributes.set(name, match[2] ?? match[3] ?? match[4] ?? '');
+        }
+    }
+    return attributes;
+};
+
 const readToken = (source: string, name: string): string => {
     const value = new RegExp(`${name}:\\s*([^;]+);`, 'u').exec(source)?.[1];
     if (value === undefined) {
@@ -119,9 +131,13 @@ describe('semantic light theme', () => {
     });
 
     it('loads the prepaint theme from an external classic script before the entry module', () => {
-        expect(startupThemeMatch?.[1]).toContain('src="/themePrepaint.js"');
-        expect(startupThemeMatch?.[1]).not.toMatch(/\btype\s*=\s*(["'])module\1/iu);
-        expect(startupThemeMatch?.[1]).not.toMatch(/\b(?:async|defer)\b/u);
+        const themeAttributes = parseTagAttributes(startupThemeMatch?.[1] ?? '');
+        expect(themeAttributes.get('src')).toBe('/themePrepaint.js');
+        // Any module, async or defer spelling defers the prepaint past first
+        // paint and restores the dark flash it exists to prevent.
+        expect(themeAttributes.get('type')?.toLowerCase()).not.toBe('module');
+        expect(themeAttributes.has('async')).toBe(false);
+        expect(themeAttributes.has('defer')).toBe(false);
         expect(startupThemeMatch?.[2]?.trim()).toBe('');
         expect(indexHtml.indexOf('id="sourdaw-theme"')).toBeLessThan(indexHtml.indexOf('id="sourdaw-entry"'));
         expect(indexHtml).toContain(':root.light');
@@ -152,22 +168,41 @@ describe('semantic light theme', () => {
         for (const foreground of ['--color-state-play', '--color-accent-amber', '--color-accent-red']) {
             expect(contrast(readToken(lightBlock, foreground), background)).toBeGreaterThanOrEqual(4.5);
         }
+
+        // The ST/MOM/LRA captions are muted text at an alpha: their composite
+        // over the raised surface is what the musician actually reads, and at
+        // 10-12px it must still reach the 4.5:1 floor.
+        const muted = readToken(lightBlock, '--color-text-secondary');
+        const labelAlphas = [...meteringSource.matchAll(/labelClassName="[^"]*text-muted-foreground\/(\d+)/gu)].map(
+            (match) => Number(match[1])
+        );
+        expect(labelAlphas.length).toBeGreaterThan(0);
+        for (const alpha of labelAlphas) {
+            expect(contrast(composite(muted, background, alpha / 100), background)).toBeGreaterThanOrEqual(4.5);
+        }
     });
 
     it.each([
-        '--color-accent-cyan',
-        '--color-accent-amber',
-        '--color-accent-steel',
-        '--color-accent-copper',
-        '--color-accent-peach',
-        '--color-accent-mint',
-        '--color-accent-sage',
-    ])('keeps %s active-chip text above 4.75:1 on its actual tinted backgrounds', (accentToken) => {
-        const alphaSource = new RegExp(`bg-\\[var\\(${accentToken}\\)\\]/(\\d+)`, 'u').exec(chipSource)?.[1];
+        // [chip token carrying the tinted background, token holding the light colour]
+        // --color-state-danger is an alias of --color-accent-red, so the chip
+        // background is read from the alias while the colour comes from its target.
+        ['--color-accent-cyan', '--color-accent-cyan'],
+        ['--color-accent-amber', '--color-accent-amber'],
+        ['--color-accent-steel', '--color-accent-steel'],
+        ['--color-accent-copper', '--color-accent-copper'],
+        ['--color-accent-peach', '--color-accent-peach'],
+        ['--color-accent-mint', '--color-accent-mint'],
+        ['--color-accent-sage', '--color-accent-sage'],
+        ['--color-accent-lavender', '--color-accent-lavender'],
+        ['--color-accent-rose', '--color-accent-rose'],
+        ['--color-accent-indigo', '--color-accent-indigo'],
+        ['--color-state-danger', '--color-accent-red'],
+    ])('keeps %s active-chip text above 4.75:1 on its actual tinted backgrounds', (chipToken, colorToken) => {
+        const alphaSource = new RegExp(`bg-\\[var\\(${chipToken}\\)\\]/(\\d+)`, 'u').exec(chipSource)?.[1];
         if (alphaSource === undefined) {
-            throw new Error(`Missing active-chip background for ${accentToken}`);
+            throw new Error(`Missing active-chip background for ${chipToken}`);
         }
-        const accent = readToken(lightBlock, accentToken);
+        const accent = readToken(lightBlock, colorToken);
         for (const surfaceToken of [
             '--surface-deep',
             '--surface-base',
