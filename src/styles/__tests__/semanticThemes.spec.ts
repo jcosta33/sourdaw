@@ -20,6 +20,15 @@ const controlZoneSource = readFileSync(
     resolve(process.cwd(), 'src/modules/Crust/presentations/components/CrustControlZone.tsx'),
     'utf8'
 );
+const proofChamberSource = readFileSync(
+    resolve(process.cwd(), 'src/modules/ProofChamber/presentations/views/ProofChamberPanel.tsx'),
+    'utf8'
+);
+const tunerSource = readFileSync(
+    resolve(process.cwd(), 'src/modules/Tuner/presentations/views/TunerPanel.tsx'),
+    'utf8'
+);
+const mainStyles = readFileSync(resolve(process.cwd(), 'src/styles/main.css'), 'utf8');
 const meteringSource = readFileSync(
     resolve(process.cwd(), 'src/modules/Crust/presentations/components/CrustMeteringStrip.tsx'),
     'utf8'
@@ -178,6 +187,35 @@ const crustWindowStops = (): Record<string, string> => {
     const panelInset = readToken(lightBlock, '--color-bg-panelInset');
     return {
         windowTop: composite(topWhite.color, composite(topAmber.color, panelInset, topAmber.alpha), topWhite.alpha),
+        windowBottom: composite(bottomWhite.color, panelInset, bottomWhite.alpha),
+    };
+};
+
+const mainWindowStops = (utility: string): Record<string, string> => {
+    const windowBlock = new RegExp(`@utility ${utility}\\s*\\{([\\s\\S]*?)\\n\\}`, 'u').exec(mainStyles)?.[1] ?? '';
+    const rgbaLayers = Array.from(
+        windowBlock.matchAll(/rgba\(\s*(\d+),\s*(\d+),\s*(\d+),\s*([\d.]+)\)/gu),
+        (match) => ({
+            color: `#${match
+                .slice(1, 4)
+                .map((channel) => Number(channel).toString(16).padStart(2, '0'))
+                .join('')}`,
+            alpha: Number(match[4]),
+        })
+    );
+    const [topWhite, bottomWhite, topAccent] = rgbaLayers;
+    if (topWhite === undefined || bottomWhite === undefined || topAccent === undefined) {
+        throw new Error(`Missing ${utility} gradient layers`);
+    }
+    const panelInset = readToken(lightBlock, '--color-bg-panelInset');
+    const accentBase = (alpha: number) => composite(topAccent.color, panelInset, alpha);
+    return {
+        windowTop: composite(topWhite.color, accentBase(topAccent.alpha), topWhite.alpha),
+        windowMiddle: composite(
+            topWhite.color,
+            accentBase(topAccent.alpha / 2),
+            (topWhite.alpha + bottomWhite.alpha) / 2
+        ),
         windowBottom: composite(bottomWhite.color, panelInset, bottomWhite.alpha),
     };
 };
@@ -443,9 +481,8 @@ describe('semantic light theme', () => {
         const sharedInputClass = /className=\{cn\(\s*'([^']*placeholder:[^']*)'/u.exec(searchInputSource)?.[1] ?? '';
         expect(sharedInputClass).toContain('placeholder:text-muted-foreground/45');
         const routeInputClass = /\binputClassName="([^"]*)"/u.exec(searchRoute)?.[1] ?? '';
-        const effectivePlaceholderClass = (
-            cn(sharedInputClass, routeInputClass).match(/placeholder:text-[^\s]+/gu) ?? []
-        ).at(-1);
+        const effectivePlaceholderClass =
+            (cn(sharedInputClass, routeInputClass).match(/placeholder:text-[^\s]+/gu) ?? []).at(-1) ?? '';
         expect(effectivePlaceholderClass).toMatch(/^placeholder:text-text-primary(?:\/\d+)?$/u);
 
         const alphaSource = /\/(\d+)$/u.exec(effectivePlaceholderClass)?.[1];
@@ -587,39 +624,125 @@ describe('semantic light theme', () => {
         }
     });
 
-    it.each([
-        // [chip token carrying the tinted background, token holding the light colour]
-        // --color-state-danger is an alias of --color-accent-red, so the chip
-        // background is read from the alias while the colour comes from its target.
-        ['--color-accent-cyan', '--color-accent-cyan'],
-        ['--color-accent-amber', '--color-accent-amber'],
-        ['--color-accent-steel', '--color-accent-steel'],
-        ['--color-accent-copper', '--color-accent-copper'],
-        ['--color-accent-peach', '--color-accent-peach'],
-        ['--color-accent-mint', '--color-accent-mint'],
-        ['--color-accent-sage', '--color-accent-sage'],
-        ['--color-accent-lavender', '--color-accent-lavender'],
-        ['--color-accent-rose', '--color-accent-rose'],
-        ['--color-accent-indigo', '--color-accent-indigo'],
-        ['--color-state-danger', '--color-accent-red'],
-    ])('keeps %s active-chip text above 4.75:1 on its actual tinted backgrounds', (chipToken, colorToken) => {
-        const alphaSource = new RegExp(`bg-\\[var\\(${chipToken}\\)\\]/(\\d+)`, 'u').exec(chipSource)?.[1];
-        if (alphaSource === undefined) {
-            throw new Error(`Missing active-chip background for ${chipToken}`);
+    const readLightColor = (token: string): string => {
+        const value = new RegExp(`${token}:\\s*([^;]+);`, 'u').exec(lightBlock)?.[1] ?? readToken(tokens, token);
+        const alias = /^var\((--[a-z-]+)\)$/iu.exec(value.trim())?.[1];
+        return alias === undefined ? value.trim() : readLightColor(alias);
+    };
+
+    it.each(['cyan', 'amber', 'steel', 'copper', 'peach', 'mint', 'sage', 'lavender', 'rose', 'indigo', 'danger'])(
+        'keeps %s active-chip applied text above 4.75:1 on its actual tinted backgrounds',
+        (tone) => {
+            const activeToneSource =
+                /const ACTIVE_TONE_CLASS_NAMES:[\s\S]*?= \{([\s\S]*?)\n\};/u.exec(chipSource)?.[1] ?? '';
+            const toneClass = new RegExp(`\\b${tone}:\\s*'([^']+)'`, 'u').exec(activeToneSource)?.[1];
+            const backgroundToken = toneClass?.match(/bg-\[var\((--[a-z-]+)\)\]\/(\d+)/u)?.[1];
+            const alphaSource = toneClass?.match(/bg-\[var\((--[a-z-]+)\)\]\/(\d+)/u)?.[2];
+            const foregroundToken = toneClass?.match(/text-\[var\((--[a-z-]+)\)\]/u)?.[1];
+            if (backgroundToken === undefined || alphaSource === undefined || foregroundToken === undefined) {
+                throw new Error(`Missing active-chip background or applied foreground for ${tone}`);
+            }
+            const backgroundAccent = readLightColor(backgroundToken);
+            const foreground = readLightColor(foregroundToken);
+            for (const surfaceToken of [
+                '--surface-deep',
+                '--surface-base',
+                '--surface-default',
+                '--surface-raised',
+                '--color-bg-well',
+                '--color-bg-panelInset',
+            ]) {
+                const background = composite(
+                    backgroundAccent,
+                    readToken(lightBlock, surfaceToken),
+                    Number(alphaSource) / 100
+                );
+                expect(contrast(foreground, background)).toBeGreaterThanOrEqual(4.75);
+            }
         }
-        const accent = readToken(lightBlock, colorToken);
-        for (const surfaceToken of [
-            '--surface-deep',
-            '--surface-base',
-            '--surface-default',
-            '--surface-raised',
-            '--color-bg-well',
-            '--color-bg-panelInset',
-        ]) {
-            const background = composite(accent, readToken(lightBlock, surfaceToken), Number(alphaSource) / 100);
-            expect(contrast(accent, background)).toBeGreaterThanOrEqual(4.75);
+    );
+
+    it('keeps both Crust Style tile text rows readable on their nested black wells', () => {
+        const levelTileSource = /const LevelTile =[\s\S]*?\n\);\n\nconst Level1/u.exec(controlZoneSource)?.[0] ?? '';
+        const inactiveClass = /:\s*'([^']*bg-black\/20[^']*)'/u.exec(levelTileSource)?.[1] ?? '';
+        const subtitleClass = /<span className="([^"]*whitespace-pre-line[^"]*)">/u.exec(levelTileSource)?.[1] ?? '';
+        const wellAlphaSource = /bg-black\/(\d+)/u.exec(inactiveClass)?.[1];
+        expect(inactiveClass).toContain('text-foreground');
+        expect(inactiveClass).not.toContain('text-white');
+        expect(subtitleClass).toContain('text-foreground');
+        expect(subtitleClass).not.toMatch(/text-(?:muted-foreground|white)\//u);
+        expect(wellAlphaSource).toBeDefined();
+
+        const primary = readToken(lightBlock, '--color-text-primary');
+        for (const [stop, windowBackground] of Object.entries(crustWindowStops())) {
+            const background = composite('#000000', windowBackground, Number(wellAlphaSource) / 100);
+            expect(contrast(primary, background), `Style tile text on ${stop} black well`).toBeGreaterThanOrEqual(4.5);
         }
     });
+
+    it.each([
+        {
+            route: 'ProofChamber',
+            source: proofChamberSource,
+            utility: 'proof-chamber-window',
+            accents: ['--color-accent-amber', '--color-accent-cyan', '--color-accent-peach', '--color-accent-lavender'],
+            preservedDisplay: "ctx.fillStyle = 'rgb(3,3,5)';",
+        },
+        {
+            route: 'Tuner',
+            source: tunerSource,
+            utility: 'scoring-window',
+            accents: ['--color-accent-indigo', '--color-accent-mint', '--color-state-warning', '--color-state-danger'],
+            preservedDisplay: "ctx.fillStyle = 'white';",
+        },
+    ])(
+        'keeps $route semantic text readable on its real Light windows and nested wells',
+        ({ source, utility, accents, preservedDisplay }) => {
+            expect(source).not.toMatch(/\btext-white\//u);
+            expect(source).not.toMatch(/text-\[var\(--color-accent-[^\]]+\)\]\/\d+/u);
+            expect(source).not.toMatch(/\btext-(?:emerald|yellow|red)-400\b/u);
+            expect(source).toContain('text-text-primary');
+            expect(source).toContain('text-text-secondary');
+            expect(source).toContain(preservedDisplay);
+
+            const foregrounds = {
+                primary: readToken(lightBlock, '--color-text-primary'),
+                secondary: readToken(lightBlock, '--color-text-secondary'),
+            };
+            for (const accent of accents) {
+                expect(source).toContain(`var(${accent})`);
+            }
+            const stops = mainWindowStops(utility);
+            for (const [stop, background] of Object.entries(stops)) {
+                for (const [role, foreground] of Object.entries(foregrounds)) {
+                    expect(contrast(foreground, background), `${role} on ${utility} ${stop}`).toBeGreaterThanOrEqual(
+                        4.5
+                    );
+                }
+                for (const accent of accents) {
+                    expect(
+                        contrast(readLightColor(accent), background),
+                        `${accent} on ${utility} ${stop}`
+                    ).toBeGreaterThanOrEqual(4.5);
+                }
+            }
+
+            const panelInset = readToken(lightBlock, '--color-bg-panelInset');
+            for (const [role, foreground] of Object.entries(foregrounds)) {
+                expect(contrast(foreground, panelInset), `${role} on nested panelInset`).toBeGreaterThanOrEqual(4.5);
+            }
+            const blackWellAlphas = Array.from(source.matchAll(/bg-black\/(\d+)/gu), (match) => Number(match[1]));
+            for (const alpha of blackWellAlphas) {
+                for (const [stop, windowBackground] of Object.entries(stops)) {
+                    const background = composite('#000000', windowBackground, alpha / 100);
+                    expect(
+                        contrast(foregrounds.primary, background),
+                        `primary on ${utility} ${stop} black/${alpha} well`
+                    ).toBeGreaterThanOrEqual(4.5);
+                }
+            }
+        }
+    );
 
     it('keeps every Grinder plain-text route semantic and readable on its real Light surfaces', () => {
         const grinderSource = readFileSync(

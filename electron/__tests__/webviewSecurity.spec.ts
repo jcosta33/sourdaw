@@ -57,17 +57,41 @@ const parseCsp = (policy: string): Map<string, string[]> => {
     return directives;
 };
 
+type ParsedScript = {
+    namespaceURI: string | null;
+    textContent: string | null;
+    getAttribute(name: string): string | null;
+    hasAttribute(name: string): boolean;
+};
+
+type ParsedDocument = {
+    open(): void;
+    write(html: string): void;
+    close(): void;
+    querySelectorAll(selector: string): Iterable<ParsedScript>;
+};
+
+const browserDocument = (
+    globalThis as {
+        document: {
+            implementation: {
+                createHTMLDocument(title: string): ParsedDocument;
+            };
+        };
+    }
+).document;
+
 /** Parse with the browser's scripting flag so noscript contents stay inert. */
-const parseActiveHtml = (html: string): Document => {
-    const parsed = document.implementation.createHTMLDocument('');
+const parseActiveHtml = (html: string): ParsedDocument => {
+    const parsed = browserDocument.implementation.createHTMLDocument('');
     parsed.open();
     parsed.write(html);
     parsed.close();
     return parsed;
 };
 
-const findThemeScript = (html: string): HTMLScriptElement | null =>
-    [...parseActiveHtml(html).querySelectorAll<HTMLScriptElement>('script#sourdaw-theme')].find(
+const findThemeScript = (html: string): ParsedScript | null =>
+    [...parseActiveHtml(html).querySelectorAll('script#sourdaw-theme')].find(
         (script) => script.namespaceURI === 'http://www.w3.org/1999/xhtml'
     ) ?? null;
 

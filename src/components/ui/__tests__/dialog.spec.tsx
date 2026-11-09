@@ -37,6 +37,7 @@ describe('Dialog', () => {
             'max-h-[calc(100dvh-4rem)]',
             'w-[920px]',
             'max-w-[calc(100vw-4rem)]',
+            'sm:max-w-[calc(100vw-4rem)]',
             'overflow-hidden'
         );
     });
