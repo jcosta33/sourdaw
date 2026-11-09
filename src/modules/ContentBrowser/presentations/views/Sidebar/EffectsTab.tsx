@@ -96,7 +96,11 @@ export const EffectsTab = ({
     };
 
     const addSelectedTrackDevice = (deviceType: string, afterApplied: (deviceId: string | null) => void): void => {
-        addDeviceThroughAction(selectedTrackId, deviceType, afterApplied);
+        addDeviceThroughAction(selectedTrackId, deviceType, (deviceId) => {
+            if (deviceId !== null) {
+                afterApplied(deviceId);
+            }
+        });
     };
 
     const groupedEffects = new Map<string, EffectPlugin[]>();
