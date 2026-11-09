@@ -1,0 +1,72 @@
+src/modules/Yeast/models/createInitialYeastProcessorParams.ts
+  s_977061c47f01dd::t_ca72760d75d5a8 1-6
+src/modules/Yeast/useCases/__tests__/addYeastProcessor.spec.ts
+  s_977061c47f01dd::t_0e42dd775783a1 4,7,30
+  s_977061c47f01dd::t_bd2d72fa7c8e87 3,22-28,33-45
+src/modules/Yeast/handlers/__tests__/rackStructureHandlers.spec.ts
+  s_977061c47f01dd::t_c839ad30f88164 6,127-134,211,213-214,291,299-300
+  s_977061c47f01dd::t_c36860bc8423ca 87-89
+  s_977061c47f01dd::t_6bbe83050cfe81 90-95,154
+  s_977061c47f01dd::t_47e16cdbf0aa71 3-5,72-85,99,135-153,155-210,212
+  s_977061c47f01dd::t_b98d4ab97cd040 86,301
+src/modules/Yeast/useCases/__tests__/projectionRuntime.spec.ts
+  s_977061c47f01dd::t_6733f7cd2e0bd7 4,46,56
+src/modules/Yeast/handlers/__tests__/yeastUndoSessionMirror.spec.ts
+  s_977061c47f01dd::t_c36860bc8423ca 206-210,214-218
+  s_977061c47f01dd::t_851adbb23dcfe5 1,184,220,232
+  s_977061c47f01dd::t_1e275a6aa0bd27 10,162-183,185-205,211,219,229-230,233-234,240-244,247-254,256
+  s_977061c47f01dd::t_16b2ee0fe51920 14-15
+  s_977061c47f01dd::t_c1d7a1b925993d 235-239
+  s_977061c47f01dd::t_271eb9d0365ee6 212-213,221-228,231,245-246,255
+  s_977061c47f01dd::t_ec8d17a4c4cc8d 257
+tests/e2e/persistedHydrationEntry.ts
+  s_977061c47f01dd::t_9b553fa4f886bb 11
+src/modules/Yeast/handlers/__tests__/yeastFirstParameterUndo.integration.spec.ts
+  s_977061c47f01dd::t_15d6f644766cfb 1-11,19-70,72-81,84-99,103-115,129,295
+  s_977061c47f01dd::t_405e1dcea96b60 12-18,184-191,202-203,205-254
+  s_977061c47f01dd::t_e5784e1443b36e 71
+  s_977061c47f01dd::t_f8448db3e1e35a 116-128
+  s_977061c47f01dd::t_1ee06b31e29461 136,138,143-157,163-166,171
+  s_977061c47f01dd::t_f91aec128f4bde 130-135,137,139-142,158-162,170,172-178,182-183,255
+  s_977061c47f01dd::t_c4315bffe16abb 179-181
+  s_977061c47f01dd::t_11c47140e93eb2 192-201,204
+  s_977061c47f01dd::t_fbb8507eb09412 256-294
+  s_977061c47f01dd::t_c36860bc8423ca 167-169
+  s_977061c47f01dd::t_5d8ced608bf351 82-83,100-102
+src/modules/Yeast/workers/__tests__/processorFactory.spec.ts
+  s_977061c47f01dd::t_0f064050cfdb10 1,70-74,85
+  s_977061c47f01dd::t_3b005a6469a3aa 4-6,15-69,75,82-84
+  s_977061c47f01dd::t_c36860bc8423ca 76-81
+  s_977061c47f01dd::t_bc09fb67d933ee 86
+tests/e2e/yeastProcessorFirstParameterUndo.spec.ts
+  s_977061c47f01dd::t_b94983769b0bc9 87,99
+  s_977061c47f01dd::t_d24d558059db3f 200-223
+  s_977061c47f01dd::t_1a734c63ae3467 1-9,11-43,46-50,53-67,70-86,88,98,100-113,115-159,161-199,224
+  s_977061c47f01dd::t_c36860bc8423ca 10,89-97
+  s_977061c47f01dd::t_57518f29e9a192 44-45,51-52,68-69,114,160
+src/modules/Yeast/handlers/addYeastProcessor.ts
+  s_977061c47f01dd::t_143ebb64db9c03 2,5,8,21-27,29-38,45-49,56-58,69-76,78-86,89,91-100,102-121,123-126,136-142,151,156-159,162-165,170-180,232-233,250-257
+  s_977061c47f01dd::t_583e936026b0ad 28,88,101
+  s_977061c47f01dd::t_7100a41b5e8fe4 77,87
+  s_977061c47f01dd::t_c36860bc8423ca 39-44,50-55,212
+  s_977061c47f01dd::t_4c5f76828cac72 59-68,90,122
+  s_977061c47f01dd::t_739d77dca451c2 211,213
+src/modules/Yeast/useCases/addYeastProcessor.ts
+  s_977061c47f01dd::t_ca72760d75d5a8 2,18-19,29-30
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d8491b637281d03fd2989973fb5fc5f1ed03323d",
+  "prompts": {},
+  "sessions": {
+    "s_977061c47f01dd": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34d-123d-7452-a6e7-60608388b6d7",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
