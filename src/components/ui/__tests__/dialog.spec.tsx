@@ -32,7 +32,8 @@ describe('Dialog', () => {
             </Dialog>
         );
 
-        expect(screen.getByRole('dialog')).toHaveClass(
+        const dialog = screen.getByRole('dialog');
+        expect(dialog).toHaveClass(
             'h-[680px]',
             'max-h-[calc(100dvh-4rem)]',
             'w-[920px]',
@@ -40,6 +41,7 @@ describe('Dialog', () => {
             'sm:max-w-[calc(100vw-4rem)]',
             'overflow-hidden'
         );
+        expect(dialog).not.toHaveClass('sm:max-w-lg');
     });
 });
 

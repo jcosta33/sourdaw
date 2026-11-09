@@ -7,9 +7,6 @@
         return prototype === null || prototype === Object.prototype;
     };
     const parsePath = (path, legacyPaths) => {
-        if (typeof path !== 'string') {
-            throw new Error('Invalid SuperJSON path');
-        }
         const segments = [];
         let segment = '';
         for (let index = 0; index < path.length; index += 1) {
@@ -32,10 +29,12 @@
             }
         }
         segments.push(segment);
-        if (segments.some((part) => ['__proto__', 'prototype', 'constructor'].includes(part))) {
+        return segments;
+    };
+    const validatePath = (path) => {
+        if (path.some((part) => ['__proto__', 'prototype', 'constructor'].includes(part))) {
             throw new Error('Unsafe SuperJSON path');
         }
-        return segments;
     };
     const getNthKey = (value, index) => {
         if (index > value.size) {
@@ -49,6 +48,7 @@
         return keys.next().value;
     };
     const getDeep = (object, path) => {
+        validatePath(path);
         let value = object;
         for (let index = 0; index < path.length; index += 1) {
             const key = path[index];
@@ -66,6 +66,7 @@
         return value;
     };
     const setDeep = (object, path, mapper) => {
+        validatePath(path);
         if (path.length === 0) {
             return mapper(object);
         }
@@ -137,6 +138,7 @@
             throw new Error(`Unknown transformation: ${type}`);
         }
         switch (type) {
+            case undefined:
             case 'undefined':
                 return undefined;
             case 'bigint':

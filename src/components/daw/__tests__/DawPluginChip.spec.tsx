@@ -16,6 +16,18 @@ describe('DawPluginChip', () => {
         expect(onClick).toHaveBeenCalled();
     });
 
+    it('lets a caller foreground replace the active tone foreground', () => {
+        render(
+            <DawPluginChip active tone="amber" className="text-surface-raised">
+                Overridden
+            </DawPluginChip>
+        );
+
+        const chip = screen.getByRole('button', { name: 'Overridden' });
+        expect(chip).toHaveClass('text-surface-raised');
+        expect(chip).not.toHaveClass('text-[var(--color-accent-amber)]');
+    });
+
     it('uses theme-aware surface and foreground roles for an active neutral chip', () => {
         render(<DawPluginChip active>Enabled</DawPluginChip>);
 

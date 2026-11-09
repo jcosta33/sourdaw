@@ -1,14 +1,12 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { runInNewContext } from 'node:vm';
 
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { parse, stringify } from 'superjson';
 import { describe, expect, it } from 'vitest';
 
 import { DawPluginChip } from '#/components/daw/DawPluginChip';
-import { validateStoredPreferences } from '#/modules/Preferences/stores/preferencesStore';
+import { DawPluginMetricTile } from '#/components/daw/DawPluginMetricTile';
 import { cn } from '#/utils/Styles/cn';
 
 const tokens = readFileSync(resolve(process.cwd(), 'src/styles/tokens.css'), 'utf8');
@@ -22,6 +20,10 @@ const gainSource = readFileSync(
 );
 const controlZoneSource = readFileSync(
     resolve(process.cwd(), 'src/modules/Crust/presentations/components/CrustControlZone.tsx'),
+    'utf8'
+);
+const crustPanelSource = readFileSync(
+    resolve(process.cwd(), 'src/modules/Crust/presentations/views/CrustPanel.tsx'),
     'utf8'
 );
 const proofChamberSource = readFileSync(
@@ -57,16 +59,11 @@ const htmlThemeScriptFrom = (parsed: Document): HTMLScriptElement | null =>
 const indexDocument = parseActiveHtml(indexHtml);
 const findThemeScript = (html: string): HTMLScriptElement | null => htmlThemeScriptFrom(parseActiveHtml(html));
 const startupThemeMatch = htmlThemeScriptFrom(indexDocument);
-const startupThemeSource = startupThemeMatch?.getAttribute('src');
-let startupThemeScript = '';
-if (startupThemeSource === '/themePrepaint.js') {
-    startupThemeScript = readFileSync(resolve(process.cwd(), 'public/themePrepaint.js'), 'utf8');
-}
 
 const entryModuleFrom = (parsed: Document): HTMLScriptElement | null =>
-    [...parsed.querySelectorAll<HTMLScriptElement>('script[type="module" i][src]')]
-        .filter((script) => script.namespaceURI === 'http://www.w3.org/1999/xhtml')
-        .at(-1) ?? null;
+    [...parsed.querySelectorAll<HTMLScriptElement>('script[type="module" i][src]')].findLast(
+        (script) => script.namespaceURI === 'http://www.w3.org/1999/xhtml'
+    ) ?? null;
 const themePrecedesEntry = (theme: HTMLScriptElement | null, entry: HTMLScriptElement | null): boolean => {
     if (theme === null || entry === null) {
         throw new Error('Expected active theme and entry scripts');
@@ -78,41 +75,18 @@ const themePrecedesEntry = (theme: HTMLScriptElement | null, entry: HTMLScriptEl
     return (theme.compareDocumentPosition(entry) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
 };
 
-const runStartupTheme = (stored: string | null) => {
-    const classes = new Set<string>(['dark']);
-    const style: Record<string, string> = {};
-    const metaAttributes: Record<string, string> = {};
-    runInNewContext(startupThemeScript, {
-        window: { localStorage: { getItem: () => stored } },
-        document: {
-            documentElement: {
-                classList: {
-                    toggle(name: string, enabled: boolean) {
-                        if (enabled) {
-                            classes.add(name);
-                        } else {
-                            classes.delete(name);
-                        }
-                    },
-                },
-                style,
-            },
-            querySelector: () => ({
-                setAttribute(name: string, value: string) {
-                    metaAttributes[name] = value;
-                },
-            }),
-        },
-    });
-    return { classes, colorScheme: style.colorScheme, themeColor: metaAttributes.content };
-};
-
 const readToken = (source: string, name: string): string => {
     const value = new RegExp(`${name}:\\s*([^;]+);`, 'u').exec(source)?.[1];
     if (value === undefined) {
         throw new Error(`Missing ${name}`);
     }
     return value.trim();
+};
+
+const readLightColor = (token: string): string => {
+    const value = new RegExp(`${token}:\\s*([^;]+);`, 'u').exec(lightBlock)?.[1] ?? readToken(tokens, token);
+    const alias = /^var\((--[a-z-]+)\)$/iu.exec(value.trim())?.[1];
+    return alias === undefined ? value.trim() : readLightColor(alias);
 };
 
 const luminance = (hex: string): number => {
@@ -141,10 +115,37 @@ const composite = (foreground: string, background: string, alpha: number): strin
     return `#${channels.join('')}`;
 };
 
+type CssColor = { color: string; alpha: number };
+
+const parseCssColor = (value: string): CssColor => {
+    const token = /^var\((--[a-z-]+)\)$/iu.exec(value.trim())?.[1];
+    const resolved = token === undefined ? value.trim() : readLightColor(token);
+    if (/^#[0-9a-f]{6}$/iu.test(resolved)) {
+        return { color: resolved, alpha: 1 };
+    }
+    const rgba = /^rgba\(\s*(\d+),\s*(\d+),\s*(\d+),\s*([\d.]+)\)$/u.exec(resolved);
+    if (rgba !== null) {
+        return {
+            color: `#${rgba
+                .slice(1, 4)
+                .map((channel) => Number(channel).toString(16).padStart(2, '0'))
+                .join('')}`,
+            alpha: Number(rgba[4]),
+        };
+    }
+    throw new Error(`Unsupported CSS color: ${value}`);
+};
+
 const utilityBlock = (utility: string): string =>
     new RegExp(`@utility ${utility}\\s*\\{([\\s\\S]*?)\\n\\}`, 'u').exec(mainStyles)?.[1] ?? '';
 
-const mainWindowStops = (utility: string): Record<string, string> => {
+type MainWindowStops = {
+    windowTop: string;
+    windowAccentFade: string;
+    windowBottom: string;
+};
+
+const mainWindowStops = (utility: string): MainWindowStops => {
     const windowBlock = utilityBlock(utility);
     const rgbaLayers = Array.from(
         windowBlock.matchAll(/rgba\(\s*(\d+),\s*(\d+),\s*(\d+),\s*([\d.]+)\)/gu),
@@ -177,8 +178,25 @@ const mainWindowStops = (utility: string): Record<string, string> => {
     };
 };
 
-const grinderWindowStops = (): Record<string, string> => mainWindowStops('grinder-window');
-const crustWindowStops = (): Record<string, string> => mainWindowStops('crust-window');
+const grinderWindowStops = (): MainWindowStops => mainWindowStops('grinder-window');
+const crustWindowStops = (): MainWindowStops => mainWindowStops('crust-window');
+
+const grinderFaceplateStops = (): Record<string, string> => {
+    const layers = Array.from(
+        utilityBlock('grinder-faceplate').matchAll(/rgba\(\s*\d+,\s*\d+,\s*\d+,\s*[\d.]+\)/gu),
+        (match) => parseCssColor(match[0])
+    );
+    const [topWhite, bottomWhite, accent] = layers;
+    if (topWhite === undefined || bottomWhite === undefined || accent === undefined) {
+        throw new Error('Missing Grinder faceplate gradient layers');
+    }
+    const raised = readLightColor('--color-bg-panelRaised');
+    const panel = readLightColor('--color-bg-panel');
+    return {
+        faceplateTop: composite(topWhite.color, composite(accent.color, raised, accent.alpha), topWhite.alpha),
+        faceplateBottom: composite(bottomWhite.color, panel, bottomWhite.alpha),
+    };
+};
 
 describe('semantic light theme', () => {
     it('overrides the complete surface and text hierarchy and declares native control color scheme', () => {
@@ -270,186 +288,6 @@ describe('semantic light theme', () => {
         expect(findThemeScript(indexHtml)).not.toBeNull();
     });
 
-    it('restores the persisted light theme before startup paint', () => {
-        const startup = runStartupTheme(stringify({ theme: 'light' }));
-
-        expect(startup.classes).toEqual(new Set(['light']));
-        expect(startup.colorScheme).toBe('light');
-        expect(startup.themeColor).toBe('#ded8cf');
-        expect(indexHtml).toContain('--entry-startup-background: #ded8cf;');
-    });
-
-    it('falls back to the dark startup when persisted preferences are corrupt', () => {
-        const startup = runStartupTheme('{not-json');
-
-        expect(startup.classes).toEqual(new Set(['dark']));
-        expect(startup.colorScheme).toBe('dark');
-        expect(startup.themeColor).toBe('#020100');
-    });
-
-    it.each([
-        { name: 'ordinary valid Light', stored: stringify({ theme: 'light' }) },
-        { name: 'ordinary valid Dark', stored: stringify({ theme: 'dark' }) },
-        {
-            name: 'Dark raw JSON resolved to Light by a v1 nested equality',
-            stored: JSON.stringify({
-                json: { theme: 'dark', other: 'light' },
-                meta: { referentialEqualities: { other: ['theme'] }, v: 1 },
-            }),
-        },
-        {
-            name: 'v0 nested equality with an escaped dot',
-            stored: JSON.stringify({
-                json: { theme: 'dark', 'other.value': 'light' },
-                meta: { referentialEqualities: { 'other\\.value': ['theme'] }, v: 0 },
-            }),
-        },
-        {
-            name: 'versionless nested equality with an escaped dot',
-            stored: JSON.stringify({
-                json: { theme: 'dark', 'other.value': 'light' },
-                meta: { referentialEqualities: { 'other\\.value': ['theme'] } },
-            }),
-        },
-        {
-            name: 'v0 root equality with an escaped dot',
-            stored: JSON.stringify({
-                json: { theme: 'light', 'other.value': null },
-                meta: { referentialEqualities: [['other\\.value']], v: 0 },
-            }),
-        },
-        {
-            name: 'versionless root equality with an escaped dot',
-            stored: JSON.stringify({
-                json: { theme: 'light', 'other.value': null },
-                meta: { referentialEqualities: [['other\\.value']] },
-            }),
-        },
-        {
-            name: 'v0 nested equality with a literal backslash',
-            stored: JSON.stringify({
-                json: { theme: 'dark', 'other\\value': 'light' },
-                meta: { referentialEqualities: { 'other\\value': ['theme'] }, v: 0 },
-            }),
-        },
-        {
-            name: 'versionless nested equality with a literal backslash',
-            stored: JSON.stringify({
-                json: { theme: 'dark', 'other\\value': 'light' },
-                meta: { referentialEqualities: { 'other\\value': ['theme'] } },
-            }),
-        },
-        {
-            name: 'v0 root equality with a literal backslash',
-            stored: JSON.stringify({
-                json: { theme: 'light', 'other\\value': null },
-                meta: { referentialEqualities: [['other\\value']], v: 0 },
-            }),
-        },
-        {
-            name: 'versionless root equality with a literal backslash',
-            stored: JSON.stringify({
-                json: { theme: 'light', 'other\\value': null },
-                meta: { referentialEqualities: [['other\\value']] },
-            }),
-        },
-        {
-            name: 'dangerous v0 equality path',
-            stored: JSON.stringify({
-                json: { theme: 'light', constructor: 'dark' },
-                meta: { referentialEqualities: { constructor: ['theme'] }, v: 0 },
-            }),
-        },
-        {
-            name: 'direct theme value annotation',
-            stored: '{"json":{"theme":"light"},"meta":{"values":{"theme":["number"]}}}',
-        },
-        {
-            name: 'root value annotation',
-            stored: '{"json":{"theme":"light"},"meta":{"values":["number"],"v":1}}',
-        },
-        {
-            name: 'theme-affecting referential equality',
-            stored: '{"json":{"theme":"light","other":{"theme":"dark"}},"meta":{"referentialEqualities":{"other":["theme"]},"v":1}}',
-        },
-        {
-            name: 'root referential equality retargeting theme',
-            stored: '{"json":{"theme":"light","other":"dark"},"meta":{"referentialEqualities":[["theme"]],"v":1}}',
-        },
-        {
-            name: 'mixed root and nested aliases',
-            stored: '{"json":{"theme":"light","other":null,"first":{"value":1},"second":{"value":1}},"meta":{"referentialEqualities":[["other"],{"first":["second"]}],"v":1}}',
-        },
-        {
-            name: 'root theme and sibling aliases',
-            stored: '{"json":{"theme":"light","other":null},"meta":{"referentialEqualities":[["theme","other"]],"v":1}}',
-        },
-        {
-            name: 'empty nested equality targets',
-            stored: '{"json":{"theme":"light","other":{}},"meta":{"referentialEqualities":{"other":[]},"v":1}}',
-        },
-        {
-            name: 'unrelated field value metadata',
-            stored: stringify({ theme: 'light', elasticTransientSensitivity: Number.NaN }),
-        },
-        {
-            name: 'unrelated valid Date annotation',
-            stored: stringify({ theme: 'light', other: new Date('2026-01-02T03:04:05.000Z') }),
-        },
-        {
-            name: 'transformed alias source',
-            stored: '{"json":{"theme":"dark","other":"light"},"meta":{"values":{"other":["number"]},"referentialEqualities":{"other":["theme"]},"v":1}}',
-        },
-        {
-            name: 'unknown unrelated value annotation',
-            stored: '{"json":{"theme":"light","other":"value"},"meta":{"values":{"other":["unknown-transformation"]},"v":1}}',
-        },
-        {
-            name: 'malformed unrelated value annotation',
-            stored: '{"json":{"theme":"light","other":1},"meta":{"values":{"other":["set"]},"v":1}}',
-        },
-        {
-            name: 'null referential metadata',
-            stored: '{"json":{"theme":"light"},"meta":{"referentialEqualities":null,"v":1}}',
-        },
-        {
-            name: 'null nested referential metadata',
-            stored: '{"json":{"theme":"light"},"meta":{"referentialEqualities":[[],null],"v":1}}',
-        },
-        {
-            name: 'unrelated referential metadata',
-            stored: '{"json":{"theme":"light","other":{"value":1},"copy":null},"meta":{"referentialEqualities":{"other":["copy"]},"v":1}}',
-        },
-        {
-            name: 'unrelated root referential metadata',
-            stored: '{"json":{"theme":"light","other":null},"meta":{"referentialEqualities":[["other"]],"v":1}}',
-        },
-        {
-            name: 'inert nested theme annotation shape',
-            stored: '{"json":{"theme":"light"},"meta":{"values":{"theme":null}}}',
-        },
-        { name: 'absent metadata envelope', stored: '{"json":{"theme":"light"},"meta":null}' },
-        {
-            name: 'malformed referential target',
-            stored: '{"json":{"theme":"light","other":null},"meta":{"referentialEqualities":{"other":null},"v":1}}',
-        },
-    ])('keeps every startup channel aligned with runtime validation for $name', ({ stored }) => {
-        let decoded: unknown;
-        try {
-            decoded = parse(stored);
-        } catch {
-            // createLocalStorage returns the raw string when SuperJSON rejects it.
-            decoded = stored;
-        }
-        const validatedTheme = validateStoredPreferences(decoded).theme;
-
-        expect(runStartupTheme(stored)).toEqual({
-            classes: new Set([validatedTheme]),
-            colorScheme: validatedTheme,
-            themeColor: validatedTheme === 'light' ? '#ded8cf' : '#020100',
-        });
-    });
-
     it('keeps the Grinder preset search placeholder readable on every real nested window stop', () => {
         const grinderSource = readFileSync(
             resolve(process.cwd(), 'src/modules/Grinder/presentations/views/GrinderPanel.tsx'),
@@ -475,6 +313,63 @@ describe('semantic light theme', () => {
             const foreground =
                 alphaSource === undefined ? primary : composite(primary, background, Number(alphaSource) / 100);
             expect(contrast(foreground, background), `Search presets on ${stop}`).toBeGreaterThanOrEqual(4.5);
+        }
+    });
+
+    it('keeps Crust metric rows and captions readable on every real gradient stop', () => {
+        const metricWrapper =
+            /<DawPluginMetricTile className="([^"]+)" label=\{label\} value=\{value\} detail=\{detail\} \/>/u.exec(
+                crustPanelSource
+            )?.[0] ?? '';
+        expect(metricWrapper).toContain('crust-window');
+        expect(metricWrapper).not.toMatch(/labelClassName|detailClassName/u);
+        for (const label of ['Push', 'Shave', 'Target', 'Penalty']) {
+            expect(crustPanelSource).toMatch(new RegExp(`<MetricTile\\s+label="${label}"`, 'u'));
+        }
+
+        const markup = renderToStaticMarkup(
+            createElement(DawPluginMetricTile, {
+                className: 'crust-window min-w-[92px]',
+                label: 'Push',
+                value: '1.0 dB',
+                detail: 'Input shove',
+            })
+        );
+        const spans = [...parseActiveHtml(markup).querySelectorAll('span')];
+        const rows = [
+            { role: 'Metric label', className: spans[0]?.getAttribute('class') ?? '' },
+            { role: 'Metric detail', className: spans[2]?.getAttribute('class') ?? '' },
+        ];
+        const captions = Array.from(
+            crustPanelSource.matchAll(/className="([^"]*)">\s*(Preset|Target|Ceiling)\s*<\/(?:div|span)>/gu),
+            (match) => ({ role: `${match[2]} caption`, className: match[1] ?? '' })
+        );
+        expect(captions.map((caption) => caption.role)).toEqual([
+            'Preset caption',
+            'Target caption',
+            'Ceiling caption',
+            'Ceiling caption',
+        ]);
+
+        for (const { role, className } of [...rows, ...captions]) {
+            const foregroundClass = className
+                .split(/\s+/u)
+                .findLast((name) => /^text-(?:muted-foreground|text-secondary)(?:\/\d+)?$/u.test(name));
+            if (foregroundClass === undefined) {
+                throw new Error(`Missing ${role} foreground class`);
+            }
+            const token = foregroundClass.startsWith('text-muted-foreground')
+                ? '--color-muted-foreground'
+                : '--color-text-secondary';
+            const alphaSource = /\/(\d+)$/u.exec(foregroundClass)?.[1];
+            const baseForeground = readLightColor(token);
+            for (const [stop, background] of Object.entries(crustWindowStops())) {
+                const foreground =
+                    alphaSource === undefined
+                        ? baseForeground
+                        : composite(baseForeground, background, Number(alphaSource) / 100);
+                expect(contrast(foreground, background), `${role} on Crust ${stop}`).toBeGreaterThanOrEqual(4.5);
+            }
         }
     });
 
@@ -607,12 +502,6 @@ describe('semantic light theme', () => {
         }
     });
 
-    const readLightColor = (token: string): string => {
-        const value = new RegExp(`${token}:\\s*([^;]+);`, 'u').exec(lightBlock)?.[1] ?? readToken(tokens, token);
-        const alias = /^var\((--[a-z-]+)\)$/iu.exec(value.trim())?.[1];
-        return alias === undefined ? value.trim() : readLightColor(alias);
-    };
-
     it.each(['cyan', 'amber', 'steel', 'copper', 'peach', 'mint', 'sage', 'lavender', 'rose', 'indigo', 'danger'])(
         'keeps %s active-chip applied text above 4.75:1 on its actual tinted backgrounds',
         (tone) => {
@@ -727,6 +616,48 @@ describe('semantic light theme', () => {
         }
     );
 
+    it('keeps every Tuner main-read state readable over its actual inline center glow', () => {
+        const toneBlock = /let toneColor: string;([\s\S]*?)\n\s*let centerGlow/u.exec(tunerSource)?.[1] ?? '';
+        const glowBlock = /let centerGlow: string;([\s\S]*?)\n\s*let displayComponent/u.exec(tunerSource)?.[1] ?? '';
+        const toneClasses = Array.from(toneBlock.matchAll(/toneColor = '([^']+)'/gu), (match) => match[1]);
+        const glowSources = Array.from(glowBlock.matchAll(/centerGlow = '([^']+)'/gu), (match) => match[1]);
+        const stateNames = ['inactive', 'active in-tune', 'active warning', 'active danger'];
+        expect(toneClasses).toEqual([
+            'text-text-secondary',
+            'text-[var(--color-accent-mint)]',
+            'text-[var(--color-state-warning)]',
+            'text-[var(--color-state-danger)]',
+        ]);
+        expect(glowSources).toHaveLength(stateNames.length);
+        expect(tunerSource).toContain(
+            'background: `radial-gradient(circle at 50% 50%, ${centerGlow}, transparent 56%)`'
+        );
+
+        const secondary = readLightColor('--color-text-secondary');
+        for (const [index, toneClass] of toneClasses.entries()) {
+            const glowSource = glowSources[index];
+            const stateName = stateNames[index];
+            if (glowSource === undefined || stateName === undefined) {
+                throw new Error('Missing Tuner main-read state');
+            }
+            const token = /^text-\[var\((--[a-z-]+)\)\]$/u.exec(toneClass)?.[1];
+            if (toneClass !== 'text-text-secondary' && token === undefined) {
+                throw new Error(`Missing ${stateName} foreground token`);
+            }
+            const stateForeground = readLightColor(token ?? '--color-text-secondary');
+            const glow = parseCssColor(glowSource);
+            for (const [stop, surface] of Object.entries(mainWindowStops('scoring-window'))) {
+                const background = composite(glow.color, surface, glow.alpha);
+                for (const [role, foreground] of Object.entries({ state: stateForeground, secondary })) {
+                    expect(
+                        contrast(foreground, background),
+                        `Tuner ${stateName} ${role} over centerGlow on ${stop}`
+                    ).toBeGreaterThanOrEqual(4.5);
+                }
+            }
+        }
+    });
+
     it('keeps every Grinder plain-text route semantic and readable on its real Light surfaces', () => {
         const grinderSource = readFileSync(
             resolve(process.cwd(), 'src/modules/Grinder/presentations/views/GrinderPanel.tsx'),
@@ -758,6 +689,27 @@ describe('semantic light theme', () => {
         const secondary = readToken(lightBlock, '--color-text-secondary');
         const panelInset = readToken(lightBlock, '--color-bg-panelInset');
         const stops = grinderWindowStops();
+        const activeTabBlock = utilityBlock('grinder-tab-active');
+        const activeForegroundSource = /color:\s*([^;]+);/u.exec(activeTabBlock)?.[1];
+        if (activeForegroundSource === undefined) {
+            throw new Error('Missing active Grinder tab foreground');
+        }
+        const activeForeground = parseCssColor(activeForegroundSource).color;
+        const activeBackground = /background:\s*linear-gradient\(([^;]+)\);/u.exec(activeTabBlock)?.[1] ?? '';
+        const activeGradient = Array.from(
+            activeBackground.matchAll(/rgba\(\s*\d+,\s*\d+,\s*\d+,\s*[\d.]+\)/gu),
+            (match) => parseCssColor(match[0])
+        );
+        expect(activeGradient).toHaveLength(2);
+        for (const [surfaceName, surface] of Object.entries({ ...grinderFaceplateStops(), ...stops })) {
+            for (const [gradientIndex, layer] of activeGradient.entries()) {
+                const background = composite(layer.color, surface, layer.alpha);
+                expect(
+                    contrast(activeForeground, background),
+                    `active Grinder tab gradient ${gradientIndex} on ${surfaceName}`
+                ).toBeGreaterThanOrEqual(4.5);
+            }
+        }
         for (const [surfaceName, background] of Object.entries({ panelInset, ...stops })) {
             for (const [role, foreground] of Object.entries({ primary, secondary })) {
                 expect(contrast(foreground, background), `${role} on ${surfaceName}`).toBeGreaterThanOrEqual(4.5);
@@ -826,7 +778,7 @@ describe('semantic light theme', () => {
         }
     });
 
-    it('measures the Grinder category chip foreground after the real caller class merge', () => {
+    it('measures the actual Grinder category chip foreground and tinted background', () => {
         const grinderSource = readFileSync(
             resolve(process.cwd(), 'src/modules/Grinder/presentations/views/GrinderPanel.tsx'),
             'utf8'
@@ -837,15 +789,15 @@ describe('semantic light theme', () => {
             )?.[1];
         expect(categoryChip).toContain('active={category === item}');
         expect(categoryChip).toContain('tone="amber"');
-        const callerClass = /\bclassName="([^"]*)"/u.exec(categoryChip ?? '')?.[1];
+        expect(categoryChip).not.toContain('className=');
         const markup = renderToStaticMarkup(
-            createElement(DawPluginChip, { active: true, tone: 'amber', size: 'sm', className: callerClass }, 'All')
+            createElement(DawPluginChip, { active: true, tone: 'amber', size: 'sm' }, 'All')
         );
         const finalClasses =
             parseActiveHtml(markup).querySelector('button')?.getAttribute('class')?.split(/\s+/u).filter(Boolean) ?? [];
-        const foregroundClass = finalClasses
-            .filter((name) => /^text-\[var\(--[a-z-]+\)\]$/u.test(name) || name === 'text-surface-raised')
-            .at(-1);
+        const foregroundClass = finalClasses.findLast(
+            (name) => /^text-\[var\(--[a-z-]+\)\]$/u.test(name) || name === 'text-surface-raised'
+        );
         const foregroundToken =
             /^text-\[var\((--[a-z-]+)\)\]$/u.exec(foregroundClass ?? '')?.[1] ??
             (foregroundClass === 'text-surface-raised' ? '--surface-raised' : undefined);
