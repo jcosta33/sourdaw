@@ -1,0 +1,21 @@
+src/modules/TimelineEditor/presentations/helpers/__tests__/automationDrag.spec.tsx
+  s_977061c47f01dd::t_efa0b3e7a1b10c 513-514,521
+tests/e2e/automationPointNeighborIdentity.spec.ts
+  s_977061c47f01dd::t_efa0b3e7a1b10c 128-136,170,175,178,228-236,238-242
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "48362ac29dfe73e3addd80356e75b0d598649493",
+  "prompts": {},
+  "sessions": {
+    "s_977061c47f01dd": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b34d-123d-7452-a6e7-60608388b6d7",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
