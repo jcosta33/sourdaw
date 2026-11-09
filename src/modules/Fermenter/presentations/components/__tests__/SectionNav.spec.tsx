@@ -39,6 +39,18 @@ describe('SectionNav', () => {
                 `bg-[var(--color-accent-${accents[section]})]`,
                 'text-white'
             );
+            // Every other tab must keep its inactive styling: the accent is the
+            // selected-state signal, so an always-accent regression turns every
+            // tab visually active.
+            for (const [otherSection, otherLabel] of SECTION_LABELS) {
+                if (otherSection === section) {
+                    continue;
+                }
+                const unselected = screen.getByRole('tab', { name: otherLabel });
+                expect(unselected).not.toHaveClass(`bg-[var(--color-accent-${accents[section]})]`);
+                expect(unselected).not.toHaveClass('text-white');
+                expect(unselected).toHaveClass('text-muted-foreground');
+            }
             unmount();
         }
     });

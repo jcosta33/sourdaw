@@ -19,6 +19,25 @@ import { duplicateArrangement } from '../../useCases/arrangement/duplicateArrang
 import { renameArrangement } from '../../useCases/arrangement/renameArrangement';
 import { switchArrangement } from '../../useCases/arrangement/switchArrangement';
 
+const MENU_ARROW_STEPS: Record<string, number> = {
+    ArrowDown: 1,
+    ArrowUp: -1,
+};
+
+const menuFocusIndexForKey = (key: string, currentIndex: number, count: number): number | undefined => {
+    if (key === 'Home') {
+        return 0;
+    }
+    if (key === 'End') {
+        return count - 1;
+    }
+    const step = MENU_ARROW_STEPS[key];
+    if (step === undefined) {
+        return undefined;
+    }
+    return (currentIndex + step + count) % count;
+};
+
 export const ArrangementSelector = (): ReactElement | null => {
     const [open, setOpen] = useState(false);
     const [editingId, setEditingId] = useState<string | null>(null);
@@ -45,6 +64,33 @@ export const ArrangementSelector = (): ReactElement | null => {
     }
 
     const currentArrangement = state.arrangements.find((alpha) => alpha.id === state.activeArrangementId);
+
+    // Roving tab stop: the checked row is tabbable, arrows move focus.
+    const tabStopId = state.arrangements.some((arr) => arr.id === state.activeArrangementId)
+        ? state.activeArrangementId
+        : state.arrangements[0]?.id;
+
+    // WAI-ARIA menu radio pattern with manual activation: arrows, Home and End
+    // move focus only, and Enter or Space on the row switches. Arrowing across
+    // the menu must not switch the arrangement under the musician.
+    const handleMenuKeyDown = (event: React.KeyboardEvent<HTMLDivElement>): void => {
+        if (event.altKey || event.ctrlKey || event.metaKey) {
+            return;
+        }
+        const radios = Array.from(event.currentTarget.querySelectorAll<HTMLElement>('[role="menuitemradio"]'));
+        const currentIndex = radios.findIndex((radio) => radio === event.target);
+        if (currentIndex === -1) {
+            return;
+        }
+        const nextIndex = menuFocusIndexForKey(event.key, currentIndex, radios.length);
+        if (nextIndex === undefined) {
+            return;
+        }
+        event.preventDefault();
+        // The global shortcut layer would otherwise read Home and End as playhead seeks.
+        event.stopPropagation();
+        radios[nextIndex]?.focus();
+    };
 
     const handleCreate = () => {
         createArrangement(`Arrangement ${state.arrangements.length + 1}`);
@@ -123,95 +169,97 @@ export const ArrangementSelector = (): ReactElement | null => {
                         <span>Arrangements</span>
                     </DawMenuSectionLabel>
 
-                    <div className="max-h-[300px] overflow-y-auto py-1">
+                    <div className="max-h-[300px] overflow-y-auto py-1" onKeyDown={handleMenuKeyDown}>
                         {state.arrangements.map((arr) => {
                             const isActive = arr.id === state.activeArrangementId;
                             const isEditing = editingId === arr.id;
 
                             return (
-                                <div
-                                    key={arr.id}
-                                    role="menuitemradio"
-                                    aria-checked={isActive}
-                                    tabIndex={isEditing ? -1 : 0}
-                                    className={cn(
-                                        'group mx-1 rounded-sm px-2 py-1 cursor-pointer',
-                                        isActive
-                                            ? 'bg-primary/10 text-primary font-medium'
-                                            : 'hover:bg-accent/50 text-foreground transition-colors'
-                                    )}
-                                    onClick={() => {
-                                        if (!isEditing) {
-                                            handleSwitch(arr.id, arr.name);
-                                        }
-                                    }}
-                                    onKeyDown={(event) => {
-                                        // The rename action inside the row owns
-                                        // its own Enter/Space; only a key pressed
-                                        // on the row itself switches.
-                                        if (event.target !== event.currentTarget) {
-                                            return;
-                                        }
-                                        if (isEditing || (event.key !== 'Enter' && event.key !== ' ')) {
-                                            return;
-                                        }
-                                        event.preventDefault();
-                                        event.stopPropagation();
-                                        handleSwitch(arr.id, arr.name);
-                                    }}
-                                >
+                                <div key={arr.id} className="group mx-1 flex items-center gap-0.5">
                                     {isEditing ? (
-                                        <DawCompactInput
-                                            ref={inputRef}
-                                            type="text"
-                                            size="micro"
-                                            className="h-5 flex-1 min-w-0 border-primary/50 bg-background/50 px-1"
-                                            value={editName}
-                                            onChange={(event) => setEditName(event.target.value)}
-                                            onKeyDown={(event) => {
-                                                if (event.key === 'Enter') {
-                                                    handleRenameSubmit(arr.id);
-                                                }
-                                                event.stopPropagation();
-                                            }}
-                                            onBlur={() => handleRenameSubmit(arr.id)}
-                                            onClick={(event) => event.stopPropagation()}
-                                        />
+                                        <div className="min-w-0 flex-1 rounded-sm px-2 py-1">
+                                            <DawCompactInput
+                                                ref={inputRef}
+                                                type="text"
+                                                size="micro"
+                                                className="h-5 flex-1 min-w-0 border-primary/50 bg-background/50 px-1"
+                                                value={editName}
+                                                onChange={(event) => setEditName(event.target.value)}
+                                                onKeyDown={(event) => {
+                                                    if (event.key === 'Enter') {
+                                                        handleRenameSubmit(arr.id);
+                                                    }
+                                                    event.stopPropagation();
+                                                }}
+                                                onBlur={() => handleRenameSubmit(arr.id)}
+                                                onClick={(event) => event.stopPropagation()}
+                                            />
+                                        </div>
                                     ) : (
-                                        <DawPickerRow
-                                            heading={arr.name}
-                                            active={isActive}
-                                            compact
-                                            className={cn(
-                                                'flex-1 border-0 bg-transparent px-0 py-0',
-                                                isActive ? 'hover:bg-transparent' : ''
-                                            )}
-                                            startSlot={
-                                                <div className="w-4">
-                                                    {isActive ? <Check className="size-3" /> : null}
-                                                </div>
-                                            }
-                                            endSlot={
-                                                <Button
-                                                    variant="bare"
-                                                    size="bare"
-                                                    type="button"
-                                                    aria-label={`Rename ${arr.name}`}
+                                        <>
+                                            <div
+                                                role="menuitemradio"
+                                                aria-checked={isActive}
+                                                tabIndex={arr.id === tabStopId ? 0 : -1}
+                                                className={cn(
+                                                    'min-w-0 flex-1 rounded-sm px-2 py-1 cursor-pointer',
+                                                    isActive
+                                                        ? 'bg-primary/10 text-primary font-medium'
+                                                        : 'hover:bg-accent/50 text-foreground transition-colors'
+                                                )}
+                                                onClick={() => {
+                                                    handleSwitch(arr.id, arr.name);
+                                                }}
+                                                onKeyDown={(event) => {
+                                                    // Only a key pressed on the row itself switches;
+                                                    // arrows are the menu container's focus movement.
+                                                    if (event.target !== event.currentTarget) {
+                                                        return;
+                                                    }
+                                                    if (event.key !== 'Enter' && event.key !== ' ') {
+                                                        return;
+                                                    }
+                                                    event.preventDefault();
+                                                    event.stopPropagation();
+                                                    handleSwitch(arr.id, arr.name);
+                                                }}
+                                            >
+                                                <DawPickerRow
+                                                    heading={arr.name}
+                                                    active={isActive}
+                                                    compact
                                                     className={cn(
-                                                        'rounded p-0.5 transition-all hover:bg-background/80',
-                                                        isActive ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+                                                        'flex-1 border-0 bg-transparent px-0 py-0',
+                                                        isActive ? 'hover:bg-transparent' : ''
                                                     )}
-                                                    onClick={(event) => {
-                                                        event.stopPropagation();
-                                                        setEditName(arr.name);
-                                                        setEditingId(arr.id);
-                                                    }}
-                                                >
-                                                    <Edit2 className="size-3" />
-                                                </Button>
-                                            }
-                                            title={arr.name}
-                                        />
+                                                    startSlot={
+                                                        <div className="w-4">
+                                                            {isActive ? <Check className="size-3" /> : null}
+                                                        </div>
+                                                    }
+                                                    title={arr.name}
+                                                />
+                                            </div>
+                                            <Button
+                                                variant="bare"
+                                                size="bare"
+                                                type="button"
+                                                aria-label={`Rename ${arr.name}`}
+                                                className={cn(
+                                                    'rounded p-0.5 transition-all hover:bg-background/80',
+                                                    isActive
+                                                        ? 'opacity-100'
+                                                        : 'opacity-0 group-hover:opacity-100 focus-visible:opacity-100'
+                                                )}
+                                                onClick={(event) => {
+                                                    event.stopPropagation();
+                                                    setEditName(arr.name);
+                                                    setEditingId(arr.id);
+                                                }}
+                                            >
+                                                <Edit2 className="size-3" />
+                                            </Button>
+                                        </>
                                     )}
                                 </div>
                             );

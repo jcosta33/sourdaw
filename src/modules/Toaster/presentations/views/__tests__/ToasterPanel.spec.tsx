@@ -97,6 +97,19 @@ describe('ToasterPanel', () => {
         expect(buttons.length).toBeGreaterThanOrEqual(0);
     });
 
+    it('keeps Toast a one-shot peach action without pressed state', () => {
+        render(<ToasterPanel deviceId="toaster-test" />);
+        fireEvent.change(screen.getByRole('combobox', { name: 'Toaster view' }), { target: { value: 'full' } });
+
+        const toast = screen.getByRole('button', { name: /^Toast$/ });
+        expect(toast).not.toHaveAttribute('aria-pressed');
+        expect(toast).toHaveClass(
+            'border-[var(--color-accent-peach)]/60',
+            'bg-[var(--color-accent-peach)]/12',
+            'text-[var(--color-accent-peach)]'
+        );
+    });
+
     it('tells the musician Play is session-only and To timeline is what export/native playback sees', () => {
         render(<ToasterPanel deviceId="toaster-test" />);
         fireEvent.change(screen.getByRole('combobox', { name: 'Toaster view' }), { target: { value: 'full' } });
