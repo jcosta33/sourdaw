@@ -1,7 +1,8 @@
 import { cpus, platform, release } from 'node:os';
 
-import { expect, test, type Page, type TestInfo } from '@playwright/test';
+import { type Page, type TestInfo } from '@playwright/test';
 
+import { expect, test } from './e2eTest';
 import { launch_new_project, setupWorkspace, wait_for_workspace_ready } from './e2eUtils';
 
 const RATE = 48_000;
@@ -263,7 +264,7 @@ test('120-second stereo Detect includes cold Worker, copy and atomic commit with
     expect(after.raw).toEqual(after.projected);
     expect(after.projected).toHaveLength(ATTACKS.length);
     for (const [index, marker] of after.projected.entries())
-        expect(Math.abs(marker.originalBeat / 2 - ATTACKS[index]!)).toBeLessThan(0.04);
+        expect(Math.abs(marker.originalBeat / 2 - ATTACKS[index])).toBeLessThan(0.04);
     expect(commit).toHaveLength(1);
     expect(copy.length).toBeGreaterThan(1);
     expect(gaps.length).toBeGreaterThan(1);
@@ -645,7 +646,7 @@ async function assertPopulatedMeasurement(
     const onsets = after.projected.filter((marker) => marker.origin === 'transient-auto');
     expect(onsets).toHaveLength(ATTACKS.length);
     for (const [index, marker] of onsets.entries())
-        expect(Math.abs(marker.originalBeat / 2 - ATTACKS[index]!)).toBeLessThan(0.04);
+        expect(Math.abs(marker.originalBeat / 2 - ATTACKS[index])).toBeLessThan(0.04);
     expect(preparedPublications).toHaveLength(1);
     expect(result.workerMaterializationWall).toHaveLength(1);
     expect(preparationTasks.some((entry) => entry.name === 'elastic-transient-change-task')).toBe(true);
