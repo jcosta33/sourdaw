@@ -164,6 +164,7 @@ const CollapsibleSection = ({
             <DawHeaderBand compact className="rounded-sm hover:bg-surface-raised/50">
                 <Row
                     as="button"
+                    type="button"
                     align="center"
                     gap={1}
                     className="w-full"
@@ -173,7 +174,7 @@ const CollapsibleSection = ({
                     <ChevronDown
                         className={`size-3 text-muted-foreground transition-transform ${open ? '' : '-rotate-90'}`}
                     />
-                    <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
+                    <span className="text-label font-medium text-muted-foreground uppercase tracking-wider">
                         {title}
                     </span>
                 </Row>
