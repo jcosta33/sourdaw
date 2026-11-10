@@ -1,0 +1,16 @@
+src/modules/CrdtDocument/workers/__tests__/prospectiveMutationWorker.spec.ts
+  h_beb54bf43b47b7 13,38-40,60-62,68-92
+src/modules/CrdtDocument/workers/prospectiveMutationWorker.ts
+  h_beb54bf43b47b7 9-17
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b0f7bfc0f3115b0098b1a6aa40469893667adf4f",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
