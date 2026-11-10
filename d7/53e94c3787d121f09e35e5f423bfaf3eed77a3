@@ -1,0 +1,24 @@
+src/infra/store/storage/__tests__/createAutomergeStorage.prospectivePreparation.spec.ts
+  h_beb54bf43b47b7 74-76,167
+src/infra/store/storage/createAutomergeStorage.ts
+  h_beb54bf43b47b7 126-131,1012-1019,1021,1027,1029-1038,1066-1068
+src/modules/Command/useCases/__tests__/commandBatchPreparedStorage.integration.spec.ts
+  h_beb54bf43b47b7 295,385-386
+src/modules/CrdtDocument/repositories/__tests__/automergeRepository.prospectiveValidation.spec.ts
+  h_beb54bf43b47b7 7,442-510
+src/modules/CrdtDocument/repositories/automergeRepository.ts
+  h_beb54bf43b47b7 49-50,62,795-798,808-814,821,863-870
+src/modules/CrdtDocument/useCases/registerCrdtStorageRuntime.ts
+  h_beb54bf43b47b7 74,92-94
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d753e94c3787d121f09e35e5f423bfaf3eed77a3",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
