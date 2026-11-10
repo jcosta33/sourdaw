@@ -78,7 +78,7 @@ export const DawSearchInput = ({
                 onChange={(event) => onChange(event.target.value)}
                 onKeyDown={handleKeyDown}
                 className={cn(
-                    'min-w-0 flex-1 bg-transparent text-foreground outline-none placeholder:text-muted-foreground/45 [&::-webkit-search-cancel-button]:hidden',
+                    'min-w-0 flex-1 bg-transparent text-foreground outline-none placeholder:text-muted-foreground [&::-webkit-search-cancel-button]:hidden',
                     SIZE_TEXT_CLASS[size],
                     inputClassName
                 )}

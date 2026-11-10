@@ -8,13 +8,12 @@ import { describe, expect, it } from 'vitest';
 
 import { DawPluginChip } from '#/components/daw/DawPluginChip';
 import { DawPluginMetricTile } from '#/components/daw/DawPluginMetricTile';
-import { cn } from '#/utils/Styles/cn';
+import { DawSearchInput } from '#/components/daw/DawSearchInput';
 
 const tokens = readFileSync(resolve(process.cwd(), 'src/styles/tokens.css'), 'utf8');
 const indexHtml = readFileSync(resolve(process.cwd(), 'index.html'), 'utf8');
 const chipSource = readFileSync(resolve(process.cwd(), 'src/components/daw/DawPluginChip.tsx'), 'utf8');
 const ledSource = readFileSync(resolve(process.cwd(), 'src/components/daw/DawPluginLed.tsx'), 'utf8');
-const searchInputSource = readFileSync(resolve(process.cwd(), 'src/components/daw/DawSearchInput.tsx'), 'utf8');
 const gainSource = readFileSync(
     resolve(process.cwd(), 'src/modules/Crust/presentations/components/CrustGainStrip.tsx'),
     'utf8'
@@ -289,6 +288,103 @@ describe('semantic light theme', () => {
         expect(findThemeScript(indexHtml)).not.toBeNull();
     });
 
+    const renderedPlaceholderClass = ({
+        variant = 'default',
+        inputClassName,
+    }: {
+        variant?: 'default' | 'ghost';
+        inputClassName?: string;
+    } = {}): string => {
+        const markup = renderToStaticMarkup(
+            createElement(DawSearchInput, { value: '', onChange: () => undefined, variant, inputClassName })
+        );
+        const input = parseActiveHtml(markup).querySelector('input');
+        if (input === null) {
+            throw new Error('Expected the real search input to render');
+        }
+        const placeholderClass = (input.getAttribute('class') ?? '')
+            .split(/\s+/u)
+            .findLast((name) => name.startsWith('placeholder:text-'));
+        if (placeholderClass === undefined) {
+            throw new Error('Missing final search placeholder foreground class');
+        }
+        return placeholderClass;
+    };
+
+    const placeholderColor = (placeholderClass: string, background: string): string => {
+        const match = /^placeholder:text-(muted-foreground|text-primary)(?:\/(\d+))?$/u.exec(placeholderClass);
+        if (match === null) {
+            throw new Error(`Unsupported search placeholder foreground: ${placeholderClass}`);
+        }
+        const token = match[1] === 'muted-foreground' ? '--color-muted-foreground' : '--color-text-primary';
+        const foreground = readLightColor(token);
+        return match[2] === undefined ? foreground : composite(foreground, background, Number(match[2]) / 100);
+    };
+
+    it('keeps the shared default search placeholder opaque and readable on its inset surface', () => {
+        const placeholderClass = renderedPlaceholderClass();
+        expect(placeholderClass).toBe('placeholder:text-muted-foreground');
+
+        const background = readLightColor('--color-bg-panelInset');
+        expect(contrast(placeholderColor(placeholderClass, background), background)).toBeGreaterThanOrEqual(4.5);
+    });
+
+    it('keeps the Browser ghost search placeholder opaque and readable on its base surface', () => {
+        const browserSource = readFileSync(
+            resolve(process.cwd(), 'src/modules/ContentBrowser/presentations/views/Sidebar.tsx'),
+            'utf8'
+        );
+        const [, headerClass = '', searchRoute = ''] =
+            /<Row\b[^>]*className="([^"]*)"[^>]*>\s*(<DawSearchInput\b[^>]*placeholder="Search library\.\.\."[^>]*\/>)/u.exec(
+                browserSource
+            ) ?? [];
+        expect(headerClass).toContain('bg-surface-base');
+        expect(headerClass).not.toContain('bg-surface-base/');
+        expect(searchRoute).toContain('variant="ghost"');
+        const routeInputClass = /\binputClassName="([^"]*)"/u.exec(searchRoute)?.[1];
+        const placeholderClass = renderedPlaceholderClass({ variant: 'ghost', inputClassName: routeInputClass });
+        expect(placeholderClass).toBe('placeholder:text-muted-foreground');
+
+        const background = readLightColor('--surface-base');
+        expect(contrast(placeholderColor(placeholderClass, background), background)).toBeGreaterThanOrEqual(4.5);
+    });
+
+    it('keeps Preferences grid group labels readable on the dialog’s actual composite surface', () => {
+        const preferencesSource = readFileSync(
+            resolve(process.cwd(), 'src/modules/Preferences/presentations/views/PreferencesDialog.tsx'),
+            'utf8'
+        );
+        const dialogSource = readFileSync(resolve(process.cwd(), 'src/components/ui/dialog.tsx'), 'utf8');
+        const preferencesSharedSource = readFileSync(
+            resolve(process.cwd(), 'src/modules/Preferences/presentations/views/preferencesShared.tsx'),
+            'utf8'
+        );
+        expect(preferencesSource).toContain('<DialogContent size="workspace">');
+        const workspaceClass = /workspace:\s*'([^']*)'/u.exec(dialogSource)?.[1] ?? '';
+        expect(workspaceClass).toContain('bg-surface-raised');
+        expect(workspaceClass).not.toContain('bg-surface-raised/');
+        const bodyClass = /<DawDialogBody\b[^>]*className="([^"]*)"/u.exec(preferencesSource)?.[1] ?? '';
+        const bodyAlphaSource = /\bbg-surface-base\/(\d+)/u.exec(bodyClass)?.[1];
+        if (bodyAlphaSource === undefined) {
+            throw new Error('Missing Preferences dialog body surface and alpha');
+        }
+        const labelClass = /<span className="([^"]*)">\{group\.label\}<\/span>/u.exec(preferencesSharedSource)?.[1];
+        const mutedClass = /\btext-muted-foreground(?:\/(\d+))?\b/u.exec(labelClass ?? '');
+        if (mutedClass === null) {
+            throw new Error('Missing Preferences grid group muted foreground');
+        }
+
+        const background = composite(
+            readLightColor('--surface-base'),
+            readLightColor('--surface-raised'),
+            Number(bodyAlphaSource) / 100
+        );
+        const muted = readLightColor('--color-muted-foreground');
+        const foreground =
+            mutedClass[1] === undefined ? muted : composite(muted, background, Number(mutedClass[1]) / 100);
+        expect(contrast(foreground, background)).toBeGreaterThanOrEqual(4.5);
+    });
+
     it('keeps the Grinder preset search placeholder readable on every real nested window stop', () => {
         const grinderSource = readFileSync(
             resolve(process.cwd(), 'src/modules/Grinder/presentations/views/GrinderPanel.tsx'),
@@ -300,19 +396,16 @@ describe('semantic light theme', () => {
         const wellAlphaSource = /bg-black\/(\d+)/u.exec(searchRoute)?.[1];
         expect(wellAlphaSource).toBeDefined();
 
-        const sharedInputClass = /className=\{cn\(\s*'([^']*placeholder:[^']*)'/u.exec(searchInputSource)?.[1] ?? '';
-        expect(sharedInputClass).toContain('placeholder:text-muted-foreground/45');
-        const routeInputClass = /\binputClassName="([^"]*)"/u.exec(searchRoute)?.[1] ?? '';
-        const effectivePlaceholderClass =
-            (cn(sharedInputClass, routeInputClass).match(/placeholder:text-[^\s]+/gu) ?? []).at(-1) ?? '';
+        const routeInputClass = /\binputClassName="([^"]*)"/u.exec(searchRoute)?.[1];
+        const effectivePlaceholderClass = renderedPlaceholderClass({
+            variant: 'ghost',
+            inputClassName: routeInputClass,
+        });
         expect(effectivePlaceholderClass).toMatch(/^placeholder:text-text-primary(?:\/\d+)?$/u);
 
-        const alphaSource = /\/(\d+)$/u.exec(effectivePlaceholderClass)?.[1];
-        const primary = readToken(lightBlock, '--color-text-primary');
         for (const [stop, windowBackground] of Object.entries(grinderWindowStops())) {
             const background = composite('#000000', windowBackground, Number(wellAlphaSource) / 100);
-            const foreground =
-                alphaSource === undefined ? primary : composite(primary, background, Number(alphaSource) / 100);
+            const foreground = placeholderColor(effectivePlaceholderClass, background);
             expect(contrast(foreground, background), `Search presets on ${stop}`).toBeGreaterThanOrEqual(4.5);
         }
     });

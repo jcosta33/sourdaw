@@ -137,7 +137,7 @@ export const GridSubdivisionSection = ({
             {GRID_GROUPS.map((group) => (
                 <Row wrap gap={1} key={group.label || 'misc'}>
                     {group.label ? (
-                        <span className="text-[9px] text-muted-foreground/60 w-12 shrink-0">{group.label}</span>
+                        <span className="text-[9px] text-muted-foreground w-12 shrink-0">{group.label}</span>
                     ) : null}
                     {group.options.map((opt) => {
                         const entry = GRID_SNAP_OPTIONS.find(

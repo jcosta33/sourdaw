@@ -35,24 +35,6 @@ vi.mock('#/components/daw/DawBlockedState', () => ({
     ),
 }));
 
-vi.mock('#/components/daw/DawEmptyState', () => ({
-    DawEmptyState: ({
-        title,
-        description,
-        action,
-    }: {
-        title: string;
-        description: string;
-        action?: React.ReactNode;
-    }) => (
-        <div data-testid="empty-state">
-            <span>{title}</span>
-            <span>{description}</span>
-            {action}
-        </div>
-    ),
-}));
-
 vi.mock('#/components/daw/DawHeaderBand', () => ({
     DawHeaderBand: ({
         children,
@@ -257,9 +239,14 @@ describe('AutomationBottomPanel', () => {
         try {
             renderSelectedTrack();
 
-            const emptyState = screen.getByTestId('empty-state');
-            expect(emptyState).toHaveTextContent('No automation lanes yet');
-            expect(emptyState.querySelector('[data-testid="add-lane-control"]')).toHaveTextContent('Volume');
+            const title = screen.getByText('No automation lanes yet');
+            const emptyState = title.closest<HTMLElement>('.daw-empty-state-surface');
+            if (emptyState === null) {
+                throw new Error('Expected the real compact empty-state surface');
+            }
+            expect(emptyState).toHaveClass('gap-1.5', 'p-4');
+            expect(title).toHaveClass('text-xs');
+            expect(within(emptyState).getByTestId('add-lane-control')).toHaveTextContent('Volume');
 
             fireEvent.click(within(emptyState).getByRole('button', { name: 'Add Volume' }));
 

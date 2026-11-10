@@ -186,6 +186,10 @@ describe('theme prepaint', () => {
             stored: '{"json":{"theme":"light","other":"dark","copy":null},"meta":{"referentialEqualities":{"other":[false]},"v":0}}',
         },
         {
+            name: 'array non-string nested equality target',
+            stored: '{"json":{"theme":"light","other":"dark","copy":null},"meta":{"referentialEqualities":{"other":[["copy"]]},"v":1}}',
+        },
+        {
             name: 'theme-affecting referential equality',
             stored: '{"json":{"theme":"light","other":{"theme":"dark"}},"meta":{"referentialEqualities":{"other":["theme"]},"v":1}}',
         },
