@@ -791,11 +791,13 @@ class AutomergeRepository {
                         consumed = true;
                         this.preparedCandidates.delete(prepared);
                         try {
-                            const slotsMatch =
-                                input.preparedCandidateChangeFn !== undefined
-                                    ? (localSlots?.every((key) => input.localSlots?.includes(key)) ?? true)
-                                    : input.localSlots?.length === localSlots?.length &&
-                                      (localSlots?.every((key, index) => input.localSlots?.[index] === key) ?? true);
+                            let slotsMatch =
+                                input.localSlots?.length === localSlots?.length &&
+                                (localSlots?.every((key, index) => input.localSlots?.[index] === key) ?? true);
+                            if (input.preparedCandidateChangeFn !== undefined) {
+                                // The supplemental write may add slots; every prepared slot must still be claimed.
+                                slotsMatch = localSlots?.every((key) => input.localSlots?.includes(key)) ?? true;
+                            }
                             if (
                                 input.id !== id ||
                                 input.message !== message ||
@@ -807,9 +809,11 @@ class AutomergeRepository {
                             authority.assertCurrent();
                             if (input.preparedCandidateChangeFn) {
                                 // change() consumes its input document; the returned doc replaces it.
-                                updated = message
-                                    ? change(updated, { message }, input.preparedCandidateChangeFn)
-                                    : change(updated, input.preparedCandidateChangeFn);
+                                if (message) {
+                                    updated = change(updated, { message }, input.preparedCandidateChangeFn);
+                                } else {
+                                    updated = change(updated, input.preparedCandidateChangeFn);
+                                }
                             }
                             authority.assertCurrent();
                             input.validation.validateDocument(updated);

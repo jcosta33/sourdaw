@@ -193,6 +193,16 @@ const acceptedTierEdges = [
             'and calling toggleChatPanel (toggleChat, openAnswerInChat). Panel layout and mode are shell state.',
     },
     {
+        from: 'Arrangement',
+        to: 'ElasticAudio',
+        reason:
+            "Arrangement's transient-detection command handler orchestrates the Arrangement-owned warp-marker " +
+            'capture and delegates onset analysis to the ElasticAudio use case through the useCases barrel, ' +
+            'which owns the transient lifecycle over Arrangement-owned markers. It retires when the handler ' +
+            'moves to an ElasticAudio handler map registered in src/app/bootstrap.ts, the same retirement as ' +
+            'the AudioEngine edge below.',
+    },
+    {
         from: 'AudioEngine',
         to: 'Arrangement',
         reason:
