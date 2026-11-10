@@ -403,20 +403,20 @@ async function exportWav(page: Page): Promise<Buffer> {
     const capture = await installFilePickerCapture(page, test.info().outputPath(`punch-loop-${randomUUID()}.wav`));
     try {
         await page.keyboard.press(`${MODIFIER}+Shift+E`);
-        const bakery = page.getByRole('dialog').filter({ hasText: /The Bakery/i });
+        const bakery = page.getByRole('dialog').filter({ hasText: /Export audio/i });
         await expect(bakery).toBeVisible();
         await expect(bakery.getByRole('radio', { name: 'Whole project' })).toBeChecked();
         const pickerFilename = capture.pickerFilename;
-        await bakery.getByRole('button', { name: 'Start Baking' }).click();
-        await expect(bakery.getByRole('button', { name: 'Close Bakery' })).toBeVisible({ timeout: 120_000 });
+        await bakery.getByRole('button', { name: 'Export mixdown' }).click();
+        await expect(bakery.getByRole('button', { name: 'Close' })).toBeVisible({ timeout: 120_000 });
         await capture.waitForClose();
 
-        expect(await pickerFilename).toMatch(/^Sourdaw_Bake_\d+\.wav$/);
+        expect(await pickerFilename).toMatch(/^Sourdaw_Mixdown_\d+\.wav$/);
         expect(capture.writeCount()).toBeGreaterThan(0);
         expect(capture.bytesWritten()).toBeGreaterThan(0);
         expect(capture.abortCount()).toBe(0);
         const bytes = await readFile(capture.path);
-        await bakery.getByRole('button', { name: 'Close Bakery' }).click();
+        await bakery.getByRole('button', { name: 'Close' }).click();
         return bytes;
     } finally {
         await capture.dispose();

@@ -504,7 +504,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
             });
         };
         const ts = Date.now();
-        const baseName = `Sourdaw_Mixdown_${ts}`;
+        const baseName = `Sourdaw_${mode === 'stems' ? 'Stems' : 'Mixdown'}_${ts}`;
 
         let nativeDirPath: string | null = null;
         let nativeFilePath: string | null = null;
@@ -617,10 +617,10 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
             return;
         }
 
-        // ── 2. PREPARATIONS COMPLETE. START INTENSIVE BAKING ──
+        // ── 2. PREPARATIONS COMPLETE. START RENDERING AND ENCODING ──
         setExporting(true);
         setProgress(0);
-        setStatusText('Heating the offline oven...');
+        setStatusText('Preparing export…');
 
         // Set once the export's last file is being committed: the browser save's close, or the
         // dispatch of the final native write. From then on the export has succeeded and a Cancel no
@@ -707,7 +707,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                             (candidate) => candidate.id === targetId && candidate.format === format
                         );
                         const target = targetPlan.find((candidate) => candidate.id === targetId)!;
-                        setStatusText(`Kneading ${name} — ${target.name} (${format.toUpperCase()})...`);
+                        setStatusText(`Encoding ${name} — ${target.name} (${format.toUpperCase()})…`);
                         setProgress(((index + (pass + fraction) / passes.length) / total) * 100);
                     }),
                     onLimited: (target) =>
@@ -1055,7 +1055,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
         >
             <DialogContent
                 className="max-h-[calc(100vh-2rem)] w-[480px] grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden rounded-xl border border-orange-900/40 bg-surface-base p-0 shadow-[0_0_40px_rgba(234,88,12,0.1)]"
-                showCloseButton={!exporting}
+                showCloseButton={!exporting && progress !== 100}
             >
                 <DialogHeader
                     className="relative overflow-hidden px-6 pb-4 pt-6 rounded-t-xl"

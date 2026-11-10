@@ -102,7 +102,7 @@ async function audibleProject(page: Page, rate: number, channels: number, frames
     await expect(page.getByTestId('selected-track-clip-count')).toHaveText(/1 clip/i);
     const modifier = await page.evaluate(() => (navigator.platform.toUpperCase().includes('MAC') ? 'Meta' : 'Control'));
     await page.keyboard.press(`${modifier}+Shift+E`);
-    const dialog = page.getByRole('dialog').filter({ hasText: /The Bakery/i });
+    const dialog = page.getByRole('dialog').filter({ hasText: /Export audio/i });
     await expect(dialog).toBeVisible();
     await dialog.getByLabel('Auto-detect').uncheck();
     await dialog.getByLabel('Tail seconds').fill('0');
@@ -171,8 +171,8 @@ for (const rate of [44100, 48000, 88200, 96000]) {
                 await dialog.getByTestId('export-format-opus').click();
                 await expect(dialog.getByTestId('export-format-wav')).toHaveAttribute('aria-checked', 'true');
                 await expect(dialog.getByText(/Opus is always 48 kHz/)).toBeVisible();
-                await dialog.getByRole('button', { name: 'Start Baking', exact: true }).click();
-                await expect(dialog.getByRole('button', { name: 'Close Bakery', exact: true })).toBeVisible({
+                await dialog.getByRole('button', { name: 'Export mixdown', exact: true }).click();
+                await expect(dialog.getByRole('button', { name: 'Close', exact: true })).toBeVisible({
                     timeout: 120000,
                 });
                 await capture.waitForClose();
@@ -273,8 +273,8 @@ for (const codec of ['ogg', 'opus']) {
             await dialog.getByTestId('export-format-wav').click();
             await expect(dialog.getByTestId('export-format-wav')).toHaveAttribute('aria-checked', 'false');
             await expect(dialog.getByTestId('export-format-' + codec)).toHaveAttribute('aria-checked', 'true');
-            await dialog.getByRole('button', { name: 'Start Baking', exact: true }).click();
-            await expect(dialog.getByRole('button', { name: 'Close Bakery', exact: true })).toBeVisible({
+            await dialog.getByRole('button', { name: 'Export mixdown', exact: true }).click();
+            await expect(dialog.getByRole('button', { name: 'Close', exact: true })).toBeVisible({
                 timeout: 120000,
             });
             await capture.waitForClose();
@@ -300,8 +300,8 @@ test('Slices saves actual codec stems with the selected-rate WAV reference', asy
         await dialog.getByTestId('export-mode-stems').click();
         await dialog.getByTestId('export-format-ogg').click();
         await dialog.getByTestId('export-format-opus').click();
-        await dialog.getByRole('button', { name: 'Start Baking', exact: true }).click();
-        await expect(dialog.getByRole('button', { name: 'Close Bakery', exact: true })).toBeVisible({
+        await dialog.getByRole('button', { name: 'Export stems', exact: true }).click();
+        await expect(dialog.getByRole('button', { name: 'Close', exact: true })).toBeVisible({
             timeout: 120000,
         });
         await capture.waitForClose();
@@ -592,24 +592,24 @@ for (const codec of ['ogg', 'opus']) {
         const dialog = await audibleProject(page, 48000, 2, 48000 * 8.5);
         await dialog.getByTestId('export-format-' + codec).click();
         await dialog.getByTestId('export-format-wav').click();
-        await dialog.getByRole('button', { name: 'Start Baking', exact: true }).click();
+        await dialog.getByRole('button', { name: 'Export mixdown', exact: true }).click();
         await expect.poll(() => page.evaluate(() => Reflect.get(window, '__oggLifecycleProof').held)).toBe(true);
         const held = await page.evaluate(() => Reflect.get(window, '__oggLifecycleProof'));
         expect(held.workers).toHaveLength(1);
         expect(held.workers[0]).toMatchObject({ pending: 1, maxPending: 1, awaitingAck: true, terminations: 0 });
-        await dialog.getByRole('button', { name: 'Turn off Oven', exact: true }).click();
-        await expect(dialog.getByRole('button', { name: 'Start Baking', exact: true })).toBeEnabled();
+        await dialog.getByRole('button', { name: 'Cancel export', exact: true }).click();
+        await expect(dialog.getByRole('button', { name: 'Export mixdown', exact: true })).toBeEnabled();
         const previous = await page.evaluate(async () => {
             const root = await navigator.storage.getDirectory();
             return (await (await root.getFileHandle('codec-cancel-successor-proof')).getFile()).text();
         });
         expect(previous).toBe('previous completed export');
         for (let repeat = 0; repeat < 2; repeat++) {
-            await dialog.getByRole('button', { name: 'Start Baking', exact: true }).click();
-            await expect(dialog.getByRole('button', { name: 'Close Bakery', exact: true })).toBeVisible({
+            await dialog.getByRole('button', { name: 'Export mixdown', exact: true }).click();
+            await expect(dialog.getByRole('button', { name: 'Close', exact: true })).toBeVisible({
                 timeout: 120000,
             });
-            await dialog.getByRole('button', { name: 'Close Bakery', exact: true }).click();
+            await dialog.getByRole('button', { name: 'Close', exact: true }).click();
             if (repeat === 0) {
                 const modifier = await page.evaluate(() =>
                     navigator.platform.toUpperCase().includes('MAC') ? 'Meta' : 'Control'

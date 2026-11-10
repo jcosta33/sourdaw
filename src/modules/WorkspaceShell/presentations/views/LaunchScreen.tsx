@@ -326,6 +326,7 @@ export const LaunchScreen = ({ exiting }: LaunchScreenProps): ReactElement => {
                     {view === 'home' ? (
                         <div
                             key="home"
+                            data-testid="launch-home-card"
                             className={`animate-in fade-in zoom-in-95 duration-500 relative flex max-h-full flex-col items-center gap-8 overflow-y-auto overscroll-contain [&>*]:shrink-0 rounded-2xl border shadow-[0_24px_80px_rgba(0,0,0,0.7),inset_0_1px_0_rgba(255,255,255,0.05)] max-w-[440px] w-full p-10 transition-all duration-300 ${
                                 isDragOver
                                     ? 'border-[var(--color-accent-orange)]/60 bg-[var(--color-accent-orange)]/5 scale-[1.01]'

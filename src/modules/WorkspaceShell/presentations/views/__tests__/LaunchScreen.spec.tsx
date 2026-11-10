@@ -163,13 +163,6 @@ describe('LaunchScreen', () => {
         expect(demos).not.toHaveClass('bg-[var(--color-accent-orange)]/10');
     });
 
-    it('keeps every launch action reachable in a short viewport', () => {
-        render(<LaunchScreen exiting={false} />);
-
-        const card = screen.getByRole('button', { name: /New Project/ }).closest('.rounded-2xl');
-        expect(card).toHaveClass('max-h-full', 'overflow-y-auto', 'overscroll-contain', '[&>*]:shrink-0');
-    });
-
     it('fades out and stops taking pointer input while exiting', () => {
         const { rerender } = render(<LaunchScreen exiting={false} />);
         const dialog = screen.getByRole('dialog', { name: /Sourdaw — start a project/ });

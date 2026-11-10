@@ -776,6 +776,41 @@ describe('ExportDialog', () => {
         expect(screen.getByText(/The Sourdaw bakery/)).toBeInTheDocument();
     });
 
+    it.each([
+        { mode: 'mixdown' as const, suggestedName: /^Sourdaw_Mixdown_\d+\.wav$/ },
+        { mode: 'stems' as const, suggestedName: /^Sourdaw_Stems_\d+\.zip$/ },
+    ])('names the browser $mode destination for the selected export mode', async ({ mode, suggestedName }) => {
+        vi.mocked(isNativeProjectRuntimeAvailable).mockReturnValue(false);
+        mocks.exportStems.mockImplementation(async (options) => {
+            options.onStemPlan?.(['track-1']);
+            await options.onStem?.('track-1', MockAudioBuffer.create(2, 128, 44100), 0, 1);
+            return new Map();
+        });
+        const picker = vi.fn().mockResolvedValue({
+            createWritable: async () => ({
+                write: async () => {},
+                close: async () => {},
+                abort: async () => {},
+            }),
+        });
+        vi.stubGlobal('showSaveFilePicker', picker);
+
+        try {
+            render(<ExportDialog open onClose={vi.fn()} />);
+            if (mode === 'stems') {
+                fireEvent.click(screen.getByTestId('export-mode-stems'));
+            }
+            fireEvent.click(screen.getByRole('button', { name: `Export ${mode}` }));
+
+            await waitFor(() => expect(screen.getByText('Export complete.')).toBeInTheDocument());
+            expect(picker).toHaveBeenCalledWith(
+                expect.objectContaining({ suggestedName: expect.stringMatching(suggestedName) })
+            );
+        } finally {
+            vi.unstubAllGlobals();
+        }
+    });
+
     it('offers browser codecs without PCM precision controls and restores the stored preference', () => {
         vi.mocked(loadExportSettings).mockReturnValueOnce({
             formats: ['ogg', 'opus'],
@@ -2080,6 +2115,11 @@ describe('ExportDialog', () => {
             if (!reportEncoding) {
                 throw new TypeError('expected encodeWav to receive a progress callback');
             }
+            act(() => {
+                reportEncoding(0.5);
+            });
+            expect(screen.getByText(/^Encoding Sourdaw_Mixdown_\d+ — .+ \(WAV\)…$/)).toBeInTheDocument();
+
             fireEvent.click(screen.getByRole('button', { name: /cancel export/i }));
             await act(async () => {
                 encoding.resolve(new Uint8Array([1, 2, 3]));
@@ -2190,6 +2230,7 @@ describe('ExportDialog', () => {
             await waitFor(() => {
                 expect(mocks.restoreCachedAudioBuffersFromIdb).toHaveBeenCalledTimes(1);
             });
+            expect(screen.getByText('Preparing export…')).toBeInTheDocument();
 
             fireEvent.click(screen.getByRole('button', { name: /cancel export/i }));
             await act(async () => {
