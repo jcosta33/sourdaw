@@ -1,0 +1,14 @@
+tests/e2e/elasticTransientWorkerPerformance.spec.ts
+  h_beb54bf43b47b7 7-17,288-290,292,294,436,440-445,448-452,681-683,687-688
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d9628f3744e25fcab605cfaa5cbf82b170888bdb",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
