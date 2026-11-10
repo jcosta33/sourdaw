@@ -12,9 +12,71 @@ type StorageRuntimeDoc = {
     [key: string]: unknown;
 };
 
+type StorageRuntimeCandidate = ReturnType<
+    ReturnType<typeof cloneProspectiveCrdtMutation<StorageRuntimeDoc>>['materialize']
+>;
+
+type StorageRuntimeValidatedInput = Parameters<
+    NonNullable<Parameters<typeof configureAutomergeStoragePort>[0]>['mutateDocValidated']
+>[0];
+
+function mutateCrdtDocValidated(
+    candidates: WeakMap<object, StorageRuntimeCandidate>,
+    input: StorageRuntimeValidatedInput
+): void {
+    const {
+        docId,
+        changedKeys,
+        changeFn,
+        message,
+        snapshotTransaction,
+        beforeChange,
+        validateDocument,
+        beforePublication,
+        onPublished,
+        preparedCandidate,
+        preparedCandidateChangeFn,
+    } = input;
+    let candidate: StorageRuntimeCandidate | undefined;
+    if (preparedCandidate) {
+        candidate = candidates.get(preparedCandidate);
+    }
+    if (preparedCandidate && !candidate) {
+        throw new Error('Prepared storage candidate is unknown to the registered runtime');
+    }
+    const prospectiveValidation: NonNullable<
+        Parameters<typeof mutateCrdtDoc<StorageRuntimeDoc>>[0]['prospectiveValidation']
+    > = {
+        validateDocument,
+        beforePublication,
+        onPublished,
+    };
+    if (candidate) {
+        prospectiveValidation.preparedCandidate = candidate;
+        if (preparedCandidateChangeFn) {
+            prospectiveValidation.preparedCandidateChangeFn = preparedCandidateChangeFn;
+        }
+    }
+    try {
+        mutateCrdtDoc<StorageRuntimeDoc>({
+            id: docId,
+            changeFn,
+            message,
+            snapshotTransaction,
+            localSlots: changedKeys,
+            prospectiveValidation,
+            beforeChange,
+        });
+    } finally {
+        if (preparedCandidate) {
+            candidates.delete(preparedCandidate);
+            candidate?.discard();
+        }
+    }
+}
+
 export function registerCrdtStorageRuntime(): void {
-    type Candidate = ReturnType<ReturnType<typeof cloneProspectiveCrdtMutation<StorageRuntimeDoc>>['materialize']>;
-    const candidates = new WeakMap<object, Candidate>();
+    const candidates = new WeakMap<object, StorageRuntimeCandidate>();
     configureAutomergeStoragePort({
         getDoc: (docId) => getCrdtDoc<StorageRuntimeDoc>(docId),
         getDocHeads: (docId) => automergeRepository.getHeads(docId),
@@ -60,56 +122,7 @@ export function registerCrdtStorageRuntime(): void {
                 },
             };
         },
-        mutateDocValidated: ({
-            docId,
-            changedKeys,
-            changeFn,
-            message,
-            snapshotTransaction,
-            beforeChange,
-            validateDocument,
-            beforePublication,
-            onPublished,
-            preparedCandidate,
-            preparedCandidateChangeFn,
-        }) => {
-            let candidate: Candidate | undefined;
-            if (preparedCandidate) {
-                candidate = candidates.get(preparedCandidate);
-            }
-            if (preparedCandidate && !candidate) {
-                throw new Error('Prepared storage candidate is unknown to the registered runtime');
-            }
-            const prospectiveValidation: NonNullable<
-                Parameters<typeof mutateCrdtDoc<StorageRuntimeDoc>>[0]['prospectiveValidation']
-            > = {
-                validateDocument,
-                beforePublication,
-                onPublished,
-            };
-            if (candidate) {
-                prospectiveValidation.preparedCandidate = candidate;
-                if (preparedCandidateChangeFn) {
-                    prospectiveValidation.preparedCandidateChangeFn = preparedCandidateChangeFn;
-                }
-            }
-            try {
-                mutateCrdtDoc<StorageRuntimeDoc>({
-                    id: docId,
-                    changeFn,
-                    message,
-                    snapshotTransaction,
-                    localSlots: changedKeys,
-                    prospectiveValidation,
-                    beforeChange,
-                });
-            } finally {
-                if (preparedCandidate) {
-                    candidates.delete(preparedCandidate);
-                    candidate?.discard();
-                }
-            }
-        },
+        mutateDocValidated: (input) => mutateCrdtDocValidated(candidates, input),
         waitForSnapshotTransaction: (snapshotTransaction) =>
             automergeRepository.waitForSnapshotTransaction(snapshotTransaction),
     });
