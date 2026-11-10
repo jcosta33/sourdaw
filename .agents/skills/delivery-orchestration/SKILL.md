@@ -387,7 +387,7 @@ A minimal `REQUEST_CHANGES` on a `small` plan, with one finding and two clean dr
             "outcome": "clean"
         },
         {
-            "stance": "tempo-length-validation",
+            "stance": "non-finite-tempo-input",
             "reviewerModel": "gpt-6-luna",
             "tier": "economy",
             "outcome": "clean"
@@ -419,7 +419,7 @@ A minimal `APPROVE` on the same plan, with three clean draws:
             "outcome": "clean"
         },
         {
-            "stance": "tempo-length-validation",
+            "stance": "non-finite-tempo-input",
             "reviewerModel": "gpt-6-luna",
             "tier": "economy",
             "outcome": "clean"
