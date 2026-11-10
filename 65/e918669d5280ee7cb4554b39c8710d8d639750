@@ -1,0 +1,18 @@
+docs/06-testing.md
+  h_beb54bf43b47b7 893-896
+scripts/__tests__/e2eServerIdentityWiring.spec.ts
+  h_beb54bf43b47b7 158-187,209-212
+scripts/__tests__/resourceGuard.spec.ts
+  h_beb54bf43b47b7 2398,2400-2406,2414-2416
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "65e918669d5280ee7cb4554b39c8710d8d639750",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
