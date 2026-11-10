@@ -1,0 +1,26 @@
+public/themePrepaint.js
+  h_beb54bf43b47b7 13-14,18
+src/components/daw/DawSearchInput.tsx
+  h_beb54bf43b47b7 81
+src/modules/Preferences/presentations/views/__tests__/preferencesShared.spec.tsx
+  h_beb54bf43b47b7 145-151
+src/modules/Preferences/presentations/views/preferencesShared.tsx
+  h_beb54bf43b47b7 140
+src/modules/Preferences/stores/__tests__/themePrepaint.spec.ts
+  h_beb54bf43b47b7 188-191
+src/modules/TimelineEditor/presentations/views/__tests__/AutomationBottomPanel.spec.tsx
+  h_beb54bf43b47b7 242-249
+src/styles/__tests__/semanticThemes.spec.ts
+  h_beb54bf43b47b7 11,291-387,399-403,408
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "af58fd6dc5542ffb80f5a62064f66e940c1e3f1f",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
