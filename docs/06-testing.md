@@ -890,10 +890,11 @@ tests/e2e/launchFlows.spec.ts`. The guard runs that proof instead of replaying t
 receipt's canonical in-lane directory and under the receipt's profile unless `--profile` overrides
 it, as in that example; the memory budget resolves
 against the proof command itself, so a `pnpm test:e2e` proof runs under its measured budget unless
-`--max-rss-mib` overrides it. Because a server already answering at the recorded origin could
-satisfy the watch without the proof running anything, the proof is refused outright — exit 1
-before anything spawns, leaving the receipt stopped — while that origin answers; stop the
-occupying server and retry. The proof child receives the recorded port as `SOURDAW_E2E_PORT` and a
+`--max-rss-mib` overrides it. The proof is refused outright — exit 1 before anything spawns, leaving
+the receipt stopped — while the recorded origin already answers: the proof's own server cannot take
+an occupied port, so the run could only exercise the occupying server, which proves nothing about
+this checkout's recovery. Stop the occupying server and retry. The proof child receives the recorded
+port as `SOURDAW_E2E_PORT` and a
 freshly issued per-run token as `SOURDAW_E2E_RUN_TOKEN` — no proof file the command tree could
 fabricate, because the token only counts when a server stamps it, and the guard verifies the server
 directly. While the proof runs, the guard itself polls the recorded loopback origin and requires a

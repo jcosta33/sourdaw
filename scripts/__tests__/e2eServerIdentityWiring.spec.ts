@@ -167,10 +167,22 @@ function requireRunTokenThreadedToMiddleware(sourceFile: ts.SourceFile): void {
             ts.isIdentifier(node.expression) &&
             node.expression.text === 'createSourdawRootHeaderMiddleware'
         ) {
-            const tokenArgument = node.arguments[1]?.getText(sourceFile) ?? '';
-            if (!tokenArgument.includes('process.env') || !tokenArgument.includes('SOURDAW_E2E_RUN_TOKEN_ENV')) {
+            const tokenArgument = node.arguments[1];
+            // The argument must index process.env with the imported constant
+            // itself: a string literal of the same name would survive this pin
+            // while the server reads a variable the guard never sets.
+            if (
+                tokenArgument === undefined ||
+                !ts.isElementAccessExpression(tokenArgument) ||
+                !ts.isPropertyAccessExpression(tokenArgument.expression) ||
+                tokenArgument.expression.expression.getText(sourceFile) !== 'process' ||
+                tokenArgument.expression.name.text !== 'env' ||
+                tokenArgument.argumentExpression === undefined ||
+                !ts.isIdentifier(tokenArgument.argumentExpression) ||
+                tokenArgument.argumentExpression.text !== 'SOURDAW_E2E_RUN_TOKEN_ENV'
+            ) {
                 throw new Error(
-                    'every createSourdawRootHeaderMiddleware call must thread process.env[SOURDAW_E2E_RUN_TOKEN_ENV]; without it a recovery-proof server stamps no run token and the guard refuses every proof'
+                    'every createSourdawRootHeaderMiddleware call must thread process.env[SOURDAW_E2E_RUN_TOKEN_ENV] by identifier; without it a recovery-proof server stamps no run token and the guard refuses every proof'
                 );
             }
             callSites += 1;

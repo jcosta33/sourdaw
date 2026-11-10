@@ -3317,11 +3317,11 @@ export async function main(
             // The guard itself watches the recorded origin while the proof runs: the proof
             // child receives the recorded port and a freshly issued run token, and the
             // observation accepts only a server stamping both this checkout and that
-            // token. A server already answering before the proof starts could satisfy the
-            // watch without the tree running anything (a leftover e2e server), so the
-            // origin must be free first; the token closes the remaining window, where a
-            // leftover binds between that check and the observation and stamps the same
-            // checkout root without ever running under the guard. The root marker is
+            // token. An occupied origin is refused before spawning because the proof's own
+            // server cannot take the port — the run would exercise the occupying server and
+            // prove nothing about this checkout's recovery. The token closes the remaining
+            // window, where a leftover binds between that check and the observation and stamps
+            // the same checkout root without ever running under the guard. The root marker is
             // compared with the lane root because the e2e server stamps the checkout
             // root, which a receipt recorded from an in-lane subdirectory is not.
             if (explicitProof !== undefined && (await originAnswers(explicitProof.origin))) {
