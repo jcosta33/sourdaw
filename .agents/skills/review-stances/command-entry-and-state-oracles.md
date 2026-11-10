@@ -55,7 +55,11 @@ boundaries.
    locked user material. Probe: a moved locked automatic marker beside user, grid and unlocked automatic rows: real
    Detect and re-detection at another sensitivity keep exact ID, original/warped beat, lock and confidence in raw
    and projection and suppress near-hit detections; unlocking makes the row replaceable. Dropping locked-row
-   retention or near-hit suppression fails.
+   retention or near-hit suppression fails. On the Worker route, hold completion while editing a retained row or
+   adding a user row, then require the admitted write's real Undo/Redo to retain that edit and a later divergent
+   edit to refuse replay without writing. Switch source/project, replace PCM, change tempo or cancel before commit:
+   raw CRDT, projections, other clips and cached PCM stay unchanged while visible counts reflect only committed
+   truth. Compare original PCM bytes, not merely buffer identity.
 6. **An interval edit keeps everything outside `[start, end)` (#645).** Failure: a range edit drops adjacent user
    material. Probe: a comp selection over `[start, end)` keeps both complements at each beat; guarded semantic
    Undo/Redo applies to current state without touching other lanes or selections outside the footprint; a

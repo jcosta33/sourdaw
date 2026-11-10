@@ -1,5 +1,7 @@
 import { type ChangeFn } from '@automerge/automerge';
 
+import { type CanonicalStorageSlotMutation } from '#/infra/store/storage/applyCanonicalStorageSlotMutation';
+
 import { automergeRepository } from '../repositories/automergeRepository';
 
 import { type DocId } from './crdtDocumentTypes';
@@ -23,6 +25,8 @@ export type MutateCrdtDocInput<DocShape> = {
      * changed instead of every root store (audit CC-1).
      */
     localSlots?: readonly string[];
+    canonicalMutation?: CanonicalStorageSlotMutation;
+    prospectiveValidation?: Parameters<typeof automergeRepository.changeDoc<DocShape>>[5];
 };
 
 /**
@@ -38,6 +42,7 @@ export function mutateCrdtDoc<DocShape = Record<string, unknown>>(input: MutateC
         input.message,
         input.snapshotTransaction,
         input.localSlots,
+        input.prospectiveValidation,
         input.beforeChange
     );
 }

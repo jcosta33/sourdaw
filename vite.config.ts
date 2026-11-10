@@ -164,7 +164,7 @@ export default defineConfig({
     base: './',
     optimizeDeps: {
         // ORT pthreads reuse their module URL; late optimization invalidates that URL during session creation.
-        include: ['onnxruntime-web'],
+        include: ['@automerge/automerge/slim', 'onnxruntime-web'],
     },
     worker: {
         // Force IIFE format for all worker bundles so each processor file is
@@ -256,6 +256,10 @@ export default defineConfig({
     resolve: {
         alias: [
             { find: '#', replacement: fileURLToPath(new URL('./src', import.meta.url)) },
+            {
+                find: /^@automerge\/automerge\/automerge\.wasm$/,
+                replacement: `${fileURLToPath(import.meta.resolve('@automerge/automerge/automerge.wasm'))}?url`,
+            },
             // Exact match: a string find would prefix-match and break the
             // `@automerge/automerge/slim` and `/automerge.wasm` subpaths.
             { find: /^@automerge\/automerge$/, replacement: AUTOMERGE_BASE64_ENTRY },
