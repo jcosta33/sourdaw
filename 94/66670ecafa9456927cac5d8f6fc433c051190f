@@ -1,0 +1,22 @@
+src/components/daw/DawCompactTextarea.tsx
+  h_beb54bf43b47b7 16
+src/components/daw/DawDiagramFrame.tsx
+  h_beb54bf43b47b7 40
+src/components/ui/input.tsx
+  h_beb54bf43b47b7 11
+src/styles/__tests__/semanticThemes.spec.ts
+  h_beb54bf43b47b7 9-10,14,70,72,76,239,249,356-462,780-877,880
+tests/e2e/e2eStartupDiagnostics.spec.ts
+  h_beb54bf43b47b7 89-90,100,104,112-115,124,127-128
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9466670ecafa9456927cac5d8f6fc433c051190f",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
