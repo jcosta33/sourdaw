@@ -873,17 +873,15 @@ function getDurableAssetOwnerRecoveryAfterProjectLoad(): DurableAssetOwnerRecove
 }
 
 describe('bootstrap', () => {
-    it('installs the same live root reader for sensitivity and Worker lifetimes before consumers', () => {
-        expect(elasticRootMocks.install).toHaveBeenCalledExactlyOnceWith(captureProjectRootIdentityMock);
+    it('delegates the live root reader installation for sensitivity and Worker lifetimes before consumers', () => {
+        // The wiring itself lives in registerSupportingServicePorts; bootstrap must
+        // delegate to it before any command handler can consume transient detection.
+        expect(registerSupportingServicePortsMock).toHaveBeenCalledExactlyOnceWith();
+        expect(elasticRootMocks.install).not.toHaveBeenCalled();
+        expect(setElasticSensitivityRootIdentityCaptureMock).not.toHaveBeenCalled();
         expect(captureProjectRootIdentityMock).not.toHaveBeenCalled();
-        expect(elasticRootMocks.install.mock.invocationCallOrder[0]!).toBeLessThan(
+        expect(registerSupportingServicePortsMock.mock.invocationCallOrder[0]!).toBeLessThan(
             registerProductionCommandHandlersMock.mock.invocationCallOrder[0]!
-        );
-        expect(setElasticSensitivityRootIdentityCaptureMock).toHaveBeenCalledExactlyOnceWith(
-            captureProjectRootIdentityMock
-        );
-        expect(setElasticSensitivityRootIdentityCaptureMock.mock.invocationCallOrder[0]).toBeLessThan(
-            setProjectIdentityTransitionDependenciesMock.mock.invocationCallOrder[0] ?? 0
         );
     });
     it('binds committed project access during bootstrap', () => {
