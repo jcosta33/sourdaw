@@ -1,0 +1,18 @@
+docs/06-testing.md
+  h_beb54bf43b47b7 893-902
+scripts/__tests__/resourceGuard.spec.ts
+  h_beb54bf43b47b7 17,2589-2642,2648,2652,2654-2660,2662-2664,2676-2680,2706-2731
+scripts/resourceGuard.ts
+  h_beb54bf43b47b7 3338-3374
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1476009748c5b4bae6d19611fbe7afeef648ca3d",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
