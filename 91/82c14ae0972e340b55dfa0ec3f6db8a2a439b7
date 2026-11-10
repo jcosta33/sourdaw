@@ -1,0 +1,20 @@
+src/components/daw/DawSearchInput.tsx
+  h_beb54bf43b47b7 67
+src/components/ui/slider.tsx
+  h_beb54bf43b47b7 66
+tests/e2e/controlGallery.spec.ts
+  h_beb54bf43b47b7 1-2,16
+tests/e2e/e2eStartupDiagnostics.spec.ts
+  h_beb54bf43b47b7 299
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9182c14ae0972e340b55dfa0ec3f6db8a2a439b7",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
