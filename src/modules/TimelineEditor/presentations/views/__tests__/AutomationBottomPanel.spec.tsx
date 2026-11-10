@@ -106,26 +106,15 @@ vi.mock('../AutomationView/AutomationSidebarCell', () => ({
     ),
 }));
 
-vi.mock('../AutomationView/AutomationControls', () => ({
-    AutomationAddLaneControl: ({
-        params,
-        onAdd,
-    }: {
-        params: { id: string; name: string }[];
-        onAdd: (paramId: string, paramName: string) => void;
-    }) => (
-        <div data-testid="add-lane-control">
-            {params.map((param) => (
-                <button key={param.id} type="button" onClick={() => onAdd(param.id, param.name)}>
-                    Add {param.name}
-                </button>
-            ))}
-        </div>
-    ),
-    AutomationModeControl: ({ automationMode, laneCount }: { automationMode: string; laneCount: number }) => (
-        <div data-testid="mode-control" data-mode={automationMode} data-count={laneCount} />
-    ),
-}));
+vi.mock('../AutomationView/AutomationControls', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('../AutomationView/AutomationControls')>();
+    return {
+        ...actual,
+        AutomationModeControl: ({ automationMode, laneCount }: { automationMode: string; laneCount: number }) => (
+            <div data-testid="mode-control" data-mode={automationMode} data-count={laneCount} />
+        ),
+    };
+});
 
 vi.mock('../../helpers/automationViewHelpers', () => ({
     getAutomatableParams: vi.fn(() => [
@@ -246,9 +235,13 @@ describe('AutomationBottomPanel', () => {
             }
             expect(emptyState).toHaveClass('gap-1.5', 'p-4');
             expect(title).toHaveClass('text-xs');
-            expect(within(emptyState).getByTestId('add-lane-control')).toHaveTextContent('Volume');
+            const addLaneButton = within(emptyState).getByRole('button', { name: 'Add Lane' });
+            expect(addLaneButton).toBeInTheDocument();
 
-            fireEvent.click(within(emptyState).getByRole('button', { name: 'Add Volume' }));
+            fireEvent.click(addLaneButton);
+            const menu = screen.getByRole('menu');
+            expect(menu).toHaveTextContent('Add parameter');
+            fireEvent.click(within(menu).getByRole('button', { name: 'Volume' }));
 
             expect(mocks.addAutomationLane).toHaveBeenCalledWith('track-1', 'volume', 'Volume');
         } finally {

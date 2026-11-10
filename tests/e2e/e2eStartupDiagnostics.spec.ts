@@ -92,6 +92,17 @@ test('applies the persisted Light theme before the real entry module paints', as
     let entryRequests = 0;
     await page.addInitScript((key) => {
         window.localStorage.setItem(key, JSON.stringify({ json: { theme: 'light' } }));
+        const samples: Array<{ visibility: string; backgroundColor: string }> = [];
+        Object.assign(window, { __sourdawStartupFrames: samples });
+        const record = (): void => {
+            const startup = document.getElementById('entry-startup');
+            if (startup !== null) {
+                const style = window.getComputedStyle(startup);
+                samples.push({ visibility: style.visibility, backgroundColor: style.backgroundColor });
+            }
+            window.requestAnimationFrame(record);
+        };
+        window.requestAnimationFrame(record);
     }, PREFERENCES_STORAGE_KEY);
     await page.route('**/*', async (route) => {
         const url = new URL(route.request().url());
@@ -105,6 +116,16 @@ test('applies the persisted Light theme before the real entry module paints', as
         }
         await route.continue();
     });
+    const readVisibleStartupBackgrounds = (): Promise<string[]> =>
+        page.evaluate(() => {
+            const samples =
+                (
+                    window as unknown as {
+                        __sourdawStartupFrames?: Array<{ visibility: string; backgroundColor: string }>;
+                    }
+                ).__sourdawStartupFrames ?? [];
+            return samples.filter((sample) => sample.visibility === 'visible').map((sample) => sample.backgroundColor);
+        });
 
     try {
         await page.goto('/', { waitUntil: 'commit' });
@@ -120,11 +141,69 @@ test('applies the persisted Light theme before the real entry module paints', as
         await expect(page.locator('#entry-startup')).toHaveCSS('background-color', 'rgb(222, 216, 207)');
         await expect(page.getByLabel(LAUNCH_SCREEN_NAME)).toHaveCount(0);
         expect(entryRequests).toBe(1);
+        await expect.poll(readVisibleStartupBackgrounds).toContain('rgb(222, 216, 207)');
+        const visibleStartupBackgrounds = await readVisibleStartupBackgrounds();
+        expect(visibleStartupBackgrounds.length).toBeGreaterThan(0);
+        expect(visibleStartupBackgrounds).toEqual(visibleStartupBackgrounds.map(() => 'rgb(222, 216, 207)'));
 
         entryGate.resolve('release entry');
         await expect(page.getByLabel(LAUNCH_SCREEN_NAME)).toBeVisible({ timeout: 30_000 });
     } finally {
         prepaintGate.resolve('release prepaint');
+        entryGate.resolve('release entry');
+        await page.unrouteAll({ behavior: 'ignoreErrors' });
+    }
+});
+
+test('keeps aborted prepaint hidden until runtime synchronization restores saved Light', async ({ page }) => {
+    await enable_direct_e2e_viewport(page);
+    const response = await page.request.get('/');
+    expect(response.ok()).toBe(true);
+    const entrySource = await page.evaluate(
+        (html) => {
+            const parsed = new DOMParser().parseFromString(html, 'text/html');
+            return [...parsed.querySelectorAll('script[type="module" i][src]')].at(-1)?.getAttribute('src') ?? null;
+        },
+        await response.text()
+    );
+    if (entrySource === null) {
+        throw new Error('Served HTML has no entry module');
+    }
+    const entryUrl = new URL(entrySource, response.url()).href;
+    const entryGate = deferred<string>();
+    let prepaintRequests = 0;
+    let entryRequests = 0;
+    await page.addInitScript((key) => {
+        window.localStorage.setItem(key, JSON.stringify({ json: { theme: 'light' } }));
+    }, PREFERENCES_STORAGE_KEY);
+    await page.route('**/*', async (route) => {
+        const url = new URL(route.request().url());
+        if (url.pathname === '/themePrepaint.js') {
+            prepaintRequests += 1;
+            await route.abort('aborted');
+            return;
+        }
+        if (route.request().url() === entryUrl) {
+            entryRequests += 1;
+            await entryGate.promise;
+        }
+        await route.continue();
+    });
+
+    try {
+        await page.goto('/', { waitUntil: 'commit' });
+        await expect.poll(() => prepaintRequests).toBe(1);
+        await expect.poll(() => entryRequests).toBe(1);
+        const startup = page.locator('#entry-startup');
+        await expect(startup).toHaveCount(1);
+        await expect(startup).toBeHidden();
+
+        entryGate.resolve('release entry');
+        await expect(page.getByLabel(LAUNCH_SCREEN_NAME)).toBeVisible({ timeout: 30_000 });
+        await expect(page.locator('html')).toHaveClass('light');
+        await expect(page.locator('html')).toHaveCSS('color-scheme', 'light');
+        await expect(page.locator('meta[name="theme-color"]')).toHaveAttribute('content', '#ded8cf');
+    } finally {
         entryGate.resolve('release entry');
         await page.unrouteAll({ behavior: 'ignoreErrors' });
     }

@@ -11,6 +11,7 @@ function applyTheme(target: Document, theme: DocumentTheme): void {
     root.classList.toggle('light', theme === 'light');
     root.style.colorScheme = theme;
     target.querySelector('meta[name="theme-color"]')?.setAttribute('content', THEME_COLORS[theme]);
+    root.style.visibility = 'visible';
 }
 
 export function applyDocumentTheme(theme: DocumentTheme, target: Window = window): void {

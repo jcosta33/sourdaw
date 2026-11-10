@@ -861,9 +861,9 @@ describe('semantic light theme', () => {
                 [];
             expect(finalClasses).toEqual(expect.arrayContaining([expectedForeground, expectedBackground, borderClass]));
 
-            const foregroundClass = finalClasses.findLast((name) =>
-                /^text-(?:\[var\(--[a-z-]+\)\]|text-primary)$/u.test(name)
-            );
+            const foregroundClasses = finalClasses.filter((name) => /(?:^|:)text-/u.test(name));
+            expect(foregroundClasses).toEqual([expectedForeground]);
+            const foregroundClass = foregroundClasses[0];
             const foregroundToken =
                 /^text-\[var\((--[a-z-]+)\)\]$/u.exec(foregroundClass ?? '')?.[1] ??
                 (foregroundClass === 'text-text-primary' ? '--color-text-primary' : undefined);

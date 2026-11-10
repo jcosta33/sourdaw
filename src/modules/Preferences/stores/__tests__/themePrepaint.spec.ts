@@ -10,9 +10,18 @@ import { validateStoredPreferences } from '../preferencesStore';
 const startupThemeScript = readFileSync(resolve(process.cwd(), 'public/themePrepaint.js'), 'utf8');
 const indexHtml = readFileSync(resolve(process.cwd(), 'index.html'), 'utf8');
 
-const runStartupTheme = (stored: string | null) => {
+const runStartupTheme = (stored: string | null, operations: string[] = []) => {
     const classes = new Set<string>(['dark']);
-    const style: Record<string, string> = {};
+    const style = new Proxy<Record<string, string>>(
+        {},
+        {
+            set(target, property, value: string) {
+                target[String(property)] = value;
+                operations.push(`${String(property)}:${value}`);
+                return true;
+            },
+        }
+    );
     const metaAttributes: Record<string, string> = {};
     runInNewContext(startupThemeScript, {
         window: { localStorage: { getItem: () => stored } },
@@ -20,6 +29,7 @@ const runStartupTheme = (stored: string | null) => {
             documentElement: {
                 classList: {
                     toggle(name: string, enabled: boolean) {
+                        operations.push(`class:${name}:${enabled}`);
                         if (enabled) {
                             classes.add(name);
                         } else {
@@ -31,6 +41,7 @@ const runStartupTheme = (stored: string | null) => {
             },
             querySelector: () => ({
                 setAttribute(name: string, value: string) {
+                    operations.push(`meta:${name}:${value}`);
                     metaAttributes[name] = value;
                 },
             }),
@@ -40,6 +51,10 @@ const runStartupTheme = (stored: string | null) => {
 };
 
 describe('theme prepaint', () => {
+    it('hides the document in the inline startup style before any theme resource runs', () => {
+        expect(indexHtml).toMatch(/:root\s*\{[^}]*visibility:\s*hidden;/u);
+    });
+
     it('restores the persisted light theme before startup paint', () => {
         const startup = runStartupTheme(stringify({ theme: 'light' }));
 
@@ -47,6 +62,19 @@ describe('theme prepaint', () => {
         expect(startup.colorScheme).toBe('light');
         expect(startup.themeColor).toBe('#ded8cf');
         expect(indexHtml).toContain('--entry-startup-background: #ded8cf;');
+    });
+
+    it('reveals the root only after synchronously applying every theme channel', () => {
+        const operations: string[] = [];
+        runStartupTheme(stringify({ theme: 'light' }), operations);
+
+        expect(operations).toEqual([
+            'class:dark:false',
+            'class:light:true',
+            'colorScheme:light',
+            'meta:content:#ded8cf',
+            'visibility:visible',
+        ]);
     });
 
     it('falls back to the dark startup when persisted preferences are corrupt', () => {

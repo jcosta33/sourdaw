@@ -241,4 +241,5 @@
     document
         .querySelector('meta[name="theme-color"]')
         ?.setAttribute('content', theme === 'light' ? '#ded8cf' : '#020100');
+    root.style.visibility = 'visible';
 })();

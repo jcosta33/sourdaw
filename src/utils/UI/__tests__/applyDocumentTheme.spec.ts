@@ -14,6 +14,7 @@ function expectTheme(target: Document, theme: 'dark' | 'light', color: string): 
     expect(target.documentElement.classList.contains(theme === 'light' ? 'dark' : 'light')).toBe(false);
     expect(target.documentElement.style.colorScheme).toBe(theme);
     expect(target.querySelector('meta[name="theme-color"]')).toHaveAttribute('content', color);
+    expect(target.documentElement.style.visibility).toBe('visible');
 }
 
 afterEach(() => {
@@ -23,11 +24,13 @@ afterEach(() => {
     }
     document.documentElement.classList.remove('dark', 'light');
     document.documentElement.style.colorScheme = '';
+    document.documentElement.style.visibility = '';
 });
 
 describe('applyDocumentTheme', () => {
-    it('applies a live light-theme switch to the application and its same-origin browser host', () => {
+    it('applies a live light-theme switch and reveals the application and its same-origin browser host', () => {
         document.documentElement.classList.add('dark');
+        document.documentElement.style.visibility = 'hidden';
         installThemeColor(document, '#020100');
         const frame = document.createElement('iframe');
         document.body.append(frame);
@@ -36,6 +39,7 @@ describe('applyDocumentTheme', () => {
             throw new Error('expected the application frame window');
         }
         childWindow.document.documentElement.classList.add('dark');
+        childWindow.document.documentElement.style.visibility = 'hidden';
         installThemeColor(childWindow.document, '#020100');
 
         applyDocumentTheme('light', childWindow);
