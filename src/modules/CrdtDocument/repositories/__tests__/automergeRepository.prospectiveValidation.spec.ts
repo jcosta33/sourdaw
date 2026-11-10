@@ -4,6 +4,7 @@ import {
     decodeChange,
     from,
     getActorId,
+    getChangesMetaSince,
     getHeads,
     getLastLocalChange,
     merge,
@@ -435,6 +436,75 @@ describe('separated single-change prospective phases', () => {
                 })
             )
         ).toThrow('Prospective candidate has already settled');
+        transaction.commit();
+    });
+
+    it('installs a prepared primary change with its supplemental owner change in one atomic publication', () => {
+        const original = seed();
+        const observer = vi.fn();
+        repository.onChange(observer);
+        const transaction = runWithAutomergeStorageTransaction(undefined, () =>
+            repository.cloneProspectiveMutation<State>(
+                'root',
+                (draft) => {
+                    draft.count = 120;
+                },
+                'prepared',
+                undefined,
+                ['count']
+            )
+        );
+        if (transaction.status !== 'returned') {
+            throw transaction.error;
+        }
+        const prepared = transaction.scope(transaction.value.materialize);
+        const supplemental = vi.fn((draft: State) => {
+            draft.replacement = true;
+        });
+        const beforeChange = vi.fn();
+        const callbacks = validation((candidate) => {
+            expect(candidate.count).toBe(120);
+            expect(candidate.replacement).toBe(true);
+            expect(repository.getDoc('root')).toBe(original);
+        });
+        transaction.scope(() =>
+            repository.changeDoc<State>(
+                'root',
+                () => {
+                    throw new Error('The prepared primary change recomputed on the main thread');
+                },
+                'prepared',
+                undefined,
+                ['count', 'replacement'],
+                {
+                    ...callbacks,
+                    preparedCandidate: prepared,
+                    preparedCandidateChangeFn: supplemental,
+                },
+                beforeChange
+            )
+        );
+
+        const installed = repository.getDoc<State>('root');
+        expect(installed?.count).toBe(120);
+        expect(installed?.replacement).toBe(true);
+        expect(beforeChange).toHaveBeenCalledExactlyOnceWith(original);
+        expect(supplemental).toHaveBeenCalledOnce();
+        expect(callbacks.validateDocument).toHaveBeenCalledOnce();
+        expect(callbacks.beforePublication).toHaveBeenCalledOnce();
+        expect(callbacks.onPublished).toHaveBeenCalledOnce();
+        expect(observer).toHaveBeenCalledExactlyOnceWith('root', { localSlots: ['count', 'replacement'] });
+        if (!installed) {
+            throw new Error('Expected installed candidate');
+        }
+        const additions = getChangesMetaSince(installed, getHeads(original));
+        expect(additions).toHaveLength(2);
+        expect(additions.map(({ actor, seq }) => ({ actor, seq }))).toEqual([
+            { actor: ACTOR, seq: 2 },
+            { actor: ACTOR, seq: 3 },
+        ]);
+        expect(additions[0]?.deps).toEqual(getHeads(original));
+        expect(additions[1]?.deps).toEqual([additions[0]?.hash]);
         transaction.commit();
     });
 

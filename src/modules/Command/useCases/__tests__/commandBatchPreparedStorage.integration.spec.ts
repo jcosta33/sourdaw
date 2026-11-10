@@ -292,6 +292,7 @@ describe('prepared storage through command batch commits', () => {
                             throw new Error('Missing actual prepared candidate');
                         }
                         candidate = prepared;
+                        input.preparedCandidateChangeFn?.(candidate);
                     } else {
                         candidate = structuredClone(projectDocument);
                         input.changeFn(candidate);
@@ -381,7 +382,8 @@ describe('prepared storage through command batch commits', () => {
                 expect(result.status).toBe('committed');
                 // Observe the FIRST actual publication: a later receipt-finalization write cannot mask a dropped checkpoint.
                 expect(publications[0]?.checkpoint).toMatchObject({ records: [{ state: 'effects-pending' }] });
-                expect(publications[0]?.prepared).toBe(false);
+                // The late checkpoint now joins the prepared publication as a supplemental change instead of forcing a recompute.
+                expect(publications[0]?.prepared).toBe(true);
                 expect(publications[0]?.keys).toEqual(['trackGain', 'commandBatchIdempotency']);
                 expect(projectDocument.commandBatchIdempotency).toMatchObject({ records: [{ state: 'complete' }] });
             } else {

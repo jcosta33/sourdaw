@@ -71,6 +71,7 @@ export function registerCrdtStorageRuntime(): void {
             beforePublication,
             onPublished,
             preparedCandidate,
+            preparedCandidateChangeFn,
         }) => {
             let candidate: Candidate | undefined;
             if (preparedCandidate) {
@@ -88,6 +89,9 @@ export function registerCrdtStorageRuntime(): void {
             };
             if (candidate) {
                 prospectiveValidation.preparedCandidate = candidate;
+                if (preparedCandidateChangeFn) {
+                    prospectiveValidation.preparedCandidateChangeFn = preparedCandidateChangeFn;
+                }
             }
             try {
                 mutateCrdtDoc<StorageRuntimeDoc>({

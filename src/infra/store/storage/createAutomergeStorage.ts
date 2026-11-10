@@ -123,6 +123,12 @@ type AutomergeStoragePort = {
             beforePublication: () => void;
             onPublished: () => void;
             preparedCandidate?: object;
+            /**
+             * Late mutations co-committed with the prepared primary change. The
+             * runtime applies it to the private prepared candidate after the
+             * primary change, so the expensive prepared write is not recomputed.
+             */
+            preparedCandidateChangeFn?: (doc: AutomergeStorageMutableDoc) => void;
         }
     ): void;
     cloneDocForMutation?(input: AutomergeStoragePortMutationInput): PreparedStorageClone;
@@ -1003,20 +1009,33 @@ function commitAutomergeStorageMutations(
                 snapshotTransaction: firstMutation.snapshotTransaction,
             };
             if (validateDocument && mutateDocValidated) {
-                const prepared = mutations.find((mutation) => mutation.prepared)?.prepared;
+                const preparedMutations = mutations.filter((mutation) => mutation.prepared);
+                const prepared = preparedMutations.length === 1 ? preparedMutations[0]?.prepared : undefined;
+                if (preparedMutations.length > 1) {
+                    // Reuse admits exactly one prepared primary change; several is a race, not a bundle.
+                    for (const mutation of preparedMutations) {
+                        mutation.prepared?.candidate.discard();
+                    }
+                }
                 let preparedCandidate: object | undefined;
+                let preparedCandidateChangeFn: ((doc: AutomergeStorageMutableDoc) => void) | undefined;
                 if (prepared) {
                     // A changed authority is a real refusal, never a reason to conceal the race with recomputation.
                     if (prepared.port !== port || !prepared.candidate.isCurrent()) {
                         throw new Error('Prepared Automerge mutation authority changed before publication');
                     }
-                    if (
-                        mutations.length === 1 &&
-                        prepared.owner === owner &&
-                        publicationMetadata === undefined &&
-                        prepared.matches()
-                    ) {
+                    if (prepared.owner === owner && publicationMetadata === undefined && prepared.matches()) {
                         preparedCandidate = prepared.candidate.token;
+                        if (mutations.length > 1) {
+                            const preparedMutation = preparedMutations[0];
+                            const supplementalMutations = mutations.filter((mutation) => mutation !== preparedMutation);
+                            preparedCandidateChangeFn = createAutomergeStorageChangeFn(
+                                supplementalMutations,
+                                true,
+                                () => undefined,
+                                validateDocument
+                            );
+                        }
                     } else {
                         prepared.candidate.discard();
                     }
@@ -1044,6 +1063,9 @@ function commitAutomergeStorageMutations(
                 };
                 if (preparedCandidate !== undefined) {
                     validatedInput.preparedCandidate = preparedCandidate;
+                    if (preparedCandidateChangeFn) {
+                        validatedInput.preparedCandidateChangeFn = preparedCandidateChangeFn;
+                    }
                 }
                 mutateDocValidated.call(port, validatedInput);
                 if (!application.appliedChangeFn) {

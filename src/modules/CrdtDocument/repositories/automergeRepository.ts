@@ -46,6 +46,8 @@ type ProspectiveValidation<TDoc> = {
     /** Nonthrowing acknowledgement of actual installation, before publication observers run. */
     onPublished: () => void;
     preparedCandidate?: PreparedProspectiveMutation<TDoc>;
+    /** Late co-committed mutations applied to the private prepared candidate before validation. */
+    preparedCandidateChangeFn?: ChangeFn<TDoc>;
 };
 
 type PreparedProspectiveMutation<TDoc> = {
@@ -57,6 +59,7 @@ type PreparedProspectiveMutation<TDoc> = {
         snapshotTransaction: object | undefined;
         localSlots: readonly string[] | undefined;
         validation: ProspectiveValidation<TDoc>;
+        preparedCandidateChangeFn?: ChangeFn<TDoc>;
     }): void;
 };
 
@@ -789,8 +792,10 @@ class AutomergeRepository {
                         this.preparedCandidates.delete(prepared);
                         try {
                             const slotsMatch =
-                                input.localSlots?.length === localSlots?.length &&
-                                (localSlots?.every((key, index) => input.localSlots?.[index] === key) ?? true);
+                                input.preparedCandidateChangeFn !== undefined
+                                    ? (localSlots?.every((key) => input.localSlots?.includes(key)) ?? true)
+                                    : input.localSlots?.length === localSlots?.length &&
+                                      (localSlots?.every((key, index) => input.localSlots?.[index] === key) ?? true);
                             if (
                                 input.id !== id ||
                                 input.message !== message ||
@@ -800,13 +805,20 @@ class AutomergeRepository {
                                 throw new Error('Prospective candidate publication input changed');
                             }
                             authority.assertCurrent();
+                            if (input.preparedCandidateChangeFn) {
+                                // change() consumes its input document; the returned doc replaces it.
+                                updated = message
+                                    ? change(updated, { message }, input.preparedCandidateChangeFn)
+                                    : change(updated, input.preparedCandidateChangeFn);
+                            }
+                            authority.assertCurrent();
                             input.validation.validateDocument(updated);
                             authority.assertCurrent();
                             input.validation.beforePublication();
                             authority.assertCurrent();
                             this.captureBeforeMutation(id, snapshotTransaction);
                             published = true;
-                            this.publishMutation(id, updated, previousHeads, localSlots, input.validation);
+                            this.publishMutation(id, updated, previousHeads, input.localSlots, input.validation);
                         } finally {
                             releaseUnpublished();
                         }
@@ -848,7 +860,14 @@ class AutomergeRepository {
                 throw new Error('Unknown prospective candidate');
             }
             beforeChange?.(doc);
-            prepared.publish({ id, message, snapshotTransaction, localSlots, validation: prospectiveValidation });
+            prepared.publish({
+                id,
+                message,
+                snapshotTransaction,
+                localSlots,
+                validation: prospectiveValidation,
+                preparedCandidateChangeFn: prospectiveValidation.preparedCandidateChangeFn,
+            });
             return;
         }
 

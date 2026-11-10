@@ -71,6 +71,9 @@ beforeEach(() => {
                     throw new Error('Missing prepared candidate');
                 }
                 candidate = prepared;
+                if (input.preparedCandidateChangeFn) {
+                    candidate = change(candidate, { message: input.message }, input.preparedCandidateChangeFn);
+                }
             } else {
                 candidate = change(
                     clone(document, { actor: getActorId(document) }),
@@ -161,7 +164,7 @@ describe('invisible conditional Automerge preparation', () => {
                 }
             });
             prepared.transaction.commit();
-            expect(reused).toEqual([false]);
+            expect(reused).toEqual([kind === 'checkpoint']);
             expect(document.state.count).toBe(kind === 'coalesced value' ? 2 : 1);
             if (kind === 'metadata') {
                 expect(document[AUTOMERGE_STORAGE_PUBLICATION_EVIDENCE_KEY]).toEqual([{ kind: 'late', member: 7 }]);
