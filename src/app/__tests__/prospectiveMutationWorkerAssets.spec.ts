@@ -191,10 +191,12 @@ describe('shipping prospective Worker public WASM assets', () => {
                 },
             },
         });
-        const rootEntry = fileURLToPath(new URL('./fullfat_base64.js', import.meta.resolve('@automerge/automerge')));
+        const streamingEntry = fileURLToPath(
+            new URL('../../infra/automerge/automergeStreamingEntry.ts', import.meta.url)
+        );
         const slimEntry = fileURLToPath(import.meta.resolve('@automerge/automerge/slim'));
         const binaryEntry = fileURLToPath(import.meta.resolve('@automerge/automerge/automerge.wasm'));
-        expect(realpathSync(resolved.get('@automerge/automerge')!)).toBe(realpathSync(rootEntry));
+        expect(realpathSync(resolved.get('@automerge/automerge')!)).toBe(realpathSync(streamingEntry));
         expect(realpathSync(resolved.get('@automerge/automerge/slim')!)).toBe(realpathSync(slimEntry));
         const mappedBinary = resolved.get('@automerge/automerge/automerge.wasm')!;
         expect(mappedBinary.endsWith('?url')).toBe(true);

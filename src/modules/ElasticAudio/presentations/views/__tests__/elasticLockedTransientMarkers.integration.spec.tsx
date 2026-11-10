@@ -55,7 +55,7 @@ import {
 } from '#/utils/Notification/notificationEventBus';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
-import { detectTransients } from '../../../models/TransientDetection';
+import { detectTransients } from '../../../useCases/elasticAudio/detectTransients';
 import {
     type TransientOnsetWorkerRequest,
     type TransientOnsetWorkerResult,

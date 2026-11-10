@@ -28,6 +28,7 @@ describe('mutateCrdtDoc', () => {
             undefined,
             undefined,
             undefined,
+            undefined,
             undefined
         );
     });
@@ -68,6 +69,7 @@ describe('mutateCrdtDoc', () => {
             'edited clip name',
             undefined,
             undefined,
+            undefined,
             undefined
         );
     });
@@ -84,6 +86,7 @@ describe('mutateCrdtDoc', () => {
             undefined,
             snapshotTransaction,
             undefined,
+            undefined,
             undefined
         );
     });
@@ -99,6 +102,7 @@ describe('mutateCrdtDoc', () => {
             undefined,
             undefined,
             ['tracks', 'markers'],
+            undefined,
             undefined
         );
     });
@@ -120,7 +124,8 @@ describe('mutateCrdtDoc', () => {
             'validated',
             snapshotTransaction,
             ['warpStates'],
-            prospectiveValidation
+            prospectiveValidation,
+            undefined
         );
     });
 });
