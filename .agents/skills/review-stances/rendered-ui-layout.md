@@ -52,3 +52,9 @@ the rendered result; inspect the rendered viewports, rectangles, pixels and reso
    applies no CSS. Grep the diff for a template literal or concatenation producing a class name, conditional or not;
    each variant must map to complete literal strings. A case for a component whose classes vary by state must fail
    when any class a state adds is not written whole in its source; the grep alone covers unconditional strings.
+8. **Placeholder legibility must preserve the empty-versus-filled hierarchy (#6408).** PR #6403 repaired faint Light
+   placeholders by giving them the same primary foreground as entered values; its contrast-only probe missed the
+   resulting ambiguity. Resolve the actual rendered value and placeholder classes in both themes, require distinct
+   effective foregrounds, and measure placeholder contrast against every real composited background stop. The
+   placeholder must remain at least 4.5:1 without becoming the entered-value color. Reverting either route to
+   `placeholder:text-text-primary` must fail the hierarchy assertion even when the contrast assertion still passes.

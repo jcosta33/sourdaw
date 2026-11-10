@@ -1004,7 +1004,7 @@ function BrowserRail({
                     placeholder="Search presets"
                     aria-label="Search Grinder presets"
                     variant="ghost"
-                    inputClassName="placeholder:text-text-primary"
+                    inputClassName="placeholder:text-text-primary/85"
                     className="rounded-[18px] border border-white/6 bg-black/20 px-3 py-2"
                 />
                 <Row justify="between" className="text-dense uppercase tracking-[0.22em] text-text-primary">
