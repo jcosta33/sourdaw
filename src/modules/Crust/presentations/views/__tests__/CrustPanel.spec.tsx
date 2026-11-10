@@ -273,6 +273,18 @@ describe('CrustPanel', () => {
         expect(faceplate).not.toHaveClass('overflow-hidden');
     });
 
+    it('uses opaque semantic foregrounds for desk and section labels', () => {
+        render(<CrustPanel deviceId="crust-1" />);
+
+        const deskLabel = screen.getByText('Loudness desk');
+        expect(deskLabel).toHaveClass('text-[var(--color-accent-copper)]');
+        expect(deskLabel.className).not.toMatch(/text-\[var\(--color-accent-copper\)\]\//u);
+
+        const sectionLabel = screen.getByText('Mission control');
+        expect(sectionLabel).toHaveClass('text-muted-foreground');
+        expect(sectionLabel.className).not.toMatch(/text-muted-foreground\//u);
+    });
+
     it('keeps control zone scroll container from collapsing sections with [&>*]:shrink-0', () => {
         render(<CrustPanel deviceId="crust-1" />);
         const missionControlHeader = screen.getByText('Mission control');

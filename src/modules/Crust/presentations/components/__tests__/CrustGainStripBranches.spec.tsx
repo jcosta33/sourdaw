@@ -54,6 +54,14 @@ describe('CrustGainStrip — numeric readout', () => {
         render(<CrustGainStrip value={6} onChange={vi.fn()} />);
         expect(screen.getByText('Gain')).toBeInTheDocument();
     });
+
+    it.each(['Gain', '0', 'dB'])('uses an opaque semantic text role for the %s label', (label) => {
+        render(<CrustGainStrip value={6} onChange={vi.fn()} />);
+
+        expect(screen.getByText(label)).toHaveClass('text-muted-foreground');
+        expect(screen.getByText(label)).not.toHaveClass('text-muted-foreground/30');
+        expect(screen.getByText(label)).not.toHaveClass('text-muted-foreground/40');
+    });
 });
 
 describe('CrustGainStrip — keyboard interaction', () => {

@@ -223,9 +223,7 @@ export const WaveshaperEditor = ({
                 onPointerUp={handlePointerUp}
                 onPointerCancel={handlePointerCancel}
             />
-            <span className="absolute top-1 left-1 text-nano text-muted-foreground/30 font-mono">
-                Transfer Function
-            </span>
+            <span className="absolute top-1 left-1 text-nano text-muted-foreground font-mono">Transfer Function</span>
         </div>
     );
 };

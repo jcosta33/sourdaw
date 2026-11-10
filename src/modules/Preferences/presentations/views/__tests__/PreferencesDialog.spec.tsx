@@ -74,16 +74,16 @@ describe('PreferencesDialog', () => {
         render(<PreferencesDialog open={true} onClose={vi.fn()} />);
 
         const dialog = screen.getByRole('dialog');
-        const navigation = screen.getByRole('navigation');
+        const navigation = screen.getByRole('navigation', { name: 'Preferences sections' });
+        expect(screen.getByRole('button', { name: 'General' })).toHaveAttribute('aria-current', 'page');
         const sideRail = navigation.parentElement;
         const shell = sideRail?.parentElement;
 
         expect(dialog).toHaveClass(
-            'h-[520px]',
-            'max-h-[80%]',
-            'w-[720px]',
-            'max-w-[90%]',
-            'sm:max-w-[90%]',
+            'h-[680px]',
+            'max-h-[calc(100dvh-4rem)]',
+            'w-[920px]',
+            'max-w-[calc(100vw-4rem)]',
             'overflow-hidden'
         );
         expect(shell?.tagName).toBe('DIV');
@@ -100,7 +100,14 @@ describe('PreferencesDialog', () => {
         );
         expect(shell?.children).toHaveLength(2);
         expect(shell?.children[0]).toBe(sideRail);
-        expect(shell?.children[1]).toHaveClass('flex-1', 'gap-5', 'bg-surface-base/60', 'p-5', '[&>*]:shrink-0');
+        expect(shell?.children[1]).toHaveClass(
+            'flex-1',
+            'gap-5',
+            'bg-surface-base/60',
+            'p-5',
+            '[&>*]:shrink-0',
+            'overflow-y-auto'
+        );
         expect(sideRail).toHaveClass('overflow-y-auto');
 
         expect(navigation.tagName).toBe('NAV');

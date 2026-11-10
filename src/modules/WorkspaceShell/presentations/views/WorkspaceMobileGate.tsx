@@ -2,13 +2,15 @@ import { type ReactElement, type ReactNode } from 'react';
 
 import { MobileGate } from '../components/MobileGate';
 import { useDisplayScaleSynchronization } from '../hooks/useDisplayScaleSynchronization';
+import { useThemeSynchronization } from '../hooks/useThemeSynchronization';
 
 type WorkspaceMobileGateProps = {
     children: ReactNode;
 };
 
-const ScaleSynchronizationBoundary = ({ children }: WorkspaceMobileGateProps): ReactElement => {
+const AppearanceSynchronizationBoundary = ({ children }: WorkspaceMobileGateProps): ReactElement => {
     useDisplayScaleSynchronization();
+    useThemeSynchronization();
     return <>{children}</>;
 };
 
@@ -25,15 +27,14 @@ const ScaleSynchronizationBoundary = ({ children }: WorkspaceMobileGateProps): R
  * resize cannot mount or unmount the shell after that first decision; the contract
  * note on `isUnsupportedPhone` states the rule.
  *
- * Display-scale synchronization also belongs here, outside AppShell but inside the
- * mobile gate. The boundary mounts only after `MobileGate` has classified the device
- * as eligible, then reapplies the stored preference; scale moves window metrics, and
- * the gate never reads them.
+ * Appearance synchronization wraps both mobile-gate outcomes so an unsupported phone
+ * also receives the saved theme and clears the startup visibility fence. Scale moves
+ * window metrics, while the gate reads only platform identity and screen dimensions.
  */
 export const WorkspaceMobileGate = ({ children }: WorkspaceMobileGateProps): ReactElement => {
     return (
-        <MobileGate>
-            <ScaleSynchronizationBoundary>{children}</ScaleSynchronizationBoundary>
-        </MobileGate>
+        <AppearanceSynchronizationBoundary>
+            <MobileGate>{children}</MobileGate>
+        </AppearanceSynchronizationBoundary>
     );
 };

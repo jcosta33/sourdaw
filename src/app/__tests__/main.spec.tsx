@@ -301,6 +301,7 @@ describe('app main composition', () => {
         Reflect.deleteProperty(window, 'sourdaw');
         window.name = '';
         document.body.innerHTML = '<div id="root"></div>';
+        document.documentElement.style.visibility = 'hidden';
         mocks.resolveAppComposition.mockReturnValue('browser-host');
         vi.doMock('../bootstrap', () => {
             mocks.bootstrap();
@@ -511,6 +512,7 @@ describe('app main composition', () => {
 
             await import('../main');
             await vi.waitFor(() => expect(mocks.render).toHaveBeenCalledTimes(2));
+            expect(document.documentElement.style.visibility).toBe('visible');
 
             expect(mocks.loadApp).toHaveBeenCalledTimes(2);
             expect(mocks.bootstrap).toHaveBeenCalledOnce();
@@ -570,6 +572,7 @@ describe('app main composition', () => {
 
         await import('../main');
         await vi.waitFor(() => expect(mocks.render).toHaveBeenCalledTimes(2));
+        expect(document.documentElement.style.visibility).toBe('visible');
 
         expect(mocks.reportError).not.toHaveBeenCalled();
         expect(mocks.logError).toHaveBeenCalledOnce();
@@ -613,6 +616,7 @@ describe('app main composition', () => {
         await rendered;
 
         expect(mocks.render).toHaveBeenCalledOnce();
+        expect(document.documentElement.style.visibility).toBe('visible');
         const startupError = mocks.render.mock.calls[0]?.[0];
         expect(isValidElement(startupError)).toBe(true);
         if (!isValidElement<{ onReload: () => void }>(startupError)) {

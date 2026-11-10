@@ -98,11 +98,50 @@ describe('CrustMeteringStrip — GR display', () => {
     });
 });
 
+describe('CrustMeteringStrip — semantic meter text', () => {
+    it('uses theme-aware roles for neutral status, channel labels, and normal GR text', () => {
+        render(<CrustMeteringStrip {...defaultProps({ grDb: 0 })} />);
+
+        expect(screen.getByText('Clear')).toHaveClass('bg-surface-default', 'text-text-secondary');
+        for (const label of ['L', 'R']) {
+            expect(screen.getByText(label)).toHaveClass('text-muted-foreground');
+            expect(screen.getByText(label)).not.toHaveClass('text-muted-foreground/50');
+        }
+        expect(screen.getByLabelText('Gain reduction: 0.0 dB').style.color).toBe('var(--color-text-primary)');
+    });
+});
+
 describe('CrustMeteringStrip — section headers', () => {
     it('renders Output, Loudness, and TP max sections', () => {
         render(<CrustMeteringStrip {...defaultProps()} />);
         expect(screen.getByText('Output')).toBeInTheDocument();
         expect(screen.getByText('Loudness')).toBeInTheDocument();
         expect(screen.getByText('TP max')).toBeInTheDocument();
+    });
+});
+
+describe('CrustMeteringStrip — semantic loudness colors', () => {
+    it.each([
+        { lufsIntegrated: -14, lufsTarget: null, color: 'var(--color-text-primary)' },
+        { lufsIntegrated: -14, lufsTarget: -14, color: 'var(--color-state-play)' },
+        { lufsIntegrated: -12, lufsTarget: -14, color: 'var(--color-state-danger)' },
+        { lufsIntegrated: -16, lufsTarget: -14, color: 'var(--color-text-primary)' },
+    ])('uses $color for integrated $lufsIntegrated against target $lufsTarget', (props) => {
+        render(<CrustMeteringStrip {...defaultProps(props)} />);
+
+        const integrated = screen.getByLabelText(`Integrated LUFS: ${props.lufsIntegrated.toFixed(1)}`);
+        expect(integrated.style.color).toBe(props.color);
+        expect(screen.getByText('LUFS')).toHaveClass('text-muted-foreground');
+        expect(screen.getByText('LUFS')).not.toHaveClass('text-muted-foreground/50');
+    });
+
+    it.each([
+        { lufsIntegrated: -14, lufsTarget: -14, text: '(0.0)', color: 'var(--color-state-play)' },
+        { lufsIntegrated: -12, lufsTarget: -14, text: '(+2.0)', color: 'var(--color-state-danger)' },
+        { lufsIntegrated: -16, lufsTarget: -14, text: '(-2.0)', color: 'var(--color-state-warning)' },
+    ])('uses $color for target delta $text', (props) => {
+        render(<CrustMeteringStrip {...defaultProps(props)} />);
+
+        expect(screen.getByText(props.text).style.color).toBe(props.color);
     });
 });

@@ -150,7 +150,7 @@ export const AutomationAddLaneControl = ({
                 <Plus className="size-3" />
                 Add Lane
                 {showAvailableCount && params.length > 0 ? (
-                    <span className="ml-auto text-[8px] text-muted-foreground/40">{params.length} available</span>
+                    <span className="ml-auto text-[8px] text-muted-foreground">{params.length} available</span>
                 ) : null}
             </Button>
 
@@ -175,12 +175,12 @@ export const AutomationAddLaneControl = ({
                                         setOpen(false);
                                     }}
                                 >
-                                    <Plus className="size-2.5 text-muted-foreground/50" />
+                                    <Plus className="size-2.5 text-muted-foreground" />
                                     {param.name}
                                 </Button>
                             ))}
                             {params.length === 0 ? (
-                                <div className="px-2.5 py-2 text-[10px] italic text-muted-foreground/50">
+                                <div className="px-2.5 py-2 text-[10px] italic text-muted-foreground">
                                     All parameters have lanes
                                 </div>
                             ) : null}
