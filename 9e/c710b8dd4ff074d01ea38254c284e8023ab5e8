@@ -1,0 +1,66 @@
+electron/__tests__/jsdom.d.ts
+  h_beb54bf43b47b7 1-9
+electron/__tests__/webviewSecurity.spec.ts
+  h_beb54bf43b47b7 111-113,116
+index.html
+  h_beb54bf43b47b7 12,24-30
+public/themePrepaint.js
+  h_beb54bf43b47b7 244-260
+scripts/__tests__/vercelContentSecurityPolicy.spec.ts
+  h_beb54bf43b47b7 177-178,181
+src/app/__tests__/main.spec.tsx
+  h_beb54bf43b47b7 304,515,575,619
+src/app/__tests__/mainRenderBeforeBootstrap.spec.tsx
+  h_beb54bf43b47b7 289,380
+src/app/main.tsx
+  h_beb54bf43b47b7 107,119
+src/components/daw/DawEyebrowLabel.tsx
+  h_beb54bf43b47b7 12
+src/components/daw/__tests__/DawEyebrowLabel.spec.tsx
+  h_beb54bf43b47b7 12,14-15
+src/modules/Bacteria/presentations/components/BandStrip.tsx
+  h_beb54bf43b47b7 41-43,52,66,84,105
+src/modules/Bacteria/presentations/components/BezierLfoEditor.tsx
+  h_beb54bf43b47b7 238
+src/modules/Bacteria/presentations/components/CrossoverDisplay.tsx
+  h_beb54bf43b47b7 161,185-196,198-199,225
+src/modules/Bacteria/presentations/components/ModulationDock.tsx
+  h_beb54bf43b47b7 38-88,96,113,116,128,166,189,227-232,240,259,273
+src/modules/Bacteria/presentations/components/SpectralBinEditor.tsx
+  h_beb54bf43b47b7 191
+src/modules/Bacteria/presentations/components/StepSequencerEditor.tsx
+  h_beb54bf43b47b7 170
+src/modules/Bacteria/presentations/components/WaveshaperEditor.tsx
+  h_beb54bf43b47b7 226
+src/modules/Bacteria/presentations/components/XYMorphPad.tsx
+  h_beb54bf43b47b7 93
+src/modules/Bacteria/presentations/views/BacteriaPanel.tsx
+  h_beb54bf43b47b7 259,277,305,313-314,327,405-406,425,477,693,758,1870,1910
+src/modules/Preferences/stores/__tests__/themePrepaint.spec.ts
+  h_beb54bf43b47b7 13-20,35-43,45-46,98-128
+src/modules/TimelineEditor/presentations/views/AutomationView/AutomationControls.tsx
+  h_beb54bf43b47b7 153,178,183
+src/modules/WorkspaceShell/presentations/views/WorkspaceMobileGate.tsx
+  h_beb54bf43b47b7 30-32,36-38
+src/modules/WorkspaceShell/presentations/views/__tests__/WorkspaceMobileGate.spec.tsx
+  h_beb54bf43b47b7 195,199,208-213,220,232-235
+src/styles/__tests__/semanticThemes.spec.ts
+  h_beb54bf43b47b7 11,21-35,221-266,301,303-305,308,317,442
+tests/e2e/applicationModuleRecovery.spec.ts
+  h_beb54bf43b47b7 213,265,425
+tests/e2e/devServerOnlySpecs.ts
+  h_beb54bf43b47b7 23
+tests/e2e/e2eStartupDiagnostics.spec.ts
+  h_beb54bf43b47b7 6-11,100,106-110,128,133-137,140-142,148-150,158,161-165,168,220,262-322
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9ec710b8dd4ff074d01ea38254c284e8023ab5e8",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
