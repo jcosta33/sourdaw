@@ -108,12 +108,12 @@ describe('the production Content-Security-Policy', () => {
 
         const themeScript = findThemeScript(indexHtml);
         expect(themeScript?.getAttribute('src')).toBe('/themePrepaint.js');
-        // The prepaint must run as a classic inline-order script: an absent or
-        // non-JavaScript type can suppress execution, while module, async or
-        // defer spelling defers it past first paint and restores the dark flash.
+        // The classic async script cannot block the parser from reaching the
+        // static recovery markup. Its hidden-root insertion observer preserves
+        // the no-dark-flash contract without waiting for the entry module.
         expect(themeScript?.getAttribute('type')?.toLowerCase()).toBe('text/javascript');
         expect(themeScript?.getAttribute('type')?.toLowerCase()).not.toBe('module');
-        expect(themeScript?.hasAttribute('async')).toBe(false);
+        expect(themeScript?.hasAttribute('async')).toBe(true);
         expect(themeScript?.hasAttribute('defer')).toBe(false);
         expect(themeScript?.textContent?.trim()).toBe('');
     });

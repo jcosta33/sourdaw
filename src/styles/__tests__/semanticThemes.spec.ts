@@ -8,6 +8,7 @@ import { describe, expect, it } from 'vitest';
 
 import { DawCompactTextarea } from '#/components/daw/DawCompactTextarea';
 import { DawDiagramFrame } from '#/components/daw/DawDiagramFrame';
+import { DawEyebrowLabel } from '#/components/daw/DawEyebrowLabel';
 import { DawPluginChip } from '#/components/daw/DawPluginChip';
 import { DawPluginMetricTile } from '#/components/daw/DawPluginMetricTile';
 import { DawSearchInput } from '#/components/daw/DawSearchInput';
@@ -17,6 +18,21 @@ const tokens = readFileSync(resolve(process.cwd(), 'src/styles/tokens.css'), 'ut
 const indexHtml = readFileSync(resolve(process.cwd(), 'index.html'), 'utf8');
 const chipSource = readFileSync(resolve(process.cwd(), 'src/components/daw/DawPluginChip.tsx'), 'utf8');
 const ledSource = readFileSync(resolve(process.cwd(), 'src/components/daw/DawPluginLed.tsx'), 'utf8');
+const automationSource = readFileSync(
+    resolve(process.cwd(), 'src/modules/TimelineEditor/presentations/views/AutomationView/AutomationControls.tsx'),
+    'utf8'
+);
+const bacteriaSources = [
+    'src/modules/Bacteria/presentations/views/BacteriaPanel.tsx',
+    'src/modules/Bacteria/presentations/components/ModulationDock.tsx',
+    'src/modules/Bacteria/presentations/components/StepSequencerEditor.tsx',
+    'src/modules/Bacteria/presentations/components/CrossoverDisplay.tsx',
+    'src/modules/Bacteria/presentations/components/BandStrip.tsx',
+    'src/modules/Bacteria/presentations/components/BezierLfoEditor.tsx',
+    'src/modules/Bacteria/presentations/components/WaveshaperEditor.tsx',
+    'src/modules/Bacteria/presentations/components/SpectralBinEditor.tsx',
+    'src/modules/Bacteria/presentations/components/XYMorphPad.tsx',
+].map((path) => ({ path, source: readFileSync(resolve(process.cwd(), path), 'utf8') }));
 const gainSource = readFileSync(
     resolve(process.cwd(), 'src/modules/Crust/presentations/components/CrustGainStrip.tsx'),
     'utf8'
@@ -202,6 +218,52 @@ const grinderFaceplateStops = (): Record<string, string> => {
 };
 
 describe('semantic light theme', () => {
+    it('keeps Automation labels, counts, icons, and empty states opaque on every floating-surface stop', () => {
+        const markup = renderToStaticMarkup(createElement(DawEyebrowLabel, null, 'Add parameter'));
+        const eyebrow = parseActiveHtml(markup).querySelector('span');
+        expect(eyebrow).not.toBeNull();
+        expect(eyebrow?.getAttribute('class')).toContain('text-muted-foreground');
+        expect(eyebrow?.getAttribute('class')).not.toContain('text-muted-foreground/');
+        expect(automationSource).not.toMatch(/\btext-muted-foreground\/\d+/u);
+
+        const muted = readLightColor('--color-muted-foreground');
+        for (const [stop, background] of Object.entries(mainWindowStops('daw-floating-surface'))) {
+            expect(contrast(muted, background), `Automation muted text on ${stop}`).toBeGreaterThanOrEqual(4.5);
+        }
+    });
+
+    it('keeps every Bacteria text role opaque and readable on every real Light window stop', () => {
+        for (const { path, source } of bacteriaSources) {
+            expect(source, `${path} alpha-reduced text`).not.toMatch(
+                /\btext-(?:foreground|muted-foreground|\[var\(--color-[a-z-]+\)\]|rose-400)\/\d+/u
+            );
+            expect(source, `${path} raw Light-unaware text`).not.toMatch(/\btext-(?:rose-400|white)\b/u);
+        }
+        const modulationSource = bacteriaSources.find(({ path }) => path.endsWith('ModulationDock.tsx'))?.source ?? '';
+        const crossoverSource = bacteriaSources.find(({ path }) => path.endsWith('CrossoverDisplay.tsx'))?.source ?? '';
+        expect(modulationSource).toContain('color: source.textColor');
+        expect(modulationSource).toContain("source?.textColor ?? 'var(--color-text-primary)'");
+        expect(modulationSource).not.toContain('text-[6px] opacity-50');
+        expect(crossoverSource).not.toContain('style={{ color: BAND_BORDER_COLORS');
+
+        const stops = mainWindowStops('bacteria-window');
+        for (const token of [
+            '--color-text-primary',
+            '--color-text-secondary',
+            '--color-accent-mint',
+            '--color-accent-rose',
+            '--color-accent-orange',
+            '--color-accent-lavender',
+            '--color-accent-steel',
+            '--color-accent-amber',
+        ]) {
+            const foreground = readLightColor(token);
+            for (const [stop, background] of Object.entries(stops)) {
+                expect(contrast(foreground, background), `${token} on Bacteria ${stop}`).toBeGreaterThanOrEqual(4.5);
+            }
+        }
+    });
+
     it('overrides the complete surface and text hierarchy and declares native control color scheme', () => {
         for (const name of [
             '--surface-deep',
@@ -236,14 +298,14 @@ describe('semantic light theme', () => {
         }
     });
 
-    it('loads the prepaint theme before the startup main and entry module', () => {
+    it('loads the prepaint theme before the startup main and entry module without blocking either', () => {
         expect(startupThemeMatch?.getAttribute('src')).toBe('/themePrepaint.js');
-        // An absent or non-JavaScript type can suppress execution; module,
-        // async or defer spelling defers the prepaint past first paint and
-        // restores the dark flash it exists to prevent.
+        // An absent or non-JavaScript type can suppress execution. Async lets
+        // the parser reach the static startup markup; the hidden root and the
+        // script's insertion observer still prevent an unthemed first paint.
         expect(startupThemeMatch?.getAttribute('type')?.toLowerCase()).toBe('text/javascript');
         expect(startupThemeMatch?.getAttribute('type')?.toLowerCase()).not.toBe('module');
-        expect(startupThemeMatch?.hasAttribute('async')).toBe(false);
+        expect(startupThemeMatch?.hasAttribute('async')).toBe(true);
         expect(startupThemeMatch?.hasAttribute('defer')).toBe(false);
         expect(startupThemeMatch?.textContent?.trim()).toBe('');
         expect(themePrecedesEntry(startupThemeMatch, indexDocument.getElementById('entry-startup'))).toBe(true);
@@ -252,7 +314,7 @@ describe('semantic light theme', () => {
     });
 
     it('detects reversed real theme and entry tags in one connected document', () => {
-        const themeTag = '<script id="sourdaw-theme" type="text/javascript" src="/themePrepaint.js"></script>';
+        const themeTag = '<script id="sourdaw-theme" type="text/javascript" src="/themePrepaint.js" async></script>';
         const entryTag = '<script id="sourdaw-entry" type="module" src="/src/app/main.tsx"></script>';
         expect(indexHtml).toContain(themeTag);
         expect(indexHtml).toContain(entryTag);
@@ -377,7 +439,7 @@ describe('semantic light theme', () => {
 
     const dawInsetSurfaceStops = (): Record<string, string> => {
         const backgroundSource =
-            /background:([\s\S]*?);\n    border:/u.exec(utilityBlock('daw-inset-surface'))?.[1] ?? '';
+            /background:([\s\S]*?);\n {4}border:/u.exec(utilityBlock('daw-inset-surface'))?.[1] ?? '';
         const layers = Array.from(backgroundSource.matchAll(/rgba\([^)]*\)/gu), (match) => parseCssColor(match[0]));
         const [topWhite, bottomWhite, topBlack] = layers;
         const fadeEndpoint = Number(/transparent\s+([\d.]+)%/u.exec(backgroundSource)?.[1]);

@@ -104,6 +104,7 @@ async function renderApplication(): Promise<void> {
                 // Logged, not raised: the reload view below recovers this failure, so it is
                 // no uncaught page error, unlike a failed first paint.
                 logger.error(new Error('The application module failed to load', { cause: error }));
+                document.documentElement.style.visibility = 'visible';
                 reactRoot.render(<ApplicationFirstPaint onReload={() => reloadApplication(window.location)} />);
             }
         );
@@ -115,6 +116,7 @@ async function renderDesktopStartupError(): Promise<void> {
         import('react-dom/client'),
         import('./DesktopStartupError'),
     ]);
+    document.documentElement.style.visibility = 'visible';
     createRoot(root).render(<DesktopStartupError onReload={() => reloadApplication(window.location)} />);
 }
 

@@ -9,7 +9,7 @@
         <link rel="icon" type="image/x-icon" href="/favicon.ico" />
         <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png" />
         <link rel="apple-touch-icon" href="/icon-192.png" />
-        <script id="sourdaw-theme" type="text/javascript" src="/themePrepaint.js"></script>
+        <script id="sourdaw-theme" type="text/javascript" src="/themePrepaint.js" async></script>
         <style>
             :root {
                 visibility: hidden;
@@ -21,6 +21,13 @@
                 --entry-startup-color: #292521;
             }
         </style>
+        <noscript>
+            <style>
+                :root {
+                    visibility: visible;
+                }
+            </style>
+        </noscript>
         <script defer src="/entryLoadRecovery.js"></script>
     </head>
     <body class="bg-background text-foreground antialiased">

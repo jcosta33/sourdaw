@@ -10,7 +10,14 @@ import { validateStoredPreferences } from '../preferencesStore';
 const startupThemeScript = readFileSync(resolve(process.cwd(), 'public/themePrepaint.js'), 'utf8');
 const indexHtml = readFileSync(resolve(process.cwd(), 'index.html'), 'utf8');
 
-const runStartupTheme = (stored: string | null, operations: string[] = []) => {
+type StartupThemeOptions = {
+    hasStartup?: () => boolean;
+    onMutation?: (callback: () => void) => void;
+    onDisconnect?: () => void;
+};
+
+const runStartupTheme = (stored: string | null, operations: string[] = [], options: StartupThemeOptions = {}) => {
+    const { hasStartup = () => true, onMutation = () => undefined, onDisconnect = () => undefined } = options;
     const classes = new Set<string>(['dark']);
     const style = new Proxy<Record<string, string>>(
         {},
@@ -25,7 +32,18 @@ const runStartupTheme = (stored: string | null, operations: string[] = []) => {
     const metaAttributes: Record<string, string> = {};
     runInNewContext(startupThemeScript, {
         window: { localStorage: { getItem: () => stored } },
+        MutationObserver: class {
+            constructor(callback: () => void) {
+                onMutation(callback);
+            }
+            observe(): void {}
+            disconnect(): void {
+                onDisconnect();
+            }
+        },
         document: {
+            readyState: 'loading',
+            getElementById: (id: string) => (id === 'entry-startup' && hasStartup() ? {} : null),
             documentElement: {
                 classList: {
                     toggle(name: string, enabled: boolean) {
@@ -75,6 +93,37 @@ describe('theme prepaint', () => {
             'meta:content:#ded8cf',
             'visibility:visible',
         ]);
+    });
+
+    it('reveals early async execution when startup markup arrives without waiting for the entry module', () => {
+        const operations: string[] = [];
+        let startupPresent = false;
+        let mutation = (): void => undefined;
+        let disconnected = false;
+        runStartupTheme(stringify({ theme: 'light' }), operations, {
+            hasStartup: () => startupPresent,
+            onMutation: (callback) => {
+                mutation = callback;
+            },
+            onDisconnect: () => {
+                disconnected = true;
+            },
+        });
+
+        expect(operations).toEqual([
+            'class:dark:false',
+            'class:light:true',
+            'colorScheme:light',
+            'meta:content:#ded8cf',
+        ]);
+        mutation();
+        expect(operations).not.toContain('visibility:visible');
+
+        startupPresent = true;
+        mutation();
+
+        expect(operations.at(-1)).toBe('visibility:visible');
+        expect(disconnected).toBe(true);
     });
 
     it('falls back to the dark startup when persisted preferences are corrupt', () => {

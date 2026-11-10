@@ -241,5 +241,21 @@
     document
         .querySelector('meta[name="theme-color"]')
         ?.setAttribute('content', theme === 'light' ? '#ded8cf' : '#020100');
-    root.style.visibility = 'visible';
+    const reveal = () => {
+        root.style.visibility = 'visible';
+    };
+    if (document.readyState === 'loading' && document.getElementById('entry-startup') === null) {
+        // DOMContentLoaded waits for the entry module; observe the static startup
+        // markup instead so a held module cannot hide the recovery surface.
+        const observer = new MutationObserver(() => {
+            if (document.getElementById('entry-startup') === null) {
+                return;
+            }
+            observer.disconnect();
+            reveal();
+        });
+        observer.observe(document.documentElement, { childList: true, subtree: true });
+    } else {
+        reveal();
+    }
 })();

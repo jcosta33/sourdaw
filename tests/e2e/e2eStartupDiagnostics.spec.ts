@@ -3,7 +3,12 @@ import { rm } from 'node:fs/promises';
 import { createFixture, deferred, event } from '../../scripts/__tests__/fixtures/e2eStartupDiagnostics.ts';
 
 import { test, expect } from './e2eTest';
-import { enable_direct_e2e_viewport, LAUNCH_SCREEN_NAME, PREFERENCES_STORAGE_KEY } from './e2eUtils';
+import {
+    enable_direct_e2e_viewport,
+    LAUNCH_SCREEN_NAME,
+    PREFERENCES_STORAGE_KEY,
+    wait_for_launch_first_paint,
+} from './e2eUtils';
 
 test('applies the persisted Light theme before the real entry module paints', async ({ page }) => {
     await enable_direct_e2e_viewport(page);
@@ -92,13 +97,17 @@ test('applies the persisted Light theme before the real entry module paints', as
     let entryRequests = 0;
     await page.addInitScript((key) => {
         window.localStorage.setItem(key, JSON.stringify({ json: { theme: 'light' } }));
-        const samples: Array<{ visibility: string; backgroundColor: string }> = [];
+        const samples: Array<{ visibility: string; backgroundColor: string; color: string }> = [];
         Object.assign(window, { __sourdawStartupFrames: samples });
         const record = (): void => {
             const startup = document.getElementById('entry-startup');
             if (startup !== null) {
                 const style = window.getComputedStyle(startup);
-                samples.push({ visibility: style.visibility, backgroundColor: style.backgroundColor });
+                samples.push({
+                    visibility: style.visibility,
+                    backgroundColor: style.backgroundColor,
+                    color: style.color,
+                });
             }
             window.requestAnimationFrame(record);
         };
@@ -116,38 +125,47 @@ test('applies the persisted Light theme before the real entry module paints', as
         }
         await route.continue();
     });
-    const readVisibleStartupBackgrounds = (): Promise<string[]> =>
+    const readVisibleStartupFrames = (): Promise<Array<{ backgroundColor: string; color: string }>> =>
         page.evaluate(() => {
             const samples =
                 (
                     window as unknown as {
-                        __sourdawStartupFrames?: Array<{ visibility: string; backgroundColor: string }>;
+                        __sourdawStartupFrames?: Array<{
+                            visibility: string;
+                            backgroundColor: string;
+                            color: string;
+                        }>;
                     }
                 ).__sourdawStartupFrames ?? [];
-            return samples.filter((sample) => sample.visibility === 'visible').map((sample) => sample.backgroundColor);
+            return samples
+                .filter((sample) => sample.visibility === 'visible')
+                .map((sample) => ({ backgroundColor: sample.backgroundColor, color: sample.color }));
         });
 
     try {
         await page.goto('/', { waitUntil: 'commit' });
         await expect.poll(() => prepaintRequests).toBe(1);
-        await expect(page.locator('#entry-startup')).toHaveCount(0);
+        await expect.poll(() => entryRequests).toBe(1);
+        await expect(page.locator('#entry-startup')).toHaveCount(1);
+        await expect(page.locator('#entry-startup')).toBeHidden();
         await expect(page.getByLabel(LAUNCH_SCREEN_NAME)).toHaveCount(0);
 
         prepaintGate.resolve('release prepaint');
-        await expect.poll(() => entryRequests).toBe(1);
         await expect(page.locator('html')).toHaveClass('light');
         await expect(page.locator('html')).toHaveCSS('color-scheme', 'light');
         await expect(page.locator('meta[name="theme-color"]')).toHaveAttribute('content', '#ded8cf');
         await expect(page.locator('#entry-startup')).toHaveCSS('background-color', 'rgb(222, 216, 207)');
+        await expect(page.locator('#entry-startup')).toHaveCSS('color', 'rgb(41, 37, 33)');
         await expect(page.getByLabel(LAUNCH_SCREEN_NAME)).toHaveCount(0);
         expect(entryRequests).toBe(1);
-        await expect.poll(readVisibleStartupBackgrounds).toContain('rgb(222, 216, 207)');
-        const visibleStartupBackgrounds = await readVisibleStartupBackgrounds();
-        expect(visibleStartupBackgrounds.length).toBeGreaterThan(0);
-        expect(visibleStartupBackgrounds).toEqual(visibleStartupBackgrounds.map(() => 'rgb(222, 216, 207)'));
+        await expect.poll(async () => (await readVisibleStartupFrames()).length).toBeGreaterThan(0);
+        const visibleStartupFrames = await readVisibleStartupFrames();
+        for (const frame of visibleStartupFrames) {
+            expect(frame).toEqual({ backgroundColor: 'rgb(222, 216, 207)', color: 'rgb(41, 37, 33)' });
+        }
 
         entryGate.resolve('release entry');
-        await expect(page.getByLabel(LAUNCH_SCREEN_NAME)).toBeVisible({ timeout: 30_000 });
+        await wait_for_launch_first_paint(page);
     } finally {
         prepaintGate.resolve('release prepaint');
         entryGate.resolve('release entry');
@@ -199,7 +217,7 @@ test('keeps aborted prepaint hidden until runtime synchronization restores saved
         await expect(startup).toBeHidden();
 
         entryGate.resolve('release entry');
-        await expect(page.getByLabel(LAUNCH_SCREEN_NAME)).toBeVisible({ timeout: 30_000 });
+        await wait_for_launch_first_paint(page);
         await expect(page.locator('html')).toHaveClass('light');
         await expect(page.locator('html')).toHaveCSS('color-scheme', 'light');
         await expect(page.locator('meta[name="theme-color"]')).toHaveAttribute('content', '#ded8cf');
@@ -240,4 +258,65 @@ test('receives independent renderer heartbeats while the real entry module remai
         await item.server.close();
         await rm(item.root, { recursive: true, force: true });
     }
+});
+
+test('reveals desktop connection recovery instead of leaving the root hidden', async ({ page }) => {
+    await page.addInitScript(() => {
+        Object.defineProperty(navigator, 'userAgent', {
+            configurable: true,
+            get: () => 'Mozilla/5.0 Electron/33.0.0 Sourdaw',
+        });
+    });
+
+    await page.goto('/');
+
+    const failure = page.getByRole('alert', { name: 'Sourdaw could not start' });
+    await expect(failure).toBeVisible();
+    await expect(
+        failure.getByText('The desktop connection did not load. Reload Sourdaw to try starting it again.')
+    ).toBeVisible();
+    await expect(failure.getByRole('button', { name: 'Reload Sourdaw' })).toBeVisible();
+    await expect(page.locator('html')).toHaveCSS('visibility', 'visible');
+});
+
+test('reveals the saved Light theme on the unsupported-phone gate', async ({ browser, baseURL }) => {
+    const context = await browser.newContext({
+        baseURL,
+        viewport: { width: 393, height: 852 },
+        screen: { width: 393, height: 852 },
+        isMobile: true,
+        hasTouch: true,
+    });
+    const phone = await context.newPage();
+    try {
+        await enable_direct_e2e_viewport(phone);
+        await phone.addInitScript((key) => {
+            window.localStorage.setItem(key, JSON.stringify({ json: { theme: 'light', uiScale: 1 } }));
+        }, PREFERENCES_STORAGE_KEY);
+
+        await phone.goto('/');
+
+        await expect(phone.getByText('Desktop DAW')).toBeVisible();
+        await expect(phone.locator('html')).toHaveClass('light');
+        await expect(phone.locator('html')).toHaveCSS('visibility', 'visible');
+        await expect(phone.getByTestId('transport-play')).toHaveCount(0);
+    } finally {
+        await context.close();
+    }
+});
+
+test.describe('with JavaScript disabled', () => {
+    test.use({ javaScriptEnabled: false });
+
+    test('keeps the static startup and reload guidance visible', async ({ page }) => {
+        await page.goto('/');
+
+        await expect(page.getByRole('status', { name: 'Starting Sourdaw' })).toBeVisible();
+        await expect(
+            page.getByText("If this screen remains, use your browser's Reload to try starting Sourdaw again.")
+        ).toBeVisible();
+        await expect(page.locator('html')).toHaveCSS('visibility', 'visible');
+        await expect(page.locator('#entry-startup')).toHaveCSS('background-color', 'rgb(2, 1, 0)');
+        await expect(page.locator('#entry-startup')).toHaveCSS('color', 'rgb(238, 238, 238)');
+    });
 });

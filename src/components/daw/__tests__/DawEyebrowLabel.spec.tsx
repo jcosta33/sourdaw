@@ -9,9 +9,10 @@ describe('DawEyebrowLabel', () => {
         expect(screen.getByText('Section')).toBeInTheDocument();
     });
 
-    it('should default to xs size class', () => {
+    it('should default to xs size class and an opaque muted foreground', () => {
         const { container } = render(<DawEyebrowLabel>A</DawEyebrowLabel>);
-        expect(container.firstChild).toHaveClass('text-[9px]');
+        expect(container.firstChild).toHaveClass('text-[9px]', 'text-muted-foreground');
+        expect(container.firstChild).not.toHaveClass('text-muted-foreground/60');
     });
 
     it('should apply sm size class when size is sm', () => {
