@@ -1,0 +1,60 @@
+src/modules/AudioRendering/presentations/views/ExportDialog.tsx
+  h_beb54bf43b47b7 507,620,623,710,1058
+src/modules/AudioRendering/presentations/views/__tests__/ExportDialog.spec.tsx
+  h_beb54bf43b47b7 779-813,2118-2122,2233
+src/modules/AudioRendering/presentations/views/__tests__/ExportDialogControls.integration.spec.tsx
+  h_beb54bf43b47b7 24,44,68,75,144,148
+src/modules/AudioRendering/presentations/views/__tests__/exportStreamingMemory.spec.tsx
+  h_beb54bf43b47b7 1133
+src/modules/WorkspaceShell/presentations/views/LaunchScreen.tsx
+  h_beb54bf43b47b7 329
+tests/e2e/bakeryControlGeometry.spec.ts
+  h_beb54bf43b47b7 7,19,42
+tests/e2e/browserDisplayScale.spec.ts
+  h_beb54bf43b47b7 385
+tests/e2e/crossFeatureWorkflowTestId.spec.ts
+  h_beb54bf43b47b7 120
+tests/e2e/deepInteractions.spec.ts
+  h_beb54bf43b47b7 39,41
+tests/e2e/export.spec.ts
+  h_beb54bf43b47b7 15,17,32-33
+tests/e2e/exportAudioEvidence.spec.ts
+  h_beb54bf43b47b7 87,117-121,123,128-129,132
+tests/e2e/exportAudioEvidenceFullLength.spec.ts
+  h_beb54bf43b47b7 45,66-67,72
+tests/e2e/exportOggCodecs.spec.ts
+  h_beb54bf43b47b7 105,174-175,276-277,303-304,595,600-601,608-609,612
+tests/e2e/exportRangeSelection.spec.ts
+  h_beb54bf43b47b7 42
+tests/e2e/exportStemsModeTestId.spec.ts
+  h_beb54bf43b47b7 12,75,83,89-90,93,135-136,140
+tests/e2e/exportTestId.spec.ts
+  h_beb54bf43b47b7 8,38-39
+tests/e2e/finalE2EGaps.spec.ts
+  h_beb54bf43b47b7 13,24,26
+tests/e2e/fullWorkflowTestId.spec.ts
+  h_beb54bf43b47b7 79,92
+tests/e2e/launchFlows.spec.ts
+  h_beb54bf43b47b7 23-51
+tests/e2e/projectMenuTestId.spec.ts
+  h_beb54bf43b47b7 56,60
+tests/e2e/punchLoopTakeAcceptance.spec.ts
+  h_beb54bf43b47b7 406,410-411,414,419
+tests/e2e/tempoSourceTimeAcceptance.spec.ts
+  h_beb54bf43b47b7 566,574-575,578,583
+tests/production-e2e/productionFaustExport.e2e.spec.ts
+  h_beb54bf43b47b7 132,179,183,191-192,374,378,387-388,407-408
+tests/production-e2e/productionFaustProbe.ts
+  h_beb54bf43b47b7 232
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9c0a8b9727af8f93ec5913dfc32b6dc975520a24",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
