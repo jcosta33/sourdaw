@@ -400,7 +400,7 @@ export const PianoRollToolbar = ({
             min={25}
             max={400}
             step={25}
-            className="w-20"
+            className="w-20 shrink-0"
             aria-label="Piano roll zoom"
             data-testid="toolbar-zoom"
         />
