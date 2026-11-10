@@ -1,0 +1,16 @@
+src/app/__tests__/bootstrap.spec.ts
+  h_beb54bf43b47b7 876-881,883
+src/app/__tests__/registerSupportingServicePorts.spec.ts
+  h_beb54bf43b47b7 12-29,40,57,75,221-236
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b5001a8a0578fc1ddb1302185a4c8e69a0d005d5",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
