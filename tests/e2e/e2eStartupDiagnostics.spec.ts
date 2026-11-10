@@ -5,6 +5,7 @@ import { createFixture, deferred, event } from '../../scripts/__tests__/fixtures
 import { test, expect } from './e2eTest';
 import {
     enable_direct_e2e_viewport,
+    LAUNCH_SCREEN_FIRST_PAINT_TIMEOUT_MS,
     LAUNCH_SCREEN_NAME,
     PREFERENCES_STORAGE_KEY,
     wait_for_launch_first_paint,

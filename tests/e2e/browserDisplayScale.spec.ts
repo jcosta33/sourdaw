@@ -90,6 +90,10 @@ async function expectUiScaleDragKeepsGeometryUntilCommit(page: Page, frame: Fram
     const slider = dialog.getByRole('slider', { name: 'UI Scale' });
     const sliderRoot = dialog.locator('[data-slot="slider"]');
     await expect(sliderRoot).toHaveCount(1);
+    // The workspace dialog transitions max-height on entry; measure only after its final geometry arrives.
+    await dialog.evaluate(async (element) => {
+        await Promise.all(element.getAnimations().map((animation) => animation.finished));
+    });
     const sliderBox = requireBox(await slider.boundingBox(), 'UI Scale slider thumb');
     const sliderRootBox = requireBox(await sliderRoot.boundingBox(), 'UI Scale slider');
     const dialogBox = requireBox(await dialog.boundingBox(), 'Preferences dialog');
