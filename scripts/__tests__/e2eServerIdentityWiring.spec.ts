@@ -155,6 +155,36 @@ function requireApplyKeepsModeGate(sourceFile: ts.SourceFile): void {
     }
 }
 
+function requireRunTokenThreadedToMiddleware(sourceFile: ts.SourceFile): void {
+    const declaration = findFunctionDeclaration(sourceFile, 'sourdawE2eServingCheckoutPlugin');
+    if (!declaration?.body) {
+        throw new Error('vite.config.ts must declare function sourdawE2eServingCheckoutPlugin()');
+    }
+    let callSites = 0;
+    const visit = (node: ts.Node): void => {
+        if (
+            ts.isCallExpression(node) &&
+            ts.isIdentifier(node.expression) &&
+            node.expression.text === 'createSourdawRootHeaderMiddleware'
+        ) {
+            const tokenArgument = node.arguments[1]?.getText(sourceFile) ?? '';
+            if (!tokenArgument.includes('process.env') || !tokenArgument.includes('SOURDAW_E2E_RUN_TOKEN_ENV')) {
+                throw new Error(
+                    'every createSourdawRootHeaderMiddleware call must thread process.env[SOURDAW_E2E_RUN_TOKEN_ENV]; without it a recovery-proof server stamps no run token and the guard refuses every proof'
+                );
+            }
+            callSites += 1;
+        }
+        node.forEachChild(visit);
+    };
+    declaration.body.forEachChild(visit);
+    if (callSites !== 2) {
+        throw new Error(
+            `the identity plugin must serve the marker middleware from both configureServer and configurePreviewServer (found ${callSites} call sites)`
+        );
+    }
+}
+
 function requireWarmupAssertsIdentity(sourceFile: ts.SourceFile): void {
     const warmup = findFunctionDeclaration(sourceFile, 'warmFirstPaint');
     if (!warmup) {
@@ -174,6 +204,10 @@ describe('e2e serving-identity wiring', () => {
 
     it("keeps the isSourdawE2eServeMode(mode) term in the plugin's apply predicate", () => {
         expect(() => requireApplyKeepsModeGate(parseSource('vite.config.ts'))).not.toThrow();
+    });
+
+    it('threads the guard-issued run token into both serving middleware call sites', () => {
+        expect(() => requireRunTokenThreadedToMiddleware(parseSource('vite.config.ts'))).not.toThrow();
     });
 
     it('firstPaintWarmup awaits assertServingCheckoutIdentity inside warmFirstPaint', () => {

@@ -2395,10 +2395,15 @@ describe('guard failure stop enforcement', { timeout: GUARDED_CASE_TIMEOUT_MS },
                 const code = await runGuardCli(['--recover', '--', 'pnpm', 'test:e2e', 'launch.spec.ts'], {
                     cwd: fixture.lane.worktreePath,
                     detectLane: () => fixture.lane,
-                    runCommand: async () => {
+                    runCommand: async (input) => {
                         // The proof brings up a server stamped with a foreign
-                        // checkout root on the recorded port.
-                        marker = await startMarkerServer(fixture.repoRoot, fixture.port);
+                        // checkout root on the recorded port, holding this run's
+                        // token so only the root comparison can refuse it.
+                        marker = await startMarkerServer(
+                            fixture.repoRoot,
+                            fixture.port,
+                            input.env?.[SOURDAW_E2E_RUN_TOKEN_ENV]
+                        );
                         return fakeResult({ code: 0 });
                     },
                     error: (message) => errors.push(message),
@@ -2406,7 +2411,9 @@ describe('guard failure stop enforcement', { timeout: GUARDED_CASE_TIMEOUT_MS },
 
                 expect(code).toBe(1);
                 expect(readGuardFailureReceipt(fixture.repoRoot, fixture.laneName)).toEqual(fixture.receipt);
-                expect(errors.join('\n')).toContain('did not verify the recorded dev server');
+                const output = errors.join('\n');
+                expect(output).toContain('did not verify the recorded dev server');
+                expect(output).toContain(`serves ${fixture.repoRoot}, not`);
             } finally {
                 await marker?.close();
                 rmSync(fixture.repoRoot, { recursive: true, force: true });
