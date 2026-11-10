@@ -10,6 +10,7 @@ vi.mock('../prospectiveMutationWorkerRuntime', () => ({ materializeProspectiveMu
 const endpoint = {
     onmessage: null as ((event: MessageEvent<unknown>) => Promise<void>) | null,
     postMessage: vi.fn(),
+    location: { origin: 'https://prospective-worker.test' },
 };
 
 beforeEach(() => {
@@ -34,7 +35,9 @@ describe('prospective Worker public WASM readiness', () => {
             throw new Error('Worker handler missing');
         }
         const request = { seed: 'owned request' };
-        const pending = endpoint.onmessage(new MessageEvent('message', { data: request }));
+        const pending = endpoint.onmessage(
+            new MessageEvent('message', { data: request, origin: endpoint.location.origin })
+        );
         expect(calls.initialize).toHaveBeenCalledExactlyOnceWith(expect.stringContaining('automerge.wasm'));
         expect(calls.materialize).not.toHaveBeenCalled();
         expect(endpoint.postMessage).not.toHaveBeenCalled();
@@ -54,10 +57,37 @@ describe('prospective Worker public WASM readiness', () => {
             if (!endpoint.onmessage) {
                 throw new Error('Worker handler missing');
             }
-            await endpoint.onmessage(new MessageEvent('message', { data: { seed: 'request' } }));
+            await endpoint.onmessage(
+                new MessageEvent('message', { data: { seed: 'request' }, origin: endpoint.location.origin })
+            );
             expect(calls.initialize).toHaveBeenCalledTimes(1);
             expect(calls.materialize).not.toHaveBeenCalled();
             expect(endpoint.postMessage).toHaveBeenCalledExactlyOnceWith({ status: 'failed', message });
         }
     );
+
+    it('drops messages posted from a foreign origin without initializing or responding', async () => {
+        await import('../prospectiveMutationWorker');
+        if (!endpoint.onmessage) {
+            throw new Error('Worker handler missing');
+        }
+        await endpoint.onmessage(
+            new MessageEvent('message', { data: { seed: 'foreign' }, origin: 'https://foreign.example' })
+        );
+        expect(calls.initialize).not.toHaveBeenCalled();
+        expect(calls.materialize).not.toHaveBeenCalled();
+        expect(endpoint.postMessage).not.toHaveBeenCalled();
+    });
+
+    it('accepts messages whose serialized origin is empty, as Chromium reports for its own document', async () => {
+        calls.initialize.mockResolvedValue(undefined);
+        calls.materialize.mockReturnValue({ bytes: Uint8Array.of(9), heads: [] });
+        await import('../prospectiveMutationWorker');
+        if (!endpoint.onmessage) {
+            throw new Error('Worker handler missing');
+        }
+        await endpoint.onmessage(new MessageEvent('message', { data: { seed: 'chromium' } }));
+        expect(calls.initialize).toHaveBeenCalledExactlyOnceWith(expect.stringContaining('automerge.wasm'));
+        expect(calls.materialize).toHaveBeenCalledExactlyOnceWith({ seed: 'chromium' });
+    });
 });

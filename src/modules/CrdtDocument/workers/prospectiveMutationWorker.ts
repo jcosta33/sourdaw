@@ -6,7 +6,15 @@ import { type ProspectiveMutationWorkerResponse } from '../models/ProspectiveMut
 
 import { materializeProspectiveMutation } from './prospectiveMutationWorkerRuntime';
 
-self.onmessage = async ({ data }: MessageEvent<unknown>): Promise<void> => {
+self.onmessage = async (event: MessageEvent<unknown>): Promise<void> => {
+    // Chromium serializes the origin of a dedicated Worker's creating document as
+    // an empty string; other engines report the document origin. A dedicated
+    // Worker is unreachable from any other browsing context, so those are the
+    // only two shapes a trusted sender can produce.
+    if (event.origin !== '' && event.origin !== self.location.origin) {
+        return;
+    }
+    const { data } = event;
     try {
         await initializeWasm(wasmUrl);
         const result = materializeProspectiveMutation(data);
