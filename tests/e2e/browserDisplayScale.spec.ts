@@ -382,7 +382,7 @@ async function expectEqCanvasDrag(page: Page, app: FrameLocator): Promise<void> 
 async function expectExportUsable(page: Page, app: FrameLocator): Promise<void> {
     const isMac = await page.evaluate(() => navigator.platform.toUpperCase().includes('MAC'));
     await app.locator('body').press(isMac ? 'Meta+Shift+E' : 'Control+Shift+E');
-    const dialog = app.getByRole('dialog').filter({ hasText: /The Bakery/i });
+    const dialog = app.getByRole('dialog').filter({ hasText: /Export audio/i });
     await expect(dialog).toBeVisible();
     const start = dialog.getByTestId('export-start');
     await expect(start).toBeVisible();

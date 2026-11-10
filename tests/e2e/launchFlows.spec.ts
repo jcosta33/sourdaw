@@ -22,6 +22,35 @@ test.describe('Launch Screen & Project Entry', () => {
             await setupWorkspace(page);
         });
 
+        test('keeps every home action reachable at 900 by 700', async ({ page }) => {
+            await page.setViewportSize({ width: 900, height: 700 });
+            const card = page.getByTestId('launch-home-card');
+            const importButton = page.locator('#launch-import-dawproject');
+            const exportButton = page.locator('#launch-export-dawproject');
+            await expect(card).toBeVisible();
+            await expect(page.locator('#launch-new-project')).toBeVisible();
+            await expect(page.locator('#launch-from-template')).toBeVisible();
+            await expect(page.locator('#launch-demo-project')).toBeVisible();
+
+            const overflow = await card.evaluate((element) => ({
+                clientHeight: element.clientHeight,
+                scrollHeight: element.scrollHeight,
+            }));
+            expect(overflow.scrollHeight).toBeGreaterThan(overflow.clientHeight);
+
+            await exportButton.scrollIntoViewIfNeeded();
+            const cardBox = await boxOf(card, 'Launch home card');
+            for (const [control, name] of [
+                [importButton, 'Import project'],
+                [exportButton, 'Export project'],
+            ] as const) {
+                await expect(control).toBeVisible();
+                const controlBox = await boxOf(control, name);
+                expect(controlBox.y).toBeGreaterThanOrEqual(cardBox.y);
+                expect(controlBox.y + controlBox.height).toBeLessThanOrEqual(cardBox.y + cardBox.height);
+            }
+        });
+
         test('Can browse the template grid and filter by category', async ({ page }) => {
             const launch_screen = page.getByLabel('Sourdaw — start a project');
             await launch_screen.waitFor({ state: 'visible' });
