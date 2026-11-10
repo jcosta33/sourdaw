@@ -1,7 +1,12 @@
 import { logger } from '#/infra/logger/appLogger';
-import { captureProjectRootIdentity } from '#/modules/CrdtDocument/useCases';
-import { captureEventPositionAt, sealHeldRecordedMidiNotes } from '#/modules/MIDI/useCases';
+import { captureProjectRootIdentity, getCrdtDoc } from '#/modules/CrdtDocument/useCases';
+import {
+    captureEventPositionAt,
+    captureRecordedControllerRetirement,
+    sealHeldRecordedMidiNotes,
+} from '#/modules/MIDI/useCases';
 import { transportStore } from '#/modules/Transport/stores';
+import { CLIP_LOOP_WINDOW_BEAT_TOLERANCE } from '#/utils/clipLoopOrigin';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { startFirstPassAtRecordPoint, type Take, type TakeLane } from '../../models/TakeLane';
@@ -14,6 +19,12 @@ import { type Clip } from '../../stores/trackStore';
 import { commitRecording } from './commitRecording';
 import { discardRecording } from './discardRecording';
 import { passDepthAt } from './passDepthAt';
+import {
+    RecordingCommitOwnershipRefusal,
+    RecordingRootMovedRefusal,
+    recordingCommitGroups,
+} from './recordingCommitGroup';
+import { recordingMidiBound } from './recordingMidiBound';
 import { recordingMidiSourceBeatAt } from './recordingMidiSourceBeatAt';
 import { recordingPassOrigin } from './recordingPassOrigin';
 import { recordingPassTiming } from './recordingPassTiming';
@@ -141,11 +152,6 @@ function finalMidiPassOffsetsAtStop(
  * catch — a silent `false` return cannot be told apart from a
  * commit that landed just before the root moved.
  */
-class RecordingRootMovedRefusal extends Error {
-    constructor() {
-        super('recording commit refused: the project root moved while the take was landing');
-    }
-}
 
 /** What a stop did: `refused` closed nothing (the root moved), `closed` finished normally. */
 export type StopRecordingOutcome = 'refused' | 'closed';
@@ -194,7 +200,11 @@ function closeRecordedTakes(input: {
     });
 }
 
-type RecordingEnd = { contextSeconds: number; beatAtContextSeconds: (seconds: number) => number };
+type RecordingEnd = {
+    contextSeconds: number;
+    beatAtContextSeconds: (seconds: number) => number;
+    midiPosition?: { beat: number; passIndex: number };
+};
 
 function captureMidiStopState(
     clipIds: readonly string[],
@@ -218,7 +228,7 @@ function captureMidiStopState(
     if (midiClipIds.length === 0) {
         return { midiSourceEndBeats, finalMidiPassOffsets: new Map() };
     }
-    const stopPosition = captureEventPositionAt({ audioTime: ending?.contextSeconds ?? 0 });
+    const stopPosition = ending?.midiPosition ?? captureEventPositionAt({ audioTime: ending?.contextSeconds ?? 0 });
     for (const clipId of midiClipIds) {
         midiSourceEndBeats.set(clipId, recordingMidiSourceBeatAt(clipId, stopPosition));
     }
@@ -254,6 +264,10 @@ function finishAudioRecordingPasses(
 }
 
 function commitFinalizedMidiClip(clip: Clip, stillOwnsCaptureRoot: () => boolean): Promise<StopRecordingOutcome> {
+    let retireControllers = () => {};
+    if (!recordingCommitGroups.has(clip.id)) {
+        retireControllers = captureRecordedControllerRetirement(clip.id);
+    }
     // The queued commit must re-check the root; a refused resume is distinct
     // from a commit that landed just before the root moved.
     return commitRecording(clip, undefined, {
@@ -264,8 +278,22 @@ function commitFinalizedMidiClip(clip: Clip, stillOwnsCaptureRoot: () => boolean
             return true;
         },
     })
-        .then(() => 'closed' as const)
+        .then(() => {
+            const raw = getCrdtDoc<{ tracks: { tracks: { clips: { id: string }[] }[] } }>('root');
+            if (
+                stillOwnsCaptureRoot() &&
+                !raw?.tracks.tracks.some((track) => track.clips.some((row) => row.id === clip.id))
+            ) {
+                retireControllers();
+                return 'refused' as const;
+            }
+            return 'closed' as const;
+        })
         .catch((error: unknown) => {
+            if (error instanceof RecordingCommitOwnershipRefusal) {
+                notifyUser('Recording changed while it was finishing; your current edit was kept.', 'warning');
+                return 'refused' as const;
+            }
             if (error instanceof RecordingRootMovedRefusal) {
                 notifyUser(
                     'Recording stopped — the project switched branches while the take was landing, so it was not kept.',
@@ -279,6 +307,7 @@ function commitFinalizedMidiClip(clip: Clip, stillOwnsCaptureRoot: () => boolean
             if (stillOwnsCaptureRoot()) {
                 notifyUser('Recording failed — the take was discarded. Try recording again.', 'error');
                 discardRecording(clip.id);
+                retireControllers();
             } else {
                 notifyUser(
                     'Recording stopped — the project switched branches while the take was landing, so it was not kept.',
@@ -289,14 +318,38 @@ function commitFinalizedMidiClip(clip: Clip, stillOwnsCaptureRoot: () => boolean
         });
 }
 
+function boundedRecordingEnd(ending: RecordingEnd | undefined, manualAudioEnd: boolean) {
+    const bound = recordingMidiBound.read();
+    let reachesBound = false;
+    if (ending && bound.status === 'bounded') {
+        const position = ending.midiPosition ?? captureEventPositionAt({ audioTime: ending.contextSeconds });
+        reachesBound =
+            position.passIndex > bound.ending.midiPosition.passIndex ||
+            (position.passIndex === bound.ending.midiPosition.passIndex &&
+                position.beat >= bound.ending.midiPosition.beat - CLIP_LOOP_WINDOW_BEAT_TOLERANCE);
+    }
+    if (ending && bound.status === 'bounded' && reachesBound) {
+        return {
+            ending: { ...ending, contextSeconds: bound.ending.contextSeconds, midiPosition: bound.ending.midiPosition },
+            // Explicit Stop may settle waiting PCM, while native ending and the admitted out remain authoritative.
+            manualAudioEnd: false,
+            automaticOwned: true,
+        };
+    }
+    return { ending, manualAudioEnd, automaticOwned: bound.status === 'open' || bound.status === 'bounded' };
+}
+
 export async function stopRecording(
     atBeat?: number,
     ending?: RecordingEnd,
     manualAudioEnd = false
 ): Promise<StopRecordingOutcome> {
+    recordingCommitGroups.reconcileAdmission();
     const clipIds = activeRecordingRef.current;
     const captureRootIdentity = activeRecordingRef.capturedRootIdentity ?? null;
     const midiAdmissions = activeRecordingRef.midiAdmissions;
+    const bounded = boundedRecordingEnd(ending, manualAudioEnd);
+    ({ ending, manualAudioEnd } = bounded);
     const trackState = getTrackState();
     const { midiSourceEndBeats, finalMidiPassOffsets } = captureMidiStopState(
         clipIds,
@@ -307,6 +360,8 @@ export async function stopRecording(
     activeRecordingRef.capturedRootIdentity = null;
     activeRecordingRef.midiAdmissions = [];
     activeRecordingRef.passOrigins = new Map();
+    recordingMidiBound.clear();
+    recordingCommitGroups.settleActive(captureRootIdentity);
 
     if (clipIds.length === 0) {
         return 'closed';
@@ -320,6 +375,7 @@ export async function stopRecording(
     const stillOwnsCaptureRoot = (): boolean =>
         captureRootIdentity === null || captureProjectRootIdentity() === captureRootIdentity;
     if (!stillOwnsCaptureRoot()) {
+        recordingCommitGroups.refuse(clipIds, captureRootIdentity);
         notifyUser('Recording stopped — the project switched branches while recording, so it was not kept.', 'warning');
         return 'refused';
     }
@@ -369,12 +425,14 @@ export async function stopRecording(
     });
 
     for (const clip of finalizedMidiClips) {
+        const sourceEnd = midiSourceEndBeats.get(clip.id) ?? undefined;
         sealHeldRecordedMidiNotes({
             clipId: clip.id,
             trackId: clip.trackId,
             endAudioTime: ending?.contextSeconds,
             admissions: midiAdmissions,
-            endSourceBeat: midiSourceEndBeats.get(clip.id) ?? undefined,
+            endSourceBeat: sourceEnd,
+            exclusiveEndSourceBeat: bounded.automaticOwned ? sourceEnd : undefined,
         });
     }
 

@@ -6,6 +6,7 @@ import {
     resetCommandBatchIdempotency,
 } from '#/modules/Command/useCases';
 import {
+    captureProjectMutationAuthorization,
     captureProjectRevision,
     settledProjectRevisionMatchesLiveIgnoringSaveWrites,
 } from '#/modules/CrdtDocument/useCases';
@@ -33,6 +34,10 @@ export function configureAiWorkflowCommandCheckpointRuntime(): void {
     // checkpoint is written under that lock.
     installNavigatorLocksStub();
     configureCommandBatchIdempotency({ canExecute: () => true });
+    commandProjectRevisionPort.configureMutationAuthority({
+        revisionProvider: captureProjectRevision,
+        captureMutationAuthorization: captureProjectMutationAuthorization,
+    });
     commandProjectRevisionPort.setProvider(captureProjectRevision);
     commandProjectRevisionPort.setLiveMatchIgnoringSaveWrites(settledProjectRevisionMatchesLiveIgnoringSaveWrites);
 }

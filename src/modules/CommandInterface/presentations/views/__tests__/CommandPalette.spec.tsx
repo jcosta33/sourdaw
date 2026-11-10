@@ -131,6 +131,31 @@ describe('CommandPalette', () => {
         expect(option1).toHaveAttribute('aria-selected', 'true');
     });
 
+    it('filters the rendered command options for a positive query', () => {
+        render(<CommandPalette />);
+        const input = screen.getByRole('combobox');
+
+        fireEvent.change(input, { target: { value: 'track' } });
+
+        expect(screen.getByRole('option', { name: /Add MIDI Track/ })).toBeInTheDocument();
+        expect(screen.getByRole('option', { name: /Duplicate Track/ })).toBeInTheDocument();
+        expect(screen.queryByRole('option', { name: /Save Project/ })).not.toBeInTheDocument();
+    });
+
+    it('restores named command options when the positive query is cleared', () => {
+        render(<CommandPalette />);
+        const input = screen.getByRole('combobox');
+
+        expect(screen.getByRole('option', { name: /Save Project/ })).toBeInTheDocument();
+        fireEvent.change(input, { target: { value: 'track' } });
+        expect(screen.queryByRole('option', { name: /Save Project/ })).not.toBeInTheDocument();
+
+        fireEvent.change(input, { target: { value: '' } });
+
+        expect(screen.getByRole('option', { name: /Add MIDI Track/ })).toBeInTheDocument();
+        expect(screen.getByRole('option', { name: /Save Project/ })).toBeInTheDocument();
+    });
+
     it('moves selection back up on ArrowUp keydown', () => {
         render(<CommandPalette />);
         const commands = searchCommands('');

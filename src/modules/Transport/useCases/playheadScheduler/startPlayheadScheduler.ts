@@ -2,6 +2,7 @@ import { logger } from '#/infra/logger/appLogger';
 import { trackStore, takeLaneStore, activeRecordingRef } from '#/modules/Arrangement/stores';
 import {
     startRecording,
+    captureRecordingCommitRetirement,
     updateClip,
     discardRecording,
     commitRecording,
@@ -44,6 +45,7 @@ import { scheduleAudioClips } from '../scheduling/scheduleAudioClips';
 import { scheduleMetronome } from '../scheduling/scheduleMetronome';
 import { scheduleMidiNotes } from '../scheduling/scheduleMidiNotes';
 import { commitRecoveredAudioRecording } from '../transportControls/commitRecoveredAudioRecording';
+import { createAutomaticPunchEnding } from '../transportControls/createAutomaticPunchEnding';
 import { createRecordingCaptureClocks } from '../transportControls/createRecordingCaptureClocks';
 import { finalizeAutomaticRecording } from '../transportControls/finalizeAutomaticRecording';
 import { panicYeastRuntime } from '../transportControls/panicYeastRuntime';
@@ -51,6 +53,7 @@ import { recordingLifecycle } from '../transportControls/recordingLifecycle';
 
 import { advanceSchedulerDiscontinuityEpoch } from './advanceSchedulerDiscontinuityEpoch';
 import { beatAtSecondsFromAnchor } from './beatAtSecondsFromAnchor';
+import { createLoopAudioSchedule } from './createLoopAudioSchedule';
 import { createNativeRecordingPassClock } from './createNativeRecordingPassClock';
 import { disposePlayheadScheduler } from './disposePlayheadScheduler';
 import { initialEmissionRetirements } from './initialEmissionRetirements';
@@ -354,6 +357,9 @@ export function startPlayheadScheduler(
     startAutomationRecording();
 
     const ctx = getAudioContext();
+    schedulerSession.loopAudioSchedule?.reset();
+    const loopAudioSchedule = createLoopAudioSchedule({ context: ctx, isCurrent: cancellation.isCurrent });
+    schedulerSession.loopAudioSchedule = loopAudioSchedule;
     const captureClock = createNativeRecordingPassClock();
     const rootIdentity = captureProjectRootIdentity();
     const idleNativeClock = createNativeRecordingCaptureClock({
@@ -411,11 +417,6 @@ export function startPlayheadScheduler(
     resetMetronomeBeat(state.playheadPosition);
 
     let previousTempo = state.tempo;
-    // The audio-clock instant a punch-out falls due for a punch recording that
-    // a late-wrap tick opened in a pass it handed over at its own seam: that
-    // tick cannot close it (the capture has only just begun), and the ticks
-    // after it scan the incoming pass, which never reaches the punch-out beat.
-    let lateWrapPunchOutAudioTime: number | null = null;
     const grainMs = state.scheduleGrainMs;
     schedulerTimingDiagnostics.reset(grainMs);
 
@@ -557,6 +558,7 @@ export function startPlayheadScheduler(
         const baseTempoChanged = current.tempo !== priorTempo && changes.length === 0;
         let soundedTempoAdoptionBeat: number | null = null;
         if (tempoMapChanged || baseTempoChanged || loopChanged) {
+            loopAudioSchedule.reset();
             if (tempoMapChanged || baseTempoChanged) {
                 // Pending input follows the effective beat/time epoch. Owners
                 // whose first frame already sounded keep their frozen epoch.
@@ -921,6 +923,7 @@ export function startPlayheadScheduler(
         let capturedJumpBoundary: { endBeat: number; nextPassStartBeat: number } | null = null;
         let jumpClosedRecordingPasses = 0;
         if (jumpToPosition !== null) {
+            loopAudioSchedule.reset();
             const pending = schedulerSession.pendingSeam;
             if (pending !== null && activeRecordingRef.current.length > 0) {
                 let endingBeat = newPosition;
@@ -1203,39 +1206,6 @@ export function startPlayheadScheduler(
         if (seam && !seam.afterLateWrap) {
             punchScanWindowStart = dyingTickStartPosition;
         }
-        // The punch checks below may open a recording this tick, so read the
-        // recording state BEFORE that block runs. A punch-out is due at the seam
-        // only for a recording that was already open when the tick began — the
-        // same law that keeps an ordinary tick from opening and finalizing a
-        // punch in one pass, where the scan beat cannot be both inside the
-        // region and past its end. Ungated, a punch-in whose crossing lands on
-        // the seam tick was finalized empty in the same tick, every pass.
-        const recordingOpenAtTickStart = schedulerSession.punchRecordingActive;
-        const punchOutDueAtSeam = seam !== null && recordingOpenAtTickStart && current.punchOutBeat <= seam.passUpTo;
-        // #4905 — on a wrap tick (the seam-edit re-anchor or the late wrap) the
-        // scanned position is already the incoming pass's, and a region at or
-        // below the look-ahead never presents a scan at or past the punch-out
-        // beat afterwards: the crossing of the punch-out point happened inside
-        // the pass that just died, so the punch-out is due at the wrap itself.
-        // Same gating law as the seam arm — only for a recording already open
-        // when the tick began, so a punch-in opened this tick is never
-        // finalized empty.
-        const punchOutDueAtWrap = lateWrap && recordingOpenAtTickStart && current.punchOutBeat <= current.loopEnd;
-        // A punch recording opened by an earlier late-wrap tick in the pass
-        // that tick handed over is due once the audio clock reaches its
-        // punch-out, as a scan reaching that beat would make it; a relocation
-        // before then moves the playhead away from the punch-out it was due at.
-        const punchOutDueAfterLateWrap =
-            recordingOpenAtTickStart && lateWrapPunchOutAudioTime !== null && now >= lateWrapPunchOutAudioTime;
-        if (
-            !recordingOpenAtTickStart ||
-            punchOutDueAfterLateWrap ||
-            jumpToPosition !== null ||
-            reemitAfterEdit ||
-            lateWrap
-        ) {
-            lateWrapPunchOutAudioTime = null;
-        }
         if (opensPunchIn(current, punchScanBeat)) {
             openedRecording = true;
             schedulerSession.punchRecordingActive = true;
@@ -1252,6 +1222,36 @@ export function startPlayheadScheduler(
             // playhead) is wrong on both paths — nothing writes it during
             // playback.
             const punchAnchorBeat = Math.max(current.punchInBeat, punchScanWindowStart);
+            const captureClocks = createRecordingCaptureClocks(
+                ctx,
+                (beat) =>
+                    secondsBetweenBeats(
+                        tempoMapStore.value?.changes ?? [],
+                        0,
+                        beat,
+                        transportStore.value?.tempo ?? current.tempo
+                    ),
+                undefined,
+                true
+            );
+            const openingContextSeconds = now;
+            const punch = createAutomaticPunchEnding(
+                current.punchOutBeat,
+                () => {
+                    if (initial && initialSchedulingAnchor === undefined) {
+                        return null;
+                    }
+                    return {
+                        beat: punchAnchorBeat,
+                        contextSeconds:
+                            (initial ? initialSchedulingAnchor! : openingContextSeconds) +
+                            secondsBetweenBeats(changes, publishedBeat, punchAnchorBeat, current.tempo),
+                    };
+                },
+                captureClocks
+            );
+            schedulerSession.automaticPunch?.dispose();
+            schedulerSession.automaticPunch = punch;
             let clips: ReturnType<typeof startRecording>;
             let nativeEntry: ReturnType<typeof nativeRecordingEntry> | null = null;
             if (
@@ -1261,31 +1261,37 @@ export function startPlayheadScheduler(
             ) {
                 nativeEntry = nativeRecordingEntry(captureRead.snapshot);
             }
-            if (browserCapture) {
-                if (initial) {
-                    clips = startRecording(punchAnchorBeat, () => initialSchedulingAnchor ?? null);
+            try {
+                if (browserCapture) {
+                    if (initial) {
+                        clips = startRecording(
+                            punchAnchorBeat,
+                            () => initialSchedulingAnchor ?? null,
+                            undefined,
+                            punch.read
+                        );
+                    } else {
+                        clips = startRecording(punchAnchorBeat, undefined, undefined, punch.read);
+                    }
                 } else {
-                    clips = startRecording(punchAnchorBeat);
+                    clips = startRecording(punchAnchorBeat, undefined, nativeEntry, punch.read);
                 }
-            } else {
-                clips = startRecording(punchAnchorBeat, undefined, nativeEntry);
+            } catch (error) {
+                captureClocks.dispose();
+                punch.dispose();
+                schedulerSession.automaticPunch = null;
+                schedulerSession.punchRecordingActive = false;
+                throw error;
             }
             updateTransportState({ isRecording: true });
 
-            const captureClocks = createRecordingCaptureClocks(ctx, (beat) =>
-                secondsBetweenBeats(
-                    tempoMapStore.value?.changes ?? [],
-                    0,
-                    beat,
-                    transportStore.value?.tempo ?? current.tempo
-                )
-            );
             captureClocks.register();
             const armedTracks = trackStore.value?.tracks.filter((time) => time.armed) ?? [];
             for (const track of armedTracks) {
                 if (track.kind === 'midi') {
                     const recClip = clips.find((context) => context.trackId === track.id);
                     if (recClip) {
+                        captureRecordingCommitRetirement(recClip.id);
                         // Input-latency compensation shifts a recorded note
                         // earlier by the round-trip time. With the clip origin
                         // sitting exactly on the anchor, a note played on the
@@ -1308,6 +1314,7 @@ export function startPlayheadScheduler(
                 }
                 if (track.kind === 'audio') {
                     const recClip = clips.find((context) => context.trackId === track.id);
+                    const retireCommit = recClip ? captureRecordingCommitRetirement(recClip.id) : () => {};
                     const latencySeconds =
                         (ctx.baseLatency || 0) + (ctx.outputLatency || 0) + getCompensationDelay(track.id);
                     const captureClock = captureClocks.create(track.id, latencySeconds);
@@ -1358,6 +1365,7 @@ export function startPlayheadScheduler(
                             (result) => {
                                 captureClocks.remove(track.id);
                                 if (!ownsCapture()) {
+                                    retireCommit();
                                     notifyUser(
                                         'Punch-in recording stopped — the take was not kept on this branch.',
                                         'warning'
@@ -1365,6 +1373,7 @@ export function startPlayheadScheduler(
                                     return;
                                 }
                                 if (result.kind === 'failed') {
+                                    retireCommit();
                                     // A capture that dies mid-punch (ring overrun,
                                     // worker crash, a WAV that never decoded) must
                                     // not strand an empty provisional clip on the
@@ -1409,6 +1418,11 @@ export function startPlayheadScheduler(
                                     // edit, or stop has replaced the published pair.
                                     const occurrence = captureClock.relocation ?? captureAnchor;
                                     if (!occurrence) {
+                                        void commitRecoveredAudioRecording(
+                                            { ...recClip, audioBufferId: bufferId },
+                                            beatAtSecondsFromAnchor(changes, 0, buffer.duration, current.tempo),
+                                            ownsCapture
+                                        );
                                         return;
                                     }
                                     const capture = {
@@ -1435,6 +1449,16 @@ export function startPlayheadScheduler(
                                             { ...capture, sourceDurationSeconds: buffer.duration },
                                             { shouldExecute: ownsCapture }
                                         ).catch((error: unknown) => {
+                                            if (
+                                                error instanceof Error &&
+                                                error.name === 'RecordingCommitOwnershipRefusal'
+                                            ) {
+                                                notifyUser(
+                                                    'Recording changed while it was finishing; your current edit was kept.',
+                                                    'warning'
+                                                );
+                                                return;
+                                            }
                                             if (error instanceof Error && error.name === 'RecordingRootMovedRefusal') {
                                                 notifyUser(
                                                     'Punch-in recording stopped — the take was not kept on this branch.',
@@ -1477,6 +1501,7 @@ export function startPlayheadScheduler(
                             // input that failed to open rejects into the `.catch`
                             // below (#6009).
                             captureClocks.remove(track.id);
+                            retireCommit();
                             initialEmissionRetirements.defer(() => {
                                 if (ownsCapture()) {
                                     retireUnstartedCapture();
@@ -1485,6 +1510,7 @@ export function startPlayheadScheduler(
                         })
                         .catch((error: unknown) => {
                             captureClocks.remove(track.id);
+                            retireCommit();
                             logger.error(new Error('Punch-in audio recording failed to start', { cause: error }));
                             // Decided when the failure arrives: a start whose
                             // recording a stop gesture closed after it was
@@ -1514,29 +1540,12 @@ export function startPlayheadScheduler(
             }
         }
 
-        // A late wrap that opened this recording in a pass it hands over at its
-        // own seam leaves the punch-out to a later tick, since no later scan
-        // reaches the dying pass's band: it is due when the audio clock gets
-        // there. The scheduled seam's own incoming scan never takes this path
-        // (its punch-in captures across the seam, see `punchOutDueAtSeam`).
-        if (openedRecording && seam?.afterLateWrap && current.punchOutBeat <= seam.passUpTo) {
-            lateWrapPunchOutAudioTime =
-                now + secondsBetweenBeats(changes, seam.passPosition, current.punchOutBeat, current.tempo);
-        }
-
-        // `punchOutDueAtSeam`: the punch-out point sits inside the dying pass's
-        // last look-ahead band — above where it stands at the seam tick but at
-        // or below where the seam instant lands it. The crossing will happen
-        // before the seam and no later tick scans that band, so the punch-out
-        // is due at the seam instant and fires here.
-        if (
-            schedulerSession.punchRecordingActive &&
-            current.punchInEnabled &&
-            (punchScanBeat >= current.punchOutBeat ||
-                punchOutDueAtSeam ||
-                punchOutDueAtWrap ||
-                punchOutDueAfterLateWrap)
-        ) {
+        const punch = schedulerSession.automaticPunch;
+        if (schedulerSession.punchRecordingActive && punch?.ready()) {
+            const bound = punch.read();
+            if (bound.status !== 'bounded') {
+                throw new Error('Ready automatic punch has no owned ending');
+            }
             // Finalize BEFORE the flush. The flush runs the capture terminal that
             // commits the take, and the commit captures the live clip and takes;
             // running it first would capture the pre-finalization anchor — a
@@ -1545,7 +1554,7 @@ export function startPlayheadScheduler(
             // this neither blocks the scheduler nor reorders the audio flush.
             // Same anchoring as punch-in: the region's own end beat, not the
             // overshooting tick position and not the stale store playhead.
-            finalizeAutomaticRecording(current.punchOutBeat);
+            finalizeAutomaticRecording(punch.outBeat, bound.ending);
             await Promise.resolve(stopAudioRecording()).catch((error: unknown) => {
                 logger.error(new Error('Punch-out audio recording failed to stop', { cause: error }));
             });
@@ -1553,6 +1562,8 @@ export function startPlayheadScheduler(
                 return;
             }
             schedulerSession.punchRecordingActive = false;
+            punch.dispose();
+            schedulerSession.automaticPunch = null;
             updateTransportState({ isRecording: false });
         }
 
@@ -1597,6 +1608,7 @@ export function startPlayheadScheduler(
                 };
                 schedulerSession.lastLoopSeamAudioTime = seam.seamAudioTime;
             }
+            loopAudioSchedule.refill({ transport: current, changes, position: publishedBeat, audioTime: now });
             if (!publishClock()) {
                 return;
             }
@@ -1609,6 +1621,17 @@ export function startPlayheadScheduler(
             }
         }
 
+        const eventSchedulingAnchor = now;
+        if (!initial) {
+            loopAudioSchedule.refill({ transport: current, changes, position: publishedBeat, audioTime: now });
+        }
+        const dyingBufferPool = loopAudioSchedule.poolAt(now);
+        const incomingBufferPool = seam ? loopAudioSchedule.poolAt(seam.seamAudioTime, true) : null;
+        let windowBufferPool = dyingBufferPool;
+        if (schedulerSession.pendingSeam) {
+            windowBufferPool = loopAudioSchedule.poolAt(schedulerSession.pendingSeam.seamAudioTime, true);
+        }
+        const bufferInput = { transport: current, changes, position: publishedBeat, audioTime: now };
         const initialMidiEmissions: Promise<void>[] = [];
         const initialEmissionErrors: unknown[] = [];
         function observeInitialMidi(emission: Promise<void>): void {
@@ -1641,6 +1664,7 @@ export function startPlayheadScheduler(
                 !current ||
                 !lateWrap ||
                 lateWrapSeamAudioTime === null ||
+                activeRecordingRef.current.length === 0 ||
                 capturedJumpBoundary !== null ||
                 capturedEditBoundary !== null
             ) {
@@ -1679,28 +1703,30 @@ export function startPlayheadScheduler(
             // Dying pass: the window remainder up to the seam, emitted against
             // the position the dying pass holds at `now`, so its last events
             // land at their own grid times — all at or before the seam instant.
-            scheduleMetronome(
+            scheduleMetronome(seam.passHighWater, seam.passUpTo, seam.passPosition, current, eventSchedulingAnchor);
+            const retainDyingFrozen = loopAudioSchedule.watchFrozenMidiWindow(
+                dyingBufferPool,
                 seam.passHighWater,
-                seam.passUpTo,
-                seam.passPosition,
-                current,
-                initial ? initialSchedulingAnchor : undefined
+                seam.passUpTo
             );
-            const dyingMidi = scheduleMidiNotes(
-                seam.passHighWater,
-                seam.passUpTo,
-                seam.passPosition,
-                schedulerSession.scheduledFrozenTracks,
-                schedulerSession.activeAudioSources,
-                current,
-                currentTempo,
-                cancellation,
-                // An edit's re-emit (it opens where the cut look-ahead began), a
-                // stall's skip and a late wrap (it opens at the loop start) make
-                // this window a relocation; an ordinary seam tick continues.
-                reemitAfterEdit || skipsStalledSpan || seam.afterLateWrap,
-                initial ? preparedMidi?.midiWindow(seam.passHighWater, seam.passUpTo) : undefined,
-                initial ? initialSchedulingAnchor : undefined
+            const dyingMidi = retainDyingFrozen(
+                scheduleMidiNotes(
+                    seam.passHighWater,
+                    seam.passUpTo,
+                    seam.passPosition,
+                    dyingBufferPool?.frozen ?? schedulerSession.scheduledFrozenTracks,
+                    dyingBufferPool?.sources ?? schedulerSession.activeAudioSources,
+                    current,
+                    currentTempo,
+                    cancellation,
+                    // An edit's re-emit (it opens where the cut look-ahead began), a
+                    // stall's skip and a late wrap (it opens at the loop start) make
+                    // this window a relocation; an ordinary seam tick continues.
+                    reemitAfterEdit || skipsStalledSpan || seam.afterLateWrap,
+                    initial ? preparedMidi?.midiWindow(seam.passHighWater, seam.passUpTo) : undefined,
+                    initial ? initialSchedulingAnchor : undefined,
+                    eventSchedulingAnchor
+                )
             );
             if (initial) {
                 observeInitialMidi(dyingMidi);
@@ -1715,16 +1741,20 @@ export function startPlayheadScheduler(
             // material and must not be started by the dying pass — the seam
             // instant it would start at is the instant the incoming pass's own
             // events are due.
-            scheduleAudioClips(
-                seam.passHighWater,
-                seam.passUpTo - BEAT_EPSILON,
-                seam.passPosition,
-                schedulerSession.scheduledAudioClips,
-                schedulerSession.scheduledFrozenTracks,
-                schedulerSession.activeAudioSources,
-                current,
-                initial ? initialSchedulingAnchor : undefined
-            );
+            if (!loopAudioSchedule.active) {
+                scheduleAudioClips(
+                    seam.passHighWater,
+                    seam.passUpTo - BEAT_EPSILON,
+                    seam.passPosition,
+                    dyingBufferPool?.audio ?? schedulerSession.scheduledAudioClips,
+                    dyingBufferPool?.frozen ?? schedulerSession.scheduledFrozenTracks,
+                    dyingBufferPool?.sources ?? schedulerSession.activeAudioSources,
+                    current,
+                    initial ? initialSchedulingAnchor : undefined
+                );
+            } else {
+                loopAudioSchedule.recoverMappedWindow(dyingBufferPool, seam.passHighWater, seam.passUpTo, bufferInput);
+            }
             // Incoming pass: the window past the seam, emitted against the
             // incoming pass's own position at `now`, so its first beat lands
             // exactly at the seam instant — ahead of the audio clock on every
@@ -1757,29 +1787,31 @@ export function startPlayheadScheduler(
             // clicks there with its own accent, or nothing does when
             // loopStart is not a beat.
             resetMetronomeBeat(current.loopStart);
-            scheduleMetronome(
-                current.loopStart,
-                seam.wrappedUpTo,
-                newPosition,
-                current,
-                initial ? initialSchedulingAnchor : undefined
-            );
+            scheduleMetronome(current.loopStart, seam.wrappedUpTo, newPosition, current, eventSchedulingAnchor);
             // The incoming pass opens at the loop start: a relocation, so the
             // stored controllers are restored to what is in force there. The
             // dying window above already posted everything up to the seam, which
             // is why this path lifts nothing frameless.
-            const incomingMidi = scheduleMidiNotes(
+            const retainIncomingFrozen = loopAudioSchedule.watchFrozenMidiWindow(
+                incomingBufferPool,
                 current.loopStart,
-                seam.wrappedUpTo,
-                newPosition,
-                schedulerSession.scheduledFrozenTracks,
-                schedulerSession.activeAudioSources,
-                current,
-                currentTempo,
-                cancellation,
-                true,
-                initial ? preparedMidi?.midiWindow(current.loopStart, seam.wrappedUpTo) : undefined,
-                initial ? initialSchedulingAnchor : undefined
+                seam.wrappedUpTo
+            );
+            const incomingMidi = retainIncomingFrozen(
+                scheduleMidiNotes(
+                    current.loopStart,
+                    seam.wrappedUpTo,
+                    newPosition,
+                    incomingBufferPool?.frozen ?? schedulerSession.scheduledFrozenTracks,
+                    incomingBufferPool?.sources ?? schedulerSession.activeAudioSources,
+                    current,
+                    currentTempo,
+                    cancellation,
+                    true,
+                    initial ? preparedMidi?.midiWindow(current.loopStart, seam.wrappedUpTo) : undefined,
+                    initial ? initialSchedulingAnchor : undefined,
+                    eventSchedulingAnchor
+                )
             );
             if (initial) {
                 observeInitialMidi(incomingMidi);
@@ -1789,16 +1821,25 @@ export function startPlayheadScheduler(
             if (!cancellation.isCurrent()) {
                 return;
             }
-            scheduleAudioClips(
-                current.loopStart,
-                seam.wrappedUpTo,
-                newPosition,
-                schedulerSession.scheduledAudioClips,
-                schedulerSession.scheduledFrozenTracks,
-                schedulerSession.activeAudioSources,
-                current,
-                initial ? initialSchedulingAnchor : undefined
-            );
+            if (!loopAudioSchedule.active) {
+                scheduleAudioClips(
+                    current.loopStart,
+                    seam.wrappedUpTo,
+                    newPosition,
+                    incomingBufferPool?.audio ?? schedulerSession.scheduledAudioClips,
+                    incomingBufferPool?.frozen ?? schedulerSession.scheduledFrozenTracks,
+                    incomingBufferPool?.sources ?? schedulerSession.activeAudioSources,
+                    current,
+                    initial ? initialSchedulingAnchor : undefined
+                );
+            } else {
+                loopAudioSchedule.recoverMappedWindow(
+                    incomingBufferPool,
+                    current.loopStart,
+                    seam.wrappedUpTo,
+                    bufferInput
+                );
+            }
             schedulerSession.lastScheduledBeat = seam.wrappedUpTo;
         } else {
             stageLateWrapPassTakes(newPosition);
@@ -1810,23 +1851,31 @@ export function startPlayheadScheduler(
                 scheduleUpTo,
                 schedulerSession.accumulatedPosition,
                 current,
-                initial ? initialSchedulingAnchor : undefined
+                eventSchedulingAnchor
             );
             // A late wrap, a follow-action jump, an edit's re-emit and a stall's
             // skip open this window at their destination, so it restores the
             // stored controllers there too.
-            const windowMidi = scheduleMidiNotes(
+            const retainWindowFrozen = loopAudioSchedule.watchFrozenMidiWindow(
+                windowBufferPool,
                 schedulerSession.lastScheduledBeat,
-                scheduleUpTo,
-                schedulerSession.accumulatedPosition,
-                schedulerSession.scheduledFrozenTracks,
-                schedulerSession.activeAudioSources,
-                current,
-                currentTempo,
-                cancellation,
-                lateWrap || jumpToPosition !== null || reemitAfterEdit || skipsStalledSpan,
-                initial ? preparedMidi?.midiWindow(schedulerSession.lastScheduledBeat, scheduleUpTo) : undefined,
-                initial ? initialSchedulingAnchor : undefined
+                scheduleUpTo
+            );
+            const windowMidi = retainWindowFrozen(
+                scheduleMidiNotes(
+                    schedulerSession.lastScheduledBeat,
+                    scheduleUpTo,
+                    schedulerSession.accumulatedPosition,
+                    windowBufferPool?.frozen ?? schedulerSession.scheduledFrozenTracks,
+                    windowBufferPool?.sources ?? schedulerSession.activeAudioSources,
+                    current,
+                    currentTempo,
+                    cancellation,
+                    lateWrap || jumpToPosition !== null || reemitAfterEdit || skipsStalledSpan,
+                    initial ? preparedMidi?.midiWindow(schedulerSession.lastScheduledBeat, scheduleUpTo) : undefined,
+                    initial ? initialSchedulingAnchor : undefined,
+                    eventSchedulingAnchor
+                )
             );
             if (initial) {
                 observeInitialMidi(windowMidi);
@@ -1836,18 +1885,28 @@ export function startPlayheadScheduler(
             if (!cancellation.isCurrent()) {
                 return;
             }
-            scheduleAudioClips(
-                schedulerSession.lastScheduledBeat,
-                scheduleUpTo,
-                schedulerSession.accumulatedPosition,
-                schedulerSession.scheduledAudioClips,
-                schedulerSession.scheduledFrozenTracks,
-                schedulerSession.activeAudioSources,
-                current,
-                initial ? initialSchedulingAnchor : undefined
-            );
+            if (!loopAudioSchedule.active) {
+                scheduleAudioClips(
+                    schedulerSession.lastScheduledBeat,
+                    scheduleUpTo,
+                    schedulerSession.accumulatedPosition,
+                    windowBufferPool?.audio ?? schedulerSession.scheduledAudioClips,
+                    windowBufferPool?.frozen ?? schedulerSession.scheduledFrozenTracks,
+                    windowBufferPool?.sources ?? schedulerSession.activeAudioSources,
+                    current,
+                    initial ? initialSchedulingAnchor : undefined
+                );
+            } else {
+                loopAudioSchedule.recoverMappedWindow(
+                    windowBufferPool,
+                    schedulerSession.lastScheduledBeat,
+                    scheduleUpTo,
+                    bufferInput
+                );
+            }
             schedulerSession.lastScheduledBeat = scheduleUpTo;
         }
+        loopAudioSchedule.fence();
         // Prepared MIDI has no external await: both passes and all audio were
         // emitted in this turn. Observe its error receipts only after emission.
         if (initial) {
@@ -1927,6 +1986,7 @@ export function startPlayheadScheduler(
     }
     const cancelInitialEmission = () => {
         if (preparedInitial.ownsSession()) {
+            loopAudioSchedule.reset();
             stopActiveSources(schedulerSession.activeAudioSources, ctx);
             stopAllScheduled();
         }

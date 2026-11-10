@@ -139,6 +139,8 @@ vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
 // builds its tool catalog from Command exports the Command mock below omits.
 vi.mock('#/modules/AiRuntime/useCases', () => ({ cancelActiveAgentRuns: vi.fn() }));
 vi.mock('#/modules/Command/useCases', () => ({
+    commitUndoEntry: vi.fn(),
+    createUndoEntry: vi.fn(),
     commitRedoInverseCapture: vi.fn(),
     readUndoEntryForInverse: vi.fn<typeof import('#/modules/Command/useCases').readUndoEntryForInverse>(() => null),
 
@@ -156,6 +158,12 @@ vi.mock('#/modules/Command/useCases', () => ({
     syncActionReplayMetadata: vi.fn(),
 }));
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
+    projectRevisionMatchesLiveWithinProjection: vi.fn(() => {
+        throw new Error('Unexpected selection render admission in this fixture');
+    }),
+    settlePendingProjectWritesAndCaptureRevision: vi.fn(() => {
+        throw new Error('Unexpected selection render admission in this fixture');
+    }),
     commandSourcePublicationMatches: vi.fn<
         typeof import('#/modules/CrdtDocument/useCases').commandSourcePublicationMatches
     >(() => false),

@@ -184,6 +184,28 @@ describe('Electron runtime provenance', () => {
         expect(validateElectronRuntimeProvenance(root, contract)).toContain('Electron source manifest drifted');
     });
 
+    it('accepts a peer-qualified snapshot of the same Electron version', () => {
+        const { root, contract } = fixture();
+        write(
+            root,
+            'pnpm-lock.yaml',
+            `importers:\n\n  .:\n    devDependencies:\n      electron:\n        specifier: 1.2.3\n        version: 1.2.3(supports-color@7.2.0)\n\npackages:\n\n  electron@1.2.3:\n    resolution: {integrity: sha512-test}\n`
+        );
+
+        expect(validateElectronRuntimeProvenance(root, contract)).toEqual([]);
+    });
+
+    it('rejects a peer-qualified snapshot of a different Electron version', () => {
+        const { root, contract } = fixture();
+        write(
+            root,
+            'pnpm-lock.yaml',
+            `importers:\n\n  .:\n    devDependencies:\n      electron:\n        specifier: 1.2.3\n        version: 1.2.30(supports-color@7.2.0)\n\npackages:\n\n  electron@1.2.3:\n    resolution: {integrity: sha512-test}\n`
+        );
+
+        expect(validateElectronRuntimeProvenance(root, contract)).toContain('Electron lock resolution drifted');
+    });
+
     it('rejects duplicate lockfile keys', () => {
         const { root, contract } = fixture();
         write(

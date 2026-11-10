@@ -350,6 +350,36 @@ export function readNativeForkHistory(ref: string, local: GitConfigReader): stri
     }
 }
 
+export function parseHistoricalClosedReceipt(
+    value: unknown,
+    childPullRequest: number,
+    parentPullRequest: number
+): HistoricalClosedParent & { proof: string } {
+    const closed = value;
+    if (closed === null || typeof closed !== 'object' || Array.isArray(closed)) {
+        fail('invalid historical closed parent receipt');
+    }
+    const proof = closed as Record<string, unknown>;
+    if (
+        Object.keys(proof).sort().join(',') !== 'parentOriginMain,proof,replacementPullRequest' ||
+        typeof proof.replacementPullRequest !== 'number' ||
+        !Number.isSafeInteger(proof.replacementPullRequest) ||
+        proof.replacementPullRequest <= 0 ||
+        [parentPullRequest, childPullRequest].includes(proof.replacementPullRequest) ||
+        typeof proof.parentOriginMain !== 'boolean' ||
+        typeof proof.proof !== 'string' ||
+        proof.proof === '' ||
+        Buffer.byteLength(proof.proof, 'utf8') > 32768
+    ) {
+        fail('invalid historical closed parent receipt');
+    }
+    return {
+        replacementPullRequest: proof.replacementPullRequest,
+        parentOriginMain: proof.parentOriginMain,
+        proof: proof.proof,
+    };
+}
+
 function assertCompletionCore(core: Record<string, unknown>): void {
     const expectedCoreKeys =
         'base,baseRefOid,closedAt,head,headRefName,headRepository,mergeCommit,merged,number,repository,state';

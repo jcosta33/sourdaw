@@ -21,7 +21,7 @@ yet; `main` is the current source.
   an Automerge CRDT document, so undo, persistence, and collaboration share
   one write path.
 - Desktop: an Electron shell over the same app, backed by Rust crates for
-  native audio, DSP, CLAP plugin hosting, and I/O, plus Rust-to-WASM packages
+  native audio, DSP, CLAP and VST® 3 plugin hosting, and I/O, plus Rust-to-WASM packages
   shipped as committed artifacts.
 - Collaboration: direct WebRTC sessions, an optional authenticated WebSocket
   relay (`server/`), and native LAN discovery. These are transports, not a
@@ -35,7 +35,7 @@ yet; `main` is the current source.
 
 Arrangement, recording and editing, a mixer, routing, automation, built-in
 instruments and effects, local project persistence, and direct collaboration.
-The desktop app also hosts CLAP plugins. VST® 3 is unsupported.
+The desktop app also hosts CLAP and VST® 3 plugins.
 
 ## The agent harness
 
@@ -66,7 +66,7 @@ path yet.
 ### Prerequisites
 
 - Node.js `>=24.15.0 <25`
-- pnpm `11.6.0`
+- pnpm `11.28.11`
 - Rust nightly `nightly-2026-04-14` for desktop and native work
 
 ### Browser app

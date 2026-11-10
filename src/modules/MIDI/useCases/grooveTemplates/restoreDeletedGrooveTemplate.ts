@@ -5,10 +5,11 @@ import { isGrooveTemplateState } from '../../models/GrooveTemplateState';
 import { isGrooveTemplateAssignment, grooveTemplateStore } from '../../stores/grooveTemplateStore';
 
 import { type DeletedGrooveTemplateSnapshot } from './deleteGrooveTemplate';
-import { markGrooveTemplateProjectWrite } from './markGrooveTemplateProjectWrite';
 import { resolveGrooveTemplateName } from './resolveGrooveTemplateName';
 
-export function restoreDeletedGrooveTemplate(snapshot: DeletedGrooveTemplateSnapshot): void {
+export function restoreDeletedGrooveTemplate(snapshot: DeletedGrooveTemplateSnapshot): {
+    status: 'written' | 'no-write';
+} {
     const state = grooveTemplateStore.value;
     if (!state) {
         throw new Error('Cannot restore groove template: state is unavailable');
@@ -65,6 +66,9 @@ export function restoreDeletedGrooveTemplate(snapshot: DeletedGrooveTemplateSnap
     ) {
         throw new Error(`Cannot restore groove template "${snapshot.template.id}": candidate is not canonical`);
     }
+    if (valuesEqual(state, candidate)) {
+        return { status: 'no-write' };
+    }
     grooveTemplateStore.set(candidate);
-    markGrooveTemplateProjectWrite();
+    return { status: 'written' };
 }

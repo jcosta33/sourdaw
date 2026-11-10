@@ -119,6 +119,8 @@ vi.mock('../../../useCases/device/executeAddDeviceAction', () => ({
 }));
 
 vi.mock('#/modules/Command/useCases', () => ({
+    commitUndoEntry: vi.fn(),
+    createUndoEntry: vi.fn(),
     getExecutableAppActionEffect: vi.fn(() => null),
     executeUserAppAction: vi.fn(),
     executeAppAction: mocks.executeAppAction,
@@ -1428,7 +1430,10 @@ describe('useTimelineFileDrop', () => {
         });
 
         await waitFor(() => {
-            expect(mocks.decodeAudioFile).toHaveBeenCalledWith(mockFile);
+            expect(mocks.decodeAudioFile).toHaveBeenCalledWith(
+                mockFile,
+                expect.objectContaining({ retain: expect.any(Function), release: expect.any(Function) })
+            );
             expect(batchPayload('addClip')).toEqual(expect.objectContaining({ audioBufferId: 'buf-flac' }));
         });
     });

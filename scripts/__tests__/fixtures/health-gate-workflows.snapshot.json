@@ -5,7 +5,6 @@
     "heavy-gates.yml",
     "nightly-evidence-report.yml",
     "nightly.yml",
-    "pr-checks.yml",
     "quantum-measurements.yml",
     "validation.yml",
     "wasm-artifacts.yml"
@@ -15,7 +14,11 @@
     "on": {
       "pull_request": {
         "types": [
-          "labeled"
+          "opened",
+          "synchronize",
+          "reopened",
+          "ready_for_review",
+          "converted_to_draft"
         ]
       }
     },
@@ -28,58 +31,9 @@
       "cancel-in-progress": true
     },
     "jobs": {
-      "admission": {
-        "name": "Approval admission",
-        "runs-on": "ubuntu-latest",
-        "timeout-minutes": 5,
-        "outputs": {
-          "admitted": "${{ steps.decide.outputs.admitted }}",
-          "reason": "${{ steps.decide.outputs.reason }}"
-        },
-        "steps": [
-          {
-            "name": "Checkout trusted admission",
-            "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
-            "with": {
-              "ref": "${{ github.event.repository.default_branch }}",
-              "path": "trusted",
-              "sparse-checkout": "scripts",
-              "persist-credentials": false
-            }
-          },
-          {
-            "name": "Set up Node",
-            "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
-            "with": {
-              "node-version": "24.19.0"
-            }
-          },
-          {
-            "name": "Read reviews",
-            "env": {
-              "GH_TOKEN": "${{ github.token }}",
-              "REPOSITORY": "${{ github.repository }}",
-              "NUMBER": "${{ github.event.pull_request.number }}"
-            },
-            "run": "gh api --paginate --slurp \"repos/$REPOSITORY/pulls/$NUMBER/reviews\" > \"$RUNNER_TEMP/reviews.json\""
-          },
-          {
-            "name": "Decide admission",
-            "id": "decide",
-            "env": {
-              "REVIEWS_PATH": "${{ runner.temp }}/reviews.json",
-              "HEAD_SHA": "${{ github.event.pull_request.head.sha }}",
-              "LABEL_NAME": "${{ github.event.label.name }}",
-              "SENDER_NODE_ID": "${{ github.event.sender.node_id }}"
-            },
-            "run": "node trusted/scripts/ciApprovalAdmission.ts"
-          }
-        ]
-      },
       "scope": {
         "name": "Plan required checks",
-        "needs": "admission",
-        "if": "needs.admission.outputs.admitted == 'true'",
+        "if": "github.event.pull_request.draft == false",
         "runs-on": "ubuntu-latest",
         "timeout-minutes": 10,
         "permissions": {
@@ -118,9 +72,9 @@
             "name": "Set up Node",
             "timeout-minutes": 3,
             "continue-on-error": true,
-            "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+            "uses": "actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
             "with": {
-              "node-version": "24.19.0",
+              "node-version": "24.22.2",
               "cache": "pnpm"
             }
           },
@@ -150,7 +104,7 @@
           },
           {
             "name": "Upload scope manifest",
-            "uses": "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
+            "uses": "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9",
             "with": {
               "name": "pr-validation-scope",
               "path": "pr-validation-scope.json",
@@ -165,17 +119,79 @@
         "needs": "scope",
         "uses": "./.github/workflows/validation.yml",
         "with": {
-          "mode": "full",
           "browser": "${{ needs.scope.outputs.browser == 'true' }}",
           "profile": "${{ needs.scope.outputs.profile }}"
         }
+      },
+      "e2e-build": {
+        "name": "Shared E2E build",
+        "needs": "scope",
+        "if": "${{ github.event.pull_request.draft == false && needs.scope.result == 'success' && fromJSON(needs.scope.outputs.matrix || '{\"include\":[]}').include[0] != null }}",
+        "runs-on": "ubuntu-latest",
+        "container": {
+          "image": "mcr.microsoft.com/playwright:v1.65.0-noble@sha256:6e3fb709361521eb27161606e6da6d2674e5e89fa16516cb37d6fdd91372273d",
+          "options": "--init --ipc=host"
+        },
+        "defaults": {
+          "run": {
+            "shell": "bash"
+          }
+        },
+        "timeout-minutes": 75,
+        "steps": [
+          {
+            "name": "Checkout",
+            "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+            "with": {
+              "ref": "${{ github.sha }}",
+              "persist-credentials": false
+            }
+          },
+          {
+            "name": "Set up pnpm",
+            "uses": "./.github/actions/setup-pnpm",
+            "with": {
+              "package_json_file": "package.json"
+            }
+          },
+          {
+            "name": "Set up Node",
+            "timeout-minutes": 3,
+            "continue-on-error": true,
+            "uses": "actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
+            "with": {
+              "node-version": "24.22.2",
+              "cache": "pnpm"
+            }
+          },
+          {
+            "name": "Install dependencies",
+            "run": "pnpm install --frozen-lockfile"
+          },
+          {
+            "name": "Build shared E2E app",
+            "run": "node scripts/sharedE2eBuild.ts build"
+          },
+          {
+            "name": "Upload shared E2E build",
+            "uses": "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9",
+            "with": {
+              "name": "e2e-build-${{ github.run_id }}-${{ github.run_attempt }}",
+              "path": "dist/",
+              "if-no-files-found": "error",
+              "retention-days": 7
+            }
+          }
+        ]
       },
       "affected": {
         "name": "Affected workflows",
         "needs": [
           "scope",
-          "validation"
+          "validation",
+          "e2e-build"
         ],
+        "if": "${{ github.event.pull_request.draft == false && !cancelled() && needs.scope.result == 'success' && needs.validation.result == 'success' &&\n    ((fromJSON(needs.scope.outputs.matrix || '{\"include\":[]}').include[0] != null && needs.e2e-build.result == 'success') ||\n     (fromJSON(needs.scope.outputs.matrix || '{\"include\":[]}').include[0] == null && needs.e2e-build.result == 'skipped')) }}",
         "uses": "./.github/workflows/heavy-gates.yml",
         "with": {
           "matrix": "${{ needs.scope.outputs.matrix }}",
@@ -200,7 +216,7 @@
           },
           {
             "name": "Initialise CodeQL",
-            "uses": "github/codeql-action/init@c16c0f3f2812ec4bb3750a5ed64873fe2ce0fbef",
+            "uses": "github/codeql-action/init@52cf1852265d99e9bea071b03366fc777a602909",
             "with": {
               "languages": "javascript-typescript",
               "queries": "security-extended"
@@ -208,7 +224,7 @@
           },
           {
             "name": "Analyse",
-            "uses": "github/codeql-action/analyze@c16c0f3f2812ec4bb3750a5ed64873fe2ce0fbef",
+            "uses": "github/codeql-action/analyze@52cf1852265d99e9bea071b03366fc777a602909",
             "with": {
               "category": ".github/workflows/nightly.yml:codeql"
             }
@@ -219,8 +235,8 @@
         "name": "Gate",
         "if": "${{ always() }}",
         "needs": [
-          "admission",
           "scope",
+          "e2e-build",
           "validation",
           "affected",
           "codeql"
@@ -232,126 +248,13 @@
             "name": "Require selected checks to succeed",
             "if": "${{ always() }}",
             "env": {
-              "RESULTS": "${{ toJSON(needs) }}"
+              "RESULTS": "${{ toJSON(needs) }}",
+              "MATRIX": "${{ needs.scope.outputs.matrix }}",
+              "DRAFT": "${{ github.event.pull_request.draft }}"
             },
-            "run": "set -euo pipefail\nprintf '%s' \"$RESULTS\" | jq -r '\n  if .admission.result == \"success\" and .admission.outputs.admitted == \"true\" then empty\n  else \"::error title=Gate not admitted::\\(.admission.outputs.reason // \"approval admission did not decide\")\" end'\nprintf '%s' \"$RESULTS\" | jq -e '\n  (keys | sort) == [\"admission\", \"affected\", \"codeql\", \"scope\", \"validation\"] and\n  .admission.result == \"success\" and .admission.outputs.admitted == \"true\" and\n  .scope.result == \"success\" and .validation.result == \"success\" and .affected.result == \"success\" and\n  (.scope.outputs.browser == \"true\" or .scope.outputs.browser == \"false\") and\n  (.scope.outputs[\"browser-ai\"] == \"true\" or .scope.outputs[\"browser-ai\"] == \"false\") and\n  (if .scope.outputs.codeql == \"true\" then .codeql.result == \"success\"\n   elif .scope.outputs.codeql == \"false\" then .codeql.result == \"skipped\"\n   else false end)'\n"
+            "run": "set -euo pipefail\nif [ \"$DRAFT\" != \"false\" ]; then\n  printf '%s\\n' '::error title=Gate refused::pull request is a draft'\n  exit 1\nfi\nselected=$(printf '%s' \"$MATRIX\" | jq -er '\n  if type != \"object\" or (.include | type) != \"array\" then error(\"invalid E2E plan\")\n  elif all(.include[]; (.id | type) == \"number\" and (.specs | type) == \"array\" and (.specs | length) > 0) then\n    if (.include | length) > 0 then \"success\" else \"skipped\" end\n  else error(\"invalid E2E group\") end')\nprintf '%s' \"$RESULTS\" | jq -e --arg selected \"$selected\" '\n  (keys | sort) == [\"affected\", \"codeql\", \"e2e-build\", \"scope\", \"validation\"] and\n  .scope.result == \"success\" and .validation.result == \"success\" and .affected.result == \"success\" and\n  .[\"e2e-build\"].result == $selected and\n  (.scope.outputs.browser == \"true\" or .scope.outputs.browser == \"false\") and\n  (.scope.outputs[\"browser-ai\"] == \"true\" or .scope.outputs[\"browser-ai\"] == \"false\") and\n  (if .scope.outputs.codeql == \"true\" then .codeql.result == \"success\"\n   elif .scope.outputs.codeql == \"false\" then .codeql.result == \"skipped\"\n   else false end)'\n"
           }
         ]
-      }
-    }
-  },
-  "pr-checks.yml": {
-    "name": "PR checks",
-    "on": {
-      "pull_request": {
-        "types": [
-          "opened",
-          "synchronize",
-          "reopened",
-          "ready_for_review"
-        ]
-      }
-    },
-    "permissions": {
-      "contents": "read",
-      "pull-requests": "read"
-    },
-    "concurrency": {
-      "group": "pr-checks-${{ github.event.pull_request.number }}",
-      "cancel-in-progress": true
-    },
-    "jobs": {
-      "scope": {
-        "name": "Plan push checks",
-        "runs-on": "ubuntu-latest",
-        "timeout-minutes": 10,
-        "permissions": {
-          "contents": "read",
-          "pull-requests": "read",
-          "actions": "read"
-        },
-        "outputs": {
-          "profile": "${{ steps.plan.outputs.profile }}",
-          "matrix": "${{ steps.plan.outputs.matrix }}",
-          "browser": "${{ steps.plan.outputs.browser }}",
-          "browser-ai": "${{ steps.plan.outputs.browser-ai }}",
-          "codeql": "${{ steps.plan.outputs.codeql }}"
-        },
-        "steps": [
-          {
-            "name": "Checkout",
-            "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
-            "with": {
-              "fetch-depth": 0,
-              "persist-credentials": false
-            }
-          },
-          {
-            "name": "Enable Corepack",
-            "run": "corepack enable"
-          },
-          {
-            "name": "Set up pnpm",
-            "uses": "./.github/actions/setup-pnpm",
-            "with": {
-              "package_json_file": "package.json"
-            }
-          },
-          {
-            "name": "Set up Node",
-            "timeout-minutes": 3,
-            "continue-on-error": true,
-            "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
-            "with": {
-              "node-version": "24.19.0",
-              "cache": "pnpm"
-            }
-          },
-          {
-            "name": "Install dependencies",
-            "run": "pnpm install --frozen-lockfile --ignore-scripts"
-          },
-          {
-            "name": "Fetch coverage map",
-            "id": "coverage_map",
-            "env": {
-              "GH_TOKEN": "${{ github.token }}",
-              "E2E_COVERAGE_MAP": "${{ runner.temp }}/e2e-coverage-map.json"
-            },
-            "run": "node scripts/fetchE2eCoverageMap.ts"
-          },
-          {
-            "name": "Plan affected checks",
-            "id": "plan",
-            "env": {
-              "BASE_SHA": "${{ github.event.pull_request.base.sha }}",
-              "HEAD_SHA": "${{ github.event.pull_request.head.sha }}",
-              "E2E_COVERAGE_MAP": "${{ runner.temp }}/e2e-coverage-map.json",
-              "E2E_COVERAGE_MAP_CREATED_AT": "${{ steps.coverage_map.outputs.created-at }}"
-            },
-            "run": "node scripts/prValidationScope.ts plan"
-          },
-          {
-            "name": "Upload scope manifest",
-            "uses": "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
-            "with": {
-              "name": "pr-validation-scope",
-              "path": "pr-validation-scope.json",
-              "if-no-files-found": "error",
-              "retention-days": 7
-            }
-          }
-        ]
-      },
-      "validation": {
-        "name": "Push validation",
-        "needs": "scope",
-        "uses": "./.github/workflows/validation.yml",
-        "with": {
-          "mode": "preliminary",
-          "browser": "${{ needs.scope.outputs.browser == 'true' }}",
-          "profile": "${{ needs.scope.outputs.profile }}"
-        }
       }
     }
   },
@@ -378,7 +281,7 @@
       "pull-requests": "read"
     },
     "env": {
-      "NODE_VERSION": "24.19.0"
+      "NODE_VERSION": "24.22.2"
     },
     "jobs": {
       "e2e": {
@@ -386,7 +289,7 @@
         "if": "fromJSON(inputs.matrix).include[0] != null",
         "runs-on": "ubuntu-latest",
         "container": {
-          "image": "mcr.microsoft.com/playwright:v1.64.1-noble@sha256:47b510dd9230bf0b9bfc9b20102241e577ea7a99334ab4c3ca19f19770e9b8ea",
+          "image": "mcr.microsoft.com/playwright:v1.65.0-noble@sha256:6e3fb709361521eb27161606e6da6d2674e5e89fa16516cb37d6fdd91372273d",
           "options": "--init --ipc=host"
         },
         "defaults": {
@@ -402,7 +305,11 @@
         "steps": [
           {
             "name": "Checkout",
-            "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
+            "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+            "with": {
+              "ref": "${{ github.sha }}",
+              "persist-credentials": false
+            }
           },
           {
             "name": "Set up pnpm",
@@ -415,7 +322,7 @@
             "name": "Set up Node",
             "timeout-minutes": 3,
             "continue-on-error": true,
-            "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+            "uses": "actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
             "with": {
               "node-version": "${{ env.NODE_VERSION }}",
               "cache": "pnpm"
@@ -426,15 +333,24 @@
             "run": "pnpm install --frozen-lockfile"
           },
           {
+            "name": "Download shared E2E build",
+            "uses": "actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333",
+            "with": {
+              "name": "e2e-build-${{ github.run_id }}-${{ github.run_attempt }}",
+              "path": "dist/"
+            }
+          },
+          {
             "name": "Verify preinstalled browser runtime",
             "timeout-minutes": 2,
-            "run": "node scripts/verifyPlaywrightRuntime.ts 1.64.1"
+            "run": "node scripts/verifyPlaywrightRuntime.ts 1.65.0"
           },
           {
             "name": "Run shard",
             "id": "run_shard",
             "env": {
-              "E2E_SPECS": "${{ toJSON(matrix.specs) }}"
+              "E2E_SPECS": "${{ toJSON(matrix.specs) }}",
+              "SOURDAW_SHARED_E2E_BUILD": "1"
             },
             "run": "node scripts/prValidationScope.ts run"
           },
@@ -449,7 +365,7 @@
           {
             "name": "Upload blob report",
             "if": "${{ !cancelled() }}",
-            "uses": "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
+            "uses": "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9",
             "with": {
               "name": "e2e-blob-${{ matrix.id }}",
               "path": "blob-report/",
@@ -485,7 +401,7 @@
             "name": "Set up Node",
             "timeout-minutes": 3,
             "continue-on-error": true,
-            "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+            "uses": "actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
             "with": {
               "node-version": "${{ env.NODE_VERSION }}",
               "cache": "pnpm"
@@ -497,7 +413,7 @@
           },
           {
             "name": "Download blob reports",
-            "uses": "actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c",
+            "uses": "actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333",
             "with": {
               "pattern": "e2e-blob-*",
               "path": "all-blob-reports",
@@ -510,7 +426,7 @@
           },
           {
             "name": "Upload report",
-            "uses": "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
+            "uses": "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9",
             "with": {
               "name": "playwright-report",
               "path": "playwright-report/",
@@ -548,7 +464,7 @@
             "name": "Set up Node",
             "timeout-minutes": 3,
             "continue-on-error": true,
-            "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+            "uses": "actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
             "with": {
               "node-version": "${{ env.NODE_VERSION }}",
               "cache": "pnpm"
@@ -577,7 +493,7 @@
             "name": "Upload Browser AI WebGPU diagnostics",
             "if": "${{ always() }}",
             "timeout-minutes": 2,
-            "uses": "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
+            "uses": "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9",
             "with": {
               "name": "browser-ai-webgpu-diagnostics",
               "path": "browser-ai-webgpu-admission.log\ntest-results/**/trace.zip\ntest-results/**/error-context.md\ntest-results/.last-run.json\n",
@@ -617,12 +533,6 @@
     "on": {
       "workflow_call": {
         "inputs": {
-          "mode": {
-            "description": "Full required validation or preliminary push validation.",
-            "required": false,
-            "default": "full",
-            "type": "string"
-          },
           "browser": {
             "description": "Whether the affected plan requires browser smoke.",
             "required": true,
@@ -672,7 +582,7 @@
       "pull-requests": "read"
     },
     "env": {
-      "NODE_VERSION": "24.19.0"
+      "NODE_VERSION": "24.22.2"
     },
     "jobs": {
       "decide": {
@@ -716,14 +626,13 @@
               "EVENT": "${{ github.event_name }}",
               "BROWSER": "${{ inputs.browser }}",
               "PROFILE": "${{ inputs.profile }}",
-              "MODE": "${{ inputs.mode }}",
               "RUST": "${{ steps.filter-retry.outputs.rust || steps.filter.outputs.rust }}",
               "SERVER": "${{ steps.filter-retry.outputs.server || steps.filter.outputs.server }}",
               "E2E": "${{ steps.filter-retry.outputs.e2e || steps.filter.outputs.e2e }}",
               "WEB": "${{ steps.filter-retry.outputs.web || steps.filter.outputs.web }}",
               "UNCLASSIFIED": "${{ steps.filter-retry.outputs.unclassified || steps.filter.outputs.unclassified }}"
             },
-            "run": "set -euo pipefail\n# An empty verdict means both filter attempts failed or never ran;\n# letting it read as `false` would skip every lane under a green job.\nfor verdict in \"$RUST\" \"$SERVER\" \"$E2E\" \"$WEB\" \"$UNCLASSIFIED\" \"$BROWSER\"; do\n  if [ \"$verdict\" != \"true\" ] && [ \"$verdict\" != \"false\" ]; then\n    printf 'No scope verdict: both \"Filter changed paths\" and \"Retry changed-paths filter after a transient API failure\" failed or produced no output.\\n' >&2\n    exit 1\n  fi\ndone\ncase \"$MODE\" in\n  full|preliminary) ;;\n  *) printf 'Invalid validation mode: %s\\n' \"$MODE\" >&2; exit 1 ;;\nesac\ncase \"$PROFILE\" in\n  docs|tooling|broad) ;;\n  *) printf 'Invalid affected profile: %s\\n' \"$PROFILE\" >&2; exit 1 ;;\nesac\nheavy=false\nif [ \"$EVENT\" = \"pull_request_review\" ]; then heavy=true; fi\nrust=$RUST\nserver=$SERVER\ne2e=$E2E\nweb=$WEB\nif [ \"$UNCLASSIFIED\" = \"true\" ]; then\n  rust=true\n  server=true\n  e2e=true\n  web=true\nfi\ne2e=$BROWSER\ntooling=false\nif [ \"$EVENT\" = \"pull_request\" ]; then\n  case \"$PROFILE\" in\n    docs|tooling)\n      if [ \"$BROWSER\" != \"false\" ]; then\n        printf 'Narrow profile conflicts with browser selection\\n' >&2\n        exit 1\n      fi\n      rust=false\n      server=false\n      e2e=false\n      web=false\n      if [ \"$PROFILE\" = \"tooling\" ]; then tooling=true; fi\n      ;;\n  esac\nfi\n# `code` is the one question the scope-independent jobs ask: does this\n# head carry anything but prose? Only a change that claims no scope at\n# all — documentation — answers no.\ncode=false\nif [ \"$rust\" = \"true\" ] || [ \"$server\" = \"true\" ] || [ \"$e2e\" = \"true\" ] || [ \"$web\" = \"true\" ]; then\n  code=true\nfi\nif [ \"$tooling\" = \"true\" ]; then code=true; fi\n{\n  printf 'heavy=%s\\n' \"$heavy\"\n  printf 'rust=%s\\n' \"$rust\"\n  printf 'server=%s\\n' \"$server\"\n  printf 'e2e=%s\\n' \"$e2e\"\n  printf 'web=%s\\n' \"$web\"\n  printf 'code=%s\\n' \"$code\"\n  printf 'tooling=%s\\n' \"$tooling\"\n} >> \"$GITHUB_OUTPUT\"\n"
+            "run": "set -euo pipefail\n# An empty verdict means both filter attempts failed or never ran;\n# letting it read as `false` would skip every lane under a green job.\nfor verdict in \"$RUST\" \"$SERVER\" \"$E2E\" \"$WEB\" \"$UNCLASSIFIED\" \"$BROWSER\"; do\n  if [ \"$verdict\" != \"true\" ] && [ \"$verdict\" != \"false\" ]; then\n    printf 'No scope verdict: both \"Filter changed paths\" and \"Retry changed-paths filter after a transient API failure\" failed or produced no output.\\n' >&2\n    exit 1\n  fi\ndone\ncase \"$PROFILE\" in\n  docs|tooling|broad) ;;\n  *) printf 'Invalid affected profile: %s\\n' \"$PROFILE\" >&2; exit 1 ;;\nesac\nheavy=false\nif [ \"$EVENT\" = \"pull_request_review\" ]; then heavy=true; fi\nrust=$RUST\nserver=$SERVER\ne2e=$E2E\nweb=$WEB\nif [ \"$UNCLASSIFIED\" = \"true\" ]; then\n  rust=true\n  server=true\n  e2e=true\n  web=true\nfi\ne2e=$BROWSER\ntooling=false\nif [ \"$EVENT\" = \"pull_request\" ]; then\n  case \"$PROFILE\" in\n    docs|tooling)\n      if [ \"$BROWSER\" != \"false\" ]; then\n        printf 'Narrow profile conflicts with browser selection\\n' >&2\n        exit 1\n      fi\n      rust=false\n      server=false\n      e2e=false\n      web=false\n      if [ \"$PROFILE\" = \"tooling\" ]; then tooling=true; fi\n      ;;\n  esac\nfi\n# `code` is the one question the scope-independent jobs ask: does this\n# head carry anything but prose? Only a change that claims no scope at\n# all — documentation — answers no.\ncode=false\nif [ \"$rust\" = \"true\" ] || [ \"$server\" = \"true\" ] || [ \"$e2e\" = \"true\" ] || [ \"$web\" = \"true\" ]; then\n  code=true\nfi\nif [ \"$tooling\" = \"true\" ]; then code=true; fi\n{\n  printf 'heavy=%s\\n' \"$heavy\"\n  printf 'rust=%s\\n' \"$rust\"\n  printf 'server=%s\\n' \"$server\"\n  printf 'e2e=%s\\n' \"$e2e\"\n  printf 'web=%s\\n' \"$web\"\n  printf 'code=%s\\n' \"$code\"\n  printf 'tooling=%s\\n' \"$tooling\"\n} >> \"$GITHUB_OUTPUT\"\n"
           }
         ]
       },
@@ -752,7 +661,7 @@
             "name": "Set up Node",
             "timeout-minutes": 3,
             "continue-on-error": true,
-            "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+            "uses": "actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
             "with": {
               "node-version": "${{ env.NODE_VERSION }}",
               "cache": "pnpm"
@@ -867,7 +776,7 @@
             "name": "Set up Node",
             "timeout-minutes": 3,
             "continue-on-error": true,
-            "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+            "uses": "actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
             "with": {
               "node-version": "${{ env.NODE_VERSION }}",
               "cache": "pnpm"
@@ -911,7 +820,7 @@
             "name": "Set up Node",
             "timeout-minutes": 3,
             "continue-on-error": true,
-            "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+            "uses": "actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
             "with": {
               "node-version": "${{ env.NODE_VERSION }}",
               "cache": "pnpm"
@@ -930,7 +839,7 @@
       "unit": {
         "name": "Unit suite ${{ matrix.shard }}/4",
         "needs": "decide",
-        "if": "inputs.mode == 'full' && (needs.decide.outputs.web == 'true')",
+        "if": "(needs.decide.outputs.web == 'true')",
         "runs-on": "ubuntu-latest",
         "timeout-minutes": 45,
         "strategy": {
@@ -968,7 +877,7 @@
           },
           {
             "name": "Set up Node",
-            "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+            "uses": "actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
             "with": {
               "node-version": "${{ env.NODE_VERSION }}"
             }
@@ -1030,7 +939,7 @@
             "name": "Set up Node",
             "timeout-minutes": 3,
             "continue-on-error": true,
-            "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+            "uses": "actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
             "with": {
               "node-version": "${{ env.NODE_VERSION }}",
               "cache": "pnpm"
@@ -1052,7 +961,7 @@
         "if": "github.event.pull_request != null && needs.decide.outputs.e2e == 'true'",
         "runs-on": "ubuntu-latest",
         "container": {
-          "image": "mcr.microsoft.com/playwright:v1.64.1-noble@sha256:47b510dd9230bf0b9bfc9b20102241e577ea7a99334ab4c3ca19f19770e9b8ea",
+          "image": "mcr.microsoft.com/playwright:v1.65.0-noble@sha256:6e3fb709361521eb27161606e6da6d2674e5e89fa16516cb37d6fdd91372273d",
           "options": "--init --ipc=host"
         },
         "defaults": {
@@ -1077,7 +986,7 @@
             "name": "Set up Node",
             "timeout-minutes": 3,
             "continue-on-error": true,
-            "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+            "uses": "actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
             "with": {
               "node-version": "${{ env.NODE_VERSION }}",
               "cache": "pnpm"
@@ -1090,7 +999,7 @@
           {
             "name": "Verify preinstalled browser runtime",
             "timeout-minutes": 2,
-            "run": "node scripts/verifyPlaywrightRuntime.ts 1.64.1"
+            "run": "node scripts/verifyPlaywrightRuntime.ts 1.65.0"
           },
           {
             "name": "Run offline smoke set",
@@ -1101,7 +1010,7 @@
       "build": {
         "name": "Production build",
         "needs": "decide",
-        "if": "inputs.mode == 'full' && (needs.decide.outputs.web == 'true')",
+        "if": "(needs.decide.outputs.web == 'true')",
         "runs-on": "ubuntu-latest",
         "timeout-minutes": 20,
         "steps": [
@@ -1120,7 +1029,7 @@
             "name": "Set up Node",
             "timeout-minutes": 3,
             "continue-on-error": true,
-            "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+            "uses": "actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
             "with": {
               "node-version": "${{ env.NODE_VERSION }}",
               "cache": "pnpm"
@@ -1139,7 +1048,7 @@
       "rust": {
         "name": "Rust workspace and collaboration server",
         "needs": "decide",
-        "if": "inputs.mode == 'full' && (needs.decide.outputs.rust == 'true' || needs.decide.outputs.server == 'true')",
+        "if": "(needs.decide.outputs.rust == 'true' || needs.decide.outputs.server == 'true')",
         "runs-on": "ubuntu-latest",
         "timeout-minutes": 60,
         "steps": [
@@ -1158,7 +1067,7 @@
             "name": "Set up Node",
             "timeout-minutes": 3,
             "continue-on-error": true,
-            "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+            "uses": "actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
             "with": {
               "node-version": "${{ env.NODE_VERSION }}",
               "cache": "npm",
@@ -1174,7 +1083,7 @@
           {
             "name": "Restore pinned Rust toolchain",
             "id": "pinned-toolchain",
-            "uses": "actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830",
+            "uses": "actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9",
             "with": {
               "path": "~/.rustup/toolchains",
               "key": "pinned-rust-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}"
@@ -1186,12 +1095,12 @@
           },
           {
             "name": "Cache cargo build",
-            "uses": "Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6"
+            "uses": "Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0"
           },
           {
             "name": "Cache Cargo dependencies",
             "id": "cargo-deps",
-            "uses": "actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830",
+            "uses": "actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9",
             "with": {
               "path": "~/.cargo/registry\n~/.cargo/git\n",
               "key": "cargo-deps-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.lock', '**/Cargo.toml', '.cargo/config.toml', 'rust-toolchain.toml') }}"
@@ -1215,7 +1124,7 @@
       "native-macos": {
         "name": "Native audio backend (macOS)",
         "needs": "decide",
-        "if": "inputs.mode == 'full' && (needs.decide.outputs.rust == 'true')",
+        "if": "(needs.decide.outputs.rust == 'true')",
         "runs-on": "macos-latest",
         "timeout-minutes": 60,
         "steps": [
@@ -1234,7 +1143,7 @@
           {
             "name": "Cache cargo build",
             "id": "rust-cache",
-            "uses": "Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6",
+            "uses": "Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0",
             "with": {
               "save-if": "false"
             }
@@ -1242,7 +1151,7 @@
           {
             "name": "Cache the cargo registry index",
             "id": "cargo-index",
-            "uses": "actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830",
+            "uses": "actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9",
             "with": {
               "path": "~/.cargo/registry/index",
               "key": "cargo-index-v2-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-${{ hashFiles('Cargo.lock', '**/Cargo.toml', '.cargo/config.toml', 'rust-toolchain.toml') }}",
@@ -1265,9 +1174,9 @@
           },
           {
             "name": "Set up Node for native mutation proof",
-            "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+            "uses": "actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
             "with": {
-              "node-version": "24.19.0"
+              "node-version": "24.22.2"
             }
           },
           {
@@ -1283,7 +1192,7 @@
           {
             "name": "Upload native transport mutation evidence",
             "if": "${{ always() }}",
-            "uses": "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
+            "uses": "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9",
             "with": {
               "name": "native-transport-mutations-${{ github.event.pull_request.head.sha }}",
               "path": ".agents/artifacts/native-transport-mutations/",
@@ -1296,7 +1205,7 @@
       "native-windows": {
         "name": "Native audio backend (Windows)",
         "needs": "decide",
-        "if": "inputs.mode == 'full' && (needs.decide.outputs.rust == 'true')",
+        "if": "(needs.decide.outputs.rust == 'true')",
         "runs-on": "windows-latest",
         "timeout-minutes": 60,
         "steps": [
@@ -1311,12 +1220,12 @@
           {
             "name": "Cache cargo build",
             "id": "rust-cache",
-            "uses": "Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6"
+            "uses": "Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0"
           },
           {
             "name": "Cache the cargo registry index",
             "id": "cargo-index",
-            "uses": "actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830",
+            "uses": "actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9",
             "with": {
               "path": "~/.cargo/registry/index",
               "key": "cargo-index-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-${{ hashFiles('Cargo.lock') }}",
@@ -1335,7 +1244,7 @@
       "native-parity": {
         "name": "Native parity (macOS)",
         "needs": "decide",
-        "if": "inputs.mode == 'full' && (needs.decide.outputs.rust == 'true' || needs.decide.outputs.web == 'true')",
+        "if": "(needs.decide.outputs.rust == 'true' || needs.decide.outputs.web == 'true')",
         "runs-on": "macos-latest",
         "timeout-minutes": 60,
         "steps": [
@@ -1350,12 +1259,12 @@
           {
             "name": "Cache cargo build",
             "id": "rust-cache",
-            "uses": "Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6"
+            "uses": "Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0"
           },
           {
             "name": "Cache the cargo registry index",
             "id": "cargo-index",
-            "uses": "actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830",
+            "uses": "actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9",
             "with": {
               "path": "~/.cargo/registry/index",
               "key": "cargo-index-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-${{ hashFiles('Cargo.lock') }}",
@@ -1373,7 +1282,7 @@
             "name": "Set up Node",
             "timeout-minutes": 3,
             "continue-on-error": true,
-            "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+            "uses": "actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
             "with": {
               "node-version": "${{ env.NODE_VERSION }}",
               "cache": "pnpm"
@@ -1460,7 +1369,7 @@
           {
             "name": "Install trusted Gitleaks",
             "working-directory": "${{ github.workspace }}",
-            "run": "set -euo pipefail\numask 077\ngitleaks_archive=\"$RUNNER_TEMP/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz\"\ngitleaks_dir=\"$RUNNER_TEMP/gitleaks-${GITLEAKS_VERSION}\"\ngitleaks_url=\"https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz\"\n\ncurl --fail --location --proto '=https' --tlsv1.2 --silent --show-error \\\n  --output \"$gitleaks_archive\" \\\n  \"$gitleaks_url\"\nprintf '%s  %s\\n' \"$GITLEAKS_SHA256\" \"$gitleaks_archive\" | sha256sum --check --status\nmkdir -p \"$gitleaks_dir\"\ntar -xzf \"$gitleaks_archive\" -C \"$gitleaks_dir\" gitleaks\nprintf '%s\\n' \"$gitleaks_dir\" >> \"$GITHUB_PATH\"\n"
+            "run": "set -euo pipefail\numask 077\ngitleaks_archive=\"$RUNNER_TEMP/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz\"\ngitleaks_dir=\"$RUNNER_TEMP/gitleaks-${GITLEAKS_VERSION}\"\ngitleaks_url=\"https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz\"\n\ncurl --fail --location --proto '=https' --tlsv1.2 --silent --show-error \\\n  --retry 3 --retry-max-time 120 --connect-timeout 10 --max-time 60 \\\n  --output \"$gitleaks_archive\" \\\n  \"$gitleaks_url\"\nprintf '%s  %s\\n' \"$GITLEAKS_SHA256\" \"$gitleaks_archive\" | sha256sum --check --status\nmkdir -p \"$gitleaks_dir\"\ntar -xzf \"$gitleaks_archive\" -C \"$gitleaks_dir\" gitleaks\nprintf '%s\\n' \"$gitleaks_dir\" >> \"$GITHUB_PATH\"\n"
           },
           {
             "name": "Validate PR merge diff secret scanner",
@@ -1504,10 +1413,9 @@
             "if": "${{ always() }}",
             "env": {
               "RESULTS": "${{ toJSON(needs) }}",
-              "PULL_REQUEST": "${{ github.event.pull_request != null }}",
-              "MODE": "${{ inputs.mode }}"
+              "PULL_REQUEST": "${{ github.event.pull_request != null }}"
             },
-            "run": "set -euo pipefail\nprintf '%s' \"$RESULTS\" | jq -e --arg pr \"$PULL_REQUEST\" --arg mode \"$MODE\" '\n  def selected($flag):\n    if $flag == \"true\" then \"success\"\n    elif $flag == \"false\" then \"skipped\"\n    else error(\"missing scope verdict\") end;\n  def broad($flag): if $mode == \"preliminary\" then \"skipped\" else selected($flag) end;\n  ($mode == \"full\" or $mode == \"preliminary\") and\n  (keys | sort) == ([\"decide\", \"static\", \"lint\", \"boundaries\", \"unit\", \"tooling-unit\", \"smoke\", \"build\", \"rust\", \"native-macos\", \"native-windows\", \"native-parity\", \"dependency-review\", \"pr-secrets\"] | sort) and\n  .decide.result == \"success\" and .static.result == \"success\" and\n  (.decide.outputs | [.rust, .server, .e2e, .web, .code, .tooling] | all(. == \"true\" or . == \"false\")) and\n  .lint.result == selected(.decide.outputs.code) and\n  .boundaries.result == selected(.decide.outputs.code) and\n  .unit.result == broad(.decide.outputs.web) and\n  .[\"tooling-unit\"].result == selected(.decide.outputs.tooling) and\n  .build.result == broad(.decide.outputs.web) and\n  .rust.result == broad(if .decide.outputs.rust == \"true\" or .decide.outputs.server == \"true\" then \"true\" else \"false\" end) and\n  .[\"native-macos\"].result == broad(.decide.outputs.rust) and\n  .[\"native-windows\"].result == broad(.decide.outputs.rust) and\n  .[\"native-parity\"].result == broad(if .decide.outputs.rust == \"true\" or .decide.outputs.web == \"true\" then \"true\" else \"false\" end) and\n  .smoke.result == (if $pr == \"true\" then selected(.decide.outputs.e2e) elif $pr == \"false\" then \"skipped\" else error(\"missing PR verdict\") end) and\n  .[\"dependency-review\"].result == selected($pr) and\n  .[\"pr-secrets\"].result == selected($pr)'\n"
+            "run": "set -euo pipefail\nprintf '%s' \"$RESULTS\" | jq -e --arg pr \"$PULL_REQUEST\" '\n  def selected($flag):\n    if $flag == \"true\" then \"success\"\n    elif $flag == \"false\" then \"skipped\"\n    else error(\"missing scope verdict\") end;\n  (keys | sort) == ([\"decide\", \"static\", \"lint\", \"boundaries\", \"unit\", \"tooling-unit\", \"smoke\", \"build\", \"rust\", \"native-macos\", \"native-windows\", \"native-parity\", \"dependency-review\", \"pr-secrets\"] | sort) and\n  .decide.result == \"success\" and .static.result == \"success\" and\n  (.decide.outputs | [.rust, .server, .e2e, .web, .code, .tooling] | all(. == \"true\" or . == \"false\")) and\n  .lint.result == selected(.decide.outputs.code) and\n  .boundaries.result == selected(.decide.outputs.code) and\n  .unit.result == selected(.decide.outputs.web) and\n  .[\"tooling-unit\"].result == selected(.decide.outputs.tooling) and\n  .build.result == selected(.decide.outputs.web) and\n  .rust.result == selected(if .decide.outputs.rust == \"true\" or .decide.outputs.server == \"true\" then \"true\" else \"false\" end) and\n  .[\"native-macos\"].result == selected(.decide.outputs.rust) and\n  .[\"native-windows\"].result == selected(.decide.outputs.rust) and\n  .[\"native-parity\"].result == selected(if .decide.outputs.rust == \"true\" or .decide.outputs.web == \"true\" then \"true\" else \"false\" end) and\n  .smoke.result == (if $pr == \"true\" then selected(.decide.outputs.e2e) elif $pr == \"false\" then \"skipped\" else error(\"missing PR verdict\") end) and\n  .[\"dependency-review\"].result == selected($pr) and\n  .[\"pr-secrets\"].result == selected($pr)'\n"
           }
         ]
       }
@@ -1531,7 +1439,7 @@
       "cancel-in-progress": false
     },
     "env": {
-      "NODE_VERSION": "24.19.0"
+      "NODE_VERSION": "24.22.2"
     },
     "jobs": {
       "decide": {
@@ -1582,7 +1490,7 @@
             "name": "Set up Node",
             "timeout-minutes": 3,
             "continue-on-error": true,
-            "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+            "uses": "actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
             "with": {
               "node-version": "${{ env.NODE_VERSION }}",
               "cache": "pnpm"
@@ -1680,7 +1588,7 @@
             "name": "Set up Node",
             "timeout-minutes": 3,
             "continue-on-error": true,
-            "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+            "uses": "actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
             "with": {
               "node-version": "${{ env.NODE_VERSION }}",
               "cache": "pnpm"
@@ -1726,7 +1634,7 @@
             "name": "Set up Node",
             "timeout-minutes": 3,
             "continue-on-error": true,
-            "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+            "uses": "actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
             "with": {
               "node-version": "${{ env.NODE_VERSION }}",
               "cache": "pnpm"
@@ -1783,7 +1691,7 @@
           },
           {
             "name": "Set up Node",
-            "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+            "uses": "actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
             "with": {
               "node-version": "${{ env.NODE_VERSION }}"
             }
@@ -1849,7 +1757,7 @@
             "name": "Set up Node",
             "timeout-minutes": 3,
             "continue-on-error": true,
-            "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+            "uses": "actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
             "with": {
               "node-version": "${{ env.NODE_VERSION }}",
               "cache": "pnpm"
@@ -1888,7 +1796,7 @@
           },
           {
             "name": "Cache cargo build",
-            "uses": "Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6"
+            "uses": "Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0"
           },
           {
             "name": "Rust workspace health gates",
@@ -1909,7 +1817,7 @@
           },
           {
             "name": "Install Node",
-            "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+            "uses": "actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
             "with": {
               "node-version": "${{ env.NODE_VERSION }}"
             }
@@ -1918,7 +1826,7 @@
             "name": "Set up Node",
             "timeout-minutes": 3,
             "continue-on-error": true,
-            "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+            "uses": "actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
             "with": {
               "node-version": "${{ env.NODE_VERSION }}",
               "cache": "npm",
@@ -1953,7 +1861,7 @@
           },
           {
             "name": "Cache cargo build",
-            "uses": "Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6"
+            "uses": "Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0"
           },
           {
             "name": "Test the audio crates",
@@ -1982,7 +1890,7 @@
           },
           {
             "name": "Cache cargo build",
-            "uses": "Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6"
+            "uses": "Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0"
           },
           {
             "name": "Test the audio crates",
@@ -2016,7 +1924,7 @@
             "name": "Set up Node",
             "timeout-minutes": 3,
             "continue-on-error": true,
-            "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+            "uses": "actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
             "with": {
               "node-version": "${{ env.NODE_VERSION }}",
               "cache": "pnpm"
@@ -2028,7 +1936,7 @@
           },
           {
             "name": "Cache cargo build",
-            "uses": "Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6"
+            "uses": "Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0"
           },
           {
             "name": "Install dependencies",
@@ -2063,7 +1971,7 @@
           {
             "name": "Upload the measurement record",
             "if": "always()",
-            "uses": "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
+            "uses": "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9",
             "with": {
               "name": "desktop-latency-${{ github.sha }}",
               "path": "measurements/desktop-latency/nightly-${{ github.sha }}.json",
@@ -2073,7 +1981,7 @@
           {
             "name": "Upload the agent workspace proof record",
             "if": "always()",
-            "uses": "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
+            "uses": "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9",
             "with": {
               "name": "desktop-agent-workspace-${{ github.sha }}",
               "path": "measurements/desktop-agent-workspace/nightly-${{ github.sha }}.json",
@@ -2088,7 +1996,7 @@
         "if": "needs.decide.outputs.heavy == 'true' && needs.decide.outputs.e2e == 'true'",
         "runs-on": "ubuntu-latest",
         "container": {
-          "image": "mcr.microsoft.com/playwright:v1.64.1-noble@sha256:47b510dd9230bf0b9bfc9b20102241e577ea7a99334ab4c3ca19f19770e9b8ea",
+          "image": "mcr.microsoft.com/playwright:v1.65.0-noble@sha256:6e3fb709361521eb27161606e6da6d2674e5e89fa16516cb37d6fdd91372273d",
           "options": "--init --ipc=host"
         },
         "defaults": {
@@ -2132,7 +2040,7 @@
             "name": "Set up Node",
             "timeout-minutes": 3,
             "continue-on-error": true,
-            "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+            "uses": "actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
             "with": {
               "node-version": "${{ env.NODE_VERSION }}",
               "cache": "pnpm"
@@ -2145,7 +2053,7 @@
           {
             "name": "Verify preinstalled browser runtime",
             "timeout-minutes": 2,
-            "run": "node scripts/verifyPlaywrightRuntime.ts 1.64.1"
+            "run": "node scripts/verifyPlaywrightRuntime.ts 1.65.0"
           },
           {
             "name": "Run shard",
@@ -2163,7 +2071,7 @@
           {
             "name": "Upload blob report",
             "if": "${{ !cancelled() }}",
-            "uses": "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
+            "uses": "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9",
             "with": {
               "name": "e2e-blob-${{ matrix.shard }}",
               "path": "blob-report/",
@@ -2198,7 +2106,7 @@
             "name": "Set up Node",
             "timeout-minutes": 3,
             "continue-on-error": true,
-            "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+            "uses": "actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
             "with": {
               "node-version": "${{ env.NODE_VERSION }}",
               "cache": "pnpm"
@@ -2245,7 +2153,7 @@
             "name": "Set up Node",
             "timeout-minutes": 3,
             "continue-on-error": true,
-            "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+            "uses": "actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
             "with": {
               "node-version": "${{ env.NODE_VERSION }}",
               "cache": "pnpm"
@@ -2257,7 +2165,7 @@
           },
           {
             "name": "Download blob reports",
-            "uses": "actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c",
+            "uses": "actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333",
             "with": {
               "pattern": "e2e-blob-*",
               "path": "all-blob-reports",
@@ -2270,7 +2178,7 @@
           },
           {
             "name": "Upload report",
-            "uses": "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
+            "uses": "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9",
             "with": {
               "name": "playwright-report",
               "path": "playwright-report/",
@@ -2285,7 +2193,7 @@
         "if": "needs.decide.outputs.heavy == 'true' && needs.decide.outputs.e2e == 'true'",
         "runs-on": "ubuntu-latest",
         "container": {
-          "image": "mcr.microsoft.com/playwright:v1.64.1-noble@sha256:47b510dd9230bf0b9bfc9b20102241e577ea7a99334ab4c3ca19f19770e9b8ea",
+          "image": "mcr.microsoft.com/playwright:v1.65.0-noble@sha256:6e3fb709361521eb27161606e6da6d2674e5e89fa16516cb37d6fdd91372273d",
           "options": "--init --ipc=host"
         },
         "defaults": {
@@ -2329,7 +2237,7 @@
             "name": "Set up Node",
             "timeout-minutes": 3,
             "continue-on-error": true,
-            "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+            "uses": "actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
             "with": {
               "node-version": "${{ env.NODE_VERSION }}",
               "cache": "pnpm"
@@ -2342,7 +2250,7 @@
           {
             "name": "Verify preinstalled browser runtime",
             "timeout-minutes": 2,
-            "run": "node scripts/verifyPlaywrightRuntime.ts 1.64.1"
+            "run": "node scripts/verifyPlaywrightRuntime.ts 1.65.0"
           },
           {
             "name": "Run shard with coverage",
@@ -2353,7 +2261,7 @@
           },
           {
             "name": "Upload coverage records",
-            "uses": "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
+            "uses": "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9",
             "with": {
               "name": "e2e-coverage-${{ matrix.shard }}",
               "path": "e2e-coverage/",
@@ -2389,7 +2297,7 @@
             "name": "Set up Node",
             "timeout-minutes": 3,
             "continue-on-error": true,
-            "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+            "uses": "actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
             "with": {
               "node-version": "${{ env.NODE_VERSION }}",
               "cache": "pnpm"
@@ -2401,7 +2309,7 @@
           },
           {
             "name": "Download coverage records",
-            "uses": "actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c",
+            "uses": "actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333",
             "with": {
               "pattern": "e2e-coverage-*",
               "path": "all-e2e-coverage",
@@ -2417,7 +2325,7 @@
           },
           {
             "name": "Upload the coverage map",
-            "uses": "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
+            "uses": "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9",
             "with": {
               "name": "e2e-coverage-map",
               "path": "e2e-coverage-map.json",
@@ -2445,7 +2353,7 @@
           },
           {
             "name": "Initialise CodeQL",
-            "uses": "github/codeql-action/init@c16c0f3f2812ec4bb3750a5ed64873fe2ce0fbef",
+            "uses": "github/codeql-action/init@52cf1852265d99e9bea071b03366fc777a602909",
             "with": {
               "languages": "javascript-typescript",
               "queries": "security-extended"
@@ -2453,7 +2361,7 @@
           },
           {
             "name": "Analyse",
-            "uses": "github/codeql-action/analyze@c16c0f3f2812ec4bb3750a5ed64873fe2ce0fbef"
+            "uses": "github/codeql-action/analyze@52cf1852265d99e9bea071b03366fc777a602909"
           }
         ]
       },
@@ -2572,7 +2480,7 @@
             "if": "env.DEPLOY_CREDENTIAL_PRESENT == 'true'",
             "timeout-minutes": 3,
             "continue-on-error": true,
-            "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+            "uses": "actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
             "with": {
               "node-version": "${{ env.NODE_VERSION }}",
               "cache": "pnpm"
@@ -2742,9 +2650,9 @@
           },
           {
             "name": "Set up Node",
-            "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+            "uses": "actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
             "with": {
-              "node-version": "24.19.0"
+              "node-version": "24.22.2"
             }
           },
           {
@@ -2881,9 +2789,9 @@
           },
           {
             "name": "Set up Node",
-            "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+            "uses": "actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
             "with": {
-              "node-version": "24.19.0"
+              "node-version": "24.22.2"
             }
           },
           {
@@ -2930,7 +2838,7 @@
           },
           {
             "name": "Upload qualified artifact",
-            "uses": "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
+            "uses": "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9",
             "with": {
               "name": "quantum-measurement-${{ github.event.pull_request.head.sha }}-${{ github.run_id }}-${{ github.run_attempt }}",
               "path": "${{ runner.temp }}/qualified-quantum-measurement",
@@ -3037,9 +2945,9 @@
           },
           {
             "name": "Set up Node",
-            "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+            "uses": "actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
             "with": {
-              "node-version": "24.19.0"
+              "node-version": "24.22.2"
             }
           },
           {
@@ -3072,7 +2980,7 @@
           {
             "name": "Upload qualified artifact",
             "if": "steps.plan.outputs.selected == 'true'",
-            "uses": "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
+            "uses": "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9",
             "with": {
               "name": "wasm-${{ github.event.pull_request.head.sha }}-${{ github.run_id }}-${{ github.run_attempt }}",
               "path": "${{ runner.temp }}/qualified-wasm-artifacts",
@@ -3125,7 +3033,7 @@
           {
             "name": "Restore pinned Rust toolchain",
             "id": "pinned-toolchain",
-            "uses": "actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830",
+            "uses": "actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9",
             "with": {
               "path": "~/.rustup/toolchains",
               "key": "pinned-rust-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}"
@@ -3137,12 +3045,12 @@
           },
           {
             "name": "Cache cargo build",
-            "uses": "Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6"
+            "uses": "Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0"
           },
           {
             "name": "Cache Cargo dependencies",
             "id": "cargo-deps",
-            "uses": "actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830",
+            "uses": "actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9",
             "with": {
               "path": "~/.cargo/registry\n~/.cargo/git\n",
               "key": "cargo-deps-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.lock', '**/Cargo.toml', '.cargo/config.toml', 'rust-toolchain.toml') }}"
@@ -3171,12 +3079,12 @@
           {
             "name": "Cache cargo build",
             "id": "rust-cache",
-            "uses": "Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6"
+            "uses": "Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0"
           },
           {
             "name": "Cache the cargo registry index",
             "id": "cargo-index",
-            "uses": "actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830",
+            "uses": "actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9",
             "with": {
               "path": "~/.cargo/registry/index",
               "key": "cargo-index-v2-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-${{ hashFiles('Cargo.lock', '**/Cargo.toml', '.cargo/config.toml', 'rust-toolchain.toml') }}",

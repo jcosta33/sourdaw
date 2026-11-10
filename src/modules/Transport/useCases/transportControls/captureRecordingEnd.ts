@@ -6,10 +6,17 @@ import { captureGestureBeat } from '../../stores/captureGestureBeat';
 import { tempoMapStore } from '../../stores/tempoMapStore';
 
 /** Freeze the ending gesture's clock conversion before a capture flush can edit it. */
-export function captureRecordingEnd() {
+export function captureRecordingEnd(receipt?: {
+    contextSeconds: number;
+    beatAtContextSeconds: (seconds: number) => number;
+    midiPosition?: { beat: number; passIndex: number };
+}) {
     const transport = getTransportState();
     if (!transport) {
         return undefined;
+    }
+    if (receipt) {
+        return { ...receipt, rolling: transport.isPlaying };
     }
     const contextSeconds = getAudioContext().currentTime;
     const beat = captureGestureBeat();

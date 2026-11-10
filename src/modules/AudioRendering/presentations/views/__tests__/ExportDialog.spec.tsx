@@ -306,6 +306,15 @@ vi.mock('#/modules/Automation/stores', () => ({
 // AudioEngine key in this factory is an unread graph-coverage stub (`vi.fn()`
 // and `audioEngine: {}`).
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    openCachedAudioBufferHold: vi.fn(() => {
+        throw new Error('Unexpected audio buffer residency hold in this fixture');
+    }),
+    captureOfflineRenderProjectSource: vi.fn(() => {
+        throw new Error('Unexpected selection render capture in this fixture');
+    }),
+    captureOfflineRenderRuntimeInput: vi.fn(() => {
+        throw new Error('Unexpected selection render capture in this fixture');
+    }),
     builtinSynthVoice: { read: vi.fn() },
     rearmCommittedTrackInputMonitoring: vi.fn(async () => undefined),
     reconcileAutoInputMonitoring: vi.fn(),
@@ -596,8 +605,8 @@ function setProjectTracks(tracks: TestTrack[]): void {
 
 async function startRenderToClip(): Promise<number> {
     vi.mocked(renderToClip).mockReturnValue({ trackId: 'track-1', clipId: 'clip-new', audioBufferId: 'rendered-1' });
-    fireEvent.click(screen.getByRole('button', { name: /to clip/i }));
-    fireEvent.click(screen.getByRole('button', { name: 'Render to Clip' }));
+    fireEvent.click(screen.getByRole('button', { name: /render to clip/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'Render to clip' }));
 
     await waitFor(() => {
         expect(renderToClip).toHaveBeenCalledTimes(1);
@@ -629,15 +638,15 @@ type RenderCallbacks = Required<Pick<OfflineRenderOptions, 'onProgress' | 'onWar
 /** A committed export reads finished, once, and nothing re-reports it as cancelled. */
 async function expectSucceededExportState(): Promise<void> {
     await waitFor(() => {
-        expect(screen.getByText(/Baking Complete/)).toBeInTheDocument();
+        expect(screen.getByText(/Export complete/)).toBeInTheDocument();
     });
-    expect(screen.queryByText('Oven turned off.')).not.toBeInTheDocument();
+    expect(screen.queryByText('Export cancelled.')).not.toBeInTheDocument();
     expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '100');
-    expect(screen.getByRole('button', { name: /close bakery/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^close$/i })).toBeInTheDocument();
     expect(mocks.notifyUser.mock.calls.filter((call) => call[1] === 'success')).toHaveLength(1);
     // Outlast the cancelled-state unlock delay: a late reset would land here.
     await new Promise((resolve) => setTimeout(resolve, 1700));
-    expect(screen.queryByText('Oven turned off.')).not.toBeInTheDocument();
+    expect(screen.queryByText('Export cancelled.')).not.toBeInTheDocument();
     expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '100');
 }
 
@@ -650,9 +659,9 @@ function encodeWavReportingDone(): void {
 }
 
 /** A cancelled export reads cancelled, never finished, and hands the dialog back for a new export. */
-async function expectCancelledExportState(startButtonName: string | RegExp = /start baking/i): Promise<void> {
+async function expectCancelledExportState(startButtonName: string | RegExp = /export (mixdown|stems)/i): Promise<void> {
     await waitFor(() => {
-        expect(screen.getByText('Oven turned off.')).toBeInTheDocument();
+        expect(screen.getByText('Export cancelled.')).toBeInTheDocument();
     });
     expect(Number(screen.getByRole('progressbar').getAttribute('aria-valuenow'))).toBeLessThan(100);
     await waitFor(
@@ -661,13 +670,13 @@ async function expectCancelledExportState(startButtonName: string | RegExp = /st
         },
         { timeout: 4000 }
     );
-    expect(screen.queryByRole('button', { name: /close bakery/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^close$/i })).not.toBeInTheDocument();
 }
 
 async function startMixdownExport(): Promise<void> {
     render(<ExportDialog open={true} onClose={vi.fn()} />);
 
-    fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+    fireEvent.click(screen.getByRole('button', { name: /export mixdown/i }));
 
     await waitFor(() => {
         expect(mocks.renderOffline).toHaveBeenCalledTimes(1);
@@ -756,6 +765,52 @@ describe('ExportDialog', () => {
         ]);
     });
 
+    it('puts export tasks before bakery metaphors in the title, modes, and primary action', () => {
+        render(<ExportDialog open onClose={vi.fn()} />);
+
+        expect(screen.getByRole('heading', { name: 'Export audio' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Mixdown (Whole loaf)' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Stems (Slices)' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Render to clip (Inline)' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Export mixdown' })).toBeInTheDocument();
+        expect(screen.getByText(/The Sourdaw bakery/)).toBeInTheDocument();
+    });
+
+    it.each([
+        { mode: 'mixdown' as const, suggestedName: /^Sourdaw_Mixdown_\d+\.wav$/ },
+        { mode: 'stems' as const, suggestedName: /^Sourdaw_Stems_\d+\.zip$/ },
+    ])('names the browser $mode destination for the selected export mode', async ({ mode, suggestedName }) => {
+        vi.mocked(isNativeProjectRuntimeAvailable).mockReturnValue(false);
+        mocks.exportStems.mockImplementation(async (options) => {
+            options.onStemPlan?.(['track-1']);
+            await options.onStem?.('track-1', MockAudioBuffer.create(2, 128, 44100), 0, 1);
+            return new Map();
+        });
+        const picker = vi.fn().mockResolvedValue({
+            createWritable: async () => ({
+                write: async () => {},
+                close: async () => {},
+                abort: async () => {},
+            }),
+        });
+        vi.stubGlobal('showSaveFilePicker', picker);
+
+        try {
+            render(<ExportDialog open onClose={vi.fn()} />);
+            if (mode === 'stems') {
+                fireEvent.click(screen.getByTestId('export-mode-stems'));
+            }
+            fireEvent.click(screen.getByRole('button', { name: `Export ${mode}` }));
+
+            await waitFor(() => expect(screen.getByText('Export complete.')).toBeInTheDocument());
+            expect(picker).toHaveBeenCalledWith(
+                expect.objectContaining({ suggestedName: expect.stringMatching(suggestedName) })
+            );
+        } finally {
+            vi.unstubAllGlobals();
+        }
+    });
+
     it('offers browser codecs without PCM precision controls and restores the stored preference', () => {
         vi.mocked(loadExportSettings).mockReturnValueOnce({
             formats: ['ogg', 'opus'],
@@ -804,7 +859,9 @@ describe('ExportDialog', () => {
             if (mode === 'stems') {
                 fireEvent.click(screen.getByTestId('export-mode-stems'));
             }
-            fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+            fireEvent.click(
+                screen.getByRole('button', { name: mode === 'stems' ? /export stems/i : /export mixdown/i })
+            );
             await waitFor(() => expect(mocks.commit).toHaveBeenCalledTimes(1));
             expect(mode === 'stems' ? mocks.exportStems : mocks.renderOffline).toHaveBeenCalledWith(
                 expect.objectContaining({ sampleRate: 44100 })
@@ -848,7 +905,7 @@ describe('ExportDialog', () => {
         expect(screen.getByRole('spinbutton', { name: 'Target loudness' })).toHaveValue(-16);
         expect(screen.getByText('Stereo (2 channels)')).toBeInTheDocument();
         fireEvent.click(screen.getByRole('button', { name: 'Repeatable' }));
-        fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+        fireEvent.click(screen.getByRole('button', { name: /export mixdown/i }));
         await waitFor(() => expect(mocks.writeNativeAudioMixdownFile).toHaveBeenCalledTimes(1));
         expect(mocks.renderOffline).toHaveBeenCalledTimes(1);
         expect(mocks.renderOffline).toHaveBeenCalledWith(expect.objectContaining({ sampleRate: 44100 }));
@@ -891,10 +948,10 @@ describe('ExportDialog', () => {
         try {
             initializeNativeWriterMocks();
             render(<ExportDialog open={true} onClose={vi.fn()} />);
-            fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+            fireEvent.click(screen.getByRole('button', { name: /export mixdown/i }));
 
             await waitFor(() => {
-                expect(screen.getByText(/Baking Complete/)).toBeInTheDocument();
+                expect(screen.getByText(/Export complete/)).toBeInTheDocument();
             });
             expect(mocks.writeNativeAudioMixdownFile).toHaveBeenCalledTimes(1);
             expect(mocks.commit).toHaveBeenCalledTimes(1);
@@ -931,8 +988,8 @@ describe('ExportDialog', () => {
         try {
             render(<ExportDialog open={true} onClose={vi.fn()} />);
             selectPodcastEpisode();
-            fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
-            await waitFor(() => expect(screen.getByText(/Baking Complete/)).toBeInTheDocument());
+            fireEvent.click(screen.getByRole('button', { name: /export mixdown/i }));
+            await waitFor(() => expect(screen.getByText(/Export complete/)).toBeInTheDocument());
             if (route === 'picker') {
                 expect(write).toHaveBeenCalledTimes(1);
                 expect(write.mock.calls[0]![0]).toEqual(await vi.mocked(audioBufferToMp3).mock.results[0]!.value);
@@ -944,7 +1001,7 @@ describe('ExportDialog', () => {
                 expect(createUrl).toHaveBeenCalledTimes(1);
                 const blob = createUrl.mock.calls[0]![0];
                 if (!(blob instanceof Blob)) {
-                    throw new Error('Expected downloadable MP3 Blob');
+                    throw new TypeError('Expected downloadable MP3 Blob');
                 }
                 expect(blob.type).toBe('audio/mpeg');
                 const downloadedBytes = new Uint8Array(await blob.arrayBuffer());
@@ -981,7 +1038,7 @@ describe('ExportDialog', () => {
             fireEvent.change(screen.getByRole('spinbutton', { name: 'Target loudness' }), { target: { value: '-20' } });
             view.rerender(<ExportDialog open={true} onClose={vi.fn()} />);
             expect(screen.getByRole('spinbutton', { name: 'Target loudness' })).toHaveValue(-20);
-            fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+            fireEvent.click(screen.getByRole('button', { name: /export mixdown/i }));
             expect(mocks.selectNativeAudioExportFile).toHaveBeenCalledTimes(1);
             fireEvent.change(screen.getByRole('textbox', { name: 'Episode title' }), {
                 target: { value: 'Later edit' },
@@ -1025,12 +1082,12 @@ describe('ExportDialog', () => {
         }
     });
 
-    it('does not tag a non-MP3 override and offers targets for stems but not Render to Clip', async () => {
+    it('does not tag a non-MP3 override and offers targets for stems but not Render to clip', async () => {
         render(<ExportDialog open={true} onClose={vi.fn()} />);
         selectPodcastEpisode();
         fireEvent.click(screen.getByTestId('export-format-wav'));
         fireEvent.click(screen.getByTestId('export-format-mp3'));
-        fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+        fireEvent.click(screen.getByRole('button', { name: /export mixdown/i }));
         await waitFor(() => expect(mocks.writeNativeAudioMixdownFile).toHaveBeenCalledTimes(1));
         expect(mocks.writeNativeAudioMixdownFile).toHaveBeenCalledWith(
             expect.objectContaining({ format: 'wav', bytes: new Uint8Array([1, 2, 3]) })
@@ -1038,7 +1095,7 @@ describe('ExportDialog', () => {
         expect(audioBufferToMp3).not.toHaveBeenCalled();
         fireEvent.click(screen.getByTestId('export-mode-stems'));
         expect(screen.getByRole('combobox', { name: 'Delivery preset' })).toBeInTheDocument();
-        fireEvent.click(screen.getByRole('button', { name: /to clip/i }));
+        fireEvent.click(screen.getByRole('button', { name: /render to clip/i }));
         expect(screen.queryByRole('combobox', { name: 'Delivery preset' })).not.toBeInTheDocument();
         expect(screen.queryByRole('textbox', { name: 'Episode title' })).not.toBeInTheDocument();
     });
@@ -1049,7 +1106,7 @@ describe('ExportDialog', () => {
         fireEvent.change(screen.getByRole('textbox', { name: 'Episode title' }), {
             target: { value: '🌊'.repeat(1025) },
         });
-        fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+        fireEvent.click(screen.getByRole('button', { name: /export mixdown/i }));
         expect(await screen.findByText('Episode title must be at most 4096 UTF-8 bytes.')).toBeInTheDocument();
         expect(mocks.selectNativeAudioExportFile).not.toHaveBeenCalled();
         expect(mocks.renderOffline).not.toHaveBeenCalled();
@@ -1073,11 +1130,11 @@ describe('ExportDialog', () => {
         mocks.renderOffline.mockResolvedValueOnce(createPodcastFixture());
         render(<ExportDialog open={true} onClose={vi.fn()} />);
         selectPodcastEpisode();
-        fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+        fireEvent.click(screen.getByRole('button', { name: /export mixdown/i }));
         await act(async () => encoded.promise);
-        fireEvent.click(screen.getByRole('button', { name: /turn off oven/i }));
+        fireEvent.click(screen.getByRole('button', { name: /cancel export/i }));
         act(() => release.resolve());
-        await waitFor(() => expect(screen.getByText('Oven turned off.')).toBeInTheDocument());
+        await waitFor(() => expect(screen.getByText('Export cancelled.')).toBeInTheDocument());
         expect(mocks.writeNativeAudioMixdownFile).not.toHaveBeenCalled();
         expect(mocks.notifyUser).not.toHaveBeenCalledWith(expect.anything(), 'success');
     });
@@ -1126,7 +1183,7 @@ describe('ExportDialog', () => {
         if (mode === 'stem') {
             fireEvent.click(screen.getByTestId('export-mode-stems'));
         }
-        fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+        fireEvent.click(screen.getByRole('button', { name: mode === 'stem' ? /export stems/i : /export mixdown/i }));
         await waitFor(() => expect(mocks.restoreCachedAudioBuffersFromIdb).toHaveBeenCalledTimes(1));
         const callsWhileRestoring = {
             mixdown: mocks.renderOffline.mock.calls.length,
@@ -1139,8 +1196,8 @@ describe('ExportDialog', () => {
 
         await act(async () => restoring.resolve(0));
         await waitFor(() => expect(mocks.commit).toHaveBeenCalledTimes(1));
-        await waitFor(() => expect(screen.getByRole('button', { name: /slices/i })).toBeEnabled());
-        expect(screen.getByText(/Baking Complete/)).toBeInTheDocument();
+        await waitFor(() => expect(screen.getByRole('button', { name: /stems/i })).toBeEnabled());
+        expect(screen.getByText(/Export complete/)).toBeInTheDocument();
         expect(callsWhileRestoring).toEqual({ mixdown: 0, stems: 0, wav: 0, mp3: 0, flac: 0, commit: 0 });
         if (mode === 'stem') {
             expect(mocks.exportStems).toHaveBeenCalledTimes(1);
@@ -1252,7 +1309,9 @@ describe('ExportDialog', () => {
                 if (mode === 'stems') {
                     fireEvent.click(screen.getByTestId('export-mode-stems'));
                 }
-                fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+                fireEvent.click(
+                    screen.getByRole('button', { name: mode === 'stems' ? /export stems/i : /export mixdown/i })
+                );
                 await waitFor(() => expect(mocks.commit).toHaveBeenCalledTimes(mode === 'mixdown' ? 1 : 2));
                 expect(Array.from(requirePcm('cold-clip').getChannelData(0))).toEqual(Array.from(ordinary));
                 expect(Array.from(requirePcm('cold-frozen').getChannelData(0))).toEqual(Array.from(frozen));
@@ -1308,7 +1367,7 @@ describe('ExportDialog', () => {
         });
 
         render(<ExportDialog open={true} onClose={vi.fn()} />);
-        fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+        fireEvent.click(screen.getByRole('button', { name: /export mixdown/i }));
         await waitFor(() => expect(mocks.restoreCachedAudioBuffersFromIdb).toHaveBeenCalledTimes(1));
 
         setProjectTracks([
@@ -1352,14 +1411,14 @@ describe('ExportDialog', () => {
 
         fireEvent.click(screen.getByRole('checkbox', { name: /auto-detect/i }));
         fireEvent.change(screen.getByRole('spinbutton', { name: /tail seconds/i }), { target: { value: '60' } });
-        fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+        fireEvent.click(screen.getByRole('button', { name: /export mixdown/i }));
 
         await waitFor(() => {
             expect(mocks.renderOffline).toHaveBeenCalledWith(expect.objectContaining({ tailSeconds: 60 }));
         });
     });
 
-    it('hands Render to Clip the manual tail the render carried', async () => {
+    it('hands Render to clip the manual tail the render carried', async () => {
         render(<ExportDialog open={true} onClose={vi.fn()} />);
         fireEvent.click(screen.getByRole('checkbox', { name: /auto-detect/i }));
         fireEvent.change(screen.getByRole('spinbutton', { name: /tail seconds/i }), { target: { value: '7.5' } });
@@ -1370,7 +1429,7 @@ describe('ExportDialog', () => {
         expect(renderToClip).toHaveBeenCalledWith(expect.objectContaining({ tailSeconds: renderedTail }));
     });
 
-    it('hands Render to Clip the auto-detected tail the render carried', async () => {
+    it('hands Render to clip the auto-detected tail the render carried', async () => {
         mocks.getAutoDetectedTailSeconds.mockReturnValue({ seconds: 9.25, uncappedSeconds: 9.25, clamped: false });
         render(<ExportDialog open={true} onClose={vi.fn()} />);
 
@@ -1424,8 +1483,8 @@ describe('ExportDialog', () => {
         );
 
         render(<ExportDialog open={true} onClose={vi.fn()} />);
-        fireEvent.click(screen.getByRole('button', { name: /slices/i }));
-        fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+        fireEvent.click(screen.getByRole('button', { name: /stems/i }));
+        fireEvent.click(screen.getByRole('button', { name: /export stems/i }));
 
         await waitFor(() => {
             expect(mocks.writeNativeAudioStemFile).toHaveBeenCalledTimes(2);
@@ -1451,12 +1510,12 @@ describe('ExportDialog', () => {
         mocks.encodeWav.mockReturnValue(encoding.promise);
 
         render(<ExportDialog open={true} onClose={vi.fn()} />);
-        fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+        fireEvent.click(screen.getByRole('button', { name: /export mixdown/i }));
         await waitFor(() => {
             expect(mocks.encodeWav).toHaveBeenCalledTimes(1);
         });
 
-        fireEvent.click(screen.getByRole('button', { name: /turn off oven/i }));
+        fireEvent.click(screen.getByRole('button', { name: /cancel export/i }));
         await act(async () => {
             encoding.resolve(new Uint8Array([1, 2, 3]));
         });
@@ -1464,7 +1523,7 @@ describe('ExportDialog', () => {
         // A cancelled export unlocks the dialog after a short readable delay.
         await waitFor(
             () => {
-                expect(screen.getByRole('button', { name: /start baking/i })).toBeEnabled();
+                expect(screen.getByRole('button', { name: /export mixdown/i })).toBeEnabled();
             },
             { timeout: 4000 }
         );
@@ -1489,20 +1548,20 @@ describe('ExportDialog', () => {
         mocks.encodeWav.mockReturnValue(encoding.promise);
 
         render(<ExportDialog open={true} onClose={vi.fn()} />);
-        fireEvent.click(screen.getByRole('button', { name: /slices/i }));
-        fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+        fireEvent.click(screen.getByRole('button', { name: /stems/i }));
+        fireEvent.click(screen.getByRole('button', { name: /export stems/i }));
         await waitFor(() => {
             expect(mocks.encodeWav).toHaveBeenCalledTimes(1);
         });
 
-        fireEvent.click(screen.getByRole('button', { name: /turn off oven/i }));
+        fireEvent.click(screen.getByRole('button', { name: /cancel export/i }));
         await act(async () => {
             encoding.resolve(new Uint8Array([1, 2, 3]));
         });
 
         await waitFor(
             () => {
-                expect(screen.getByRole('button', { name: /start baking/i })).toBeEnabled();
+                expect(screen.getByRole('button', { name: /export stems/i })).toBeEnabled();
             },
             { timeout: 4000 }
         );
@@ -1523,19 +1582,19 @@ describe('ExportDialog', () => {
         mocks.writeNativeAudioStemFile.mockReturnValueOnce(writing.promise);
 
         render(<ExportDialog open={true} onClose={vi.fn()} />);
-        fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+        fireEvent.click(screen.getByRole('button', { name: /export mixdown/i }));
         await waitFor(() => {
             expect(mocks.writeNativeAudioStemFile).toHaveBeenCalledTimes(1);
         });
 
-        fireEvent.click(screen.getByRole('button', { name: /turn off oven/i }));
+        fireEvent.click(screen.getByRole('button', { name: /cancel export/i }));
         await act(async () => {
             writing.resolve();
         });
 
         await waitFor(
             () => {
-                expect(screen.getByRole('button', { name: /start baking/i })).toBeEnabled();
+                expect(screen.getByRole('button', { name: /export mixdown/i })).toBeEnabled();
             },
             { timeout: 4000 }
         );
@@ -1565,12 +1624,12 @@ describe('ExportDialog', () => {
 
         try {
             render(<ExportDialog open={true} onClose={vi.fn()} />);
-            fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+            fireEvent.click(screen.getByRole('button', { name: /export mixdown/i }));
             await waitFor(() => {
                 expect(createWritable).toHaveBeenCalledTimes(1);
             });
 
-            fireEvent.click(screen.getByRole('button', { name: /turn off oven/i }));
+            fireEvent.click(screen.getByRole('button', { name: /cancel export/i }));
             await act(async () => {
                 opening.resolve();
             });
@@ -1580,7 +1639,7 @@ describe('ExportDialog', () => {
             expect(writable.write).not.toHaveBeenCalled();
             expect(writable.close).not.toHaveBeenCalled();
             expect(mocks.notifyUser).not.toHaveBeenCalledWith(expect.anything(), 'success');
-            expect(screen.queryByText(/Baking Complete/)).not.toBeInTheDocument();
+            expect(screen.queryByText(/Export complete/)).not.toBeInTheDocument();
         } finally {
             vi.unstubAllGlobals();
             vi.mocked(isNativeProjectRuntimeAvailable).mockReturnValue(true);
@@ -1603,12 +1662,12 @@ describe('ExportDialog', () => {
 
         try {
             render(<ExportDialog open={true} onClose={vi.fn()} />);
-            fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+            fireEvent.click(screen.getByRole('button', { name: /export mixdown/i }));
             await waitFor(() => {
                 expect(writable.write).toHaveBeenCalledTimes(1);
             });
 
-            fireEvent.click(screen.getByRole('button', { name: /turn off oven/i }));
+            fireEvent.click(screen.getByRole('button', { name: /cancel export/i }));
             await act(async () => {
                 writing.resolve();
             });
@@ -1617,7 +1676,7 @@ describe('ExportDialog', () => {
             expect(writable.abort).toHaveBeenCalledTimes(1);
             expect(writable.close).not.toHaveBeenCalled();
             expect(mocks.notifyUser).not.toHaveBeenCalledWith(expect.anything(), 'success');
-            expect(screen.queryByText(/Baking Complete/)).not.toBeInTheDocument();
+            expect(screen.queryByText(/Export complete/)).not.toBeInTheDocument();
         } finally {
             vi.unstubAllGlobals();
             vi.mocked(isNativeProjectRuntimeAvailable).mockReturnValue(true);
@@ -1640,28 +1699,28 @@ describe('ExportDialog', () => {
 
         try {
             render(<ExportDialog open={true} onClose={vi.fn()} />);
-            fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+            fireEvent.click(screen.getByRole('button', { name: /export mixdown/i }));
             await waitFor(() => {
                 expect(writable.close).toHaveBeenCalledTimes(1);
             });
 
-            fireEvent.click(screen.getByRole('button', { name: /turn off oven/i }));
+            fireEvent.click(screen.getByRole('button', { name: /cancel export/i }));
             await act(async () => {
                 closing.resolve();
             });
 
             await waitFor(() => {
-                expect(screen.getByText(/Baking Complete/)).toBeInTheDocument();
+                expect(screen.getByText(/Export complete/)).toBeInTheDocument();
             });
             // The file was committed, so the export is finished and nothing re-reports it as cancelled.
-            expect(screen.queryByText('Oven turned off.')).not.toBeInTheDocument();
+            expect(screen.queryByText('Export cancelled.')).not.toBeInTheDocument();
             expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '100');
-            expect(screen.getByRole('button', { name: /close bakery/i })).toBeInTheDocument();
+            expect(screen.getByRole('button', { name: /^close$/i })).toBeInTheDocument();
             expect(mocks.notifyUser.mock.calls.filter((call) => call[1] === 'success')).toHaveLength(1);
             expect(writable.abort).not.toHaveBeenCalled();
             // Outlast the cancelled-state unlock delay: a reset would land here.
             await new Promise((resolve) => setTimeout(resolve, 1700));
-            expect(screen.queryByText('Oven turned off.')).not.toBeInTheDocument();
+            expect(screen.queryByText('Export cancelled.')).not.toBeInTheDocument();
             expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '100');
         } finally {
             vi.unstubAllGlobals();
@@ -1680,7 +1739,7 @@ describe('ExportDialog', () => {
 
             try {
                 render(<ExportDialog open={true} onClose={vi.fn()} />);
-                fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+                fireEvent.click(screen.getByRole('button', { name: /export mixdown/i }));
 
                 // Wait for the picker to be called and drain all timers to completion.
                 await act(async () => {
@@ -1695,7 +1754,7 @@ describe('ExportDialog', () => {
                 // No notification should be sent.
                 expect(mocks.notifyUser).not.toHaveBeenCalled();
                 // Dialog should remain ready for a new export.
-                expect(screen.getByRole('button', { name: /start baking/i })).toBeEnabled();
+                expect(screen.getByRole('button', { name: /export mixdown/i })).toBeEnabled();
             } finally {
                 vi.unstubAllGlobals();
                 vi.mocked(isNativeProjectRuntimeAvailable).mockReturnValue(true);
@@ -1711,9 +1770,9 @@ describe('ExportDialog', () => {
         const committing = createDeferred<void>();
         mocks.commit.mockReturnValueOnce(committing.promise);
         render(<ExportDialog open onClose={vi.fn()} />);
-        fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+        fireEvent.click(screen.getByRole('button', { name: /export mixdown/i }));
         await waitFor(() => expect(mocks.commit).toHaveBeenCalledTimes(1));
-        fireEvent.click(screen.getByRole('button', { name: /turn off oven/i }));
+        fireEvent.click(screen.getByRole('button', { name: /cancel export/i }));
         await act(async () => {
             committing.resolve();
         });
@@ -1726,12 +1785,12 @@ describe('ExportDialog', () => {
         mocks.writeNativeAudioMixdownFile.mockReturnValueOnce(writing.promise);
 
         render(<ExportDialog open={true} onClose={vi.fn()} />);
-        fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+        fireEvent.click(screen.getByRole('button', { name: /export mixdown/i }));
         await waitFor(() => {
             expect(mocks.writeNativeAudioMixdownFile).toHaveBeenCalledTimes(1);
         });
 
-        fireEvent.click(screen.getByRole('button', { name: /turn off oven/i }));
+        fireEvent.click(screen.getByRole('button', { name: /cancel export/i }));
         await act(async () => {
             writing.resolve();
         });
@@ -1755,8 +1814,8 @@ describe('ExportDialog', () => {
                 ])
             );
             render(<ExportDialog open={true} onClose={vi.fn()} />);
-            fireEvent.click(screen.getByRole('button', { name: /slices/i }));
-            fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+            fireEvent.click(screen.getByRole('button', { name: /stems/i }));
+            fireEvent.click(screen.getByRole('button', { name: /export stems/i }));
         };
 
         it('ends cancelled when it lands during the last staged stem file', async () => {
@@ -1767,7 +1826,7 @@ describe('ExportDialog', () => {
                 expect(mocks.writeNativeAudioStemFile).toHaveBeenCalledTimes(2);
             });
 
-            fireEvent.click(screen.getByRole('button', { name: /turn off oven/i }));
+            fireEvent.click(screen.getByRole('button', { name: /cancel export/i }));
             await act(async () => {
                 writingLast.resolve();
             });
@@ -1801,7 +1860,7 @@ describe('ExportDialog', () => {
                 expect(mocks.writeNativeAudioStemFile).toHaveBeenCalledTimes(3);
             });
 
-            fireEvent.click(screen.getByRole('button', { name: /turn off oven/i }));
+            fireEvent.click(screen.getByRole('button', { name: /cancel export/i }));
             await act(async () => {
                 writingLastWav.resolve();
             });
@@ -1826,7 +1885,7 @@ describe('ExportDialog', () => {
                 expect(mocks.writeNativeAudioStemFile).toHaveBeenCalledTimes(4);
             });
 
-            fireEvent.click(screen.getByRole('button', { name: /turn off oven/i }));
+            fireEvent.click(screen.getByRole('button', { name: /cancel export/i }));
             await act(async () => {
                 writingLastMp3.resolve();
             });
@@ -1844,7 +1903,7 @@ describe('ExportDialog', () => {
                 expect(mocks.writeNativeAudioStemFile).toHaveBeenCalledTimes(1);
             });
 
-            fireEvent.click(screen.getByRole('button', { name: /turn off oven/i }));
+            fireEvent.click(screen.getByRole('button', { name: /cancel export/i }));
             await act(async () => {
                 writingFirst.resolve();
             });
@@ -1860,19 +1919,19 @@ describe('ExportDialog', () => {
         mocks.renderOffline.mockReturnValue(rendering.promise);
 
         render(<ExportDialog open={true} onClose={vi.fn()} />);
-        fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+        fireEvent.click(screen.getByRole('button', { name: /export mixdown/i }));
         await waitFor(() => {
             expect(mocks.renderOffline).toHaveBeenCalledTimes(1);
         });
 
-        fireEvent.click(screen.getByRole('button', { name: /turn off oven/i }));
+        fireEvent.click(screen.getByRole('button', { name: /cancel export/i }));
         await act(async () => {
             rendering.reject(new Error('Export cancelled'));
         });
 
         await expectCancelledExportState();
         expect(screen.queryByText('Export cancelled')).not.toBeInTheDocument();
-        expect(screen.queryByText('The bread burned...')).not.toBeInTheDocument();
+        expect(screen.queryByText('Export failed.')).not.toBeInTheDocument();
         expect(mocks.loggerError).not.toHaveBeenCalled();
     });
 
@@ -1884,8 +1943,8 @@ describe('ExportDialog', () => {
 
         const startStemExport = (): void => {
             render(<ExportDialog open={true} onClose={vi.fn()} />);
-            fireEvent.click(screen.getByRole('button', { name: /slices/i }));
-            fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+            fireEvent.click(screen.getByRole('button', { name: /stems/i }));
+            fireEvent.click(screen.getByRole('button', { name: /export stems/i }));
         };
 
         const holdRender = <TValue,>(setReturnValue: (promise: Promise<TValue>) => void) => {
@@ -1910,12 +1969,12 @@ describe('ExportDialog', () => {
         ): Promise<RenderCallbacks> => {
             await waitFor(assertRenderStarted);
             const callbacks = renderCallbacks(getRenderOptions());
-            fireEvent.click(screen.getByRole('button', { name: /turn off oven/i }));
+            fireEvent.click(screen.getByRole('button', { name: /cancel export/i }));
             await act(async () => {
                 rendering.reject(new Error('Export cancelled'));
             });
             await waitFor(() => {
-                expect(screen.getByText('Oven turned off.')).toBeInTheDocument();
+                expect(screen.getByText('Export cancelled.')).toBeInTheDocument();
             });
             return callbacks;
         };
@@ -1941,7 +2000,7 @@ describe('ExportDialog', () => {
                 mocks.renderOffline.mockReturnValue(promise);
             });
             render(<ExportDialog open={true} onClose={vi.fn()} />);
-            fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+            fireEvent.click(screen.getByRole('button', { name: /export mixdown/i }));
             return cancelRenderInFlight(
                 () => expect(mocks.renderOffline).toHaveBeenCalledTimes(1),
                 () => {
@@ -1957,8 +2016,8 @@ describe('ExportDialog', () => {
                 mocks.renderOffline.mockReturnValue(promise);
             });
             render(<ExportDialog open={true} onClose={vi.fn()} />);
-            fireEvent.click(screen.getByRole('button', { name: /to clip/i }));
-            fireEvent.click(screen.getByRole('button', { name: 'Render to Clip' }));
+            fireEvent.click(screen.getByRole('button', { name: /render to clip/i }));
+            fireEvent.click(screen.getByRole('button', { name: 'Render to clip' }));
             return cancelRenderInFlight(
                 () => expect(mocks.renderOffline).toHaveBeenCalledTimes(1),
                 () => {
@@ -1970,7 +2029,7 @@ describe('ExportDialog', () => {
         };
 
         const expectCancelledStateHeld = async (startButtonName?: string | RegExp): Promise<void> => {
-            expect(screen.getByText('Oven turned off.')).toBeInTheDocument();
+            expect(screen.getByText('Export cancelled.')).toBeInTheDocument();
             expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '0');
             expect(mocks.loggerWarn).not.toHaveBeenCalledWith('plugin missing');
             await expectCancelledExportState(startButtonName);
@@ -1983,7 +2042,7 @@ describe('ExportDialog', () => {
                 onProgress(0.5);
             });
 
-            expect(screen.queryByText('Proofing slices...')).not.toBeInTheDocument();
+            expect(screen.queryByText('Rendering stems…')).not.toBeInTheDocument();
             await expectCancelledStateHeld();
         });
 
@@ -2004,7 +2063,7 @@ describe('ExportDialog', () => {
                 onProgress(0.5);
             });
 
-            expect(screen.queryByText('Proofing whole loaf...')).not.toBeInTheDocument();
+            expect(screen.queryByText('Rendering mixdown…')).not.toBeInTheDocument();
             await expectCancelledStateHeld();
         });
 
@@ -2030,8 +2089,8 @@ describe('ExportDialog', () => {
                 onProgress(0.5);
             });
 
-            expect(screen.queryByText('Rendering clip...')).not.toBeInTheDocument();
-            await expectCancelledStateHeld('Render to Clip');
+            expect(screen.queryByText('Rendering clip…')).not.toBeInTheDocument();
+            await expectCancelledStateHeld('Render to clip');
         });
 
         it('drops a clip render warning reported after the export was cancelled', async () => {
@@ -2041,14 +2100,14 @@ describe('ExportDialog', () => {
                 onWarning('plugin missing');
             });
 
-            await expectCancelledStateHeld('Render to Clip');
+            await expectCancelledStateHeld('Render to clip');
         });
 
         it('keeps the progress bar down when an encoder reports progress after the cancel', async () => {
             const encoding = createDeferred<Uint8Array>();
             mocks.encodeWav.mockReturnValue(encoding.promise);
             render(<ExportDialog open={true} onClose={vi.fn()} />);
-            fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+            fireEvent.click(screen.getByRole('button', { name: /export mixdown/i }));
             await waitFor(() => {
                 expect(mocks.encodeWav).toHaveBeenCalledTimes(1);
             });
@@ -2056,12 +2115,17 @@ describe('ExportDialog', () => {
             if (!reportEncoding) {
                 throw new TypeError('expected encodeWav to receive a progress callback');
             }
-            fireEvent.click(screen.getByRole('button', { name: /turn off oven/i }));
+            act(() => {
+                reportEncoding(0.5);
+            });
+            expect(screen.getByText(/^Encoding Sourdaw_Mixdown_\d+ — .+ \(WAV\)…$/)).toBeInTheDocument();
+
+            fireEvent.click(screen.getByRole('button', { name: /cancel export/i }));
             await act(async () => {
                 encoding.resolve(new Uint8Array([1, 2, 3]));
             });
             await waitFor(() => {
-                expect(screen.getByText('Oven turned off.')).toBeInTheDocument();
+                expect(screen.getByText('Export cancelled.')).toBeInTheDocument();
             });
 
             act(() => {
@@ -2071,13 +2135,13 @@ describe('ExportDialog', () => {
             await expectCancelledStateHeld();
         });
 
-        it('keeps "Oven turned off." when Turn off Oven is pressed again during the unlock delay', async () => {
+        it('keeps "Export cancelled." when Cancel export is pressed again during the unlock delay', async () => {
             await cancelStemExportWhileRendering();
 
-            fireEvent.click(screen.getByRole('button', { name: /turn off oven/i }));
+            fireEvent.click(screen.getByRole('button', { name: /cancel export/i }));
 
-            expect(screen.getByText('Oven turned off.')).toBeInTheDocument();
-            expect(screen.queryByText('Cooling down...')).not.toBeInTheDocument();
+            expect(screen.getByText('Export cancelled.')).toBeInTheDocument();
+            expect(screen.queryByText('Cancelling export…')).not.toBeInTheDocument();
             await expectCancelledExportState();
         });
     });
@@ -2104,8 +2168,8 @@ describe('ExportDialog', () => {
             } else {
                 setProjectTracks([{ id: 'delay', name: 'Delay Bus', kind: 'audio', clips: [] }]);
                 render(<ExportDialog open={true} onClose={vi.fn()} />);
-                fireEvent.click(screen.getByRole('button', { name: /slices/i }));
-                fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+                fireEvent.click(screen.getByRole('button', { name: /stems/i }));
+                fireEvent.click(screen.getByRole('button', { name: /export stems/i }));
             }
             await waitFor(() => {
                 expect(screen.getByText(message)).toBeInTheDocument();
@@ -2130,7 +2194,7 @@ describe('ExportDialog', () => {
         const rendering = createDeferred<AudioBuffer>();
         mocks.renderOffline.mockReturnValue(rendering.promise);
         render(<ExportDialog open={true} onClose={vi.fn()} />);
-        fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+        fireEvent.click(screen.getByRole('button', { name: /export mixdown/i }));
         await waitFor(() => {
             expect(mocks.renderOffline).toHaveBeenCalledTimes(1);
         });
@@ -2146,7 +2210,7 @@ describe('ExportDialog', () => {
         });
 
         expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '30');
-        expect(screen.getByText('Proofing whole loaf...')).toBeInTheDocument();
+        expect(screen.getByText('Rendering mixdown…')).toBeInTheDocument();
         expect(mocks.loggerWarn).toHaveBeenCalledWith('plugin missing');
 
         await act(async () => {
@@ -2162,12 +2226,13 @@ describe('ExportDialog', () => {
             const restoring = createDeferred<number>();
             mocks.restoreCachedAudioBuffersFromIdb.mockReturnValue(restoring.promise);
             render(<ExportDialog open={true} onClose={vi.fn()} />);
-            fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+            fireEvent.click(screen.getByRole('button', { name: /export mixdown/i }));
             await waitFor(() => {
                 expect(mocks.restoreCachedAudioBuffersFromIdb).toHaveBeenCalledTimes(1);
             });
+            expect(screen.getByText('Preparing export…')).toBeInTheDocument();
 
-            fireEvent.click(screen.getByRole('button', { name: /turn off oven/i }));
+            fireEvent.click(screen.getByRole('button', { name: /cancel export/i }));
             await act(async () => {
                 restoring.resolve(0);
             });
@@ -2185,13 +2250,13 @@ describe('ExportDialog', () => {
                 { id: 'track-lead', name: 'Lead', kind: 'audio', clips: [] },
             ]);
             render(<ExportDialog open={true} onClose={vi.fn()} />);
-            fireEvent.click(screen.getByRole('button', { name: /slices/i }));
-            fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+            fireEvent.click(screen.getByRole('button', { name: /stems/i }));
+            fireEvent.click(screen.getByRole('button', { name: /export stems/i }));
             await waitFor(() => {
                 expect(mocks.restoreCachedAudioBuffersFromIdb).toHaveBeenCalledTimes(1);
             });
 
-            fireEvent.click(screen.getByRole('button', { name: /turn off oven/i }));
+            fireEvent.click(screen.getByRole('button', { name: /cancel export/i }));
             await act(async () => {
                 restoring.resolve(0);
             });
@@ -2218,12 +2283,12 @@ describe('ExportDialog', () => {
 
         try {
             render(<ExportDialog open={true} onClose={vi.fn()} />);
-            fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+            fireEvent.click(screen.getByRole('button', { name: /export mixdown/i }));
             await waitFor(() => {
                 expect(writable.close).toHaveBeenCalledTimes(1);
             });
 
-            fireEvent.click(screen.getByRole('button', { name: /turn off oven/i }));
+            fireEvent.click(screen.getByRole('button', { name: /cancel export/i }));
             await act(async () => {
                 closing.reject(new Error('Disk full'));
             });
@@ -2232,9 +2297,9 @@ describe('ExportDialog', () => {
                 expect(screen.getByText('Disk full')).toBeInTheDocument();
             });
             expect(mocks.loggerError).toHaveBeenCalledWith(expect.objectContaining({ message: 'Export failed' }));
-            expect(screen.queryByText('Oven turned off.')).not.toBeInTheDocument();
-            expect(screen.queryByRole('button', { name: /close bakery/i })).not.toBeInTheDocument();
-            expect(screen.getByRole('button', { name: /start baking/i })).toBeEnabled();
+            expect(screen.queryByText('Export cancelled.')).not.toBeInTheDocument();
+            expect(screen.queryByRole('button', { name: /^close$/i })).not.toBeInTheDocument();
+            expect(screen.getByRole('button', { name: /export mixdown/i })).toBeEnabled();
             expect(mocks.notifyUser).not.toHaveBeenCalledWith(expect.anything(), 'success');
         } finally {
             vi.unstubAllGlobals();
@@ -2254,7 +2319,7 @@ describe('ExportDialog', () => {
         vi.mocked(audioBufferToMp3).mockResolvedValue(new Uint8Array([4, 5, 6]));
 
         render(<ExportDialog open={true} onClose={vi.fn()} />);
-        fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+        fireEvent.click(screen.getByRole('button', { name: /export mixdown/i }));
 
         await waitFor(() => {
             expect(mocks.writeNativeAudioStemFile).toHaveBeenCalledTimes(2);
@@ -2302,7 +2367,7 @@ describe('ExportDialog', () => {
         mocks.selectNativeAudioExportFile.mockResolvedValue('/tmp/sourdaw-export.flac');
 
         render(<ExportDialog open={true} onClose={vi.fn()} />);
-        fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+        fireEvent.click(screen.getByRole('button', { name: /export mixdown/i }));
 
         await waitFor(() => {
             expect(audioBufferToFlac).toHaveBeenCalledTimes(1);
@@ -2322,7 +2387,7 @@ describe('ExportDialog', () => {
         mocks.selectNativeAudioExportFile.mockResolvedValue('/tmp/sourdaw-export.wav');
 
         render(<ExportDialog open={true} onClose={vi.fn()} />);
-        fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+        fireEvent.click(screen.getByRole('button', { name: /export mixdown/i }));
 
         await waitFor(() => {
             expect(mocks.encodeWav).toHaveBeenCalledTimes(1);
@@ -2346,7 +2411,7 @@ describe('ExportDialog', () => {
         mocks.selectNativeAudioExportFile.mockResolvedValue('/tmp/sourdaw-export.wav');
 
         render(<ExportDialog open={true} onClose={vi.fn()} />);
-        fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+        fireEvent.click(screen.getByRole('button', { name: /export mixdown/i }));
 
         await waitFor(() => {
             expect(mocks.encodeWav).toHaveBeenCalledTimes(1);
@@ -2378,7 +2443,7 @@ describe('ExportDialog', () => {
         mocks.selectNativeAudioExportFile.mockResolvedValue('/tmp/sourdaw-export.wav');
 
         render(<ExportDialog open={true} onClose={vi.fn()} />);
-        fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+        fireEvent.click(screen.getByRole('button', { name: /export mixdown/i }));
 
         await waitFor(() => {
             expect(mocks.encodeWav).toHaveBeenCalledTimes(1);
@@ -2409,7 +2474,7 @@ describe('ExportDialog', () => {
         mocks.selectNativeAudioExportFile.mockResolvedValue('/tmp/sourdaw-export.wav');
 
         render(<ExportDialog open={true} onClose={vi.fn()} />);
-        fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+        fireEvent.click(screen.getByRole('button', { name: /export mixdown/i }));
 
         await waitFor(() => {
             expect(mocks.encodeWav).toHaveBeenCalledTimes(1);
@@ -2478,7 +2543,7 @@ describe('ExportDialog', () => {
             )
         ).toBeInTheDocument();
         // Non-blocking: the advisory never disables Start.
-        expect(screen.getByRole('button', { name: /start baking/i })).toBeEnabled();
+        expect(screen.getByRole('button', { name: /export mixdown/i })).toBeEnabled();
     });
 
     it('renders no advisory when the selector reports no pattern outside the arrangement', () => {
@@ -2489,23 +2554,23 @@ describe('ExportDialog', () => {
         expect(screen.queryByText(/has a sequencer pattern that is not in the arrangement/i)).not.toBeInTheDocument();
     });
 
-    it('starts fresh on reopen after a completed export so a second bake is possible', async () => {
+    it('starts fresh on reopen after a completed export so a second export is possible', async () => {
         // AppShell keeps the dialog mounted and toggles only `open`; the rerender
         // pair below reproduces exactly that close-then-reopen sequence.
         const view = render(<ExportDialog open={true} onClose={vi.fn()} />);
-        fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+        fireEvent.click(screen.getByRole('button', { name: /export mixdown/i }));
 
         await waitFor(() => {
-            expect(screen.getByText(/Ding! Baking Complete/)).toBeInTheDocument();
+            expect(screen.getByText(/Export complete/)).toBeInTheDocument();
         });
 
         view.rerender(<ExportDialog open={false} onClose={vi.fn()} />);
         view.rerender(<ExportDialog open={true} onClose={vi.fn()} />);
 
-        expect(screen.queryByText(/Ding! Baking Complete/)).not.toBeInTheDocument();
+        expect(screen.queryByText(/Export complete/)).not.toBeInTheDocument();
         expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
-        expect(screen.queryByRole('button', { name: /close bakery/i })).not.toBeInTheDocument();
-        expect(screen.getByRole('button', { name: /start baking/i })).toBeEnabled();
+        expect(screen.queryByRole('button', { name: /^close$/i })).not.toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /export mixdown/i })).toBeEnabled();
     });
 
     it('does not let a completed export auto-close a dialog reopened within the timer window', async () => {
@@ -2514,10 +2579,10 @@ describe('ExportDialog', () => {
         // timer must not fire onClose against that fresh session.
         const onClose = vi.fn();
         const view = render(<ExportDialog open={true} onClose={onClose} />);
-        fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+        fireEvent.click(screen.getByRole('button', { name: /export mixdown/i }));
 
         await waitFor(() => {
-            expect(screen.getByText(/Ding! Baking Complete/)).toBeInTheDocument();
+            expect(screen.getByText(/Export complete/)).toBeInTheDocument();
         });
 
         view.rerender(<ExportDialog open={false} onClose={onClose} />);
@@ -2532,7 +2597,7 @@ describe('ExportDialog', () => {
     it('starts fresh on reopen after a failed export so no stale error remains', async () => {
         mocks.writeNativeAudioMixdownFile.mockRejectedValueOnce(new Error('disk full'));
         const view = render(<ExportDialog open={true} onClose={vi.fn()} />);
-        fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+        fireEvent.click(screen.getByRole('button', { name: /export mixdown/i }));
 
         await waitFor(() => {
             expect(screen.getByText('disk full')).toBeInTheDocument();
@@ -2542,24 +2607,24 @@ describe('ExportDialog', () => {
         view.rerender(<ExportDialog open={true} onClose={vi.fn()} />);
 
         expect(screen.queryByText('disk full')).not.toBeInTheDocument();
-        expect(screen.queryByText('The bread burned...')).not.toBeInTheDocument();
+        expect(screen.queryByText('Export failed.')).not.toBeInTheDocument();
         expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
-        expect(screen.getByRole('button', { name: /start baking/i })).toBeEnabled();
+        expect(screen.getByRole('button', { name: /export mixdown/i })).toBeEnabled();
     });
 
     it('renders the failure status beside the error when an export fails', async () => {
         mocks.writeNativeAudioMixdownFile.mockRejectedValueOnce(new Error('disk full'));
 
         render(<ExportDialog open={true} onClose={vi.fn()} />);
-        fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+        fireEvent.click(screen.getByRole('button', { name: /export mixdown/i }));
 
         await waitFor(() => {
-            expect(screen.getByText('The bread burned...')).toBeInTheDocument();
+            expect(screen.getByText('Export failed.')).toBeInTheDocument();
         });
         expect(screen.getByText('disk full')).toBeInTheDocument();
     });
 
-    it('grows the oven status slot for a long failure message instead of clipping it', async () => {
+    it('grows the export status slot for a long failure message instead of clipping it', async () => {
         // Native write failures carry the command plus the full output path, so
         // the message wraps to several lines inside the slot. jsdom cannot
         // measure wrapping, so the observable is the slot's class: min-height
@@ -2572,7 +2637,7 @@ describe('ExportDialog', () => {
         );
 
         render(<ExportDialog open={true} onClose={vi.fn()} />);
-        fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+        fireEvent.click(screen.getByRole('button', { name: /export mixdown/i }));
 
         const errorNode = await screen.findByText(/Bake failed:/);
         expect(errorNode).toBeInTheDocument();
@@ -2580,22 +2645,22 @@ describe('ExportDialog', () => {
         expect(errorNode.closest('.h-10')).toBeNull();
     });
 
-    it('keeps the fixed oven status slot for the ready layout', () => {
+    it('keeps the fixed export status slot for the ready layout', () => {
         render(<ExportDialog open={true} onClose={vi.fn()} />);
 
-        expect(screen.getByText(/Oven Ready/).closest('.h-10')).not.toBeNull();
+        expect(screen.getByText(/Ready to export/).closest('.h-10')).not.toBeNull();
     });
 
-    it('keeps the fixed oven status slot during a retry flight after a failed export', async () => {
+    it('keeps the fixed export status slot during a retry flight after a failed export', async () => {
         mocks.writeNativeAudioMixdownFile.mockRejectedValueOnce(new Error('disk full'));
         render(<ExportDialog open={true} onClose={vi.fn()} />);
 
-        fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+        fireEvent.click(screen.getByRole('button', { name: /export mixdown/i }));
         await waitFor(() => {
             expect(screen.getByText('disk full')).toBeInTheDocument();
         });
 
-        fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+        fireEvent.click(screen.getByRole('button', { name: /export mixdown/i }));
         const bar = await screen.findByRole('progressbar');
         expect(bar.closest('.h-10')).not.toBeNull();
     });
@@ -2604,7 +2669,7 @@ describe('ExportDialog', () => {
         mocks.selectNativeAudioExportFile.mockRejectedValue(new Error('Permission denied'));
 
         render(<ExportDialog open={true} onClose={vi.fn()} />);
-        fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+        fireEvent.click(screen.getByRole('button', { name: /export mixdown/i }));
 
         await waitFor(() => {
             expect(screen.getByText('Permission denied')).toBeInTheDocument();
@@ -2612,7 +2677,7 @@ describe('ExportDialog', () => {
         expect(mocks.renderOffline).not.toHaveBeenCalled();
         expect(mocks.notifyUser).toHaveBeenCalledWith('Permission denied', 'error');
         expect(mocks.notifyUser).not.toHaveBeenCalledWith(expect.anything(), 'success');
-        expect(screen.queryByText(/Ding! Baking Complete/)).not.toBeInTheDocument();
+        expect(screen.queryByText(/Export complete/)).not.toBeInTheDocument();
     });
 
     it('retires a pending native destination when Cancel closes the dialog', async () => {
@@ -2621,7 +2686,7 @@ describe('ExportDialog', () => {
         const onClose = vi.fn();
         const view = render(<ExportDialog open={true} onClose={onClose} />);
         selectPodcastEpisode();
-        fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+        fireEvent.click(screen.getByRole('button', { name: /export mixdown/i }));
         expect(mocks.selectNativeAudioExportFile).toHaveBeenCalledTimes(1);
 
         fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
@@ -2644,13 +2709,13 @@ describe('ExportDialog', () => {
         const onClose = vi.fn();
         const view = render(<ExportDialog open={true} onClose={onClose} />);
         selectPodcastEpisode();
-        fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+        fireEvent.click(screen.getByRole('button', { name: /export mixdown/i }));
         expect(mocks.selectNativeAudioExportFile).toHaveBeenCalledTimes(1);
 
         fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
         view.rerender(<ExportDialog open={false} onClose={onClose} />);
         view.rerender(<ExportDialog open={true} onClose={onClose} />);
-        fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+        fireEvent.click(screen.getByRole('button', { name: /export mixdown/i }));
         expect(mocks.selectNativeAudioExportFile).toHaveBeenCalledTimes(2);
         await act(async () => destination.resolve('/tmp/older-podcast.mp3'));
 
@@ -2676,13 +2741,13 @@ describe('ExportDialog', () => {
             .mockReturnValueOnce(currentDestination.promise);
         const onClose = vi.fn();
         const view = render(<ExportDialog open={true} onClose={onClose} />);
-        fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+        fireEvent.click(screen.getByRole('button', { name: /export mixdown/i }));
         expect(mocks.selectNativeAudioExportFile).toHaveBeenCalledTimes(1);
 
         fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
         view.rerender(<ExportDialog open={false} onClose={onClose} />);
         view.rerender(<ExportDialog open={true} onClose={onClose} />);
-        fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+        fireEvent.click(screen.getByRole('button', { name: /export mixdown/i }));
         expect(mocks.selectNativeAudioExportFile).toHaveBeenCalledTimes(2);
         await act(async () => destination.reject(new Error('Older picker failure')));
 
@@ -2704,7 +2769,7 @@ describe('ExportDialog', () => {
         const createObjectURL = vi.spyOn(URL, 'createObjectURL');
         try {
             render(<ExportDialog open onClose={vi.fn()} />);
-            fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+            fireEvent.click(screen.getByRole('button', { name: /export mixdown/i }));
             await waitFor(() => expect(screen.getByText('Save picker failed')).toBeInTheDocument());
             expect(mocks.renderOffline).not.toHaveBeenCalled();
             expect(mocks.restoreCachedAudioBuffersFromIdb).not.toHaveBeenCalled();
@@ -2730,15 +2795,15 @@ describe('ExportDialog', () => {
             const view = render(<ExportDialog open onClose={vi.fn()} />);
             let settled = false;
             try {
-                fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+                fireEvent.click(screen.getByRole('button', { name: /export mixdown/i }));
                 await waitFor(() => expect(writable.write).toHaveBeenCalledTimes(1));
 
-                fireEvent.click(screen.getByRole('button', { name: 'Turn off Oven' }));
+                fireEvent.click(screen.getByRole('button', { name: 'Cancel export' }));
 
                 await waitFor(() => expect(writable.abort).toHaveBeenCalledTimes(1));
-                await waitFor(() => expect(screen.getByText('Oven turned off.')).toBeInTheDocument());
+                await waitFor(() => expect(screen.getByText('Export cancelled.')).toBeInTheDocument());
                 expect(writable.close).not.toHaveBeenCalled();
-                expect(mocks.notifyUser).not.toHaveBeenCalledWith('Ding! The audio finished baking', 'success');
+                expect(mocks.notifyUser).not.toHaveBeenCalledWith('Audio exported', 'success');
 
                 await act(async () => {
                     settled = true;
@@ -2781,15 +2846,15 @@ describe('ExportDialog', () => {
         vi.stubGlobal('showSaveFilePicker', picker);
         const view = render(<ExportDialog open onClose={vi.fn()} />);
         try {
-            fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+            fireEvent.click(screen.getByRole('button', { name: /export mixdown/i }));
             await waitFor(() => expect(oldWritable.write).toHaveBeenCalledTimes(1));
 
             view.rerender(<ExportDialog open={false} onClose={vi.fn()} />);
             await waitFor(() => expect(oldWritable.abort).toHaveBeenCalledTimes(1));
             view.rerender(<ExportDialog open onClose={vi.fn()} />);
-            fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+            fireEvent.click(screen.getByRole('button', { name: /export mixdown/i }));
             await waitFor(() => expect(currentWritable.close).toHaveBeenCalledTimes(1));
-            expect(mocks.notifyUser).toHaveBeenCalledWith('Ding! The audio finished baking', 'success');
+            expect(mocks.notifyUser).toHaveBeenCalledWith('Audio exported', 'success');
 
             await act(async () => {
                 oldWrite.reject(new Error('Retired sink failure'));
@@ -2797,7 +2862,7 @@ describe('ExportDialog', () => {
             });
             expect(oldWritable.close).not.toHaveBeenCalled();
             expect(currentWritable.close).toHaveBeenCalledTimes(1);
-            expect(screen.getByText('Ding! Baking Complete! 🍞')).toBeInTheDocument();
+            expect(screen.getByText('Export complete.')).toBeInTheDocument();
             expect(screen.queryByText('Retired sink failure')).not.toBeInTheDocument();
         } finally {
             oldWrite.resolve();
@@ -2830,25 +2895,25 @@ describe('ExportDialog', () => {
         const onClose = vi.fn();
         const view = render(<ExportDialog open onClose={onClose} />);
         try {
-            fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+            fireEvent.click(screen.getByRole('button', { name: /export mixdown/i }));
             await waitFor(() => expect(oldWritable.close).toHaveBeenCalledTimes(1));
             view.rerender(<ExportDialog open={false} onClose={onClose} />);
             view.rerender(<ExportDialog open onClose={onClose} />);
-            fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+            fireEvent.click(screen.getByRole('button', { name: /export mixdown/i }));
             await waitFor(() => expect(currentWritable.close).toHaveBeenCalledTimes(1));
             const pendingProgress = screen.getByRole('progressbar').getAttribute('aria-valuenow');
-            expect(screen.getByText('Proofing Whole Loaf (offline mixdown)...')).toBeInTheDocument();
+            expect(screen.getByText('Rendering mixdown…')).toBeInTheDocument();
 
             vi.useFakeTimers();
             await act(async () => {
                 oldClosing.resolve();
                 await oldClosing.promise;
             });
-            expect(screen.queryByText(/Baking Complete/)).not.toBeInTheDocument();
-            expect(screen.getByText('Proofing Whole Loaf (offline mixdown)...')).toBeInTheDocument();
+            expect(screen.queryByText(/Export complete/)).not.toBeInTheDocument();
+            expect(screen.getByText('Rendering mixdown…')).toBeInTheDocument();
             expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', pendingProgress);
-            expect(screen.getByRole('button', { name: /turn off oven/i })).toBeInTheDocument();
-            expect(screen.queryByRole('button', { name: /start baking/i })).not.toBeInTheDocument();
+            expect(screen.getByRole('button', { name: /cancel export/i })).toBeInTheDocument();
+            expect(screen.queryByRole('button', { name: /export mixdown/i })).not.toBeInTheDocument();
             expect(mocks.notifyUser).not.toHaveBeenCalledWith(expect.anything(), 'success');
             await act(async () => vi.advanceTimersByTimeAsync(2500));
             expect(onClose).not.toHaveBeenCalled();
@@ -2859,9 +2924,9 @@ describe('ExportDialog', () => {
                 currentClosing.resolve();
                 await currentClosing.promise;
             });
-            expect(screen.getByText('Ding! Baking Complete! 🍞')).toBeInTheDocument();
+            expect(screen.getByText('Export complete.')).toBeInTheDocument();
             expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '100');
-            expect(screen.getByRole('button', { name: /close bakery/i })).toBeInTheDocument();
+            expect(screen.getByRole('button', { name: /^close$/i })).toBeInTheDocument();
             expect(mocks.notifyUser.mock.calls.filter((call) => call[1] === 'success')).toHaveLength(1);
             await act(async () => vi.advanceTimersByTimeAsync(2500));
             expect(onClose).toHaveBeenCalledTimes(1);
@@ -2887,7 +2952,7 @@ describe('ExportDialog', () => {
         vi.stubGlobal('showSaveFilePicker', async () => ({ createWritable: async () => oldWritable }));
         const view = render(<ExportDialog open onClose={vi.fn()} />);
         try {
-            fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+            fireEvent.click(screen.getByRole('button', { name: /export mixdown/i }));
             await waitFor(() => expect(oldWritable.write).toHaveBeenCalledTimes(1));
 
             view.rerender(<ExportDialog open={false} onClose={vi.fn()} />);
@@ -2900,7 +2965,7 @@ describe('ExportDialog', () => {
             };
             vi.stubGlobal('showSaveFilePicker', async () => ({ createWritable: async () => freshWritable }));
             view.rerender(<ExportDialog open onClose={vi.fn()} />);
-            fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+            fireEvent.click(screen.getByRole('button', { name: /export mixdown/i }));
             await waitFor(() => expect(screen.getByText('Fresh export failure')).toBeInTheDocument());
 
             await act(async () => {
@@ -2944,32 +3009,32 @@ describe('ExportDialog', () => {
             abort: vi.fn().mockResolvedValue(undefined),
         };
         try {
-            fireEvent.click(screen.getByRole('button', { name: /to clip/i }));
-            fireEvent.click(screen.getByRole('button', { name: 'Render to Clip' }));
+            fireEvent.click(screen.getByRole('button', { name: /render to clip/i }));
+            fireEvent.click(screen.getByRole('button', { name: 'Render to clip' }));
             await act(async () => oldRenderStarted.promise);
-            fireEvent.click(screen.getByRole('button', { name: /turn off oven/i }));
+            fireEvent.click(screen.getByRole('button', { name: /cancel export/i }));
             await act(async () => {
                 oldRendering.reject(new Error('Export cancelled'));
                 await oldRendering.promise.catch(() => undefined);
             });
-            await vi.waitFor(() => expect(screen.getByText('Oven turned off.')).toBeInTheDocument());
-            expect(screen.getByRole('button', { name: /turn off oven/i })).toBeInTheDocument();
+            await vi.waitFor(() => expect(screen.getByText('Export cancelled.')).toBeInTheDocument());
+            expect(screen.getByRole('button', { name: /cancel export/i })).toBeInTheDocument();
 
             view.rerender(<ExportDialog open={false} onClose={vi.fn()} />);
             vi.mocked(isNativeProjectRuntimeAvailable).mockReturnValue(false);
             vi.stubGlobal('showSaveFilePicker', async () => ({ createWritable: async () => currentWritable }));
             view.rerender(<ExportDialog open onClose={vi.fn()} />);
-            fireEvent.click(screen.getByRole('button', { name: /whole loaf/i }));
-            fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+            fireEvent.click(screen.getByRole('button', { name: /mixdown/i }));
+            fireEvent.click(screen.getByRole('button', { name: /export mixdown/i }));
             await act(async () => currentWriteStarted.promise);
 
-            expect(screen.getByRole('button', { name: /turn off oven/i })).toBeInTheDocument();
+            expect(screen.getByRole('button', { name: /cancel export/i })).toBeInTheDocument();
             await act(async () => {
                 await vi.advanceTimersByTimeAsync(1500);
             });
 
-            expect(screen.getByRole('button', { name: /turn off oven/i })).toBeInTheDocument();
-            expect(screen.queryByRole('button', { name: /start baking/i })).not.toBeInTheDocument();
+            expect(screen.getByRole('button', { name: /cancel export/i })).toBeInTheDocument();
+            expect(screen.queryByRole('button', { name: /export mixdown/i })).not.toBeInTheDocument();
             expect(currentWritable.close).not.toHaveBeenCalled();
         } finally {
             currentWrite.resolve();
@@ -3004,8 +3069,8 @@ describe('ExportDialog', () => {
             waitForUnderFakeTimers(() => expect(screen.getByText(text)).toBeInTheDocument());
 
         const completeExport = async (): Promise<void> => {
-            fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
-            await findTextUnderFakeTimers(/Ding! Baking Complete/);
+            fireEvent.click(screen.getByRole('button', { name: /export mixdown/i }));
+            await findTextUnderFakeTimers(/Export complete/);
         };
 
         it('leaves no pending auto-close and never closes after the open dialog unmounts', async () => {
@@ -3028,7 +3093,7 @@ describe('ExportDialog', () => {
             }
         });
 
-        it('leaves no pending Render to Clip auto-close and never closes after the open dialog unmounts', async () => {
+        it('leaves no pending Render to clip auto-close and never closes after the open dialog unmounts', async () => {
             startFakeTimerSession();
             try {
                 const onClose = vi.fn();
@@ -3038,8 +3103,8 @@ describe('ExportDialog', () => {
                     audioBufferId: 'rendered-1',
                 });
                 const view = render(<ExportDialog open onClose={onClose} />);
-                fireEvent.click(screen.getByRole('button', { name: /to clip/i }));
-                fireEvent.click(screen.getByRole('button', { name: 'Render to Clip' }));
+                fireEvent.click(screen.getByRole('button', { name: /render to clip/i }));
+                fireEvent.click(screen.getByRole('button', { name: 'Render to clip' }));
                 await waitForUnderFakeTimers(() =>
                     expect(mocks.notifyUser).toHaveBeenCalledWith('Rendered audio placed as a new clip', 'success')
                 );
@@ -3073,7 +3138,7 @@ describe('ExportDialog', () => {
                     await vi.advanceTimersByTimeAsync(2600);
                 });
                 expect(onClose).not.toHaveBeenCalled();
-                expect(screen.getByRole('button', { name: /start baking/i })).toBeEnabled();
+                expect(screen.getByRole('button', { name: /export mixdown/i })).toBeEnabled();
             } finally {
                 finishFakeTimerSession();
             }
@@ -3100,8 +3165,8 @@ describe('ExportDialog', () => {
         });
 
         it.each([
-            ['Render to Clip', /to clip/i, 'Render to Clip'],
-            ['mixdown', /whole loaf/i, /start baking/i],
+            ['Render to clip', /render to clip/i, 'Render to clip'],
+            ['mixdown', /^Mixdown \(Whole loaf\)$/i, /export mixdown/i],
         ])(
             'leaves no pending unlock when the dialog unmounts in the cancelled %s window',
             async (_mode, modeButton, startButton) => {
@@ -3118,12 +3183,12 @@ describe('ExportDialog', () => {
                     fireEvent.click(screen.getByRole('button', { name: modeButton }));
                     fireEvent.click(screen.getByRole('button', { name: startButton }));
                     await act(async () => renderStarted.promise);
-                    fireEvent.click(screen.getByRole('button', { name: /turn off oven/i }));
+                    fireEvent.click(screen.getByRole('button', { name: /cancel export/i }));
                     await act(async () => {
                         rendering.reject(new Error('Export cancelled'));
                         await rendering.promise.catch(() => undefined);
                     });
-                    await findTextUnderFakeTimers('Oven turned off.');
+                    await findTextUnderFakeTimers('Export cancelled.');
                     expect(vi.getTimerCount()).toBeGreaterThan(0);
 
                     view.unmount();
@@ -3150,8 +3215,8 @@ describe('ExportDialog', () => {
             });
             try {
                 const view = render(<ExportDialog open onClose={vi.fn()} />);
-                fireEvent.click(screen.getByRole('button', { name: /to clip/i }));
-                fireEvent.click(screen.getByRole('button', { name: 'Render to Clip' }));
+                fireEvent.click(screen.getByRole('button', { name: /render to clip/i }));
+                fireEvent.click(screen.getByRole('button', { name: 'Render to clip' }));
                 await act(async () => renderStarted.promise);
 
                 view.unmount();
@@ -3174,7 +3239,7 @@ describe('ExportDialog', () => {
         try {
             const onClose = vi.fn();
             const view = render(<ExportDialog open={true} onClose={onClose} />);
-            fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+            fireEvent.click(screen.getByRole('button', { name: /export mixdown/i }));
             expect(showSaveFilePicker).toHaveBeenCalledTimes(1);
 
             view.rerender(<ExportDialog open={false} onClose={onClose} />);
@@ -3193,7 +3258,7 @@ describe('ExportDialog', () => {
             expect(writable.write).not.toHaveBeenCalled();
             expect(writable.close).not.toHaveBeenCalled();
             expect(mocks.notifyUser).not.toHaveBeenCalled();
-            expect(screen.getByRole('button', { name: /start baking/i })).toBeEnabled();
+            expect(screen.getByRole('button', { name: /export mixdown/i })).toBeEnabled();
         } finally {
             vi.unstubAllGlobals();
             vi.mocked(isNativeProjectRuntimeAvailable).mockReturnValue(true);
@@ -3212,7 +3277,7 @@ describe('ExportDialog', () => {
         mocks.selectNativeAudioExportFile.mockReturnValue(selection);
 
         render(<ExportDialog open={true} onClose={vi.fn()} />);
-        fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+        fireEvent.click(screen.getByRole('button', { name: /export mixdown/i }));
         await waitFor(() => {
             expect(mocks.selectNativeAudioExportFile).toHaveBeenCalledTimes(1);
         });
@@ -3224,8 +3289,8 @@ describe('ExportDialog', () => {
         expect(mocks.renderOffline).not.toHaveBeenCalled();
         expect(mocks.notifyUser).not.toHaveBeenCalled();
         expect(screen.queryByText('The user aborted a request.')).not.toBeInTheDocument();
-        expect(screen.queryByText('The bread burned...')).not.toBeInTheDocument();
-        expect(screen.getByRole('button', { name: /start baking/i })).toBeEnabled();
+        expect(screen.queryByText('Export failed.')).not.toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /export mixdown/i })).toBeEnabled();
     });
 
     it('stops before rendering when native destination selection is cancelled', async () => {
@@ -3238,7 +3303,7 @@ describe('ExportDialog', () => {
         mocks.selectNativeAudioExportFile.mockReturnValue(selection);
 
         render(<ExportDialog open={true} onClose={vi.fn()} />);
-        fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+        fireEvent.click(screen.getByRole('button', { name: /export mixdown/i }));
         await waitFor(() => {
             expect(mocks.selectNativeAudioExportFile).toHaveBeenCalledTimes(1);
         });
@@ -3249,8 +3314,8 @@ describe('ExportDialog', () => {
 
         expect(mocks.renderOffline).not.toHaveBeenCalled();
         expect(mocks.notifyUser).not.toHaveBeenCalled();
-        expect(screen.queryByText('The bread burned...')).not.toBeInTheDocument();
-        expect(screen.getByRole('button', { name: /start baking/i })).toBeEnabled();
+        expect(screen.queryByText('Export failed.')).not.toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /export mixdown/i })).toBeEnabled();
     });
 
     describe('independent delivery target controls', () => {
@@ -3381,26 +3446,26 @@ describe('ExportDialog', () => {
             twoStems();
             await encodeRealWav();
             render(<ExportDialog open={true} onClose={vi.fn()} />);
-            fireEvent.click(screen.getByRole('button', { name: /slices/i }));
+            fireEvent.click(screen.getByRole('button', { name: /stems/i }));
             expect(screen.getByRole('checkbox', { name: 'WAV loudness reports' })).not.toBeChecked();
-            fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+            fireEvent.click(screen.getByRole('button', { name: /export stems/i }));
             await expectSucceededExportState();
             expect(mocks.writeNativeAudioStemFile.mock.calls.map(([written]) => written.fileName)).toEqual([
                 'Kick.wav',
                 'Snare.wav',
             ]);
             expect(mocks.registerReportPair).not.toHaveBeenCalled();
-            expect(screen.getByText(/Baking Complete/).textContent).toBe('Ding! Baking Complete! 🍞');
-            expect(mocks.notifyUser).toHaveBeenCalledWith('Ding! The audio finished baking', 'success');
+            expect(screen.getByText(/Export complete/).textContent).toBe('Export complete.');
+            expect(mocks.notifyUser).toHaveBeenCalledWith('Audio exported', 'success');
         });
 
         it('writes a report of the exact WAV beside each stem and counts them on completion', async () => {
             twoStems();
             await encodeRealWav();
             render(<ExportDialog open={true} onClose={vi.fn()} />);
-            fireEvent.click(screen.getByRole('button', { name: /slices/i }));
+            fireEvent.click(screen.getByRole('button', { name: /stems/i }));
             fireEvent.click(screen.getByRole('checkbox', { name: 'WAV loudness reports' }));
-            fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+            fireEvent.click(screen.getByRole('button', { name: /export stems/i }));
             await expectSucceededExportState();
             expect(mocks.writeNativeAudioStemFile.mock.calls.map(([written]) => written.fileName)).toEqual([
                 'Kick.wav',
@@ -3432,7 +3497,7 @@ describe('ExportDialog', () => {
             [
                 'an MP3 beside the WAV stems',
                 () => {
-                    fireEvent.click(screen.getByRole('button', { name: /slices/i }));
+                    fireEvent.click(screen.getByRole('button', { name: /stems/i }));
                     fireEvent.click(screen.getByTestId('export-format-mp3'));
                 },
             ],
@@ -3441,7 +3506,7 @@ describe('ExportDialog', () => {
             render(<ExportDialog open={true} onClose={vi.fn()} />);
             fireEvent.click(screen.getByRole('checkbox', { name: 'WAV loudness reports' }));
             arrange();
-            fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+            fireEvent.click(screen.getByTestId('export-start'));
             expect(await screen.findByText(/WAV loudness reports need a Stems export/)).toBeInTheDocument();
             expect(mocks.selectNativeAudioExportDirectory).not.toHaveBeenCalled();
             expect(mocks.selectNativeAudioExportFile).not.toHaveBeenCalled();
@@ -3455,9 +3520,9 @@ describe('ExportDialog', () => {
             await encodeRealWav();
             mocks.writeNativeAudioStemFile.mockRejectedValueOnce(new Error('disk full'));
             render(<ExportDialog open={true} onClose={vi.fn()} />);
-            fireEvent.click(screen.getByRole('button', { name: /slices/i }));
+            fireEvent.click(screen.getByRole('button', { name: /stems/i }));
             fireEvent.click(screen.getByRole('checkbox', { name: 'WAV loudness reports' }));
-            fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+            fireEvent.click(screen.getByRole('button', { name: /export stems/i }));
             expect(await screen.findByText('Export incomplete: disk full')).toBeInTheDocument();
             expect(mocks.commit).not.toHaveBeenCalled();
         });

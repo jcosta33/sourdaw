@@ -24,8 +24,12 @@ import { schedulerSession, stopActiveSources } from './schedulerSession';
  * graph — so a hot reload of any scheduler module actually triggers teardown.
  */
 export function disposePlayheadScheduler(): void {
+    schedulerSession.automaticPunch?.dispose();
+    schedulerSession.automaticPunch = null;
     releasePlayheadClockHold(schedulerSession.generation);
     schedulerSession.generation += 1;
+    schedulerSession.loopAudioSchedule?.reset();
+    schedulerSession.loopAudioSchedule = null;
     advanceSchedulerDiscontinuityEpoch();
     if (schedulerSession.worker) {
         schedulerSession.worker.postMessage({ type: 'stop' });

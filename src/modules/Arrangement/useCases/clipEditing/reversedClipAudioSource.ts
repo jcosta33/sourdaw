@@ -1,4 +1,10 @@
-import { getAudioSourcePositionSeconds } from '#/utils/audioSourceTime';
+import {
+    getAudioSourcePositionSeconds,
+    projectAudioLoopPassSegments,
+    resolveAudioSourceOffsetSeconds,
+} from '#/utils/audioSourceTime';
+import { CLIP_LOOP_WINDOW_BEAT_TOLERANCE } from '#/utils/clipLoopOrigin';
+import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
 
 import { type Clip } from '../../models/Track';
 
@@ -9,12 +15,16 @@ type ReversibleAudioSource = Pick<
     | 'startBeat'
     | 'endBeat'
     | 'audioOffsetSeconds'
+    | 'audioOffsetBeats'
     | 'audioUnwrappedOffsetSeconds'
     | 'audioLoopStartSeconds'
     | 'audioLoopPassEntrySeconds'
     | 'audioLoopPassOriginBeat'
     | 'stretchMode'
     | 'stretchRatio'
+    | 'loopEnabled'
+    | 'loopLength'
+    | 'loopOriginBeat'
 >;
 
 export type ReversedAudioSourceFields = Pick<
@@ -43,13 +53,56 @@ export type ReversedAudioSourceFields = Pick<
 export function reversedClipAudioSource(
     clip: ReversibleAudioSource,
     bufferDurationSeconds: number,
-    secondsAtBeat: (beat: number) => number
+    secondsAtBeat: (beat: number) => number,
+    tempoAtClipStart: number
 ): ReversedAudioSourceFields | null | undefined {
-    if (clip.audioOffsetSeconds === undefined) {
-        return undefined;
-    }
     if (!Number.isFinite(bufferDurationSeconds) || bufferDurationSeconds <= 0) {
         return null;
+    }
+    if (clip.loopEnabled) {
+        const sourceEntry = resolveAudioSourceOffsetSeconds(clip, tempoAtClipStart);
+        const duration = clip.endBeat - clip.startBeat;
+        const { loopLengthBeats } = projectClipLoopExpansion({
+            clipDurationBeats: duration,
+            configuredLoopLengthBeats: clip.loopLength,
+            loopEnabled: true,
+        });
+        function isLinearPeriod(start: number): boolean {
+            const segments = projectAudioLoopPassSegments({
+                clip,
+                loopLengthBeats,
+                iterationStartBeat: start,
+                iterationEndBeat: start + loopLengthBeats,
+                stretchRatio: consumedStretchFactor(clip),
+                tempoAtClipStart,
+                secondsAtBeat,
+            });
+            return (
+                segments.length > 0 &&
+                segments.every(
+                    (segment) =>
+                        segment.sourceStartSeconds ===
+                        getAudioSourcePositionSeconds(
+                            sourceEntry,
+                            secondsAtBeat(start + segment.startOffsetBeats) - secondsAtBeat(start),
+                            consumedStretchFactor(clip)
+                        )
+                )
+            );
+        }
+        // A partial mirror may play today's span correctly while moving its
+        // preserved loop window beyond the buffer. Admit a complete linear
+        // period whose next period repeats the same source entry instead.
+        if (
+            Math.abs(duration - loopLengthBeats) > CLIP_LOOP_WINDOW_BEAT_TOLERANCE ||
+            !isLinearPeriod(clip.startBeat) ||
+            !isLinearPeriod(clip.startBeat + loopLengthBeats)
+        ) {
+            return null;
+        }
+    }
+    if (clip.audioOffsetSeconds === undefined) {
+        return undefined;
     }
     const exitSeconds = getAudioSourcePositionSeconds(
         clip.audioOffsetSeconds,

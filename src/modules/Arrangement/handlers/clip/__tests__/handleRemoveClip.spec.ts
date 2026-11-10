@@ -69,6 +69,8 @@ vi.mock('../../../useCases/rippleDelete/rippleDeleteClips', () => ({
 vi.mock('../../../stores/timelineEditingStore', () => ({ timelineEditingStore: mocks.timelineEditingStore }));
 
 vi.mock('#/modules/Command/useCases', () => ({
+    commitUndoEntry: vi.fn(),
+    createUndoEntry: vi.fn(),
     commitRedoInverseCapture: vi.fn(),
     executeAppAction: vi.fn(),
     executeUserAppAction: vi.fn(),

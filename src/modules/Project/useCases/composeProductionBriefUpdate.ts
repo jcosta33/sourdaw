@@ -46,7 +46,7 @@ function refuse(field: ProductionBriefUpdateField, reason: string): Refusal {
 
 /** Folded whitespace and no control characters, so two spellings of one statement compare equal. */
 function normalizeText(value: string): string {
-    return value.replace(CONTROL_CHARACTERS, ' ').replaceAll(/\s+/gu, ' ').trim();
+    return value.replaceAll(CONTROL_CHARACTERS, ' ').replaceAll(/\s+/gu, ' ').trim();
 }
 
 function readText(field: ProductionBriefUpdateField, value: string, maxLength: number): string | Refusal {

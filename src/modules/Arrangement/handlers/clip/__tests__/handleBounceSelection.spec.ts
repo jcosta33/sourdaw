@@ -28,7 +28,11 @@ describe('handleBounceSelection', () => {
             payload: { trackId: 't1', startBeat: 0, endBeat: 4 },
         });
 
-        expect(mocks.bounceSelection).toHaveBeenCalledWith('t1', 0, 4);
+        expect(mocks.bounceSelection).toHaveBeenCalledWith('t1', 0, 4, {
+            signal: undefined,
+            deferUndoEntry: expect.any(Function),
+            onCommitValidation: expect.any(Function),
+        });
         expect(result).toEqual({ status: 'written' });
     });
 

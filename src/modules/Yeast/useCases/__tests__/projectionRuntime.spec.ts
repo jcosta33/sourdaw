@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { PROCESSOR_PARAM_DEFAULTS } from '../../models/ProcessorCatalog';
 import { createYeastProcessorProjection } from '../../models/YeastProcessorProjection';
 
 const store = vi.hoisted(() => ({
@@ -42,7 +43,7 @@ describe('addYeastProcessor — projection/runtime ownership', () => {
                     type: 'arpeggiator',
                     name: 'Arpeggiator',
                     bypassed: false,
-                    params: {},
+                    params: PROCESSOR_PARAM_DEFAULTS.arpeggiator,
                 },
             ],
             uiLevel: 1,
@@ -52,7 +53,7 @@ describe('addYeastProcessor — projection/runtime ownership', () => {
                 id: 'arpeggiator-uuid-1',
                 type: 'arpeggiator',
                 bypassed: false,
-                params: {},
+                params: PROCESSOR_PARAM_DEFAULTS.arpeggiator,
             },
         ]);
     });

@@ -20,6 +20,11 @@ Report a probe that cannot run with its exact mutation, named check and limitati
    readiness through the real progress producer. Delay the bad variant past the case's end: finishing
    before a scheduled side effect does not prove it was prevented, so the delayed mutant must still
    fail. Teardown must not depend on the behavior under test.
+   Do not retry a required material or ownership invariant as readiness. #6342's bounded Audio-to-MIDI capture
+   retry still hid a first-read PCM miss even though permanent absence failed with the right message. Return null
+   once at the actual cached-buffer read while retaining the real PCM, then allow later reads: the case must fail
+   on the one-shot miss, with hydration and document-witness refusals also remaining strict. Its public review
+   reported permanent-absence/deadline attacks; historical private prompts and reviewer tiers are unknown.
    (#5661, #5874, #5363, #5849, #5520, #5613, #5517, #3318, #5464)
 
 2. **The case's deadline pays for work it does not observe.**
@@ -30,7 +35,20 @@ Report a probe that cannot run with its exact mutation, named check and limitati
    multi-request setup, and population walks in one case. Shrink cost without losing the asserted
    condition: a shorter render must still produce a receipt above its bound, and a dev-server resolve
    with discovery off must assert the exact source file chosen rather than an inequality. A raised
-   timeout or warm-up hides the cost.
+   timeout or warm-up hides unobserved cost. A generic deep matcher over a long typed PCM buffer can dominate an otherwise
+   prompt async ownership test: queued Audio-to-MIDI cases in #6302 spent over 97% of local case time comparing
+   1.76 million samples and exceeded the default deadline on hosted runners. Measure admission, release, conversion
+   and assertion phases separately. Preserve the whole source fixture and compare its exact view bytes with a
+   standard-library byte primitive, including byteOffset and byteLength; a mutation at the final byte must fail.
+   Never replace full-buffer preservation with sampled elements, shorter audio or a larger timeout.
+   External render or provider doubles do not remove downstream objective DSP. Measure actual render count,
+   coherent PCM geometry and the real analysis before setting a case-specific deadline for required work; retain
+   programme and gating windows and every functional assertion. #6311 introduced the brief case and #6350 the
+   baseline cases and their initial measurement route. In Health run 42437242526, the [brief case](https://github.com/jcosta33/sourdaw/actions/runs/42437242526/job/128598913651)
+   took 5811 ms and the [baseline cases](https://github.com/jcosta33/sourdaw/actions/runs/42437242526/job/128598913642)
+   took 5153 and 5194 ms against 5 seconds; local diagnosis observed
+   real analysis of 9 or 27 renders in roughly 2.1–2.5 seconds. The missed probe was workload and deadline accounting,
+   not a demonstrated semantic assertion escape. Do not use global timeouts or retries.
    Compose stage deadlines (escalation plus proof, navigation plus overlay, every retry attempt plus
    backoff within step and job budgets) and drive a stalled child through the loop. A wall-clock bound
    measures only the budgeted quantity; a count cap is not a deadline. Under induced engine or runner
@@ -87,7 +105,13 @@ Report a probe that cannot run with its exact mutation, named check and limitati
    plugin bindings) and mock only the native boundary before importing the subject, keeping real project modules
    and their asserted values in the graph. Run the exact spec in an install-script-free environment where the
    native package entry cannot run: it must collect and execute assertions without evaluating that entry, since a
-   cached host binary conceals a CI install that skips native downloads. `windowCloseCoordinator.spec.ts` imported
+   cached host binary conceals a CI install that skips native downloads. Trace every direct and transitive pure-spec importer of a shared native-adjacent constant module, not just the
+   first fixture repaired. `rendererSessionLifecycle.spec.ts` reaches the coordinator and its real `APP_TITLE`
+   transitively, and `appIpc.spec.ts` reaches the same title through `appIpc.ts`; isolate only the native
+   boundary in both, preserving the real modules and assertions. #5700
+   repaired the coordinator fixture but missed this caller; its public record does not establish the prior reviewer
+   stance, prompt or tier. #4289 introduced the coordinator import of `APP_TITLE`, and #3141 introduced the
+   lifecycle spec. `windowCloseCoordinator.spec.ts` imported
    `APP_TITLE` from `protocol.ts`, which imports `electron`, and failed collection with `Electron failed to
 install correctly` on hosted unit2 (run 40195635280 at `fd9e41a4b3`); mock only `electron`, keep `protocol.ts`,
    `APP_TITLE`, the coordinator and an assertion for each coordinator state transition real.

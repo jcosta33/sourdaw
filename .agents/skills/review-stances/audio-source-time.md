@@ -105,3 +105,58 @@ red and the mutation that must fail it. Report the concrete break or none.
     remains the declared legacy ambiguity; these checks do not establish arbitrary history authenticity or
     classify erased and renamed events. Keep that characterization separate from the historical fixture and from
     positive modern source authentication.
+
+11. **A whole-source Reverse must preserve the cyclic source window (#3288, #6069).** #3288 introduced
+    the linear mirrored offset, and #6069 carried that law into canonical source seconds and complete source
+    captures. The public #6069 approval explicitly left the looped-span mirror as follow-up #6077; its accepted
+    checks did not require a real cyclic PCM refusal or correct reversal. At 48 kHz, use
+    nonperiodic eight-second PCM, a clip over beats0–5 at60BPM, E0 and period4: its last audible frame is47999,
+    while the linear whole-buffer mirror reads239999. Refuse before allocation, cache, clip, analysis or history
+    effects and tell the musician to bounce the loop first. Preserve a lawful complete-period positive through
+    raw Command, exact PCM, provenance and repeated Undo/Redo. An advanced anchor alone is no oracle: E1/H1,
+    W4 and pass origin1 over beats1–5 is a continuous complete period. Also test retained handles: E0/P4 with
+    visible span2 and D8 mirrors the visible samples atE6, but an unchanged four-beat repeat would reach source10
+    beyond the buffer. A visible-span-only admission must fail that extension probe; do not invent a wrong-current-
+    frame claim for it or a new cyclic renderer to make it pass.
+12. **Both selected-bounce survivors retain canonical source authority (#621, #5888).** #621 added the
+    spanning and right-edge survivor branches. #5888 made physical source seconds authoritative while these
+    branches still advanced only the beat alias; the older aligned beat-only fixture did not probe that
+    interaction. At 60 BPM, bounce beats2–6 from a canonical loop[0,10), E1/P4/origin0, and repeat with
+    the selection beginning at0 to enter the other branch. The right survivor must read source3 at beat6 and
+    reset to1 at beat8. Compare the actual common reader and kept outside/left material, source PCM and real
+    callback Undo/Redo; changing either branch back to the beat-only advance must fail its own case. Preserve
+    the independently established looping-MIDI carry and row-partition law rather than restamping all fragments.
+    A shortened audio left survivor must also retain an implicit original period: exercise both spanning and
+    left-crossing branches, extend the survivor through the original repeat boundary, and require its original
+    source entry. Undo restores exact optional-field absence; nonlooping clips gain no loop metadata.
+13. **A held render authenticates the source it sampled through publication.** The source-blind await/write
+    sequence survives in the extracted Bounce owner from #226; this attribution identifies the available owner
+    extraction, not proof that it first introduced the earlier algorithm. The missing probe is a real typed Bounce
+    or Consolidate held while a public same-ID clip slip commits. Require the newer raw source, projection and
+    its history to survive, without cache or callback publication from the old render. Source/tempo edits followed
+    by a restoration still invalidate the sample; a same-bytes replacement root is a different authority. Preserve
+    unrelated peer name/selection/save writes. Include actual sidechain/send/child source contributors and global
+    compensation dependencies, detach material object/publication facts rather than comparing a live cache to
+    itself, and hold a late source intervention at the actual commit boundary. Refusal publishes no callback or
+    material; a genuinely committed ambiguous result retains exactly the material and inverse it published.
+    The standing source probe does not establish audible DSP, browser acceptance or generic callback-history
+    concurrency safety. Published project/source and decoded-material admission does not certify transient
+    per-device preview/fallback state; that separate current-renderer obligation is #6305.
+14. **Reverse captures optional beat-alias presence without rewriting older replay (#3288).** #3288's
+    inverse producer used `audioOffsetBeats ?? 0`; its public approval explicitly accepted unset→0, so its
+    probe did not require exact raw optional-field restoration. A real canonical WAV import can carry source
+    seconds with no beat alias. Reverse it, then use actual Command Undo/Redo twice: absent must return absent,
+    explicit0 must remain present0, and nonzero must restore exactly alongside source, fades and analysis.
+    Modern inverses need an explicit present/value capture; an older restore payload that omits the alias
+    still means leave live, not delete. Reject malformed capture unions at serialized argument admission.
+    A default-zero fixture or equality that drops absent keys cannot prove this contract.
+15. **Queued loop passes retain their own media authority across a stall (#6277).** At48kHz/120BPM,
+    fill a2s loop with unequal canonical source entries, then complete the last refill125ms before its seam.
+    Freeze the actual `source.start(when, offset, duration)` and stop ledger BEFORE withholding ticks for200ms.
+    The successor must already own the mapped seam, original entry, rate and exclusive ending; recovery must
+    neither restart it late nor stop it with the dying pass. Repeat a125ms loop crossing multiple seams,
+    stretched/comped material and frozen audio/MIDI. Same clip/buffer IDs do not authenticate future content:
+    replace the actual cached buffer under its existing ID, or edit entry, comp, gain, fade or envelope, and
+    require retirement before each old future start, including one less than5ms away. Unchanged current
+    material survives. Removing future-input reconciliation or clearing promoted-pass keys must fail
+    `startPlayheadSchedulerLoopAudioStall.spec.ts`; source-call evidence remains distinct from rendered PCM.

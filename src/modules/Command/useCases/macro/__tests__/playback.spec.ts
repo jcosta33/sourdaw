@@ -138,6 +138,36 @@ describe('playMacro', () => {
         });
     });
 
+    it('clears the recorded transient quantize plan so replay plans against the project as it now is', async () => {
+        const snapshot = { trackId: 't1', clips: [], clipOrder: [], clipSatellites: [], clipAutomationLanes: [] };
+        const plan = {
+            source: { audioBufferId: 'b1', sampleRate: 48000, length: 48000 },
+            clock: { tempo: 120, changes: [] },
+            expected: snapshot,
+            replacement: snapshot,
+            moves: [],
+            skipped: [],
+        };
+        const quantizeMacro: Macro = {
+            id: 'quantize-1',
+            name: 'Quantize',
+            actions: [{ type: 'quantizeTransients', payload: { clipId: 'c1', gridSize: 0.25, plan } }],
+            createdAt: 0,
+        };
+        macroStore.set({ macros: [quantizeMacro], recording: false, currentRecording: [] });
+
+        await playMacro('quantize-1');
+
+        expect(executeAppActionMock.mock.calls[0]![0]).toEqual({
+            type: 'quantizeTransients',
+            payload: { clipId: 'c1', gridSize: 0.25 },
+        });
+        expect(macroStore.value?.macros[0]?.actions[0]).toEqual({
+            type: 'quantizeTransients',
+            payload: { clipId: 'c1', gridSize: 0.25, plan },
+        });
+    });
+
     it('replays recorded row counteractions using only their public request fields', async () => {
         const rowMacro: Macro = {
             id: 'row-counteractions',

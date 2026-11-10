@@ -253,7 +253,7 @@ describe('durable asset ownership lifecycle', () => {
             await vi.waitFor(() => expect(receiver.getAsset(staged.hash)).toBeInstanceOf(Blob));
             const served = receiver.getAsset(staged.hash);
             if (!(served instanceof Blob)) {
-                throw new Error('Expected the owned original to be served');
+                throw new TypeError('Expected the owned original to be served');
             }
             expect(refused).toBe(true);
             expect(new Uint8Array(await served.arrayBuffer())).toEqual(new Uint8Array(await blob.arrayBuffer()));

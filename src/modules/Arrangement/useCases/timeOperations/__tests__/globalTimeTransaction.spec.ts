@@ -1057,7 +1057,7 @@ describe('executeGlobalTimeOperation', () => {
 
         expect(thrown).toBeInstanceOf(UnrecoveredGlobalTimeStateError);
         if (!(thrown instanceof UnrecoveredGlobalTimeStateError)) {
-            throw new Error('Expected explicit unrecovered global-time error');
+            throw new TypeError('Expected explicit unrecovered global-time error');
         }
         expect(thrown.originalFailure).toBe(publicationError);
         expect(thrown.compensationFailures).toEqual([
@@ -1127,7 +1127,7 @@ describe('executeGlobalTimeOperation', () => {
 
         expect(thrown).toBeInstanceOf(UnrecoveredGlobalTimeStateError);
         if (!(thrown instanceof UnrecoveredGlobalTimeStateError)) {
-            throw new Error('Expected explicit unrecovered global-time error');
+            throw new TypeError('Expected explicit unrecovered global-time error');
         }
         expect(thrown.compensationFailures).toEqual([
             transportCompensationFailure,

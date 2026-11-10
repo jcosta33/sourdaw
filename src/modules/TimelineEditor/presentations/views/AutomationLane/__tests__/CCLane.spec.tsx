@@ -63,6 +63,11 @@ vi.mock('#/modules/MIDI/stores', async (importOriginal) => {
 });
 
 vi.mock('#/modules/Command/useCases', () => ({
+    commitUndoEntry: vi.fn(),
+    createUndoEntry: vi.fn(),
+    resetActionReplayAuthority: () => {
+        throw new Error('Unexpected replay-authority reset in this lane fixture');
+    },
     getExecutableAppActionEffect: vi.fn(() => null),
     executeUserAppAction: vi.fn(),
     executeAppAction: vi.fn(),

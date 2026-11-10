@@ -76,6 +76,9 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     scheduleClick: vi.fn(),
 }));
 vi.mock('#/modules/MIDI/useCases', () => ({
+    captureEventPositionAt: () => {
+        throw new Error('This manual setup-failure fixture has no automatic MIDI capture position');
+    },
     countSettledOverdubPasses: () => 0,
     isOverdubLanding: () => false,
     waitForOverdubLanding: () => Promise.resolve(),

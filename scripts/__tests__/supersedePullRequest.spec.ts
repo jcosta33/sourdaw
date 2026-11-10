@@ -1,5 +1,5 @@
 import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -19,7 +19,7 @@ import {
     withPullRequestMutationLock,
     type PullRequestMutationSerialization,
 } from '../pullRequestMutationLock.ts';
-import { readRegisteredLaneStack, writeLaneStack, type LaneStack } from '../stackedLanes.ts';
+import { laneStackPath, readRegisteredLaneStack, writeLaneStack, type LaneStack } from '../stackedLanes.ts';
 import {
     parseSupersessionParentBinding,
     inspectNativeParentCompletion,
@@ -1412,11 +1412,11 @@ function realDependencyFixture(root: string, kind: 'direct' | 'late' | 'unrelate
         comparisons.push([ancestor, descendant]);
         return dag.ancestor(ancestor, descendant);
     };
-    fixture.port.readRegisteredLaneStack = (branch) => {
-        return readRegisteredLaneStack(root, branch, (args) =>
-            execFileSync('git', args, { cwd: root, encoding: 'utf8' })
-        );
-    };
+    const { readSupersessionLaneStack } = shellPort({ configDir: root, env: {}, dispose: () => undefined }, root);
+    if (readSupersessionLaneStack === undefined) {
+        throw new Error('Expected the native supersession stack reader');
+    }
+    fixture.port.readSupersessionLaneStack = readSupersessionLaneStack;
     const register = (patch: Partial<LaneStack> = {}) => {
         const descriptor: LaneStack = {
             version: 1,
@@ -1443,7 +1443,22 @@ function realDependencyFixture(root: string, kind: 'direct' | 'late' | 'unrelate
             parentNumber,
             distinct ? parentReplacementNumber : undefined
         );
-    return { ...fixture, dag, comparisons, register, run };
+    const serialized = () =>
+        serializedSupersedePullRequest(
+            root,
+            {
+                oldNumber,
+                expectedHead: dag.oldChild,
+                replacementNumber,
+                lineage: repairedLineage,
+                authorNodeId: AUTHOR_BOT_NODE_ID,
+                port: fixture.port,
+                supersededParentNumber: parentNumber,
+                parentReplacementNumber: distinct ? parentReplacementNumber : undefined,
+            },
+            serializeFixture
+        );
+    return { ...fixture, dag, comparisons, register, run, serialized };
 }
 
 type ChildBaseRef = NonNullable<SupersededPullRequest['baseRef']> | null;
@@ -3764,6 +3779,289 @@ describe('pull-request supersession', () => {
     );
 
     it.each([false, true])(
+        'closes a final-parent-contained child with a sole orphan fork without changing local evidence, distinct=%s',
+        async (distinct) => {
+            await withLockRoot(async (root) => {
+                const current = realDependencyFixture(root, 'direct', distinct);
+                const key = 'branch.fix/old-pull-request.sourdaw-stack-fork';
+                execFileSync('git', ['config', key, current.dag.base], { cwd: root });
+                expect(current.dag.ancestor(current.dag.originalParent, current.dag.oldChild)).toBe(true);
+                expect(() =>
+                    readRegisteredLaneStack(root, 'fix/old-pull-request', (args) =>
+                        execFileSync('git', args, { cwd: root, encoding: 'utf8' })
+                    )
+                ).toThrow(/stack descriptor missing/);
+                expect(current.run()).toBe('pull-request-superseded:2244:2246');
+                expect(current.state().state).toBe('CLOSED');
+                const marker = current
+                    .state()
+                    .comments.find((comment) => comment.body.startsWith('sourdaw-supersession-parent-v1 '));
+                expect(marker).toBeDefined();
+                expect(parseSupersessionParentBinding(marker!.body).provenance).toEqual({
+                    kind: 'final-parent-head',
+                    forkHead: current.dag.originalParent,
+                    admittedParentHead: null,
+                });
+                expect(execFileSync('git', ['config', '--get-all', key], { cwd: root, encoding: 'utf8' }).trim()).toBe(
+                    current.dag.base
+                );
+                expect(existsSync(laneStackPath(root, 'fix/old-pull-request'))).toBe(false);
+                expect(existsSync(`${laneStackPath(root, 'fix/old-pull-request')}.admission.json`)).toBe(false);
+                expect(current.calls.filter((call) => call.startsWith('close:'))).toEqual(['close:2244']);
+            });
+        }
+    );
+
+    it.each([
+        ['unrelated', /orphan fork to final parent ancestry is not proven/],
+        ['child only', /orphan fork to final parent ancestry is not proven/],
+        ['parent only', /orphan fork to old child ancestry is not proven/],
+        ['late parent', /no matching native registered parent provenance/],
+        ['malformed', /orphan stack fork must be a full commit SHA/],
+        ['empty', /orphan stack fork must be a full commit SHA/],
+        ['duplicate', /branch lineage marker must have exactly one value/],
+        ['incomplete admission', /historical admission is incomplete/],
+    ] as const)('refuses %s orphan evidence before writing a marker', async (scenario, refusal) => {
+        await withLockRoot(async (root) => {
+            const lateParent = scenario === 'late parent' || scenario === 'parent only';
+            const current = realDependencyFixture(root, lateParent ? 'late' : 'direct', true);
+            const branch = 'fix/old-pull-request';
+            const key = `branch.${branch}.sourdaw-stack-fork`;
+            let fork = current.dag.base;
+            if (scenario === 'unrelated') {
+                fork = current.dag.reusedParent;
+            }
+            if (scenario === 'child only') {
+                fork = current.dag.oldChild;
+            }
+            if (scenario === 'parent only') {
+                fork = current.dag.finalParent;
+            }
+            if (scenario === 'empty') {
+                fork = '';
+            }
+            if (scenario === 'malformed') {
+                fork = 'HEAD';
+            }
+            execFileSync('git', ['config', key, fork], { cwd: root });
+            if (scenario === 'duplicate') {
+                execFileSync('git', ['config', '--add', key, fork], { cwd: root });
+            }
+            if (scenario === 'incomplete admission') {
+                current.register();
+                const path = laneStackPath(root, branch);
+                writeFileSync(
+                    `${path}.admission.json`,
+                    JSON.stringify({
+                        version: 1,
+                        childPullRequest: oldNumber,
+                        expectedChildHead: current.dag.oldChild,
+                        descriptor: JSON.parse(readFileSync(path, 'utf8')),
+                    })
+                );
+                rmSync(path);
+            }
+            expect(() => current.run()).toThrow(refusal);
+            expect(current.state().state).toBe('OPEN');
+            expect(current.calls.filter((call) => /^(?:comment|close|delete):/.test(call))).toEqual([]);
+        });
+    });
+
+    it.each([
+        'wrong parent appears',
+        'valid descriptor appears',
+        'admitted parent head changes',
+        'registration disappears',
+    ] as const)('refuses changed registration at the final witness: %s', async (change) => {
+        await withLockRoot(async (root) => {
+            const current = realDependencyFixture(root, 'direct', true);
+            if (change === 'admitted parent head changes' || change === 'registration disappears') {
+                current.register();
+            }
+            const beforeMarkers = change === 'valid descriptor appears';
+            const original = current.state().comments.map((comment) => comment.id);
+            const witness = current.port.assertCurrentPullRequest;
+            current.port.assertCurrentPullRequest = (number, expected) => {
+                witness(number, expected);
+                if (beforeMarkers ? number !== replacementNumber : number !== oldNumber || expected.state !== 'OPEN') {
+                    return;
+                }
+                switch (change) {
+                    case 'wrong parent appears':
+                        current.register({ parentPullRequest: 9999 });
+                        break;
+                    case 'valid descriptor appears':
+                        current.register();
+                        break;
+                    case 'admitted parent head changes':
+                        current.register({ parentHead: current.dag.base });
+                        break;
+                    case 'registration disappears':
+                        rmSync(laneStackPath(root, 'fix/old-pull-request'));
+                        execFileSync('git', ['config', '--unset', 'branch.fix/old-pull-request.sourdaw-stack-fork'], {
+                            cwd: root,
+                        });
+                        break;
+                }
+            };
+            const refusal = await current.serialized().catch((error: Error) => error.message);
+            expect(current.state().state).toBe('OPEN');
+            expect(refusal).toMatch(/local stack evidence changed/);
+            expect(current.state().comments.map((comment) => comment.id)).toEqual(original);
+            expect(current.calls).not.toContain('close:2244');
+            expect(current.calls.filter((call) => call.startsWith('comment:'))).toHaveLength(beforeMarkers ? 0 : 3);
+            expect(current.calls.filter((call) => call.startsWith('delete:'))).toHaveLength(beforeMarkers ? 0 : 3);
+            expect(
+                readPullRequestMutationLockOid(root, pullRequestMutationLockRef(oldNumber), oldNumber)
+            ).toBeUndefined();
+        });
+    });
+
+    it('refuses changed registration on a completed ancestor during the final CLOSED replay witness', async () => {
+        await withLockRoot(async (root) => {
+            const fixture = nestedNativeFixture(root);
+            expect(await fixture.serialized()).toBe('pull-request-superseded:4002:5001');
+            const writes = fixture.writes();
+            const witness = fixture.port.assertCurrentPullRequest;
+            fixture.port.assertCurrentPullRequest = (number, expected) => {
+                witness(number, expected);
+                if (number === 4002 && expected.state === 'CLOSED') {
+                    const ancestor = fixture.row(4001);
+                    writeLaneStack(root, {
+                        version: 1,
+                        childBranch: ancestor.headRefName,
+                        parentBranch: ancestor.base,
+                        forkHead: fixture.dag.originalParent,
+                        parentHead: fixture.dag.originalParent,
+                        parentPullRequest: 4000,
+                    });
+                    execFileSync(
+                        'git',
+                        ['config', `branch.${ancestor.headRefName}.sourdaw-stack-fork`, fixture.dag.originalParent],
+                        { cwd: root }
+                    );
+                }
+            };
+            await expect(fixture.serialized()).rejects.toThrow(/PR #4001 local stack evidence changed/);
+            expect(fixture.row(4002).state).toBe('CLOSED');
+            expect(fixture.writes()).toEqual(writes);
+        });
+    });
+
+    it.each(['before markers', 'between markers', 'before close', 'after close', 'closed replay'] as const)(
+        'observes a changed valid orphan fork at the final local witness %s',
+        async (boundary) => {
+            await withLockRoot(async (root) => {
+                const current = realDependencyFixture(root, 'direct', true);
+                const { port, dag } = current;
+                const key = 'branch.fix/old-pull-request.sourdaw-stack-fork';
+                execFileSync('git', ['config', key, dag.base], { cwd: root });
+                const run = current.serialized;
+                if (boundary === 'closed replay') {
+                    expect(await run()).toBe('pull-request-superseded:2244:2246');
+                }
+                const original = current.state().comments.map((comment) => comment.id);
+                const callsBefore = current.calls.length;
+                const moveFork = () => execFileSync('git', ['config', key, dag.originalParent], { cwd: root });
+                const witness = port.assertCurrentPullRequest;
+                port.assertCurrentPullRequest = (number, expected) => {
+                    witness(number, expected);
+                    if (
+                        (boundary === 'before markers' && number === replacementNumber) ||
+                        (boundary === 'before close' && number === oldNumber && expected.state === 'OPEN') ||
+                        ((boundary === 'after close' || boundary === 'closed replay') &&
+                            number === oldNumber &&
+                            expected.state === 'CLOSED')
+                    ) {
+                        moveFork();
+                    }
+                };
+                if (boundary === 'between markers') {
+                    const add = port.comment;
+                    port.comment = (number, body) => {
+                        const receipt = add(number, body);
+                        moveFork();
+                        return receipt;
+                    };
+                }
+                await expect(run()).rejects.toThrow(/local stack evidence changed/);
+                const mutations = current.calls
+                    .slice(callsBefore)
+                    .filter((call) => /^(?:comment|close|delete):/.test(call));
+                if (boundary === 'after close') {
+                    expect(current.state().state).toBe('CLOSED');
+                    expect(current.state().comments).toHaveLength(original.length + 3);
+                    expect(retainedOwner(root)).toBeTruthy();
+                } else {
+                    expect(current.state().state).toBe(boundary === 'closed replay' ? 'CLOSED' : 'OPEN');
+                    expect(current.state().comments.map((comment) => comment.id)).toEqual(original);
+                    expect(
+                        readPullRequestMutationLockOid(root, pullRequestMutationLockRef(oldNumber), oldNumber)
+                    ).toBeUndefined();
+                    if (boundary === 'between markers') {
+                        expect(mutations.map((call) => call.split(':')[0])).toEqual(['comment', 'delete']);
+                    }
+                    if (boundary === 'before markers' || boundary === 'closed replay') {
+                        expect(mutations).toEqual([]);
+                    }
+                    expect(mutations).not.toContain('close:2244');
+                }
+            });
+        }
+    );
+
+    it('rechecks a completed parent’s orphan fork before closing its nested child', async () => {
+        await withLockRoot(async (root) => {
+            const fixture = nestedNativeFixture(root);
+            const key = 'branch.fix/nested-parent.sourdaw-stack-fork';
+            execFileSync('git', ['config', key, fixture.dag.base], { cwd: root });
+            const witness = fixture.port.assertCurrentPullRequest;
+            fixture.port.assertCurrentPullRequest = (number, expected) => {
+                witness(number, expected);
+                if (number === 4002 && expected.state === 'OPEN') {
+                    execFileSync('git', ['config', key, fixture.dag.originalParent], { cwd: root });
+                }
+            };
+            const original = structuredClone(fixture.row(4002).comments);
+            await expect(fixture.serialized()).rejects.toThrow(/PR #4001 local stack evidence changed/);
+            expect(fixture.row(4002).state).toBe('OPEN');
+            expect(fixture.row(4002).comments).toEqual(original);
+            expect(fixture.writes()).not.toContain('close:4002');
+        });
+    });
+
+    it('replays the public final-parent binding after an orphan disappears, and refuses a contradictory orphan', async () => {
+        await withLockRoot(async (root) => {
+            const current = realDependencyFixture(root, 'direct', true);
+            const key = 'branch.fix/old-pull-request.sourdaw-stack-fork';
+            execFileSync('git', ['config', key, current.dag.base], { cwd: root });
+            expect(current.run()).toBe('pull-request-superseded:2244:2246');
+            const afterClose = current.calls.length;
+            execFileSync('git', ['config', '--unset', key], { cwd: root });
+            expect(current.run()).toBe('pull-request-superseded:2244:2246');
+            execFileSync('git', ['config', key, current.dag.reusedParent], { cwd: root });
+            expect(() => current.run()).toThrow(/orphan fork to final parent ancestry is not proven/);
+            expect(current.calls.slice(afterClose).filter((call) => /^(?:comment|close|delete):/.test(call))).toEqual(
+                []
+            );
+        });
+    });
+
+    it('refuses registered replay with only its orphan fork still present', async () => {
+        await withLockRoot(async (root) => {
+            const current = realDependencyFixture(root, 'late', true);
+            current.register();
+            expect(current.run()).toBe('pull-request-superseded:2244:2246');
+            const afterClose = current.calls.length;
+            rmSync(laneStackPath(root, 'fix/old-pull-request'));
+            expect(() => current.run()).toThrow(/restore the recorded descriptor before registered replay/);
+            expect(current.calls.slice(afterClose).filter((call) => /^(?:comment|close|delete):/.test(call))).toEqual(
+                []
+            );
+        });
+    });
+
+    it.each([false, true])(
         'refuses a real unrelated reused parent despite coherent refs and replacement ancestry, distinct=%s',
         async (distinct) => {
             await withLockRoot(async (root) => {
@@ -4067,13 +4365,13 @@ describe('pull-request supersession', () => {
                 return { ...value, baseRef: null, comments };
             };
             if (scenario === 'contradictory descriptor') {
-                const read = current.port.readRegisteredLaneStack;
-                current.port.readRegisteredLaneStack = (branch) => {
-                    const stack = read?.(branch);
-                    if (stack === undefined) {
+                const read = current.port.readSupersessionLaneStack;
+                current.port.readSupersessionLaneStack = (branch) => {
+                    const evidence = read?.(branch);
+                    if (evidence?.kind !== 'registered') {
                         throw new Error('expected registered fixture');
                     }
-                    return { ...stack, parentPullRequest: 9999 };
+                    return { kind: 'registered', stack: { ...evidence.stack, parentPullRequest: 9999 } };
                 };
             }
             expect(() => current.run()).toThrow(/binding|provenance|JSON|canonical/i);

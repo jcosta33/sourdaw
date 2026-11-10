@@ -95,6 +95,7 @@ export { projectClipMidiEvents } from './grooveTemplates/projectClipMidiEvents';
 export { projectCommittedGroove } from './grooveTemplates/projectCommittedGroove';
 export { renameGrooveTemplate } from './grooveTemplates/renameGrooveTemplate';
 export { restoreDeletedGrooveTemplate } from './grooveTemplates/restoreDeletedGrooveTemplate';
+export { markGrooveTemplateProjectWrite } from './grooveTemplates/markGrooveTemplateProjectWrite';
 export { restoreGrooveAssignment } from './grooveTemplates/restoreGrooveAssignment';
 export { snapshotGrooveTemplateDeletion } from './grooveTemplates/snapshotGrooveTemplateDeletion';
 
@@ -185,9 +186,6 @@ export { getMidiNoteTransformHandlers } from './getMidiNoteTransformHandlers';
 export { getMidiTransformProtocolContract } from './getMidiTransformProtocolContract';
 export { getMidiGrooveHandlers } from './getMidiGrooveHandlers';
 
-// ── Pattern Instances ─────────────────────────────────────────────────────────
-export { getPatternInstanceHandlers } from './getPatternInstanceHandlers';
-
 export { strumNotes } from './strumNotes/strumNotes';
 export { restoreStrumOriginals } from './strumNotes/restoreStrumOriginals';
 
@@ -199,6 +197,8 @@ export { initWebMidi } from './webMidiInput/initWebMidi';
 export { setWebMidiRealtimeProcessor } from './webMidiInput/setWebMidiRealtimeProcessor';
 export { setWebMidiRuntimeEventBus } from './webMidiInput/setWebMidiRuntimeEventBus';
 export { setRecordingMidiAdmissionPort } from './webMidiInput/recordingMidiAdmissionPort';
+export { prepareRecordedControllersCommit } from './recordedControllerTake/prepareRecordedControllersCommit';
+export { captureRecordedControllerRetirement } from './recordedControllerTake/captureRecordedControllerRetirement';
 export { setMidiInputTrack } from './webMidiInput/setMidiInputTrack';
 export { getMidiInputTrack } from './webMidiInput/getMidiInputTrack';
 export { getMidiInputTrackOwnerId } from './webMidiInput/getMidiInputTrackOwnerId';

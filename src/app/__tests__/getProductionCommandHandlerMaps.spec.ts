@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import { getArrangementHandlers } from '#/modules/Arrangement/useCases';
 import { clearHandlerRegistry, undoStore } from '#/modules/Command/stores';
 import { getExecutableCommandRegistrations, registerProductionCommandHandlers } from '#/modules/Command/useCases';
 
@@ -75,8 +76,19 @@ describe('getProductionCommandHandlerMaps', () => {
             Object.entries(handlerMap).map(([actionType, handler]) => ({ actionType, handler: handler as unknown }))
         );
 
-        expect(handlerMaps).toHaveLength(38);
+        // Pattern instance actions share the Arrangement map rather than a separate map.
+        expect(handlerMaps).toHaveLength(37);
         expect(new Set(actionTypes).size).toBe(actionTypes.length);
+        const arrangementHandlers = getArrangementHandlers();
+        for (const actionType of [
+            'createPatternInstance',
+            'detachPatternInstance',
+            'restorePatternInstanceLink',
+        ] as const) {
+            expect(allHandlers.filter((entry) => entry.actionType === actionType)).toEqual([
+                { actionType, handler: arrangementHandlers[actionType] },
+            ]);
+        }
         expect(actionTypes).toContain('editTempoMap');
         expect(actionTypes).toContain('restoreTempoMapEdit');
         expect(
@@ -88,8 +100,9 @@ describe('getProductionCommandHandlerMaps', () => {
         expect(undoStore.value?.past.map((entry) => entry.label)).toEqual(['Current action']);
 
         const registrations = getExecutableCommandRegistrations();
-        expect(registrations).toHaveLength(113);
+        expect(registrations).toHaveLength(114);
         expect(registrations.map(({ actionType }) => actionType)).toContain('setCompRegion');
+        expect(registrations.map(({ actionType }) => actionType)).toContain('quantizeTransients');
         expect(registrations.map(({ actionType }) => actionType)).toContain('setProductionBrief');
         expect(registrations.map(({ actionType }) => actionType)).not.toContain('editTempoMap');
         expect(registrations.map(({ actionType }) => actionType)).not.toContain('restoreTempoMapEdit');

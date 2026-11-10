@@ -731,7 +731,7 @@ describe('handleLoadPreset', () => {
                 message: 'Action committed but post-commit processing failed: loadPreset',
             });
             if (!(committedError instanceof Error) || !(committedError.cause instanceof AggregateError)) {
-                throw new Error('Expected the Command receipt to preserve the post-commit failure');
+                throw new TypeError('Expected the Command receipt to preserve the post-commit failure');
             }
             for (const runtimeFailure of committedError.cause.errors) {
                 expect(runtimeFailure).toMatchObject({

@@ -5,10 +5,9 @@ async function openFermenter(page: import('@playwright/test').Page): Promise<voi
     const search = page.getByTestId('browser-search');
     if (!(await search.isVisible().catch(() => false))) {
         await page.getByTestId('toggle-browser').click();
-        await page.waitForTimeout(500);
     }
+    await expect(search).toBeVisible();
     await search.fill('fermenter');
-    await page.waitForTimeout(500);
     // The Fermenter card must be reachable; if it is not, the panel-open
     // contract is broken and the test must fail rather than silently skip.
     const card = page.getByRole('button', { name: /^Fermenter/i }).first();
@@ -25,20 +24,68 @@ test.describe('Fermenter panel deep — knobs, macros', () => {
         await launch_new_project(page);
     });
 
-    test('Fermenter knob responds to keyboard — aria-valuenow changes on ArrowUp', async ({ page }) => {
+    test('Fermenter Brightness macro responds to keyboard at both bounds', async ({ page }) => {
         await openFermenter(page);
 
-        const firstSlider = page.getByRole('slider').first();
-        await expect(firstSlider).toBeVisible({ timeout: 5000 });
-        await firstSlider.focus();
-        const before = Number(await firstSlider.getAttribute('aria-valuenow'));
+        const level = page.locator('.fermenter-faceplate').getByRole('slider', { name: 'Level', exact: true });
+        await expect(level).toHaveAttribute('aria-valuenow', '0.8');
+        await level.scrollIntoViewIfNeeded();
+        await level.press('ArrowUp');
+        await expect(level).toHaveAttribute('aria-valuenow', '0.81');
+
+        const brightness = page
+            .getByTestId('instrument-bottom-panel-body')
+            .getByRole('slider', { name: 'Brightness', exact: true });
+        await expect(brightness).toBeVisible();
+        await brightness.focus();
+        await page.keyboard.press('End');
+        await expect(brightness).toHaveAttribute('aria-valuenow', '1');
+        await page.keyboard.press('Home');
+        await expect(brightness).toHaveAttribute('aria-valuenow', '0');
         await page.keyboard.press('ArrowUp');
-        await page.waitForTimeout(200);
-        const after = Number(await firstSlider.getAttribute('aria-valuenow'));
-        // The knob reports a new value unless it was already at its maximum.
-        if (before < 1) {
-            expect(after).toBeGreaterThan(before);
-        }
+        await expect(brightness).toHaveAttribute('aria-valuenow', '0.01');
+
+        const panel = page.locator('.fermenter-faceplate');
+        // Before the switch the Oscillator tab owns the tabpanel: its Level
+        // slider is present and the Effects chip is not rendered at all.
+        await expect(panel.getByRole('slider', { name: 'Level', exact: true })).toBeVisible();
+        await expect(panel.getByRole('button', { name: 'Dist', exact: true })).toHaveCount(0);
+        await panel.getByRole('tab', { name: 'Effects', exact: true }).click();
+        await expect(panel.getByRole('button', { name: 'Dist', exact: true })).toHaveAttribute('aria-pressed', 'true');
+        // After the switch the Oscillator content is gone, not merely hidden.
+        await expect(panel.getByRole('slider', { name: 'Level', exact: true })).toHaveCount(0);
+    });
+
+    test('Fermenter manual tabs activate with Enter and Space', async ({ page }) => {
+        await openFermenter(page);
+
+        const tablist = page.getByRole('tablist', { name: 'Fermenter sections' });
+        const oscillator = tablist.getByRole('tab', { name: 'Oscillator', exact: true });
+        const filter = tablist.getByRole('tab', { name: 'Filter', exact: true });
+        const expectFilterSelected = async (): Promise<void> => {
+            const filterPanel = page.getByRole('tabpanel', { name: 'Filter', exact: true });
+            await expect(filter).toHaveAttribute('aria-selected', 'true');
+            await expect(filterPanel).toBeVisible();
+            await expect(filter).toHaveAttribute('id', 'fermenter-section-filter');
+            await expect(filter).toHaveAttribute('aria-controls', 'fermenter-section-panel');
+            await expect(filterPanel).toHaveAttribute('id', 'fermenter-section-panel');
+            await expect(filterPanel).toHaveAttribute('aria-labelledby', 'fermenter-section-filter');
+        };
+
+        await expect(oscillator).toHaveAttribute('aria-selected', 'true');
+        await oscillator.focus();
+        await page.keyboard.press('ArrowRight');
+        await expect(filter).toBeFocused();
+        await page.keyboard.press('Enter');
+        await expectFilterSelected();
+
+        await oscillator.click();
+        await expect(oscillator).toHaveAttribute('aria-selected', 'true');
+        await oscillator.focus();
+        await page.keyboard.press('ArrowRight');
+        await expect(filter).toBeFocused();
+        await page.keyboard.press('Space');
+        await expectFilterSelected();
     });
 
     test('Fermenter panel close button hides the panel', async ({ page }) => {

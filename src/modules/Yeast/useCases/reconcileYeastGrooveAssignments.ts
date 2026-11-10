@@ -6,10 +6,10 @@ import { readAllYeastRacks } from '../stores/yeastStore';
 
 import { YEAST_GROOVE_OWNER_ID } from './getYeastGrooveAssignment';
 
-export function reconcileYeastGrooveAssignments(): void {
+export function reconcileYeastGrooveAssignments(): boolean {
     const grooveState = grooveTemplateStore.value;
     if (!grooveState) {
-        return;
+        return false;
     }
 
     // The live-consumer set is the union of groove processors across EVERY
@@ -28,16 +28,19 @@ export function reconcileYeastGrooveAssignments(): void {
         }
     }
 
+    let grooveChanged = false;
     batchStoreUpdates(() => {
         for (const assignment of grooveState.assignments) {
             if (assignment.consumerType !== 'yeast-processor' || liveConsumerIds.has(assignment.consumerId)) {
                 continue;
             }
-            restoreGrooveAssignment({
+            const result = restoreGrooveAssignment({
                 consumerType: assignment.consumerType,
                 consumerId: assignment.consumerId,
                 assignment: null,
             });
+            grooveChanged = result.status === 'written' || grooveChanged;
         }
     });
+    return grooveChanged;
 }

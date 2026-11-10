@@ -8,6 +8,7 @@ import {
     assertOriginalHistoricalParent,
     assertHistoricalActorsAndLifecycle,
     historicalCreationAnchor,
+    parseHistoricalClosedReceipt,
     historicalRecord as object,
     historicalTextField as textField,
     type GitConfigReader,
@@ -43,36 +44,6 @@ type HistoricalAdmissionIdentity = {
 
 export type HistoricalAdmissionReceipt = HistoricalAdmissionIdentity &
     ({ version: 1 } | { version: 2; closedParent: HistoricalClosedParent & { proof: string } });
-
-function parseHistoricalClosedReceipt(
-    value: unknown,
-    childPullRequest: number,
-    parentPullRequest: number
-): HistoricalClosedParent & { proof: string } {
-    const closed = value;
-    if (closed === null || typeof closed !== 'object' || Array.isArray(closed)) {
-        fail('invalid historical closed parent receipt');
-    }
-    const proof = closed as Record<string, unknown>;
-    if (
-        Object.keys(proof).sort().join(',') !== 'parentOriginMain,proof,replacementPullRequest' ||
-        typeof proof.replacementPullRequest !== 'number' ||
-        !Number.isSafeInteger(proof.replacementPullRequest) ||
-        proof.replacementPullRequest <= 0 ||
-        [parentPullRequest, childPullRequest].includes(proof.replacementPullRequest) ||
-        typeof proof.parentOriginMain !== 'boolean' ||
-        typeof proof.proof !== 'string' ||
-        proof.proof === '' ||
-        Buffer.byteLength(proof.proof, 'utf8') > 32768
-    ) {
-        fail('invalid historical closed parent receipt');
-    }
-    return {
-        replacementPullRequest: proof.replacementPullRequest,
-        parentOriginMain: proof.parentOriginMain,
-        proof: proof.proof,
-    };
-}
 
 export function parseHistoricalAdmissionReceipt(value: unknown): HistoricalAdmissionReceipt {
     if (value === null || typeof value !== 'object' || Array.isArray(value)) {
@@ -215,16 +186,16 @@ export function writeLaneStack(primaryRoot: string, descriptor: LaneStack): void
     renameSync(temporary, path);
 }
 
-export function readRegisteredLaneStack(
+function readLaneStackEvidence(
     primaryRoot: string,
     branch: string,
     git: GitConfigReader
-): LaneStack | undefined {
+): { descriptor: LaneStack | undefined; forkMarker: string | undefined } {
     const forkMarkers = readLaneStackForkMarkers(branch, git);
     if (forkMarkers.length > 1) {
         fail('branch lineage marker must have exactly one value');
     }
-    const forkMarker = forkMarkers[0] ?? '';
+    const forkMarker = forkMarkers[0];
     const descriptor = readLaneStack(primaryRoot, branch);
     const receipt = readHistoricalAdmissionReceipt(primaryRoot, branch);
     if (
@@ -238,13 +209,44 @@ export function readRegisteredLaneStack(
             'historical admission is incomplete or conflicts with registered lineage; resume the exact native admission'
         );
     }
-    if (forkMarker !== '' && descriptor === undefined) {
-        fail('stack descriptor missing; restore the recorded descriptor before publication');
-    }
     if (descriptor !== undefined && descriptor.forkHead !== forkMarker) {
         fail('stack descriptor does not match the branch lineage marker');
     }
+    return { descriptor, forkMarker };
+}
+
+export function readRegisteredLaneStack(
+    primaryRoot: string,
+    branch: string,
+    git: GitConfigReader
+): LaneStack | undefined {
+    const { descriptor, forkMarker } = readLaneStackEvidence(primaryRoot, branch, git);
+    if (forkMarker !== undefined && forkMarker !== '' && descriptor === undefined) {
+        fail('stack descriptor missing; restore the recorded descriptor before publication');
+    }
     return descriptor;
+}
+
+export type SupersessionLaneStack =
+    { kind: 'registered'; stack: LaneStack } | { kind: 'orphan-fork'; forkHead: string };
+
+/** Closure can check an orphan for contradictions without treating it as registered history. */
+export function readSupersessionLaneStack(
+    primaryRoot: string,
+    branch: string,
+    git: GitConfigReader
+): SupersessionLaneStack | undefined {
+    const { descriptor, forkMarker } = readLaneStackEvidence(primaryRoot, branch, git);
+    if (descriptor !== undefined) {
+        return { kind: 'registered', stack: descriptor };
+    }
+    if (forkMarker === undefined) {
+        return undefined;
+    }
+    if (!/^[0-9a-f]{40}$/.test(forkMarker)) {
+        fail('orphan stack fork must be a full commit SHA');
+    }
+    return { kind: 'orphan-fork', forkHead: forkMarker };
 }
 
 export function assertStackAcyclic(descriptor: LaneStack, read: (branch: string) => LaneStack | undefined): void {

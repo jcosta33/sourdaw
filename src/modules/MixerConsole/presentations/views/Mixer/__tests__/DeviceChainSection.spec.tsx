@@ -30,6 +30,11 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
 }));
 
 vi.mock('#/modules/Command/useCases', () => ({
+    commitUndoEntry: vi.fn(),
+    createUndoEntry: vi.fn(),
+    resetActionReplayAuthority: () => {
+        throw new Error('Unexpected replay-authority reset in this device UI fixture');
+    },
     getExecutableAppActionEffect: vi.fn(() => null),
     executeAppAction: vi.fn(),
     executeUserAppAction: mocks.executeUserAppAction,

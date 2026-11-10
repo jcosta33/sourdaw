@@ -50,18 +50,23 @@ function createTrackState(track: Track): TrackState {
 const FIXTURE_TEMPO = 600;
 const SAMPLES_PER_BEAT = 10;
 
-function createTestAudioBuffer(channelData: Float32Array<ArrayBuffer>, sampleRate = 100): AudioBuffer {
+function createTestAudioBuffer(
+    data: Float32Array<ArrayBuffer> | readonly Float32Array<ArrayBuffer>[],
+    sampleRate = 100
+): AudioBuffer {
+    const channels = data instanceof Float32Array ? [data] : data;
+    const channelData = channels[0]!;
     return {
-        copyFromChannel: (destination, _channelNumber, startInChannel = 0) => {
-            destination.set(channelData.subarray(startInChannel, startInChannel + destination.length));
+        copyFromChannel: (destination, channelNumber, startInChannel = 0) => {
+            destination.set(channels[channelNumber]!.subarray(startInChannel, startInChannel + destination.length));
         },
-        copyToChannel: (source, _channelNumber, startInChannel = 0) => {
-            channelData.set(source, startInChannel);
+        copyToChannel: (source, channelNumber, startInChannel = 0) => {
+            channels[channelNumber]!.set(source, startInChannel);
         },
         duration: channelData.length / sampleRate,
-        getChannelData: () => channelData,
+        getChannelData: (channel) => channels[channel]!,
         length: channelData.length,
-        numberOfChannels: 1,
+        numberOfChannels: channels.length,
         sampleRate,
     };
 }
@@ -155,6 +160,80 @@ describe('prepareStripSilence', () => {
         expect(plan!.next.clips.map((clip) => clip.id)).not.toContain('clip-1');
         expect(plan!.previous.clips).toEqual([expect.objectContaining({ id: 'clip-1' })]);
         expect(plan!.newClipIds).toHaveLength(2);
+    });
+
+    describe('all-channel physical PCM islands', () => {
+        function channel(...islands: [number, number, number][]): Float32Array<ArrayBuffer> {
+            const samples = new Float32Array(240_000);
+            for (const [startBeat, endBeat, amplitude] of islands) {
+                samples.fill(amplitude, startBeat * 24_000, endBeat * 24_000);
+            }
+            return samples;
+        }
+
+        it.each([
+            ['separated left and right', () => [channel([0, 2, 0.5], [8, 10, 0.5]), channel([4, 6, 0.5])]],
+            ['channel-swapped', () => [channel([4, 6, 0.5]), channel([0, 2, 0.5], [8, 10, 0.5])]],
+            ['right-only', () => [channel(), channel([0, 2, 0.5], [4, 6, 0.5], [8, 10, 0.5])]],
+            [
+                'anti-phase',
+                () => [
+                    channel([0, 2, 0.5], [4, 6, 0.5], [8, 10, 0.5]),
+                    channel([0, 2, -0.5], [4, 6, -0.5], [8, 10, -0.5]),
+                ],
+            ],
+            ['third-channel-only', () => [channel(), channel(), channel([0, 2, 0.5], [4, 6, 0.5], [8, 10, 0.5])]],
+            ['mono', () => [channel([0, 2, 0.5], [4, 6, 0.5], [8, 10, 0.5])]],
+        ])('retains the same three common source windows for %s material', (_label, makeChannels) => {
+            transportStore.set({ ...defaultTransportState, tempo: 120 });
+            const source = ClipDummy.create({
+                id: 'clip-1',
+                audioBufferId: 'buf-1',
+                startBeat: 0,
+                endBeat: 10,
+                audioOffsetSeconds: 0,
+            });
+            const channels = makeChannels();
+            const original = channels.map((samples) => samples.slice());
+            mocks.getTrackState.mockReturnValue(createTrackState(createTrackWithClips([source])));
+            mocks.getCachedAudioBuffer.mockReturnValue(createTestAudioBuffer(channels, 48_000));
+
+            const plan = prepareStripSilence({ clipId: 'clip-1', threshold: -40, minDuration: 0.5 });
+
+            expect(
+                plan?.next.clips.map(({ startBeat, endBeat, audioOffsetSeconds, audioBufferId }) => ({
+                    startBeat,
+                    endBeat,
+                    audioOffsetSeconds,
+                    audioBufferId,
+                }))
+            ).toEqual([
+                { startBeat: 0, endBeat: 2, audioOffsetSeconds: 0, audioBufferId: 'buf-1' },
+                { startBeat: 4, endBeat: 6, audioOffsetSeconds: 2, audioBufferId: 'buf-1' },
+                { startBeat: 8, endBeat: 10, audioOffsetSeconds: 4, audioBufferId: 'buf-1' },
+            ]);
+            expect(channels).toEqual(original);
+        });
+
+        it.each([
+            { amplitude: 0, threshold: -40 },
+            { amplitude: 0.009, threshold: -40 },
+            { amplitude: 1, threshold: 0 },
+        ])(
+            'keeps stereo peaks at or below the strict threshold unchanged ($amplitude at $threshold dB)',
+            ({ amplitude, threshold }) => {
+                transportStore.set({ ...defaultTransportState, tempo: 120 });
+                const source = ClipDummy.create({ id: 'clip-1', audioBufferId: 'buf-1', startBeat: 0, endBeat: 10 });
+                mocks.getTrackState.mockReturnValue(createTrackState(createTrackWithClips([source])));
+                mocks.getCachedAudioBuffer.mockReturnValue(
+                    createTestAudioBuffer(
+                        [channel(), channel([0, 2, amplitude], [4, 6, amplitude], [8, 10, amplitude])],
+                        48_000
+                    )
+                );
+                expect(prepareStripSilence({ clipId: 'clip-1', threshold, minDuration: 0.5 })).toBeNull();
+            }
+        );
     });
 
     it('scans the clip-start-tempo source window and keeps its audible fragments in a flat region', () => {

@@ -42,7 +42,7 @@ test('exports the complete Nebula Drift mix as a stereo WAV', async ({ page }, t
 
         const isMac = await page.evaluate(() => navigator.platform.toUpperCase().includes('MAC'));
         await page.keyboard.press(isMac ? 'Meta+Shift+E' : 'Control+Shift+E');
-        const dialog = page.getByRole('dialog').filter({ hasText: /The Bakery/i });
+        const dialog = page.getByRole('dialog').filter({ hasText: /Export audio/i });
         await expect(dialog).toBeVisible();
         await expect(dialog.getByTestId('export-format-wav')).toHaveAttribute('aria-checked', 'true');
         await expect(dialog.getByRole('checkbox', { name: 'MP3 Lossy crust', exact: true })).toHaveAttribute(
@@ -63,13 +63,13 @@ test('exports the complete Nebula Drift mix as a stereo WAV', async ({ page }, t
         await expect(tailInput).toHaveValue('2');
 
         const pickerFilename = capture.pickerFilename;
-        await dialog.getByRole('button', { name: 'Start Baking' }).click();
-        await expect(dialog.getByRole('button', { name: 'Close Bakery' })).toBeVisible({
+        await dialog.getByRole('button', { name: 'Export mixdown' }).click();
+        await expect(dialog.getByRole('button', { name: 'Close' })).toBeVisible({
             timeout: EXPORT_COMPLETION_TIMEOUT_MS,
         });
         await capture.waitForClose();
 
-        expect(await pickerFilename).toMatch(/^Sourdaw_Bake_\d+\.wav$/);
+        expect(await pickerFilename).toMatch(/^Sourdaw_Mixdown_\d+\.wav$/);
         expect(capture.writeCount()).toBeGreaterThan(0);
         expect(capture.bytesWritten()).toBeGreaterThan(78_000_000);
         expect(capture.abortCount()).toBe(0);

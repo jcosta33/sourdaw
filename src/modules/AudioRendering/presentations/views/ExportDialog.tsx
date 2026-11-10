@@ -253,8 +253,8 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
 
     // AppShell keeps this dialog mounted and toggles only `open`, so the last
     // export's progress, status and error would otherwise survive a close — a
-    // finished bake reopens showing "Baking Complete" with only Close Bakery,
-    // and a failure greets the next session with its stale error box.
+    // finished export would reopen with its completion state, and a failure
+    // would greet the next session with its stale error box.
     useEffect(() => {
         if (open) {
             openSessionRef.current += 1;
@@ -413,15 +413,15 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
     };
 
     const handleCancel = () => {
-        // The Turn off Oven button stays visible through the cancelled window: a repeat click must
-        // not replace "Oven turned off." with "Cooling down...".
+        // The Cancel export button stays visible through the cancelled window: a repeat click must
+        // not replace "Export cancelled." with "Cancelling export…".
         if (cancelledRef.current || commitStartedRef.current) {
             return;
         }
         cancelledRef.current = true;
         activeExportCancellationRef.current?.abort();
         cancelExport();
-        setStatusText('Cooling down...');
+        setStatusText('Cancelling export…');
     };
 
     const handleClose = () => {
@@ -498,13 +498,13 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                 return;
             }
             setProgress(0);
-            setStatusText('Oven turned off.');
+            setStatusText('Export cancelled.');
             scheduleForSession(session, 1500, () => {
                 setExporting(false);
             });
         };
         const ts = Date.now();
-        const baseName = `Sourdaw_Bake_${ts}`;
+        const baseName = `Sourdaw_${mode === 'stems' ? 'Stems' : 'Mixdown'}_${ts}`;
 
         let nativeDirPath: string | null = null;
         let nativeFilePath: string | null = null;
@@ -596,7 +596,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                 const message = error instanceof Error ? error.message : 'Export storage is unavailable.';
                 setExporting(false);
                 setErrorText(message);
-                setStatusText('The bread burned...');
+                setStatusText('Export failed.');
                 setProgress(0);
                 notifyUser(message, 'error');
                 clearActiveCancellation();
@@ -617,10 +617,10 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
             return;
         }
 
-        // ── 2. PREPARATIONS COMPLETE. START INTENSIVE BAKING ──
+        // ── 2. PREPARATIONS COMPLETE. START RENDERING AND ENCODING ──
         setExporting(true);
         setProgress(0);
-        setStatusText('Heating the offline oven...');
+        setStatusText('Preparing export…');
 
         // Set once the export's last file is being committed: the browser save's close, or the
         // dispatch of the final native write. From then on the export has succeeded and a Cancel no
@@ -707,7 +707,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                             (candidate) => candidate.id === targetId && candidate.format === format
                         );
                         const target = targetPlan.find((candidate) => candidate.id === targetId)!;
-                        setStatusText(`Kneading ${name} — ${target.name} (${format.toUpperCase()})...`);
+                        setStatusText(`Encoding ${name} — ${target.name} (${format.toUpperCase()})…`);
                         setProgress(((index + (pass + fraction) / passes.length) / total) * 100);
                     }),
                     onLimited: (target) =>
@@ -721,7 +721,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
 
             // ── ACTUAL PROCESS ORCHESTRATION ──
             if (mode === 'render-to-clip') {
-                setStatusText('Rendering clip (offline)...');
+                setStatusText('Rendering clip…');
                 const rtcWarnings = new Set<string>();
                 const buffer = await renderOffline({
                     durationBeats,
@@ -732,7 +732,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                         const barPct = frac * 100;
                         setProgress(barPct);
                         if (Math.round(barPct) % 5 === 0) {
-                            setStatusText('Rendering clip...');
+                            setStatusText('Rendering clip…');
                         }
                     }),
                     onWarning: whileNotCancelled((msg: string) => {
@@ -762,7 +762,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                     name: clipName,
                 });
                 if (!result) {
-                    throw new Error('Render to Clip: failed to place clip on target track.');
+                    throw new Error('Render to clip: failed to place clip on target track.');
                 }
                 setProgress(100);
                 setStatusText('Clip ready in the timeline.');
@@ -772,7 +772,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
             }
 
             if (mode === 'stems') {
-                setStatusText('Proofing Slices (rendering stems)...');
+                setStatusText('Rendering stems…');
                 // Accumulate warnings and emit a single summary toast to avoid notification spam
                 const stemWarnings = new Set<string>();
                 let stemBaseNames = new Map<string, string>();
@@ -805,7 +805,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                     return;
                 }
             } else {
-                setStatusText('Proofing Whole Loaf (offline mixdown)...');
+                setStatusText('Rendering mixdown…');
                 // Accumulate warnings and emit a single summary toast to avoid notification spam
                 const mixWarnings = new Set<string>();
                 await renderOffline({
@@ -818,7 +818,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                         const barPct = frac * 60;
                         setProgress(barPct);
                         if (Math.round(barPct) % 5 === 0) {
-                            setStatusText('Proofing whole loaf...');
+                            setStatusText('Rendering mixdown…');
                         }
                     }),
                     onWarning: whileNotCancelled((msg: string) => {
@@ -859,11 +859,11 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
             setProgress(100);
             const reports = describeLoudnessReports(output?.reportedFiles() ?? 0);
             if (reports) {
-                setStatusText(`Ding! Baking Complete! 🍞 ${reports} written.`);
-                notifyUser(`Ding! The audio and ${reports} finished baking`, 'success');
+                setStatusText(`Export complete. ${reports} written.`);
+                notifyUser(`Audio and ${reports} exported`, 'success');
             } else {
-                setStatusText('Ding! Baking Complete! 🍞');
-                notifyUser('Ding! The audio finished baking', 'success');
+                setStatusText('Export complete.');
+                notifyUser('Audio exported', 'success');
             }
 
             // Auto-close after 2.5s, only if this export's session still owns the dialog
@@ -871,11 +871,11 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
         } catch (error) {
             // A Cancel's own failure is reported by the finally below.
             if (!endedCancelled() && currentSession()) {
-                const msg = error instanceof Error ? error.message : 'Unknown oven malfunction';
+                const msg = error instanceof Error ? error.message : 'Unknown export error';
                 logger.error(new Error('Export failed', { cause: error }));
                 // A reported export may stop between a stem and its report; say so rather than imply a clean miss.
                 setErrorText(includeWavLoudnessReports && exportMode === 'stems' ? `Export incomplete: ${msg}` : msg);
-                setStatusText('The bread burned...');
+                setStatusText('Export failed.');
                 // Reset the bar so a stale half-filled value doesn't render beside the error box
                 setProgress(0);
             }
@@ -895,13 +895,13 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                 // export is reported as cancelled, so the bar must not keep the encoder's last
                 // figure, and 100 would show the finished state. All uncommitted files were aborted.
                 setProgress(0);
-                setStatusText('Oven turned off.');
+                setStatusText('Export cancelled.');
                 scheduleForSession(session, 1500, () => {
                     setExporting(false);
                 });
             } else if (currentSession()) {
                 // Success or error — both unblock the button immediately.
-                // progress===100 drives the "Close Bakery" button state; exporting===false re-enables export.
+                // progress===100 drives the Close button state; exporting===false re-enables export.
                 setExporting(false);
             }
             clearActiveCancellation();
@@ -934,9 +934,9 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
     // The status slot is a fixed 40px row for the progress and ready layouts; a
     // failure message wraps to several lines and needs the slot to grow, so the
     // container drops to min-height exactly when this error branch renders.
-    const showOvenError = !exporting && progress !== 100 && errorText !== '';
+    const showExportError = !exporting && progress !== 100 && errorText !== '';
 
-    const renderOvenStatus = (): ReactElement => {
+    const renderExportStatus = (): ReactElement => {
         if (exporting || progress === 100) {
             return (
                 <Stack gap={1.5} className="animate-in fade-in duration-300">
@@ -969,7 +969,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                 </Stack>
             );
         }
-        if (showOvenError) {
+        if (showExportError) {
             // A failure sets exporting=false and progress=0, so this branch is
             // the only place the failure status is ever visible — keep it beside
             // the error detail.
@@ -987,7 +987,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                 justify="center"
                 className="h-full text-center text-dense uppercase tracking-widest text-muted-foreground"
             >
-                {isNativeProjectRuntimeAvailable() ? 'Desktop Oven Ready' : 'Web Oven Ready'}
+                {isNativeProjectRuntimeAvailable() ? 'Ready to export on desktop' : 'Ready to export in browser'}
             </Stack>
         );
     };
@@ -1002,7 +1002,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                     className="border border-red-900/50 bg-red-950 text-red-400 hover:bg-red-900 hover:text-red-200"
                 >
                     <X className="mr-1 size-3.5" />
-                    Turn off Oven
+                    Cancel export
                 </Button>
             );
         }
@@ -1015,7 +1015,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                     className="border-green-900/50 text-green-400 hover:bg-green-950/30 hover:text-green-300"
                 >
                     <CheckCircle2 className="mr-1 size-3.5" />
-                    Close Bakery
+                    Close
                 </Button>
             );
         }
@@ -1038,7 +1038,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                     className="border-t border-orange-400/30 bg-orange-600 font-medium text-white shadow-[0_0_15px_rgba(234,88,12,0.3)] transition-all hover:bg-orange-500 hover:shadow-[0_0_20px_rgba(249,115,22,0.5)]"
                 >
                     <Flame className="mr-1.5 size-3.5 opacity-80" />
-                    {mode === 'render-to-clip' ? 'Render to Clip' : 'Start Baking'}
+                    {mode === 'render-to-clip' ? 'Render to clip' : `Export ${mode}`}
                 </Button>
             </>
         );
@@ -1055,7 +1055,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
         >
             <DialogContent
                 className="max-h-[calc(100vh-2rem)] w-[480px] grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden rounded-xl border border-orange-900/40 bg-surface-base p-0 shadow-[0_0_40px_rgba(234,88,12,0.1)]"
-                showCloseButton={!exporting}
+                showCloseButton={!exporting && progress !== 100}
             >
                 <DialogHeader
                     className="relative overflow-hidden px-6 pb-4 pt-6 rounded-t-xl"
@@ -1068,15 +1068,15 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                     <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_var(--tw-gradient-stops))] from-amber-500/10 via-transparent to-transparent" />
                     <DialogTitle className="relative flex items-center gap-2 text-base font-semibold text-orange-50/90">
                         <Flame className="size-4 text-orange-500" />
-                        The Bakery
+                        Export audio
                     </DialogTitle>
-                    <p className="mt-0.5 text-xs tracking-wide text-orange-500/60">
-                        Export your masterpiece straight from the Sourdaw oven.
+                    <p className="mt-0.5 text-xs tracking-wide text-orange-500/70">
+                        The Sourdaw bakery — fresh mixes, ready to share.
                     </p>
                 </DialogHeader>
 
                 <DawDialogBody scrollable className="gap-4 bg-transparent px-6 py-5">
-                    <DawDialogSection tone="warm" title="Render Order">
+                    <DawDialogSection tone="warm" title="Export type">
                         <Grid cols={3} gap={2}>
                             <Button
                                 variant={mode === 'mixdown' ? 'default' : 'outline'}
@@ -1091,7 +1091,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                                 disabled={exporting}
                                 style={mode === 'mixdown' ? { boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.05)' } : {}}
                             >
-                                Whole Loaf <span className="ml-1 text-[10px] opacity-60">(Mixdown)</span>
+                                Mixdown <span className="ml-1 text-[10px] opacity-60">(Whole loaf)</span>
                             </Button>
                             <Button
                                 variant={mode === 'stems' ? 'default' : 'outline'}
@@ -1106,7 +1106,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                                 disabled={exporting}
                                 style={mode === 'stems' ? { boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.05)' } : {}}
                             >
-                                Slices <span className="ml-1 text-[10px] opacity-60">(Stems)</span>
+                                Stems <span className="ml-1 text-[10px] opacity-60">(Slices)</span>
                             </Button>
                             <Button
                                 variant={mode === 'render-to-clip' ? 'default' : 'outline'}
@@ -1124,7 +1124,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                                         : {}
                                 }
                             >
-                                To Clip <span className="ml-1 text-[10px] opacity-60">(Inline)</span>
+                                Render to clip <span className="ml-1 text-[10px] opacity-60">(Inline)</span>
                             </Button>
                         </Grid>
                     </DawDialogSection>
@@ -1606,10 +1606,10 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
 
                     <DawDialogSection
                         tone="warm"
-                        title="Oven Status"
-                        detail={isNativeProjectRuntimeAvailable() ? 'Desktop oven ready' : 'Web oven ready'}
+                        title="Export status"
+                        detail={isNativeProjectRuntimeAvailable() ? 'Ready on desktop' : 'Ready in browser'}
                     >
-                        <div className={showOvenError ? 'min-h-10' : 'h-10'}>{renderOvenStatus()}</div>
+                        <div className={showExportError ? 'min-h-10' : 'h-10'}>{renderExportStatus()}</div>
                     </DawDialogSection>
 
                     {unbakedToasterPatterns.length > 0 ? (

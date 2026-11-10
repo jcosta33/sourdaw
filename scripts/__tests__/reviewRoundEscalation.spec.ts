@@ -60,8 +60,8 @@ describe('countReviewerRequestChangesRounds', () => {
 });
 
 describe('assertReviewRoundsBelowFreeze', () => {
-    it('pins the freeze at five reviewer request-changes rounds', () => {
-        expect(REVIEW_ROUND_FREEZE_THRESHOLD).toBe(5);
+    it('pins the freeze at ten reviewer request-changes rounds', () => {
+        expect(REVIEW_ROUND_FREEZE_THRESHOLD).toBe(10);
     });
 
     it.each([0, REVIEW_ROUND_FREEZE_THRESHOLD - 1])('admits a fresh publication after %s rounds', (rounds) => {
@@ -105,7 +105,7 @@ describe('logReviewRoundFreezeAtThreshold', () => {
         'flags the freeze at %s rounds',
         (rounds) => {
             expect(messagesFor(rounds)).toEqual([reviewRoundFreezeFlag(PR, rounds)]);
-            expect(messagesFor(rounds)[0]).toBe(`review-round-freeze:${PR}:request-changes=${rounds}:threshold=5`);
+            expect(messagesFor(rounds)[0]).toBe(`review-round-freeze:${PR}:request-changes=${rounds}:threshold=10`);
         }
     );
 

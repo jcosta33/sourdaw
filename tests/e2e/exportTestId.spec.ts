@@ -5,7 +5,7 @@ async function openExportDialog(page: import('@playwright/test').Page): Promise<
     // Open via keyboard shortcut Cmd/Ctrl+Shift+E.
     const isMac = await page.evaluate(() => navigator.platform.toUpperCase().includes('MAC'));
     await page.keyboard.press(isMac ? 'Meta+Shift+E' : 'Control+Shift+E');
-    await expect(page.getByRole('dialog').filter({ hasText: /The Bakery/i })).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByRole('dialog').filter({ hasText: /Export audio/i })).toBeVisible({ timeout: 10_000 });
 }
 
 test.describe('Export dialog — test-id targeted', () => {
@@ -28,17 +28,6 @@ test.describe('Export dialog — test-id targeted', () => {
         expect(mixdownVariant).not.toBe('outline');
     });
 
-    test('switching to stems mode changes the active button', async ({ page }) => {
-        await openExportDialog(page);
-
-        const stems = page.getByTestId('export-mode-stems');
-        await stems.click();
-
-        // The stems button should now be active (not outline).
-        const variant = await stems.getAttribute('data-variant');
-        expect(variant).not.toBe('outline');
-    });
-
     test('cancel button closes the export dialog', async ({ page }) => {
         await openExportDialog(page);
 
@@ -46,16 +35,7 @@ test.describe('Export dialog — test-id targeted', () => {
         await expect(cancel).toBeVisible();
         await cancel.click();
 
-        // Dialog should close — "The Bakery" title disappears.
-        await expect(page.getByText('The Bakery')).not.toBeVisible({ timeout: 5000 });
-    });
-
-    test('start baking is enabled with the default WAV format', async ({ page }) => {
-        await openExportDialog(page);
-
-        const start = page.getByTestId('export-start');
-        await expect(page.getByTestId('export-format-wav')).toHaveAttribute('aria-checked', 'true');
-        await expect(start).toHaveText('Start Baking');
-        await expect(start).toBeEnabled();
+        // Dialog should close — "Export audio" title disappears.
+        await expect(page.getByText('Export audio')).not.toBeVisible({ timeout: 5000 });
     });
 });

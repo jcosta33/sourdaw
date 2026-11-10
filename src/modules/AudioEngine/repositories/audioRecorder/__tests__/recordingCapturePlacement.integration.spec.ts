@@ -78,6 +78,7 @@ const hardware = vi.hoisted(() => ({
     rollGate: Promise.resolve(),
     buffer: null as AudioBuffer | null,
     sourceStarts: [] as { when: number; sourceSeconds: number; durationSeconds: number }[],
+    sourceStops: [] as number[],
     schedulerWorker: null as {
         onmessage: ((event: { data: unknown }) => void) | null;
         generation: number;
@@ -103,7 +104,13 @@ const context = {
     createGain: () => ({
         connect: vi.fn(),
         disconnect: vi.fn(),
-        gain: { cancelScheduledValues: vi.fn(), setValueAtTime: vi.fn(), linearRampToValueAtTime: vi.fn() },
+        gain: {
+            value: 1,
+            cancelScheduledValues: vi.fn(),
+            cancelAndHoldAtTime: vi.fn(),
+            setValueAtTime: vi.fn(),
+            linearRampToValueAtTime: vi.fn(),
+        },
     }),
     createMediaStreamSource: () => ({ connect: vi.fn(), disconnect: vi.fn() }),
     decodeAudioData: () => {
@@ -140,6 +147,7 @@ vi.mock('#/modules/AudioEngine/useCases', async (original) => {
             start: (when: number, sourceSeconds: number, durationSeconds: number) => {
                 hardware.sourceStarts.push({ when, sourceSeconds, durationSeconds });
             },
+            stop: (when: number) => hardware.sourceStops.push(when),
         }),
         resumeEngine: () => Promise.resolve(),
         nativeLiveGraphSessionOffered: () => true,
@@ -278,6 +286,7 @@ describe('real recorder first-frame capture placement', () => {
         hardware.rollStarts = 0;
         hardware.buffer = null;
         hardware.sourceStarts = [];
+        hardware.sourceStops = [];
         hardware.schedulerWorker = null;
         setGestureClockSource({ getAudioTimeSeconds: () => hardware.now, readNativeCursorBeats: () => null });
         Object.defineProperty(navigator, 'mediaDevices', {
@@ -732,7 +741,9 @@ describe('real recorder first-frame capture placement', () => {
                             Math.round((started.sourceSeconds + started.durationSeconds) * 48000) - 1
                         ]
                     ).toBe(selection.firstFrame + Math.round(selection.durationSeconds * 48000) - 1);
+                    const previousStopCount = hardware.sourceStops.length;
                     await stopPlayback();
+                    expect(hardware.sourceStops.slice(previousStopCount)).toContain(hardware.now);
                 }
                 if (emptyFinalLap) {
                     expect(finalPass).toBeUndefined();
@@ -744,6 +755,67 @@ describe('real recorder first-frame capture placement', () => {
             }
         }
     );
+
+    it('retains real producer PCM through the admitted automatic punch out', async () => {
+        hardware.latencySeconds = 0;
+        transportStore.set({
+            ...transportStore.value!,
+            playheadPosition: 8,
+            isLooping: true,
+        });
+        await executeAppAction({ type: 'setPunchIn', payload: { beat: 10 } }, { skipUndo: true });
+        await executeAppAction({ type: 'setPunchOut', payload: { beat: 11.95 } }, { skipUndo: true });
+        await executeAppAction({ type: 'togglePunch' }, { skipUndo: true });
+        setPlayback(true);
+        await vi.waitFor(() => expect(playheadClockRef.beat).toBe(8), { interval: 1 });
+        for (let step = 1; step <= 20; step++) {
+            await schedulerTick(50 + step / 20);
+        }
+        await vi.waitFor(() => expect(activeSessions.get(TRACK_ID)?.status).toBe('starting'), { interval: 1 });
+        worker.onmessage?.({ data: { type: 'ready' } });
+        const zeroFrame = Math.round(51 * context.sampleRate);
+        let renderedFrames = 0;
+        for (let step = 1; step <= 21; step++) {
+            const tickTime = 51 + step / 20;
+            const targetFrames = Math.floor((tickTime * context.sampleRate - zeroFrame) / 128) * 128;
+            while (renderedFrames < targetFrames) {
+                hardware.now = (zeroFrame + renderedFrames) / context.sampleRate;
+                vi.stubGlobal('currentFrame', zeroFrame + renderedFrames);
+                processor.process([[Float32Array.from({ length: 128 }, (_value, index) => renderedFrames + index)]]);
+                renderedFrames += 128;
+            }
+            await schedulerTick(tickTime);
+        }
+        await vi.waitFor(() => expect(hardware.buffer).not.toBeNull(), { interval: 1 });
+        const [clip] = trackStore.value!.tracks[0]!.clips;
+        if (!clip?.audioBufferId || !hardware.buffer) {
+            throw new Error('The automatic punch did not retain its producer buffer');
+        }
+        const retained = audioBufferCache.get(clip.audioBufferId);
+        expect(retained).toBe(hardware.buffer);
+        expect(retained!.length).toBeGreaterThan(128);
+        expect(retained!.getChannelData(0)[0]).toBe(0);
+        expect(retained!.getChannelData(0).at(-1)).toBe(retained!.length - 1);
+        const requiredLastFrame = Math.round((51.975 - 51) * context.sampleRate) - 1;
+        expect(
+            retained!.getChannelData(0)[requiredLastFrame],
+            `retained ${retained!.length} producer frames; punch out needs frame ${requiredLastFrame}`
+        ).toBe(requiredLastFrame);
+        expect(retained!.length).toBeGreaterThan(requiredLastFrame);
+        expectProjection();
+        expect(undoHistoryStore.value?.past).toHaveLength(1);
+        const committedClips = structuredClone(trackStore.value!.tracks[0]!.clips);
+        const committedLanes = structuredClone(takeLaneStore.value!.lanes);
+        await undo();
+        expect(trackStore.value!.tracks[0]!.clips).toEqual([]);
+        expect(takeLaneStore.value!.lanes).toEqual([]);
+        expectProjection();
+        await redo();
+        expect(trackStore.value!.tracks[0]!.clips).toEqual(committedClips);
+        expect(takeLaneStore.value!.lanes).toEqual(committedLanes);
+        expect(audioBufferCache.get(clip.audioBufferId)).toBe(retained);
+        expectProjection();
+    });
 
     it('keeps automatic punch sample zero on a seam sounded before recorder admission settles', async () => {
         let admitMedia!: () => void;
@@ -973,7 +1045,11 @@ describe('real recorder first-frame capture placement', () => {
         worker.onmessage?.({ data: { type: 'ready' } });
         vi.stubGlobal('currentFrame', 50.4 * context.sampleRate);
         processor.process([[new Float32Array(128)]]);
-        expect(readFirst?.()).toEqual({ status: 'captured', contextSeconds: 50.4 });
+        expect(readFirst?.()).toEqual({
+            status: 'captured',
+            contextSeconds: 50.4,
+            capturedThroughContextSeconds: (50.4 * context.sampleRate + 128) / context.sampleRate,
+        });
         await stopAudioRecording();
         expect(readFirst?.()).toEqual({ status: 'unavailable' });
 
@@ -987,7 +1063,11 @@ describe('real recorder first-frame capture placement', () => {
         worker.onmessage?.({ data: { type: 'ready' } });
         vi.stubGlobal('currentFrame', 60 * context.sampleRate);
         processor.process([[new Float32Array(128)]]);
-        expect(readNext?.()).toEqual({ status: 'captured', contextSeconds: 60 });
+        expect(readNext?.()).toEqual({
+            status: 'captured',
+            contextSeconds: 60,
+            capturedThroughContextSeconds: (60 * context.sampleRate + 128) / context.sampleRate,
+        });
         expect(readFirst?.()).toEqual({ status: 'unavailable' });
         await stopAudioRecording();
     });

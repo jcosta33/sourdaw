@@ -8,7 +8,7 @@
  */
 import { describe, expect, it, vi } from 'vitest';
 
-import { commandChannel, DENIED_COMMANDS, EXPOSED_COMMANDS } from '../commands.js';
+import { addonMethodName, commandChannel, DENIED_COMMANDS, EXPOSED_COMMANDS } from '../commands.js';
 import { createPluginCommandAdmission } from '../pluginCommandAdmission.js';
 import {
     registerCommandRouter,
@@ -93,6 +93,31 @@ const hostWith = (methods: Record<string, (...args: readonly unknown[]) => unkno
 });
 
 describe('the registered channel table', () => {
+    it.each([
+        'collab_apply_change',
+        'collab_create_project',
+        'collab_get_document_state',
+        'collab_load_bundle',
+        'collab_merge_bundle',
+        'collab_save_bundle',
+    ])('registers no channel or native lookup for private command %s', (command) => {
+        const { ipcMain, handlers } = collectingIpc();
+        const implementation = vi.fn();
+        const host = hostWith({ [addonMethodName(command)]: implementation });
+        const native = vi.fn(() => host);
+
+        registerCommandRouter({
+            ipcMain,
+            native,
+            isTrustedFrameUrl: () => true,
+            createStream: nullStream,
+        });
+
+        expect(handlers.has(commandChannel(command))).toBe(false);
+        expect(native).not.toHaveBeenCalled();
+        expect(implementation).not.toHaveBeenCalled();
+    });
+
     it('registers one channel per exposed command and none for a denied one', () => {
         const { ipcMain, handlers } = collectingIpc();
 

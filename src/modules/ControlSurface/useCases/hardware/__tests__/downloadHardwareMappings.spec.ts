@@ -68,7 +68,7 @@ describe('downloadHardwareMappings', () => {
         expect(URL.createObjectURL).toHaveBeenCalledTimes(1);
         const blob = vi.mocked(URL.createObjectURL).mock.calls[0]?.[0];
         if (!(blob instanceof Blob)) {
-            throw new Error('Expected an actual exported Blob');
+            throw new TypeError('Expected an actual exported Blob');
         }
         expect(blob.type).toBe('application/json');
         expect(JSON.parse(await readBlob(blob))).toEqual(before?.profiles[0]?.mappings);

@@ -125,7 +125,7 @@ export const LevelMeter = ({ trackId, height = 'h-full', width = 'w-2' }: LevelM
         };
 
         const tick = (currentTime: DOMHighResTimeStamp, deltaMs: number) => {
-            const rawPeak = trackId ? getTrackPeakLevel(trackId) : getMasterPeakLevel();
+            const rawPeak = trackId ? getTrackPeakLevel(trackId, currentTime) : getMasterPeakLevel(currentTime);
             if (rawPeak === null) {
                 // Master bus with no meter tap wired: there is no level to paint.
                 // The -∞ frame (black bed, LED gaps, no fill) is the picture a

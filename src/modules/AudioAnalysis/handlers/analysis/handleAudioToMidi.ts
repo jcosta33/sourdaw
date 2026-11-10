@@ -11,20 +11,20 @@ function normalizeAudioToMidiMode(mode: string | undefined): 'rhythm' | 'pitched
 }
 
 export const handleAudioToMidi = createHandler<'audioToMidi'>({
-    execute: (action) => {
-        audioToMidi({
+    executionKind: 'runtime',
+    batchExecution: 'singleton',
+    execute: async (action, context) => {
+        const converted = await audioToMidi({
             clipId: action.payload.clipId,
             trackId: action.payload.trackId ?? '',
             sensitivity: action.payload.sensitivity,
             mode: normalizeAudioToMidiMode(action.payload.mode),
+            signal: context?.signal,
         });
+        return { status: converted ? 'written' : 'no-write' };
     },
     describe: () => ({ label: 'Convert audio to MIDI' }),
-    // Not undoable: the conversion's MIDI clip and notes are written through direct
-    // `addClip` / `addMidiNote` store calls (see useCases/audioToMidi.ts), not dispatched
-    // AppActions, so this handler has no `inverseAction` to honor. Marking it `undoable: true`
-    // would push an inert undo entry (null inverse) that `executeUndo` cannot consume — it
-    // would wedge the undo stack (undoRedo.ts:23-38,107-112) on a no-op. The track creation it
-    // performs is dispatched as its own `addTrack` AppAction and stays independently undoable.
+    // The child batch owns creation and its complete inverse, outside any parent
+    // project transaction. The runtime orchestrator publishes no history of its own.
     undoable: false,
 });

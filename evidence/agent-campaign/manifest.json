@@ -7,10 +7,10 @@
     },
     "capabilityInventory": {
         "source": "src/app/getAgentProtocolManifest.ts",
-        "digest": "bc3515679d3ee624fb2dee1f5be8851685a5a632d138d5b4ed8373ae9b0a954e"
+        "digest": "b8f6db42eff94358bbc3b90e7c7db30d2c8a85f83011fb3b07e6bfbead5cbe37"
     },
     "census": {
-        "digest": "bfb87fb03f6b3327febae2cba50e58b4074531085dfff3587f10508a002cb217"
+        "digest": "6c4172954f16521208037568c1a09b02aa070b842b01579008ef5a7d3a4e9437"
     },
     "environment": ["package.json", "pnpm-lock.yaml", "Cargo.lock", "tsconfig.json", "vite.config.ts"],
     "tasks": [
@@ -187,7 +187,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/Command/useCases/__tests__/agentCommandCoverage.spec.ts",
-                    "digest": "d762ecc6a847a564e8de1cc4bbbc8970ff231499ba1c3fffd94897fa7d42d3f0"
+                    "digest": "70a880454539931056056c3b8be8ee361fe14651ca4b2b8b9e3ebbe5796c4f5d"
                 }
             ]
         },
@@ -259,7 +259,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/Command/useCases/__tests__/verifiedBatchReceipt.spec.ts",
-                    "digest": "25ee4896c2664d0f46aac859de674f7f75afb63b14fba52cc87cb2f9cd93715e"
+                    "digest": "79ca48419a433685091b69623e4398c0e84c50c65923c2bb76ac5b00e14b5785"
                 }
             ]
         },
@@ -271,7 +271,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/Command/useCases/__tests__/commandBatchIdempotency.spec.ts",
-                    "digest": "b15e99ffde5fe4079768391f966e48bb60c91eebbdd9eb064fc7904776c223ac"
+                    "digest": "e336ec5f7ba0bb22c77831bb49146b836ee0d1f4d0504a0bcb8ec19d02f17a26"
                 }
             ]
         },
@@ -560,7 +560,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/AiRuntime/useCases/__tests__/compileArbitraryCommandList.spec.ts",
-                    "digest": "f5c45eb9d3be0ffa908586764dc9b6bd9fc8315789aa7e802fdb2f59a19e9804"
+                    "digest": "000164555199ee8a4acd1f1690cb6dd45bc212785f3d7613c62fc1cb856f90b8"
                 }
             ]
         },
@@ -745,7 +745,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/WorkspaceShell/presentations/views/__tests__/AgentWorkspace.spec.tsx",
-                    "digest": "d491c9e9d94f399afa69484ff1eeac2a5b5c0e137b9390b61e11120e62cc404b"
+                    "digest": "021fc1d4efe1948863ce3b914dfe75f3bcbb1987a9c01e2834e306e733b938c5"
                 },
                 {
                     "path": "tests/e2e/agentWorkspace.spec.ts",

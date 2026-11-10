@@ -186,7 +186,7 @@ ignored with one log line. Re-publishing a head whose record already binds its
 publication replays that record unchanged, and records persisted under earlier contracts keep
 replaying and verifying.
 
-A pull request whose public history holds `REVIEW_ROUND_FREEZE_THRESHOLD` (five, in
+A pull request whose public history holds `REVIEW_ROUND_FREEZE_THRESHOLD` (ten, in
 `scripts/reviewRoundEscalation.ts`) reviewer `REQUEST_CHANGES` rounds is frozen: `review:publish`
 refuses every fresh reviewer publication on it, approve or request changes, and no caller document
 lifts the freeze. Respin the change as one consolidated pull request and close the frozen one with
@@ -518,25 +518,21 @@ Workflow separation is a security boundary. Owner-required `Gate` must pass on t
 GitHub accepts `skipped` required checks and prefers the newest same-name run, so an event that
 skips `Gate` can pass a red head (a `pull_request_review` trigger did, in production). Preserve:
 
-- `.github/workflows/health-gates.yml` answers to labeled `pull_request` events alone and mints `Gate`. Its `gate`
-  job and its assertion step carry `always()` so cancellation cannot skip the verdict.
-  Its assertion requires successful scope, validation and affected checks, plus the exact
-  selected CodeQL result; cancelled or unexpectedly skipped checks fail. Do not add a trigger to this file, and do not rename `gate`.
-  Its `admission` job, run from the default branch so a head cannot rewrite it, admits only the reviewer App's
-  `ci:approved` label for that App's undismissed APPROVE of the event's exact head; any other label event fails
-  `Gate` with the reason rather than skipping it, so heavy CI runs once per approved head instead of on every push.
-- `.github/workflows/pr-checks.yml` runs the scope plan and validation on every push, mints no `Gate`, and is
-  never required: it is a preliminary pre-review signal that skips broad unit, build, Rust and native jobs, and a new head has no `Gate` until it is approved again.
-  Known limits, kept because sharing one concurrency group would let label events cancel push checks: a push
-  does not cancel an admitted run still working on the old head, and any later label event on the pull request
-  cancels the admitted run and fails `Gate`; re-running `review:publish` on the approved head re-applies the label.
+- `.github/workflows/health-gates.yml` answers to `pull_request` `opened`, `synchronize`, `reopened`,
+  `ready_for_review`, and `converted_to_draft`, and mints `Gate`. Its `gate` job and its assertion
+  step carry `always()` so cancellation cannot skip the verdict. A draft still fails `Gate`: a
+  skipped required check passes. Heavy checks run only when the pull request is not a draft.
+  The assertion requires successful scope, shared E2E build, validation and affected checks, plus
+  the exact selected CodeQL result; cancelled or unexpectedly skipped checks fail. Do not add a
+  trigger to this file, and do not rename `gate`. A later event in the same concurrency group
+  cancels the in-progress run, and that cancelled `Gate` fails; a new push is that event.
 - `.github/workflows/validation.yml` runs types, lint, boundaries, unit matrix, build, Rust,
-  native checks, scoped smoke, release inventory, PR diff secret scanning and dependency review on
-  in the admitted full run; preliminary push validation omits the broad unit, build, Rust and native jobs. Nightly and `release:proof:assemble` also run release inventory;
+  native checks, scoped smoke, release inventory, PR diff secret scanning and dependency review
+  for every non-draft pull request. Nightly and `release:proof:assemble` also run release inventory;
   the release owner still assembles proof before `release:cut` as described in `docs/release.md`.
 - `.github/workflows/heavy-gates.yml` is reusable only, called by the required PR workflow.
   Its explicit affected E2E matrix and selected Browser AI hardware proof decide `Gate`, and run
-  only in the admitted run. CodeQL has a separately permissioned required
+  only for a non-draft pull request. CodeQL has a separately permissioned required
   job in `health-gates.yml`; full-history secret scanning remains in the nightly.
 - `.github/workflows/nightly.yml` owns the schedule and dispatch events: the full train and the
   nightly failure report. It is the only production web deploy — `vercel.json` disables the Git

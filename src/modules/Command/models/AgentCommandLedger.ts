@@ -175,6 +175,7 @@ const AGENT_COMMAND_LEDGER_TUPLES: readonly SupportedEntryTuple[] = [
     // Arrangement — audio-editing
     ['setClipFade', 'audio-editing', 'Arrangement'],
     ['glueClips', 'audio-editing', 'Arrangement'],
+    ['quantizeTransients', 'audio-editing', 'Arrangement'],
     ['crossfadeClips', 'audio-editing', 'Arrangement'],
     ['normalizeClip', 'audio-editing', 'Arrangement'],
     ['setClipStretchMode', 'audio-editing', 'Arrangement'],

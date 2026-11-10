@@ -448,7 +448,15 @@ describe('removeAllTracks modulation lifecycle (#5090)', () => {
         const result = await executeAppActionBatch([{ type: 'removeAllTracks', payload: undefined }], {
             prepareValidation: () => ({
                 status: 'ready',
-                postconditions: { documentId: 'root', validate: () => 'spec refusal' },
+                prepareExecution: () => ({
+                    status: 'ready',
+                    validation: {
+                        preparePostconditions: () => ({
+                            status: 'ready',
+                            postconditions: { documentId: 'root', validate: () => 'spec refusal' },
+                        }),
+                    },
+                }),
             }),
         });
 

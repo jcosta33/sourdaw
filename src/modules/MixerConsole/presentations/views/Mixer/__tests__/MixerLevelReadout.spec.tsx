@@ -6,7 +6,7 @@ import { MixerLevelReadout } from '../MixerLevelReadout';
 type SchedulerTick = (currentTime: DOMHighResTimeStamp, deltaMs: number) => void;
 
 const mocks = vi.hoisted(() => ({
-    getMasterPeakLevel: vi.fn<() => number | null>(() => 0),
+    getMasterPeakLevel: vi.fn<(frameTime?: number) => number | null>(() => 0),
     getTrackPeakLevel: vi.fn(() => 0),
     register: vi.fn<(id: string, callback: (currentTime: DOMHighResTimeStamp, deltaMs: number) => void) => void>(),
     unregister: vi.fn<(id: string) => void>(),
@@ -79,7 +79,7 @@ describe('MixerLevelReadout', () => {
         render(<MixerLevelReadout trackId="track-1" control={null} value={null} />);
 
         mocks.scheduledTick?.(0, 16);
-        expect(mocks.getTrackPeakLevel).toHaveBeenCalledWith('track-1');
+        expect(mocks.getTrackPeakLevel).toHaveBeenCalledWith('track-1', 0);
         expect(mocks.getMasterPeakLevel).not.toHaveBeenCalled();
         expect(getPeakReadout()).toHaveTextContent('0.0');
 
@@ -94,7 +94,7 @@ describe('MixerLevelReadout', () => {
         render(<MixerLevelReadout trackId={null} control={null} value={null} />);
 
         mocks.scheduledTick?.(0, 16);
-        expect(mocks.getMasterPeakLevel).toHaveBeenCalledTimes(1);
+        expect(mocks.getMasterPeakLevel).toHaveBeenCalledExactlyOnceWith(0);
         expect(mocks.getTrackPeakLevel).not.toHaveBeenCalled();
         expect(getPeakReadout()).toHaveTextContent('0.0');
     });

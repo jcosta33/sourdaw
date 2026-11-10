@@ -578,6 +578,13 @@ vi.mock('#/modules/Automation/stores', () => ({
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/AudioEngine/useCases')>();
     return {
+        openCachedAudioBufferHold: actual.openCachedAudioBufferHold,
+        captureOfflineRenderProjectSource: vi.fn(() => {
+            throw new Error('Unexpected selection render capture in this fixture');
+        }),
+        captureOfflineRenderRuntimeInput: vi.fn(() => {
+            throw new Error('Unexpected selection render capture in this fixture');
+        }),
         builtinSynthVoice: actual.builtinSynthVoice,
         configureOfflineMidiEventProjection: actual.configureOfflineMidiEventProjection,
         configureOfflinePpqEndpointProjection: actual.configureOfflinePpqEndpointProjection,
@@ -1123,7 +1130,7 @@ describe('connected stem export output ownership', () => {
         };
         try {
             if (exportStarted && !closed) {
-                const cancel = screen.queryByRole('button', { name: 'Turn off Oven' });
+                const cancel = screen.queryByRole('button', { name: 'Cancel export' });
                 if (cancel) {
                     fireEvent.click(cancel);
                 }

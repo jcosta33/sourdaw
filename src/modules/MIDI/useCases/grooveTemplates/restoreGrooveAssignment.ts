@@ -7,8 +7,6 @@ import {
     isGrooveTemplateAssignment,
 } from '../../stores/grooveTemplateStore';
 
-import { markGrooveTemplateProjectWrite } from './markGrooveTemplateProjectWrite';
-
 type RestoreGrooveAssignmentInput = {
     consumerType: GrooveConsumerType;
     consumerId: string;
@@ -21,10 +19,10 @@ export function restoreGrooveAssignment({
     consumerId,
     assignment,
     expectedAssignment,
-}: RestoreGrooveAssignmentInput): void {
+}: RestoreGrooveAssignmentInput): { status: 'written' | 'no-write' } {
     const state = grooveTemplateStore.value;
     if (!state) {
-        return;
+        return { status: 'no-write' };
     }
     const existingIndex = state.assignments.findIndex(
         (candidate) => candidate.consumerType === consumerType && candidate.consumerId === consumerId
@@ -36,6 +34,9 @@ export function restoreGrooveAssignment({
     if (assignment && !isGrooveTemplateAssignment(assignment)) {
         throw new Error('Cannot restore groove assignment: snapshot is not canonical');
     }
+    if (valuesEqual(currentAssignment, assignment)) {
+        return { status: 'no-write' };
+    }
     if (!assignment) {
         grooveTemplateStore.set({
             ...state,
@@ -43,8 +44,7 @@ export function restoreGrooveAssignment({
                 (candidate) => candidate.consumerType !== consumerType || candidate.consumerId !== consumerId
             ),
         });
-        markGrooveTemplateProjectWrite();
-        return;
+        return { status: 'written' };
     }
     const assignments = [...state.assignments];
     if (existingIndex === -1) {
@@ -53,5 +53,5 @@ export function restoreGrooveAssignment({
         assignments[existingIndex] = structuredClone(assignment);
     }
     grooveTemplateStore.set({ ...state, assignments });
-    markGrooveTemplateProjectWrite();
+    return { status: 'written' };
 }

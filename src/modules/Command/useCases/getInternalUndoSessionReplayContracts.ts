@@ -6,6 +6,8 @@ import type { SessionActionContract } from '../stores/undoSessionMirror';
 
 function createInternalReplayContract(
     actionType:
+        | 'discardRecording'
+        | 'restoreRecording'
         | 'discardCreatedTrack'
         | 'discardDuplicatedClip'
         | 'discardDrawnClip'
@@ -13,6 +15,7 @@ function createInternalReplayContract(
         | 'restoreClip'
         | 'restoreClipPlacement'
         | 'restoreClipSplitState'
+        | 'restoreStripSilenceState'
         | 'restoreAudioClipStartTrim'
         | 'restoreAudioClipSlip'
         | 'restoreDrawnClip'
@@ -35,6 +38,7 @@ function createInternalReplayContract(
             // their neutral Command snapshots. Their owner validators decode
             // the complete shapes without widening executable discovery.
             if (
+                actionType === 'restoreRecording' ||
                 actionType === 'restoreClip' ||
                 actionType === 'restoreTimeOperationState' ||
                 actionType === 'restoreAudioClipStartTrim' ||
@@ -60,6 +64,15 @@ function createInternalReplayContract(
 export function getInternalUndoSessionReplayContracts(): readonly SessionActionContract[] {
     return [
         {
+            actionType: 'commitRecording',
+            operationVersion: 1,
+            role: 'forward',
+            validateArguments: (payload: unknown) => validateVersionedCommandArguments('commitRecording', payload),
+            validateEntry: (entry) => getHandlerByType('commitRecording')?.validateSessionEntry?.(entry) === true,
+        },
+        createInternalReplayContract('discardRecording', 1, 'optional'),
+        createInternalReplayContract('restoreRecording', 1, 'required'),
+        {
             actionType: 'editTempoMap',
             operationVersion: 1,
             role: 'forward',
@@ -73,6 +86,13 @@ export function getInternalUndoSessionReplayContracts(): readonly SessionActionC
             validateArguments: (payload: unknown) => validateVersionedCommandArguments('deleteTime', payload),
             validateEntry: (entry) => getHandlerByType('deleteTime')?.validateSessionEntry?.(entry) === true,
         },
+        {
+            actionType: 'stripSilence',
+            operationVersion: 1,
+            role: 'forward',
+            validateArguments: (payload: unknown) => validateVersionedCommandArguments('stripSilence', payload),
+            validateEntry: (entry) => getHandlerByType('stripSilence')?.validateSessionEntry?.(entry) === true,
+        },
         createInternalReplayContract('discardCreatedTrack', 1, 'optional'),
         createInternalReplayContract('discardDuplicatedClip', 1, 'optional'),
         createInternalReplayContract('discardDrawnClip', 1, 'optional'),
@@ -80,6 +100,7 @@ export function getInternalUndoSessionReplayContracts(): readonly SessionActionC
         createInternalReplayContract('restoreClip', 1, 'required'),
         createInternalReplayContract('restoreClipPlacement', 1, 'required'),
         createInternalReplayContract('restoreClipSplitState', 1, 'required'),
+        createInternalReplayContract('restoreStripSilenceState', 1, 'required'),
         createInternalReplayContract('restoreAudioClipStartTrim', 1, 'required'),
         createInternalReplayContract('restoreAudioClipSlip', 1, 'required'),
         createInternalReplayContract('restoreDrawnClip', 1, 'optional'),

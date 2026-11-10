@@ -1,5 +1,5 @@
 import { trackStore } from '#/modules/Arrangement/stores';
-import { pushUndoEntry } from '#/modules/Command/useCases';
+import { commitUndoEntry, createUndoEntry } from '#/modules/Command/useCases';
 
 import { type AutomationPoint } from '../../models/Automation';
 import { automationStore } from '../../stores/automationStore';
@@ -86,9 +86,8 @@ export function stopAutomationRecording(finalBoundaryBeat?: number): void {
         commitRecordedPass(key, 'touch', null);
     }
 
-    // Build the scoped undo from the lanes actually touched. Each callback maps
-    // over the CURRENT store lanes and replaces `points` for only the affected
-    // lanes — leaving concurrent edits to every other lane intact.
+    // Replay only the lanes this session touched, and only while their points
+    // still match the captured side. One group makes every lane restore atomic.
     const laneEdits: Array<{ laneId: string; beforePoints: AutomationPoint[]; afterPoints: AutomationPoint[] }> = [];
     for (const [laneId, beforePoints] of laneBaselines) {
         const afterPoints = snapshotLanePoints(laneId) ?? [];
@@ -98,33 +97,23 @@ export function stopAutomationRecording(finalBoundaryBeat?: number): void {
     }
 
     if (laneEdits.length > 0) {
-        pushUndoEntry(
-            'Record Automation',
-            () => {
-                const current = automationStore.value;
-                if (!current) {
-                    return;
+        const groupId = `record-automation-${crypto.randomUUID()}`;
+        for (const { laneId, beforePoints, afterPoints } of laneEdits) {
+            const entry = createUndoEntry(
+                'Record Automation',
+                {
+                    type: 'restoreAutomationLanePoints',
+                    payload: { laneId, points: afterPoints, expectedPoints: beforePoints },
+                },
+                {
+                    type: 'restoreAutomationLanePoints',
+                    payload: { laneId, points: beforePoints, expectedPoints: afterPoints },
                 }
-                const restore = new Map(laneEdits.map((edit) => [edit.laneId, edit.beforePoints]));
-                automationStore.set({
-                    lanes: current.lanes.map((lane) =>
-                        restore.has(lane.id) ? { ...lane, points: restore.get(lane.id)! } : lane
-                    ),
-                });
-            },
-            () => {
-                const current = automationStore.value;
-                if (!current) {
-                    return;
-                }
-                const restore = new Map(laneEdits.map((edit) => [edit.laneId, edit.afterPoints]));
-                automationStore.set({
-                    lanes: current.lanes.map((lane) =>
-                        restore.has(lane.id) ? { ...lane, points: restore.get(lane.id)! } : lane
-                    ),
-                });
-            }
-        );
+            );
+            entry.groupId = groupId;
+            entry.groupLabel = 'Record Automation';
+            commitUndoEntry(entry);
+        }
     }
 
     activeRecording.clear();

@@ -293,13 +293,13 @@ export const useStatusBarMetrics = (refs: StatusBarMetricRefs): void => {
         };
         scheduleIdle();
 
-        const tick = (): void => {
+        const tick = (frameTime: DOMHighResTimeStamp): void => {
             const now = performance.now();
             const frameDelta = now - lastFrameRef.current;
             lastFrameRef.current = now;
 
             const engineInfo = getEngineState();
-            const masterLevel = getMasterPeakLevel();
+            const masterLevel = getMasterPeakLevel(frameTime);
             if (now - lastDiagnosticsAtRef.current >= 1_000) {
                 // The native engine publishes stream errors into a bounded ring
                 // that only this command drains. Two callers share that drain

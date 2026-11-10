@@ -50,6 +50,15 @@ vi.mock('#/modules/Transport/useCases', () => ({
     countSettledTakes: () => takes.settled,
 }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    openCachedAudioBufferHold: vi.fn(() => {
+        throw new Error('Unexpected audio buffer residency hold in this fixture');
+    }),
+    captureOfflineRenderProjectSource: vi.fn(() => {
+        throw new Error('Unexpected selection render capture in this fixture');
+    }),
+    captureOfflineRenderRuntimeInput: vi.fn(() => {
+        throw new Error('Unexpected selection render capture in this fixture');
+    }),
     builtinSynthVoice: { read: vi.fn() },
     rearmCommittedTrackInputMonitoring: vi.fn(async () => undefined),
     reconcileAutoInputMonitoring: vi.fn(),
@@ -123,6 +132,8 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     wireSidechainRoute: vi.fn(),
 }));
 vi.mock('#/modules/Command/useCases', () => ({
+    commitUndoEntry: vi.fn(),
+    createUndoEntry: vi.fn(),
     reconcileSessionUndoForProject: vi.fn(() => {
         throw new Error('Unexpected reconcileSessionUndoForProject in this fixture');
     }),

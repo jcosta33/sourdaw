@@ -4,7 +4,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { handleAiDenoiseClip } from '#/modules/AiGeneration/useCases';
 import { runAiActionWithToast } from '#/modules/AiRuntime/useCases';
 import { describeDetectedKey, detectKey, detectTempo } from '#/modules/AudioAnalysis/useCases';
-import { executeAppAction, executeUserAppAction } from '#/modules/Command/useCases';
+import { executeAppAction, executeAppActionBatch, executeUserAppAction } from '#/modules/Command/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { clipSelectionStore, defaultClipSelectionState } from '../../../stores/clipSelectionStore';
@@ -155,6 +155,7 @@ vi.mock('../../../useCases/clipEditing/reverseClip', () => ({
 vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Command/useCases')>()),
     executeAppAction: vi.fn(),
+    executeAppActionBatch: vi.fn(),
     executeUserAppAction: vi.fn(),
     pushUndoEntry: vi.fn(),
     REDO_NOT_APPLIED: Symbol('REDO_NOT_APPLIED'),
@@ -433,15 +434,74 @@ describe('ClipContextMenu', () => {
             )
         );
     });
-    it('routes audio-to-MIDI through the toast wrapper, not the user dispatch wrapper', () => {
+    it('routes audio-to-MIDI through a typed singleton batch with invocation authority', () => {
+        vi.mocked(executeAppActionBatch).mockResolvedValueOnce({ status: 'executed', actions: [] });
         render(<ClipContextMenu x={0} y={0} clipId="clip1" splitBeat={4} onClose={mockOnClose} />);
 
         fireEvent.click(screen.getByRole('button', { name: 'Convert to MIDI' }));
 
         const action = { type: 'audioToMidi', payload: { clipId: 'clip1' } };
-        expect(executeAppAction).toHaveBeenCalledWith(action);
+        expect(executeAppActionBatch).toHaveBeenCalledWith([action], {
+            source: 'manual',
+            shouldExecute: expect.any(Function),
+        });
+        expect(executeAppAction).not.toHaveBeenCalledWith(action);
         expect(executeUserAppAction).not.toHaveBeenCalledWith(action);
     });
+
+    it.each(['no-op', 'rejected', 'conflicted', 'cancelled', 'failed', 'ambiguous'] as const)(
+        'rejects the audio-to-MIDI toast callback for %s output',
+        async (status) => {
+            let result: Awaited<ReturnType<typeof executeAppActionBatch>>;
+            if (status === 'no-op') {
+                result = { status, actions: [] };
+            } else {
+                result = { status, actions: [], reason: 'Conversion did not commit' };
+            }
+            vi.mocked(executeAppActionBatch).mockResolvedValueOnce(result);
+            let callbackResult!: Promise<void>;
+            vi.mocked(runAiActionWithToast).mockImplementationOnce((action) => {
+                callbackResult = action();
+                void callbackResult.catch(() => {});
+                return Promise.resolve();
+            });
+            render(<ClipContextMenu x={0} y={0} clipId="clip1" splitBeat={4} onClose={mockOnClose} />);
+            fireEvent.click(screen.getByRole('button', { name: 'Convert to MIDI' }));
+            await expect(callbackResult).rejects.toThrow(
+                status === 'no-op' ? 'No MIDI clip was created' : 'Conversion did not commit'
+            );
+        }
+    );
+
+    it.each(['executed', 'executed-with-warning'] as const)(
+        'waits for %s before completing the conversion toast callback',
+        async (status) => {
+            let release!: (result: Awaited<ReturnType<typeof executeAppActionBatch>>) => void;
+            vi.mocked(executeAppActionBatch).mockReturnValueOnce(
+                new Promise((resolve) => {
+                    release = resolve;
+                })
+            );
+            let completed = false;
+            let callbackResult!: Promise<void>;
+            vi.mocked(runAiActionWithToast).mockImplementationOnce((action) => {
+                callbackResult = action().then(() => {
+                    completed = true;
+                });
+                return callbackResult;
+            });
+            render(<ClipContextMenu x={0} y={0} clipId="clip1" splitBeat={4} onClose={mockOnClose} />);
+            fireEvent.click(screen.getByRole('button', { name: 'Convert to MIDI' }));
+            expect(completed).toBe(false);
+            if (status === 'executed') {
+                release({ status, actions: [] });
+            } else {
+                release({ status, actions: [], warning: 'Committed with a warning' });
+            }
+            await callbackResult;
+            expect(completed).toBe(true);
+        }
+    );
 
     it('routes Continue MIDI through the toast wrapper, not the user dispatch wrapper', () => {
         render(<ClipContextMenu x={0} y={0} clipId="midi1" splitBeat={4} onClose={mockOnClose} />);

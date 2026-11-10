@@ -11,7 +11,7 @@ test.describe('Full workflow integration — EDM template', () => {
         await wait_for_workspace_ready(page);
     });
 
-    test('play → mute a track → hear it mute → unmute → stop', async ({ page }) => {
+    test('play → mute a track → unmute → stop at the start', async ({ page }) => {
         const play = page.getByTestId('transport-play');
         const stop = page.getByTestId('transport-stop');
         await expect(play).toBeVisible({ timeout: 15_000 });
@@ -76,7 +76,7 @@ test.describe('Full workflow integration — EDM template', () => {
         const isMac = await page.evaluate(() => navigator.platform.toUpperCase().indexOf('MAC') >= 0);
         await page.keyboard.press(isMac ? 'Meta+Shift+E' : 'Control+Shift+E');
 
-        await expect(page.getByRole('dialog').filter({ hasText: /The Bakery/i })).toBeVisible({
+        await expect(page.getByRole('dialog').filter({ hasText: /Export audio/i })).toBeVisible({
             timeout: 10_000,
         });
 
@@ -89,7 +89,7 @@ test.describe('Full workflow integration — EDM template', () => {
         await page.getByTestId('export-cancel').click();
         await page.waitForTimeout(300);
 
-        await expect(page.getByRole('dialog').filter({ hasText: /The Bakery/i })).not.toBeVisible();
+        await expect(page.getByRole('dialog').filter({ hasText: /Export audio/i })).not.toBeVisible();
     });
 
     test('open command palette, search, close', async ({ page }) => {

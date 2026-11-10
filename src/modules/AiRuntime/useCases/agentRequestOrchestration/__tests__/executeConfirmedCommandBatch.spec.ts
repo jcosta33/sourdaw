@@ -1371,7 +1371,7 @@ describe('executeConfirmedCommandBatch', () => {
             configure: () => {
                 const controller = mocks.setActiveAborter.mock.calls[0]?.[0];
                 if (!(controller instanceof AbortController)) {
-                    throw new Error('Expected the active abort controller.');
+                    throw new TypeError('Expected the active abort controller.');
                 }
                 controller.abort();
             },

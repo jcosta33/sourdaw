@@ -89,15 +89,73 @@ boundaries.
    A same-lineage replacement or snapshot restore whose new active heads drop a prior head records a discard epoch
    that rejects earlier approvals. Checkpoint-only descendants of two captured heads stay eligible, compared at their
    own dependency frontier; an unresolved whole-map checkpoint conflict refuses at confirmation.
+   Hold a paused decision or read-only preset plan across a real save timestamp and active-arrangement copy:
+   the captured revision and authority survive. Saved and unflushed fader edits, edit then revert, child-document
+   changes and root replacement refuse before handoff (#1989, #5852, #6240). Raw-head equality fails the save
+   control; comparing only the final content fails the reverted edit. Read-only content admission does not grant
+   storage-owner write authority, and execution retains its own guards.
 6. **Identity-scoped undo must survive peer edits (#3757).** Failure: whole-aggregate snapshot restore erases peer
    work an isolated round trip never sees. Probe: peer edit after the operation and again after Undo, then real
    Undo/Redo through Command, reading raw CRDT and projection. Field order alone never conflicts; changed values,
    array order, missing fields, bad captures refuse.
+   Linked pattern creation and detachment also wrote project truth while their registered handlers described only
+   a label: Command recorded a null inverse, so Undo dropped that row and reversed the prior musician edit.
+   Probe both real registered actions with a shifted source offset, distinct expression notes, a destination keeper
+   and a prior edit: require a nonnull typed inverse before Undo, exact raw/projected material after Undo, and
+   same-identity Redo through another Undo. A forward-state equality after Redo alone passes when Undo did nothing.
+   After Redo, merge a peer note into the created clip and require discard refusal; an unrelated keeper edit must
+   survive a valid discard. Detach replay owns only link fields: absent and present-empty overrides differ,
+   false-valued keys survive, non-link peer edits remain, and a peer relink refuses the stale inverse. No introducing
+   PR or historical review stance was established for this escape.
+   Recorded automation introduced callback snapshots in `2e2a16dbb9`; `0ca79dea60` narrowed them to touched lanes
+   but still replaced each lane's points blindly. The missed probe was a peer change to the same recorded lane:
+   another-lane preservation and an isolated round trip stayed green while callbacks erased peer points and curves,
+   reported success and consumed history. No introducing PR or historical review stance was established.
+   Merge a peer point and a Bezier/stairs shape edit before the FIRST Undo, and again after Undo before Redo.
+   Require exact raw/projected peer data, a conflict warning and the complete recording unit still pending. Record
+   two lanes and put the stale lane at both replay positions: a late conflict must roll back its earlier sibling.
+   A metadata-only peer edit must survive successful replay, and one normal user Undo/Redo must restore every
+   recorded lane together. Keep a real same-lane A-to-B-to-C restore batch: validating every expected snapshot
+   against the initial live state falsely refuses its staged prefix. Point-only restore handlers use transaction
+   rollback, not runtime inverse compensation; a refused later restore must report conflict without a missing-inverse
+   error. Removing the point-snapshot guard must fail the peer and late-conflict cases.
+   Keep inverse producers on that same exact point shape: absent optional controls or stair fields stay absent,
+   never own properties valued `undefined`. A malformed expected point whose known fields match live state must
+   still refuse, so a value mismatch cannot mask missing shape admission. Drive normal Reverse/Invert through
+   registered Command, raw CRDT, projection and Undo/Redo as well as direct handlers. Caller fixtures must register
+   the real Automation handler map used by bootstrap when recording now replays through typed restores.
 7. **Grouped inverse capture must read the owning action prefix (#4083, #4073, #4071).** Failure:
    `executeAppActionBatch` describes members before executing, so later inverses capture pre-batch state. Probe: real
    grouped Undo/Redo against raw CRDT and projection; swap the earlier-sibling projection for live pre-batch state and
    the group fails. When a member snapshots state an earlier one produced (comp-then-remove), inspect the real history
-   entry: a correct final state does not prove the inverse composed the prefix.
+   entry: a correct final state does not prove the inverse composed the prefix. #6221 (`7115fe4389`) refreshed a
+   created clip's guard after the whole Redo group, so a later grouped `addNotes` entered the creator's capture:
+   the second Undo removed the notes first and then falsely refused the clip. Its public approval describes single
+   duplicate cycles and earlier-member restores; those probes omit the later-note member. The missing probe is an actual
+   `addClip` + `addNotes` group through Undo, Redo, Undo, including a serialized and hydrated future stack. Every
+   current creation/duplication producer publishes its own fresh execution-prefix capture only after successful
+   commit, authenticated against its pending inverse; a failed later member leaves that inverse unchanged. Keep
+   duplicate MIDI/satellite and retired-take round trips, plus peer additions after Redo that still refuse Undo.
+   Restamping from final group state must fail the composed case; weakening the guard must fail the peer case.
+   A creator followed by removal can leave no durable project change. Its fresh runtime note/lane identities must
+   not advance one inverse while the removal retains its prior capture. Replay a saved duplicate/remove group,
+   with and without an unrelated durable sibling, through two reload Undo/Redo cycles. Replace the root from a
+   later sibling's committed callback and require neither capture generation to advance. Creator-prefix captures
+   join the same owner-bound, group-wide publication/settlement as removal captures; ambiguous publication retains
+   every paired capture. Canonicalization may clone a requested action: only a private dispatcher binding from
+   the exact authenticated pending request authorizes that canonical object. Borrowed/forged contexts, other
+   pending entries, stale inverses, replaced history and authority resets must refuse the binding. Payload or id
+   equality never grants replay authority. Required CI on #6302 exposed both the missing net-zero composition and
+   the distinction between requested and canonical identities.
+   #4564 introduced private commitRecording/discardRecording/restoreRecording without the already required session
+   contracts: live Undo passed while the production mirror serialized zero recording entries. Require two real mixed
+   entries/same group in serialized bytes BEFORE reload; production registration plus genuine project/witness must
+   hydrate both past and future through two Undo/Redo cycles, preserving raw rows/takes/PCM and older reachable history.
+   Keep this family private, pair exact forward/inverse/redo ownership and current versions, and decode full note/CC/bend
+   snapshots through their required owner (neutral carriers contain only IDs). Missing forward/owner contract or an invalid
+   sibling must fail/refuse the whole group, including malformed shape/source, wrong track/family and missing redo.
+   A binary document reload retaining live Undo objects is no session-hydration oracle; fresh-tab data is no cross-tab
+   history proof. Historical private reviewer prompts and tiers for this escape are unestablished.
 
 ## Retired lessons
 

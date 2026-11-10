@@ -28,6 +28,13 @@ Report a probe that cannot run with its exact mutation, named check and limitati
 3. **A flag, setter or presence stands for what the musician consumes.**
    Probe: observe PCM against an independent input, decoded bytes, painted pixels and console output during
    load, never a flag, setter, DOM presence, returned length or metadata.
+   Preset audition must inspect the PCM of a successful live buffer start, excluding offline sources,
+   and distinguish real catalog instrument envelopes/spectra and an effects tail under identical excitation.
+   Restoring the common oscillator route must fail buffer admission; substituting one common PCM buffer
+   across presets must fail musical discrimination. Admit project/history preservation only after the
+   inspection bridge observes a genuine UI edit in the same app singleton; an empty bridge must fail.
+   The original preset placeholder asserted its common tone rather than the sound it claimed to audition
+   (introduced in `22a84b216658f593391e7e141d90f7c84d13648b`, retained through #6180).
    (#187, #5013, #4904, #5812)
 
 4. **Fixtures or history bytes the real producer would never write.**
@@ -71,11 +78,30 @@ Report a probe that cannot run with its exact mutation, named check and limitati
    beyond ten seconds (#5239).
    (#5639, #4271, #5615, #5705, #5595, #5363, #5284, #2097, #4496, #1949, #4577, #5649, #474, #2597, #2811, #2035, #5239)
 
+    For a module-graph checker, compare its edges with actual installed Vite transforms and ESM execution
+    under the checked project transform policy. All-inline named type imports and re-exports are erased;
+    mixed value/type imports, explicit empty imports and re-exports, and bare side-effect imports retain
+    evaluation. Give each runtime control a unique module identity and assert its target sentinel, then
+    require erased-edge cases to stay out of the graph and every retained-edge case to expose a downstream
+    missing key. Reverting the classification or dropping every empty-name edge must fail these planted
+    cases. (#1572)
+
+    A module-initialization guard must distinguish lazy function bodies from executed initializers (#6307, #6367).
+    The retired whole-file constructor regex rejected a lazy `new Set()` in the real inspection reader; restoring
+    it must fail the positive entry case. Classify AST initializers after normalizing erased assertions,
+    `satisfies`, non-null and generic-instantiation wrappers. Accept identifier aliases only to imported runtime
+    bindings, implemented local functions or prior validated bindings. Type-only imports and `declare function`
+    declarations emit no binding: read an ambient getter with the emitted JavaScript and require that control to
+    fail admission. Keep actual top-level calls/constructors, wrapped work, dynamic imports and wrong aliases as
+    negative controls; passing a handwritten text fixture alone does not prove the served entry's runtime boundary.
+
 7. **A configuration value, snapshot or count stands for runtime behavior.**
    Probe: a configuration value, successful scan, snapshot, literal checkout depth or request count proves no
    runtime behavior, object availability, upload or comparison coverage: paginate every main analysis
    configuration, drive checkout depth through a real fetch topology, and prove a reload by a changed
    `performance.timeOrigin`. Confirm the run checked the integration that lands.
+   For keyboard controls, assert owned effects and that unowned keys during playback cause no state change or
+   default prevention. In the live app, verify Follow survives Tab and focus moves.
    (#5243, #3548, #3170)
 
 8. **The evidence claims more than its scope.**
@@ -84,3 +110,14 @@ Report a probe that cannot run with its exact mutation, named check and limitati
    component is not evidence, so quote its primary source; a job that cannot run on the PR has its first hosted
    run as its only evidence.
    (#5595, #3170)
+
+9. **A test awaits away the disputed input interval (#6218).**
+   Probe: dispatch a second shortcut while the first is held at the real snapshot-transaction boundary, before any
+   copy selection exists. Unequal source spans distinguish continuation from two copies of the original; assert
+   raw CRDT, owner projections, selected IDs and per-input Undo/Redo content. A test that waits for the first copy
+   selection before its second press proves completed serial input only. Observe settlement through the actual
+   returned intent promises; a fixed microtask count proves no scheduling boundary. Use controlled Command outcomes
+   only for error interpretation, and label them as such; they cannot prove kernel admission or publication fences.
+   Test each independent authority predicate while the others remain valid: replacing the root and reselecting a
+   clip changes both project and selection, so it cannot detect removal of the project-identity check alone. Retain
+   the existing selection reference naturally, with all selected IDs present, then remove only that identity check.

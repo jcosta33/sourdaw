@@ -151,6 +151,7 @@ const executionPolicies = {
     removeTrack: destructivePolicy,
     reverseClip: destructivePolicy,
     stripSilence: destructivePolicy,
+    quantizeTransients: destructivePolicy,
 
     armTrack: authoritySensitivePolicy,
     setMasterGain: authoritySensitivePolicy,

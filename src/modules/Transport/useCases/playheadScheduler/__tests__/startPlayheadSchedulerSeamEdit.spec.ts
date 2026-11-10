@@ -1,13 +1,16 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-import { activeRecordingRef } from '#/modules/Arrangement/stores';
+import { logger } from '#/infra/logger/appLogger';
+import { activeRecordingRef, type Track } from '#/modules/Arrangement/stores';
 import { startRecording, stopRecording, stageRecordingTake } from '#/modules/Arrangement/useCases';
 
+import { BEAT_EPSILON } from '../../../models/TempoMap';
 import { defaultTransportState } from '../../../models/TransportState';
 import { forgetStoredControllerEngagements } from '../../../services/storedControllerEngagement';
 import { metronomeSchedulingState } from '../../scheduling/metronomeSchedulingState';
 import { disposePlayheadScheduler } from '../disposePlayheadScheduler';
 import { schedulerSession } from '../schedulerSession';
+import { schedulerTimingDiagnostics } from '../schedulerTimingDiagnostics';
 import { startPlayheadScheduler } from '../startPlayheadScheduler';
 
 /**
@@ -66,8 +69,7 @@ vi.mock('#/modules/Arrangement/stores', () => ({
         },
     },
     takeLaneStore: { value: { lanes: [] } },
-    // The loop-wrap take path reads which clips are actively recording; no test
-    // here records, so the ref stays empty.
+    // Punch cases model the recording refs' admission and synchronous closure.
     activeRecordingRef: { current: [] },
     // Pulled in transitively: the scheduler reaches Levain's param bridge, whose
     // dependency bundle destructures these off this barrel at module scope. A
@@ -121,6 +123,9 @@ vi.mock('#/modules/Automation/useCases', () => ({
     isRecordingAutomation: vi.fn(() => false),
 }));
 vi.mock('#/modules/Arrangement/useCases', () => ({
+    // This component fixture owns audio capture only; no Arrangement publication or MIDI target exists.
+    captureRecordingCommitRetirement: () => () => {},
+    hasAutomaticRecordingMidiCapture: () => false,
     takeOwnsRecordingRoot: vi.fn(() => true),
     prepareRecoveredRecording: vi.fn(),
     admitRecordingCaptureClock: vi.fn(),
@@ -174,9 +179,32 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     relocateNoteExpression: vi.fn(),
     registerScheduledSource: vi.fn(),
     scheduleFaustNote: vi.fn(),
-    audioEngine: { setTransportInfo: vi.fn() },
+    audioEngine: {
+        get context() {
+            return audioContextStub;
+        },
+        setTransportInfo: vi.fn(),
+    },
     stopAllScheduled: vi.fn(),
-    startAudioRecording: vi.fn(),
+    // A continuously published recorder clock below this scheduler component seam.
+    // PCM retention itself is observed by recordingCapturePlacement.integration.
+    startAudioRecording: vi.fn<typeof import('#/modules/AudioEngine/useCases').startAudioRecording>(
+        async (_track, _terminal, _input, admit) => {
+            const sampleZero = Math.round(ctxTime.now * audioContextStub.sampleRate);
+            admit?.(() => {
+                const frontier = Math.round(ctxTime.now * audioContextStub.sampleRate);
+                if (frontier <= sampleZero) {
+                    return { status: 'pending' };
+                }
+                return {
+                    status: 'captured',
+                    contextSeconds: sampleZero / audioContextStub.sampleRate,
+                    capturedThroughContextSeconds: frontier / audioContextStub.sampleRate,
+                };
+            });
+            return true;
+        }
+    ),
     stopAudioRecording: vi.fn(),
     cacheAudioBuffer: vi.fn(),
     refreshSidechainAlignment: vi.fn(),
@@ -308,9 +336,17 @@ function emitSchedulerTick(worker: SchedulerWorkerHarness): void {
 
 async function runTick(worker: SchedulerWorkerHarness, seconds = TICK_SECONDS): Promise<void> {
     ctxTime.now += seconds;
+    const generation = schedulerSession.generation;
+    const settled = schedulerTimingDiagnostics.snapshot().ticksSettled;
     emitSchedulerTick(worker);
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await vi.waitFor(
+        () => {
+            expect(schedulerSession.generation).toBe(generation);
+            expect(schedulerTimingDiagnostics.snapshot().ticksSettled).toBe(settled + 1);
+        },
+        { interval: 1 }
+    );
+    expect(logger.error).not.toHaveBeenCalled();
 }
 
 function schedulerWorker(): SchedulerWorkerHarness {
@@ -444,11 +480,17 @@ describe('startPlayheadScheduler seam vs mid-playback edit', () => {
  * scan ever revisits the dying pass's tail, and on a region the edit shrank
  * below the look-ahead no seam will serve it either. A punch recording open
  * across that edit-induced wrap can therefore only see its punch-out at the
- * wrap itself, and its pass-span take must stage after the punch checks, not
- * inside the arm.
+ * wrap itself. A continuing recording stages its pass after the punch checks;
+ * a finalized punch has no recording refs left to stage.
  */
 const arrangementEvents = vi.hoisted(
-    () => [] as Array<{ kind: 'punch-in' | 'punch-out' | 'stage-take'; at: number; beat?: number }>
+    () =>
+        [] as Array<{
+            kind: 'punch-in' | 'punch-out' | 'stage-take';
+            at: number;
+            beat?: number;
+            take?: Parameters<typeof stageRecordingTake>[0];
+        }>
 );
 
 describe('startPlayheadScheduler punch at the seam-edit wrap', () => {
@@ -459,13 +501,55 @@ describe('startPlayheadScheduler punch at the seam-edit wrap', () => {
     const EDITED_LOOP_START = 3.9;
     const EDITED_LOOP_END = 4;
 
-    function armedRecordingTrack(): unknown {
+    function armedRecordingTrack(): Track {
         return {
             id: 'rec-1',
-            armed: true,
+            name: 'Recording',
             kind: 'audio',
+            muted: false,
+            soloed: false,
+            gain: 0.8,
+            pan: 0,
+            color: '#ff0000',
+            devices: [],
+            sends: [],
+            midiFx: [],
+            frozen: false,
+            freezeState: { status: 'unfrozen' },
+            parentId: null,
+            collapsed: false,
+            inputMonitoring: 'auto',
+            hidden: false,
+            disabled: false,
+            height: 80,
+            outputId: 'master',
+            automationMode: 'read',
+            groupId: null,
+            soloSafe: false,
+            notes: '',
+            activeAlternativeId: 'recording-alt',
+            alternatives: [{ id: 'recording-alt', name: 'Recording', clips: [] }],
+            vcaGroupId: null,
+            midiOutputTrackId: null,
+            followChordTrack: false,
+            armed: true,
             inputId: 'dev-punch',
-            clips: [{ id: 'rec-clip-1', startBeat: PUNCH_IN_BEAT, endBeat: 8 }],
+            clips: [
+                {
+                    id: 'rec-clip-1',
+                    trackId: 'rec-1',
+                    name: 'Recording',
+                    type: 'audio',
+                    startBeat: PUNCH_IN_BEAT,
+                    endBeat: 8,
+                    fadeInBeats: 0,
+                    fadeOutBeats: 0,
+                    gain: 1,
+                    color: '#ff0000',
+                    locked: false,
+                    muted: false,
+                },
+            ],
         };
     }
 
@@ -518,21 +602,23 @@ describe('startPlayheadScheduler punch at the seam-edit wrap', () => {
             return [];
         });
         vi.mocked(stopRecording).mockImplementation(async (atBeat) => {
+            activeRecordingRef.current = [];
             arrangementEvents.push({ kind: 'punch-out', at: ctxTime.now, beat: atBeat });
             return 'closed';
         });
-        vi.mocked(stageRecordingTake).mockImplementation(() => {
-            arrangementEvents.push({ kind: 'stage-take', at: ctxTime.now });
+        vi.mocked(stageRecordingTake).mockImplementation((take) => {
+            arrangementEvents.push({ kind: 'stage-take', at: ctxTime.now, take });
         });
     });
 
     afterEach(() => {
         activeRecordingRef.current = [];
         disposePlayheadScheduler();
+        vi.restoreAllMocks();
         vi.unstubAllGlobals();
     });
 
-    it('finalizes the punch recording at the edit-induced wrap and stages its take after the punch checks', async () => {
+    it('finalizes the punch recording at the edit-induced wrap without staging a full pass after closure', async () => {
         trackStoreState.value = { tracks: [armedRecordingTrack()] };
         transportStoreState.value = recordingPunchState();
 
@@ -598,14 +684,11 @@ describe('startPlayheadScheduler punch at the seam-edit wrap', () => {
         );
         expect(editTickPunchOuts).toHaveLength(1);
         expect(schedulerSession.punchRecordingActive).toBe(false);
-        // The pass-span take stages after the punch checks, on the same law as
-        // the seam path: a take staged before the finalization would name the
-        // punch clip with a full pass span it never recorded.
+        // Finalization clears the recording refs synchronously. A full pass
+        // staged afterwards would claim material the punched clip never captured.
         const editTickStages = editTickEvents.filter((event) => event.kind === 'stage-take');
-        expect(editTickStages).toHaveLength(1);
-        expect(editTickEvents.indexOf(editTickStages[0]!)).toBeGreaterThan(
-            editTickEvents.indexOf(editTickPunchOuts[0]!)
-        );
+        expect(editTickStages).toEqual([]);
+        expect(activeRecordingRef.current).toEqual([]);
 
         // Settle the following passes: the recording must not finalize twice —
         // the ordinary wrap ticks after the edit see it already closed.
@@ -613,6 +696,64 @@ describe('startPlayheadScheduler punch at the seam-edit wrap', () => {
             await runTick(worker, 0.01);
         }
         expect(punchOutsAtBeat(PUNCH_OUT_BEAT)).toHaveLength(1);
+    });
+
+    it('stages the continuing recording at the edit-induced wrap after checking the punch boundary', async () => {
+        trackStoreState.value = { tracks: [armedRecordingTrack()] };
+        transportStoreState.value = recordingPunchState({ punchOutBeat: 8 });
+        startPlayheadScheduler();
+        const worker = schedulerWorker();
+        let ticks = 0;
+        while (panicYeastRuntimeSpy.mock.calls.length === 0 && ticks < 200) {
+            ticks++;
+            await runTick(worker);
+        }
+        expect(panicYeastRuntimeSpy).toHaveBeenCalled();
+        expect(arrangementEvents.filter((event) => event.kind === 'punch-in')).toEqual([
+            { kind: 'punch-in', at: expect.closeTo(SEAM_TICK_TIME, 3), beat: PUNCH_IN_BEAT },
+        ]);
+        await runTick(worker, 0.01);
+        transportStoreState.value = recordingPunchState({ isRecording: true, punchOutBeat: 8 });
+        activeRecordingRef.current = ['rec-clip-1'];
+        await runTick(worker, 0.01);
+        await runTick(worker, 0.01);
+        const punch = schedulerSession.automaticPunch;
+        if (!punch) {
+            throw new Error('The continuing recording must retain its automatic punch.');
+        }
+        const checkEnding = vi.spyOn(punch, 'ready');
+        tempoMapStoreState.value = {
+            changes: [{ id: 'tempo-edit', beat: 0, tempo: EDITED_BPM, curve: 'instant' }],
+        };
+        transportStoreState.value = recordingPunchState({
+            loopStart: EDITED_LOOP_START,
+            loopEnd: EDITED_LOOP_END,
+            isRecording: true,
+            punchOutBeat: 8,
+        });
+        await runTick(worker, 0.01);
+        const editStages = arrangementEvents.filter((event) => event.kind === 'stage-take' && event.at === ctxTime.now);
+        expect(editStages).toHaveLength(1);
+        expect(editStages[0]!.take).toMatchObject({
+            trackId: 'rec-1',
+            clipId: 'rec-clip-1',
+            name: 'Take 1',
+            startBeat: EDITED_LOOP_START,
+            sourceOffsetBeats: expect.closeTo(EDITED_LOOP_START - PUNCH_IN_BEAT, 10),
+            passEndContextSeconds: expect.closeTo(2, 10),
+        });
+        expect(Math.abs(editStages[0]!.take!.endBeat - EDITED_LOOP_END)).toBeLessThanOrEqual(BEAT_EPSILON);
+        expect(arrangementEvents.filter((event) => event.kind === 'punch-out')).toEqual([]);
+        expect(schedulerSession.punchRecordingActive).toBe(true);
+        expect(activeRecordingRef.current).toEqual(['rec-clip-1']);
+        expect(arrangementEvents.indexOf(editStages[0]!)).toBeGreaterThan(
+            arrangementEvents.findIndex((event) => event.kind === 'punch-in')
+        );
+        expect(checkEnding).toHaveBeenCalledOnce();
+        expect(checkEnding).toHaveReturnedWith(false);
+        expect(vi.mocked(stageRecordingTake).mock.invocationCallOrder.at(-1)).toBeGreaterThan(
+            checkEnding.mock.invocationCallOrder[0]!
+        );
     });
 });
 

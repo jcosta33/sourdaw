@@ -1,7 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
+import { defaultTrackState } from '#/modules/Arrangement/stores';
+import { createTrack, setTrackStoreState } from '#/modules/Arrangement/useCases';
+import { captureProjectRevision, projectRevisionMatchesLiveIgnoringSaveWrites } from '#/modules/CrdtDocument/useCases';
 import { projectStore, defaultProjectStoreState } from '#/modules/Project/stores';
+import { querySemanticProject } from '#/modules/Project/useCases';
 
 import { DEFAULT_AGENT_RESOURCE_LIMITS } from '../../models/AgentResourceLimits';
 import { type ProjectContext } from '../../models/ProjectContext';
@@ -39,11 +43,12 @@ const mocks = vi.hoisted(() => ({
 // fixed revision does not describe.
 vi.mock('#/modules/CrdtDocument/useCases', async (importOriginal) => {
     const revision = JSON.stringify({ documentIdentityEpoch: 1, mutationEpoch: 1, documents: [] });
+    const capture = vi.fn(() => revision);
     return {
         ...(await importOriginal<typeof import('#/modules/CrdtDocument/useCases')>()),
-        captureProjectRevision: vi.fn(() => revision),
+        captureProjectRevision: capture,
         settlePendingProjectWritesAndCaptureRevision: vi.fn(() => revision),
-        projectRevisionMatchesLiveIgnoringSaveWrites: vi.fn((expected: string) => expected === revision),
+        projectRevisionMatchesLiveIgnoringSaveWrites: vi.fn((expected: string) => expected === capture()),
     };
 });
 
@@ -126,8 +131,13 @@ function answerTurn(argumentsValue: Record<string, unknown>) {
     };
 }
 
-function runScriptedLoop(turns: readonly unknown[]) {
-    const catalog = prepareAnswerInterpretationCatalog({ prompt: PROMPT, context, projectRevision: 'revision-1' });
+function runScriptedLoop(
+    turns: readonly unknown[],
+    beforeIntake: readonly unknown[] = [],
+    revision = captureProjectRevision(),
+    limits?: { maxReceiptBytesPerCall: number }
+) {
+    const catalog = prepareAnswerInterpretationCatalog({ prompt: PROMPT, context, projectRevision: revision });
     const intake = {
         id: 'intake',
         name: 'selectAnswerInterpretation',
@@ -140,7 +150,11 @@ function runScriptedLoop(turns: readonly unknown[]) {
             uncertainty: 'none',
         },
     };
-    const requestTurn = vi.fn().mockResolvedValueOnce({ status: 'complete', toolCalls: [intake] });
+    const requestTurn = vi.fn();
+    for (const turn of beforeIntake) {
+        requestTurn.mockResolvedValueOnce(turn);
+    }
+    requestTurn.mockResolvedValueOnce({ status: 'complete', toolCalls: [intake] });
     for (const turn of turns) {
         requestTurn.mockResolvedValueOnce(turn);
     }
@@ -148,8 +162,9 @@ function runScriptedLoop(turns: readonly unknown[]) {
         loopId: 'loop-answer',
         terminalToolNames: TERMINAL_TOOL_NAMES,
         requestTurn,
+        limits,
         answerInterpretation: {
-            admit: (call) => admitAnswerInterpretation({ catalog, call, projectRevision: 'revision-1' }),
+            admit: (call) => admitAnswerInterpretation({ catalog, call, projectRevision: revision }),
         },
     });
 }
@@ -187,7 +202,11 @@ describe('answer.respond ends a run as an answer outcome', () => {
     it('plans an answer carrying its text and the evidence resolved from this run, with no actions', async () => {
         scriptStructuralAnswer();
 
-        const result = await parsePromptToActions({ prompt: PROMPT, context, projectRevision: 'revision-1' });
+        const result = await parsePromptToActions({
+            prompt: PROMPT,
+            context,
+            projectRevision: JSON.stringify({ documentIdentityEpoch: 1, mutationEpoch: 1, documents: [] }),
+        });
 
         const receipts = result.applicationToolReceipts ?? [];
         expect(receipts.map(({ callId, status }) => ({ callId, status }))).toEqual([
@@ -233,6 +252,305 @@ describe('answer.respond ends a run as an answer outcome', () => {
             { callId: 'query', toolName: 'project.query', summary: recipeReceipt?.summary },
         ]);
         expect(messages[1]?.pendingActionConfirmationId).toBeUndefined();
+    });
+
+    it('preserves the unfiltered query sentence and cites its actual receipt', async () => {
+        const result = await runScriptedLoop([
+            readTurn,
+            answerTurn({ intakeCallId: 'intake', statements: [{ kind: 'query-page', callId: 'query' }] }),
+        ]);
+        expect(result.status).toBe('complete');
+        if (result.status !== 'complete') {
+            throw new Error(result.reason);
+        }
+        expect(result.answer?.text).toBe(
+            'The “project-summary” query returned 1 item(s) on this page out of 1 matching item(s).'
+        );
+        expect(result.answer?.evidence.map((entry) => entry.callId)).toEqual(['intake', 'query']);
+    });
+
+    it('refuses a pre-intake query even when a later query succeeds', async () => {
+        const result = await runScriptedLoop(
+            [
+                { ...readTurn, toolCalls: [{ ...readTurn.toolCalls[0]!, id: 'later' }] },
+                answerTurn({ intakeCallId: 'intake', statements: [{ kind: 'query-page', callId: 'query' }] }),
+            ],
+            [readTurn]
+        );
+        expect(result).toMatchObject({
+            status: 'rejected',
+            reason: 'Answer references evidence outside its frozen interpretation or successful bounded reads.',
+        });
+    });
+
+    it('refuses a query at a different frozen revision', async () => {
+        const revision = JSON.stringify({ documentIdentityEpoch: 1, mutationEpoch: 2, documents: [] });
+        const result = await runScriptedLoop(
+            [readTurn, answerTurn({ intakeCallId: 'intake', statements: [{ kind: 'query-page', callId: 'query' }] })],
+            [],
+            revision
+        );
+        expect(result.status).toBe('rejected');
+    });
+
+    it('refuses a bounded receipt that truncates the original revision', async () => {
+        const revision = JSON.stringify({
+            documentIdentityEpoch: 1,
+            mutationEpoch: 1,
+            documents: [{ docId: 'x'.repeat(2200), heads: [] }],
+        });
+        const previousRevision = captureProjectRevision();
+        vi.mocked(captureProjectRevision).mockReturnValue(revision);
+        try {
+            expect(projectRevisionMatchesLiveIgnoringSaveWrites(revision)).toBe(true);
+            const result = await runScriptedLoop([
+                readTurn,
+                answerTurn({ intakeCallId: 'intake', statements: [{ kind: 'query-page', callId: 'query' }] }),
+            ]);
+            expect(result.status).toBe('rejected');
+        } finally {
+            vi.mocked(captureProjectRevision).mockReturnValue(previousRevision);
+        }
+    });
+
+    it('names the retained baseline of a diff query', async () => {
+        const baseline = querySemanticProject({ type: 'object' }).revisionToken;
+        const result = await runScriptedLoop([
+            {
+                status: 'complete',
+                toolCalls: [
+                    { id: 'query', name: 'project.query', arguments: { type: 'diff', sinceRevision: baseline } },
+                ],
+            },
+            answerTurn({ intakeCallId: 'intake', statements: [{ kind: 'query-page', callId: 'query' }] }),
+        ]);
+        expect(result.status).toBe('complete');
+        if (result.status !== 'complete') {
+            throw new Error(result.reason);
+        }
+        expect(result.answer?.text).toContain(`sinceRevision: “${baseline}”`);
+    });
+
+    it('refuses a failed project query as evidence', async () => {
+        const result = await runScriptedLoop([
+            { status: 'complete', toolCalls: [{ id: 'query', name: 'project.query', arguments: { type: 'diff' } }] },
+            answerTurn({ intakeCallId: 'intake', statements: [{ kind: 'query-page', callId: 'query' }] }),
+        ]);
+        expect(result).toMatchObject({
+            status: 'rejected',
+            receipts: expect.arrayContaining([expect.objectContaining({ callId: 'query', status: 'failure' })]),
+        });
+    });
+
+    it('refuses a diff whose baseline is outside the retained window', async () => {
+        const result = await runScriptedLoop([
+            {
+                status: 'complete',
+                toolCalls: [
+                    {
+                        id: 'query',
+                        name: 'project.query',
+                        arguments: { type: 'diff', sinceRevision: 'unknown-baseline' },
+                    },
+                ],
+            },
+            answerTurn({ intakeCallId: 'intake', statements: [{ kind: 'query-page', callId: 'query' }] }),
+        ]);
+        expect(result.status).toBe('rejected');
+    });
+
+    it('refuses a project query whose receipt exceeds its per-call budget', async () => {
+        const tracks = Array.from({ length: 20 }, (_, index) =>
+            createTrack({ id: `track-${index}`, name: `Track ${index}`, kind: 'audio' })
+        );
+        setTrackStoreState({ ...structuredClone(defaultTrackState), tracks });
+        try {
+            const result = await runScriptedLoop(
+                [
+                    {
+                        status: 'complete',
+                        toolCalls: [
+                            { id: 'query', name: 'project.query', arguments: { type: 'object', page: { limit: 50 } } },
+                        ],
+                    },
+                    answerTurn({ intakeCallId: 'intake', statements: [{ kind: 'query-page', callId: 'query' }] }),
+                ],
+                [],
+                captureProjectRevision(),
+                { maxReceiptBytesPerCall: 2048 }
+            );
+            expect(result.status).toBe('rejected');
+            expect(result.receipts.find((receipt) => receipt.callId === 'query')?.status).toBe('failure');
+        } finally {
+            setTrackStoreState(structuredClone(defaultTrackState));
+        }
+    });
+
+    it('reports the owner-filtered subset of real project objects', async () => {
+        const matching = createTrack({ id: 'track-a', name: 'Lead *One*', kind: 'audio' });
+        const other = createTrack({ id: 'track-b', name: 'Other', kind: 'audio' });
+        setTrackStoreState({ ...structuredClone(defaultTrackState), tracks: [matching, other] });
+        try {
+            const result = await runScriptedLoop([
+                {
+                    status: 'complete',
+                    toolCalls: [
+                        {
+                            id: 'query',
+                            name: 'project.query',
+                            arguments: {
+                                type: 'object',
+                                filters: { exactName: 'Lead *One*', kind: 'audio', muted: false },
+                                page: { limit: 1 },
+                            },
+                        },
+                    ],
+                },
+                answerTurn({ intakeCallId: 'intake', statements: [{ kind: 'query-page', callId: 'query' }] }),
+            ]);
+            expect(result.status).toBe('complete');
+            if (result.status !== 'complete') {
+                throw new Error(result.reason);
+            }
+            expect(result.answer?.text).toContain('1 item(s) on this page out of 1 matching item(s)');
+            expect(result.answer?.text).toContain('Lead \\*One\\*');
+            expect(result.answer?.text).toContain('muted: false');
+            expect(result.receipts.find((receipt) => receipt.callId === 'query')?.data).toMatchObject({
+                items: [expect.objectContaining({ id: 'track-a' })],
+                page: { total: 1 },
+            });
+        } finally {
+            setTrackStoreState(structuredClone(defaultTrackState));
+        }
+    });
+
+    it('names every supplied filter and page in the query scope', async () => {
+        const filters = { exactName: 'A "quoted" name', selected: false, startBeat: 0, endBeat: 3.14159, muted: true };
+        const result = await runScriptedLoop([
+            {
+                status: 'complete',
+                toolCalls: [
+                    { id: 'query', name: 'project.query', arguments: { type: 'object', filters, page: { limit: 2 } } },
+                ],
+            },
+            answerTurn({ intakeCallId: 'intake', statements: [{ kind: 'query-page', callId: 'query' }] }),
+        ]);
+        expect(result.status).toBe('complete');
+        if (result.status !== 'complete') {
+            throw new Error(result.reason);
+        }
+        expect(result.answer?.text).toContain('exactName');
+        expect(result.answer?.text).toContain('selected: false');
+        expect(result.answer?.text).toContain('startBeat: 0');
+        expect(result.answer?.text).toContain('endBeat: 3.14159');
+        expect(result.answer?.text).toContain('muted: true');
+        expect(result.answer?.text).toContain('limit: 2');
+    });
+
+    it('retains all query filter keys without dropping false or zero', async () => {
+        const filters = {
+            stableId: 'id',
+            exactName: 'name',
+            fuzzyName: 'fuzzy',
+            kind: 'audio',
+            tag: 'tag',
+            role: 'role',
+            parentId: 'parent',
+            startBeat: 0,
+            endBeat: 2.123456,
+            sectionId: 'section',
+            selected: false,
+            locked: false,
+            muted: false,
+            soloed: false,
+            deviceType: 'device',
+            deviceCategory: 'category',
+            routeFromId: 'from',
+            routeToId: 'to',
+            hasAutomation: false,
+            contentType: 'audio',
+            assetType: 'asset',
+            minInferredConfidence: 0,
+        };
+        const result = await runScriptedLoop([
+            {
+                status: 'complete',
+                toolCalls: [{ id: 'query', name: 'project.query', arguments: { type: 'object', filters } }],
+            },
+            answerTurn({ intakeCallId: 'intake', statements: [{ kind: 'query-page', callId: 'query' }] }),
+        ]);
+        expect(result.status).toBe('complete');
+        if (result.status !== 'complete') {
+            throw new Error(result.reason);
+        }
+        for (const [key, value] of Object.entries(filters)) {
+            expect(result.answer?.text).toContain(
+                `${key}: ${typeof value === 'string' ? `“${value}”` : String(value)}`
+            );
+        }
+    });
+
+    it('limits an answer whose faithful query scope exceeds the composed bound', async () => {
+        const value = '*'.repeat(256);
+        const filters = {
+            stableId: value,
+            exactName: value,
+            fuzzyName: value,
+            kind: value,
+            tag: value,
+            role: value,
+            parentId: value,
+            sectionId: value,
+            deviceType: value,
+            deviceCategory: value,
+            routeFromId: value,
+            routeToId: value,
+            assetType: value,
+        };
+        const result = await runScriptedLoop([
+            {
+                status: 'complete',
+                toolCalls: [{ id: 'query', name: 'project.query', arguments: { type: 'object', filters } }],
+            },
+            answerTurn({ intakeCallId: 'intake', statements: [{ kind: 'query-page', callId: 'query' }] }),
+        ]);
+        expect(result).toMatchObject({
+            status: 'complete',
+            answer: { text: 'This answer is limited to the available bounded evidence.' },
+        });
+    });
+
+    it('refuses a summary query whose requested filters are ignored by Project', async () => {
+        const result = await runScriptedLoop([
+            {
+                status: 'complete',
+                toolCalls: [
+                    {
+                        id: 'query',
+                        name: 'project.query',
+                        arguments: { type: 'project-summary', filters: { muted: false } },
+                    },
+                ],
+            },
+            answerTurn({ intakeCallId: 'intake', statements: [{ kind: 'query-page', callId: 'query' }] }),
+        ]);
+        expect(result.status).toBe('rejected');
+    });
+
+    it('refuses two answers by the answer-alone rule', async () => {
+        const result = await runScriptedLoop([
+            {
+                status: 'complete',
+                toolCalls: [
+                    { id: 'answer-1', name: 'answer.respond', arguments: structuralAnswerArguments },
+                    { id: 'answer-2', name: 'answer.respond', arguments: structuralAnswerArguments },
+                ],
+            },
+        ]);
+        expect(result).toMatchObject({
+            status: 'rejected',
+            reason: 'Provider combined an answer with another terminal call.',
+        });
     });
 
     it('refuses an answer whose text is empty once trimmed', async () => {

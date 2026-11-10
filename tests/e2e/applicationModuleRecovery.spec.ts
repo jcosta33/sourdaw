@@ -131,7 +131,7 @@ async function seedSavedProject(page: Page): Promise<string> {
     }, stringify(true));
     const response = await page.goto('/?app-module-recovery=proof#preserved');
     expect(decodeURIComponent(response?.headers()['x-sourdaw-root'] ?? '')).toBe(ROOT);
-    await launch_new_project(page, { firstPaintTimeoutMs: 180_000 });
+    await launch_new_project(page);
     await page.getByTestId('project-name').click();
     const name = page.locator('input:focus');
     await name.fill(PROJECT_NAME);
@@ -210,6 +210,7 @@ test('critical rendering dependency failure retains manual entry recovery in the
 
         const failure = page.getByRole('alert', { name: 'Sourdaw could not start' });
         await expect(failure).toBeVisible();
+        await expect(page.locator('html')).toHaveCSS('visibility', 'visible');
         await expect(
             failure.getByText('The application did not load. Reload Sourdaw to try starting it again.')
         ).toBeVisible();
@@ -261,6 +262,7 @@ test('critical rendering dependency failure retains manual entry recovery in the
         await failure.getByRole('button', { name: 'Reload Sourdaw' }).click();
         await expect.poll(() => page.evaluate(() => performance.timeOrigin)).not.toBe(timeOrigin);
         await expect(failure).toBeVisible();
+        await expect(page.locator('html')).toHaveCSS('visibility', 'visible');
         expect(page.url()).toBe(url);
         expect(navigations).toBe(2);
         expect(requests).toEqual({ entry: 2, bootstrap: 2, critical: 2, app: 0 });
@@ -420,6 +422,7 @@ for (const fault of ['transient', 'permanent', 'evaluation']) {
             } else {
                 const failure = page.getByRole('alert', { name: 'Sourdaw could not start' });
                 await expect(failure).toBeVisible();
+                await expect(page.locator('html')).toHaveCSS('visibility', 'visible');
                 await expect(
                     failure.getByText('The application did not finish loading. Reload Sourdaw to try again.')
                 ).toBeVisible();

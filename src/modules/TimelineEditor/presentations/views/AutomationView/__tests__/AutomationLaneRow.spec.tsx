@@ -500,6 +500,44 @@ describe('AutomationLaneRow', () => {
         expect(deleteSelectedPoints).toHaveBeenCalledWith('lane-1', [0, 4]);
     });
 
+    it('forwards the rendered identity of each same-beat point to the drag owner', () => {
+        const lane: AutomationLane = {
+            ...defaultProps.lane,
+            points: [
+                { id: 'first', beat: 4, value: 0.2, curve: 'step', tension: 0 },
+                { id: 'second', beat: 4, value: 0.8, curve: 'linear', tension: 0 },
+            ],
+        };
+        const { container } = render(<AutomationLaneRow {...defaultProps} lane={lane} />);
+        const circles = container.querySelectorAll('[data-auto-point] circle:first-child');
+        expect(circles).toHaveLength(2);
+        const first = circles[0];
+        const second = circles[1];
+        if (!first || !second) {
+            throw new Error('Both rendered point hit targets are required');
+        }
+        fireEvent.mouseDown(first, { button: 0 });
+        expect(onPointMouseDown).toHaveBeenLastCalledWith(
+            4,
+            expect.anything(),
+            lane,
+            expect.any(Function),
+            expect.any(Function),
+            expect.anything(),
+            'first'
+        );
+        fireEvent.mouseDown(second, { button: 0 });
+        expect(onPointMouseDown).toHaveBeenLastCalledWith(
+            4,
+            expect.anything(),
+            lane,
+            expect.any(Function),
+            expect.any(Function),
+            expect.anything(),
+            'second'
+        );
+    });
+
     describe('Escape and the point selection', () => {
         const laneWithPoints: AutomationLane = {
             ...defaultProps.lane,

@@ -59,6 +59,9 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('#/modules/MIDI/useCases', () => ({
+    captureEventPositionAt: () => {
+        throw new Error('This manual pre-roll fixture has no automatic MIDI capture position');
+    },
     isOverdubLanding: () => false,
     countSettledOverdubPasses: () => 0,
     waitForOverdubLanding: () => Promise.resolve(),
@@ -83,6 +86,7 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     discardRecording: mocks.discardRecording,
 }));
 vi.mock('#/modules/Arrangement/stores', () => ({
+    gainEnvelopeStore: { value: null },
     activeRecordingRef: { current: [] },
     getTrackEligibility: () => ({ acceptsRecording: true }),
     getGainEnvelopeSeries: () => undefined,

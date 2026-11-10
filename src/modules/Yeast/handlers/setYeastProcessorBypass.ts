@@ -1,3 +1,4 @@
+import { markGrooveTemplateProjectWrite } from '#/modules/MIDI/useCases';
 import { createHandler } from '#/utils/createHandler';
 import { type HandlerValidationContext } from '#/utils/handlerContract';
 
@@ -39,8 +40,15 @@ export const handleSetYeastProcessorBypass = createHandler<'setYeastProcessorByp
         if (processor.bypassed !== action.payload.expectedBypassed) {
             return { status: 'conflict' };
         }
-        setYeastProcessorBypass(action.payload.processorId, action.payload.bypassed);
-        return { status: 'written' };
+        const grooveChanged = setYeastProcessorBypass(action.payload.processorId, action.payload.bypassed);
+        if (!grooveChanged) {
+            return { status: 'written' };
+        }
+        return {
+            status: 'written',
+            afterCommit: markGrooveTemplateProjectWrite,
+            afterAmbiguousCommit: markGrooveTemplateProjectWrite,
+        };
     },
     isNoop: (action) => {
         const processor = findLiveProcessor(action.payload.processorId);

@@ -64,13 +64,16 @@ const mocks = vi.hoisted(() => {
     };
 });
 
-vi.mock('../bootstrap', () => {
+// Registered per test with `vi.doMock`: Vitest caches a mock factory's result across
+// `vi.resetModules()` and shares one in-flight factory per mock, so only re-registering
+// makes each test observe its own bootstrap import.
+function mockBootstrapModule(): Promise<Record<string, never>> {
     mocks.bootstrap();
     if (mocks.bootstrapFailure) {
         throw mocks.bootstrapFailure;
     }
     return new Promise<Record<string, never>>(() => undefined);
-});
+}
 
 vi.mock('../browserDisplayScaleHost', () => ({
     mountBrowserDisplayScaleHost: mocks.mountBrowserDisplayScaleHost,
@@ -221,7 +224,7 @@ function expectAppShellMarkerInRoot(): void {
     const shell = root.querySelector('[data-testid="app-shell"]');
     expect(shell).not.toBeNull();
     if (!(shell instanceof HTMLElement)) {
-        throw new Error('app-shell marker was not an HTMLElement');
+        throw new TypeError('app-shell marker was not an HTMLElement');
     }
     expect(document.documentElement.style.overflow).toBe('hidden');
     expect(document.body.style.margin).toBe('0px');
@@ -270,6 +273,7 @@ describe('app main first paint', () => {
     beforeEach(async () => {
         vi.clearAllMocks();
         vi.resetModules();
+        vi.doMock('../bootstrap', mockBootstrapModule);
         mocks.bootstrapFailure = null;
         mocks.appImportPending = false;
         mocks.appImportRelease = null;
@@ -282,6 +286,7 @@ describe('app main first paint', () => {
         Reflect.deleteProperty(window, 'sourdaw');
         window.name = '';
         document.documentElement.removeAttribute('data-sourdaw-entry-started');
+        document.documentElement.style.visibility = 'hidden';
         const html = readFileSync(resolve(process.cwd(), 'index.html'), 'utf8');
         document.body.innerHTML = new DOMParser().parseFromString(html, 'text/html').body.innerHTML;
         vi.stubGlobal('reportError', mocks.reportError);
@@ -367,11 +372,12 @@ describe('app main first paint', () => {
             await vi.waitFor(() => expect(mocks.reportError).toHaveBeenCalledOnce());
             const reported = mocks.reportError.mock.calls[0]?.[0];
             if (!(reported instanceof Error)) {
-                throw new Error('Critical import failure was not reported');
+                throw new TypeError('Critical import failure was not reported');
             }
             expect(reported.cause).toBe(failure);
 
             expect(document.getElementById('entry-startup-title')?.textContent).toBe('Sourdaw could not start');
+            expect(document.documentElement.style.visibility).toBe('visible');
             expect(document.querySelector('#entry-startup [role="alert"]')).not.toBeNull();
             expect(document.getElementById('entry-startup-reload')?.hasAttribute('hidden')).toBe(false);
             expect(mocks.reportError).toHaveBeenCalledOnce();

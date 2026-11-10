@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { scrollTimelineViewportHorizontallyFromWheel } from '#/modules/Arrangement/useCases';
@@ -29,15 +29,6 @@ const mocks = vi.hoisted(() => ({
 vi.mock('#/components/daw/DawBlockedState', () => ({
     DawBlockedState: ({ title, description }: { title: string; description: string }) => (
         <div data-testid="blocked-state">
-            <span>{title}</span>
-            <span>{description}</span>
-        </div>
-    ),
-}));
-
-vi.mock('#/components/daw/DawEmptyState', () => ({
-    DawEmptyState: ({ title, description }: { title: string; description: string }) => (
-        <div data-testid="empty-state">
             <span>{title}</span>
             <span>{description}</span>
         </div>
@@ -115,18 +106,15 @@ vi.mock('../AutomationView/AutomationSidebarCell', () => ({
     ),
 }));
 
-vi.mock('../AutomationView/AutomationControls', () => ({
-    AutomationAddLaneControl: ({ params }: { params: { id: string; name: string }[] }) => (
-        <div data-testid="add-lane-control">
-            {params.map((param) => (
-                <span key={param.id}>{param.name}</span>
-            ))}
-        </div>
-    ),
-    AutomationModeControl: ({ automationMode, laneCount }: { automationMode: string; laneCount: number }) => (
-        <div data-testid="mode-control" data-mode={automationMode} data-count={laneCount} />
-    ),
-}));
+vi.mock('../AutomationView/AutomationControls', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('../AutomationView/AutomationControls')>();
+    return {
+        ...actual,
+        AutomationModeControl: ({ automationMode, laneCount }: { automationMode: string; laneCount: number }) => (
+            <div data-testid="mode-control" data-mode={automationMode} data-count={laneCount} />
+        ),
+    };
+});
 
 vi.mock('../../helpers/automationViewHelpers', () => ({
     getAutomatableParams: vi.fn(() => [
@@ -233,6 +221,32 @@ describe('AutomationBottomPanel', () => {
         render(<AutomationBottomPanel />);
         expect(screen.getByTestId('blocked-state')).toBeInTheDocument();
         expect(screen.getByText('No track selected')).toBeInTheDocument();
+    });
+
+    it('puts the add-lane action inside the empty state it explains', () => {
+        const clientWidth = vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(400);
+        try {
+            renderSelectedTrack();
+
+            const title = screen.getByText('No automation lanes yet');
+            const emptyState = title.closest<HTMLElement>('.daw-empty-state-surface');
+            if (emptyState === null) {
+                throw new Error('Expected the real compact empty-state surface');
+            }
+            expect(emptyState).toHaveClass('gap-1.5', 'p-4');
+            expect(title).toHaveClass('text-xs');
+            const addLaneButton = within(emptyState).getByRole('button', { name: 'Add Lane' });
+            expect(addLaneButton).toBeInTheDocument();
+
+            fireEvent.click(addLaneButton);
+            const menu = screen.getByRole('menu');
+            expect(menu).toHaveTextContent('Add parameter');
+            fireEvent.click(within(menu).getByRole('button', { name: 'Volume' }));
+
+            expect(mocks.addAutomationLane).toHaveBeenCalledWith('track-1', 'volume', 'Volume');
+        } finally {
+            clientWidth.mockRestore();
+        }
     });
 
     it('should route horizontal wheel movement through the Arrangement horizontal scroll use case', () => {

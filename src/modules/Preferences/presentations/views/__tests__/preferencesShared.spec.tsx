@@ -142,4 +142,11 @@ describe('GridSubdivisionSection', () => {
             expect(screen.getByRole('button', { name: token })).toBeInTheDocument();
         }
     });
+
+    it.each(['Standard', 'Triplet', 'Dotted'])('renders the %s group label with opaque muted text', (label) => {
+        render(<GridSubdivisionSection value="1/4" onChange={vi.fn()} />);
+
+        expect(screen.getByText(label)).toHaveClass('text-muted-foreground');
+        expect(screen.getByText(label).className).not.toMatch(/text-muted-foreground\//u);
+    });
 });

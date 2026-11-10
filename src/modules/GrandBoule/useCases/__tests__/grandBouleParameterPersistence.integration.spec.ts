@@ -83,6 +83,8 @@ vi.mock('#/modules/MIDI/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/MIDI/useCases')>();
     return {
         captureEventPositionAt: actual.captureEventPositionAt,
+        prepareRecordedControllersCommit: actual.prepareRecordedControllersCommit,
+        captureRecordedControllerRetirement: actual.captureRecordedControllerRetirement,
         replaceFrozenMidiTakeRow: actual.replaceFrozenMidiTakeRow,
         sealHeldRecordedMidiNotes: actual.sealHeldRecordedMidiNotes,
         snapshotMidiClipData: actual.snapshotMidiClipData,
@@ -157,6 +159,15 @@ vi.mock('#/modules/Routing/useCases', async (importOriginal) => {
 });
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    openCachedAudioBufferHold: vi.fn(() => {
+        throw new Error('Unexpected audio buffer residency hold in this fixture');
+    }),
+    captureOfflineRenderProjectSource: vi.fn(() => {
+        throw new Error('Unexpected selection render capture in this fixture');
+    }),
+    captureOfflineRenderRuntimeInput: vi.fn(() => {
+        throw new Error('Unexpected selection render capture in this fixture');
+    }),
     builtinSynthVoice: { read: vi.fn() },
     rearmCommittedTrackInputMonitoring: vi.fn(async () => undefined),
     reconcileAutoInputMonitoring: vi.fn(),

@@ -309,6 +309,18 @@ async function createDivergedAudioSourceAction(actionType: AudioSourceConflictAc
 }
 
 const CONFLICT_CAPABLE_FIXTURES: readonly DivergedFixture[] = [
+    {
+        title: 'enableWarping refuses a missing audio target',
+        actionType: 'enableWarping',
+        divergedAction: { type: 'enableWarping', payload: { clipId: 'clip-missing' } },
+        reason: 'Audio warping requires an existing audio clip.',
+    },
+    {
+        title: 'enableWarping refuses an existing MIDI target',
+        actionType: 'enableWarping',
+        divergedAction: { type: 'enableWarping', payload: { clipId: 'clip-midi' } },
+        reason: 'Audio warping requires an existing audio clip.',
+    },
     ...(['trimClipStart', 'restoreAudioClipStartTrim', 'restoreAudioClipSlip'] as const).map((actionType) => ({
         title: `${actionType} refuses a captured edit after its media owner diverges`,
         actionType,
@@ -416,6 +428,18 @@ const CONFLICT_CAPABLE_FIXTURES: readonly DivergedFixture[] = [
                 expectedEqualBeatPoints: [],
                 expectedPresence: 'present',
                 replacementPresence: 'absent',
+            },
+        },
+    },
+    {
+        title: 'restoreAutomationLanePoints refuses a diverged recorded-lane snapshot',
+        actionType: 'restoreAutomationLanePoints',
+        divergedAction: {
+            type: 'restoreAutomationLanePoints',
+            payload: {
+                laneId: 'automation-follower',
+                points: [],
+                expectedPoints: [{ id: 'automation-point', beat: 4, value: 0.9, curve: 'linear', tension: 0 }],
             },
         },
     },
@@ -656,6 +680,17 @@ function seedLiveProjectState(): void {
     });
     if (clip === null) {
         throw new Error('Expected live clip fixture');
+    }
+    const midiClip = addClip({
+        id: 'clip-midi',
+        trackId: 'track-live',
+        startBeat: 0,
+        endBeat: 8,
+        name: 'MIDI clip',
+        type: 'midi',
+    });
+    if (midiClip === null) {
+        throw new Error('Expected live MIDI clip fixture');
     }
     takeLaneStore.set({
         lanes: [

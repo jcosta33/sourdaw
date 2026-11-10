@@ -221,7 +221,7 @@ vi.mock('../../../useCases/elasticAudio/markElasticDetectionComplete', () => ({
     markElasticDetectionComplete: (...args: unknown[]) => mocks.markElasticDetectionComplete(...args),
 }));
 
-vi.mock('../../../useCases/elasticAudio/quantizeTransients', () => ({
+vi.mock('../../../useCases/quantizeTransients', () => ({
     quantizeTransients: (...args: unknown[]) => mocks.quantizeTransients(...args),
 }));
 
@@ -479,12 +479,24 @@ describe('ElasticEditorPanel', () => {
         });
     });
 
-    it('invokes quantizeTransients on Quantize button when markers exist and detection ran', () => {
+    it('quantizes to the snap grid at the saved sensitivity on Quantize when markers exist and detection ran', () => {
+        preferencesStore.trySet({ ...defaultPreferences, elasticTransientSensitivity: 0.82 });
         render(<ElasticEditorPanel />);
         const btn = screen.getByTestId('elastic-quantize-button');
         expect(btn).not.toBeDisabled();
         fireEvent.click(btn);
-        expect(mocks.quantizeTransients).toHaveBeenCalledWith('c1');
+        expect(mocks.quantizeTransients).toHaveBeenCalledWith('c1', 0.25, 0.82);
+    });
+
+    it('quantizes to the snap grid from the G shortcut', () => {
+        mocks.timelineEditingValue = { snapValue: 0.5 };
+        render(<ElasticEditorPanel />);
+        fireEvent.keyDown(window, { key: 'g' });
+        expect(mocks.quantizeTransients).toHaveBeenCalledWith(
+            'c1',
+            0.5,
+            defaultPreferences.elasticTransientSensitivity
+        );
     });
 
     it('disables the Quantize button when detection has not run', () => {

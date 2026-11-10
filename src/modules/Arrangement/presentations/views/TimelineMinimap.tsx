@@ -354,48 +354,42 @@ export const TimelineMinimap = ({ height = TIMELINE_MINIMAP_DEFAULT_HEIGHT }: Ti
     };
 
     const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-        // Keyboard scrolling for the slider: a small step on the arrows, a full
-        // visible page on Page keys, and Home jumps to the start.
-        const stepBeats = 4;
-        const stepPx = stepBeats * pixelsPerBeat;
+        const stepPx = 4 * pixelsPerBeat;
         const pageBeats = canvasMetrics.width > 0 ? canvasMetrics.width / pixelsPerBeat : 16;
         const pagePx = pageBeats * pixelsPerBeat;
-
-        if (transportStore.value?.isPlaying) {
-            setTimelineMinimapAutoScroll(false);
-        }
+        let targetScrollX: number;
 
         switch (event.key) {
             case 'ArrowLeft':
             case 'ArrowDown':
-                event.preventDefault();
-                event.stopPropagation();
-                setTimelineMinimapScrollX(scrollX - stepPx);
+                targetScrollX = scrollX - stepPx;
                 break;
             case 'ArrowRight':
             case 'ArrowUp':
-                event.preventDefault();
-                event.stopPropagation();
-                setTimelineMinimapScrollX(scrollX + stepPx);
+                targetScrollX = scrollX + stepPx;
                 break;
             case 'PageUp':
-                event.preventDefault();
-                event.stopPropagation();
-                setTimelineMinimapScrollX(scrollX - pagePx);
+                targetScrollX = scrollX - pagePx;
                 break;
             case 'PageDown':
-                event.preventDefault();
-                event.stopPropagation();
-                setTimelineMinimapScrollX(scrollX + pagePx);
+                targetScrollX = scrollX + pagePx;
                 break;
             case 'Home':
-                event.preventDefault();
-                event.stopPropagation();
-                setTimelineMinimapScrollX(0);
+                targetScrollX = 0;
+                break;
+            case 'End':
+                targetScrollX = sliderMaxBeats * pixelsPerBeat;
                 break;
             default:
-                break;
+                return;
         }
+
+        event.preventDefault();
+        event.stopPropagation();
+        if (transportStore.value?.isPlaying) {
+            setTimelineMinimapAutoScroll(false);
+        }
+        setTimelineMinimapScrollX(targetScrollX);
     };
 
     return (

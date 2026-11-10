@@ -14,10 +14,6 @@ import { TrackHeader } from '../TrackHeader';
 vi.unmock('#/components/ui/tooltip');
 
 // Mock external dependencies
-vi.mock('../../../useCases/toggleTrackState/muteTrack', () => ({
-    muteTrack: vi.fn<(...args: unknown[]) => void>(),
-}));
-
 vi.mock('../../../useCases/toggleTrackState/soloTrack', () => ({
     soloTrack: vi.fn<(...args: unknown[]) => void>(),
 }));
@@ -31,10 +27,13 @@ vi.mock('../../../useCases/toggleTrackState/selectTrack', () => ({
 }));
 
 vi.mock('#/modules/Command/useCases', () => ({
+    commitUndoEntry: vi.fn(),
+    createUndoEntry: vi.fn(),
     getExecutableAppActionEffect: vi.fn(() => null),
     executeAppAction: vi.fn(),
     executeUserAppAction: vi.fn(),
     pushUndoEntry: vi.fn(),
+    resetActionReplayAuthority: vi.fn<() => void>(),
 }));
 
 vi.mock('../../../useCases/folder/toggleFolderCollapse', () => ({
@@ -318,10 +317,17 @@ describe('TrackHeader', () => {
     });
 
     it('toggles the mute state on click', async () => {
-        const { muteTrack } = await import('../../../useCases/toggleTrackState/muteTrack');
         renderWithTooltip(<TrackHeader track={mockTrack} isSelected={false} />);
         fireEvent.click(screen.getByLabelText(/Mute/));
-        expect(muteTrack).toHaveBeenCalledWith('track1', true);
+        expect(executeUserAppAction).toHaveBeenCalledWith(
+            { type: 'muteTrack', payload: { trackId: 'track1', muted: true, expectedMuted: false } },
+            expect.objectContaining({
+                skipUndo: true,
+                shouldExecute: expect.any(Function),
+                shouldCommit: expect.any(Function),
+                onCommitted: expect.any(Function),
+            })
+        );
     });
 
     it('solos exclusively on a plain click', async () => {

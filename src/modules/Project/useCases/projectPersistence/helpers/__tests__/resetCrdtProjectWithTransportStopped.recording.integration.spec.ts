@@ -69,7 +69,11 @@ const mocks = vi.hoisted(() => {
             capture = { terminal, sampleZeroContextFrame };
             const read: RecordingCaptureReader = () => {
                 if (capture?.terminal === terminal) {
-                    return { status: 'captured', contextSeconds: sampleZeroContextFrame / audioClock.sampleRate };
+                    return {
+                        status: 'captured',
+                        contextSeconds: sampleZeroContextFrame / audioClock.sampleRate,
+                        capturedThroughContextSeconds: audioClock.currentTime,
+                    };
                 } else {
                     return { status: 'unavailable' };
                 }

@@ -638,6 +638,12 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // evaluator's AU-1 delegation note (#747). The transformer computes
         // curve values only, holds no device writes.
         // 'src/modules/Arrangement/transformers/automationTransformers.ts': removed (0),
+        // Count provenance: new file entry, measured 2 — the declaration and the
+        // one call of `compileSlices`, the pure planner that turns detected
+        // onsets into slice positions for a transient quantize. It returns plain
+        // data; the plan is applied through `restoreStripSilenceState` as a clip
+        // replacement and touches no device, parameter or engine state.
+        'src/modules/Arrangement/useCases/prepareTransientQuantize.ts': 2,
         // Count provenance: 0 in code, was 1 lexical — a doc-comment
         // cross-reference to `compileAutomationEvents` in the live evaluator's
         // AU-1 delegation note (#747) — not a sink.
@@ -849,6 +855,17 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // confirmPendingChatActions (#3147). Command settlement only; no device
         // hydration or write.
         'src/modules/AiRuntime/useCases/agentRequestOrchestration/settleConfirmedCommandExecution.ts': 2,
+        // Count provenance: new file entry, measured 3 — the
+        // `compileVibeBatchMetricState` import, its module path in that same
+        // import, and the one call that reads a vibe-run batch's measured metric
+        // state. Grounding builds immutable batch actions only; no device
+        // hydration or write.
+        'src/modules/AiRuntime/useCases/agentRequestOrchestration/groundVibeRunBatch.ts': 3,
+        // Count provenance: new file entry, measured 3 — the
+        // `compileAgentRiskApproval` import, its module path in that same import,
+        // and the one call that seals the next scheduled batch's approval
+        // snapshot. Immutable approval metadata only; no device hydration or write.
+        'src/modules/AiRuntime/useCases/agentRequestOrchestration/proposeNextScheduledBatch.ts': 3,
         // Count provenance: new file entry, measured 1 — the single
         // `providerProtocol.compileRequest` call, extracted from
         // sendChatMessage (#2975). Provider-request compilation only.
@@ -881,6 +898,17 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         'src/modules/AiRuntime/useCases/splitCompiledCommandList.ts': 1,
         'src/modules/AiRuntime/useCases/streamHostedModelText.ts': 1,
         'src/modules/AiRuntime/useCases/validateArbitraryCommandListEvidence.ts': 1,
+        // Count provenance: new file entry, measured 4 — the exported
+        // `compileVibeBatchMetricState` declaration, plus the
+        // `compilePreviewMeasurementProposal` import, its module path and one
+        // call that measures a batch preview. Measurement compiles a versioned
+        // Command envelope over an isolated projection; no device hydration or write.
+        'src/modules/AiRuntime/useCases/vibeRun/compileVibeBatchMetricState.ts': 4,
+        // Count provenance: new file entry, measured 3 — the
+        // `compilePerceptualConstraints` import, its module path and one call
+        // that reads the request's constraint clauses while planning the
+        // schedule. Pure prompt reading; no device hydration or write.
+        'src/modules/AiRuntime/useCases/vibeRun/planVibeRunSchedule.ts': 3,
         // Arrangement: compileAddDeviceAction / compileReorderDevicesAction /
         // compileLoadPresetActions / compileTrackStripInitializationSnapshot.
         // Compilers, barrel re-exports, the loadPreset handler, and
@@ -994,6 +1022,12 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // compiled action commits through `executeAppActionBatch`; the file
         // writes no store or device.
         'src/modules/ContentBrowser/useCases/placeLibrarySample.ts': 2,
+        // Count provenance: measured 4 — compileLoadPresetActions import/call
+        // and compilePreviewDevices declaration/call. Compiled actions are read
+        // only to construct disposable offline input, never executed or hydrated
+        // into live project/device state. The device-data census below is scoped
+        // to Arrangement/Project; this foreign request-local projection writes neither.
+        'src/modules/ContentBrowser/useCases/renderPresetPreview.ts': 4,
         'src/modules/ContentBrowser/presentations/views/Sidebar/InstrumentsTab.tsx': 4,
         // Count provenance: 0 in code, was 2 — addDeviceThroughAction now
         // delegates to `executeAddDeviceAction`; no compiler named.
@@ -1120,6 +1154,11 @@ const DEVICE_DATA_COUNTS = {
         // device chain from `track.devices`, it only measures how long that
         // chain rings. Read, not write; no live device is touched.
         'src/modules/Arrangement/useCases/freezeBounce/freezeTrack.ts': 1,
+        // Count provenance: measured 1 — `devices:` in trackRows retains
+        // device topology as read-only source identity for selection-render
+        // admission and global compensation. The projection reaches canonicalJson,
+        // not a store, CRDT or runtime device write.
+        'src/modules/Arrangement/useCases/freezeBounce/selectionBounceSourceProjection.ts': 1,
         // MD-4 (#716) retired the two sinks this file used to carry: the freeze/
         // bounce renderer no longer reads `track.devices` to build its own device
         // chain — it hands the render subgraph to the AudioEngine offline graph,

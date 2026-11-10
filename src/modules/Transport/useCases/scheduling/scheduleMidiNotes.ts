@@ -471,8 +471,13 @@ function placeSamplesOnClock({
  * playback was just relocated to (a loop wrap, a follow-action jump), not the
  * continuation of the previous window. It additionally restores every stored
  * controller to the value in force at `fromBeat` and lifts those left engaged
- * that nothing is in force for there, at the frame `fromBeat` lands on. A
- * transport start or a user seek is not a relocation in this sense. A track that
+ * that nothing is in force for there, at the frame `fromBeat` lands on.
+ *
+ * `eventSchedulingAnchor` is the time `accumulatedPosition` stands for, retained
+ * across buffer preparation and MIDI awaits. It is separate from the initial-only
+ * buffer anchor so rolling frozen sources keep their existing head and floor clocks.
+ *
+ * A transport start or a user seek is not a relocation in this sense. A track that
  * schedules again after a track or clip mute withheld its stored controllers gets
  * the same restore in that window.
  */
@@ -487,7 +492,8 @@ export async function scheduleMidiNotes(
     cancellation?: SchedulerCancellation,
     opensAtRelocation = false,
     preparedInitialWindow?: PreparedInitialMidiWindow,
-    initialSchedulingAnchor?: number
+    initialSchedulingAnchor?: number,
+    eventSchedulingAnchor = initialSchedulingAnchor
 ): Promise<void> {
     const isCurrent = () => (cancellation?.isCurrent() ?? true) && (preparedInitialWindow?.isCurrent() ?? true);
     if (preparedInitialWindow && !isCurrent()) {
@@ -534,7 +540,7 @@ export async function scheduleMidiNotes(
     // that window — so staleness is a clock question, not a window-grace
     // question (a note's own tail past the pass end is no such segment: the
     // rack is handed it as its own note on the pass head, owned there):
-    // `accumulatedPosition` is the beat `getCurrentTime()` stands for this tick
+    // `accumulatedPosition` is the beat the event anchor stands for this tick
     // (the same position the note time formula measures against), and a start
     // behind it computes a time in the past that Web Audio clamps to an
     // immediate fire. The window's groove-reach bound stays as the floor for
@@ -569,7 +575,7 @@ export async function scheduleMidiNotes(
     // a relocation's restore alike. A caller that keeps the clock past this window freezes the time it
     // stands for (`currentTime`), as a started note does.
     const sampleFrameAtBeatOnTrack =
-        (trackId: string, currentTime = initialSchedulingAnchor) =>
+        (trackId: string, currentTime = eventSchedulingAnchor) =>
         (beat: number) => {
             const { sampleRate } = getAudioContext();
             return placeSamplesOnClock({
@@ -741,7 +747,7 @@ export async function scheduleMidiNotes(
         if (!soundingAtRelocation || !isCurrent()) {
             return;
         }
-        const relocationClockTime = initialSchedulingAnchor ?? getCurrentTime();
+        const relocationClockTime = eventSchedulingAnchor ?? getCurrentTime();
         for (const track of tracks) {
             const soundingNotes = soundingAtRelocation.get(track.id);
             if (!soundingNotes || frozenBufferIdOf(track)) {
@@ -1225,7 +1231,7 @@ export async function scheduleMidiNotes(
                             accumulatedSamples,
                             sampleRate: sr,
                             compensation,
-                            currentTime: initialSchedulingAnchor,
+                            currentTime: eventSchedulingAnchor,
                         });
                         const durationSamples = noteEndSamples - noteStartSamples;
                         const duration = durationSamples / sr;
@@ -1239,7 +1245,7 @@ export async function scheduleMidiNotes(
                             accumulatedSamples,
                             sampleRate: sr,
                             compensation,
-                            currentTime: initialSchedulingAnchor,
+                            currentTime: eventSchedulingAnchor,
                         }).sampleFrame;
                         const noteGain = isTrackScopedYeastNote ? 1 : clip.gain;
 
@@ -1351,7 +1357,7 @@ export async function scheduleMidiNotes(
                                     : undefined;
                             // Later windows place its changes through this
                             // same clock, frozen at the time it started.
-                            const noteClockTime = initialSchedulingAnchor ?? getCurrentTime();
+                            const noteClockTime = eventSchedulingAnchor ?? getCurrentTime();
                             const expression =
                                 note.expression || trackBend
                                     ? startNoteExpression({
@@ -1468,7 +1474,7 @@ export async function scheduleMidiNotes(
                     accumulatedSamples,
                     sampleRate,
                     compensation: getCompensationDelay(trackId),
-                    currentTime: initialSchedulingAnchor,
+                    currentTime: eventSchedulingAnchor,
                 }).sampleFrame,
         });
     }

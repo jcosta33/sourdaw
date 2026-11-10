@@ -32,6 +32,7 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
 
 vi.mock('../recordingMidiAdmissionPort', () => ({
     recordingMidiAdmissionPort: {
+        isRecordingMidiInputExcluded: () => false,
         admitRecordingMidiNoteOn: () => null,
         admitRecordingMidiNoteOff: () => undefined,
         admitRecordingMidiExpression: () => undefined,

@@ -16,13 +16,21 @@ none.
    step-only inverse or lost anchor must fail the terminal-output case (#5209/#5243): include both
    moving-layer schedulers and stem branches, quantisation, slew and the compensated write clock, and a
    layer whose beat-zero value differs from its requested-start value under a tempo ramp. Source offsets
-   converted at the clip-start tempo are `audio-source-time.md` probe 1.
+   converted at the clip-start tempo are `audio-source-time.md` probe 1. Re-date an admitted punch's SAME original out/occurrence
+   after accepted120→60 adoption: browser uses the effective adoption instant; native compares old/new durations
+   from the SAME epoch beat to original out, only at a newly authorized sounded epoch. Loop/locate geometry,
+   cancelled/planned/future epochs cannot retarget it. Ignoring adoption must fail the connected out/producer case.
 2. **Musical law against DAW convention.** State the law an established DAW applies and evaluate at
    two grids (1/16 and 1/4); quantize the output again and require it unchanged; a result no reference
    DAW reproduces is a finding unless a decision record names the difference (#4788). Mapped ruler
    paint must follow the model's physical bar origins, not an inverse over bar names (Insert 2 at 4 in
    4/4 carries the origin to 6 and moves the clip at 8 to 10; two partial pieces can share a number);
-   cover partial bars, denominators other than 4 and a later meter change.
+   cover partial bars, denominators other than 4 and a later meter change. Track clip-list bar endpoints
+   must use the live default meter and time-signature map: beats 18–27 read 5–7 in 4/4, 7–10 in 3/4
+   or 6/8, and 7–10 with a 5/8 change at beat 8 over a 4/4 default. Changing either meter source while
+   the list is mounted must update its labels. Restore quarter-note arithmetic or remove the subscription;
+   `TrackClipsSection.spec.tsx` must fail. Follow the view's `useMeterInput` to the public
+   `getBarNumberAtBeat` query so the display shares the ruler's snapped meter law.
 3. **Fresh instance, highest rate, whole signal.** Render a fresh instance without setting the
    parameter under test and compare with explicit values (default routing); measure the actual engine
    at the highest admitted context rate for late tail and silence after the physical duration; compare
@@ -63,6 +71,17 @@ none.
    before the next quantum, so it holds from that quantum's first frame, suspended or running. Render from such a
    frame through a fixture applying Chromium's step rule (a time clamped up to `currentTime`, taking effect on the
    first frame at or after it) and assert the first sample.
+   A future source can also expose pre-event gain: at48kHz, drive the real clip emitter at
+   `21.668000000000003` with nonzero PCM and an undrawn attack. Capture every onset sample for fresh gains
+   and actual onended-to-pool reuse, including the prior unity-reset timeline; `22.42` and an unmodified
+   native replay are controls. The main-base causal probe for#6277 reproduced a full-amplitude first sample
+   removed only by changing acquisition seed, with all other captured samples equal. Fresh default gain
+   was introduced by direct commit`4f410257b2`, pooled reset1 by`134120470a`; no associated PR was found.
+   Later#6129 retained that sequence; its comp/source-call checks did not observe native onset gain.
+   Seed the fade's effective intended value before source.start, including equal-time outgoing plateaus
+   and nonzero drawn progress; preserve envelope/frozen unity. Reverting only the fresh or pooled seed
+   must fail the named first-sample PCM comparison. A mocked source.start snapshot proves construction,
+   not rendered audio; retain whole-interval native replay, exact frames and pooling history.
 8. **MIDI note correlation crosses the rack boundary.** When a transform stores a Note On decision for a
    later Note Off, drive supplied `noteInstanceId` values through `MidiRack`: one equal-pitch note, change the
    deciding parameter while held, then attack and release a second identity first. Assert emitted identity
@@ -83,3 +102,25 @@ none.
     the new one (same commit). Schedule, edit (comp, take swap, mute, and a part scheduled ahead), run the next
     pass, and assert `stop` on every superseded source before its start and exactly one `start` for the new
     content; an unchanged pass must call neither.
+
+12. **Recorded MIDI shares its admitted media origin (#5891).** At120BPM with30ms latency, require the real
+    compensated downbeat at source0 and held out1.09 rather than1.03: onset, expression, off and Stop subtract
+    startBeat−midiOffsetBeats BEFORE clamping, preserving captured pass origins across loop edits. Removing the
+    media-origin adjustment must fail the endpoint; adding it after clamping must fail the downbeat. Strike at
+    11.02 for out11.03, release before out and hold after out, with zero and nonzero lead-in: the ordinary0.0625
+    minimum cannot extend the automatic-owned source cap. Both key-up and sealing emit no zero/malformed note
+    when no positive interval remains; ordinary manual/no-cap minimum stays a control. Historical private review
+    prompts and tiers are unestablished. Owner lifetime: `session-lifecycle.md` probe12; no hardware MIDI claim.
+13. **Recovered clocks do not prove rendered loop continuity (#6277).** The100ms tick-driven buffer window
+    and stop/clear seam route appear in direct commit `4f410257b2`; no associated introducing PR is established.
+    Later public#4897 seam checks and#6004 clock-gap/wrap checks do not establish pre-block successor admission
+    or a rendered interval through a blocked main thread. Withhold200ms of ticks across a2s seam and multiple
+    125ms seams, retaining a source ledger copied before the block and an independent source-time reference.
+    `startPlayheadSchedulerLoopAudioStall.spec.ts` must fail if admission waits for the old100ms window or
+    prepares only one successor. Require the actual completed coverage, recorded completion audio timestamp,
+    250ms endpoint, one-frame-beyond retained-lead control and mapped recovery beyond coverage. Advance the
+    context clock during preparation: tick-entry time cannot certify350ms remaining at completion. Bound
+    work even under an unmoving monotonic clock and tiny legal loops; shortfall must name actual unadmitted
+    coverage. Separately capture real Chromium programme PCM through the block and compare an unstalled
+    reference for missing intervals, phase and duplicates, including existing fades. API calls, positive meters,
+    recovered wrap counts and a+2s-anchor admission benchmark cannot replace that rendered-signal proof.

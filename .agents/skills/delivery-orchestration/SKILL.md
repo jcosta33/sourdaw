@@ -198,10 +198,9 @@ milestone and project mechanics, branch-type warnings, and off-convention lanes:
 
 ### e. Wait for push checks and mergeability
 
-- Wait for the entire `PR checks` workflow on the exact head to conclude `SUCCESS`; a green
-  `Plan push checks` job alone is not the workflow result.
-- A model-label event may trigger a pre-approval `Gate` failure; that separate run is expected and is
-  not awaited before independent review and reviewer-App approval.
+- Wait for the entire `Health gates` workflow on the exact head to conclude `SUCCESS`; a green
+  `Plan required checks` job alone is not the workflow result. A draft fails `Gate` without running
+  the heavy jobs.
 - Use one observer per PR; back off on read failures or use a connected reader that returns complete
   checks. Job pages can omit results: establish completion from the whole exact-head workflow or a
   complete check rollup, never a green subset, and do not rerun CI because a status read failed.
@@ -412,7 +411,7 @@ A minimal `APPROVE` on the same plan:
 
 ### i. Before any APPROVE publish
 
-- The whole `PR checks` workflow is `SUCCESS` on that exact head (step e).
+- The whole `Health gates` workflow is `SUCCESS` on that exact head (step e).
 - `gh pr view <pr> --json mergeable` reads `MERGEABLE`; wait out `UNKNOWN`, and resolve `CONFLICTING`
   with a new head and a fresh round.
 - Zero unresolved review threads, CodeQL `github-advanced-security` threads included.
@@ -436,15 +435,10 @@ another post. A legacy bundle without a risk plan retains its historical shape. 
 replay contract: [review records](references/review-records.md).
 
 Post validated blockers as a `REQUEST_CHANGES` review BEFORE dispatching any repair.
-`REQUEST_CHANGES` removes the `ci:approved` label.
 
 On a clean round, the reviewer posts one APPROVE; that reviewer APPROVE on the current head records
-the delivery authorization in the head's dossier, and `review:publish` then re-applies the
-`ci:approved` label as the reviewer App, after its publication lock is released; a failed label write
-exits nonzero naming the pull request, and a plain re-run replays the review and retries it. That
-label event alone starts the heavy checks and `Gate`, so CI capacity is spent once per approved
-head. Re-running `review:publish` on the same head replays the review and re-applies the label,
-which restarts a `Gate` that a later label event failed or cancelled.
+the delivery authorization in the head's dossier. Approval does not start CI: `Health gates` already
+ran for the non-draft head, and a later push starts it again.
 
 ### k. Repair
 
@@ -469,7 +463,7 @@ clarify code, not threads. Full eligibility, ancestry, and crash-recovery mechan
 
 ### l. Gate and deliver
 
-Wait for the approval-triggered `Gate`. The merge is your decision: run `pnpm deliver <pr>` from the
+`Gate` already ran on this head. A later push starts it again and needs a fresh review. The merge is your decision: run `pnpm deliver <pr>` from the
 protected primary checkout, and the script squash-merges as the immutable author App after the
 reviewer APPROVE and a green `Gate`.
 
@@ -648,7 +642,7 @@ author brief's approach and reasoning never reach a reviewer, the bundle, or the
 
 ## Freeze
 
-At five reviewer `REQUEST_CHANGES` rounds a PR is frozen to fresh publication under AGENTS.md
+At ten reviewer `REQUEST_CHANGES` rounds a PR is frozen to fresh publication under AGENTS.md
 [Review](../../../AGENTS.md#review); mechanics in [review records](references/review-records.md).
 
 ## References

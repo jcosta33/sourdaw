@@ -1240,7 +1240,7 @@ describe('branchStateAuthority', () => {
     function reportedResetError(): string {
         const [reported] = mocks.loggerError.mock.calls.at(-1) ?? [];
         if (!(reported instanceof Error)) {
-            throw new Error('No reset recovery error was reported');
+            throw new TypeError('No reset recovery error was reported');
         }
         return reported.message;
     }

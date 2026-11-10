@@ -249,7 +249,7 @@ function parserMatrixNames(template: string, strategy: unknown): string[] {
             continue;
         }
         const reference = new RegExp(`\\$\\{\\{\\s*matrix\\.${dimension}\\s*\\}\\}`, 'g');
-        resolved = resolved.flatMap((name) => values.map((value) => name.replace(reference, () => String(value))));
+        resolved = resolved.flatMap((name) => values.map((value) => name.replaceAll(reference, () => String(value))));
     }
     return resolved;
 }
@@ -6834,6 +6834,11 @@ describe('pull-request delivery', () => {
             './.github/workflows/heavy-gates.yml',
             './.github/workflows/validation.yml',
         ]);
+        const liveWorkflow = parse(LIVE_WORKFLOW_SOURCE) as {
+            jobs?: Record<string, { name?: unknown; needs?: unknown }>;
+        };
+        expect(liveWorkflow.jobs?.gate?.needs).toContain('e2e-build');
+        expect(liveWorkflow.jobs?.['e2e-build']?.name).toBe('Shared E2E build');
         expect(liveSummary.called['./.github/workflows/heavy-gates.yml']?.jobs).toHaveProperty('e2e');
         const runtimeMatrixRefusal = await refusalErrorFor(LIVE_WORKFLOW_SOURCE, LIVE_CALLED_SOURCES);
         const { port, calls } = fakePort({ gateRequiredCheckNames: runtimeMatrixRefusal });

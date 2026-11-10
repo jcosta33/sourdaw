@@ -629,6 +629,32 @@ export type StripSilenceActionSnapshot = {
     readonly clipSatellites: readonly ClipSatelliteEntrySnapshot[];
     readonly clipAutomationLanes: readonly ClipAutomationLaneSnapshot[];
 };
+/** One detected onset a transient quantize cut and moved: the slice it heads now starts at `toBeat`. */
+export type TransientQuantizeMoveSnapshot = {
+    readonly onsetIndex: number;
+    readonly sliceClipId: string;
+    /** The onset's position in the source file: the slice's exact `audioOffsetSeconds`. */
+    readonly sourceSeconds: number;
+    readonly confidence: number;
+    readonly fromBeat: number;
+    readonly toBeat: number;
+};
+/** One detected onset a transient quantize left uncut: `merged` when its grid point did not advance
+ *  past the slice before it, `limit` when it fell past the onset cap. */
+export type TransientQuantizeSkipSnapshot = {
+    readonly onsetIndex: number;
+    readonly reason: 'merged' | 'limit';
+};
+/** The application-materialized plan a transient quantize applies. It is a strip-silence-shaped
+ *  clip replacement, bound to the decoded source and the tempo clock it was detected against. */
+export type TransientQuantizePlanSnapshot = {
+    readonly source: { readonly audioBufferId: string; readonly sampleRate: number; readonly length: number };
+    readonly clock: TempoSourceClock;
+    readonly expected: StripSilenceActionSnapshot;
+    readonly replacement: StripSilenceActionSnapshot;
+    readonly moves: readonly TransientQuantizeMoveSnapshot[];
+    readonly skipped: readonly TransientQuantizeSkipSnapshot[];
+};
 export type ClipSplitActionSnapshot = {
     /** Old clip-start tempo that authenticates audio source promotion on both replay facets. */
     readonly audioSourceTempoAtStart?: number;
@@ -2490,6 +2516,8 @@ export type AppAction =
               fadeOutBeats?: number;
               /** Offset the restore puts back; optional so older undo entries still decode. */
               audioOffsetBeats?: number;
+              /** Modern exact optional alias capture. Absent retains the older numeric/omitted contract. */
+              audioOffsetBeatsCapture?: { present: false } | { present: true; value: number };
               /** Loop anchor the restore puts back; optional so older undo entries still decode. */
               loopOriginBeat?: number;
               /** Canonical source clock the restore puts back exactly. Present only for a
@@ -3244,8 +3272,27 @@ export type AppAction =
     | { type: 'captureScratchPad'; payload?: undefined }
     | { type: 'commitScratchPad'; payload?: undefined }
     | { type: 'clearScratchPad'; payload?: undefined }
-    | { type: 'createPatternInstance'; payload: { sourceClipId: string; targetTrackId: string; startBeat: number } }
+    | {
+          type: 'createPatternInstance';
+          payload: { sourceClipId: string; targetTrackId: string; startBeat: number; targetClipId?: string };
+      }
     | { type: 'detachPatternInstance'; payload: { clipId: string } }
+    | {
+          /** Exact link-field replay; never replaces clip content or MIDI material. */
+          type: 'restorePatternInstanceLink';
+          payload: {
+              clipId: string;
+              trackId: string;
+              expected: {
+                  parentClipId: { present: false } | { present: true; value: string };
+                  overrides: { present: false } | { present: true; value: Record<string, boolean> };
+              };
+              replacement: {
+                  parentClipId: { present: false } | { present: true; value: string };
+                  overrides: { present: false } | { present: true; value: Record<string, boolean> };
+              };
+          };
+      }
     | { type: 'startMacroRecording'; payload?: undefined }
     | { type: 'stopMacroRecording'; payload: { name: string } }
     | { type: 'playMacro'; payload: { macroId: string } }
@@ -3333,7 +3380,23 @@ export type AppAction =
           };
       }
     | { type: 'detectTransients'; payload: { clipId: string; sensitivity?: number } }
-    | { type: 'quantizeTransients'; payload: { clipId: string } }
+    | {
+          type: 'quantizeTransients';
+          payload: {
+              clipId: string;
+              /** Grid step in beats. */
+              gridSize: number;
+              strength?: number;
+              swing?: number;
+              sensitivity?: number;
+              minConfidence?: number;
+              /** Absolute beat range the onsets must start in, half-open. */
+              startBeat?: number;
+              endBeat?: number;
+              /** Internal deterministic replay metadata. AiRuntime rejects it. */
+              plan?: TransientQuantizePlanSnapshot;
+          };
+      }
     | { type: 'openElasticEditor'; payload: { clipId: string } }
     | { type: 'closeElasticEditor'; payload?: undefined }
     | { type: 'elasticSetSensitivity'; payload: { sensitivity: number } }

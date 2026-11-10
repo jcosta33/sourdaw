@@ -237,6 +237,8 @@ export { stopRecording } from './recording/stopRecording';
 export { takeOwnsRecordingRoot } from './recording/takeOwnsRecordingRoot';
 export { recordingMidiSourceBeatAt } from './recording/recordingMidiSourceBeatAt';
 export { admitRecordingMidiNoteOn } from './recording/admitRecordingMidiNoteOn';
+export { isRecordingMidiInputExcluded } from './recording/isRecordingMidiInputExcluded';
+export { captureRecordingCommitRetirement } from './recording/captureRecordingCommitRetirement';
 export { admitRecordingMidiExpression } from './recording/admitRecordingMidiExpression';
 export { admitRecordingMidiNoteOff } from './recording/admitRecordingMidiNoteOff';
 export { findOpenRecordingMidiAdmission } from './recording/findOpenRecordingMidiAdmission';
@@ -326,6 +328,7 @@ export { getFactoryPresets } from './soundPresetLibrary';
 // Published because the composition root registers the factory presets device modules ship.
 export { deviceFactoryPresetSources } from './deviceFactoryPresetSources';
 export { stripSilence } from './stripSilence';
+export { readTransientQuantizeOutcome } from './readTransientQuantizeOutcome';
 export { getBuiltinPlugins } from './getBuiltinPlugins';
 export { getPlatformPlugins } from './getPlatformPlugins';
 export { getPluginById } from './getPluginById';
@@ -343,3 +346,5 @@ export { setDeviceState } from './device/setDeviceState';
 export { getSongStructureHandlers } from './getSongStructureHandlers';
 export { initStalenessDetection } from './freezeBounce/initStalenessDetection';
 export { isImportedStemSetApplied } from './stemImport/isImportedStemSetApplied';
+
+export { hasAutomaticRecordingMidiCapture } from './recording/hasAutomaticRecordingMidiCapture';

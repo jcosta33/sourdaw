@@ -69,12 +69,16 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     stopNativeLiveGraphSession: vi.fn(() => Promise.resolve({ outcome: 'declined', reason: 'no session' })),
 }));
 vi.mock('#/modules/MIDI/useCases', () => ({
+    captureEventPositionAt: () => {
+        throw new Error('This manual pause fixture has no automatic MIDI capture position');
+    },
     resetMidiState: vi.fn(),
     adaptGrooveTemplateForConsumer: vi.fn(),
     getGrooveTemplate: vi.fn(),
     getScopedGrooveAssignment: vi.fn(),
     getScopedGrooveConsumerId: vi.fn(),
     getStraightGrooveTemplateId: vi.fn(),
+    markGrooveTemplateProjectWrite: vi.fn(),
     restoreGrooveAssignment: vi.fn(),
 }));
 vi.mock('#/modules/Yeast/useCases', async (importOriginal) => ({

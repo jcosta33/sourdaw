@@ -63,6 +63,10 @@ type DeviceEnginePorts = {
 
 let productionPorts: DeviceEnginePorts | null = null;
 
+async function setTemplateArpeggiatorParam(processorId: string, name: string, value: number): Promise<void> {
+    await setYeastProcessorParam(processorId, name, value);
+}
+
 function buildProductionPorts(): DeviceEnginePorts {
     // Macro slots (`macro0`..`macro7`) are deliberately absent: project truth
     // stores them as one `macros` array, not as individually keyed values, so
@@ -113,7 +117,7 @@ function buildProductionPorts(): DeviceEnginePorts {
         templateArpeggiatorAuthoring: {
             focusRack: setActiveYeastDevice,
             addProcessor: addYeastProcessor,
-            setProcessorParam: setYeastProcessorParam,
+            setProcessorParam: setTemplateArpeggiatorParam,
         },
         templateDeviceContent: {
             stringSectionState: createLevainTemplateDeviceState,

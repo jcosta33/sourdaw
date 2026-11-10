@@ -33,7 +33,6 @@ import { parseDocument } from 'yaml';
 
 export const HEALTH_GATE_WORKFLOW_FILES = [
     'health-gates.yml',
-    'pr-checks.yml',
     'heavy-gates.yml',
     'validation.yml',
     'nightly.yml',
@@ -172,16 +171,12 @@ export const STEP_INVENTORY: Readonly<Record<string, Readonly<Record<string, rea
         ],
     },
     'health-gates.yml': {
-        admission: ['Checkout trusted admission', 'Set up Node', 'Read reviews', 'Decide admission'],
         scope: [...SETUP_PNPM_NODE, 'Fetch coverage map', 'Plan affected checks', 'Upload scope manifest'],
+        'e2e-build': [...SETUP_NODE, 'Build shared E2E app', 'Upload shared E2E build'],
         validation: null,
         affected: null,
         codeql: ['Checkout', 'Initialise CodeQL', 'Analyse'],
         gate: ['Require selected checks to succeed'],
-    },
-    'pr-checks.yml': {
-        scope: [...SETUP_PNPM_NODE, 'Fetch coverage map', 'Plan affected checks', 'Upload scope manifest'],
-        validation: null,
     },
     'validation.yml': {
         decide: ['Filter changed paths', 'Retry changed-paths filter after a transient API failure', 'Resolve scope'],
@@ -239,7 +234,7 @@ export const STEP_INVENTORY: Readonly<Record<string, Readonly<Record<string, rea
         'validation-gate': ['Require selected validation jobs to succeed'],
     },
     'heavy-gates.yml': {
-        e2e: SHARDED_BROWSER_STEPS,
+        e2e: [...SETUP_NODE, 'Download shared E2E build', ...SHARDED_BROWSER_STEPS.slice(SETUP_NODE.length)],
         'e2e-report': [...SETUP_PNPM_NODE, 'Download blob reports', 'Merge into one report', 'Upload report'],
         'browser-ai-webgpu': [...WEBGPU_ADMISSION_STEPS, 'Upload Browser AI WebGPU diagnostics'],
         'heavy-gate': ['Require selected browser jobs to succeed'],
