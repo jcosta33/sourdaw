@@ -1,0 +1,20 @@
+.agents/skills/review-stances/rendered-ui-layout.md
+  h_beb54bf43b47b7 55-60
+src/components/ui/input.tsx
+  h_beb54bf43b47b7 11
+src/modules/Grinder/presentations/views/GrinderPanel.tsx
+  h_beb54bf43b47b7 1007
+src/styles/__tests__/semanticThemes.spec.ts
+  h_beb54bf43b47b7 105-108,110,113-115,172,194,205-206,386-390,396,450,464,514-517,525,530-535,537-538,579-582,598,600-601,603-608
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c158549553c1826e9aa9acfffeaf8614e8a2d93d",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
