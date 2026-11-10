@@ -17,7 +17,7 @@ type StorageRuntimeCandidate = ReturnType<
 >;
 
 type StorageRuntimeValidatedInput = Parameters<
-    NonNullable<Parameters<typeof configureAutomergeStoragePort>[0]>['mutateDocValidated']
+    NonNullable<NonNullable<Parameters<typeof configureAutomergeStoragePort>[0]>['mutateDocValidated']>
 >[0];
 
 function mutateCrdtDocValidated(
