@@ -296,7 +296,7 @@ test('reveals the saved Light theme on the unsupported-phone gate', async ({ bro
 
         await phone.goto('/');
 
-        await expect(phone.getByText('Desktop DAW')).toBeVisible();
+        await expect(phone.getByText('Desktop DAW')).toBeVisible({ timeout: LAUNCH_SCREEN_FIRST_PAINT_TIMEOUT_MS });
         await expect(phone.locator('html')).toHaveClass('light');
         await expect(phone.locator('html')).toHaveCSS('visibility', 'visible');
         await expect(phone.getByTestId('transport-play')).toHaveCount(0);

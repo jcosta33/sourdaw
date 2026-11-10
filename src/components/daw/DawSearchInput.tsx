@@ -64,7 +64,7 @@ export const DawSearchInput = ({
     return (
         <div
             className={cn(
-                'relative flex items-center w-full transition-colors focus-within:ring-1 focus-within:ring-ring',
+                'relative flex min-w-0 items-center w-full transition-colors focus-within:ring-1 focus-within:ring-ring',
                 VARIANT_CLASS[variant],
                 SIZE_CONTAINER_CLASS[size],
                 containerClassName,
