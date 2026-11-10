@@ -117,7 +117,6 @@ import { setMidiLearnDependencies } from '#/modules/ControlSurface/useCases';
 import {
     agentProjectInspectionPort,
     initBranchState,
-    captureProjectRootIdentity,
     captureProjectRevision,
     settledProjectRevisionMatchesLiveIgnoringSaveWrites,
     inspectAgentProjectDivergence,
@@ -138,10 +137,6 @@ import {
     syncCrumbsNativeInstances,
 } from '#/modules/Crumbs/useCases';
 import { updateCrustMeters, deleteCrustMeters } from '#/modules/Crust/stores';
-import {
-    setElasticRootIdentityProvider,
-    setElasticSensitivityRootIdentityCapture,
-} from '#/modules/ElasticAudio/useCases';
 import { setFermenterTelemetry } from '#/modules/Fermenter/stores';
 import { setFermenterMappedParam, setFermenterDependencies } from '#/modules/Fermenter/useCases';
 import { updateGlutenMeters, deleteGlutenMeters } from '#/modules/Gluten/stores';
@@ -272,7 +267,6 @@ registerProjectLifecycle();
 registerDeviceEnginePorts();
 registerSupportingServicePorts();
 registerKernelPorts();
-setElasticSensitivityRootIdentityCapture(captureProjectRootIdentity);
 configureCommandBatchIdempotency({ canExecute: canExecuteCommandBatch });
 setActionHistoryMetadataPort({
     record: recordActionHistoryEntry,
@@ -283,7 +277,6 @@ setActionHistoryMetadataPort({
 sessionUndoWitnessStampPort.setProvider(stampSessionUndoWitness);
 productionBriefAdmissionPort.setGuard(productionBriefActionBatchAdmission.capture);
 commandProjectRevisionPort.setProvider(captureProjectRevision);
-setElasticRootIdentityProvider(captureProjectRootIdentity);
 commandProjectRevisionPort.setLiveMatchIgnoringSaveWrites(settledProjectRevisionMatchesLiveIgnoringSaveWrites);
 configureAudioEngineRuntime();
 commandBatchPreflightPort.setProvider(captureCommandBatchPreflightState);

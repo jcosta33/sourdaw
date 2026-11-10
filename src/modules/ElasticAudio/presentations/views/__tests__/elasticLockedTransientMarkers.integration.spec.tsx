@@ -55,13 +55,13 @@ import {
 } from '#/utils/Notification/notificationEventBus';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
-import { detectTransients } from '../../../useCases/elasticAudio/detectTransients';
 import {
     type TransientOnsetWorkerRequest,
     type TransientOnsetWorkerResult,
 } from '../../../models/TransientOnsetWorker';
 import { defaultElasticAudioState, elasticAudioStore } from '../../../stores/elasticAudio';
 import { addManualMarker } from '../../../useCases/elasticAudio/addManualMarker';
+import { detectTransients } from '../../../useCases/elasticAudio/detectTransients';
 import { setElasticSensitivityRootIdentityCapture } from '../../../useCases/elasticAudio/elasticSensitivityDependencies';
 import { openElasticEditor } from '../../../useCases/elasticAudio/openElasticEditor';
 import { setElasticRootIdentityProvider } from '../../../useCases/elasticAudio/setElasticRootIdentityProvider';
