@@ -1,0 +1,32 @@
+index.html
+  h_beb54bf43b47b7 15
+public/entryLoadRecovery.js
+  h_beb54bf43b47b7 39
+public/themePrepaint.js
+  h_beb54bf43b47b7 244
+src/modules/Preferences/stores/__tests__/themePrepaint.spec.ts
+  h_beb54bf43b47b7 13,15-24,32,44,54-57,67-79
+src/modules/TimelineEditor/presentations/views/__tests__/AutomationBottomPanel.spec.tsx
+  h_beb54bf43b47b7 109-117,238-239,241-244
+src/styles/__tests__/semanticThemes.spec.ts
+  h_beb54bf43b47b7 864-866
+src/utils/UI/__tests__/applyDocumentTheme.spec.ts
+  h_beb54bf43b47b7 17,27,31,33,42
+src/utils/UI/applyDocumentTheme.ts
+  h_beb54bf43b47b7 14
+tests/e2e/e2eStartupDiagnostics.spec.ts
+  h_beb54bf43b47b7 95-105,119-128,144-147,158-211
+tests/e2e/entryLoadRecovery.spec.ts
+  h_beb54bf43b47b7 87-90
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0c939f4471f918d5be97816432d7edf4ce1e1239",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
