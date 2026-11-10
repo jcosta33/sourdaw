@@ -890,10 +890,16 @@ tests/e2e/launchFlows.spec.ts`. The guard runs that proof instead of replaying t
 receipt's canonical in-lane directory and under the receipt's profile unless `--profile` overrides
 it, as in that example; the memory budget resolves
 against the proof command itself, so a `pnpm test:e2e` proof runs under its measured budget unless
-`--max-rss-mib` overrides it. The proof child receives the recorded port as `SOURDAW_E2E_PORT` and
-nothing else: no token and no proof file the command tree could fabricate. While the proof runs,
-the guard itself polls the recorded loopback origin and requires a response carrying this
-checkout's e2e marker before it clears the unchanged original receipt; the guard still owns
+`--max-rss-mib` overrides it. The proof child receives the recorded port as `SOURDAW_E2E_PORT` and a
+freshly issued per-run token as `SOURDAW_E2E_RUN_TOKEN` — no proof file the command tree could
+fabricate, because the token only counts when a server stamps it, and the guard verifies the server
+directly. While the proof runs, the guard itself polls the recorded loopback origin and requires a
+response carrying this checkout's e2e marker AND this run's token before it clears the unchanged
+original receipt; the token binds the observation to the run, so a leftover e2e server that binds
+after the unserved-origin check stamps the checkout root but no (or a stale) token and cannot
+satisfy the watch. What the guard can prove is that a server this proof started answered at the
+recorded origin; what it cannot prove is that the browser suite exercised the app — the proof's
+own exit code covers that. The guard still owns
 resource enforcement and process-tree cleanup. An unrelated command's zero exit, an unmarked or
 foreign server at the recorded origin, a failed proof, signal, timeout, resource stop, cleanup
 leak, or concurrently replaced receipt preserves the stop. Explicit proofs require a recorded

@@ -3335,34 +3335,43 @@ export async function main(
                 explicitProof === undefined || runToken === undefined
                     ? undefined
                     : observeRecoveryServer(explicitProof.origin, lane.worktreePath, runToken);
-            const result = await runCommand({
-                command: recoveryCommand,
-                args: recoveryArgs,
-                profile: resolvedProfile,
-                maxRssBytes:
-                    input.maxRssBytes ??
-                    (explicitProof === undefined
-                        ? receipt.maxRssBytes
-                        : resolveDefaultMaxRssBytes({
-                              profile: resolvedProfile,
-                              command: recoveryCommand,
-                              args: recoveryArgs,
-                          })),
-                diskReserveBytes: input.diskReserveBytes,
-                showOutput: input.showOutput,
-                cwd: recoveryCwd,
-                ...(explicitProof === undefined || runToken === undefined
-                    ? {}
-                    : {
-                          env: {
-                              ...process.env,
-                              [SOURDAW_E2E_PORT_ENV]: String(explicitProof.port),
-                              [SOURDAW_E2E_RUN_TOKEN_ENV]: runToken,
-                          },
-                      }),
-            });
-            if (explicitProof !== undefined && observation !== undefined) {
-                const { observed, mismatch } = await observation.finish();
+            // The observer's interval would outlive a throwing proof (one that
+            // cannot even spawn) and hold the event loop open, so it finishes
+            // whether the run resolves or rejects.
+            let result: GuardedCommandResult;
+            let observationResult: RecoveryServerObservation | undefined;
+            try {
+                result = await runCommand({
+                    command: recoveryCommand,
+                    args: recoveryArgs,
+                    profile: resolvedProfile,
+                    maxRssBytes:
+                        input.maxRssBytes ??
+                        (explicitProof === undefined
+                            ? receipt.maxRssBytes
+                            : resolveDefaultMaxRssBytes({
+                                  profile: resolvedProfile,
+                                  command: recoveryCommand,
+                                  args: recoveryArgs,
+                              })),
+                    diskReserveBytes: input.diskReserveBytes,
+                    showOutput: input.showOutput,
+                    cwd: recoveryCwd,
+                    ...(explicitProof === undefined || runToken === undefined
+                        ? {}
+                        : {
+                              env: {
+                                  ...process.env,
+                                  [SOURDAW_E2E_PORT_ENV]: String(explicitProof.port),
+                                  [SOURDAW_E2E_RUN_TOKEN_ENV]: runToken,
+                              },
+                          }),
+                });
+            } finally {
+                observationResult = await observation?.finish();
+            }
+            if (explicitProof !== undefined && observationResult !== undefined) {
+                const { observed, mismatch } = observationResult;
                 if (result.code === 0 && result.reason === undefined && !observed) {
                     emitGuardedResult(recoveryCommand, result, input.showOutput);
                     error(

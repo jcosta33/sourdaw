@@ -14,6 +14,7 @@ import {
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 import { afterAll, describe, expect, it } from 'vitest';
 
@@ -2585,28 +2586,82 @@ describe('guard failure stop enforcement', { timeout: GUARDED_CASE_TIMEOUT_MS },
             }
         });
 
-        it('discharges a stopped dev server through a real finite guarded proof', async () => {
-            const fixture = await createProofServedDevServerFixture('recover-dev-real-proof');
+        it('stops watching the recorded origin when the proof command cannot start', async () => {
+            const fixture = await createProofServedDevServerFixture('recover-dev-proof-unspawnable');
+            const errors: string[] = [];
+            // Node's _getActiveHandles() no longer reports timers, so observe
+            // the observer directly: track every interval the run creates and
+            // require each one cleared. A left-over repeating timer here keeps
+            // the process alive — the CLI would print the spawn error and hang.
+            const realSetInterval = globalThis.setInterval;
+            const realClearInterval = globalThis.clearInterval;
+            const created: ReturnType<typeof realSetInterval>[] = [];
+            const cleared = new Set<ReturnType<typeof realSetInterval>>();
+            globalThis.setInterval = ((callback: () => void, ms?: number) => {
+                const timer = realSetInterval(callback, ms);
+                created.push(timer);
+                return timer;
+            }) as typeof globalThis.setInterval;
+            globalThis.clearInterval = ((timer?: ReturnType<typeof realSetInterval>) => {
+                if (timer !== undefined) {
+                    cleared.add(timer);
+                }
+                realClearInterval(timer);
+            }) as typeof globalThis.clearInterval;
+
+            try {
+                const code = await runGuardCli(['--recover', '--', 'pnpm', 'test:e2e', 'missing.spec.ts'], {
+                    cwd: fixture.lane.worktreePath,
+                    detectLane: () => fixture.lane,
+                    runCommand: async () => {
+                        throw new Error('spawn pnpm ENOENT');
+                    },
+                    error: (message) => errors.push(message),
+                });
+
+                expect(code).toBe(1);
+                expect(errors.join('\n')).toContain('spawn pnpm ENOENT');
+                expect(readGuardFailureReceipt(fixture.repoRoot, fixture.laneName)).toEqual(fixture.receipt);
+                const leaked = created.filter((timer) => !cleared.has(timer));
+                expect(leaked).toEqual([]);
+            } finally {
+                globalThis.setInterval = realSetInterval;
+                globalThis.clearInterval = realClearInterval;
+                for (const timer of created) {
+                    realClearInterval(timer);
+                }
+                rmSync(fixture.repoRoot, { recursive: true, force: true });
+            }
+        });
+
+        // The generated proof child imports the real marker middleware; under
+        // Vitest import.meta.url is an HTTP module URL, so anchor at the
+        // checkout root the test run executes from instead.
+        const identityModuleSpecifier = pathToFileURL(join(process.cwd(), 'scripts', 'e2eServerIdentity.ts')).href;
+
+        const writeMarkerProof = (fixture: { lane: { worktreePath: string } }, tokenExpression: string): void => {
             writeFileSync(
                 join(fixture.lane.worktreePath, 'package.json'),
                 JSON.stringify({
                     name: 'guard-dev-real-proof',
                     private: true,
-                    scripts: { 'test:e2e': 'node proof.cjs' },
+                    scripts: { 'test:e2e': 'node proof.mts' },
                 })
             );
             writeFileSync(
-                join(fixture.lane.worktreePath, 'proof.cjs'),
+                join(fixture.lane.worktreePath, 'proof.mts'),
                 [
-                    "const { createServer } = require('node:http');",
-                    "const { writeFileSync } = require('node:fs');",
-                    '// The proof itself serves the checkout marker on the recorded port,',
-                    '// the way a Playwright-run e2e server does, including the run',
-                    '// token the guard handed this proof through the environment.',
+                    "import { createServer } from 'node:http';",
+                    "import { writeFileSync } from 'node:fs';",
+                    `import { createSourdawRootHeaderMiddleware } from '${identityModuleSpecifier}';`,
+                    '// The proof serves the recorded port through the same marker middleware',
+                    '// a Playwright-run e2e server mounts, fed the run token the guard',
+                    '// handed this proof through the environment.',
+                    `const marker = createSourdawRootHeaderMiddleware(process.cwd(), ${tokenExpression});`,
                     'const server = createServer((request, response) => {',
-                    "    response.setHeader('X-Sourdaw-Root', encodeURIComponent(process.cwd()));",
-                    "    response.setHeader('X-Sourdaw-Run-Token', process.env.SOURDAW_E2E_RUN_TOKEN);",
-                    "    response.end('ok');",
+                    '    marker(request, response, () => {',
+                    "        response.end('ok');",
+                    '    });',
                     '});',
                     "server.listen(Number(process.env.SOURDAW_E2E_PORT), '127.0.0.1', () => {",
                     "    writeFileSync('observed.json', JSON.stringify({",
@@ -2618,6 +2673,11 @@ describe('guard failure stop enforcement', { timeout: GUARDED_CASE_TIMEOUT_MS },
                     '});',
                 ].join('\n')
             );
+        };
+
+        it('discharges a stopped dev server through a real finite guarded proof', async () => {
+            const fixture = await createProofServedDevServerFixture('recover-dev-real-proof');
+            writeMarkerProof(fixture, 'process.env.SOURDAW_E2E_RUN_TOKEN');
 
             try {
                 const code = await runGuardCli(['--recover', '--', 'pnpm', 'test:e2e', 'launch.spec.ts'], {
@@ -2638,6 +2698,32 @@ describe('guard failure stop enforcement', { timeout: GUARDED_CASE_TIMEOUT_MS },
                     port: String(fixture.port),
                 });
                 expect(readGuardFailureReceipt(fixture.repoRoot, fixture.laneName)).toBeUndefined();
+            } finally {
+                rmSync(fixture.repoRoot, { recursive: true, force: true });
+            }
+        });
+
+        it('preserves a stopped dev receipt when the proof serves a stale run token', async () => {
+            const fixture = await createProofServedDevServerFixture('recover-dev-stale-token');
+            writeMarkerProof(fixture, "'stale-token-from-another-run'");
+            const errors: string[] = [];
+
+            try {
+                const code = await runGuardCli(['--recover', '--', 'pnpm', 'test:e2e', 'launch.spec.ts'], {
+                    cwd: fixture.lane.worktreePath,
+                    detectLane: () => fixture.lane,
+                    runCommand: async (input) =>
+                        runIsolatedGuardedCommand({
+                            ...input,
+                            availableMemoryBytes: abundantMemoryBytes,
+                        }),
+                    assertModulesPreflight: () => undefined,
+                    error: (message) => errors.push(message),
+                });
+
+                expect(code).toBe(1);
+                expect(readGuardFailureReceipt(fixture.repoRoot, fixture.laneName)).toEqual(fixture.receipt);
+                expect(errors.join('\n')).toContain("without this run's marker");
             } finally {
                 rmSync(fixture.repoRoot, { recursive: true, force: true });
             }
