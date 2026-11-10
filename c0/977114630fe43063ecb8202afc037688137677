@@ -1,0 +1,18 @@
+src/app/__tests__/prospectiveMutationWorkerAssets.spec.ts
+  h_beb54bf43b47b7 194-196,199
+src/modules/CrdtDocument/useCases/__tests__/mutateCrdtDoc.spec.ts
+  h_beb54bf43b47b7 31,72,89,105,127-128
+src/modules/ElasticAudio/presentations/views/__tests__/elasticLockedTransientMarkers.integration.spec.tsx
+  h_beb54bf43b47b7 58
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c0977114630fe43063ecb8202afc037688137677",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
