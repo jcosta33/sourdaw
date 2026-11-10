@@ -22,10 +22,11 @@ export function registerCrdtStorageRuntime(): void {
         hasDoc: (docId) => hasCrdtDoc(docId),
         isMutationBlockedBySnapshotTransaction: (docId, snapshotTransaction) =>
             automergeRepository.isMutationBlockedBySnapshotTransaction(docId, snapshotTransaction),
-        mutateDoc: ({ docId, changedKeys, changeFn, message, snapshotTransaction }) => {
+        mutateDoc: ({ docId, changedKeys, changeFn, message, snapshotTransaction, beforeChange }) => {
             mutateCrdtDoc<StorageRuntimeDoc>({
                 id: docId,
                 changeFn,
+                beforeChange,
                 message,
                 snapshotTransaction,
                 localSlots: changedKeys,
@@ -65,6 +66,7 @@ export function registerCrdtStorageRuntime(): void {
             changeFn,
             message,
             snapshotTransaction,
+            beforeChange,
             validateDocument,
             beforePublication,
             onPublished,
@@ -95,6 +97,7 @@ export function registerCrdtStorageRuntime(): void {
                     snapshotTransaction,
                     localSlots: changedKeys,
                     prospectiveValidation,
+                    beforeChange,
                 });
             } finally {
                 if (preparedCandidate) {

@@ -64,6 +64,7 @@ const discardDecodedAudioFileMock = vi.hoisted(() => vi.fn());
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     decodeAudioFile: decodeAudioFileMock,
     discardDecodedAudioFile: discardDecodedAudioFileMock,
+    openCachedAudioBufferHold: () => ({ retain: vi.fn(), release: vi.fn() }),
 }));
 
 const projectEpoch = vi.hoisted(() => {
@@ -185,7 +186,7 @@ describe('TimelineEmptyMenu', () => {
         fireEvent.click(button);
         expect(executeUserAppAction).toHaveBeenCalledWith({
             type: 'addTrack',
-            payload: { name: 'Audio', kind: 'audio' },
+            payload: { kind: 'audio' },
         });
         expect(mockOnClose).toHaveBeenCalled();
     });
@@ -470,7 +471,10 @@ describe('TimelineEmptyMenu', () => {
         createSpy.mockRestore();
 
         expect(projectEpoch.latest()?.isCurrent()).toBe(true);
-        expect(decodeAudioFileMock).toHaveBeenCalledWith(successorFile);
+        expect(decodeAudioFileMock).toHaveBeenCalledWith(
+            successorFile,
+            expect.objectContaining({ retain: expect.any(Function), release: expect.any(Function) })
+        );
         expect(dispatchedBatchPayload('addClip')).toEqual(
             expect.objectContaining({ trackId: 'same-track', audioBufferId: 'audio-successor' })
         );

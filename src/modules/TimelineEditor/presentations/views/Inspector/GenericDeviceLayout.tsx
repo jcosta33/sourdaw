@@ -14,12 +14,13 @@ import { type ReactElement, useState } from 'react';
 import { ChevronDown } from 'lucide-react';
 
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
-import { Stack, Row, Grid } from '#/components/layout';
+import { Stack, Row } from '#/components/layout';
 
 import { SurfaceCard } from '../../components/Inspector/SurfaceCard';
 
 import { type DeviceLayoutProps } from './deviceLayoutRegistry';
 import { DeviceParameterControl } from './DeviceParameterControl';
+import { ParamCardGrid } from './ParamCardGrid';
 import { SectionHeader } from './SectionHeader';
 
 type DeviceParam = DeviceLayoutProps['parameters'][number];
@@ -133,9 +134,8 @@ const ParamRow = ({
     device: DeviceLayoutProps['device'];
     trackId: string;
 }): ReactElement => {
-    const cols = Math.min(2, params.length); // Max 2 per row in the narrow inspector
     return (
-        <Grid gap={2} className={`grid-cols-1 @md:grid-cols-${String(cols)}`}>
+        <ParamCardGrid className={params.length > 1 ? undefined : '@sm:grid-cols-1'}>
             {params.map((param) => (
                 <SurfaceCard
                     key={param.id}
@@ -144,7 +144,7 @@ const ParamRow = ({
                     <DeviceParameterControl param={param} device={device} trackId={trackId} />
                 </SurfaceCard>
             ))}
-        </Grid>
+        </ParamCardGrid>
     );
 };
 
@@ -164,6 +164,7 @@ const CollapsibleSection = ({
             <DawHeaderBand compact className="rounded-sm hover:bg-surface-raised/50">
                 <Row
                     as="button"
+                    type="button"
                     align="center"
                     gap={1}
                     className="w-full"
@@ -173,7 +174,7 @@ const CollapsibleSection = ({
                     <ChevronDown
                         className={`size-3 text-muted-foreground transition-transform ${open ? '' : '-rotate-90'}`}
                     />
-                    <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
+                    <span className="text-label font-medium text-muted-foreground uppercase tracking-wider">
                         {title}
                     </span>
                 </Row>

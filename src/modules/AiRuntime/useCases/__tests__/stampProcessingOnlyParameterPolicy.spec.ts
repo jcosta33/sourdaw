@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { getArrangementHandlers } from '#/modules/Arrangement/useCases';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 import { getExecutableAppActionToolSchemas, parseVersionedCommandEnvelope } from '#/modules/Command/useCases';
@@ -11,6 +12,10 @@ import { generateToolPlanningOutcome } from '../llmOrchestration/inference';
 import { materializeActionStateGuards } from '../materializeActionStateGuards';
 import { parsePromptToActions } from '../parsePromptToActions';
 import { stampProcessingOnlyParameterPolicy } from '../stampProcessingOnlyParameterPolicy';
+
+import { literalMetricIntakeTurn } from './metricGoalWorkflowFixture';
+
+registerDeviceEnginePorts();
 
 vi.mock('../llmOrchestration/inference', async (importOriginal) => {
     const original = await importOriginal<typeof import('../llmOrchestration/inference')>();
@@ -269,6 +274,10 @@ describe('planner routes that reach the chokepoint', () => {
 
     it('stamps a provider-proposed device parameter edit', async () => {
         const mocked = vi.mocked(generateToolPlanningOutcome);
+        mocked.mockImplementationOnce(async (_system, userMessage, schemas) => ({
+            status: 'complete',
+            toolCalls: literalMetricIntakeTurn(userMessage, schemas),
+        }));
         mocked.mockResolvedValueOnce({
             status: 'complete',
             toolCalls: [

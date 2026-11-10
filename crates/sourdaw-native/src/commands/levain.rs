@@ -15,7 +15,7 @@
 //!
 //! The field names a bank arrives under are the worklet's own upload protocol
 //! (`src/modules/Levain/repositories/sampleLoader/loadInstrumentFromManifest.ts`
-//! posts them; `src/modules/AudioEngine/services/levainProcessor.ts` translates
+//! posts them; `src/modules/AudioEngine/worklets/levainProcessor.ts` translates
 //! them into `LevainInstance` calls). This store accepts the same field
 //! vocabulary and translates it identically, so a strip that moves between the
 //! browser runtime and the native one sounds the same bank rather than a
@@ -47,7 +47,7 @@ use std::sync::Arc;
 ///
 /// The figure the web runtime builds its own instance with
 /// (`new LevainInstance(sampleRate, 64)`,
-/// `src/modules/AudioEngine/services/levainProcessor.ts`), so a strip that
+/// `src/modules/AudioEngine/worklets/levainProcessor.ts`), so a strip that
 /// moves between the two runtimes steals voices at the same point. `daw-engine`
 /// holds the same figure for the instance it builds when no bank is named, and
 /// keeps it private; spelling it again here is what lets the two agree by
@@ -1259,7 +1259,7 @@ mod tests {
 
     /// The three string encodings, pair by pair, against the worklet's own
     /// tables: `LEGATO_TRANSITION_TYPE_IDS` and `LEGATO_DYNAMIC_IDS` at
-    /// `src/modules/AudioEngine/services/levainProcessor.ts` lines 48-59, and
+    /// `src/modules/AudioEngine/worklets/levainProcessor.ts` lines 48-59, and
     /// the loop-mode arm of `addZone` at lines 535-543 of the same file.
     ///
     /// A name is what crosses the wire, so a table that shifted by one here

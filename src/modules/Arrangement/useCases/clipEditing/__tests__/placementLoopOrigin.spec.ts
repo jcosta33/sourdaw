@@ -3,11 +3,11 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { midiStore } from '#/modules/MIDI/stores';
 import { projectClipMidiEvents } from '#/modules/MIDI/useCases';
 import { defaultTransportState, playheadPositionRef, transportStore } from '#/modules/Transport/stores';
-import { defaultWorkspaceState, workspaceStore } from '#/modules/WorkspaceShell/stores';
-import { isBeatInClipLoopWindow, resolveClipLoopOriginAdvance } from '#/utils/clipLoopOrigin';
+import { isBeatInClipLoopWindow, resolveClipLoopOriginAdvance, resolveClipLoopPassGrid } from '#/utils/clipLoopOrigin';
 
 import { type Clip, createTrack } from '../../../models/Track';
 import { clipboardStore } from '../../../stores/clipboardStore';
+import { defaultTimelineEditingState, timelineEditingStore } from '../../../stores/timelineEditingStore';
 import { defaultTrackState, trackStore } from '../../../stores/trackStore';
 import { duplicateClipCore } from '../../clip/duplicateClipCore';
 import { moveClip } from '../../clip/moveClip';
@@ -55,12 +55,20 @@ type AnchorProbe = {
     advance: number;
     /** Membership per probe event, in offset-relative media beats. */
     window: boolean[];
-    /** One entry per projected pass (pass 0 and pass 1), `id@clip-relative beat`. */
+    /** One entry per projected pass (grid passes 0 and 1), `id@clip-relative beat`. */
     projection: string[];
 };
 
 function projectPasses(clip: Clip): string[] {
-    return [clip.startBeat, clip.startBeat + LOOP_LENGTH].map((iterationStartBeat) =>
+    const { firstPassStartBeat } = resolveClipLoopPassGrid({
+        startBeat: clip.startBeat,
+        endBeat: clip.endBeat,
+        loopOriginBeat: clip.loopOriginBeat,
+        loopEnabled: clip.loopEnabled ?? false,
+        loopLengthBeats: clip.loopLength ?? LOOP_LENGTH,
+        iterationCount: 2,
+    });
+    return [firstPassStartBeat, firstPassStartBeat + LOOP_LENGTH].map((iterationStartBeat) =>
         projectClipMidiEvents({
             events: PROBE_EVENTS,
             clipId: clip.id,
@@ -161,7 +169,7 @@ describe('placement keeps a looped clip anchored (#4988)', () => {
         });
         trackStore.set(structuredClone(defaultTrackState));
         midiStore.set({ probabilitySeed: 1, notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} });
-        workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: false });
+        timelineEditingStore.set({ ...defaultTimelineEditingState, rippleEditing: false });
         transportStore.set(defaultTransportState);
         clipboardStore.set({ clipClipboard: [], noteClipboard: null });
         previousPlayhead = playheadPositionRef.current;
@@ -172,7 +180,7 @@ describe('placement keeps a looped clip anchored (#4988)', () => {
         setTimeOperationDependencies(null);
         playheadPositionRef.current = previousPlayhead;
         trackStore.set(structuredClone(defaultTrackState));
-        workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: false });
+        timelineEditingStore.set({ ...defaultTimelineEditingState, rippleEditing: false });
         clipboardStore.set({ clipClipboard: [], noteClipboard: null });
     });
 
@@ -357,7 +365,7 @@ describe('placement keeps a looped clip anchored (#4988)', () => {
             loopedClip({ id: 'c-gone', name: 'Gone', startBeat: 8, endBeat: 16 }),
             loopedClip({ id: 'c-next', name: 'Next', startBeat: 16, endBeat: 24, loopOriginBeat: 16 }),
         ]);
-        workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: true });
+        timelineEditingStore.set({ ...defaultTimelineEditingState, rippleEditing: true });
         const plan = planRippleDelete({ trackId: 't-keys', clipIds: ['c-gone'] });
         if (!plan) {
             throw new Error('Expected a ripple delete plan');
@@ -408,7 +416,7 @@ describe('placement keeps a looped clip anchored (#4988)', () => {
         expect(probe(right)).toEqual(rightBefore);
     });
 
-    it('deleteTime: clips right of the deleted range carry the anchor; split fragments re-stamp to their own head', () => {
+    it('deleteTime: clips right of the deleted range carry the anchor; a looping fragment keeps the source phase', () => {
         seedTracks([
             loopedClip(),
             loopedClip({ id: 'c-after', name: 'After', startBeat: 12, endBeat: 20, loopOriginBeat: 12 }),
@@ -423,13 +431,10 @@ describe('placement keeps a looped clip anchored (#4988)', () => {
         expect(after.loopOriginBeat).toBe(8);
         expect(probe(after)).toEqual(afterBefore);
 
-        // The right fragment re-bases its notes by −splitBeat under
-        // midiOffsetBeats 0 and moves its head to the operation start — a
-        // fresh coordinate basis the source anchor has no meaning in. Carried
-        // through, the source anchor derives a spurious advance whose window
-        // silences the surviving material; the fragment re-stamps the anchor
-        // to its own start, so the advance is zero and the window opens at
-        // the head — the same two-pass projection the source read (#5198).
+        // The right fragment is the looping source trimmed to the range end
+        // (8) and moved to the operation start (4): its offset advances by the
+        // cut, its anchor rides the move to −4, and the advance of two whole
+        // loops keeps the source's window and the same two-pass projection.
         const rightFragment = trackStore.value?.tracks
             .flatMap((track) => track.clips)
             .find((clip) => clip.name === 'Loop (R)');
@@ -437,9 +442,10 @@ describe('placement keeps a looped clip anchored (#4988)', () => {
             throw new Error('Expected the right fragment of the spanning clip');
         }
         expect(rightFragment.startBeat).toBe(4);
-        expect(rightFragment.loopOriginBeat).toBe(4);
+        expect(rightFragment.midiOffsetBeats).toBe(8);
+        expect(rightFragment.loopOriginBeat).toBe(-4);
         expect(probe(rightFragment)).toEqual({
-            advance: 0,
+            advance: 8,
             window: [true, false],
             projection: ['head@0', 'head@4'],
         });

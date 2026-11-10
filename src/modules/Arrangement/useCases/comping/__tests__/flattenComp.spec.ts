@@ -8,27 +8,20 @@ import { midiStore } from '#/modules/MIDI/stores';
 
 import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
-import { createTakeLane, type TakeLane } from '../../../models/TakeLane';
+import { createTakeLane, type Take, type TakeLane } from '../../../models/TakeLane';
 import { type Clip } from '../../../models/Track';
 import { __resetGainEnvelopesForTest, setEnvelope } from '../../../stores/gainEnvelopeStore';
 import { takeLaneStore } from '../../../stores/takeLaneStore';
 import { trackStore } from '../../../stores/trackStore';
+import * as clipGlueState from '../../clipEditing/restoreClipGlueState';
 import { restoreClipGlueState } from '../../clipEditing/restoreClipGlueState';
+import { readUndoHistoryAudioBufferIds } from '../../readUndoHistoryAudioBufferIds';
 import { resolveClipsWithComping } from '../../resolveComping';
 import { flattenComp } from '../flattenComp';
 
 const notifyUserMock = vi.hoisted(() => vi.fn());
 
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: notifyUserMock }));
-
-// The real transaction, kept observable: the refusal tests have to prove a
-// guard fired BEFORE the clip replacement was attempted, which no store reading
-// can show — the transaction refuses on the same input and leaves the same
-// stores behind.
-vi.mock('../../clipEditing/restoreClipGlueState', async (importOriginal) => {
-    const actual = await importOriginal<typeof import('../../clipEditing/restoreClipGlueState')>();
-    return { restoreClipGlueState: vi.fn(actual.restoreClipGlueState) };
-});
 
 const TRACK_ID = 'track-1';
 const EMPTY_MIDI = { notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} };
@@ -39,7 +32,7 @@ function seedTrack(clips: readonly Clip[], kind: 'audio' | 'midi' = 'audio'): vo
 }
 
 function seedLane(
-    takes: readonly { id: string; clipId: string; startBeat: number; endBeat: number }[],
+    takes: readonly (Pick<Take, 'id' | 'clipId' | 'startBeat' | 'endBeat'> & Partial<Take>)[],
     activeCompRegions: readonly { startBeat: number; endBeat: number; takeId: string }[]
 ): TakeLane {
     const lane: TakeLane = {
@@ -99,8 +92,66 @@ function warnings(): string[] {
 }
 
 describe('flattenComp', () => {
+    it('materializes audible base-gap tiles before retiring a lane with no selections or takes', () => {
+        const clip = ClipDummy.create({
+            id: 'source',
+            trackId: TRACK_ID,
+            startBeat: 0,
+            endBeat: 12,
+            audioBufferId: 'buffer',
+            loopEnabled: true,
+            loopLength: 4,
+            loopOriginBeat: 0,
+            audioOffsetSeconds: 0,
+            audioLoopStartSeconds: 0,
+            audioLoopPassEntrySeconds: 0,
+            audioLoopPassOriginBeat: 0,
+            stretchMode: 'timestretch',
+            stretchRatio: 2,
+        });
+        seedTrack([clip]);
+        const lane = {
+            ...createTakeLane(TRACK_ID),
+            baseGapAudioSources: [
+                {
+                    clipId: clip.id,
+                    startBeat: 1,
+                    endBeat: 11,
+                    audioSource: {
+                        startBeat: 1,
+                        audioOffsetSeconds: 0.5,
+                        audioLoopStartSeconds: 0,
+                        audioLoopPassEntrySeconds: 0.5,
+                        audioLoopPassOriginBeat: 1,
+                        loopOriginBeat: 0,
+                        loopLength: 4,
+                    },
+                },
+            ],
+        };
+        takeLaneStore.set({ lanes: [lane] });
+        const sourceWindows = () =>
+            resolveClipsWithComping(TRACK_ID, liveClips()).map((part) => ({
+                startBeat: part.startBeat,
+                endBeat: part.endBeat,
+                audioOffsetSeconds: part.audioOffsetSeconds,
+                audioLoopStartSeconds: part.audioLoopStartSeconds,
+                audioLoopPassEntrySeconds: part.audioLoopPassEntrySeconds,
+                audioLoopPassOriginBeat: part.audioLoopPassOriginBeat,
+                loopOriginBeat: part.loopOriginBeat,
+                loopLength: part.loopLength,
+            }));
+        const before = sourceWindows();
+        expect(before).toHaveLength(3);
+        expect(flattenComp(TRACK_ID)).toBe(true);
+        expect(liveClips()).toHaveLength(3);
+        expect(sourceWindows()).toEqual(before);
+        expect(laneIds()).toEqual([]);
+    });
+
     beforeEach(() => {
         vi.clearAllMocks();
+        vi.spyOn(clipGlueState, 'restoreClipGlueState');
         clearUndoHistory();
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
         takeLaneStore.set({ lanes: [] });
@@ -164,6 +215,28 @@ describe('flattenComp', () => {
         expect(programme.map((clip) => [clip.audioBufferId, clip.startBeat, clip.endBeat])).toEqual([['buf-b', 0, 8]]);
     });
 
+    it('keeps the unheard take’s buffer reachable from history so undo can restore it (#6003)', () => {
+        // Take A is not in the comp, so after the flatten no clip references
+        // buf-a; only the entry's undo can bring it back, and the audio cache
+        // reads residency from what history declares.
+        seedTrack([
+            ClipDummy.create({ id: 'clip-a', trackId: TRACK_ID, startBeat: 0, endBeat: 8, audioBufferId: 'buf-a' }),
+            ClipDummy.create({ id: 'clip-b', trackId: TRACK_ID, startBeat: 0, endBeat: 8, audioBufferId: 'buf-b' }),
+        ]);
+        seedLane(
+            [
+                { id: 'take-a', clipId: 'clip-a', startBeat: 0, endBeat: 8 },
+                { id: 'take-b', clipId: 'clip-b', startBeat: 0, endBeat: 8 },
+            ],
+            [{ startBeat: 0, endBeat: 8, takeId: 'take-b' }]
+        );
+
+        expect(flattenComp(TRACK_ID)).toBe(true);
+
+        expect(liveClips().some((clip) => clip.audioBufferId === 'buf-a')).toBe(false);
+        expect(readUndoHistoryAudioBufferIds()).toEqual(new Set(['buf-a', 'buf-b']));
+    });
+
     it('gives every fragment the media-entry offset its own position demands', () => {
         // One slipped recording with a comp region in the middle: the three
         // fragments the resolver plays enter the buffer 0.5, 2.5 and 4.5 beats
@@ -179,7 +252,7 @@ describe('flattenComp', () => {
         });
         seedTrack([sourceClip]);
         seedLane(
-            [{ id: 'take-a', clipId: 'clip-a', startBeat: 0, endBeat: 8 }],
+            [{ id: 'take-a', clipId: 'clip-a', startBeat: 0, endBeat: 8, sourceOffsetSeconds: 0 }],
             [{ startBeat: 2, endBeat: 4, takeId: 'take-a' }]
         );
 
@@ -200,9 +273,27 @@ describe('flattenComp', () => {
         for (const key of ['regionStartBeat', 'regionEndBeat', 'sourceStartBeat']) {
             expect(liveClips().filter((clip) => Object.hasOwn(clip, key))).toEqual([]);
         }
-        const sourceKeys = new Set(Object.keys(sourceClip));
-        for (const fragment of liveClips()) {
-            expect(new Set(Object.keys(fragment))).toEqual(sourceKeys);
+        const sourceKeys = Object.keys(sourceClip);
+        const canonicalKeys = [
+            'audioOffsetSeconds',
+            'audioUnwrappedOffsetSeconds',
+            'audioLoopStartSeconds',
+            'audioLoopPassEntrySeconds',
+            'audioLoopPassOriginBeat',
+            'loopOriginBeat',
+        ];
+        expect(liveClips()[1]).toMatchObject({
+            audioOffsetSeconds: 1.25,
+            audioUnwrappedOffsetSeconds: 1.25,
+            audioLoopStartSeconds: 1.25,
+            audioLoopPassEntrySeconds: 1.25,
+            audioLoopPassOriginBeat: 2,
+            loopOriginBeat: 2,
+        });
+        for (const [index, fragment] of liveClips().entries()) {
+            expect(new Set(Object.keys(fragment))).toEqual(
+                new Set(index === 1 ? [...sourceKeys, ...canonicalKeys] : sourceKeys)
+            );
         }
     });
 
@@ -431,6 +522,7 @@ describe('flattenComp', () => {
         vi.mocked(restoreClipGlueState).mockReturnValueOnce(false);
 
         expect(flattenComp(TRACK_ID)).toBe(false);
+        expect(restoreClipGlueState).toHaveBeenCalledTimes(1);
 
         // The lane comes off before the replacement is attempted, so a refused
         // apply has to put it back — at its own index — rather than leave the

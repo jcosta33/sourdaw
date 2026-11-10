@@ -1,3 +1,4 @@
+export { projectRevisionMatchesLiveWithinProjection } from './projectRevisionMatchesLiveWithinProjection';
 export { DOC_PREFIX_ROOT, DOC_BRANCHES } from './crdtDocumentTypes';
 
 export { compactProject } from './compactProject';
@@ -7,7 +8,9 @@ export { captureProjectRootIdentity } from './captureProjectRootIdentity';
 export { captureProjectRevision } from './captureProjectRevision';
 export { captureDurableDocumentWitness } from './captureDurableDocumentWitness';
 export { projectRevisionMatchesLiveIgnoringCommandCheckpoint } from './projectRevisionMatchesLiveIgnoringCommandCheckpoint';
+export { projectRevisionMatchesLiveIgnoringSaveWrites } from './projectRevisionMatchesLiveIgnoringSaveWrites';
 export { settlePendingProjectWritesAndCaptureRevision } from './settlePendingProjectWritesAndCaptureRevision';
+export { settledProjectRevisionMatchesLiveIgnoringSaveWrites } from './settledProjectRevisionMatchesLiveIgnoringSaveWrites';
 export { captureProjectMutationAuthorization } from './captureProjectMutationAuthorization';
 export { readOwnedProjectPublications } from './readOwnedProjectPublications';
 export { commandSourcePublicationMatches } from './commandSourcePublicationMatches';
@@ -22,6 +25,7 @@ export { createCommandPreviewWorkspace } from './createCommandPreviewWorkspace';
 export { createCommandRecoveryWorkspace } from './createCommandRecoveryWorkspace';
 export { captureActiveBranchReference } from './captureActiveBranchReference';
 export { getDrumPreviewBranchHandlers } from './getDrumPreviewBranchHandlers';
+export { drumPreviewSourcePort } from './drumPreviewSourcePort';
 export { waitForCrdtDocumentTransition } from './waitForCrdtDocumentTransition';
 export { createCrdtProject } from './createCrdtProject';
 export { getPersistenceBackend } from './crdtProjectLifecycle';
@@ -29,18 +33,22 @@ export { loadCrdtProject } from './loadCrdtProject';
 export { persistCrdtProject } from './persistCrdtProject';
 export { runCrdtPersistenceBarrier } from './runCrdtPersistenceBarrier';
 export { sessionUndoWitnessStampPort } from './sessionUndoWitnessStampPort';
+export { branchSwitchTransport } from './crdtBranching/branchSwitchTransport';
 
 export { createCrdtDoc } from './createCrdtDoc';
 export { clearActionHistory } from './clearActionHistory';
 export { markActionHistoryEntryReverted } from './markActionHistoryEntryReverted';
 export { recordActionHistoryEntry } from './recordActionHistoryEntry';
 export { recordActionHistoryEntries } from './recordActionHistoryEntries';
+export { subscribeToPublishedActionHistory } from './subscribeToPublishedActionHistory';
 export { getCrdtDoc } from './getCrdtDoc';
 export { getCrdtDocIds } from './getCrdtDocIds';
 export { hasCrdtDoc } from './hasCrdtDoc';
 export { mutateCrdtDoc } from './mutateCrdtDoc';
 
 export { projectCrdtToStores } from './projection/projectProjection';
+export { kernelSlotProjections, projectSlotProjectionRegistry } from './projection/projectSlotProjections';
+export { slotProjection } from './projection/slotProjection';
 export { projectActionHistoryToStore } from './projection/projectActionHistoryToStore';
 export { setupProjectionBridge } from './projection/setupProjectionBridge';
 
@@ -65,3 +73,5 @@ export { commitCheckpointCatalog } from './commitCheckpointCatalog';
 export { readCheckpointArtifact } from './readCheckpointArtifact';
 export { readCheckpointCatalog } from './readCheckpointCatalog';
 export { inspectCheckpointRootMedia } from './inspectCheckpointRootMedia';
+export { exportSdawFile } from './crdtMerge/exportSdawFile';
+export { prepareExternalProjectDocument } from './prepareExternalProjectDocument';

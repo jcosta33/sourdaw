@@ -11,6 +11,7 @@ import {
     type ResolvedTarget,
     resolveRecipeTarget,
 } from './resolveRecipeTarget';
+import { servesAnySourceScope } from './servesAnySourceScope';
 
 type MixRecipeCatalog = ReturnType<typeof getMixRecipeCatalog>;
 type MixRecipe = MixRecipeCatalog['recipes'][number];
@@ -83,9 +84,17 @@ function dedupeInFirstSeenOrder(values: readonly RecipeDescriptor[]): RecipeDesc
     return ordered;
 }
 
-function matchesRole(recipe: MixRecipe, role: ResolvedRole): boolean {
+/**
+ * A recipe naming no role serves any source scope. Any other recipe matches the role resolved, or
+ * every role when nothing resolved one; a target whose own role resolves none matches only the
+ * recipes that need no role.
+ */
+function matchesRole(recipe: MixRecipe, target: ResolvedTarget | null, role: ResolvedRole): boolean {
+    if (recipe.roles.length === 0) {
+        return servesAnySourceScope(target, role);
+    }
     if (role.recipeRole === null) {
-        return true;
+        return role.source === 'none';
     }
     return recipe.roles.includes(role.recipeRole);
 }
@@ -167,7 +176,9 @@ function describeAcceptedTerms(catalog: MixRecipeCatalog): string {
  * A target's canonical role selects the recipe role only when no `role`
  * argument overrides it; either way, an existing target's device chain still
  * excludes a recipe whose `edit` step names a device type the chain lacks,
- * because retuning a device that is not there is not an executable move.
+ * because retuning a device that is not there is not an executable move. A
+ * target whose canonical role gives no recipe role is offered only the recipes
+ * that name no role, beside a warning asking for a role argument.
  *
  * The tracks default to the live project's; a caller holding the context a request was planned
  * against passes that read instead, so discovery and the request see one project.
@@ -227,11 +238,10 @@ export function discoverMixRecipes(
         warnings.push(
             `This target's canonical role, ${role.canonicalRole ?? 'unknown'}, has no recipe role; pass a role argument to select one.`
         );
-        return { status: 'ok', warnings, data: noCandidates };
     }
 
     const roleMatches = catalog.recipes.filter(
-        (recipe) => resolvedDescriptors.includes(recipe.descriptor) && matchesRole(recipe, role)
+        (recipe) => resolvedDescriptors.includes(recipe.descriptor) && matchesRole(recipe, target, role)
     );
     const expandable = roleMatches.filter(
         (recipe) => countRecipeExpansionCommands(recipe) <= RECIPE_EXPANSION_MAX_COMMANDS

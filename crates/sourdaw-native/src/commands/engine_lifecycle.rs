@@ -154,20 +154,24 @@ pub async fn retire_native_engine(
     crumbs: &CrumbsState,
     windows_host: &dyn PluginWindowHost,
 ) -> RetireNativeEngineResult {
-    let (retired_engine, engine_owned_plugins) = match drain_the_lost_engine(state, crumbs).await {
-        DrainedEngine::NothingToRetire(outcome) => {
-            return RetireNativeEngineResult::of(outcome, Vec::new())
-        }
-        DrainedEngine::Drained {
-            handle,
-            engine_owned_plugins,
-        } => (handle, engine_owned_plugins),
-    };
+    let (retired_engine, engine_owned_plugins, crumbs_work) =
+        match drain_the_lost_engine(state, crumbs).await {
+            DrainedEngine::NothingToRetire(outcome) => {
+                return RetireNativeEngineResult::of(outcome, Vec::new())
+            }
+            DrainedEngine::Drained {
+                handle,
+                engine_owned_plugins,
+                crumbs_work,
+            } => (handle, engine_owned_plugins, crumbs_work),
+        };
 
+    let crumbs_work = crumbs::finish_detached_crumbs(crumbs_work, crumbs);
     let retired_instance_ids =
         retire_engine_owned_plugins(state, engine_owned_plugins, Some(windows_host));
 
     drop(retired_engine);
+    drop(crumbs_work);
 
     // The dead scheduler releases its own `Arc` when the owner thread drops
     // it behind the handle above, which may or may not have happened by now.
@@ -185,6 +189,7 @@ enum DrainedEngine {
     Drained {
         handle: EngineHandle,
         engine_owned_plugins: Vec<(String, EnginePluginInstanceData)>,
+        crumbs_work: Vec<crumbs::DrainedCrumbsWork>,
     },
     NothingToRetire(RetireOutcome),
 }
@@ -218,12 +223,13 @@ async fn drain_the_lost_engine(state: &AppState, crumbs: &CrumbsState) -> Draine
     };
 
     let engine_owned_plugins = take_engine_owned_plugins(state);
-    crumbs::detach_from_retired_engine(crumbs);
+    let crumbs_work = crumbs::detach_from_retired_engine(crumbs);
     registry.reset_for_engine_restart();
 
     DrainedEngine::Drained {
         handle,
         engine_owned_plugins,
+        crumbs_work,
     }
 }
 
@@ -854,8 +860,8 @@ mod tests {
 
     #[test]
     fn a_crumbs_instance_reattaches_to_the_engine_that_replaces_the_retired_one() {
-        let state = AppState::default();
-        let crumbs_state = CrumbsState::default();
+        let state = Arc::new(AppState::default());
+        let crumbs_state = Arc::new(CrumbsState::default());
         let _lost_engine_commands = fill_slot_with_capture_engine(&state);
         block_on_test(crumbs::create_crumbs(
             "instance-1".to_string(),
@@ -876,7 +882,9 @@ mod tests {
             "an instance left attached holds rings the retired engine's slot side is gone from"
         );
 
-        let mut replacement_commands = fill_slot_with_capture_engine(&state);
+        let (replacement, driver) = daw_engine::capture_lifecycle_fixture(64, false)
+            .expect("the replacement fixture must drive its actual sampler and input");
+        *state.engine.lock().expect("the retired slot is empty") = Some(replacement);
         let applied = block_on_test(apply_graph_commands(empty_batch(), &state, &crumbs_state))
             .expect("the batch on the replacing engine resolves");
 
@@ -885,34 +893,32 @@ mod tests {
             crumbs::instance_is_attached(&crumbs_state, "instance-1"),
             "the first batch on the new engine is what re-registers the instance"
         );
-        let mut added_plugins = 0;
-        let mut registered_capture_consumers = 0;
-        while let Ok(command) = replacement_commands.pop() {
-            match command {
-                GraphCommand::AddHostedPlugin(..) => added_plugins += 1,
-                GraphCommand::RegisterCaptureConsumer(_) => registered_capture_consumers += 1,
-                _ => {}
-            }
-        }
-        assert_eq!(
-            (added_plugins, registered_capture_consumers),
-            (1, 1),
-            "the re-registration is the slot plus its capture tap, on the replacing engine's ring"
-        );
+        crumbs::tests::replacement_native_take_probe(crumbs_state, state, driver, "instance-1");
     }
 
     #[test]
     fn the_first_batch_on_the_replacing_engine_is_numbered_from_one() {
         let state = AppState::default();
         let _lost_engine_commands = fill_slot_with_capture_engine(&state);
+        let original = state
+            .graph
+            .lock()
+            .expect("registry readable")
+            .engine_incarnation();
         for _ in 0..5 {
-            block_on_test(apply_graph_commands(
+            let applied = block_on_test(apply_graph_commands(
                 empty_batch(),
                 &state,
                 &CrumbsState::default(),
             ))
             .expect("the setup batches resolve");
+            assert_eq!(applied["engineIncarnation"].as_str(), original.as_deref());
         }
+        let position = block_on_test(super::super::engine_transport::engine_transport_position(
+            &state,
+        ))
+        .expect("position readable");
+        assert_eq!(position.engine_incarnation, Some(original.clone()));
         assert_eq!(
             state
                 .graph
@@ -924,7 +930,19 @@ mod tests {
         );
         stall_the_engine_in_the_slot(&state);
 
+        let stalled = block_on_test(super::super::engine_transport::engine_transport_position(
+            &state,
+        ))
+        .expect("stalled position readable");
+        assert!(!stalled.running);
+        assert_eq!(stalled.engine_incarnation, Some(original.clone()));
+
         retire(&state, &CrumbsState::default(), &NoWindowHost);
+        let empty = block_on_test(super::super::engine_transport::engine_transport_position(
+            &state,
+        ))
+        .expect("empty position readable");
+        assert_eq!(empty.engine_incarnation, Some(None));
         let _replacement_commands = fill_slot_with_capture_engine(&state);
         let applied = block_on_test(apply_graph_commands(
             empty_batch(),
@@ -934,6 +952,20 @@ mod tests {
         .expect("the batch on the replacing engine resolves");
 
         assert_eq!(applied["application"], "applied");
+        let replacement = block_on_test(super::super::engine_transport::engine_transport_position(
+            &state,
+        ))
+        .expect("replacement position readable");
+        let replacement_id = applied["engineIncarnation"]
+            .as_str()
+            .expect("live identity emitted");
+        assert_ne!(Some(replacement_id), original.as_deref());
+        assert_eq!(
+            replacement.engine_incarnation,
+            Some(Some(replacement_id.to_string()))
+        );
+        let wire = serde_json::to_value(replacement).expect("replacement serializes");
+        assert_eq!(wire["engineIncarnation"], applied["engineIncarnation"]);
         assert_eq!(
             applied["admittedBatch"].as_u64(),
             Some(1),

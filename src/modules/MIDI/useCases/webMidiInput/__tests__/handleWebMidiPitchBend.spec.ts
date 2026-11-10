@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import * as synthVoices from '#/modules/Synth/useCases';
 import { tempoMapStore } from '#/modules/Transport/stores';
 
 import { createWebMidiNoteKey } from '../../../models/WebMidiTypes';
@@ -10,6 +11,13 @@ import { bufferRecordedMidiPitchBend } from '../../recordedControllerTake/buffer
 const mpe_enabled = vi.hoisted(() => ({ value: true }));
 const target_track_id = vi.hoisted(() => ({ value: 'track-1' }));
 const audio_clock = vi.hoisted(() => ({ currentTime: 2, sampleRate: 48000, baseLatency: 0, outputLatency: 0 }));
+
+vi.mock('../recordingMidiAdmissionPort', () => ({
+    recordingMidiAdmissionPort: {
+        isRecordingMidiInputExcluded: () => false,
+        takeOwnsRecordingRoot: () => true,
+    },
+}));
 
 vi.mock('../../../repositories/webMidi/getMpeEnabled', () => ({
     getMpeEnabled: () => mpe_enabled.value,
@@ -22,6 +30,8 @@ vi.mock('../../../repositories/webMidi/getTargetTrackId', () => ({
 const apply_note_expression = vi.hoisted(() => vi.fn());
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    builtinSynthVoice: { read: () => synthVoices },
+    writeNativeBuiltinParameters: vi.fn(),
     soundsNativeNotes: vi.fn(() => false),
     audioEngine: {
         context: audio_clock,
@@ -551,6 +561,25 @@ describe('handleWebMidiPitchBend', () => {
             fn(5, 0, 0, at_beat(6));
 
             expect(recorded_rows()).toEqual([{ value: -8192, beat: 2, channel: 5 }]);
+        });
+
+        it('scopes a wheel recorded with MPE off to its channel, and leaves the MPE master’s unscoped', () => {
+            // Live, a wheel moves only its own channel's notes outside MPE, while the zone master reaches every
+            // member channel: the row says which, so playback bends the same notes.
+            const scopes = () =>
+                (recordedControllerTakeState.buffers.get(RECORDING_CLIP_ID)?.pitchBend ?? []).map((row) => [
+                    row.channel,
+                    row.channelScoped,
+                ]);
+            mpe_enabled.value = false;
+            handleWebMidiPitchBend._factory(recording_dependencies())(2, 0, 96, at_beat(6));
+            mpe_enabled.value = true;
+            handleWebMidiPitchBend._factory(recording_dependencies())(0, 0, 96, at_beat(7));
+
+            expect(scopes()).toEqual([
+                [2, true],
+                [0, undefined],
+            ]);
         });
 
         it('records nothing while the transport is not recording', () => {

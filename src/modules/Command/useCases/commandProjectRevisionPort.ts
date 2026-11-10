@@ -1,5 +1,9 @@
 type CommandProjectRevisionProvider = () => string;
 type CommandProjectRevisionLiveMatch = (expectedRevision: string) => boolean;
+type CommandProjectMutationAuthority = {
+    revisionProvider: CommandProjectRevisionProvider;
+    captureMutationAuthorization: (options: { rejectForeignPendingWrites: true }) => () => boolean;
+};
 
 const UNCONFIGURED_PROJECT_REVISION = 'unconfigured-project-revision';
 
@@ -10,6 +14,8 @@ function captureUnconfiguredProjectRevision(): string {
 let provider: CommandProjectRevisionProvider = captureUnconfiguredProjectRevision;
 let providerConfigured = false;
 let liveMatch: CommandProjectRevisionLiveMatch | null = null;
+let mutationAuthority: CommandProjectMutationAuthority | null = null;
+let configurationGeneration = 0;
 
 export const commandProjectRevisionPort = {
     capture(): string {
@@ -18,20 +24,65 @@ export const commandProjectRevisionPort = {
     isConfigured(): boolean {
         return providerConfigured;
     },
-    matchesLiveIgnoringCommandCheckpoint(expectedRevision: string): boolean {
-        if (provider() === expectedRevision) {
-            return true;
+    configureMutationAuthority(authority: CommandProjectMutationAuthority): void {
+        if (mutationAuthority === null) {
+            mutationAuthority = {
+                revisionProvider: authority.revisionProvider,
+                captureMutationAuthorization: authority.captureMutationAuthorization,
+            };
+            return;
         }
-        return liveMatch?.(expectedRevision) === true;
+        if (
+            mutationAuthority.revisionProvider !== authority.revisionProvider ||
+            mutationAuthority.captureMutationAuthorization !== authority.captureMutationAuthorization
+        ) {
+            throw new Error(
+                'commandProjectRevisionPort.configureMutationAuthority: the authority differs from the registered one'
+            );
+        }
+    },
+    /** Capture outside a change and invoke in the executing transaction before its first publication. */
+    captureMutationAuthorization(): () => boolean {
+        if (!providerConfigured) {
+            throw new Error('Command batch postcondition authority requires a configured project revision provider');
+        }
+        const capturedProvider = provider;
+        const capturedGeneration = configurationGeneration;
+        const capturedRevision = provider();
+        let ownsMutations: (() => boolean) | null = null;
+        if (mutationAuthority?.revisionProvider === capturedProvider) {
+            ownsMutations = mutationAuthority.captureMutationAuthorization({ rejectForeignPendingWrites: true });
+        }
+        return () => {
+            if (configurationGeneration !== capturedGeneration || provider !== capturedProvider) {
+                return false;
+            }
+            if (ownsMutations) {
+                return ownsMutations();
+            }
+            return provider() === capturedRevision;
+        };
+    },
+    /**
+     * A registered matcher answers alone, even for the exact live revision: the provider reads heads
+     * as they stand, while the matcher may first settle store writes the heads do not hold yet.
+     */
+    matchesLiveIgnoringSaveWrites(expectedRevision: string): boolean {
+        if (liveMatch) {
+            return liveMatch(expectedRevision);
+        }
+        return provider() === expectedRevision;
     },
     setProvider(nextProvider: CommandProjectRevisionProvider | null): void {
+        configurationGeneration += 1;
         provider = nextProvider ?? captureUnconfiguredProjectRevision;
         providerConfigured = nextProvider !== null;
         if (nextProvider === null) {
             liveMatch = null;
         }
     },
-    setLiveMatchIgnoringCommandCheckpoint(nextMatch: CommandProjectRevisionLiveMatch | null): void {
+    setLiveMatchIgnoringSaveWrites(nextMatch: CommandProjectRevisionLiveMatch | null): void {
+        configurationGeneration += 1;
         liveMatch = nextMatch;
     },
 };

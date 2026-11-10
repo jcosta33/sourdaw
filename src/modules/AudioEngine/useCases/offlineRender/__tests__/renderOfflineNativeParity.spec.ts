@@ -84,6 +84,7 @@ import { fileURLToPath } from 'node:url';
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { type Track, type TrackStoreState } from '#/modules/Arrangement/stores';
 import { type AutomationLane } from '#/modules/Automation/stores';
 import { LEGACY_MIDI_PROBABILITY_SEED, type MidiStoreState } from '#/modules/MIDI/stores';
@@ -120,6 +121,8 @@ import {
     type HarnessAudioBuffer,
     type HarnessContextOptions,
 } from './nullTestRenderHarness';
+
+registerDeviceEnginePorts();
 
 const SAMPLE_RATE = 48_000;
 /**

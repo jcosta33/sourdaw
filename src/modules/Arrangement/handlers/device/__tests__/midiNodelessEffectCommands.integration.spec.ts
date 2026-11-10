@@ -9,6 +9,7 @@ import {
     getRuntimeGraphRevision,
     configureRuntimeGraphTopologyValidator,
     getTrackStrip,
+    initEngineDeviceCollaborators,
     removeTrackStrip,
     waitForDevices,
     updateDeviceParam,
@@ -92,6 +93,7 @@ describe('registered MIDI device actions with real AudioEngine and TrackNode', (
         trackStore.set({ tracks: [track], selectedTrackId: track.id, ghostClips: [] });
         flushAutomergeStorageWrites();
         configureRuntimeGraphTopologyValidator(runtimeGraphTopology.matchesCurrentProject);
+        initEngineDeviceCollaborators();
         expect(projectTrack().devices.map((device) => device.type)).toEqual(['builtin-synth']);
     });
 
@@ -226,7 +228,7 @@ async function assertConnectedCrust(): Promise<InstanceType<typeof audio.Control
     expect(device?.controller?.ready).toBe(true);
     const worklet = device?.inputNode;
     if (!(worklet instanceof audio.ControlledWorkletNode)) {
-        throw new Error('Crust did not load its real worklet wrapper');
+        throw new TypeError('Crust did not load its real worklet wrapper');
     }
     expect(worklet.name).toBe('crust-processor');
     expect(worklet.connectedTo.length).toBeGreaterThan(0);

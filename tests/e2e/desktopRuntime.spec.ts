@@ -1,6 +1,5 @@
-import { expect, test } from '@playwright/test';
-
-import { launch_new_project, setupWorkspace } from './e2eUtils';
+import { expect, test } from './e2eTest';
+import { launch_new_project_via_ui, setupWorkspace } from './e2eUtils';
 
 const ALLOWED_WARNING_FRAGMENTS = [
     'using deprecated parameters for `initSync()`',
@@ -60,6 +59,17 @@ test('launches a project through the window.sourdaw desktop-runtime contract', a
     await page.addInitScript(() => {
         const calls: RuntimeCall[] = [];
         const eventListeners = new Map<string, Set<(payload: unknown) => void>>();
+        let launchNewProjectClicks = 0;
+
+        document.addEventListener(
+            'click',
+            (event) => {
+                if (event.target instanceof Element && event.target.closest('#launch-new-project')) {
+                    launchNewProjectClicks += 1;
+                }
+            },
+            true
+        );
 
         const refuseCommand = (command: string, args: unknown): Promise<never> => {
             calls.push({ command, args });
@@ -146,13 +156,15 @@ test('launches a project through the window.sourdaw desktop-runtime contract', a
         };
 
         Reflect.set(window, '__SOURDAW_BRIDGE_CALLS__', calls);
+        Reflect.set(window, '__SOURDAW_LAUNCH_NEW_PROJECT_CLICKS__', () => launchNewProjectClicks);
         Reflect.set(window, 'sourdaw', bridge);
     });
 
     await setupWorkspace(page);
     expect(await page.evaluate(() => 'sourdaw' in window)).toBe(true);
-    await launch_new_project(page);
+    await launch_new_project_via_ui(page);
     await expect(page.getByRole('group', { name: 'Playback controls' })).toBeVisible();
+    expect(await page.evaluate(() => Reflect.get(window, '__SOURDAW_LAUNCH_NEW_PROJECT_CLICKS__')())).toBe(1);
 
     const runtimeCalls = await page.evaluate(() => {
         const calls: unknown = Reflect.get(window, '__SOURDAW_BRIDGE_CALLS__');

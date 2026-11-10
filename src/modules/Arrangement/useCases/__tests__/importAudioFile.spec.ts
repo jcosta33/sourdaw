@@ -1,11 +1,13 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { trackStore } from '../../stores/trackStore';
+import { collaborationAssetTransfer } from '../collaborationAssetTransfer';
 import { importAudioFile } from '../importAudioFile';
 
 const mocks = vi.hoisted(() => ({
     decodeAudioFile: vi.fn(),
     discardDecodedAudioFile: vi.fn(),
+    releaseHold: vi.fn(),
     executeAppActionBatch: vi.fn(),
     getAssetTransfer: vi.fn(),
     notifyUser: vi.fn(),
@@ -16,11 +18,7 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
     decodeAudioFile: mocks.decodeAudioFile,
     discardDecodedAudioFile: mocks.discardDecodedAudioFile,
-}));
-
-vi.mock('#/modules/Collaboration/useCases', async (importOriginal) => ({
-    ...(await importOriginal<typeof import('#/modules/Collaboration/useCases')>()),
-    getAssetTransfer: mocks.getAssetTransfer,
+    openCachedAudioBufferHold: () => ({ retain: vi.fn(), release: mocks.releaseHold }),
 }));
 
 vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
@@ -41,6 +39,8 @@ vi.mock('#/modules/Transport/stores', async (importOriginal) => ({
     },
 }));
 
+collaborationAssetTransfer.configure({ current: mocks.getAssetTransfer, isSessionActive: () => false });
+
 function createStagedTransfer() {
     return {
         stageLocalAsset: vi.fn().mockResolvedValue({ hash: 'hash-1', leaseId: 'lease-1' }),
@@ -50,6 +50,9 @@ function createStagedTransfer() {
 }
 
 describe('importAudioFile', () => {
+    afterEach(() => {
+        expect(mocks.releaseHold).toHaveBeenCalledTimes(1);
+    });
     beforeEach(() => {
         vi.clearAllMocks();
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });

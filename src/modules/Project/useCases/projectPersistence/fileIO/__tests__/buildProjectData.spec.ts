@@ -37,7 +37,6 @@ vi.mock('#/modules/Automation/stores', () => ({
     automationStore: { value: { lanes: [] } },
     modulationStore: { value: { modulators: [] } },
 }));
-vi.mock('#/modules/CvGate/stores', () => ({ cvGateStore: { value: undefined } }));
 const chordTrackStoreMock = vi.hoisted(() => ({
     value: {
         enabled: true,
@@ -100,8 +99,22 @@ vi.mock('../../../../stores/arrangementStore', async (importOriginal) => {
     };
 });
 
+import { midiLearnStore } from '#/modules/ControlSurface/stores';
+import { readYeastRack } from '#/modules/Yeast/stores';
+
 import { sanitize_arrangement_store_state } from '../../../../stores/arrangementStore';
 import { buildProjectData } from '../buildProjectData';
+import { cvGateProjection } from '../cvGateProjection';
+import { midiLearnProjection } from '../midiLearnProjection';
+import { rackProcessorReader } from '../rackProcessorReader';
+
+// The composition root's rack reader over the doubled Yeast barrel, its MIDI
+// learn projection over the live store, and a CV/gate projection holding no
+// outputs: the registrars themselves cannot load while whole module barrels
+// are mocked.
+rackProcessorReader.configure({ readProcessors: (deviceId) => readYeastRack(deviceId).processors });
+midiLearnProjection.configure({ readMidiLearn: () => midiLearnStore.value });
+cvGateProjection.configure({ readCvGate: () => null });
 
 // Minimal runtime track for the builder's walks (devices, clips,
 // alternatives, freezeState). The Arrangement stores module is mocked here,

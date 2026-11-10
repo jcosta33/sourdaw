@@ -1,12 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { getCompensationDelay, getCurrentTime, updateDeviceParam } from '#/modules/AudioEngine/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import { getAutomationValueAtBeat, isRecordingAutomation, resolveAutoMatchValue } from '#/modules/Automation/useCases';
 import { externalPluginParameterStore } from '#/modules/PluginHost/stores';
 
+import { schedulerSession } from '../../../playheadScheduler/schedulerSession';
 import { applyAutomation } from '../applyAutomation';
+
+registerDeviceEnginePorts();
 
 /**
  * AC-003: an automation lane on an external plugin device rides the live apply
@@ -109,6 +113,7 @@ function seedPluginLane(laneParameterId: string, parameterValues: Record<string,
 
 describe('applyAutomation on an external plugin device', () => {
     beforeEach(() => {
+        schedulerSession.generation += 1;
         vi.clearAllMocks();
         vi.mocked(getCurrentTime).mockReturnValue(5);
         vi.mocked(getCompensationDelay).mockReturnValue(0);
@@ -221,8 +226,8 @@ describe('applyAutomation on an external plugin device', () => {
         expect(updateDeviceParam).toHaveBeenCalled();
 
         vi.mocked(updateDeviceParam).mockClear();
-        // Mutated in place: replacing the snapshot would be a project change,
-        // which drops runtime ownership before the gate edge is ever reached.
+        // Keep this fixture's owner while changing its gate; immutable edits
+        // retain the same ownership too, as the connected history spec proves.
         const track = (trackStore as unknown as MutableStore<{ tracks: { automationMode: string }[] }>).value
             .tracks[0]!;
         track.automationMode = 'off';

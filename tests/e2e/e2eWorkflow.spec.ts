@@ -1,5 +1,4 @@
-import { expect, test } from '@playwright/test';
-
+import { expect, test } from './e2eTest';
 import { launch_from_template, launch_new_project, setupWorkspace } from './e2eUtils';
 
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
@@ -104,7 +103,7 @@ test.describe('Browser panel deep interactions', () => {
 
     test('Switching to Project tab shows project metadata', async ({ page }) => {
         const browser = page.getByRole('complementary', { name: 'Browser panel' });
-        await browser.getByRole('button', { name: 'Project', exact: true }).click();
+        await browser.getByRole('tab', { name: 'Project', exact: true }).click();
         await expect(browser.getByText(/PROJECT META|Name|Created/i).first()).toBeVisible({ timeout: 5000 });
     });
 

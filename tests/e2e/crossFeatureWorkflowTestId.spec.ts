@@ -1,5 +1,6 @@
-import { expect, test, type Page } from '@playwright/test';
+import { type Page } from '@playwright/test';
 
+import { expect, test } from './e2eTest';
 import { launch_from_template, setupWorkspace } from './e2eUtils';
 
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
@@ -116,7 +117,7 @@ test.describe('Cross-feature workflow — EDM template', () => {
         await expect(bypass).toHaveAttribute('aria-pressed', 'true');
 
         await page.keyboard.press(`${MOD}+Shift+E`);
-        const bakery = page.getByRole('dialog').filter({ hasText: /The Bakery/i });
+        const bakery = page.getByRole('dialog').filter({ hasText: /Export audio/i });
         await expect(bakery).toBeVisible();
         await page.getByTestId('export-cancel').click();
         await expect(bakery).toBeHidden();

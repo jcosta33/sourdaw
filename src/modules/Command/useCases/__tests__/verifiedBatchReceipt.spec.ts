@@ -5,9 +5,16 @@ import {
     createAutomergeStorage,
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
-import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
+import {
+    clearHandlerRegistry,
+    registerHandlerMap,
+    undoHistoryStore,
+    undoStore,
+    undoTreeStore,
+} from '#/modules/Command/stores';
 import { type ActionHandler, type AppAction } from '#/utils/handlerContract';
 
+import { createEmptyTree } from '../../models/UndoTree';
 import { type ActionHistoryMetadata } from '../actionHistoryMetadataPort';
 import { commandBatchPreflightPort } from '../commandBatchPreflightPort';
 import { commandProjectRevisionPort } from '../commandProjectRevisionPort';
@@ -33,7 +40,6 @@ const PAN_COMMAND_ID = '22222222-2222-4222-8222-222222222222';
 
 const mocks = vi.hoisted(() => ({
     clearSemanticContext: vi.fn(),
-    commitUndoEntry: vi.fn(),
     recordAction: vi.fn(),
     recordActionHistoryMetadata: vi.fn<(entry: ActionHistoryMetadata) => string[]>(() => []),
     setSemanticContext: vi.fn(),
@@ -51,7 +57,6 @@ vi.mock('../actionHistoryMetadataPort', () => ({
             entries.flatMap((entry) => mocks.recordActionHistoryMetadata(entry)),
     },
 }));
-vi.mock('../commitUndoEntry', () => ({ commitUndoEntry: mocks.commitUndoEntry }));
 vi.mock('../macro/recording/recordAction', () => ({ recordAction: mocks.recordAction }));
 
 function revision(head: number): string {
@@ -160,6 +165,7 @@ describe('verified batch receipt', () => {
     let protectedFingerprintChanged: boolean;
     let rejectPostconditions: boolean;
     let rejectResultingRevisionCapture: boolean;
+    let removeRevisionProviderAfterPublication: boolean;
 
     function compileArtifactBatch(input: { renderAfterCommit?: () => void } = {}) {
         projectDocument = { markers: { ids: [] }, rendered: { jobIds: [] } };
@@ -312,6 +318,7 @@ describe('verified batch receipt', () => {
         protectedFingerprintChanged = false;
         rejectPostconditions = false;
         rejectResultingRevisionCapture = false;
+        removeRevisionProviderAfterPublication = false;
         projectDocument = { trackGain: { value: 1 }, trackPan: { value: 0 } };
         configureAutomergeStoragePort({
             getDoc: () => projectDocument,
@@ -322,6 +329,10 @@ describe('verified batch receipt', () => {
                 changeFn(draft);
                 projectDocument = draft;
                 mutationCount += 1;
+                if (removeRevisionProviderAfterPublication) {
+                    removeRevisionProviderAfterPublication = false;
+                    commandProjectRevisionPort.setProvider(null);
+                }
             },
         });
         gainStorage = createAutomergeStorage<{ value: number }>('root', 'trackGain');
@@ -361,6 +372,7 @@ describe('verified batch receipt', () => {
     });
 
     afterEach(() => {
+        undoTreeStore.set({ tree: createEmptyTree(), enabled: false });
         flushAutomergeStorageWrites();
         configureAutomergeStoragePort(null);
         commandBatchPreflightPort.setProvider(null);
@@ -933,7 +945,8 @@ describe('verified batch receipt', () => {
     });
 
     it('reports observer warnings without claiming a partial project commit', async () => {
-        mocks.recordActionHistoryMetadata.mockImplementationOnce(() => {
+        // Macro recording observes the batch only after its commit published.
+        mocks.recordAction.mockImplementationOnce(() => {
             throw new Error('history observer unavailable');
         });
         const batch = compileBatch();
@@ -945,12 +958,57 @@ describe('verified batch receipt', () => {
         });
 
         expect(result.status).toBe('committed-with-warning');
+        expect(mutationCount).toBe(1);
+        expect(projectDocument).toMatchObject({ trackGain: { value: 0.8 }, trackPan: { value: -0.2 } });
         expect(receiptFrom(result)).toMatchObject({
             outcome: 'committed-with-warning',
             atomicity: 'atomic',
             warnings: ['history observer unavailable'],
             compensation: { available: false, commandIds: [] },
             modelSummary: 'Committed 2 commands atomically; reporting completed with warnings.',
+        });
+    });
+
+    it('reports a history staging failure as a failed batch with nothing committed', async () => {
+        const history = createAutomergeStorage<{ entries: ActionHistoryMetadata[] }>('root', 'actionHistory');
+        history.hydrate?.();
+        // History is staged inside the batch's own transaction: the first entry
+        // stages, the second refuses, and the whole transaction must abort.
+        mocks.recordActionHistoryMetadata
+            .mockImplementationOnce((entry) => {
+                const stagedEntries = history.get()?.entries ?? [];
+                history.set({ entries: [...stagedEntries, entry] });
+                return [];
+            })
+            .mockImplementationOnce(() => {
+                throw new Error('history staging refused');
+            });
+        undoHistoryStore.set({ past: [], future: [] });
+        undoTreeStore.set({ tree: createEmptyTree(), enabled: true });
+        const batch = compileBatch();
+
+        const result = await executeVersionedCommandBatchEnvelope({
+            authority: batch.authority,
+            confirmed: true,
+            serialized: batch.serialized,
+        });
+        flushAutomergeStorageWrites();
+
+        expect(result.status).toBe('failed');
+        expect(mocks.recordActionHistoryMetadata).toHaveBeenCalledTimes(2);
+        expect(mutationCount).toBe(0);
+        expect(projectDocument).toEqual({ trackGain: { value: 1 }, trackPan: { value: 0 } });
+        expect(history.get()?.entries ?? []).toEqual([]);
+        expect(undoStore.value?.past).toEqual([]);
+        expect(undoTreeStore.value?.tree).toEqual(createEmptyTree());
+        expect(mocks.recordAction).not.toHaveBeenCalled();
+        expect(receiptFrom(result)).toMatchObject({
+            outcome: 'failed',
+            commandOutcomes: [{ outcome: 'not-applied' }, { outcome: 'not-applied' }],
+            affectedIds: [],
+            errors: ['history staging refused'],
+            resulting: { normalizedRevision: revision(0) },
+            semanticDiff: null,
         });
     });
 
@@ -990,8 +1048,11 @@ describe('verified batch receipt', () => {
         });
     });
 
-    it('does not fabricate resulting heads when no revision provider is configured', async () => {
+    it('refuses without writes or fabricated heads when no revision provider is configured before execution', async () => {
         const batch = compileBatch();
+        const documentBefore = structuredClone(projectDocument);
+        const historyBefore = undoHistoryStore.value;
+        const treeBefore = undoTreeStore.value;
         commandProjectRevisionPort.setProvider(null);
 
         const result = await executeVersionedCommandBatchEnvelope({
@@ -1000,14 +1061,59 @@ describe('verified batch receipt', () => {
             serialized: batch.serialized,
         });
 
-        expect(result.status).toBe('committed');
+        expect(result).toMatchObject({
+            status: 'conflicted',
+            reason: 'Command batch execution preparation failed: Command batch postcondition authority requires a configured project revision provider',
+            actions: [],
+        });
+        expect(mutationCount).toBe(0);
+        expect(projectDocument).toEqual(documentBefore);
+        expect(gainStorage.get()).toEqual({ value: 1 });
+        expect(panStorage.get()).toEqual({ value: 0 });
+        expect(undoHistoryStore.value).toEqual(historyBefore);
+        expect(undoTreeStore.value).toEqual(treeBefore);
+        expect(mocks.recordActionHistoryMetadata).not.toHaveBeenCalled();
+        expect(mocks.recordAction).not.toHaveBeenCalled();
         expect(receiptFrom(result)).toMatchObject({
+            outcome: 'verification-failed',
+            commandOutcomes: [{ outcome: 'not-applied' }, { outcome: 'not-applied' }],
+            affectedIds: [],
             observedBase: null,
             resulting: null,
             warnings: [
                 'Observed base revision is unavailable: revision provider is not configured',
                 'Resulting project revision is unavailable: revision provider is not configured',
             ],
+        });
+    });
+
+    it('retains committed effects without fabricating heads when the provider disappears after publication', async () => {
+        const batch = compileBatch();
+        const historyCountBefore = undoHistoryStore.value?.past.length ?? 0;
+        removeRevisionProviderAfterPublication = true;
+
+        const result = await executeVersionedCommandBatchEnvelope({
+            authority: batch.authority,
+            confirmed: true,
+            serialized: batch.serialized,
+        });
+
+        expect(result.status).toBe('committed');
+        expect(mutationCount).toBe(1);
+        expect(projectDocument).toEqual({ trackGain: { value: 0.8 }, trackPan: { value: -0.2 } });
+        expect(gainStorage.get()).toEqual({ value: 0.8 });
+        expect(panStorage.get()).toEqual({ value: -0.2 });
+        expect(undoHistoryStore.value?.past.slice(historyCountBefore)).toMatchObject([
+            { action: { type: 'setTrackGain', payload: { gain: 0.8 } }, groupId: 'batch-receipt' },
+            { action: { type: 'setTrackPan', payload: { pan: -0.2 } }, groupId: 'batch-receipt' },
+        ]);
+        expect(commandProjectRevisionPort.isConfigured()).toBe(false);
+        expect(receiptFrom(result)).toMatchObject({
+            outcome: 'committed',
+            observedBase: { normalizedRevision: revision(0) },
+            resulting: null,
+            commandOutcomes: [{ outcome: 'committed' }, { outcome: 'committed' }],
+            warnings: ['Resulting project revision is unavailable: revision provider is not configured'],
             modelSummary: 'Committed 2 commands atomically, but resulting project heads are unavailable.',
         });
     });

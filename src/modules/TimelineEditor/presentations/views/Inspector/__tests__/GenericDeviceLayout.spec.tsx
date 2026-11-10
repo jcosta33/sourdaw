@@ -86,6 +86,12 @@ describe('GenericDeviceLayout', () => {
         expect(paramControls.length).toBe(5);
     });
 
+    it('lays two-parameter rows out as one column until the container is wide enough for two cards', () => {
+        renderWithTooltip(<GenericDeviceLayout {...createMockProps(2)} />);
+        const grid = screen.getAllByTestId('param-control')[0]?.parentElement?.parentElement;
+        expect(grid).toHaveClass('grid', 'grid-cols-1', '@sm:grid-cols-2');
+    });
+
     it('should render collapsible sections for more than 10 parameters', () => {
         const props = createMockProps(15);
         renderWithTooltip(<GenericDeviceLayout {...props} />);
@@ -192,13 +198,18 @@ describe('GenericDeviceLayout', () => {
         expect(screen.getByText('Filter')).toBeInTheDocument();
     });
 
-    it('should toggle section collapse on click', () => {
-        const props = createMockProps(15);
-        renderWithTooltip(<GenericDeviceLayout {...props} />);
-        const sectionButton = screen.getByText('Advanced').closest('button');
-        if (sectionButton) {
-            fireEvent.click(sectionButton);
-        }
+    it('toggles section content and keeps disclosure labels at the shared legible size', () => {
+        renderWithTooltip(<GenericDeviceLayout {...createMockProps(15)} />);
+        const sectionButton = screen.getByRole('button', { name: 'Advanced' });
+
+        expect(sectionButton).toHaveAttribute('aria-expanded', 'false');
+        expect(screen.getByText('Advanced')).toHaveClass('text-label');
+        expect(screen.queryAllByTestId('param-control')).toHaveLength(0);
+
+        fireEvent.click(sectionButton);
+
+        expect(sectionButton).toHaveAttribute('aria-expanded', 'true');
+        expect(screen.getAllByTestId('param-control')).toHaveLength(15);
     });
 
     it('should render parameters in SurfaceCards', () => {

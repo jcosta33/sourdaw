@@ -15,6 +15,7 @@ import { startSequencer } from '../startSequencer';
 import { stopSequencer } from '../stopSequencer';
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    builtinSynthVoice: { read: vi.fn() },
     startFaustNote: vi.fn(),
     soundsNativeNotes: vi.fn(() => false),
     writeNativeBuiltinParameters: vi.fn(),

@@ -139,4 +139,44 @@ describe('projectMidiClipPlayback', () => {
             }
         );
     });
+    it('plays a looping clip cut off its loop grid on the source passes', () => {
+        // A loop [0, 4) anchored at 0 and played to 16, cut off its grid at 6:
+        // the split's right fragment (the source trimmed to 6, rows untouched)
+        // and a start trim to 6 (offset wrapped to 2, rows ridden by −4) play
+        // every beat from 8 on as the uncut clip does — the held row whole,
+        // the seam row cut and re-struck on the source's seams.
+        const rows = (shiftBeats: number): MidiNote[] => [
+            { id: 'held', pitch: 60, startBeat: 1.5 + shiftBeats, duration: 1, velocity: 100 },
+            { id: 'seam', pitch: 64, startBeat: 3.5 + shiftBeats, duration: 1, velocity: 100 },
+        ];
+        const playedFromBeatEight = (startBeat: number, midiOffsetBeats: number, shiftBeats: number) =>
+            projectMidiClipPlayback({
+                notes: rows(shiftBeats),
+                controlChanges: [],
+                clip: {
+                    id: 'clip',
+                    startBeat,
+                    endBeat: 16,
+                    midiOffsetBeats,
+                    loopEnabled: true,
+                    loopLength: 4,
+                    loopOriginBeat: 0,
+                },
+            })
+                .notes.filter((played) => played.startBeat >= 8)
+                .map(({ pitch, startBeat, duration }) => [pitch, startBeat, duration])
+                .toSorted((left, right) => left[1]! - right[1]!);
+
+        const uncut = playedFromBeatEight(0, 0, 0);
+        expect(uncut).toEqual([
+            [64, 8, 0.5],
+            [60, 9.5, 1],
+            [64, 11.5, 0.5],
+            [64, 12, 0.5],
+            [60, 13.5, 1],
+            [64, 15.5, 0.5],
+        ]);
+        expect(playedFromBeatEight(6, 6, 0)).toEqual(uncut);
+        expect(playedFromBeatEight(6, 2, -4)).toEqual(uncut);
+    });
 });

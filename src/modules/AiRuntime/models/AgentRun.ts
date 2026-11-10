@@ -3,6 +3,7 @@ import { type AgentExecutionMode, type AgentTrustCeiling } from './AgentExecutio
 import { type ApplicationToolReceipt } from './ApplicationOwnedTool';
 import { type AiBackendPreference, type RunnableAiBackend } from './LlmOrchestrationTypes';
 import { type ProviderRequestTokenCeilingMethod } from './ModelProviderBudgetEstimate';
+import { type PerceptualConstraintReading } from './PerceptualConstraint';
 import { type BoundRequestProtections } from './ProposalGroundingBasis';
 
 export const AGENT_RUN_SCHEMA_VERSION = 1 as const;
@@ -60,10 +61,12 @@ export type AgentRunBudgetAttempt = {
 };
 
 export type AgentRunPlan = {
+    metricGoalState?: string;
     summary: string;
     commandIds: string[];
     serializedBatchIdentity: string | null;
     applicationToolReceipts?: ApplicationToolReceipt[];
+    terminalMeasurementSettlement?: string;
     revision: string | null;
     classification: 'simple' | 'complex';
     showPlanPanel: boolean;
@@ -96,7 +99,9 @@ export type AgentRunBatchScheduleSlice = {
  * its own. `position` is the 1-based batch the run most recently proposed; the run is not complete
  * while a later position remains.
  */
-export type AgentRunBatchSchedule = {
+type AgentRunBatchScheduleBase = {
+    /** Original semantic obligations persist across every slice; proof is rebound per batch. */
+    metricGoalState?: string;
     schemaVersion: 1;
     scheduleId: string;
     position: number;
@@ -110,6 +115,35 @@ export type AgentRunBatchSchedule = {
     requestProtections?: BoundRequestProtections;
     slices: AgentRunBatchScheduleSlice[];
 };
+
+/**
+ * What each slice holds decides how a later slice is read back and grounded. A `bulk-set` slice is the
+ * serialized evidence of one cut of a compiled set list; a schedule stored before kinds existed reads
+ * as `bulk-set`, the only kind there was.
+ */
+export type AgentRunBulkSetBatchSchedule = AgentRunBatchScheduleBase & { kind: 'bulk-set' };
+
+/**
+ * A whole-project vibe run: position 1 is the production brief, and each later position is one batch
+ * of the application's plan, named by its batch id in `serializedSlice`. The plan was read against the
+ * brief at `briefRevision`, and a later batch is grounded only while the live brief is still that
+ * revision. `recordedConstraints` are the request's perceptual constraints as they were read when the
+ * brief was admitted, which every batch is held to instead of a reading of the request against the
+ * project as it is when the batch is proposed.
+ */
+export type AgentRunVibeRunBatchSchedule = AgentRunBatchScheduleBase & {
+    kind: 'vibe-run';
+    serializedPlan: string;
+    briefRevision: number;
+    recordedConstraints: PerceptualConstraintReading;
+};
+
+export type AgentRunBatchSchedule = AgentRunBulkSetBatchSchedule | AgentRunVibeRunBatchSchedule;
+
+/** A schedule as the planner produces it, before the run binds its interaction mode and trust ceiling. */
+export type PlannedAgentRunBatchSchedule =
+    | Omit<AgentRunBulkSetBatchSchedule, 'interactionMode' | 'trustCeiling'>
+    | Omit<AgentRunVibeRunBatchSchedule, 'interactionMode' | 'trustCeiling'>;
 
 /** Whether a later batch of this run's schedule is still owed, so a committed batch does not complete it. */
 export function hasRemainingScheduledBatches(run: { plan: AgentRunPlan | null }): boolean {

@@ -8,6 +8,7 @@ type NormalizeExportBufferInput = {
     apply?: boolean;
     targetLufs: number;
     ceilingDbTp: number;
+    measurements?: Parameters<typeof applyExportNormalization>[0]['measurements'];
 };
 
 /**

@@ -16,6 +16,7 @@ export type MidiNote = {
     pitchBendRangeSemitones?: number;
     channel?: number;
     articulation?: string;
+    recordingPassIndex?: number;
     expression?: {
         pressure?: Array<{ offsetBeats: number; value: number }>;
         slide?: Array<{ offsetBeats: number; value: number }>;
@@ -36,4 +37,6 @@ export type MidiPitchBend = {
     value: number;
     beat: number;
     channel: number;
+    /** Captured from a channel's wheel; the lane keeps it when a removed point is restored. */
+    channelScoped?: boolean;
 };

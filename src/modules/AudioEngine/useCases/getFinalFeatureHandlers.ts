@@ -1,31 +1,23 @@
-import { handleAddCvOutput } from '../handlers/finalFeature/handleAddCvOutput';
 import { handleCloseElasticEditor } from '../handlers/finalFeature/handleCloseElasticEditor';
 import { handleElasticAddMarker } from '../handlers/finalFeature/handleElasticAddMarker';
 import { handleElasticRemoveMarker } from '../handlers/finalFeature/handleElasticRemoveMarker';
 import { handleElasticSetSensitivity } from '../handlers/finalFeature/handleElasticSetSensitivity';
 import { handleElasticSetTool } from '../handlers/finalFeature/handleElasticSetTool';
 import { handleElasticToggleMarkerLock } from '../handlers/finalFeature/handleElasticToggleMarkerLock';
-import { handleEnableWarping } from '../handlers/finalFeature/handleEnableWarping';
 import { handleGetLatencyReport } from '../handlers/finalFeature/handleGetLatencyReport';
 import { handleOpenElasticEditor } from '../handlers/finalFeature/handleOpenElasticEditor';
-import { handleQuantizeTransients } from '../handlers/finalFeature/handleQuantizeTransients';
-import { handleRemoveCvOutput } from '../handlers/finalFeature/handleRemoveCvOutput';
 import { handleSetWarpAlgorithm } from '../handlers/finalFeature/handleSetWarpAlgorithm';
 import { handleSetWarpPitchShift } from '../handlers/finalFeature/handleSetWarpPitchShift';
 
 export type FinalFeatureHandlersMap = {
-    addCvOutput: typeof handleAddCvOutput;
     closeElasticEditor: typeof handleCloseElasticEditor;
     elasticAddMarker: typeof handleElasticAddMarker;
     elasticRemoveMarker: typeof handleElasticRemoveMarker;
     elasticSetSensitivity: typeof handleElasticSetSensitivity;
     elasticSetTool: typeof handleElasticSetTool;
     elasticToggleMarkerLock: typeof handleElasticToggleMarkerLock;
-    enableWarping: typeof handleEnableWarping;
     getLatencyReport: typeof handleGetLatencyReport;
     openElasticEditor: typeof handleOpenElasticEditor;
-    quantizeTransients: typeof handleQuantizeTransients;
-    removeCvOutput: typeof handleRemoveCvOutput;
     setWarpAlgorithm: typeof handleSetWarpAlgorithm;
     setWarpPitchShift: typeof handleSetWarpPitchShift;
 };
@@ -35,7 +27,6 @@ export type FinalFeatureHandlersMap = {
  */
 export function getFinalFeatureHandlers(): FinalFeatureHandlersMap {
     return {
-        quantizeTransients: handleQuantizeTransients,
         openElasticEditor: handleOpenElasticEditor,
         closeElasticEditor: handleCloseElasticEditor,
         elasticSetSensitivity: handleElasticSetSensitivity,
@@ -43,9 +34,6 @@ export function getFinalFeatureHandlers(): FinalFeatureHandlersMap {
         elasticRemoveMarker: handleElasticRemoveMarker,
         elasticToggleMarkerLock: handleElasticToggleMarkerLock,
         elasticSetTool: handleElasticSetTool,
-        addCvOutput: handleAddCvOutput,
-        removeCvOutput: handleRemoveCvOutput,
-        enableWarping: handleEnableWarping,
         setWarpAlgorithm: handleSetWarpAlgorithm,
         setWarpPitchShift: handleSetWarpPitchShift,
         getLatencyReport: handleGetLatencyReport,

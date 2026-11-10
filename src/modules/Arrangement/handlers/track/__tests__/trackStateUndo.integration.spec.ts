@@ -45,6 +45,13 @@ import { getArrangementHandlers } from '../../../useCases/getArrangementHandlers
 // stubbed AudioContext cannot build. The subject here is what project truth holds after
 // undo, so the engine seam is stubbed rather than exercised.
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    captureOfflineRenderProjectSource: vi.fn(() => {
+        throw new Error('Unexpected selection render capture in this fixture');
+    }),
+    captureOfflineRenderRuntimeInput: vi.fn(() => {
+        throw new Error('Unexpected selection render capture in this fixture');
+    }),
+    builtinSynthVoice: { read: vi.fn() },
     rearmCommittedTrackInputMonitoring: vi.fn(async () => undefined),
     startFaustNote: vi.fn(),
     soundsNativeNotes: vi.fn(() => false),
@@ -63,6 +70,8 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     getAudioContext: vi.fn(() => ({ currentTime: 0, sampleRate: 48000 })),
     getAudioDevices: vi.fn(() => Promise.resolve([])),
     getCachedAudioBuffer: vi.fn(),
+    restoreUnpinnedAudioBuffersFromIdb: vi.fn(),
+    holdAudioBufferForSession: vi.fn(),
     getCompensationDelay: vi.fn(),
     getDefaultBendRangeSemitones: vi.fn(),
     getDeviceChainTailSeconds: vi.fn(),

@@ -1,128 +1,44 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { notificationMock, setMock, storeState } = vi.hoisted(() => {
-    const storeState = {
-        value: null as {
-            changes: Array<{ id: string; beat: number; tempo: number; curve: 'instant' | 'linear' }>;
-        } | null,
-    };
-    const notificationMock = vi.fn();
-    const setMock = vi.fn((next: typeof storeState.value) => {
-        storeState.value = next;
-        notificationMock(next);
-    });
-    return { notificationMock, setMock, storeState };
-});
-
-vi.mock('../../../stores/tempoMapStore', () => ({
-    tempoMapStore: {
-        get value() {
-            return storeState.value;
-        },
-        set: setMock,
-    },
-}));
+const { execute } = vi.hoisted(() => ({ execute: vi.fn() }));
+vi.mock('#/modules/Command/useCases', () => ({ executeAppAction: execute }));
 
 import { replaceTempoMap } from '../replaceTempoMap';
 
+// Row, source and saved-history behavior lives in tempoMapCommands.integration;
+// this public wrapper must return the real owning Command promise.
 describe('replaceTempoMap', () => {
     beforeEach(() => {
-        storeState.value = {
-            changes: [{ id: 'prior', beat: 4, tempo: 110, curve: 'instant' }],
-        };
-        setMock.mockClear();
-        notificationMock.mockClear();
+        execute.mockReset();
     });
 
-    afterEach(() => {
-        vi.restoreAllMocks();
-    });
-
-    it('replaces the map in supplied order with short deterministic IDs and one notification', () => {
-        vi.spyOn(crypto, 'randomUUID')
-            .mockReturnValueOnce('12345678-1234-4123-8123-123456789abc')
-            .mockReturnValueOnce('abcdef12-abcd-4abc-8abc-abcdef123456');
-
-        replaceTempoMap({
-            changes: [
-                { beat: 88, tempo: 72, curve: 'linear' },
-                { beat: 0, tempo: 90, curve: 'instant' },
-            ],
+    it('returns the actual Command completion for the requested musical edit', async () => {
+        const completion = Promise.resolve();
+        execute.mockReturnValue(completion);
+        expect(replaceTempoMap({ changes: [{ beat: 4, tempo: 140, curve: 'linear' }] })).toBe(completion);
+        expect(execute).toHaveBeenCalledExactlyOnceWith({
+            type: 'editTempoMap',
+            payload: { edit: { type: 'replace', changes: [{ beat: 4, tempo: 140, curve: 'linear' }] } },
         });
-
-        const expected = {
-            changes: [
-                { id: 'tempo-12345678', beat: 88, tempo: 72, curve: 'linear' },
-                { id: 'tempo-abcdef12', beat: 0, tempo: 90, curve: 'instant' },
-            ],
-        };
-        expect(setMock).toHaveBeenCalledExactlyOnceWith(expected);
-        expect(notificationMock).toHaveBeenCalledExactlyOnceWith(expected);
-        expect(storeState.value).toEqual(expected);
+        await completion;
     });
 
-    it('accepts an empty replacement batch without generating IDs', () => {
-        const randomUUIDMock = vi.spyOn(crypto, 'randomUUID');
-
-        replaceTempoMap({ changes: [] });
-
-        const expected = { changes: [] };
-        expect(randomUUIDMock).not.toHaveBeenCalled();
-        expect(setMock).toHaveBeenCalledExactlyOnceWith(expected);
-        expect(notificationMock).toHaveBeenCalledExactlyOnceWith(expected);
-        expect(storeState.value).toEqual(expected);
+    it('preserves a Command refusal for its caller', async () => {
+        const failure = new Error('Owning row changed');
+        execute.mockRejectedValue(failure);
+        await expect(replaceTempoMap({ changes: [{ beat: 4, tempo: 140, curve: 'linear' }] })).rejects.toBe(failure);
     });
-
-    it('rejects the complete batch before UUID generation when a tempo is invalid', () => {
-        const prior = storeState.value;
-        const randomUUIDMock = vi.spyOn(crypto, 'randomUUID');
-
-        expect(() =>
-            replaceTempoMap({
-                changes: [
-                    { beat: 0, tempo: 90, curve: 'instant' },
-                    { beat: 88, tempo: Number.POSITIVE_INFINITY, curve: 'linear' },
-                ],
-            })
-        ).toThrow(new RangeError('Tempo must be finite and between 20 and 999'));
-        expect(randomUUIDMock).not.toHaveBeenCalled();
-        expect(setMock).not.toHaveBeenCalled();
-        expect(notificationMock).not.toHaveBeenCalled();
-        expect(storeState.value).toBe(prior);
-    });
-
-    it('initializes the map when the store state is null', () => {
-        storeState.value = null;
-        vi.spyOn(crypto, 'randomUUID').mockReturnValue('feedface-feed-4ace-8eed-feedfacefeed');
-
-        replaceTempoMap({ changes: [{ beat: 12, tempo: 128, curve: 'instant' }] });
-
-        const expected = {
-            changes: [{ id: 'tempo-feedface', beat: 12, tempo: 128, curve: 'instant' }],
-        };
-        expect(setMock).toHaveBeenCalledExactlyOnceWith(expected);
-        expect(notificationMock).toHaveBeenCalledExactlyOnceWith(expected);
-        expect(storeState.value).toEqual(expected);
-    });
-
-    it('leaves prior state untouched when ID construction throws', () => {
-        const prior = storeState.value;
-        vi.spyOn(crypto, 'randomUUID')
-            .mockReturnValueOnce('12345678-1234-4123-8123-123456789abc')
-            .mockImplementationOnce(() => {
-                throw new Error('UUID failure');
-            });
-
-        expect(() =>
-            replaceTempoMap({
-                changes: [
-                    { beat: 0, tempo: 90, curve: 'instant' },
-                    { beat: 88, tempo: 72, curve: 'linear' },
-                ],
-            })
-        ).toThrow('UUID failure');
-        expect(setMock).not.toHaveBeenCalled();
-        expect(notificationMock).not.toHaveBeenCalled();
-        expect(storeState.value).toBe(prior);
+    it.each([
+        { beat: -1, tempo: 120, curve: 'instant' as const },
+        { beat: 0, tempo: Number.POSITIVE_INFINITY, curve: 'linear' as const },
+        { beat: 0, tempo: 1000, curve: 'instant' as const },
+    ])('rejects the complete invalid batch before admission or ID allocation: %j', (invalid) => {
+        const uuid = vi.spyOn(crypto, 'randomUUID');
+        expect(() => replaceTempoMap({ changes: [{ beat: 0, tempo: 90, curve: 'instant' }, invalid] })).toThrow(
+            RangeError
+        );
+        expect(execute).not.toHaveBeenCalled();
+        expect(uuid).not.toHaveBeenCalled();
+        uuid.mockRestore();
     });
 });

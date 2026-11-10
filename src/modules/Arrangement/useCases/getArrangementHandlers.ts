@@ -1,9 +1,10 @@
 import { adjustmentLayerHandlers } from '../handlers/batchFeature/adjustmentLayerHandlers';
 import { handleDiscardCreatedCompGroup } from '../handlers/batchFeature/discardCreatedCompGroup';
 import { handleCreateCompGroup } from '../handlers/batchFeature/handleCreateCompGroup';
-import { handleSearchSamples } from '../handlers/batchFeature/handleSearchSamples';
 import { clipHandlers } from '../handlers/clip/clipHandlers';
 import { handleDetectTransients } from '../handlers/clip/handleDetectTransients';
+import { handleRestoreAudioClipSlip } from '../handlers/clip/handleRestoreAudioClipSlip';
+import { handleRestoreAudioClipStartTrim } from '../handlers/clip/handleRestoreAudioClipStartTrim';
 import { handleRestoreTimeOperationState } from '../handlers/clip/handleRestoreTimeOperationState';
 import { handleRestoreTrackClipStates } from '../handlers/clip/handleRestoreTrackClipStates';
 import { handleAddGainEnvelopePoint } from '../handlers/clipGainEnvelope/handleAddGainEnvelopePoint';
@@ -11,10 +12,12 @@ import { handleRemoveGainEnvelopePoint } from '../handlers/clipGainEnvelope/hand
 import { handleResetClipGainEnvelope } from '../handlers/clipGainEnvelope/handleResetClipGainEnvelope';
 import { handleSetClipGainEnvelope } from '../handlers/clipGainEnvelope/handleSetClipGainEnvelope';
 import { handleToggleClipGainEnvelope } from '../handlers/clipGainEnvelope/handleToggleClipGainEnvelope';
+import { handleEnableWarping } from '../handlers/clipStretch/handleEnableWarping';
 import { handleFitClipToBeats } from '../handlers/clipStretch/handleFitClipToBeats';
 import { handleRestoreClipStretchState } from '../handlers/clipStretch/handleRestoreClipStretchState';
 import { handleSetClipStretchMode } from '../handlers/clipStretch/handleSetClipStretchMode';
 import { handleSetClipStretchRatio } from '../handlers/clipStretch/handleSetClipStretchRatio';
+import { handleRemoveCompRegion } from '../handlers/comping/handleRemoveCompRegion';
 import { handleRestoreCompRegionInterval } from '../handlers/comping/handleRestoreCompRegionInterval';
 import { handleSetCompRegion } from '../handlers/comping/handleSetCompRegion';
 import { handleAddDevice } from '../handlers/device/handleAddDevice';
@@ -44,6 +47,9 @@ import { handleResizeSection } from '../handlers/marker/handleResizeSection';
 import { handleRestoreSectionBeats } from '../handlers/marker/handleRestoreSectionBeats';
 import { handleSetMarkerColor } from '../handlers/marker/handleSetMarkerColor';
 import { handleSetSectionColor } from '../handlers/marker/handleSetSectionColor';
+import { handleCreatePatternInstance } from '../handlers/patternInstance/handleCreatePatternInstance';
+import { handleDetachPatternInstance } from '../handlers/patternInstance/handleDetachPatternInstance';
+import { handleRestorePatternInstanceLink } from '../handlers/patternInstance/handleRestorePatternInstanceLink';
 import { handleLoadPreset, handleRestorePresetDeviceChain } from '../handlers/preset/handleLoadPreset';
 import { handleSavePreset } from '../handlers/preset/handleSavePreset';
 import { handleCommitRecording } from '../handlers/recording/handleCommitRecording';
@@ -54,6 +60,7 @@ import { handleRestoreTrack } from '../handlers/restore/handleRestoreTrack';
 import { handleClearScratchPad } from '../handlers/scratchPad/handleClearScratchPad';
 import { handleCommitScratchPad } from '../handlers/scratchPad/handleCommitScratchPad';
 import { handleRestoreScratchPadState } from '../handlers/scratchPad/handleRestoreScratchPadState';
+import { handleReplaceOriginalMidiTakeRow } from '../handlers/takeLane/replaceOriginalMidiTakeRow';
 import { handleSelectTake } from '../handlers/takeLane/selectTake';
 import { handleDeleteTrackTemplate } from '../handlers/template/handleDeleteTrackTemplate';
 import { handleLoadTrackTemplate } from '../handlers/template/handleLoadTrackTemplate';
@@ -126,6 +133,9 @@ import { handleSetVcaGain } from '../handlers/vca/handleSetVcaGain';
  */
 export function getArrangementHandlers() {
     return {
+        createPatternInstance: handleCreatePatternInstance,
+        detachPatternInstance: handleDetachPatternInstance,
+        restorePatternInstanceLink: handleRestorePatternInstanceLink,
         importStemSet: handleImportStemSet,
         discardImportedStemSet: handleDiscardImportedStemSet,
         addTrack: handleAddTrack,
@@ -179,6 +189,7 @@ export function getArrangementHandlers() {
         restoreScratchPadState: handleRestoreScratchPadState,
         discardCreatedCompGroup: handleDiscardCreatedCompGroup,
         selectTake: handleSelectTake,
+        replaceOriginalMidiTakeRow: handleReplaceOriginalMidiTakeRow,
         restoreTrackAlternativeState: handleRestoreTrackAlternativeState,
         zoomTracksVertical: handleZoomTracksVertical,
         addMarker: handleAddMarker,
@@ -215,9 +226,12 @@ export function getArrangementHandlers() {
         removeFromVca: handleRemoveFromVca,
         setVcaGain: handleSetVcaGain,
         restoreLegacyVcaState: handleRestoreLegacyVcaState,
+        enableWarping: handleEnableWarping,
         setClipStretchMode: handleSetClipStretchMode,
         setClipStretchRatio: handleSetClipStretchRatio,
         restoreClipStretchState: handleRestoreClipStretchState,
+        restoreAudioClipStartTrim: handleRestoreAudioClipStartTrim,
+        restoreAudioClipSlip: handleRestoreAudioClipSlip,
         fitClipToBeats: handleFitClipToBeats,
         loadPreset: handleLoadPreset,
         restorePresetDeviceChain: handleRestorePresetDeviceChain,
@@ -241,11 +255,11 @@ export function getArrangementHandlers() {
         removeSend: handleRemoveSend,
         addSidechainRoute: handleAddSidechainRoute,
         removeSidechainRoute: handleRemoveSidechainRoute,
-        searchSamples: handleSearchSamples,
         createCompGroup: handleCreateCompGroup,
         ...adjustmentLayerHandlers,
         ...clipHandlers,
         setCompRegion: handleSetCompRegion,
+        removeCompRegion: handleRemoveCompRegion,
         restoreCompRegionInterval: handleRestoreCompRegionInterval,
     };
 }

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 
 import { FACTORY_LIBRARY_ROOT_ID } from '#/modules/FactorySynthesis/useCases';
@@ -20,6 +20,13 @@ type LibraryBrowserMocks = {
     projectSpatialMap: ReturnType<typeof vi.fn>;
     readNativeLibrarySampleFile: ReturnType<typeof vi.fn>;
     getCachedAudioBuffer: Mock<(input: { bufferId: string }) => AudioBuffer | null>;
+    ensureFactorySampleBuffer: Mock<
+        (input: {
+            sampleId: string;
+        }) => Promise<
+            { status: 'resolved'; buffer: AudioBuffer } | { status: 'unavailable' } | { status: 'not-factory' }
+        >
+    >;
 };
 
 const mocks = vi.hoisted((): LibraryBrowserMocks => ({
@@ -35,10 +42,14 @@ const mocks = vi.hoisted((): LibraryBrowserMocks => ({
     projectSpatialMap: vi.fn(),
     readNativeLibrarySampleFile: vi.fn(),
     getCachedAudioBuffer: vi.fn<(input: { bufferId: string }) => AudioBuffer | null>(),
+    ensureFactorySampleBuffer: vi.fn(),
 }));
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    cacheAudioBuffer: vi.fn(),
+    getAudioContext: vi.fn(),
     getCachedAudioBuffer: mocks.getCachedAudioBuffer,
+    restoreUnpinnedAudioBuffersFromIdb: vi.fn(),
 }));
 
 vi.mock('#/infra/store/useStore', () => ({
@@ -55,6 +66,10 @@ vi.mock('../../../useCases/isNativeSampleLibraryRuntimeAvailable', () => ({
 
 vi.mock('../../../useCases/readNativeLibrarySampleFile', () => ({
     readNativeLibrarySampleFile: mocks.readNativeLibrarySampleFile,
+}));
+
+vi.mock('../../../useCases/ensureFactorySampleBuffer', () => ({
+    ensureFactorySampleBuffer: mocks.ensureFactorySampleBuffer,
 }));
 
 vi.mock('../../../useCases/projectSpatialMap', () => ({
@@ -128,28 +143,30 @@ describe('LibraryBrowser', () => {
         mocks.isNativeSampleLibraryRuntimeAvailable.mockReturnValue(false);
         mocks.preview.playingId = null;
         mocks.getCachedAudioBuffer.mockReset();
+        mocks.ensureFactorySampleBuffer.mockReset();
+        mocks.ensureFactorySampleBuffer.mockResolvedValue({ status: 'unavailable' });
         mocks.preview.play.mockReset();
         embeddingStore.set({ embeddings: new Map(), modelStatus: 'idle' });
         setSearchQuery('');
     });
 
     it('should render without crashing', () => {
-        render(<LibraryBrowser preview={mocks.preview} selectedTrackId={null} />);
+        render(<LibraryBrowser preview={mocks.preview} />);
         expect(document.body).toBeTruthy();
     });
 
     it('should handle store state', () => {
-        render(<LibraryBrowser preview={mocks.preview} selectedTrackId={null} />);
+        render(<LibraryBrowser preview={mocks.preview} />);
         expect(document.body).toBeTruthy();
     });
 
     it('should render with useCase bindings', () => {
-        render(<LibraryBrowser preview={mocks.preview} selectedTrackId={null} />);
+        render(<LibraryBrowser preview={mocks.preview} />);
         expect(document.body).toBeTruthy();
     });
 
     it('should have interactive elements', () => {
-        render(<LibraryBrowser preview={mocks.preview} selectedTrackId={null} />);
+        render(<LibraryBrowser preview={mocks.preview} />);
         const buttons = screen.queryAllByRole('button');
         expect(buttons.length).toBeGreaterThanOrEqual(0);
     });
@@ -166,7 +183,7 @@ describe('LibraryBrowser', () => {
             displayName: 'Kick',
         });
 
-        render(<LibraryBrowser preview={mocks.preview} selectedTrackId={null} />);
+        render(<LibraryBrowser preview={mocks.preview} />);
 
         fireEvent.click(screen.getByRole('button', { name: 'Play Kick' }));
 
@@ -189,7 +206,7 @@ describe('LibraryBrowser', () => {
             displayName: 'Texture',
         });
 
-        render(<LibraryBrowser preview={mocks.preview} selectedTrackId={null} />);
+        render(<LibraryBrowser preview={mocks.preview} />);
 
         fireEvent.click(screen.getByRole('button', { name: 'Play Texture' }));
 
@@ -198,6 +215,43 @@ describe('LibraryBrowser', () => {
                 '"Texture" is a .flac file — your browser may not be able to preview it.',
                 'warning'
             );
+        });
+    });
+
+    it('offers no add control on a row when the embedding surface supplies no placement', () => {
+        mocks.libraryState = createLibraryState({
+            provider: 'browser',
+            ext: 'wav',
+            rootRef: 'browser-root',
+            relativePath: 'Loops/Texture.wav',
+            displayName: 'Texture',
+        });
+
+        render(<LibraryBrowser preview={mocks.preview} />);
+
+        expect(screen.getByRole('button', { name: 'Play Texture' })).toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'Add Texture to track' })).toBeNull();
+    });
+
+    it('hands the row sample to the supplied placement when its add control is pressed', () => {
+        mocks.libraryState = createLibraryState({
+            provider: 'browser',
+            ext: 'wav',
+            rootRef: 'browser-root',
+            relativePath: 'Loops/Texture.wav',
+            displayName: 'Texture',
+        });
+        const onAddSample = vi.fn();
+
+        render(<LibraryBrowser preview={mocks.preview} onAddSample={onAddSample} />);
+        fireEvent.click(screen.getByRole('button', { name: 'Add Texture to track' }));
+
+        expect(onAddSample).toHaveBeenCalledTimes(1);
+        expect(onAddSample).toHaveBeenCalledWith({
+            id: 'sample1',
+            name: 'Texture',
+            path: 'Loops/Texture.wav',
+            libraryRootId: 'root1',
         });
     });
 
@@ -213,7 +267,7 @@ describe('LibraryBrowser', () => {
         state.samples[0]!.folder = 'Drums\\Kits';
         mocks.libraryState = state;
 
-        render(<LibraryBrowser preview={mocks.preview} selectedTrackId={null} />);
+        render(<LibraryBrowser preview={mocks.preview} />);
 
         // The subfolder button must show only the leaf segment, not the full path.
         expect(screen.getByRole('button', { name: /^Open folder Kits,/ })).toBeTruthy();
@@ -244,7 +298,7 @@ describe('LibraryBrowser', () => {
         ];
         mocks.libraryState = state;
 
-        render(<LibraryBrowser preview={mocks.preview} selectedTrackId={null} />);
+        render(<LibraryBrowser preview={mocks.preview} />);
 
         const names = screen
             .getAllByRole('button', { name: /^Open folder / })
@@ -270,7 +324,7 @@ describe('LibraryBrowser', () => {
             displayName: 'Texture',
         });
 
-        render(<LibraryBrowser preview={mocks.preview} selectedTrackId={null} />);
+        render(<LibraryBrowser preview={mocks.preview} />);
 
         fireEvent.click(screen.getByRole('button', { name: 'Play Texture' }));
 
@@ -292,7 +346,7 @@ describe('LibraryBrowser', () => {
             displayName: 'Kick',
         });
 
-        render(<LibraryBrowser preview={mocks.preview} selectedTrackId={null} />);
+        render(<LibraryBrowser preview={mocks.preview} />);
 
         expect(screen.queryByRole('button', { name: 'Analyze' })).toBeNull();
     });
@@ -306,7 +360,7 @@ describe('LibraryBrowser', () => {
             displayName: 'Kick',
         });
 
-        render(<LibraryBrowser preview={mocks.preview} selectedTrackId={null} />);
+        render(<LibraryBrowser preview={mocks.preview} />);
 
         // The map panel (and its button) only mounts once the MAP toggle is on.
         fireEvent.click(screen.getByRole('button', { name: 'Timbral spatial map' }));
@@ -340,11 +394,11 @@ describe('LibraryBrowser', () => {
             displayName: 'Kick',
         });
 
-        const { rerender } = render(<LibraryBrowser preview={mocks.preview} selectedTrackId={null} />);
+        const { rerender } = render(<LibraryBrowser preview={mocks.preview} />);
 
         fireEvent.click(screen.getByRole('button', { name: 'Play Kick' }));
 
-        rerender(<LibraryBrowser preview={{ ...mocks.preview, playingId: 'sample1' }} selectedTrackId={null} />);
+        rerender(<LibraryBrowser preview={{ ...mocks.preview, playingId: 'sample1' }} />);
         fireEvent.click(screen.getByRole('button', { name: 'Stop Kick' }));
 
         resolveFile(new File(['audio'], 'Kick.wav', { type: 'audio/wav' }));
@@ -385,7 +439,7 @@ describe('LibraryBrowser', () => {
         ];
         mocks.libraryState = state;
 
-        render(<LibraryBrowser preview={mocks.preview} selectedTrackId={null} />);
+        render(<LibraryBrowser preview={mocks.preview} />);
 
         // Click sample 1 (deferred file 1)
         fireEvent.click(screen.getByRole('button', { name: 'Play Kick' }));
@@ -427,7 +481,7 @@ describe('LibraryBrowser', () => {
             displayName: 'Kick',
         });
 
-        const { unmount } = render(<LibraryBrowser preview={mocks.preview} selectedTrackId={null} />);
+        const { unmount } = render(<LibraryBrowser preview={mocks.preview} />);
 
         // Click sample
         fireEvent.click(screen.getByRole('button', { name: 'Play Kick' }));
@@ -445,10 +499,10 @@ describe('LibraryBrowser', () => {
 
     it('does not stop playback when re-rendered with an updated preview reference', () => {
         const preview = { ...mocks.preview, stop: vi.fn(), playingId: null };
-        const { rerender } = render(<LibraryBrowser preview={preview} selectedTrackId={null} />);
+        const { rerender } = render(<LibraryBrowser preview={preview} />);
 
         const updatedPreview = { ...mocks.preview, stop: vi.fn(), playingId: 'sample-1' };
-        rerender(<LibraryBrowser preview={updatedPreview} selectedTrackId={null} />);
+        rerender(<LibraryBrowser preview={updatedPreview} />);
 
         expect(preview.stop).not.toHaveBeenCalled();
         expect(updatedPreview.stop).not.toHaveBeenCalled();
@@ -456,7 +510,7 @@ describe('LibraryBrowser', () => {
 
     it('stops preview on unmount', () => {
         const preview = { ...mocks.preview, stop: vi.fn() };
-        const { unmount } = render(<LibraryBrowser preview={preview} selectedTrackId={null} />);
+        const { unmount } = render(<LibraryBrowser preview={preview} />);
         unmount();
         expect(preview.stop).toHaveBeenCalledTimes(1);
     });
@@ -510,7 +564,7 @@ describe('LibraryBrowser', () => {
             scanProgress: 0,
         };
 
-        render(<LibraryBrowser preview={mocks.preview} selectedTrackId={null} />);
+        render(<LibraryBrowser preview={mocks.preview} />);
 
         fireEvent.click(screen.getByRole('button', { name: 'Play Kick' }));
 
@@ -569,7 +623,7 @@ describe('LibraryBrowser', () => {
             scanProgress: 0,
         };
 
-        render(<LibraryBrowser preview={mocks.preview} selectedTrackId={null} />);
+        render(<LibraryBrowser preview={mocks.preview} />);
 
         fireEvent.click(screen.getByRole('button', { name: 'Play Kick' }));
 
@@ -624,7 +678,7 @@ describe('LibraryBrowser', () => {
             scanProgress: 0,
         };
 
-        render(<LibraryBrowser preview={mocks.preview} selectedTrackId={null} />);
+        render(<LibraryBrowser preview={mocks.preview} />);
 
         fireEvent.click(screen.getByRole('button', { name: 'Play External Sample' }));
 
@@ -680,7 +734,7 @@ describe('LibraryBrowser', () => {
             scanProgress: 0,
         };
 
-        render(<LibraryBrowser preview={mocks.preview} selectedTrackId={null} />);
+        render(<LibraryBrowser preview={mocks.preview} />);
 
         fireEvent.click(screen.getByRole('button', { name: 'Play External Sample' }));
 
@@ -693,7 +747,7 @@ describe('LibraryBrowser', () => {
         expect(mocks.preview.play).not.toHaveBeenCalled();
     });
 
-    it('warns when factory sample buffer is missing from cache', async () => {
+    it('warns when no source can supply an evicted factory sample buffer', async () => {
         mocks.getCachedAudioBuffer.mockReturnValue(null);
 
         mocks.libraryState = {
@@ -735,7 +789,7 @@ describe('LibraryBrowser', () => {
             scanProgress: 0,
         };
 
-        render(<LibraryBrowser preview={mocks.preview} selectedTrackId={null} />);
+        render(<LibraryBrowser preview={mocks.preview} />);
 
         fireEvent.click(screen.getByRole('button', { name: 'Play Kick' }));
 
@@ -745,7 +799,134 @@ describe('LibraryBrowser', () => {
                 'warning'
             );
         });
+        expect(mocks.ensureFactorySampleBuffer).toHaveBeenCalledExactlyOnceWith({ sampleId: 'factory-kick' });
         expect(mocks.preview.play).not.toHaveBeenCalled();
+    });
+
+    it('plays an evicted factory sample once the library obtains its buffer', async () => {
+        mocks.getCachedAudioBuffer.mockReturnValue(null);
+        const restored = { duration: 1, length: 44100, numberOfChannels: 1, sampleRate: 44100 } as AudioBuffer;
+        mocks.ensureFactorySampleBuffer.mockResolvedValue({ status: 'resolved', buffer: restored });
+
+        mocks.libraryState = {
+            roots: [
+                {
+                    id: FACTORY_LIBRARY_ROOT_ID,
+                    name: 'Factory Samples',
+                    provider: 'browser',
+                    rootRef: '',
+                    connectedAt: 0,
+                    status: 'ready',
+                    fileCount: 1,
+                    settings: { recursive: true },
+                },
+            ],
+            samples: [
+                {
+                    id: 'factory-kick',
+                    libraryRootId: FACTORY_LIBRARY_ROOT_ID,
+                    displayName: 'Kick',
+                    relativePath: 'Drums/Kick.factory',
+                    ext: 'factory',
+                    folder: 'Drums',
+                    sync: { exists: true, status: 'analyzed', sizeBytes: 4 },
+                    format: { durationSec: 1 },
+                    tags: ['factory'],
+                    favorite: false,
+                },
+            ],
+            folderTrees: {},
+            activeRootId: FACTORY_LIBRARY_ROOT_ID,
+            currentFolder: 'Drums',
+            searchQuery: '',
+            tagFilter: null,
+            favoritesOnly: false,
+            sortField: 'name',
+            sortDirection: 'asc',
+            scanning: false,
+            scanProgress: 0,
+        };
+
+        render(<LibraryBrowser preview={mocks.preview} />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Play Kick' }));
+
+        await waitFor(() => {
+            expect(mocks.preview.play).toHaveBeenCalledWith('factory-kick', restored);
+        });
+        expect(mocks.ensureFactorySampleBuffer).toHaveBeenCalledExactlyOnceWith({ sampleId: 'factory-kick' });
+        expect(mocks.notifyUser).not.toHaveBeenCalled();
+    });
+
+    it('drops an evicted factory sample whose buffer arrives after a later preview started', async () => {
+        mocks.getCachedAudioBuffer.mockReturnValue(null);
+        const snareBuffer = { duration: 1, length: 44100, numberOfChannels: 1, sampleRate: 44100 } as AudioBuffer;
+        const kickBuffer = { duration: 2, length: 88200, numberOfChannels: 1, sampleRate: 44100 } as AudioBuffer;
+        let resolveKick: (result: { status: 'resolved'; buffer: AudioBuffer }) => void = () => undefined;
+        mocks.ensureFactorySampleBuffer.mockImplementation(({ sampleId }) => {
+            if (sampleId !== 'factory-kick') {
+                return Promise.resolve({ status: 'resolved', buffer: snareBuffer });
+            }
+            return new Promise((resolve) => {
+                resolveKick = resolve;
+            });
+        });
+        const factorySample = (id: string, displayName: string) => ({
+            id,
+            libraryRootId: FACTORY_LIBRARY_ROOT_ID,
+            displayName,
+            relativePath: `Drums/${displayName}.factory`,
+            ext: 'factory',
+            folder: 'Drums',
+            sync: { exists: true, status: 'analyzed' as const, sizeBytes: 4 },
+            format: { durationSec: 1 },
+            tags: ['factory'],
+            favorite: false,
+        });
+
+        mocks.libraryState = {
+            roots: [
+                {
+                    id: FACTORY_LIBRARY_ROOT_ID,
+                    name: 'Factory Samples',
+                    provider: 'browser',
+                    rootRef: '',
+                    connectedAt: 0,
+                    status: 'ready',
+                    fileCount: 2,
+                    settings: { recursive: true },
+                },
+            ],
+            samples: [factorySample('factory-kick', 'Kick'), factorySample('factory-snare', 'Snare')],
+            folderTrees: {},
+            activeRootId: FACTORY_LIBRARY_ROOT_ID,
+            currentFolder: 'Drums',
+            searchQuery: '',
+            tagFilter: null,
+            favoritesOnly: false,
+            sortField: 'name',
+            sortDirection: 'asc',
+            scanning: false,
+            scanProgress: 0,
+        };
+
+        render(<LibraryBrowser preview={mocks.preview} />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Play Kick' }));
+        await waitFor(() => {
+            expect(mocks.ensureFactorySampleBuffer).toHaveBeenCalledWith({ sampleId: 'factory-kick' });
+        });
+        fireEvent.click(screen.getByRole('button', { name: 'Play Snare' }));
+        await waitFor(() => {
+            expect(mocks.preview.play).toHaveBeenCalledWith('factory-snare', snareBuffer);
+        });
+
+        await act(async () => {
+            resolveKick({ status: 'resolved', buffer: kickBuffer });
+        });
+
+        expect(mocks.preview.play).toHaveBeenCalledExactlyOnceWith('factory-snare', snareBuffer);
+        expect(mocks.notifyUser).not.toHaveBeenCalled();
     });
 
     it('tells the user similarity analysis is unavailable for a sample without an embedding', () => {
@@ -757,7 +938,7 @@ describe('LibraryBrowser', () => {
             displayName: 'Kick',
         });
 
-        render(<LibraryBrowser preview={mocks.preview} selectedTrackId={null} />);
+        render(<LibraryBrowser preview={mocks.preview} />);
 
         fireEvent.click(screen.getByRole('button', { name: 'Find samples similar to Kick' }));
 
@@ -778,7 +959,7 @@ describe('LibraryBrowser', () => {
             displayName: 'Kick',
         });
 
-        render(<LibraryBrowser preview={mocks.preview} selectedTrackId={null} />);
+        render(<LibraryBrowser preview={mocks.preview} />);
 
         fireEvent.click(screen.getByRole('button', { name: 'Find samples similar to Kick' }));
 
@@ -800,7 +981,7 @@ describe('LibraryBrowser', () => {
         state.samples = [kick, { ...kick, id: 'sample2', displayName: 'Snare', relativePath: 'Drums/Snare.wav' }];
         mocks.libraryState = state;
 
-        render(<LibraryBrowser preview={mocks.preview} selectedTrackId={null} />);
+        render(<LibraryBrowser preview={mocks.preview} />);
 
         fireEvent.click(screen.getByRole('button', { name: 'Find samples similar to Kick' }));
 
@@ -826,7 +1007,7 @@ describe('LibraryBrowser', () => {
         state.searchQuery = 'similar:sample1';
         mocks.libraryState = state;
 
-        render(<LibraryBrowser preview={mocks.preview} selectedTrackId={null} />);
+        render(<LibraryBrowser preview={mocks.preview} />);
 
         expect(screen.getByRole('button', { name: 'Play Snare' })).toBeTruthy();
         expect(screen.queryByRole('button', { name: 'Play Hat' })).toBeNull();

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 
-import { grColor } from '../crustMeterColors';
+import { grColor, grTextColor } from '../crustMeterColors';
 
 describe('grColor', () => {
     it('returns the neutral colour at and below 1 dB of gain reduction', () => {
@@ -25,5 +25,18 @@ describe('grColor', () => {
         expect(grColor(8.1)).toBe('#C44030');
         expect(grColor(20)).toBe('#C44030');
         expect(grColor(-20)).toBe('#C44030');
+    });
+});
+
+describe('grTextColor', () => {
+    it('uses semantic text and state roles without changing the canvas meter palette', () => {
+        expect(grTextColor(0)).toBe('var(--color-text-primary)');
+        expect(grTextColor(-1)).toBe('var(--color-text-primary)');
+        expect(grTextColor(-1.5)).toBe('var(--color-state-warning)');
+        expect(grTextColor(-4)).toBe('var(--color-state-warning)');
+        expect(grTextColor(-4.5)).toBe('var(--color-accent-orange)');
+        expect(grTextColor(-8)).toBe('var(--color-accent-orange)');
+        expect(grTextColor(-8.1)).toBe('var(--color-state-danger)');
+        expect(grTextColor(-20)).toBe('var(--color-state-danger)');
     });
 });

@@ -31,8 +31,10 @@ import {
     CLIP_GAIN_LAW,
     CLIP_MAX_GAIN,
     FADER_MAX_GAIN,
+    METRONOME_LEVEL_LAW,
     SEND_LEVEL_LAW,
     TRACK_FADER_LAW,
+    VCA_LEVEL_LAW,
     VCA_MAX_GAIN,
 } from '#/utils/audioLevelLaw';
 import { MIN_CLIP_LOOP_LENGTH_BEATS } from '#/utils/clipLoopProjection';
@@ -345,7 +347,8 @@ const validators = {
         param.stems.length >= 2 &&
         param.stems.length <= 32 &&
         param.stems.every(isStemImportAssignment),
-    addTrack: (param): param is PayloadOf<'addTrack'> => isObj(param) && isString(param.name) && isString(param.kind),
+    addTrack: (param): param is PayloadOf<'addTrack'> =>
+        isObj(param) && (param.name === undefined || isString(param.name)) && isString(param.kind),
     removeTrack: (param): param is PayloadOf<'removeTrack'> =>
         isObj(param) &&
         hasOnlyKeys(param, [
@@ -490,6 +493,14 @@ const validators = {
         isObj(param) &&
         isInRange(param.numerator, 1, 32) &&
         (param.denominator === 2 || param.denominator === 4 || param.denominator === 8 || param.denominator === 16),
+    // Only the application composes a brief write (`brief.compile`), and the Project handler reads
+    // the whole brief again before writing, so this checks the envelope it arrives in.
+    setProductionBrief: (param): param is PayloadOf<'setProductionBrief'> =>
+        isObj(param) &&
+        hasExactKeys(param, ['expectedRevision', 'brief']) &&
+        Number.isInteger(param.expectedRevision) &&
+        isNonNegativeNumber(param.expectedRevision) &&
+        isObj(param.brief),
     setPlayback: (param): param is PayloadOf<'setPlayback'> =>
         isObj(param) && hasExactKeys(param, ['playing']) && typeof param.playing === 'boolean',
     // `setMasterGain`'s `gain` is the same linear-amplitude fraction as
@@ -509,7 +520,14 @@ const validators = {
         ) &&
         isOptionalOwn(param, 'deltaDb', isLevelDelta),
     setMetronomeVolume: (param): param is PayloadOf<'setMetronomeVolume'> =>
-        isObj(param) && hasExactKeys(param, ['volume']) && isInRange(param.volume, 0, 1),
+        isObj(param) &&
+        hasOnlyKeys(param, ['volume', 'volumeDb', 'deltaDb']) &&
+        statesLevelOnce(param, 'volume', 'volumeDb') &&
+        isOptionalOwn(param, 'volume', (value): value is number => isInRange(value, 0, 1)) &&
+        isOptionalOwn(param, 'volumeDb', (value): value is number =>
+            isInRange(value, METRONOME_LEVEL_LAW.floorDb, METRONOME_LEVEL_LAW.ceilingDb)
+        ) &&
+        isOptionalOwn(param, 'deltaDb', isLevelDelta),
     setLoopEnabled: (param): param is PayloadOf<'setLoopEnabled'> =>
         isObj(param) && hasExactKeys(param, ['enabled']) && typeof param.enabled === 'boolean',
     setMetronomeEnabled: (param): param is PayloadOf<'setMetronomeEnabled'> =>
@@ -1028,7 +1046,16 @@ const validators = {
     createFolder: 'unchecked',
     setSend: (param): param is PayloadOf<'setSend'> =>
         isObj(param) &&
-        hasOnlyKeys(param, ['trackId', 'busId', 'level', 'levelDb', 'deltaDb', 'expectedLevel', 'expectedPreFader']) &&
+        hasOnlyKeys(param, [
+            'trackId',
+            'busId',
+            'level',
+            'levelDb',
+            'deltaDb',
+            'preFader',
+            'expectedLevel',
+            'expectedPreFader',
+        ]) &&
         Object.hasOwn(param, 'trackId') &&
         Object.hasOwn(param, 'busId') &&
         isNonEmptyString(param.trackId) &&
@@ -1040,6 +1067,7 @@ const validators = {
             isInRange(value, SEND_LEVEL_LAW.floorDb, SEND_LEVEL_LAW.ceilingDb)
         ) &&
         isOptionalOwn(param, 'deltaDb', isLevelDelta) &&
+        isOptionalOwn(param, 'preFader', (value): value is boolean => typeof value === 'boolean') &&
         isOptionalOwn(param, 'expectedLevel', (value): value is number => isInRange(value, 0, 1)) &&
         isOptionalOwn(param, 'expectedPreFader', (value): value is boolean => typeof value === 'boolean'),
     addSend: (param): param is PayloadOf<'addSend'> =>
@@ -1244,9 +1272,14 @@ const validators = {
     // different things.
     setVcaGain: (param): param is PayloadOf<'setVcaGain'> =>
         isObj(param) &&
-        hasExactKeys(param, ['vcaGroupId', 'gain']) &&
+        hasOnlyKeys(param, ['vcaGroupId', 'gain', 'gainDb', 'deltaDb']) &&
         isNonEmptyString(param.vcaGroupId) &&
-        isInRange(param.gain, 0, VCA_MAX_GAIN),
+        statesLevelOnce(param, 'gain', 'gainDb') &&
+        isOptionalOwn(param, 'gain', (value): value is number => isInRange(value, 0, VCA_MAX_GAIN)) &&
+        isOptionalOwn(param, 'gainDb', (value): value is number =>
+            isInRange(value, VCA_LEVEL_LAW.floorDb, VCA_LEVEL_LAW.ceilingDb)
+        ) &&
+        isOptionalOwn(param, 'deltaDb', isLevelDelta),
 
     // Groove
     extractGroove: 'unchecked',
@@ -1267,7 +1300,27 @@ const validators = {
     enableWarping: 'unchecked',
     setWarpAlgorithm: 'unchecked',
     setWarpPitchShift: 'unchecked',
-    quantizeTransients: 'unchecked',
+    // A provider names the edit; the plan is application-materialized and never accepted from it.
+    quantizeTransients: (param): param is PayloadOf<'quantizeTransients'> =>
+        isObj(param) &&
+        hasOnlyKeys(param, [
+            'clipId',
+            'gridSize',
+            'strength',
+            'swing',
+            'sensitivity',
+            'minConfidence',
+            'startBeat',
+            'endBeat',
+        ]) &&
+        isNonEmptyString(param.clipId) &&
+        isInRange(param.gridSize, 1 / 32, 4) &&
+        ['strength', 'swing', 'sensitivity', 'minConfidence'].every((key) =>
+            isOptionalOwn(param, key, (value): value is number => isInRange(value, 0, 1))
+        ) &&
+        isOptionalOwn(param, 'startBeat', isNumber) &&
+        isOptionalOwn(param, 'endBeat', isNumber) &&
+        (!isNumber(param.startBeat) || !isNumber(param.endBeat) || param.endBeat > param.startBeat),
 
     // Comping
     createCompGroup: 'unchecked',

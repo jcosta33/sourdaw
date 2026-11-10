@@ -1,27 +1,14 @@
-import { type ReactElement, type DragEvent, useState, useEffect, useRef } from 'react';
+import { type ComponentProps, type ReactElement, type DragEvent, useState, useEffect, useRef } from 'react';
 
-import {
-    LayoutTemplate,
-    Sparkles,
-    FolderOpen,
-    Upload,
-    Download,
-    ArrowLeft,
-    Music,
-    Mic,
-    Film,
-    FileText,
-    Guitar,
-    Headphones,
-    Piano,
-    Layers,
-    Clock,
-} from 'lucide-react';
+import { LayoutTemplate, Sparkles, FolderOpen, FilePlus2, Upload, Download, ArrowLeft, Clock } from 'lucide-react';
+import { FocusScope } from 'radix-ui/internal';
 
 import { Grid, Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
+import { focusLandmarkIfUnfocused } from '#/components/ui/dialog';
 import { executeUserAppAction } from '#/modules/Command/useCases';
 import { pickAndImportDawProject } from '#/modules/DawInterchange/useCases';
+import { TemplateGallery } from '#/modules/Project/presentations/views';
 import {
     newProject,
     createFromTemplate,
@@ -30,11 +17,10 @@ import {
     loadRecentProject,
 } from '#/modules/Project/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
+import { cn } from '#/utils/Styles/cn';
 
 import { importDroppedLaunchFiles } from '../../useCases/importDroppedLaunchFiles';
 import { SourdawLogo } from '../components/SourdawLogo';
-
-import { TemplatePreviewThumb } from './TemplatePreviewThumb';
 
 // ─────────────────────────────────────────────────────────────
 // Constants & metadata
@@ -42,17 +28,10 @@ import { TemplatePreviewThumb } from './TemplatePreviewThumb';
 
 type View = 'home' | 'grid' | 'loading';
 
+type GalleryCategory = NonNullable<ComponentProps<typeof TemplateGallery>['initialCategory']>;
+
 export type LaunchScreenProps = {
     exiting: boolean;
-};
-
-type LaunchTemplateCategory = 'empty' | 'music' | 'podcast' | 'film' | 'demo';
-
-type LaunchTemplate = {
-    id: string;
-    name: string;
-    description: string;
-    category: LaunchTemplateCategory;
 };
 
 const LOADING_QUIPS = [
@@ -81,54 +60,6 @@ const BREAD_TAGLINES = [
 ];
 
 const randomTagline = BREAD_TAGLINES[Math.floor(Math.random() * BREAD_TAGLINES.length)] ?? BREAD_TAGLINES[0]!;
-
-const CATEGORY_ORDER: Array<LaunchTemplateCategory | 'all'> = ['all', 'demo', 'music', 'podcast', 'film'];
-
-const CATEGORY_LABELS: Record<string, string> = {
-    all: 'All',
-    demo: 'Demos',
-    music: 'Music',
-    podcast: 'Podcast',
-    film: 'Film',
-};
-
-const CATEGORY_COLORS: Record<string, { text: string; bg: string; activeBg: string; border: string }> = {
-    all: { text: 'text-white/60', bg: 'bg-white/5', activeBg: 'bg-white/10', border: 'border-white/10' },
-    demo: {
-        text: 'text-[var(--color-accent-mint)]',
-        bg: 'bg-[var(--color-accent-mint)]/8',
-        activeBg: 'bg-[var(--color-accent-mint)]/15',
-        border: 'border-[var(--color-accent-mint)]/25',
-    },
-    music: {
-        text: 'text-[var(--color-accent-lavender)]',
-        bg: 'bg-[var(--color-accent-lavender)]/8',
-        activeBg: 'bg-[var(--color-accent-lavender)]/15',
-        border: 'border-[var(--color-accent-lavender)]/25',
-    },
-    podcast: {
-        text: 'text-[var(--color-accent-peach)]',
-        bg: 'bg-[var(--color-accent-peach)]/8',
-        activeBg: 'bg-[var(--color-accent-peach)]/15',
-        border: 'border-[var(--color-accent-peach)]/25',
-    },
-    film: {
-        text: 'text-[var(--color-accent-cyan)]',
-        bg: 'bg-[var(--color-accent-cyan)]/8',
-        activeBg: 'bg-[var(--color-accent-cyan)]/15',
-        border: 'border-[var(--color-accent-cyan)]/25',
-    },
-    empty: { text: 'text-white/50', bg: 'bg-white/5', activeBg: 'bg-white/10', border: 'border-white/10' },
-};
-
-const TEMPLATE_ICONS: Record<string, ReactElement> = {
-    empty: <FileText className="size-4" aria-hidden="true" />,
-    'basic-band': <Guitar className="size-4" aria-hidden="true" />,
-    electronic: <Headphones className="size-4" aria-hidden="true" />,
-    podcast: <Mic className="size-4" aria-hidden="true" />,
-    'film-score': <Film className="size-4" aria-hidden="true" />,
-    'singer-songwriter': <Piano className="size-4" aria-hidden="true" />,
-};
 
 // ─────────────────────────────────────────────────────────────
 // Sub-components (internal, not exported)
@@ -188,27 +119,10 @@ const LogoBlock = (): ReactElement => (
             <h1 className="text-3xl font-bold tracking-tight bg-gradient-to-r from-[var(--color-accent-orange)] via-amber-300 to-[var(--color-accent-peach)] bg-clip-text text-transparent">
                 Sourdaw
             </h1>
-            <p className="mt-1 text-sm text-white/30 italic">{randomTagline}</p>
+            <p className="mt-1 text-sm text-white/55 italic">{randomTagline}</p>
         </div>
     </Stack>
 );
-
-// Icon for a category pill. Mirrors the original ternary chain: any category
-// other than all/demo/music/podcast (i.e. film) falls back to the Film icon.
-const CategoryPillIcon = ({ category }: { category: LaunchTemplateCategory | 'all' }): ReactElement => {
-    switch (category) {
-        case 'all':
-            return <Layers className="size-3" aria-hidden="true" />;
-        case 'demo':
-            return <Sparkles className="size-3" aria-hidden="true" />;
-        case 'music':
-            return <Music className="size-3" aria-hidden="true" />;
-        case 'podcast':
-            return <Mic className="size-3" aria-hidden="true" />;
-        default:
-            return <Film className="size-3" aria-hidden="true" />;
-    }
-};
 
 // ─────────────────────────────────────────────────────────────
 // Main export
@@ -216,7 +130,7 @@ const CategoryPillIcon = ({ category }: { category: LaunchTemplateCategory | 'al
 
 export const LaunchScreen = ({ exiting }: LaunchScreenProps): ReactElement => {
     const [view, setView] = useState<View>('home');
-    const [activeCategory, setActiveCategory] = useState<LaunchTemplateCategory | 'all'>('all');
+    const [galleryCategory, setGalleryCategory] = useState<GalleryCategory>('all');
     const [loadingName, setLoadingName] = useState('');
     const [importingDawProject, setImportingDawProject] = useState(false);
     const [isDragOver, setIsDragOver] = useState(false);
@@ -226,14 +140,7 @@ export const LaunchScreen = ({ exiting }: LaunchScreenProps): ReactElement => {
     );
     const intervalRef = useRef<ReturnType<typeof setInterval>>(undefined);
 
-    const allTemplates: LaunchTemplate[] = getTemplates().map((template) => ({
-        id: template.id,
-        name: template.name,
-        description: template.description,
-        category: template.category,
-    }));
-    const filteredTemplates =
-        activeCategory === 'all' ? allTemplates : allTemplates.filter((t) => t.category === activeCategory);
+    const templates = getTemplates();
 
     // Rotate quips during loading
     useEffect(() => {
@@ -293,8 +200,8 @@ export const LaunchScreen = ({ exiting }: LaunchScreenProps): ReactElement => {
         void executeUserAppAction({ type: 'exportDawProject' });
     };
 
-    const handleOpenGrid = (category: LaunchTemplateCategory | 'all'): void => {
-        setActiveCategory(category);
+    const handleOpenGrid = (category: GalleryCategory): void => {
+        setGalleryCategory(category);
         setView('grid');
     };
 
@@ -315,7 +222,11 @@ export const LaunchScreen = ({ exiting }: LaunchScreenProps): ReactElement => {
         })();
     };
 
-    const handleTemplateSelect = (template: LaunchTemplate): void => {
+    const handleTemplateSelect = (templateId: string): void => {
+        const template = templates.find((candidate) => candidate.id === templateId);
+        if (!template) {
+            return;
+        }
         setLoadingName(template.name);
         setView('loading');
         // Fire-and-forget: the click handler returns void; activation failure
@@ -363,295 +274,266 @@ export const LaunchScreen = ({ exiting }: LaunchScreenProps): ReactElement => {
     // ── Render ──
 
     return (
-        <div
-            role="dialog"
-            aria-modal="true"
-            aria-label="Sourdaw — start a project"
-            className="fixed inset-0 z-[9999] overflow-hidden"
-            style={{
-                transition: 'opacity 0.65s cubic-bezier(0.4,0,0.2,1), transform 0.65s cubic-bezier(0.4,0,0.2,1)',
-                opacity: exiting ? 0 : 1,
-                transform: exiting ? 'scale(1.03)' : 'scale(1)',
-                pointerEvents: exiting ? 'none' : undefined,
-                background:
-                    'radial-gradient(ellipse at 50% 35%, rgba(217,119,6,0.10) 0%, rgba(0,0,0,0) 65%), hsl(220,14%,5%)',
+        // A Radix modal Dialog would also aria-hide the toast and confirm hosts that sit outside the shell
+        // so failures stay announced; only the Tab trap is wanted here, and not while the exit fade lets the
+        // workspace take focus. FocusScope's default unmount restore targets the element focused at mount,
+        // which on a cold start is the body, so it is replaced by landing on the workspace landmark.
+        <FocusScope.FocusScope
+            asChild
+            trapped={!exiting}
+            loop
+            onUnmountAutoFocus={(event) => {
+                event.preventDefault();
+                focusLandmarkIfUnfocused();
             }}
-            onDragOver={
-                view === 'home'
-                    ? (e) => {
-                          e.preventDefault();
-                          e.dataTransfer.dropEffect = 'copy';
-                          setIsDragOver(true);
-                      }
-                    : undefined
-            }
-            onDragLeave={
-                view === 'home'
-                    ? (e) => {
-                          if (!e.currentTarget.contains(e.relatedTarget as Node)) {
-                              setIsDragOver(false);
-                          }
-                      }
-                    : undefined
-            }
-            onDrop={view === 'home' ? handleDrop : undefined}
         >
-            <AmbientGlows />
+            <div
+                role="dialog"
+                aria-modal="true"
+                aria-label="Sourdaw — start a project"
+                className={cn(
+                    'fixed inset-0 z-[9999] overflow-hidden transition-[opacity,scale] duration-650 ease-in-out motion-reduce:transition-none',
+                    exiting && 'pointer-events-none scale-[1.03] opacity-0 motion-reduce:scale-100'
+                )}
+                style={{
+                    background:
+                        'radial-gradient(ellipse at 50% 35%, rgba(217,119,6,0.10) 0%, rgba(0,0,0,0) 65%), hsl(220,14%,5%)',
+                }}
+                onDragOver={
+                    view === 'home'
+                        ? (e) => {
+                              e.preventDefault();
+                              e.dataTransfer.dropEffect = 'copy';
+                              setIsDragOver(true);
+                          }
+                        : undefined
+                }
+                onDragLeave={
+                    view === 'home'
+                        ? (e) => {
+                              if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+                                  setIsDragOver(false);
+                              }
+                          }
+                        : undefined
+                }
+                onDrop={view === 'home' ? handleDrop : undefined}
+            >
+                <AmbientGlows />
 
-            <Row justify="center" className="h-full p-6">
-                {/* ── HOME ── */}
-                {view === 'home' ? (
-                    <div
-                        key="home"
-                        className={`animate-in fade-in zoom-in-95 duration-500 relative flex flex-col items-center gap-8 rounded-2xl border shadow-[0_24px_80px_rgba(0,0,0,0.7),inset_0_1px_0_rgba(255,255,255,0.05)] max-w-[440px] w-full p-10 transition-all duration-300 ${
-                            isDragOver
-                                ? 'border-[var(--color-accent-orange)]/60 bg-[var(--color-accent-orange)]/5 scale-[1.01]'
-                                : 'border-white/[0.07] bg-white/[0.03] backdrop-blur-xl'
-                        }`}
-                    >
-                        <LogoBlock />
-
-                        {recentProjects.length > 0 ? (
-                            <Stack gap={2} className="w-full">
-                                <Row gap={1.5} className="px-0.5">
-                                    <Clock className="size-3 text-white/35" aria-hidden="true" />
-                                    <span className="text-[10px] font-semibold text-white/45 uppercase tracking-wider">
-                                        Recent Projects
-                                    </span>
-                                </Row>
-                                <Row
-                                    align="stretch"
-                                    gap={2}
-                                    className="overflow-x-auto scrollbar-thin -mx-1 px-1 pb-1"
-                                    role="list"
-                                    aria-label="Recent projects"
-                                >
-                                    {recentProjects.map((entry) => (
-                                        <RecentProjectCard
-                                            key={entry.key}
-                                            entry={entry}
-                                            onOpen={handleRecentProjectSelect}
-                                        />
-                                    ))}
-                                </Row>
-                            </Stack>
-                        ) : null}
-
-                        <Grid cols={3} gap={3} className="w-full">
-                            <ActionCard
-                                id="launch-new-project"
-                                label="New Project"
-                                sub="Blank canvas"
-                                icon={<FolderOpen className="size-5" aria-hidden="true" />}
-                                colorVar="--color-accent-orange"
-                                onClick={handleNewProject}
-                            />
-                            <ActionCard
-                                id="launch-from-template"
-                                label="Templates"
-                                sub="Pre-baked recipes"
-                                icon={<LayoutTemplate className="size-5" aria-hidden="true" />}
-                                colorVar="--color-accent-lavender"
-                                onClick={() => handleOpenGrid('all')}
-                            />
-                            <ActionCard
-                                id="launch-demo-project"
-                                label="Demos"
-                                sub="Hear what's cooking"
-                                icon={<Sparkles className="size-5" aria-hidden="true" />}
-                                colorVar="--color-accent-mint"
-                                onClick={() => handleOpenGrid('demo')}
-                            />
-                        </Grid>
-
+                <Row justify="center" className="h-full p-6">
+                    {/* ── HOME ── */}
+                    {view === 'home' ? (
                         <div
-                            className={`flex items-center gap-2 px-4 py-2.5 rounded-lg border border-dashed transition-all w-full justify-center ${
+                            key="home"
+                            data-testid="launch-home-card"
+                            className={`animate-in fade-in zoom-in-95 duration-500 relative flex max-h-full flex-col items-center gap-8 overflow-y-auto overscroll-contain [&>*]:shrink-0 rounded-2xl border shadow-[0_24px_80px_rgba(0,0,0,0.7),inset_0_1px_0_rgba(255,255,255,0.05)] max-w-[440px] w-full p-10 transition-all duration-300 ${
                                 isDragOver
-                                    ? 'border-[var(--color-accent-orange)] bg-[var(--color-accent-orange)]/10 text-[var(--color-accent-orange)]'
-                                    : 'border-white/[0.10] text-white/20'
+                                    ? 'border-[var(--color-accent-orange)]/60 bg-[var(--color-accent-orange)]/5 scale-[1.01]'
+                                    : 'border-white/[0.07] bg-white/[0.03] backdrop-blur-xl'
                             }`}
                         >
-                            <Upload className="size-3.5 shrink-0" aria-hidden="true" />
-                            <span className="text-[11px]">Drop audio or MIDI to start instantly</span>
-                        </div>
+                            <LogoBlock />
 
-                        <Row justify="center" wrap gap={2}>
-                            <Button
-                                variant="bare"
-                                size="bare"
-                                type="button"
-                                id="launch-import-dawproject"
-                                onClick={handleImportDawProject} // `aria-disabled`, not `disabled`: a focused element
-                                // that becomes `disabled` blurs to <body>, so a
-                                // keyboard user who activates this loses focus the
-                                // instant the handler runs and has to Tab from the
-                                // top after a slow picker. Re-entry is already
-                                // blocked by the guard in handleImportDawProject.
-                                aria-disabled={importingDawProject}
-                                aria-busy={importingDawProject}
-                                className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[11px] text-white/45 border border-white/[0.07] hover:border-white/[0.18] hover:text-white/80 transition-colors cursor-pointer aria-disabled:cursor-progress"
-                            >
-                                <Upload className="size-3" aria-hidden="true" />
-                                {importingDawProject ? 'Importing .dawproject…' : 'Import .dawproject'}
-                                <span className="text-white/25">from Ableton, Bitwig, Studio One…</span>
-                            </Button>
-                            <Button
-                                variant="bare"
-                                size="bare"
-                                type="button"
-                                id="launch-export-dawproject"
-                                onClick={handleExportDawProject}
-                                className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[11px] text-white/45 border border-white/[0.07] hover:border-white/[0.18] hover:text-white/80 transition-colors cursor-pointer"
-                            >
-                                <Download className="size-3" aria-hidden="true" />
-                                Export .dawproject
-                            </Button>
-                        </Row>
-
-                        <p className="text-[9px] text-white/12 tracking-wider">Sourdaw Studio · Time to cook</p>
-                    </div>
-                ) : null}
-
-                {/* ── GRID (Templates / Demos) ── */}
-                {view === 'grid' ? (
-                    <Stack
-                        gap={4}
-                        className="animate-in fade-in slide-in-from-bottom-3 duration-400 max-w-[620px] w-full"
-                        key="grid"
-                    >
-                        {/* Header */}
-                        <Row gap={3}>
-                            <Button
-                                variant="bare"
-                                size="bare"
-                                type="button"
-                                aria-label="Back to home"
-                                className="flex items-center gap-1.5 text-xs text-white/40 hover:text-white/70 transition-colors cursor-pointer"
-                                onClick={() => setView('home')}
-                            >
-                                <ArrowLeft className="size-3.5" aria-hidden="true" />
-                                Back
-                            </Button>
-                            <div className="h-3 w-px bg-white/10" />
-                            <p className="text-xs text-white/50 font-medium">Start a new project</p>
-                        </Row>
-
-                        {/* Category pills */}
-                        <Row align="stretch" wrap gap={1.5}>
-                            {CATEGORY_ORDER.map((cat) => {
-                                const colors = CATEGORY_COLORS[cat] ?? CATEGORY_COLORS.all!;
-                                const isActive = activeCategory === cat;
-                                return (
-                                    <Button
-                                        variant="bare"
-                                        size="bare"
-                                        key={cat}
-                                        type="button"
-                                        onClick={() => setActiveCategory(cat)}
-                                        className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-medium border transition-all cursor-pointer ${
-                                            isActive
-                                                ? `${colors.activeBg} ${colors.text} ${colors.border}`
-                                                : 'bg-white/[0.03] text-white/35 border-white/[0.06] hover:bg-white/[0.06] hover:text-white/60'
-                                        }`}
-                                    >
-                                        <CategoryPillIcon category={cat} />
-                                        {CATEGORY_LABELS[cat]}
-                                    </Button>
-                                );
-                            })}
-                        </Row>
-
-                        {/* Template grid */}
-                        <Grid cols={2} gap={2.5} className="max-h-[400px] overflow-y-auto pr-1 scrollbar-thin">
-                            {filteredTemplates.map((template) => {
-                                const colors = CATEGORY_COLORS[template.category] ?? CATEGORY_COLORS.empty!;
-                                const icon = TEMPLATE_ICONS[template.id] ?? (
-                                    <FileText className="size-4" aria-hidden="true" />
-                                );
-                                return (
-                                    <Button
-                                        variant="bare"
-                                        size="bare"
-                                        key={template.id}
-                                        type="button"
-                                        onClick={() => handleTemplateSelect(template)}
-                                        className={`group flex items-start gap-3 p-4 rounded-xl border transition-all duration-150 cursor-pointer text-left hover:shadow-[0_4px_16px_rgba(0,0,0,0.4)] hover:brightness-110 ${colors.border} bg-white/[0.03] hover:bg-white/[0.06] backdrop-blur-sm`}
-                                    >
-                                        <div
-                                            className={`mt-0.5 shrink-0 size-8 rounded-lg ${colors.bg} flex items-center justify-center ${colors.text} transition-colors group-hover:${colors.activeBg}`}
-                                        >
-                                            {icon}
-                                        </div>
-                                        <div className="min-w-0 flex-1">
-                                            <p className={`text-xs font-semibold text-white/80 truncate`}>
-                                                {template.name}
-                                            </p>
-                                            <p className={`text-[10px] mt-0.5 ${colors.text}/70 capitalize`}>
-                                                {template.category === 'empty' ? 'Blank' : template.category}
-                                            </p>
-                                            <p className="text-[10px] text-white/30 mt-1 leading-relaxed line-clamp-2">
-                                                {template.description}
-                                            </p>
-                                            <div className="mt-2 overflow-hidden rounded-md border border-white/[0.06]">
-                                                <TemplatePreviewThumb templateId={template.id} />
-                                            </div>
-                                        </div>
-                                    </Button>
-                                );
-                            })}
-                        </Grid>
-
-                        <p className="text-[9px] text-white/15 text-center">
-                            Or drop audio / MIDI files on the home screen to import instantly
-                        </p>
-                    </Stack>
-                ) : null}
-
-                {/* ── LOADING ── */}
-                {view === 'loading' ? (
-                    <Stack align="center" gap={6} className="animate-in fade-in zoom-in-95 duration-400" key="loading">
-                        <div className="relative">
-                            <div
-                                className="absolute inset-0 rounded-full blur-2xl scale-[2.5] opacity-25"
-                                style={{ background: 'var(--color-accent-orange)' }}
-                            />
-                            <SourdawLogo className="relative h-28 drop-shadow-[0_6px_32px_rgba(217,119,6,0.5)]" />
-                        </div>
-                        <Stack gap={2} className="text-center">
-                            <p className="text-sm font-semibold text-white/80">
-                                {loadingName ? (
-                                    <>
-                                        Baking{' '}
-                                        <span className="bg-gradient-to-r from-[var(--color-accent-orange)] to-[var(--color-accent-peach)] bg-clip-text text-transparent">
-                                            {loadingName}
+                            {recentProjects.length > 0 ? (
+                                <Stack gap={2} className="w-full">
+                                    <Row gap={1.5} className="px-0.5">
+                                        <Clock className="size-3 text-white/35" aria-hidden="true" />
+                                        <span className="text-[10px] font-semibold text-white/45 uppercase tracking-wider">
+                                            Recent Projects
                                         </span>
-                                    </>
-                                ) : (
-                                    'Setting up your session…'
-                                )}
-                            </p>
-                            <p
-                                key={quipIndex}
-                                className="text-xs text-white/35 italic animate-in fade-in slide-in-from-bottom-1 duration-300"
+                                    </Row>
+                                    <Row
+                                        align="stretch"
+                                        gap={2}
+                                        className="overflow-x-auto scrollbar-thin -mx-1 px-1 pb-1"
+                                        role="list"
+                                        aria-label="Recent projects"
+                                    >
+                                        {recentProjects.map((entry) => (
+                                            <RecentProjectCard
+                                                key={entry.key}
+                                                entry={entry}
+                                                onOpen={handleRecentProjectSelect}
+                                            />
+                                        ))}
+                                    </Row>
+                                </Stack>
+                            ) : null}
+
+                            <Stack gap={3} className="w-full">
+                                <div className="px-0.5">
+                                    <h2 className="text-label font-semibold text-white/65 uppercase tracking-wider">
+                                        Create a project
+                                    </h2>
+                                    <p className="mt-1 text-dense text-white/45">
+                                        Start empty, use a template, or explore a demo.
+                                    </p>
+                                </div>
+                                <ActionCard
+                                    id="launch-new-project"
+                                    label="New Project"
+                                    sub="Start with an empty project"
+                                    icon={<FilePlus2 className="size-5" aria-hidden="true" />}
+                                    colorVar="--color-accent-orange"
+                                    primary
+                                    onClick={handleNewProject}
+                                />
+                                <Grid cols={2} gap={3} className="w-full">
+                                    <ActionCard
+                                        id="launch-from-template"
+                                        label="Templates"
+                                        sub="Pre-baked recipes"
+                                        icon={<LayoutTemplate className="size-5" aria-hidden="true" />}
+                                        colorVar="--color-accent-lavender"
+                                        onClick={() => handleOpenGrid('all')}
+                                    />
+                                    <ActionCard
+                                        id="launch-demo-project"
+                                        label="Demos"
+                                        sub="Hear what's cooking"
+                                        icon={<Sparkles className="size-5" aria-hidden="true" />}
+                                        colorVar="--color-accent-mint"
+                                        onClick={() => handleOpenGrid('demo')}
+                                    />
+                                </Grid>
+                            </Stack>
+
+                            <div
+                                className={`flex items-center gap-2 px-4 py-2.5 rounded-lg border border-dashed transition-all w-full justify-center ${
+                                    isDragOver
+                                        ? 'border-[var(--color-accent-orange)] bg-[var(--color-accent-orange)]/10 text-[var(--color-accent-orange)]'
+                                        : 'border-white/[0.10] text-white/20'
+                                }`}
                             >
-                                {LOADING_QUIPS[quipIndex]}
+                                <Upload className="size-3.5 shrink-0" aria-hidden="true" />
+                                <span className="text-[11px]">Drop audio or MIDI to start instantly</span>
+                            </div>
+
+                            <Row justify="center" wrap gap={2}>
+                                <Button
+                                    variant="bare"
+                                    size="bare"
+                                    type="button"
+                                    id="launch-import-dawproject"
+                                    onClick={handleImportDawProject} // `aria-disabled`, not `disabled`: a focused element
+                                    // that becomes `disabled` blurs to <body>, so a
+                                    // keyboard user who activates this loses focus the
+                                    // instant the handler runs and has to Tab from the
+                                    // top after a slow picker. Re-entry is already
+                                    // blocked by the guard in handleImportDawProject.
+                                    aria-disabled={importingDawProject}
+                                    aria-busy={importingDawProject}
+                                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[11px] text-white/45 border border-white/[0.07] hover:border-white/[0.18] hover:text-white/80 transition-colors cursor-pointer aria-disabled:cursor-progress"
+                                >
+                                    <Upload className="size-3" aria-hidden="true" />
+                                    {importingDawProject ? 'Importing .dawproject…' : 'Import .dawproject'}
+                                    <span className="text-white/25">from Ableton, Bitwig, Studio One…</span>
+                                </Button>
+                                <Button
+                                    variant="bare"
+                                    size="bare"
+                                    type="button"
+                                    id="launch-export-dawproject"
+                                    onClick={handleExportDawProject}
+                                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[11px] text-white/45 border border-white/[0.07] hover:border-white/[0.18] hover:text-white/80 transition-colors cursor-pointer"
+                                >
+                                    <Download className="size-3" aria-hidden="true" />
+                                    Export .dawproject
+                                </Button>
+                            </Row>
+
+                            <p className="text-[9px] text-white/12 tracking-wider">Sourdaw Studio · Time to cook</p>
+                        </div>
+                    ) : null}
+
+                    {/* ── GRID (Templates / Demos) ── */}
+                    {view === 'grid' ? (
+                        <Stack
+                            gap={4}
+                            className="animate-in fade-in slide-in-from-bottom-3 duration-400 max-w-[620px] w-full"
+                            key="grid"
+                        >
+                            {/* Header */}
+                            <Row gap={3}>
+                                <Button
+                                    variant="bare"
+                                    size="bare"
+                                    type="button"
+                                    aria-label="Back to home"
+                                    className="flex items-center gap-1.5 text-xs text-white/40 hover:text-white/70 transition-colors cursor-pointer"
+                                    onClick={() => setView('home')}
+                                >
+                                    <ArrowLeft className="size-3.5" aria-hidden="true" />
+                                    Back
+                                </Button>
+                                <div className="h-3 w-px bg-white/10" />
+                                <p className="text-xs text-white/50 font-medium">Start a new project</p>
+                            </Row>
+
+                            <TemplateGallery
+                                templates={templates}
+                                initialCategory={galleryCategory}
+                                onSelect={handleTemplateSelect}
+                            />
+
+                            <p className="text-[9px] text-white/15 text-center">
+                                Or drop audio / MIDI files on the home screen to import instantly
                             </p>
                         </Stack>
-                        <div className="w-48 h-px rounded-full overflow-hidden bg-white/5">
-                            <div
-                                className="h-full w-1/3 rounded-full"
-                                style={{
-                                    background:
-                                        'linear-gradient(90deg, transparent, var(--color-accent-orange), transparent)',
-                                    animation: 'ls-shimmer 1.6s ease-in-out infinite',
-                                }}
-                            />
-                        </div>
-                        <style>{`@keyframes ls-shimmer { 0%{transform:translateX(-200%)} 100%{transform:translateX(400%)} }`}</style>
-                    </Stack>
-                ) : null}
-            </Row>
-        </div>
+                    ) : null}
+
+                    {/* ── LOADING ── */}
+                    {view === 'loading' ? (
+                        <Stack
+                            align="center"
+                            gap={6}
+                            className="animate-in fade-in zoom-in-95 duration-400"
+                            key="loading"
+                        >
+                            <div className="relative">
+                                <div
+                                    className="absolute inset-0 rounded-full blur-2xl scale-[2.5] opacity-25"
+                                    style={{ background: 'var(--color-accent-orange)' }}
+                                />
+                                <SourdawLogo className="relative h-28 drop-shadow-[0_6px_32px_rgba(217,119,6,0.5)]" />
+                            </div>
+                            <Stack gap={2} className="text-center">
+                                <p className="text-sm font-semibold text-white/80">
+                                    {loadingName ? (
+                                        <>
+                                            Preparing{' '}
+                                            <span className="bg-gradient-to-r from-[var(--color-accent-orange)] to-[var(--color-accent-peach)] bg-clip-text text-transparent">
+                                                {loadingName}
+                                            </span>
+                                        </>
+                                    ) : (
+                                        'Setting up your session…'
+                                    )}
+                                </p>
+                                <p
+                                    key={quipIndex}
+                                    className="text-xs text-white/35 italic animate-in fade-in slide-in-from-bottom-1 duration-300"
+                                >
+                                    {LOADING_QUIPS[quipIndex]}
+                                </p>
+                            </Stack>
+                            <div className="w-48 h-px rounded-full overflow-hidden bg-white/5">
+                                <div
+                                    className="h-full w-1/3 rounded-full"
+                                    style={{
+                                        background:
+                                            'linear-gradient(90deg, transparent, var(--color-accent-orange), transparent)',
+                                        animation: 'ls-shimmer 1.6s ease-in-out infinite',
+                                    }}
+                                />
+                            </div>
+                            <style>{`@keyframes ls-shimmer { 0%{transform:translateX(-200%)} 100%{transform:translateX(400%)} }`}</style>
+                        </Stack>
+                    ) : null}
+                </Row>
+            </div>
+        </FocusScope.FocusScope>
     );
 };
 
@@ -663,16 +545,22 @@ type ActionCardProps = {
     sub: string;
     icon: ReactElement;
     colorVar: string;
+    primary?: boolean;
     onClick: () => void;
 };
 
-const ActionCard = ({ id, label, sub, icon, colorVar, onClick }: ActionCardProps): ReactElement => (
+const ActionCard = ({ id, label, sub, icon, colorVar, primary = false, onClick }: ActionCardProps): ReactElement => (
     <Button
         variant="bare"
         size="bare"
         type="button"
         id={id}
-        className="group flex flex-col items-center gap-2.5 p-4 rounded-xl border border-white/[0.07] bg-white/[0.03] transition-all duration-200 cursor-pointer text-center"
+        className={cn(
+            'group flex w-full items-center rounded-xl border p-4 transition-all duration-200 cursor-pointer',
+            primary
+                ? 'justify-start gap-4 border-[var(--color-accent-orange)]/35 bg-[var(--color-accent-orange)]/10 text-left'
+                : 'flex-col gap-2.5 border-white/[0.07] bg-white/[0.03] text-center'
+        )}
         style={{ ['--card-color' as string]: `var(${colorVar})` }}
         onClick={onClick}
         onMouseEnter={(e) => {
@@ -687,14 +575,16 @@ const ActionCard = ({ id, label, sub, icon, colorVar, onClick }: ActionCardProps
     >
         <Row
             justify="center"
-            className="size-10 rounded-xl transition-all duration-200"
+            className="size-10 shrink-0 rounded-xl transition-all duration-200"
             style={{ background: `color-mix(in srgb, var(${colorVar}) 15%, transparent)`, color: `var(${colorVar})` }}
         >
             {icon}
         </Row>
         <div>
-            <span className="text-xs font-semibold text-white/75 block leading-tight">{label}</span>
-            <span className="text-[9px] text-white/28 mt-0.5 block">{sub}</span>
+            <span className={cn('font-semibold text-white/85 block leading-tight', primary ? 'text-sm' : 'text-xs')}>
+                {label}
+            </span>
+            <span className="text-dense text-white/50 mt-0.5 block">{sub}</span>
         </div>
     </Button>
 );

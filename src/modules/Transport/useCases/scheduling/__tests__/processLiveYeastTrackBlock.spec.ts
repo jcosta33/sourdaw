@@ -1,10 +1,20 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { projectCommittedGroove } from '#/modules/MIDI/useCases';
+import { readYeastRack } from '#/modules/Yeast/stores';
 import { processYeastMidi } from '#/modules/Yeast/useCases';
 
 import { defaultTransportState } from '../../../models/TransportState';
+import { liveMidiProcessor } from '../liveMidiProcessor';
 import { processLiveYeastTrackBlock } from '../processLiveYeastTrackBlock';
+
+// The MIDI barrel is mocked whole here, so the composition root's registrar
+// cannot load; the processor it registers is filled directly, with the Yeast
+// processing this spec doubles.
+liveMidiProcessor.configure({
+    processBlock: processYeastMidi,
+    readRackProcessors: (rackId) => readYeastRack(rackId).processors,
+});
 
 vi.mock('#/modules/MIDI/useCases', () => ({
     projectCommittedGroove: vi.fn(({ events }: { events: readonly unknown[] }) => events),
@@ -182,5 +192,56 @@ describe('processLiveYeastTrackBlock', () => {
             [60, 5, 'noteOff'],
         ]);
         expect(result?.notesByRoute.get('route-a')).toEqual([expect.objectContaining({ pitch: 60, startBeat: 4 })]);
+    });
+
+    it('hands the rack a note crossing the pass end as its in-pass segment and its own pass-head note', async () => {
+        // Loop 4, pass [4, 8): the note at 3.5 runs half a beat past the pass
+        // end. The pass releases it there and strikes the half beat on its own
+        // head, as a distinct instance the window holding the head owns, which
+        // plays the source row and begins half a beat into it. The offline
+        // render hands its rack the same list (projectOfflineYeastTrackNotes).
+        const expression = { pressure: [{ offsetBeats: 0.25, value: 90 }] };
+        vi.mocked(projectCommittedGroove).mockImplementation(({ events }) => events);
+        vi.mocked(processYeastMidi).mockImplementation(({ events }) => Promise.resolve([...events]));
+        vi.mocked(processYeastMidi).mockClear();
+
+        const result = await processLiveYeastTrackBlock({
+            context: { sampleRate: 48_000 } as BaseAudioContext,
+            rackId: 'rack-a',
+            trackId: 'track-a',
+            iterations: [
+                {
+                    routeId: 'route-a',
+                    clipId: 'clip-a',
+                    iterationStartBeat: 4,
+                    iterationEndBeat: 8,
+                    midiOffsetBeats: 0,
+                    loopEnabled: true,
+                    loopLengthBeats: 4,
+                    sourceNotes: [
+                        { id: 'crossing', pitch: 60, startBeat: 3.5, duration: 1, velocity: 100, expression },
+                    ],
+                },
+            ],
+            fromBeat: 4,
+            toBeat: 8.25,
+            changes: [],
+            timeSignatureChanges: [],
+            transport: { ...defaultTransportState, tempo: 120 },
+            isCurrent: () => true,
+        });
+
+        const inputEvents = vi.mocked(processYeastMidi).mock.lastCall?.[0].events ?? [];
+        expect(inputEvents.map((event) => [event.kind.type, event.timePpq, event.noteInstanceId])).toEqual([
+            ['noteOn', 7.5, 'route-a:crossing'],
+            ['noteOff', 8, 'route-a:crossing'],
+            ['noteOn', 4, 'route-a:crossing:pass-head'],
+            ['noteOff', 4.5, 'route-a:crossing:pass-head'],
+        ]);
+        expect(result?.notesByRoute.get('route-a')).toEqual([
+            expect.objectContaining({ pitch: 60, startBeat: 4, duration: 0.5, beatsIntoNote: 0.5, expression }),
+            expect.objectContaining({ pitch: 60, startBeat: 7.5, duration: 0.5, expression }),
+        ]);
+        expect(result?.notesByRoute.get('route-a')?.[1]).not.toHaveProperty('beatsIntoNote');
     });
 });

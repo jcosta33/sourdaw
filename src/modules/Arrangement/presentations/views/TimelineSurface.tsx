@@ -8,14 +8,22 @@ import { onZoomToFit, onZoomToSelection, onScrollToPlayhead } from '#/modules/Wo
 import { animationScheduler } from '#/utils/DOM/AnimationScheduler';
 
 import { type TimelineRenderer } from '../../models/RendererBackend';
+import { getRenderedTrackExtent, getRenderedTrackTops } from '../../models/TimelineTrackExtent';
 import { previewDirtyFlag } from '../../stores/clipDragPreviewRef';
 import { clipSelectionStore, defaultClipSelectionState } from '../../stores/clipSelectionStore';
 import { markerStore } from '../../stores/markerStore';
 import { takeLaneStore } from '../../stores/takeLaneStore';
-import { setAutoScroll, setScrollX, setTimelineZoom, timelineViewStore } from '../../stores/timelineViewStore';
+import {
+    setAutoScroll,
+    setScrollX,
+    setTimelineViewportHeight,
+    setTimelineZoom,
+    timelineViewStore,
+} from '../../stores/timelineViewStore';
 import { trackStore } from '../../stores/trackStore';
 import { buildTimelineRenderModel } from '../../useCases/buildTimelineRenderModel';
 import { getTimelineSurfaceMinimumHeight } from '../../useCases/getTimelineSurfaceMinimumHeight';
+import { resolvePlayheadFollowScroll } from '../../useCases/resolvePlayheadFollowScroll';
 import { useTimelineInteractions } from '../hooks/useTimelineInteractions';
 import { createTimelineRenderer } from '../renderers/createTimelineRenderer';
 
@@ -81,49 +89,28 @@ export const TimelineSurface = (): ReactElement => {
         const left = Math.max(0, marqueeSelection.startBeat * pixelsPerBeat - scrollX);
         const width = (marqueeSelection.endBeat - marqueeSelection.startBeat) * pixelsPerBeat;
 
-        let topTrackIdx = -1;
-        let bottomTrackIdx = -1;
-
-        for (const [idx, track] of currentTrackStore.tracks.entries()) {
+        // Rows as laid out on the canvas: visible tracks only, each with its
+        // variation lanes. The marquee spans from its first row's top to its
+        // last row's bottom.
+        const rows = buildTimelineRenderModel().tracks;
+        const tops = getRenderedTrackTops(rows);
+        let topRow = -1;
+        let bottomRow = -1;
+        for (const [idx, track] of rows.entries()) {
             if (marqueeSelection.trackIds.includes(track.id)) {
-                if (topTrackIdx === -1 || idx < topTrackIdx) {
-                    topTrackIdx = idx;
+                if (topRow === -1) {
+                    topRow = idx;
                 }
-                if (idx > bottomTrackIdx) {
-                    bottomTrackIdx = idx;
-                }
+                bottomRow = idx;
             }
         }
 
-        if (topTrackIdx === -1) {
+        if (topRow === -1) {
             return null;
         }
 
-        let trackYOffset = 0;
-        let top = 0;
-        let bottom = 0;
-
-        for (let i = 0; i <= bottomTrackIdx; i++) {
-            const track = currentTrackStore.tracks[i];
-            if (!track) {
-                continue;
-            }
-
-            // Mirror buildTimelineRenderModel.ts:162 / the renderer's row layout:
-            // folders collapse to a fixed 26px and every other track uses its own
-            // resizable height. Using a single constant here misaligned the
-            // marquee box against the rendered rows (#32-new).
-            const rowHeight = track.kind === 'folder' ? 26 : track.height;
-
-            if (i === topTrackIdx) {
-                top = trackYOffset;
-            }
-            if (i === bottomTrackIdx) {
-                bottom = trackYOffset + rowHeight;
-            }
-
-            trackYOffset += rowHeight;
-        }
+        const top = tops[topRow]!;
+        const bottom = tops[bottomRow]! + getRenderedTrackExtent(rows[bottomRow]!);
 
         return {
             left,
@@ -243,6 +230,8 @@ export const TimelineSurface = (): ReactElement => {
 
         let disposed = false;
         let dirty = true;
+        let lastPlayheadBeat = playheadPositionRef.current;
+        let lastFrameWasPlaying = transportStore.value?.isPlaying ?? false;
         const renderId = crypto.randomUUID();
 
         const markDirty = () => {
@@ -292,25 +281,33 @@ export const TimelineSurface = (): ReactElement => {
                     dirty = false;
 
                     const viewState = timelineViewStore.value;
-                    if (isPlaying && viewState?.autoScrollEnabled) {
-                        const playheadPx = playheadPositionRef.current * viewState.pixelsPerBeat;
+                    const playheadBeat = playheadPositionRef.current;
+                    if (viewState) {
                         // audit M-013: measure the viewport in CSS pixels, the
-                        // same unit scrollX and playheadPx use. `canvas.width`
-                        // is the DEVICE-pixel backing store (both renderers set
-                        // it to CSS width × devicePixelRatio), so reading it
-                        // here inflated the threshold by the dpr: at dpr 2 it
-                        // sat at 150% of the viewport and the playhead ran off
+                        // same unit scrollX and the playhead pixel use.
+                        // `canvas.width` is the DEVICE-pixel backing store (both
+                        // renderers set it to CSS width × devicePixelRatio), so
+                        // reading it inflated the threshold by the dpr: at dpr 2
+                        // it sat at 150% of the viewport and the playhead ran off
                         // screen before follow-playhead ever fired. Use the
                         // container's CSS box, as the zoom/scroll handlers above
                         // already do.
-                        const viewportWidth = container.getBoundingClientRect().width;
-                        const rightThreshold = viewState.scrollX + viewportWidth * 0.75;
-                        const leftEdge = viewState.scrollX;
-
-                        if (playheadPx > rightThreshold || playheadPx < leftEdge) {
-                            setScrollX(playheadPx - viewportWidth * 0.25);
+                        const nextScrollX = resolvePlayheadFollowScroll({
+                            previousPlayheadBeat: lastPlayheadBeat,
+                            playheadBeat,
+                            isPlaying,
+                            wasPlaying: lastFrameWasPlaying,
+                            autoScrollEnabled: viewState.autoScrollEnabled,
+                            scrollX: viewState.scrollX,
+                            viewportWidth: container.getBoundingClientRect().width,
+                            pixelsPerBeat: viewState.pixelsPerBeat,
+                        });
+                        if (nextScrollX !== null) {
+                            setScrollX(nextScrollX);
                         }
                     }
+                    lastPlayheadBeat = playheadBeat;
+                    lastFrameWasPlaying = isPlaying;
 
                     const model = buildTimelineRenderModel();
                     renderer.render(model);
@@ -330,6 +327,9 @@ export const TimelineSurface = (): ReactElement => {
             for (const entry of entries) {
                 const { width, height } = entry.contentRect;
                 rendererRef.current?.resize(width, height);
+                // The store clamps vertical scroll against this viewport, so it
+                // must be right before the first wheel event, not after it.
+                setTimelineViewportHeight(height);
             }
             // Immediately re-render after resize to prevent a 1-frame flash.
             // Setting canvas.width/height clears all pixel data, but the dirty

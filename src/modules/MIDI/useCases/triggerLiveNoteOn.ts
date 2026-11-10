@@ -7,8 +7,54 @@
  * @param note    - MIDI note number (0–127)
  * @param velocity - Note velocity (1–127)
  */
+import { audioEngine } from '#/modules/AudioEngine/useCases';
+import { transportStore } from '#/modules/Transport/stores';
+
+import { getTargetTrackId } from '../repositories/webMidi/getTargetTrackId';
+
+import { captureCompensatedRecordingPosition } from './webMidiInput/captureCompensatedRecordingPosition';
+import { captureEventPositionAt } from './webMidiInput/captureEventBeat';
+import { captureRecordingMemberExpression } from './webMidiInput/captureRecordingMemberExpression';
 import { handleWebMidiNoteOn } from './webMidiInput/handleWebMidiNoteOn';
+import { recordingMidiAdmissionPort } from './webMidiInput/recordingMidiAdmissionPort';
+
+const { admitRecordingMidiNoteOn } = recordingMidiAdmissionPort;
 
 export function triggerLiveNoteOn(channel: number, note: number, velocity: number): Promise<void> {
-    return handleWebMidiNoteOn(channel, note, velocity);
+    if (transportStore.value?.isRecording !== true) {
+        return handleWebMidiNoteOn(channel, note, velocity);
+    }
+    const audioTime = audioEngine.context.currentTime;
+    const position = captureEventPositionAt({ audioTime });
+    const trackId = getTargetTrackId();
+    let admission: ReturnType<typeof admitRecordingMidiNoteOn> = null;
+    if (velocity > 0 && trackId) {
+        admission = admitRecordingMidiNoteOn({
+            trackId,
+            channel,
+            note,
+            velocity,
+            audioTime,
+            position: captureCompensatedRecordingPosition(trackId, audioTime),
+            initialExpression: captureRecordingMemberExpression(channel),
+        });
+    }
+    const time: {
+        audioTime: number;
+        recordingBeat: number;
+        recordingPassIndex: number;
+        recordingAdmissionId?: string;
+        recordingExcluded?: boolean;
+    } = {
+        audioTime,
+        recordingBeat: position.beat,
+        recordingPassIndex: position.passIndex,
+    };
+    if (admission) {
+        time.recordingAdmissionId = admission.id;
+    }
+    if (recordingMidiAdmissionPort.isRecordingMidiInputExcluded(audioTime, trackId)) {
+        time.recordingExcluded = true;
+    }
+    return handleWebMidiNoteOn(channel, note, velocity, time);
 }

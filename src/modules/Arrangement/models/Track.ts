@@ -113,6 +113,16 @@ export type Clip = {
      *  Set on import; used to request the file from peers in a collab session. */
     assetHash?: string;
     audioOffsetBeats?: number;
+    /** Signed source position at the clip head. Authoritative when present, including zero. */
+    audioOffsetSeconds?: number;
+    /** Unwrapped clip-media entry for take provenance, distinct from the audible loop entry. */
+    audioUnwrappedOffsetSeconds?: number;
+    /** Source loop boundary, independent of placement and the entry at the trimmed head. */
+    audioLoopStartSeconds?: number;
+    /** Source second repeated at each original pass seam, independent of the first visible entry. */
+    audioLoopPassEntrySeconds?: number;
+    /** Original pass grid. Cuts retain it; whole moves shift it with the clip. */
+    audioLoopPassOriginBeat?: number;
     midiOffsetBeats?: number;
     fadeInBeats: number;
     fadeOutBeats: number;
@@ -320,7 +330,9 @@ export function normalizeTrack(track: Partial<Track> & { id: string; name: strin
         kind: track.kind,
         muted: track.muted ?? false,
         soloed: track.soloed ?? false,
-        armed: track.armed ?? false,
+        // Master cannot be armed: it has no row to hold a take, and stored or
+        // peer state must not be able to arm it past the eligibility refusal.
+        armed: track.kind !== 'master' && (track.armed ?? false),
         gain: track.gain ?? 0.8,
         pan: track.pan ?? 0,
         color: track.color ?? '',

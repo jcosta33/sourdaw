@@ -1,8 +1,10 @@
-import { expect, type Page } from '@playwright/test';
+import { type Page } from '@playwright/test';
 import { stringify as superjsonStringify } from 'superjson';
 
 import { DIRECT_E2E_VIEWPORT_NAME } from '../../src/app/resolveAppComposition';
 
+import type { DirectProjectSetupModule } from './directProjectSetupContract';
+import { expect } from './e2eTest';
 import { attach_first_paint_console, format_first_paint_timeout_diagnosis } from './firstPaintDiagnostics';
 
 export const LAUNCH_SCREEN_NAME = 'Sourdaw — start a project';
@@ -35,18 +37,14 @@ const ALPHA_NOTICE_DISMISSED_STORAGE_KEY = 'sourdaw-alpha-notice-dismissed';
 export const PREFERENCES_STORAGE_KEY = 'sourdaw-preferences';
 export const RECENT_PROJECTS_STORAGE_KEY = 'sourdaw-recent-projects';
 
-type LaunchOverlayState = 'active' | 'exited';
-
 type LaunchFromTemplateInput = {
     page: Page;
     template_name: string | RegExp;
 };
 
-type LaunchNewProjectOptions = {
-    firstPaintTimeoutMs?: number;
-};
-
 type SetupWorkspaceOptions = {
+    /** Fresh-context persistence proofs must keep their own saved data across reload. */
+    clearLocalStorage?: boolean;
     localStorage?: Array<{ name: string; value: string }>;
 };
 
@@ -89,8 +87,10 @@ export async function setupWorkspace(page: Page, options: SetupWorkspaceOptions 
 
     await enable_direct_e2e_viewport(page);
     await page.addInitScript(
-        ({ alphaDismissed, alphaNoticeKey, localStorage }) => {
-            window.localStorage.clear();
+        ({ alphaDismissed, alphaNoticeKey, clearLocalStorage, localStorage }) => {
+            if (clearLocalStorage) {
+                window.localStorage.clear();
+            }
             window.localStorage.setItem('wd:onboarding-completed', '1');
             window.localStorage.setItem(alphaNoticeKey, alphaDismissed);
             window.localStorage.setItem('wd:first-load-hint-shown', '1');
@@ -101,6 +101,7 @@ export async function setupWorkspace(page: Page, options: SetupWorkspaceOptions 
         {
             alphaDismissed,
             alphaNoticeKey: ALPHA_NOTICE_DISMISSED_STORAGE_KEY,
+            clearLocalStorage: options.clearLocalStorage ?? true,
             localStorage: options.localStorage ?? [],
         }
     );
@@ -109,32 +110,18 @@ export async function setupWorkspace(page: Page, options: SetupWorkspaceOptions 
     await page.waitForLoadState('domcontentloaded');
 }
 
-async function get_launch_overlay_state(page: Page): Promise<LaunchOverlayState> {
-    const launch_screen = page.getByLabel(LAUNCH_SCREEN_NAME);
-
-    return launch_screen.evaluateAll((elements): LaunchOverlayState => {
-        const element = elements[0];
-        if (!element) {
-            return 'exited';
-        }
-
-        const style = window.getComputedStyle(element);
-        if (style.opacity === '0' && style.pointerEvents === 'none') {
-            return 'exited';
-        }
-
-        return 'active';
-    });
-}
-
 export async function wait_for_workspace_ready(page: Page): Promise<void> {
-    // Launch loading text is transient; wait for the stable exited-overlay contract instead.
+    // Launch loading text is transient; wait for the overlay to unmount instead.
+    // A transparent overlay is still an aria-modal dialog, so an unscoped
+    // getByRole('dialog') right after launch would also match it.
     // The overlay-exit waits on WASM DSP boot + template instantiation. Under
     // full-suite worker contention a heavy template (e.g. the full demo project)
-    // can take well past the 5s default poll bound; match the panel-open bound
+    // can take well past the 5s default bound; match the panel-open bound
     // so a slow-but-healthy boot is not mistaken for a hang.
-    await expect.poll(async () => get_launch_overlay_state(page), { timeout: 30_000 }).toBe('exited');
-    await expect(page.getByRole('group', { name: PLAYBACK_CONTROLS_NAME })).toBeVisible();
+    await expect(page.getByLabel(LAUNCH_SCREEN_NAME)).toHaveCount(0, { timeout: 30_000 });
+    await expect(page.getByRole('group', { name: PLAYBACK_CONTROLS_NAME })).toBeVisible({
+        timeout: 30_000,
+    });
 }
 
 /**
@@ -145,9 +132,13 @@ export async function wait_for_workspace_ready(page: Page): Promise<void> {
  * handshake, React render, WASM boot, `[capabilities]`), so a red leg
  * diagnoses itself instead of surfacing as an opaque "element(s) not found".
  */
+type LaunchFirstPaintOptions = {
+    firstPaintTimeoutMs?: number;
+};
+
 export async function wait_for_launch_first_paint(
     page: Page,
-    { firstPaintTimeoutMs = LAUNCH_SCREEN_FIRST_PAINT_TIMEOUT_MS }: LaunchNewProjectOptions = {}
+    { firstPaintTimeoutMs = LAUNCH_SCREEN_FIRST_PAINT_TIMEOUT_MS }: LaunchFirstPaintOptions = {}
 ): Promise<void> {
     const timeline = attach_first_paint_console(page);
     const startedAtMs = performance.now();
@@ -166,9 +157,34 @@ export async function wait_for_launch_first_paint(
     }
 }
 
-export async function launch_new_project(page: Page, options: LaunchNewProjectOptions = {}): Promise<void> {
-    await wait_for_launch_first_paint(page, options);
+const DIRECT_SETUP_ENTRY_PATH = '/e2e/direct-project-setup.js';
 
+/**
+ * Create a blank project by invoking newProject directly through the E2E-only
+ * same-build module route, bypassing the launch-screen UI entirely. The entry
+ * is served at a deterministic path in both dev mode (via the vite plugin
+ * middleware) and built e2e mode (emitted at that path by the build). Throws
+ * when newProject returns false — no fallback clicks.
+ */
+export async function launch_new_project(page: Page): Promise<void> {
+    const result = await page.evaluate(async (entryPath: string) => {
+        const { newProject }: DirectProjectSetupModule = await import(entryPath);
+        return newProject();
+    }, DIRECT_SETUP_ENTRY_PATH);
+    if (!result) {
+        throw new Error('newProject returned false — project setup was refused or superseded');
+    }
+    await wait_for_workspace_ready(page);
+}
+
+/**
+ * Create a new project through the launch-screen UI. Use this only for tests
+ * that explicitly verify launch-screen behaviour (overlays, transitions, motion
+ * preference). All other tests that just need an open project should use
+ * launch_new_project.
+ */
+export async function launch_new_project_via_ui(page: Page, options: LaunchFirstPaintOptions = {}): Promise<void> {
+    await wait_for_launch_first_paint(page, options);
     await page.locator('#launch-new-project').click();
     await wait_for_workspace_ready(page);
 }
@@ -235,7 +251,7 @@ type OpenBrowserInstrumentInput = {
  */
 export async function open_browser_instrument({ page, instrument }: OpenBrowserInstrumentInput): Promise<void> {
     const browser = page.getByRole('complementary', { name: 'Browser panel' });
-    await browser.getByRole('button', { name: 'Instruments', exact: true }).click();
+    await browser.getByRole('tab', { name: 'Instruments', exact: true }).click();
     // The InstrumentCard is a real <button> (DawChooserCard) whose accessible
     // name begins with the instrument label, e.g. "Levain Orchestra …". Target it
     // by role + name-prefix, not a bare getByText: a text-node click can resolve

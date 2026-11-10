@@ -177,6 +177,11 @@ export const executableAppActionEffectsByType = {
         removes: ['clip'],
         noteFields: ['startBeat'],
     },
+    quantizeTransients: {
+        dimensions: ['clip-audio', 'arrangement', 'automation'],
+        scope: 'target',
+        creates: ['clip', 'automation-lane'],
+    },
     crossfadeClips: {
         dimensions: ['clip-audio', 'arrangement'],
         scope: 'target',
@@ -292,6 +297,10 @@ export const executableAppActionEffectsByType = {
         dimensions: ['arrangement'],
         scope: 'target',
     },
+    removeCompRegion: {
+        dimensions: ['arrangement'],
+        scope: 'target',
+    },
     setSoloSafe: {
         dimensions: ['monitoring'],
         scope: 'target',
@@ -329,7 +338,12 @@ export const executableAppActionEffectsByType = {
         scope: 'target',
     },
     setTempo: {
-        dimensions: ['project-timing'],
+        dimensions: ['project-timing', 'arrangement', 'clip-audio'],
+        scope: 'project',
+    },
+    // The brief is project intent: it changes no sound, timing or arrangement, and carries the locks.
+    setProductionBrief: {
+        dimensions: ['protection'],
         scope: 'project',
     },
     setTimeSignature: {

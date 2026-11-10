@@ -5,17 +5,19 @@
  */
 import { type ReactElement } from 'react';
 
-import { Row } from '#/components/layout';
-import { Button } from '#/components/ui/button';
+import { DawTabStrip, type DawTabStripItem } from '#/components/daw/DawTabStrip';
 
 export type FermenterSection = 'osc' | 'filter' | 'env' | 'mod' | 'fx';
 
-const SECTIONS: Array<{ id: FermenterSection; label: string; color: string }> = [
-    { id: 'osc', label: 'Oscillator', color: 'var(--color-accent-lavender)' },
-    { id: 'filter', label: 'Filter', color: 'var(--color-accent-cyan)' },
-    { id: 'env', label: 'Envelopes', color: 'var(--color-accent-mint)' },
-    { id: 'mod', label: 'Modulation', color: 'var(--color-accent-peach)' },
-    { id: 'fx', label: 'Effects', color: 'var(--color-accent-lavender)' },
+export const FERMENTER_SECTION_PANEL_ID = 'fermenter-section-panel';
+export const FERMENTER_SECTION_TAB_ID_PREFIX = 'fermenter-section';
+
+const SECTIONS: readonly DawTabStripItem<FermenterSection>[] = [
+    { id: 'osc', label: 'Oscillator', activeClassName: 'bg-[var(--color-accent-lavender)] text-white' },
+    { id: 'filter', label: 'Filter', activeClassName: 'bg-[var(--color-accent-cyan)] text-white' },
+    { id: 'env', label: 'Envelopes', activeClassName: 'bg-[var(--color-accent-mint)] text-white' },
+    { id: 'mod', label: 'Modulation', activeClassName: 'bg-[var(--color-accent-peach)] text-white' },
+    { id: 'fx', label: 'Effects', activeClassName: 'bg-[var(--color-accent-lavender)] text-white' },
 ];
 
 type SectionNavProps = {
@@ -24,21 +26,14 @@ type SectionNavProps = {
 };
 
 export const SectionNav = ({ active, onChange }: SectionNavProps): ReactElement => (
-    <Row align="stretch" gap={0.5} className="px-1">
-        {SECTIONS.map(({ id, label, color }) => (
-            <Button
-                variant="bare"
-                size="bare"
-                key={id}
-                type="button"
-                className={`px-2 py-0.5 rounded text-[9px] font-medium transition-all ${
-                    active === id ? 'text-white' : 'text-muted-foreground hover:text-foreground'
-                }`}
-                style={active === id ? { backgroundColor: color } : undefined}
-                onClick={() => onChange(id)}
-            >
-                {label}
-            </Button>
-        ))}
-    </Row>
+    <DawTabStrip
+        label="Fermenter sections"
+        idPrefix={FERMENTER_SECTION_TAB_ID_PREFIX}
+        panelId={FERMENTER_SECTION_PANEL_ID}
+        items={SECTIONS}
+        activeId={active}
+        onChange={onChange}
+        className="px-1"
+        tabClassName="rounded px-2 py-0.5 text-[9px] font-medium text-muted-foreground hover:text-foreground"
+    />
 );

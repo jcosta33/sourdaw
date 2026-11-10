@@ -851,10 +851,29 @@ struct ExportFileTransaction {
     sealed: bool,
 }
 
+struct ExportFileLock {
+    file: std::fs::File,
+}
+
+impl ExportFileLock {
+    fn acquire(file: std::fs::File) -> Result<Self, String> {
+        file.try_lock()
+            .map_err(|_| "Streaming export is owned by another live native host".to_string())?;
+        Ok(Self { file })
+    }
+}
+
+impl Drop for ExportFileLock {
+    fn drop(&mut self) {
+        // Passive duplicates must not extend ownership beyond this acquired owner's lifetime.
+        let _ = self.file.unlock();
+    }
+}
+
 /// One host holds an OS lock for its entire lifetime. Recovery never races another live host.
 /// The authenticated manifest is private native state, never renderer-authored delete authority.
 pub(crate) struct ExportFileRegistry {
-    _lock: std::fs::File,
+    _lock: ExportFileLock,
     initializing: bool,
     manifest_path: PathBuf,
     key: [u8; 32],
@@ -995,8 +1014,7 @@ impl ExportFileRegistry {
             .truncate(false)
             .open(&lock_path)
             .map_err(|e| format!("Cannot open export state lock: {e}"))?;
-        lock.try_lock()
-            .map_err(|_| "Streaming export is owned by another live native host".to_string())?;
+        let lock = ExportFileLock::acquire(lock)?;
         let key_path = directory.join("export-files.key");
         refuse_export_symlink(&key_path)?;
         let mut key = [0_u8; 32];
@@ -2546,6 +2564,43 @@ mod tests {
     }
 
     #[test]
+    fn export_transactions_commit_report_before_audio_on_manifest_failure() {
+        let dir = TempExportDir::create("report-before-audio");
+        let audio = dir.path("stem.wav");
+        let report = dir.path("stem.wav.loudness.json");
+        std::fs::write(&audio, b"old audio").unwrap();
+        let mut registry = ExportFileRegistry::open(&dir.path("private")).unwrap();
+        let audio_token = registry
+            .begin(audio.to_string_lossy().into_owned(), 7)
+            .unwrap();
+        registry.append(&audio_token, b"new audio", 7).unwrap();
+        registry.seal(&audio_token, 7).unwrap();
+        let report_token = registry
+            .begin(report.to_string_lossy().into_owned(), 7)
+            .unwrap();
+        registry.append(&report_token, b"new report", 7).unwrap();
+        registry.seal(&report_token, 7).unwrap();
+
+        // The report's rename succeeds, then persisting the manifest after it fails.
+        std::fs::remove_file(&registry.manifest_path).unwrap();
+        std::fs::create_dir(&registry.manifest_path).unwrap();
+        assert!(registry
+            .commit(&[report_token, audio_token.clone()], 7)
+            .is_err());
+
+        // Renames are not one transaction: the report is already published, and the audio
+        // it describes never replaced the old file, which keeps its old bytes.
+        assert_eq!(std::fs::read(&report).unwrap(), b"new report");
+        assert_eq!(std::fs::read(&audio).unwrap(), b"old audio");
+
+        // The unpublished audio stays staged and aborts without touching the old file.
+        std::fs::remove_dir(&registry.manifest_path).unwrap();
+        registry.abort(&[audio_token]).unwrap();
+        assert_eq!(std::fs::read(&audio).unwrap(), b"old audio");
+        assert!(temp_file_residue(&dir.root).is_empty());
+    }
+
+    #[test]
     fn export_transactions_abort_and_drop_preserve_existing_files() {
         let dir = TempExportDir::create("abort");
         let target = dir.path("stem.flac");
@@ -2623,10 +2678,167 @@ mod tests {
     }
 
     #[test]
+    fn export_transactions_retained_lock_carrier_does_not_outlive_normal_disposal() {
+        let dir = TempExportDir::create("retained-lock-disposal");
+        let private = dir.path("private");
+        let target = dir.path("picked.wav");
+        std::fs::write(&target, b"original export").unwrap();
+        let mut registry = ExportFileRegistry::open(&private).unwrap();
+        let token = registry
+            .begin(target.to_string_lossy().into_owned(), 1)
+            .unwrap();
+        registry.append(&token, b"intended export", 1).unwrap();
+        let temp = registry.transactions[&token].record.temp.clone();
+        let path = private.join("export-files.json");
+        let bytes = std::fs::read(&path).unwrap();
+        let key = registry.key;
+        let carrier = registry._lock.file.try_clone().unwrap();
+
+        let error = ExportFileRegistry::open(&private).err().unwrap();
+        assert_eq!(std::fs::read(&temp).unwrap(), b"intended export");
+        assert_eq!(std::fs::read(&target).unwrap(), b"original export");
+        assert_eq!(std::fs::read(&path).unwrap(), bytes);
+        assert_eq!(
+            error,
+            "Streaming export is owned by another live native host"
+        );
+
+        drop(registry);
+        assert_eq!(std::fs::read(&target).unwrap(), b"original export");
+        assert!(
+            !temp.exists(),
+            "normal disposal must remove its staged file"
+        );
+        let disposed_bytes = std::fs::read(&path).unwrap();
+        let manifest: ExportManifest = serde_json::from_slice(&disposed_bytes).unwrap();
+        assert_eq!(manifest.version, EXPORT_MANIFEST_VERSION);
+        assert!(manifest.records.is_empty());
+        assert_eq!(
+            manifest.authentication,
+            export_manifest_mac(&key, manifest.version, &manifest.records).unwrap()
+        );
+        let successor = ExportFileRegistry::open(&private)
+            .unwrap_or_else(|error| panic!("passive carrier retained disposed ownership: {error}"));
+        assert!(successor.transactions.is_empty());
+        drop(carrier);
+        let error = ExportFileRegistry::open(&private).err().unwrap();
+        assert_eq!(std::fs::read(&target).unwrap(), b"original export");
+        assert!(!temp.exists());
+        assert_eq!(std::fs::read(&path).unwrap(), disposed_bytes);
+        assert_eq!(
+            error,
+            "Streaming export is owned by another live native host"
+        );
+        drop(successor);
+        let next = ExportFileRegistry::open(&private).unwrap();
+        assert!(next.transactions.is_empty());
+    }
+
+    #[test]
+    fn export_transactions_retained_lock_carrier_does_not_hide_stale_creation_recovery() {
+        let dir = TempExportDir::create("retained-lock-creation");
+        let private = dir.path("private");
+        let target = dir.path("picked.wav");
+        std::fs::write(&target, b"original export").unwrap();
+        let mut registry = ExportFileRegistry::open(&private).unwrap();
+        let token = registry
+            .begin(target.to_string_lossy().into_owned(), 1)
+            .unwrap();
+        registry.append(&token, b"intended export", 1).unwrap();
+        let mut record = registry.transactions[&token].record.clone();
+        let temp = record.temp.clone();
+        let path = private.join("export-files.json");
+        let original_bytes = std::fs::read(&path).unwrap();
+        let carrier = registry._lock.file.try_clone().unwrap();
+
+        let error = ExportFileRegistry::open(&private).err().unwrap();
+        assert_eq!(std::fs::read(&temp).unwrap(), b"intended export");
+        assert_eq!(std::fs::read(&target).unwrap(), b"original export");
+        assert_eq!(std::fs::read(&path).unwrap(), original_bytes);
+        assert_eq!(
+            error,
+            "Streaming export is owned by another live native host"
+        );
+
+        record.identity.as_mut().unwrap().created = Some(ExportFileCreationTime {
+            seconds: 1,
+            nanos: 0,
+        });
+        let records = vec![record];
+        let manifest = ExportManifest {
+            version: EXPORT_MANIFEST_VERSION,
+            authentication: export_manifest_mac(&registry.key, EXPORT_MANIFEST_VERSION, &records)
+                .unwrap(),
+            records,
+        };
+        let bytes = serde_json::to_vec(&manifest).unwrap();
+        // Preserve the real crash record while handing off its original owner.
+        registry.initializing = true;
+        drop(registry);
+        std::fs::write(&path, &bytes).unwrap();
+
+        let error = ExportFileRegistry::open(&private).err().unwrap();
+        assert_eq!(std::fs::read(&temp).unwrap(), b"intended export");
+        assert_eq!(std::fs::read(&target).unwrap(), b"original export");
+        assert_eq!(std::fs::read(&path).unwrap(), bytes);
+        assert_eq!(
+            error,
+            "Cannot prove export temporary file identity after restart"
+        );
+        drop(carrier);
+    }
+
+    #[test]
+    fn export_transactions_invalid_key_preserves_crash_state_until_key_restored() {
+        let dir = TempExportDir::create("recovery-key-length");
+        let private = dir.path("private");
+        let target = dir.path("picked.wav");
+        std::fs::write(&target, b"original export").unwrap();
+        let mut registry = ExportFileRegistry::open(&private).unwrap();
+        let token = registry
+            .begin(target.to_string_lossy().into_owned(), 1)
+            .unwrap();
+        registry.append(&token, b"intended export", 1).unwrap();
+        let temp = registry.transactions[&token].record.temp.clone();
+        let path = private.join("export-files.json");
+        let bytes = std::fs::read(&path).unwrap();
+        let key_path = private.join("export-files.key");
+        let key = std::fs::read(&key_path).unwrap();
+        assert_eq!(key.len(), 32);
+        registry.initializing = true;
+        drop(registry);
+        std::fs::write(&key_path, &key[..31]).unwrap();
+
+        let error = ExportFileRegistry::open(&private).err().unwrap();
+        assert_eq!(std::fs::read(&temp).unwrap(), b"intended export");
+        assert_eq!(std::fs::read(&target).unwrap(), b"original export");
+        assert_eq!(std::fs::read(&path).unwrap(), bytes);
+        assert_eq!(std::fs::read(&key_path).unwrap(), key[..31]);
+        assert_eq!(error, "Invalid export authentication key");
+
+        std::fs::write(&key_path, &key).unwrap();
+        let recovered = ExportFileRegistry::open(&private).unwrap();
+        assert!(recovered.transactions.is_empty());
+        assert!(!temp.exists());
+        assert_eq!(std::fs::read(&target).unwrap(), b"original export");
+        assert_eq!(std::fs::read(&key_path).unwrap(), key);
+        let manifest: ExportManifest =
+            serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        assert_eq!(manifest.version, EXPORT_MANIFEST_VERSION);
+        assert!(manifest.records.is_empty());
+        assert_eq!(
+            manifest.authentication,
+            export_manifest_mac(&recovered.key, manifest.version, &manifest.records).unwrap()
+        );
+    }
+
+    #[test]
     fn export_transactions_forged_manifest_is_refused_without_deleting_or_overwriting_it() {
         let dir = TempExportDir::create("forged");
         let private = dir.path("private");
-        drop(ExportFileRegistry::open(&private).unwrap());
+        create_private_state_directory(&private).unwrap();
+        let key: Vec<u8> = (0..32).collect();
+        std::fs::write(private.join("export-files.key"), key).unwrap();
         let victim = dir.path("user.wav");
         std::fs::write(&victim, b"user file").unwrap();
         let record = ExportTempRecord {
@@ -2643,10 +2855,8 @@ mod tests {
         .unwrap();
         let manifest = private.join("export-files.json");
         std::fs::write(&manifest, &forged).unwrap();
-        assert!(ExportFileRegistry::open(&private)
-            .err()
-            .unwrap()
-            .contains("Unauthenticated"));
+        let error = ExportFileRegistry::open(&private).err().unwrap();
+        assert!(error.contains("Unauthenticated"), "{error}");
         assert_eq!(std::fs::read(&victim).unwrap(), b"user file");
         assert_eq!(std::fs::read(&manifest).unwrap(), forged);
     }
@@ -2813,10 +3023,8 @@ mod tests {
         drop(registry);
         let path = private.join("export-files.json");
         std::fs::write(&path, &bytes).unwrap();
-        assert!(ExportFileRegistry::open(&private)
-            .err()
-            .unwrap()
-            .contains("after restart"));
+        let error = ExportFileRegistry::open(&private).err().unwrap();
+        assert!(error.contains("after restart"), "{error}");
         assert_eq!(std::fs::read(temp).unwrap(), b"intended export");
         assert_eq!(std::fs::read(target).unwrap(), b"original export");
         assert_eq!(std::fs::read(path).unwrap(), bytes);

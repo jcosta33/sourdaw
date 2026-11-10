@@ -8,7 +8,6 @@ import {
     getCachedAudioBuffer,
     getCurrentTime,
 } from '#/modules/AudioEngine/useCases';
-import { getAssetTransfer } from '#/modules/Collaboration/useCases';
 
 import { defaultTransportState } from '../../../models/TransportState';
 import { disposeAudioClipScheduling } from '../disposeAudioClipScheduling';
@@ -21,6 +20,7 @@ const { createdGains } = vi.hoisted(() => ({
     createdGains: [] as Array<{ gain: { linearRampToValueAtTime: ReturnType<typeof vi.fn> } }>,
 }));
 vi.mock('#/modules/Arrangement/stores', () => ({
+    gainEnvelopeStore: { value: null },
     trackStore: {
         get value() {
             return trackStoreState.value;
@@ -62,23 +62,15 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
 // real loop projection.
 vi.mock('#/modules/Arrangement/useCases', () => ({
     resolveClipsWithComping: vi.fn(() => []),
+    collaborationAssetTransfer: {
+        read: () => ({ isSessionActive: () => false, current: () => null }),
+    },
 }));
 vi.mock('#/utils/Notification/notifyUser', () => ({
     notifyUser: vi.fn(),
 }));
 vi.mock('../scheduleFrozenTrack', () => ({
     scheduleFrozenTrack: vi.fn(() => false),
-}));
-const collaborationStoreState: { value: { isEnabled: boolean } | null } = { value: null };
-vi.mock('#/modules/Collaboration/stores', () => ({
-    collaborationStore: {
-        get value() {
-            return collaborationStoreState.value;
-        },
-    },
-}));
-vi.mock('#/modules/Collaboration/useCases', () => ({
-    getAssetTransfer: vi.fn(() => null),
 }));
 // `TempoMap` is deliberately NOT stubbed: it is a pure leaf with its own spec,
 // and the timing these tests pin is exactly the question of which conversion the
@@ -163,7 +155,6 @@ describe('scheduleAudioClips — micro fade-out after a mid-clip start', () => {
         tempoMapStore.value = { changes: [] };
         vi.mocked(getCompensationDelay).mockReturnValue(0);
         vi.mocked(getGainEnvelopeSeries).mockReturnValue(undefined);
-        vi.mocked(getAssetTransfer).mockReturnValue(null);
     });
 
     it('ramps the clip to silence at the moment its source ends', () => {

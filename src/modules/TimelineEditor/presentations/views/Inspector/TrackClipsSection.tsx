@@ -8,11 +8,13 @@ import { DawMicroBadge } from '#/components/daw/DawMicroBadge';
 import { Row } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { acceptGhostClip, dismissGhostClip } from '#/modules/Arrangement/useCases';
+import { getBarNumberAtBeat } from '#/modules/Transport/useCases';
 import { MIDI_CLIP_DRAG_MIME_TYPE } from '#/utils/midiClipDrag';
 
 import { type Track } from '../../../models/TrackViewTypes';
 import { ChoiceCard } from '../../components/Inspector/ChoiceCard';
 import { MetaText } from '../../components/Inspector/MetaText';
+import { useMeterInput } from '../../hooks/useMeterInput';
 
 type TrackClipsSectionProps = {
     track: Track;
@@ -20,6 +22,8 @@ type TrackClipsSectionProps = {
 };
 
 export const TrackClipsSection = ({ track, onSelectClip }: TrackClipsSectionProps): ReactElement => {
+    const meter = useMeterInput();
+
     return (
         <div>
             <DawHeaderBand compact className="mb-2 rounded-sm" title={`Clips (${track.clips.length})`} />
@@ -67,7 +71,8 @@ export const TrackClipsSection = ({ track, onSelectClip }: TrackClipsSectionProp
                                 ) : null}
                             </Row>
                             <MetaText>
-                                bar {Math.floor(clip.startBeat / 4) + 1}–{Math.floor(clip.endBeat / 4) + 1}
+                                bar {getBarNumberAtBeat({ ...meter, beat: clip.startBeat })}–
+                                {getBarNumberAtBeat({ ...meter, beat: clip.endBeat })}
                             </MetaText>
                             {clip.isGhost ? (
                                 <Row gap={1} className="mt-1.5 pt-1.5 border-t border-border/30">

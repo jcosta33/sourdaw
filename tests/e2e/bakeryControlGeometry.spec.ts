@@ -1,11 +1,10 @@
-import { expect, test } from '@playwright/test';
-
+import { expect, test } from './e2eTest';
 import { launch_new_project, setupWorkspace } from './e2eUtils';
 
 async function openBakery(page: import('@playwright/test').Page): Promise<void> {
     const isMac = await page.evaluate(() => navigator.platform.toUpperCase().includes('MAC'));
     await page.keyboard.press(isMac ? 'Meta+Shift+E' : 'Control+Shift+E');
-    await expect(page.getByRole('dialog').filter({ hasText: /The Bakery/i })).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByRole('dialog').filter({ hasText: /Export audio/i })).toBeVisible({ timeout: 10_000 });
 }
 
 test.describe('Bakery control geometry', () => {
@@ -17,7 +16,7 @@ test.describe('Bakery control geometry', () => {
     test('the dither Off choice activates and remains selected after reopening', async ({ page }) => {
         await openBakery(page);
 
-        const dialog = page.getByRole('dialog').filter({ hasText: /The Bakery/i });
+        const dialog = page.getByRole('dialog').filter({ hasText: /Export audio/i });
         const off = dialog.getByRole('button', { name: 'Off', exact: true });
         await off.click();
         await expect
@@ -40,7 +39,7 @@ test.describe('Bakery control geometry', () => {
     test('all Fidelity controls remain reachable by scrolling the dialog', async ({ page }) => {
         await openBakery(page);
 
-        const dialog = page.getByRole('dialog').filter({ hasText: /The Bakery/i });
+        const dialog = page.getByRole('dialog').filter({ hasText: /Export audio/i });
         const repeatable = dialog.getByRole('button', { name: 'Repeatable', exact: true });
         await expect(repeatable).toBeEnabled();
 

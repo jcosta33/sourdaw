@@ -256,7 +256,7 @@ const K = (props: KProps): ReactElement => {
                 aria-label={label}
             />
             <span className="text-micro leading-none text-muted-foreground">{label}</span>
-            {unit ? <span className="font-mono text-nano text-muted-foreground/45">{formatValue(v, unit)}</span> : null}
+            {unit ? <span className="font-mono text-nano text-muted-foreground">{formatValue(v, unit)}</span> : null}
         </Stack>
     );
 };
@@ -274,7 +274,7 @@ const SectionHeader = ({
 }): ReactElement => (
     <Row align="start" justify="between" gap={3}>
         <Stack gap={1}>
-            <div className="text-micro font-semibold uppercase tracking-[0.28em] text-[var(--color-accent-mint-bright)]/70">
+            <div className="text-micro font-semibold uppercase tracking-[0.28em] text-[var(--color-accent-mint)]">
                 {eyebrow}
             </div>
             <div className="text-[13px] font-semibold tracking-[0.02em] text-foreground">{title}</div>
@@ -289,7 +289,7 @@ const SectionHeader = ({
 );
 
 const BChip = ({
-    active = false,
+    active,
     size = 'sm',
     className,
     children,
@@ -302,7 +302,7 @@ const BChip = ({
 
 const MetricCell = ({ label, value }: { label: string; value: string }): ReactElement => (
     <Stack gap={1} className="bacteria-window min-w-[92px] px-3 py-2">
-        <span className="text-micro uppercase tracking-[0.24em] text-muted-foreground/55">{label}</span>
+        <span className="text-micro uppercase tracking-[0.24em] text-muted-foreground">{label}</span>
         <span className="font-mono text-[12px] text-foreground">{value}</span>
     </Stack>
 );
@@ -310,8 +310,8 @@ const MetricCell = ({ label, value }: { label: string; value: string }): ReactEl
 const BandMeters = ({ state }: { state: BacteriaState }): ReactElement => (
     <Stack gap={2} className="bacteria-window px-3 py-2">
         <Row justify="between" gap={2}>
-            <span className="text-micro uppercase tracking-[0.24em] text-muted-foreground/55">Band energy</span>
-            <span className="text-micro text-muted-foreground/45">{state.patch.bandCount} active lanes</span>
+            <span className="text-micro uppercase tracking-[0.24em] text-muted-foreground">Band energy</span>
+            <span className="text-micro text-muted-foreground">{state.patch.bandCount} active lanes</span>
         </Row>
         <Row gap={2}>
             {Array.from({ length: state.patch.bandCount }, (_, index) => {
@@ -324,7 +324,7 @@ const BandMeters = ({ state }: { state: BacteriaState }): ReactElement => (
                                 style={{ width: `${Math.max(6, level * 100)}%` }}
                             />
                         </div>
-                        <Row justify="between" gap={2} className="text-micro text-muted-foreground/45">
+                        <Row justify="between" gap={2} className="text-micro text-muted-foreground">
                             <span>B{index + 1}</span>
                             <span className="font-mono">{formatValue(state.bandLevels[index] ?? -100, 'dB')}</span>
                         </Row>
@@ -402,10 +402,8 @@ const PresetRail = ({
 
             <Stack grow className="bacteria-window min-h-0 overflow-hidden">
                 <Row justify="between" gap={2} className="border-b border-white/6 px-3 py-2">
-                    <span className="text-micro uppercase tracking-[0.24em] text-muted-foreground/55">
-                        Preset drawer
-                    </span>
-                    <span className="text-micro text-muted-foreground/45">{state.patch.name}</span>
+                    <span className="text-micro uppercase tracking-[0.24em] text-muted-foreground">Preset drawer</span>
+                    <span className="text-micro text-muted-foreground">{state.patch.name}</span>
                 </Row>
                 <Stack grow gap={1} className="min-h-0 overflow-y-auto px-2 py-2 [&>*]:shrink-0">
                     {filteredPresets.length > 0 ? (
@@ -424,7 +422,7 @@ const PresetRail = ({
                                     onClick={() => loadBacteriaPatchWithAudio(deviceId, preset.patch)}
                                 >
                                     <span className="text-compact font-medium text-foreground">{preset.name}</span>
-                                    <span className="text-micro uppercase tracking-[0.22em] text-muted-foreground/50">
+                                    <span className="text-micro uppercase tracking-[0.22em] text-muted-foreground">
                                         {preset.category}
                                     </span>
                                 </Stack>
@@ -472,21 +470,31 @@ const PlayHero = ({ deviceId, state }: { deviceId: string; state: BacteriaState 
                 />
             </Stack>
             <Grid cols={4} gap={2}>
-                {state.patch.snapshots.slice(0, 4).map((snapshot, index) => (
-                    <Stack key={snapshot.id} gap={1} className="bacteria-window px-3 py-2">
-                        <span className="text-micro uppercase tracking-[0.24em] text-muted-foreground/55">
-                            Snap {snapshot.id}
-                        </span>
-                        <span className="truncate text-compact text-foreground">{snapshot.name}</span>
-                        <BChip
-                            active={Object.keys(snapshot.paramValues).length > 0}
-                            aria-label={`Capture snapshot ${snapshot.id}`}
-                            onClick={() => captureBacteriaSnapshot(deviceId, index)}
-                        >
-                            Capture
-                        </BChip>
-                    </Stack>
-                ))}
+                {state.patch.snapshots.slice(0, 4).map((snapshot, index) => {
+                    const populated = Object.keys(snapshot.paramValues).length > 0;
+                    return (
+                        <Stack key={snapshot.id} gap={1} className="bacteria-window px-3 py-2">
+                            <span className="text-micro uppercase tracking-[0.24em] text-muted-foreground">
+                                Snap {snapshot.id}
+                            </span>
+                            <span className="truncate text-compact text-foreground">{snapshot.name}</span>
+                            <BChip
+                                className={
+                                    populated
+                                        ? 'border-[var(--color-accent-mint)]/60 bg-[var(--color-accent-mint)]/12 text-[var(--color-accent-mint)]'
+                                        : undefined
+                                }
+                                aria-label={`Capture snapshot ${snapshot.id}`}
+                                aria-description={
+                                    populated ? 'Populated; capturing overwrites the stored snapshot' : undefined
+                                }
+                                onClick={() => captureBacteriaSnapshot(deviceId, index)}
+                            >
+                                Capture
+                            </BChip>
+                        </Stack>
+                    );
+                })}
             </Grid>
         </Stack>
 
@@ -682,9 +690,7 @@ const ShapeHero = ({ deviceId, state }: { deviceId: string; state: BacteriaState
             <Stack grow gap={3} className="bacteria-window min-h-0 p-3">
                 <Row justify="between" gap={3}>
                     <Stack gap={1}>
-                        <div className="text-micro uppercase tracking-[0.24em] text-muted-foreground/55">
-                            Band broth
-                        </div>
+                        <div className="text-micro uppercase tracking-[0.24em] text-muted-foreground">Band broth</div>
                         <div className="text-[12px] font-medium text-foreground">Zoomed strips</div>
                     </Stack>
                     <DawPluginLed tone="mint">{state.patch.globalRouting.replace('-', ' ')}</DawPluginLed>
@@ -749,7 +755,7 @@ const BuildHero = ({ deviceId, state }: { deviceId: string; state: BacteriaState
         <Stack grow gap={3} className="bacteria-window min-h-0 p-3">
             <Row justify="between" gap={2}>
                 <Stack gap={1}>
-                    <div className="text-micro uppercase tracking-[0.24em] text-muted-foreground/55">Band cards</div>
+                    <div className="text-micro uppercase tracking-[0.24em] text-muted-foreground">Band cards</div>
                     <div className="text-[12px] font-medium text-foreground">The organism split open</div>
                 </Stack>
                 <DawPluginLed tone="mint">{state.patch.crossoverMode}</DawPluginLed>
@@ -983,19 +989,6 @@ function renderShapeControls(deviceId: string, state: BacteriaState): ReactEleme
                                     max={1}
                                     step={0.01}
                                     def={0.5}
-                                    onBandChange={setBandParam}
-                                />
-                            ) : null}
-                            {band.distortionMode === 'breakdown' ? (
-                                <K
-                                    v={band.breakdownDepth}
-                                    k="breakdownDepth"
-                                    label="Depth"
-                                    min={0}
-                                    max={4}
-                                    step={0.1}
-                                    def={1}
-                                    unit="st"
                                     onBandChange={setBandParam}
                                 />
                             ) : null}
@@ -1874,7 +1867,7 @@ export const BacteriaPanel = ({ deviceId }: { deviceId: string }): ReactElement 
             <Stack gap={2.5} grow className="min-w-0">
                 <Row as="header" gap={2.5} className="bacteria-window shrink-0 flex-wrap px-3 py-2">
                     <Stack gap={1}>
-                        <div className="text-micro uppercase tracking-[0.28em] text-[var(--color-accent-mint-bright)]/70">
+                        <div className="text-micro uppercase tracking-[0.28em] text-[var(--color-accent-mint)]">
                             {activeLevel.eyebrow}
                         </div>
                         <div className="text-[13px] font-semibold text-foreground">Bacteria</div>
@@ -1914,7 +1907,7 @@ export const BacteriaPanel = ({ deviceId }: { deviceId: string }): ReactElement 
                     <Row gap={2} className="ml-auto">
                         <DawPluginLed tone="mint">{moduleMeta.label}</DawPluginLed>
                         <Stack align="end" className="text-right">
-                            <div className="text-micro uppercase tracking-[0.22em] text-muted-foreground/55">
+                            <div className="text-micro uppercase tracking-[0.22em] text-muted-foreground">
                                 In {formatValue(state.inputDb, 'dB')} / Out {formatValue(state.outputDb, 'dB')}
                             </div>
                             <div className="text-dense text-muted-foreground">

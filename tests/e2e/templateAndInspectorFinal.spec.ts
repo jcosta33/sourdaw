@@ -1,5 +1,4 @@
-import { expect, test } from '@playwright/test';
-
+import { expect, test } from './e2eTest';
 import { launch_new_project, setupWorkspace } from './e2eUtils';
 
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
@@ -22,7 +21,7 @@ test.describe('Template Filtering and Loading', () => {
         await expect(page.getByRole('button', { name: 'EDM' })).toBeVisible();
         await expect(page.getByRole('button', { name: 'Cinematic' })).toBeVisible();
 
-        await page.getByRole('button', { name: 'Film', exact: true }).click();
+        await page.getByRole('radio', { name: 'Film', exact: true }).click();
 
         await expect(page.getByRole('button', { name: 'Cinematic' })).toBeVisible();
         await expect(page.getByRole('button', { name: 'EDM' })).toBeHidden();
@@ -78,6 +77,25 @@ test.describe('Device Panel — Show/Hide', () => {
         // transport toolbar this case used to assert is visible either way.
         await expect(back_to_track).toBeVisible();
         await expect(inspector.getByRole('heading', { name: 'Synth' })).toBeVisible();
+
+        const header = inspector.getByTestId('device-inspector-header');
+        const viewport = inspector.locator('[data-slot="scroll-area-viewport"]');
+        await expect
+            .poll(() => viewport.evaluate((element) => element.scrollHeight - element.clientHeight))
+            .toBeGreaterThan(0);
+        await viewport.evaluate((element) => {
+            element.scrollTop = element.scrollHeight;
+        });
+        await expect
+            .poll(async () => {
+                const headerBox = await header.boundingBox();
+                const viewportBox = await viewport.boundingBox();
+                if (!headerBox || !viewportBox) {
+                    throw new Error('Expected the device header and inspector viewport');
+                }
+                return Math.abs(headerBox.y - viewportBox.y);
+            })
+            .toBeLessThanOrEqual(1);
     });
 });
 

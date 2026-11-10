@@ -116,8 +116,38 @@ function createMeasurementAdmitter(runId: string): MeasurementAdmitter {
     };
 }
 
+function createStemPreparationAdmitter(runId: string) {
+    return ({
+        analysisCount,
+        downloadBytes,
+        storageBytes,
+    }: {
+        analysisCount: number;
+        downloadBytes: number;
+        storageBytes: number;
+    }): boolean => {
+        const estimates = [
+            ['localAnalysis', analysisCount],
+            ['downloadBytes', downloadBytes],
+            ['storageBytes', storageBytes],
+        ] as const;
+        return (
+            agentRunLifecycle.reserveBudgetBatch({
+                runId,
+                attempts: estimates.map(([category, estimate]) => ({
+                    attemptId: `stem-preparation:${category}`,
+                    category,
+                    estimate,
+                    provenance: 'versioned-estimate',
+                })),
+            }).status === 'reserved'
+        );
+    };
+}
+
 export const agentWorkBudget = {
     admitMeasurement: createMeasurementAdmitter,
+    admitStemPreparation: createStemPreparationAdmitter,
     reconcileCommandWork: reconcileAgentCommandWork,
     reserveCommandWork: reserveAgentCommandWork,
 } as const;

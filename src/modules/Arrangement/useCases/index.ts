@@ -8,6 +8,7 @@ export { addTrackWithDeferredAddedEvent } from './addTrackWithDeferredAddedEvent
 export { setArrangementEventBus } from './arrangementEventBus';
 export { createTrack } from './createTrack';
 export { normalizeTrack } from './normalizeTrack';
+export { nextDefaultTrackName } from './nextDefaultTrackName';
 export { removeTrack } from './removeTrack';
 export { renameTrack } from './renameTrack';
 export { reserveNextTrackColorForCommand } from './reserveNextTrackColorForCommand';
@@ -49,6 +50,8 @@ export { rearmInputMonitoring } from './rearmInputMonitoring';
 export { exportMidiClip } from './exportMidiClip';
 export { importMidiFile } from './importMidiFile';
 export { importAudioFile } from './importAudioFile';
+export { collaborationAssetTransfer } from './collaborationAssetTransfer';
+export { getLegacyTrimInverseReplayFailure } from './getLegacyTrimInverseReplayFailure';
 
 export { setTrackGain } from './setTrackGainPan/setTrackGain';
 export { clampTrackGain } from './setTrackGainPan/clampTrackGain';
@@ -63,10 +66,13 @@ export { getNextAppActionClipId } from './clip/getNextAppActionClipId';
 export { removeClip } from './clip/removeClip';
 export { duplicateClip } from './clip/duplicateClip';
 export { duplicateClipToNextBar } from './clip/duplicateClipToNextBar';
+export { prepareDuplicateClipTargetId } from './clip/prepareDuplicateClipTargetId';
 export { acceptGhostClip } from './clip/acceptGhostClip';
 export { dismissGhostClip } from './clip/dismissGhostClip';
 export { setClipAudioAssetStager } from './clip/setClipAudioAssetStager';
 export { stageClipAudioAsset } from './clip/stageClipAudioAsset';
+export { compileNewAudioTrackAction } from './compileNewAudioTrackAction';
+export { retainedCreation } from './creationBatch';
 export { updateClip } from './updateClip';
 export { replaceClipAudioBuffer } from './replaceClipAudioBuffer';
 export { relinkClipAudioSource } from './relinkClipAudioSource';
@@ -90,6 +96,7 @@ export { getGrooveOffsetAtBeat } from './groove/applyGrooveTemplate';
 export { deleteTimeRange } from './clipEditing/deleteTimeRange';
 export { glueClips } from './clipEditing/glueClips';
 export { getGlueEligibleClipPairs } from './clipEditing/getGlueEligibleClipPairs';
+export { getClipEndLimit } from './clipEditing/getClipEndLimit';
 export { slipClipContent } from './clipEditing/slipClipContent';
 
 export { setClipLoop } from './clipLoop/setClipLoop';
@@ -104,12 +111,17 @@ export { hydrateClipWarpStates } from './warp/hydrateClipWarpStates';
 export { removeGainEnvelopePoint } from './clipGainEnvelope/removeGainEnvelopePoint';
 export { resetClipGainEnvelope } from './clipGainEnvelope/resetClipGainEnvelope';
 export { toggleClipGainEnvelope } from './clipGainEnvelope/toggleClipGainEnvelope';
+export { collectAudioBufferIdFields } from './collectAudioBufferIdFields';
 export { isAudioBufferReferencedByUndoHistory } from './isAudioBufferReferencedByUndoHistory';
+export { readUndoEntriesAudioBufferIds } from './readUndoEntriesAudioBufferIds';
+export { readUndoHistoryAudioBufferIds } from './readUndoHistoryAudioBufferIds';
 
 // ── Clipboard ─────────────────────────────────────────────────────────────────
 
 export { copySelectedClip } from './clipboard/copySelectedClip';
 export { copySelectedNotes } from './clipboard/copySelectedNotes';
+export { copyPianoRollNotes } from './clipboard/copyPianoRollNotes';
+export { getCopiedPianoRollNotes } from './clipboard/getCopiedPianoRollNotes';
 export { cutSelectedClip } from './clipboard/cutSelectedClip';
 export { pasteClip } from './clipboard/pasteClip';
 export { pasteNotes } from './clipboard/pasteNotes';
@@ -123,6 +135,11 @@ export { toggleClipInSelection } from './clipSelection/toggleClipInSelection';
 export { selectAllClips } from './clipSelection/selectAllClips';
 export { clearClipSelection } from './clipSelection/clearClipSelection';
 export { setMarqueeSelection } from './clipSelection/setMarqueeSelection';
+
+// ── Device Selection ──────────────────────────────────────────────────────────
+
+export { selectDevice } from './deviceSelection/selectDevice';
+export { clearDeviceSelection } from './deviceSelection/clearDeviceSelection';
 
 // ── Timeline Interactions ─────────────────────────────────────────────────────
 
@@ -140,6 +157,9 @@ export { selectTake } from './comping/selectTake';
 export { setCompRegion } from './comping/setCompRegion';
 export { removeCompRegion } from './comping/removeCompRegion';
 export { resolveClipsWithComping } from './resolveComping';
+export { prepareTempoAudioSources } from './prepareTempoAudioSources';
+export { applyTempoAudioSources } from './applyTempoAudioSources';
+export { canApplyTempoAudioSources } from './canApplyTempoAudioSources';
 
 export { createCompGroup } from './groupComping/compGroupOperations/createCompGroup';
 
@@ -155,6 +175,8 @@ export { getLayerCount } from './adjustmentLayer/getLayerCount';
 // ── Device ────────────────────────────────────────────────────────────────────
 
 export { executeAddDeviceAction } from './device/executeAddDeviceAction';
+export { isExternalPluginDeviceType } from './device/externalPluginDeviceType';
+export { getAddedDeviceParameterValues } from './device/getAddedDeviceParameterValues';
 export { executeRemoveDeviceAction } from './device/executeRemoveDeviceAction';
 export { addMidiFx } from './device/addMidiFx';
 export { removeMidiFx } from './device/removeMidiFx';
@@ -162,9 +184,11 @@ export { bypassMidiFx } from './device/bypassMidiFx';
 export { updateMidiFxParam } from './device/updateMidiFxParam';
 export { bypassDevice } from './device/bypassDevice';
 export { compileReorderDevicesAction } from './device/compileReorderDevicesAction';
-export { setSend } from './device/sendManagement/setSend';
-export { removeSend } from './device/sendManagement/removeSend';
-export { toggleSendPreFader } from './device/sendManagement/toggleSendPreFader';
+export { compileSendLevelAction } from './device/sendManagement/compileSendLevelAction';
+export { compileSendPreFaderAction } from './device/sendManagement/compileSendPreFaderAction';
+export { listSendDestinations } from './device/sendManagement/listSendDestinations';
+export { commitSendEdit } from './device/sendManagement/commitSendEdit';
+export { commitSendLevel } from './device/sendManagement/commitSendLevel';
 export { setDeviceParameter } from './device/setDeviceParameter/setDeviceParameter';
 export { persistDevicePatch } from './device/setDeviceParameter/persistDevicePatch';
 
@@ -205,9 +229,22 @@ export { armTrack } from './recording/armTrack';
 export { commitRecording } from './recording/commitRecording';
 export { discardRecording } from './recording/discardRecording';
 export { stageRecordingTake } from './recording/stageRecordingTake';
+export { observeRecordingPassEntry } from './recording/observeRecordingPassEntry';
+export { admitRecordingCaptureClock } from './recording/admitRecordingCaptureClock';
+export { prepareRecoveredRecording } from './recording/prepareRecoveredRecording';
 export { startRecording } from './recording/startRecording';
 export { stopRecording } from './recording/stopRecording';
 export { takeOwnsRecordingRoot } from './recording/takeOwnsRecordingRoot';
+export { recordingMidiSourceBeatAt } from './recording/recordingMidiSourceBeatAt';
+export { admitRecordingMidiNoteOn } from './recording/admitRecordingMidiNoteOn';
+export { isRecordingMidiInputExcluded } from './recording/isRecordingMidiInputExcluded';
+export { captureRecordingCommitRetirement } from './recording/captureRecordingCommitRetirement';
+export { admitRecordingMidiExpression } from './recording/admitRecordingMidiExpression';
+export { admitRecordingMidiNoteOff } from './recording/admitRecordingMidiNoteOff';
+export { findOpenRecordingMidiAdmission } from './recording/findOpenRecordingMidiAdmission';
+export { findOpenRecordingMidiMemberAdmission } from './recording/findOpenRecordingMidiMemberAdmission';
+export { retireRecordingMidiAdmission } from './recording/retireRecordingMidiAdmission';
+export { getRecordingMidiAdmission } from './recording/getRecordingMidiAdmission';
 
 export { captureArrangementToScratchPad } from './scratchPad/captureCommit/captureArrangementToScratchPad';
 export { commitScratchPadToArrangement } from './scratchPad/captureCommit/commitScratchPadToArrangement';
@@ -225,7 +262,8 @@ export { groupTracks } from './toggleTrackState/groupTracks';
 export { muteTrack } from './toggleTrackState/muteTrack';
 export { selectTrack } from './toggleTrackState/selectTrack';
 export { setAutomationMode } from './toggleTrackState/setAutomationMode';
-export { setTrackOutput } from './toggleTrackState/setTrackOutput';
+export { commitTrackOutput } from './toggleTrackState/commitTrackOutput';
+export { listTrackOutputDestinations } from './toggleTrackState/listTrackOutputDestinations';
 export { soloTrack } from './toggleTrackState/soloTrack';
 export { soloTrackExclusive } from './toggleTrackState/soloTrackExclusive';
 export { toggleChordTrackFollow } from './toggleTrackState/toggleChordTrackFollow';
@@ -233,9 +271,26 @@ export { toggleInputMonitoring } from './toggleTrackState/toggleInputMonitoring'
 export { toggleSoloSafe } from './toggleTrackState/toggleSoloSafe';
 export { toggleVariationLanes } from './toggleTrackState/toggleVariationLanes';
 
+// ── Solo Mode ─────────────────────────────────────────────────────────────────
+
+export { setSoloMode } from './soloMode/setSoloMode';
+export { syncSoloModePreference } from './soloMode/syncSoloModePreference';
+
+// ── Timeline Editing ──────────────────────────────────────────────────────────
+
+export { toggleRippleEditing } from './timelineEditing/toggleRippleEditing';
+export { setSnapValue } from './timelineEditing/setSnapValue';
+export { setAutomationSubLanes } from './timelineEditing/setAutomationSubLanes';
+
 // ── Track View / Zoom ─────────────────────────────────────────────────────────
 
 export { zoomTracksVertical } from './trackZoom';
+export { initTimelineViewReconciliation } from './initTimelineViewReconciliation';
+export { detectVariationLaneEnabling } from './detectVariationLaneEnabling';
+export { hasVariationLanes } from './hasVariationLanes';
+export { getAlternativeClips } from './getAlternativeClips';
+export { getHeldClips } from './getHeldClips';
+export { getTimelineSurfaceMinimumHeight } from './getTimelineSurfaceMinimumHeight';
 export { scrollTimelineViewportFromWheel } from './scrollTimelineViewportFromWheel';
 export { scrollTimelineViewportHorizontallyFromWheel } from './scrollTimelineViewportHorizontallyFromWheel';
 export { setTimelineHorizontalScrollbarScrollX } from './setTimelineHorizontalScrollbarScrollX';
@@ -270,7 +325,10 @@ export { getMarkerState } from './timelineQueries';
 export { detectAndApplySongStructure } from './detectAndApplySongStructure';
 export { detectSongStructure } from './detectSongStructure';
 export { getFactoryPresets } from './soundPresetLibrary';
+// Published because the composition root registers the factory presets device modules ship.
+export { deviceFactoryPresetSources } from './deviceFactoryPresetSources';
 export { stripSilence } from './stripSilence';
+export { readTransientQuantizeOutcome } from './readTransientQuantizeOutcome';
 export { getBuiltinPlugins } from './getBuiltinPlugins';
 export { getPlatformPlugins } from './getPlatformPlugins';
 export { getPluginById } from './getPluginById';
@@ -288,3 +346,5 @@ export { setDeviceState } from './device/setDeviceState';
 export { getSongStructureHandlers } from './getSongStructureHandlers';
 export { initStalenessDetection } from './freezeBounce/initStalenessDetection';
 export { isImportedStemSetApplied } from './stemImport/isImportedStemSetApplied';
+
+export { hasAutomaticRecordingMidiCapture } from './recording/hasAutomaticRecordingMidiCapture';

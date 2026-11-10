@@ -6,7 +6,7 @@ import { MixerLevelReadout } from '../MixerLevelReadout';
 type SchedulerTick = (currentTime: DOMHighResTimeStamp, deltaMs: number) => void;
 
 const mocks = vi.hoisted(() => ({
-    getMasterPeakLevel: vi.fn<() => number | null>(() => 0),
+    getMasterPeakLevel: vi.fn<(frameTime?: number) => number | null>(() => 0),
     getTrackPeakLevel: vi.fn(() => 0),
     register: vi.fn<(id: string, callback: (currentTime: DOMHighResTimeStamp, deltaMs: number) => void) => void>(),
     unregister: vi.fn<(id: string) => void>(),
@@ -79,7 +79,7 @@ describe('MixerLevelReadout', () => {
         render(<MixerLevelReadout trackId="track-1" control={null} value={null} />);
 
         mocks.scheduledTick?.(0, 16);
-        expect(mocks.getTrackPeakLevel).toHaveBeenCalledWith('track-1');
+        expect(mocks.getTrackPeakLevel).toHaveBeenCalledWith('track-1', 0);
         expect(mocks.getMasterPeakLevel).not.toHaveBeenCalled();
         expect(getPeakReadout()).toHaveTextContent('0.0');
 
@@ -94,7 +94,7 @@ describe('MixerLevelReadout', () => {
         render(<MixerLevelReadout trackId={null} control={null} value={null} />);
 
         mocks.scheduledTick?.(0, 16);
-        expect(mocks.getMasterPeakLevel).toHaveBeenCalledTimes(1);
+        expect(mocks.getMasterPeakLevel).toHaveBeenCalledExactlyOnceWith(0);
         expect(mocks.getTrackPeakLevel).not.toHaveBeenCalled();
         expect(getPeakReadout()).toHaveTextContent('0.0');
     });
@@ -186,6 +186,21 @@ describe('MixerLevelReadout', () => {
         expect(readout).toHaveTextContent('-∞');
         expect(readout).not.toHaveClass('text-state-error');
         expect(readout).toHaveClass('text-muted-foreground/80');
+    });
+
+    it('reads an infinite peak as "+∞", flags it as an over, and clicking resets it', () => {
+        mocks.getTrackPeakLevel.mockReturnValue(Number.POSITIVE_INFINITY);
+        render(<MixerLevelReadout trackId="track-1" control={null} value={null} />);
+
+        mocks.scheduledTick?.(0, 16);
+        const readout = getPeakReadout();
+        expect(readout).toHaveTextContent('+∞');
+        expect(readout).toHaveClass('text-state-error');
+
+        mocks.getTrackPeakLevel.mockReturnValue(0.5);
+        fireEvent.click(readout);
+        mocks.scheduledTick?.(16, 16);
+        expect(readout).toHaveTextContent('-6.0');
     });
 
     it('applies clusterClassName to the cluster and valueSize to the value text', () => {

@@ -11,8 +11,10 @@ import { useStoreSelector } from '#/infra/store/useStoreSelector';
 import { clipSelectionStore, defaultClipSelectionState } from '#/modules/Arrangement/stores';
 import { selectClip } from '#/modules/Arrangement/useCases';
 import { midiStore, type MidiStoreState } from '#/modules/MIDI/stores';
+import { formatMusicalPosition } from '#/modules/Transport/useCases';
 import { setWorkspaceMode } from '#/modules/WorkspaceShell/useCases';
 
+import { useMeterInput } from '../hooks/useMeterInput';
 import { useTracks } from '../hooks/useTracks';
 
 import { ClipEditorTray } from './ClipEditorTray';
@@ -33,6 +35,7 @@ export const ClipView = (): ReactElement => {
     const [showAutomationTray, setShowAutomationTray] = useState(true);
 
     const clipSelection = useStore(clipSelectionStore, defaultClipSelectionState);
+    const meter = useMeterInput();
 
     // Hooks must precede the no-track early return; the selected-clip
     // derivation is pure, so it moves up with them.
@@ -40,6 +43,8 @@ export const ClipView = (): ReactElement => {
         selectedTrack?.clips.find((context) => context.id === clipSelection.selectedClipId) ??
         selectedTrack?.clips[0] ??
         null;
+
+    const startPosition = selectedClip ? formatMusicalPosition({ ...meter, beat: selectedClip.startBeat }) : '';
 
     // Live note count for the selected MIDI clip — the dock's only DOM
     // readout of clip content, so recording and editing flows are observable
@@ -74,7 +79,7 @@ export const ClipView = (): ReactElement => {
             return undefined;
         }
         const midiClipIds = ids.filter((id) =>
-            tracks.some((time) => time.kind === 'midi' && time.clips.some((context) => context.id === id))
+            tracks.some((time) => time.clips.some((context) => context.id === id && context.type === 'midi'))
         );
         return midiClipIds.length > 1 ? midiClipIds : undefined;
     };
@@ -93,7 +98,7 @@ export const ClipView = (): ReactElement => {
         }
     };
     const renderAudioEditModeToggle = (): ReactElement | null => {
-        if (selectedTrack.kind !== 'audio' || !selectedClip) {
+        if (selectedClip?.type !== 'audio') {
             return null;
         }
         return (
@@ -118,7 +123,7 @@ export const ClipView = (): ReactElement => {
         );
     };
     const renderEditorBody = (): ReactElement => {
-        if (selectedTrack.kind === 'midi' && selectedClip) {
+        if (selectedClip?.type === 'midi') {
             return (
                 <PianoRoll
                     clipId={selectedClip.id}
@@ -159,9 +164,9 @@ export const ClipView = (): ReactElement => {
                     <span
                         className="text-[10px] text-muted-foreground/60"
                         data-testid="selected-clip-start-beat"
-                        aria-label={`Selected clip starts at beat ${selectedClip.startBeat}`}
+                        aria-label={`Selected clip starts at bar ${startPosition}`}
                     >
-                        @ {selectedClip.startBeat} beats
+                        @ {startPosition}
                     </span>
                 ) : null}
                 <span
@@ -196,22 +201,24 @@ export const ClipView = (): ReactElement => {
                     </Row>
                 ) : null}
                 {renderAudioEditModeToggle()}
-                <Button
-                    variant={showAutomationTray ? 'secondary' : 'ghost'}
-                    size="xs"
-                    className="ml-auto h-5 px-2 text-[10px]"
-                    onClick={() => setShowAutomationTray((prev) => !prev)}
-                    aria-label="Toggle automation lane"
-                    aria-pressed={showAutomationTray}
-                    data-testid="toggle-automation-tray-button"
-                >
-                    Automation
-                </Button>
+                {selectedClip?.type === 'midi' ? (
+                    <Button
+                        variant={showAutomationTray ? 'secondary' : 'ghost'}
+                        size="xs"
+                        className="ml-auto h-5 px-2 text-[10px]"
+                        onClick={() => setShowAutomationTray((prev) => !prev)}
+                        aria-label="Toggle automation lane"
+                        aria-pressed={showAutomationTray}
+                        data-testid="toggle-automation-tray-button"
+                    >
+                        Automation
+                    </Button>
+                ) : null}
             </DawControlStrip>
             <Row align="stretch" grow className="min-h-[102px] overflow-hidden" data-testid="clip-editor-body-row">
                 {renderEditorBody()}
             </Row>
-            {showAutomationTray ? (
+            {selectedClip?.type === 'midi' && showAutomationTray ? (
                 <ClipEditorTray className="h-28" data-testid="clip-editor-tray">
                     <AutomationLane
                         clipId={selectedClip?.id ?? null}

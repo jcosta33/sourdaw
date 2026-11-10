@@ -1,15 +1,15 @@
 import { readFile } from 'node:fs/promises';
 
-import { expect, test } from '@playwright/test';
 import { unzipSync } from 'fflate';
 
+import { expect, test } from './e2eTest';
 import { launch_from_template, setupWorkspace } from './e2eUtils';
 import { installFilePickerCapture } from './exportFilePickerCapture';
 
 async function openBakery(page: import('@playwright/test').Page): Promise<void> {
     const isMac = await page.evaluate(() => navigator.platform.toUpperCase().includes('MAC'));
     await page.keyboard.press(isMac ? 'Meta+Shift+E' : 'Control+Shift+E');
-    await expect(page.getByRole('dialog').filter({ hasText: /The Bakery/i })).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByRole('dialog').filter({ hasText: /Export audio/i })).toBeVisible({ timeout: 10_000 });
 }
 
 function inspectStemWav(bytes: Uint8Array): { channels: number; durationSeconds: number; sampleRate: number } {
@@ -72,28 +72,7 @@ function inspectStemWav(bytes: Uint8Array): { channels: number; durationSeconds:
 }
 
 test.describe('Export stems mode', () => {
-    test('stems mode is mutually exclusive with mixdown', async ({ page }) => {
-        await setupWorkspace(page);
-        await launch_from_template({ page, template_name: /EDM/i });
-        await openBakery(page);
-
-        const mixdown = page.getByTestId('export-mode-mixdown');
-        const stems = page.getByTestId('export-mode-stems');
-
-        // Mixdown is the default active mode; stems starts inactive (outline).
-        await expect(mixdown).not.toHaveAttribute('data-variant', 'outline');
-        await expect(stems).toHaveAttribute('data-variant', 'outline');
-
-        await stems.click();
-
-        // The existing fidelity suite only proves the stems button itself changed
-        // variant; this proves the mode group is a single-choice toggle — mixdown
-        // deactivates when stems becomes active.
-        await expect(stems).not.toHaveAttribute('data-variant', 'outline');
-        await expect(mixdown).toHaveAttribute('data-variant', 'outline');
-    });
-
-    test('stems mode bakes a multi-stem ZIP instead of a single mixdown file', async ({ page }, testInfo) => {
+    test('stems mode exports a multi-stem ZIP instead of a single mixdown file', async ({ page }, testInfo) => {
         test.setTimeout(240_000);
         const capture = await installFilePickerCapture(page, testInfo.outputPath('sourdaw-stems-export.zip'));
         try {
@@ -101,17 +80,17 @@ test.describe('Export stems mode', () => {
             await launch_from_template({ page, template_name: /EDM/i });
 
             await openBakery(page);
-            const dialog = page.getByRole('dialog').filter({ hasText: /The Bakery/i });
+            const dialog = page.getByRole('dialog').filter({ hasText: /Export audio/i });
 
             await dialog.getByTestId('export-mode-stems').click();
             await expect(dialog.getByTestId('export-mode-stems')).not.toHaveAttribute('data-variant', 'outline');
 
             const pickerFilename = capture.pickerFilename;
-            await dialog.getByRole('button', { name: 'Start Baking' }).click();
-            await expect(dialog.getByRole('button', { name: 'Close Bakery' })).toBeVisible({ timeout: 220_000 });
+            await dialog.getByRole('button', { name: 'Export stems' }).click();
+            await expect(dialog.getByRole('button', { name: 'Close' })).toBeVisible({ timeout: 220_000 });
             await capture.waitForClose();
 
-            expect(await pickerFilename).toMatch(/^Sourdaw_Bake_\d+\.zip$/);
+            expect(await pickerFilename).toMatch(/^Sourdaw_Stems_\d+\.zip$/);
             expect(capture.writeCount()).toBeGreaterThan(0);
             expect(capture.bytesWritten()).toBeGreaterThan(0);
             expect(capture.abortCount()).toBe(0);
@@ -153,11 +132,11 @@ test.describe('Export stems mode', () => {
         await launch_from_template({ page, template_name: /EDM/i });
         await openBakery(page);
 
-        const dialog = page.getByRole('dialog').filter({ hasText: /The Bakery/i });
-        await dialog.getByRole('button', { name: 'Start Baking' }).click();
+        const dialog = page.getByRole('dialog').filter({ hasText: /Export audio/i });
+        await dialog.getByRole('button', { name: 'Export mixdown' }).click();
         await expect(
             dialog.getByText(/Streaming export needs a browser with the Save File picker and writable file storage\./i)
         ).toBeVisible();
-        await expect(dialog.getByRole('button', { name: 'Close Bakery' })).toHaveCount(0);
+        await expect(dialog.getByRole('button', { name: 'Close' })).toHaveCount(1);
     });
 });

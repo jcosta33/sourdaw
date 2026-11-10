@@ -25,6 +25,7 @@ export function registerProductionCommandHandlers(
                 role: 'forward' as const,
                 validateArguments: registration.runtimeSchema.validate,
                 validateEntry: registration.sessionEntryValidator,
+                restoreEntry: registration.sessionEntryRestorer,
             })),
             ...getInternalUndoSessionReplayContracts(),
         ],

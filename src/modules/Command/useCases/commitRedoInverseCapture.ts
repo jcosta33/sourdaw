@@ -4,6 +4,8 @@ import { type AppAction } from '#/utils/handlerContract';
 import { type ActionUndoEntry } from '../models/UndoEntry';
 import { undoStore } from '../stores/undoStore';
 
+import { findPendingRedoEntry } from './findPendingRedoEntry';
+
 // Project owners supply this read capability; Command must not import their
 // document/runtime composition back into its execution kernel.
 type PublicationAuthority = {
@@ -18,8 +20,10 @@ type Publication = {
 };
 
 type StagedCapture = {
+    action: AppAction;
     entry: ActionUndoEntry;
     inverseAction: AppAction;
+    recordedInverseAction: AppAction;
     owner: object;
     identity: string;
     before: string;
@@ -39,13 +43,6 @@ type CaptureLifecycle =
 
 // Execution-local intents only. They never enter the document or session mirror.
 const stagedCaptures = new WeakMap<AppAction, StagedCapture>();
-
-function findEntry(replayAction: AppAction): ActionUndoEntry | undefined {
-    const entry = undoStore.value?.future.find(
-        (candidate) => candidate.kind === 'action' && (candidate.redoAction ?? candidate.action) === replayAction
-    );
-    return entry?.kind === 'action' ? entry : undefined;
-}
 
 function publicationIsCurrent(publication: Publication, actions: readonly AppAction[]): boolean {
     return (
@@ -111,7 +108,8 @@ function settleStagedCaptures(actions: readonly AppAction[], captures: readonly 
             (capture) =>
                 capture.publication === publication &&
                 undoStore.value?.future.includes(capture.entry) === true &&
-                capture.entry.inverseAction?.type === capture.inverseAction.type
+                capture.entry.inverseAction === capture.recordedInverseAction &&
+                findPendingRedoEntry(capture.action) === capture.entry
         )
     ) {
         return;
@@ -127,7 +125,7 @@ export function commitRedoInverseCapture(replayAction: AppAction, inverseAction:
 export function commitRedoInverseCapture(lifecycle: CaptureLifecycle): void;
 export function commitRedoInverseCapture(input: AppAction | CaptureLifecycle, inverseAction?: AppAction): void {
     if (!('phase' in input)) {
-        const entry = findEntry(input);
+        const entry = findPendingRedoEntry(input);
         if (entry && inverseAction && entry.inverseAction?.type === inverseAction.type) {
             entry.inverseAction = inverseAction;
         }
@@ -135,14 +133,16 @@ export function commitRedoInverseCapture(input: AppAction | CaptureLifecycle, in
     }
     if (input.phase === 'stage') {
         stagedCaptures.delete(input.action);
-        const entry = findEntry(input.action);
+        const entry = findPendingRedoEntry(input.action);
         const owner = getCurrentAutomergeStorageMutationOwner();
         if (!entry || !owner || entry.inverseAction?.type !== input.inverseAction.type) {
             return;
         }
         stagedCaptures.set(input.action, {
+            action: input.action,
             entry,
             inverseAction: input.inverseAction,
+            recordedInverseAction: entry.inverseAction,
             owner,
             identity: input.publicationAuthority.captureIdentity(),
             before: input.publicationAuthority.captureWitness(),

@@ -60,19 +60,35 @@ vi.mock('#/modules/WorkspaceShell/useCases', () => ({
     setWorkspaceMode: vi.fn(),
 }));
 
-vi.mock('#/modules/Arrangement/useCases', () => ({
+vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Arrangement/useCases')>()),
     selectClip: vi.fn(),
 }));
 
-vi.mock('#/modules/Arrangement/stores', () => ({
+vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Arrangement/stores')>()),
     clipSelectionStore: clipSelectionMocks.store,
     defaultClipSelectionState: { selectedClipId: null, selectedClipIds: [], marqueeSelection: null },
+}));
+
+const meterMocks = vi.hoisted(() => ({
+    transport: { value: { timeSignatureNumerator: 4, timeSignatureDenominator: 4 } },
+    changes: { value: { changes: [] as { beat: number; numerator: number; denominator: number }[] } },
+}));
+
+vi.mock('#/modules/Transport/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Transport/stores')>()),
+    transportStore: meterMocks.transport,
+    timeSignatureMapStore: meterMocks.changes,
 }));
 
 vi.mock('#/infra/store/useStore', () => ({
     useStore: vi.fn((store: { value: unknown }, fallback?: unknown) => {
         if (store === clipSelectionMocks.store) {
             return clipSelectionMocks.store.value;
+        }
+        if (store === meterMocks.transport || store === meterMocks.changes) {
+            return store.value;
         }
         return fallback ?? store.value;
     }),
@@ -241,6 +257,46 @@ describe('ClipView', () => {
         expect(noteCount).toHaveAttribute('aria-label', '0 notes in Midi Clip');
     });
 
+    describe('selected clip start readout', () => {
+        const showClipAt = (startBeat: number): void => {
+            const clip = { ...makeClip({ id: 'clip-midi', name: 'Midi Clip', type: 'midi' }), startBeat };
+            vi.mocked(useTracks).mockReturnValue({
+                tracks: [makeTrack({ id: 'track-1', kind: 'midi', clips: [clip] })],
+                selectedTrackId: 'track-1',
+            });
+        };
+
+        beforeEach(() => {
+            meterMocks.transport.value = { timeSignatureNumerator: 4, timeSignatureDenominator: 4 };
+            meterMocks.changes.value = { changes: [] };
+        });
+
+        it('reads a clip at beat 0 as bar 1.1.1', () => {
+            showClipAt(0);
+            renderWithTooltip(<ClipView />);
+            const readout = screen.getByTestId('selected-clip-start-beat');
+            expect(readout).toHaveTextContent('@ 1.1.1');
+            expect(readout).toHaveAttribute('aria-label', 'Selected clip starts at bar 1.1.1');
+        });
+
+        it('counts bars through a 3/4 meter rather than assuming 4/4', () => {
+            meterMocks.transport.value = { timeSignatureNumerator: 3, timeSignatureDenominator: 4 };
+            showClipAt(9);
+            renderWithTooltip(<ClipView />);
+            const readout = screen.getByTestId('selected-clip-start-beat');
+            expect(readout).toHaveTextContent('@ 4.1.1');
+            expect(readout).toHaveAttribute('aria-label', 'Selected clip starts at bar 4.1.1');
+        });
+
+        it('counts bars through a meter change on the map', () => {
+            meterMocks.changes.value = { changes: [{ beat: 8, numerator: 3, denominator: 4 }] };
+            showClipAt(14);
+            renderWithTooltip(<ClipView />);
+            // Two 4/4 bars, then 3/4 bars from beat 8 open on beats 8, 11 and 14.
+            expect(screen.getByTestId('selected-clip-start-beat')).toHaveTextContent('@ 5.1.1');
+        });
+    });
+
     it('should render the waveform editor by default for an audio track with a clip', () => {
         const clip = makeClip({ id: 'clip-audio', name: 'Audio Clip', type: 'audio', audioBufferId: 'buf-1' });
         vi.mocked(useTracks).mockReturnValue({
@@ -264,6 +320,69 @@ describe('ClipView', () => {
 
         fireEvent.click(waveformButton);
         expect(screen.getByTestId('waveform-editor')).toBeInTheDocument();
+    });
+
+    it('does not offer MIDI automation for an audio clip even on a MIDI track', () => {
+        const clip = makeClip({ id: 'audio', name: 'Audio', type: 'audio', audioBufferId: 'buffer-a' });
+        vi.mocked(useTracks).mockReturnValue({
+            tracks: [makeTrack({ id: 'track-1', kind: 'midi', clips: [clip] })],
+            selectedTrackId: 'track-1',
+        });
+        renderWithTooltip(<ClipView />);
+        expect(screen.queryByTestId('toggle-automation-tray-button')).not.toBeInTheDocument();
+        expect(screen.queryByTestId('clip-editor-tray')).not.toBeInTheDocument();
+        expect(screen.queryByTestId('piano-roll')).not.toBeInTheDocument();
+        expect(screen.getByTestId('waveform-editor')).toHaveAttribute('data-clip-id', 'audio');
+        expect(screen.getByTestId('waveform-editor')).toHaveAttribute('data-audio-buffer-id', 'buffer-a');
+        expect(screen.getByText('Waveform')).toBeInTheDocument();
+        expect(screen.getByText('Knead (Pitch)')).toBeInTheDocument();
+    });
+
+    it.each([false, true])('preserves MIDI tray preference %s across audio and empty selections', (shown) => {
+        const midi = makeClip({ id: 'midi', name: 'MIDI', type: 'midi' });
+        const audio = makeClip({ id: 'audio', name: 'Audio', type: 'audio' });
+        const tracks = [makeTrack({ id: 'track-1', kind: 'audio', clips: [midi, audio] })];
+        vi.mocked(useTracks).mockReturnValue({ tracks, selectedTrackId: 'track-1' });
+        clipSelectionMocks.store.value.selectedClipId = 'midi';
+        const view = renderWithTooltip(<ClipView />);
+        expect(screen.getByTestId('clip-editor-tray')).toBeInTheDocument();
+        expect(screen.getByTestId('piano-roll')).toHaveAttribute('data-clip-id', 'midi');
+        expect(screen.queryByText('Waveform')).not.toBeInTheDocument();
+        if (!shown) {
+            fireEvent.click(screen.getByTestId('toggle-automation-tray-button'));
+        }
+        clipSelectionMocks.store.value.selectedClipId = 'audio';
+        view.rerender(
+            <TooltipProvider>
+                <ClipView />
+            </TooltipProvider>
+        );
+        expect(screen.queryByTestId('toggle-automation-tray-button')).not.toBeInTheDocument();
+        expect(screen.queryByTestId('clip-editor-tray')).not.toBeInTheDocument();
+        fireEvent.click(screen.getByText('Knead (Pitch)'));
+        expect(screen.getByTestId('knead-editor')).toHaveAttribute('data-clip-id', 'audio');
+        vi.mocked(useTracks).mockReturnValue({
+            tracks: [makeTrack({ id: 'track-1', kind: 'audio', clips: [] })],
+            selectedTrackId: 'track-1',
+        });
+        view.rerender(
+            <TooltipProvider>
+                <ClipView />
+            </TooltipProvider>
+        );
+        expect(screen.queryByTestId('toggle-automation-tray-button')).not.toBeInTheDocument();
+        vi.mocked(useTracks).mockReturnValue({ tracks, selectedTrackId: 'track-1' });
+        clipSelectionMocks.store.value.selectedClipId = 'midi';
+        view.rerender(
+            <TooltipProvider>
+                <ClipView />
+            </TooltipProvider>
+        );
+        expect(screen.getByTestId('piano-roll')).toHaveAttribute('data-clip-id', 'midi');
+        expect(screen.queryByTestId('knead-editor')).not.toBeInTheDocument();
+        expect(screen.queryByText('Waveform')).not.toBeInTheDocument();
+        expect(screen.getByTestId('toggle-automation-tray-button')).toHaveAttribute('aria-pressed', String(shown));
+        expect(screen.queryByTestId('clip-editor-tray') !== null).toBe(shown);
     });
 
     it('should switch to the knead editor when the pitch mode button is clicked', () => {
@@ -294,8 +413,8 @@ describe('ClipView', () => {
 
         expect(screen.getByTestId('empty-state')).toHaveTextContent('No clips on this track');
         expect(screen.queryByText('Waveform')).not.toBeInTheDocument();
-        const automationLane = screen.getByTestId('automation-lane');
-        expect(automationLane).toHaveAttribute('data-clip-id', 'null');
+        expect(screen.queryByTestId('toggle-automation-tray-button')).not.toBeInTheDocument();
+        expect(screen.queryByTestId('clip-editor-tray')).not.toBeInTheDocument();
     });
 
     it('should render a clip switcher when a track has multiple clips and select on click', () => {
@@ -334,6 +453,27 @@ describe('ClipView', () => {
         renderWithTooltip(<ClipView />);
 
         expect(screen.getByText('Clip A')).toHaveAttribute('data-variant', 'secondary');
+    });
+
+    it('opens only selected MIDI clips in selection order regardless of track kind', () => {
+        const midiA = makeClip({ id: 'midi-a', name: 'MIDI A', type: 'midi', trackId: 'track-1' });
+        const audio = makeClip({ id: 'audio', name: 'Audio', type: 'audio', trackId: 'track-2' });
+        const midiB = makeClip({ id: 'midi-b', name: 'MIDI B', type: 'midi', trackId: 'track-2' });
+        clipSelectionMocks.store.value = {
+            selectedClipId: 'midi-a',
+            selectedClipIds: ['midi-b', 'audio', 'midi-a'],
+            marqueeSelection: null,
+        };
+        vi.mocked(useTracks).mockReturnValue({
+            tracks: [
+                makeTrack({ id: 'track-1', kind: 'audio', clips: [midiA] }),
+                makeTrack({ id: 'track-2', kind: 'midi', clips: [audio, midiB] }),
+            ],
+            selectedTrackId: 'track-1',
+        });
+        renderWithTooltip(<ClipView />);
+        expect(screen.getByTestId('piano-roll')).toHaveAttribute('data-opened-clip-ids', 'midi-b,midi-a');
+        expect(screen.queryByText('Waveform')).not.toBeInTheDocument();
     });
 
     it('should not pass openedClipIds when at most one clip is selected', () => {

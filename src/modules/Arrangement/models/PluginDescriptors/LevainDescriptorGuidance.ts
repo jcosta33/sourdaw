@@ -7,7 +7,7 @@ import { NO_SOURCE_SPECIFIC_MODULATION, instrumentGuidance } from './GuidancePro
  * Guidance for Levain, taken from `crates/daw-dsp/src/levain`.
  *
  * `LevainEngine::set_param` (`engine.rs`) maps the descriptor ids through
- * `PARAM_MAP` (`services/levainProcessor.ts`). A note's gain is fixed at its
+ * `PARAM_MAP` (`worklets/levainProcessor.ts`). A note's gain is fixed at its
  * note-on as velocity/127 × the humanize level offset × the auto-divisi
  * gain; `masterGain` and the expression gain (CC11 expression × CC7 volume,
  * `expression.rs` `expression_gain`) scale each mic position's voice sum

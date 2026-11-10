@@ -1,5 +1,6 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 
+import { ASSET_RESUME_DATABASE } from '../../models/AssetTransferResume';
 import { DOC_ID_ASSET } from '../../models/SyncChannelConstants';
 import { createDurableAssetRepository, type DurableAssetCommitProof } from '../../repositories/durableAssetRepository';
 import { type PeerConnectionManager } from '../../repositories/peerConnection';
@@ -230,6 +231,40 @@ describe('durable asset ownership lifecycle', () => {
             })
         );
         recreated.dispose();
+    });
+
+    it('serves a project-owned original when resume storage cannot be read', async () => {
+        const blob = new Blob(['owned-without-resume-storage'], { type: 'audio/wav' });
+        const staged = await transfer.stageDurableAsset(blob, 'owned-resume-failure.wav', 'lease-owned-resume-failure');
+        await transfer.promoteDurableStagedAsset(staged.leaseId, staged.hash);
+        transfer.dispose();
+        const receiver = new AssetTransfer(peer, { onAssetAvailable, onProgress, onTransferFailed }, TEST_OWNER);
+        const open = indexedDB.open.bind(indexedDB);
+        let refused = false;
+        const resumeOpen = vi.spyOn(indexedDB, 'open').mockImplementation((name, version) => {
+            if (name === ASSET_RESUME_DATABASE && !refused) {
+                refused = true;
+                throw new DOMException('controlled resume storage refusal', 'QuotaExceededError');
+            }
+            return open(name, version);
+        });
+        try {
+            receiver.requestAsset(staged.hash);
+            await vi.waitFor(() => expect(receiver.getAsset(staged.hash)).toBeInstanceOf(Blob));
+            const served = receiver.getAsset(staged.hash);
+            if (!(served instanceof Blob)) {
+                throw new TypeError('Expected the owned original to be served');
+            }
+            expect(refused).toBe(true);
+            expect(new Uint8Array(await served.arrayBuffer())).toEqual(new Uint8Array(await blob.arrayBuffer()));
+            expect(onAssetAvailable).toHaveBeenCalledExactlyOnceWith(staged.hash);
+            expect(peer.broadcastCrdtSync).not.toHaveBeenCalledWith(
+                expect.objectContaining({ data: expect.stringContaining('asset.request') })
+            );
+        } finally {
+            resumeOpen.mockRestore();
+            receiver.dispose();
+        }
     });
 
     it('rebinds a join-created owner to the synchronized project identity before recreation', async () => {

@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { captureCommandBatchPreflightState } from '#/app/captureCommandBatchPreflightState';
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
 import { trackStore, type Clip, type Track } from '#/modules/Arrangement/stores';
 import { getArrangementHandlers, runtimeGraphTopology, setArrangementEventBus } from '#/modules/Arrangement/useCases';
@@ -40,13 +41,32 @@ import {
     getPendingActionConfirmation,
     proposePendingActionConfirmation,
 } from '../../stores/pendingActionConfirmationStore';
+import { admitPlanningInterpretation } from '../admitPlanningInterpretation';
+import { bindMetricGoalsToBatch } from '../bindMetricGoalsToBatch';
 import { compileAgentRiskApproval } from '../compileAgentRiskApproval';
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
+import { getProjectContext } from '../getProjectContext';
+import { prepareAnswerInterpretationCatalog } from '../prepareAnswerInterpretationCatalog';
+import { prepareCreativeInterpretationCatalog } from '../prepareCreativeInterpretationCatalog';
+import { prepareMetricIntentCatalog } from '../prepareMetricIntentCatalog';
 
 import {
     configureAiWorkflowCommandCheckpointRuntime,
     resetAiWorkflowCommandCheckpointRuntime,
 } from './aiWorkflowCommandCheckpointRuntime';
+
+registerDeviceEnginePorts();
+
+function hasMetricAuthority(result: ReturnType<typeof admitPlanningInterpretation>): result is ReturnType<
+    typeof admitPlanningInterpretation
+> & {
+    metricAuthority: Extract<
+        ReturnType<typeof import('../admitMetricIntent').admitMetricIntent>,
+        { status: 'admitted' }
+    >['authority'];
+} {
+    return 'metricAuthority' in result && result.metricAuthority !== undefined && result.metricAuthority !== null;
+}
 
 const fixtureStorageOwners = vi.hoisted(() => new Map<string, { flushPendingUnscopedWrite(): void }>());
 
@@ -184,12 +204,13 @@ function arpeggiateAction(input: {
 
 function propose(input: { actions: ExecutableRuntimeAction[]; id: string; protectedTrackId: string }): void {
     const projectRevision = captureProjectRevision();
+    const prompt = 'add a syncopated arpeggio without touching the protected track';
     const commandBatch = compileVersionedCommandBatchEnvelope({
         runId: input.id,
         batchId: input.id,
         projectId: captureProjectIdentity(),
         baseRevision: projectRevision,
-        intent: 'add a syncopated arpeggio without touching the protected track',
+        intent: prompt,
         protectedTargetIds: [input.protectedTrackId],
         commands: input.actions.map((action) =>
             serializeVersionedCommandEnvelope(
@@ -202,6 +223,54 @@ function propose(input: { actions: ExecutableRuntimeAction[]; id: string; protec
             )
         ),
     });
+    // This fixture approves a bounded MIDI transform, with no acoustic quality claim or fabricated proof.
+    const context = getProjectContext();
+    const catalogInput = { prompt, context, projectRevision };
+    const creative = prepareCreativeInterpretationCatalog(catalogInput);
+    const answer = prepareAnswerInterpretationCatalog(catalogInput);
+    const metric = prepareMetricIntentCatalog({ prompt, answer });
+    const target = creative.targets.find((entry) => entry.objectIds.includes('track-lead'));
+    const dimension = creative.dimensions.find((entry) => entry.dimension === 'midi-content');
+    if (target === undefined || dimension === undefined) {
+        throw new TypeError('Expected the actual selected Lead target and MIDI edit dimension.');
+    }
+    const admitted = admitPlanningInterpretation({
+        creative,
+        answer,
+        metric,
+        projectRevision,
+        turn: 1,
+        call: {
+            id: 'protected-midi-intake',
+            name: 'selectCreativeInterpretation',
+            arguments: {
+                catalogId: creative.catalogId,
+                modeId: 'edit',
+                targetCandidateIds: [target.candidateId],
+                editDimensionCandidateIds: [dimension.candidateId],
+                constraintCandidateIds: [],
+                creationSlotIds: [],
+                uncertainty: 'none',
+                answer: null,
+                metricIntent: { kind: 'non-acoustic', objectives: [], uncertainty: 'none' },
+            },
+        },
+    });
+    if (admitted.status !== 'admitted' || admitted.kind !== 'creative' || !hasMetricAuthority(admitted)) {
+        throw new TypeError('Expected genuine non-acoustic MIDI intake.');
+    }
+    const metricGoalState = JSON.stringify(
+        bindMetricGoalsToBatch({
+            commandBatch,
+            state: {
+                schemaVersion: 1,
+                authorities: [admitted.metricAuthority],
+                steps: [],
+                proofs: [],
+                binding: null,
+            },
+        })
+    );
     proposePendingActionConfirmation({
         id: input.id,
         prompt: 'add a syncopated arpeggio',
@@ -209,7 +278,8 @@ function propose(input: { actions: ExecutableRuntimeAction[]; id: string; protec
         actions: input.actions,
         actionLabels: input.actions.map((action) => action.type),
         commandBatch,
-        agentApproval: compileAgentRiskApproval({ commandBatch }),
+        metricGoalState,
+        agentApproval: compileAgentRiskApproval({ commandBatch, metricGoalState }),
         protectedUnchanged: [{ id: input.protectedTrackId, name: 'Pad' }],
         executionMode: 'atomic',
         projectRevision,
@@ -217,22 +287,24 @@ function propose(input: { actions: ExecutableRuntimeAction[]; id: string; protec
 }
 
 /**
- * A remote patch that reaches the live projection after the batch captured its
- * baseline, and that the batch's own staged document therefore never sees.
+ * Queue an independent live write while the batch's candidate is being inspected.
+ * Its pending value is newer than the raw document and must revoke source authority.
  */
-function landCollaboratorPadNoteBeforePostcondition(): void {
+function queueCollaboratorPadNoteDuringPostcondition(): void {
+    const baseline = midiStore.value;
+    if (!baseline) {
+        throw new Error('Expected the committed MIDI baseline for the collaborator note');
+    }
+    expect(getCrdtDoc<RawMidiProjectDocument>('root')?.midi?.notesByClipId).toEqual(baseline.notesByClipId);
+    const collaboratorState = structuredClone({
+        ...baseline,
+        notesByClipId: { ...baseline.notesByClipId, 'clip-pad': COLLABORATOR_PAD_NOTES },
+    });
     let landed = false;
     commandBatchPreflightPort.setProvider((input) => {
         if (input.projectDocument && !landed) {
             landed = true;
-            const state = midiStore.value;
-            if (!state) {
-                throw new Error('Expected MIDI state for the collaborator note');
-            }
-            midiStore.set({
-                ...state,
-                notesByClipId: { ...state.notesByClipId, 'clip-pad': COLLABORATOR_PAD_NOTES },
-            });
+            midiStore.set(collaboratorState);
         }
         return captureCommandBatchPreflightState(input);
     });
@@ -297,7 +369,7 @@ describe('protected target authority under collaborator drift', () => {
         removeCrdtDoc('root');
     });
 
-    it('commits a batch whose protected track only a collaborator changed', async () => {
+    it('refuses a batch when a foreign pending write appears during candidate validation', async () => {
         propose({
             actions: [
                 arpeggiateAction({
@@ -311,11 +383,62 @@ describe('protected target authority under collaborator drift', () => {
             id: 'confirmation-untouched-protected-track',
             protectedTrackId: 'track-pad',
         });
-        landCollaboratorPadNoteBeforePostcondition();
+        queueCollaboratorPadNoteDuringPostcondition();
 
         await expect(
             confirmPendingChatActions({ confirmationId: 'confirmation-untouched-protected-track' })
-        ).resolves.toEqual({ status: 'executed' });
+        ).resolves.toEqual({
+            status: 'failed',
+            reason: 'Command batch project changed after execution source preparation',
+        });
+
+        expect(midiStore.value?.notesByClipId['clip-lead']).toEqual(LEAD_NOTES);
+        expect(midiStore.value?.notesByClipId['clip-pad']).toEqual(COLLABORATOR_PAD_NOTES);
+        expect(getCrdtDoc<RawMidiProjectDocument>('root')?.midi?.notesByClipId).toMatchObject({
+            'clip-lead': LEAD_NOTES,
+            'clip-pad': PAD_NOTES,
+        });
+        expect(getCrdtDoc('root')).not.toHaveProperty('commandBatchIdempotency');
+        expect(undoStore.value?.past).toEqual([]);
+        expect(getPendingActionConfirmation('confirmation-untouched-protected-track')?.executedActions).toEqual([]);
+        flushFixtureProjectWrites();
+        expect(midiStore.value?.notesByClipId['clip-lead']).toEqual(LEAD_NOTES);
+        expect(midiStore.value?.notesByClipId['clip-pad']).toEqual(COLLABORATOR_PAD_NOTES);
+        const rawMidi = getCrdtDoc<RawMidiProjectDocument>('root')?.midi?.notesByClipId;
+        expect(rawMidi?.['clip-lead']).toEqual(LEAD_NOTES);
+        expect(rawMidi?.['clip-pad']).toEqual(COLLABORATOR_PAD_NOTES);
+        expect(getPendingActionConfirmation('confirmation-untouched-protected-track')?.status).toBe('failed');
+    });
+
+    it('commits from a settled collaborator baseline without changing the protected track', async () => {
+        const state = midiStore.value;
+        if (!state) {
+            throw new Error('Expected MIDI state for the settled collaborator note');
+        }
+        midiStore.set({ ...state, notesByClipId: { ...state.notesByClipId, 'clip-pad': COLLABORATOR_PAD_NOTES } });
+        flushFixtureProjectWrites();
+        expect(getCrdtDoc<RawMidiProjectDocument>('root')?.midi?.notesByClipId?.['clip-pad']).toEqual(
+            COLLABORATOR_PAD_NOTES
+        );
+        propose({
+            actions: [
+                arpeggiateAction({
+                    addedNotes: ADDED_LEAD_NOTES,
+                    clipId: 'clip-lead',
+                    expectedNotes: LEAD_NOTES,
+                    trackId: 'track-lead',
+                    trackName: 'Lead',
+                }),
+            ],
+            id: 'confirmation-settled-collaborator',
+            protectedTrackId: 'track-pad',
+        });
+
+        await expect(
+            confirmPendingChatActions({ confirmationId: 'confirmation-settled-collaborator' })
+        ).resolves.toEqual({
+            status: 'executed',
+        });
 
         flushFixtureProjectWrites();
         expect(midiStore.value?.notesByClipId['clip-lead']).toEqual([...LEAD_NOTES, ...ADDED_LEAD_NOTES]);
@@ -323,7 +446,7 @@ describe('protected target authority under collaborator drift', () => {
         const rawMidi = getCrdtDoc<RawMidiProjectDocument>('root')?.midi?.notesByClipId;
         expect(rawMidi?.['clip-lead']).toEqual([...LEAD_NOTES, ...ADDED_LEAD_NOTES]);
         expect(rawMidi?.['clip-pad']).toEqual(COLLABORATOR_PAD_NOTES);
-        expect(getPendingActionConfirmation('confirmation-untouched-protected-track')?.status).toBe('executed');
+        expect(getPendingActionConfirmation('confirmation-settled-collaborator')?.status).toBe('executed');
     });
 
     it('refuses a batch that writes notes into a clip on its own protected track', async () => {

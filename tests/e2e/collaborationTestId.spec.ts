@@ -1,5 +1,4 @@
-import { test, expect } from '@playwright/test';
-
+import { test, expect } from './e2eTest';
 import { launch_new_project, setupWorkspace } from './e2eUtils';
 
 test.describe('Collaboration panel — test-id targeted', () => {
@@ -20,15 +19,6 @@ test.describe('Collaboration panel — test-id targeted', () => {
 
         const panel = page.getByRole('dialog', { name: 'Collaborate' });
         await expect(panel).toBeVisible({ timeout: 5000 });
-    });
-
-    test('collaboration panel shows status text', async ({ page }) => {
-        await page.getByTestId('toggle-collaboration').click();
-        await page.waitForTimeout(500);
-
-        const panel = page.getByRole('dialog', { name: 'Collaborate' });
-        await expect(panel).toBeVisible();
-
         await expect(panel.getByRole('status')).toHaveText('Not connected');
     });
 

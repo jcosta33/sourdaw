@@ -14,9 +14,8 @@ export { initProjectDirtyTracking } from './projectPersistence/saveProject/initP
 export { initPluginStateDirtyTracking } from './projectPersistence/saveProject/initPluginStateDirtyTracking';
 export { loadProject } from './projectPersistence/loadProject';
 export { setProjectIdentityTransitionDependencies } from './projectPersistence/projectIdentityTransitionDependencies';
-export { setAgentMeasurementArtifactsClearer } from './projectPersistence/setAgentMeasurementArtifactsClearer';
-export { setAgentSectionRenderArtifactsClearer } from './projectPersistence/setAgentSectionRenderArtifactsClearer';
-export { setActiveAgentRunsCanceller } from './projectPersistence/setActiveAgentRunsCanceller';
+export { projectLifecycleRegistry } from './projectPersistence/projectLifecycleRegistry';
+export { resetProjectStoresForProject } from './projectPersistence/resetProjectStoresForProject';
 export { whenProjectIdentityTransitionDependenciesConfigured } from './projectPersistence/whenProjectIdentityTransitionDependenciesConfigured';
 export { failProjectIdentityTransitionDependencies } from './projectPersistence/failProjectIdentityTransitionDependencies';
 export { renameProject } from './projectPersistence/saveProject/renameProject';
@@ -43,8 +42,17 @@ export { acceptCreativeIntent } from './acceptCreativeIntent';
 export { querySemanticProject } from './semanticProjectQueries';
 export { queryAgentDiscovery } from './queryAgentDiscovery';
 export { parseSemanticProjectQueryInput } from './parseSemanticProjectQueryInput';
+export { getSemanticProjectQueryFiltersSchema } from './getSemanticProjectQueryFiltersSchema';
 export { parseAgentDiscoveryInput } from './parseAgentDiscoveryInput';
 export { agentCapabilityDiscoveryPort } from './agentCapabilityDiscoveryPort';
+export { projectOriginalMediaPort } from './projectPersistence/projectOriginalMediaPort';
+export { rackProcessorReader } from './projectPersistence/fileIO/rackProcessorReader';
+export { cvGateProjection } from './projectPersistence/fileIO/cvGateProjection';
+export { midiLearnProjection } from './projectPersistence/fileIO/midiLearnProjection';
+export { sampleDiscoverySource } from './agentDiscovery/sampleDiscoverySource';
+export { templateArpeggiatorAuthoring } from './projectTemplates/templateHelpers/templateArpeggiatorAuthoring';
+export { templateDeviceContent } from './projectTemplates/templateHelpers/templateDeviceContent';
+export { storedDrumVoices } from './storedDrumVoices';
 export { getProjectProtocolContracts } from './getProjectProtocolContracts';
 export { getAgentProjectModelContract } from './getAgentProjectModelContract';
 export { getDurableProjectOwnerId } from './getDurableProjectOwnerId';
@@ -62,6 +70,7 @@ export { getRecentProjects, recentProjectChanges } from './recentProjects/helper
 export { isOpenProjectKey } from './recentProjects/isOpenProjectKey';
 export { loadRecentProject } from './recentProjects/loadRecentProject';
 export { collectDurableOwnedAudioBufferIds } from './projectPersistence/durableOwnership/collectDurableOwnedAudioBufferIds';
+export { collectTrackStateAudioBufferIds } from './projectPersistence/helpers/collectTrackStateAudioBufferIds';
 
 export { isNativeProjectRuntimeAvailable } from './isNativeProjectRuntimeAvailable'; // export-runtime check (ADR 0011 W4)
 
@@ -70,3 +79,6 @@ export { agentAssetFileBoundary } from './agentAssetFileBoundary';
 export { getCanonicalTrackRole } from './getCanonicalTrackRole';
 export { getCanonicalTrackRoleOptions } from './getCanonicalTrackRoleOptions';
 export { setTrackCanonicalRole } from './setTrackCanonicalRole';
+export { composeProductionBriefUpdate } from './composeProductionBriefUpdate';
+export { describeProductionBriefChange } from './describeProductionBriefChange';
+export { getProductionBriefUpdateLimits } from './getProductionBriefUpdateLimits';

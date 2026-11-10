@@ -1,17 +1,19 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { executeAppAction } from '#/modules/Command/useCases';
+
 import { IOSection } from '../IOSection';
 
 import type { Track } from '../../../../models/TrackViewTypes';
 
 const mocks = vi.hoisted(() => ({
-    setTrackOutput: vi.fn(),
     tracks: [] as Track[],
 }));
 
-vi.mock('#/modules/Arrangement/useCases', () => ({
-    setTrackOutput: mocks.setTrackOutput,
+vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Command/useCases')>()),
+    executeAppAction: vi.fn(),
 }));
 
 vi.mock('../../../hooks/useTracks', () => ({
@@ -64,6 +66,7 @@ const makeBus = (overrides: Partial<Track> = {}): Track => ({
 describe('IOSection', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        vi.mocked(executeAppAction).mockResolvedValue(undefined);
         mocks.tracks = [];
     });
 
@@ -108,7 +111,7 @@ describe('IOSection', () => {
         expect(screen.queryByRole('option', { name: 'Reverb' })).not.toBeInTheDocument();
     });
 
-    it('calls setTrackOutput with the track id and chosen target, then closes the listbox', () => {
+    it('dispatches one undoable setTrackOutput action for the chosen target, then closes the listbox', () => {
         mocks.tracks = [makeBus({ id: 'bus-1', name: 'Reverb' })];
         const track: Track = { ...baseTrack, id: 'track-9', outputId: 'master' };
 
@@ -116,7 +119,25 @@ describe('IOSection', () => {
         fireEvent.click(screen.getByRole('button', { name: 'Master' }));
         fireEvent.click(screen.getByRole('option', { name: 'Reverb' }));
 
-        expect(mocks.setTrackOutput).toHaveBeenCalledWith('track-9', 'bus-1');
+        expect(executeAppAction).toHaveBeenCalledExactlyOnceWith({
+            type: 'setTrackOutput',
+            payload: { trackId: 'track-9', outputId: 'bus-1', expectedOutputId: 'master' },
+        });
         expect(screen.queryByRole('listbox', { name: 'Output routing' })).not.toBeInTheDocument();
+    });
+
+    it('does not offer a bus that already feeds this track, by output or by send', () => {
+        mocks.tracks = [
+            makeBus({ id: 'bus-1', name: 'Drum Bus' }),
+            makeBus({ id: 'bus-2', name: 'Parallel Comp', outputId: 'bus-1' }),
+            makeBus({ id: 'bus-3', name: 'Room', sends: [{ busId: 'bus-1', level: 0.5, preFader: false }] }),
+            makeBus({ id: 'bus-4', name: 'Reverb' }),
+        ];
+        const track: Track = { ...baseTrack, id: 'bus-1', kind: 'bus', name: 'Drum Bus', outputId: 'master' };
+
+        render(<IOSection track={track} />);
+        fireEvent.click(screen.getByRole('button', { name: 'Master' }));
+
+        expect(screen.getAllByRole('option').map((option) => option.textContent)).toEqual(['Master', 'Reverb']);
     });
 });

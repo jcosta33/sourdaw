@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { getArrangementHandlers } from '#/modules/Arrangement/useCases';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 import { commandTrackDefaultsPort, parseVersionedCommandEnvelope } from '#/modules/Command/useCases';
@@ -19,6 +20,10 @@ import { buildLlmActionSystemPrompt } from '../../transformers/llmActionBridge';
 import { compilePlannedActionCommandBatch } from '../compilePlannedActionCommandBatch';
 import { generateToolPlanningOutcome } from '../llmOrchestration/inference';
 import { parsePromptToActions } from '../parsePromptToActions';
+
+import { literalMetricIntakeTurn, nonAcousticMetricIntakeTurn } from './metricGoalWorkflowFixture';
+
+registerDeviceEnginePorts();
 
 vi.mock('../llmOrchestration/inference', async (importOriginal) => {
     const original = await importOriginal<typeof import('../llmOrchestration/inference')>();
@@ -100,6 +105,27 @@ const selectedClipProject: ProjectContext = {
  * Names no track, no clip and no beat: every object the batch creates is one the plan invents. That
  * is exactly what the plan-created object evidence route exists to admit.
  */
+const bluesIntake = nonAcousticMetricIntakeTurn({
+    modeId: 'create',
+    dimensions: ['arrangement', 'midi-content'],
+    creationSlotObjectTypes: ['track'],
+    nestedCreationSlotObjectTypes: ['clip'],
+});
+
+async function literalPlanningIntake(_system: string, message: string, schemas: readonly ToolSchema[]) {
+    return {
+        status: 'complete' as const,
+        toolCalls: literalMetricIntakeTurn(message, schemas).map((call) => ({ ...call, id: 'intake' })),
+    };
+}
+
+async function bluesPlanningIntake(_system: string, message: string, schemas: readonly ToolSchema[]) {
+    return {
+        status: 'complete' as const,
+        toolCalls: bluesIntake(message, schemas).map((call) => ({ ...call, id: 'intake' })),
+    };
+}
+
 const CREATIVE_REQUEST = 'create a blues song with a twelve bar progression';
 
 /** The same request stating the one value that carries project-wide authority. */
@@ -420,6 +446,7 @@ describe('high-level intent compilation', () => {
     it('semantically preserves unquoted multiword track names through canonical command compilation', async () => {
         const prompt = 'create 2 audio tracks named Lead Vocals, Backing Vocals';
         vi.mocked(generateToolPlanningOutcome)
+            .mockImplementationOnce(literalPlanningIntake)
             .mockResolvedValueOnce(namedTracksSearchTurn)
             .mockResolvedValueOnce(namedTracksDiscoverTurn)
             .mockResolvedValueOnce(proposeTurn(namedTrackItems));
@@ -430,7 +457,7 @@ describe('high-level intent compilation', () => {
             projectRevision: 'revision-named-tracks',
         });
 
-        expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(3);
+        expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(4);
         expect(vi.mocked(generateToolPlanningOutcome).mock.calls[0]?.[4]).toBe(prompt);
         expect(result.rejectionReason).toBeUndefined();
         expect(result.planningOutcome).toEqual({ kind: 'proposal' });
@@ -476,6 +503,7 @@ describe('high-level intent compilation', () => {
     it('semantically preserves an unquoted multiword clip name through canonical command compilation', async () => {
         const prompt = 'rename clip to Bridge Solo';
         vi.mocked(generateToolPlanningOutcome)
+            .mockImplementationOnce(literalPlanningIntake)
             .mockResolvedValueOnce(renameSearchTurn)
             .mockResolvedValueOnce(renameDiscoverTurn)
             .mockResolvedValueOnce(proposeCommandsTurn(renameClipItems));
@@ -486,7 +514,7 @@ describe('high-level intent compilation', () => {
             projectRevision: 'revision-rename',
         });
 
-        expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(3);
+        expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(4);
         expect(vi.mocked(generateToolPlanningOutcome).mock.calls[0]?.[4]).toBe(prompt);
         expect(result.rejectionReason).toBeUndefined();
         expect(result.planningOutcome).toEqual({ kind: 'proposal' });
@@ -522,6 +550,7 @@ describe('high-level intent compilation', () => {
     it('keeps an explicit clip source ahead of the selected clip through real routing', async () => {
         const prompt = 'rename Lead to Bridge Solo';
         vi.mocked(generateToolPlanningOutcome)
+            .mockImplementationOnce(literalPlanningIntake)
             .mockResolvedValueOnce(renameSearchTurn)
             .mockResolvedValueOnce(renameDiscoverTurn)
             .mockResolvedValueOnce(
@@ -534,7 +563,7 @@ describe('high-level intent compilation', () => {
             projectRevision: 'revision-rename-lead',
         });
 
-        expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(3);
+        expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(4);
         expect(vi.mocked(generateToolPlanningOutcome).mock.calls[0]?.[4]).toBe(prompt);
         expect(result.rejectionReason).toBeUndefined();
         expect(result.actions).toMatchObject([
@@ -553,6 +582,7 @@ describe('high-level intent compilation', () => {
     ])('keeps an explicit source independent of multi-selection for a $label proposal', async ({ proposal }) => {
         const prompt = 'rename Lead to Bridge Solo';
         vi.mocked(generateToolPlanningOutcome)
+            .mockImplementationOnce(literalPlanningIntake)
             .mockResolvedValueOnce(renameSearchTurn)
             .mockResolvedValueOnce(renameDiscoverTurn)
             .mockResolvedValueOnce(proposal);
@@ -578,6 +608,7 @@ describe('high-level intent compilation', () => {
     ])('keeps a source after the clip carrier authoritative for a $label proposal', async ({ proposal }) => {
         const prompt = 'rename clip Lead to Bridge Solo';
         vi.mocked(generateToolPlanningOutcome)
+            .mockImplementationOnce(literalPlanningIntake)
             .mockResolvedValueOnce(renameSearchTurn)
             .mockResolvedValueOnce(renameDiscoverTurn)
             .mockResolvedValueOnce(proposal);
@@ -588,7 +619,7 @@ describe('high-level intent compilation', () => {
             projectRevision: 'revision-clip-carrier-source',
         });
 
-        expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(3);
+        expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(4);
         expect(result.rejectionReason).toBeUndefined();
         expect(result.actions).toEqual([{ type: 'renameClip', payload: { clipId: 'clip-lead', name: 'Bridge Solo' } }]);
     });
@@ -608,6 +639,7 @@ describe('high-level intent compilation', () => {
         const prompt = 'rename clip Road to Nowhere to Ending';
         const context = withLiteralClipName(selectedClipProject, 'clip-road-long', 'Road to Nowhere');
         vi.mocked(generateToolPlanningOutcome)
+            .mockImplementationOnce(literalPlanningIntake)
             .mockResolvedValueOnce(renameSearchTurn)
             .mockResolvedValueOnce(renameDiscoverTurn)
             .mockResolvedValueOnce(proposal);
@@ -618,7 +650,7 @@ describe('high-level intent compilation', () => {
             projectRevision: 'revision-known-connector-source',
         });
 
-        expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(3);
+        expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(4);
         expect(result.rejectionReason).toBeUndefined();
         expect(result.actions).toEqual([{ type: 'renameClip', payload: { clipId: 'clip-road-long', name: 'Ending' } }]);
     });
@@ -640,6 +672,7 @@ describe('high-level intent compilation', () => {
             const prompt = 'rename clip Road to Nowhere to Ending';
             const context = withLiteralClipName(selectedClipProject, 'clip-road-long', 'Road to Nowhere');
             vi.mocked(generateToolPlanningOutcome)
+                .mockImplementationOnce(literalPlanningIntake)
                 .mockResolvedValueOnce(renameSearchTurn)
                 .mockResolvedValueOnce(renameDiscoverTurn)
                 .mockResolvedValueOnce(proposal);
@@ -650,7 +683,7 @@ describe('high-level intent compilation', () => {
                 projectRevision: 'revision-wrong-connector-value',
             });
 
-            expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(3);
+            expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(4);
             expect(result.actions).toEqual([]);
             expect(result.rejectionReason).toContain('value name');
         }
@@ -686,6 +719,7 @@ describe('high-level intent compilation', () => {
             selectedClipProject.tracks.flatMap((track) => track.clips).some((clip) => clip.name === 'Lead to Road')
         ).toBe(false);
         vi.mocked(generateToolPlanningOutcome)
+            .mockImplementationOnce(literalPlanningIntake)
             .mockResolvedValueOnce(renameSearchTurn)
             .mockResolvedValueOnce(renameDiscoverTurn)
             .mockResolvedValueOnce(proposal);
@@ -696,7 +730,7 @@ describe('high-level intent compilation', () => {
             projectRevision: 'revision-destination-connector',
         });
 
-        expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(3);
+        expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(4);
         expect(result.rejectionReason).toBeUndefined();
         expect(result.actions).toEqual([
             { type: 'renameClip', payload: { clipId: 'clip-lead', name: 'Road to Nowhere' } },
@@ -724,6 +758,7 @@ describe('high-level intent compilation', () => {
                 'Road'
             );
             vi.mocked(generateToolPlanningOutcome)
+                .mockImplementationOnce(literalPlanningIntake)
                 .mockResolvedValueOnce(renameSearchTurn)
                 .mockResolvedValueOnce(renameDiscoverTurn)
                 .mockResolvedValueOnce(proposal);
@@ -734,7 +769,7 @@ describe('high-level intent compilation', () => {
                 projectRevision: 'revision-overlap-connector-source',
             });
 
-            expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(3);
+            expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(4);
             expect(result.actions).toEqual([]);
         }
     );
@@ -747,6 +782,7 @@ describe('high-level intent compilation', () => {
             'Road'
         );
         vi.mocked(generateToolPlanningOutcome)
+            .mockImplementationOnce(literalPlanningIntake)
             .mockResolvedValueOnce(renameSearchTurn)
             .mockResolvedValueOnce(renameDiscoverTurn)
             .mockResolvedValueOnce(proposeTurn([renameClipListItem('Road to Nowhere', 'Ending')]));
@@ -757,7 +793,7 @@ describe('high-level intent compilation', () => {
             projectRevision: 'revision-overlap-full-source',
         });
 
-        expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(3);
+        expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(4);
         expect(result.actions).toEqual([]);
         expect(result.rejectionReason).toContain('not grounded or ambiguous');
     });
@@ -781,6 +817,7 @@ describe('high-level intent compilation', () => {
             'Road'
         );
         vi.mocked(generateToolPlanningOutcome)
+            .mockImplementationOnce(literalPlanningIntake)
             .mockResolvedValueOnce(renameSearchTurn)
             .mockResolvedValueOnce(renameDiscoverTurn)
             .mockResolvedValueOnce(proposal);
@@ -806,6 +843,7 @@ describe('high-level intent compilation', () => {
     ])('keeps a hyphenated bare destination opaque through a $label proposal', async ({ proposal }) => {
         const prompt = 'rename clip Intro-to-Outro; leave Lead unchanged';
         vi.mocked(generateToolPlanningOutcome)
+            .mockImplementationOnce(literalPlanningIntake)
             .mockResolvedValueOnce(renameSearchTurn)
             .mockResolvedValueOnce(renameDiscoverTurn)
             .mockResolvedValueOnce(proposal);
@@ -838,6 +876,7 @@ describe('high-level intent compilation', () => {
         async ({ proposal }) => {
             const prompt = 'rename clip Lead to Bridge Solo';
             vi.mocked(generateToolPlanningOutcome)
+                .mockImplementationOnce(literalPlanningIntake)
                 .mockResolvedValueOnce(renameSearchTurn)
                 .mockResolvedValueOnce(renameDiscoverTurn)
                 .mockResolvedValueOnce(proposal);
@@ -848,7 +887,7 @@ describe('high-level intent compilation', () => {
                 projectRevision: 'revision-clip-carrier-wrong-source',
             });
 
-            expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(3);
+            expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(4);
             expect(result.actions).toEqual([]);
             expect(result.rejectionReason).toContain('does not match');
         }
@@ -870,6 +909,7 @@ describe('high-level intent compilation', () => {
         async ({ proposal }) => {
             const prompt = 'rename clip Missing to Bridge Solo';
             vi.mocked(generateToolPlanningOutcome)
+                .mockImplementationOnce(literalPlanningIntake)
                 .mockResolvedValueOnce(renameSearchTurn)
                 .mockResolvedValueOnce(renameDiscoverTurn)
                 .mockResolvedValueOnce(proposal);
@@ -880,7 +920,7 @@ describe('high-level intent compilation', () => {
                 projectRevision: 'revision-unknown-source',
             });
 
-            expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(3);
+            expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(4);
             expect(result.actions).toEqual([]);
             expect(result.rejectionReason).toContain('not grounded');
         }
@@ -901,6 +941,7 @@ describe('high-level intent compilation', () => {
     ])('does not remask synthesized clip placeholders across $label rename clauses', async ({ proposal }) => {
         const prompt = 'rename Lead to Opening, then rename clip "clip" to Ending';
         vi.mocked(generateToolPlanningOutcome)
+            .mockImplementationOnce(literalPlanningIntake)
             .mockResolvedValueOnce(renameSearchTurn)
             .mockResolvedValueOnce(renameDiscoverTurn)
             .mockResolvedValueOnce(proposal);
@@ -911,7 +952,7 @@ describe('high-level intent compilation', () => {
             projectRevision: 'revision-multiple-carriers',
         });
 
-        expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(3);
+        expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(4);
         expect(result.rejectionReason).toBeUndefined();
         expect(result.actions).toEqual([
             { type: 'renameClip', payload: { clipId: 'clip-lead', name: 'Opening' } },
@@ -922,6 +963,7 @@ describe('high-level intent compilation', () => {
     it('keeps rename syntax inside a quoted destination inert', async () => {
         const prompt = 'rename Lead to "rename clip"';
         vi.mocked(generateToolPlanningOutcome)
+            .mockImplementationOnce(literalPlanningIntake)
             .mockResolvedValueOnce(renameSearchTurn)
             .mockResolvedValueOnce(renameDiscoverTurn)
             .mockResolvedValueOnce(
@@ -934,7 +976,7 @@ describe('high-level intent compilation', () => {
             projectRevision: 'revision-quoted-carrier-inert',
         });
 
-        expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(3);
+        expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(4);
         expect(result.rejectionReason).toBeUndefined();
         expect(result.actions).toEqual([{ type: 'renameClip', payload: { clipId: 'clip-lead', name: 'rename clip' } }]);
     });
@@ -942,6 +984,7 @@ describe('high-level intent compilation', () => {
     it('uses the optional-to bare rename carrier on the semantic route', async () => {
         const prompt = 'rename clip Bridge Solo';
         vi.mocked(generateToolPlanningOutcome)
+            .mockImplementationOnce(literalPlanningIntake)
             .mockResolvedValueOnce(renameSearchTurn)
             .mockResolvedValueOnce(renameDiscoverTurn)
             .mockResolvedValueOnce(proposeCommandsTurn(renameClipItems));
@@ -952,7 +995,7 @@ describe('high-level intent compilation', () => {
             projectRevision: 'revision-rename-no-to',
         });
 
-        expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(3);
+        expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(4);
         expect(result.rejectionReason).toBeUndefined();
         expect(result.actions).toEqual([{ type: 'renameClip', payload: { clipId: 'clip-bass', name: 'Bridge Solo' } }]);
     });
@@ -1002,6 +1045,7 @@ describe('high-level intent compilation', () => {
             expect(context.selectedClipIds).toEqual([expectedClipId]);
             expect(selectedClip?.type).toBe(expectedType);
             vi.mocked(generateToolPlanningOutcome)
+                .mockImplementationOnce(literalPlanningIntake)
                 .mockResolvedValueOnce(renameSearchTurn)
                 .mockResolvedValueOnce(renameDiscoverTurn)
                 .mockResolvedValueOnce(proposal);
@@ -1012,7 +1056,7 @@ describe('high-level intent compilation', () => {
                 projectRevision: 'revision-selected-media-qualifier',
             });
 
-            expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(3);
+            expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(4);
             expect(result.rejectionReason).toBeUndefined();
             expect(result.actions).toEqual([
                 { type: 'renameClip', payload: { clipId: expectedClipId, name: 'Ending' } },
@@ -1035,6 +1079,7 @@ describe('high-level intent compilation', () => {
             true
         );
         vi.mocked(generateToolPlanningOutcome)
+            .mockImplementationOnce(literalPlanningIntake)
             .mockResolvedValueOnce(renameSearchTurn)
             .mockResolvedValueOnce(renameDiscoverTurn)
             .mockResolvedValueOnce(proposal);
@@ -1045,7 +1090,7 @@ describe('high-level intent compilation', () => {
             projectRevision: 'revision-quoted-source-suffix',
         });
 
-        expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(3);
+        expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(4);
         expect(result.actions).toEqual([]);
     });
 
@@ -1092,6 +1137,7 @@ describe('high-level intent compilation', () => {
             expect(context.selectedClipIds).toEqual([selectedId]);
             expect(selectedClip?.type).toBe(selectedType);
             vi.mocked(generateToolPlanningOutcome)
+                .mockImplementationOnce(literalPlanningIntake)
                 .mockResolvedValueOnce(renameSearchTurn)
                 .mockResolvedValueOnce(renameDiscoverTurn)
                 .mockResolvedValueOnce(proposal);
@@ -1102,7 +1148,7 @@ describe('high-level intent compilation', () => {
                 projectRevision: 'revision-mismatched-media-selection',
             });
 
-            expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(3);
+            expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(4);
             expect(result.actions).toEqual([]);
         }
     );
@@ -1126,6 +1172,7 @@ describe('high-level intent compilation', () => {
         expect(literalClip?.type).toBe('audio');
         expect(context.selectedClipIds).toEqual(['clip-bass']);
         vi.mocked(generateToolPlanningOutcome)
+            .mockImplementationOnce(literalPlanningIntake)
             .mockResolvedValueOnce(renameSearchTurn)
             .mockResolvedValueOnce(renameDiscoverTurn)
             .mockResolvedValueOnce(proposal);
@@ -1136,7 +1183,7 @@ describe('high-level intent compilation', () => {
             projectRevision: 'revision-literal-media-selection-name',
         });
 
-        expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(3);
+        expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(4);
         expect(result.rejectionReason).toBeUndefined();
         expect(result.actions).toEqual([
             { type: 'renameClip', payload: { clipId: 'clip-literal-midi', name: 'Ending' } },
@@ -1149,6 +1196,7 @@ describe('high-level intent compilation', () => {
     ])('rejects an ambiguous bare source on the $label optional-to route', async ({ proposal }) => {
         const prompt = 'rename clip Bridge Solo';
         vi.mocked(generateToolPlanningOutcome)
+            .mockImplementationOnce(literalPlanningIntake)
             .mockResolvedValueOnce(renameSearchTurn)
             .mockResolvedValueOnce(renameDiscoverTurn)
             .mockResolvedValueOnce(proposal);
@@ -1177,6 +1225,7 @@ describe('high-level intent compilation', () => {
     ])('keeps a curly-apostrophe quoted source literal for a $label proposal', async ({ proposal }) => {
         const prompt = 'rename ‘Drummer’s Selected Clip’ to Bridge Solo';
         vi.mocked(generateToolPlanningOutcome)
+            .mockImplementationOnce(literalPlanningIntake)
             .mockResolvedValueOnce(renameSearchTurn)
             .mockResolvedValueOnce(renameDiscoverTurn)
             .mockResolvedValueOnce(proposal);
@@ -1196,6 +1245,7 @@ describe('high-level intent compilation', () => {
     it('rejects the selected clip for a quoted curly-apostrophe source', async () => {
         const prompt = 'rename ‘Drummer’s Selected Clip’ to Bridge Solo';
         vi.mocked(generateToolPlanningOutcome)
+            .mockImplementationOnce(literalPlanningIntake)
             .mockResolvedValueOnce(renameSearchTurn)
             .mockResolvedValueOnce(renameDiscoverTurn)
             .mockResolvedValueOnce(proposeCommandsTurn(renameClipItems));
@@ -1230,6 +1280,7 @@ describe('high-level intent compilation', () => {
         'keeps source authority on a matching compiler selector for $prompt',
         async ({ prompt, selectorName, expectedClipId }) => {
             vi.mocked(generateToolPlanningOutcome)
+                .mockImplementationOnce(literalPlanningIntake)
                 .mockResolvedValueOnce(renameSearchTurn)
                 .mockResolvedValueOnce(renameDiscoverTurn)
                 .mockResolvedValueOnce(proposeTurn([renameClipListItem(selectorName)]));
@@ -1240,7 +1291,7 @@ describe('high-level intent compilation', () => {
                 projectRevision: 'revision-rename-list',
             });
 
-            expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(3);
+            expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(4);
             expect(result.rejectionReason).toBeUndefined();
             expect(result.actions).toEqual([
                 { type: 'renameClip', payload: { clipId: expectedClipId, name: 'Bridge Solo' } },
@@ -1262,6 +1313,7 @@ describe('high-level intent compilation', () => {
         'rejects a compiler selector that contradicts source authority for $prompt',
         async ({ prompt, selectorName }) => {
             vi.mocked(generateToolPlanningOutcome)
+                .mockImplementationOnce(literalPlanningIntake)
                 .mockResolvedValueOnce(renameSearchTurn)
                 .mockResolvedValueOnce(renameDiscoverTurn)
                 .mockResolvedValueOnce(proposeTurn([renameClipListItem(selectorName)]));
@@ -1272,7 +1324,7 @@ describe('high-level intent compilation', () => {
                 projectRevision: 'revision-rename-list-wrong',
             });
 
-            expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(3);
+            expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(4);
             expect(result.actions).toEqual([]);
             expect(result.rejectionReason).toContain('does not match');
         }
@@ -1281,6 +1333,7 @@ describe('high-level intent compilation', () => {
     it('preserves source order across multiple ordinary rename commands', async () => {
         const prompt = 'rename Bass Verse to Bridge Solo, then rename Lead to Melody';
         vi.mocked(generateToolPlanningOutcome)
+            .mockImplementationOnce(literalPlanningIntake)
             .mockResolvedValueOnce(renameSearchTurn)
             .mockResolvedValueOnce(renameDiscoverTurn)
             .mockResolvedValueOnce(
@@ -1296,7 +1349,7 @@ describe('high-level intent compilation', () => {
             projectRevision: 'revision-rename-sequence',
         });
 
-        expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(3);
+        expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(4);
         expect(result.rejectionReason).toBeUndefined();
         expect(result.actions).toEqual([
             { type: 'renameClip', payload: { clipId: 'clip-bass', name: 'Bridge Solo' } },
@@ -1307,6 +1360,7 @@ describe('high-level intent compilation', () => {
     it('rejects a provider attempt to replace an explicit clip source with the selection', async () => {
         const prompt = 'rename Lead to Bridge Solo';
         vi.mocked(generateToolPlanningOutcome)
+            .mockImplementationOnce(literalPlanningIntake)
             .mockResolvedValueOnce(renameSearchTurn)
             .mockResolvedValueOnce(renameDiscoverTurn)
             .mockResolvedValueOnce(proposeCommandsTurn(renameClipItems));
@@ -1317,7 +1371,7 @@ describe('high-level intent compilation', () => {
             projectRevision: 'revision-rename-wrong',
         });
 
-        expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(3);
+        expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(4);
         expect(result.actions).toEqual([]);
         expect(result.rejectionReason).toContain('does not match');
     });
@@ -1325,6 +1379,7 @@ describe('high-level intent compilation', () => {
     it('rejects a direct rename proposal for a clip protected by the whole request', async () => {
         const prompt = 'rename clip to Bridge Solo; leave Bass Verse unchanged';
         vi.mocked(generateToolPlanningOutcome)
+            .mockImplementationOnce(literalPlanningIntake)
             .mockResolvedValueOnce(renameSearchTurn)
             .mockResolvedValueOnce(renameDiscoverTurn)
             .mockResolvedValueOnce(proposeCommandsTurn(renameClipItems));
@@ -1335,7 +1390,7 @@ describe('high-level intent compilation', () => {
             projectRevision: 'revision-protected',
         });
 
-        expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(3);
+        expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(4);
         expect(result.actions).toEqual([]);
         expect(result.rejectionReason).toContain('protected');
     });
@@ -1354,6 +1409,7 @@ describe('high-level intent compilation', () => {
     ])('rejects a $label rename protected by a multiline selection reference', async ({ proposal }) => {
         const prompt = 'rename Bass Verse to Opening; leave selected\nclips unchanged';
         vi.mocked(generateToolPlanningOutcome)
+            .mockImplementationOnce(literalPlanningIntake)
             .mockResolvedValueOnce(renameSearchTurn)
             .mockResolvedValueOnce(renameDiscoverTurn)
             .mockResolvedValueOnce(proposal);
@@ -1364,7 +1420,7 @@ describe('high-level intent compilation', () => {
             projectRevision: 'revision-multiline-protection',
         });
 
-        expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(3);
+        expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(4);
         expect(result.actions).toEqual([]);
         expect(result.rejectionReason).toContain('protected');
     });
@@ -1380,6 +1436,7 @@ describe('high-level intent compilation', () => {
     ])('retains multiline unrelated protections for a $label proposal', async ({ label, proposal }) => {
         const prompt = 'rename Lead to Bridge Solo; leave Bass Verse,\n"Selected Clip" unchanged';
         vi.mocked(generateToolPlanningOutcome)
+            .mockImplementationOnce(literalPlanningIntake)
             .mockResolvedValueOnce(renameSearchTurn)
             .mockResolvedValueOnce(renameDiscoverTurn)
             .mockResolvedValueOnce(proposal);
@@ -1390,7 +1447,7 @@ describe('high-level intent compilation', () => {
             projectRevision: 'revision-multiline-protected-scope',
         });
 
-        expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(3);
+        expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(4);
         expect(result.rejectionReason).toBeUndefined();
         expect(result.actions).toEqual([{ type: 'renameClip', payload: { clipId: 'clip-lead', name: 'Bridge Solo' } }]);
         if (label === 'compiler-backed') {
@@ -1414,6 +1471,7 @@ describe('high-level intent compilation', () => {
     ])('rejects a $label rename of an unquoted dotted protected name', async ({ proposal }) => {
         const prompt = 'rename Verse.1 to Opening; leave Verse.1 unchanged';
         vi.mocked(generateToolPlanningOutcome)
+            .mockImplementationOnce(literalPlanningIntake)
             .mockResolvedValueOnce(renameSearchTurn)
             .mockResolvedValueOnce(renameDiscoverTurn)
             .mockResolvedValueOnce(proposal);
@@ -1431,6 +1489,7 @@ describe('high-level intent compilation', () => {
     it('retains an unrelated dotted protection in compiler scope', async () => {
         const prompt = 'rename Lead to Bridge Solo; leave Verse.alt unchanged';
         vi.mocked(generateToolPlanningOutcome)
+            .mockImplementationOnce(literalPlanningIntake)
             .mockResolvedValueOnce(renameSearchTurn)
             .mockResolvedValueOnce(renameDiscoverTurn)
             .mockResolvedValueOnce(proposeTurn(renameLeadClipItems));
@@ -1449,6 +1508,7 @@ describe('high-level intent compilation', () => {
     it('retains an unrelated protected clip in compiler-backed proposal scope', async () => {
         const prompt = 'rename Lead to Bridge Solo; leave Bass Verse unchanged';
         vi.mocked(generateToolPlanningOutcome)
+            .mockImplementationOnce(literalPlanningIntake)
             .mockResolvedValueOnce(renameSearchTurn)
             .mockResolvedValueOnce(renameDiscoverTurn)
             .mockResolvedValueOnce(proposeTurn(renameLeadClipItems));
@@ -1459,7 +1519,7 @@ describe('high-level intent compilation', () => {
             projectRevision: 'revision-protected-scope',
         });
 
-        expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(3);
+        expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(4);
         expect(result.rejectionReason).toBeUndefined();
         expect(result.actions).toMatchObject([
             { type: 'renameClip', payload: { clipId: 'clip-lead', name: 'Bridge Solo' } },
@@ -1471,6 +1531,7 @@ describe('high-level intent compilation', () => {
     it('rejects a compiler-backed rename when its resolved target is protected', async () => {
         const prompt = 'rename Lead to Bridge Solo; leave Lead unchanged';
         vi.mocked(generateToolPlanningOutcome)
+            .mockImplementationOnce(literalPlanningIntake)
             .mockResolvedValueOnce(renameSearchTurn)
             .mockResolvedValueOnce(renameDiscoverTurn)
             .mockResolvedValueOnce(proposeTurn(renameLeadClipItems));
@@ -1481,7 +1542,7 @@ describe('high-level intent compilation', () => {
             projectRevision: 'revision-protected-list',
         });
 
-        expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(3);
+        expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(4);
         expect(result.actions).toEqual([]);
         expect(result.rejectionReason).toContain('protected');
     });
@@ -1489,6 +1550,7 @@ describe('high-level intent compilation', () => {
     it('rejects an explicitly named rename target inside a protected clip selection', async () => {
         const prompt = 'rename Lead to Bridge Solo; leave selected clips unchanged';
         vi.mocked(generateToolPlanningOutcome)
+            .mockImplementationOnce(literalPlanningIntake)
             .mockResolvedValueOnce(renameSearchTurn)
             .mockResolvedValueOnce(renameDiscoverTurn)
             .mockResolvedValueOnce(
@@ -1501,7 +1563,7 @@ describe('high-level intent compilation', () => {
             projectRevision: 'revision-protected-selection',
         });
 
-        expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(3);
+        expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(4);
         expect(result.actions).toEqual([]);
         expect(result.rejectionReason).toContain('protected');
     });
@@ -1520,6 +1582,7 @@ describe('high-level intent compilation', () => {
     ])('rejects a $label rename protected by a combined selected and named list', async ({ proposal }) => {
         const prompt = 'rename Bass Verse to Opening; leave selected clips and Lead unchanged';
         vi.mocked(generateToolPlanningOutcome)
+            .mockImplementationOnce(literalPlanningIntake)
             .mockResolvedValueOnce(renameSearchTurn)
             .mockResolvedValueOnce(renameDiscoverTurn)
             .mockResolvedValueOnce(proposal);
@@ -1540,6 +1603,7 @@ describe('high-level intent compilation', () => {
         'rename Lead to Opening; leave "Bass Verse unchanged',
     ])('rejects malformed protection syntax before admitting %s', async (prompt) => {
         vi.mocked(generateToolPlanningOutcome)
+            .mockImplementationOnce(literalPlanningIntake)
             .mockResolvedValueOnce(renameSearchTurn)
             .mockResolvedValueOnce(renameDiscoverTurn)
             .mockResolvedValueOnce(
@@ -1559,6 +1623,7 @@ describe('high-level intent compilation', () => {
     it('retains every combined protection in accepted compiler scope', async () => {
         const prompt = 'rename Lead to Bridge Solo; leave selected clips and "Selected Clip" unchanged';
         vi.mocked(generateToolPlanningOutcome)
+            .mockImplementationOnce(literalPlanningIntake)
             .mockResolvedValueOnce(renameSearchTurn)
             .mockResolvedValueOnce(renameDiscoverTurn)
             .mockResolvedValueOnce(proposeTurn(renameLeadClipItems));
@@ -1590,6 +1655,7 @@ describe('high-level intent compilation', () => {
     ])('rejects a $label rename of a quoted literal protected clip', async ({ proposal }) => {
         const prompt = 'rename clip-literal-selected to Bridge Solo; leave "Selected Clip" unchanged';
         vi.mocked(generateToolPlanningOutcome)
+            .mockImplementationOnce(literalPlanningIntake)
             .mockResolvedValueOnce(renameSearchTurn)
             .mockResolvedValueOnce(renameDiscoverTurn)
             .mockResolvedValueOnce(proposal);
@@ -1600,13 +1666,14 @@ describe('high-level intent compilation', () => {
             projectRevision: 'revision-protected-literal-selection',
         });
 
-        expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(3);
+        expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(4);
         expect(result.actions).toEqual([]);
         expect(result.rejectionReason).toContain('protected');
     });
 
     it('compiles a track, clip and notes request on an empty project into one batch of canonical commands', async () => {
         vi.mocked(generateToolPlanningOutcome)
+            .mockImplementationOnce(bluesPlanningIntake)
             .mockResolvedValueOnce(searchTurn)
             .mockResolvedValueOnce(discoverTurn)
             .mockResolvedValueOnce(proposeTurn(bluesItems));
@@ -1625,6 +1692,7 @@ describe('high-level intent compilation', () => {
     it('admits a project-wide tempo only when the request states it', async () => {
         const withTempo = [...bluesItems, { id: 'set-tempo', name: 'setTempo', arguments: { bpm: 96 } }];
         vi.mocked(generateToolPlanningOutcome)
+            .mockImplementationOnce(bluesPlanningIntake)
             .mockResolvedValueOnce(searchTurn)
             .mockResolvedValueOnce(discoverTempoTurn)
             .mockResolvedValueOnce(proposeTurn(withTempo));
@@ -1642,6 +1710,7 @@ describe('high-level intent compilation', () => {
     it('refuses a project-wide tempo the request never states, while the created objects still compile', async () => {
         const withTempo = [...bluesItems, { id: 'set-tempo', name: 'setTempo', arguments: { bpm: 96 } }];
         vi.mocked(generateToolPlanningOutcome)
+            .mockImplementationOnce(bluesPlanningIntake)
             .mockResolvedValueOnce(searchTurn)
             .mockResolvedValueOnce(discoverTempoTurn)
             .mockResolvedValueOnce(proposeTurn(withTempo));
@@ -1659,6 +1728,7 @@ describe('high-level intent compilation', () => {
 
     it('mints application-owned identities and points the notes at the clip the same batch created', async () => {
         vi.mocked(generateToolPlanningOutcome)
+            .mockImplementationOnce(bluesPlanningIntake)
             .mockResolvedValueOnce(searchTurn)
             .mockResolvedValueOnce(discoverTurn)
             .mockResolvedValueOnce(proposeTurn(bluesItems));
@@ -1696,6 +1766,7 @@ describe('high-level intent compilation', () => {
 
     it('keeps the provider tool surface compact and discloses addNotes only as a discovery receipt', async () => {
         vi.mocked(generateToolPlanningOutcome)
+            .mockImplementationOnce(bluesPlanningIntake)
             .mockResolvedValueOnce(searchTurn)
             .mockResolvedValueOnce(discoverTurn)
             .mockResolvedValueOnce(proposeTurn(bluesItems));
@@ -1711,10 +1782,10 @@ describe('high-level intent compilation', () => {
                 (schema: ToolSchema) => schema.function.name
             );
         // The mutation never becomes a provider tool: it stays a schema the application disclosed.
-        expect(turnSchemaNames(0)).toContain('agent.command-index.search');
+        expect(turnSchemaNames(1)).toContain('agent.command-index.search');
         expect(turnSchemaNames(0)).not.toContain('addNotes');
-        expect(turnSchemaNames(2)).not.toContain('addNotes');
-        const proposalTurnMessage = vi.mocked(generateToolPlanningOutcome).mock.calls[2]?.[1] ?? '';
+        expect(turnSchemaNames(3)).not.toContain('addNotes');
+        const proposalTurnMessage = vi.mocked(generateToolPlanningOutcome).mock.calls[3]?.[1] ?? '';
         expect(proposalTurnMessage).toContain('discover-1');
         expect(proposalTurnMessage).toContain('addNotes');
     });

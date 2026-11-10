@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { stopAllScheduled } from '#/modules/AudioEngine/useCases';
+import { panicCrumbs } from '#/modules/Crumbs/useCases';
 import { resetMidiState } from '#/modules/MIDI/useCases';
 import { yeastPanic } from '#/modules/Yeast/useCases';
 
@@ -11,8 +12,14 @@ import { playheadPositionRef } from '../../../stores/playheadPositionRef';
 import { schedulerSession } from '../../playheadScheduler/schedulerSession';
 import { startPlayheadScheduler } from '../../playheadScheduler/startPlayheadScheduler';
 import { stopPlayheadScheduler } from '../../playheadScheduler/stopPlayheadScheduler';
+import { notePanicParticipants } from '../notePanicParticipants';
 import { seekPlayhead } from '../seekPlayhead';
 import { stopActiveRecording } from '../stopActiveRecording';
+
+// The MIDI barrel is mocked whole here, so the composition root's registrar
+// cannot load; the participants it registers are filled directly, with the
+// Yeast panic this spec doubles.
+notePanicParticipants.configure({ settleGeneratedNotes: yeastPanic, voiceReleases: [panicCrumbs] });
 
 const loggerMock = vi.hoisted(() => ({
     error: vi.fn(),
@@ -42,6 +49,7 @@ vi.mock('#/modules/MIDI/useCases', () => ({
     getScopedGrooveAssignment: vi.fn(),
     getScopedGrooveConsumerId: vi.fn(),
     getStraightGrooveTemplateId: vi.fn(),
+    markGrooveTemplateProjectWrite: vi.fn(),
     restoreGrooveAssignment: vi.fn(),
 }));
 vi.mock('#/modules/Yeast/useCases', async (importOriginal) => ({

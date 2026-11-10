@@ -1,5 +1,5 @@
 import { createMidiNote } from '../../models/MidiNote';
-import { transformMidiGlobalTimeState } from '../../services/transformMidiGlobalTimeState';
+import { type MidiGlobalTimeCommand, transformMidiGlobalTimeState } from '../../services/transformMidiGlobalTimeState';
 import { midiStore } from '../../stores/midiStore';
 
 export type SplitMidiNotesAtBeatInput = {
@@ -12,6 +12,8 @@ export type SplitMidiNotesAtBeatInput = {
      * kept on the source clip.
      */
     discardBeforeBeat?: number;
+    /** The source loops: the new clip copies its whole loop (`copiesLoopMaterial`). */
+    copiesLoopMaterial?: boolean;
     targetNoteIds?: readonly string[];
 };
 
@@ -20,6 +22,7 @@ export function splitMidiNotesAtBeat({
     newClipId,
     splitBeat,
     discardBeforeBeat,
+    copiesLoopMaterial = false,
     targetNoteIds: suppliedTargetNoteIds,
 }: SplitMidiNotesAtBeatInput): void {
     const state = midiStore.value;
@@ -27,15 +30,19 @@ export function splitMidiNotesAtBeat({
         return;
     }
 
-    const commands = [
-        {
-            type: 'split-notes' as const,
-            sourceClipId,
-            targetClipId: newClipId,
-            splitBeat,
-            ...(discardBeforeBeat === undefined ? {} : { discardBeforeBeat }),
-        },
-    ];
+    const command: Extract<MidiGlobalTimeCommand, { type: 'split-notes' }> = {
+        type: 'split-notes',
+        sourceClipId,
+        targetClipId: newClipId,
+        splitBeat,
+    };
+    if (discardBeforeBeat !== undefined) {
+        command.discardBeforeBeat = discardBeforeBeat;
+    }
+    if (copiesLoopMaterial) {
+        command.copiesLoopMaterial = true;
+    }
+    const commands = [command];
     const planned = transformMidiGlobalTimeState({ state, commands });
     if (planned.status === 'rejected' || !planned.hasChanges) {
         return;

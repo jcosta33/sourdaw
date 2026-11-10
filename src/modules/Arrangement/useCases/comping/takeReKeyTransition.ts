@@ -1,3 +1,5 @@
+import { type AudioSourceTile } from '#/utils/audioSourceTime';
+
 import { type CompRegion, type Take } from '../../models/TakeLane';
 
 /**
@@ -59,4 +61,6 @@ export type TakeReKeyLaneTransition = {
     takesAfter: readonly Take[];
     regionsBefore: readonly CompRegion[];
     regionsAfter: readonly CompRegion[];
+    baseGapAudioSourcesBefore?: readonly AudioSourceTile[];
+    baseGapAudioSourcesAfter?: readonly AudioSourceTile[];
 };

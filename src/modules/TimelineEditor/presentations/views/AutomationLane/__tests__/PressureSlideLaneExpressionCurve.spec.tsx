@@ -38,10 +38,15 @@ vi.mock('#/modules/MIDI/stores', async (importOriginal) => ({
 
 vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Arrangement/stores')>()),
-    trackStore: { value: { tracks: [] } },
+    trackStore: { value: { tracks: [] }, subscribe: vi.fn(() => () => {}) },
 }));
 
 vi.mock('#/modules/Command/useCases', () => ({
+    commitUndoEntry: vi.fn(),
+    createUndoEntry: vi.fn(),
+    resetActionReplayAuthority: () => {
+        throw new Error('Unexpected replay-authority reset in this lane fixture');
+    },
     getExecutableAppActionEffect: vi.fn(() => null),
     executeUserAppAction: vi.fn(),
     executeAppAction: vi.fn(),

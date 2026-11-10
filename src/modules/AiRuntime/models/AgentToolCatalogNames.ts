@@ -23,6 +23,8 @@ export const ANALYSIS_DETECT_TRANSIENTS_TOOL_NAME = 'analysis.detectTransients';
 export const RECIPE_DISCOVERY_TOOL_NAME = 'recipe.discover';
 export const RECIPE_EXPANSION_TOOL_NAME = 'recipe.expand';
 export const TRANSFORM_COMPILE_TOOL_NAME = 'transform.compile';
+/** Hosted chat planning only: it composes the next production brief, and is never mandatory. */
+export const BRIEF_COMPILE_TOOL_NAME = 'brief.compile';
 
 /**
  * The planning tools every backend advertises on every request. A backend that narrows its tool

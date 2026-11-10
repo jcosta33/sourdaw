@@ -1,3 +1,4 @@
+import { getHeads } from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 /**
@@ -15,14 +16,19 @@ const liveMidi = vi.hoisted(() => {
     return { input, inputs: access.inputs };
 });
 
+import { registerSupportingServicePorts } from '#/app/registerSupportingServicePorts';
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
+import { createEventBus } from '#/infra/events/createEventBus';
 import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
+import { builtinSynthVoice } from '#/modules/AudioEngine/useCases';
 import { clearHandlerRegistry, macroStore, registerHandlerMap, undoHistoryStore } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
+    executeAppActionBatch,
+    executeAppAction,
     redo,
     resetActionReplayAuthority,
     setActionHistoryMetadataPort,
@@ -32,6 +38,8 @@ import { midiLearnStore } from '#/modules/ControlSurface/stores';
 import { setMidiLearnDependencies } from '#/modules/ControlSurface/useCases';
 import {
     createCrdtDoc,
+    getCrdtDoc,
+    mutateCrdtDoc,
     registerCrdtStorageRuntime,
     removeCrdtDoc,
     resetCrdtProjectAuthority,
@@ -50,19 +58,37 @@ import {
     resetMidiState,
     selectMidiInput,
     setMidiInputTrack,
+    setRecordingMidiAdmissionPort,
     setWebMidiRuntimeEventBus,
+    waitForOverdubLanding,
 } from '#/modules/MIDI/useCases';
+import * as synthVoices from '#/modules/Synth/useCases';
 import { transportStore } from '#/modules/Transport/stores';
 
 import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { takeLaneStore } from '../../../stores/takeLaneStore';
 import { trackStore } from '../../../stores/trackStore';
+import { setArrangementEventBus } from '../../../useCases/arrangementEventBus';
 import { getArrangementHandlers } from '../../../useCases/getArrangementHandlers';
+import { admitRecordingMidiExpression } from '../../../useCases/recording/admitRecordingMidiExpression';
+import { admitRecordingMidiNoteOff } from '../../../useCases/recording/admitRecordingMidiNoteOff';
+import { admitRecordingMidiNoteOn } from '../../../useCases/recording/admitRecordingMidiNoteOn';
+import { findOpenRecordingMidiAdmission } from '../../../useCases/recording/findOpenRecordingMidiAdmission';
+import { findOpenRecordingMidiMemberAdmission } from '../../../useCases/recording/findOpenRecordingMidiMemberAdmission';
+import { getRecordingMidiAdmission } from '../../../useCases/recording/getRecordingMidiAdmission';
+import { isRecordingMidiInputExcluded } from '../../../useCases/recording/isRecordingMidiInputExcluded';
+import { recordingMidiSourceBeatAt } from '../../../useCases/recording/recordingMidiSourceBeatAt';
+import { retireRecordingMidiAdmission } from '../../../useCases/recording/retireRecordingMidiAdmission';
 import { startRecording } from '../../../useCases/recording/startRecording';
 import { stopRecording } from '../../../useCases/recording/stopRecording';
+import { takeOwnsRecordingRoot } from '../../../useCases/recording/takeOwnsRecordingRoot';
 import { selectTrack } from '../../../useCases/toggleTrackState/selectTrack';
 
+registerSupportingServicePorts();
+builtinSynthVoice.configure(synthVoices);
+
 const TRACK_ID = 'track-midi';
+let disposeRecordingAdmission = (): void => {};
 
 const noActionHistoryMetadataPort = {
     record: () => [],
@@ -99,6 +125,18 @@ describe('recorded controller take commit', () => {
         });
         takeLaneStore.set({ lanes: [] });
         midiStore.set({ notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} });
+        disposeRecordingAdmission = setRecordingMidiAdmissionPort({
+            admitRecordingMidiNoteOn,
+            admitRecordingMidiNoteOff,
+            admitRecordingMidiExpression,
+            findOpenRecordingMidiAdmission,
+            findOpenRecordingMidiMemberAdmission,
+            getRecordingMidiAdmission,
+            retireRecordingMidiAdmission,
+            takeOwnsRecordingRoot,
+            recordingMidiSourceBeatAt,
+            isRecordingMidiInputExcluded,
+        });
         transportStore.set({
             ...transportStore.value!,
             isRecording: false,
@@ -111,6 +149,7 @@ describe('recorded controller take commit', () => {
     afterEach(() => {
         transportStore.set({ ...transportStore.value!, isRecording: false, overdubEnabled: false });
         destroyWebMidi();
+        disposeRecordingAdmission();
         clearHandlerRegistry();
         clearUndoHistory();
         resetActionReplayAuthority();
@@ -194,7 +233,8 @@ describe('recorded controller take commit', () => {
             { controller: 64, value: 127, beat: 1.5, channel: 0 },
             { controller: 64, value: 0, beat: 4, channel: 0 },
         ]);
-        expect(rowsOf(recordedBend)).toEqual([{ value: 1000, beat: 1, channel: 0 }]);
+        // A wheel moved with MPE off bends only its own channel's notes, and the take says so.
+        expect(rowsOf(recordedBend)).toEqual([{ value: 1000, beat: 1, channel: 0, channelScoped: true }]);
         expect(undoHistoryStore.value?.past ?? []).toHaveLength(1);
 
         await undo();
@@ -249,6 +289,230 @@ describe('recorded controller take commit', () => {
             });
             flushAutomergeStorageWrites();
         }
+
+        it.each(['failure', 'cancellation'] as const)(
+            'keeps exact buffered controllers when a real second child causes %s after the first write',
+            async (mode) => {
+                trackStore.set({
+                    ...trackStore.value!,
+                    tracks: [
+                        ...trackStore.value!.tracks,
+                        TrackDummy.create({ id: 'second-midi', kind: 'midi', armed: true, clips: [] }),
+                    ],
+                });
+                const firstId = await startLiveTake();
+                sendLive(4.5, 0xb0, 1, 55);
+                const secondId = trackStore.value!.tracks.find((track) => track.id === 'second-midi')!.clips[0]!.id;
+                setMidiInputTrack('second-midi');
+                sendLive(5, 0xb0, 1, 66);
+                flushAutomergeStorageWrites();
+                const actions = trackStore
+                    .value!.tracks.flatMap((track) => track.clips)
+                    .map((clip) => ({
+                        type: 'commitRecording' as const,
+                        payload: { clip: { ...structuredClone(clip), endBeat: 8 } },
+                    }));
+                const before = structuredClone(getCrdtDoc<Record<string, unknown>>('root'));
+                const plans = [firstId, secondId].map((id) => planRecordedControllers({ clip: spanOf(id) }));
+                const handlers = getArrangementHandlers();
+                const original = handlers.commitRecording;
+                if (original.previewExecution !== 'unsupported-external') {
+                    throw new Error('Recording abort fixture requires its actual external handler contract');
+                }
+                let writes = 0;
+                let firstRowsObserved = false;
+                clearHandlerRegistry();
+                registerHandlerMap({
+                    ...handlers,
+                    commitRecording: {
+                        ...original,
+                        execute: (action, context) => {
+                            if (writes === 1 && mode === 'failure') {
+                                throw new Error('controlled second recording child failure');
+                            }
+                            const result = original.execute(action, context);
+                            writes += 1;
+                            if (writes === 1) {
+                                firstRowsObserved = (midiStore.value?.ccByClipId[firstId]?.length ?? 0) > 0;
+                            }
+                            return result;
+                        },
+                    },
+                });
+                const result = await executeAppActionBatch(actions, {
+                    groupId: 'controlled-recording-abort',
+                    shouldExecute: () => mode !== 'cancellation' || writes === 0,
+                });
+                expect(result.status).toBe(mode === 'cancellation' ? 'cancelled' : 'failed');
+                expect(firstRowsObserved).toBe(true);
+                expect(getCrdtDoc('root')).toEqual(before);
+                expect(undoHistoryStore.value?.past).toEqual([]);
+                expect([firstId, secondId].map((id) => planRecordedControllers({ clip: spanOf(id) }))).toEqual(plans);
+                clearHandlerRegistry();
+                registerHandlerMap(handlers);
+                registerHandlerMap(getWebMidiInputHandlers());
+                const retry = await executeAppActionBatch(
+                    actions.map((action) => structuredClone(action)),
+                    {
+                        groupId: 'controlled-recording-retry',
+                    }
+                );
+                expect(retry.status).toBe('committed');
+                for (const [index, id] of [firstId, secondId].entries()) {
+                    expect(midiStore.value?.ccByClipId[id]).toEqual(plans[index]!.cc);
+                    expect(planRecordedControllers({ clip: spanOf(id) }).cc).toEqual([]);
+                }
+                await undo();
+                expect(trackStore.value!.tracks.flatMap((track) => track.clips)).toEqual([]);
+                await redo();
+                expect(midiStore.value?.ccByClipId[firstId]).toEqual(plans[0]!.cc);
+                expect(midiStore.value?.ccByClipId[secondId]).toEqual(plans[1]!.cc);
+            }
+        );
+
+        it.each([false, true])(
+            'settles rows arriving after the prepared plan when the later falling edge precedes publication with ambiguous=%s',
+            async (ambiguous) => {
+                const id = await startLiveTake();
+                sendLive(4.5, 0xb0, 1, 55);
+                const provisional = structuredClone(trackStore.value!.tracks[0]!.clips[0]!);
+                flushAutomergeStorageWrites();
+                const handlers = getArrangementHandlers();
+                const original = handlers.commitRecording;
+                if (original.previewExecution !== 'unsupported-external') {
+                    throw new Error('Held recording fixture requires its actual external handler contract');
+                }
+                const entered = Promise.withResolvers<void>();
+                const release = Promise.withResolvers<void>();
+                clearHandlerRegistry();
+                registerHandlerMap({
+                    ...handlers,
+                    commitRecording: {
+                        ...original,
+                        execute: async (action, context) => {
+                            const result = original.execute(action, context);
+                            entered.resolve();
+                            await release.promise;
+                            return result;
+                        },
+                    },
+                });
+                registerHandlerMap(getWebMidiInputHandlers());
+                const publication = executeAppActionBatch(
+                    [{ type: 'commitRecording', payload: { clip: { ...provisional, endBeat: 8 } } }],
+                    { groupId: 'recording-pending-controller-plan' }
+                );
+                try {
+                    await entered.promise;
+                    if (ambiguous) {
+                        let failNextPublication = true;
+                        configureAutomergeStoragePort({
+                            getDoc: (docId) => getCrdtDoc<Record<string, unknown>>(docId),
+                            getDocHeads: (docId) => getHeads(getCrdtDoc<Record<string, unknown>>(docId)!),
+                            hasDoc: (docId) => !!getCrdtDoc(docId),
+                            getSemanticMessage: () => undefined,
+                            mutateDoc: ({
+                                docId,
+                                changedKeys,
+                                changeFn,
+                                beforeChange,
+                                message,
+                                snapshotTransaction,
+                            }) => {
+                                mutateCrdtDoc({
+                                    id: docId,
+                                    changeFn,
+                                    beforeChange,
+                                    message,
+                                    snapshotTransaction,
+                                    localSlots: changedKeys,
+                                });
+                                if (failNextPublication) {
+                                    failNextPublication = false;
+                                    throw new Error('controlled observer failure after primary recording publication');
+                                }
+                            },
+                        });
+                    }
+                    sendLive(5, 0xb0, 1, 99);
+                    transportStore.set({ ...transportStore.value!, isRecording: false });
+                    await waitForOverdubLanding();
+                    release.resolve();
+                    expect((await publication).status).toBe(ambiguous ? 'ambiguous' : 'committed');
+                    registerCrdtStorageRuntime();
+                    await waitForOverdubLanding();
+                    expect(pedalsOf(id)).toEqual([
+                        { controller: 1, value: 55, beat: 0.5, channel: 0 },
+                        { controller: 1, value: 99, beat: 1, channel: 0 },
+                    ]);
+                    expect(planRecordedControllers({ clip: spanOf(id) }).cc).toEqual([]);
+                    expect(undoHistoryStore.value!.past).toHaveLength(ambiguous ? 1 : 2);
+                    await undo();
+                    expect(pedalsOf(id)).toEqual([{ controller: 1, value: 55, beat: 0.5, channel: 0 }]);
+                    if (ambiguous) {
+                        // Only the later, confirmed overdub has ordinary Undo history.
+                        await redo();
+                        expect(pedalsOf(id)).toHaveLength(2);
+                        await undo();
+                        expect(pedalsOf(id)).toHaveLength(1);
+                        await redo();
+                        expect(pedalsOf(id)).toHaveLength(2);
+                        return;
+                    }
+                    await undo();
+                    expect(trackStore.value!.tracks[0]!.clips).toEqual([]);
+                    expect(midiStore.value?.ccByClipId[id]).toBeUndefined();
+                    await redo();
+                    expect(pedalsOf(id)).toEqual([{ controller: 1, value: 55, beat: 0.5, channel: 0 }]);
+                    await redo();
+                    expect(pedalsOf(id)).toHaveLength(2);
+                    await undo();
+                    await undo();
+                    await redo();
+                    await redo();
+                    expect(pedalsOf(id)).toHaveLength(2);
+                } finally {
+                    release.resolve();
+                    await publication;
+                }
+            }
+        );
+
+        it('keeps actually published recording rows and finishes only their controller owner after a publication observer throws', async () => {
+            const id = await startLiveTake();
+            sendLive(4.5, 0xb0, 1, 55);
+            const provisional = trackStore.value!.tracks[0]!.clips[0]!;
+            flushAutomergeStorageWrites();
+            const rows = planRecordedControllers({ clip: spanOf(id) });
+            configureAutomergeStoragePort({
+                getDoc: (docId) => getCrdtDoc<Record<string, unknown>>(docId),
+                getDocHeads: (docId) => getHeads(getCrdtDoc<Record<string, unknown>>(docId)!),
+                hasDoc: (docId) => !!getCrdtDoc(docId),
+                getSemanticMessage: () => undefined,
+                mutateDoc: ({ docId, changedKeys, changeFn, beforeChange, message, snapshotTransaction }) => {
+                    mutateCrdtDoc({
+                        id: docId,
+                        changeFn,
+                        beforeChange,
+                        message,
+                        snapshotTransaction,
+                        localSlots: changedKeys,
+                    });
+                    throw new Error('controlled observer failure after actual recording publication');
+                },
+            });
+            const result = await executeAppActionBatch(
+                [{ type: 'commitRecording', payload: { clip: { ...structuredClone(provisional), endBeat: 8 } } }],
+                { groupId: 'actual-ambiguous-recording' }
+            );
+            expect(result.status).toBe('ambiguous');
+            expect(midiStore.value?.ccByClipId[id]).toEqual(rows.cc);
+            const raw = getCrdtDoc<{ midi: { ccByClipId: Record<string, unknown> } }>('root')!;
+            expect(raw.midi.ccByClipId[id]).toEqual(rows.cc);
+            expect(trackStore.value!.tracks[0]!.clips[0]!.endBeat).toBe(8);
+            expect(planRecordedControllers({ clip: spanOf(id) }).cc).toEqual([]);
+            registerCrdtStorageRuntime();
+        });
 
         it('writes nothing to the store during a long take and lands every row, in order, at the commit', async () => {
             const MESSAGES = 6000;
@@ -345,7 +609,7 @@ describe('recorded controller take commit', () => {
             expect(midiStore.value?.pitchBendByClipId[clipId]).toEqual(committedBend);
         });
 
-        it('writes nothing for a discarded take and starts the next take empty', async () => {
+        it('writes nothing for a discarded take and starts the next take with none of its rows, only the wheel it left held', async () => {
             const discardedClipId = await startLiveTake();
             sendLive(4.5, 0xb0, 1, 55);
             sendLive(5, 0xe0, 104, 71);
@@ -369,7 +633,10 @@ describe('recorded controller take commit', () => {
             flushAutomergeStorageWrites();
 
             expect(pedalsOf(next.id)).toEqual([{ controller: 1, value: 33, beat: 0.25, channel: 0 }]);
-            expect(midiStore.value?.pitchBendByClipId[next.id]).toBeUndefined();
+            // None of the discarded take's rows: only the wheel it left off centre, which the next take begins under.
+            expect((midiStore.value?.pitchBendByClipId[next.id] ?? []).map(({ id: _id, ...row }) => row)).toEqual([
+                { value: 1000, beat: 0, channel: 0, channelScoped: true },
+            ]);
             expect(midiStore.value?.ccByClipId[discardedClipId]).toBeUndefined();
         });
 
@@ -433,7 +700,9 @@ describe('recorded controller take commit', () => {
         });
 
         /** Hold the project's snapshot transaction, as a collaboration persist does, until `release` is called. */
-        async function holdSnapshotTransaction(): Promise<{ release: () => void; settled: Promise<unknown> }> {
+        async function holdSnapshotTransaction(
+            beforeRelease?: (transaction: object) => Promise<void>
+        ): Promise<{ release: () => void; settled: Promise<unknown> }> {
             let release!: () => void;
             const released = new Promise<void>((resolve) => {
                 release = resolve;
@@ -442,9 +711,10 @@ describe('recorded controller take commit', () => {
             const started = new Promise<void>((resolve) => {
                 markStarted = resolve;
             });
-            const settled = transactSnapshot(async () => {
+            const settled = transactSnapshot(async (transaction) => {
                 markStarted();
                 await released;
+                await beforeRelease?.(transaction);
             });
             await started;
             return { release, settled };
@@ -516,7 +786,13 @@ describe('recorded controller take commit', () => {
                 sendLive(4.5, 0xb0, 1, 55);
                 sendLive(5, 0xe0, 104, 71);
                 expect(planRecordedControllers({ clip: spanOf(clipId) }).cc).toHaveLength(1);
-                const held = await holdSnapshotTransaction();
+                setArrangementEventBus(createEventBus());
+                const held = await holdSnapshotTransaction(async (transaction) => {
+                    await executeAppAction(
+                        { type: 'removeTrack', payload: { trackId: TRACK_ID } },
+                        { snapshotTransaction: transaction, skipUndo: true }
+                    );
+                });
                 transportStore.set({ ...transportStore.value!, isRecording: false });
                 // The refused commit rolls its transaction back, so the stored rows
                 // end up unchanged either way: a write that landed and was undone
@@ -534,7 +810,6 @@ describe('recorded controller take commit', () => {
                 });
                 const stopping = stopRecording(8);
 
-                trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
                 held.release();
                 await held.settled;
                 await stopping;
@@ -844,6 +1119,67 @@ describe('recorded controller take commit', () => {
                     { controller: 64, value: 127, beat: 0, channel: 0 },
                     { controller: 64, value: 0, beat: 2, channel: 0 },
                 ]);
+            });
+        });
+
+        describe('a pitch wheel already off centre when the take begins', () => {
+            it('leads the take with the wheel scoped to its channel at clip beat 0, removed by undo and restored by redo', async () => {
+                setWebMidiRuntimeEventBus({ eventBus: { emit: () => Promise.resolve(), on: () => () => {} } });
+                await initWebMidi();
+                setMidiInputTrack(TRACK_ID);
+                // Channel 2's wheel a quarter up (4096 above centre), held through Record.
+                sendLive(4, 0xe1, 0, 96);
+                const [provisional] = startRecording(4);
+                if (!provisional) {
+                    throw new Error('expected a provisional recording clip');
+                }
+                transportStore.set({ ...transportStore.value!, isRecording: true });
+
+                appendRecordedMidiNote({
+                    clipId: provisional.id,
+                    note: { id: 'note-1', pitch: 60, startBeat: 0, duration: 1, velocity: 100, channel: 0 },
+                });
+                appendRecordedMidiNote({
+                    clipId: provisional.id,
+                    note: { id: 'note-2', pitch: 64, startBeat: 0, duration: 1, velocity: 100, channel: 1 },
+                });
+                await stopRecording(8);
+                flushAutomergeStorageWrites();
+
+                const bendsOf = (clipId: string) =>
+                    (midiStore.value?.pitchBendByClipId[clipId] ?? []).map(({ id: _id, ...row }) => row);
+                const expected = [{ value: 4096, beat: 0, channel: 1, channelScoped: true }];
+                expect(bendsOf(provisional.id)).toEqual(expected);
+
+                await undo();
+                flushAutomergeStorageWrites();
+                expect(midiStore.value?.pitchBendByClipId[provisional.id]).toBeUndefined();
+
+                await redo();
+                flushAutomergeStorageWrites();
+                expect(bendsOf(provisional.id)).toEqual(expected);
+            });
+
+            it('adds no bend row when every wheel is centred', async () => {
+                setWebMidiRuntimeEventBus({ eventBus: { emit: () => Promise.resolve(), on: () => () => {} } });
+                await initWebMidi();
+                setMidiInputTrack(TRACK_ID);
+                sendLive(4, 0xe1, 0, 96);
+                sendLive(4, 0xe1, 0, 64);
+                const [provisional] = startRecording(4);
+                if (!provisional) {
+                    throw new Error('expected a provisional recording clip');
+                }
+                transportStore.set({ ...transportStore.value!, isRecording: true });
+
+                appendRecordedMidiNote({
+                    clipId: provisional.id,
+                    note: { id: 'note-1', pitch: 60, startBeat: 0, duration: 1, velocity: 100 },
+                });
+                await stopRecording(8);
+                flushAutomergeStorageWrites();
+
+                expect(midiStore.value?.pitchBendByClipId[provisional.id]).toBeUndefined();
             });
         });
 

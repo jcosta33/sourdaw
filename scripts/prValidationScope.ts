@@ -6,10 +6,20 @@ import { isDeepStrictEqual } from 'node:util';
 
 import { assertCollectedBrowserInventory } from './e2eCollectorInventory.ts';
 import { partitionByDuration, readSpecDurations, type SpecDurations } from './e2eShardPartition.ts';
-import { readCheckoutDiff } from './prValidationScopeCheckout.ts';
-import { isPlaywrightCollected } from './vitestCollectionPatterns.ts';
+import { TEST_FIXTURE_REASON, testSidePathSelection, testSideRoutes, type TestSideRoute } from './e2eTestSideRoute.ts';
+import {
+    parseChangedPaths,
+    parseChangedRecords,
+    readCheckoutDiff,
+    SELECTION_INPUTS,
+} from './prValidationScopeCheckout.ts';
+import { isRepositoryTooling } from './repositoryToolingPaths.ts';
+import { isPlaywrightCollected, isVitestCollected } from './vitestCollectionPatterns.ts';
 
-import type { AffectedSelection } from './e2eAffectedGraph.ts';
+import type { AffectedSelection, RuntimeGraph } from './e2eAffectedGraph.ts';
+import type { CoverageSelection } from './e2eCoverageSelection.ts';
+
+export { parseChangedPaths } from './prValidationScopeCheckout.ts';
 
 export const SMOKE_SPEC = 'tests/e2e/smoke.spec.ts';
 
@@ -18,6 +28,9 @@ const REVIEW_TOOLING = new Set([
     'agentDeliveryScripts',
     'acceptReview',
     'claimTrackerIssue',
+    'cleanupLanes',
+    'installCleanupLanes',
+    'laneActivity',
     'confirmReviewRepairs',
     'deliverPullRequest',
     'fileTrackerIssue',
@@ -32,7 +45,6 @@ const REVIEW_TOOLING = new Set([
     'repairReviewFinding',
     'resolveThread',
     'reviewApprovalFormat',
-    'reviewApprovalLabel',
     'reviewDocumentParser',
     'reviewDossier',
     'reviewDossierBindings',
@@ -89,7 +101,11 @@ const RELEASE_TOOLING_METADATA = new Set([
     'release/dependency-license-proofs.json',
 ]);
 
-const OPERATIONAL_PACKAGE_SCRIPTS = new Map([['retarget:plan', 'node scripts/retargetCapabilitySnapshot.ts']]);
+const OPERATIONAL_PACKAGE_SCRIPTS = new Map([
+    ['retarget:plan', 'node scripts/retargetCapabilitySnapshot.ts'],
+    ['lane:cleanup', 'node scripts/cleanupLanes.ts'],
+    ['lane:cleanup:install', 'node scripts/installCleanupLanes.ts'],
+]);
 
 export type BrowserMatrix = { include: { id: number; specs: string[] }[] };
 export type ValidationPlan = {
@@ -107,20 +123,12 @@ function isDocumentation(path: string): boolean {
 }
 
 /**
- * Repository tooling and prose never select browser execution, though they keep broad non-browser
- * validation. Generator and build scripts reach the browser only through their outputs, which land
- * under src/ or public/ and select browser coverage there. Product trees may load Markdown, so it
- * stays classified with them.
+ * Vitest specs under src/ never reach the browser: the production dependency graph excludes them and
+ * Playwright ignores them. Non-spec files under `__tests__/` are not matched, because a browser
+ * harness page may load them.
  */
-function isRepositoryTooling(path: string): boolean {
-    return (
-        path.startsWith('scripts/') ||
-        path.startsWith('.agents/') ||
-        path === '.gitleaksignore' ||
-        path === '.gitleaks.toml' ||
-        /^release\/[^/]+\.json$/.test(path) ||
-        (path.endsWith('.md') && !/^(?:src|public|tests)\//.test(path))
-    );
+function isProductUnitSpec(path: string): boolean {
+    return path.startsWith('src/') && isVitestCollected(path);
 }
 
 function needsCodeql(path: string): boolean {
@@ -173,32 +181,6 @@ function isRegularFile(path: string): boolean {
     } catch {
         return false;
     }
-}
-
-export function parseChangedPaths(diff: string): string[] {
-    if (diff === '') {
-        throw new Error('Changed-path diff is empty');
-    }
-    const fields = diff.split('\0');
-    if (fields.pop() !== '') {
-        throw new Error('Changed-path diff must be NUL terminated');
-    }
-    const paths = new Set<string>();
-    for (let index = 0; index < fields.length;) {
-        const status = fields[index++];
-        if (status === undefined || !/^(?:[AMDUT]|[RC]\d+)$/.test(status)) {
-            throw new Error(`Unsupported diff status: ${status}`);
-        }
-        const count = /^[RC]/.test(status) ? 2 : 1;
-        for (let offset = 0; offset < count; offset++) {
-            const path = fields[index++];
-            if (!path || path.startsWith('/') || path.split('/').includes('..')) {
-                throw new Error('Invalid changed path');
-            }
-            paths.add(path);
-        }
-    }
-    return [...paths].sort();
 }
 
 function packageHasModifiedStatus(diff: string): boolean {
@@ -300,10 +282,13 @@ function browserMatrix(specs: readonly string[], durations: SpecDurations): Brow
     };
 }
 
+const FULL_COVERAGE_REASON = 'product, shared, deleted, renamed, or unclassified dependency; full browser coverage';
+
 function browserPathSelection(
     path: string,
     available: ReadonlySet<string>,
-    affected?: AffectedSelection
+    affected?: AffectedSelection,
+    coverage?: CoverageSelection
 ): { specs: readonly string[]; browserAi: boolean; broad: boolean; reason: string } {
     if (isSpec(path) && available.has(path)) {
         return {
@@ -321,12 +306,37 @@ function browserPathSelection(
             reason: `affected feature owners: ${affected.owners.join(', ')}`,
         };
     }
+    const covered = coverage?.kind === 'specs' ? coverage.paths.find((entry) => entry.path === path) : undefined;
+    if (covered !== undefined) {
+        return { specs: covered.specs, browserAi: covered.browserAi, broad: false, reason: covered.reason };
+    }
     return {
         specs: [],
         browserAi: true,
         broad: true,
-        reason: 'product, shared, deleted, renamed, or unclassified dependency; full browser coverage',
+        reason: coverage?.kind === 'full' ? `${FULL_COVERAGE_REASON}; ${coverage.reason}` : FULL_COVERAGE_REASON,
     };
+}
+
+type PathSelection = { browser: false; reason: string } | ({ browser: true } & ReturnType<typeof browserPathSelection>);
+
+/** A unit spec or unit-only test fixture runs no browser; every other product path selects specs. */
+function pathSelection(
+    path: string,
+    available: ReadonlySet<string>,
+    selections: { affected?: AffectedSelection; coverage?: CoverageSelection; testSide?: readonly TestSideRoute[] }
+): PathSelection {
+    if (isProductUnitSpec(path)) {
+        return { browser: false, reason: 'unit test source; broad non-browser validation without browser execution' };
+    }
+    const side = selections.testSide?.find((route) => route.path === path);
+    if (side === undefined) {
+        return { browser: true, ...browserPathSelection(path, available, selections.affected, selections.coverage) };
+    }
+    if (side.kind === 'specs' && side.specs.length === 0) {
+        return { browser: false, reason: TEST_FIXTURE_REASON };
+    }
+    return { browser: true, ...testSidePathSelection(side, available, FULL_COVERAGE_REASON) };
 }
 
 function planProfile(broad: boolean, tooling: boolean): ValidationPlan['profile'] {
@@ -341,7 +351,9 @@ export function selectValidationPlan(
     availableSpecs: readonly string[],
     durations: SpecDurations = new Map(),
     packageScriptOnly = false,
-    affected?: AffectedSelection
+    affected?: AffectedSelection,
+    coverage?: CoverageSelection,
+    testSide?: readonly TestSideRoute[]
 ): ValidationPlan {
     if (paths.length === 0) {
         throw new Error('Changed path list is empty');
@@ -379,8 +391,13 @@ export function selectValidationPlan(
             });
             continue;
         }
+        const selection = pathSelection(path, available, { affected, coverage, testSide });
+        if (!selection.browser) {
+            nonBrowser = true;
+            reasons.push({ path, reason: selection.reason });
+            continue;
+        }
         browser = true;
-        const selection = browserPathSelection(path, available, affected);
         for (const spec of selection.specs) {
             selected.add(spec);
         }
@@ -423,7 +440,8 @@ export function selectedSpecArguments(value: unknown, root: string): string[] {
     });
 }
 
-function listSpecs(root: string): string[] {
+/** Every collected browser spec under tests/e2e, as repository paths. */
+export function listSpecs(root: string): string[] {
     const specs: string[] = [];
     for (const entry of readdirSync(resolve(root, 'tests/e2e'), { recursive: true, withFileTypes: true })) {
         const path = relative(root, resolve(entry.parentPath, entry.name));
@@ -434,7 +452,7 @@ function listSpecs(root: string): string[] {
     return specs;
 }
 
-/** Paths that need browser coverage beyond documentation, repository tooling, and collected specs. */
+/** Paths that need browser coverage beyond documentation, repository tooling, unit specs, and collected specs. */
 export function productPathsOf(
     paths: readonly string[],
     specs: readonly string[],
@@ -445,6 +463,7 @@ export function productPathsOf(
             !isDocumentation(path) &&
             toolingReason(path, packageScriptOnly) === null &&
             !isRepositoryTooling(path) &&
+            !isProductUnitSpec(path) &&
             !(isSpec(path) && specs.includes(path))
     );
 }
@@ -467,42 +486,77 @@ export function canNarrow(input: {
     );
 }
 
+type RuntimeGraphResult = RuntimeGraph | { kind: 'full'; reason: string };
+
 async function affectedFromCheckout(
     root: string,
     base: string,
     head: string,
     diff: string,
-    specs: readonly string[]
-): Promise<{ paths: string[]; packageScriptOnly: boolean; affected?: AffectedSelection }> {
+    specs: readonly string[],
+    coverageMap: { path: string | undefined; createdAt: string | undefined }
+): Promise<{
+    paths: string[];
+    packageScriptOnly: boolean;
+    affected?: AffectedSelection;
+    coverage?: CoverageSelection;
+    testSide?: TestSideRoute[];
+}> {
     const paths = parseChangedPaths(diff);
     const packageScriptOnly = paths.includes('package.json') && isOperationalPackageScriptChange(diff, base, head);
-    const productPaths = productPathsOf(paths, specs, packageScriptOnly);
+    const changedProductPaths = productPathsOf(paths, specs, packageScriptOnly);
     const graphInputsDirty = spawnSync(
         'git',
-        [
-            'status',
-            '--porcelain',
-            '--untracked-files=all',
-            '--',
-            'src',
-            'public',
-            'scripts/e2eSuiteOwners.json',
-            'scripts/e2eAffectedGraph.ts',
-            'tsconfig.json',
-        ],
+        ['status', '--porcelain', '--untracked-files=all', '--', ...SELECTION_INPUTS],
         { cwd: root, encoding: 'utf8' }
     );
     const cleanGraphInputs = graphInputsDirty.status === 0 && graphInputsDirty.stdout === '';
+    const candidates = cleanGraphInputs ? changedProductPaths : [];
+    const testSide = await testSideRoutes(root, candidates, parseChangedRecords(diff), specs);
+    // Routed test-side modules leave the product route, so neither narrowing rule sees them.
+    const productPaths = changedProductPaths.filter((path) => !testSide.some((route) => route.path === path));
+    // Owner narrowing and coverage selection read one shared graph, built at most once.
+    let runtime: Promise<RuntimeGraphResult> | undefined;
+    const loadRuntime = async (): Promise<RuntimeGraphResult> => {
+        runtime ??= import('./e2eAffectedGraph.ts').then(({ loadRuntimeGraph }) => loadRuntimeGraph(root));
+        return runtime;
+    };
     let affected: AffectedSelection | undefined;
     if (cleanGraphInputs && canNarrow({ productPaths, candidateDiff: diff, integrationDiff: '' })) {
         try {
             const { loadAffectedE2e } = await import('./e2eAffectedGraph.ts');
-            affected = await loadAffectedE2e(root, productPaths, specs);
+            affected = await loadAffectedE2e(root, productPaths, specs, await loadRuntime());
         } catch {
             affected = { kind: 'full', reason: 'dependency graph helper unavailable' };
         }
     }
-    return { paths, packageScriptOnly, affected };
+    // Without a configured map path (a local run), the coverage rule is not in play at all.
+    if (productPaths.length === 0 || affected?.kind === 'narrow' || coverageMap.path === undefined) {
+        return { paths, packageScriptOnly, affected, testSide };
+    }
+    if (!cleanGraphInputs) {
+        const coverage: CoverageSelection = { kind: 'full', reason: 'selection inputs are dirty' };
+        return { paths, packageScriptOnly, affected, coverage, testSide };
+    }
+    const product = new Set(productPaths);
+    let coverage: CoverageSelection;
+    try {
+        const { loadCoverageSelection } = await import('./e2eCoverageSelection.ts');
+        coverage = await loadCoverageSelection({
+            root,
+            base,
+            head,
+            changes: parseChangedRecords(diff).filter((record) => product.has(record.path)),
+            availableSpecs: specs,
+            map: coverageMap,
+            now: new Date(),
+            loadRuntime,
+        });
+    } catch (error) {
+        const message = error instanceof Error ? error.message : 'unknown error';
+        coverage = { kind: 'full', reason: `coverage selection failed: ${message}` };
+    }
+    return { paths, packageScriptOnly, affected, coverage, testSide };
 }
 
 async function main(): Promise<void> {
@@ -525,11 +579,19 @@ async function main(): Promise<void> {
     }
     const { checkout, firstParent, diff } = readCheckoutDiff(root, base, head);
     const specs = listSpecs(root);
-    const { paths, packageScriptOnly, affected } = await affectedFromCheckout(root, firstParent, checkout, diff, specs);
+    const { paths, packageScriptOnly, affected, coverage, testSide } = await affectedFromCheckout(
+        root,
+        firstParent,
+        checkout,
+        diff,
+        specs,
+        { path: process.env.E2E_COVERAGE_MAP, createdAt: process.env.E2E_COVERAGE_MAP_CREATED_AT }
+    );
     console.log(
         JSON.stringify({ eventBase: base, candidateHead: head, integrationFirstParent: firstParent, checkout })
     );
-    const plan = selectValidationPlan(paths, specs, readSpecDurations(), packageScriptOnly, affected);
+    const durations = readSpecDurations();
+    const plan = selectValidationPlan(paths, specs, durations, packageScriptOnly, affected, coverage, testSide);
     if (affected?.kind === 'full') {
         plan.reasons.push({ path: 'affected graph', reason: affected.reason });
     }

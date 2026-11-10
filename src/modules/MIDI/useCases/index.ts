@@ -56,7 +56,12 @@ export { canPrepareMidiClipGlueState } from './midiClipData/canPrepareMidiClipGl
 export { prepareMidiClipFanOutState } from './midiClipData/prepareMidiClipFanOutState';
 export { prepareMidiClipGlueState } from './midiClipData/prepareMidiClipGlueState';
 export { projectMidiClipWindow } from './midiClipData/projectMidiClipWindow';
+export { projectFrozenMidiTakeWindow } from './midiClipData/projectFrozenMidiTakeWindow';
+export { replaceFrozenMidiTakeRow } from './midiClipData/replaceFrozenMidiTakeRow';
+export { sliceMidiTakeNoteForEdit } from './midiClipData/sliceMidiTakeNoteForEdit';
+export { projectMidiNoteMenuTransform } from './midiNoteTransforms/projectMidiNoteMenuTransform';
 export { projectMidiClipPlayback } from './midiClipData/projectMidiClipPlayback';
+export { snapshotMidiClipData } from './midiClipData/snapshotMidiClipData';
 export { projectClipControllerEvents } from './midiClipData/projectClipControllerEvents';
 export { projectClipControllerRestore } from './midiClipData/projectClipControllerRestore';
 export { projectChannelBend } from './midiClipData/projectChannelBend';
@@ -90,6 +95,7 @@ export { projectClipMidiEvents } from './grooveTemplates/projectClipMidiEvents';
 export { projectCommittedGroove } from './grooveTemplates/projectCommittedGroove';
 export { renameGrooveTemplate } from './grooveTemplates/renameGrooveTemplate';
 export { restoreDeletedGrooveTemplate } from './grooveTemplates/restoreDeletedGrooveTemplate';
+export { markGrooveTemplateProjectWrite } from './grooveTemplates/markGrooveTemplateProjectWrite';
 export { restoreGrooveAssignment } from './grooveTemplates/restoreGrooveAssignment';
 export { snapshotGrooveTemplateDeletion } from './grooveTemplates/snapshotGrooveTemplateDeletion';
 
@@ -100,6 +106,7 @@ export { moveMidiCC } from './midiEvent/moveMidiCC';
 export { movePitchBend } from './midiEvent/movePitchBend';
 export { removeMidiCC } from './midiEvent/removeMidiCC';
 export { removePitchBend } from './midiEvent/removePitchBend';
+export { restorePitchBend } from './midiEvent/restorePitchBend';
 export { restoreMidiCCPoints } from './midiEvent/restoreMidiCCPoints';
 export { revisitHandEditedCCReturns } from './midiEvent/revisitHandEditedCCReturns';
 export { getHandEditedReturnFamily } from './midiEvent/getHandEditedReturnFamily';
@@ -108,6 +115,11 @@ export { setNotePressure } from './midiEvent/setNotePressure';
 export { setNoteSlide } from './midiEvent/setNoteSlide';
 export { setNotePitchBend } from './midiEvent/setNotePitchBend';
 export { resolveMidiNoteArticulationId } from './resolveMidiNoteArticulationId';
+// Published because the composition root registers the articulation tables and
+// velocity calibration device modules own.
+export { articulationIdResolvers } from './articulationIdResolvers';
+export { velocityCalibration } from './webMidiInput/velocityCalibration';
+export { midiLearnRouting } from './webMidiInput/midiLearnRouting';
 
 // ── MIDI Note CRUD ────────────────────────────────────────────────────────────
 export { addMidiNote } from './midiNoteCrud/addMidiNote';
@@ -116,6 +128,7 @@ export { batchAddMidiNotes } from './midiNoteCrud/batchAddMidiNotes';
 export { duplicateClipNotes } from './midiNoteCrud/duplicateClipNotes';
 export { getNotesForClip } from './midiNoteCrud/getNotesForClip';
 export { isMidiRowCoordinateCapture } from './midiNoteCrud/isMidiRowCoordinateCapture';
+export { getMidiClipNotesSnapshot } from './midiNoteTransforms/getMidiClipNotesSnapshot';
 export { migrateAbsoluteMidiNotes } from './midiNoteCrud/migrateAbsoluteMidiNotes';
 export { moveMidiNote } from './midiNoteCrud/moveMidiNote';
 export { prepareClipMidiRowCoordinateShift } from './midiNoteCrud/prepareClipMidiRowCoordinateShift';
@@ -173,9 +186,6 @@ export { getMidiNoteTransformHandlers } from './getMidiNoteTransformHandlers';
 export { getMidiTransformProtocolContract } from './getMidiTransformProtocolContract';
 export { getMidiGrooveHandlers } from './getMidiGrooveHandlers';
 
-// ── Pattern Instances ─────────────────────────────────────────────────────────
-export { getPatternInstanceHandlers } from './getPatternInstanceHandlers';
-
 export { strumNotes } from './strumNotes/strumNotes';
 export { restoreStrumOriginals } from './strumNotes/restoreStrumOriginals';
 
@@ -186,6 +196,9 @@ export { transposeForChordTrack } from './transposeForChordTrack';
 export { initWebMidi } from './webMidiInput/initWebMidi';
 export { setWebMidiRealtimeProcessor } from './webMidiInput/setWebMidiRealtimeProcessor';
 export { setWebMidiRuntimeEventBus } from './webMidiInput/setWebMidiRuntimeEventBus';
+export { setRecordingMidiAdmissionPort } from './webMidiInput/recordingMidiAdmissionPort';
+export { prepareRecordedControllersCommit } from './recordedControllerTake/prepareRecordedControllersCommit';
+export { captureRecordedControllerRetirement } from './recordedControllerTake/captureRecordedControllerRetirement';
 export { setMidiInputTrack } from './webMidiInput/setMidiInputTrack';
 export { getMidiInputTrack } from './webMidiInput/getMidiInputTrack';
 export { getMidiInputTrackOwnerId } from './webMidiInput/getMidiInputTrackOwnerId';
@@ -196,6 +209,8 @@ export { resetMidiState } from './webMidiInput/resetMidiState';
 export { resolveLiveInputNoteReceiver } from './webMidiInput/resolveLiveInputNoteReceiver';
 export { panicLiveNotes } from './webMidiInput/panicLiveNotes';
 export { triggerLiveNoteOn } from './triggerLiveNoteOn';
+export { sealHeldRecordedMidiNotes } from './webMidiInput/sealHeldRecordedMidiNotes';
+export { captureEventPositionAt } from './webMidiInput/captureEventBeat';
 export { triggerLiveNoteOff } from './triggerLiveNoteOff';
 export { getWebMidiInputHandlers } from './getWebMidiInputHandlers';
 

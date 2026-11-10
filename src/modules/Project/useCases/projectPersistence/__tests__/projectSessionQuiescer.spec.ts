@@ -7,7 +7,7 @@ const mocks = vi.hoisted(() => ({
     clearRuntimeCachedAudioBuffers: vi.fn(async () => undefined),
     disarmRetrospectiveCapture: vi.fn(),
     resetAudioGraph: vi.fn(),
-    retractEveryCrumbsEngineAttachment: vi.fn(),
+    retractEveryEngineAttachment: vi.fn(),
     beginProjectSessionPluginRetirement: vi.fn(),
     repairRuntimeGraphFromProject: vi.fn(),
     stopPlayback: vi.fn(),
@@ -17,10 +17,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     clearRuntimeCachedAudioBuffers: mocks.clearRuntimeCachedAudioBuffers,
     disarmRetrospectiveCapture: mocks.disarmRetrospectiveCapture,
     resetAudioGraph: mocks.resetAudioGraph,
-}));
-
-vi.mock('#/modules/Crumbs/useCases', () => ({
-    retractEveryCrumbsEngineAttachment: mocks.retractEveryCrumbsEngineAttachment,
+    engineAttachmentTracking: { read: () => ({ retractEveryAttachment: mocks.retractEveryEngineAttachment }) },
 }));
 
 vi.mock('#/modules/PluginHost/useCases', () => ({
@@ -73,7 +70,7 @@ describe('projectSessionQuiescer — the recorded arm does not outlive the sessi
         // After the engine teardown it sits beside, and before the quiesce is
         // reported committed: the ring stops retaining on the way down.
         expect(mocks.disarmRetrospectiveCapture.mock.invocationCallOrder[0]).toBeGreaterThan(
-            mocks.retractEveryCrumbsEngineAttachment.mock.invocationCallOrder[0] ?? 0
+            mocks.retractEveryEngineAttachment.mock.invocationCallOrder[0] ?? 0
         );
     });
 

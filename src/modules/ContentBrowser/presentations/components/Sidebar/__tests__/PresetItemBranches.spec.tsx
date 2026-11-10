@@ -79,21 +79,48 @@ describe('PresetItem — category badge', () => {
 });
 
 describe('PresetItem — favorite toggle', () => {
-    it('shows "Add to favorites" when not favorited', () => {
+    it('shows "Add Warm Pad to favorites" when not favorited', () => {
         renderItem({ favorites: new Set<string>() });
-        expect(screen.getByRole('button', { name: /add to favorites/i })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Add Warm Pad to favorites' })).toBeInTheDocument();
     });
 
-    it('shows "Remove from favorites" when favorited', () => {
+    it('shows "Remove Warm Pad from favorites" when favorited', () => {
         renderItem({ favorites: new Set(['p1']) });
-        expect(screen.getByRole('button', { name: /remove from favorites/i })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Remove Warm Pad from favorites' })).toBeInTheDocument();
     });
 
     it('calls onToggleFavorite with preset id when clicked', () => {
         const { onToggleFavorite, onClick } = renderItem();
-        fireEvent.click(screen.getByRole('button', { name: /add to favorites/i }));
+        fireEvent.click(screen.getByRole('button', { name: 'Add Warm Pad to favorites' }));
         expect(onToggleFavorite).toHaveBeenCalledWith('p1');
         expect(onClick).not.toHaveBeenCalled();
+    });
+});
+
+describe('PresetItem — per-row names', () => {
+    it('names each row preview and favorite button after its own preset', () => {
+        render(
+            <>
+                <PresetItem
+                    preset={makePreset({ id: 'p1', name: 'Warm Pad' })}
+                    selectedTrackId={null}
+                    favorites={new Set<string>()}
+                    onToggleFavorite={vi.fn()}
+                    onClick={vi.fn()}
+                    preview={makePreview()}
+                />
+                <PresetItem
+                    preset={makePreset({ id: 'p2', name: 'Bright Lead' })}
+                    selectedTrackId={null}
+                    favorites={new Set(['p2'])}
+                    onToggleFavorite={vi.fn()}
+                    onClick={vi.fn()}
+                    preview={makePreview()}
+                />
+            </>
+        );
+        expect(screen.getByRole('button', { name: 'Add Warm Pad to favorites' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Remove Bright Lead from favorites' })).toBeInTheDocument();
     });
 });
 
@@ -125,11 +152,15 @@ describe('PresetItem — title tooltip', () => {
 });
 
 describe('PresetItem — preview button', () => {
-    it('calls preview.playTone with preset id when preview clicked', () => {
+    it('passes the preset identity to preview.play without loading or favoriting', () => {
+        const play = vi.fn();
         const playTone = vi.fn();
-        renderItem({ preview: makePreview({ playTone }) });
+        const { onClick, onToggleFavorite } = renderItem({ preview: makePreview({ play, playTone }) });
         fireEvent.click(screen.getByTestId('preview-btn'));
-        expect(playTone).toHaveBeenCalledWith('p1', 261.63, 0.5);
+        expect(play).toHaveBeenCalledWith('p1', { kind: 'preset', presetId: 'p1' });
+        expect(playTone).not.toHaveBeenCalled();
+        expect(onClick).not.toHaveBeenCalled();
+        expect(onToggleFavorite).not.toHaveBeenCalled();
     });
 });
 
@@ -138,5 +169,64 @@ describe('PresetItem — card click', () => {
         const { onClick } = renderItem();
         fireEvent.click(screen.getByText('Warm Pad'));
         expect(onClick).toHaveBeenCalledTimes(1);
+    });
+});
+
+/**
+ * The parts of a button's description, in order. A browser reads a referenced
+ * element's aria-label, which jsdom's accessible-description computation does
+ * not, so each referenced element's label or text is resolved here.
+ */
+function describedBy(button: HTMLElement): string[] {
+    return (button.getAttribute('aria-describedby') ?? '')
+        .split(' ')
+        .map((id) => document.getElementById(id))
+        .map((part) => part?.getAttribute('aria-label') ?? part?.textContent ?? '');
+}
+
+describe('PresetItem — keyboard reachability', () => {
+    it('exposes the card action as a focusable native button named for the preset', () => {
+        const { onClick } = renderItem();
+        const card = screen.getByRole('button', { name: 'Warm Pad' });
+        expect(describedBy(card)).toEqual(['synth', 'MIDI track', 'Fermenter → Gluten']);
+        expect(card.tagName).toBe('BUTTON');
+        expect(card).toHaveAttribute('type', 'button');
+        expect(card.tabIndex).toBeGreaterThanOrEqual(0);
+        card.focus();
+        expect(card).toHaveFocus();
+        // jsdom does not turn Enter or Space into a click; a native button does in the browser.
+        card.click();
+        expect(onClick).toHaveBeenCalledTimes(1);
+    });
+
+    it('describes an audio preset without a category badge by its track kind and chain', () => {
+        renderItem({ preset: makePreset({ trackKind: 'audio' }), hideCategory: true });
+        expect(describedBy(screen.getByRole('button', { name: 'Warm Pad' }))).toEqual([
+            'Audio track',
+            'Fermenter → Gluten',
+        ]);
+    });
+
+    it('keeps preview, card and favorite as separate sibling buttons, none nested', () => {
+        renderItem();
+        const buttons = screen.getAllByRole('button');
+        expect(buttons.map((button) => button.getAttribute('aria-label') ?? button.textContent?.trim())).toEqual([
+            'Preview',
+            'Warm Pad',
+            'Add Warm Pad to favorites',
+        ]);
+        for (const button of buttons) {
+            expect(button.querySelector('button')).toBeNull();
+        }
+    });
+
+    it('does not load the preset when the favorite star is activated', () => {
+        const { onClick, onToggleFavorite } = renderItem();
+        const star = screen.getByRole('button', { name: 'Add Warm Pad to favorites' });
+        star.focus();
+        expect(star).toHaveFocus();
+        star.click();
+        expect(onToggleFavorite).toHaveBeenCalledWith('p1');
+        expect(onClick).not.toHaveBeenCalled();
     });
 });

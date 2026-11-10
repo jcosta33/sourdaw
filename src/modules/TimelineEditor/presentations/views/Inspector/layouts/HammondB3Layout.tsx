@@ -1,12 +1,13 @@
 import { type ReactElement } from 'react';
 
-import { Grid, Row, Stack } from '#/components/layout';
+import { Row, Stack } from '#/components/layout';
 import { Slider } from '#/components/ui/slider';
 import { setDeviceParameter } from '#/modules/Arrangement/useCases';
 
 import { SurfaceCard } from '../../../components/Inspector/SurfaceCard';
 import { type DeviceLayoutProps, registerDeviceLayout } from '../deviceLayoutRegistry';
 import { DeviceParameterControl } from '../DeviceParameterControl';
+import { ParamCardGrid } from '../ParamCardGrid';
 
 export const HammondB3Layout = ({ device, trackId, parameters }: DeviceLayoutProps): ReactElement | null => {
     if (!device) {
@@ -52,8 +53,8 @@ export const HammondB3Layout = ({ device, trackId, parameters }: DeviceLayoutPro
                                         step={1}
                                         value={[8 - val]}
                                         className="h-[120px] w-6"
-                                        trackClassName="w-2 rounded-sm bg-surface-inset shadow-[inset_0_1px_2px_rgba(0,0,0,0.45)]"
-                                        rangeClassName="[background:linear-gradient(180deg,rgba(201,160,122,0.92)_0%,rgba(201,160,122,0.6)_100%)] shadow-[0_0_10px_rgba(201,160,122,0.14)]"
+                                        trackClassName="w-2 rounded-sm border border-control-rail-edge bg-surface-inset shadow-[inset_0_1px_2px_rgba(0,0,0,0.45)]"
+                                        rangeClassName="[background:linear-gradient(180deg,var(--color-control-fill-peach-top)_0%,var(--color-control-fill-peach-bottom)_100%)] shadow-[0_0_10px_rgba(201,160,122,0.14)]"
                                         thumbClassName="size-5 rounded-[4px]"
                                         aria-label={param.name}
                                         onValueChange={(values) => {
@@ -76,13 +77,13 @@ export const HammondB3Layout = ({ device, trackId, parameters }: DeviceLayoutPro
             {otherParams.length > 0 ? (
                 <Stack gap={2} className="border-t border-border/40 pt-4">
                     <h3 className="text-xs font-semibold text-foreground/80 uppercase px-1">Controls</h3>
-                    <Grid cols={2} gap={4}>
+                    <ParamCardGrid gap={4}>
                         {otherParams.map((param) => (
                             <SurfaceCard key={param.id} className="p-2">
                                 <DeviceParameterControl param={param} device={device} trackId={trackId} />
                             </SurfaceCard>
                         ))}
-                    </Grid>
+                    </ParamCardGrid>
                 </Stack>
             ) : null}
         </Stack>

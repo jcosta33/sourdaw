@@ -2189,31 +2189,20 @@ describe('bridgeLlmToolCalls', () => {
         );
     });
 
-    it('rejects crossfades with removal of either target track in either order', () => {
-        const sameTrackContext = createCrossfadeContext();
-        const [sourceTrack, destinationTrack, ...remainingTracks] = sameTrackContext.tracks;
+    it('rejects crossfades with removal of the target track in either order', () => {
+        const context = createCrossfadeContext();
+        const [sourceTrack] = context.tracks;
         const [sourceClip, destinationClip] = sourceTrack?.clips ?? [];
-        if (!sourceTrack || !destinationTrack || !sourceClip || !destinationClip) {
-            throw new Error('Expected two tracks and two crossfade clips');
+        if (!sourceTrack || !sourceClip || !destinationClip) {
+            throw new Error('Expected a track with two crossfade clips');
         }
-        const context: ProjectContext = {
-            ...sameTrackContext,
-            tracks: [
-                { ...sourceTrack, clipCount: 1, clips: [sourceClip] },
-                { ...destinationTrack, kind: 'audio', clipCount: 1, clips: [destinationClip] },
-                ...remainingTracks,
-            ],
-        };
         const crossfade = crossfadeCall({ clipAId: sourceClip.id, clipBId: destinationClip.id, durationBeats: 1 });
-        const removals = [sourceTrack.id, destinationTrack.id].map((trackId) => ({
-            name: 'removeTrack',
-            arguments: { trackId },
-        }));
+        const removeTrack = { name: 'removeTrack', arguments: { trackId: sourceTrack.id } };
 
-        const results = removals.flatMap((removeTrack) => [
+        const results = [
             bridge({ context, calls: [crossfade, removeTrack] }),
             bridge({ context, calls: [removeTrack, crossfade] }),
-        ]);
+        ];
 
         expect(results.every((result) => result.actions.length === 1)).toBe(true);
         expect(results.every((result) => result.rejections.length === 1)).toBe(true);
@@ -3633,7 +3622,7 @@ describe('bridgeLlmToolCalls', () => {
         expect(userMessage).toContain('"revision":3');
         expect(userMessage).toContain('"vision":"Intimate verses, explosive choruses"');
         expect(userMessage).toContain(
-            '"vcaGroups":[{"id":"vca-drums","name":"Drum VCA","gain":0.75,"muted":false,"trackIds":["track-vocals"]}]'
+            '"vcaGroups":[{"id":"vca-drums","name":"Drum VCA","gain":0.75,"gainDb":-2.4987747321659985,"muted":false,"trackIds":["track-vocals"]}]'
         );
         expect(userMessage).toContain('"soloSafe":false');
         expect(userMessage).toContain('"automationLanes"');

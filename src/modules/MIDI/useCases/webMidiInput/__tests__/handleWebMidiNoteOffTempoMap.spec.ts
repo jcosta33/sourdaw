@@ -8,6 +8,22 @@ const mpe_enabled = vi.hoisted(() => ({ value: false }));
 const get_track_strip = vi.hoisted(() => vi.fn());
 const audio_clock = vi.hoisted(() => ({ currentTime: 2, sampleRate: 48000, baseLatency: 0, outputLatency: 0 }));
 
+vi.mock('#/modules/Arrangement/useCases', () => ({
+    isRecordingMidiInputExcluded: () => false,
+    getRecordingMidiAdmission: () => undefined,
+    retireRecordingMidiAdmission: () => undefined,
+    takeOwnsRecordingRoot: () => true,
+}));
+
+vi.mock('../recordingMidiAdmissionPort', () => ({
+    recordingMidiAdmissionPort: {
+        isRecordingMidiInputExcluded: () => false,
+        getRecordingMidiAdmission: () => undefined,
+        retireRecordingMidiAdmission: () => undefined,
+        takeOwnsRecordingRoot: () => true,
+    },
+}));
+
 // Injection seam adapted from the issue source, per its own escape hatch: the
 // handler converts through the stores barrel's placement reads
 // (`readSecondsAtBeat`/`readBeatAtSamples`), which read the live
@@ -19,6 +35,7 @@ vi.mock('../../../repositories/webMidi/getMpeEnabled', () => ({
 }));
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    builtinSynthVoice: { read: vi.fn() },
     audioEngine: {
         context: audio_clock,
         getTrackStrip: get_track_strip,

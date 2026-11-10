@@ -39,6 +39,11 @@ describe('PresetItem', () => {
             />
         );
         expect(screen.getByText('Warm Pad')).toBeInTheDocument();
+        fireEvent.click(screen.getByRole('button', { name: 'Preview Warm Pad' }));
+        expect(preview.play).toHaveBeenCalledWith('preset-1', { kind: 'preset', presetId: 'preset-1' });
+        expect(preview.playTone).not.toHaveBeenCalled();
+        expect(onClick).not.toHaveBeenCalled();
+        expect(onToggleFavorite).not.toHaveBeenCalled();
         fireEvent.click(screen.getByText('Warm Pad'));
         expect(onClick).toHaveBeenCalledTimes(1);
     });

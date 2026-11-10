@@ -1,5 +1,6 @@
 import { type ProjectContext, type ProjectContextTrack } from '../../models/ProjectContext';
 
+import { PROMPT_CLAUSE_SEPARATOR } from './groundingStrategies/getPromptClauses';
 import { normalizePromptText } from './groundingStrategies/normalizePromptText';
 import { resolveWorkflowTrackIds } from './resolveWorkflowTrackIds';
 
@@ -13,12 +14,11 @@ function normalizeDeviceName(value: string): string {
     return normalizePromptText(value.replace(/^builtin-/u, ''));
 }
 
-// Mirrors the request boundaries the bridge grounds each action against (getPromptClauses in
-// bridgeGroundedLlmToolCalls): a request ends at a coordinating or sequential connector, a
-// comma, a semicolon, a newline, or a sentence period.
+// The request boundaries the bridge grounds each action against (getPromptClauses in
+// bridgeGroundedLlmToolCalls).
 function splitPromptIntoRequests(prompt: string): string[] {
     return prompt
-        .split(/\s+(?:and then|then|and|but)\s+|[;,\n]+|\.(?!\d)/iu)
+        .split(PROMPT_CLAUSE_SEPARATOR)
         .map((request) => request.trim())
         .filter((request) => request !== '');
 }

@@ -1,5 +1,6 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
+import { collaborationAssetTransfer } from '../collaborationAssetTransfer';
 import * as subject from '../importAudioClipToTrack';
 
 const mocks = vi.hoisted(() => {
@@ -7,35 +8,35 @@ const mocks = vi.hoisted(() => {
     // exercise the missing-transport branch.
     const transport: { value: { tempo: number } | undefined } = { value: { tempo: 120 } };
     return {
-        decodeAudioFile: vi.fn<(file: File) => Promise<{ id: string; buffer: AudioBuffer }>>(),
+        decodeAudioFile: vi.fn<(typeof import('#/modules/AudioEngine/useCases'))['decodeAudioFile']>(),
         discardDecodedAudioFile: vi.fn(),
+        releaseHold: vi.fn(),
         notifyUser: vi.fn(),
         getTrackById: vi.fn<(id: string) => { clips: { id: string; endBeat: number }[] } | undefined>(),
         executeAppActionBatch: vi.fn(),
         transport,
         stageLocalAsset: vi.fn<(blob: Blob, name: string) => Promise<{ hash: string; leaseId: string }>>(),
         releaseStagedAsset: vi.fn<(leaseId: string) => void>(),
-        promoteStagedAsset: vi.fn<(leaseId: string) => void>(),
+        promoteStagedAsset: vi.fn<(leaseId: string) => boolean>(),
     };
 });
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
-    decodeAudioFile: (file: File) => mocks.decodeAudioFile(file),
+    decodeAudioFile: mocks.decodeAudioFile,
     discardDecodedAudioFile: mocks.discardDecodedAudioFile,
+    openCachedAudioBufferHold: () => ({ retain: vi.fn(), release: mocks.releaseHold }),
 }));
 
-vi.mock('#/modules/Collaboration/useCases', () => ({
-    getAssetTransfer: () => {
-        if (!mocks.stageLocalAsset) {
-            return null;
-        }
-        return {
-            stageLocalAsset: mocks.stageLocalAsset,
-            releaseStagedAsset: mocks.releaseStagedAsset,
-            promoteStagedAsset: mocks.promoteStagedAsset,
-        };
-    },
-}));
+collaborationAssetTransfer.configure({
+    current: () => ({
+        stageLocalAsset: mocks.stageLocalAsset,
+        releaseStagedAsset: mocks.releaseStagedAsset,
+        promoteStagedAsset: mocks.promoteStagedAsset,
+        promoteDurableStagedAsset: vi.fn(),
+        requestAsset: vi.fn(),
+    }),
+    isSessionActive: () => false,
+});
 
 vi.mock('#/modules/Transport/stores', () => ({
     DEFAULT_TEMPO_BPM: 120,
@@ -77,6 +78,9 @@ function fakeBuffer(duration: number): AudioBuffer {
 }
 
 describe('importAudioClipToTrack', () => {
+    afterEach(() => {
+        expect(mocks.releaseHold).toHaveBeenCalledTimes(1);
+    });
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.transport.value = { tempo: 120 };

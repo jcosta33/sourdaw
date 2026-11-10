@@ -203,6 +203,7 @@ describe('registerCrdtStorageRuntime', () => {
         const port = getRegisteredPort();
         const changeFn = vi.fn();
         const validateDocument = vi.fn();
+        const beforeChange = vi.fn();
         const beforePublication = vi.fn();
         const onPublished = vi.fn();
         const snapshotTransaction = {};
@@ -212,6 +213,7 @@ describe('registerCrdtStorageRuntime', () => {
             changedKeys: ['warpStates'],
             message: 'Detect',
             snapshotTransaction,
+            beforeChange,
             validateDocument,
             beforePublication,
             onPublished,
@@ -223,6 +225,7 @@ describe('registerCrdtStorageRuntime', () => {
             message: 'Detect',
             snapshotTransaction,
             prospectiveValidation: { validateDocument, beforePublication, onPublished },
+            beforeChange,
         });
     });
 });

@@ -10,7 +10,6 @@ import { coordinateAcceptReview, runAcceptReviewCli } from '../acceptReview.ts';
 import { shellPort as deliverShellPort } from '../deliverPullRequest.ts';
 import {
     AUTHOR_BOT_NODE_ID,
-    CI_APPROVAL_LABEL,
     ORCHESTRATOR_USER_NODE_ID,
     REVIEWER_BOT_NODE_ID,
     type GhSession,
@@ -175,8 +174,6 @@ function fakePort(
 ) {
     const calls: string[] = [];
     const logs: string[] = [];
-    // Label writes stay out of `calls`, whose exact read-then-post sequence many cases pin.
-    const labelWrites: string[] = [];
     const posted: { review?: Parameters<PublishReviewPort['postReview']>[0] } = {};
     let head = input.head ?? 'headsha';
     let state = input.state ?? 'OPEN';
@@ -248,11 +245,9 @@ function fakePort(
             latestReviewerReviewDatabaseId: null,
             unresolvedThreads: input.unresolvedThreads ?? 0,
         }),
-        applyApprovalLabel: (number) => labelWrites.push(`apply:${number}`),
-        removeApprovalLabel: (number) => labelWrites.push(`remove:${number}`),
         log: (message) => logs.push(message),
     };
-    return { port, calls, logs, posted, labelWrites };
+    return { port, calls, logs, posted };
 }
 
 function createJournaledRecoveryFixture(
@@ -1187,8 +1182,6 @@ describe('review publish', () => {
                         markRemoteMutationAttempt();
                         throw new Error('create review failed: HTTP 422');
                     },
-                    applyApprovalLabel: () => expect.fail('no label without a standing review'),
-                    removeApprovalLabel: () => expect.fail('no label without a standing review'),
                     log: () => undefined,
                 }),
                 publish: publishPreparedReview,
@@ -1342,14 +1335,6 @@ describe('review publish', () => {
         expect(calls[0]).toBe('read:/repo/.agents/review-bundles/42-headsha/review.json');
         expect(calls[1]).toBe(`post:headsha:APPROVE:${approvalBody()}`);
         expect(logs.at(-1)).toBe('99');
-    });
-
-    it('leaves the CI approval label to the coordinator, outside the publication lock', () => {
-        const { port, labelWrites } = fakePort();
-
-        publishReview(42, port);
-
-        expect(labelWrites).toEqual([]);
     });
 
     it('posts REQUEST_CHANGES body and comments when valid', () => {
@@ -2252,90 +2237,6 @@ describe('review publish', () => {
  * `openLane.spec.ts` documents why `vi.mock('node:child_process')` does not intercept a module
  * under `scripts/` and why a prior spec that trusted it filed a live issue on the public tracker.
  */
-describe('shellPort CI approval label', () => {
-    const session: GhSession = { configDir: '/tmp/sourdaw-gh', env: {}, dispose: () => undefined };
-    const labelPath = `repos/jcosta33/sourdaw/labels/${encodeURIComponent(CI_APPROVAL_LABEL)}`;
-    const issueLabelPath = `repos/jcosta33/sourdaw/issues/42/labels/${encodeURIComponent(CI_APPROVAL_LABEL)}`;
-
-    function recordingCapture(answers: Record<string, () => string>) {
-        const requests: string[] = [];
-        const capture = (command: string, args: string[], options?: { input?: string }): string => {
-            if (command === 'git' && args[0] === 'rev-parse') {
-                return `${process.cwd()}/.git`;
-            }
-            const method = args.includes('--method') ? args[args.indexOf('--method') + 1] : 'GET';
-            const path = args.find((arg) => arg.startsWith('repos/')) ?? '';
-            const request = `${method ?? ''} ${path}${options?.input === undefined ? '' : ` ${options.input}`}`;
-            requests.push(request);
-            const answer = answers[`${method ?? ''} ${path}`];
-            return answer === undefined ? '{}' : answer();
-        };
-        return { requests, capture };
-    }
-
-    function notFound(): never {
-        throw new Error('gh: Not Found (HTTP 404)');
-    }
-
-    it('takes a stale label off before adding it, so every approval emits a fresh labeled event', () => {
-        const { requests, capture } = recordingCapture({});
-        shellPort(session, process.cwd(), capture).applyApprovalLabel(42);
-        expect(requests).toEqual([
-            `GET ${labelPath}`,
-            `DELETE ${issueLabelPath}`,
-            `POST repos/jcosta33/sourdaw/issues/42/labels ${JSON.stringify({ labels: [CI_APPROVAL_LABEL] })}`,
-        ]);
-    });
-
-    it('creates the label when the repository lacks it and tolerates its absence from the pull request', () => {
-        const { requests, capture } = recordingCapture({
-            [`GET ${labelPath}`]: notFound,
-            [`DELETE ${issueLabelPath}`]: notFound,
-        });
-        shellPort(session, process.cwd(), capture).applyApprovalLabel(42);
-        expect(requests[1]).toMatch(/^POST repos\/jcosta33\/sourdaw\/labels \{"name":"ci:approved",/u);
-        expect(requests.at(-1)).toBe(
-            `POST repos/jcosta33/sourdaw/issues/42/labels ${JSON.stringify({ labels: [CI_APPROVAL_LABEL] })}`
-        );
-    });
-
-    it('treats a label another publication created first as present, and fails on any other refusal', () => {
-        const raced = recordingCapture({
-            [`GET ${labelPath}`]: notFound,
-            'POST repos/jcosta33/sourdaw/labels': () => {
-                throw new Error(
-                    'gh: Validation Failed (HTTP 422)\n{"errors":[{"resource":"Label","code":"already_exists","field":"name"}]}'
-                );
-            },
-        });
-        shellPort(session, process.cwd(), raced.capture).applyApprovalLabel(42);
-        expect(raced.requests.at(-1)).toBe(
-            `POST repos/jcosta33/sourdaw/issues/42/labels ${JSON.stringify({ labels: [CI_APPROVAL_LABEL] })}`
-        );
-
-        const invalid = recordingCapture({
-            [`GET ${labelPath}`]: notFound,
-            'POST repos/jcosta33/sourdaw/labels': () => {
-                throw new Error('gh: Validation Failed (HTTP 422)\n{"errors":[{"code":"invalid","field":"color"}]}');
-            },
-        });
-        expect(() => shellPort(session, process.cwd(), invalid.capture).applyApprovalLabel(42)).toThrow('HTTP 422');
-    });
-
-    it('removes the label, succeeding when it is absent and failing on any other error', () => {
-        const absent = recordingCapture({ [`DELETE ${issueLabelPath}`]: notFound });
-        shellPort(session, process.cwd(), absent.capture).removeApprovalLabel(42);
-        expect(absent.requests).toEqual([`DELETE ${issueLabelPath}`]);
-
-        const denied = recordingCapture({
-            [`DELETE ${issueLabelPath}`]: () => {
-                throw new Error('gh: Resource not accessible by integration (HTTP 403)');
-            },
-        });
-        expect(() => shellPort(session, process.cwd(), denied.capture).removeApprovalLabel(42)).toThrow('HTTP 403');
-    });
-});
-
 describe('shellPort postReview state verification', () => {
     const session: GhSession = { configDir: '/tmp/sourdaw-gh', env: {}, dispose: () => undefined };
 
@@ -5016,8 +4917,6 @@ describe('orchestrator acceptance', () => {
         expect(fixture.journal).toHaveBeenCalledWith(
             expect.objectContaining({ expectedHead: 'headsha', reviewerActorNodeId: ORCHESTRATOR_USER_NODE_ID })
         );
-        // Gate admission accepts only the reviewer App's approval, so the legacy acceptance never labels.
-        expect(fixture.labelWrites).toEqual([]);
     });
 
     it.each([
@@ -5369,7 +5268,6 @@ describe('fresh reviewer dossier publication', () => {
         const calls: string[] = [];
         const logs: string[] = [];
         const writes: { path: string; contents: string }[] = [];
-        const labelWrites: string[] = [];
         const posted: { review?: Parameters<PublishReviewPort['postReview']>[0] } = {};
         const port: PublishReviewPort = {
             primaryRoot: () => root,
@@ -5410,8 +5308,6 @@ describe('fresh reviewer dossier publication', () => {
             },
             publicReviews: () => input.publicReviews ?? [],
             publicReviewComments: () => input.publicReviewComments ?? [],
-            applyApprovalLabel: (labeledNumber) => labelWrites.push(`apply:${labeledNumber}`),
-            removeApprovalLabel: (labeledNumber) => labelWrites.push(`remove:${labeledNumber}`),
             log: (message) => logs.push(message),
         };
         if (input.writable !== false) {
@@ -5428,7 +5324,6 @@ describe('fresh reviewer dossier publication', () => {
             logs,
             writes,
             posted,
-            labelWrites,
             readDossier: () => readJsonFile(join(bundle, 'dossier.json')),
         };
     }
@@ -5695,21 +5590,20 @@ describe('fresh reviewer dossier publication', () => {
         });
 
         it.each([
-            ['premium summary', { reviewerModel: 'gpt-6.1-sol' }, /review.json reviewerModel.*permitted low-cost/u],
-            [
-                'premium later draw',
-                { draws: [...defaultDraws.slice(0, 2), { ...defaultDraws[2], reviewerModel: 'claude-opus-4.5' }] },
-                /draws\[2\].reviewerModel.*permitted low-cost/u,
-            ],
             [
                 'strongest metadata',
                 { draws: [{ ...defaultDraws[0], tier: 'strongest' }, ...defaultDraws.slice(1)] },
                 /economy or standard/u,
             ],
             [
-                'exhaustion waiver',
-                { reviewerModel: 'gpt-6-astra', modelExhaustion: 'All affordable models were unavailable.' },
-                /permitted low-cost/u,
+                'exhaustion never waives the tier rule',
+                {
+                    reviewerModel: 'gpt-6-astra',
+                    modelExhaustion: 'All affordable models were unavailable.',
+                    body: 'Reviewed on gpt-6-astra after every other model was unavailable.',
+                    draws: [{ ...defaultDraws[0], tier: 'strongest' }, ...defaultDraws.slice(1)],
+                },
+                /economy or standard/u,
             ],
         ])('refuses a fresh %s before dossier, journal or remote writes', (_label, fields, message) => {
             const fixture = dossierFixture({ document: { ...reviewDocument, ...fields } });
@@ -6113,11 +6007,9 @@ describe('fresh reviewer dossier publication', () => {
         }
     });
 
-    it('replays a recorded approval over reopened threads and retries the label', async () => {
-        // The replay exemption is load-bearing: a label write that failed after a successful
-        // approval promises that a re-run replays the review and retries the label, and a thread
-        // reopened in between must not turn that re-run into a refusal (#5436 gates fresh
-        // approvals only). Driven through the coordinator, whose label sync is the retry.
+    it('replays a recorded approval over reopened threads', async () => {
+        // A thread reopened after the approval posted must not turn a re-run into a refusal
+        // (#5436 gates fresh approvals only). The re-run replays the recorded publication.
         const landedReview: RemotePublishedReview = {
             id: 99,
             state: 'APPROVED',
@@ -6158,12 +6050,8 @@ describe('fresh reviewer dossier publication', () => {
             await coordinatePublishReview(number, dependencies(fixture.port));
             expect(fixture.calls.filter((call) => call === 'post')).toHaveLength(1);
 
-            // The thread reopened after the approval posted; the re-run replays the
-            // recorded publication, posts nothing new, and retries the label.
-            fixture.labelWrites.length = 0;
             await coordinatePublishReview(number, dependencies(reopenedThreadsPort));
             expect(fixture.calls.filter((call) => call === 'post')).toHaveLength(1);
-            expect(fixture.labelWrites).toEqual([`apply:${number}`]);
         } finally {
             removeTemporaryDirectory(fixture.root);
         }
@@ -6243,14 +6131,14 @@ describe('fresh reviewer dossier publication', () => {
         }
     });
 
-    it('refuses a premium unpublished historical record before a new publication without rewriting it', () => {
+    it('refuses a strongest-tier unpublished historical record before a new publication without rewriting it', () => {
         const historical = canonicalPersistedDossier();
         const fixture = dossierFixture({ plan: riskPlan(), dossier: historical, draws: null });
         try {
             writeFileSync(join(fixture.bundle, 'dossier.json'), serializeReviewDossier(parseReviewDossier(historical)));
             const before = readFileSync(join(fixture.bundle, 'dossier.json'), 'utf8');
             expect(serializeReviewDossier(parseReviewDossier(JSON.parse(before)))).toBe(before);
-            expect(refusedBeforeSideEffects(fixture)).toMatch(/permitted low-cost review model/u);
+            expect(refusedBeforeSideEffects(fixture)).toMatch(/economy or standard/u);
             expect(readFileSync(join(fixture.bundle, 'dossier.json'), 'utf8')).toBe(before);
         } finally {
             removeTemporaryDirectory(fixture.root);
@@ -6381,196 +6269,6 @@ describe('fresh reviewer dossier publication', () => {
             ]);
             // REQUEST_CHANGES records no delivery authorization: only the reviewer APPROVE does.
             expect(deliveryAuthorization(persisted)).toBeUndefined();
-        } finally {
-            removeTemporaryDirectory(fixture.root);
-        }
-    });
-
-    /** A REQUEST_CHANGES bundle whose one finding binds to the comment the fake POST lands. */
-    function changesRequestedFixture(remoteReviews: Record<number, RemotePublishedReview | undefined>) {
-        const comment = {
-            path: 'scripts/target.ts',
-            line: 5,
-            side: 'RIGHT' as const,
-            defect: 'the gate reads the wrong base',
-            consequence: 'a foreign commit slips the authorship gate',
-            done: 'read the comparison base',
-            sources: findingSources,
-        };
-        return dossierFixture({
-            plan: toolingRiskPlan(),
-            document: {
-                event: 'REQUEST_CHANGES',
-                draws: findingDraws,
-                body: 'One blocking finding.',
-                comments: [comment],
-                reviewerModel: 'claude-sonnet-4.5',
-            },
-            diff: [
-                'diff --git a/scripts/target.ts b/scripts/target.ts',
-                'index 1111111..2222222 100644',
-                '--- a/scripts/target.ts',
-                '+++ b/scripts/target.ts',
-                '@@ -2,3 +2,4 @@',
-                ' context2',
-                ' context3',
-                ' context4',
-                '+added',
-                '',
-            ].join('\n'),
-            reviewComments: [{ id: 2329000042, path: comment.path, line: comment.line, side: 'RIGHT', body: 'r' }],
-            remoteReviews,
-        });
-    }
-
-    /** The review GitHub holds after the fake POST, so a re-run can replay it live and exact. */
-    function landedReview(review: Parameters<PublishReviewPort['postReview']>[0]): RemotePublishedReview {
-        return {
-            id: 99,
-            state: review.event === 'APPROVE' ? 'APPROVED' : 'CHANGES_REQUESTED',
-            body: review.body,
-            commitId: head,
-            actorNodeId: REVIEWER_BOT_NODE_ID,
-            comments: review.comments.map((comment) => ({
-                path: comment.path,
-                line: comment.line,
-                side: comment.side,
-                body: composeReviewCommentBody(comment),
-            })),
-        };
-    }
-
-    /**
-     * Drives the real coordinator over the real publication lock. The fake POST marks the remote
-     * mutation exactly as production does, so any failure inside the lock after it strands the owner.
-     */
-    async function publishUnderLock(
-        fixture: ReturnType<typeof dossierFixture>,
-        label: { apply: (labeled: number) => void; remove: (labeled: number) => void }
-    ): Promise<void> {
-        const executable = join(fixture.root, 'ps');
-        writeFileSync(
-            executable,
-            '#!/bin/sh\nif [ "$2" = "pgid=" ]; then printf "%s\\n" "$4"; else printf "%s\\n" "publication-process-start"; fi\n'
-        );
-        chmodSync(executable, 0o700);
-        const previous = process.env.SOURDAW_TRUSTED_PS_PATH;
-        process.env.SOURDAW_TRUSTED_PS_PATH = executable;
-        try {
-            await coordinatePublishReview(number, {
-                primaryRoot: () => fixture.root,
-                serializeMutation: withPullRequestReviewPublicationMutationLock,
-                authenticateReviewer: async () => ({
-                    minted: { actorNodeId: REVIEWER_BOT_NODE_ID },
-                    session: { configDir: '/tmp/reviewer', env: {}, dispose: () => undefined },
-                }),
-                repositoryName: () => 'jcosta33/sourdaw',
-                reviewPort: (_session, _primaryRoot, markRemoteMutationAttempt) => ({
-                    ...fixture.port,
-                    postReview: (review) => {
-                        markRemoteMutationAttempt();
-                        return fixture.port.postReview(review);
-                    },
-                    applyApprovalLabel: label.apply,
-                    removeApprovalLabel: label.remove,
-                }),
-                publish: publishPreparedReview,
-            });
-        } finally {
-            if (previous === undefined) {
-                delete process.env.SOURDAW_TRUSTED_PS_PATH;
-            } else {
-                process.env.SOURDAW_TRUSTED_PS_PATH = previous;
-            }
-        }
-    }
-
-    const forbidden = (labeled: number): never => {
-        throw new Error(`unexpected label write on ${labeled}`);
-    };
-    const labelDenied = (): never => {
-        throw new Error('gh: Resource not accessible by integration (HTTP 403)');
-    };
-    const labelFailure =
-        `review 99 stands on PR #${number}, but the ci:approved label write failed ` +
-        `(gh: Resource not accessible by integration (HTTP 403)); ` +
-        `re-run pnpm review:publish ${number} to replay the review and retry the label`;
-
-    it('labels an approved head only after its dossier binding stands and the lock is released', async () => {
-        const fixture = dossierFixture({ plan: riskPlan() });
-        const observed: string[] = [];
-        try {
-            runGit(fixture.root, ['init']);
-            await publishUnderLock(fixture, {
-                apply: (labeled) => {
-                    const persisted = parseReviewDossier(fixture.readDossier());
-                    observed.push(
-                        `apply:${labeled}:${String(publishedReviewId(persisted))}:` +
-                            `${String(deliveryAuthorization(persisted)?.reviewId)}:` +
-                            `${String(readPullRequestMutationLockOid(fixture.root, pullRequestMutationLockRef(labeled), labeled))}`
-                    );
-                },
-                remove: forbidden,
-            });
-            expect(observed).toEqual([`apply:${number}:99:99:undefined`]);
-        } finally {
-            removeTemporaryDirectory(fixture.root);
-        }
-    });
-
-    it('releases the lock when the approval label fails, and a plain re-run replays and labels', async () => {
-        const remoteReviews: Record<number, RemotePublishedReview | undefined> = {};
-        const fixture = dossierFixture({ plan: riskPlan(), remoteReviews });
-        try {
-            runGit(fixture.root, ['init']);
-            await expect(publishUnderLock(fixture, { apply: labelDenied, remove: forbidden })).rejects.toThrow(
-                labelFailure
-            );
-            expect(readPullRequestMutationLockOid(fixture.root, pullRequestMutationLockRef(number), number)).toBe(
-                undefined
-            );
-            const persisted = parseReviewDossier(fixture.readDossier());
-            expect(publishedReviewId(persisted)).toBe(99);
-            expect(deliveryAuthorization(persisted)?.reviewId).toBe(99);
-
-            const review = fixture.posted.review;
-            if (review === undefined) {
-                throw new Error('expected the APPROVE to have posted');
-            }
-            remoteReviews[99] = landedReview(review);
-            const applied: number[] = [];
-            await publishUnderLock(fixture, { apply: (labeled) => applied.push(labeled), remove: forbidden });
-            expect(applied).toEqual([number]);
-            expect(fixture.calls.filter((call) => call === 'post')).toHaveLength(1);
-        } finally {
-            removeTemporaryDirectory(fixture.root);
-        }
-    });
-
-    it('releases the lock when label removal fails after REQUEST_CHANGES, and a plain re-run replays and removes', async () => {
-        const remoteReviews: Record<number, RemotePublishedReview | undefined> = {};
-        const fixture = changesRequestedFixture(remoteReviews);
-        try {
-            runGit(fixture.root, ['init']);
-            await expect(publishUnderLock(fixture, { apply: forbidden, remove: labelDenied })).rejects.toThrow(
-                labelFailure
-            );
-            expect(readPullRequestMutationLockOid(fixture.root, pullRequestMutationLockRef(number), number)).toBe(
-                undefined
-            );
-            const persisted = parseReviewDossier(fixture.readDossier());
-            expect(publishedReviewId(persisted)).toBe(99);
-            expect(deliveryAuthorization(persisted)).toBeUndefined();
-
-            const review = fixture.posted.review;
-            if (review === undefined) {
-                throw new Error('expected the REQUEST_CHANGES to have posted');
-            }
-            remoteReviews[99] = landedReview(review);
-            const removed: number[] = [];
-            await publishUnderLock(fixture, { apply: forbidden, remove: (labeled) => removed.push(labeled) });
-            expect(removed).toEqual([number]);
-            expect(fixture.calls.filter((call) => call === 'post')).toHaveLength(1);
         } finally {
             removeTemporaryDirectory(fixture.root);
         }

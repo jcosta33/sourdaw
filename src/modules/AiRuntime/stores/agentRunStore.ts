@@ -17,6 +17,7 @@ import {
     type AgentRunBatch,
     type AgentRunBatchSchedule,
     type AgentRunBatchScheduleSlice,
+    type AgentRunBulkSetBatchSchedule,
     type AgentRunBudgetAttempt,
     type AgentRunCommittedWork,
     type AgentRunDecision,
@@ -34,10 +35,12 @@ import {
     type AgentRunSagaStep,
     type AgentRunState,
     type AgentRunTemporaryAsset,
+    type AgentRunVibeRunBatchSchedule,
     type AgentRunWorkLease,
 } from '../models/AgentRun';
-import { type ApplicationToolReceipt } from '../models/ApplicationOwnedTool';
+import { APPLICATION_TOOL_RECEIPT_MAX_BYTES, type ApplicationToolReceipt } from '../models/ApplicationOwnedTool';
 import { getPendingEffectRecoveryPolicy } from '../models/GetPendingEffectRecoveryPolicy';
+import { MAX_METRIC_GOAL_STATE_BYTES } from '../models/MetricGoalAdmission';
 import { type BoundRequestProtections, type ProposalProtectionFacts } from '../models/ProposalGroundingBasis';
 import {
     THREAD_COMMIT_STANDINGS,
@@ -45,6 +48,8 @@ import {
     type ThreadContextEvidence,
 } from '../models/ThreadContext';
 import { hasSamePreparedStemImportRecovery } from '../validators/hasSamePreparedStemImportRecovery';
+import { readPerceptualConstraintReading } from '../validators/readPerceptualConstraintReading';
+import { readScheduledVibeRunPlan } from '../validators/readScheduledVibeRunPlan';
 
 const MAX_PENDING_EFFECT_RECOVERIES = 256;
 const MAX_PREPARED_STEM_IMPORT_RECOVERIES = 256;
@@ -923,11 +928,18 @@ function readApplicationToolReceipt(value: unknown): ApplicationToolReceipt | nu
     const revision = readNullableString(value.revision);
     const summary = readString(value.summary);
     const warnings = readStringArray(value.warnings);
+    const origin = value.origin;
+    if (origin !== undefined && origin !== 'application-verification') {
+        return null;
+    }
+    if (origin === 'application-verification' && toolName !== 'analysis.measure') {
+        return null;
+    }
     if (
         callId === null ||
         toolName === null ||
         turn === null ||
-        turn < 1 ||
+        (turn < 1 && !(turn === 0 && origin === 'application-verification' && toolName === 'analysis.measure')) ||
         revision === undefined ||
         summary === null ||
         warnings === null
@@ -949,7 +961,7 @@ function readApplicationToolReceipt(value: unknown): ApplicationToolReceipt | nu
     if ((value.status === 'success' && error !== null) || (value.status === 'failure' && error === null)) {
         return null;
     }
-    return {
+    const receipt: ApplicationToolReceipt = {
         schema: 'sourdaw.application-tool-receipt',
         schemaVersion: 1,
         callId,
@@ -962,6 +974,10 @@ function readApplicationToolReceipt(value: unknown): ApplicationToolReceipt | nu
         warnings,
         error,
     };
+    if (origin !== undefined) {
+        return { ...receipt, origin };
+    }
+    return receipt;
 }
 
 function isThreadCommitStanding(value: unknown): value is ThreadCommitStanding {
@@ -1303,6 +1319,53 @@ function readBoundRequestProtections(value: unknown): BoundRequestProtections | 
     return { request, facts, resolvedTrackClauses };
 }
 
+/** A schedule stored before kinds existed held bulk-set slices, the only kind there was; any other kind is unreadable. */
+function readAgentRunBatchScheduleKind(value: unknown): AgentRunBatchSchedule['kind'] | null {
+    if (value === undefined || value === 'bulk-set') {
+        return 'bulk-set';
+    }
+    return value === 'vibe-run' ? 'vibe-run' : null;
+}
+
+type AgentRunBatchScheduleBase = Omit<AgentRunBulkSetBatchSchedule, 'kind'>;
+
+/**
+ * A vibe run's own fields, read whole: a plan its own reader accepts, planned against the brief
+ * revision the schedule names, whose batches are exactly the schedule's slices after the brief, and
+ * the request's recorded constraints. Anything else would let a restored run ground a batch nobody
+ * planned, or hold it to constraints nobody stated.
+ */
+function readAgentRunVibeRunBatchSchedule(
+    value: UnknownRecord,
+    base: AgentRunBatchScheduleBase
+): AgentRunVibeRunBatchSchedule | null {
+    const serializedPlan = readSerializedSlice(value.serializedPlan);
+    const briefRevision = readNonNegativeInteger(value.briefRevision);
+    const recordedConstraints = readPerceptualConstraintReading(value.recordedConstraints);
+    const plan = serializedPlan === null ? null : readScheduledVibeRunPlan(serializedPlan);
+    const [brief, ...batchSlices] = base.slices;
+    if (
+        serializedPlan === null ||
+        briefRevision === null ||
+        recordedConstraints === null ||
+        plan === null ||
+        plan.briefRevision !== briefRevision ||
+        base.serializedProviderProposal !== null ||
+        brief?.serializedSlice !== 'production-brief' ||
+        brief.commandCount !== 1 ||
+        batchSlices.length !== plan.batches.length ||
+        batchSlices.some(
+            (slice, index) =>
+                slice.serializedSlice !== plan.batches[index]?.id ||
+                slice.commandCount !== plan.batches[index]?.commandCount ||
+                JSON.stringify(slice.targetIds) !== JSON.stringify(plan.batches[index]?.targetIds)
+        )
+    ) {
+        return null;
+    }
+    return { ...base, kind: 'vibe-run', serializedPlan, briefRevision, recordedConstraints };
+}
+
 /**
  * A schedule is read whole or not at all: its slices must number its batches 1..total in order, and
  * its position must name one of them, or a restored run could propose a batch out of sequence.
@@ -1311,6 +1374,7 @@ function readAgentRunBatchSchedule(value: unknown): AgentRunBatchSchedule | null
     if (!isRecord(value) || value.schemaVersion !== 1) {
         return null;
     }
+    const kind = readAgentRunBatchScheduleKind(value.kind);
     const scheduleId = readString(value.scheduleId);
     const position = readNonNegativeInteger(value.position);
     const total = readNonNegativeInteger(value.total);
@@ -1329,6 +1393,7 @@ function readAgentRunBatchSchedule(value: unknown): AgentRunBatchSchedule | null
     }
     const slices = readCollection(value.slices, readAgentRunBatchScheduleSlice);
     if (
+        kind === null ||
         scheduleId === null ||
         position === null ||
         total === null ||
@@ -1345,7 +1410,7 @@ function readAgentRunBatchSchedule(value: unknown): AgentRunBatchSchedule | null
     ) {
         return null;
     }
-    const schedule: AgentRunBatchSchedule = {
+    const schedule: AgentRunBatchScheduleBase = {
         schemaVersion: 1,
         scheduleId,
         position,
@@ -1359,7 +1424,13 @@ function readAgentRunBatchSchedule(value: unknown): AgentRunBatchSchedule | null
     if (requestProtections !== undefined && requestProtections !== null) {
         schedule.requestProtections = requestProtections;
     }
-    return schedule;
+    if (
+        typeof value.metricGoalState === 'string' &&
+        new TextEncoder().encode(value.metricGoalState).byteLength <= MAX_METRIC_GOAL_STATE_BYTES
+    ) {
+        schedule.metricGoalState = value.metricGoalState;
+    }
+    return kind === 'vibe-run' ? readAgentRunVibeRunBatchSchedule(value, schedule) : { ...schedule, kind };
 }
 
 function readAgentRunPlan(value: unknown, fallbackScope: AgentRun['scope']): AgentRunPlan | null | undefined {
@@ -1511,6 +1582,17 @@ function readAgentRunPlan(value: unknown, fallbackScope: AgentRun['scope']): Age
               commandIds,
               serializedBatchIdentity,
               applicationToolReceipts,
+              terminalMeasurementSettlement:
+                  typeof value.terminalMeasurementSettlement === 'string' &&
+                  new TextEncoder().encode(value.terminalMeasurementSettlement).byteLength <=
+                      APPLICATION_TOOL_RECEIPT_MAX_BYTES
+                      ? value.terminalMeasurementSettlement
+                      : undefined,
+              metricGoalState:
+                  typeof value.metricGoalState === 'string' &&
+                  new TextEncoder().encode(value.metricGoalState).byteLength <= MAX_METRIC_GOAL_STATE_BYTES
+                      ? value.metricGoalState
+                      : undefined,
               revision,
               classification,
               showPlanPanel,

@@ -4,7 +4,7 @@
  * `AGENT_COMMAND_LEDGER` holds exactly one entry per `actionType` in
  * `executableAppActionRegistry.ts`'s descriptor list. The owner is the handler-map module that
  * registers the actionType (`registerProductionCommandHandlers` in
- * `commandRegistryCompleteness.spec.ts` names the seven maps), never the module that merely
+ * `commandRegistryCompleteness.spec.ts` names the eight maps), never the module that merely
  * describes or targets the operation. An entry not yet backed by a registered handler is
  * `interim-unsupported` and carries a tracker packet (`/^#\d+$/`) naming the later work instead of
  * a handler factory name; every entry on this head is `supported`, since every descriptor already
@@ -41,6 +41,7 @@ export const AGENT_COMMAND_LEDGER_OWNERS = [
     'Automation',
     'CrdtDocument',
     'MIDI',
+    'Project',
     'Transport',
     'Yeast',
 ] as const;
@@ -95,6 +96,7 @@ const SUPPORTED_ENTRY_PACKETS: Record<AgentCommandLedgerOwner, string> = {
     Automation: 'getAutomationHandlers',
     CrdtDocument: 'getDrumPreviewBranchHandlers',
     MIDI: 'getMidiNoteTransformHandlers',
+    Project: 'getProjectHandlers',
     Transport: 'getTransportHandlers',
     Yeast: 'getYeastHandlers',
 };
@@ -136,6 +138,7 @@ const AGENT_COMMAND_LEDGER_TUPLES: readonly SupportedEntryTuple[] = [
     ['clearSolos', 'track', 'Arrangement'],
     ['selectTake', 'track', 'Arrangement'],
     ['setCompRegion', 'track', 'Arrangement'],
+    ['removeCompRegion', 'track', 'Arrangement'],
     ['createVcaGroup', 'track', 'Arrangement'],
     ['assignToVca', 'track', 'Arrangement'],
     ['removeFromVca', 'track', 'Arrangement'],
@@ -172,6 +175,7 @@ const AGENT_COMMAND_LEDGER_TUPLES: readonly SupportedEntryTuple[] = [
     // Arrangement — audio-editing
     ['setClipFade', 'audio-editing', 'Arrangement'],
     ['glueClips', 'audio-editing', 'Arrangement'],
+    ['quantizeTransients', 'audio-editing', 'Arrangement'],
     ['crossfadeClips', 'audio-editing', 'Arrangement'],
     ['normalizeClip', 'audio-editing', 'Arrangement'],
     ['setClipStretchMode', 'audio-editing', 'Arrangement'],
@@ -242,6 +246,9 @@ const AGENT_COMMAND_LEDGER_TUPLES: readonly SupportedEntryTuple[] = [
     ['setMetronomeEnabled', 'project-timeline', 'Transport'],
     ['setMetronomeVolume', 'project-timeline', 'Transport'],
     ['setMasterGain', 'project-timeline', 'Transport'],
+
+    // Project — project-timeline. The brief's decisions stay uncovered: a request copies them unchanged.
+    ['setProductionBrief', 'project-timeline', 'Project'],
 
     // Yeast — parameter / device
     ['setYeastProcessorParam', 'parameter', 'Yeast'],

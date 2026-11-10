@@ -349,9 +349,10 @@ describe('launch overlay first-paint bound', () => {
             .filter((entry) => entry.firstPaintArguments.length > 0)
             .map((entry) => entry.file);
 
-        // smoke.spec.ts delegates every overlay wait to
-        // e2eUtils' wait_for_launch_first_paint (#4781), so its waits are held
-        // by the helper's own bound rather than by a direct census hit.
+        // smoke.spec.ts opens its initial project through launch_new_project,
+        // which bypasses the overlay and has no direct waits or first-paint
+        // options. Its separate project-reopen flow still uses the bounded
+        // wait_for_launch_first_paint helper.
         expect(filesWithWaits).toEqual(
             expect.arrayContaining([
                 'tests/e2e/launchFlows.spec.ts',
@@ -367,8 +368,16 @@ describe('launch overlay first-paint bound', () => {
             ])
         );
         expect(filesWithLaunchArguments).toEqual(
-            expect.arrayContaining(['tests/e2e/browserAiAdmittedPresentation.spec.ts', 'tests/e2e/smoke.spec.ts'])
+            expect.arrayContaining(['tests/e2e/browserAiAdmittedPresentation.spec.ts'])
         );
+
+        const smoke = scanned.find((entry) => entry.file === 'tests/e2e/smoke.spec.ts');
+        expect(smoke).toMatchObject({ waits: [], firstPaintArguments: [] });
+
+        const admittedPresentation = scanned.find(
+            (entry) => entry.file === 'tests/e2e/browserAiAdmittedPresentation.spec.ts'
+        );
+        expect(admittedPresentation?.firstPaintArguments.map((argument) => argument.milliseconds)).toContain(90_000);
     });
 
     it('gives every explicit overlay wait the shared first-paint bound', () => {
@@ -379,7 +388,7 @@ describe('launch overlay first-paint bound', () => {
         expect(offenders).toEqual([]);
     });
 
-    it('never passes launch_new_project a first-paint bound below the shared one', () => {
+    it('keeps launch_new_project_via_ui first-paint bounds at or above the shared one', () => {
         const bound = readBoundMilliseconds();
         const offenders = scanned.flatMap((entry) =>
             entry.firstPaintArguments

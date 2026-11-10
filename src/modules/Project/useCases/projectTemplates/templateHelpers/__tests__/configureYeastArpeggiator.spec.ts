@@ -13,8 +13,21 @@ vi.mock('#/modules/Yeast/useCases', () => ({
 }));
 
 import { type Track } from '#/modules/Arrangement/stores';
+import { setActiveYeastDevice } from '#/modules/Yeast/stores';
+import { addYeastProcessor, setYeastProcessorParam } from '#/modules/Yeast/useCases';
 
 import { configureYeastArpeggiator } from '../configureYeastArpeggiator';
+import { templateArpeggiatorAuthoring } from '../templateArpeggiatorAuthoring';
+
+// The composition root's rack write path over the doubled Yeast barrels: the
+// registrar itself cannot load while they are mocked whole.
+templateArpeggiatorAuthoring.configure({
+    focusRack: setActiveYeastDevice,
+    addProcessor: addYeastProcessor,
+    setProcessorParam: async (processorId, name, value) => {
+        await setYeastProcessorParam(processorId, name, value);
+    },
+});
 
 function makeTrack(devices: Track['devices']): Track {
     return {

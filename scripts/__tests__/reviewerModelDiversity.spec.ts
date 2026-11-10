@@ -363,33 +363,13 @@ describe('fresh review model cost ceiling', () => {
         });
     }
 
-    it.each(['gpt-6-luna', 'gpt-5.6-terra', 'claude-sonnet-4.5', 'claude-haiku-4-5'])(
-        'admits the affordable public model %s',
-        (model) => {
-            expect(() => admit(model)).not.toThrow();
-        }
-    );
-
-    it.each([
-        'gpt-6-astra',
-        'gpt-6.1-sol',
-        'gpt-5.6-sol',
-        'fable',
-        'claude-opus-4.5',
-        'unknown-model',
-        'gpt-6-luna-pro',
-        'claude-sonnet-4.5-opus',
-    ])('refuses premium or unclassified summary model %s', (model) => {
-        expect(() => admit(model)).toThrow(/permitted low-cost review model/u);
-    });
-
     it('checks every draw even when the summary and preceding draw are affordable', () => {
         expect(() =>
             admit('gpt-6-luna', [
                 { stance: 'lost identity', reviewerModel: 'claude-haiku-4-5', tier: 'economy' },
-                { stance: 'lost head binding', reviewerModel: 'gpt-6.1-sol', tier: 'standard' },
+                { stance: 'lost head binding', reviewerModel: 'gpt-6.1-sol', tier: 'strongest' },
             ])
-        ).toThrow(/draws\[1\].reviewerModel.*permitted low-cost review model/u);
+        ).toThrow(/draws\[1\].*economy or standard/u);
     });
 
     it('admits model diversity across affordable economy and standard draws', () => {
@@ -416,8 +396,9 @@ describe('fresh review model cost ceiling', () => {
                     reviewerModel: 'gpt-6.1-sol',
                     body: 'Reviewed on gpt-6.1-sol after other models were unavailable.',
                     modelExhaustion: 'All permitted review models were unavailable.',
+                    draws: [{ stance: 'lost identity', reviewerModel: 'gpt-6.1-sol', tier: 'strongest' }],
                 },
             })
-        ).toThrow(/permitted low-cost review model/u);
+        ).toThrow(/economy or standard/u);
     });
 });

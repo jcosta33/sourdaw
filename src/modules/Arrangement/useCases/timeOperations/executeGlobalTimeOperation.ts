@@ -1,5 +1,6 @@
 import { batchStoreUpdates } from '#/infra/store/createStore';
-import { restampLoopOriginEntry, shiftLoopOriginEntry } from '#/utils/clipLoopOrigin';
+import { continuesLoopingMidiPhase, loopingMidiLengthEntry, shiftLoopOriginEntry } from '#/utils/clipLoopOrigin';
+import { hasExactAudioSourceFields } from '#/utils/hasExactAudioSourceFields';
 
 import { type Clip, type Track } from '../../models/Track';
 import { getTrackState, type TrackState } from '../../repositories/track/getTrackState';
@@ -12,6 +13,7 @@ import {
 import { markerStore, type MarkerStoreState } from '../../stores/markerStore';
 import { createClipWriteTargetIndex } from '../../stores/resolveEligibleClipWriteTarget';
 import { removeClipSatelliteData } from '../clip/removeClipSatelliteData';
+import { prepareAudioClipCutFields } from '../clipEditing/prepareAudioClipCutFields';
 import { applyTakeReKeyTransitions } from '../comping/applyTakeReKeyTransitions';
 import { captureRetiredTakeLanes } from '../comping/captureRetiredTakeLanes';
 import { captureTrackTakeReKeyTransitions } from '../comping/captureTrackTakeReKeyTransitions';
@@ -20,6 +22,7 @@ import { removeTakesForClips } from '../comping/removeTakesForClips';
 import { type TakeReKeyLaneTransition } from '../comping/takeReKeyTransition';
 
 import { createTakeLaneTransitionPlan } from './createTakeLaneTransitionPlan';
+import { deletedRightContentEntry } from './deletedRightContentEntry';
 import { prepareClipSatelliteStateRestore } from './prepareClipSatelliteStateRestore';
 import { timeOperationDependencies, type TimeOperationDependencies } from './timeOperationDependencies';
 import { timeOperationStateCodec } from './timeOperationStateCodec';
@@ -126,6 +129,7 @@ type PlannedLocalState = {
                   splitBeat: number;
                   discardBeforeBeat?: number;
                   retainOnSourceWindows?: readonly { start: number; end: number }[];
+                  copiesLoopMaterial?: true;
               }[];
               removeClipIds: readonly string[];
           })
@@ -303,7 +307,7 @@ function validateClip(value: unknown): value is Clip {
     if (typeof value.locked !== 'boolean' || typeof value.muted !== 'boolean') {
         return false;
     }
-    return true;
+    return hasExactAudioSourceFields(value);
 }
 
 function validateOwners(state: TrackState): readonly NormalizedOwner[] | null {
@@ -906,6 +910,16 @@ function prepareInsertedTracks(
     return { ...state, tracks };
 }
 
+/** A looping MIDI source's cut: the target copies the whole loop and the source keeps it. */
+function loopCopyingSplit(clip: Clip, newClipId: string, cutBeat: number) {
+    return {
+        sourceClipId: clip.id,
+        newClipId,
+        splitBeat: cutBeat - clip.startBeat + (clip.midiOffsetBeats ?? 0),
+        copiesLoopMaterial: true as const,
+    };
+}
+
 function prepareDeletedTracks(
     state: TrackState,
     owners: readonly NormalizedOwner[],
@@ -920,9 +934,10 @@ function prepareDeletedTracks(
         splitBeat: number;
         discardBeforeBeat?: number;
         retainOnSourceWindows?: readonly { start: number; end: number }[];
+        copiesLoopMaterial?: true;
     }>;
     removeClipIds: string[];
-} {
+} | null {
     const duration = operation.endBeat - operation.startBeat;
     const identityIndex = indexClipIdentities(identities);
     const splits: Array<{
@@ -931,6 +946,7 @@ function prepareDeletedTracks(
         splitBeat: number;
         discardBeforeBeat?: number;
         retainOnSourceWindows?: readonly { start: number; end: number }[];
+        copiesLoopMaterial?: true;
     }> = [];
     const removeClipIds: string[] = [];
     let changed = false;
@@ -950,6 +966,10 @@ function prepareDeletedTracks(
                 continue;
             }
             if (clip.startBeat >= operation.endBeat) {
+                const source = prepareAudioClipCutFields(clip, clip.startBeat, -duration);
+                if (!source) {
+                    return null;
+                }
                 trackChanged = true;
                 clips.push({
                     ...clip,
@@ -961,6 +981,7 @@ function prepareDeletedTracks(
                     // key absent — the inverse plan's snapshot is compared
                     // structurally against the normalized live state.
                     ...shiftLoopOriginEntry(clip, -duration),
+                    ...source,
                 });
                 continue;
             }
@@ -970,30 +991,25 @@ function prepareDeletedTracks(
                 continue;
             }
             if (clip.startBeat < operation.startBeat && clip.endBeat > operation.endBeat) {
+                const leftSource = prepareAudioClipCutFields(clip, clip.startBeat, 0);
+                const rightSource = prepareAudioClipCutFields(clip, operation.endBeat, -duration);
+                if (!leftSource || !rightSource) {
+                    return null;
+                }
                 trackChanged = true;
                 const identity = getClipIdentity(identityIndex, 'delete-right', owner.id, clip.id);
-                // The fragment anchor follows the basis it creates (#4988).
-                // The MIDI fragment re-bases its notes by −splitBeat under
-                // midiOffsetBeats 0 — a fresh coordinate basis the source
-                // anchor has no meaning in, whose carried advance would open
-                // the window behind the head and silence the survivors — so
-                // it re-stamps to its own start, key absent for an unanchored
-                // source. The audio fragment keeps source-coordinate offsets
-                // advanced by the consumed span, and its head also rides the
-                // compressing relocation by −duration, so its anchor rides
-                // that relocation: composed, the consumed advance cancels the
-                // offset advance, the region
-                // `audioOffsetBeats - (startBeat - loopOriginBeat)` stays the
-                // source's own, and the entry lands at the cut phase.
-                // Unanchored sources keep the key absent — the inverse plan's
-                // snapshot is compared structurally against the normalized
-                // live state.
-                const rightLoopOriginEntry =
-                    clip.type === 'midi'
-                        ? restampLoopOriginEntry(clip, operation.startBeat)
-                        : shiftLoopOriginEntry(clip, -duration);
+                // The fragment anchor follows the basis it creates (#4988):
+                // `deletedRightContentEntry`. A looping MIDI source keeps its
+                // whole loop on both fragments, each with the loop length the
+                // source played.
                 clips.push(
-                    { ...clip, endBeat: operation.startBeat, name: `${clip.name} (L)` },
+                    {
+                        ...clip,
+                        endBeat: operation.startBeat,
+                        name: `${clip.name} (L)`,
+                        ...loopingMidiLengthEntry(clip),
+                        ...leftSource,
+                    },
                     {
                         ...clip,
                         id: identity.targetClipId,
@@ -1001,11 +1017,13 @@ function prepareDeletedTracks(
                         endBeat: clip.endBeat - duration,
                         name: `${clip.name} (R)`,
                         audioOffsetBeats: (clip.audioOffsetBeats ?? 0) + (operation.endBeat - clip.startBeat),
-                        midiOffsetBeats: 0,
-                        ...rightLoopOriginEntry,
+                        ...deletedRightContentEntry(clip, operation),
+                        ...rightSource,
                     }
                 );
-                if (clip.type === 'midi') {
+                if (continuesLoopingMidiPhase(clip)) {
+                    splits.push(loopCopyingSplit(clip, identity.targetClipId, operation.endBeat));
+                } else if (clip.type === 'midi') {
                     // #5112 — the left fragment keeps the media its comp
                     // regions play across the cut, not only what is stored
                     // before it.
@@ -1024,9 +1042,19 @@ function prepareDeletedTracks(
                 continue;
             }
             if (clip.startBeat < operation.startBeat) {
+                const source = prepareAudioClipCutFields(clip, clip.startBeat, 0);
+                if (!source) {
+                    return null;
+                }
                 trackChanged = true;
-                clips.push({ ...clip, endBeat: operation.startBeat });
-                if (clip.type === 'midi') {
+                clips.push({ ...clip, endBeat: operation.startBeat, ...loopingMidiLengthEntry(clip), ...source });
+                if (continuesLoopingMidiPhase(clip)) {
+                    // A looping clip keeps its whole loop: the discard copy
+                    // takes the rows only to be removed, leaving the source's.
+                    const identity = getClipIdentity(identityIndex, 'delete-discard', owner.id, clip.id);
+                    splits.push(loopCopyingSplit(clip, identity.targetClipId, operation.startBeat));
+                    removeClipIds.push(identity.targetClipId);
+                } else if (clip.type === 'midi') {
                     const mediaSplit = operation.startBeat - clip.startBeat + (clip.midiOffsetBeats ?? 0);
                     const identity = getClipIdentity(identityIndex, 'delete-discard', owner.id, clip.id);
                     const retainWindows = retainWindowsFor(clip);
@@ -1047,30 +1075,24 @@ function prepareDeletedTracks(
 
             trackChanged = true;
             const identity = getClipIdentity(identityIndex, 'delete-right', owner.id, clip.id);
-            // Same per-basis law as the spanning fragment above (#4988): the
-            // MIDI notes re-base under midiOffsetBeats 0, so the source
-            // anchor would derive a spurious (here negative) advance whose
-            // window drops the surviving head material and it re-stamps to
-            // its own start. The audio offset stays in source coordinates
-            // advanced by the consumed span while the head rides the
-            // compressing relocation by −duration, so the audio anchor rides
-            // that relocation — the region stays the source's own, entering
-            // at the cut phase. Unanchored sources keep the key absent
-            // (#5198).
-            const rightLoopOriginEntry =
-                clip.type === 'midi'
-                    ? restampLoopOriginEntry(clip, operation.startBeat)
-                    : shiftLoopOriginEntry(clip, -duration);
+            const source = prepareAudioClipCutFields(clip, operation.endBeat, -duration);
+            if (!source) {
+                return null;
+            }
+            // Same per-basis law as the spanning fragment above (#4988).
             clips.push({
                 ...clip,
                 id: identity.targetClipId,
                 startBeat: operation.startBeat,
                 endBeat: clip.endBeat - duration,
                 audioOffsetBeats: (clip.audioOffsetBeats ?? 0) + (operation.endBeat - clip.startBeat),
-                midiOffsetBeats: 0,
-                ...rightLoopOriginEntry,
+                ...deletedRightContentEntry(clip, operation),
+                ...source,
             });
-            if (clip.type === 'midi') {
+            if (continuesLoopingMidiPhase(clip)) {
+                splits.push(loopCopyingSplit(clip, identity.targetClipId, operation.endBeat));
+                removeClipIds.push(clip.id);
+            } else if (clip.type === 'midi') {
                 const mediaSplit = operation.endBeat - clip.startBeat + (clip.midiOffsetBeats ?? 0);
                 splits.push({
                     sourceClipId: clip.id,
@@ -1291,7 +1313,7 @@ function prepareLocalState(
     operation: GlobalTimeOperation,
     clipIdentities: readonly ClipReplayIdentity[],
     retainWindowsFor: (clip: Clip) => readonly { start: number; end: number }[]
-): PlannedLocalState {
+): PlannedLocalState | null {
     if (operation.type === 'insert') {
         return {
             trackState: prepareInsertedTracks(trackState, owners, operation),
@@ -1319,6 +1341,9 @@ function prepareLocalState(
     }
 
     const deleted = prepareDeletedTracks(trackState, owners, operation, clipIdentities, retainWindowsFor);
+    if (!deleted) {
+        return null;
+    }
     return {
         trackState: deleted.state,
         markerState: prepareDeletedMarkerState(markerState, operation),
@@ -1630,6 +1655,9 @@ export function executeGlobalTimeOperation(input: ExecuteGlobalTimeOperationInpu
         clipIdentities,
         retainWindowsFor
     );
+    if (!local) {
+        return rejectResult();
+    }
     const clipIdentityTransition = collectClipIdentityTransition(owners, validatedInput.operation, clipIdentities);
     if (
         !clipIdentityTransition ||

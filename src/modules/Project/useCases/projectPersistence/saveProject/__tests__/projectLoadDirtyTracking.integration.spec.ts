@@ -65,6 +65,16 @@ const {
 }));
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    openCachedAudioBufferHold: vi.fn(() => {
+        throw new Error('Unexpected audio buffer residency hold in this fixture');
+    }),
+    captureOfflineRenderProjectSource: vi.fn(() => {
+        throw new Error('Unexpected selection render capture in this fixture');
+    }),
+    captureOfflineRenderRuntimeInput: vi.fn(() => {
+        throw new Error('Unexpected selection render capture in this fixture');
+    }),
+    builtinSynthVoice: { read: vi.fn() },
     rearmCommittedTrackInputMonitoring: vi.fn(async () => undefined),
     reconcileAutoInputMonitoring: vi.fn(),
     forgetProjectLatchedPedals: vi.fn(),
@@ -97,6 +107,8 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     garbageCollectCachedAudioBuffersBySize: vi.fn(),
     garbageCollectFreezeAudioBuffers: vi.fn(),
     getCachedAudioBuffer: vi.fn(),
+    restoreUnpinnedAudioBuffersFromIdb: vi.fn(),
+    holdAudioBufferForSession: vi.fn(),
     getCompensationDelay: vi.fn(),
     getDefaultBendRangeSemitones: vi.fn(),
     getDeviceChainTailSeconds: vi.fn(),
@@ -135,6 +147,8 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     sendNativeLiveMidiNote: () => Promise.resolve(true),
 }));
 vi.mock('#/modules/Command/useCases', () => ({
+    commitUndoEntry: vi.fn(),
+    createUndoEntry: vi.fn(),
     commitRedoInverseCapture: vi.fn(),
     readUndoEntryForInverse: vi.fn<typeof import('#/modules/Command/useCases').readUndoEntryForInverse>(() => null),
 
@@ -150,6 +164,12 @@ vi.mock('#/modules/Command/useCases', () => ({
     syncActionReplayMetadata: vi.fn(),
 }));
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
+    projectRevisionMatchesLiveWithinProjection: vi.fn(() => {
+        throw new Error('Unexpected selection render admission in this fixture');
+    }),
+    settlePendingProjectWritesAndCaptureRevision: vi.fn(() => {
+        throw new Error('Unexpected selection render admission in this fixture');
+    }),
     commandSourcePublicationMatches: vi.fn<
         typeof import('#/modules/CrdtDocument/useCases').commandSourcePublicationMatches
     >(() => false),
@@ -175,6 +195,7 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     beginBranchSession: vi.fn(),
     projectActionHistoryToStore: mockProjectActionHistoryToStore,
     projectRevisionMatchesLiveIgnoringCommandCheckpoint: vi.fn(() => true),
+    projectRevisionMatchesLiveIgnoringSaveWrites: vi.fn(() => true),
     removeCrdtDoc: vi.fn(),
     projectBranchSession: vi.fn(),
     replaceCrdtDoc: vi.fn(),
@@ -247,6 +268,7 @@ import { setArrangementEventBus } from '#/modules/Arrangement/useCases';
 import { defaultProjectStoreState, projectStore } from '../../../../stores/projectStore';
 import { replaceProjectData } from '../../helpers/replaceProjectData';
 import { newProject } from '../../newProject';
+import { projectLifecycleRegistry } from '../../projectLifecycleRegistry';
 import { initProjectDirtyTracking } from '../initProjectDirtyTracking';
 
 import type {
@@ -325,11 +347,20 @@ async function withRealAutomergeStoragePort<TResult>(
     }
 }
 
+/**
+ * The module hydrate a load runs writes neither store the dirty subscription
+ * watches, and the production registration reaches every module this spec
+ * replaces with a partial double, so one stand-in participant takes the place
+ * of the modules it hydrates.
+ */
+const moduleHydrateParticipant = { module: 'ModuleHydrateStandIn', hydrateFromProjectData: vi.fn() };
+
 describe('project load dirty tracking (audit M-011)', () => {
     let stopDirtyTracking: () => void = () => {};
 
     beforeEach(() => {
         vi.clearAllMocks();
+        projectLifecycleRegistry.configure([moduleHydrateParticipant]);
         documentIdentity.epoch = 0;
         mockCompactProject.mockImplementation(async () => flushAutomergeStorageWrites());
         setArrangementEventBus(createEventBus<ArrangementEvents>());
@@ -360,6 +391,7 @@ describe('project load dirty tracking (audit M-011)', () => {
         expect(result.status).toBe('committed');
         // The load really happened — otherwise "clean" would be vacuous.
         expect(trackStore.value?.tracks.map((track) => track.name)).toContain(LOADED_TRACK_NAME);
+        expect(moduleHydrateParticipant.hydrateFromProjectData).toHaveBeenCalledOnce();
         expect(projectStore.value?.name).toBe('Opened From Disk');
         expect(projectStore.value?.dirty).toBe(false);
     });

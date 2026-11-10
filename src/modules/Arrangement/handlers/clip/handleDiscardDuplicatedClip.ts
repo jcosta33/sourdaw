@@ -1,4 +1,3 @@
-import { projectMidiNotesByClipIdThroughRestores } from '#/modules/MIDI/useCases';
 import { createHandler } from '#/utils/createHandler';
 import { type AppAction, type HandlerValidationContext } from '#/utils/handlerContract';
 
@@ -40,9 +39,7 @@ export const handleDiscardDuplicatedClip = createHandler<'discardDuplicatedClip'
             entityId: action.payload.clipId,
             entityType: 'clip',
             guard,
-            projectedMidiNotesByClipId: projectMidiNotesByClipIdThroughRestores(
-                context.actions.slice(0, context.actionIndex)
-            ),
+            priorBatchActions: context.actions.slice(0, context.actionIndex),
             projectedClipState: projectedClipStateFor(action, context),
         });
     },
@@ -69,10 +66,13 @@ export const handleDiscardDuplicatedClip = createHandler<'discardDuplicatedClip'
     describe: () => ({ label: 'Discard duplicated clip' }),
     /**
      * The entry's redo re-created the clip this discard removed, so put back the
-     * takes the discard captured. A redo that re-created nothing — a no-op replay,
-     * or a route that mints a fresh id instead of reusing the captured one — leaves
-     * the named clip absent, and re-attaching a lane to a clip identity nothing
-     * carries would leave the takes orphaned rather than restored.
+     * takes the discard captured. Its forward creator publishes the fresh guard
+     * at that action's prefix; later group members must not enter that capture.
+     * A redo that
+     * re-created nothing — a no-op replay, or a route that mints a fresh id
+     * instead of reusing the captured one — leaves the named clip absent, and
+     * re-attaching a lane to a clip identity nothing carries would leave the
+     * takes orphaned rather than restored.
      */
     afterRedoReplay: (action) => {
         if (resolveEligibleClipWriteTarget({ clipId: action.payload.clipId }).status === 'missing') {

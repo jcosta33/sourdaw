@@ -76,6 +76,14 @@ describe('createTrack', () => {
 });
 
 describe('normalizeTrack', () => {
+    it('never arms the master track, whatever stored or projected state says', () => {
+        expect(normalizeTrack({ id: 'master', name: 'Master', kind: 'master', armed: true }).armed).toBe(false);
+    });
+
+    it('keeps an ordinary track armed when stored armed', () => {
+        expect(normalizeTrack({ id: 't1', name: 'Audio', kind: 'audio', armed: true }).armed).toBe(true);
+    });
+
     it('fills freezeState when missing from persisted data', () => {
         const time = normalizeTrack({ id: 't1', name: 'Old', kind: 'audio' });
         expect(time.freezeState).toEqual({ status: 'unfrozen' });

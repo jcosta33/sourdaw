@@ -1,3 +1,4 @@
+import { captureAutomergeStorageTransactionScope } from '#/infra/store/storage/createAutomergeStorage';
 import { cacheAudioBuffer } from '#/modules/AudioEngine/useCases';
 import { pushUndoEntry } from '#/modules/Command/useCases';
 import {
@@ -6,14 +7,19 @@ import {
     restoreMidiClipData,
     splitMidiNotesAtBeat,
 } from '#/modules/MIDI/useCases';
-import { restampLoopOriginEntry } from '#/utils/clipLoopOrigin';
+import { continuesLoopingMidiPhase, loopingMidiLengthEntry, midiFragmentWindowEntry } from '#/utils/clipLoopOrigin';
+import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
+import { type HandlerCommitValidation } from '#/utils/handlerContract';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
+import { type TempoTimeline } from '../../models/TempoTimeline';
 import { type Clip } from '../../models/Track';
 import { resolveEligibleClipWriteTarget } from '../../stores/resolveEligibleClipWriteTarget';
 import { trackStore } from '../../stores/trackStore';
+import { audioSourceAtBeat } from '../clipEditing/audioSourceAtBeat';
 import { collectTracksClipBufferIds } from '../timeOperations/collectTracksClipBufferIds';
 
+import { captureSelectionBounceSource } from './captureSelectionBounceSource';
 import { detectSilentBake } from './detectSilentBake';
 import { renderTrackOffline, type RenderScheduleTally } from './renderOffline';
 
@@ -54,22 +60,67 @@ function applyMidiClipDataSnapshot(clipId: string, snapshot: MidiClipDataSnapsho
     });
 }
 
-export async function bounceSelection(trackId: string, startBeat: number, endBeat: number): Promise<boolean> {
+/** A shortened left fragment must not redefine an implicit original repeat period. */
+function bouncedLeftContentEntry(clip: Clip) {
+    if (clip.type === 'midi') {
+        return loopingMidiLengthEntry(clip);
+    }
+    if (!clip.loopEnabled || clip.loopLength !== undefined) {
+        return {};
+    }
+    const { loopLengthBeats } = projectClipLoopExpansion({
+        clipDurationBeats: clip.endBeat - clip.startBeat,
+        loopEnabled: true,
+    });
+    return { loopLength: loopLengthBeats };
+}
+
+/** A right audio fragment keeps its physical entry and the original pass/reset grid. */
+function bouncedRightContentEntry(clip: Clip, endBeat: number, timeline: TempoTimeline) {
+    if (clip.type === 'midi') {
+        return midiFragmentWindowEntry(clip, endBeat, endBeat);
+    }
+    const source = audioSourceAtBeat(clip, endBeat, timeline);
+    return source ? { ...source, midiOffsetBeats: 0 } : null;
+}
+
+type SelectionBounceOptions = {
+    signal?: AbortSignal;
+    deferUndoEntry?: (publish: () => void) => void;
+    onCommitValidation?: (validation: HandlerCommitValidation) => void;
+};
+
+export async function bounceSelection(
+    trackId: string,
+    startBeat: number,
+    endBeat: number,
+    options: SelectionBounceOptions = {}
+): Promise<boolean> {
+    const scope = captureAutomergeStorageTransactionScope();
     // Selection bounce uses hardcoded options for now, but could be extended
     const state = trackStore.value;
     if (!state) {
         return false;
     }
 
-    const track = state.tracks.find((time) => time.id === trackId);
-    if (!track) {
+    const initialTrack = state.tracks.find((time) => time.id === trackId);
+    if (!initialTrack) {
         return false;
     }
 
-    const clipsInRange = track.clips.filter((context) => context.endBeat > startBeat && context.startBeat < endBeat);
+    const clipsInRange = initialTrack.clips.filter(
+        (context) => context.endBeat > startBeat && context.startBeat < endBeat
+    );
     if (clipsInRange.length === 0) {
         return false;
     }
+
+    const source = captureSelectionBounceSource(initialTrack, options.signal);
+    if (!source) {
+        return false;
+    }
+
+    const track = source.track;
 
     let scheduleTally: RenderScheduleTally = { scheduledNotes: 0, scheduledBuffers: [], withheldDeviceTypes: [] };
     // Same refusal channel as `bounceTrack`: the render throws rather than hand
@@ -79,6 +130,7 @@ export async function bounceSelection(trackId: string, startBeat: number, endBea
     let renderedBuffer: AudioBuffer | null;
     try {
         renderedBuffer = await renderTrackOffline(track, startBeat, endBeat, {
+            abortSignal: options.signal,
             onScheduled: (tally) => {
                 scheduleTally = tally;
             },
@@ -89,6 +141,11 @@ export async function bounceSelection(trackId: string, startBeat: number, endBea
     }
 
     if (!renderedBuffer) {
+        return false;
+    }
+
+    if (!source.matches()) {
+        notifyUser('Bounce cancelled because its source changed during rendering.', 'warning');
         return false;
     }
 
@@ -112,228 +169,230 @@ export async function bounceSelection(trackId: string, startBeat: number, endBea
         return false;
     }
 
-    const freshTarget = resolveEligibleClipWriteTarget({ trackId });
-    if (freshTarget.status !== 'eligible') {
-        return false;
-    }
-
-    const freshState = trackStore.value;
-    if (!freshState) {
-        return false;
-    }
-
-    const targetTrackIndex = freshState.tracks.findIndex((candidate) => candidate.id === freshTarget.trackId);
-    if (targetTrackIndex === -1) {
-        return false;
-    }
-
-    const targetTrack = freshState.tracks[targetTrackIndex]!;
-
-    // Partial overlaps are split at the selection edges so out-of-range
-    // material survives (ledger M-031) — same split convention as
-    // deleteTimeRange (#608). Fully-inside clips are removed with their
-    // MIDI data cleaned. Notes are clip-relative, so kept parts keep their
-    // alignment via media-beat partitioning below.
-    const keptClips: Clip[] = [];
-    const removedMidiClipIds: string[] = [];
-    const sourceMidiClipIds: string[] = [];
-    const generatedMidiClipIds: string[] = [];
-    const splitOps: Array<{
-        sourceClipId: string;
-        newClipId: string;
-        splitBeat: number;
-        discardBeforeBeat?: number;
-    }> = [];
-
-    for (const clip of targetTrack.clips) {
-        if (clip.endBeat <= startBeat || clip.startBeat >= endBeat) {
-            keptClips.push(clip);
-            continue;
+    return scope(() => {
+        const freshTarget = resolveEligibleClipWriteTarget({ trackId });
+        if (freshTarget.status !== 'eligible') {
+            return false;
         }
-        if (clip.type === 'midi') {
-            sourceMidiClipIds.push(clip.id);
+
+        const freshState = trackStore.value;
+        if (!freshState) {
+            return false;
         }
-        if (clip.startBeat >= startBeat && clip.endBeat <= endBeat) {
-            // Fully inside the selection: replaced by the bounce.
-            removedMidiClipIds.push(clip.id);
-            continue;
+
+        const targetTrackIndex = freshState.tracks.findIndex((candidate) => candidate.id === freshTarget.trackId);
+        if (targetTrackIndex === -1) {
+            return false;
         }
-        if (clip.startBeat < startBeat && clip.endBeat > endBeat) {
-            // Spans the selection: keep both outside parts.
-            const rightClipId = `clip-bsel-${crypto.randomUUID().slice(0, 8)}`;
-            // The fragment anchor follows the basis it creates (#4988). The
-            // MIDI fragment re-bases its notes by −splitBeat under
-            // midiOffsetBeats 0 — a fresh coordinate basis the source anchor
-            // has no meaning in, whose carried advance would open the window
-            // behind the head and silence the survivors — so it re-stamps to
-            // its own start, key absent for an unanchored source. The audio
-            // fragment keeps source-coordinate offsets advanced by the cut,
-            // so it carries the source anchor: the offset advance and the
-            // anchor-advance growth cancel, the region
-            // `audioOffsetBeats - (startBeat - loopOriginBeat)` stays the
-            // source's own, and the entry lands at the cut phase.
-            const rightLoopOriginEntry = clip.type === 'midi' ? restampLoopOriginEntry(clip, endBeat) : {};
-            keptClips.push(
-                { ...clip, endBeat: startBeat, name: `${clip.name} (L)` },
-                {
-                    ...clip,
-                    id: rightClipId,
-                    startBeat: endBeat,
-                    name: `${clip.name} (R)`,
-                    audioOffsetBeats: (clip.audioOffsetBeats ?? 0) + (endBeat - clip.startBeat),
-                    midiOffsetBeats: 0,
-                    ...rightLoopOriginEntry,
+
+        const targetTrack = freshState.tracks[targetTrackIndex]!;
+
+        // Partial overlaps are split at the selection edges so out-of-range
+        // material survives (ledger M-031) — same split convention as
+        // deleteTimeRange (#608). Fully-inside clips are removed with their
+        // MIDI data cleaned. Notes are clip-relative, so kept parts keep their
+        // alignment via media-beat partitioning below.
+        const keptClips: Clip[] = [];
+        const removedMidiClipIds: string[] = [];
+        const sourceMidiClipIds: string[] = [];
+        const generatedMidiClipIds: string[] = [];
+        const splitOps: Array<{
+            sourceClipId: string;
+            newClipId: string;
+            splitBeat: number;
+            discardBeforeBeat?: number;
+            copiesLoopMaterial: boolean;
+        }> = [];
+
+        for (const clip of targetTrack.clips) {
+            if (clip.endBeat <= startBeat || clip.startBeat >= endBeat) {
+                keptClips.push(clip);
+                continue;
+            }
+            if (clip.type === 'midi') {
+                sourceMidiClipIds.push(clip.id);
+            }
+            if (clip.startBeat >= startBeat && clip.endBeat <= endBeat) {
+                // Fully inside the selection: replaced by the bounce.
+                removedMidiClipIds.push(clip.id);
+                continue;
+            }
+            const rightSource =
+                clip.endBeat > endBeat ? bouncedRightContentEntry(clip, endBeat, source.timeline) : null;
+            if (clip.endBeat > endBeat && rightSource === null) {
+                return false;
+            }
+            if (clip.startBeat < startBeat && clip.endBeat > endBeat) {
+                // Spans the selection: keep both outside parts.
+                const rightClipId = `clip-bsel-${crypto.randomUUID().slice(0, 8)}`;
+                // The fragment anchor follows the basis it creates (#4988):
+                // `bouncedRightContentEntry`.
+                keptClips.push(
+                    { ...clip, endBeat: startBeat, name: `${clip.name} (L)`, ...bouncedLeftContentEntry(clip) },
+                    {
+                        ...clip,
+                        id: rightClipId,
+                        startBeat: endBeat,
+                        name: `${clip.name} (R)`,
+                        audioOffsetBeats: (clip.audioOffsetBeats ?? 0) + (endBeat - clip.startBeat),
+                        ...rightSource,
+                    }
+                );
+                if (clip.type === 'midi') {
+                    generatedMidiClipIds.push(rightClipId);
+                    splitOps.push({
+                        sourceClipId: clip.id,
+                        newClipId: rightClipId,
+                        splitBeat: endBeat - clip.startBeat + (clip.midiOffsetBeats ?? 0),
+                        discardBeforeBeat: startBeat - clip.startBeat + (clip.midiOffsetBeats ?? 0),
+                        copiesLoopMaterial: continuesLoopingMidiPhase(clip),
+                    });
                 }
-            );
+                continue;
+            }
+            if (clip.startBeat < startBeat) {
+                // Crosses the left edge: keep the left part; in-selection notes
+                // move to a throwaway id and are removed.
+                keptClips.push({ ...clip, endBeat: startBeat, ...bouncedLeftContentEntry(clip) });
+                if (clip.type === 'midi') {
+                    const mediaSplit = startBeat - clip.startBeat + (clip.midiOffsetBeats ?? 0);
+                    const discardId = `clip-bsel-discard-${crypto.randomUUID().slice(0, 8)}`;
+                    generatedMidiClipIds.push(discardId);
+                    // A looping clip keeps its whole loop: the discard copy takes
+                    // the rows only to be removed.
+                    splitOps.push({
+                        sourceClipId: clip.id,
+                        newClipId: discardId,
+                        splitBeat: mediaSplit,
+                        discardBeforeBeat: mediaSplit,
+                        copiesLoopMaterial: continuesLoopingMidiPhase(clip),
+                    });
+                    removedMidiClipIds.push(discardId);
+                }
+                continue;
+            }
+            // Crosses the right edge: keep the right part, re-based to endBeat on
+            // a fresh id (its MIDI media starts at the split point).
+            const rightClipId = `clip-bsel-${crypto.randomUUID().slice(0, 8)}`;
+            // Same per-basis law as the spanning fragment above (#4988).
+            keptClips.push({
+                ...clip,
+                id: rightClipId,
+                startBeat: endBeat,
+                audioOffsetBeats: (clip.audioOffsetBeats ?? 0) + (endBeat - clip.startBeat),
+                ...rightSource,
+            });
             if (clip.type === 'midi') {
                 generatedMidiClipIds.push(rightClipId);
+                const mediaSplit = endBeat - clip.startBeat + (clip.midiOffsetBeats ?? 0);
                 splitOps.push({
                     sourceClipId: clip.id,
                     newClipId: rightClipId,
-                    splitBeat: endBeat - clip.startBeat + (clip.midiOffsetBeats ?? 0),
-                    discardBeforeBeat: startBeat - clip.startBeat + (clip.midiOffsetBeats ?? 0),
-                });
-            }
-            continue;
-        }
-        if (clip.startBeat < startBeat) {
-            // Crosses the left edge: keep the left part; in-selection notes
-            // move to a throwaway id and are removed.
-            keptClips.push({ ...clip, endBeat: startBeat });
-            if (clip.type === 'midi') {
-                const mediaSplit = startBeat - clip.startBeat + (clip.midiOffsetBeats ?? 0);
-                const discardId = `clip-bsel-discard-${crypto.randomUUID().slice(0, 8)}`;
-                generatedMidiClipIds.push(discardId);
-                splitOps.push({
-                    sourceClipId: clip.id,
-                    newClipId: discardId,
                     splitBeat: mediaSplit,
                     discardBeforeBeat: mediaSplit,
+                    copiesLoopMaterial: continuesLoopingMidiPhase(clip),
                 });
-                removedMidiClipIds.push(discardId);
+                removedMidiClipIds.push(clip.id);
             }
-            continue;
         }
-        // Crosses the right edge: keep the right part, re-based to endBeat on
-        // a fresh id (its MIDI media starts at the split point).
-        const rightClipId = `clip-bsel-${crypto.randomUUID().slice(0, 8)}`;
-        // Same per-basis law as the spanning fragment above (#4988): the MIDI
-        // notes re-base under midiOffsetBeats 0, so the source anchor
-        // re-stamps to the fragment's own start instead of deriving a
-        // spurious advance there. The audio offset stays in source
-        // coordinates advanced by the cut, so the audio side carries the
-        // source anchor — the region stays the source's own, entering at the
-        // cut phase. Unanchored sources keep the key absent.
-        const rightLoopOriginEntry = clip.type === 'midi' ? restampLoopOriginEntry(clip, endBeat) : {};
-        keptClips.push({
-            ...clip,
-            id: rightClipId,
-            startBeat: endBeat,
-            audioOffsetBeats: (clip.audioOffsetBeats ?? 0) + (endBeat - clip.startBeat),
-            midiOffsetBeats: 0,
-            ...rightLoopOriginEntry,
+
+        // Freeze the MIDI data the split/remove mutations below touch, or the
+        // track-only undo would permanently destroy notes (PR #621 review —
+        // pre-split the op never touched midiStore). Source entries are frozen
+        // before mutation; generated entries (kept right parts, throwaway
+        // discards) are frozen after so redo reinstates them.
+        const midiSnapshotsBefore = new Map<string, MidiClipDataSnapshot>();
+        for (const clipId of sourceMidiClipIds) {
+            midiSnapshotsBefore.set(clipId, captureMidiClipData(clipId));
+        }
+
+        const tracksBefore = structuredClone(freshState.tracks);
+
+        const audioBufferId = `bounce-sel-${trackId}-${crypto.randomUUID()}`;
+
+        const bouncedClip: Clip = {
+            id: `bounced-sel-${crypto.randomUUID()}`,
+            trackId,
+            name: `${track.name} (selection bounce)`,
+            startBeat,
+            endBeat,
+            type: 'audio',
+            audioBufferId,
+            fadeInBeats: 0,
+            fadeOutBeats: 0,
+            gain: 1.0,
+            color: '',
+            locked: false,
+            muted: false,
+        };
+
+        const tracksAfterBounce = freshState.tracks.slice();
+        tracksAfterBounce[targetTrackIndex] = {
+            ...targetTrack,
+            clips: [...keptClips, bouncedClip],
+        };
+        trackStore.set({
+            ...freshState,
+            tracks: tracksAfterBounce,
         });
-        if (clip.type === 'midi') {
-            generatedMidiClipIds.push(rightClipId);
-            const mediaSplit = endBeat - clip.startBeat + (clip.midiOffsetBeats ?? 0);
-            splitOps.push({
-                sourceClipId: clip.id,
-                newClipId: rightClipId,
-                splitBeat: mediaSplit,
-                discardBeforeBeat: mediaSplit,
-            });
-            removedMidiClipIds.push(clip.id);
+
+        for (const op of splitOps) {
+            splitMidiNotesAtBeat(op);
         }
-    }
+        for (const clipId of removedMidiClipIds) {
+            removeMidiClipData([clipId]);
+        }
 
-    // Freeze the MIDI data the split/remove mutations below touch, or the
-    // track-only undo would permanently destroy notes (PR #621 review —
-    // pre-split the op never touched midiStore). Source entries are frozen
-    // before mutation; generated entries (kept right parts, throwaway
-    // discards) are frozen after so redo reinstates them.
-    const midiSnapshotsBefore = new Map<string, MidiClipDataSnapshot>();
-    for (const clipId of sourceMidiClipIds) {
-        midiSnapshotsBefore.set(clipId, captureMidiClipData(clipId));
-    }
+        const midiSnapshotsAfter = new Map<string, MidiClipDataSnapshot>();
+        for (const clipId of [...sourceMidiClipIds, ...generatedMidiClipIds]) {
+            midiSnapshotsAfter.set(clipId, captureMidiClipData(clipId));
+        }
 
-    const tracksBefore = structuredClone(freshState.tracks);
-
-    const audioBufferId = `bounce-sel-${trackId}-${Date.now()}`;
-    cacheAudioBuffer({ buffer: renderedBuffer, bufferId: audioBufferId });
-
-    const bouncedClip: Clip = {
-        id: `bounced-sel-${crypto.randomUUID()}`,
-        trackId,
-        name: `${track.name} (selection bounce)`,
-        startBeat,
-        endBeat,
-        type: 'audio',
-        audioBufferId,
-        fadeInBeats: 0,
-        fadeOutBeats: 0,
-        gain: 1.0,
-        color: '',
-        locked: false,
-        muted: false,
-    };
-
-    const tracksAfterBounce = freshState.tracks.slice();
-    tracksAfterBounce[targetTrackIndex] = {
-        ...targetTrack,
-        clips: [...keptClips, bouncedClip],
-    };
-    trackStore.set({
-        ...freshState,
-        tracks: tracksAfterBounce,
+        const tracksAfter = structuredClone(trackStore.value?.tracks ?? []);
+        // Undo restores the pre-bounce tracks, redo the post-bounce ones; both
+        // carry clips referencing audio buffers the history must keep alive.
+        const restoresBufferIds = [
+            ...new Set([...collectTracksClipBufferIds(tracksBefore), ...collectTracksClipBufferIds(tracksAfter)]),
+        ];
+        options.onCommitValidation?.(source.commitValidation(tracksAfter));
+        const publish = () => {
+            cacheAudioBuffer({ buffer: renderedBuffer, bufferId: audioBufferId });
+            pushUndoEntry(
+                'Bounce Selection',
+                () => {
+                    const state1 = trackStore.value;
+                    if (state1) {
+                        trackStore.set({ ...state1, tracks: tracksBefore });
+                    }
+                    // Reinstate the pre-bounce note data: source clips get their
+                    // original entries back; generated ids (right parts, discards)
+                    // did not exist before the bounce and are removed.
+                    for (const [clipId, snapshot] of midiSnapshotsBefore) {
+                        applyMidiClipDataSnapshot(clipId, snapshot);
+                    }
+                    removeMidiClipData(generatedMidiClipIds);
+                },
+                () => {
+                    const state1 = trackStore.value;
+                    if (state1) {
+                        trackStore.set({ ...state1, tracks: tracksAfter });
+                    }
+                    // Reinstate the post-bounce partition: split entries and kept
+                    // right parts return exactly as the op wrote them; removed
+                    // entries (inside clips, throwaway discards) are all-null
+                    // snapshots and are removed again.
+                    for (const [clipId, snapshot] of midiSnapshotsAfter) {
+                        applyMidiClipDataSnapshot(clipId, snapshot);
+                    }
+                },
+                { restoresBufferIds }
+            );
+        };
+        if (options.deferUndoEntry) {
+            options.deferUndoEntry(publish);
+        } else {
+            publish();
+        }
+        return true;
     });
-
-    for (const op of splitOps) {
-        splitMidiNotesAtBeat(op);
-    }
-    for (const clipId of removedMidiClipIds) {
-        removeMidiClipData([clipId]);
-    }
-
-    const midiSnapshotsAfter = new Map<string, MidiClipDataSnapshot>();
-    for (const clipId of [...sourceMidiClipIds, ...generatedMidiClipIds]) {
-        midiSnapshotsAfter.set(clipId, captureMidiClipData(clipId));
-    }
-
-    const tracksAfter = structuredClone(trackStore.value?.tracks ?? []);
-    // Undo restores the pre-bounce tracks, redo the post-bounce ones; both
-    // carry clips referencing audio buffers the history must keep alive.
-    const restoresBufferIds = [
-        ...new Set([...collectTracksClipBufferIds(tracksBefore), ...collectTracksClipBufferIds(tracksAfter)]),
-    ];
-    pushUndoEntry(
-        'Bounce Selection',
-        () => {
-            const state1 = trackStore.value;
-            if (state1) {
-                trackStore.set({ ...state1, tracks: tracksBefore });
-            }
-            // Reinstate the pre-bounce note data: source clips get their
-            // original entries back; generated ids (right parts, discards)
-            // did not exist before the bounce and are removed.
-            for (const [clipId, snapshot] of midiSnapshotsBefore) {
-                applyMidiClipDataSnapshot(clipId, snapshot);
-            }
-            removeMidiClipData(generatedMidiClipIds);
-        },
-        () => {
-            const state1 = trackStore.value;
-            if (state1) {
-                trackStore.set({ ...state1, tracks: tracksAfter });
-            }
-            // Reinstate the post-bounce partition: split entries and kept
-            // right parts return exactly as the op wrote them; removed
-            // entries (inside clips, throwaway discards) are all-null
-            // snapshots and are removed again.
-            for (const [clipId, snapshot] of midiSnapshotsAfter) {
-                applyMidiClipDataSnapshot(clipId, snapshot);
-            }
-        },
-        { restoresBufferIds }
-    );
-    return true;
 }

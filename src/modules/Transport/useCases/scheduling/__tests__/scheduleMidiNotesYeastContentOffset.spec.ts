@@ -11,13 +11,28 @@ import {
     type GrooveTemplateState,
 } from '#/modules/MIDI/stores';
 import { projectClipMidiEvents, projectCommittedGroove } from '#/modules/MIDI/useCases';
-import { scheduleNote } from '#/modules/Synth/useCases';
+import { toasterStore } from '#/modules/Toaster/stores';
 import { processYeastMidi } from '#/modules/Yeast/useCases';
 
 import { defaultTransportState } from '../../../models/TransportState';
 import { tempoMapStore } from '../../../stores/tempoMapStore';
 import { timeSignatureMapStore } from '../../../stores/timeSignatureMapStore';
+import { kitSwing } from '../kitSwing';
+import { liveMidiProcessor } from '../liveMidiProcessor';
 import { scheduleMidiNotes } from '../scheduleMidiNotes';
+
+// The engine and Arrangement barrels are mocked whole here, so the composition
+// root's registrar cannot load; the device ports it registers are filled
+// directly, from the Yeast and Toaster barrels this spec doubles. Scheduling a
+// window never reads a rack, and the Yeast store cannot load over the mocked
+// track store, so a rack read fails the spec rather than answering.
+liveMidiProcessor.configure({
+    processBlock: processYeastMidi,
+    readRackProcessors: (rackId) => {
+        throw new Error(`scheduleMidiNotes read the rack of ${rackId}`);
+    },
+});
+kitSwing.configure({ currentSwing: (deviceId) => toasterStore.value?.[deviceId]?.kit.swing });
 
 /** Types withheld only inside tests that exercise the generic admission guard. */
 const injectedWithheldDeviceTypes = vi.hoisted(() => new Set<string>());
@@ -98,6 +113,7 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     getSynthParamsForTrack: vi.fn(() => ({})),
 }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    builtinSynthVoice: { read: () => synthVoices },
     applyNoteExpression: vi.fn(),
     startNoteExpression: vi.fn(),
     advanceNoteExpression: vi.fn(),
@@ -127,7 +143,8 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     soundsNativeNotes: vi.fn(() => false),
     writeNativeBuiltinParameters: vi.fn(),
 }));
-vi.mock('#/modules/Synth/useCases', () => ({
+// The built-in synth voice this spec's notes sound through, read through the AudioEngine port.
+const synthVoices = vi.hoisted(() => ({
     getDrumKitDefByIndex: vi.fn(() => null),
     // Web-MIDI message-handler bundle, via the real MIDI use-case barrel.
     getSynthParamsFromDevices: vi.fn(() => ({})),
@@ -135,6 +152,7 @@ vi.mock('#/modules/Synth/useCases', () => ({
     scheduleKitNote: vi.fn(),
     scheduleNote: vi.fn(),
 }));
+const { scheduleNote } = synthVoices;
 vi.mock('#/modules/Yeast/useCases', () => ({
     processYeastMidi: vi.fn(),
     getYeastSchedulingLookahead: vi.fn(() => ({ earlyBeats: 0, lateBeats: 0 })),
@@ -327,14 +345,14 @@ describe('scheduleMidiNotes — Yeast track with a clip content offset', () => {
         ]);
     });
 
-    it('wraps looped content displaced before an iteration head to where the twin re-anchors it', async () => {
+    it('re-anchors looped content displaced before an iteration head and strikes its overflow on the pass head', async () => {
         // Content 0.25 with offset 0.5 is audible at −0.25 inside each loop
         // iteration. Clamping it to the iteration heads owns the note at [0, 4]
-        // and loses it at every seam; the twin instead re-anchors a looped
-        // negative relative start with
-        // `((offset % loopLength) + loopLength) % loopLength`, landing each
-        // occurrence at `iterationStart + 3.75`, and the release keeps the full
-        // 0.5-beat duration from there, ringing across the seam.
+        // and loses it at every seam; a looped pass instead re-anchors a start
+        // before its head by the loop length, to `iterationStart + 3.75`, ends
+        // the note at the pass end, and hands the rack the 0.25 beats past it
+        // as their own note on the head of the same pass, as the synth route
+        // sounds them.
         expect(
             await sweepScheduledVoices(0.5, {
                 clip: { endBeat: 8, loopEnabled: true, loopLength: 4 },
@@ -342,8 +360,10 @@ describe('scheduleMidiNotes — Yeast track with a clip content offset', () => {
                 sweepEndBeat: 8,
             })
         ).toEqual([
-            { pitch: 60, beat: 3.75, durationBeats: 0.5 },
-            { pitch: 60, beat: 7.75, durationBeats: 0.5 },
+            { pitch: 60, beat: 0, durationBeats: 0.25 },
+            { pitch: 60, beat: 3.75, durationBeats: 0.25 },
+            { pitch: 60, beat: 4, durationBeats: 0.25 },
+            { pitch: 60, beat: 7.75, durationBeats: 0.25 },
         ]);
     });
 });
@@ -470,9 +490,10 @@ describe('scheduleMidiNotes — Yeast track with a committed clip groove displac
     it('schedules a groove-displaced start that crosses the iteration head at the wrapped position per pass', async () => {
         // Slot-0 timingOffset −0.5 at full amount on a 1/8 grid displaces the
         // note at 1/32 by −0.25 beats, across every iteration head (grooved
-        // relative start −0.21875). The twin re-anchors each pass to
-        // `iterationStart + 3.78125`; the phase index must admit the note so the
-        // window owning that position selects it.
+        // relative start −0.21875). Each pass re-anchors it to
+        // `iterationStart + 3.78125`, ends it at the pass end, and strikes the
+        // remaining 0.28125 beats on the pass head; the phase index must admit
+        // the note so the windows owning both positions select it.
         expect(
             await sweepScheduledVoices({
                 clip: { endBeat: 8, loopEnabled: true, loopLength: 4 },
@@ -480,35 +501,44 @@ describe('scheduleMidiNotes — Yeast track with a committed clip groove displac
                 grooveState: clipGrooveState({ index: 0, timingOffset: -0.5 }),
             })
         ).toEqual([
-            { pitch: 60, beat: 3.78125, durationBeats: 0.5 },
-            { pitch: 60, beat: 7.78125, durationBeats: 0.5 },
+            { pitch: 60, beat: 0, durationBeats: 0.28125 },
+            { pitch: 60, beat: 3.78125, durationBeats: 0.21875 },
+            { pitch: 60, beat: 4, durationBeats: 0.28125 },
+            { pitch: 60, beat: 7.78125, durationBeats: 0.21875 },
         ]);
     });
 
-    it('delivers the wrapped release of a groove-crossing note to the window that owns it', async () => {
+    it('delivers each release of a groove-crossing note to the window that owns it', async () => {
         // Slot-0 timingOffset −0.4 at full amount on a 1/8 grid displaces the
         // note at 0.02 by −0.2 beats, across every iteration head (grooved
         // relative start −0.18); each pass re-anchors it to
-        // `iterationStart + 3.82` and the release rings at
-        // `wrappedStart + 1.18`, one beat past the next head. The phase entry's
-        // `endPhaseBeat` stays at the raw `0.02 + 1.18`, a full loop away from
-        // that wrapped release, so the window owning 5.0 found zero candidates
-        // and skipped the owning iteration: the note-on sounded while its
-        // note-off never reached the processor.
+        // `iterationStart + 3.82`, releases it on the pass end, and strikes
+        // the beat it has left on the pass head, released one beat in. Every
+        // release is owned by a window no note-on of its pass shares, so each
+        // must reach the rack from the window holding it, or the note-on
+        // sounds and its note-off never arrives.
         await sweepScheduledVoices({
             clip: { endBeat: 8, loopEnabled: true, loopLength: 4 },
             note: { startBeat: 0.02, duration: 1.18 },
             grooveState: clipGrooveState({ index: 0, timingOffset: -0.4 }),
         });
-        const yeastEvents = vi.mocked(processYeastMidi).mock.calls.flatMap((call) => call[0].events);
-        const noteOnBeats = yeastEvents
-            .filter((event) => event.kind.type === 'noteOn')
-            .map((event) => event.timePpq ?? Number.NaN);
-        const noteOffBeats = yeastEvents
-            .filter((event) => event.kind.type === 'noteOff')
-            .map((event) => event.timePpq ?? Number.NaN);
-        expect(noteOnBeats).toEqual([expect.closeTo(3.82, 6), expect.closeTo(7.82, 6)]);
-        expect(noteOffBeats).toEqual([expect.closeTo(5, 6)]);
+        const yeastEvents = vi
+            .mocked(processYeastMidi)
+            .mock.calls.flatMap((call) => call[0].events)
+            .map((event) => ({ type: event.kind.type, beat: event.timePpq, instance: event.noteInstanceId }));
+        const passNote = (pass: number) => `live-yeast:track-1:clip-1:${pass}:n1`;
+        const passHeadTail = (pass: number) => `${passNote(pass)}:pass-head`;
+        expect(yeastEvents).toEqual([
+            { type: 'noteOn', beat: expect.closeTo(0, 6), instance: passHeadTail(0) },
+            { type: 'noteOff', beat: expect.closeTo(1, 6), instance: passHeadTail(0) },
+            { type: 'noteOn', beat: expect.closeTo(3.82, 6), instance: passNote(0) },
+            { type: 'noteOff', beat: expect.closeTo(4, 6), instance: passNote(0) },
+            { type: 'noteOn', beat: expect.closeTo(4, 6), instance: passHeadTail(1) },
+            { type: 'noteOff', beat: expect.closeTo(5, 6), instance: passHeadTail(1) },
+            { type: 'noteOn', beat: expect.closeTo(7.82, 6), instance: passNote(1) },
+            // The second pass ends on the clip end (8), so the window closing there owns its release, as the bounce posts it.
+            { type: 'noteOff', beat: expect.closeTo(8, 6), instance: passNote(1) },
+        ]);
     });
 
     it('keeps the mirrored crossing selected: a raw-negative start the groove pushes past the head sounds inside its iteration', async () => {

@@ -194,6 +194,55 @@ function bridge(input: {
 
 const VALUE_MISMATCH_REASON = 'Provider value value does not match the user request';
 
+describe('literal controls beside creative intent', () => {
+    it.each([
+        { prompt: 'set tempo to 96 bpm', call: { name: 'setTempo', arguments: { bpm: 96 } } },
+        { prompt: 'mute Guitar', call: { name: 'muteTrack', arguments: { trackId: 'guitar', muted: true } } },
+    ])('never lets $call.name write through a read-only authority', ({ prompt, call }) => {
+        const result = bridge({
+            prompt,
+            calls: [call],
+            creativeAuthority: buildAuthority({
+                mode: 'read-only',
+                targets: [],
+                editDimensions: [],
+                creationSlots: [],
+            }),
+        });
+        expect(result.actions).toEqual([]);
+        expect(result.rejections).toMatchObject([{ name: call.name, reason: expect.stringContaining('read-only') }]);
+    });
+
+    it('grounds an explicitly requested mute through its ordinary target rules beside a creative gain edit', () => {
+        const result = bridge({
+            prompt: 'mute Bass and make Guitar quieter',
+            calls: [
+                { name: 'muteTrack', arguments: { trackId: 'bass', muted: true } },
+                { name: 'setTrackGain', arguments: { trackId: 'guitar', gain: 0.6 } },
+            ],
+            creativeAuthority: buildAuthority(),
+        });
+        expect(result.rejections).toEqual([]);
+        expect(result.actions).toMatchObject([
+            { type: 'muteTrack', payload: { trackId: 'bass', muted: true } },
+            { type: 'setTrackGain', payload: { trackId: 'guitar', gain: 0.6 } },
+        ]);
+    });
+
+    it.each(['make Guitar quieter', 'mute Guitar and make Guitar quieter'])(
+        'refuses an ungrounded Bass mute beside %s',
+        (prompt) => {
+            const result = bridge({
+                prompt,
+                calls: [{ name: 'muteTrack', arguments: { trackId: 'bass', muted: true } }],
+                creativeAuthority: buildAuthority(),
+            });
+            expect(result.actions).toEqual([]);
+            expect(result.rejections).toMatchObject([{ name: 'muteTrack' }]);
+        }
+    );
+});
+
 function bridgeBrightness(prompt: string, value: number) {
     return bridge({
         calls: [
@@ -1018,7 +1067,7 @@ describe('creative authority grounding in the tool-call bridge', () => {
             { type: 'addDevice', payload: { trackId: 'guitar', deviceType: 'radio-filter' } },
         ]);
         expect(result.rejections).toMatchObject([
-            { name: 'muteTrack', reason: 'Creative authority does not extend to monitoring effects' },
+            { name: 'muteTrack', reason: 'Provider action is not grounded in the user request' },
         ]);
     });
 

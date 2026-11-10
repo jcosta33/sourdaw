@@ -3,14 +3,19 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { type TimelineRenderModel } from '../../../models/TimelineRenderModel';
 import { hitTestAutomationSubLane } from '../hitTestAutomationSubLane';
 
-const { mockTimelineViewValue, mockTrackValue, mockWorkspaceValue, mockAutomationValue, mockBuildTimelineRenderModel } =
-    vi.hoisted(() => ({
-        mockTimelineViewValue: { value: null } as any,
-        mockTrackValue: { value: null } as any,
-        mockWorkspaceValue: { value: null } as any,
-        mockAutomationValue: { value: null } as any,
-        mockBuildTimelineRenderModel: vi.fn(),
-    }));
+const {
+    mockTimelineViewValue,
+    mockTrackValue,
+    mockTimelineEditingValue,
+    mockAutomationValue,
+    mockBuildTimelineRenderModel,
+} = vi.hoisted(() => ({
+    mockTimelineViewValue: { value: null } as any,
+    mockTrackValue: { value: null } as any,
+    mockTimelineEditingValue: { value: null } as any,
+    mockAutomationValue: { value: null } as any,
+    mockBuildTimelineRenderModel: vi.fn(),
+}));
 
 vi.mock('../../../stores/timelineViewStore', () => ({
     timelineViewStore: {
@@ -28,17 +33,13 @@ vi.mock('../../../stores/trackStore', () => ({
     },
 }));
 
-vi.mock('#/modules/WorkspaceShell/stores', async (importOriginal) => {
-    const actual = await importOriginal<any>();
-    return {
-        ...actual,
-        workspaceStore: {
-            get value() {
-                return mockWorkspaceValue.value;
-            },
+vi.mock('../../../stores/timelineEditingStore', () => ({
+    timelineEditingStore: {
+        get value() {
+            return mockTimelineEditingValue.value;
         },
-    };
-});
+    },
+}));
 
 vi.mock('#/modules/Automation/stores', async (importOriginal) => {
     const actual = await importOriginal<any>();
@@ -60,7 +61,7 @@ describe('hitTestAutomationSubLane', () => {
     beforeEach(() => {
         mockTimelineViewValue.value = null;
         mockTrackValue.value = null;
-        mockWorkspaceValue.value = null;
+        mockTimelineEditingValue.value = null;
         mockAutomationValue.value = null;
         mockBuildTimelineRenderModel.mockReset();
     });
@@ -99,7 +100,7 @@ describe('hitTestAutomationSubLane', () => {
 
         mockTimelineViewValue.value = { pixelsPerBeat: 10, scrollX: 0, scrollY: 0 };
         mockTrackValue.value = { tracks: [], selectedTrackId: null };
-        mockWorkspaceValue.value = {
+        mockTimelineEditingValue.value = {
             automationVisibility: 'overlay',
             automationSubLanes: { t1: ['gain'] },
         };
@@ -133,7 +134,7 @@ describe('hitTestAutomationSubLane', () => {
     it('returns null when automation is hidden', () => {
         mockTimelineViewValue.value = { pixelsPerBeat: 10, scrollX: 0, scrollY: 0 };
         mockTrackValue.value = { tracks: [], selectedTrackId: null };
-        mockWorkspaceValue.value = {
+        mockTimelineEditingValue.value = {
             automationVisibility: 'hidden',
             automationSubLanes: {},
         };
@@ -146,7 +147,7 @@ describe('hitTestAutomationSubLane', () => {
     it('returns null when the render model cannot be built even though automation is visible', () => {
         mockTimelineViewValue.value = { pixelsPerBeat: 10, scrollX: 0, scrollY: 0 };
         mockTrackValue.value = { tracks: [], selectedTrackId: null };
-        mockWorkspaceValue.value = {
+        mockTimelineEditingValue.value = {
             automationVisibility: 'overlay',
             automationSubLanes: { t1: ['gain'] },
         };
@@ -190,7 +191,7 @@ describe('hitTestAutomationSubLane', () => {
         mockTimelineViewValue.value = { pixelsPerBeat: 10, scrollX: 0, scrollY: 0 };
         mockTrackValue.value = { tracks: [], selectedTrackId: null };
         // Track t1 has no entry in the sub-lane map -> falls back to an empty list.
-        mockWorkspaceValue.value = {
+        mockTimelineEditingValue.value = {
             automationVisibility: 'overlay',
             automationSubLanes: {},
         };
@@ -234,7 +235,7 @@ describe('hitTestAutomationSubLane', () => {
         };
         mockTimelineViewValue.value = { pixelsPerBeat: 10, scrollX: 0, scrollY: 0 };
         mockTrackValue.value = { tracks: [], selectedTrackId: null };
-        mockWorkspaceValue.value = {
+        mockTimelineEditingValue.value = {
             automationVisibility: 'overlay',
             automationSubLanes: { t1: ['gain'] },
         };
@@ -242,7 +243,8 @@ describe('hitTestAutomationSubLane', () => {
         mockAutomationValue.value = { lanes: [] };
         mockBuildTimelineRenderModel.mockReturnValue(model);
 
-        expect(hitTestAutomationSubLane(50, 70)).toBeNull();
+        // 170 is local y 46 in t1, above its sub-lane; without the lane block t1 would start at 100 and hit.
+        expect(hitTestAutomationSubLane(50, 170)).toBeNull();
     });
 
     it('returns null when the y coordinate is below every track lane', () => {
@@ -278,7 +280,7 @@ describe('hitTestAutomationSubLane', () => {
         };
         mockTimelineViewValue.value = { pixelsPerBeat: 10, scrollX: 0, scrollY: 0 };
         mockTrackValue.value = { tracks: [], selectedTrackId: null };
-        mockWorkspaceValue.value = {
+        mockTimelineEditingValue.value = {
             automationVisibility: 'overlay',
             automationSubLanes: { t1: ['gain'] },
         };
@@ -287,5 +289,53 @@ describe('hitTestAutomationSubLane', () => {
 
         // Y far below the 100px-tall track -> no track lane contains it.
         expect(hitTestAutomationSubLane(50, 500)).toBeNull();
+    });
+
+    it('finds the sub-lane of a track below the variation lanes of the track above it', () => {
+        const row = (id: string, index: number, lanes: number) => ({
+            id,
+            name: id,
+            index,
+            kind: 'midi' as const,
+            color: '#000',
+            muted: false,
+            soloed: false,
+            height: 100,
+            clips: [],
+            variationLanes: Array.from({ length: lanes }, (_, lane) => ({
+                id: `${id}-${lane}`,
+                name: 'Alt',
+                clips: [],
+            })),
+            automationMode: 'read' as const,
+        });
+        mockBuildTimelineRenderModel.mockReturnValue({
+            dataDirty: false,
+            tracks: [row('t0', 0, 1), row('t1', 1, 0)],
+            selectedTrackId: null,
+            selectedClipId: null,
+            selectedClipIds: [],
+            playheadPosition: 0,
+            viewportStartBeat: 0,
+            viewportEndBeat: 32,
+            beatsPerPixel: 0.1,
+            pixelsPerBeat: 10,
+            trackHeight: 100,
+            scrollY: 0,
+            tempo: 120,
+            timeSignatureNumerator: 4,
+            timeSignatureDenominator: 4,
+        } satisfies TimelineRenderModel);
+        mockTimelineViewValue.value = { pixelsPerBeat: 10, scrollX: 0, scrollY: 0 };
+        mockTrackValue.value = { tracks: [], selectedTrackId: null };
+        mockTimelineEditingValue.value = { automationVisibility: 'overlay', automationSubLanes: { t1: ['gain'] } };
+        mockAutomationValue.value = {
+            lanes: [{ id: 'lane-1', trackId: 't1', parameterId: 'gain', points: [], objects: [] }],
+        };
+
+        // t0 spans 0..124 (row plus one 24px lane); t1 starts at 124 and its sub-lane at 124 + 60.
+        expect(hitTestAutomationSubLane(50, 124 + 70)?.trackId).toBe('t1');
+        // 170 is local y 46 in t1, above its sub-lane; without the lane block t1 would start at 100 and hit.
+        expect(hitTestAutomationSubLane(50, 170)).toBeNull();
     });
 });

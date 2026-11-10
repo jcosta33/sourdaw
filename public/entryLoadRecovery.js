@@ -36,6 +36,7 @@
     }
 
     function showFailure() {
+        document.documentElement.style.visibility = 'visible';
         const title = document.getElementById('entry-startup-title');
         const description = document.getElementById('entry-startup-description');
         const button = document.getElementById('entry-startup-reload');
@@ -48,6 +49,8 @@
         button.addEventListener('click', () => window.location.reload());
         button.hidden = false;
     }
+
+    window.addEventListener('sourdaw:initial-render-failed', showFailure, { once: true });
 
     // This independent deferred script runs before the later module entry.
     window.addEventListener(

@@ -70,6 +70,21 @@ function describeDropouts({ playback, health }: DescribeDropoutsInput): string {
     );
 }
 
+/**
+ * The meter admits +Infinity samples, so a blown-up output reads as an infinite
+ * peak. It prints as "+∞", the sibling of the "-∞" silence notation, because
+ * "Infinity" overflows the readout box.
+ */
+function formatMasterLevelDb(level: number): string {
+    if (Number.isNaN(level) || level <= 0) {
+        return '-∞';
+    }
+    if (!Number.isFinite(level)) {
+        return '+∞';
+    }
+    return (20 * Math.log10(level)).toFixed(1);
+}
+
 type DeadlineEvidence = ReturnType<typeof collectAudioDeadlineEvidence>;
 
 /**
@@ -278,13 +293,13 @@ export const useStatusBarMetrics = (refs: StatusBarMetricRefs): void => {
         };
         scheduleIdle();
 
-        const tick = (): void => {
+        const tick = (frameTime: DOMHighResTimeStamp): void => {
             const now = performance.now();
             const frameDelta = now - lastFrameRef.current;
             lastFrameRef.current = now;
 
             const engineInfo = getEngineState();
-            const masterLevel = getMasterPeakLevel();
+            const masterLevel = getMasterPeakLevel(frameTime);
             if (now - lastDiagnosticsAtRef.current >= 1_000) {
                 // The native engine publishes stream errors into a bounded ring
                 // that only this command drains. Two callers share that drain
@@ -516,7 +531,7 @@ export const useStatusBarMetrics = (refs: StatusBarMetricRefs): void => {
                 return;
             }
 
-            const levelDb = masterLevel > 0 ? (20 * Math.log10(masterLevel)).toFixed(1) : '-∞';
+            const levelDb = formatMasterLevelDb(masterLevel);
             if (refs.masterLevelBar.current) {
                 refs.masterLevelBar.current.style.width = `${Math.min(100, masterLevel * 300)}%`;
             }

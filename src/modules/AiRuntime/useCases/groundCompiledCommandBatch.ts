@@ -5,6 +5,7 @@ import { doesProductionBriefAllowActionBatch } from '#/modules/Project/useCases'
 import { type AgentRunProviderProposal } from '../models/AgentRun';
 import { type CreativeRequestAuthority } from '../models/CreativeInterpretation';
 import { type IntentResult } from '../models/IntentResult';
+import { type PerceptualConstraintReading } from '../models/PerceptualConstraint';
 import { type PlanningOutcome } from '../models/PlanningOutcome';
 import { type PlanningRejectionEvidence } from '../models/PlanningRejectionEvidence';
 import {
@@ -29,6 +30,8 @@ import { type ArbitraryCommandListEvidence } from './compileArbitraryCommandList
 import { deriveMatchSelectorPredicates } from './deriveMatchSelectorPredicates';
 import { type ProjectContext } from './getProjectContext';
 import { materializeActionStateGuards } from './materializeActionStateGuards';
+import { findExcludedDimensionEdit } from './perceptualConstraints/findExcludedDimensionEdit';
+import { readRequestPerceptualConstraints } from './perceptualConstraints/readRequestPerceptualConstraints';
 import { readPlanningMarkerSignatures } from './readPlanningMarkerSignatures';
 import { validateActions } from './validateActions';
 
@@ -53,6 +56,12 @@ type GroundCompiledCommandBatchInput = {
     refinementProtections?: ProposalProtectionFacts;
     /** Resolved protections of this exact request when replaying a later scheduled slice. */
     requestProtections?: BoundRequestProtections;
+    /**
+     * The request's perceptual constraints as they were read when its run was planned. A later batch
+     * of an application-planned run is held to exactly these, never to a reading of the request
+     * against the project as it is when that batch is proposed.
+     */
+    recordedConstraints?: PerceptualConstraintReading;
 };
 
 /** What grounding a refinement against its pending card's basis established. */
@@ -62,6 +71,7 @@ type GroundedRefinement = {
 };
 
 type GroundedFields = {
+    nativeLiteralUses: ReturnType<typeof bridgeGroundedLlmToolCalls>['nativeLiteralUses'];
     actions: IntentResult['actions'];
     actionCommandGraph: IntentResult['actionCommandGraph'];
     requiresConfirmation: boolean;
@@ -227,12 +237,24 @@ function bindBridgedActions(
     return guarded;
 }
 
+/** A reading that states nothing is left off, so an unconstrained card's facts read as they always did. */
+function recordPerceptualConstraints(
+    facts: ProposalProtectionFacts,
+    reading: PerceptualConstraintReading
+): ProposalProtectionFacts {
+    if (reading.constraints.length === 0 && reading.unsupported.length === 0) {
+        return facts;
+    }
+    return { ...facts, perceptualConstraints: reading };
+}
+
 function composeGroundedFields(
     input: GroundCompiledCommandBatchInput,
     bridged: Bridged,
-    guarded: Guarded
+    guarded: Guarded,
+    constraints: PerceptualConstraintReading
 ): GroundedFields {
-    const protectionFacts = composeProtectionFacts(input, bridged, guarded);
+    const protectionFacts = recordPerceptualConstraints(composeProtectionFacts(input, bridged, guarded), constraints);
     const verifiedProviderProposalScope = composeVerifiedProviderProposalScope({
         actions: guarded.actions,
         compilerEvidence: input.compilerEvidence,
@@ -290,6 +312,7 @@ function composeGroundedFields(
 
     return {
         actions: guarded.actions,
+        nativeLiteralUses: bridged.nativeLiteralUses,
         actionCommandGraph: bridged.actionCommandGraph,
         requiresConfirmation: requiresAppActionConfirmation(guarded.actions),
         providerKnownTargetIds: getProviderKnownTargetIds(input),
@@ -356,7 +379,11 @@ function composeGroundingBasis(
             ...protectionFacts,
         });
     }
-    return { ...basis, ...protectionFacts };
+    return {
+        ...basis,
+        protectedUnchanged: protectionFacts.protectedUnchanged,
+        protectedControls: protectionFacts.protectedControls,
+    };
 }
 
 function readControlFacts(
@@ -446,5 +473,24 @@ export function groundCompiledCommandBatch(input: GroundCompiledCommandBatchInpu
     if (guarded.status !== 'accepted') {
         return guarded;
     }
-    return { status: 'grounded', ...composeGroundedFields(input, bridged, guarded) };
+    // Refused here, inside planning, so the provider can answer with a batch that leaves the
+    // excluded dimension alone; compilation refuses it again for every route that skips the loop.
+    // A refinement is held to the constraints its card recorded, whichever route grounds it.
+    const constraints =
+        input.recordedConstraints ??
+        readRequestPerceptualConstraints({
+            prompt: input.prompt,
+            context: input.context,
+            recorded: input.refinementProtections?.perceptualConstraints,
+        });
+    const excludedEdit = findExcludedDimensionEdit({
+        constraints: constraints.constraints,
+        actions: guarded.actions,
+        context: input.context,
+    });
+    if (excludedEdit !== null) {
+        logger.warn('[AI] Rejected LLM action batch because it edits a dimension the request excludes');
+        return { status: 'rejected', rejectionReason: `Provider action rejected: ${excludedEdit.reason}` };
+    }
+    return { status: 'grounded', ...composeGroundedFields(input, bridged, guarded, constraints) };
 }

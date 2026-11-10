@@ -8,28 +8,25 @@ Owns transient marker detection, warp marker editing/quantization, warp algorith
 
 ## Public Contract Surface
 
-- **`useCases`**: `detectTransients`, `detectTransientsForClip`, `markElasticDetectionComplete`, `selectElasticMarkers`, `openElasticEditor`, `closeElasticEditor`, `setElasticTool`, `setElasticSensitivity`, `addManualMarker`, `removeMarker`, `toggleMarkerLock`, `quantizeTransients`, `enableWarping`, `setWarpAlgorithm`, `setPitchShift`, `setDefaultAlgorithm`, `getAlgorithmInfo`.
-- **`stores`**: `elasticAudioStore` (`defaultElasticAudioState`, types `ElasticAudioState`, `ElasticEditorTool`), `audioWarpStore` (`DEFAULT_WARP_SETTINGS`, `WARP_ALGORITHMS`, types `WarpAlgorithm`, `WarpState`, `ClipWarpSettings`).
-- **`presentations/views`**: `ElasticEditorPanel`.
-- **`events`**: None.
-- **Handler maps**: Handlers for elastic audio/warping actions live in `AudioEngine/handlers/finalFeature`.
+Public surface: `useCases/index.ts`, `stores/index.ts`, `presentations/views/index.ts`. Handlers for elastic audio/warping actions live in `AudioEngine/handlers/finalFeature`, not here. `quantizeTransients` is Arrangement's executable command (it cuts and moves clips); `useCases/quantizeTransients.ts` only dispatches it with the editor's snap grid and sensitivity.
 
 ## Key Subsystems
 
 - **`stores/elasticAudio.ts`**: Open clip, detection lifecycle state, marker selection, and active editor tool. Last-used detection sensitivity belongs to the client-local Preferences store, not this session store.
 - **`stores/audioWarp.ts`**: Per-clip warp settings (algorithm, pitch shift semitones/cents, warp enabled, transient sensitivity).
 - **`presentations/views/`**: `ElasticEditorPanel.tsx` interactive transient visualizer and marker manipulation surface.
-- **`useCases/`**: Transient detection (`detectTransients.ts`, `detectTransientsForClip.ts`), marker manipulation (`addManualMarker.ts`, `removeMarker.ts`, `toggleMarkerLock.ts`, `quantizeTransients.ts`), and warp configuration (`enableWarping.ts`, `setWarpAlgorithm.ts`, `setPitchShift.ts`).
+- **`useCases/`**: Transient detection (`detectTransients.ts`, `detectTransientsForClip.ts`), marker manipulation (`addManualMarker.ts`, `removeMarker.ts`, `toggleMarkerLock.ts`), the transient quantize dispatcher (`quantizeTransients.ts`), and warp configuration (`enableWarping.ts`, `setWarpAlgorithm.ts`, `setPitchShift.ts`).
 
 ## Invariants & Traps
 
 - **Non-destructive transient metadata**: Transient markers and warp points are metadata projections on audio clips; original PCM audio in `audioBufferCache` is never mutated.
-- **Locked marker protection**: Locked warp markers cannot be moved or auto-quantized; transient quantization operations must respect marker lock flags.
+- **Locked marker protection**: Locked warp markers cannot be moved or auto-quantized by marker edits.
+- **The onset detector is shared**: `#/utils/transientOnsetDetection` is the one detector the onset worker, marker detection and Arrangement's transient quantize all run, so a marker the editor shows and a cut the quantize makes come from the same analysis.
 - **Sensitivity re-detection**: Changing sensitivity writes the canonical user preference and re-runs transient detection for the displayed audio clip after a 150 ms debounce. An explicitly open clip takes precedence over selection. A pending gesture cannot mutate a changed clip, source, or project root; selecting a clip alone does not detect.
 
 ## Verification
 
 PR CI owns broader unit and crate suites. Locally run only the exact changed spec or filtered Rust test.
 
-- **Focused unit tests**: `pnpm test:run <changed-spec>`
+- **Focused unit tests**: `pnpm guard --profile focused -- pnpm test:run <changed-spec>`
 - PR CI checks module boundaries; inspect that result after cross-module changes.

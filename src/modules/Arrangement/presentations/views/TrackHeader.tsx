@@ -27,12 +27,12 @@ import { cn } from '#/utils/Styles/cn';
 import { type Track, type InputMonitoring } from '../../models/Track';
 import { toggleFolderCollapse } from '../../useCases/folder/toggleFolderCollapse';
 import { setInputMonitoring } from '../../useCases/setTrackGainPan/setInputMonitoring';
-import { muteTrack } from '../../useCases/toggleTrackState/muteTrack';
 import { selectTrack } from '../../useCases/toggleTrackState/selectTrack';
 import { soloTrack } from '../../useCases/toggleTrackState/soloTrack';
 import { soloTrackExclusive } from '../../useCases/toggleTrackState/soloTrackExclusive';
 import { INPUT_MONITORING_CYCLE } from '../../useCases/toggleTrackState/toggleInputMonitoring';
 import { toggleVariationLanes } from '../../useCases/toggleTrackState/toggleVariationLanes';
+import { useTrackMuteToggle } from '../hooks/useTrackMuteToggle';
 
 import { TrackContextMenu } from './TrackContextMenu';
 import { InlineTrackName } from './TrackHeader/InlineTrackName';
@@ -60,9 +60,31 @@ type TrackHeaderProps = {
 };
 
 export const TrackHeader = ({ track, isSelected }: TrackHeaderProps): ReactElement => {
+    const toggleMute = useTrackMuteToggle(track.id, track.muted);
     const trackHeight = track.height;
     const isFreezing = track.freezeState.status === 'freezing';
     const isStale = track.freezeState.status === 'stale';
+    const freezeErrorMessage =
+        track.freezeState.status === 'error' ? track.freezeState.errorMessage || 'Freeze failed. Try again.' : null;
+    const freezeErrorContent = freezeErrorMessage ? (
+        <Tooltip>
+            <TooltipTrigger asChild>
+                <Button
+                    variant="bare"
+                    size="bare"
+                    type="button"
+                    aria-label={`Freeze error: ${freezeErrorMessage}`}
+                    data-testid="track-freeze-error-badge"
+                    className="ml-1 inline-flex items-center gap-0.5 rounded bg-state-danger/20 px-1 text-[8px] font-bold text-state-danger outline-none focus-visible:ring-1 focus-visible:ring-state-danger"
+                    onClick={(event) => event.stopPropagation()}
+                >
+                    <AlertCircle className="size-2.5" aria-hidden="true" />
+                    ERROR
+                </Button>
+            </TooltipTrigger>
+            <TooltipContent>{freezeErrorMessage}</TooltipContent>
+        </Tooltip>
+    ) : null;
 
     if (track.kind === 'folder') {
         const isDrumMachine = track.devices.some((data) => data.type === 'toaster');
@@ -87,7 +109,9 @@ export const TrackHeader = ({ track, isSelected }: TrackHeaderProps): ReactEleme
                             <Button
                                 variant="ghost"
                                 size="icon-xs"
-                                aria-label={track.collapsed ? 'Expand folder' : 'Collapse folder'}
+                                aria-label={
+                                    track.collapsed ? `Expand folder ${track.name}` : `Collapse folder ${track.name}`
+                                }
                                 onClick={(event) => {
                                     event.stopPropagation();
                                     toggleFolderCollapse(track.id);
@@ -111,7 +135,7 @@ export const TrackHeader = ({ track, isSelected }: TrackHeaderProps): ReactEleme
                             />
                         </>
                     }
-                    endSlot={<ResizeHandle trackId={track.id} />}
+                    endSlot={freezeErrorContent}
                     style={{
                         height: 26,
                         boxShadow: isSelected
@@ -133,7 +157,9 @@ export const TrackHeader = ({ track, isSelected }: TrackHeaderProps): ReactEleme
     ) : null;
 
     let freezeStateContent = null;
-    if (isFreezing) {
+    if (freezeErrorContent) {
+        freezeStateContent = freezeErrorContent;
+    } else if (isFreezing) {
         freezeStateContent = (
             <Stack gap={1} className="w-16 ml-2" data-testid="track-freezing-badge">
                 <span className="text-[8px] font-bold text-primary animate-pulse">FREEZING</span>
@@ -218,7 +244,7 @@ export const TrackHeader = ({ track, isSelected }: TrackHeaderProps): ReactEleme
                                     variant="bare"
                                     size="bare"
                                     type="button"
-                                    aria-label="Toggle variation lanes"
+                                    aria-label={`Variation lanes for ${track.name}`}
                                     aria-pressed={track.showVariationLanes}
                                     className={cn(
                                         'size-5 rounded flex items-center justify-center transition-colors',
@@ -244,7 +270,7 @@ export const TrackHeader = ({ track, isSelected }: TrackHeaderProps): ReactEleme
                                         active={track.inputMonitoring === 'on'}
                                         variant="mint"
                                         size="icon-sm"
-                                        aria-label={`Input monitoring: ${INPUT_MONITORING_LABEL[track.inputMonitoring]}`}
+                                        aria-label={`Input monitoring for ${track.name}: ${INPUT_MONITORING_LABEL[track.inputMonitoring]}`}
                                         className="font-bold text-[10px]"
                                         onClick={(event) => {
                                             event.stopPropagation();
@@ -298,7 +324,7 @@ export const TrackHeader = ({ track, isSelected }: TrackHeaderProps): ReactEleme
                                     className="font-bold text-[9px]"
                                     onClick={(event) => {
                                         event.stopPropagation();
-                                        muteTrack(track.id, !track.muted);
+                                        void toggleMute();
                                     }}
                                 >
                                     M
@@ -335,7 +361,7 @@ export const TrackHeader = ({ track, isSelected }: TrackHeaderProps): ReactEleme
                     </Row>
                 </div>
 
-                <ResizeHandle trackId={track.id} />
+                <ResizeHandle trackId={track.id} trackName={track.name} height={track.height} />
             </div>
         </TrackContextMenu>
     );

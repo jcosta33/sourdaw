@@ -2,18 +2,34 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { startRecording } from '#/modules/Arrangement/useCases';
 import { startAudioRecording } from '#/modules/AudioEngine/useCases';
+import { panicCrumbs } from '#/modules/Crumbs/useCases';
+import { toasterStore } from '#/modules/Toaster/stores';
+import { readYeastRack } from '#/modules/Yeast/stores';
 import { processYeastMidi, yeastPanic } from '#/modules/Yeast/useCases';
 
 import { defaultTransportState } from '../../../models/TransportState';
 import { captureGestureBeat } from '../../../stores/captureGestureBeat';
 import { setGestureClockSource } from '../../../stores/gestureClockSource';
 import { playheadClockRef } from '../../../stores/playheadClockRef';
+import { kitSwing } from '../../scheduling/kitSwing';
+import { liveMidiProcessor } from '../../scheduling/liveMidiProcessor';
 import { metronomeSchedulingState } from '../../scheduling/metronomeSchedulingState';
+import { notePanicParticipants } from '../../transportControls/notePanicParticipants';
 import { startPlayback } from '../../transportControls/startPlayback';
 import { stopPlayback } from '../../transportControls/stopPlayback';
 import { toggleRecording } from '../../transportControls/toggleRecording';
 import { disposePlayheadScheduler } from '../disposePlayheadScheduler';
 import { schedulerSession } from '../schedulerSession';
+
+// The engine and Arrangement barrels are mocked whole here, so the composition
+// root's registrar cannot load; the device ports it registers are filled
+// directly, from the Yeast and Toaster barrels this spec doubles.
+liveMidiProcessor.configure({
+    processBlock: processYeastMidi,
+    readRackProcessors: (rackId) => readYeastRack(rackId).processors,
+});
+notePanicParticipants.configure({ settleGeneratedNotes: yeastPanic, voiceReleases: [panicCrumbs] });
+kitSwing.configure({ currentSwing: (deviceId) => toasterStore.value?.[deviceId]?.kit.swing });
 
 /** The actual browser start, MIDI/audio producers and tempo law run together.
  * Only engine calls, external Yeast work and foreign stores are controlled. */
@@ -26,6 +42,7 @@ const midiStoreState: {
     value: { notesByClipId: Record<string, unknown[]>; probabilitySeed: number } | null;
 } = { value: null };
 const ctxTime = { now: 0 };
+const initialBuffer = vi.hoisted(() => ({ sampleRate: 48_000, length: 48_000, duration: 1 }));
 
 const audioContextStub = {
     sampleRate: 48000,
@@ -33,7 +50,13 @@ const audioContextStub = {
         return ctxTime.now;
     },
     createGain: () => ({
-        gain: { value: 1, cancelScheduledValues: vi.fn(), setValueAtTime: vi.fn(), linearRampToValueAtTime: vi.fn() },
+        gain: {
+            value: 1,
+            cancelScheduledValues: vi.fn(),
+            cancelAndHoldAtTime: vi.fn(),
+            setValueAtTime: vi.fn(),
+            linearRampToValueAtTime: vi.fn(),
+        },
         connect: vi.fn(),
         disconnect: vi.fn(),
     }),
@@ -50,6 +73,7 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({ captureProjectRootIdentity: 
 
 vi.mock('#/infra/logger/appLogger', () => ({ logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn() } }));
 vi.mock('#/modules/Arrangement/stores', () => ({
+    gainEnvelopeStore: { value: null },
     appendClipToTrack: vi.fn(),
     clipSelectionStore: { value: null },
     resolveEligibleClipWriteTarget: vi.fn(),
@@ -119,10 +143,19 @@ vi.mock('#/modules/Automation/useCases', () => ({
     isRecordingAutomation: vi.fn(() => false),
 }));
 vi.mock('#/modules/Arrangement/useCases', () => ({
+    collaborationAssetTransfer: {
+        read: () => ({ isSessionActive: () => false, current: () => null }),
+    },
     getTrackStoreState: () => trackStoreState.value,
     takeOwnsRecordingRoot: vi.fn(() => true),
+    admitRecordingCaptureClock: vi.fn(),
+    observeRecordingPassEntry: vi.fn(),
+    prepareRecoveredRecording: vi.fn(),
     discardRecording: vi.fn(),
     startRecording: vi.fn(() => []),
+    // Provisional rows are modeled without an Arrangement commit group or MIDI admission owner.
+    captureRecordingCommitRetirement: () => () => undefined,
+    hasAutomaticRecordingMidiCapture: () => false,
     stopRecording: vi.fn(),
     addTakeLane: vi.fn(),
     addTake: vi.fn(),
@@ -144,10 +177,17 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
  */
 const scheduleClickSpy = vi.hoisted(() => vi.fn<(time: number, isAccent: boolean, volume: number) => void>());
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    builtinSynthVoice: { read: () => synthVoices },
+    ensureCachedAudioBuffersDurable: vi.fn(),
     startFaustNote: vi.fn(),
     soundsNativeNotes: vi.fn(() => false),
     writeNativeBuiltinParameters: vi.fn(),
     getAudioContext: () => audioContextStub,
+    createNativeRecordingCaptureClock: () => ({
+        admission: null,
+        last: null,
+        read: () => ({ carrier: 'browser' as const }),
+    }),
     getCurrentTime: () => ctxTime.now,
     scheduleClick: scheduleClickSpy,
     getCompensationDelay: () => 0,
@@ -162,12 +202,20 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     relocateNoteExpression: vi.fn(),
     registerScheduledSource: vi.fn(),
     scheduleFaustNote: vi.fn(),
-    audioEngine: { setTransportInfo: (...args: unknown[]) => transportPublications.push(args) },
+    audioEngine: {
+        beginAudioPreviewIntent: () => ({
+            signal: new AbortController().signal,
+            isCurrent: () => true,
+            release: vi.fn(),
+        }),
+        setTransportInfo: (...args: unknown[]) => transportPublications.push(args),
+    },
     stopAllScheduled: vi.fn(),
     cancelTrackAutomationRamps: vi.fn(),
     startAudioRecording: vi.fn(),
     stopAudioRecording: vi.fn(),
     cacheAudioBuffer: vi.fn(),
+    openCachedAudioBufferHold: () => ({ retain: vi.fn(), release: vi.fn() }),
     refreshSidechainAlignment: vi.fn(),
     scheduleAdjustmentLayers: vi.fn(),
     createBufferSource: () => {
@@ -182,7 +230,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
         sources.push(source);
         return source;
     },
-    getCachedAudioBuffer: () => ({ sampleRate: 48_000, length: 48_000, duration: 1 }),
+    getCachedAudioBuffer: () => initialBuffer,
     resumeEngine: () => Promise.resolve(),
     nativeLiveGraphSessionOffered: () => false,
     startNativeLiveGraphSession: vi.fn(),
@@ -202,7 +250,8 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
 const scheduleNoteSpy = vi.hoisted(() =>
     vi.fn<(ctx: unknown, destination: unknown, pitch: number, startTime: number, ...rest: unknown[]) => unknown>()
 );
-vi.mock('#/modules/Synth/useCases', () => ({
+// The built-in synth voice this spec's notes sound through, read through the AudioEngine port.
+const synthVoices = vi.hoisted(() => ({
     getDrumKitDefByIndex: () => null,
     scheduleDrumKitNote: vi.fn(),
     scheduleKitNote: vi.fn(),
@@ -216,8 +265,6 @@ vi.mock('#/modules/Yeast/useCases', () => ({
     getYeastSchedulingLookahead: () => ({ earlyBeats: 0, lateBeats: 0 }),
 }));
 vi.mock('#/modules/Yeast/stores', () => ({ readYeastRack: () => ({ processors: [] }) }));
-vi.mock('#/modules/Collaboration/stores', () => ({ collaborationStore: { value: null } }));
-vi.mock('#/modules/Collaboration/useCases', () => ({ getAssetTransfer: () => null }));
 vi.mock('../../ensureTrackStrips', () => ({ ensureTrackStrips: vi.fn() }));
 vi.mock('../../transportControls/stopActiveRecording', () => ({ stopActiveRecording: () => Promise.resolve() }));
 // scheduleMetronome and resetMetronomeBeat run for real: the seam anchor is
@@ -235,7 +282,14 @@ vi.mock('../../evaluateFollowActions', () => ({
     evaluateFollowActions: (...args: unknown[]) => (evaluateFollowActionsMock as (...a: unknown[]) => unknown)(...args),
 }));
 
-type SourceStart = { start: ReturnType<typeof vi.fn<(when: number, offset: number, duration: number) => void>> };
+type SourceStart = {
+    buffer: AudioBuffer | null;
+    playbackRate: { value: number };
+    connect: ReturnType<typeof vi.fn>;
+    disconnect: ReturnType<typeof vi.fn>;
+    stop: ReturnType<typeof vi.fn>;
+    start: ReturnType<typeof vi.fn<(when: number, offset: number, duration: number) => void>>;
+};
 const sources: SourceStart[] = [];
 const transportPublications: unknown[][] = [];
 const notes: { pitch: number; time: number }[] = [];
@@ -516,11 +570,23 @@ describe('initial browser playback window', () => {
                 { pitch: 62, frame: 488_400 },
                 { pitch: 67, frame: 484_800 },
             ]);
-            expect(playheadClockRef).toEqual({ beat: 1.5, audioTimeSeconds: anchor, hold: null });
+            expect(playheadClockRef).toEqual({
+                beat: 1.5,
+                audioTimeSeconds: anchor,
+                generation: schedulerSession.generation,
+                pendingLoopSeam: null,
+                hold: null,
+            });
             ctxTime.now = 10.05;
             deliverWorkerTick();
             await vi.waitFor(() => expect(schedulerSession.tickInFlight).toBe(false));
-            expect(playheadClockRef).toEqual({ beat: 1.5, audioTimeSeconds: anchor, hold: null });
+            expect(playheadClockRef).toEqual({
+                beat: 1.5,
+                audioTimeSeconds: anchor,
+                generation: schedulerSession.generation,
+                pendingLoopSeam: null,
+                hold: null,
+            });
             expect(captureGestureBeat()).toBe(1.5);
             ctxTime.now = 10.15;
             deliverWorkerTick();
@@ -613,7 +679,7 @@ describe('initial browser playback window', () => {
         };
     }
 
-    it('uses the same prepared horizon for both sides of a 100 BPM seam', async () => {
+    it('shares the initial100BPM anchor while admitting later audio passes without extending MIDI', async () => {
         seedSeam(0.125, 100, 0.25);
         playheadClockRef.beat = 0.125;
         const onRoll = vi.fn<(contextSeconds: number, beat: number) => void>();
@@ -623,10 +689,20 @@ describe('initial browser playback window', () => {
         expect(onRoll).toHaveBeenCalledExactlyOnceWith(8.1, 0.125);
         expect(transportStoreState.value?.isPlaying).toBe(true);
         expect(notes.map(({ pitch }) => pitch)).toEqual([60, 67, 72]);
-        expect(sources).toHaveLength(3);
-        expect(sources[0]!.start.mock.calls[0]?.[0]).toBeCloseTo(8.1, 12);
-        expect(sources[1]!.start.mock.calls[0]?.[0]).toBeCloseTo(8.1, 12);
-        expect(sources[2]!.start.mock.calls[0]?.[0]).toBeCloseTo(8.175, 12);
+        expect(sources).toHaveLength(6);
+        // At100BPM a .25beat loop costs.15s. Starting halfway through
+        // it admits the dying pass and two successors within350ms.
+        const expectedStarts = [8.1, 8.1, 8.25, 8.175, 8.4, 8.325];
+        const expectedOffsets = [0.12, 0.195, 0.12, 0.12, 0.12, 0.12];
+        const expectedEnds = [8.175, 8.175, 8.325, 8.325, 8.475, 8.475];
+        for (const [index, source] of sources.entries()) {
+            expect(source.buffer).toBe(initialBuffer);
+            expect(source.start.mock.calls).toHaveLength(1);
+            expect(source.start.mock.calls[0]?.[0]).toBeCloseTo(expectedStarts[index]!, 12);
+            expect(source.start.mock.calls[0]?.[1]).toBeCloseTo(expectedOffsets[index]!, 12);
+            expect(source.stop.mock.calls).toHaveLength(1);
+            expect(source.stop.mock.calls[0]?.[0]).toBeCloseTo(expectedEnds[index]!, 12);
+        }
     });
 
     it('waits for the real seam panic before choosing one future anchor for both passes', async () => {
@@ -655,7 +731,23 @@ describe('initial browser playback window', () => {
             expect(sources[1]!.start.mock.calls[0]?.[0]).toBeCloseTo(10.175, 12);
             expect(scheduleClickSpy).toHaveBeenCalledTimes(1);
             expect(scheduleClickSpy.mock.calls[0]?.[0]).toBeCloseTo(10.175, 12);
-            expect(playheadClockRef).toEqual({ beat: 1.5, audioTimeSeconds: 10.1, hold: null });
+            expect(playheadClockRef).toEqual({
+                beat: 1.5,
+                audioTimeSeconds: 10.1,
+                generation: schedulerSession.generation,
+                pendingLoopSeam: {
+                    generation: schedulerSession.generation,
+                    anchorBeat: 1.5,
+                    anchorAudioTimeSeconds: 10.1,
+                    tempo: 120,
+                    tempoMapChanges: [],
+                    audioTimeSeconds: expect.closeTo(10.175, 12),
+                    loopStart: 0,
+                    loopEnd: 1.65,
+                    passIndex: 1,
+                },
+                hold: null,
+            });
             expect(onRoll).toHaveBeenCalledExactlyOnceWith(10.1, 1.5);
         } finally {
             ready.resolve();
@@ -733,7 +825,16 @@ describe('initial browser playback window', () => {
             const playback = startPlayback();
             try {
                 await vi.waitFor(() => expect(processYeastMidi).toHaveBeenCalled());
-                expect(startRecording).toHaveBeenCalledExactlyOnceWith(1.5);
+                const call = vi.mocked(startRecording).mock.calls[0];
+                const owner = schedulerSession.automaticPunch;
+                if (!owner || typeof call?.[1] !== 'function' || typeof call[3] !== 'function') {
+                    throw new Error('Initial punch did not supply its actual owner and anchor readers');
+                }
+                const initialAnchor = call[1];
+                const ownedRead = call[3];
+                expect(startRecording).toHaveBeenCalledExactlyOnceWith(1.5, initialAnchor, undefined, owner.read);
+                expect(initialAnchor()).toBeNull();
+                expect(ownedRead()).toEqual({ status: 'pending' });
                 expect(transportStoreState.value?.isRecording).toBe(true);
                 expect(notes).toEqual([]);
                 if (change === 'source edited') {
@@ -747,7 +848,25 @@ describe('initial browser playback window', () => {
                 expect(notes).toHaveLength(change === 'unchanged' ? 3 : 0);
                 expect(sources).toHaveLength(change === 'unchanged' ? 1 : 0);
                 if (change === 'unchanged') {
-                    expect(playheadClockRef).toEqual({ beat: 1.5, audioTimeSeconds: 10.1, hold: null });
+                    expect(playheadClockRef).toEqual({
+                        beat: 1.5,
+                        audioTimeSeconds: 10.1,
+                        generation: schedulerSession.generation,
+                        pendingLoopSeam: null,
+                        hold: null,
+                    });
+                    expect(initialAnchor()).toBe(10.1);
+                    const bound = owner.read();
+                    if (bound.status !== 'bounded') {
+                        throw new Error('The admitted initial punch did not date its original out');
+                    }
+                    expect(bound.startContextSeconds).toBe(10.1);
+                    const expectedOutSeconds = 10.1 + ((2 - 1.5) * 60) / 120;
+                    expect(bound.ending.contextSeconds).toBeCloseTo(expectedOutSeconds, 10);
+                    expect(bound.ending.beatAtContextSeconds(expectedOutSeconds)).toBeCloseTo(2, 10);
+                    expect(bound.ending.midiPosition).toEqual({ beat: 2, passIndex: 0 });
+                } else {
+                    expect(ownedRead()).toEqual({ status: 'retired' });
                 }
             } finally {
                 ready.resolve();

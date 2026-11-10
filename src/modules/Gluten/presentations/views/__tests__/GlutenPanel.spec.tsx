@@ -1,6 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { glutenStore, setGlutenUiLevel } from '../../../stores/glutenStore';
 import { GlutenPanel } from '../GlutenPanel';
 
 vi.mock('#/infra/store/useStore', () => ({
@@ -13,11 +14,13 @@ const DEVICE_ID = 'gluten-test-device';
 describe('GlutenPanel', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        glutenStore.set({});
+        setGlutenUiLevel(DEVICE_ID, 5);
     });
 
     it('should render without crashing', () => {
         render(<GlutenPanel deviceId={DEVICE_ID} />);
-        expect(document.body).toBeTruthy();
+        expect(screen.getByRole('group', { name: 'Effect control detail' })).toBeVisible();
     });
 
     it('should render interactive elements', () => {
@@ -49,8 +52,13 @@ describe('GlutenPanel', () => {
 
     it('applies minimum height floor and does not clip overflow at root', () => {
         const { container } = render(<GlutenPanel deviceId={DEVICE_ID} />);
+        const viewport = container.firstElementChild;
         const faceplate = container.querySelector('.gluten-faceplate');
-        expect(faceplate).toHaveClass('min-h-[440px]');
+        // The height-constrained box is the root wrapper: an overflow clip
+        // there cuts the floored workspace off inside a shorter panel.
+        expect(viewport).toHaveClass('@container', 'h-full', 'min-h-[440px]');
+        expect(viewport).not.toHaveClass('overflow-hidden');
+        expect(faceplate).toHaveClass('min-h-[464px]');
         expect(faceplate).not.toHaveClass('overflow-hidden');
     });
 
@@ -64,6 +72,22 @@ describe('GlutenPanel', () => {
             expect(section).not.toBeNull();
             expect(section?.className).toContain('shrink-0');
         }
+    });
+
+    it('applies responsive rail layout and scoped scrolling class contracts', () => {
+        const { container } = render(<GlutenPanel deviceId={DEVICE_ID} />);
+        const viewport = container.firstElementChild;
+        const faceplate = container.querySelector('.gluten-faceplate');
+        const workspace = faceplate?.firstElementChild;
+
+        expect(viewport).toHaveClass('@container', 'h-full');
+        expect(faceplate).not.toHaveClass('@container', 'h-full');
+        expect(faceplate).toHaveClass('@4xl:h-full');
+        expect(workspace).not.toHaveClass('h-full');
+        expect(workspace).toHaveClass('grid-cols-1', '@4xl:h-full', '@4xl:grid-cols-[15rem_minmax(0,1fr)_19rem]');
+        expect(screen.getByLabelText('Gluten presets')).toHaveClass('h-80', '@4xl:h-auto');
+        expect(screen.getByLabelText('Gluten dynamics overview')).toHaveClass('@4xl:overflow-y-auto');
+        expect(screen.getByLabelText('Gluten controls')).toHaveClass('@4xl:overflow-y-auto');
     });
 
     it('renders topology buttons with stacked icon-led header and labels to prevent horizontal squashing', () => {

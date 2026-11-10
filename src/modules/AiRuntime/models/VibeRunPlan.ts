@@ -1,5 +1,9 @@
+import { type ApplicationToolReceipt } from './ApplicationOwnedTool';
 import { type MeasuredMetricEntry } from './MeasuredPreview';
+import { type ProjectContextTrack } from './ProjectContext';
 import { type SemanticCommandListRoleFamily } from './SemanticCommandList';
+
+export const SCHEDULED_VIBE_RUN_PLAN_MAX_BYTES = 1024 * 1024;
 
 export type VibeRunBeatWindow = {
     readonly startBeat: number;
@@ -116,4 +120,87 @@ export type VibeRunPlan = {
     readonly batches: readonly VibeRunBatch[];
     readonly excludedTargets: readonly VibeRunExcludedTarget[];
     readonly unplannedRoles: readonly VibeRunUnplannedRole[];
+    readonly coverageRefusals: readonly {
+        readonly targetId: string;
+        readonly role: SemanticCommandListRoleFamily;
+        readonly range: VibeRunVerificationRange;
+        readonly metric: string;
+        readonly band: string | null;
+        readonly reason: string;
+    }[];
+};
+
+/**
+ * One scheduled batch keeps its frozen verification ranges and references to plan-owned initial
+ * witnesses. Each approval still obtains fresh baseline and isolated preview figures at its own revision.
+ * Missing range fields identify legacy unmeasured history, which cannot execute as a measured run.
+ */
+export type ScheduledVibeRunBatch = Pick<VibeRunBatch, 'id' | 'ordinal' | 'targetIds' | 'targets' | 'commandCount'> & {
+    readonly objective: Pick<VibeRunBatchObjective, 'descriptors' | 'role'> &
+        Partial<Pick<VibeRunBatchObjective, 'sections' | 'sectionGoals'>>;
+    readonly verificationRanges?: readonly VibeRunVerificationRange[];
+    readonly witnessIds?: readonly string[];
+};
+
+/** The plan a `vibe-run` schedule stores, serialized, against the brief revision it was read from. */
+type LegacyScheduledVibeRunPlan = {
+    readonly schemaVersion: 1;
+    readonly briefRevision: number;
+    readonly batches: readonly ScheduledVibeRunBatch[];
+};
+
+/** Historical analysis evidence belongs to the run, never to editable Project truth. */
+export type VibeRunVerificationRange = VibeRunBeatWindow & { readonly sectionId: string | null };
+
+export type VibeRunInitialWitness = {
+    readonly id: string;
+    readonly receiptCallId: string;
+    readonly receiptDigest: string;
+    readonly targetId: string;
+    readonly recipeId: string;
+    readonly recipeDigest: string;
+    readonly expectationIndex: number;
+    readonly metric: string;
+    readonly band: string | null;
+    readonly range: VibeRunVerificationRange;
+};
+
+export type VibeRunInitialEvidence = {
+    readonly origin: 'vibe-run-initial-baselines';
+    readonly sourceRevision: string;
+    readonly sourceRevisionDigest: string;
+    readonly projectId: string;
+    readonly runId: string;
+    readonly briefId: string;
+    readonly briefDigest: string;
+    readonly mixIntentDigest: string;
+    readonly catalogVersion: number;
+    readonly roles: readonly {
+        readonly targetId: string;
+        readonly canonicalRole: NonNullable<ProjectContextTrack['canonicalRole']>;
+    }[];
+    readonly sections: readonly VibeRunSectionScope[];
+    readonly arrangementRange: VibeRunVerificationRange;
+    readonly receipts: readonly ApplicationToolReceipt[];
+    readonly witnesses: readonly VibeRunInitialWitness[];
+};
+
+export type MeasuredScheduledVibeRunPlan = {
+    readonly schemaVersion: 2;
+    readonly briefRevision: number;
+    readonly batches: readonly ScheduledVibeRunBatch[];
+    readonly initial: VibeRunInitialEvidence;
+    readonly initialDigest: string;
+    readonly planDigest: string;
+};
+
+/** Schema 1 stays readable as an explicitly unmeasured historical plan. */
+export type ScheduledVibeRunPlan = LegacyScheduledVibeRunPlan | MeasuredScheduledVibeRunPlan;
+
+/** Optional read failures explain an unscheduled run; they never authorize an acoustic change. */
+export type VibeRunInitialBaselineRefusal = {
+    readonly schemaVersion: 1;
+    readonly sourceRevision: string;
+    readonly stage: 'preflight' | 'collection';
+    readonly receiptCallIds: readonly string[];
 };

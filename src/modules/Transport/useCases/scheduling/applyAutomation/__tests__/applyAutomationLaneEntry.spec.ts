@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { updateDeviceParam } from '#/modules/AudioEngine/useCases';
 import { automationStore } from '#/modules/Automation/stores';
@@ -7,6 +8,8 @@ import { getAutomationValueAtBeat, isRecordingAutomation } from '#/modules/Autom
 
 import { schedulerSession } from '../../../playheadScheduler/schedulerSession';
 import { applyAutomation } from '../applyAutomation';
+
+registerDeviceEnginePorts();
 
 vi.mock('#/modules/Arrangement/stores', async (importOriginal) => {
     const mod = await importOriginal<typeof import('#/modules/Arrangement/stores')>();
@@ -130,6 +133,7 @@ function deviceWrites(): number[] {
 
 describe('applyAutomation device-lane scope entry (#4741)', () => {
     beforeEach(() => {
+        schedulerSession.generation += 1;
         vi.clearAllMocks();
         vi.mocked(isRecordingAutomation).mockReturnValue(false);
         // Continuous play: the epoch never advances, so no discontinuity snap

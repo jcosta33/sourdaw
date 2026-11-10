@@ -57,7 +57,7 @@ function assertHostedCheckout(
 function assertHostedArtifactUpload(named: (name: string) => Record<string, unknown>): void {
     requireHostedWasmEqual(
         named('Upload qualified artifact').uses,
-        'actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a',
+        'actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9',
         'the pinned artifact uploader'
     );
     requireHostedWasmEqual(
@@ -69,6 +69,33 @@ function assertHostedArtifactUpload(named: (name: string) => Record<string, unkn
             'retention-days': 1,
         },
         'only qualified output with bounded retention'
+    );
+}
+
+function assertHostedSourceTooling(named: (name: string) => Record<string, unknown>): void {
+    assertHostedCheckout(
+        named,
+        'Checkout workflow control',
+        '${{ github.workflow_sha }}',
+        'control',
+        'workflow control'
+    );
+    assertHostedCheckout(
+        named,
+        'Checkout source head',
+        '${{ github.event.pull_request.head.sha }}',
+        'source',
+        'exact head'
+    );
+    requireHostedWasmEqual(
+        named('Set up pnpm').uses,
+        './control/.github/actions/setup-pnpm',
+        'pnpm setup from workflow control'
+    );
+    requireHostedWasmEqual(
+        named('Set up pnpm').with,
+        { package_json_file: 'source/package.json' },
+        'pnpm target from the source manifest'
     );
 }
 
@@ -116,20 +143,7 @@ export function assertHostedWasmWorkflow(value: unknown): void {
         }
         return step;
     };
-    assertHostedCheckout(
-        named,
-        'Checkout workflow control',
-        '${{ github.workflow_sha }}',
-        'control',
-        'workflow control'
-    );
-    assertHostedCheckout(
-        named,
-        'Checkout source head',
-        '${{ github.event.pull_request.head.sha }}',
-        'source',
-        'exact head'
-    );
+    assertHostedSourceTooling(named);
     requireHostedWasmEqual(
         named('Select affected packages').run,
         'node control/scripts/hostedWasmArtifacts.ts plan "$GITHUB_WORKSPACE/source"',

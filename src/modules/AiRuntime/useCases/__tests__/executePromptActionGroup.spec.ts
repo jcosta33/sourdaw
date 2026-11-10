@@ -65,6 +65,12 @@ vi.mock('#/modules/Collaboration/useCases', () => ({
     }),
 }));
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
+    projectRevisionMatchesLiveWithinProjection: vi.fn(() => {
+        throw new Error('Unexpected selection render admission in this fixture');
+    }),
+    settlePendingProjectWritesAndCaptureRevision: vi.fn(() => {
+        throw new Error('Unexpected selection render admission in this fixture');
+    }),
     commandSourcePublicationMatches: vi.fn<
         typeof import('#/modules/CrdtDocument/useCases').commandSourcePublicationMatches
     >(() => false),
@@ -82,6 +88,7 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     getCrdtDoc: vi.fn(() => undefined),
     getCrdtDocIds: vi.fn(() => []),
     projectRevisionMatchesLiveIgnoringCommandCheckpoint: vi.fn(() => true),
+    projectRevisionMatchesLiveIgnoringSaveWrites: vi.fn(() => true),
     subscribeToCrdtChanges: vi.fn<typeof import('#/modules/CrdtDocument/useCases').subscribeToCrdtChanges>(() =>
         vi.fn()
     ),

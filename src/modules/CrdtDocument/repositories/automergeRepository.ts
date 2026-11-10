@@ -33,6 +33,7 @@ import {
 import { type CrdtDocumentSnapshot } from '../models/CrdtDocumentSnapshot';
 import { type DocId, type DocumentBundle, type MergeResult, DOC_PREFIX_ROOT } from '../models/CrdtDocumentTypes';
 import { type ProspectiveMutationWorkerResult } from '../models/ProspectiveMutationWorkerProtocol';
+import { advanceDocumentIdentityEpoch, readDocumentIdentityEpoch } from '../stores/documentIdentityEpoch';
 
 import { compareIncrementalKeys } from './crdtPersistence/compareIncrementalKeys';
 import { requestProspectiveMutation } from './prospectiveMutationWorkerClient';
@@ -353,7 +354,9 @@ class AutomergeRepository {
     private rootId: DocId = DOC_PREFIX_ROOT;
     private mutationEpoch = 0;
     private lastHistoryDiscardEpoch = 0;
-    private documentIdentityEpoch = 0;
+    private get documentIdentityEpoch(): number {
+        return readDocumentIdentityEpoch();
+    }
     private rootIdentityEpoch = 0;
     private unownedMutationEpoch = 0;
     private mutationEpochByOwner = new WeakMap<object, number>();
@@ -832,21 +835,24 @@ class AutomergeRepository {
         message?: string,
         snapshotTransaction?: object,
         localSlots?: readonly string[],
-        prospectiveValidation?: ProspectiveValidation<TDoc>
+        prospectiveValidation?: ProspectiveValidation<TDoc>,
+        beforeChange?: (document: Readonly<TDoc>) => void
     ): void {
+        const doc = this.docs.get(id) as Doc<TDoc> | undefined;
+        if (!doc) {
+            throw new Error(`Document not found: ${id}`);
+        }
         if (prospectiveValidation?.preparedCandidate) {
             const prepared = prospectiveValidation.preparedCandidate;
             if (!this.preparedCandidates.has(prepared)) {
                 throw new Error('Unknown prospective candidate');
             }
+            beforeChange?.(doc);
             prepared.publish({ id, message, snapshotTransaction, localSlots, validation: prospectiveValidation });
             return;
         }
-        const doc = this.docs.get(id) as Doc<TDoc> | undefined;
-        if (!doc) {
-            throw new Error(`Document not found: ${id}`);
-        }
 
+        beforeChange?.(doc);
         let previousHeads: Heads;
         let updated: Doc<TDoc>;
         if (prospectiveValidation) {
@@ -857,13 +863,18 @@ class AutomergeRepository {
             // The original stays writable on refusal. Continue its actual actor's
             // sequence only when this independently backed candidate is installed.
             const candidate = clone(doc, { actor: getActorId(doc) });
-            updated = message ? change(candidate, { message }, changeFn) : change(candidate, changeFn);
-            assertCurrentAuthority();
-            prospectiveValidation.validateDocument(updated);
-            assertCurrentAuthority();
-            prospectiveValidation.beforePublication();
-            assertCurrentAuthority();
-            this.captureBeforeMutation(id, snapshotTransaction);
+            try {
+                updated = message ? change(candidate, { message }, changeFn) : change(candidate, changeFn);
+                assertCurrentAuthority();
+                prospectiveValidation.validateDocument(updated);
+                assertCurrentAuthority();
+                prospectiveValidation.beforePublication();
+                assertCurrentAuthority();
+                this.captureBeforeMutation(id, snapshotTransaction);
+            } catch (error) {
+                free(candidate);
+                throw error;
+            }
         } else {
             this.captureBeforeMutation(id, snapshotTransaction);
             previousHeads = getHeads(doc);
@@ -1538,6 +1549,9 @@ class AutomergeRepository {
             if (touchedRoot) {
                 this.notifyRootInstallation();
             }
+            if (installedAny) {
+                this.notifyListeners();
+            }
             throw error;
         }
         // The worker's `mergeBundle` kept the merged documents as its
@@ -1591,6 +1605,9 @@ class AutomergeRepository {
             }
             if (touchedRoot) {
                 this.notifyRootInstallation();
+            }
+            if (result.mergedDocIds.length > 0 || result.newDocIds.length > 0) {
+                this.notifyListeners();
             }
             throw error;
         }
@@ -1653,7 +1670,7 @@ class AutomergeRepository {
     }
 
     private markDocumentIdentityMutation(): void {
-        this.documentIdentityEpoch += 1;
+        advanceDocumentIdentityEpoch();
         this.markMutation();
     }
 

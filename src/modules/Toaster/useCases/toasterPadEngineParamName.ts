@@ -3,7 +3,7 @@
  *
  * `setToasterPadParam` and `setPadParamImmediate` address a pad by its
  * `PadState` key, and the worklet translates at its own message door
- * (`PAD_PARAM_MAP`, `AudioEngine/services/toasterProcessor.ts`). The native
+ * (`PAD_PARAM_MAP`, `AudioEngine/worklets/toasterProcessor.ts`). The native
  * body has no such door, so a write leaving for the engine has to arrive
  * already spelled the way the kit projection spells it
  * (`projectToasterKitToEngineMessages`) — `sendReverb` reaching a pad as

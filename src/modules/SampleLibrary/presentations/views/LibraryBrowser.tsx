@@ -23,7 +23,7 @@ import { SAMPLE_DRAG_MIME_TYPE } from '#/utils/dragMimeTypes';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 import { basename_from_path } from '#/utils/path-basename';
 
-import { type FolderNode, isBrowserDecodeRisky } from '../../models/LibraryTypes';
+import { type FolderNode, type SampleRecord, isBrowserDecodeRisky } from '../../models/LibraryTypes';
 import {
     defaultLibraryState,
     libraryStore,
@@ -35,6 +35,7 @@ import {
 import { connectFolder } from '../../useCases/connectFolder/connectFolder';
 import { disconnectLibraryRoot } from '../../useCases/connectFolder/disconnectLibraryRoot';
 import { rescanRoot } from '../../useCases/connectFolder/rescanRoot';
+import { ensureFactorySampleBuffer } from '../../useCases/ensureFactorySampleBuffer';
 import { findSimilarSamples } from '../../useCases/findSimilarSamples';
 import { isNativeSampleLibraryRuntimeAvailable } from '../../useCases/isNativeSampleLibraryRuntimeAvailable';
 import { readNativeLibrarySampleFile } from '../../useCases/readNativeLibrarySampleFile';
@@ -54,7 +55,11 @@ type LibraryPreview = {
 
 type LibraryBrowserProps = {
     preview: LibraryPreview;
-    selectedTrackId: string | null;
+    /**
+     * Places a sample on the timeline. The embedding surface owns placement
+     * (target track, position), so rows show their add control only when given.
+     */
+    onAddSample?: (sample: { id: string; name: string; path: string; libraryRootId: string }) => void;
 };
 
 // Numeric-aware collator so file lists order "Kick 1, Kick 2, … Kick 10" rather
@@ -87,8 +92,21 @@ function buildFileCountIndex(tree: FolderNode | undefined): Map<string, number> 
     return index;
 }
 
-export const LibraryBrowser = ({ preview, selectedTrackId: _selectedTrackId }: LibraryBrowserProps): ReactElement => {
+export const LibraryBrowser = ({ preview, onAddSample }: LibraryBrowserProps): ReactElement => {
     const state = useStore(libraryStore, defaultLibraryState);
+
+    const addToTrackHandler = (sample: SampleRecord): (() => void) | undefined => {
+        if (!onAddSample) {
+            return undefined;
+        }
+        return () =>
+            onAddSample({
+                id: sample.id,
+                name: sample.displayName,
+                path: sample.relativePath,
+                libraryRootId: sample.libraryRootId,
+            });
+    };
 
     const [showSearch, setShowSearch] = useState(false);
     const [showMap, setShowMap] = useState(false);
@@ -246,7 +264,15 @@ export const LibraryBrowser = ({ preview, selectedTrackId: _selectedTrackId }: L
         }
 
         if (root.id === FACTORY_LIBRARY_ROOT_ID) {
-            notifyUser(`"${sample.displayName}" can't be previewed — audio buffer is not available.`, 'warning');
+            const factoryBuffer = await ensureFactorySampleBuffer({ sampleId: sample.id });
+            if (previewRequestIdRef.current !== requestId) {
+                return;
+            }
+            if (factoryBuffer.status !== 'resolved') {
+                notifyUser(`"${sample.displayName}" can't be previewed — audio buffer is not available.`, 'warning');
+                return;
+            }
+            previewRef.current.play(sample.id, factoryBuffer.buffer);
             return;
         }
 
@@ -598,7 +624,13 @@ export const LibraryBrowser = ({ preview, selectedTrackId: _selectedTrackId }: L
                             );
                         })}
 
-                        <div ref={listRef} role="listbox" aria-label="Samples" aria-orientation="vertical">
+                        <div
+                            ref={listRef}
+                            role="listbox"
+                            aria-label="Samples"
+                            aria-orientation="vertical"
+                            className="@container"
+                        >
                             {shownFiles.map((sample, index) => (
                                 <SampleRow
                                     key={sample.id}
@@ -613,6 +645,7 @@ export const LibraryBrowser = ({ preview, selectedTrackId: _selectedTrackId }: L
                                     onStop={handleStopPreview}
                                     onToggleFavorite={() => void toggleFavorite(sample.id)}
                                     onFindSimilar={() => handleFindSimilar(sample)}
+                                    onAddToTrack={addToTrackHandler(sample)}
                                     onDragStart={(e) => {
                                         e.dataTransfer.setData(
                                             SAMPLE_DRAG_MIME_TYPE,

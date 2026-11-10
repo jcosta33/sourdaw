@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { trackStore } from '#/modules/Arrangement/stores';
 import {
     getCompensationDelay,
@@ -11,8 +12,11 @@ import { automationStore } from '#/modules/Automation/stores';
 import { getAutomationValueAtBeat, isRecordingAutomation, resolveAutoMatchValue } from '#/modules/Automation/useCases';
 import { applyFermenterRuntimeParam } from '#/modules/Fermenter/useCases';
 
+import { schedulerSession } from '../../../playheadScheduler/schedulerSession';
 import { appliedAutomationBases } from '../appliedAutomationBases';
 import { applyAutomation } from '../applyAutomation';
+
+registerDeviceEnginePorts();
 
 /**
  * Live-playback guard: a lane on a **stepped** device parameter must deliver an
@@ -143,6 +147,7 @@ function ride({ startValue, endValue }: { startValue: number; endValue: number }
 
 describe('applyAutomation — stepped device parameters', () => {
     beforeEach(() => {
+        schedulerSession.generation += 1;
         vi.clearAllMocks();
         vi.mocked(isRecordingAutomation).mockReturnValue(false);
         vi.mocked(getCurrentTime).mockReturnValue(5);

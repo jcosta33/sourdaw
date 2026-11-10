@@ -1,0 +1,123 @@
+# Lesson library: test observation scope
+
+A test is invalid when it observes project truth or output in one place only, or when the boundary its claim depends on
+is replaced by a controlled one. Split out of `test-validity.md`.
+Each probe answers the baseline question from the Review section of root `AGENTS.md` (what must break for this
+check to fail, and does it observe what its name claims?) and carries its baseline mechanical probe unrestated:
+revert the behavioral hunk or apply one targeted mutation, run the named spec, and a remaining green fails the
+round. Run mutations only on a committed head through [reviewer isolation](README.md#reviewer-isolation).
+Report a probe that cannot run with its exact mutation, named check and limitation, never as passed.
+
+## Standing probes
+
+1. **Project truth is observed in one place only.**
+   Probe: assert raw CRDT, owner projections, both history stacks and the history tree together, and again
+   after save, binary reload and session-mirror hydration. The identity census across reload and replay is
+   `project-integrity.md` probe 6; saved inverses holding bad captures are `project-integrity.md` probe 3;
+   exact-inverse inputs are in `moving-coordinate-inverses.md`. For rejected partial merges, pair this with the
+   real-store probe in `command-entry-and-state-oracles.md` probe 1. Removing the producer, reload fence or
+   copy must fail the case.
+   (#4036, #5578, #5064, #5157, #4564)
+
+2. **Final equality hides a write followed by restoration.**
+   Probe: count writes from a sentinel placed before the action and observe settled transitions, since
+   notifications can miss a root install; keep identical-content replacement and an aborted private preview
+   as clean controls, and compare any reported verdict with the final state it describes.
+   (#5649, #5274)
+
+3. **A flag, setter or presence stands for what the musician consumes.**
+   Probe: observe PCM against an independent input, decoded bytes, painted pixels and console output during
+   load, never a flag, setter, DOM presence, returned length or metadata.
+   Preset audition must inspect the PCM of a successful live buffer start, excluding offline sources,
+   and distinguish real catalog instrument envelopes/spectra and an effects tail under identical excitation.
+   Restoring the common oscillator route must fail buffer admission; substituting one common PCM buffer
+   across presets must fail musical discrimination. Admit project/history preservation only after the
+   inspection bridge observes a genuine UI edit in the same app singleton; an empty bridge must fail.
+   The original preset placeholder asserted its common tone rather than the sound it claimed to audition
+   (introduced in `22a84b216658f593391e7e141d90f7c84d13648b`, retained through #6180).
+   (#187, #5013, #4904, #5812)
+
+4. **Fixtures or history bytes the real producer would never write.**
+   Probe: replay history from bytes the untouched historical producer wrote, read by the current reader. Check
+   fixture values real publication normalizes (600 BPM published as 120) after hydration.
+   (#2169, #5578)
+
+5. **A process boundary is modelled by a buffered read or a closed pipe.**
+   Probe: exercise real child pipes and process groups: a buffered parent read is not a Writable `false`, closed
+   pipes are not group absence, only `ESRCH` proves absence, and every PID is validated before signalling. After
+   the first `ESRCH` the owned group is retired: send zero signals to it or to a raw descendant PID, even when
+   the identifier is reused, and make direct-PID-only termination fail a stalled case whose grandchild ignores
+   TERM and closes inherited stderr; numeric PID validation alone is insufficient. Inspection `EPERM` stays
+   provisional until `ESRCH`; EIO then `ESRCH` must still refuse mutation proof; persistent EIO retains the
+   mutated source and partial evidence without restoration; persistent `EPERM` exhausts the deadline with its
+   typed diagnostic.
+   (#5624, #5240, #5115, #5320, #5331)
+
+6. **A test double or controlled system cannot fail the way the real boundary does.**
+   Probe: exercise the real thing: the default launcher and owner fence, a real Git DAG, the installed tool, the
+   SDK in its server environment, the live GraphQL schema, the pinned scanner, the served entry under the
+   production CSP, the compiled build rather than the dev loader, and a transport buffer at production size. A
+   custom dispatcher can bypass a global request mock. Where a double stays, type each mock from the exported
+   callable and return its complete current result, so a stale owner result cannot pose as tested recovery. Fake
+   a host receiver-sensitively, so an unbound method call throws. Derive fixtures from the producer's definition
+   (live schema, upload-name template, the query the adapter emits), never from the consumer's regex or a
+   hand-written response. Replace call spies and mocked authority with the real owner, and keep real state apart
+   from any read projection that could hide it. Mutate what the double hid (drop `this`, change the result
+   shape, add a segment, write outside the barrel, omit a still-present remote record from reads) and require
+   the case to fail. Beside a valid commit, inject each extra write through the real store (a duplicate barrel
+   action, an unrelated entity, a wrong value on an authorized field); with a real controller, fail the actual
+   storage write once and repeat the cancellation. Read logged errors even when every assertion passes.
+   A fake message port must consume replies in posted order: a refusal (`sampleBankError`) fences
+   nothing about chunks queued behind it, so feed the double the first refusal, the still-queued stale
+   chunks, then the `retiredBankReleased` reply; manually emitting that release before the stale chunks,
+   or acknowledging rejected chunks, cannot prove the fence. Restore early credit release on the
+   refusal in a committed private probe: the maintained ordered-port case must fail when a second port
+   uploads before the release, while its healthy eight-chunk successor still respects the four-credit
+   limit. Pair the shared-owner progress oracle with a real processor zone table larger than the credit
+   window, and require a delivered owner zone acknowledgement to keep every staged follower pending
+   beyond ten seconds (#5239).
+   (#5639, #4271, #5615, #5705, #5595, #5363, #5284, #2097, #4496, #1949, #4577, #5649, #474, #2597, #2811, #2035, #5239)
+
+    For a module-graph checker, compare its edges with actual installed Vite transforms and ESM execution
+    under the checked project transform policy. All-inline named type imports and re-exports are erased;
+    mixed value/type imports, explicit empty imports and re-exports, and bare side-effect imports retain
+    evaluation. Give each runtime control a unique module identity and assert its target sentinel, then
+    require erased-edge cases to stay out of the graph and every retained-edge case to expose a downstream
+    missing key. Reverting the classification or dropping every empty-name edge must fail these planted
+    cases. (#1572)
+
+    A module-initialization guard must distinguish lazy function bodies from executed initializers (#6307, #6367).
+    The retired whole-file constructor regex rejected a lazy `new Set()` in the real inspection reader; restoring
+    it must fail the positive entry case. Classify AST initializers after normalizing erased assertions,
+    `satisfies`, non-null and generic-instantiation wrappers. Accept identifier aliases only to imported runtime
+    bindings, implemented local functions or prior validated bindings. Type-only imports and `declare function`
+    declarations emit no binding: read an ambient getter with the emitted JavaScript and require that control to
+    fail admission. Keep actual top-level calls/constructors, wrapped work, dynamic imports and wrong aliases as
+    negative controls; passing a handwritten text fixture alone does not prove the served entry's runtime boundary.
+
+7. **A configuration value, snapshot or count stands for runtime behavior.**
+   Probe: a configuration value, successful scan, snapshot, literal checkout depth or request count proves no
+   runtime behavior, object availability, upload or comparison coverage: paginate every main analysis
+   configuration, drive checkout depth through a real fetch topology, and prove a reload by a changed
+   `performance.timeOrigin`. Confirm the run checked the integration that lands.
+   For keyboard controls, assert owned effects and that unowned keys during playback cause no state change or
+   default prevention. In the live app, verify Follow survives Tab and focus moves.
+   (#5243, #3548, #3170)
+
+8. **The evidence claims more than its scope.**
+   Probe: state the evidence scope: controlled engines prove the call path, not audible, hardware or
+   cross-platform execution; a later pass does not explain an earlier failure; a comment about a third-party
+   component is not evidence, so quote its primary source; a job that cannot run on the PR has its first hosted
+   run as its only evidence.
+   (#5595, #3170)
+
+9. **A test awaits away the disputed input interval (#6218).**
+   Probe: dispatch a second shortcut while the first is held at the real snapshot-transaction boundary, before any
+   copy selection exists. Unequal source spans distinguish continuation from two copies of the original; assert
+   raw CRDT, owner projections, selected IDs and per-input Undo/Redo content. A test that waits for the first copy
+   selection before its second press proves completed serial input only. Observe settlement through the actual
+   returned intent promises; a fixed microtask count proves no scheduling boundary. Use controlled Command outcomes
+   only for error interpretation, and label them as such; they cannot prove kernel admission or publication fences.
+   Test each independent authority predicate while the others remain valid: replacing the root and reselecting a
+   clip changes both project and selection, so it cannot detect removal of the project-identity check alone. Retain
+   the existing selection reference naturally, with all selected IDs present, then remove only that identity check.

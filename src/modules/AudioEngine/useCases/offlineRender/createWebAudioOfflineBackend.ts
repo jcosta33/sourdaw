@@ -91,6 +91,7 @@ export type WebAudioOfflineBackend = AudioGraphBackend & {
 
 /** Command kinds an offline render cannot answer, with the reason a caller needs. */
 const UNSUPPORTED_COMMAND_REASONS: Partial<Record<AudioGraphCommand['kind'], string>> = {
+    'set-grinder-model': 'native prepared NAM operations cannot be executed by the web offline backend',
     'insert-device': 'an offline render builds each device chain once, at strip creation',
     'remove-device': 'an offline render builds each device chain once, at strip creation',
     'set-transport': "an offline render's transport is fixed by the region it was created for",
@@ -362,6 +363,8 @@ export function createWebAudioOfflineBackend(deps: WebAudioOfflineBackendDeps): 
                 }
                 writeDeviceParameter(command.target, command.write);
                 return null;
+            case 'set-grinder-model':
+                throw new Error('native NAM operation escaped whole-batch refusal');
             case 'set-device-parameters':
                 // An immediate patch load addresses a native built-in, and only
                 // a strip the native engine carries holds one — so a producer

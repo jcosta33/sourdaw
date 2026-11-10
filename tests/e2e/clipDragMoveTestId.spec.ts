@@ -1,5 +1,4 @@
-import { test, expect } from '@playwright/test';
-
+import { test, expect } from './e2eTest';
 import { launch_new_project, setupWorkspace } from './e2eUtils';
 
 // A 2-second sine WAV (~4 beats at 120 BPM) so the clip has a wide enough body
@@ -31,7 +30,9 @@ function buildDragWav(): Buffer {
 // Set up an audio track with an imported clip, open the bottom dock's Editor
 // tab so the ClipView strip mounts, and select the clip. Returns the timeline
 // canvas locator.
-async function setupAudioClipForDrag(page: import('@playwright/test').Page): Promise<import('@playwright/test').Locator> {
+async function setupAudioClipForDrag(
+    page: import('@playwright/test').Page
+): Promise<import('@playwright/test').Locator> {
     const isMac = await page.evaluate(() => navigator.platform.toUpperCase().includes('MAC'));
     await page.keyboard.press(isMac ? 'Meta+K' : 'Control+K');
     const paletteInput = page.getByTestId('command-palette-input');
@@ -74,8 +75,8 @@ test.describe('Clip drag / move on the timeline', () => {
 
     test('dragging a clip rightward increases its start beat', async ({ page }) => {
         const startBeat = page.getByTestId('selected-clip-start-beat');
-        // The imported clip starts at beat 0.
-        await expect(startBeat).toHaveText(/@ 0 beats/i);
+        // The imported clip starts at bar 1.1.1.
+        await expect(startBeat).toHaveText(/@ 1\.1\.1/);
 
         const canvas = page.getByLabel('Timeline editor surface');
         const box = await canvas.boundingBox();
@@ -94,16 +95,14 @@ test.describe('Clip drag / move on the timeline', () => {
         await page.mouse.up();
         await page.waitForTimeout(800);
 
-        // The start beat readout now reflects the moved position — greater than 0.
-        const afterText = await startBeat.innerText();
-        const afterBeat = Number(afterText.match(/-?\d+(\.\d+)?/)?.[0] ?? '0');
-        expect(afterBeat).toBeGreaterThan(0);
+        // The start readout now reflects the moved position — no longer bar 1.1.1.
+        await expect(startBeat).not.toHaveText(/@ 1\.1\.1/);
     });
 
     test('dragging a clip moves it without duplicating', async ({ page }) => {
         const startBeat = page.getByTestId('selected-clip-start-beat');
         const clipCount = page.getByTestId('selected-track-clip-count');
-        await expect(startBeat).toHaveText(/@ 0 beats/i);
+        await expect(startBeat).toHaveText(/@ 1\.1\.1/);
         const countBefore = await clipCount.innerText();
 
         const canvas = page.getByLabel('Timeline editor surface');
@@ -121,10 +120,8 @@ test.describe('Clip drag / move on the timeline', () => {
         await page.mouse.up();
         await page.waitForTimeout(800);
 
-        // The clip moved (start beat > 0)…
-        const afterText = await startBeat.innerText();
-        const afterBeat = Number(afterText.match(/-?\d+(\.\d+)?/)?.[0] ?? '0');
-        expect(afterBeat).toBeGreaterThan(0);
+        // The clip moved (start no longer bar 1.1.1)…
+        await expect(startBeat).not.toHaveText(/@ 1\.1\.1/);
         // …and the track still holds the same number of clips — a plain drag
         // moves, it does not duplicate (Alt+drag would).
         await expect(clipCount).toHaveText(countBefore);

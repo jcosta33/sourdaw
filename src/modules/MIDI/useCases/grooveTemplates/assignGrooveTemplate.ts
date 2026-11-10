@@ -5,7 +5,6 @@ import {
 } from '../../stores/grooveTemplateStore';
 
 import { canonicalizeGrooveTemplateAssignment } from './canonicalizeGrooveTemplateAssignment';
-import { markGrooveTemplateProjectWrite } from './markGrooveTemplateProjectWrite';
 
 type AssignGrooveTemplateInput = {
     consumerType: GrooveConsumerType;
@@ -15,7 +14,7 @@ type AssignGrooveTemplateInput = {
 };
 
 type AssignGrooveTemplateResult =
-    | { ok: true; assignment: GrooveTemplateAssignment }
+    | { ok: true; status: 'written' | 'no-write'; assignment: GrooveTemplateAssignment }
     | { ok: false; error: { code: 'state-unavailable' } }
     | { ok: false; error: { code: 'invalid-consumer-id' } }
     | { ok: false; error: { code: 'missing-template'; templateId: string } };
@@ -42,7 +41,7 @@ export function assignGrooveTemplate(input: AssignGrooveTemplateInput): AssignGr
         existingAssignment.templateId === assignment.templateId &&
         existingAssignment.amount === assignment.amount
     ) {
-        return { ok: true, assignment };
+        return { ok: true, status: 'no-write', assignment };
     }
     const assignments = [...state.assignments];
     if (existingIndex === -1) {
@@ -51,6 +50,5 @@ export function assignGrooveTemplate(input: AssignGrooveTemplateInput): AssignGr
         assignments[existingIndex] = assignment;
     }
     grooveTemplateStore.set({ ...state, assignments });
-    markGrooveTemplateProjectWrite();
-    return { ok: true, assignment };
+    return { ok: true, status: 'written', assignment };
 }

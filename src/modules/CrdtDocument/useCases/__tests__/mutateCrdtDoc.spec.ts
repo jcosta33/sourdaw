@@ -22,7 +22,14 @@ describe('mutateCrdtDoc', () => {
         mutateCrdtDoc({ id: 'root', changeFn });
 
         expect(automergeRepository.changeDoc).toHaveBeenCalledTimes(1);
-        expect(automergeRepository.changeDoc).toHaveBeenCalledWith('root', changeFn, undefined, undefined, undefined);
+        expect(automergeRepository.changeDoc).toHaveBeenCalledWith(
+            'root',
+            changeFn,
+            undefined,
+            undefined,
+            undefined,
+            undefined
+        );
     });
 
     it('forwards the supported canonical description only through private preparation', () => {
@@ -60,6 +67,7 @@ describe('mutateCrdtDoc', () => {
             changeFn,
             'edited clip name',
             undefined,
+            undefined,
             undefined
         );
     });
@@ -75,6 +83,7 @@ describe('mutateCrdtDoc', () => {
             changeFn,
             undefined,
             snapshotTransaction,
+            undefined,
             undefined
         );
     });
@@ -84,10 +93,14 @@ describe('mutateCrdtDoc', () => {
 
         mutateCrdtDoc({ id: 'root', changeFn, localSlots: ['tracks', 'markers'] });
 
-        expect(automergeRepository.changeDoc).toHaveBeenCalledWith('root', changeFn, undefined, undefined, [
-            'tracks',
-            'markers',
-        ]);
+        expect(automergeRepository.changeDoc).toHaveBeenCalledWith(
+            'root',
+            changeFn,
+            undefined,
+            undefined,
+            ['tracks', 'markers'],
+            undefined
+        );
     });
     it('forwards exact prospective validation and publication acknowledgement on the validated branch', () => {
         const changeFn = vi.fn();

@@ -9,6 +9,7 @@ import { DawControlStrip } from '#/components/daw/DawControlStrip';
 import { Button } from '#/components/ui/button';
 import { Slider } from '#/components/ui/slider';
 import { CHORD_TYPE_KEYS } from '#/modules/MIDI/useCases';
+import { getScaleLabel } from '#/utils/Music/MusicalScale';
 import { cn } from '#/utils/Styles/cn';
 
 import { MPE_EXPRESSION_LANES, type MpeExpressionLane } from '../../helpers/mpeAvailability';
@@ -190,7 +191,7 @@ export const PianoRollToolbar = ({
         >
             {Object.keys(SCALES).map((key) => (
                 <option key={key} value={key}>
-                    {key}
+                    {getScaleLabel(key)}
                 </option>
             ))}
         </DawCompactSelect>
@@ -399,7 +400,7 @@ export const PianoRollToolbar = ({
             min={25}
             max={400}
             step={25}
-            className="w-20"
+            className="w-20 shrink-0"
             aria-label="Piano roll zoom"
             data-testid="toolbar-zoom"
         />

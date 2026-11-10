@@ -1,12 +1,10 @@
-import { expect, test } from '@playwright/test';
-
+import { expect, test } from './e2eTest';
 import { launch_new_project, setupWorkspace } from './e2eUtils';
 
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
 
-// Error-path coverage: a corrupt MIDI file must surface an error notification
-// and add no track. The existing MIDI import spec covers the happy path
-// (midiExportDownloadTestId); the rejection branch is uncovered.
+// This browser case owns notification routing and real dismiss hit-testing.
+// NotificationToast.spec.tsx owns local queue and dismissal behavior.
 //
 // importMidiFile (Arrangement use case) catches a parse failure from
 // readMidiFile and calls notifyUser(`Failed to import "${file.name}" -
@@ -27,14 +25,15 @@ test.describe('Import error paths — corrupt MIDI rejected', () => {
         await page.keyboard.press(`${MOD}+K`);
         const palette = page.getByTestId('command-palette-input');
         await palette.fill('Add Audio Track');
-        await page.waitForTimeout(300);
-        await palette.press('Enter');
-        await page.waitForTimeout(800);
+        const trackRows = trackList.locator('[role="row"] [role="row"]');
+        const tracksBeforeAdd = await trackRows.count();
+        await page.getByRole('option', { name: /^Add Audio Track/ }).click();
+        await expect(trackRows).toHaveCount(tracksBeforeAdd + 1);
         const tracksAfterAdd = await trackList.getByRole('row').count();
         expect(tracksAfterAdd).toBeGreaterThanOrEqual(1);
 
         // Feed garbage bytes as a .mid — not a valid MIDI file.
-        trackList.getByRole('row').first().click({ button: 'right' });
+        await trackList.getByRole('row').first().click({ button: 'right' });
         await page.getByRole('menu').waitFor({ state: 'visible' });
         const chooser = page.waitForEvent('filechooser');
         await page.getByRole('menuitem', { name: /Import MIDI/i }).click();
@@ -53,8 +52,8 @@ test.describe('Import error paths — corrupt MIDI rejected', () => {
         await expect(toast).toContainText(/invalid or corrupt MIDI file/i);
 
         // No track was added by the failed import — the count is unchanged.
-        await page.waitForTimeout(500);
-        const tracksAfterImport = await trackList.getByRole('row').count();
-        expect(tracksAfterImport).toBe(tracksAfterAdd);
+        await expect(trackList.getByRole('row')).toHaveCount(tracksAfterAdd);
+        await toast.getByRole('button', { name: 'Dismiss notification' }).click();
+        await expect(toast).toHaveCount(0);
     });
 });

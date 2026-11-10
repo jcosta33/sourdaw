@@ -1,15 +1,18 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ClipDummy } from '../../../__tests__/ClipDummy';
-import { snapToZeroCrossing } from '../snapToZeroCrossing';
+import { liveTempoTimeline } from '../../liveTempoTimeline';
+import { resolveZeroCrossingPosition } from '../snapToZeroCrossing';
+import { snapToZeroCrossing } from '../snapToZeroCrossingBeat';
 
 import type { SnapSplitBeatToZeroCrossingInput } from '../../../services/snapSplitBeatToZeroCrossing';
 
 const mocks = vi.hoisted(() => ({
     getCachedAudioBuffer: vi.fn(),
     snapSplitBeatToZeroCrossing: vi.fn(),
-    transportStore: { value: null as { tempo: number } | null },
-    clipStartTempo: null as number | null,
+    readSecondsAtBeat: vi.fn(),
+    readBeatAtSamples: vi.fn(),
+    readTempoAtBeat: vi.fn(),
 }));
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
@@ -17,33 +20,33 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
 }));
 
 vi.mock('#/modules/Transport/stores', () => ({
-    DEFAULT_TEMPO_BPM: 120,
-    transportStore: mocks.transportStore,
-    readTempoAtBeat: ({ beat }: { beat: number }) =>
-        (beat === 4 ? mocks.clipStartTempo : null) ?? mocks.transportStore.value?.tempo ?? 120,
+    readSecondsAtBeat: mocks.readSecondsAtBeat,
+    readBeatAtSamples: mocks.readBeatAtSamples,
+    readTempoAtBeat: mocks.readTempoAtBeat,
 }));
 
 vi.mock('../../../services/snapSplitBeatToZeroCrossing', () => ({
-    snapSplitBeatToZeroCrossing: mocks.snapSplitBeatToZeroCrossing,
+    snapSplitPositionToZeroCrossing: mocks.snapSplitBeatToZeroCrossing,
 }));
 
 describe('snapToZeroCrossing use case', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        mocks.transportStore.value = null;
-        mocks.clipStartTempo = null;
     });
 
-    it('returns unchanged for non-audio clips without reading the audio cache', () => {
-        const clip = ClipDummy.create({ type: 'midi' });
+    it.each([{ type: 'midi' as const }, { audioBufferId: undefined }])(
+        'returns unchanged without reading the audio cache for an ineligible clip: %o',
+        (overrides) => {
+            const clip = ClipDummy.create(overrides);
 
-        expect(snapToZeroCrossing(clip, 2.5)).toBe(2.5);
-        expect(mocks.getCachedAudioBuffer).not.toHaveBeenCalled();
-        expect(mocks.snapSplitBeatToZeroCrossing).not.toHaveBeenCalled();
-    });
+            expect(snapToZeroCrossing(clip, 2.5)).toBe(2.5);
+            expect(mocks.getCachedAudioBuffer).not.toHaveBeenCalled();
+            expect(mocks.snapSplitBeatToZeroCrossing).not.toHaveBeenCalled();
+        }
+    );
 
-    it('reads cached audio and tempo before invoking the pure calculation', () => {
-        const clip = ClipDummy.create({ type: 'audio', audioBufferId: 'buf-1' });
+    it('passes cached audio and the live integrated timeline to the pure calculation', () => {
+        const clip = ClipDummy.create({ audioBufferId: 'buf-1' });
         const channelData = new Float32Array([1, -1]);
         const audioBuffer: AudioBuffer = {
             copyFromChannel: vi.fn(),
@@ -55,8 +58,7 @@ describe('snapToZeroCrossing use case', () => {
             sampleRate: 48000,
         };
         mocks.getCachedAudioBuffer.mockReturnValue(audioBuffer);
-        mocks.transportStore.value = { tempo: 60 };
-        mocks.snapSplitBeatToZeroCrossing.mockReturnValue(1.5);
+        mocks.snapSplitBeatToZeroCrossing.mockReturnValue({ beat: 1.5 });
 
         expect(snapToZeroCrossing(clip, 2)).toBe(1.5);
 
@@ -67,26 +69,42 @@ describe('snapToZeroCrossing use case', () => {
             splitBeat: 2,
             channelData,
             sampleRate: 48000,
-            tempo: 60,
+            timeline: liveTempoTimeline,
+            stretchRatio: 1,
         } satisfies SnapSplitBeatToZeroCrossingInput);
+
+        mocks.readSecondsAtBeat.mockReturnValue(0.625);
+        mocks.readBeatAtSamples.mockReturnValue(1.5);
+        mocks.readTempoAtBeat.mockReturnValue(240);
+        expect(liveTempoTimeline.secondsAtBeat(1.5)).toBe(0.625);
+        expect(liveTempoTimeline.beatAtSeconds(0.625)).toBe(1.5);
+        expect(liveTempoTimeline.tempoAtBeat(1.5)).toBe(240);
+        expect(mocks.readSecondsAtBeat).toHaveBeenCalledWith({ beat: 1.5 });
+        expect(mocks.readBeatAtSamples).toHaveBeenCalledWith({ samples: 0.625, sampleRate: 1 });
+        expect(mocks.readTempoAtBeat).toHaveBeenCalledWith({ beat: 1.5 });
     });
 
-    it('passes tempo at the clip start when it differs from project tempo', () => {
-        const clip = ClipDummy.create({ type: 'audio', audioBufferId: 'buf-1', startBeat: 4, audioOffsetBeats: 1 });
-        const channelData = new Float32Array([1, -1]);
-        mocks.getCachedAudioBuffer.mockReturnValue({ getChannelData: () => channelData, sampleRate: 100 });
-        mocks.transportStore.value = { tempo: 120 };
-        mocks.clipStartTempo = 90;
-        mocks.snapSplitBeatToZeroCrossing.mockReturnValue(5);
+    it.each([
+        { mode: 'off' as const, ratio: 2, expected: 1 },
+        { mode: 'repitch' as const, ratio: 2, expected: 2 },
+        { mode: 'timestretch' as const, ratio: 0, expected: 0.01 },
+        { mode: 'repitch' as const, ratio: 200, expected: 100 },
+    ])('uses the consumed stretch rate for $mode ratio $ratio', ({ mode, ratio, expected }) => {
+        const clip = ClipDummy.create({ stretchMode: mode, stretchRatio: ratio });
+        mocks.getCachedAudioBuffer.mockReturnValue({
+            getChannelData: () => new Float32Array([1, -1]),
+            sampleRate: 48000,
+        });
+        mocks.snapSplitBeatToZeroCrossing.mockReturnValue({ beat: 2 });
 
-        expect(snapToZeroCrossing(clip, 5)).toBe(5);
+        expect(snapToZeroCrossing(clip, 2)).toBe(2);
         expect(mocks.snapSplitBeatToZeroCrossing).toHaveBeenCalledWith(
-            expect.objectContaining({ clip, splitBeat: 5, tempo: 90 })
+            expect.objectContaining({ clip, splitBeat: 2, timeline: liveTempoTimeline, stretchRatio: expected })
         );
     });
 
     it('returns unchanged when the referenced audio is not cached', () => {
-        const clip = ClipDummy.create({ type: 'audio', audioBufferId: 'missing' });
+        const clip = ClipDummy.create({ audioBufferId: 'missing' });
         mocks.getCachedAudioBuffer.mockReturnValue(null);
 
         expect(snapToZeroCrossing(clip, 2.5)).toBe(2.5);
@@ -94,32 +112,22 @@ describe('snapToZeroCrossing use case', () => {
         expect(mocks.snapSplitBeatToZeroCrossing).not.toHaveBeenCalled();
     });
 
-    it('falls back to a 120 BPM default when the transport store has no tempo', () => {
-        const clip = ClipDummy.create({ type: 'audio', audioBufferId: 'buf-1' });
-        const channelData = new Float32Array([1, -1]);
-        const audioBuffer: AudioBuffer = {
-            copyFromChannel: vi.fn(),
-            copyToChannel: vi.fn(),
-            duration: 1,
-            getChannelData: vi.fn(() => channelData),
-            length: channelData.length,
-            numberOfChannels: 1,
-            sampleRate: 48000,
+    it('retains a selected source sample and uses the captured preparation timeline', () => {
+        const clip = ClipDummy.create();
+        const timeline = {
+            secondsAtBeat: vi.fn(),
+            beatAtSeconds: vi.fn(),
+            tempoAtBeat: vi.fn(),
         };
-        mocks.getCachedAudioBuffer.mockReturnValue(audioBuffer);
-        // Transport store present but missing a tempo field — must fall back
-        // to the 120 BPM hard-coded default rather than forwarding undefined.
-        mocks.transportStore.value = { tempo: undefined } as unknown as { tempo: number };
-        mocks.snapSplitBeatToZeroCrossing.mockReturnValue(2.25);
-
-        expect(snapToZeroCrossing(clip, 2)).toBe(2.25);
-
-        expect(mocks.snapSplitBeatToZeroCrossing).toHaveBeenCalledWith({
-            clip,
-            splitBeat: 2,
-            channelData,
+        const position = { beat: 2.5000416666666663, sourceSeconds: 108002 / 48000 };
+        mocks.getCachedAudioBuffer.mockReturnValue({
+            getChannelData: () => new Float32Array([1, -1]),
             sampleRate: 48000,
-            tempo: 120,
-        } satisfies SnapSplitBeatToZeroCrossingInput);
+        });
+        mocks.snapSplitBeatToZeroCrossing.mockReturnValue(position);
+
+        expect(resolveZeroCrossingPosition(clip, 2.5, timeline)).toBe(position);
+        expect(mocks.snapSplitBeatToZeroCrossing).toHaveBeenCalledWith(expect.objectContaining({ timeline }));
+        expect(snapToZeroCrossing(clip, 2.5)).toBe(position.beat);
     });
 });

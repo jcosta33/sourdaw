@@ -6,16 +6,11 @@ import { DawEmptyState } from '#/components/daw/DawEmptyState';
 import { DawPickerRow } from '#/components/daw/DawPickerRow';
 import { Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
-import { createTrack } from '#/modules/Arrangement/useCases';
 import { getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
-import { stageAudioBufferAsset } from '#/modules/AudioRendering/useCases';
-import { getAssetTransfer } from '#/modules/Collaboration/useCases';
-import { executeAppActionBatch } from '#/modules/Command/useCases';
-import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
 import { SAMPLE_DRAG_MIME_TYPE } from '#/utils/dragMimeTypes';
-import { notifyUser } from '#/utils/Notification/notifyUser';
 import { cn } from '#/utils/Styles/cn';
 
+import { addBrowserSample } from '../../../useCases/addBrowserSample';
 import { PreviewButton } from '../../components/Sidebar/PreviewButton';
 import { type SampleItem } from '../../components/Sidebar/sidebarConstants';
 import { type PreviewHandle } from '../../hooks/usePreviewAudio';
@@ -24,108 +19,11 @@ type SamplesTabProps = {
     samples: SampleItem[];
     favorites: Set<string>;
     onToggleFavorite: (id: string) => void;
-    selectedTrackId: string | null;
     preview: PreviewHandle;
 };
 
-export const SamplesTab = ({
-    samples,
-    favorites,
-    onToggleFavorite,
-    selectedTrackId,
-    preview,
-}: SamplesTabProps): ReactElement => {
+export const SamplesTab = ({ samples, favorites, onToggleFavorite, preview }: SamplesTabProps): ReactElement => {
     const categories = [...new Set(samples.map((state) => state.category))];
-
-    const handleAdd = async (sample: SampleItem): Promise<void> => {
-        let trackId = selectedTrackId;
-        let newTrack: ReturnType<typeof createTrack> | undefined;
-        if (!trackId) {
-            newTrack = createTrack({ name: sample.name, kind: 'audio' });
-            trackId = newTrack.id;
-        }
-        const tempo = transportStore.value?.tempo ?? defaultTransportState.tempo;
-        let cachedBuffer: AudioBuffer | null | undefined;
-        if (sample.audioBufferId) {
-            cachedBuffer = getCachedAudioBuffer({ bufferId: sample.audioBufferId });
-        }
-        const durationSeconds = sample.durationSeconds ?? cachedBuffer?.duration;
-        let durationBeats = 8;
-        if (durationSeconds !== undefined) {
-            durationBeats = Math.max(1, Math.ceil((durationSeconds / 60) * tempo));
-        }
-        // A clicked sample becomes a shareable clip, so its cached PCM is
-        // staged before publication: the clip's assetHash is the identity a
-        // receiving peer requests and verifies the bytes against (#3759).
-        let stagedAsset: Awaited<ReturnType<typeof stageAudioBufferAsset>> = null;
-        if (cachedBuffer) {
-            try {
-                stagedAsset = await stageAudioBufferAsset(cachedBuffer, sample.name);
-            } catch {
-                notifyUser(`Failed to add "${sample.name}" — asset registration failed`, 'error');
-                return;
-            }
-        }
-        // The sample lands as the registered creation actions so it enters
-        // undo history (#4618); the batch reports the commit so the staged
-        // lease is promoted only when a clip actually kept the audio.
-        type SampleBatchAction = Parameters<typeof executeAppActionBatch>[0][number];
-        const actions: SampleBatchAction[] = [];
-        if (newTrack) {
-            actions.push({
-                type: 'addTrack',
-                payload: {
-                    id: newTrack.id,
-                    name: newTrack.name,
-                    kind: newTrack.kind,
-                    color: newTrack.color,
-                    initialAlternativeId: newTrack.activeAlternativeId,
-                },
-            });
-        }
-        const clipAction: Extract<(typeof actions)[number], { type: 'addClip' }> = {
-            type: 'addClip',
-            payload: {
-                trackId,
-                startBeat: 0,
-                endBeat: durationBeats,
-                name: sample.name,
-                type: 'audio',
-                audioBufferId: sample.audioBufferId,
-            },
-        };
-        if (stagedAsset) {
-            clipAction.payload.assetHash = stagedAsset.hash;
-        }
-        actions.push(clipAction);
-        let batchResult: Awaited<ReturnType<typeof executeAppActionBatch>>;
-        try {
-            batchResult = await executeAppActionBatch(actions, {
-                groupId: `add-sample-${crypto.randomUUID()}`,
-                groupLabel: `Add sample: ${sample.name}`,
-                source: 'manual',
-                requireCompensation: true,
-            });
-        } catch {
-            if (stagedAsset) {
-                getAssetTransfer()?.releaseStagedAsset(stagedAsset.leaseId);
-            }
-            return;
-        }
-        const retainedSample =
-            batchResult.status === 'committed' ||
-            batchResult.status === 'committed-with-warning' ||
-            batchResult.status === 'ambiguous';
-        if (!retainedSample) {
-            if (stagedAsset) {
-                getAssetTransfer()?.releaseStagedAsset(stagedAsset.leaseId);
-            }
-            return;
-        }
-        if (stagedAsset) {
-            getAssetTransfer()?.promoteStagedAsset(stagedAsset.leaseId);
-        }
-    };
 
     return (
         <Stack gap={2}>
@@ -163,7 +61,14 @@ export const SamplesTab = ({
                                     event.dataTransfer.setData(SAMPLE_DRAG_MIME_TYPE, JSON.stringify(data));
                                     event.dataTransfer.effectAllowed = 'copy';
                                 }}
-                                onClick={() => void handleAdd(sample)}
+                                onClick={() =>
+                                    void addBrowserSample({
+                                        id: sample.id,
+                                        name: sample.name,
+                                        audioBufferId: sample.audioBufferId,
+                                        durationSeconds: sample.durationSeconds,
+                                    })
+                                }
                                 title="Drag to timeline or click to add"
                             >
                                 <DawPickerRow
@@ -172,6 +77,7 @@ export const SamplesTab = ({
                                         <Row gap={1}>
                                             <PreviewButton
                                                 isPlaying={preview.playingId === sample.id}
+                                                itemName={sample.name}
                                                 onPlay={() => {
                                                     const buffer = sample.audioBufferId
                                                         ? getCachedAudioBuffer({ bufferId: sample.audioBufferId })
@@ -203,7 +109,9 @@ export const SamplesTab = ({
                                                 onToggleFavorite(sample.id);
                                             }}
                                             aria-label={
-                                                favorites.has(sample.id) ? 'Remove from favorites' : 'Add to favorites'
+                                                favorites.has(sample.id)
+                                                    ? `Remove ${sample.name} from favorites`
+                                                    : `Add ${sample.name} to favorites`
                                             }
                                         >
                                             <Star

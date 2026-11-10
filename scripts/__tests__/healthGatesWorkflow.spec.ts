@@ -13,7 +13,7 @@ import {
     requireBrowserWebGpuHardware,
 } from '../../tests/e2e/browserAiHardware';
 import browserAiWebGpuAdmissionConfig from '../../tests/e2e/browserAiWebGpuAdmission.playwright.config';
-import { ADMITTED_CONDITION, assertApprovalGatedRequiredCheck } from '../approvalGatedWorkflowContract';
+import { COLD_FIRST_PAINT_TIMEOUT_MS } from '../../tests/e2e/coldFirstPaintBudget';
 import { assertDeployWebBuildRun, assertDeployWebJobNoVercelPull } from '../deployWebWorkflowContract';
 import {
     assertWorkflowFileInventory,
@@ -28,6 +28,7 @@ import {
 } from '../healthGateWorkflowContract';
 import { assertHostedQuantumMeasurementWorkflow } from '../hostedQuantumMeasurementWorkflowContract';
 import { assertHostedWasmWorkflow } from '../hostedWasmWorkflowContract';
+import { assertPullRequestGateWorkflows } from '../pullRequestGateWorkflowContract';
 import { assertJobLevelPermissions, assertWorkflowSecuritySurface } from '../workflowSecuritySurfaceContract';
 
 type UnknownRecord = Record<string, unknown>;
@@ -52,9 +53,7 @@ const SCOPE_OUTPUT_REFERENCES = {
     tooling: '${{ steps.scope.outputs.tooling }}',
 };
 const CODE_CONDITION = "needs.decide.outputs.code == 'true'";
-// An approving review validates the same pull-request head under a different
-// event, but it must wait behind any in-flight push run instead of cancelling
-// it. Every Gate member reading a pull request keys off the payload instead.
+// Every Gate member reading a pull request keys off the payload, never the event name.
 const PULL_REQUEST_PAYLOAD_CONDITION = 'github.event.pull_request != null';
 const SMOKE_CONDITION = `${PULL_REQUEST_PAYLOAD_CONDITION} && needs.decide.outputs.e2e == 'true'`;
 const EVENT_GATED_SMOKE_CONDITION = "github.event_name == 'pull_request' && needs.decide.outputs.e2e == 'true'";
@@ -62,7 +61,7 @@ const SMOKE_COMMAND = 'pnpm test:e2e tests/e2e/smoke.spec.ts --retries=0';
 const INSTALL_DRAIN_SECONDS = 15;
 // Every remaining root apt route must retain the signed-source filter.
 const APT_FEED_FILTER = 'bash scripts/aptWithoutMicrosoftFeed.sh';
-const PLAYWRIGHT_IMAGE_DIGEST = 'sha256:eff16c30e6f3f4af0a03fa4b706120d5e9b0891c344a27d64559aff5900a4a27';
+const PLAYWRIGHT_IMAGE_DIGEST = 'sha256:6e3fb709361521eb27161606e6da6d2674e5e89fa16516cb37d6fdd91372273d';
 const BROWSER_RUNTIME_STEP = 'Verify preinstalled browser runtime';
 // The ALSA headers are one small apt install, but `apt-get update` is the slow
 // part on a slow mirror, so the single transaction carries the same 8 minute
@@ -79,6 +78,8 @@ const PULL_REQUEST_CONCURRENCY_CANCELLATION = true;
 // accepts skipped required checks, so the summary and its sole step use always().
 const GATE_CONDITION = '${{ always() }}';
 const HEAVY_GATE_CONDITION = '${{ always() }}';
+const AFFECTED_ADMISSION =
+    "${{ github.event.pull_request.draft == false && !cancelled() && needs.scope.result == 'success' && needs.validation.result == 'success' && ((fromJSON(needs.scope.outputs.matrix || '{\"include\":[]}').include[0] != null && needs.e2e-build.result == 'success') || (fromJSON(needs.scope.outputs.matrix || '{\"include\":[]}').include[0] == null && needs.e2e-build.result == 'skipped')) }}";
 const HEALTH_GATES_TRIGGERS = ['pull_request'] as const;
 const HEAVY_GATES_TRIGGERS = ['workflow_call'] as const;
 const NIGHTLY_TRIGGERS = ['schedule', 'workflow_dispatch'] as const;
@@ -100,8 +101,7 @@ const NATIVE_PARITY_JOB_NAME = 'Native parity (macOS)';
 const NATIVE_PARITY_RUNNER = 'macos-latest';
 // Parity breaks from either side of the seam: the Rust renderer the addon
 // exposes, or the TypeScript that produces the graph it renders.
-const NATIVE_PARITY_CONDITION =
-    "inputs.mode == 'full' && (needs.decide.outputs.rust == 'true' || needs.decide.outputs.web == 'true')";
+const NATIVE_PARITY_CONDITION = "(needs.decide.outputs.rust == 'true' || needs.decide.outputs.web == 'true')";
 const NATIVE_PARITY_BUILD_STEP = 'Build the native addon';
 const NATIVE_PARITY_ADDON_STEP = 'Require the built addon the parity specs probe for';
 const NATIVE_PARITY_RUN_STEP = 'Run the addon parity specs';
@@ -152,13 +152,18 @@ const TOKEN_REFERENCE = /GITHUB_TOKEN|GH_TOKEN|github\.token|\$\{\{\s*secrets\./
 const BROWSER_AI_WEBGPU_JOB = 'browser-ai-webgpu';
 const BROWSER_AI_WEBGPU_JOB_NAME = 'Browser AI WebGPU admission';
 const BROWSER_AI_WEBGPU_CONDITION = 'inputs.browser-ai';
-const BROWSER_AI_WEBGPU_RUNNER = 'macos-14';
+const BROWSER_AI_WEBGPU_RUNNER = 'macos-15';
 const BROWSER_AI_WEBGPU_SCRIPT_NAME = 'test:e2e:browser-ai-webgpu-admission';
 const BROWSER_AI_WEBGPU_COMMAND = 'pnpm test:e2e:browser-ai-webgpu-admission';
 const BROWSER_AI_WEBGPU_LOG = 'browser-ai-webgpu-admission.log';
-const BROWSER_AI_WEBGPU_GLOBAL_TIMEOUT_MS = 17 * 60_000;
-const BROWSER_AI_WEBGPU_STEP_TIMEOUT_MINUTES = 18;
-const BROWSER_AI_WEBGPU_JOB_TIMEOUT_MINUTES = 40;
+const BROWSER_AI_WEBGPU_GLOBAL_TIMEOUT_MS = 19 * 60_000;
+const BROWSER_AI_WEBGPU_STEP_TIMEOUT_MINUTES = 20;
+const BROWSER_AI_WEBGPU_JOB_TIMEOUT_MINUTES = 42;
+// Four admission tests run serially, each bounded at 180 seconds.
+const BROWSER_AI_WEBGPU_TESTS_MS = 4 * 180_000;
+// Dev-server start, two browser launches and teardown need this much beyond
+// the cold warmup and the tests.
+const BROWSER_AI_WEBGPU_RUN_OVERHEAD_MS = 2 * 60_000;
 const BROWSER_AI_WEBGPU_DIAGNOSTIC_PATHS = [
     BROWSER_AI_WEBGPU_LOG,
     'test-results/**/trace.zip',
@@ -175,7 +180,7 @@ const BROWSER_AI_WEBGPU_STEP_CAPS = new Map([
     ['Set up Node', 3],
     ['Install dependencies', 2],
     ['Install Chromium', 2],
-    ['Run Browser AI WebGPU admission', 18],
+    ['Run Browser AI WebGPU admission', 20],
     ['Upload Browser AI WebGPU diagnostics', 2],
 ]);
 const BROWSER_AI_WEBGPU_PACKAGE_SCRIPT =
@@ -188,7 +193,7 @@ const BROWSER_AI_WEBGPU_TEST_MATCH = ['browserAiWebGpuAdmission.spec.ts', 'brows
 const BROWSER_AI_WEBGPU_ORIGIN = 'http://localhost:5188';
 const BROWSER_AI_WEBGPU_SERVER_COMMAND = 'pnpm dev --host 127.0.0.1 --port 5188 --strictPort';
 const BROWSER_AI_WEBGPU_GLOBAL_SETUP = './firstPaintWarmup.ts';
-const GATE_MEMBERS = ['admission', 'scope', 'validation', 'affected', 'codeql'] as const;
+const GATE_MEMBERS = ['scope', 'e2e-build', 'validation', 'affected', 'codeql'] as const;
 // Exact and ordered. `Gate` is a required status check, so a leg dropped from
 // this lane stops deciding merges while every check still reads green.
 const VALIDATION_JOBS = [
@@ -281,6 +286,8 @@ const NIGHTLY_REPORT_NEEDS = [
     'desktop-measure',
     'e2e',
     'e2e-report',
+    'e2e-coverage',
+    'e2e-coverage-map',
     'browser-ai-webgpu',
     'codeql',
     'secrets',
@@ -321,27 +328,25 @@ const RELEASE_SIDE_EFFECTS = [
     /release:cut/u,
 ] as const;
 // Unit and selected E2E both reach the required Gate through reusable callers.
-const SUITE_JOB_WIRING = {
+const SUITE_JOB_WIRING: Record<string, Readonly<{ workflow: 'validation' | 'heavy'; needs?: string; if: string }>> = {
     unit: {
         workflow: 'validation',
         needs: 'decide',
-        if: "inputs.mode == 'full' && (needs.decide.outputs.web == 'true')",
+        if: "(needs.decide.outputs.web == 'true')",
     },
     e2e: {
         workflow: 'heavy',
-        needs: undefined,
         if: 'fromJSON(inputs.matrix).include[0] != null',
     },
-} satisfies Record<string, Readonly<{ workflow: 'validation' | 'heavy'; needs?: string; if: string }>>;
+};
 // The four scope conditions no other pin reads. Each is the whole definition
 // of when its job may legitimately skip: widening one runs the leg where it
 // proves nothing, and narrowing or dropping one retires the proof while every
 // other pin stays green.
-const BUILD_CONDITION = "inputs.mode == 'full' && (needs.decide.outputs.web == 'true')";
-const RUST_CONDITION =
-    "inputs.mode == 'full' && (needs.decide.outputs.rust == 'true' || needs.decide.outputs.server == 'true')";
-const NATIVE_MACOS_CONDITION = "inputs.mode == 'full' && (needs.decide.outputs.rust == 'true')";
-const NATIVE_WINDOWS_CONDITION = "inputs.mode == 'full' && (needs.decide.outputs.rust == 'true')";
+const BUILD_CONDITION = "(needs.decide.outputs.web == 'true')";
+const RUST_CONDITION = "(needs.decide.outputs.rust == 'true' || needs.decide.outputs.server == 'true')";
+const NATIVE_MACOS_CONDITION = "(needs.decide.outputs.rust == 'true')";
+const NATIVE_WINDOWS_CONDITION = "(needs.decide.outputs.rust == 'true')";
 // The nightly split its combined Rust job along the deploy seam (#3516): the
 // crate leg keeps the `rust` scope alone because the crates it tests ship in
 // the web bundle, and the collaboration-server leg answers to the `server`
@@ -391,6 +396,9 @@ type SoftenedStepPin = Readonly<{ workflow: string; job: string; step: string }>
 const CONTINUE_ON_ERROR_STEP_PINS: readonly SoftenedStepPin[] = [
     { workflow: 'validation.yml', job: 'decide', step: PATHS_FILTER_FIRST_ATTEMPT_STEP },
 ];
+// A setup-node cache step may soften because its failure only costs the
+// cache; the cap keeps a refused restore inside the deliberate 5-minute step cap.
+const CACHE_RESTORE_STEP_MAX_MINUTES = 5;
 // A softened shard step reports a failing suite as a passing required check.
 const SUITE_SHARD_STEP = 'Run shard';
 // The census walks production sources once per train, outside the unit shards,
@@ -420,7 +428,6 @@ const isolationScriptSource = readFileSync(join(repositoryRoot, DEPLOY_WEB_ISOLA
 
 const { document: workflowDocument, parsed: workflow } = loadWorkflow('health-gates.yml');
 const { parsed: validationWorkflow } = loadWorkflow('validation.yml');
-const { parsed: prChecksWorkflow } = loadWorkflow('pr-checks.yml');
 const { parsed: cargoDependencySeed } = loadWorkflow('cargo-dependency-seed.yml');
 const { parsed: heavyWorkflow } = loadWorkflow('heavy-gates.yml');
 const { document: nightlyDocument, parsed: nightly } = loadWorkflow('nightly.yml');
@@ -510,13 +517,13 @@ function assertRequiredScopePlan(candidate: UnknownRecord): void {
     const pnpm = stepNamed(scope, 'Set up pnpm');
     if (
         typeof pnpm.uses !== 'string' ||
-        !pnpm.uses.startsWith('pnpm/action-setup@') ||
+        pnpm.uses !== './.github/actions/setup-pnpm' ||
         recordAt(pnpm, 'with').package_json_file !== 'package.json'
     ) {
         throw new Error('required scope must install the repository package manager');
     }
     const node = recordAt(stepNamed(scope, 'Set up Node'), 'with');
-    if (node['node-version'] !== '24.19.0' || node.cache !== 'pnpm') {
+    if (node['node-version'] !== '24.22.2' || node.cache !== 'pnpm') {
         throw new Error('required scope must use the pinned Node version');
     }
     if (stepNamed(scope, 'Install dependencies').run !== 'pnpm install --frozen-lockfile --ignore-scripts') {
@@ -638,8 +645,8 @@ function selectedPrValidationJobs(outputs: UnknownRecord, candidate: UnknownReco
 
 function assertScopeContract(candidate: UnknownRecord): string {
     const callerInputs = recordAt(recordAt(recordAt(candidate, 'on'), 'workflow_call'), 'inputs');
-    if (JSON.stringify(Object.keys(callerInputs).sort()) !== JSON.stringify(['browser', 'mode', 'profile'])) {
-        throw new Error('shared validation must expose browser, mode and affected profile inputs');
+    if (JSON.stringify(Object.keys(callerInputs).sort()) !== JSON.stringify(['browser', 'profile'])) {
+        throw new Error('shared validation must expose browser and affected profile inputs');
     }
     const decide = jobAt(candidate, 'decide');
     if (decide.if !== undefined) {
@@ -667,9 +674,6 @@ function assertScopeContract(candidate: UnknownRecord): string {
     const scope = stepNamed(decide, 'Resolve scope');
     if (scope.id !== 'scope') {
         throw new Error('Resolve scope must retain the scope step id');
-    }
-    if (recordAt(scope, 'env').MODE !== '${{ inputs.mode }}') {
-        throw new Error('scope must validate the requested mode');
     }
     if (recordAt(scope, 'env').BROWSER !== '${{ inputs.browser }}') {
         throw new Error('shared validation must receive the selected browser decision');
@@ -701,7 +705,7 @@ function assertRepositoryIndependentScope(
             }
         }
     }
-    if (JSON.stringify(callers.sort()) !== JSON.stringify(['health-gates.yml', 'pr-checks.yml'])) {
+    if (JSON.stringify(callers.sort()) !== JSON.stringify(['health-gates.yml'])) {
         throw new Error('repository-independent scope must account for every validation caller');
     }
     const decide = jobAt(candidate, 'decide');
@@ -860,7 +864,15 @@ function assertContainerBrowserRuntime(job: UnknownRecord, label: string, jobMin
     }
     const run = stepNamed(job, label === 'the offline smoke job' ? 'Run offline smoke set' : 'Run shard');
     if (
-        steps.indexOf(proof) !== steps.findIndex((step) => step.name === 'Install dependencies') + 1 ||
+        steps.indexOf(proof) !==
+            steps.findIndex(
+                (step) =>
+                    step.name ===
+                    (label === 'the offline smoke job' || label === 'the nightly end-to-end job'
+                        ? 'Install dependencies'
+                        : 'Download shared E2E build')
+            ) +
+                1 ||
         steps.indexOf(run) !== steps.indexOf(proof) + 1 ||
         run.if !== undefined ||
         run['continue-on-error'] !== undefined ||
@@ -896,12 +908,62 @@ function assertBoundedAlsaInstall(job: UnknownRecord, label: string): void {
     }
 }
 
+function assertVerifiedPnpmCallers(candidate: UnknownRecord, control: boolean): number {
+    let callers = 0;
+    const jobs = recordAt(candidate, 'jobs');
+    for (const [jobName, value] of Object.entries(jobs)) {
+        const job = asRecord(value, 'pnpm caller job');
+        if (!Array.isArray(job.steps)) {
+            continue;
+        }
+        const steps = job.steps.map((step) => asRecord(step, 'pnpm caller step'));
+        for (const [index, setup] of steps.entries()) {
+            if (typeof setup.uses === 'string' && setup.uses.startsWith('pnpm/action-setup@')) {
+                throw new Error(`${jobName} must use verified pnpm acquisition`);
+            }
+            if (setup.name !== PNPM_SETUP_STEP) {
+                continue;
+            }
+            callers += 1;
+            if (setup.uses !== (control ? './control/.github/actions/setup-pnpm' : './.github/actions/setup-pnpm')) {
+                throw new Error(`${jobName} must use verified pnpm acquisition`);
+            }
+            const manifest = setup.with === undefined ? undefined : recordAt(setup, 'with').package_json_file;
+            if (control ? manifest !== 'source/package.json' : manifest !== undefined && manifest !== 'package.json') {
+                throw new Error(`${jobName} must select the source pnpm manifest`);
+            }
+            const node = steps[index + 1];
+            if (node?.name !== NODE_SETUP_STEP || node.if !== setup.if) {
+                throw new Error(`${jobName} must retain the later Node caller and its admission`);
+            }
+            const nodeVersion = recordAt(node, 'with')['node-version'];
+            const selectedVersion =
+                nodeVersion === '${{ env.NODE_VERSION }}' ? recordAt(candidate, 'env').NODE_VERSION : nodeVersion;
+            if (selectedVersion !== '24.22.2') {
+                throw new Error(`${jobName} later Node must match the verified bootstrap runtime`);
+            }
+            const checkout = steps
+                .slice(0, index)
+                .find((step) => typeof step.uses === 'string' && step.uses.startsWith('actions/checkout@'));
+            if (!checkout) {
+                throw new Error(`${jobName} must acquire its local setup action before execution`);
+            }
+        }
+    }
+    return callers;
+}
+
 function assertLintTimeBudgets(candidate: UnknownRecord): void {
     const lint = jobAt(candidate, 'lint');
     if (stepNamed(lint, 'Checkout')['timeout-minutes'] !== 10) {
         throw new Error('lint checkout must have a ten-minute timeout');
     }
-    const prep = ['Set up pnpm', 'Set up Node', 'Install dependencies'];
+    // The pnpm store restore is capped well below the other setup steps because
+    // a refused restore falls through to the install step.
+    if (stepNamed(lint, 'Set up Node')['timeout-minutes'] !== 3) {
+        throw new Error('lint step Set up Node must have a three-minute timeout');
+    }
+    const prep = ['Set up pnpm', 'Install dependencies'];
     for (const name of prep) {
         if (stepNamed(lint, name)['timeout-minutes'] !== 5) {
             throw new Error(`lint step ${name} must have a five-minute timeout`);
@@ -911,7 +973,7 @@ function assertLintTimeBudgets(candidate: UnknownRecord): void {
         throw new Error('lint execution must have a twenty-minute timeout');
     }
     const jobTimeout = lint['timeout-minutes'];
-    const stepTotal = 10 + prep.length * 5 + 20;
+    const stepTotal = 10 + 3 + prep.length * 5 + 20;
     if (typeof jobTimeout !== 'number' || jobTimeout < stepTotal + 5 || jobTimeout > 50) {
         throw new Error('lint job must include five minutes for cleanup after all step budgets');
     }
@@ -1459,8 +1521,8 @@ function assertNativeTransportMutationProof(candidate: UnknownRecord): void {
     });
     expect(recordAt(stepNamed(job, 'Cache cargo build'), 'with')).toEqual({ 'save-if': 'false' });
     const setup = stepNamed(job, 'Set up Node for native mutation proof');
-    expect(setup.uses).toBe('actions/setup-node@820762786026740c76f36085b0efc47a31fe5020');
-    expect(recordAt(setup, 'with')).toEqual({ 'node-version': '24.19.0' });
+    expect(setup.uses).toBe('actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1');
+    expect(recordAt(setup, 'with')).toEqual({ 'node-version': '24.22.2' });
     const probe = stepNamed(job, 'Verify native transport mutation sensitivity');
     expect(probe.run).toBe('node scripts/verifyNativeTransportMutations.ts');
     expect(probe.id).toBe('native-mutations');
@@ -1475,7 +1537,7 @@ function assertNativeTransportMutationProof(candidate: UnknownRecord): void {
     const upload = stepNamed(job, 'Upload native transport mutation evidence');
     expect(upload.if).toBe('${{ always() }}');
     expect(upload['continue-on-error']).toBeUndefined();
-    expect(upload.uses).toBe('actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a');
+    expect(upload.uses).toBe('actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9');
     expect(recordAt(upload, 'with')).toEqual({
         name: 'native-transport-mutations-${{ github.event.pull_request.head.sha }}',
         path: '.agents/artifacts/native-transport-mutations/',
@@ -1518,7 +1580,7 @@ function assertCargoDependencySeed(seed: UnknownRecord, consumer: UnknownRecord)
         expect(job['timeout-minutes']).toBe(60);
         expect(stepNamed(job, 'Checkout').uses).toBe('actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1');
         expect(stepNamed(job, 'Cache cargo build').uses).toBe(
-            'Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6'
+            'Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0'
         );
     }
     const linuxSeedNames = arrayAt(linuxSeed, 'steps').map((step) => asRecord(step, 'step').name);
@@ -1548,7 +1610,7 @@ function assertCargoDependencySeed(seed: UnknownRecord, consumer: UnknownRecord)
 
     for (const job of [linuxSeed, linuxConsumer]) {
         const cache = stepNamed(job, 'Cache Cargo dependencies');
-        expect(cache.uses).toBe('actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830');
+        expect(cache.uses).toBe('actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9');
         const options = recordAt(cache, 'with');
         expect(options.path).toBe(CARGO_DEPENDENCY_PATH);
         expect(options.key).toBe(CARGO_DEPENDENCY_KEY);
@@ -1571,7 +1633,7 @@ function assertCargoDependencySeed(seed: UnknownRecord, consumer: UnknownRecord)
     for (const job of [nativeSeed, nativeConsumer]) {
         const cache = stepNamed(job, 'Cache the cargo registry index');
         expect(cache.id).toBe('cargo-index');
-        expect(cache.uses).toBe('actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830');
+        expect(cache.uses).toBe('actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9');
         expect(recordAt(cache, 'with')).toEqual({
             path: '~/.cargo/registry/index',
             key: CARGO_INDEX_KEY,
@@ -1585,7 +1647,6 @@ function assertCargoDependencySeed(seed: UnknownRecord, consumer: UnknownRecord)
 
 type WorkflowSet = {
     health: UnknownRecord;
-    prChecks: UnknownRecord;
     validation: UnknownRecord;
     cargoDependencySeed: UnknownRecord;
     heavy: UnknownRecord;
@@ -1598,7 +1659,6 @@ type WorkflowSet = {
 function workflowSet(): WorkflowSet {
     return {
         health: workflow,
-        prChecks: prChecksWorkflow,
         validation: validationWorkflow,
         cargoDependencySeed,
         heavy: heavyWorkflow,
@@ -1613,7 +1673,6 @@ function cloneWorkflows(label: string): WorkflowSet {
     const clone = structuredClone(workflowSet());
     return {
         health: asRecord(clone.health, `${label} health`),
-        prChecks: asRecord(clone.prChecks, `${label} PR checks`),
         validation: asRecord(clone.validation, `${label} validation`),
         cargoDependencySeed: asRecord(clone.cargoDependencySeed, `${label} cargo dependency seed`),
         heavy: asRecord(clone.heavy, `${label} heavy`),
@@ -1644,7 +1703,6 @@ function assertBlockingSuites(set: WorkflowSet): void {
 function workflowFiles(set: WorkflowSet): ReadonlyArray<readonly [string, UnknownRecord]> {
     return [
         ['health-gates.yml', set.health],
-        ['pr-checks.yml', set.prChecks],
         ['validation.yml', set.validation],
         ['cargo-dependency-seed.yml', set.cargoDependencySeed],
         ['heavy-gates.yml', set.heavy],
@@ -1715,11 +1773,88 @@ function assertNoContinueOnError(set: WorkflowSet): void {
                 }
                 const label = stepLabel(file, jobId, step);
                 const pin = pins.get(`${file}${jobId}${typeof step.name === 'string' ? step.name : ''}`);
+                if (isSetupNodeCacheStep(step) && step['continue-on-error'] === true) {
+                    continue;
+                }
                 if (pin === undefined || step['continue-on-error'] !== true) {
                     throw new Error(`${label} must not continue on error`);
                 }
             }
         }
+    }
+}
+
+// A setup-node package-manager cache restore is a speed-up, never a proof: the
+// install step after it is correct uncached. When the Actions cache refuses or
+// stalls the restore ("Failed to restore: Egress is over the account limit."),
+// the step must fall through to that install instead of hanging in setup-node
+// until the job dies (#5929). setup-node's restore takes no download timeout of
+// its own, so the step cap is the bound. The step is the one place softening is
+// allowed, and only after an earlier unsoftened step has installed Node, so the
+// softening can cost the cache and never the runtime.
+function isSetupNodeCacheStep(step: UnknownRecord): boolean {
+    if (typeof step.uses !== 'string' || !step.uses.startsWith('actions/setup-node@')) {
+        return false;
+    }
+    if (step.with === undefined) {
+        return false;
+    }
+    const cache = recordAt(step, 'with').cache;
+    return typeof cache === 'string' && cache.length > 0;
+}
+
+// The setup-pnpm composite installs the verified bootstrap runtime, which
+// assertVerifiedPnpmCallers pins its following setup-node to; a plain install
+// must name the very node-version the softened step asks for.
+function installsNodeUnsoftened(step: UnknownRecord, nodeVersion: unknown): boolean {
+    if (step['continue-on-error'] !== undefined) {
+        return false;
+    }
+    if (step.uses === './.github/actions/setup-pnpm') {
+        return true;
+    }
+    if (typeof step.uses !== 'string' || !step.uses.startsWith('actions/setup-node@') || step.with === undefined) {
+        return false;
+    }
+    const options = recordAt(step, 'with');
+    return options.cache === undefined && options['node-version'] === nodeVersion;
+}
+
+function assertCacheRestoreFallsThrough(set: WorkflowSet): void {
+    let cacheSteps = 0;
+    for (const [file, candidate] of workflowFiles(set)) {
+        for (const [jobId, jobValue] of Object.entries(recordAt(candidate, 'jobs'))) {
+            const steps = jobSteps(file, jobId, asRecord(jobValue, `${file} job ${jobId}`));
+            for (const [index, step] of steps.entries()) {
+                if (!isSetupNodeCacheStep(step)) {
+                    continue;
+                }
+                cacheSteps += 1;
+                const label = stepLabel(file, jobId, step);
+                if (step['continue-on-error'] !== true) {
+                    throw new Error(`${label} must continue on error so a refused cache restore falls through`);
+                }
+                const stepMinutes = step['timeout-minutes'];
+                if (
+                    typeof stepMinutes !== 'number' ||
+                    stepMinutes < 1 ||
+                    stepMinutes > CACHE_RESTORE_STEP_MAX_MINUTES
+                ) {
+                    throw new Error(
+                        `${label} must cap the cache restore at ${CACHE_RESTORE_STEP_MAX_MINUTES} minutes or fewer`
+                    );
+                }
+                const nodeVersion = recordAt(step, 'with')['node-version'];
+                if (!steps.slice(0, index).some((earlier) => installsNodeUnsoftened(earlier, nodeVersion))) {
+                    throw new Error(
+                        `${label} must follow an unsoftened install of the same Node so softening costs only the cache`
+                    );
+                }
+            }
+        }
+    }
+    if (cacheSteps === 0) {
+        throw new Error('no setup-node cache step found; the fall-through sweep would assert nothing');
     }
 }
 
@@ -1847,9 +1982,16 @@ function withWorkflowFiles(files: readonly string[]): () => void {
 // The SARIF upload is the only write this job needs: `contents: write` would
 // hand the pull-request workflow a token that can push,
 // and dropping `security-events: write` would fail the upload on the head.
+// The planner reads the nightly coverage map artifact, so it alone adds a read-only actions grant.
+const SCOPE_PERMISSIONS = JSON.stringify({ contents: 'read', 'pull-requests': 'read', actions: 'read' });
+
 function assertRequiredCodeQlPermissions(candidate: UnknownRecord): void {
     for (const [jobId, value] of Object.entries(recordAt(candidate, 'jobs'))) {
-        if (jobId !== 'codeql' && asRecord(value, jobId).permissions !== undefined) {
+        const permissions = asRecord(value, jobId).permissions;
+        if (jobId === 'scope' && JSON.stringify(permissions) !== SCOPE_PERMISSIONS) {
+            throw new Error('the scope job must grant exactly contents: read, pull-requests: read, and actions: read');
+        }
+        if (jobId !== 'codeql' && jobId !== 'scope' && permissions !== undefined) {
             throw new Error(`the ${jobId} job must inherit read-only workflow permissions`);
         }
     }
@@ -1883,11 +2025,11 @@ function assertValidationScopeConditions(candidate: UnknownRecord): void {
 
 // The single invariant the whole split exists to hold: `Gate` is the required
 // context, GitHub counts a `skipped` conclusion as satisfying a required check,
-// and it prefers the newest run of that name. So only a labeled `pull_request`
-// run of `health-gates.yml` may mint that name, `gate` must be unable to skip,
-// and it must fail unless the reviewer App approved the exact head.
+// and it prefers the newest run of that name. So only a `pull_request` run of
+// `health-gates.yml` may mint that name, `gate` must be unable to skip, and it
+// must fail for a draft, a cancellation, or any failed selected check.
 function assertRequiredCheckIsolation(set: WorkflowSet): void {
-    assertApprovalGatedRequiredCheck(Object.fromEntries(workflowFiles(set)));
+    assertPullRequestGateWorkflows(Object.fromEntries(workflowFiles(set)));
     if (JSON.stringify(Object.keys(recordAt(set.heavy, 'on')).sort()) !== JSON.stringify([...HEAVY_GATES_TRIGGERS])) {
         throw new Error('heavy-gates.yml must be reusable-only');
     }
@@ -1917,14 +2059,22 @@ function assertJobGraph(set: WorkflowSet): void {
         throw new Error('required validation must consume the affected scope');
     }
     if (jobAt(health, 'validation').if !== undefined) {
-        throw new Error('required validation must run on every pull request');
+        throw new Error('required validation must follow scope and carry no extra condition');
     }
     if (
         recordAt(jobAt(health, 'validation'), 'with').browser !== "${{ needs.scope.outputs.browser == 'true' }}" ||
         recordAt(jobAt(health, 'validation'), 'with').profile !== '${{ needs.scope.outputs.profile }}' ||
-        recordAt(jobAt(health, 'validation'), 'with').mode !== 'full'
+        recordAt(jobAt(health, 'validation'), 'with').mode !== undefined
     ) {
         throw new Error('required browser smoke must consume the affected scope');
+    }
+    const e2eBuild = jobAt(health, 'e2e-build');
+    if (
+        e2eBuild.needs !== 'scope' ||
+        e2eBuild.if !==
+            "${{ github.event.pull_request.draft == false && needs.scope.result == 'success' && fromJSON(needs.scope.outputs.matrix || '{\"include\":[]}').include[0] != null }}"
+    ) {
+        throw new Error('shared E2E build must start from validated scope before validation finishes');
     }
     const browserInput = recordAt(recordAt(recordAt(set.validation, 'on'), 'workflow_call'), 'inputs');
     if (
@@ -1937,23 +2087,17 @@ function assertJobGraph(set: WorkflowSet): void {
     ) {
         throw new Error('shared validation must require the affected browser decision');
     }
-    if (
-        JSON.stringify(browserInput.mode) !==
-        JSON.stringify({
-            description: 'Full required validation or preliminary push validation.',
-            required: false,
-            default: 'full',
-            type: 'string',
-        })
-    ) {
-        throw new Error('shared validation must default to full');
+    if (browserInput.mode !== undefined) {
+        throw new Error('shared validation must not offer a mode that can skip required jobs');
     }
     const affected = jobAt(health, 'affected');
+    const affectedAdmission = typeof affected.if === 'string' ? affected.if.replaceAll(/\s+/gu, ' ') : '';
     if (
         affected.uses !== './.github/workflows/heavy-gates.yml' ||
-        JSON.stringify(affected.needs) !== JSON.stringify(['scope', 'validation'])
+        JSON.stringify(affected.needs) !== JSON.stringify(['scope', 'validation', 'e2e-build']) ||
+        affectedAdmission !== AFFECTED_ADMISSION
     ) {
-        throw new Error('required affected E2E must wait for scope and successful validation');
+        throw new Error('required affected E2E must wait for successful validation and the selected shared build');
     }
     if (
         recordAt(affected, 'with').matrix !== '${{ needs.scope.outputs.matrix }}' ||
@@ -1976,19 +2120,6 @@ function assertJobGraph(set: WorkflowSet): void {
     assertNightlyReportCoverage(set);
     assertDeviceWriteBoundaryCensus(set);
     assertSummaryMembership(set);
-    assertRequiredScopePlan(set.prChecks);
-    if (JSON.stringify(Object.keys(recordAt(set.prChecks, 'jobs'))) !== JSON.stringify(['scope', 'validation'])) {
-        throw new Error('pr-checks.yml must run only the scope plan and the validation lane');
-    }
-    const pushValidation = jobAt(set.prChecks, 'validation');
-    if (
-        pushValidation.uses !== VALIDATION_CALL ||
-        pushValidation.needs !== 'scope' ||
-        JSON.stringify(pushValidation.with) !==
-            JSON.stringify({ ...recordAt(jobAt(set.health, 'validation'), 'with'), mode: 'preliminary' })
-    ) {
-        throw new Error('push validation must consume the affected scope exactly as the required lane does');
-    }
 }
 
 // Both trains run the census once, in their static contract job, and a
@@ -2019,8 +2150,8 @@ function assertDeviceWriteBoundaryCensus(set: WorkflowSet): void {
     }
 }
 
-// The nightly reporter is the only thing that observes what path filters and
-// the approval gate skip, so a leg missing from its needs is a class of failure
+// The nightly reporter is the only thing that observes what path filters
+// skip, so a leg missing from its needs is a class of failure
 // that reports nowhere a person looks.
 function assertNightlyReportCoverage(set: WorkflowSet): void {
     const nightlyReport = jobAt(set.nightly, 'nightly-report');
@@ -2155,7 +2286,7 @@ function assertBrowserAiWebGpuJob(candidate: UnknownRecord): void {
         throw new Error('Browser AI WebGPU job must retain its selected hardware condition');
     }
     if (job['runs-on'] !== BROWSER_AI_WEBGPU_RUNNER) {
-        throw new Error('Browser AI WebGPU job must use the standard macos-14 runner');
+        throw new Error('Browser AI WebGPU job must use the standard macos-15 runner');
     }
     if (job['timeout-minutes'] !== BROWSER_AI_WEBGPU_JOB_TIMEOUT_MINUTES) {
         throw new Error(
@@ -2213,7 +2344,7 @@ function assertNightlyBrowserAiWebGpuJob(candidate: UnknownRecord): void {
         throw new Error('Browser AI WebGPU job must retain its heavy E2E scope condition');
     }
     if (job['runs-on'] !== BROWSER_AI_WEBGPU_RUNNER) {
-        throw new Error('Browser AI WebGPU job must use the standard macos-14 runner');
+        throw new Error('Browser AI WebGPU job must use the standard macos-15 runner');
     }
     if (stringAt(stepNamed(job, 'Install Chromium'), 'run') !== 'pnpm exec playwright install chromium') {
         throw new Error('Browser AI WebGPU job must install Chromium directly');
@@ -2628,6 +2759,14 @@ describe('health gates workflow contract', () => {
         recordAt(stepNamed(jobAt(wrongControl, 'build-artifacts'), 'Checkout workflow control'), 'with').ref =
             '${{ github.sha }}';
         expect(() => assertHostedWasmWorkflow(wrongControl)).toThrow('workflow control');
+        const sourceBootstrap = structuredClone(hostedWasm);
+        stepNamed(jobAt(sourceBootstrap, 'build-artifacts'), 'Set up pnpm').uses =
+            './source/.github/actions/setup-pnpm';
+        expect(() => assertHostedWasmWorkflow(sourceBootstrap)).toThrow('pnpm setup from workflow control');
+        const controlTarget = structuredClone(hostedWasm);
+        recordAt(stepNamed(jobAt(controlTarget, 'build-artifacts'), 'Set up pnpm'), 'with').package_json_file =
+            'control/package.json';
+        expect(() => assertHostedWasmWorkflow(controlTarget)).toThrow('pnpm target from the source manifest');
         const privileged = structuredClone(hostedWasm);
         privileged.on = { pull_request_target: {} };
         expect(() => assertHostedWasmWorkflow(privileged)).toThrow('unprivileged PR trigger');
@@ -2652,12 +2791,10 @@ describe('health gates workflow contract', () => {
         vi.unstubAllGlobals();
     });
 
-    // The regression this whole split exists to prevent. On PR #3116 a
-    // comment-only review ran this workflow, every job legitimately skipped,
-    // `gate` was minted as `skipped`, and GitHub read that as satisfying the
-    // required `Gate` on a head whose earlier `Gate` had failed. A required
-    // check cannot be defended by a job condition — only by keeping the events
-    // that can skip it out of the file that mints it.
+    // On PR #3116 a comment-only review ran this workflow, every job skipped,
+    // and GitHub read the skipped `Gate` as satisfying the required check.
+    // A draft must not recreate that: Gate runs and fails, and no other event
+    // mints the name.
     it('lets only a pull-request run mint the required Gate', () => {
         expect(workflowDocument.errors).toEqual([]);
         expect(nightlyDocument.errors).toEqual([]);
@@ -2676,104 +2813,53 @@ describe('health gates workflow contract', () => {
         expect(() => assertNightlyPermissions(nightly)).not.toThrow();
         expect(() => assertNightlyConcurrencyContract(nightly)).not.toThrow();
 
+        const triggerRefusal =
+            'health-gates.yml must answer to pull_request open, push, reopen, and draft-state events alone';
         const reviewTriggered = cloneWorkflows('review-triggered');
         recordAt(reviewTriggered.health, 'on').pull_request_review = { types: ['submitted'] };
-        expect(() => assertRequiredCheckIsolation(reviewTriggered)).toThrow(
-            'health-gates.yml must answer to labeled pull_request events alone'
-        );
+        expect(() => assertRequiredCheckIsolation(reviewTriggered)).toThrow(triggerRefusal);
 
-        // A second event type reaches Gate on every push again, and a run-completion
-        // trigger runs outside the pull_request event entirely.
         for (const events of [
             { pull_request: { types: ['labeled', 'synchronize'] } },
-            { pull_request: { types: ['labeled'] }, workflow_run: { workflows: ['PR checks'] } },
-            { pull_request_target: { types: ['labeled'] } },
+            { pull_request: { types: ['opened'] }, workflow_run: { workflows: ['Health gates'] } },
+            { pull_request_target: { types: ['opened'] } },
         ]) {
             const widenedTrigger = cloneWorkflows('widened trigger');
             widenedTrigger.health.on = events;
-            expect(() => assertRequiredCheckIsolation(widenedTrigger)).toThrow(
-                'health-gates.yml must answer to labeled pull_request events alone'
-            );
+            expect(() => assertRequiredCheckIsolation(widenedTrigger)).toThrow(triggerRefusal);
         }
 
         const skippableGate = cloneWorkflows('skippable gate');
         jobAt(skippableGate.health, 'gate').if = '${{ !cancelled() }}';
         expect(() => assertRequiredCheckIsolation(skippableGate)).toThrow('Gate must run after cancellation');
 
-        // Gating the Gate itself on admission would skip it on every unadmitted
-        // label event, and a skipped Gate satisfies the required check.
-        const admissionSkippedGate = cloneWorkflows('admission-skipped gate');
-        jobAt(admissionSkippedGate.health, 'gate').if = ADMITTED_CONDITION;
-        expect(() => assertRequiredCheckIsolation(admissionSkippedGate)).toThrow('Gate must run after cancellation');
+        // Gating Gate on the draft flag skips it for every draft, and a skipped Gate passes.
+        const draftSkippedGate = cloneWorkflows('draft-skipped gate');
+        jobAt(draftSkippedGate.health, 'gate').if = 'github.event.pull_request.draft == false';
+        expect(() => assertRequiredCheckIsolation(draftSkippedGate)).toThrow('Gate must run after cancellation');
 
         const skippableGateStep = cloneWorkflows('skippable gate step');
         stepNamed(jobAt(skippableGateStep.health, 'gate'), 'Require selected checks to succeed').if =
-            ADMITTED_CONDITION;
+            'github.event.pull_request.draft == false';
         expect(() => assertRequiredCheckIsolation(skippableGateStep)).toThrow('Gate must run after cancellation');
 
-        const unadmittedGate = cloneWorkflows('unadmitted gate');
-        const unadmittedNeeds = arrayAt(jobAt(unadmittedGate.health, 'gate'), 'needs');
-        unadmittedNeeds.splice(unadmittedNeeds.indexOf('admission'), 1);
-        expect(() => assertRequiredCheckIsolation(unadmittedGate)).toThrow(
-            'Gate must fail unless approval admission admitted the head'
+        const silentDraft = cloneWorkflows('silent draft');
+        const gateStep = stepNamed(jobAt(silentDraft.health, 'gate'), 'Require selected checks to succeed');
+        gateStep.run = stringAt(gateStep, 'run').replace('pull request is a draft', 'draft ignored');
+        expect(() => assertRequiredCheckIsolation(silentDraft)).toThrow(
+            'Gate must fail when the pull request is a draft'
         );
 
         const ungatedHeavyRun = cloneWorkflows('ungated heavy run');
         delete jobAt(ungatedHeavyRun.health, 'scope').if;
         expect(() => assertRequiredCheckIsolation(ungatedHeavyRun)).toThrow(
-            'the heavy checks must start only after approval admission admits the head'
+            'the heavy checks must run only for a non-draft pull request'
         );
 
         const bypassingCodeql = cloneWorkflows('bypassing CodeQL');
-        jobAt(bypassingCodeql.health, 'codeql').needs = 'admission';
+        jobAt(bypassingCodeql.health, 'codeql').needs = 'validation';
         expect(() => assertRequiredCheckIsolation(bypassingCodeql)).toThrow(
-            'health-gates.yml job codeql must wait for approval admission through scope'
-        );
-
-        // Candidate code deciding its own admission: the head could admit itself.
-        const candidateAdmission = cloneWorkflows('candidate admission');
-        recordAt(stepNamed(jobAt(candidateAdmission.health, 'admission'), 'Checkout trusted admission'), 'with').ref =
-            '${{ github.event.pull_request.head.sha }}';
-        expect(() => assertRequiredCheckIsolation(candidateAdmission)).toThrow(
-            'approval admission must decide from the default branch, never the candidate head'
-        );
-
-        // An older head's approval admits when the decision reads any SHA but the event head.
-        const olderHeadAdmission = cloneWorkflows('older-head admission');
-        recordAt(stepNamed(jobAt(olderHeadAdmission.health, 'admission'), 'Decide admission'), 'env').HEAD_SHA =
-            '${{ github.event.pull_request.base.sha }}';
-        expect(() => assertRequiredCheckIsolation(olderHeadAdmission)).toThrow(
-            'approval admission must decide on the event head, label and sender with the trusted script'
-        );
-
-        // Any approval admits when the decision no longer runs the reviewer-identity check.
-        const anyApproverAdmission = cloneWorkflows('any-approver admission');
-        stepNamed(jobAt(anyApproverAdmission.health, 'admission'), 'Decide admission').run =
-            'echo admitted=true >> "$GITHUB_OUTPUT"';
-        expect(() => assertRequiredCheckIsolation(anyApproverAdmission)).toThrow(
-            'approval admission must decide on the event head, label and sender with the trusted script'
-        );
-
-        const softenedAdmission = cloneWorkflows('softened admission');
-        jobAt(softenedAdmission.health, 'admission')['continue-on-error'] = true;
-        expect(() => assertRequiredCheckIsolation(softenedAdmission)).toThrow(
-            'approval admission must not declare continue-on-error'
-        );
-
-        const mintingPushChecks = cloneWorkflows('minting push checks');
-        recordAt(mintingPushChecks.prChecks, 'jobs').gate = jobAt(workflow, 'gate');
-        expect(() => assertRequiredCheckIsolation(mintingPushChecks)).toThrow('pr-checks.yml must not name a job Gate');
-
-        const renamedPushValidation = cloneWorkflows('renamed push validation');
-        jobAt(renamedPushValidation.prChecks, 'validation').name = REQUIRED_CHECK_NAME;
-        expect(() => assertRequiredCheckIsolation(renamedPushValidation)).toThrow(
-            'pr-checks.yml must not name a job Gate'
-        );
-
-        const labeledPushChecks = cloneWorkflows('labeled push checks');
-        labeledPushChecks.prChecks.on = { pull_request: { types: ['opened', 'synchronize', 'labeled'] } };
-        expect(() => assertRequiredCheckIsolation(labeledPushChecks)).toThrow(
-            'pr-checks.yml must answer to pull-request pushes alone'
+            'health-gates.yml job codeql must wait for the non-draft scope'
         );
 
         const shadowedGate = cloneWorkflows('shadowed gate');
@@ -2844,12 +2930,6 @@ describe('health gates workflow contract', () => {
         );
 
         expect(() => assertWorkflowPermissions(workflow)).not.toThrow();
-        expect(() => assertWorkflowPermissions(prChecksWorkflow)).not.toThrow();
-        expect(prChecksWorkflow.concurrency).toEqual({
-            group: 'pr-checks-${{ github.event.pull_request.number }}',
-            'cancel-in-progress': true,
-        });
-        expect(() => assertNoJobLevelConcurrency(prChecksWorkflow, 'pr-checks.yml')).not.toThrow();
         expect(() => assertWorkflowPermissions(validationWorkflow)).not.toThrow();
         expect(() => assertWorkflowPermissions(heavyWorkflow)).not.toThrow();
         expect(() => assertConcurrencyContract(workflow)).not.toThrow();
@@ -2939,19 +3019,21 @@ describe('health gates workflow contract', () => {
             recordAt(stepNamed(jobAt(localFilters, 'decide'), name), 'with').filters = 'filters.yml';
             expect(() => assertRepositoryIndependentScope(localFilters, workflows)).toThrow('inline filters');
         }
-        for (const caller of ['health-gates.yml', 'pr-checks.yml']) {
-            const nonPrCaller = structuredClone(workflows);
-            recordAt(nonPrCaller[caller]!, 'on').workflow_dispatch = {};
-            expect(() => assertRepositoryIndependentScope(validationWorkflow, nonPrCaller)).toThrow(
-                `${caller} must call validation only on pull_request`
-            );
-            const unreadable = structuredClone(workflows);
-            recordAt(unreadable[caller]!, 'permissions')['pull-requests'] = 'none';
-            expect(() => assertRepositoryIndependentScope(validationWorkflow, unreadable)).toThrow(
-                'changed-files API read permission'
-            );
+        const nonPrCaller = structuredClone(workflows);
+        recordAt(nonPrCaller['health-gates.yml']!, 'on').workflow_dispatch = {};
+        expect(() => assertRepositoryIndependentScope(validationWorkflow, nonPrCaller)).toThrow(
+            'health-gates.yml must call validation only on pull_request'
+        );
+        const unreadable = structuredClone(workflows);
+        recordAt(unreadable['health-gates.yml']!, 'permissions')['pull-requests'] = 'none';
+        expect(() => assertRepositoryIndependentScope(validationWorkflow, unreadable)).toThrow(
+            'changed-files API read permission'
+        );
+        const healthGates = workflows['health-gates.yml'];
+        if (healthGates === undefined) {
+            throw new Error('health-gates.yml missing from the workflow directory');
         }
-        const newCaller = { ...workflows, 'another.yml': structuredClone(prChecksWorkflow) };
+        const newCaller = { ...workflows, 'another.yml': structuredClone(healthGates) };
         expect(() => assertRepositoryIndependentScope(validationWorkflow, newCaller)).toThrow(
             'account for every validation caller'
         );
@@ -3247,8 +3329,8 @@ describe('health gates workflow contract', () => {
             expect(() => check(workflow)).not.toThrow();
             for (const image of [
                 `mcr.microsoft.com/playwright:v1.62.0-noble@${PLAYWRIGHT_IMAGE_DIGEST}`,
-                'mcr.microsoft.com/playwright:v1.63.0-noble',
-                `mcr.microsoft.com/playwright:v1.63.0-noble@sha256:${'0'.repeat(64)}`,
+                'mcr.microsoft.com/playwright:v1.64.1-noble',
+                `mcr.microsoft.com/playwright:v1.64.1-noble@sha256:${'0'.repeat(64)}`,
             ]) {
                 const mismatch = structuredClone(workflow);
                 recordAt(jobAt(mismatch, job), 'container').image = image;
@@ -3435,6 +3517,113 @@ describe('health gates workflow contract', () => {
         expect(() => assertBoundedHeavyE2eInstall(bypassed.heavy)).toThrow('without conditional admission');
     });
 
+    it('transports the integration build once to each selected shard', () => {
+        const producer = jobAt(workflow, 'e2e-build');
+        const shard = jobAt(heavyWorkflow, 'e2e');
+        const artifact = 'e2e-build-${{ github.run_id }}-${{ github.run_attempt }}';
+        expect(producer.name).toBe('Shared E2E build');
+        expect(producer.needs).toBe('scope');
+        expect(producer.if).toBe(
+            "${{ github.event.pull_request.draft == false && needs.scope.result == 'success' && fromJSON(needs.scope.outputs.matrix || '{\"include\":[]}').include[0] != null }}"
+        );
+        expect(producer.container).toEqual(shard.container);
+        expect(producer.defaults).toEqual(shard.defaults);
+        expect(shard.needs).toBeUndefined();
+        for (const job of [producer, shard]) {
+            expect(recordAt(stepNamed(job, 'Checkout'), 'with')).toMatchObject({
+                ref: '${{ github.sha }}',
+                'persist-credentials': false,
+            });
+        }
+        expect(stepNamed(producer, 'Build shared E2E app').run).toBe('node scripts/sharedE2eBuild.ts build');
+        const upload = stepNamed(producer, 'Upload shared E2E build');
+        expect(upload.uses).toBe('actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9');
+        expect(recordAt(upload, 'with')).toMatchObject({ name: artifact, path: 'dist/', 'if-no-files-found': 'error' });
+        const download = stepNamed(shard, 'Download shared E2E build');
+        expect(download.uses).toBe('actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333');
+        expect(recordAt(download, 'with')).toMatchObject({ name: artifact, path: 'dist/' });
+        expect(recordAt(stepNamed(shard, 'Run shard'), 'env')).toMatchObject({
+            E2E_SPECS: '${{ toJSON(matrix.specs) }}',
+            SOURDAW_SHARED_E2E_BUILD: '1',
+        });
+        expect(stepNamed(shard, 'Run shard').run).toBe('node scripts/prValidationScope.ts run');
+    });
+
+    it('requires the selected shared build in the parent Gate', () => {
+        const script = assertGateContract(workflow, 'gate', 'Gate', GATE_CONDITION);
+        const selected = JSON.stringify({ include: [{ id: 1, specs: ['tests/e2e/export.spec.ts'] }] });
+        const empty = JSON.stringify({ include: [] });
+        expect(recordAt(stepNamed(jobAt(workflow, 'gate'), 'Require selected checks to succeed'), 'env').MATRIX).toBe(
+            '${{ needs.scope.outputs.matrix }}'
+        );
+        const results = (
+            matrix: string,
+            build: JobResult,
+            affected: JobResult,
+            codeql: JobResult,
+            validation: JobResult
+        ) =>
+            JSON.stringify({
+                scope: {
+                    result: 'success',
+                    outputs: { matrix, browser: 'true', 'browser-ai': 'false', codeql: 'true' },
+                },
+                'e2e-build': { result: build },
+                validation: { result: validation },
+                affected: { result: affected },
+                codeql: { result: codeql },
+            });
+        expect(
+            runResultsGuard(script, results(selected, 'success', 'success', 'success', 'success'), {
+                MATRIX: selected,
+                DRAFT: 'false',
+            })
+        ).toBe(0);
+        expect(
+            runResultsGuard(script, results(empty, 'skipped', 'success', 'success', 'success'), {
+                MATRIX: empty,
+                DRAFT: 'false',
+            })
+        ).toBe(0);
+        for (const result of ['failure', 'cancelled', 'skipped'] as const) {
+            expect(
+                runResultsGuard(script, results(selected, result, 'success', 'success', 'success'), {
+                    MATRIX: selected,
+                    DRAFT: 'false',
+                })
+            ).not.toBe(0);
+        }
+        expect(
+            runResultsGuard(script, results(empty, 'success', 'success', 'success', 'success'), {
+                MATRIX: empty,
+                DRAFT: 'false',
+            })
+        ).not.toBe(0);
+        expect(
+            runResultsGuard(
+                script,
+                JSON.stringify({
+                    scope: {
+                        result: 'success',
+                        outputs: { matrix: selected, browser: 'true', 'browser-ai': 'false', codeql: 'true' },
+                    },
+                    validation: { result: 'success' },
+                    affected: { result: 'success' },
+                    codeql: { result: 'success' },
+                }),
+                { MATRIX: selected, DRAFT: 'false' }
+            )
+        ).not.toBe(0);
+        for (const matrix of ['not-json', '{"include":null}', '{"include":[{"id":"1","specs":[]}]}']) {
+            expect(
+                runResultsGuard(script, results(matrix, 'skipped', 'success', 'success', 'success'), {
+                    MATRIX: matrix,
+                    DRAFT: 'false',
+                })
+            ).not.toBe(0);
+        }
+    });
+
     it('makes selected validation, E2E and CodeQL decisive for the required Gate', () => {
         expect(() => assertJobGraph(workflowSet())).not.toThrow();
 
@@ -3496,7 +3685,31 @@ describe('health gates workflow contract', () => {
         const disconnectedAffected = cloneWorkflows('disconnected affected E2E');
         jobAt(disconnectedAffected.health, 'affected').needs = 'validation';
         expect(() => assertJobGraph(disconnectedAffected)).toThrow(
-            'required affected E2E must wait for scope and successful validation'
+            'required affected E2E must wait for successful validation and the selected shared build'
+        );
+
+        const permissiveAffected = cloneWorkflows('permissive affected admission');
+        jobAt(permissiveAffected.health, 'affected').if = '${{ always() }}';
+        expect(() => assertJobGraph(permissiveAffected)).toThrow(
+            'required affected E2E must wait for successful validation and the selected shared build'
+        );
+
+        // When workflow cancellation is true while all predecessors succeeded, always() admits the
+        // expensive caller but !cancelled() rejects it. This source-bound mutation must fail the guard.
+        const cancellationAdmissionBypass = cloneWorkflows('cancelled affected admission bypass');
+        const affectedIf = jobAt(cancellationAdmissionBypass.health, 'affected').if;
+        if (typeof affectedIf !== 'string') {
+            throw new TypeError('affected admission must be an expression');
+        }
+        jobAt(cancellationAdmissionBypass.health, 'affected').if = affectedIf.replace('!cancelled()', 'always()');
+        expect(() => assertJobGraph(cancellationAdmissionBypass)).toThrow(
+            'required affected E2E must wait for successful validation and the selected shared build'
+        );
+
+        const validationGatedBuild = cloneWorkflows('validation-gated shared E2E build');
+        jobAt(validationGatedBuild.health, 'e2e-build').needs = 'validation';
+        expect(() => assertJobGraph(validationGatedBuild)).toThrow(
+            'shared E2E build must start from validated scope before validation finishes'
         );
 
         const unselectedCodeql = cloneWorkflows('unselected CodeQL');
@@ -3507,7 +3720,9 @@ describe('health gates workflow contract', () => {
 
         const gatedPushLane = cloneWorkflows('gated push lane');
         jobAt(gatedPushLane.health, 'validation').if = 'false';
-        expect(() => assertJobGraph(gatedPushLane)).toThrow('required validation must run on every pull request');
+        expect(() => assertJobGraph(gatedPushLane)).toThrow(
+            'required validation must follow scope and carry no extra condition'
+        );
 
         // A leg dropped out of the shared lane leaves the required Gate without
         // failing anything: the summary still passes, on less evidence.
@@ -3735,6 +3950,56 @@ describe('health gates workflow contract', () => {
         });
     });
 
+    it('lets a refused or stalled setup-node cache restore fall through to an uncached install', () => {
+        expect(() => assertCacheRestoreFallsThrough(workflowSet())).not.toThrow();
+        expect(() => assertNoContinueOnError(workflowSet())).not.toThrow();
+
+        const hardened = cloneWorkflows('hardened pnpm cache step');
+        const hardenedStep = stepNamed(jobAt(hardened.validation, 'lint'), 'Set up Node');
+        delete hardenedStep['continue-on-error'];
+        expect(() => assertCacheRestoreFallsThrough(hardened)).toThrow(
+            'validation.yml job lint step Set up Node must continue on error so a refused cache restore falls through'
+        );
+
+        const unbounded = cloneWorkflows('unbounded pnpm cache step');
+        delete stepNamed(jobAt(unbounded.health, 'scope'), 'Set up Node')['timeout-minutes'];
+        expect(() => assertCacheRestoreFallsThrough(unbounded)).toThrow(
+            'health-gates.yml job scope step Set up Node must cap the cache restore at 5 minutes or fewer'
+        );
+
+        // The rule follows any package-manager cache, not only pnpm.
+        const unboundedNpm = cloneWorkflows('unbounded npm cache step');
+        delete stepNamed(jobAt(unboundedNpm.validation, 'rust'), 'Set up Node')['timeout-minutes'];
+        expect(() => assertCacheRestoreFallsThrough(unboundedNpm)).toThrow(
+            'validation.yml job rust step Set up Node must cap the cache restore at 5 minutes or fewer'
+        );
+
+        const softenedInstall = cloneWorkflows('cache step without an unsoftened Node install');
+        const collabSteps = arrayAt(jobAt(softenedInstall.nightly, 'collab-server'), 'steps');
+        collabSteps.splice(
+            collabSteps.indexOf(stepNamed(jobAt(softenedInstall.nightly, 'collab-server'), 'Install Node')),
+            1
+        );
+        expect(() => assertCacheRestoreFallsThrough(softenedInstall)).toThrow(
+            'nightly.yml job collab-server step Set up Node must follow an unsoftened install of the same Node so softening costs only the cache'
+        );
+
+        // An install of another Node would leave that runtime in place when the cache step fails.
+        const otherRuntime = cloneWorkflows('cache step after an install of another Node');
+        recordAt(stepNamed(jobAt(otherRuntime.nightly, 'collab-server'), 'Install Node'), 'with')['node-version'] =
+            '22';
+        expect(() => assertCacheRestoreFallsThrough(otherRuntime)).toThrow(
+            'nightly.yml job collab-server step Set up Node must follow an unsoftened install of the same Node so softening costs only the cache'
+        );
+
+        // Only setup-node itself may soften for a cache; another action naming a cache may not.
+        const foreignCache = cloneWorkflows('non-setup-node cache step');
+        stepNamed(jobAt(foreignCache.health, 'scope'), 'Set up Node').uses = 'example/actions/setup-node@v1';
+        expect(() => assertNoContinueOnError(foreignCache)).toThrow(
+            'health-gates.yml job scope step Set up Node must not continue on error'
+        );
+    });
+
     it('sweeps every job and step for softening, with only the pinned conditional steps', () => {
         expect(() => assertNoContinueOnError(workflowSet())).not.toThrow();
         expect(() => assertUnconditionalSteps(workflowSet())).not.toThrow();
@@ -3828,7 +4093,12 @@ describe('health gates workflow contract', () => {
         const widenedScope = cloneWorkflows('widened scope permissions');
         jobAt(widenedScope.health, 'scope').permissions = { contents: 'write' };
         expect(() => assertRequiredCodeQlPermissions(widenedScope.health)).toThrow(
-            'the scope job must inherit read-only workflow permissions'
+            'the scope job must grant exactly contents: read, pull-requests: read, and actions: read'
+        );
+        const widenedValidation = cloneWorkflows('widened validation permissions');
+        jobAt(widenedValidation.health, 'validation').permissions = { contents: 'read' };
+        expect(() => assertRequiredCodeQlPermissions(widenedValidation.health)).toThrow(
+            'the validation job must inherit read-only workflow permissions'
         );
     });
 
@@ -3987,7 +4257,7 @@ describe('health gates workflow contract', () => {
             TOKEN: '${{ secrets.VERCEL_TOKEN }}',
         };
         expect(surface(leakedStepSecret)).toThrow(
-            'health-gates.yml job scope must read exactly its pinned secrets: none'
+            'health-gates.yml job scope must read exactly its pinned secrets: GITHUB_TOKEN'
         );
 
         const jobToken = cloneWorkflows('job token on static');
@@ -4033,9 +4303,9 @@ describe('health gates workflow contract', () => {
         expect(surface(extraDeploySecret)).toThrow('nightly.yml job deploy-web must read exactly its pinned secrets');
 
         const inheritedSecrets = cloneWorkflows('secrets inherited by validation');
-        jobAt(inheritedSecrets.prChecks, 'validation').secrets = 'inherit';
+        jobAt(inheritedSecrets.health, 'validation').secrets = 'inherit';
         expect(surface(inheritedSecrets)).toThrow(
-            'pr-checks.yml job validation must not pass secrets to a reusable workflow'
+            'health-gates.yml job validation must not pass secrets to a reusable workflow'
         );
 
         const environment = cloneWorkflows('environment on a validation leg');
@@ -4063,10 +4333,10 @@ describe('health gates workflow contract', () => {
             'validation.yml job lint must pin "./../../evil" to a full commit SHA or a ./ path inside the repository'
         );
 
-        const computedGate = cloneWorkflows('computed Gate name on push checks');
-        jobAt(computedGate.prChecks, 'scope').name = "${{ 'Ga' }}te";
+        const computedGate = cloneWorkflows('computed Gate name on scope');
+        jobAt(computedGate.health, 'scope').name = "${{ 'Ga' }}te";
         expect(surface(computedGate)).toThrow(
-            'pr-checks.yml job scope must not compute its check name from an expression'
+            'health-gates.yml job scope must not compute its check name from an expression'
         );
 
         const computedShardName = cloneWorkflows('matrix-driven name change');
@@ -4084,8 +4354,8 @@ describe('health gates workflow contract', () => {
         expect(surface(emptyNamedGate)).toThrow('nightly.yml job Gate must not be named Gate');
 
         const secondGate = cloneWorkflows('second Gate in health gates');
-        jobAt(secondGate.health, 'admission').name = 'Gate';
-        expect(surface(secondGate)).toThrow('health-gates.yml job admission must not be named Gate');
+        jobAt(secondGate.health, 'scope').name = 'Gate';
+        expect(surface(secondGate)).toThrow('health-gates.yml job scope must not be named Gate');
     });
 
     it('pins the trusted nightly evidence reporter before granting issue writes', () => {
@@ -4153,6 +4423,33 @@ describe('health gates workflow contract', () => {
         expect(withWorkflowFiles(HEALTH_GATE_WORKFLOW_FILES.slice(1))).toThrow(
             'health-gates.yml is pinned in the recorded workflow file inventory but missing from .github/workflows'
         );
+    });
+
+    it('keeps every pnpm acquisition on the verified action and the same later Node runtime', () => {
+        let callers = 0;
+        for (const file of readdirSync(join(repositoryRoot, '.github/workflows')).filter((file) =>
+            /\.ya?ml$/.test(file)
+        )) {
+            const candidate = loadWorkflow(file).parsed;
+            callers += assertVerifiedPnpmCallers(candidate, file === 'wasm-artifacts.yml');
+        }
+        expect(callers).toBe(28);
+
+        const oldBootstrap = structuredClone(validationWorkflow);
+        stepNamed(jobAt(oldBootstrap, 'lint'), PNPM_SETUP_STEP).uses =
+            'pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86';
+        expect(() => assertVerifiedPnpmCallers(oldBootstrap, false)).toThrow('verified pnpm acquisition');
+        const mismatchedRuntime = structuredClone(nightly);
+        recordAt(stepNamed(jobAt(mismatchedRuntime, 'build'), NODE_SETUP_STEP), 'with')['node-version'] = '22';
+        expect(() => assertVerifiedPnpmCallers(mismatchedRuntime, false)).toThrow(
+            'match the verified bootstrap runtime'
+        );
+        const unguardedDeploy = structuredClone(nightly);
+        delete stepNamed(jobAt(unguardedDeploy, DEPLOY_WEB_JOB), PNPM_SETUP_STEP).if;
+        expect(() => assertVerifiedPnpmCallers(unguardedDeploy, false)).toThrow('later Node caller and its admission');
+        const sourceAction = structuredClone(hostedWasm);
+        stepNamed(jobAt(sourceAction, 'build-artifacts'), PNPM_SETUP_STEP).uses = './source/.github/actions/setup-pnpm';
+        expect(() => assertVerifiedPnpmCallers(sourceAction, true)).toThrow('verified pnpm acquisition');
     });
 
     it('requires Set up pnpm immediately before Set up Node on every pnpm-cached nightly and heavy-lane job', () => {
@@ -4344,8 +4641,8 @@ describe('health gates workflow contract', () => {
         const expectedRun =
             'bash scripts/ensurePinnedRustToolchain.sh "${{ steps.pinned-toolchain.outputs.cache-hit }}"';
         for (const [workflow, jobName, cacheAction] of [
-            [validationWorkflow, 'rust', 'actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830'],
-            [seed, 'rust', 'actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830'],
+            [validationWorkflow, 'rust', 'actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9'],
+            [seed, 'rust', 'actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9'],
         ] as const) {
             const job = jobAt(workflow, jobName);
             const steps = arrayAt(job, 'steps').map((step) => asRecord(step, 'step'));
@@ -4445,6 +4742,26 @@ describe('health gates workflow contract', () => {
         expect(recordAt(unit, 'strategy')['fail-fast']).toBe(false);
     });
 
+    // Without the pinned build the real-render specs cold-start the image's full
+    // Chrome under shard load, which outran a 120s warm-up (run 42099824047).
+    it.each([
+        ['validation.yml', validationWorkflow],
+        ['nightly.yml', nightly],
+    ])('installs the pinned Chromium into the %s unit account between install and the shard', (_file, workflow) => {
+        const unit = jobAt(workflow, 'unit');
+        const steps = arrayAt(unit, 'steps');
+        const browsers = stepNamed(unit, 'Install Chromium');
+        expect(stringAt(browsers, 'run')).toBe(
+            'node scripts/runIsolatedUnitShard.ts browsers --context "${{ steps.unit_isolation.outputs.context }}"'
+        );
+        expect(steps.indexOf(browsers)).toBe(steps.indexOf(stepNamed(unit, 'Install dependencies')) + 1);
+        expect(steps.indexOf(browsers)).toBe(steps.indexOf(stepNamed(unit, 'Run shard')) - 1);
+        expect(browsers['timeout-minutes']).toBe(2);
+        expect(browsers.if).toBeUndefined();
+        expect(browsers['continue-on-error']).toBeUndefined();
+        expect(browsers.env).toBeUndefined();
+    });
+
     it('fetches provenance history in static validation and the unit matrix', () => {
         expect(() => assertUnitProvenanceHistory(validationWorkflow)).not.toThrow();
 
@@ -4468,6 +4785,11 @@ describe('health gates workflow contract', () => {
         expect(() => assertBrowserAiWebGpuJob(heavyWorkflow)).not.toThrow();
         expect(() => assertNightlyBrowserAiWebGpuJob(nightly)).not.toThrow();
         expect(() => assertBrowserAiWebGpuProofChain(packageManifest, browserAiWebGpuConfig)).not.toThrow();
+        // The whole-run limit must still fit the tests' own bounds after the
+        // cold warmup has spent all of its allowance.
+        expect(
+            BROWSER_AI_WEBGPU_GLOBAL_TIMEOUT_MS - COLD_FIRST_PAINT_TIMEOUT_MS - BROWSER_AI_WEBGPU_TESTS_MS
+        ).toBeGreaterThanOrEqual(BROWSER_AI_WEBGPU_RUN_OVERHEAD_MS);
         expect(BROWSER_AI_WEBGPU_GLOBAL_TIMEOUT_MS / 60_000).toBeLessThan(BROWSER_AI_WEBGPU_STEP_TIMEOUT_MINUTES);
         expect(BROWSER_AI_WEBGPU_STEP_TIMEOUT_MINUTES).toBeLessThan(BROWSER_AI_WEBGPU_JOB_TIMEOUT_MINUTES);
 
@@ -4518,11 +4840,11 @@ describe('health gates workflow contract', () => {
             }
         }
 
-        for (const runner of ['self-hosted', 'macos-14-large', 'macos-14-xlarge']) {
+        for (const runner of ['self-hosted', 'macos-14', 'macos-15-large', 'macos-15-xlarge']) {
             const premiumRunner = asRecord(structuredClone(heavyWorkflow), `${runner} Browser AI heavyWorkflow`);
             jobAt(premiumRunner, BROWSER_AI_WEBGPU_JOB)['runs-on'] = runner;
             expect(() => assertBrowserAiWebGpuJob(premiumRunner)).toThrow(
-                'Browser AI WebGPU job must use the standard macos-14 runner'
+                'Browser AI WebGPU job must use the standard macos-15 runner'
             );
         }
 
@@ -4743,53 +5065,55 @@ describe('health gates workflow contract', () => {
 
     it('requires selected PR and browser checks to succeed, including after cancellation', () => {
         const gateScript = assertGateContract(workflow, 'gate', 'Gate', GATE_CONDITION);
-        const requiredResults = (
-            codeql: 'true' | 'false',
-            overrides: Record<string, JobResult> = {},
-            admitted: 'true' | 'false' = 'true'
-        ) =>
+        const selectedMatrix = JSON.stringify({ include: [{ id: 1, specs: ['tests/e2e/export.spec.ts'] }] });
+        const requiredResults = (codeql: 'true' | 'false', overrides: Record<string, JobResult> = {}) =>
             JSON.stringify({
-                admission: {
-                    result: overrides.admission ?? 'success',
-                    outputs: { admitted, reason: 'the reviewer App has not approved head abc' },
-                },
                 scope: {
                     result: overrides.scope ?? 'success',
-                    outputs: { browser: 'true', 'browser-ai': 'false', codeql },
+                    outputs: { matrix: selectedMatrix, browser: 'true', 'browser-ai': 'false', codeql },
                 },
+                'e2e-build': { result: overrides['e2e-build'] ?? 'success' },
                 validation: { result: overrides.validation ?? 'success' },
                 affected: { result: overrides.affected ?? 'success' },
                 codeql: { result: overrides.codeql ?? (codeql === 'true' ? 'success' : 'skipped') },
             });
-        expect(runResultsGuard(gateScript, requiredResults('true'))).toBe(0);
-        expect(runResultsGuard(gateScript, requiredResults('false'))).toBe(0);
-        for (const dependency of ['admission', 'scope', 'validation', 'affected', 'codeql']) {
+        const gateStatus = (results: string, draft = 'false') =>
+            runResultsGuard(gateScript, results, { MATRIX: selectedMatrix, DRAFT: draft });
+        expect(gateStatus(requiredResults('true'))).toBe(0);
+        expect(gateStatus(requiredResults('false'))).toBe(0);
+        for (const dependency of ['scope', 'e2e-build', 'validation', 'affected', 'codeql']) {
             for (const result of ['failure', 'cancelled', 'skipped'] as const) {
-                expect(runResultsGuard(gateScript, requiredResults('true', { [dependency]: result }))).not.toBe(0);
+                expect(gateStatus(requiredResults('true', { [dependency]: result }))).not.toBe(0);
             }
         }
-        // A refused admission skips every heavy job; Gate must fail, never pass on the skips, and say why.
-        const refused = JSON.stringify({
-            admission: {
-                result: 'success',
-                outputs: { admitted: 'false', reason: 'the reviewer App has not approved head abc' },
-            },
+        const draft = JSON.stringify({
             scope: { result: 'skipped', outputs: {} },
+            'e2e-build': { result: 'skipped' },
             validation: { result: 'skipped' },
             affected: { result: 'skipped' },
             codeql: { result: 'skipped' },
         });
-        expect(runResultsGuard(gateScript, refused)).not.toBe(0);
+        expect(gateStatus(draft, 'true')).not.toBe(0);
+        const passingDraft = spawnSync('bash', ['-c', gateScript], {
+            encoding: 'utf8',
+            env: {
+                ...process.env,
+                RESULTS: requiredResults('false'),
+                DRAFT: 'true',
+                MATRIX: selectedMatrix,
+            },
+        });
+        expect(passingDraft.status).not.toBe(0);
+        expect(passingDraft.stdout).toBe('::error title=Gate refused::pull request is a draft\n');
         expect(
-            spawnSync('bash', ['-c', gateScript], { encoding: 'utf8', env: { ...process.env, RESULTS: refused } })
-                .stdout
-        ).toMatch(/^::error title=Gate not admitted::the reviewer App has not approved head abc\n/u);
-        expect(runResultsGuard(gateScript, requiredResults('true', {}, 'false'))).not.toBe(0);
-        expect(runResultsGuard(gateScript, requiredResults('false', { codeql: 'success' }))).not.toBe(0);
-        expect(
-            runResultsGuard(gateScript, requiredResults('true').replace('"browser":"true"', '"browser":""'))
-        ).not.toBe(0);
-        expect(runResultsGuard(gateScript, '{}')).not.toBe(0);
+            spawnSync('bash', ['-c', gateScript], {
+                encoding: 'utf8',
+                env: { ...process.env, RESULTS: draft, DRAFT: 'true', MATRIX: '' },
+            }).stdout
+        ).toMatch(/^::error title=Gate refused::pull request is a draft\n/u);
+        expect(gateStatus(requiredResults('false', { codeql: 'success' }))).not.toBe(0);
+        expect(gateStatus(requiredResults('true').replace('"browser":"true"', '"browser":""'))).not.toBe(0);
+        expect(gateStatus('{}')).not.toBe(0);
         const renamedGate = asRecord(structuredClone(workflow), 'renamed gate workflow');
         jobAt(renamedGate, 'gate').name = 'Health summary';
         expect(() => assertGateContract(renamedGate, 'gate', 'Gate', GATE_CONDITION)).toThrow(
@@ -4820,7 +5144,6 @@ describe('health gates workflow contract', () => {
                 'e2e-report': { result: report },
                 'browser-ai-webgpu': { result: hardware },
             });
-        const selectedMatrix = JSON.stringify({ include: [{ id: 1, specs: ['tests/e2e/export.spec.ts'] }] });
         const emptyMatrix = JSON.stringify({ include: [] });
         expect(
             runResultsGuard(heavyGateScript, browserResults('success', 'success', 'skipped'), {
@@ -4892,7 +5215,7 @@ describe('health gates workflow contract', () => {
         const step = stepNamed(gate, 'Require selected validation jobs to succeed');
         expect(step.if).toBe(GATE_CONDITION);
         expect(recordAt(step, 'env').RESULTS).toBe('${{ toJSON(needs) }}');
-        expect(recordAt(step, 'env').MODE).toBe('${{ inputs.mode }}');
+        expect(recordAt(step, 'env').MODE).toBeUndefined();
         const script = stringAt(step, 'run');
         const scope = runScopeScript(assertScopeContract(validationWorkflow), 'pull_request', {
             PROFILE: 'tooling',
@@ -4908,8 +5231,7 @@ describe('health gates workflow contract', () => {
             ])
         );
         results.decide = { result: 'success', outputs: scope };
-        const run = (value: unknown) =>
-            runResultsGuard(script, JSON.stringify(value), { PULL_REQUEST: 'true', MODE: 'full' });
+        const run = (value: unknown) => runResultsGuard(script, JSON.stringify(value), { PULL_REQUEST: 'true' });
         expect(run(results)).toBe(0);
         for (const outcome of ['failure', 'cancelled', 'skipped'] as const) {
             expect(run({ ...results, 'tooling-unit': { result: outcome } })).not.toBe(0);
@@ -4942,24 +5264,11 @@ describe('health gates workflow contract', () => {
             delete missingJob[job];
             expect(run(missingJob)).not.toBe(0);
         }
-        const preliminary = { ...full, ...Object.fromEntries(broadJobs.map((job) => [job, { result: 'skipped' }])) };
-        const runMode = (value: unknown, mode: string) =>
-            runResultsGuard(script, JSON.stringify(value), { PULL_REQUEST: 'true', MODE: mode });
-        expect(runMode(preliminary, 'preliminary')).toBe(0);
-        expect(runMode({ ...preliminary, lint: { result: 'failure' } }, 'preliminary')).not.toBe(0);
-        expect(runMode({ ...preliminary, unit: { result: 'success' } }, 'preliminary')).not.toBe(0);
-        for (const mode of ['', 'invalid']) {
-            expect(runMode(full, mode)).not.toBe(0);
-            expect(() =>
-                runScopeScript(assertScopeContract(validationWorkflow), 'pull_request', { MODE: mode })
-            ).toThrow();
-        }
         const wrongRequiredMode = cloneWorkflows('preliminary required validation');
         recordAt(jobAt(wrongRequiredMode.health, 'validation'), 'with').mode = 'preliminary';
-        expect(() => assertJobGraph(wrongRequiredMode)).toThrow();
-        const missingRequiredMode = cloneWorkflows('missing required validation mode');
-        delete recordAt(jobAt(missingRequiredMode.health, 'validation'), 'with').mode;
-        expect(() => assertJobGraph(missingRequiredMode)).toThrow();
+        expect(() => assertJobGraph(wrongRequiredMode)).toThrow(
+            'required browser smoke must consume the affected scope'
+        );
     });
 
     it('runs a trusted, credentialless scanner over the untrusted target history', () => {

@@ -6,9 +6,10 @@ import { type FileProviderKind, type LibraryRoot, type SampleRecord } from '../.
 import { defaultLibraryState, libraryStore } from '../../stores/libraryStore';
 import { resolveAgentCatalogCandidate } from '../resolveAgentCatalogCandidate';
 
-const mocks = vi.hoisted(() => ({ resolveDroppedSampleFile: vi.fn() }));
+const mocks = vi.hoisted(() => ({ resolveDroppedSampleFile: vi.fn(), ensureFactorySampleBuffer: vi.fn() }));
 
 vi.mock('../resolveDroppedSampleFile', () => ({ resolveDroppedSampleFile: mocks.resolveDroppedSampleFile }));
+vi.mock('../ensureFactorySampleBuffer', () => ({ ensureFactorySampleBuffer: mocks.ensureFactorySampleBuffer }));
 
 const NATIVE_ROOT_ID = 'user-library';
 
@@ -55,6 +56,7 @@ function seedLibrary(samples: SampleRecord[], roots: LibraryRoot[] = [factoryRoo
     libraryStore.set({ ...defaultLibraryState, roots, samples, folderTrees: {} });
 }
 
+const FACTORY_BUFFER = { duration: 1 } as unknown as AudioBuffer;
 const CANDIDATE_FILE = new File([new Uint8Array([1, 2, 3])], 'brushed.wav');
 
 function resolverReturnsFile(): void {
@@ -128,6 +130,52 @@ describe('resolveAgentCatalogCandidate', () => {
         });
     });
 
+    describe('factory candidate', () => {
+        beforeEach(() => {
+            seedLibrary([
+                buildRecord({ id: 'kick-1', displayName: 'Factory Kick', libraryRootId: FACTORY_LIBRARY_ROOT_ID }),
+            ]);
+        });
+
+        it('should resolve to the resident buffer under the sample id, without reading a file', async () => {
+            mocks.ensureFactorySampleBuffer.mockResolvedValue({ status: 'resolved', buffer: FACTORY_BUFFER });
+
+            const result = await resolveAgentCatalogCandidate({ candidateId: 'kick-1' });
+
+            if (result.status !== 'resolved') {
+                throw new Error(`Expected a resolved candidate, received "${result.reason}".`);
+            }
+            expect(result.source).toEqual({ kind: 'buffer', audioBufferId: 'kick-1', buffer: FACTORY_BUFFER });
+            expect(mocks.ensureFactorySampleBuffer).toHaveBeenCalledWith({ sampleId: 'kick-1' });
+            expect(mocks.resolveDroppedSampleFile).not.toHaveBeenCalled();
+        });
+
+        it('should report the file unavailable when the buffer is unavailable', async () => {
+            mocks.ensureFactorySampleBuffer.mockResolvedValue({ status: 'unavailable' });
+
+            const result = await resolveAgentCatalogCandidate({ candidateId: 'kick-1' });
+
+            expect(result).toEqual({ status: 'rejected', reason: 'file-unavailable' });
+        });
+
+        it('should report the file unavailable when obtaining the buffer throws', async () => {
+            mocks.ensureFactorySampleBuffer.mockRejectedValue(new Error('storage failed'));
+
+            const result = await resolveAgentCatalogCandidate({ candidateId: 'kick-1' });
+
+            expect(result).toEqual({ status: 'rejected', reason: 'file-unavailable' });
+        });
+
+        it('should leave a file record of another root to the file path', async () => {
+            resolverReturnsFile();
+            seedLibrary([buildRecord({ id: 'snare-1', displayName: 'Brushed Snare' })]);
+
+            await resolveAgentCatalogCandidate({ candidateId: 'snare-1' });
+
+            expect(mocks.ensureFactorySampleBuffer).not.toHaveBeenCalled();
+        });
+    });
+
     describe('resolved candidate', () => {
         it('should hand back the resolver file itself and name the record the way the library reads it', async () => {
             resolverReturnsFile();
@@ -145,7 +193,7 @@ describe('resolveAgentCatalogCandidate', () => {
             if (result.status !== 'resolved') {
                 throw new Error(`Expected a resolved candidate, received "${result.reason}".`);
             }
-            expect(result.file).toBe(CANDIDATE_FILE);
+            expect(result.source).toEqual({ kind: 'file', file: CANDIDATE_FILE });
             expect(mocks.resolveDroppedSampleFile).toHaveBeenCalledWith({
                 libraryRootId: NATIVE_ROOT_ID,
                 relativePath: 'snares/brushed.wav',
@@ -168,7 +216,7 @@ describe('resolveAgentCatalogCandidate', () => {
         });
 
         it('should carry the factory root name and its bundled licensing', async () => {
-            resolverReturnsFile();
+            mocks.ensureFactorySampleBuffer.mockResolvedValue({ status: 'resolved', buffer: FACTORY_BUFFER });
             seedLibrary([
                 buildRecord({ id: 'kick-1', displayName: 'Factory Kick', libraryRootId: FACTORY_LIBRARY_ROOT_ID }),
             ]);

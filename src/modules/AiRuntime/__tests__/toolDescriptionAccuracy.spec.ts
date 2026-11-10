@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { MIDI_TRANSFORM_IMPLEMENTATIONS } from '#/modules/AiGeneration/useCases';
 import { getBuiltinPlugins, getMixRecipeCatalog } from '#/modules/Arrangement/useCases';
 import { getAgentMeasurementMetricIds } from '#/modules/AudioAnalysis/useCases';
@@ -19,6 +20,8 @@ import { getAgentToolCatalogEntries } from '../useCases/getAgentToolCatalogEntri
 import { getMidiNoteGenerationToolSchemas } from '../useCases/getMidiNoteGenerationToolSchemas';
 import { getPlanningProviderToolSchemas } from '../useCases/getPlanningProviderToolSchemas';
 import { getPlanningProviderSchemaContract } from '../useCases/planningProviderSchema';
+
+registerDeviceEnginePorts();
 
 /**
  * Every description a planner reads cites identifiers: device parameter ids, tool and command names,

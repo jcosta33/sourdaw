@@ -1,7 +1,16 @@
 import { raceAbortSignal } from '#/infra/audioWorklet/raceAbortSignal';
 import { createReadyHandshake, ensureWorkletRegistered, fetchWasmModule } from '#/infra/audioWorklet/workletInitShared';
 
-import processorUrl from '../services/transientShaperProcessor.ts?worker&url';
+import {
+    createTransientShaperControl,
+    NO_IMMEDIATE_FRAME,
+    type TransientShaperControl,
+    writeTransientShaperImmediateGain,
+    writeTransientShaperResetEpoch,
+} from '../models/TransientShaperControl';
+import processorUrl from '../worklets/transientShaperProcessor.ts?worker&url';
+
+import { requireSharedArrayBuffer } from './pluginHostingErrors';
 
 const RESET_FAULT_EPOCH = 16_777_215;
 const DISPOSE_TIMEOUT_MS = 1000;
@@ -29,7 +38,7 @@ export function isTransientShaperDevice(type: string): boolean {
     return type === 'transient-shaper';
 }
 
-export function isTransientShaperParameter(name: string): boolean {
+export function isTransientShaperParameter(name: string): name is 'attackGain' | 'sustainGain' {
     return name === 'attackGain' || name === 'sustainGain';
 }
 
@@ -37,13 +46,13 @@ function bounded(value: number): number {
     return Math.min(2, Math.max(0, value));
 }
 
-function createGainControls(context: BaseAudioContext, param: (name: string) => AudioParam | undefined) {
-    const time = (frame?: number): number => {
-        if (frame === undefined) {
-            return context.currentTime;
-        }
-        return Math.max(context.currentTime, frameTime(frame, context.sampleRate));
-    };
+function createGainControls(
+    context: BaseAudioContext,
+    param: (name: string) => AudioParam | undefined,
+    control: TransientShaperControl
+) {
+    const currentFrame = (): number => Math.round(context.currentTime * context.sampleRate);
+    const time = (frame: number): number => frameTime(Math.max(currentFrame(), frame), context.sampleRate);
     return {
         setParam(name: string, value: number, sampleFrame?: number): void {
             if (
@@ -52,7 +61,21 @@ function createGainControls(context: BaseAudioContext, param: (name: string) => 
             ) {
                 return;
             }
-            param(name)?.setValueAtTime(bounded(value), time(sampleFrame));
+            const target = param(name);
+            if (!target) {
+                return;
+            }
+            const now = currentFrame();
+            const frame = Math.max(now, sampleFrame ?? now);
+            const gain = bounded(value);
+            target.setValueAtTime(gain, time(frame));
+            // Chromium clamps an event before `currentTime` up to it, and a
+            // `currentTime` that sits above its integer frame lands one sample
+            // late, so only the shared control block reaches the frame a write
+            // made now is for.
+            if (frame === now && isTransientShaperParameter(name)) {
+                writeTransientShaperImmediateGain(control, name, gain, frame);
+            }
         },
         acceptsScheduledParam: isTransientShaperParameter,
         scheduleParam(name: string, segments: readonly OfflineAutomationSegment[]): void {
@@ -60,6 +83,7 @@ function createGainControls(context: BaseAudioContext, param: (name: string) => 
             if (!target) {
                 return;
             }
+            let reachesNow = false;
             for (const segment of segments) {
                 if (
                     !Number.isSafeInteger(segment.startFrame) ||
@@ -75,6 +99,12 @@ function createGainControls(context: BaseAudioContext, param: (name: string) => 
                 if (segment.endFrame > segment.startFrame) {
                     target.linearRampToValueAtTime(bounded(segment.endValue), time(segment.endFrame));
                 }
+                reachesNow ||= segment.startFrame <= currentFrame();
+            }
+            // An immediate write is only ever for the current frame, so
+            // automation that reaches it must decide that frame instead.
+            if (reachesNow && isTransientShaperParameter(name)) {
+                writeTransientShaperImmediateGain(control, name, 1, NO_IMMEDIATE_FRAME);
             }
         },
     };
@@ -88,6 +118,8 @@ export async function createTransientShaperNode(
     if (typeof AudioContext !== 'undefined' && context instanceof AudioContext && context.state === 'suspended') {
         await raceAbortSignal(context.resume(), signal);
     }
+    requireSharedArrayBuffer('Transient Shaper');
+    const { buffer: controlBuffer, control } = createTransientShaperControl(0);
     await raceAbortSignal(ensureWorkletRegistered(context, processorUrl), signal);
     const lease = await raceAbortSignal(
         fetchWasmModule({ ctx: context, bundleId: 'daw-dsp', url: '/wasm/daw-dsp/daw_dsp_bg.wasm', signal }),
@@ -103,19 +135,20 @@ export async function createTransientShaperNode(
             channelCount: 2,
             channelCountMode: 'explicit',
             channelInterpretation: 'speakers',
-            processorOptions: { wasmModule: lease.module },
+            processorOptions: { wasmModule: lease.module, control: controlBuffer },
         });
         lease.commit();
     } catch (error) {
         lease.release();
         throw error;
     }
-    return createTransientShaperController(context, workletNode, signal, onRuntimeFailure);
+    return createTransientShaperController(context, workletNode, control, signal, onRuntimeFailure);
 }
 
 function createTransientShaperController(
     context: BaseAudioContext,
     workletNode: AudioWorkletNode,
+    control: TransientShaperControl,
     signal?: AbortSignal,
     onRuntimeFailure?: (message: string) => void
 ) {
@@ -179,7 +212,7 @@ function createTransientShaperController(
         }
         return workletNode.parameters.get(name);
     };
-    const gainControls = createGainControls(context, param);
+    const gainControls = createGainControls(context, param, control);
     workletNode.port.postMessage({ type: 'init' });
     return {
         workletNode,
@@ -194,10 +227,12 @@ function createTransientShaperController(
             }
             bypassed = value;
             epoch++;
-            // A scheduled currentTime can round into the next quantum. Publish
-            // the intrinsic value too, with no older private timeline to override it.
+            // The k-rate value can land a whole quantum late (see the gain
+            // writes), so the shared control block carries the same epoch to
+            // the next quantum.
             resetParam.cancelScheduledValues(0);
             resetParam.value = epoch;
+            writeTransientShaperResetEpoch(control, epoch);
             if (epoch === RESET_FAULT_EPOCH) {
                 fail('Transient Shaper reset epoch exhausted');
             }

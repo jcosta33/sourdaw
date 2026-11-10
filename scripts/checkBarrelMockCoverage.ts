@@ -65,7 +65,6 @@ const sourceRoot = join(repoRoot, 'src');
 /**
  * The four contract-folder barrels (ADR 0006). A module's public surface is only
  * ever one of these, so this list is the population definition, not a sample.
- * `Common/` and `Supporting/` are the namespaced module groups.
  */
 export const allBarrelKinds = ['useCases', 'stores', 'events', 'presentations/views'] as const;
 
@@ -86,9 +85,7 @@ export const gatedBarrelKinds: ReadonlyArray<(typeof allBarrelKinds)[number]> = 
 
 function buildBarrelPattern(kinds: ReadonlyArray<string>): RegExp {
     const kindAlternation = kinds.map((kind) => kind.replace('/', '\\/')).join('|');
-    return new RegExp(
-        `^#\\/modules\\/[A-Za-z0-9]+(?:\\/(?:Common|Supporting)\\/[A-Za-z0-9]+)?\\/(?:${kindAlternation})$`
-    );
+    return new RegExp(`^#\\/modules\\/[A-Za-z0-9]+\\/(?:${kindAlternation})$`);
 }
 
 const moduleExtensions = ['.ts', '.tsx', '.js', '.jsx'] as const;
@@ -144,7 +141,6 @@ const exemptions: ReadonlyArray<ExemptionRow> = [
         barrel: '#/modules/MIDI/stores',
         missingKeys: [
             'GROOVE_CONSUMER_TYPES',
-            'LEGACY_MIDI_PROBABILITY_SEED',
             'canonicalizeGrooveConsumerId',
             'chordTrackStore',
             'defaultChordTrackState',
@@ -164,25 +160,9 @@ const exemptions: ReadonlyArray<ExemptionRow> = [
         reason: "Reachable via this spec's graph but never read by its tests (verified passing).",
     },
     {
-        spec: 'src/modules/CommandInterface/useCases/keyboardShortcutActions/__tests__/handleKeyboardShortcut.spec.ts',
-        barrel: '#/modules/Arrangement/stores',
-        missingKeys: ['markerStore', 'resolveEligibleDeviceWriteTarget'],
-        reason: "Reachable via this spec's graph but never read by its tests (verified passing).",
-    },
-    {
         spec: 'src/modules/Crust/useCases/crustParamBridge/__tests__/loadCrustPatchWithAudio.spec.ts',
         barrel: '#/modules/Arrangement/stores',
-        missingKeys: [
-            'appendClipToTrack',
-            'clipSelectionStore',
-            'gainEnvelopeStore',
-            'getTrackEligibility',
-            'markerStore',
-            'resolveEligibleClipWriteTarget',
-            'takeLaneStore',
-            'updateClipInStore',
-            'vcaGroupStore',
-        ],
+        missingKeys: ['clipSelectionStore', 'getTrackEligibility', 'markerStore', 'updateClipInStore'],
         reason: "Reachable via this spec's graph but never read by its tests (verified passing).",
     },
     {
@@ -220,56 +200,49 @@ const exemptions: ReadonlyArray<ExemptionRow> = [
     {
         spec: 'src/modules/Transport/useCases/__tests__/ensureTrackStrips.spec.ts',
         barrel: '#/modules/Arrangement/stores',
-        missingKeys: [
-            'appendClipToTrack',
-            'clipSelectionStore',
-            'gainEnvelopeStore',
-            'resolveEligibleClipWriteTarget',
-            'updateClipInStore',
-            'vcaGroupStore',
-        ],
+        missingKeys: ['clipSelectionStore', 'updateClipInStore'],
         reason: "Reachable via this spec's graph but never read by its tests (verified passing).",
     },
     {
         spec: 'src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerSeamNotes.spec.ts',
         barrel: '#/modules/Arrangement/stores',
-        missingKeys: ['appendClipToTrack', 'clipSelectionStore', 'resolveEligibleClipWriteTarget', 'updateClipInStore'],
+        missingKeys: ['clipSelectionStore'],
         reason: "Reachable via this spec's graph but never read by its tests (verified passing).",
     },
     {
         spec: 'src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerLoopSeamTiming.spec.ts',
         barrel: '#/modules/Arrangement/stores',
-        missingKeys: ['appendClipToTrack', 'clipSelectionStore', 'resolveEligibleClipWriteTarget', 'updateClipInStore'],
+        missingKeys: ['clipSelectionStore'],
         reason: "Seam-notes harness family; reachable via this spec's graph but never read by its tests (verified passing).",
     },
     {
         spec: 'src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerTempoChangePosition.spec.ts',
         barrel: '#/modules/Arrangement/stores',
-        missingKeys: ['appendClipToTrack', 'clipSelectionStore', 'resolveEligibleClipWriteTarget', 'updateClipInStore'],
+        missingKeys: ['clipSelectionStore'],
         reason: "Seam-notes harness family; reachable via this spec's graph but never read by its tests (verified passing).",
     },
     {
         spec: 'src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerSeamHandover.spec.ts',
         barrel: '#/modules/Arrangement/stores',
-        missingKeys: ['appendClipToTrack', 'clipSelectionStore', 'resolveEligibleClipWriteTarget', 'updateClipInStore'],
+        missingKeys: ['clipSelectionStore'],
         reason: "Seam-notes harness family; reachable via this spec's graph but never read by its tests (verified passing).",
     },
     {
         spec: 'src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerSeamEdit.spec.ts',
         barrel: '#/modules/Arrangement/stores',
-        missingKeys: ['appendClipToTrack', 'clipSelectionStore', 'resolveEligibleClipWriteTarget', 'updateClipInStore'],
+        missingKeys: ['clipSelectionStore'],
         reason: "Seam-notes harness family; reachable via this spec's graph but never read by its tests (verified passing).",
     },
     {
         spec: 'src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerSeamPunch.spec.ts',
         barrel: '#/modules/Arrangement/stores',
-        missingKeys: ['appendClipToTrack', 'clipSelectionStore', 'resolveEligibleClipWriteTarget', 'updateClipInStore'],
+        missingKeys: ['clipSelectionStore'],
         reason: "Seam-notes harness family; reachable via this spec's graph but never read by its tests (verified passing).",
     },
     {
         spec: 'src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotesYeastContentOffset.spec.ts',
         barrel: '#/modules/Arrangement/stores',
-        missingKeys: ['appendClipToTrack', 'clipSelectionStore', 'resolveEligibleClipWriteTarget', 'updateClipInStore'],
+        missingKeys: ['clipSelectionStore'],
         reason: 'Yeast offset harness; the omitted Arrangement keys are never read by its tests (verified passing).',
     },
     {
@@ -281,7 +254,7 @@ const exemptions: ReadonlyArray<ExemptionRow> = [
     {
         spec: 'src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotesYeastGrooveWindowAdmission.spec.ts',
         barrel: '#/modules/Arrangement/stores',
-        missingKeys: ['appendClipToTrack', 'clipSelectionStore', 'resolveEligibleClipWriteTarget', 'updateClipInStore'],
+        missingKeys: ['clipSelectionStore'],
         reason: 'Yeast groove-admission harness; the omitted Arrangement keys are never read by its tests (verified passing).',
     },
     {
@@ -774,7 +747,14 @@ export function readFileFacts(absolutePath: string, contents: string): FileFacts
                         }
                     }
                 }
-                addImport(node.moduleSpecifier.text, names);
+                const hasOnlyInlineTypeBindings =
+                    clause.namedBindings !== undefined &&
+                    ts.isNamedImports(clause.namedBindings) &&
+                    clause.namedBindings.elements.length > 0 &&
+                    names.length === 0;
+                if (!hasOnlyInlineTypeBindings) {
+                    addImport(node.moduleSpecifier.text, names);
+                }
             } else if (!clause) {
                 addImport(node.moduleSpecifier.text, []);
             }
@@ -786,7 +766,10 @@ export function readFileFacts(absolutePath: string, contents: string): FileFacts
                     const names = node.exportClause.elements
                         .filter((element) => !element.isTypeOnly)
                         .map((element) => (element.propertyName ?? element.name).text);
-                    addImport(node.moduleSpecifier.text, names);
+                    const hasOnlyInlineTypeBindings = node.exportClause.elements.length > 0 && names.length === 0;
+                    if (!hasOnlyInlineTypeBindings) {
+                        addImport(node.moduleSpecifier.text, names);
+                    }
                 } else {
                     addImport(node.moduleSpecifier.text, ['*']);
                 }
@@ -876,7 +859,7 @@ export type AnalyzeInput = {
     exemptions?: ReadonlyArray<ExemptionRow>;
 };
 
-/** `#/modules/Foo/Common/Bar/presentations/views` → `presentations/views`. No kind
+/** `#/modules/Foo/presentations/views` → `presentations/views`. No kind
  * is a suffix of another, so the suffix test partitions unambiguously. */
 function kindOfSpecifier(specifier: string): string | undefined {
     return allBarrelKinds.find((kind) => specifier.endsWith(`/${kind}`));

@@ -10,6 +10,7 @@ import { createModelProviderFailureError, isModelProviderFailureError } from '..
 import { isToolPlanningRejectedError } from '../../errors/ToolPlanningRejectedError';
 import { type AgentDataCategory } from '../../models/AgentDataPolicy';
 import { MANDATORY_PLANNING_TOOL_NAMES } from '../../models/AgentToolCatalogNames';
+import { ANSWER_INTERPRETATION_TOOL_NAME } from '../../models/AnswerInterpretation';
 import { CREATIVE_INTERPRETATION_TOOL_NAME } from '../../models/CreativeInterpretation';
 import { type HostedTurnHistory } from '../../models/HostedTurnHistory';
 import { type RunnableAiBackend } from '../../models/LlmOrchestrationTypes';
@@ -30,6 +31,7 @@ import {
     type ModelProviderResult,
     type ModelProviderSession,
     type ModelProviderStreamIdentity,
+    type ModelProviderToolCallSchemaMismatch,
 } from '../../models/ModelProviderProtocol';
 import { MODEL_TEXT_MAX_INPUT_TOKENS } from '../../models/ModelTextRequestLimits';
 import { type ToolSchema } from '../../models/ToolDefinitions';
@@ -64,6 +66,7 @@ import {
     ANALYSIS_COMPARE_REFERENCE_TOOL_NAME,
     ANALYSIS_DETECT_TRANSIENTS_TOOL_NAME,
     ANALYSIS_MEASURE_TOOL_NAME,
+    BRIEF_COMPILE_TOOL_NAME,
     COMMAND_BATCH_PROPOSAL_TOOL_NAME,
 } from '../agentToolCatalog';
 import { createModelProviderStreamWriter } from '../createModelProviderStreamWriter';
@@ -75,18 +78,17 @@ import { declareHostedTurnDataCategories } from './declareHostedTurnDataCategori
 import { decodeHostedProposalWireCall } from './decodeHostedProposalWireCall';
 import { getHostedProposalWireToolSchema } from './getHostedProposalWireToolSchema';
 
-// What WebLLM advertises on every request: the nine mandatory planning tools, the command-index
-// search, catalog discovery and the creative interpretation tool.
+// The core planning contract and whichever interpretation control this live phase publishes.
 const WEBLLM_APPLICATION_TOOL_NAMES: ReadonlySet<string> = new Set([
     ...MANDATORY_PLANNING_TOOL_NAMES,
     AGENT_COMMAND_INDEX_SEARCH_TOOL_NAME,
     AGENT_CATALOG_DISCOVERY_TOOL_NAME,
     CREATIVE_INTERPRETATION_TOOL_NAME,
+    ANSWER_INTERPRETATION_TOOL_NAME,
 ]);
 
-// The mandatory planning contract (workflow selector, twelve application tools, the 23 workflow
-// action tools: 36) plus one prompt-selected slot; the budget bounds browser prompt size, not a
-// provider limit. Raise it with the mandatory set, never below it plus one free slot.
+// Retain the established ceiling while phases publish fewer mandatory tools. Exactly one optional
+// or discovered tool is selected below; spare ceiling capacity never admits another command.
 export const WEBLLM_TOOL_BUDGET = 37;
 
 /**
@@ -105,6 +107,11 @@ type HostedTurnRequest = {
     localReceiptContextComplete?: boolean;
     /** Application-selected ceiling; absent callers retain the configured planning budget. */
     maxOutputTokens?: number;
+    /**
+     * The caller answers a call whose schema the provider did not enforce, and whose arguments miss
+     * it, with a correctable receipt of its own. Absent, such a call fails the attempt as before.
+     */
+    answersSchemaInvalidCalls?: true;
 };
 
 /**
@@ -201,6 +208,29 @@ function admissibleSchemaValue(value: unknown, schema: unknown): unknown {
         return admissible;
     }
     return value;
+}
+
+/**
+ * Whether a call's schema mismatch is the caller's to answer: only when the caller said it answers
+ * one and the provider did not enforce that tool's schema. A WebLLM reply is free text parsed into
+ * calls, so nothing enforced it; a hosted one followed the request's strictness, tool by tool.
+ */
+function toolCallSchemaMismatch(input: {
+    backend: RunnableAiBackend;
+    cloudToolPlan: HostedToolPlan | null;
+    toolName: string;
+    answersSchemaInvalidCalls: boolean;
+}): ModelProviderToolCallSchemaMismatch {
+    if (!input.answersSchemaInvalidCalls) {
+        return 'fail-attempt';
+    }
+    if (input.backend === 'webllm') {
+        return 'admit-as-violation';
+    }
+    const plan = input.cloudToolPlan;
+    const enforced =
+        plan !== null && plan.strictToolSchemas && plan.nonStrictToolNames?.includes(input.toolName) !== true;
+    return enforced ? 'fail-attempt' : 'admit-as-violation';
 }
 
 function admissibleToolCallArguments(
@@ -545,12 +575,14 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                     const applicationTools = toolSchemas.filter((tool) =>
                         WEBLLM_APPLICATION_TOOL_NAMES.has(tool.function.name)
                     );
-                    // The reference comparison is not mandatory and is never offered locally.
+                    // The reference comparison and the brief compiler are not mandatory and are never
+                    // offered locally.
                     const actionTools = toolSchemas.filter(
                         (tool) =>
                             tool.function.name !== WORKFLOW_CAPABILITY_TOOL_NAME &&
                             !WEBLLM_APPLICATION_TOOL_NAMES.has(tool.function.name) &&
                             tool.function.name !== ANALYSIS_COMPARE_REFERENCE_TOOL_NAME &&
+                            tool.function.name !== BRIEF_COMPILE_TOOL_NAME &&
                             tool.function.name !== ANALYSIS_DETECT_TRANSIENTS_TOOL_NAME
                     );
                     const selectedActionTools = selectExecutableAppActionToolSchemasForPrompt({
@@ -577,7 +609,10 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                     const mandatoryTools = [...workflowSelectionTools, ...applicationTools, ...workflowActionTools];
                     providerTools = [
                         ...mandatoryTools,
-                        ...promptActionTools.slice(0, Math.max(0, WEBLLM_TOOL_BUDGET - mandatoryTools.length)),
+                        ...promptActionTools.slice(
+                            0,
+                            Math.min(1, Math.max(0, WEBLLM_TOOL_BUDGET - mandatoryTools.length))
+                        ),
                     ];
                     logger.info(
                         `[AI Engine] (webllm) Using ${String(providerTools.length)}/${String(toolSchemas.length)} tools`
@@ -802,6 +837,12 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                                 name: call.name,
                                 arguments: admissibleToolCallArguments(call.arguments, advertisedTool),
                             },
+                            schemaMismatch: toolCallSchemaMismatch({
+                                backend,
+                                cloudToolPlan,
+                                toolName: call.name,
+                                answersSchemaInvalidCalls: hostedTurn?.answersSchemaInvalidCalls === true,
+                            }),
                         });
                     }
                     const normalizedResult = providerSource.finish({ reason: 'stop' });
@@ -817,16 +858,23 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                     logger.info(
                         `[AI Engine] (${backend}) ${String(outcome.toolCalls.length)} tool call(s): ${outcome.toolCalls.map((call) => call.name).join(', ')}`
                     );
-                    const normalizedToolCalls = normalizedResult.output.toolCalls.map((call, index) => ({
-                        ...(providerCallIds[index] === undefined ? {} : { id: providerCallIds[index] }),
-                        name: call.name,
-                        arguments: call.arguments,
-                    }));
+                    const normalizedToolCalls: ToolCallResult[] = normalizedResult.output.toolCalls.map(
+                        (call, index) => ({
+                            ...(providerCallIds[index] === undefined ? {} : { id: providerCallIds[index] }),
+                            name: call.name,
+                            arguments: call.arguments,
+                            ...(call.argumentSchemaViolation === undefined
+                                ? {}
+                                : { argumentSchemaViolation: call.argumentSchemaViolation }),
+                        })
+                    );
                     if (strictHostedProposalWire) {
                         for (const [index, call] of normalizedToolCalls.entries()) {
+                            // A call that misses its wire schema keeps the arguments it was refused for.
                             if (
-                                call.name !== COMMAND_BATCH_PROPOSAL_TOOL_NAME &&
-                                call.name !== ANALYSIS_MEASURE_TOOL_NAME
+                                call.argumentSchemaViolation !== undefined ||
+                                (call.name !== COMMAND_BATCH_PROPOSAL_TOOL_NAME &&
+                                    call.name !== ANALYSIS_MEASURE_TOOL_NAME)
                             ) {
                                 continue;
                             }
@@ -856,7 +904,9 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                     outcome = {
                         status: 'complete',
                         toolCalls: normalizedToolCalls,
-                        proposal: extractAgentPlanProposal(normalizedToolCalls),
+                        proposal: extractAgentPlanProposal(
+                            normalizedToolCalls.filter((call) => call.argumentSchemaViolation === undefined)
+                        ),
                         ...(cloudToolPlan === null || hostedProvider === undefined
                             ? {}
                             : {

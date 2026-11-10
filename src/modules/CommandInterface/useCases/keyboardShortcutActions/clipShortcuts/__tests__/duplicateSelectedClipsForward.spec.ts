@@ -1,210 +1,213 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { type RetiredTakeLaneSnapshot } from '#/utils/handlerContract';
+import { type executeAppActionBatch } from '#/modules/Command/useCases';
 
-const {
-    mockTrackStore,
-    mockAddClip,
-    mockRemoveClip,
-    mockCaptureRetiredTakeLanes,
-    mockRestoreTakesForClip,
-    mockDuplicateClipAutomation,
-    mockPushUndoEntry,
-} = vi.hoisted(() => ({
-    mockTrackStore: {
-        value: {
-            tracks: [
-                {
-                    id: 't1',
-                    name: 'Track 1',
-                    clips: [
-                        {
-                            id: 'c1',
-                            name: 'Clip A',
-                            startBeat: 0,
-                            endBeat: 4,
-                            type: 'audio',
-                            audioBufferId: 'buf-1',
-                        },
-                        {
-                            id: 'c2',
-                            name: 'Clip B',
-                            startBeat: 8,
-                            endBeat: 12,
-                            type: 'midi',
-                        },
-                    ],
-                },
-            ],
+type BatchResult = Awaited<ReturnType<typeof executeAppActionBatch>>;
+
+const { mockTrackStore, mockExecuteAppActionBatch, mockNotifyUser, mockSetClipSelection, mockPrepareTargetId } =
+    vi.hoisted(() => ({
+        mockSetClipSelection: vi.fn(),
+        mockPrepareTargetId: vi.fn<() => string>(),
+        mockTrackStore: {
+            value: {
+                tracks: [
+                    {
+                        id: 't1',
+                        name: 'Track 1',
+                        clips: [
+                            { id: 'c1', name: 'Clip A', startBeat: 0, endBeat: 4, type: 'audio' },
+                            { id: 'c2', name: 'Clip B', startBeat: 8, endBeat: 12, type: 'midi' },
+                        ],
+                    },
+                    {
+                        id: 't2',
+                        name: 'Track 2',
+                        clips: [
+                            { id: 'c3', name: 'Clip C', startBeat: 2, endBeat: 6, type: 'audio' },
+                            { id: 'empty', name: 'Empty', startBeat: 20, endBeat: 20, type: 'audio' },
+                        ],
+                    },
+                ],
+            },
         },
-    },
-    mockAddClip: vi.fn<() => { id: string } | null>(() => ({ id: 'new-clip' })),
-    mockRemoveClip: vi.fn(),
-    mockCaptureRetiredTakeLanes: vi.fn<(clipIds: readonly string[]) => RetiredTakeLaneSnapshot[]>(() => []),
-    mockRestoreTakesForClip: vi.fn(),
-    mockDuplicateClipAutomation: vi.fn(),
-    mockPushUndoEntry: vi.fn(),
-}));
+        mockExecuteAppActionBatch: vi.fn<(...args: unknown[]) => Promise<BatchResult>>(),
+        mockNotifyUser: vi.fn(),
+    }));
 
 vi.mock('#/modules/Arrangement/stores', () => ({ trackStore: mockTrackStore }));
 vi.mock('#/modules/Arrangement/useCases', () => ({
-    addClip: mockAddClip,
-    removeClip: mockRemoveClip,
-    captureRetiredTakeLanes: mockCaptureRetiredTakeLanes,
-    restoreTakesForClip: mockRestoreTakesForClip,
+    prepareDuplicateClipTargetId: mockPrepareTargetId,
+    setClipSelection: mockSetClipSelection,
 }));
-vi.mock('#/modules/Automation/useCases', () => ({ duplicateClipAutomation: mockDuplicateClipAutomation }));
-vi.mock('#/modules/Command/useCases', () => ({
-    pushUndoEntry: mockPushUndoEntry,
-    executeUserAppAction: vi.fn(),
-    REDO_NOT_APPLIED: Symbol('REDO_NOT_APPLIED'),
-}));
+vi.mock('#/modules/Command/useCases', () => ({ executeAppActionBatch: mockExecuteAppActionBatch }));
+vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: mockNotifyUser }));
+vi.mock('#/infra/logger/appLogger', () => ({ logger: { error: vi.fn() } }));
 
 import { duplicateSelectedClipsForward } from '../duplicateSelectedClipsForward';
+
+function dispatchedBatch() {
+    expect(mockExecuteAppActionBatch).toHaveBeenCalledTimes(1);
+    const [actions, options] = mockExecuteAppActionBatch.mock.calls[0] as [unknown[], Record<string, unknown>];
+    return { actions, options };
+}
 
 describe('duplicateSelectedClipsForward', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        let nextCopy = 0;
+        mockPrepareTargetId.mockImplementation(() => `copy-${String((nextCopy += 1))}`);
+        mockExecuteAppActionBatch.mockResolvedValue({ status: 'committed', actions: [] });
     });
 
-    it('does nothing when no clips are selected', () => {
-        duplicateSelectedClipsForward([]);
-        expect(mockAddClip).not.toHaveBeenCalled();
-        expect(mockPushUndoEntry).not.toHaveBeenCalled();
+    it('dispatches nothing when no clips are selected', async () => {
+        await duplicateSelectedClipsForward([]);
+        expect(mockExecuteAppActionBatch).not.toHaveBeenCalled();
     });
 
-    it('does nothing when the store has no value', () => {
+    it('dispatches nothing when the store has no value', async () => {
         const original = mockTrackStore.value;
         (mockTrackStore as { value: unknown }).value = null;
-        duplicateSelectedClipsForward(['c1']);
+        await duplicateSelectedClipsForward(['c1']);
         mockTrackStore.value = original;
-        expect(mockAddClip).not.toHaveBeenCalled();
+        expect(mockExecuteAppActionBatch).not.toHaveBeenCalled();
     });
 
-    it('duplicates a single clip forward by its own span', () => {
-        duplicateSelectedClipsForward(['c1']);
-        // span = 4 - 0 = 4; new clip at beat 4-8
-        expect(mockAddClip).toHaveBeenCalledExactlyOnceWith({
-            trackId: 't1',
-            startBeat: 4,
-            endBeat: 8,
-            name: 'Clip A (copy)',
-            type: 'audio',
-            audioBufferId: 'buf-1',
-        });
-        expect(mockDuplicateClipAutomation).toHaveBeenCalledWith('c1', 'new-clip');
+    it('dispatches nothing when the selected ids match no clip', async () => {
+        await duplicateSelectedClipsForward(['nonexistent']);
+        expect(mockExecuteAppActionBatch).not.toHaveBeenCalled();
     });
 
-    it('duplicates multiple clips forward by the selection span', () => {
-        duplicateSelectedClipsForward(['c1', 'c2']);
-        // earliestStart = 0, latestEnd = 12, span = 12
-        // c1 → 12-16, c2 → 20-24
-        expect(mockAddClip).toHaveBeenCalledTimes(2);
-        const calls = mockAddClip.mock.calls as Array<Array<Record<string, unknown>>>;
-        const firstCall = calls[0]?.[0];
-        const secondCall = calls[1]?.[0];
-        expect(firstCall).toMatchObject({ startBeat: 12, endBeat: 16, name: 'Clip A (copy)' });
-        expect(secondCall).toMatchObject({ startBeat: 20, endBeat: 24, name: 'Clip B (copy)' });
+    it('dispatches nothing when the selection spans no time', async () => {
+        await duplicateSelectedClipsForward(['empty']);
+        expect(mockExecuteAppActionBatch).not.toHaveBeenCalled();
     });
 
-    it('pushes an undo entry with the correct label', () => {
-        duplicateSelectedClipsForward(['c1']);
-        expect(mockPushUndoEntry).toHaveBeenCalledTimes(1);
-        const label = mockPushUndoEntry.mock.calls[0]?.[0];
-        expect(label).toBe('Duplicate 1 clip forward');
-    });
+    it('dispatches one duplicateClipAt per selected clip in track order, each on its own track by the span', async () => {
+        // Selection order differs from track order on purpose.
+        await duplicateSelectedClipsForward(['c3', 'c2', 'c1']);
 
-    it('uses plural label when duplicating multiple clips', () => {
-        duplicateSelectedClipsForward(['c1', 'c2']);
-        const label = mockPushUndoEntry.mock.calls[0]?.[0];
-        expect(label).toBe('Duplicate 2 clips forward');
-    });
-
-    it('registers undo and redo closures that call removeClip and addClip respectively', () => {
-        duplicateSelectedClipsForward(['c1']);
-        const undoFn = mockPushUndoEntry.mock.calls[0]?.[1];
-        const redoFn = mockPushUndoEntry.mock.calls[0]?.[2];
-        const retiredTakeLanes: RetiredTakeLaneSnapshot[] = [
+        // earliestStart = 0, latestEnd = 12, span = 12.
+        const { actions } = dispatchedBatch();
+        expect(actions).toEqual([
             {
-                laneIndex: 0,
-                lane: {
-                    id: 'lane-1',
-                    trackId: 't1',
-                    takes: [
-                        {
-                            id: 'take-1',
-                            clipId: 'new-clip',
-                            name: 'Take',
-                            startBeat: 0,
-                            endBeat: 4,
-                            selected: false,
-                        },
-                    ],
-                    activeCompRegions: [],
-                },
-                retiredTakeIds: ['take-1'],
+                type: 'duplicateClipAt',
+                payload: { clipId: 'c1', destinationTrackId: 't1', startBeat: 12, targetClipId: 'copy-1' },
             },
-        ];
-        mockCaptureRetiredTakeLanes.mockReturnValue(retiredTakeLanes);
-        // Undo captures what the copies are carrying before it removes them.
-        undoFn();
-        expect(mockCaptureRetiredTakeLanes).toHaveBeenCalledWith(['new-clip']);
-        expect(mockRemoveClip).toHaveBeenCalledWith('new-clip');
-        // Redo creates the copies under the same ids and puts those takes back.
-        vi.clearAllMocks();
-        redoFn();
-        expect(mockAddClip).toHaveBeenCalledExactlyOnceWith({
-            id: 'new-clip',
-            trackId: 't1',
-            startBeat: 4,
-            endBeat: 8,
-            name: 'Clip A (copy)',
-            type: 'audio',
-            audioBufferId: 'buf-1',
+            {
+                type: 'duplicateClipAt',
+                payload: { clipId: 'c2', destinationTrackId: 't1', startBeat: 20, targetClipId: 'copy-2' },
+            },
+            {
+                type: 'duplicateClipAt',
+                payload: { clipId: 'c3', destinationTrackId: 't2', startBeat: 14, targetClipId: 'copy-3' },
+            },
+        ]);
+    });
+
+    it('runs every copy as one manual undo group', async () => {
+        await duplicateSelectedClipsForward(['c1', 'c2']);
+
+        const { options } = dispatchedBatch();
+        expect(options).toEqual({
+            groupId: expect.stringMatching(/^duplicate-clips-forward-.+/),
+            groupLabel: 'Duplicate 2 clips forward',
+            source: 'manual',
         });
-        expect(mockRestoreTakesForClip).toHaveBeenCalledWith(retiredTakeLanes);
     });
 
-    it('does nothing when selected clip ids do not match any clips in the store', () => {
-        duplicateSelectedClipsForward(['nonexistent']);
-        expect(mockAddClip).not.toHaveBeenCalled();
-        expect(mockPushUndoEntry).not.toHaveBeenCalled();
+    it('labels a single copy in the singular', async () => {
+        await duplicateSelectedClipsForward(['c1']);
+
+        const { actions, options } = dispatchedBatch();
+        expect(actions).toEqual([
+            {
+                type: 'duplicateClipAt',
+                payload: { clipId: 'c1', destinationTrackId: 't1', startBeat: 4, targetClipId: 'copy-1' },
+            },
+        ]);
+        expect(options.groupLabel).toBe('Duplicate 1 clip forward');
     });
 
-    it('restores only the capture of the copies it re-created', () => {
-        duplicateSelectedClipsForward(['c1', 'c2']);
-        const call = mockPushUndoEntry.mock.calls[0];
-        const undoFn = call?.[1];
-        const redoFn = call?.[2];
-        const firstCapture: RetiredTakeLaneSnapshot = {
-            laneIndex: 0,
-            lane: {
-                id: 'lane-a',
-                trackId: 't1',
-                takes: [{ id: 'take-a', clipId: 'new-clip', name: 'A', startBeat: 0, endBeat: 4, selected: false }],
-                activeCompRegions: [],
-            },
-            retiredTakeIds: ['take-a'],
-        };
-        const secondCapture: RetiredTakeLaneSnapshot = {
-            laneIndex: 1,
-            lane: {
-                id: 'lane-b',
-                trackId: 't1',
-                takes: [{ id: 'take-b', clipId: 'missing-copy', name: 'B', startBeat: 0, endBeat: 4, selected: false }],
-                activeCompRegions: [],
-            },
-            retiredTakeIds: ['take-b'],
-        };
-        // `...Once` throughout: `clearAllMocks` clears calls, not implementations, so a
-        // plain `mockReturnValue` here would leak into every later case in this file.
-        mockCaptureRetiredTakeLanes.mockReturnValueOnce([firstCapture, secondCapture]);
-        undoFn();
-        // Only the first copy comes back; the second's id is never minted again.
-        mockAddClip.mockReturnValueOnce({ id: 'new-clip' }).mockReturnValueOnce(null);
+    it('draws a fresh group for every press', async () => {
+        await duplicateSelectedClipsForward(['c1']);
+        await duplicateSelectedClipsForward(['c1']);
 
-        redoFn();
+        const groupIds = mockExecuteAppActionBatch.mock.calls.map(
+            (call) => (call[1] as Record<string, unknown>).groupId
+        );
+        expect(new Set(groupIds).size).toBe(2);
+    });
 
-        expect(mockRestoreTakesForClip).toHaveBeenCalledExactlyOnceWith([firstCapture]);
+    it.each(['rejected', 'conflicted'] as const)('tells the user when the batch is %s', async (status) => {
+        mockExecuteAppActionBatch.mockResolvedValueOnce({ status, reason: 'project is locked', actions: [] });
+
+        await duplicateSelectedClipsForward(['c1']);
+
+        expect(mockNotifyUser).toHaveBeenCalledExactlyOnceWith(
+            'Duplicate clips forward was refused: project is locked',
+            'warning'
+        );
+    });
+
+    it.each(['failed', 'cancelled'] as const)('propagates a %s batch instead of notifying', async (status) => {
+        mockExecuteAppActionBatch.mockResolvedValueOnce({ status, reason: 'handler threw', actions: [] });
+
+        await expect(duplicateSelectedClipsForward(['c1'])).rejects.toThrow(
+            'Duplicate clips forward failed: handler threw'
+        );
+        expect(mockNotifyUser).not.toHaveBeenCalled();
+    });
+
+    it('selects exactly the copies the batch named, so the next press chains after them', async () => {
+        await duplicateSelectedClipsForward(['c3', 'c2', 'c1']);
+
+        const { actions } = dispatchedBatch();
+        const named = (actions as { payload: { targetClipId: string } }[]).map((action) => action.payload.targetClipId);
+        expect(named).toEqual(['copy-1', 'copy-2', 'copy-3']);
+        expect(mockSetClipSelection).toHaveBeenCalledExactlyOnceWith(named);
+    });
+
+    it.each(['committed-with-warning', 'executed', 'executed-with-warning'] as const)(
+        'selects the copies when the batch ends %s',
+        async (status) => {
+            mockExecuteAppActionBatch.mockResolvedValueOnce({ status, warning: 'w', actions: [] });
+
+            await duplicateSelectedClipsForward(['c1']);
+
+            expect(mockSetClipSelection).toHaveBeenCalledExactlyOnceWith(['copy-1']);
+        }
+    );
+
+    it.each(['rejected', 'conflicted'] as const)(
+        'leaves the selection on the source when the batch is %s',
+        async (status) => {
+            mockExecuteAppActionBatch.mockResolvedValueOnce({ status, reason: 'locked', actions: [] });
+
+            await duplicateSelectedClipsForward(['c1']);
+
+            expect(mockSetClipSelection).not.toHaveBeenCalled();
+        }
+    );
+
+    it.each(['failed', 'cancelled'] as const)('leaves the selection alone when the batch %s', async (status) => {
+        mockExecuteAppActionBatch.mockResolvedValueOnce({ status, reason: 'boom', actions: [] });
+
+        await expect(duplicateSelectedClipsForward(['c1'])).rejects.toThrow();
+        expect(mockSetClipSelection).not.toHaveBeenCalled();
+    });
+
+    it('leaves the selection alone when the batch is a no-op or ambiguous', async () => {
+        mockExecuteAppActionBatch.mockResolvedValueOnce({ status: 'no-op', actions: [] });
+        mockExecuteAppActionBatch.mockResolvedValueOnce({ status: 'ambiguous', reason: 'x', actions: [] });
+
+        await duplicateSelectedClipsForward(['c1']);
+        await duplicateSelectedClipsForward(['c1']);
+
+        expect(mockSetClipSelection).not.toHaveBeenCalled();
+    });
+
+    it('stays silent when the batch commits', async () => {
+        await duplicateSelectedClipsForward(['c1']);
+        expect(mockNotifyUser).not.toHaveBeenCalled();
     });
 });

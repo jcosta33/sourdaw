@@ -1,5 +1,3 @@
-import { getChangesMetaSince, getHeads, hasHeads } from '@automerge/automerge';
-
 import { getClipAutomationMoveState } from '#/modules/Automation/useCases';
 import { commitRedoInverseCapture } from '#/modules/Command/useCases';
 import {
@@ -7,11 +5,9 @@ import {
     captureProjectIdentity,
     captureProjectMutationAuthorization,
     getCrdtDoc,
-    readOwnedProjectPublications,
     hasForeignPendingProjectWrites,
 } from '#/modules/CrdtDocument/useCases';
 import { decodeMidiClipDataSnapshots, getMidiStoreState, removeMidiClipData } from '#/modules/MIDI/useCases';
-import { workspaceStore } from '#/modules/WorkspaceShell/stores';
 import { createHandler } from '#/utils/createHandler';
 import {
     type ActionHandler,
@@ -22,6 +18,7 @@ import {
 import { valuesEqual } from '#/utils/structuralEquality';
 
 import { readClipSatelliteEntry } from '../../stores/clipSatelliteState';
+import { timelineEditingStore } from '../../stores/timelineEditingStore';
 import { sanitizeTrackSnapshot } from '../../stores/trackStore';
 import { readClipScopedAutomationLanes } from '../../useCases/clip/readClipScopedAutomationLanes';
 import { removeClip } from '../../useCases/clip/removeClip';
@@ -33,6 +30,7 @@ import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { planRippleDelete } from '../../useCases/rippleDelete/planRippleDelete';
 import { rippleDeleteClips } from '../../useCases/rippleDelete/rippleDeleteClips';
 
+import { captureClipReplayPublication } from './captureClipReplayPublication';
 import { createdClipMidiCapture } from './createdClipMidiCapture';
 import { isRemoveClipSessionPayload } from './isRemoveClipSessionPayload';
 import { pairedInverseForRedo } from './takeRetirementRedo';
@@ -164,30 +162,6 @@ function createdMidiMatchesCapture(
         valuesEqual(actual.controlChanges, expected.controlChanges) &&
         valuesEqual(actual.pitchBends, expected.pitchBends)
     );
-}
-
-/** The inverse producer owns document authority; Command only settles its staged history. */
-function captureRemovalPublication(owner: object): () => (() => boolean) | null {
-    const baseline = readOwnedProjectPublications(owner).length;
-    const identity = captureProjectIdentity();
-    return () => {
-        const publications = readOwnedProjectPublications(owner).slice(baseline);
-        if (publications.length === 0) {
-            return null;
-        }
-        return () =>
-            captureProjectIdentity() === identity &&
-            publications.every(({ docId, heads }) => {
-                const document = getCrdtDoc(docId);
-                if (!document || !hasHeads(document, [...heads])) {
-                    return false;
-                }
-                // A historical view shares backend futures and siblings. Only
-                // heads in the installed frontier's causal closure attest this write.
-                const outside = getChangesMetaSince(document, getHeads(document));
-                return heads.every((head) => !outside.some((change) => change.hash === head));
-            });
-    };
 }
 
 function findOwningTrackId(clipId: string): string | undefined {
@@ -360,7 +334,7 @@ function prepareRemovalCapturePublication(
             publicationAuthority: {
                 captureIdentity: captureProjectIdentity,
                 captureWitness: captureDurableDocumentWitness,
-                captureOwnedPublication: captureRemovalPublication,
+                captureOwnedPublication: captureClipReplayPublication,
             },
         });
     }
@@ -433,7 +407,7 @@ export const handleRemoveClip: ActionHandler<RemoveClipAction> = createHandler<'
             pendingRedoCaptures.delete(alpha);
             return { status: 'conflict' };
         }
-        const ripple = alpha.payload.ripple ?? workspaceStore.value?.rippleEditing ?? false;
+        const ripple = alpha.payload.ripple ?? timelineEditingStore.value?.rippleEditing ?? false;
         const pendingRedo = pendingRedoCaptures.get(alpha);
         pendingRedoCaptures.delete(alpha);
         const { sourceProof, committedResult } = prepareRemovalCapturePublication(

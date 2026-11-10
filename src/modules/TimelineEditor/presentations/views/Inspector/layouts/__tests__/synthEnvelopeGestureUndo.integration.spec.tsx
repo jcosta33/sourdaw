@@ -2,6 +2,7 @@ import { act, cleanup, fireEvent, render, renderHook, screen, waitFor, within } 
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { getProductionCommandHandlerMaps } from '#/app/getProductionCommandHandlerMaps';
+import { registerProjectSlotProjections } from '#/app/registerProjectSlotProjections';
 import { createMockAudioContext } from '#/helpers/__tests__/audioContext.mock';
 import {
     configureAutomergeStoragePort,
@@ -11,7 +12,12 @@ import { useStore } from '#/infra/store/useStore';
 import { installTransactionalIndexedDb } from '#/infra/testing/installTransactionalIndexedDb';
 import { type Device, type Track, trackStore } from '#/modules/Arrangement/stores';
 import { createTrack, getPluginById } from '#/modules/Arrangement/useCases';
-import { audioEngine, getAudioContext, updateDeviceParam } from '#/modules/AudioEngine/useCases';
+import {
+    audioEngine,
+    getAudioContext,
+    initEngineDeviceCollaborators,
+    updateDeviceParam,
+} from '#/modules/AudioEngine/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import * as automationUseCases from '#/modules/Automation/useCases';
 import { setAutomationRecordingDependencies, stopAutomationRecording } from '#/modules/Automation/useCases';
@@ -246,7 +252,7 @@ function Layout({ displayed, parameters }: { displayed?: Device; parameters?: De
 function curve(): HTMLCanvasElement {
     const canvas = screen.getByRole('img', { name: 'ADSR envelope shape' });
     if (!(canvas instanceof HTMLCanvasElement)) {
-        throw new Error('Required actual Synth envelope canvas is absent');
+        throw new TypeError('Required actual Synth envelope canvas is absent');
     }
     return canvas;
 }
@@ -438,11 +444,13 @@ describe('actual registered Synth envelope through real project and history', ()
         vi.clearAllMocks();
         engineWrites.length = 0;
         Object.assign(audioEngine.context, createMockAudioContext());
+        initEngineDeviceCollaborators();
         configureAutomergeStoragePort(null);
         resetCrdtProjectAuthority('Synth envelope gesture');
         removeCrdtDoc('root');
         createCrdtDoc('root');
         registerCrdtStorageRuntime();
+        registerProjectSlotProjections();
         await compactProject();
         clearHandlerRegistry();
         clearUndoHistory();
@@ -481,6 +489,7 @@ describe('actual registered Synth envelope through real project and history', ()
             clear: () => undefined,
         });
         sessionUndoWitnessStampPort.setProvider(null);
+        audioEngine.setUseCaseDeviceCollaborators(null);
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
         automationStore.set({ lanes: [] });
         agentProjectRepairStateStore.set(null);

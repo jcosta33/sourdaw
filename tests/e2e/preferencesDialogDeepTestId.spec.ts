@@ -1,5 +1,4 @@
-import { test, expect } from '@playwright/test';
-
+import { test, expect } from './e2eTest';
 import { launch_new_project, setupWorkspace } from './e2eUtils';
 
 async function openPreferences(page: import('@playwright/test').Page): Promise<void> {
@@ -26,7 +25,7 @@ async function navTo(page: import('@playwright/test').Page, label: string): Prom
 
 test.describe('Preferences dialog — section navigation deep', () => {
     test.beforeEach(async ({ page }) => {
-        await setupWorkspace(page);
+        await setupWorkspace(page, { clearLocalStorage: false });
         await launch_new_project(page);
         await openPreferences(page);
     });
@@ -50,6 +49,23 @@ test.describe('Preferences dialog — section navigation deep', () => {
         // Toggle back so the assertion is symmetric and unambiguous.
         await autoSave.click();
         await expect(autoSave).toHaveAttribute('aria-checked', before ?? '');
+    });
+
+    test('Auto Save preference survives a new document', async ({ page }) => {
+        const autoSave = page.getByRole('switch', { name: /Auto Save/i });
+        await expect(autoSave).toHaveAttribute('aria-checked', 'true');
+        await autoSave.click();
+        await expect(autoSave).toHaveAttribute('aria-checked', 'false');
+        await page
+            .getByRole('dialog')
+            .getByRole('button', { name: /^Done$/ })
+            .click();
+        await expect(page.getByRole('dialog')).toHaveCount(0);
+
+        await page.reload({ waitUntil: 'domcontentloaded' });
+        await launch_new_project(page);
+        await openPreferences(page);
+        await expect(page.getByRole('switch', { name: /Auto Save/i })).toHaveAttribute('aria-checked', 'false');
     });
 
     test('Shortcuts section lists captured bindings', async ({ page }) => {

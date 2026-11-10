@@ -18,15 +18,18 @@ const mocks = vi.hoisted(() => ({
     pickAndImportDawProject: vi.fn(),
 }));
 
-vi.mock('#/modules/Command/useCases', () => ({
+vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Command/useCases')>()),
     executeUserAppAction: mocks.executeUserAppAction,
 }));
 
-vi.mock('#/modules/DawInterchange/useCases', () => ({
+vi.mock('#/modules/DawInterchange/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/DawInterchange/useCases')>()),
     pickAndImportDawProject: mocks.pickAndImportDawProject,
 }));
 
-vi.mock('#/modules/Project/useCases', () => ({
+vi.mock('#/modules/Project/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Project/useCases')>()),
     createFromTemplate: mocks.createFromTemplate,
     getRecentProjects: mocks.getRecentProjects,
     getPreviewLoop: mocks.getPreviewLoop,
@@ -55,11 +58,119 @@ describe('LaunchScreen', () => {
         mocks.pickAndImportDawProject.mockResolvedValue(true);
     });
 
+    it('keeps Tab and Shift+Tab inside the dialog while the app behind it has focusable controls', async () => {
+        render(
+            <>
+                <button type="button">Behind the dialog</button>
+                <LaunchScreen exiting={false} />
+            </>
+        );
+        const dialog = screen.getByRole('dialog', { name: /Sourdaw — start a project/ });
+        const tabbables = Array.from(dialog.querySelectorAll<HTMLElement>('button:not([disabled])'));
+        const first = tabbables[0];
+        const last = tabbables[tabbables.length - 1];
+        expect(first).toBeDefined();
+
+        last?.focus();
+        fireEvent.keyDown(last ?? dialog, { key: 'Tab' });
+        expect(document.activeElement).toBe(first);
+
+        first?.focus();
+        fireEvent.keyDown(first ?? dialog, { key: 'Tab', shiftKey: true });
+        expect(document.activeElement).toBe(last);
+        expect(screen.getByRole('button', { name: 'Behind the dialog' })).not.toHaveFocus();
+    });
+
+    it('leaves a toast rendered outside the launch screen exposed to assistive tech', () => {
+        render(
+            <>
+                <div role="alert">Failed to create a new project.</div>
+                <LaunchScreen exiting={false} />
+            </>
+        );
+
+        expect(screen.getByRole('alert')).toHaveTextContent('Failed to create a new project.');
+    });
+
+    describe('leaving the launch screen', () => {
+        type LaunchPhase = 'off' | 'on' | 'exiting';
+
+        // One stable tree, so toggling the phase mounts and unmounts only the launch screen.
+        const Host = ({ phase }: { phase: LaunchPhase }) => (
+            <>
+                <main data-focus-landmark="" tabIndex={-1}>
+                    Workspace
+                </main>
+                <input aria-label="Outside input" />
+                <button type="button">Held focus at mount</button>
+                {phase === 'off' ? null : <LaunchScreen exiting={phase === 'exiting'} />}
+            </>
+        );
+
+        // Radix restores focus from a timer queued during unmount; a timer queued after it runs after it.
+        const afterUnmountRestore = (): Promise<void> =>
+            new Promise((resolve) => {
+                setTimeout(resolve, 0);
+            });
+
+        it('lands focus on the workspace landmark instead of the mount-time element', async () => {
+            const { rerender } = render(<Host phase="off" />);
+            screen.getByRole('button', { name: 'Held focus at mount' }).focus();
+            rerender(<Host phase="on" />);
+
+            rerender(<Host phase="off" />);
+
+            await waitFor(() => {
+                expect(screen.getByText('Workspace')).toHaveFocus();
+            });
+        });
+
+        it('stops trapping while exiting and leaves focus on the outside element the user chose', async () => {
+            const { rerender } = render(<Host phase="off" />);
+            screen.getByRole('button', { name: 'Held focus at mount' }).focus();
+            rerender(<Host phase="on" />);
+            rerender(<Host phase="exiting" />);
+
+            screen.getByLabelText('Outside input').focus();
+            await waitFor(() => {
+                expect(screen.getByLabelText('Outside input')).toHaveFocus();
+            });
+            rerender(<Host phase="off" />);
+            await afterUnmountRestore();
+
+            expect(screen.getByLabelText('Outside input')).toHaveFocus();
+            expect(screen.getByText('Workspace')).not.toHaveFocus();
+        });
+    });
+
     it('should render the launch dialog with primary actions', () => {
         render(<LaunchScreen exiting={false} />);
         expect(screen.getByRole('dialog', { name: /Sourdaw — start a project/ })).toBeInTheDocument();
         expect(screen.getByText('Sourdaw')).toBeInTheDocument();
         expect(screen.getByRole('button', { name: /New Project/ })).toBeInTheDocument();
+    });
+
+    it('makes a blank project the primary action and templates and demos secondary', () => {
+        render(<LaunchScreen exiting={false} />);
+
+        expect(screen.getByRole('heading', { name: 'Create a project' })).toBeInTheDocument();
+        const newProject = screen.getByRole('button', { name: /New Project/ });
+        const templates = screen.getByRole('button', { name: /Templates/ });
+        const demos = screen.getByRole('button', { name: /Demos/ });
+        expect(newProject).toHaveTextContent('Start with an empty project');
+        expect(newProject).toHaveClass('bg-[var(--color-accent-orange)]/10');
+        expect(templates).not.toHaveClass('bg-[var(--color-accent-orange)]/10');
+        expect(demos).not.toHaveClass('bg-[var(--color-accent-orange)]/10');
+    });
+
+    it('fades out and stops taking pointer input while exiting', () => {
+        const { rerender } = render(<LaunchScreen exiting={false} />);
+        const dialog = screen.getByRole('dialog', { name: /Sourdaw — start a project/ });
+        expect(dialog).not.toHaveClass('opacity-0');
+
+        rerender(<LaunchScreen exiting />);
+
+        expect(dialog).toHaveClass('opacity-0', 'pointer-events-none', 'motion-reduce:transition-none');
     });
 
     it('starts a new project in the click handler before shortcuts can run', () => {
@@ -103,6 +214,21 @@ describe('LaunchScreen', () => {
         fireEvent.click(screen.getByRole('button', { name: /Basic Band/ }));
 
         await waitFor(() => expect(mocks.createFromTemplate).toHaveBeenCalledWith('basic-band'));
+    });
+
+    it('creates the template of a card that is not the first one', async () => {
+        mocks.getTemplates.mockReturnValue([
+            { id: 'basic-band', name: 'Basic Band', description: 'A band', category: 'music' },
+            { id: 'podcast-1', name: 'Podcast One', description: 'A podcast', category: 'podcast' },
+        ]);
+
+        render(<LaunchScreen exiting={false} />);
+        fireEvent.click(screen.getByRole('button', { name: /Templates/ }));
+        fireEvent.click(screen.getByRole('radio', { name: /^Podcast$/ }));
+        fireEvent.click(screen.getByRole('button', { name: /Podcast One/ }));
+
+        await waitFor(() => expect(mocks.createFromTemplate).toHaveBeenCalledWith('podcast-1'));
+        expect(mocks.createFromTemplate).not.toHaveBeenCalledWith('basic-band');
     });
 
     it('restores the home view when template project activation fails', async () => {
@@ -300,7 +426,7 @@ describe('LaunchScreen', () => {
         expect(screen.getByRole('button', { name: /Podcast One/ })).toBeInTheDocument();
 
         // Switch to Podcast category
-        fireEvent.click(screen.getByRole('button', { name: /^Podcast$/ }));
+        fireEvent.click(screen.getByRole('radio', { name: /^Podcast$/ }));
         expect(screen.queryByRole('button', { name: /Basic Band/ })).not.toBeInTheDocument();
         expect(screen.getByRole('button', { name: /Podcast One/ })).toBeInTheDocument();
     });

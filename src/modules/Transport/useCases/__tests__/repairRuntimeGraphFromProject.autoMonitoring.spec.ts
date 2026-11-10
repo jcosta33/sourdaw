@@ -1,11 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { stopInputMonitoring, syncAutoInputMonitoring } from '#/modules/AudioEngine/useCases';
 
 import { defaultTransportState, transportStore } from '../../stores/transportStore';
 import { repairRuntimeGraphFromProject } from '../repairRuntimeGraphFromProject';
 
 import type { Store } from '#/infra/store/types';
+
+registerDeviceEnginePorts();
 
 type TestTrack = {
     id: string;

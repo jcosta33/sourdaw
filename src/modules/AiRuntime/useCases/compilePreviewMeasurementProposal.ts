@@ -3,6 +3,7 @@ import { doesProductionBriefAllowActionBatch } from '#/modules/Project/useCases'
 
 import { COMMAND_BATCH_PROPOSAL_TOOL_NAME } from '../models/AgentToolCatalogNames';
 import { type CreativeRequestAuthority } from '../models/CreativeInterpretation';
+import { type PerceptualConstraintReading } from '../models/PerceptualConstraint';
 import { type ProjectContext } from '../models/ProjectContext';
 import {
     type AdoptedRecipe,
@@ -18,6 +19,8 @@ import { compileArbitraryCommandList } from './compileArbitraryCommandList';
 import { compilePlannedActionCommandBatch } from './compilePlannedActionCommandBatch';
 import { materializeActionStateGuards } from './materializeActionStateGuards';
 import { materializeTransformToolCalls } from './materializeTransformToolCalls';
+import { findExcludedDimensionEdit } from './perceptualConstraints/findExcludedDimensionEdit';
+import { readRequestPerceptualConstraints } from './perceptualConstraints/readRequestPerceptualConstraints';
 import { readPlanningMarkerSignatures } from './readPlanningMarkerSignatures';
 import { validateActions } from './validateActions';
 
@@ -25,12 +28,17 @@ type CompilePreviewMeasurementProposalInput = {
     callId: string;
     /** An uncompiled semantic list, or the exact application-retained recipe commands. */
     source:
-        { proposal: Readonly<Record<string, unknown>> } | { recipe: Extract<RetainedCompilation, { kind: 'recipe' }> };
+        | { proposal: Readonly<Record<string, unknown>> }
+        | { recipe: Extract<RetainedCompilation, { kind: 'recipe' }> }
+        | { retained: readonly RetainedCommandSet[] }
+        | { preparedBatch: CommandBatchEnvelope };
     context: ProjectContext;
     prompt: string;
     revision: string;
     runId: string;
     creativeAuthority: CreativeRequestAuthority | undefined;
+    /** The constraints the card a refinement replaces recorded, when the batch is one. */
+    recordedConstraints?: PerceptualConstraintReading;
 };
 
 type CommandBatchEnvelope = Extract<
@@ -101,15 +109,16 @@ function toRetainedCommands(commands: readonly ToolCallResult[]): RetainedComman
 }
 
 function groundRetainedCommands(input: CompilePreviewMeasurementProposalInput, retained: RetainedCommandSet) {
+    const compilations = 'retained' in input.source ? input.source.retained : [retained];
     return bridgeGroundedLlmToolCalls({
-        calls: materializeTransformToolCalls([retained]),
+        calls: materializeTransformToolCalls(compilations),
         context: input.context,
         ...readPlanningMarkerSignatures(),
         prompt: input.prompt,
         transformProof: {
             revision: input.revision,
             creativeAuthorityId: input.creativeAuthority?.authorityId ?? null,
-            compilations: [retained],
+            compilations,
         },
         projectRevision: input.revision,
         creativeAuthority: input.creativeAuthority,
@@ -144,6 +153,18 @@ function admitRetainedCommands(input: CompilePreviewMeasurementProposalInput, re
     if (!doesProductionBriefAllowActionBatch(guarded.actions)) {
         return { status: 'rejected' as const, reason: 'The proposal list conflicts with locked production intent.' };
     }
+    const excludedEdit = findExcludedDimensionEdit({
+        constraints: readRequestPerceptualConstraints({
+            prompt: input.prompt,
+            context: input.context,
+            recorded: input.recordedConstraints,
+        }).constraints,
+        actions: guarded.actions,
+        context: input.context,
+    });
+    if (excludedEdit !== null) {
+        return { status: 'rejected' as const, reason: excludedEdit.reason };
+    }
     return { status: 'admitted' as const, actions: guarded.actions, actionCommandGraph: bridged.actionCommandGraph };
 }
 
@@ -176,7 +197,44 @@ function withPreviewColor(action: AdmittedAction): AdmittedAction {
 export function compilePreviewMeasurementProposal(
     input: CompilePreviewMeasurementProposalInput
 ): CompiledPreviewProposal {
-    const retained = 'recipe' in input.source ? input.source.recipe : compileSemanticList(input, input.source.proposal);
+    if ('preparedBatch' in input.source) {
+        const envelope = input.source.preparedBatch;
+        if (envelope.baseRevision !== input.revision || envelope.runId !== input.runId) {
+            return { status: 'rejected', reason: 'The prepared preview batch has a different run or revision.' };
+        }
+        return {
+            status: 'compiled',
+            envelope,
+            commands: envelope.commands.map((command, index) => ({
+                key: String(index),
+                stepId: command.commandId,
+                operation: command.operation,
+                arguments: command.arguments,
+                reason: 'Application-requested proof refresh of the exact prepared batch.',
+                expectedEffect: '',
+                binding: null,
+                dependencyKeys: [],
+            })),
+        };
+    }
+    let retained: RetainedCommandSet | { status: 'rejected'; reason: string };
+    if ('retained' in input.source) {
+        if (
+            input.source.retained.length === 0 ||
+            input.source.retained.some((entry) => entry.revision !== input.revision)
+        ) {
+            return { status: 'rejected', reason: 'The retained prefix has another revision or no producer commands.' };
+        }
+        retained = {
+            callId: input.callId,
+            revision: input.revision,
+            commands: input.source.retained.flatMap((compilation) => compilation.commands),
+        };
+    } else if ('recipe' in input.source) {
+        retained = input.source.recipe;
+    } else {
+        retained = compileSemanticList(input, input.source.proposal);
+    }
     if ('status' in retained) {
         return retained;
     }

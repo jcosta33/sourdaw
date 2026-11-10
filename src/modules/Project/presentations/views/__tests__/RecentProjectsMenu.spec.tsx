@@ -1,11 +1,14 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { confirmUser } from '#/utils/Notification/confirmUser';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { pickFiles } from '../../../useCases/fileDialog';
 import { applyImportedProjectData } from '../../../useCases/projectPersistence/fileIO/applyImportedProjectData';
 import { newProject } from '../../../useCases/projectPersistence/newProject';
+import { openProjectDirectoryFromPicker } from '../../../useCases/projectPersistence/openProjectDirectoryFromPicker';
+import { pendingProjectReplacements } from '../../../useCases/projectPersistence/pendingProjectReplacements';
 import { saveProject } from '../../../useCases/projectPersistence/saveProject/saveProject';
 import { loadRecentProject } from '../../../useCases/recentProjects/loadRecentProject';
 import { removeFromRecentProjects } from '../../../useCases/recentProjects/removeFromRecentProjects';
@@ -29,6 +32,11 @@ vi.mock('#/utils/Notification/notifyUser', () => ({
     notifyUser: vi.fn(),
 }));
 
+// The Don't Save dialog's answer; Cancel unless a case chooses otherwise.
+vi.mock('#/utils/Notification/confirmUser', () => ({
+    confirmUser: vi.fn(),
+}));
+
 vi.mock('../../../useCases/recentProjects/loadRecentProject', () => ({
     loadRecentProject: vi.fn(),
 }));
@@ -47,6 +55,10 @@ vi.mock('../../../useCases/recentProjects/helpers', () => ({
 
 vi.mock('../../../useCases/projectPersistence/newProject', () => ({
     newProject: vi.fn(),
+}));
+
+vi.mock('../../../useCases/projectPersistence/openProjectDirectoryFromPicker', () => ({
+    openProjectDirectoryFromPicker: vi.fn(),
 }));
 
 vi.mock('../../../useCases/projectPersistence/saveProject/saveProject', () => ({
@@ -106,10 +118,16 @@ vi.mock('../TemplateChooser', () => ({
         open ? <div data-testid="template-chooser">Template Chooser</div> : null,
 }));
 
+// Radix opens a dropdown on pointer down, as a real press does.
+const openProjectMenu = (): void => {
+    fireEvent.pointerDown(screen.getByLabelText(/Project menu/i), { pointerId: 1, button: 0 });
+};
+
 describe('RecentProjectsMenu', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.projectStoreValue.value = null;
+        vi.mocked(confirmUser).mockResolvedValue(false);
     });
 
     it('should render without crashing', () => {
@@ -136,13 +154,13 @@ describe('RecentProjectsMenu', () => {
     it('should show menu when button is clicked', () => {
         render(<RecentProjectsMenu />);
         const button = screen.getByLabelText(/Project menu/i);
-        fireEvent.click(button);
+        fireEvent.pointerDown(button, { pointerId: 1, button: 0 });
         expect(screen.getByRole('menu')).toBeInTheDocument();
     });
 
     it('keeps the project menu scrollable within the renderer height', () => {
         render(<RecentProjectsMenu />);
-        fireEvent.click(screen.getByLabelText(/Project menu/i));
+        openProjectMenu();
 
         expect(screen.getByRole('menu')).toHaveClass(
             'max-h-[calc(100vh-3rem)]',
@@ -153,7 +171,7 @@ describe('RecentProjectsMenu', () => {
 
     it('left-aligns menu rows that do not carry a trailing shortcut', () => {
         render(<RecentProjectsMenu />);
-        fireEvent.click(screen.getByLabelText(/Project menu/i));
+        openProjectMenu();
 
         const labels = [
             'New Project',
@@ -170,56 +188,68 @@ describe('RecentProjectsMenu', () => {
     it('should render New Project option', () => {
         render(<RecentProjectsMenu />);
         const button = screen.getByLabelText(/Project menu/i);
-        fireEvent.click(button);
+        fireEvent.pointerDown(button, { pointerId: 1, button: 0 });
         expect(screen.getByText(/New Project/i)).toBeInTheDocument();
     });
 
     it('should render New from Template option', () => {
         render(<RecentProjectsMenu />);
         const button = screen.getByLabelText(/Project menu/i);
-        fireEvent.click(button);
+        fireEvent.pointerDown(button, { pointerId: 1, button: 0 });
         expect(screen.getByText(/New from Template/i)).toBeInTheDocument();
     });
 
     it('should render Load Demo Project option', () => {
         render(<RecentProjectsMenu />);
         const button = screen.getByLabelText(/Project menu/i);
-        fireEvent.click(button);
+        fireEvent.pointerDown(button, { pointerId: 1, button: 0 });
         expect(screen.getByText(/Load Demo Project/i)).toBeInTheDocument();
     });
 
     it('should render Save option', () => {
         render(<RecentProjectsMenu />);
         const button = screen.getByLabelText(/Project menu/i);
-        fireEvent.click(button);
+        fireEvent.pointerDown(button, { pointerId: 1, button: 0 });
         expect(screen.getByText(/Save/i)).toBeInTheDocument();
     });
 
     it('should render Export Audio option', () => {
         render(<RecentProjectsMenu />);
         const button = screen.getByLabelText(/Project menu/i);
-        fireEvent.click(button);
+        fireEvent.pointerDown(button, { pointerId: 1, button: 0 });
         expect(screen.getByText(/Export Audio/i)).toBeInTheDocument();
     });
 
     it('should render Export Project File option', () => {
         render(<RecentProjectsMenu />);
         const button = screen.getByLabelText(/Project menu/i);
-        fireEvent.click(button);
+        fireEvent.pointerDown(button, { pointerId: 1, button: 0 });
         expect(screen.getByText(/Export Project File/i)).toBeInTheDocument();
     });
 
     it('should render Import Project File option', () => {
         render(<RecentProjectsMenu />);
         const button = screen.getByLabelText(/Project menu/i);
-        fireEvent.click(button);
+        fireEvent.pointerDown(button, { pointerId: 1, button: 0 });
         expect(screen.getByText(/Import Project File/i)).toBeInTheDocument();
+    });
+
+    it('opens the project folder picker when the browser supports it', () => {
+        vi.stubGlobal('showDirectoryPicker', vi.fn());
+        try {
+            render(<RecentProjectsMenu />);
+            openProjectMenu();
+            fireEvent.click(screen.getByRole('menuitem', { name: 'Open Project Folder…' }));
+            expect(openProjectDirectoryFromPicker).toHaveBeenCalledOnce();
+        } finally {
+            vi.unstubAllGlobals();
+        }
     });
 
     it('should display recent projects section', () => {
         render(<RecentProjectsMenu />);
         const button = screen.getByLabelText(/Project menu/i);
-        fireEvent.click(button);
+        fireEvent.pointerDown(button, { pointerId: 1, button: 0 });
         expect(screen.getByText(/Recent/i)).toBeInTheDocument();
         expect(screen.getByText('Project One')).toBeInTheDocument();
         expect(screen.getByText('Project Two')).toBeInTheDocument();
@@ -228,7 +258,7 @@ describe('RecentProjectsMenu', () => {
     it('should show keyboard shortcut for Save', () => {
         render(<RecentProjectsMenu />);
         const button = screen.getByLabelText(/Project menu/i);
-        fireEvent.click(button);
+        fireEvent.pointerDown(button, { pointerId: 1, button: 0 });
         const keycaps = screen.getAllByTestId('keycap');
         expect(keycaps.length).toBeGreaterThan(0);
     });
@@ -244,7 +274,7 @@ describe('RecentProjectsMenu', () => {
         vi.mocked(newProject).mockResolvedValue(true);
 
         render(<RecentProjectsMenu />);
-        fireEvent.click(screen.getByLabelText(/Project menu/i));
+        openProjectMenu();
         fireEvent.click(screen.getByRole('menuitem', { name: /New Project/i }));
 
         await waitFor(() => expect(saveProject).toHaveBeenCalledOnce());
@@ -254,20 +284,56 @@ describe('RecentProjectsMenu', () => {
         await waitFor(() => expect(newProject).toHaveBeenCalledOnce());
     });
 
-    it('aborts the new-project transition when the pre-switch save fails', async () => {
+    it('keeps the project open when the user cancels after the pre-switch save fails', async () => {
+        mocks.projectStoreValue.value = { dirty: true, createdAt: 1 };
         vi.mocked(saveProject).mockResolvedValue(false);
         vi.mocked(newProject).mockResolvedValue(true);
 
         render(<RecentProjectsMenu />);
-        fireEvent.click(screen.getByLabelText(/Project menu/i));
+        openProjectMenu();
         fireEvent.click(screen.getByRole('menuitem', { name: /New Project/i }));
 
-        await waitFor(() => expect(saveProject).toHaveBeenCalledOnce());
-        // Flush the aborted continuation (microtasks only — no timers).
-        await Promise.resolve();
-        await Promise.resolve();
+        await waitFor(() => expect(confirmUser).toHaveBeenCalledOnce());
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        expect(saveProject).toHaveBeenCalledOnce();
         expect(newProject).not.toHaveBeenCalled();
         expect(notifyUser).not.toHaveBeenCalled();
+    });
+
+    // A project that cannot be saved must not trap the user: Don't Save
+    // replaces it as a discard, so nothing saves the outgoing project again.
+    it("starts the new project as a discard when the user chose Don't Save after a failed save", async () => {
+        mocks.projectStoreValue.value = { dirty: true, createdAt: 1 };
+        vi.mocked(saveProject).mockResolvedValue(false);
+        vi.mocked(confirmUser).mockResolvedValue(true);
+        vi.mocked(newProject).mockResolvedValue(true);
+
+        render(<RecentProjectsMenu />);
+        openProjectMenu();
+        fireEvent.click(screen.getByRole('menuitem', { name: /New Project/i }));
+
+        await waitFor(() =>
+            expect(newProject).toHaveBeenCalledWith(undefined, expect.objectContaining({ outgoingProject: 'discard' }))
+        );
+        expect(saveProject).toHaveBeenCalledOnce();
+    });
+
+    it("opens the recent project as a discard when the user chose Don't Save after a failed save", async () => {
+        mocks.projectStoreValue.value = { dirty: true, createdAt: 1 };
+        vi.mocked(saveProject).mockResolvedValue(false);
+        vi.mocked(confirmUser).mockResolvedValue(true);
+        vi.mocked(loadRecentProject).mockResolvedValue('committed');
+
+        render(<RecentProjectsMenu />);
+        openProjectMenu();
+        fireEvent.click(screen.getByText('Project One'));
+
+        await waitFor(() =>
+            expect(loadRecentProject).toHaveBeenCalledWith(
+                'proj-1',
+                expect.objectContaining({ outgoingProject: 'discard' })
+            )
+        );
     });
 
     // Issue 3694: a save can resolve true while the project is still dirty —
@@ -280,7 +346,7 @@ describe('RecentProjectsMenu', () => {
         vi.mocked(newProject).mockResolvedValue(true);
 
         render(<RecentProjectsMenu />);
-        fireEvent.click(screen.getByLabelText(/Project menu/i));
+        openProjectMenu();
         fireEvent.click(screen.getByRole('menuitem', { name: /New Project/i }));
 
         await waitFor(() => expect(saveProject).toHaveBeenCalledOnce());
@@ -294,7 +360,7 @@ describe('RecentProjectsMenu', () => {
         vi.mocked(saveProject).mockResolvedValue(true);
 
         render(<RecentProjectsMenu />);
-        fireEvent.click(screen.getByLabelText(/Project menu/i));
+        openProjectMenu();
         fireEvent.click(screen.getByText('Project One'));
 
         await waitFor(() => expect(saveProject).toHaveBeenCalledOnce());
@@ -309,11 +375,17 @@ describe('RecentProjectsMenu', () => {
         vi.mocked(loadRecentProject).mockResolvedValue('not-found');
 
         render(<RecentProjectsMenu />);
-        fireEvent.click(screen.getByLabelText(/Project menu/i));
+        openProjectMenu();
         fireEvent.click(screen.getByText('Project One'));
 
         await waitFor(() => expect(saveProject).toHaveBeenCalledOnce());
-        await waitFor(() => expect(loadRecentProject).toHaveBeenCalledWith('proj-1', expect.anything()));
+        await waitFor(() =>
+            expect(loadRecentProject).toHaveBeenCalledWith(
+                'proj-1',
+                expect.objectContaining({ outgoingProject: 'save-closed-takes' })
+            )
+        );
+        expect(confirmUser).not.toHaveBeenCalled();
         await waitFor(() =>
             expect(notifyUser).toHaveBeenCalledWith(
                 'Could not find "Project One" — removing it from recent projects.',
@@ -328,7 +400,7 @@ describe('RecentProjectsMenu', () => {
         vi.mocked(loadRecentProject).mockResolvedValue('failed');
 
         render(<RecentProjectsMenu />);
-        fireEvent.click(screen.getByLabelText(/Project menu/i));
+        openProjectMenu();
         fireEvent.click(screen.getByText('Project One'));
 
         await waitFor(() =>
@@ -342,7 +414,7 @@ describe('RecentProjectsMenu', () => {
         vi.mocked(loadRecentProject).mockResolvedValue('aborted');
 
         render(<RecentProjectsMenu />);
-        fireEvent.click(screen.getByLabelText(/Project menu/i));
+        openProjectMenu();
         fireEvent.click(screen.getByText('Project One'));
 
         await waitFor(() => expect(loadRecentProject).toHaveBeenCalledWith('proj-1', expect.anything()));
@@ -358,7 +430,7 @@ describe('RecentProjectsMenu', () => {
         vi.mocked(saveProject).mockResolvedValue(true);
 
         render(<RecentProjectsMenu />);
-        fireEvent.click(screen.getByLabelText(/Project menu/i));
+        openProjectMenu();
         fireEvent.click(screen.getByText('Open Project'));
 
         await Promise.resolve();
@@ -383,11 +455,11 @@ describe('RecentProjectsMenu', () => {
         );
 
         render(<RecentProjectsMenu />);
-        fireEvent.click(screen.getByLabelText(/Project menu/i));
+        openProjectMenu();
         fireEvent.click(screen.getByText('Project One'));
         await waitFor(() => expect(saveProject).toHaveBeenCalledTimes(1));
 
-        fireEvent.click(screen.getByLabelText(/Project menu/i));
+        openProjectMenu();
         fireEvent.click(screen.getByText('Open Project'));
         for (const resolve of saves) {
             resolve(true);
@@ -405,13 +477,13 @@ describe('RecentProjectsMenu', () => {
         vi.mocked(loadRecentProject).mockResolvedValue('aborted');
 
         render(<RecentProjectsMenu />);
-        fireEvent.click(screen.getByLabelText(/Project menu/i));
+        openProjectMenu();
         fireEvent.click(screen.getByText('Project One'));
         await waitFor(() => expect(loadRecentProject).toHaveBeenCalledTimes(1));
         const options = vi.mocked(loadRecentProject).mock.calls[0]?.[1];
         expect(options?.shouldProceed?.()).toBe(true);
 
-        fireEvent.click(screen.getByLabelText(/Project menu/i));
+        openProjectMenu();
         fireEvent.click(screen.getByText('Open Project'));
 
         expect(options?.shouldProceed?.()).toBe(false);
@@ -424,12 +496,12 @@ describe('RecentProjectsMenu', () => {
         vi.mocked(loadRecentProject).mockResolvedValue('committed');
 
         render(<RecentProjectsMenu />);
-        fireEvent.click(screen.getByLabelText(/Project menu/i));
+        openProjectMenu();
         fireEvent.click(screen.getByText('Project One'));
         await waitFor(() => expect(loadRecentProject).toHaveBeenCalledTimes(1));
         const options = vi.mocked(loadRecentProject).mock.calls[0]?.[1];
 
-        fireEvent.click(screen.getByLabelText(/Project menu/i));
+        openProjectMenu();
         fireEvent.click(screen.getByText('Project Two'));
 
         expect(options?.shouldProceed?.()).toBe(true);
@@ -445,7 +517,7 @@ describe('RecentProjectsMenu', () => {
         });
 
         const chooseOpenProject = (): void => {
-            fireEvent.click(screen.getByLabelText(/Project menu/i));
+            openProjectMenu();
             fireEvent.click(screen.getByText('Open Project'));
         };
 
@@ -454,7 +526,7 @@ describe('RecentProjectsMenu', () => {
             vi.mocked(saveProject).mockReturnValueOnce(save.promise);
 
             render(<RecentProjectsMenu />);
-            fireEvent.click(screen.getByLabelText(/Project menu/i));
+            openProjectMenu();
             fireEvent.click(screen.getByRole('menuitem', { name: /New Project/i }));
             await waitFor(() => expect(saveProject).toHaveBeenCalledOnce());
 
@@ -473,7 +545,7 @@ describe('RecentProjectsMenu', () => {
             vi.mocked(newProject).mockReturnValueOnce(creation.promise);
 
             render(<RecentProjectsMenu />);
-            fireEvent.click(screen.getByLabelText(/Project menu/i));
+            openProjectMenu();
             fireEvent.click(screen.getByRole('menuitem', { name: /New Project/i }));
             await waitFor(() => expect(newProject).toHaveBeenCalledOnce());
             const options = vi.mocked(newProject).mock.calls[0]?.[1];
@@ -495,7 +567,7 @@ describe('RecentProjectsMenu', () => {
             vi.mocked(pickFiles).mockResolvedValue([file]);
 
             render(<RecentProjectsMenu />);
-            fireEvent.click(screen.getByLabelText(/Project menu/i));
+            openProjectMenu();
             fireEvent.click(screen.getByRole('menuitem', { name: /Import Project File/i }));
             await waitFor(() => expect(file.text).toHaveBeenCalledOnce());
 
@@ -505,6 +577,85 @@ describe('RecentProjectsMenu', () => {
             await new Promise((resolve) => setTimeout(resolve, 0));
             expect(applyImportedProjectData).not.toHaveBeenCalled();
             expect(notifyUser).not.toHaveBeenCalled();
+            expect(loadRecentProject).not.toHaveBeenCalled();
+        });
+    });
+
+    it('removes only the entry whose remove button is clicked and does not load it', () => {
+        // Choosing a row captures a pending replacement synchronously, before any await, so it observes the load route.
+        const captureReplacement = vi.spyOn(pendingProjectReplacements, 'capture');
+        render(<RecentProjectsMenu />);
+        openProjectMenu();
+
+        fireEvent.click(screen.getByRole('button', { name: 'Remove Project One from recent projects' }));
+
+        expect(removeFromRecentProjects).toHaveBeenCalledTimes(1);
+        expect(removeFromRecentProjects).toHaveBeenCalledWith('proj-1');
+        expect(captureReplacement).not.toHaveBeenCalled();
+        expect(loadRecentProject).not.toHaveBeenCalled();
+        captureReplacement.mockRestore();
+    });
+
+    describe('keyboard navigation', () => {
+        const openWithKeyboard = async (): Promise<HTMLElement[]> => {
+            render(<RecentProjectsMenu />);
+            const trigger = screen.getByLabelText(/Project menu/i);
+            trigger.focus();
+            fireEvent.keyDown(trigger, { key: 'Enter' });
+            const items = await screen.findAllByRole('menuitem');
+            await waitFor(() => {
+                expect(document.activeElement).toBe(items[0]);
+            });
+            return items;
+        };
+
+        // Radix moves roving focus on the next tick, so each key is awaited through its focus result.
+        const pressAndExpectFocus = async (key: string, expected: HTMLElement | undefined): Promise<void> => {
+            fireEvent.keyDown(document.activeElement ?? document.body, { key });
+            await waitFor(() => {
+                expect(document.activeElement).toBe(expected);
+            });
+        };
+
+        it('moves focus between items with the arrow keys and wraps at the ends', async () => {
+            const items = await openWithKeyboard();
+            const last = items[items.length - 1];
+
+            await pressAndExpectFocus('ArrowDown', items[1]);
+            await pressAndExpectFocus('ArrowDown', items[2]);
+            await pressAndExpectFocus('ArrowUp', items[1]);
+            await pressAndExpectFocus('ArrowUp', items[0]);
+            await pressAndExpectFocus('ArrowUp', last);
+            await pressAndExpectFocus('ArrowDown', items[0]);
+        });
+
+        it('jumps to the last and first item with End and Home', async () => {
+            const items = await openWithKeyboard();
+
+            await pressAndExpectFocus('End', items[items.length - 1]);
+            await pressAndExpectFocus('Home', items[0]);
+        });
+
+        it('removes a recent project with Backspace without opening it', async () => {
+            const items = await openWithKeyboard();
+            const recent = items.find((item) => item.textContent?.includes('Project Two'));
+            recent?.focus();
+
+            fireEvent.keyDown(recent ?? document.body, { key: 'Backspace' });
+
+            expect(removeFromRecentProjects).toHaveBeenCalledWith('proj-2');
+            expect(loadRecentProject).not.toHaveBeenCalled();
+        });
+
+        it('removes a recent project with Delete without opening it', async () => {
+            const items = await openWithKeyboard();
+            const recent = items.find((item) => item.textContent?.includes('Project One'));
+            expect(recent).toBeDefined();
+            recent?.focus();
+
+            fireEvent.keyDown(recent ?? document.body, { key: 'Delete' });
+
+            expect(removeFromRecentProjects).toHaveBeenCalledWith('proj-1');
             expect(loadRecentProject).not.toHaveBeenCalled();
         });
     });

@@ -1,5 +1,6 @@
-import { expect, test, type Page, type Route } from '@playwright/test';
+import { type Page, type Route } from '@playwright/test';
 
+import { expect, test } from './e2eTest';
 import vercelConfig from '../../vercel.json' with { type: 'json' };
 
 import {
@@ -83,6 +84,10 @@ test('recovers when the actual entry request is aborted once', async ({ page }, 
 
 test('persistent entry failure stops after one retry and manual Reload preserves the full URL', async ({ page }) => {
     await enable_direct_e2e_viewport(page);
+    await page.addInitScript(() => {
+        window.localStorage.setItem('sourdaw-preferences', JSON.stringify({ json: { theme: 'light' } }));
+    });
+    await page.route('**/themePrepaint.js', (route) => route.abort('aborted'));
     const entryUrl = await readEntryUrl(page);
     let attempts = 0;
     await page.route(entryUrl, async (route) => {

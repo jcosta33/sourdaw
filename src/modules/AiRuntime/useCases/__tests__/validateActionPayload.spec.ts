@@ -171,10 +171,12 @@ const guardedPayloadContractCases = [
             trackId: 'track-1',
             busId: 'bus-1',
             level: 1,
+            preFader: true,
             expectedLevel: 0,
             expectedPreFader: false,
         },
         invalidPayloads: [
+            { trackId: 'track-1', busId: 'bus-1', level: 0.5, preFader: 'yes' },
             { trackId: '', busId: 'bus-1', level: 0.5 },
             { trackId: 'track-1', busId: '', level: 0.5 },
             { trackId: 'track-1', busId: 'track-1', level: 0.5 },
@@ -862,6 +864,32 @@ const guardedPayloadContractCases = [
                 expectedLaneId: 'lane-1',
                 expectedSelectedTakeId: 'take-2',
             },
+        ],
+    }),
+    guardedPayloadCase({
+        actionType: 'quantizeTransients',
+        validPayload: {
+            clipId: 'clip-1',
+            gridSize: 0.25,
+            strength: 0.5,
+            swing: 0,
+            sensitivity: 1,
+            minConfidence: 0.2,
+            startBeat: 0,
+            endBeat: 8,
+        },
+        invalidPayloads: [
+            { clipId: '', gridSize: 0.25 },
+            { clipId: 'clip-1' },
+            { clipId: 'clip-1', gridSize: 0 },
+            { clipId: 'clip-1', gridSize: 1 / 64 },
+            { clipId: 'clip-1', gridSize: 8 },
+            { clipId: 'clip-1', gridSize: 0.25, strength: 1.5 },
+            { clipId: 'clip-1', gridSize: 0.25, swing: -0.1 },
+            { clipId: 'clip-1', gridSize: 0.25, sensitivity: Number.NaN },
+            { clipId: 'clip-1', gridSize: 0.25, startBeat: 4, endBeat: 4 },
+            { clipId: 'clip-1', gridSize: 0.25, endBeat: Number.POSITIVE_INFINITY },
+            { clipId: 'clip-1', gridSize: 0.25, plan: {} },
         ],
     }),
 ] as const;
@@ -1633,15 +1661,17 @@ describe('validateActionPayload / PAYLOAD_VALIDATORS', () => {
     });
 
     describe('addTrack', () => {
-        it('should require name and kind strings', () => {
+        it('should require a kind string and accept a missing name but no non-string name', () => {
             const guard = PAYLOAD_VALIDATORS.addTrack;
             expect(guard).not.toBe('unchecked');
             if (guard === 'unchecked') {
                 return;
             }
             expect(guard({ name: 'A', kind: 'audio' })).toBe(true);
+            expect(guard({ kind: 'audio' })).toBe(true);
             expect(guard({ name: 'A' })).toBe(false);
-            expect(guard({ kind: 'audio' })).toBe(false);
+            expect(guard({ name: 42, kind: 'audio' })).toBe(false);
+            expect(guard({ name: null, kind: 'audio' })).toBe(false);
         });
     });
 

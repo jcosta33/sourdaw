@@ -1,27 +1,27 @@
 # CvGate module — Agent Guidelines
 
-Control Voltage (CV) and Gate output routing and conversion for analog/modular synthesizers via DC-coupled audio interfaces (1V/oct, Hz/V, pitch, velocity, gate, trigger, and clock pulses); does not own MIDI hardware device management or audio output routing (MIDI/Routing).
+Control Voltage (CV) and Gate output configuration, calibration, and conversion for analog/modular synthesizers (1V/oct, Hz/V, pitch, velocity, gate, trigger, and clock); does not own MIDI hardware device management or audio output routing (MIDI/Routing). Physical CV/Gate delivery is not implemented.
 
 ## Public Contract Surface
 
-- **Use Cases** (`useCases/index.ts`): `addCvOutput`, `removeCvOutput`, `setCvValue`, `setVoltageStandard`, `setClockDivision`, `hydrateCvGateState`.
-- **Stores** (`stores/index.ts`): `cvGateStore`, `defaultCvGateState`, `CvGateState`, `CvOutputChannel`.
+Public surface: `useCases/index.ts`, `stores/index.ts`.
 
 ## Key Subsystems
 
 - **CV Conversion** (`useCases/cvConversion/`): Pitch-to-voltage conversion (`midiNoteToCv`) supporting `1v-per-octave` (1/12 V per semitone) and `hz-per-volt` standards.
-- **Output Management** (`useCases/cvOutputOperations/`): Physical output channel mapping, clock division, trigger pulse width (`triggerPulseMs`), and gate threshold configuration.
-- **Persistence** (`stores/cvGate.ts`): Automerge CRDT document storage for persistent CV/Gate output routing and calibration.
+- **Output Management** (`useCases/cvOutputOperations/`): Output channel configuration, normalized values, clock division, trigger pulse width (`triggerPulseMs`), and gate threshold configuration.
+- **Command handlers** (`handlers/cvOutput/`): `addCvOutput` and its undo inverse `removeCvOutput`, registered with Command through `getCvGateHandlers`. An add the use case refuses (duplicate channel, unknown type) records no undo entry.
+- **Persistence** (`stores/cvGate.ts`): Automerge CRDT document storage for persistent CV/Gate output configuration and calibration.
 
 ## Invariants & Traps
 
-- Output voltages are strictly bounded by `minVoltage` and `maxVoltage` per channel configuration to protect external modular hardware.
-- Clock divisions and trigger pulses (`triggerPulseMs`) must align with audio buffer render boundaries.
+- `setCvValue` bounds the configured normalized value to `[0, 1]`; it does not emit voltage.
+- A future physical output must respect each channel's `minVoltage` and `maxVoltage` and schedule clock divisions and trigger pulses (`triggerPulseMs`) on audio frames.
 - Hydration from CRDT project state uses strict shape validation (`hydrateCvGateState`).
 
 ## Verification
 
 PR CI owns broader unit and crate suites. Locally run only the exact changed spec or filtered Rust test.
 
-- `pnpm test:run <changed-spec>`
+- `pnpm guard --profile focused -- pnpm test:run <changed-spec>`
 - PR CI checks module boundaries; inspect that result after cross-module changes.

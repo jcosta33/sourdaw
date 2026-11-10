@@ -48,16 +48,21 @@ describe('NotificationToast', () => {
         expect(dismissButton.className).toContain('pointer-events-auto');
     });
 
-    it('should dismiss the current notification when clicking the dismiss button', async () => {
+    it('dismisses a corrupt MIDI error notification when clicking the dismiss button', async () => {
         notifyHandlerRef.current = null;
         render(<NotificationToast />);
         await waitFor(() => {
             expect(notifyHandlerRef.current).not.toBeNull();
         });
         act(() => {
-            notifyHandlerRef.current!({ message: 'First message', level: 'info' });
+            notifyHandlerRef.current!({
+                message: 'Failed to import "corrupt.mid" - invalid or corrupt MIDI file',
+                level: 'error',
+            });
         });
-        expect(screen.getByRole('alert')).toHaveTextContent('First message');
+        expect(screen.getByRole('alert')).toHaveTextContent(
+            'Failed to import "corrupt.mid" - invalid or corrupt MIDI file'
+        );
 
         const dismissButton = screen.getByRole('button', { name: 'Dismiss notification' });
         act(() => {

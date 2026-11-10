@@ -50,9 +50,10 @@ vi.mock('../../../stores/pendingActionConfirmationStore', () => ({
     getPendingActionConfirmation: mocks.getConfirmation,
     refreshPendingActionConfirmationApproval: mocks.reboundApproval,
 }));
-vi.mock('#/modules/CrdtDocument/useCases', () => ({
+vi.mock('#/modules/CrdtDocument/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/CrdtDocument/useCases')>()),
     captureProjectRevision: mocks.revision,
-    projectRevisionMatchesLiveIgnoringCommandCheckpoint: mocks.revisionMatchesLive,
+    projectRevisionMatchesLiveIgnoringSaveWrites: mocks.revisionMatchesLive,
     settlePendingProjectWritesAndCaptureRevision: mocks.settlePendingWrites,
 }));
 vi.mock('../admitCommittedSectionRenderRetry', () => ({ admitCommittedSectionRenderRetry: mocks.admitRetry }));
@@ -228,7 +229,7 @@ describe('resolveConfirmationAdmission', () => {
         });
     });
 
-    it('admits when only the command checkpoint changed the strict project revision', async () => {
+    it('admits when only a command checkpoint or a save changed the strict project revision', async () => {
         const confirmation = createConfirmation({ commandBatch: createBatch() });
         mocks.getConfirmation.mockReturnValue(confirmation);
         mocks.revision.mockReturnValue('revision-with-command-checkpoint');
@@ -419,20 +420,26 @@ describe('resolveConfirmationAdmission', () => {
         expect(mocks.invalidateForProjectChange).toHaveBeenCalledWith(confirmation);
     });
 
-    it('settles a conflicted refreshed approval through the exact divergence invalidation', async () => {
-        const commandBatch = createBatch();
-        const confirmation = createConfirmation({ commandBatch });
-        const divergence = reapprovalDivergence();
-        mocks.getConfirmation.mockReturnValue(confirmation);
-        mocks.revision.mockReturnValue('revision-2');
-        mocks.revisionMatchesLive.mockReturnValue(false);
-        mocks.refreshBatch.mockReturnValue({ status: 'conflicted', divergence });
+    it.each([
+        ['no handler refusal', null],
+        ['the handler refusal', 'The production brief names a track the project no longer holds (track-a).'],
+    ])(
+        'settles a conflicted refreshed approval through the exact divergence invalidation, carrying %s',
+        async (_label, refusal) => {
+            const commandBatch = createBatch();
+            const confirmation = createConfirmation({ commandBatch });
+            const divergence = reapprovalDivergence();
+            mocks.getConfirmation.mockReturnValue(confirmation);
+            mocks.revision.mockReturnValue('revision-2');
+            mocks.revisionMatchesLive.mockReturnValue(false);
+            mocks.refreshBatch.mockReturnValue({ status: 'conflicted', divergence, refusal });
 
-        await expect(
-            confirmationAdmission.resolveConfirmationAdmission({ confirmationId: confirmation.id })
-        ).resolves.toEqual({ status: 'handled', result: { status: 'invalidated', reason: 'divergence' } });
-        expect(mocks.invalidateForDivergence).toHaveBeenCalledWith(confirmation, divergence);
-    });
+            await expect(
+                confirmationAdmission.resolveConfirmationAdmission({ confirmationId: confirmation.id })
+            ).resolves.toEqual({ status: 'handled', result: { status: 'invalidated', reason: 'divergence' } });
+            expect(mocks.invalidateForDivergence).toHaveBeenCalledWith(confirmation, divergence, refusal);
+        }
+    );
 
     it('invalidates through project-change settlement when a carried match selector no longer resolves, without refreshing or rebinding the batch', async () => {
         const commandBatch = createBatch();

@@ -22,7 +22,7 @@ import { useStatusBarMetrics, type StatusBarMetricRefs } from '../useStatusBarMe
 // than a cross-module model import.
 type EngineRtDiagnostics = Exclude<Awaited<ReturnType<typeof refreshEngineRtDiagnostics>>, null>;
 
-type TickFn = () => void;
+type TickFn = (frameTime: DOMHighResTimeStamp, deltaMs: number) => void;
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     collectAudioDeadlineEvidence: vi.fn(),
@@ -239,11 +239,14 @@ describe('useStatusBarMetrics', () => {
         renderHook(() => useStatusBarMetrics(refs));
 
         expect(capturedTick).not.toBeNull();
-        capturedTick!();
+        capturedTick!(performance.now(), 16);
 
         // 48000 Hz → "48kHz"; 0.005s context + 0.003s device → 8.0ms heard.
         expect(refs.sampleRate.current!.textContent).toBe('48kHz');
         expect(refs.latency.current!.textContent).toBe('8.0ms');
+        expect(getMasterPeakLevel).toHaveBeenLastCalledWith(0);
+        capturedTick!(123.456, 16);
+        expect(getMasterPeakLevel).toHaveBeenLastCalledWith(123.456);
     });
 
     // ── Output latency readout ───────────────────────────────────────────
@@ -272,7 +275,7 @@ describe('useStatusBarMetrics', () => {
         makeElements(refs);
         renderHook(() => useStatusBarMetrics(refs));
 
-        capturedTick!();
+        capturedTick!(performance.now(), 16);
 
         // 5.333ms + 10.667ms = 16.0ms. Reporting either term alone reads 5.3ms or 10.7ms.
         expect(refs.latency.current!.textContent).toBe('16.0ms');
@@ -294,7 +297,7 @@ describe('useStatusBarMetrics', () => {
         makeElements(refs);
         renderHook(() => useStatusBarMetrics(refs));
 
-        capturedTick!();
+        capturedTick!(performance.now(), 16);
 
         expect(refs.latency.current!.title).toBe(
             'Output latency 16.0 ms = context 5.3 ms + device 10.7 ms.' +
@@ -318,7 +321,7 @@ describe('useStatusBarMetrics', () => {
         makeElements(refs);
         renderHook(() => useStatusBarMetrics(refs));
 
-        capturedTick!();
+        capturedTick!(performance.now(), 16);
 
         // Sum, not a fixed device allowance: a 0 device term must subtract nothing.
         expect(refs.latency.current!.textContent).toBe('5.3ms');
@@ -357,7 +360,7 @@ describe('useStatusBarMetrics', () => {
         makeElements(refs);
         renderHook(() => useStatusBarMetrics(refs));
 
-        capturedTick!();
+        capturedTick!(performance.now(), 16);
 
         // 5.333ms + 11.0ms = 16.3ms — the native reading, not the 16.0ms the
         // Web Audio fixture above would have produced.
@@ -385,7 +388,7 @@ describe('useStatusBarMetrics', () => {
         makeElements(refs);
         renderHook(() => useStatusBarMetrics(refs));
 
-        capturedTick!();
+        capturedTick!(performance.now(), 16);
 
         expect(refs.latency.current!.textContent).toBe('16.0ms');
         expect(refs.latency.current!.title).toBe(
@@ -409,7 +412,7 @@ describe('useStatusBarMetrics', () => {
         const refs = makeRefs();
         makeElements(refs);
         renderHook(() => useStatusBarMetrics(refs));
-        capturedTick!();
+        capturedTick!(performance.now(), 16);
 
         expect(refs.sampleRate.current!.textContent).toBe('48kHz');
         expect(refs.sampleRate.current!.title).toBe('Web Audio context sample rate');
@@ -439,7 +442,7 @@ describe('useStatusBarMetrics', () => {
         const refs = makeRefs();
         makeElements(refs);
         renderHook(() => useStatusBarMetrics(refs));
-        capturedTick!();
+        capturedTick!(performance.now(), 16);
 
         expect(refs.sampleRate.current!.textContent).toBe('96kHz');
         expect(refs.sampleRate.current!.title).toBe('Native engine output stream rate');
@@ -461,7 +464,7 @@ describe('useStatusBarMetrics', () => {
         const refs = makeRefs();
         makeElements(refs);
         renderHook(() => useStatusBarMetrics(refs));
-        capturedTick!();
+        capturedTick!(performance.now(), 16);
 
         expect(refs.sampleRate.current!.textContent).toBe('n/a');
         expect(refs.sampleRate.current!.title).toBe('Native engine output stream rate');
@@ -484,7 +487,7 @@ describe('useStatusBarMetrics', () => {
         const refs = makeRefs();
         makeElements(refs);
         renderHook(() => useStatusBarMetrics(refs));
-        capturedTick!();
+        capturedTick!(performance.now(), 16);
 
         expect(refs.latency.current!.textContent).toBe('n/a');
         expect(refs.latency.current!.title).toContain('Native engine is the audible output');
@@ -511,7 +514,7 @@ describe('useStatusBarMetrics', () => {
         const refs = makeRefs();
         makeElements(refs);
         renderHook(() => useStatusBarMetrics(refs));
-        capturedTick!();
+        capturedTick!(performance.now(), 16);
 
         expect(refs.engineState.current!.className).toContain(getDawStatusDotClassName({ tone: 'success' }));
         expect(refs.engineState.current!.title).toContain('Engine: native running · Web Audio: running');
@@ -536,7 +539,7 @@ describe('useStatusBarMetrics', () => {
         const refs = makeRefs();
         makeElements(refs);
         renderHook(() => useStatusBarMetrics(refs));
-        capturedTick!();
+        capturedTick!(performance.now(), 16);
 
         expect(refs.engineState.current!.className).toContain(getDawStatusDotClassName({ tone: 'warning' }));
         expect(refs.engineState.current!.title).toContain('native output stream fault: deviceChanged');
@@ -561,7 +564,7 @@ describe('useStatusBarMetrics', () => {
         const refs = makeRefs();
         makeElements(refs);
         renderHook(() => useStatusBarMetrics(refs));
-        capturedTick!();
+        capturedTick!(performance.now(), 16);
 
         expect(refs.engineState.current!.className).toContain(getDawStatusDotClassName({ tone: 'danger' }));
         expect(refs.engineState.current!.title).toContain('Engine: native stopped');
@@ -583,7 +586,7 @@ describe('useStatusBarMetrics', () => {
         const refs = makeRefs();
         makeElements(refs);
         renderHook(() => useStatusBarMetrics(refs));
-        capturedTick!();
+        capturedTick!(performance.now(), 16);
 
         expect(refs.engineState.current!.className).toContain(getDawStatusDotClassName({ tone: 'muted' }));
         expect(refs.engineState.current!.title).toContain('Engine: native (no reading yet)');
@@ -616,9 +619,9 @@ describe('useStatusBarMetrics', () => {
         });
         renderHook(() => useStatusBarMetrics(refs));
 
-        capturedTick!();
-        capturedTick!();
-        capturedTick!();
+        capturedTick!(performance.now(), 16);
+        capturedTick!(performance.now(), 16);
+        capturedTick!(performance.now(), 16);
 
         expect(titleWrites).toEqual([
             'Output latency 16.0 ms = context 5.3 ms + device 10.7 ms.' +
@@ -642,7 +645,7 @@ describe('useStatusBarMetrics', () => {
         makeElements(refs);
         renderHook(() => useStatusBarMetrics(refs));
 
-        capturedTick!();
+        capturedTick!(performance.now(), 16);
         // The spec allows outputLatency to change while the context runs.
         vi.mocked(getEngineState).mockReturnValue({
             isReady: true,
@@ -653,7 +656,7 @@ describe('useStatusBarMetrics', () => {
             baseLatency: BASE_LATENCY_SECONDS,
             outputLatency: 1024 / 48_000,
         });
-        capturedTick!();
+        capturedTick!(performance.now(), 16);
 
         expect(refs.latency.current!.textContent).toBe('26.7ms');
         expect(refs.latency.current!.title).toBe(
@@ -678,11 +681,11 @@ describe('useStatusBarMetrics', () => {
         makeElements(refs);
         renderHook(() => useStatusBarMetrics(refs));
 
-        capturedTick!();
+        capturedTick!(performance.now(), 16);
         const sampleRateTextNode = refs.sampleRate.current!.firstChild;
         const latencyTextNode = refs.latency.current!.firstChild;
 
-        capturedTick!();
+        capturedTick!(performance.now(), 16);
 
         expect(refs.sampleRate.current!.firstChild).toBe(sampleRateTextNode);
         expect(refs.latency.current!.firstChild).toBe(latencyTextNode);
@@ -704,7 +707,7 @@ describe('useStatusBarMetrics', () => {
         const refs = makeRefs();
         makeElements(refs);
         renderHook(() => useStatusBarMetrics(refs));
-        capturedTick!();
+        capturedTick!(performance.now(), 16);
 
         expect(refs.masterLevelText.current!.textContent).toContain('-6.0 dB');
         // 0.5 * 300 = 150, but the bar width is capped at Math.min(100, ...) → 100%.
@@ -730,7 +733,7 @@ describe('useStatusBarMetrics', () => {
         const refs = makeRefs();
         makeElements(refs);
         renderHook(() => useStatusBarMetrics(refs));
-        capturedTick!();
+        capturedTick!(performance.now(), 16);
 
         expect(refs.masterLevelText.current!.textContent).toBe('n/a');
         expect(refs.masterLevelBar.current!.style.width).toBe('0%');
@@ -751,9 +754,71 @@ describe('useStatusBarMetrics', () => {
         const refs = makeRefs();
         makeElements(refs);
         renderHook(() => useStatusBarMetrics(refs));
-        capturedTick!();
+        capturedTick!(performance.now(), 16);
 
         expect(refs.masterLevelText.current!.textContent).toBe('-∞ dB');
+    });
+
+    it('shows +∞ dB, not "Infinity dB", when the master peak is infinite', () => {
+        vi.mocked(getEngineState).mockReturnValue({
+            isReady: true,
+            sampleRate: 44100,
+            state: 'running',
+            masterGain: 1,
+            currentTime: 0,
+            baseLatency: 0.01,
+            outputLatency: 0,
+        });
+        vi.mocked(getMasterPeakLevel).mockReturnValue(Number.POSITIVE_INFINITY);
+
+        const refs = makeRefs();
+        makeElements(refs);
+        renderHook(() => useStatusBarMetrics(refs));
+        capturedTick!(performance.now(), 16);
+
+        expect(refs.masterLevelText.current!.textContent).toBe('+∞ dB');
+        expect(refs.masterLevelBar.current!.style.width).toBe('100%');
+    });
+
+    it('shows -∞ dB when the master peak is NaN', () => {
+        vi.mocked(getEngineState).mockReturnValue({
+            isReady: true,
+            sampleRate: 44100,
+            state: 'running',
+            masterGain: 1,
+            currentTime: 0,
+            baseLatency: 0.01,
+            outputLatency: 0,
+        });
+        vi.mocked(getMasterPeakLevel).mockReturnValue(Number.NaN);
+
+        const refs = makeRefs();
+        makeElements(refs);
+        renderHook(() => useStatusBarMetrics(refs));
+        capturedTick!(performance.now(), 16);
+
+        expect(refs.masterLevelText.current!.textContent).toBe('-∞ dB');
+    });
+
+    it('keeps a finite master peak above full scale as a one-decimal dB reading', () => {
+        vi.mocked(getEngineState).mockReturnValue({
+            isReady: true,
+            sampleRate: 44100,
+            state: 'running',
+            masterGain: 1,
+            currentTime: 0,
+            baseLatency: 0.01,
+            outputLatency: 0,
+        });
+        // 2.0 amplitude → 20*log10(2) ≈ +6.0 dB.
+        vi.mocked(getMasterPeakLevel).mockReturnValue(2);
+
+        const refs = makeRefs();
+        makeElements(refs);
+        renderHook(() => useStatusBarMetrics(refs));
+        capturedTick!(performance.now(), 16);
+
+        expect(refs.masterLevelText.current!.textContent).toBe('6.0 dB');
     });
 
     it('hides the memory container when performance.memory is unavailable', () => {
@@ -772,7 +837,7 @@ describe('useStatusBarMetrics', () => {
         const refs = makeRefs();
         makeElements(refs);
         renderHook(() => useStatusBarMetrics(refs));
-        capturedTick!();
+        capturedTick!(performance.now(), 16);
 
         expect(refs.memContainer.current!.style.display).toBe('none');
     });
@@ -797,7 +862,7 @@ describe('useStatusBarMetrics', () => {
         const refs = makeRefs();
         makeElements(refs);
         renderHook(() => useStatusBarMetrics(refs));
-        capturedTick!();
+        capturedTick!(performance.now(), 16);
 
         expect(refs.memContainer.current!.style.display).toBe('flex');
         expect(refs.memText.current!.textContent).toBe('10 MB');
@@ -818,7 +883,7 @@ describe('useStatusBarMetrics', () => {
         const refs = makeRefs();
         makeElements(refs);
         renderHook(() => useStatusBarMetrics(refs));
-        capturedTick!();
+        capturedTick!(performance.now(), 16);
 
         const expectedClass = getDawStatusDotClassName({ tone: 'success' });
         expect(refs.engineState.current!.className).toContain(expectedClass);
@@ -844,7 +909,7 @@ describe('useStatusBarMetrics', () => {
         const refs = makeRefs();
         makeElements(refs);
         renderHook(() => useStatusBarMetrics(refs));
-        capturedTick!();
+        capturedTick!(performance.now(), 16);
 
         const expectedClass = getDawStatusDotClassName({ tone: 'muted' });
         expect(refs.engineState.current!.className).toContain(expectedClass);
@@ -882,7 +947,7 @@ describe('useStatusBarMetrics', () => {
         const refs = makeRefs();
         makeElements(refs);
         renderHook(() => useStatusBarMetrics(refs));
-        capturedTick!();
+        capturedTick!(performance.now(), 16);
 
         expect(refs.engineState.current!.title).toContain('missed render deadlines: 941 (5018.0 ms)');
     });
@@ -903,7 +968,7 @@ describe('useStatusBarMetrics', () => {
         const refs = makeRefs();
         makeElements(refs);
         renderHook(() => useStatusBarMetrics(refs));
-        capturedTick!();
+        capturedTick!(performance.now(), 16);
 
         const title = refs.engineState.current!.title;
         expect(title).toContain('engine-detected dropouts: 7');
@@ -928,7 +993,7 @@ describe('useStatusBarMetrics', () => {
         const refs = makeRefs();
         makeElements(refs);
         renderHook(() => useStatusBarMetrics(refs));
-        capturedTick!();
+        capturedTick!(performance.now(), 16);
 
         const title = refs.engineState.current!.title;
         expect(title).toContain('missed render deadlines: unavailable');
@@ -964,7 +1029,7 @@ describe('useStatusBarMetrics', () => {
         const refs = makeRefs();
         makeElements(refs);
         renderHook(() => useStatusBarMetrics(refs));
-        capturedTick!();
+        capturedTick!(performance.now(), 16);
 
         const title = refs.engineState.current!.title;
         expect(title).toContain(
@@ -988,7 +1053,7 @@ describe('useStatusBarMetrics', () => {
         const refs = makeRefs();
         makeElements(refs);
         renderHook(() => useStatusBarMetrics(refs));
-        capturedTick!();
+        capturedTick!(performance.now(), 16);
 
         const title = refs.engineState.current!.title;
         expect(title).toContain(' · deadline coverage: 4/4 observed');
@@ -1013,17 +1078,17 @@ describe('useStatusBarMetrics', () => {
         makeElements(refs);
         renderHook(() => useStatusBarMetrics(refs));
 
-        capturedTick!();
+        capturedTick!(performance.now(), 16);
         const initialTitle = refs.engineState.current!.title;
 
         vi.mocked(getEngineDiagnostics).mockReturnValue(makeEngineDiagnostics(25));
         now = 500;
-        capturedTick!();
+        capturedTick!(performance.now(), 16);
         expect(getEngineDiagnostics).toHaveBeenCalledTimes(1);
         expect(refs.engineState.current!.title).toBe(initialTitle);
 
         now = 1_000;
-        capturedTick!();
+        capturedTick!(performance.now(), 16);
         expect(getEngineDiagnostics).toHaveBeenCalledTimes(2);
         expect(refs.engineState.current!.title).toContain('ready device instances: 25');
     });
@@ -1049,15 +1114,15 @@ describe('useStatusBarMetrics', () => {
         makeElements(refs);
         renderHook(() => useStatusBarMetrics(refs));
 
-        capturedTick!();
+        capturedTick!(performance.now(), 16);
         expect(refreshEngineRtDiagnostics).toHaveBeenCalledTimes(1);
 
         now = 500;
-        capturedTick!();
+        capturedTick!(performance.now(), 16);
         expect(refreshEngineRtDiagnostics).toHaveBeenCalledTimes(1);
 
         now = 1_000;
-        capturedTick!();
+        capturedTick!(performance.now(), 16);
         expect(refreshEngineRtDiagnostics).toHaveBeenCalledTimes(2);
     });
 
@@ -1077,7 +1142,7 @@ describe('useStatusBarMetrics', () => {
         const refs = makeRefs();
         makeElements(refs);
         renderHook(() => useStatusBarMetrics(refs));
-        capturedTick!();
+        capturedTick!(performance.now(), 16);
 
         // CPU text is a percentage string.
         expect(refs.cpuText.current!.textContent).toMatch(/^\d+%$/);
@@ -1104,7 +1169,7 @@ describe('useStatusBarMetrics', () => {
                 // callback with that much of it left.
                 dispatchIdle(idleMs);
             }
-            capturedTick!();
+            capturedTick!(performance.now(), 16);
         }
     }
 

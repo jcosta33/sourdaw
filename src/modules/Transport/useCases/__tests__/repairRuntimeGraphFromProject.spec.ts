@@ -1,9 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { createTrack } from '#/modules/Arrangement/useCases';
 
 import { playheadPositionRef } from '../../stores/playheadPositionRef';
 import { repairRuntimeGraphFromProject } from '../repairRuntimeGraphFromProject';
+
+registerDeviceEnginePorts();
 
 type MonitoredTrack = {
     id: string;

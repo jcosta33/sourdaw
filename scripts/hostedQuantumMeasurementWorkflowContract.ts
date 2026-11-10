@@ -206,17 +206,13 @@ function assertCheckout(named: (name: string) => UnknownRecord): void {
 }
 
 function assertSetup(named: (name: string) => UnknownRecord): void {
-    requireEqual(
-        named('Set up pnpm').uses,
-        'pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86',
-        'the pinned pnpm action'
-    );
+    requireEqual(named('Set up pnpm').uses, './.github/actions/setup-pnpm', 'the verified JavaScript pnpm action');
     requireEqual(
         named('Set up Node').uses,
-        'actions/setup-node@820762786026740c76f36085b0efc47a31fe5020',
+        'actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1',
         'the pinned Node action'
     );
-    requireEqual(record(named('Set up Node').with, 'Node setup')['node-version'], '24.19.0', 'Node 24.19.0');
+    requireEqual(record(named('Set up Node').with, 'Node setup')['node-version'], '24.22.2', 'Node 24.22.2');
     requireEqual(
         named('Install dependencies').run,
         'pnpm install --frozen-lockfile --ignore-scripts',
@@ -272,7 +268,7 @@ function assertArtifact(named: (name: string) => UnknownRecord): void {
     const upload = named('Upload qualified artifact');
     requireEqual(
         upload.uses,
-        'actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a',
+        'actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9',
         'the pinned artifact uploader'
     );
     requireEqual(

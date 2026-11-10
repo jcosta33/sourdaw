@@ -1,30 +1,4 @@
-import { resetArrangementStoresForProject } from '#/modules/Arrangement/useCases';
-import { setMasterGainValue } from '#/modules/AudioEngine/useCases';
-import { automationStore } from '#/modules/Automation/stores';
-import { bacteriaStore } from '#/modules/Bacteria/stores';
-import { crustStore, crustMeterStore } from '#/modules/Crust/stores';
-import { fermenterStore } from '#/modules/Fermenter/stores';
-import { glutenStore, glutenMeterStore } from '#/modules/Gluten/stores';
-import { resetGrandBouleStores } from '#/modules/GrandBoule/stores';
-import { grinderStore, grinderTelemetryStore } from '#/modules/Grinder/stores';
-import { kneadStore, defaultKneadState } from '#/modules/Knead/stores';
-import { levainStore } from '#/modules/Levain/stores';
-import { hydrateGrooveTemplates, resetMidiStoreForProject } from '#/modules/MIDI/useCases';
-import { proofStore } from '#/modules/Proof/stores';
-import { setSidechainRoutes } from '#/modules/Routing/useCases';
-import { toasterStore, resetToasterDeviceLifecycleState } from '#/modules/Toaster/stores';
-import { disposeEveryToasterDevice } from '#/modules/Toaster/useCases';
-import { tempoMapStore, timeSignatureMapStore, transportStore } from '#/modules/Transport/stores';
-import { defaultTransportState, preferencesSeededTransportState } from '#/modules/Transport/useCases';
-import { tunerStore } from '#/modules/Tuner/stores';
-import { hydrateYeastState } from '#/modules/Yeast/useCases';
-
-import { arrangementStore, defaultArrangementStoreState } from '../../../stores/arrangementStore';
-import { defaultMissingMediaStoreState, missingMediaStore } from '../../../stores/missingMediaStore';
-
-import { activeAgentRunsCancellerRef } from './activeAgentRunCancellationState';
-import { agentMeasurementArtifactsClearerRef } from './agentMeasurementArtifactClearingState';
-import { agentSectionRenderArtifactsClearerRef } from './agentSectionRenderArtifactsClearingState';
+import { projectLifecycleRegistry } from '../projectLifecycleRegistry';
 
 type ResetModuleStoresToDefaultInput = {
     createNewMidiProbabilitySeed?: boolean;
@@ -33,89 +7,19 @@ type ResetModuleStoresToDefaultInput = {
     resetYeastState?: boolean;
 };
 
+/**
+ * Reset every module's project-scoped state for the incoming project, through
+ * the participants the composition root registered, in their registered order.
+ * A project load passes `false` for the state its own hydration replaces.
+ */
 export function resetModuleStoresToDefault({
     createNewMidiProbabilitySeed = false,
     resetGrooveTemplates = true,
     resetMidiState = true,
     resetYeastState = true,
 }: ResetModuleStoresToDefaultInput = {}): void {
-    resetArrangementStoresForProject();
-    arrangementStore.set(structuredClone(defaultArrangementStoreState));
-    // The missing-media record describes the project being torn down. Every
-    // caller either follows with `verifyAudioBufferReferences` (the load paths,
-    // which re-derive it) or is `newProject`, which has no media to miss — so
-    // clearing here is what stops a closed project's count from outliving it.
-    missingMediaStore.set(structuredClone(defaultMissingMediaStoreState));
-    // An agent run in flight is bound to the project being torn down: cancel it
-    // first, so its renders abort through the run's own cancellation machinery
-    // and free the process-wide render lock for the incoming project (#4783).
-    // The canceller is the composition-root-registered seam — AiRuntime imports
-    // this module's barrel, so the reverse import would close a cycle.
-    activeAgentRunsCancellerRef.current?.();
-    // Retained agent section renders describe the project being torn down; clear
-    // them (and their expiry timer) through the composition-root-registered seam
-    // (#4767) — same seam shape as the measurement clearer directly below.
-    agentSectionRenderArtifactsClearerRef.current?.();
-    // Retained measurement renders describe the project being torn down; clear them (and their
-    // expiry timer) through the composition-root-registered seam — see
-    // `agentMeasurementArtifactClearingState.ts` for why this cannot be a direct barrel import.
-    agentMeasurementArtifactsClearerRef.current?.();
-    // Recording preferences seed the count-in/pre-roll default of the incoming
-    // project only; a loaded project restores its own saved transport values
-    // through `restoreTransportSnapshot`, which never passes here.
-    transportStore.set(preferencesSeededTransportState());
-    setMasterGainValue(defaultTransportState.masterGain / 100);
-    automationStore.set({ lanes: [] });
-    if (resetMidiState) {
-        resetMidiStoreForProject({ generateProbabilitySeed: createNewMidiProbabilitySeed });
+    const options = { createNewMidiProbabilitySeed, resetGrooveTemplates, resetMidiState, resetYeastState };
+    for (const participant of projectLifecycleRegistry.read('resetModuleStoresToDefault')) {
+        participant.resetForProject?.(options);
     }
-    if (resetGrooveTemplates) {
-        hydrateGrooveTemplates({ templates: [], assignments: [] });
-    }
-    if (resetYeastState) {
-        hydrateYeastState(undefined);
-    }
-    tempoMapStore.set({ changes: [] });
-    timeSignatureMapStore.set({ changes: [] });
-    setSidechainRoutes([]);
-
-    // Reset per-device-instance stores (§13.1 — prevents stale device state
-    // from previous project leaking into newly loaded projects)
-    glutenStore.set({});
-    // Gluten holds high-frequency meter telemetry in a separate store from the
-    // patch (like Grinder's grinderTelemetryStore below); reset it too so a
-    // reopened panel for a reused deviceId does not show the prior project's
-    // last meter readings.
-    glutenMeterStore.set({});
-    fermenterStore.set({});
-    grinderStore.set({});
-    grinderTelemetryStore.set({});
-    bacteriaStore.set({});
-    proofStore.set({});
-    tunerStore.set({});
-    // The graph reset that precedes a switch announces no device removal, so
-    // the outgoing project's Toasters end here: their sequencer, note-repeat
-    // and 16-Levels sessions would otherwise reach a same-id device of the
-    // incoming project.
-    disposeEveryToasterDevice();
-    toasterStore.set({});
-    // The Toaster registration bookkeeping (deferred kit writes and retired
-    // ids) is module-level state beside the store. Surviving a project
-    // switch, it would either flush an abandoned write onto the incoming
-    // project's same-id device — dirtying a just-loaded document — or refuse
-    // its loading-window writes outright. Ids are per-document, so the
-    // bookkeeping ends at the project boundary (§13.1).
-    resetToasterDeviceLifecycleState();
-    levainStore.set({});
-    // Grand Boule keeps a Map of per-device store instances (not a single
-    // Record<deviceId, State> store), so a single `.set(default)` on the shim
-    // would leave every other device's slice intact and leak it into the next
-    // project. resetGrandBouleStores() resets every per-device store (§13.1).
-    resetGrandBouleStores();
-    // Crust is per-device like Gluten: clear both the patch instances and the
-    // meter telemetry, so no previous project's patch or readings survive a
-    // device-id reuse (§13.1).
-    crustStore.set({});
-    crustMeterStore.set({});
-    kneadStore.set(defaultKneadState);
 }

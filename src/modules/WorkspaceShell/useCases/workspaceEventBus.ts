@@ -1,21 +1,22 @@
 import { Container } from '#/infra/di/Container';
 
+import type { VoidPayload } from '#/infra/events/types';
+import type { ToggleVoiceCommandPayload } from '#/modules/Command/events';
+import type { MidiOutPayload } from '#/modules/MIDI/events';
 import type {
     ConfirmPayload,
     ImportMidiPayload,
-    MidiOutPayload,
     NotifyPayload,
+    OpenPreferencesPayload,
     PromptPayload,
     ShowDevicePanelGenericPayload,
-    ToggleVoiceCommandPayload,
-    VoidPayload,
     ZoomToSelectionPayload,
 } from '../events/WorkspaceEvents';
 
 type WorkspaceEvents = {
     'panel.showDevice': ShowDevicePanelGenericPayload;
     'dialog.openExport': VoidPayload;
-    'dialog.openPreferences': VoidPayload;
+    'dialog.openPreferences': OpenPreferencesPayload;
     'project.save': VoidPayload;
     'project.new': VoidPayload;
     'command.undo': VoidPayload;

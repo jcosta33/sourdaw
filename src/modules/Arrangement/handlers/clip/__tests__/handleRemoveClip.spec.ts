@@ -46,7 +46,7 @@ const mocks = vi.hoisted(() => ({
     removeMidiClipData: vi.fn<(clipIds: readonly string[]) => void>(),
     readClipSatelliteEntry: vi.fn(),
     readClipScopedAutomationLanes: vi.fn(),
-    workspaceStore: { value: { rippleEditing: false } },
+    timelineEditingStore: { value: { rippleEditing: false } },
     witness: 'before',
 }));
 
@@ -66,9 +66,11 @@ vi.mock('../../../useCases/rippleDelete/rippleDeleteClips', () => ({
     rippleDeleteClips: mocks.rippleDeleteClips,
 }));
 
-vi.mock('#/modules/WorkspaceShell/stores', () => ({ workspaceStore: mocks.workspaceStore }));
+vi.mock('../../../stores/timelineEditingStore', () => ({ timelineEditingStore: mocks.timelineEditingStore }));
 
 vi.mock('#/modules/Command/useCases', () => ({
+    commitUndoEntry: vi.fn(),
+    createUndoEntry: vi.fn(),
     commitRedoInverseCapture: vi.fn(),
     executeAppAction: vi.fn(),
     executeUserAppAction: vi.fn(),
@@ -82,6 +84,12 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     stageCommandSourcePublication: vi.fn<
         typeof import('#/modules/CrdtDocument/useCases').stageCommandSourcePublication
     >(() => () => undefined),
+    captureProjectRootIdentity: vi.fn<typeof import('#/modules/CrdtDocument/useCases').captureProjectRootIdentity>(
+        () => 'document-identity'
+    ),
+    subscribeToCrdtChanges: vi.fn<typeof import('#/modules/CrdtDocument/useCases').subscribeToCrdtChanges>(
+        () => () => {}
+    ),
     hasForeignPendingProjectWrites: vi.fn(() => false),
     captureDurableDocumentWitness: vi.fn(() => mocks.witness),
     captureProjectMutationAuthorization: vi.fn(() => () => true),
@@ -111,7 +119,7 @@ vi.mock('../../../useCases/clip/readClipScopedAutomationLanes', () => ({
 describe('handleRemoveClip', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        mocks.workspaceStore.value = { rippleEditing: false };
+        mocks.timelineEditingStore.value = { rippleEditing: false };
         mocks.witness = 'before';
         mocks.getTrackStoreState.mockReturnValue(null);
         mocks.planRippleDelete.mockReturnValue(null);
@@ -136,7 +144,7 @@ describe('handleRemoveClip', () => {
         const description = handleRemoveClip.describe(action);
         expect(description.redoAction).toEqual(action);
         expect(description.redoAction?.payload).not.toBe(action.payload);
-        mocks.workspaceStore.value = { rippleEditing: true };
+        mocks.timelineEditingStore.value = { rippleEditing: true };
         const result = handleRemoveClip.execute(action);
         expect(mocks.rippleDeleteClips).toHaveBeenCalledWith({ trackId: 't1', clipIds: ['c1'], ripple: true });
         expect(description.redoAction).toEqual(action);
@@ -147,7 +155,7 @@ describe('handleRemoveClip', () => {
         await result.afterCommit?.();
         expect(description.redoAction).toEqual({ type: 'removeClip', payload: { clipId: 'c1', ripple: true } });
         expect(action.payload).toEqual({ clipId: 'c1' });
-        expect(mocks.workspaceStore.value.rippleEditing).toBe(true);
+        expect(mocks.timelineEditingStore.value.rippleEditing).toBe(true);
     });
 
     describe('execute', () => {

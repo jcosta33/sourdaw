@@ -154,7 +154,7 @@ export const CrustPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
         <Stack gap={2.5} className="crust-faceplate h-full min-h-[440px] p-2.5 text-foreground">
             <Row as="header" wrap gap={2.5} shrink={false} className="crust-window px-3 py-2">
                 <Stack gap={1}>
-                    <div className="text-micro uppercase tracking-[0.28em] text-[var(--color-accent-copper)]/70">
+                    <div className="text-micro uppercase tracking-[0.28em] text-[var(--color-accent-copper)]">
                         Loudness desk
                     </div>
                     <div className="text-[13px] font-semibold text-foreground">Crust</div>
@@ -177,9 +177,7 @@ export const CrustPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                         aria-expanded={presetMenuOpen}
                     >
                         <div className="min-w-0 flex-1 text-left">
-                            <div className="text-micro uppercase tracking-[0.22em] text-muted-foreground/55">
-                                Preset
-                            </div>
+                            <div className="text-micro uppercase tracking-[0.22em] text-text-secondary">Preset</div>
                             <div className="truncate text-foreground">{patch.name}</div>
                         </div>
                         <ChevronDown className="size-3.5 shrink-0 text-muted-foreground/65" />
@@ -223,9 +221,7 @@ export const CrustPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                         aria-expanded={streamingMenuOpen}
                     >
                         <div className="min-w-0 flex-1 text-left">
-                            <div className="text-micro uppercase tracking-[0.22em] text-muted-foreground/55">
-                                Target
-                            </div>
+                            <div className="text-micro uppercase tracking-[0.22em] text-text-secondary">Target</div>
                             <div className="truncate text-foreground">{streamingLabel}</div>
                         </div>
                         <div className="text-right">
@@ -279,7 +275,7 @@ export const CrustPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                         {normalizationLoss > 0.25 ? `Watch ${normalizationLoss.toFixed(1)} dB` : 'On target'}
                     </DawPluginLed>
                     <div className="text-right">
-                        <div className="text-micro uppercase tracking-[0.22em] text-muted-foreground/55">Ceiling</div>
+                        <div className="text-micro uppercase tracking-[0.22em] text-text-secondary">Ceiling</div>
                         <div className="font-mono text-compact text-foreground">{patch.ceiling.toFixed(1)} dBTP</div>
                     </div>
                 </Row>
@@ -313,7 +309,7 @@ export const CrustPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                             className="px-1"
                             size="xs"
                             title="Mission control"
-                            titleClassName="text-muted-foreground/70"
+                            titleClassName="text-muted-foreground"
                             actions={
                                 <Row gap={2} className="text-caption text-muted-foreground">
                                     <Stack gap={0.5}>
@@ -321,14 +317,14 @@ export const CrustPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                                             label="ST"
                                             value={`${lufsShortTerm.toFixed(1)} LUFS`}
                                             className="gap-1.5"
-                                            labelClassName="text-micro text-muted-foreground/55"
+                                            labelClassName="text-micro text-text-secondary"
                                             valueClassName="text-micro text-muted-foreground"
                                         />
                                         <DawReadoutRow
                                             label="TP"
                                             value={`${truepeakMax.toFixed(1)} dB`}
                                             className="gap-1.5"
-                                            labelClassName="text-micro text-muted-foreground/55"
+                                            labelClassName="text-micro text-text-secondary"
                                             valueClassName="text-micro text-muted-foreground"
                                         />
                                     </Stack>
@@ -387,7 +383,7 @@ export const CrustPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                 status bar, which is invalid and makes landmark navigation ambiguous. */}
             <Row wrap gap={2.5} shrink={false} className="crust-window px-3 py-2">
                 <Row as="label" gap={2} className="text-dense text-muted-foreground">
-                    <span className="uppercase tracking-[0.22em] text-muted-foreground/55">Ceiling</span>
+                    <span className="uppercase tracking-[0.22em] text-text-secondary">Ceiling</span>
                     <DawCompactInput
                         type="number"
                         min={-6}

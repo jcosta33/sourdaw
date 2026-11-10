@@ -1,18 +1,13 @@
-import { shiftLoopOriginEntry } from '#/utils/clipLoopOrigin';
-
 import { type Clip } from '../../models/Track';
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { mapAllTracks } from '../../repositories/track/mapAllTracks';
 import { resolveEligibleClipWriteTarget } from '../../stores/resolveEligibleClipWriteTarget';
+import { liveTempoTimeline } from '../liveTempoTimeline';
 
 import { consumedStretchFactor } from './consumedStretchFactor';
-
-function computeMaxTimelinePreRoll(clipB: Clip, stretchFactor: number): number {
-    if (clipB.type === 'midi') {
-        return Math.max(0, clipB.midiOffsetBeats ?? 0);
-    }
-    return Math.max(0, clipB.audioOffsetBeats ?? 0) / stretchFactor;
-}
+import { crossfadeClipBLoopOriginEntry } from './crossfadeClipBLoopOriginEntry';
+import { findCrossfadePair } from './findCrossfadePair';
+import { resolveCrossfadeClipB } from './resolveCrossfadeClipB';
 
 /**
  * Crossfade length used when a caller does not name one — a quarter-note
@@ -41,13 +36,11 @@ export function crossfadeClips(clipAId: string, clipBId: string, durationBeats =
         return false;
     }
 
-    const clipATrack = state.tracks.find((track) => track.id === clipAResolution.trackId);
-    const clipBTrack = state.tracks.find((track) => track.id === clipBResolution.trackId);
-    const clipA: Clip | undefined = clipATrack?.clips.find((context) => context.id === clipAId);
-    const clipB: Clip | undefined = clipBTrack?.clips.find((context) => context.id === clipBId);
-    if (!clipA || !clipB) {
+    const pair = findCrossfadePair(state.tracks, clipAId, clipBId);
+    if (!pair) {
         return false;
     }
+    const { clipA, clipB } = pair;
     if (!Number.isFinite(clipA.endBeat) || !Number.isFinite(clipB.startBeat)) {
         return false;
     }
@@ -57,10 +50,12 @@ export function crossfadeClips(clipAId: string, clipBId: string, durationBeats =
     const unclampedClipBStart = clipB.startBeat - halfLen;
 
     const stretchFactor = consumedStretchFactor(clipB);
-    const maxTimelinePreRoll = computeMaxTimelinePreRoll(clipB, stretchFactor);
-
-    const boundedClipBStart = Math.max(0, clipB.startBeat - maxTimelinePreRoll);
-    const newClipBStart = Math.max(unclampedClipBStart, boundedClipBStart);
+    const clipBPlan = resolveCrossfadeClipB(clipB, halfLen, liveTempoTimeline);
+    if (!clipBPlan) {
+        return false;
+    }
+    const newClipBStart = clipBPlan.startBeat;
+    const newAudioSource = clipBPlan.audioSource;
     const actualOverlap = newClipAEnd - newClipBStart;
 
     const clipBDelta = newClipBStart - clipB.startBeat;
@@ -80,12 +75,12 @@ export function crossfadeClips(clipAId: string, clipBId: string, durationBeats =
     // `audioOffsetBeats - (startBeat - loopOriginBeat)` survives at any
     // ratio. Carried unshifted, a stretched crossfade drives the advance
     // negative and slides the region by `clipBDelta * (stretch - 1)` source
-    // beats. The MIDI offset retreats by the raw delta, so its carried
-    // anchor already holds and stays untouched. A negative audio offset
+    // beats. A negative audio offset
     // names leading silence before recorded media; the pre-roll bound keeps
     // that start fixed. Preserve its signed lower bound while retaining the
     // zero clamp for rounding at the end of a nonnegative pre-roll handle.
-    const clipBLoopOriginEntry = clipB.type === 'audio' ? shiftLoopOriginEntry(clipB, clipBDelta - contentDelta) : {};
+    // A canonical clock carries its own repeat grid, so its anchor stays.
+    const clipBLoopOriginEntry = crossfadeClipBLoopOriginEntry(clipB, clipBDelta, contentDelta);
 
     if (
         !Number.isFinite(halfLen) ||
@@ -104,7 +99,8 @@ export function crossfadeClips(clipAId: string, clipBId: string, durationBeats =
         clipB.startBeat !== newClipBStart ||
         clipB.fadeInBeats !== actualOverlap ||
         (newAudioOffsetBeats !== undefined && clipB.audioOffsetBeats !== newAudioOffsetBeats) ||
-        (newMidiOffsetBeats !== undefined && clipB.midiOffsetBeats !== newMidiOffsetBeats);
+        (newMidiOffsetBeats !== undefined && clipB.midiOffsetBeats !== newMidiOffsetBeats) ||
+        (newAudioSource !== undefined && clipB.audioOffsetSeconds !== newAudioSource.audioOffsetSeconds);
     if (!didChangeClipA && !didChangeClipB) {
         return false;
     }
@@ -121,6 +117,7 @@ export function crossfadeClips(clipAId: string, clipBId: string, durationBeats =
                     startBeat: newClipBStart,
                     fadeInBeats: actualOverlap,
                     ...clipBLoopOriginEntry,
+                    ...newAudioSource,
                 };
                 if (newAudioOffsetBeats !== undefined) {
                     updated.audioOffsetBeats = newAudioOffsetBeats;

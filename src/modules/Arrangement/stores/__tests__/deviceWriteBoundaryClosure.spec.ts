@@ -528,10 +528,11 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // writes a device.
         'src/modules/AiRuntime/useCases/compilePlannedActionCommandBatch.ts': 7,
         // Count provenance: AC-013 compiles immutable approval and execution
-        // metadata. These references are imports, declarations, calls, and
-        // ReturnType projections around Command envelope compilers; none loads,
-        // hydrates, or writes a device or AudioEngine node.
-        'src/modules/AiRuntime/useCases/compileAgentActionExecution.ts': 10,
+        // metadata. Four additional matches are the private auto-commit batch
+        // helper's declaration, two ReturnType projections, and call. The
+        // versioned Command envelope compiler moved into that helper; none of
+        // these references loads, hydrates, or writes a device or AudioEngine node.
+        'src/modules/AiRuntime/useCases/compileAgentActionExecution.ts': 14,
         'src/modules/AiRuntime/useCases/compileAgentRiskApproval.ts': 1,
         // Count provenance: 0 in code, was 3 — confirmation admission moved to
         // agentRequestOrchestration/resolveConfirmationAdmission (#3048), taking
@@ -548,27 +549,44 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // and call). These pure helpers compile or admit data into a versioned Command
         // envelope; they do not perform device IO or hydration.
         'src/modules/AiRuntime/useCases/compilePreviewMeasurementProposal.ts': 11,
-        // Count provenance: new file entry, measured 6 — the `compilePreviewMeasurementProposal`
-        // import, module-path literal, call and type-level
+        // Count provenance: measured 7 — the `compilePreviewMeasurementProposal`
+        // import, module-path literal, two calls and type-level
         // `Parameters<typeof compilePreviewMeasurementProposal>` reference, plus the
         // local `compileProposal` declaration and call. The type reference adds no IO;
         // measurement still uses the same grounding and versioned-envelope route, with
         // no device hydration or write.
-        'src/modules/AiRuntime/useCases/executePreviewMeasurement.ts': 6,
+        'src/modules/AiRuntime/useCases/executePreviewMeasurement.ts': 7,
+        // Count provenance: new prefix-preview file has an envelope-compiler
+        // import, type projection and call, plus a local helper declaration and
+        // call. It slices and verifies immutable Command metadata; no device
+        // or AudioEngine write occurs here.
+        'src/modules/AiRuntime/useCases/prepareMetricGoalPreview.ts': 5,
+        // Count provenance: new file, measured 1 — the declaration of the pure
+        // perceptual-constraint reader, which turns request text into excluded
+        // dimensions and hold goals. It holds no device or AudioEngine write.
+        'src/modules/AiRuntime/useCases/perceptualConstraints/compilePerceptualConstraints.ts': 1,
+        // Count provenance: new file, measured 3 — that reader's imported name,
+        // its module path and its one call. No device or AudioEngine write.
+        'src/modules/AiRuntime/useCases/perceptualConstraints/readRequestPerceptualConstraints.ts': 3,
+        // Count provenance: new file entry, measured 3 — the perceptual-constraint
+        // reader's imported name, its module path and its one call, which reads the
+        // request's protective clauses as brief hard constraints. No device or
+        // AudioEngine write.
+        'src/modules/AiRuntime/useCases/executeBriefCompile.ts': 3,
         // Pending-effect continuation records keep only command-envelope types;
         // their two matches are type imports and type projections, never device IO.
         'src/modules/AiRuntime/useCases/createAgentRunPendingEffectContinuation.ts': 2,
         'src/modules/AiRuntime/useCases/issueAgentCommandApprovalBinding.ts': 3,
         'src/modules/AiRuntime/useCases/validateAgentRiskApproval.ts': 7,
         'src/modules/AiRuntime/useCases/prepareAgentRunPendingEffectContinuation.ts': 2,
-        // Count provenance: new file entry, measured 8 — four
-        // `compileAgentRiskApproval` (import, return-type projection, local
-        // annotation, call), two `compilePartialCommandBatchAcceptance` (import
+        // Count provenance: measured 10 — six `compileAgentRiskApproval`
+        // references (import identifier and path, two ReturnType projections,
+        // two calls), two `compilePartialCommandBatchAcceptance` (import
         // and call) and two `compileSelectedSubset` (declaration and call). The
-        // ninth lexical match, `compilePendingActionCommandEnvelopes`, is a
-        // comment recording why an original command's position is its action's.
+        // `compilePendingActionCommandEnvelopes` is mentioned only in a comment
+        // recording why an original command's position is its action's.
         // Re-proposal compiles command batches only; it reaches no device sink.
-        'src/modules/AiRuntime/useCases/reproposePendingChatActions.ts': 8,
+        'src/modules/AiRuntime/useCases/reproposePendingChatActions.ts': 10,
         'src/modules/AiRuntime/useCases/recordAgentRunPendingEffectContinuation.ts': 2,
         // Count provenance: 0 in code, was 2 — pure receipt projection moved to
         // projectAgentRunReceiptSaga (#3052), taking every
@@ -620,6 +638,12 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // evaluator's AU-1 delegation note (#747). The transformer computes
         // curve values only, holds no device writes.
         // 'src/modules/Arrangement/transformers/automationTransformers.ts': removed (0),
+        // Count provenance: new file entry, measured 2 — the declaration and the
+        // one call of `compileSlices`, the pure planner that turns detected
+        // onsets into slice positions for a transient quantize. It returns plain
+        // data; the plan is applied through `restoreStripSilenceState` as a clip
+        // replacement and touches no device, parameter or engine state.
+        'src/modules/Arrangement/useCases/prepareTransientQuantize.ts': 2,
         // Count provenance: 0 in code, was 1 lexical — a doc-comment
         // cross-reference to `compileAutomationEvents` in the live evaluator's
         // AU-1 delegation note (#747) — not a sink.
@@ -831,6 +855,17 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // confirmPendingChatActions (#3147). Command settlement only; no device
         // hydration or write.
         'src/modules/AiRuntime/useCases/agentRequestOrchestration/settleConfirmedCommandExecution.ts': 2,
+        // Count provenance: new file entry, measured 3 — the
+        // `compileVibeBatchMetricState` import, its module path in that same
+        // import, and the one call that reads a vibe-run batch's measured metric
+        // state. Grounding builds immutable batch actions only; no device
+        // hydration or write.
+        'src/modules/AiRuntime/useCases/agentRequestOrchestration/groundVibeRunBatch.ts': 3,
+        // Count provenance: new file entry, measured 3 — the
+        // `compileAgentRiskApproval` import, its module path in that same import,
+        // and the one call that seals the next scheduled batch's approval
+        // snapshot. Immutable approval metadata only; no device hydration or write.
+        'src/modules/AiRuntime/useCases/agentRequestOrchestration/proposeNextScheduledBatch.ts': 3,
         // Count provenance: new file entry, measured 1 — the single
         // `providerProtocol.compileRequest` call, extracted from
         // sendChatMessage (#2975). Provider-request compilation only.
@@ -853,13 +888,27 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         'src/modules/AiRuntime/useCases/groundCompiledCommandBatch.ts': 1,
         'src/modules/AiRuntime/useCases/llmOrchestration/inference.ts': 1,
         'src/modules/AiRuntime/useCases/modelProviderProtocol.ts': 3,
-        'src/modules/AiRuntime/useCases/parsePromptToActions.ts': 3,
+        // Count provenance: three new matches are the preview-proposal
+        // compiler's import identifier, module path and call. It prepares
+        // immutable Command metadata for proof, not device hydration or a write.
+        'src/modules/AiRuntime/useCases/parsePromptToActions.ts': 6,
         // Count provenance: new file entry, measured 1 — the module path in the
         // compiled-evidence type import from compileArbitraryCommandList. The file
         // splits immutable compiled evidence into slices; no device hydration or write.
         'src/modules/AiRuntime/useCases/splitCompiledCommandList.ts': 1,
         'src/modules/AiRuntime/useCases/streamHostedModelText.ts': 1,
         'src/modules/AiRuntime/useCases/validateArbitraryCommandListEvidence.ts': 1,
+        // Count provenance: new file entry, measured 4 — the exported
+        // `compileVibeBatchMetricState` declaration, plus the
+        // `compilePreviewMeasurementProposal` import, its module path and one
+        // call that measures a batch preview. Measurement compiles a versioned
+        // Command envelope over an isolated projection; no device hydration or write.
+        'src/modules/AiRuntime/useCases/vibeRun/compileVibeBatchMetricState.ts': 4,
+        // Count provenance: new file entry, measured 3 — the
+        // `compilePerceptualConstraints` import, its module path and one call
+        // that reads the request's constraint clauses while planning the
+        // schedule. Pure prompt reading; no device hydration or write.
+        'src/modules/AiRuntime/useCases/vibeRun/planVibeRunSchedule.ts': 3,
         // Arrangement: compileAddDeviceAction / compileReorderDevicesAction /
         // compileLoadPresetActions / compileTrackStripInitializationSnapshot.
         // Compilers, barrel re-exports, the loadPreset handler, and
@@ -871,13 +920,20 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // step; the hook no longer names a compiler.
         // 'src/modules/Arrangement/presentations/hooks/useTimelineFileDrop.ts': removed (0),
         // Count provenance: measured 4 after the creation-route conversion
-        // (#4618) — the drop path compiles its batches through
-        // `compileNewAudioTrackAction` (the family-patterned `compile[A-Z]…`
-        // identifier), whose declaration, the barrel path in its import line,
-        // the type-level `CreationBatchAction` reference, and the single call
-        // site each count one. The hook still writes no store directly: every
-        // mutation lands through `executeAppActionBatch`.
+        // (#4618), and still 4 after the sample branch moved into
+        // `placeLibrarySample`: the hook now names `compileNewAudioTrackAction`
+        // (the family-patterned `compile[A-Z]…` identifier) as an import
+        // identifier, the module path in that import line, and two calls (the
+        // AI-render and file-import branches). The declaration it used to hold
+        // moved to its own file, censused below. The hook writes no store
+        // directly: every mutation lands through `executeAppActionBatch`.
         'src/modules/Arrangement/presentations/hooks/useTimelineFileDrop.ts': 4,
+        // Count provenance: new file entry, measured 1 — the declaration of
+        // `compileNewAudioTrackAction`, moved out of useTimelineFileDrop.ts
+        // unchanged so the drop hook and `placeLibrarySample` share it. It
+        // returns an `addTrack` action for executeAppActionBatch to commit; it
+        // reads and writes no store or device.
+        'src/modules/Arrangement/useCases/compileNewAudioTrackAction.ts': 1,
         'src/modules/Arrangement/useCases/compileTrackStripInitializationSnapshot.ts': 1,
         'src/modules/Arrangement/useCases/device/compileAddDeviceAction.ts': 1,
         'src/modules/Arrangement/useCases/device/compileReorderDevicesAction.ts': 1,
@@ -887,11 +943,28 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // one compile call in the dispatch door. The compiled action commits
         // through `executeAppAction`; the file holds no store or engine write.
         'src/modules/Arrangement/useCases/device/executeAddDeviceAction.ts': 3,
-        // Count provenance: was 6, measured 4 — the `compileAddDeviceAction`
-        // re-export left the barrel with the dispatch-door rewire (#2980);
-        // the compileReorderDevicesAction and compileLoadPresetActions
-        // re-exports remain (identifier + module path each).
-        'src/modules/Arrangement/useCases/index.ts': 4,
+        // Count provenance: was 8, measured 10 — the `compileNewAudioTrackAction`
+        // re-export adds an identifier and a module path, so the shared
+        // add-track builder reaches ContentBrowser's `placeLibrarySample`
+        // through the barrel. Earlier: was 4, measured 8 — the compileReorderDevicesAction and
+        // compileLoadPresetActions re-exports remain (identifier + module path
+        // each), and the compileSendLevelAction and compileSendPreFaderAction
+        // re-exports add an identifier and a module path apiece. The send
+        // builders return a send action; the barrel writes nothing.
+        'src/modules/Arrangement/useCases/index.ts': 10,
+        // Count provenance: new file entry, measured 1 — the declaration of
+        // `compileSendLevelAction`. It returns a setSend/addSend action for
+        // executeAppAction to commit; it reads and writes no store or device.
+        'src/modules/Arrangement/useCases/device/sendManagement/compileSendLevelAction.ts': 1,
+        // Count provenance: new file entry, measured 3 — the `compileSendLevelAction`
+        // import (identifier and module path) and its call. It reads the send from
+        // the track repository and commits the compiled action through
+        // `commitSendEdit`; no store or device write.
+        'src/modules/Arrangement/useCases/device/sendManagement/commitSendLevel.ts': 3,
+        // Count provenance: new file entry, measured 1 — the declaration of
+        // `compileSendPreFaderAction`, which returns a setSend action; no store
+        // or device write.
+        'src/modules/Arrangement/useCases/device/sendManagement/compileSendPreFaderAction.ts': 1,
         'src/modules/Arrangement/useCases/preset/compileLoadPresetActions.ts': 1,
         'src/modules/Arrangement/useCases/projectTrackToLiveStrip.ts': 3,
         // AudioEngine: compileRuntimeDeviceControl / compileRuntimeGraphDelta /
@@ -941,14 +1014,42 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // import and call moved into the dispatch door (#2980); the
         // compileLoadPresetActions import + call remain.
         'src/modules/ContentBrowser/presentations/views/Sidebar/EffectsTab.tsx': 2,
+        // Count provenance: new file entry, measured 2 — the
+        // `compileNewAudioTrackAction` named import and its single call, which
+        // lands the new audio track in the same batch as the sample's clip. The
+        // call moved here from useTimelineFileDrop.ts's sample branch (the
+        // sidebar add used to build the same `addTrack` action inline). The
+        // compiled action commits through `executeAppActionBatch`; the file
+        // writes no store or device.
+        'src/modules/ContentBrowser/useCases/placeLibrarySample.ts': 2,
+        // Count provenance: measured 4 — compileLoadPresetActions import/call
+        // and compilePreviewDevices declaration/call. Compiled actions are read
+        // only to construct disposable offline input, never executed or hydrated
+        // into live project/device state. The device-data census below is scoped
+        // to Arrangement/Project; this foreign request-local projection writes neither.
+        'src/modules/ContentBrowser/useCases/renderPresetPreview.ts': 4,
         'src/modules/ContentBrowser/presentations/views/Sidebar/InstrumentsTab.tsx': 4,
         // Count provenance: 0 in code, was 2 — addDeviceThroughAction now
         // delegates to `executeAddDeviceAction`; no compiler named.
         // 'src/modules/ContentBrowser/presentations/views/Sidebar/effectsTabHelpers.tsx': removed (0),
         'src/modules/MixerConsole/presentations/views/Mixer/DeviceChainSection.tsx': 2,
+        // Count provenance: new file entry, measured 2 — the `compileSendPreFaderAction`
+        // import and its call for the PRE/POST toggle; level commits go through
+        // `commitSendLevel`. The compiled send action is committed through
+        // executeAppAction; the strip writes no store or device.
+        'src/modules/MixerConsole/presentations/views/Mixer/SendsSection.tsx': 2,
+        // Count provenance: new file entry, measured 2 — the `compileSendLevelAction`
+        // import and its single call for a connect click. The compiled send action
+        // is committed through executeAppAction; no device write.
+        'src/modules/Routing/presentations/views/RoutingMatrix.tsx': 2,
         // Count provenance: 0 in code, was 2 — the Enable Pitch Editor button
         // now dispatches through `executeAddDeviceAction`; no compiler named.
         // 'src/modules/TimelineEditor/presentations/views/ClipView/KneadEditor.tsx': removed (0),
+        // Count provenance: new file entry, measured 2 — the `compileSendPreFaderAction`
+        // import and its call in `SendCard`; level commits go through
+        // `commitSendLevel`. The compiled send action is committed through
+        // executeAppAction; no store or device write.
+        'src/modules/TimelineEditor/presentations/views/Inspector/SendsEditor.tsx': 2,
         'src/modules/TimelineEditor/presentations/views/Inspector/TrackDevicesSection.tsx': 2,
         'src/modules/Toaster/useCases/compileToasterTrackStackActions.ts': 3,
         'src/modules/Toaster/useCases/index.ts': 2,
@@ -968,11 +1069,15 @@ const DEVICE_DATA_COUNTS = {
         // Count provenance: measured 1 — `devices:` on the after-track snapshot
         // for the registered load-external-plugin handler.
         'src/modules/Arrangement/handlers/device/handleLoadExternalPlugin.ts': 1,
-        // Count provenance: measured 10 — lexical `devices:` / `parameterValues:`
-        // in payload types, Device reconstruction, and replacement topology.
-        // Writes go through the registered loadPreset handler after
-        // executeAppAction, not a raw store write from a foreign module.
-        'src/modules/Arrangement/handlers/preset/handleLoadPreset.ts': 10,
+        // Count provenance: measured 8 — lexical `devices:` / `parameterValues:`
+        // in payload types and replacement topology. Writes go through the
+        // registered loadPreset handler after executeAppAction, not a raw store
+        // write from a foreign module.
+        'src/modules/Arrangement/handlers/preset/handleLoadPreset.ts': 8,
+        // Count provenance: measured 2 — the Device reconstruction moved out of
+        // handleLoadPreset so the batch projection writes the same chain the
+        // loadPreset handler and its restoring inverse commit.
+        'src/modules/Arrangement/handlers/preset/toPresetProjectDevices.ts': 2,
         'src/modules/Arrangement/handlers/preset/handleSavePreset.ts': 2,
         // Count provenance: was 1 in `static`, measured 2 — the row moves buckets
         // rather than just incrementing. #2347 rewrote the template validator's
@@ -1000,7 +1105,12 @@ const DEVICE_DATA_COUNTS = {
         'src/modules/Arrangement/stores/trackStore.ts': 2,
         // Snapshot capture reads serializable device topology for a later command.
         'src/modules/Arrangement/useCases/captureTrackClipStates.ts': 1,
-        'src/modules/Arrangement/useCases/device/addDevice.ts': 2,
+        // Count provenance: was 2, measured 1 — the second hit was the
+        // `parameterValues: Record<string, number>` annotation on a local the
+        // added-device composition built. That composition moved to the pure
+        // `composeAddedDeviceParameterValues`, which writes nothing, so the
+        // remaining hit is the device chain this file writes to the project.
+        'src/modules/Arrangement/useCases/device/addDevice.ts': 1,
         'src/modules/Arrangement/useCases/device/addExternalDevice.ts': 2,
         'src/modules/Arrangement/useCases/device/addMidiFx.ts': 1,
         'src/modules/Arrangement/useCases/device/bypassDevice.ts': 1,
@@ -1044,6 +1154,11 @@ const DEVICE_DATA_COUNTS = {
         // device chain from `track.devices`, it only measures how long that
         // chain rings. Read, not write; no live device is touched.
         'src/modules/Arrangement/useCases/freezeBounce/freezeTrack.ts': 1,
+        // Count provenance: measured 1 — `devices:` in trackRows retains
+        // device topology as read-only source identity for selection-render
+        // admission and global compensation. The projection reaches canonicalJson,
+        // not a store, CRDT or runtime device write.
+        'src/modules/Arrangement/useCases/freezeBounce/selectionBounceSourceProjection.ts': 1,
         // MD-4 (#716) retired the two sinks this file used to carry: the freeze/
         // bounce renderer no longer reads `track.devices` to build its own device
         // chain — it hands the render subgraph to the AudioEngine offline graph,
@@ -2169,8 +2284,6 @@ describe('device write boundary closure', () => {
         },
     ])('rejects $name through the production closure assertion', ({ path, source }) => {
         const files = readProductionSources(process.cwd());
-        expect(() => assertProductionClosure([...files, productionSource(path, source)])).toThrow(
-            /sink census changed/
-        );
+        expect(() => assertProductionClosure([...files, productionSource(path, source)])).toThrow(path);
     });
 });

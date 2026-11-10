@@ -10,19 +10,22 @@ import { type YeastGrooveAssignmentSnapshot } from '#/utils/handlerContract';
  * the undo engine already records the removal's inverse, and a nested undoable
  * action would double-record the gesture.
  */
-export function restoreYeastGrooveAssignments(assignments: readonly YeastGrooveAssignmentSnapshot[]): void {
+export function restoreYeastGrooveAssignments(assignments: readonly YeastGrooveAssignmentSnapshot[]): boolean {
     const state = grooveTemplateStore.value;
     if (!state || assignments.length === 0) {
-        return;
+        return false;
     }
 
+    let grooveChanged = false;
     batchStoreUpdates(() => {
         for (const assignment of assignments) {
-            restoreGrooveAssignment({
+            const result = restoreGrooveAssignment({
                 consumerType: assignment.consumerType,
                 consumerId: assignment.consumerId,
                 assignment,
             });
+            grooveChanged = result.status === 'written' || grooveChanged;
         }
     });
+    return grooveChanged;
 }

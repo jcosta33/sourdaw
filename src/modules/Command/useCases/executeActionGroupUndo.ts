@@ -2,8 +2,9 @@ import { AppActionCommittedError } from '../errors/AppActionExecutionError';
 import { isActionEntry, type UndoEntry } from '../models/UndoEntry';
 
 import { executeAppActionBatch } from './executeAppActionBatch';
-import { getLegacyTrimInverseReplayFailure } from './getLegacyTrimInverseReplayFailure';
+import { getLegacyInverseReplayFailure } from './getLegacyInverseReplayFailure';
 import { normalizeLegacyLoopAnchorInverse } from './normalizeLegacyLoopAnchorInverse';
+import { runPreparedUndoReplay } from './undoReplayPreparationPort';
 
 /**
  * What happened when one entry's undo side-effect ran.
@@ -22,6 +23,11 @@ export type UndoOutcome =
     | { readonly status: 'conflict'; readonly reason?: string }
     /** The write landed but its bookkeeping failed; the stack must advance. */
     | { readonly status: 'committed'; readonly error: AppActionCommittedError };
+
+type ActionGroupUndoOptions = Pick<
+    NonNullable<Parameters<typeof executeAppActionBatch>[1]>,
+    'shouldExecute' | 'onCommitted' | 'onAmbiguousCommit'
+>;
 
 /**
  * Replays one group's inverses as ONE atomic batch, newest-first (#3814
@@ -46,12 +52,16 @@ export type UndoOutcome =
  * the group committed still fails the guards, the batch preflights `conflicted`
  * before any write, and the whole group stays on `past` retryable.
  */
-export async function executeActionGroupUndo(
+export function executeActionGroupUndo(
     entries: readonly UndoEntry[],
-    options?: Pick<
-        NonNullable<Parameters<typeof executeAppActionBatch>[1]>,
-        'shouldExecute' | 'onCommitted' | 'onAmbiguousCommit'
-    >
+    options?: ActionGroupUndoOptions
+): Promise<UndoOutcome> {
+    return runPreparedUndoReplay({ entries }, () => replayActionGroupUndo(entries, options));
+}
+
+async function replayActionGroupUndo(
+    entries: readonly UndoEntry[],
+    options?: ActionGroupUndoOptions
 ): Promise<UndoOutcome> {
     if (!entries.every(isActionEntry) || entries.some((entry) => entry.inverseAction === null)) {
         return { status: 'inert' };
@@ -72,7 +82,7 @@ export async function executeActionGroupUndo(
         ...options,
     };
     if (actions.some((action) => action.type === 'trimClipStart' && action.payload.midiOffsetBeats === undefined)) {
-        batchOptions.preExecutionValidation = () => getLegacyTrimInverseReplayFailure(actions);
+        batchOptions.preExecutionValidation = () => getLegacyInverseReplayFailure(actions, 'executeActionGroupUndo');
     }
     const result = await executeAppActionBatch(actions, batchOptions);
     if (result.status === 'conflicted' || result.status === 'cancelled') {

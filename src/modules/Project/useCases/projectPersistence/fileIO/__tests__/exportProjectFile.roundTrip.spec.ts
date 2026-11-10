@@ -1,8 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
+import { registerProjectSlotProjections } from '#/app/registerProjectSlotProjections';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { normalizeTrack } from '#/modules/Arrangement/useCases';
 import { exportCachedAudioBuffers } from '#/modules/AudioEngine/useCases';
+import { midiLearnStore } from '#/modules/ControlSurface/stores';
 import { agentProjectRepairStateStore } from '#/modules/CrdtDocument/stores';
 import {
     agentProjectInspectionPort,
@@ -12,6 +14,7 @@ import {
     projectCrdtToStores,
     removeCrdtDoc,
 } from '#/modules/CrdtDocument/useCases';
+import { cvGateStore } from '#/modules/CvGate/stores';
 import { midiStore } from '#/modules/MIDI/stores';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
 import { notifyUser } from '#/utils/Notification/notifyUser';
@@ -23,8 +26,10 @@ import { arrangementStore, defaultArrangementStoreState } from '../../../../stor
 import { defaultProjectStoreState, projectStore } from '../../../../stores/projectStore';
 import { saveProject } from '../../saveProject/saveProject';
 import { buildProjectData } from '../buildProjectData';
+import { cvGateProjection } from '../cvGateProjection';
 import { exportProjectFile } from '../exportProjectFile';
 import { hydrateProjectMidi } from '../hydrateProjectMidi';
+import { midiLearnProjection } from '../midiLearnProjection';
 
 // Heavy / side-effecting boundaries — stubbed so the export runs deterministically
 // against the real stores we seed below. vi.mock is hoisted above these imports.
@@ -51,6 +56,16 @@ vi.mock('#/modules/Routing/useCases', () => ({
     wireSidechainRoutes: vi.fn(),
 }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    openCachedAudioBufferHold: vi.fn(() => {
+        throw new Error('Unexpected audio buffer residency hold in this fixture');
+    }),
+    captureOfflineRenderProjectSource: vi.fn(() => {
+        throw new Error('Unexpected selection render capture in this fixture');
+    }),
+    captureOfflineRenderRuntimeInput: vi.fn(() => {
+        throw new Error('Unexpected selection render capture in this fixture');
+    }),
+    builtinSynthVoice: { read: vi.fn() },
     rearmCommittedTrackInputMonitoring: vi.fn(async () => undefined),
     reconcileAutoInputMonitoring: vi.fn(),
     stopTrackInputMonitoring: vi.fn(),
@@ -80,6 +95,8 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     ),
     getAudioContext: vi.fn(),
     getCachedAudioBuffer: vi.fn(),
+    restoreUnpinnedAudioBuffersFromIdb: vi.fn(),
+    holdAudioBufferForSession: vi.fn(),
     getCompensationDelay: vi.fn(),
     getDefaultBendRangeSemitones: vi.fn(),
     getDeviceChainTailSeconds: vi.fn(),
@@ -177,8 +194,15 @@ function replaceRootWithMalformedAdjustmentLayers(): void {
     });
 }
 
+// The composition root's MIDI learn and CV/gate projections over the live
+// stores: the registrar itself cannot load while whole module barrels are
+// mocked.
+midiLearnProjection.configure({ readMidiLearn: () => midiLearnStore.value });
+cvGateProjection.configure({ readCvGate: () => cvGateStore.value });
+
 describe('exportProjectFile round-trip shape', () => {
     beforeEach(() => {
+        registerProjectSlotProjections();
         vi.mocked(downloadProjectFile).mockClear();
         vi.mocked(notifyUser).mockClear();
         vi.mocked(exportCachedAudioBuffers).mockClear();

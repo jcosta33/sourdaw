@@ -15,8 +15,11 @@
 
 import { type AudioGraphBackend } from '../../models/AudioGraphBackend';
 import { type EngineLoopRegion } from '../../models/EngineTransportPosition';
+import { type NativeRecordingAdmission } from '../../models/NativeRecordingCapture';
 
 export type NativeLiveGraphSession = {
+    /** Issued capture geometry stays behind its actual audio-thread fence. */
+    captureAdmissions: NativeRecordingAdmission[];
     backend: AudioGraphBackend | null;
     /**
      * The handle of a session the renderer abandoned on a stall, retained
@@ -59,6 +62,13 @@ export type NativeLiveGraphSession = {
      * making the sound.
      */
     audibleCarrier: boolean;
+    /** Underlying programme ownership while the audition temporarily closes output. */
+    programmeCarrier: boolean;
+    auditionOwner: symbol | null;
+    auditionRestorationOwner: symbol | null;
+    auditionOutputSuppressed: boolean;
+    auditionEpoch: number;
+    auditionInvalidation: (() => void) | null;
     /**
      * Whether this session left the engine's monitor shadowed.
      *
@@ -190,12 +200,21 @@ export type NativeLiveGraphSession = {
     carriedStripIds: ReadonlySet<string>;
     /** The tail of this session's serialised command chain. */
     pending: Promise<unknown>;
+    /** Settles when the next session command settles, whether queued before or after it is read. */
+    commandSettled: PromiseWithResolvers<void>;
 };
 
 export const nativeLiveGraphSession: NativeLiveGraphSession = {
+    captureAdmissions: [],
     backend: null,
     orphanedBackend: null,
     audibleCarrier: false,
+    programmeCarrier: false,
+    auditionOwner: null,
+    auditionRestorationOwner: null,
+    auditionOutputSuppressed: false,
+    auditionEpoch: 0,
+    auditionInvalidation: null,
     // Shadowed until a session says otherwise. This is the initial state, not
     // the default a session starts in — the safe reading before any session has
     // spoken is the silent one, so a reader that runs first cannot conclude the
@@ -214,14 +233,29 @@ export const nativeLiveGraphSession: NativeLiveGraphSession = {
     startsPending: 0,
     carriedStripIds: new Set(),
     pending: Promise.resolve(),
+    commandSettled: Promise.withResolvers<void>(),
 };
 
-/** Run `work` after everything already queued on the session, whatever it answered. */
-export function queueOnNativeLiveGraphSession<TResult>(work: () => Promise<TResult>): Promise<TResult> {
+/**
+ * Run `work` after everything already queued on the session, whatever it answered. Audition
+ * monitoring rides the same queue but is not a session command, so it does not settle
+ * `commandSettled`: a release waiting for the session to change must not wake on its own attempts.
+ */
+export function queueOnNativeLiveGraphSession<TResult>(
+    work: () => Promise<TResult>,
+    kind: 'command' | 'monitoring' = 'command'
+): Promise<TResult> {
     const next = nativeLiveGraphSession.pending.then(work, work);
     // Swallowed on the chain only: the returned promise still carries the
     // rejection to the caller, while the chain itself must stay usable so one
     // failed batch does not poison every command after it.
     nativeLiveGraphSession.pending = next.catch(() => undefined);
+    if (kind === 'command') {
+        void nativeLiveGraphSession.pending.then(() => {
+            const settled = nativeLiveGraphSession.commandSettled;
+            nativeLiveGraphSession.commandSettled = Promise.withResolvers<void>();
+            settled.resolve();
+        });
+    }
     return next;
 }

@@ -1,4 +1,4 @@
-import { automationStore } from '#/modules/Automation/stores';
+import { flushAutomergeStorageWrites } from '#/infra/store/storage/createAutomergeStorage';
 import { type AppAction } from '#/utils/handlerContract';
 
 import { macroStore } from '../../stores/macroStore';
@@ -6,7 +6,12 @@ import { executeAppAction } from '../executeAppAction';
 import { generateGroupId } from '../generateGroupId';
 import { materializeCommandApplicationIds } from '../materializeCommandApplicationIds';
 
+import { lowerSourceMacroAction } from './lowerSourceMacroAction';
+import { macroCoreReads } from './macroCoreReads';
+import { replayTempoMapMacroAction } from './tempoMapMacroReplay';
+
 type ReplayIdMappings = {
+    tempoRowIds: Map<string, string>;
     automationLaneIds: Map<string, string>;
     automationPointIds: Map<string, string>;
     sidechainRouteIds: Map<string, string>;
@@ -189,7 +194,7 @@ function getGeneratedAutomationPointId(action: AppAction): string | undefined {
  * lane at all, leaves the minted id standing.
  */
 function resolveMaterializedLaneId(generatedLaneId: string, target: { trackId: string; parameterId: string }): string {
-    const lanes = automationStore.value?.lanes;
+    const lanes = macroCoreReads.read('resolveMaterializedLaneId').readAutomationLanes();
     if (lanes?.some((lane) => lane.id === generatedLaneId)) {
         return generatedLaneId;
     }
@@ -226,7 +231,11 @@ async function executeMacroAction(
     mappings: ReplayIdMappings,
     options: { groupId: string; groupLabel: string }
 ): Promise<void> {
-    const replayAction = structuredClone(action);
+    if (action.type === 'editTempoMap' || action.type === 'restoreTempoMapEdit') {
+        await replayTempoMapMacroAction(action, mappings.tempoRowIds, options);
+        return;
+    }
+    const replayAction = lowerSourceMacroAction(action, mappings.tempoRowIds);
     if (replayAction.type === 'slipClipContent' || replayAction.type === 'trimClipStart') {
         // A public history reversion can record restoration-only hints. Macro
         // playback uses the fresh command law against today's clip and rows;
@@ -310,6 +319,14 @@ async function executeMacroAction(
         if (replayAction.type === 'glueClips') {
             delete replayAction.payload.targetClipId;
         }
+        await executeAppAction(replayAction, options);
+        return;
+    }
+
+    if (replayAction.type === 'quantizeTransients') {
+        // As above: the recorded plan names the recorded slices and the source it detected; a
+        // replay plans again against the project as it now is.
+        delete replayAction.payload.plan;
         await executeAppAction(replayAction, options);
         return;
     }
@@ -402,6 +419,7 @@ export async function playMacro(macroId: string): Promise<void> {
     // batch-capable action still shares the macro's group below.
     const { groupId, groupLabel } = generateGroupId(`Macro: ${macro.name}`);
     const replayIdMappings: ReplayIdMappings = {
+        tempoRowIds: new Map(),
         automationLaneIds: new Map(),
         automationPointIds: new Map(),
         sidechainRouteIds: new Map(),
@@ -415,6 +433,9 @@ export async function playMacro(macroId: string): Promise<void> {
     };
 
     for (const action of macro.actions) {
+        // The preceding step records history after its product transaction.
+        // Settle that pending truth before the next owner captures its source.
+        flushAutomergeStorageWrites();
         await executeMacroAction(action, replayIdMappings, { groupId, groupLabel });
     }
 }

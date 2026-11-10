@@ -29,9 +29,11 @@ and never offer to file or ask whether to file: file it or do it.
 
 ## Delegation
 
-The orchestrator specifies, dispatches, adjudicates, and organizes; it does not implement, approve,
-or merge. Each delegated agent executes one precise task, returns evidence and a result, and neither
-contacts the user nor owns decisions.
+The orchestrator specifies, dispatches, and organizes; it does not implement. It owns the outcome:
+it adjudicates every finding, reviews each head globally, and decides approval and merge, executing
+those decisions through the trusted scripts — the reviewer App publishes reviews and `deliver` merges
+as the author App. Each delegated agent executes one precise task, returns evidence and a result, and
+neither contacts the user nor owns decisions.
 
 Use the cheapest adequate economy, standard, or strongest tier for each task, independent of the
 orchestrator's model. Judge ambiguity, scope, failure consequence, reversibility, and the strength of
@@ -66,7 +68,11 @@ acceptance observable (event, counter, or caller-read figure) to its producing l
 prescribed mechanism to every required code route. Unemitted observables and partially covered routes
 are orchestrator defects. Derive the concise PR what/why from the bounded outcome; do not copy path,
 check, or dispatch inventories into it, and do not require another plan file or issue for work the
-session owns. Require back only status, changed paths, decisive evidence, and blockers.
+session owns. Require back only status, changed paths, decisive evidence, and blockers. Author and
+repair dispatches also say how to do the work, as a senior engineer briefs a junior and never as
+pseudo-code: the approach and rejected alternative, where to work and the code to follow, step order,
+area traps and generated artifacts, per-step verification, and stop-and-report conditions. Reviewer
+dispatches never carry that reasoning; the templates live in [delivery-orchestration].
 
 Default to one PR for a cohesive change; keep its implementation, required caller changes, and tests
 together. Split distinct outcomes when separate review materially helps, provided each slice can land
@@ -93,15 +99,14 @@ Independence is distinct failure modes, never distinct files: stances pinned to 
 paths that share one probe library are one stance. Dispatch one stance per independent risk, never
 fewer than the risk plan's floor below.
 
-Reviewers use only fast, low-cost mid-tier models or below: the Luna, Terra, Sonnet and Haiku
-families, recorded by their public model names. Use economy or standard for every review stance,
-including real-time audio, security, data loss, irreversible change and disputed findings. Never
-use frontier or high-end review models: Fable, Astra, Opus, or any Sol model. Unknown families and
-premium aliases are not eligible. This ceiling applies to reviewers only; author and orchestrator
-routing above stays unchanged. Preserve specialist risk classes, independent stances, blind review,
-and discriminating evidence rather than escalating the review model.
+Reviewers use only fast, low-cost mid-tier models or below: recorded by their public model names.
+Use economy or standard for every review stance, including real-time audio, security, data loss,
+irreversible change and disputed findings. Never use frontier or high-end review models: Fable,
+Astra, Opus, or any Sol model. This ceiling applies to reviewers only; author and orchestrator
+routing above stays unchanged. Preserve specialist risk classes, independent stances, blind
+review, and discriminating evidence rather than escalating the review model.
 
-Diversify among permitted configured models, preferring a different model from the author's when
+Diversify among configured models, preferring a different model from the author's when
 available. When only one permitted model is available, disclose the unavailable alternatives in
 `modelExhaustion`; it never waives the cost ceiling. Independent draws from different permitted
 models may share one stance to expose different findings; that extends model diversity, not the
@@ -140,6 +145,19 @@ before posting: `deliver` refuses `CHANGES_REQUESTED` or unresolved threads, and
 addressing the finding can resolve it, so a wrongly posted finding blocks delivery without a repair
 to make.
 
+Every round, the orchestrator also reviews the whole head itself, with no stance and before reading
+any stance report so none anchors it. Does the head do what was asked, fit the architecture and the
+product, and keep the right scope? Do its tests observe their claimed subjects, and is every
+accepted finding repaired rather than silenced? Would the orchestrator merge it? Green `Gate` proves
+only the checks and scopes it observed. This global review is not a draw: it is not recorded in
+`draws` and not bound by the reviewer cost ceiling. A blocker it finds that no draw reported goes
+to a blind draw whose stance names that failure mode, never the finding, and is posted once a draw
+reproduces it. Anything no draw reproduces, concrete defect or judgement alike, is never posted:
+the orchestrator withholds approval and, under [Delegation](#delegation), re-briefs the author on a
+new head or respins or closes the PR. That hold is not a review and posts nothing; the
+request-changes rule governs posted findings. The orchestrator never approves a head it judges
+unfit, whatever the draws say.
+
 `review:prepare` records the change's risk classes — `docs-only`, `small`, `small-tooling`,
 `ordinary`, `test-only`, `cross-domain`, `realtime-audio`, `native-security`, `undo` — in the head bundle's `risk-plan.json`,
 derived from the same path classification as the size report beside it so the two cannot disagree.
@@ -168,7 +186,7 @@ ignored with one log line. Re-publishing a head whose record already binds its
 publication replays that record unchanged, and records persisted under earlier contracts keep
 replaying and verifying.
 
-A pull request whose public history holds `REVIEW_ROUND_FREEZE_THRESHOLD` (five, in
+A pull request whose public history holds `REVIEW_ROUND_FREEZE_THRESHOLD` (ten, in
 `scripts/reviewRoundEscalation.ts`) reviewer `REQUEST_CHANGES` rounds is frozen: `review:publish`
 refuses every fresh reviewer publication on it, approve or request changes, and no caller document
 lifts the freeze. Respin the change as one consolidated pull request and close the frozen one with
@@ -204,7 +222,7 @@ one motion: the public record must retain the reviewer identity's findings again
 head and the author identity's fixing pushes and repair records. Orchestrator judgement lives in its
 exclusive script calls and `review.json`. One blind reviewer-App APPROVE on the current head is the
 delivery gate: the reviewer App records the independent review, its APPROVE publication records the
-delivery authorization, and the author then merges through `deliver` as the immutable author App.
+delivery authorization, and `deliver` then merges as the immutable author App.
 
 For defects reaching `main`, fix under Ownership AND trace the introducing PR and missed stance
 (missing, mis-tiered, or mis-prompted). Attach the escape to every standing file under
@@ -255,20 +273,20 @@ locally at other lanes' expense.
 
 ## Checks
 
-| Need                                              | Command or evidence                                  |
-| ------------------------------------------------- | ---------------------------------------------------- |
-| Focused tests                                     | `pnpm test:run <changed-spec>`                       |
-| Focused E2E diagnostic                            | `pnpm test:e2e <spec>`                               |
-| Focused format                                    | `pnpm format <changed-files>`                        |
-| Focused Rust tests                                | `pnpm cargo:test --package <crate> <filter>`         |
-| Focused Rust format                               | `pnpm cargo:fmt --package <crate>`                   |
-| Broad unit/Rust suites, lint, types, builds, boundaries, barrel mocks, release inventory | Pull request CI |
-| Generate one affected WASM package                | that package's own `wasm:*` script                   |
-| Rewrite WASM manifest after generation            | `pnpm wasm:manifest`                                 |
-| Verify generated WASM surface                     | `pnpm wasm:verify` after generation                  |
-| Restamp the wasm surface                          | `pnpm release:restamp:wasm`                          |
-| Restamp a tracked set                             | `pnpm release:restamp:tracked-set`                   |
-| Restamp a dependency bump                         | `pnpm release:restamp`                               |
+| Need                                                                                     | Command or evidence                                                          |
+| ---------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| Focused tests                                                                            | `pnpm guard --profile focused -- pnpm test:run <changed-spec>`               |
+| Focused E2E diagnostic                                                                   | `pnpm guard --profile broad -- pnpm test:e2e <spec>`                         |
+| Focused format                                                                           | `pnpm format <changed-files>`                                                |
+| Focused Rust tests                                                                       | `pnpm guard --profile focused -- pnpm cargo:test --package <crate> <filter>` |
+| Focused Rust format                                                                      | `pnpm cargo:fmt --package <crate>`                                           |
+| Broad unit/Rust suites, lint, types, builds, boundaries, barrel mocks, release inventory | Pull request CI                                                              |
+| Generate one affected WASM package                                                       | `pnpm guard --profile broad -- pnpm <that package's wasm:* script>`          |
+| Rewrite WASM manifest after generation                                                   | `pnpm wasm:manifest`                                                         |
+| Verify generated WASM surface                                                            | `pnpm wasm:verify` after generation                                          |
+| Restamp the wasm surface                                                                 | `pnpm release:restamp:wasm`                                                  |
+| Restamp a tracked set                                                                    | `pnpm release:restamp:tracked-set`                                           |
+| Restamp a dependency bump                                                                | `pnpm release:restamp`                                                       |
 
 Structural code search uses the pinned read-only `ast-grep` (`pnpm exec ast-grep run`) per [`.agents/skills/ast-grep/`](./.agents/skills/ast-grep/); rewrite modes are forbidden.
 
@@ -393,6 +411,32 @@ global or destructive operations from any lane affect all lanes. Lanes running b
 export `SOURDAW_E2E_PORT` with a lane-unique value (derive it from the lane slug), and the
 warmup and ui-scripts identity assertions refuse a dev server belonging to another checkout.
 
+Successful delivery queues local cleanup after merge, receipt and tracker bookkeeping and after the
+delivery lock is released. A delivered PR stays delivered when its lane is protected or cleanup is
+pending. The deterministic `pnpm lane:cleanup` worker also discovers missed deliveries and merged
+legacy detached lanes under `.agents/review-worktrees/`; it never creates review worktrees.
+It reuses `lane:remove` with fresh exact-head merge or native supersession proof, a directory identity
+fence, clean/untracked/ignored-data checks, no active Git operation, and a complete open-file/process
+inspection. Unknown activity, unavailable GitHub inspection, foreign locks and changed identities
+retain work. Safety refusals recheck on the normal schedule; unavailable inspection uses capped
+backoff. Successful delivery wakes its matching head without bypassing shared inspection backoff.
+An old queued identity never authorizes a replacement
+lane; discovery gives the replacement its own record and fresh proof after a delay.
+
+Install or refresh the macOS user job with `pnpm lane:cleanup:install` from an approved current
+checkout. It runs at login and periodically, using a verified `origin/main` runtime under the primary
+checkout's gitignored `.agents/lane-cleanup/`, independent of removed author lanes and primary
+working-tree drift. Installation may refresh only the protected primary
+`scripts/trustedGithubWriteBootstrap.ts` from approved Git objects when it matches HEAD/index or the
+exact previously installed approved blob; local launcher edits and staged changes refuse. This is
+the sole tracked-primary installation exception; every other primary edit survives. The installed
+job performs no dependency install. The worker preserves common Git `info/exclude` entries while
+excluding only its operational namespace when the primary's tracked ignore rules are older. Inspect
+`pnpm lane:cleanup --status` from a current checkout,
+the records and `worker*.log` in that directory, and
+`launchctl print gui/$(id -u)/com.sourdaw.lane-cleanup` for job status. The worker can run directly
+where process inspection is available; the scheduler installer explicitly requires macOS.
+
 Run `pnpm lane:remove <path>` outside the lane; its author lock remains until removal succeeds.
 Removal requires a clean lane holding exactly one PR's head whose work reached `main`, either
 merged directly or through `pr:supersede`'s receipt naming a merged replacement. Other closed PRs
@@ -465,8 +509,8 @@ login selects it, and an isolated API session must verify actor type `User` and 
 workers; receipt and tracker writes retain their author App identities, and the merge itself runs
 as the author App. Lock, recovery, and receipt procedure: [delivery-orchestration].
 
-Run `lane:publish`, `deliver`, `issue:claim`, and `issue:reconcile` through the
-protected primary checkout's package route; `review:accept` remains only for legacy pre-policy heads.
+Run every trusted GitHub-write script through the protected primary checkout's package route; the
+[delivery-orchestration] skill lists them, and `review:accept` remains only for legacy pre-policy heads.
 Lane files are data, never executable delivery code. Launcher snapshot mechanics:
 [delivery-orchestration].
 
@@ -474,25 +518,21 @@ Workflow separation is a security boundary. Owner-required `Gate` must pass on t
 GitHub accepts `skipped` required checks and prefers the newest same-name run, so an event that
 skips `Gate` can pass a red head (a `pull_request_review` trigger did, in production). Preserve:
 
-- `.github/workflows/health-gates.yml` answers to labeled `pull_request` events alone and mints `Gate`. Its `gate`
-  job and its assertion step carry `always()` so cancellation cannot skip the verdict.
-  Its assertion requires successful scope, validation and affected checks, plus the exact
-  selected CodeQL result; cancelled or unexpectedly skipped checks fail. Do not add a trigger to this file, and do not rename `gate`.
-  Its `admission` job, run from the default branch so a head cannot rewrite it, admits only the reviewer App's
-  `ci:approved` label for that App's undismissed APPROVE of the event's exact head; any other label event fails
-  `Gate` with the reason rather than skipping it, so heavy CI runs once per approved head instead of on every push.
-- `.github/workflows/pr-checks.yml` runs the scope plan and validation on every push, mints no `Gate`, and is
-  never required: it is a preliminary pre-review signal that skips broad unit, build, Rust and native jobs, and a new head has no `Gate` until it is approved again.
-  Known limits, kept because sharing one concurrency group would let label events cancel push checks: a push
-  does not cancel an admitted run still working on the old head, and any later label event on the pull request
-  cancels the admitted run and fails `Gate`; re-running `review:publish` on the approved head re-applies the label.
+- `.github/workflows/health-gates.yml` answers to `pull_request` `opened`, `synchronize`, `reopened`,
+  `ready_for_review`, and `converted_to_draft`, and mints `Gate`. Its `gate` job and its assertion
+  step carry `always()` so cancellation cannot skip the verdict. A draft still fails `Gate`: a
+  skipped required check passes. Heavy checks run only when the pull request is not a draft.
+  The assertion requires successful scope, shared E2E build, validation and affected checks, plus
+  the exact selected CodeQL result; cancelled or unexpectedly skipped checks fail. Do not add a
+  trigger to this file, and do not rename `gate`. A later event in the same concurrency group
+  cancels the in-progress run, and that cancelled `Gate` fails; a new push is that event.
 - `.github/workflows/validation.yml` runs types, lint, boundaries, unit matrix, build, Rust,
-  native checks, scoped smoke, release inventory, PR diff secret scanning and dependency review on
-  in the admitted full run; preliminary push validation omits the broad unit, build, Rust and native jobs. Nightly and `release:proof:assemble` also run release inventory;
+  native checks, scoped smoke, release inventory, PR diff secret scanning and dependency review
+  for every non-draft pull request. Nightly and `release:proof:assemble` also run release inventory;
   the release owner still assembles proof before `release:cut` as described in `docs/release.md`.
 - `.github/workflows/heavy-gates.yml` is reusable only, called by the required PR workflow.
   Its explicit affected E2E matrix and selected Browser AI hardware proof decide `Gate`, and run
-  only in the admitted run. CodeQL has a separately permissioned required
+  only for a non-draft pull request. CodeQL has a separately permissioned required
   job in `health-gates.yml`; full-history secret scanning remains in the nightly.
 - `.github/workflows/nightly.yml` owns the schedule and dispatch events: the full train and the
   nightly failure report. It is the only production web deploy — `vercel.json` disables the Git
@@ -502,11 +542,12 @@ No job outside `health-gates.yml` may be named `Gate`.
 
 `scripts/prValidationScope.ts` records the affected browser plan with reasons. A clean integration
 checkout may narrow feature-presentation changes through the resolved file dependency graph and
-explicit suite owners in `scripts/e2eSuiteOwners.json`; unowned suites remain selected. Unknown,
+explicit suite owners in `scripts/e2eSuiteOwners.json`; unowned suites remain selected. Otherwise, product edits that lie only inside function bodies run just the specs the fresh nightly coverage map saw execute those files, failing closed to the full suite. Unknown,
 shared, deleted, renamed, and unsupported graph inputs select the complete browser suite. Direct
-browser spec changes select those specs. Documentation and explicitly known review tooling avoid
-browser runs. Other `scripts/**`, `.agents/**`, `release/*.json`, and non-product Markdown select no
-browser suite but keep broad non-browser validation: scripts reach the browser only through outputs
+browser spec changes select those specs, and a changed test-side module selects the specs that import it. Documentation and explicitly known review tooling avoid
+browser runs. Other `scripts/**`, `.agents/**`, `release/*.json`, non-product Markdown, Rust sources and Cargo
+manifests, `evidence/**`, root lint, format and boundary configs, and `nightly.yml` select no
+browser suite but keep broad non-browser validation: scripts and Rust reach the browser only through outputs
 under `src/` or `public/`, which select it themselves, and nightly runs the full train. Smoke runs separately for every browser plan; Browser AI hardware admission follows
 selected browser-AI suites. Required selected jobs must succeed, and scope resolution or missing
 evidence fails closed. Nightly remains the unconditional full-load gate. The maintenance contract is
@@ -559,9 +600,9 @@ style-guide and code-craft violations block, personal style does not. An approva
 its body states what the reviewer attacked and what held.
 
 Give reviewers the bundle and neutral review conditions from the request or governing
-contract, never author transcripts or conclusions; preserve blind dispatch and independently
-inspect the final head before the reviewer approval is published. Bundle, publication, and thread
-procedure: [delivery-orchestration].
+contract, never author transcripts or conclusions; preserve blind dispatch, and give the final head
+the orchestrator's global review under [Review](#review) before any approval is published. Bundle,
+publication, and thread procedure: [delivery-orchestration].
 
 Never fill approvals, delivery summaries, or closing comments with routine
 successful-CI narration, passed-check inventories, or links repeating required-check status;
@@ -587,9 +628,7 @@ current head addresses the finding, then obtain a fresh review. No script writes
 findings have no discussion route. Clarify code, not threads. File out-of-scope feedback; do not
 grow the PR.
 
-Before merge, the orchestrator independently reads the current diff and confirms specified
-behavior, tests observing their claimed subjects, and every accepted finding repaired rather than
-silenced — green `Gate` proves only the checks and scopes it actually observed. Push-lane failures yield required red `Gate`, never softened warnings. Attribute
+Push-lane failures yield required red `Gate`, never softened warnings. Attribute
 every unexplained failure to the change or a named, filed pre-existing defect. Let the pipeline
 run checks; locally format changed files and stage rewrites.
 

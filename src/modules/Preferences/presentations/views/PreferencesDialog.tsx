@@ -13,6 +13,7 @@ import { useStore } from '#/infra/store/useStore';
 import { AudioDevicePicker, PluginScanSettings } from '#/modules/AudioEngine/presentations/views';
 import { cn } from '#/utils/Styles/cn';
 
+import { type PreferencesSection } from '../../events/PreferencesEvents';
 import { defaultPreferences, type Preferences } from '../../models/Preferences';
 import { preferencesStore } from '../../stores/preferencesStore';
 import { resetPreferences } from '../../useCases/resetPreferences';
@@ -32,9 +33,9 @@ import { ShortcutsSection } from './ShortcutsSection';
 type PreferencesDialogProps = {
     open: boolean;
     onClose: () => void;
+    /** Section to show each time the dialog opens; absent keeps the section the user last viewed. */
+    requestedSection?: PreferencesSection;
 };
-
-type PreferencesSection = 'general' | 'appearance' | 'layout' | 'audio' | 'midi' | 'performance' | 'ai' | 'shortcuts';
 
 type NavItem = {
     id: PreferencesSection;
@@ -62,9 +63,16 @@ type SectionProps = {
 
 // ── Main dialog ───────────────────────────────────────────────────────
 
-export const PreferencesDialog = ({ open, onClose }: PreferencesDialogProps): ReactElement => {
+export const PreferencesDialog = ({ open, onClose, requestedSection }: PreferencesDialogProps): ReactElement => {
     const prefs = useStore<Preferences>(preferencesStore, defaultPreferences);
     const [section, setSection] = useState<PreferencesSection>('general');
+    const [wasOpen, setWasOpen] = useState(false);
+    if (open !== wasOpen) {
+        setWasOpen(open);
+        if (open && requestedSection !== undefined) {
+            setSection(requestedSection);
+        }
+    }
 
     const update = (partial: Partial<Preferences>): void => {
         updatePreferences({ patch: partial });
@@ -79,11 +87,11 @@ export const PreferencesDialog = ({ open, onClose }: PreferencesDialogProps): Re
                 }
             }}
         >
-            <DialogContent className="h-[520px] max-h-[80%] w-[720px] max-w-[90%] overflow-hidden bg-surface-raised p-0 sm:max-w-[90%]">
+            <DialogContent size="workspace">
                 <Row align="stretch" className="h-full min-h-0 overflow-hidden">
                     {/* ── Sidebar navigation ── */}
                     <DawSideRail className="w-[180px] overflow-y-auto p-3">
-                        <Stack as="nav" gap={0.5} className="h-max min-h-full">
+                        <Stack as="nav" aria-label="Preferences sections" gap={0.5} className="h-max min-h-full">
                             <DialogHeader className="mb-3">
                                 <DialogTitle className="text-sm font-semibold">Preferences</DialogTitle>
                             </DialogHeader>
@@ -93,6 +101,7 @@ export const PreferencesDialog = ({ open, onClose }: PreferencesDialogProps): Re
                                     size="bare"
                                     type="button"
                                     key={item.id}
+                                    aria-current={section === item.id ? 'page' : undefined}
                                     className={cn(
                                         'flex items-center justify-start gap-2 rounded-md px-2.5 py-1.5 text-left text-xs transition-colors',
                                         section === item.id
@@ -108,7 +117,7 @@ export const PreferencesDialog = ({ open, onClose }: PreferencesDialogProps): Re
 
                             <DawDialogFooter
                                 align="start"
-                                className="mt-auto flex-col items-stretch gap-1.5 border-white/6 bg-transparent px-0 py-3 shadow-none"
+                                className="mt-auto flex-col items-stretch gap-1.5 border-border-soft bg-transparent px-0 py-3 shadow-none"
                             >
                                 <Separator className="daw-seam h-px" />
                                 <Button

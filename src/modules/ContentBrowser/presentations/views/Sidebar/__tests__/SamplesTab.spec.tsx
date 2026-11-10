@@ -1,56 +1,19 @@
 import { type ReactElement } from 'react';
 
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { TooltipProvider } from '#/components/ui/tooltip';
 import { getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
-import { executeAppActionBatch } from '#/modules/Command/useCases';
-import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
 
+import { addBrowserSample } from '../../../../useCases/addBrowserSample';
 import { type SampleItem } from '../../../components/Sidebar/sidebarConstants';
 import { type PreviewHandle } from '../../../hooks/usePreviewAudio';
 import { SamplesTab } from '../SamplesTab';
 
-const stagingMocks = vi.hoisted(() => ({
-    stageAudioBufferAsset: vi.fn(),
-    getAssetTransfer: vi.fn(),
+vi.mock('../../../../useCases/addBrowserSample', () => ({
+    addBrowserSample: vi.fn(),
 }));
-
-vi.mock('#/modules/AudioRendering/useCases', () => ({
-    stageAudioBufferAsset: stagingMocks.stageAudioBufferAsset,
-}));
-
-vi.mock('#/modules/Collaboration/useCases', () => ({
-    getAssetTransfer: stagingMocks.getAssetTransfer,
-}));
-
-vi.mock('#/modules/Arrangement/useCases', () => ({
-    createTrack: vi.fn((input: { name: string; kind: string }) => ({
-        id: 'new-track-id',
-        name: input.name,
-        kind: input.kind,
-        color: '#000000',
-        activeAlternativeId: 'alt-1',
-    })),
-}));
-
-vi.mock('#/modules/Command/useCases', () => ({
-    executeAppActionBatch: vi.fn(),
-}));
-
-// #4618 — a clicked sample lands as a batch of registered creation actions;
-// the specs read the dispatched actions back instead of asserting on use cases.
-type BatchAction = { type: string; payload: Record<string, unknown> };
-
-const dispatchedBatchPayload = (type: string): Record<string, unknown> => {
-    const actions = vi.mocked(executeAppActionBatch).mock.calls.flatMap((call) => call[0] as BatchAction[]);
-    const action = actions.find((candidate) => candidate.type === type);
-    if (!action) {
-        throw new Error(`no ${type} action was dispatched in the sample batch`);
-    }
-    return action.payload;
-};
 
 // Preview assertions spy through `getCachedAudioBuffer`; every other
 // AudioEngine key in this factory is an unread graph-coverage stub (`vi.fn()`
@@ -62,6 +25,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     nativeLiveGraphSessionSplice: vi.fn(() => Promise.resolve({ outcome: 'skipped', reason: 'no session' })),
     discardDecodedAudioFile: vi.fn(),
     getCachedAudioBuffer: vi.fn(),
+    playAudioBufferPreview: vi.fn(),
     addMidiFxToStrip: vi.fn(),
     analyzePitchForClip: vi.fn(),
     applyNoteExpression: vi.fn(),
@@ -131,21 +95,15 @@ const mockSamples: SampleItem[] = [
 
 type RenderSamplesTabInput = {
     preview?: PreviewHandle;
-    selectedTrackId?: string | null;
     samples?: SampleItem[];
 };
 
-const renderSamplesTab = ({
-    preview = createPreview(),
-    selectedTrackId = 't1',
-    samples = mockSamples,
-}: RenderSamplesTabInput = {}) => {
+const renderSamplesTab = ({ preview = createPreview(), samples = mockSamples }: RenderSamplesTabInput = {}) => {
     renderWithTooltip(
         <SamplesTab
             samples={samples}
             favorites={new Set()}
             onToggleFavorite={vi.fn<(id: string) => void>()}
-            selectedTrackId={selectedTrackId}
             preview={preview}
         />
     );
@@ -153,15 +111,8 @@ const renderSamplesTab = ({
     return { preview };
 };
 
-const clickFirstPreviewButton = () => {
-    const previewButtons = screen.getAllByRole('button', { name: 'Preview sound' });
-    const firstPreviewButton = previewButtons[0];
-
-    if (!firstPreviewButton) {
-        throw new Error('Expected at least one preview button');
-    }
-
-    fireEvent.click(firstPreviewButton);
+const clickPreviewButton = (sampleName: string) => {
+    fireEvent.click(screen.getByRole('button', { name: `Preview ${sampleName}` }));
 };
 
 const cachedBuffer: AudioBuffer = {
@@ -178,21 +129,7 @@ describe('SamplesTab', () => {
     beforeEach(() => {
         vi.mocked(getCachedAudioBuffer).mockReset();
         vi.mocked(getCachedAudioBuffer).mockReturnValue(null);
-        vi.mocked(executeAppActionBatch).mockReset();
-        vi.mocked(executeAppActionBatch).mockResolvedValue({
-            status: 'committed',
-            actions: [],
-        });
-        stagingMocks.stageAudioBufferAsset.mockReset();
-        // Default: no staged identity — clips are placed without an assetHash,
-        // exactly as an insertion outside any shareable context would be.
-        stagingMocks.stageAudioBufferAsset.mockResolvedValue(null);
-        stagingMocks.getAssetTransfer.mockReturnValue({
-            stageLocalAsset: vi.fn(),
-            releaseStagedAsset: vi.fn(),
-            promoteStagedAsset: vi.fn(),
-        });
-        transportStore.set(structuredClone(defaultTransportState));
+        vi.mocked(addBrowserSample).mockReset();
     });
 
     it('should render sample rows', () => {
@@ -233,7 +170,7 @@ describe('SamplesTab', () => {
         vi.mocked(getCachedAudioBuffer).mockReturnValue(cachedBuffer);
         const { preview } = renderSamplesTab();
 
-        clickFirstPreviewButton();
+        clickPreviewButton('Kick');
 
         expect(getCachedAudioBuffer).toHaveBeenCalledWith({ bufferId: 'b1' });
         expect(preview.play).toHaveBeenCalledWith('s1', cachedBuffer);
@@ -243,214 +180,33 @@ describe('SamplesTab', () => {
     it('should play a fallback tone when the cached audio buffer is missing', () => {
         const { preview } = renderSamplesTab();
 
-        clickFirstPreviewButton();
+        clickPreviewButton('Kick');
 
         expect(getCachedAudioBuffer).toHaveBeenCalledWith({ bufferId: 'b1' });
         expect(preview.play).not.toHaveBeenCalled();
         expect(preview.playTone).toHaveBeenCalledWith('s1', 261.63, 0.5);
     });
 
-    it('creates clip with duration 4 beats when clicking a 4-second sample at 60 BPM', () => {
-        transportStore.set({ ...defaultTransportState, tempo: 60 });
-        const samples: SampleItem[] = [
-            {
-                id: 's-4s',
-                name: 'Ambient Pad',
-                category: 'Pads',
-                duration: '4.0s',
-                audioBufferId: 'b-4s',
-                durationSeconds: 4.0,
-            },
-        ];
-        renderSamplesTab({ samples });
+    it('names each row preview and favorite button after its own sample', () => {
+        renderSamplesTab();
 
-        fireEvent.click(screen.getByText('Ambient Pad'));
-
-        expect(dispatchedBatchPayload('addClip')).toEqual({
-            trackId: 't1',
-            startBeat: 0,
-            endBeat: 4,
-            name: 'Ambient Pad',
-            type: 'audio',
-            audioBufferId: 'b-4s',
-        });
+        expect(screen.getByRole('button', { name: 'Preview Kick' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Preview Snare' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Add Kick to favorites' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Add Snare to favorites' })).toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'Preview sound' })).toBeNull();
     });
 
-    it('creates clip with duration 8 beats when clicking a 4-second sample at 120 BPM', () => {
-        transportStore.set({ ...defaultTransportState, tempo: 120 });
-        const samples: SampleItem[] = [
-            {
-                id: 's-4s',
-                name: 'Ambient Pad',
-                category: 'Pads',
-                duration: '4.0s',
-                audioBufferId: 'b-4s',
-                durationSeconds: 4.0,
-            },
-        ];
-        renderSamplesTab({ samples });
-
-        fireEvent.click(screen.getByText('Ambient Pad'));
-
-        expect(dispatchedBatchPayload('addClip')).toEqual({
-            trackId: 't1',
-            startBeat: 0,
-            endBeat: 8,
-            name: 'Ambient Pad',
-            type: 'audio',
-            audioBufferId: 'b-4s',
-        });
-    });
-
-    it('creates clip with duration 16 beats when clicking a 4-second sample at 240 BPM', () => {
-        transportStore.set({ ...defaultTransportState, tempo: 240 });
-        const samples: SampleItem[] = [
-            {
-                id: 's-4s',
-                name: 'Ambient Pad',
-                category: 'Pads',
-                duration: '4.0s',
-                audioBufferId: 'b-4s',
-                durationSeconds: 4.0,
-            },
-        ];
-        renderSamplesTab({ samples });
-
-        fireEvent.click(screen.getByText('Ambient Pad'));
-
-        expect(dispatchedBatchPayload('addClip')).toEqual({
-            trackId: 't1',
-            startBeat: 0,
-            endBeat: 16,
-            name: 'Ambient Pad',
-            type: 'audio',
-            audioBufferId: 'b-4s',
-        });
-    });
-
-    it('creates clip with ceil-rounded duration (7 beats) for fractional 3.2s duration at 120 BPM', () => {
-        transportStore.set({ ...defaultTransportState, tempo: 120 });
-        const samples: SampleItem[] = [
-            {
-                id: 's-3.2s',
-                name: 'Guitar Riff',
-                category: 'Guitars',
-                duration: '3.2s',
-                audioBufferId: 'b-3.2s',
-                durationSeconds: 3.2,
-            },
-        ];
-        renderSamplesTab({ samples });
-
-        fireEvent.click(screen.getByText('Guitar Riff'));
-
-        expect(dispatchedBatchPayload('addClip')).toEqual({
-            trackId: 't1',
-            startBeat: 0,
-            endBeat: 7,
-            name: 'Guitar Riff',
-            type: 'audio',
-            audioBufferId: 'b-3.2s',
-        });
-    });
-
-    it('resolves cached buffer duration and computes correct beats when durationSeconds is omitted on sample', async () => {
-        transportStore.set({ ...defaultTransportState, tempo: 120 });
-        vi.mocked(getCachedAudioBuffer).mockReturnValue({
-            ...cachedBuffer,
-            duration: 3.0,
-        });
-        const samples: SampleItem[] = [
-            { id: 's-cached', name: 'Vocal Chop', category: 'Vocals', duration: '3.0s', audioBufferId: 'b-cached' },
-        ];
-        renderSamplesTab({ samples });
-
-        fireEvent.click(screen.getByText('Vocal Chop'));
-
-        expect(getCachedAudioBuffer).toHaveBeenCalledWith({ bufferId: 'b-cached' });
-        await waitFor(() => {
-            expect(dispatchedBatchPayload('addClip')).toEqual({
-                trackId: 't1',
-                startBeat: 0,
-                endBeat: 6,
-                name: 'Vocal Chop',
-                type: 'audio',
-                audioBufferId: 'b-cached',
-            });
-        });
-    });
-
-    // #3759 — a clicked sample becomes a shareable clip, so its cached PCM is
-    // staged first and the clip carries the staged hash; the lease is promoted
-    // once the clip commits.
-    it('stages the cached PCM and binds the staged hash when a sample is clicked', async () => {
-        transportStore.set({ ...defaultTransportState, tempo: 120 });
-        vi.mocked(getCachedAudioBuffer).mockReturnValue({ ...cachedBuffer, duration: 3.0 });
-        stagingMocks.stageAudioBufferAsset.mockResolvedValue({ hash: 'staged-hash', leaseId: 'staged-lease' });
-        const promoteStagedAsset = vi.fn();
-        stagingMocks.getAssetTransfer.mockReturnValue({
-            stageLocalAsset: vi.fn(),
-            releaseStagedAsset: vi.fn(),
-            promoteStagedAsset,
-        });
-        const samples: SampleItem[] = [
-            { id: 's-cached', name: 'Vocal Chop', category: 'Vocals', duration: '3.0s', audioBufferId: 'b-cached' },
-        ];
-        renderSamplesTab({ samples });
-
-        fireEvent.click(screen.getByText('Vocal Chop'));
-
-        await waitFor(() => {
-            expect(dispatchedBatchPayload('addClip')).toEqual(
-                expect.objectContaining({ trackId: 't1', name: 'Vocal Chop', assetHash: 'staged-hash' })
-            );
-        });
-        expect(stagingMocks.stageAudioBufferAsset).toHaveBeenCalledWith(
-            expect.objectContaining({ duration: 3.0 }),
-            'Vocal Chop'
-        );
-        expect(promoteStagedAsset).toHaveBeenCalledWith('staged-lease');
-    });
-
-    it('defaults to 8 beats when neither durationSeconds nor cached buffer is present', () => {
-        transportStore.set({ ...defaultTransportState, tempo: 120 });
-        vi.mocked(getCachedAudioBuffer).mockReturnValue(null);
-        const samples: SampleItem[] = [
-            { id: 's-unknown', name: 'Mystery Sample', category: 'FX', duration: 'unknown' },
-        ];
-        renderSamplesTab({ samples });
-
-        fireEvent.click(screen.getByText('Mystery Sample'));
-
-        expect(dispatchedBatchPayload('addClip')).toEqual({
-            trackId: 't1',
-            startBeat: 0,
-            endBeat: 8,
-            name: 'Mystery Sample',
-            type: 'audio',
-            audioBufferId: undefined,
-        });
-    });
-
-    it('creates a new track when selectedTrackId is null before adding clip', () => {
-        transportStore.set({ ...defaultTransportState, tempo: 120 });
-        const samples: SampleItem[] = [
-            { id: 's-1', name: 'Kick', category: 'Drums', duration: '1.0s', audioBufferId: 'b1', durationSeconds: 1.0 },
-        ];
-        renderSamplesTab({ samples, selectedTrackId: null });
+    it('hands a clicked sample to the shared browser placement', () => {
+        renderSamplesTab();
 
         fireEvent.click(screen.getByText('Kick'));
 
-        const actions = vi.mocked(executeAppActionBatch).mock.calls.flatMap((call) => call[0] as BatchAction[]);
-        const addTrackAction = actions.find((candidate) => candidate.type === 'addTrack');
-        expect(addTrackAction?.payload).toEqual(expect.objectContaining({ name: 'Kick', kind: 'audio' }));
-        expect(dispatchedBatchPayload('addClip')).toEqual({
-            trackId: 'new-track-id',
-            startBeat: 0,
-            endBeat: 2,
+        expect(addBrowserSample).toHaveBeenCalledWith({
+            id: 's1',
             name: 'Kick',
-            type: 'audio',
             audioBufferId: 'b1',
+            durationSeconds: 1.0,
         });
     });
 });

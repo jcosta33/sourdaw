@@ -1,6 +1,5 @@
-import { test, expect } from '@playwright/test';
-
 import { probeBrowserWebGpuHardware } from './browserAiHardware';
+import { test, expect } from './e2eTest';
 import { launch_new_project, setupWorkspace } from './e2eUtils';
 
 // The LlmStatusBadge is the first AI touch for browser users, and what it may

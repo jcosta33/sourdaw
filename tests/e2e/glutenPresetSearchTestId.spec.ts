@@ -1,5 +1,6 @@
-import { test, expect, type Page } from '@playwright/test';
+import { type Page } from '@playwright/test';
 
+import { test, expect } from './e2eTest';
 import { setupWorkspace, wait_for_workspace_ready } from './e2eUtils';
 
 // The "Drum Bus" track and its Gluten device "Drum Glue" come from the Pop Song
@@ -7,12 +8,13 @@ import { setupWorkspace, wait_for_workspace_ready } from './e2eUtils';
 // as deviceKnobKeyboardTestId.spec.ts: select the track, click the device entry.
 async function openGlutenPanel(page: Page): Promise<void> {
     const trackList = page.getByRole('grid', { name: /Track list/i }).first();
-    const drumBus = trackList.getByRole('row').filter({ hasText: /Drum Bus/i }).first();
+    const drumBus = trackList
+        .getByRole('row')
+        .filter({ hasText: /Drum Bus/i })
+        .first();
     await drumBus.click();
-    await page.waitForTimeout(500);
 
     await page.getByText('Drum Glue', { exact: false }).first().click();
-    await page.waitForTimeout(800);
     // The panel mounts named knobs as role="slider".
     await expect(page.getByRole('slider', { name: 'Threshold' })).toBeVisible({ timeout: 10_000 });
 }
@@ -39,6 +41,31 @@ test.describe('Gluten panel — preset search filtering', () => {
         await openGlutenPanel(page);
     });
 
+    test('control detail reveals cumulative controls and retains the current values', async ({ page }) => {
+        const disclosure = page.getByRole('group', { name: 'Effect control detail' });
+        await expect(disclosure.getByRole('button', { name: 'play', exact: true })).toHaveAttribute(
+            'aria-pressed',
+            'true'
+        );
+        const threshold = page.getByRole('slider', { name: 'Threshold', exact: true });
+        const before = await threshold.getAttribute('aria-valuenow');
+        if (before === null) {
+            throw new Error('The Threshold control must expose its current value');
+        }
+        await expect(page.getByRole('slider', { name: 'Attack', exact: true })).toHaveCount(0);
+        await disclosure.getByRole('button', { name: 'shape', exact: true }).click();
+        await expect(page.getByRole('slider', { name: 'Attack', exact: true })).toBeVisible();
+        await expect(threshold).toBeVisible();
+        await disclosure.getByRole('button', { name: 'lab', exact: true }).click();
+        await expect(page.getByRole('button', { name: '4×', exact: true })).toBeVisible();
+        await expect(page.getByRole('slider', { name: 'SC HPF', exact: true })).toBeVisible();
+        await disclosure.getByRole('button', { name: 'play', exact: true }).click();
+        await expect(page.getByRole('slider', { name: 'Attack', exact: true })).toHaveCount(0);
+        await expect(page.getByRole('button', { name: '4×', exact: true })).toHaveCount(0);
+        await expect(threshold).toHaveAttribute('aria-valuenow', before);
+        await expect(page.getByLabel('Search Gluten presets')).toBeVisible();
+    });
+
     test('narrow query drops the preset count and clearing restores it', async ({ page }) => {
         const search = page.getByLabel('Search Gluten presets');
         await expect(search).toBeVisible();
@@ -56,5 +83,95 @@ test.describe('Gluten panel — preset search filtering', () => {
         await search.fill('');
         await expect.poll(() => readyCount(page)).toBe(baseline);
         await expect(page.getByRole('button', { name: /Bus Glue/ })).toBeVisible();
+    });
+
+    test('uses the wide layout by default and contains stacked content at narrow widths', async ({ page }) => {
+        await page.setViewportSize({ width: 1440, height: 900 });
+        const faceplate = page.locator('.gluten-faceplate');
+        const workspace = faceplate.locator(':scope > div').first();
+        const panelBody = page.getByTestId('instrument-bottom-panel-body').filter({ has: faceplate });
+        const defaultGeometry = await faceplate.evaluate((element) => ({
+            width: element.getBoundingClientRect().width,
+            columns: getComputedStyle(element.firstElementChild as Element).gridTemplateColumns,
+            viewport: window.innerWidth,
+        }));
+        expect(defaultGeometry.width, JSON.stringify(defaultGeometry)).toBeGreaterThanOrEqual(896);
+        await expect
+            .poll(() =>
+                workspace.evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(' ').length)
+            )
+            .toBe(3);
+
+        const disclosure = page.getByRole('group', { name: 'Effect control detail' });
+        await disclosure.getByRole('button', { name: 'lab', exact: true }).click();
+        await expect(page.getByRole('slider', { name: 'SC HPF', exact: true })).toBeVisible();
+
+        await expect
+            .poll(() =>
+                faceplate.evaluate((element) => {
+                    const content = element.firstElementChild;
+                    if (!content) {
+                        throw new Error('Expected the Gluten workspace grid');
+                    }
+                    return element.getBoundingClientRect().bottom - content.getBoundingClientRect().bottom;
+                })
+            )
+            .toBeGreaterThanOrEqual(11);
+
+        for (const label of ['Gluten dynamics overview', 'Gluten controls']) {
+            const column = page.getByLabel(label, { exact: true });
+            await expect.poll(() => column.evaluate((element) => element.clientHeight)).toBeGreaterThanOrEqual(440);
+        }
+
+        const controls = page.getByLabel('Gluten controls', { exact: true });
+        await expect
+            .poll(() => controls.evaluate((element) => element.scrollHeight - element.clientHeight))
+            .toBeGreaterThan(0);
+        await controls.evaluate((element) => {
+            element.scrollTop = element.scrollHeight;
+        });
+        await expect.poll(() => controls.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+
+        await page.setViewportSize({ width: 900, height: 700 });
+        await expect
+            .poll(() =>
+                workspace.evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(' ').length)
+            )
+            .toBe(1);
+        await expect
+            .poll(() =>
+                faceplate.evaluate((element) => {
+                    const content = element.firstElementChild;
+                    if (!content) {
+                        throw new Error('Expected the Gluten workspace grid');
+                    }
+                    return element.getBoundingClientRect().bottom - content.getBoundingClientRect().bottom;
+                })
+            )
+            .toBeGreaterThanOrEqual(-1);
+        await expect
+            .poll(() => panelBody.evaluate((element) => element.scrollWidth - element.clientWidth))
+            .toBeLessThanOrEqual(0);
+
+        // Narrow reachability: the stacked workspace stays scrollable to its
+        // last card. An overflow clip on the root wrapper would leave the card
+        // below the scrollport while every assertion above stays green.
+        await expect
+            .poll(() => panelBody.evaluate((element) => element.scrollHeight - element.clientHeight))
+            .toBeGreaterThan(0);
+        await panelBody.evaluate((element) => {
+            element.scrollTop = element.scrollHeight;
+        });
+        const lastCard = panelBody.locator('.gluten-window').last();
+        await expect
+            .poll(async () => {
+                const scrollerBox = await panelBody.boundingBox();
+                const cardBox = await lastCard.boundingBox();
+                if (scrollerBox === null || cardBox === null) {
+                    throw new Error('Expected the panel body and its last control card');
+                }
+                return cardBox.y + cardBox.height - (scrollerBox.y + scrollerBox.height);
+            })
+            .toBeLessThanOrEqual(1);
     });
 });

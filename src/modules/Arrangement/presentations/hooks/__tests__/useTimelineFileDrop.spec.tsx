@@ -31,6 +31,7 @@ const mocks = vi.hoisted(() => {
         discardDecodedAudioFile: vi.fn(),
         getCachedAudioBuffer: vi.fn(),
         resolveDroppedSampleFile: vi.fn(),
+        ensureFactorySampleBuffer: vi.fn(),
         rememberLibraryAssetMapping: vi.fn(),
         resolveMappedLibraryAssetCandidate: vi.fn(),
         stageClipAudioAsset: vi.fn(),
@@ -79,6 +80,7 @@ vi.mock('../../../stores/trackStore', async (importOriginal) => ({
 }));
 
 vi.mock('#/modules/SampleLibrary/useCases', () => ({
+    ensureFactorySampleBuffer: mocks.ensureFactorySampleBuffer,
     resolveDroppedSampleFile: mocks.resolveDroppedSampleFile,
     rememberLibraryAssetMapping: mocks.rememberLibraryAssetMapping,
     resolveMappedLibraryAssetCandidate: mocks.resolveMappedLibraryAssetCandidate,
@@ -117,6 +119,8 @@ vi.mock('../../../useCases/device/executeAddDeviceAction', () => ({
 }));
 
 vi.mock('#/modules/Command/useCases', () => ({
+    commitUndoEntry: vi.fn(),
+    createUndoEntry: vi.fn(),
     getExecutableAppActionEffect: vi.fn(() => null),
     executeUserAppAction: vi.fn(),
     executeAppAction: mocks.executeAppAction,
@@ -124,6 +128,9 @@ vi.mock('#/modules/Command/useCases', () => ({
     pushUndoEntry: vi.fn(),
     syncActionReplayMetadata: vi.fn(),
     resetActionReplayAuthority: vi.fn(),
+    readUndoEntryForInverse: vi.fn(),
+    commitRedoInverseCapture: vi.fn(),
+    isAppActionCommittedError: vi.fn(() => false),
     REDO_NOT_APPLIED: Symbol('REDO_NOT_APPLIED'),
 }));
 
@@ -167,6 +174,8 @@ describe('useTimelineFileDrop', () => {
         // assetHash, exactly as an unregistered composition root would.
         mocks.stageClipAudioAsset.mockResolvedValue(null);
         mocks.resolveDroppedSampleFile.mockResolvedValue({ status: 'unresolved' });
+        // Default: the dropped sample is not a factory sample.
+        mocks.ensureFactorySampleBuffer.mockResolvedValue({ status: 'not-factory' });
         mocks.rememberLibraryAssetMapping.mockResolvedValue(true);
         mocks.resolveMappedLibraryAssetCandidate.mockResolvedValue(null);
         mocks.executeAddDeviceAction.mockResolvedValue({ status: 'applied', deviceId: 'device-1' });
@@ -203,10 +212,8 @@ describe('useTimelineFileDrop', () => {
     });
 
     // The drag payload carries both, and the command receives the stable id.
-    // `De-esser`, `LUFS Meter` and `Stereo Widener` each name two catalog
-    // plugins — a builtin and a Faust one — so a name lookup returns whichever
-    // the registry lists first, not the card the user actually dragged.
-    it('adds the dropped plugin by id, so a name two plugins share cannot pick the other one', async () => {
+    // Catalog names are unique, but the id is the key a device is stored under.
+    it('adds the dropped plugin by id', async () => {
         const { result } = renderHook(() => useTimelineFileDrop({ getCanvasCoords, getBeatFromX }));
 
         const mockEvent = {
@@ -214,7 +221,7 @@ describe('useTimelineFileDrop', () => {
             dataTransfer: {
                 getData: (type: string) => {
                     if (type === 'application/x-sourdaw-plugin') {
-                        return JSON.stringify({ name: 'De-esser', id: 'faust-de-esser' });
+                        return JSON.stringify({ name: 'Wideband De-esser', id: 'faust-de-esser' });
                     }
                     return '';
                 },
@@ -320,6 +327,89 @@ describe('useTimelineFileDrop', () => {
         // The cache short-circuit must skip the file decode path entirely.
         expect(mocks.resolveDroppedSampleFile).not.toHaveBeenCalled();
         expect(mocks.decodeAudioFile).not.toHaveBeenCalled();
+    });
+
+    function factoryKickDrop() {
+        return {
+            preventDefault: vi.fn(),
+            dataTransfer: {
+                getData: (type: string) =>
+                    type === 'application/x-sourdaw-sample'
+                        ? JSON.stringify({
+                              name: 'Kick',
+                              id: 'factory-kick',
+                              path: 'drums/kick.factory',
+                              libraryRootId: 'factory',
+                          })
+                        : '',
+                files: [],
+            },
+        };
+    }
+
+    it('places an evicted factory sample once the library obtains its buffer', async () => {
+        const { result } = renderHook(() => useTimelineFileDrop({ getCanvasCoords, getBeatFromX }));
+        mocks.ensureFactorySampleBuffer.mockResolvedValue({ status: 'resolved', buffer: { duration: 2 } });
+        mocks.hitTestTrack.mockReturnValue(null);
+
+        await act(async () => {
+            await result.current.handleFileDrop(factoryKickDrop() as any);
+        });
+
+        await waitFor(() => {
+            expect(batchPayload('addClip')).toEqual(
+                expect.objectContaining({ name: 'Kick', type: 'audio', audioBufferId: 'factory-kick' })
+            );
+        });
+        expect(mocks.ensureFactorySampleBuffer).toHaveBeenCalledExactlyOnceWith({ sampleId: 'factory-kick' });
+        expect(mocks.resolveDroppedSampleFile).not.toHaveBeenCalled();
+    });
+
+    it('explains and places nothing when no source can supply a factory sample buffer', async () => {
+        const { result } = renderHook(() => useTimelineFileDrop({ getCanvasCoords, getBeatFromX }));
+        mocks.ensureFactorySampleBuffer.mockResolvedValue({ status: 'unavailable' });
+        mocks.hitTestTrack.mockReturnValue(null);
+
+        await act(async () => {
+            await result.current.handleFileDrop(factoryKickDrop() as any);
+        });
+
+        expect(mocks.notifyUser).toHaveBeenCalledWith(
+            'Could not access "Kick" — audio buffer is not available.',
+            'error'
+        );
+        expect(mocks.executeAppActionBatch).not.toHaveBeenCalled();
+        expect(mocks.resolveDroppedSampleFile).not.toHaveBeenCalled();
+    });
+
+    it('says nothing and places nothing when a project switch outruns an unavailable factory buffer', async () => {
+        const { result } = renderHook(() => useTimelineFileDrop({ getCanvasCoords, getBeatFromX }));
+        let settleBuffer: (result: { status: 'unavailable' }) => void = () => undefined;
+        mocks.ensureFactorySampleBuffer.mockReturnValue(
+            new Promise((resolve) => {
+                settleBuffer = resolve;
+            })
+        );
+        mocks.hitTestTrack.mockReturnValue(null);
+
+        let drop: Promise<void> = Promise.resolve();
+        await act(async () => {
+            drop = result.current.handleFileDrop(factoryKickDrop() as any);
+        });
+        await waitFor(() => {
+            expect(mocks.ensureFactorySampleBuffer).toHaveBeenCalledExactlyOnceWith({ sampleId: 'factory-kick' });
+        });
+        projectEpoch.advance();
+
+        await act(async () => {
+            settleBuffer({ status: 'unavailable' });
+            await drop;
+        });
+
+        expect(projectEpoch.latest()?.isCurrent()).toBe(false);
+        expect(mocks.notifyUser).not.toHaveBeenCalled();
+        expect(mocks.executeAppActionBatch).not.toHaveBeenCalled();
+        expect(mocks.resolveDroppedSampleFile).not.toHaveBeenCalled();
     });
 
     // #3759 — a cached sample has no file to stage, so the drop must register
@@ -1340,7 +1430,10 @@ describe('useTimelineFileDrop', () => {
         });
 
         await waitFor(() => {
-            expect(mocks.decodeAudioFile).toHaveBeenCalledWith(mockFile);
+            expect(mocks.decodeAudioFile).toHaveBeenCalledWith(
+                mockFile,
+                expect.objectContaining({ retain: expect.any(Function), release: expect.any(Function) })
+            );
             expect(batchPayload('addClip')).toEqual(expect.objectContaining({ audioBufferId: 'buf-flac' }));
         });
     });

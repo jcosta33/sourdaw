@@ -6,7 +6,6 @@ import { admitsRecordedControlChange } from '../recordedControlChangeAdmission';
 const idle: MidiLearnSnapshot = null;
 
 const learning: MidiLearnSnapshot = {
-    mappingsSchemaVersion: 1,
     mappings: [],
     isLearning: true,
     learningTarget: { targetType: 'trackPan', trackId: 'track-1' },
@@ -24,7 +23,6 @@ const pedalPanMapping = {
 
 function mappingOf(channel: number, cc: number): MidiLearnSnapshot {
     return {
-        mappingsSchemaVersion: 1,
         mappings: [{ ...pedalPanMapping, channel, cc }],
         isLearning: false,
         learningTarget: null,

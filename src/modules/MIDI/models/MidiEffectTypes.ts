@@ -27,3 +27,10 @@ export const SCALES: Record<string, number[]> = {
     blues: [0, 3, 5, 6, 7, 10],
     chromatic: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
 };
+
+const SCALES_BY_NAME: ReadonlyMap<string, readonly number[]> = new Map(Object.entries(SCALES));
+
+/** Reads through a Map so names like `__proto__` or `toString` resolve to undefined, not an Object.prototype member. */
+export function getScale(scaleName: string): readonly number[] | undefined {
+    return SCALES_BY_NAME.get(scaleName);
+}

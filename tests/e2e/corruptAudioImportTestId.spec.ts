@@ -1,5 +1,4 @@
-import { test, expect } from '@playwright/test';
-
+import { test, expect } from './e2eTest';
 import { launch_new_project, setupWorkspace } from './e2eUtils';
 
 // Error-path coverage for audio import. The happy path (valid WAV → clip) is
@@ -17,7 +16,12 @@ test.describe('Corrupt audio import — rejected with error toast, no clip', () 
         // Need a track to import into; use the empty-state MIDI Keys button.
         const midi = page.locator('button').filter({ hasText: 'MIDI' }).filter({ hasText: 'Keys' });
         await midi.click();
-        await page.getByRole('grid', { name: /Track list/i }).first().getByRole('row').first().waitFor({ state: 'visible' });
+        await page
+            .getByRole('grid', { name: /Track list/i })
+            .first()
+            .getByRole('row')
+            .first()
+            .waitFor({ state: 'visible' });
     });
 
     test('a non-audio .wav surfaces an error toast and adds no clip', async ({ page }) => {

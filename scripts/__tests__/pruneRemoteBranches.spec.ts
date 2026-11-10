@@ -144,6 +144,20 @@ describe('encodeBranchRefPath', () => {
 });
 
 describe('parsePruneRemoteBranchesArgs', () => {
+    it('accepts repeatable exact branch names and deduplicates them', () => {
+        expect(
+            parsePruneRemoteBranchesArgs(['--branch', 'fix/one', '--branch', 'fix/two', '--branch', 'fix/one'])
+        ).toEqual({ apply: false, help: false, branches: ['fix/one', 'fix/two'] });
+    });
+
+    it.each([undefined, '', '--apply', '-bad', '@{-1}', 'bad name', 'fix/*', 'fix/../one', 'fix//one', 'fix/one.lock'])(
+        'rejects malformed or missing branch selector %s',
+        (value) => {
+            const args = value === undefined ? ['--branch'] : ['--branch', value];
+            expect(() => parsePruneRemoteBranchesArgs(args)).toThrow('usage: pnpm branch:prune');
+        }
+    );
+
     it('should reject an unknown flag', () => {
         expect(() => parsePruneRemoteBranchesArgs(['--bogus'])).toThrow();
     });
@@ -249,6 +263,168 @@ function threeSpentMaster(): Map<string, BranchPullRequest[]> {
 }
 
 describe('pruneRemoteBranches', () => {
+    it.each([false, true])(
+        'narrows the printed plan and deletions to the exact selected branch (apply=%s)',
+        (apply) => {
+            const master = new Map<string, BranchPullRequest[]>([
+                ['fix/one', [mergedPr(1, 'ta')]],
+                ['fix/one-more', [mergedPr(2, 'tb')]],
+            ]);
+            const { port, deleteCalls, pullRequestBatchSizes } = fakePort({
+                branches: [branch('fix/one', 'ta'), branch('fix/one-more', 'tb')],
+                pullRequestsFor: (names) => mapFor(master, names),
+            });
+            const { log, lines } = collectingLog();
+            const argv = ['--branch', 'fix/one'];
+            if (apply) {
+                argv.push('--apply');
+            }
+            const args = parsePruneRemoteBranchesArgs(argv);
+
+            expect(pruneRemoteBranches(args, port, log)).toBe(0);
+            expect(deleteCalls).toEqual(apply ? ['fix/one'] : []);
+            expect(pullRequestBatchSizes[0]).toBe(2);
+            expect(lines).toContain('spent: 1');
+            expect(lines).toContain('spent fix/one ta #1:MERGED');
+            expect(lines.some((line) => line.includes('fix/one-more'))).toBe(false);
+            if (!apply) {
+                expect(lines).toContain('dry run: 1 branches would be deleted; pass --apply to delete');
+            }
+        }
+    );
+
+    it('deletes multiple selected branches once each in name order', () => {
+        const master = threeSpentMaster();
+        const { port, deleteCalls } = fakePort({
+            branches: threeSpentBranches,
+            pullRequestsFor: (names) => mapFor(master, names),
+        });
+        const { log } = collectingLog();
+        const args = parsePruneRemoteBranchesArgs([
+            '--apply',
+            '--branch',
+            'gamma',
+            '--branch',
+            'beta',
+            '--branch',
+            'gamma',
+        ]);
+
+        expect(pruneRemoteBranches(args, port, log)).toBe(0);
+        expect(deleteCalls).toEqual(['beta', 'gamma']);
+    });
+
+    it.each([false, true])('rejects any unknown selected name before partial deletion (apply=%s)', (apply) => {
+        const master = threeSpentMaster();
+        const { port, deleteCalls, branchTipCalls } = fakePort({
+            branches: threeSpentBranches,
+            pullRequestsFor: (names) => mapFor(master, names),
+        });
+        const { log, lines } = collectingLog();
+        const argv = ['--branch', 'alpha', '--branch', 'typo'];
+        if (apply) {
+            argv.push('--apply');
+        }
+        const args = parsePruneRemoteBranchesArgs(argv);
+
+        expect(() => pruneRemoteBranches(args, port, log)).toThrow('unknown remote branch: typo');
+        expect(deleteCalls).toEqual([]);
+        expect(branchTipCalls).toEqual([]);
+        expect(lines).toEqual([]);
+    });
+
+    it('applies the limit after narrowing to selected branches', () => {
+        const master = threeSpentMaster();
+        const { port, deleteCalls } = fakePort({
+            branches: threeSpentBranches,
+            pullRequestsFor: (names) => mapFor(master, names),
+        });
+        const { log, lines } = collectingLog();
+        const args = parsePruneRemoteBranchesArgs(['--apply', '--limit', '1', '--branch', 'gamma', '--branch', 'beta']);
+
+        expect(pruneRemoteBranches(args, port, log)).toBe(0);
+        expect(deleteCalls).toEqual(['beta']);
+        expect(lines).toContain('deleted 1, already gone 0, kept at re-check 0, remaining spent 1');
+    });
+
+    it.each(['moved', 'open', 'unlisted', 'dependent', 'revision-holder'])(
+        'preserves selected unsafe branches classified as %s',
+        (protection) => {
+            const revision = '1111111111111111111111111111111111111111';
+            let targetListing: FakePullRequestsResult = [mergedPr(1, 'tip-target')];
+            if (protection === 'moved') {
+                targetListing = [mergedPr(1, 'old-tip')];
+            }
+            if (protection === 'open') {
+                targetListing = [openPr(1, 'tip-target')];
+            }
+            if (protection === 'unlisted') {
+                targetListing = { pullRequests: [mergedPr(1, 'tip-target')], complete: false };
+            }
+            const { port, deleteCalls } = fakePort({
+                branches: [branch('target', 'tip-target'), branch('unselected', 'tip-other')],
+                pullRequestsFor: () =>
+                    new Map<string, FakePullRequestsResult>([
+                        ['target', targetListing],
+                        ['unselected', [mergedPr(2, 'tip-other')]],
+                    ]),
+                baseDependentsFor: () =>
+                    new Map([['target', protection === 'dependent' ? [openPr(3, 'tip-child')] : []]]),
+                recordedMeasurementRevisions: () => (protection === 'revision-holder' ? [revision] : []),
+                branchHoldsRevision: (candidate) => candidate.name === 'target',
+            });
+            const { log } = collectingLog();
+
+            expect(
+                pruneRemoteBranches(parsePruneRemoteBranchesArgs(['--apply', '--branch', 'target']), port, log)
+            ).toBe(0);
+            expect(deleteCalls).toEqual([]);
+        }
+    );
+
+    it('keeps a selected branch whose fresh tip moved even when fresh pull requests match it', () => {
+        let reads = 0;
+        const { port, deleteCalls, branchTipCalls } = fakePort({
+            branches: [branch('target', 'old-tip'), branch('unselected', 'tip-other')],
+            pullRequestsFor: (names) => {
+                reads += 1;
+                const targetTip = reads === 1 ? 'old-tip' : 'new-tip';
+                return new Map(
+                    names.map((name) => [name, [mergedPr(1, name === 'unselected' ? 'tip-other' : targetTip)]])
+                );
+            },
+            branchTip: () => 'new-tip',
+        });
+        const { log, lines } = collectingLog();
+
+        expect(pruneRemoteBranches(parsePruneRemoteBranchesArgs(['--apply', '--branch', 'target']), port, log)).toBe(0);
+        expect(deleteCalls).toEqual([]);
+        expect(branchTipCalls).toEqual(['target']);
+        expect(lines).toContain('kept target: moved at re-check');
+    });
+
+    it('retains full revision-holder context when a selected spent branch has an unselected surviving holder', () => {
+        const compared: string[] = [];
+        const { port, deleteCalls } = fakePort({
+            branches: [branch('target', 'tip-target'), branch('survivor', 'tip-survivor')],
+            pullRequestsFor: () =>
+                new Map([
+                    ['target', [mergedPr(1, 'tip-target')]],
+                    ['survivor', [openPr(2, 'tip-survivor')]],
+                ]),
+            recordedMeasurementRevisions: () => ['1111111111111111111111111111111111111111'],
+            branchHoldsRevision: (candidate) => {
+                compared.push(candidate.name);
+                return true;
+            },
+        });
+        const { log } = collectingLog();
+
+        expect(pruneRemoteBranches(parsePruneRemoteBranchesArgs(['--apply', '--branch', 'target']), port, log)).toBe(0);
+        expect(compared).toEqual(['target', 'survivor']);
+        expect(deleteCalls).toEqual(['target']);
+    });
+
     it('keeps a spent parent branch when a complete plan-time read finds an open base-dependent pull request', () => {
         const target = branch('parent', 'tip-parent');
         const { port, deleteCalls } = fakePort({
@@ -989,6 +1165,29 @@ describe('deleteRemoteBranch', () => {
             throw new Error('gh: Reference does not exist (HTTP 422)');
         };
         expect(deleteRemoteBranch('gone-branch', runner)).toBe('already-gone');
+    });
+
+    it('should resolve already-gone when the runner throws an HTTP 404 Reference-does-not-exist error', () => {
+        const runner = (): string => {
+            throw new Error('gh: Reference does not exist (HTTP 404)');
+        };
+        expect(deleteRemoteBranch('raced-branch', runner)).toBe('already-gone');
+    });
+
+    it('should reject an HTTP 404 Not Found, naming the branch and carrying the original error as cause', () => {
+        const original = new Error('gh: Not Found (HTTP 404)');
+        const runner = (): string => {
+            throw original;
+        };
+        let caught: unknown;
+        try {
+            deleteRemoteBranch('unreachable-branch', runner);
+        } catch (error) {
+            caught = error;
+        }
+        expect(caught).toBeInstanceOf(Error);
+        expect((caught as Error).message).toContain('unreachable-branch');
+        expect((caught as Error).cause).toBe(original);
     });
 
     it('should reject with an error naming the branch and carrying the original error as cause on any other failure', () => {

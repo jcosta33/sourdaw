@@ -4,10 +4,7 @@ Real-time P2P and LAN collaboration sessions over Automerge CRDTs, owning networ
 
 ## Public Contract Surface
 
-- `stores`: `collaborationStore`.
-- `useCases`: `createSession`, `generateInvite`, `joinSession`, `acceptAnswer`, `leaveSession`, `broadcastPresence`, `onPresence`, `getAssetTransfer`, `canMutateBranchMetadata`, `canExecuteCommandBatch`, `getCollaborationHandlers`.
-- `presentations/views`: `CollaborationPanel`, `PresenceOverlay`.
-- Handlers: `getCollaborationHandlers` (`createCollabSession`, `joinCollabSession`, `leaveCollabSession`).
+Public surface: `useCases/index.ts`, `stores/index.ts`, `presentations/views/index.ts`.
 
 ## Key Subsystems
 
@@ -20,7 +17,7 @@ Real-time P2P and LAN collaboration sessions over Automerge CRDTs, owning networ
 
 - **Trust Model (Bearer Write Access)**: An invite string is an unconditional write bearer credential. Any peer completing the handshake edits without restriction and changes merge directly. No roles, viewer modes, or per-peer permission checks exist (ADR 0016 ruling 4).
 - **Host-Authoritative Branch Metadata**: `__branches__` is a structural single-writer document enforced in `buildAutomergeSyncHooks` (`useCases/collaboration/sessionManagement.ts`).
-- **Automerge WASM Build**: Vite aliases `@automerge/automerge` to the base64 WASM entrypoint (`vite.config.ts`). Never alter or remove this alias.
+- **Automerge WASM Build**: The app build's main-thread code receives Automerge's slim entry, initialised from the emitted `.wasm` by URL, through `src/infra/automerge/automergeStreamingEntry.ts`; `vite.config.ts` owns that redirect. IIFE build workers, the dev server, and Vitest keep the base64 entry: IIFE cannot hold top-level await, dev serves one module URL to the page and to module workers whose messages Chromium drops while a top-level await delays `onmessage`, and Node cannot fetch the URL; `fullfat_bundler.js` is unusable under Rolldown.
 - **DataChannel Framing Limits**: Payloads must respect chunk limits in `models/SyncChannelConstants.ts` to prevent RTCDataChannel buffer overflow or silent packet drop.
 - **Storage Pressure**: Sessions tear down cleanly and flush pending doc states if client storage quotas are exceeded.
 
@@ -29,5 +26,5 @@ Real-time P2P and LAN collaboration sessions over Automerge CRDTs, owning networ
 PR CI owns broader unit and crate suites. Locally run only the exact changed spec or filtered Rust test.
 
 ```bash
-pnpm test:run <changed-spec>
+pnpm guard --profile focused -- pnpm test:run <changed-spec>
 ```

@@ -1,5 +1,4 @@
-import { expect, test } from '@playwright/test';
-
+import { expect, test } from './e2eTest';
 import { launch_new_project, setupWorkspace } from './e2eUtils';
 
 test.describe('AI Features', () => {
@@ -9,11 +8,15 @@ test.describe('AI Features', () => {
     });
 
     test('Generative AI panel shows generation options when toggled', async ({ page }) => {
+        // Detailed grid option semantics live in GenerativeAiPanel.spec.tsx.
         await page.getByRole('button', { name: 'Generate', exact: true }).click();
-        await page.waitForTimeout(1000);
+        await expect(page.getByRole('button', { name: 'Patterns', exact: true })).toBeVisible();
 
-        const panel_content = page.getByText(/Genre|Mood|Pattern|Instrument|Generate|Create/i);
-        await expect(panel_content.first()).toBeVisible({ timeout: 5000 });
+        await page.getByRole('button', { name: 'AI', exact: true }).click();
+        await expect(page.getByText('Describe the Music')).toBeVisible();
+        await expect(page.getByTestId('genre-grid')).toBeVisible();
+        await expect(page.getByTestId('mood-grid')).toBeVisible();
+        await expect(page.getByTestId('instrument-grid')).toBeVisible();
     });
 
     test('AI chat panel toggles and shows empty state with composer', async ({ page }) => {

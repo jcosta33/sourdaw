@@ -628,7 +628,6 @@ function trustedReviewMutationFixture(root: string, mutationLog: string): void {
         'reviewPublicationRemoteInspection.ts',
         'reviewPublicationBinding.ts',
         'pullRequestReviewState.ts',
-        'reviewApprovalLabel.ts',
         ...approvalSources.map((path) => path.slice('scripts/'.length)),
     ]) {
         writeFileSync(join(root, 'scripts', path), 'export {};\n');
@@ -995,6 +994,8 @@ describe('package scripts and gitignore', () => {
         expect(pkg.scripts['issue:reconcile']).toBe('node scripts/trustedGithubWriteBootstrap.ts issue:reconcile');
         expect(pkg.scripts['issue:claim']).toBe('node scripts/trustedGithubWriteBootstrap.ts issue:claim');
         expect(pkg.scripts['lane:remove']).toBe('node scripts/removeLane.ts');
+        expect(pkg.scripts['lane:cleanup']).toBe('node scripts/cleanupLanes.ts');
+        expect(pkg.scripts['lane:cleanup:install']).toBe('node scripts/installCleanupLanes.ts');
         expect(pkg.scripts.deliver).toBe('node scripts/trustedGithubWriteBootstrap.ts deliver');
     });
 
@@ -1039,10 +1040,18 @@ describe('package scripts and gitignore', () => {
             'only the gate job may emit the stable Gate summary check name'
         );
         expect(gate.if).toBe(REQUIRED_GATE_CONDITION);
-        expect(workflowArrayAt(gate, 'needs')).toEqual(['admission', 'scope', 'validation', 'affected', 'codeql']);
+        expect(workflowArrayAt(gate, 'needs')).toEqual(['scope', 'e2e-build', 'validation', 'affected', 'codeql']);
         const gateStep = workflowStep(gate, 'Require selected checks to succeed');
         expect(gateStep.if).toBe(REQUIRED_GATE_CONDITION);
-        expect(workflowRecordAt(gateStep, 'env')).toEqual({ RESULTS: '${{ toJSON(needs) }}' });
+        expect(workflowRecordAt(gateStep, 'env')).toEqual({
+            RESULTS: '${{ toJSON(needs) }}',
+            MATRIX: '${{ needs.scope.outputs.matrix }}',
+            DRAFT: '${{ github.event.pull_request.draft }}',
+        });
+        expect(gateStep.run).toContain(
+            'if type != "object" or (.include | type) != "array" then error("invalid E2E plan")'
+        );
+        expect(gateStep.run).toContain('.["e2e-build"].result == $selected');
         expect(gateStep.run).toContain('.scope.result == "success"');
         expect(gateStep.run).toContain('.validation.result == "success"');
         expect(gateStep.run).toContain('.affected.result == "success"');
@@ -1071,7 +1080,7 @@ describe('package scripts and gitignore', () => {
         expect(Object.hasOwn(workflowStep(codeql, 'Checkout'), 'if')).toBe(false);
 
         const analyze = workflowStep(codeql, 'Analyse');
-        expect(analyze.uses).toBe('github/codeql-action/analyze@c16c0f3f2812ec4bb3750a5ed64873fe2ce0fbef');
+        expect(analyze.uses).toBe('github/codeql-action/analyze@52cf1852265d99e9bea071b03366fc777a602909');
         expect(Object.hasOwn(analyze, 'with')).toBe(false);
     });
 
@@ -1094,7 +1103,6 @@ describe('package scripts and gitignore', () => {
             'publishLane.ts',
             'prepareReview.ts',
             'publishReview.ts',
-            'reviewApprovalLabel.ts',
             'recoverPublishReviewLock.ts',
             'reviewPublicationReceiptAdoption.ts',
             'reviewCommentDiffPreflight.ts',
@@ -1106,6 +1114,9 @@ describe('package scripts and gitignore', () => {
             'deliverPullRequest.ts',
             'pullRequestMutationLock.ts',
             'removeLane.ts',
+            'cleanupLanes.ts',
+            'installCleanupLanes.ts',
+            'laneActivity.ts',
             'resolveThread.ts',
             'recoverDeliveryLock.ts',
             'deliveryLockLegacyIncidents.ts',
@@ -1134,29 +1145,39 @@ describe('package scripts and gitignore', () => {
         expect(paths).toEqual([
             'scripts/trustedGithubWriteBootstrap.ts',
             'scripts/deliverPullRequest.ts',
-            'scripts/pullRequestReviewState.ts',
-            'scripts/recoverDeliveryLock.ts',
+            'scripts/canonicalRecord.ts',
+            'scripts/cleanupLaneBookkeeping.ts',
+            'scripts/cleanupLanes.ts',
             'scripts/deliveryLockLegacyIncidents.ts',
             'scripts/deliveryRemoteInspection.ts',
+            'scripts/evidenceSafety.ts',
+            'scripts/githubAppIdentity.ts',
+            'scripts/laneActivity.ts',
+            'scripts/pnpmModulesPreflight.ts',
+            'scripts/prContract.ts',
             'scripts/pullRequestMutationLock.ts',
+            'scripts/pullRequestReviewState.ts',
             'scripts/reconcileTrackerIssue.ts',
-            'scripts/trackerIssueReconciliation.ts',
+            'scripts/recoverDeliveryLock.ts',
+            'scripts/removeLane.ts',
+            'scripts/resourceGuard.ts',
+            'scripts/resourceGuardDisk.ts',
+            'scripts/resourceGuardLsofDiagnostics.ts',
+            'scripts/resourceGuardProofReasons.ts',
+            'scripts/resourceGuardStorage.ts',
             'scripts/reviewBundleLocator.ts',
+            'scripts/reviewDiffSummary.ts',
             'scripts/reviewDossier.ts',
             'scripts/reviewDossierBindings.ts',
-            'scripts/reviewDossierReassessed.ts',
             'scripts/reviewDossierChain.ts',
+            'scripts/reviewDossierReassessed.ts',
             'scripts/reviewDossierViews.ts',
-            'scripts/evidenceSafety.ts',
-            'scripts/canonicalRecord.ts',
             'scripts/reviewRiskPolicy.ts',
             'scripts/savedProjectStatePaths.ts',
-            'scripts/reviewDiffSummary.ts',
+            'scripts/trackerIssueReconciliation.ts',
             'scripts/wasm-artifacts.ts',
             'scripts/wasmToolchainPins.ts',
             'scripts/workspaceManifestFingerprint.ts',
-            'scripts/githubAppIdentity.ts',
-            'scripts/prContract.ts',
         ]);
         expect(trustedDependencyPaths('review:resolve')).toEqual([
             'scripts/trustedGithubWriteBootstrap.ts',
@@ -1171,7 +1192,6 @@ describe('package scripts and gitignore', () => {
             'scripts/reviewRepair.ts',
             'scripts/reviewRoundEscalation.ts',
             'scripts/publishReview.ts',
-            'scripts/reviewApprovalLabel.ts',
             'scripts/pullRequestReviewState.ts',
             'scripts/reviewCommentDiffPreflight.ts',
             'scripts/reviewDocumentParser.ts',
@@ -1276,29 +1296,39 @@ describe('package scripts and gitignore', () => {
                 expected: [
                     'scripts/trustedGithubWriteBootstrap.ts',
                     'scripts/deliverPullRequest.ts',
-                    'scripts/pullRequestReviewState.ts',
-                    'scripts/recoverDeliveryLock.ts',
+                    'scripts/canonicalRecord.ts',
+                    'scripts/cleanupLaneBookkeeping.ts',
+                    'scripts/cleanupLanes.ts',
                     'scripts/deliveryLockLegacyIncidents.ts',
                     'scripts/deliveryRemoteInspection.ts',
+                    'scripts/evidenceSafety.ts',
+                    'scripts/githubAppIdentity.ts',
+                    'scripts/laneActivity.ts',
+                    'scripts/pnpmModulesPreflight.ts',
+                    'scripts/prContract.ts',
                     'scripts/pullRequestMutationLock.ts',
+                    'scripts/pullRequestReviewState.ts',
                     'scripts/reconcileTrackerIssue.ts',
-                    'scripts/trackerIssueReconciliation.ts',
+                    'scripts/recoverDeliveryLock.ts',
+                    'scripts/removeLane.ts',
+                    'scripts/resourceGuard.ts',
+                    'scripts/resourceGuardDisk.ts',
+                    'scripts/resourceGuardLsofDiagnostics.ts',
+                    'scripts/resourceGuardProofReasons.ts',
+                    'scripts/resourceGuardStorage.ts',
                     'scripts/reviewBundleLocator.ts',
+                    'scripts/reviewDiffSummary.ts',
                     'scripts/reviewDossier.ts',
                     'scripts/reviewDossierBindings.ts',
-                    'scripts/reviewDossierReassessed.ts',
                     'scripts/reviewDossierChain.ts',
+                    'scripts/reviewDossierReassessed.ts',
                     'scripts/reviewDossierViews.ts',
-                    'scripts/evidenceSafety.ts',
-                    'scripts/canonicalRecord.ts',
                     'scripts/reviewRiskPolicy.ts',
                     'scripts/savedProjectStatePaths.ts',
-                    'scripts/reviewDiffSummary.ts',
+                    'scripts/trackerIssueReconciliation.ts',
                     'scripts/wasm-artifacts.ts',
                     'scripts/wasmToolchainPins.ts',
                     'scripts/workspaceManifestFingerprint.ts',
-                    'scripts/githubAppIdentity.ts',
-                    'scripts/prContract.ts',
                 ],
             },
             {
@@ -1312,7 +1342,6 @@ describe('package scripts and gitignore', () => {
                     'scripts/reviewRepair.ts',
                     'scripts/reviewRoundEscalation.ts',
                     'scripts/publishReview.ts',
-                    'scripts/reviewApprovalLabel.ts',
                     'scripts/pullRequestReviewState.ts',
                     'scripts/reviewCommentDiffPreflight.ts',
                     'scripts/reviewDocumentParser.ts',
@@ -1345,7 +1374,6 @@ describe('package scripts and gitignore', () => {
                 expected: [
                     'scripts/trustedGithubWriteBootstrap.ts',
                     'scripts/publishReview.ts',
-                    'scripts/reviewApprovalLabel.ts',
                     'scripts/reconstructReviewRounds.ts',
                     'scripts/reviewRepair.ts',
                     'scripts/reviewRoundEscalation.ts',
@@ -1386,7 +1414,6 @@ describe('package scripts and gitignore', () => {
                     'scripts/reviewRepair.ts',
                     'scripts/reviewRoundEscalation.ts',
                     'scripts/publishReview.ts',
-                    'scripts/reviewApprovalLabel.ts',
                     'scripts/pullRequestReviewState.ts',
                     'scripts/reviewCommentDiffPreflight.ts',
                     'scripts/reviewDocumentParser.ts',
@@ -1562,12 +1589,18 @@ describe('package scripts and gitignore', () => {
      * closure plus the loader's own static closure. A source copied into the graph without a real
      * import, or dropped from it while still imported, reddens.
      */
-    it('declares exactly each command static local import closure, so over- and under-declaration redden', () => {
-        const readSource = readRepositorySource();
-        for (const command of Object.keys(trustedDependencyGraphs) as TrustedGithubWriteCommand[]) {
-            assertDeclaredClosure(command, trustedDependencyGraphs[command], readSource);
+    // Reads every trusted command's whole closure synchronously, which slow runners stretch past
+    // the 5 s default without any change in behaviour.
+    it(
+        'declares exactly each command static local import closure, so over- and under-declaration redden',
+        { timeout: 30_000 },
+        () => {
+            const readSource = readRepositorySource();
+            for (const command of Object.keys(trustedDependencyGraphs) as TrustedGithubWriteCommand[]) {
+                assertDeclaredClosure(command, trustedDependencyGraphs[command], readSource);
+            }
         }
-    });
+    );
 
     /**
      * The entry the closure is walked from must come from the runtime's own command table, never from
@@ -3530,8 +3563,6 @@ describe('package scripts and gitignore', () => {
                     unresolvedThreads: 0,
                 }),
                 postReview: () => expect.fail('review creation should not start'),
-                applyApprovalLabel: () => expect.fail('review creation should not start'),
-                removeApprovalLabel: () => expect.fail('review creation should not start'),
                 log: () => undefined,
             }),
             publish: () => {

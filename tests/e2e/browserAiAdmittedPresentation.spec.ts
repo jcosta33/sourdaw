@@ -1,11 +1,12 @@
-import { expect, test, type Page, type TestInfo } from '@playwright/test';
+import { type Page, type TestInfo } from '@playwright/test';
 
 import {
     getBrowserAiWebGpuHardwareRequirement,
     probeBrowserWebGpuHardware,
     requireBrowserWebGpuHardware,
 } from './browserAiHardware';
-import { launch_new_project, setupWorkspace } from './e2eUtils';
+import { expect, test } from './e2eTest';
+import { launch_new_project_via_ui, setupWorkspace } from './e2eUtils';
 
 /**
  * The admitted half of the AI availability contract.
@@ -37,7 +38,7 @@ test('offers browser model onboarding once a WebGPU device is admitted', async (
     test.setTimeout(180_000);
     await setupWorkspace(page);
     // This leg owns the first hardware/Vite cold compilation.
-    await launch_new_project(page, { firstPaintTimeoutMs: 90_000 });
+    await launch_new_project_via_ui(page, { firstPaintTimeoutMs: 90_000 });
 
     if (!(await admitsHardwareWebGpu(page, testInfo))) {
         return;
@@ -72,7 +73,7 @@ test('offers browser model onboarding once a WebGPU device is admitted', async (
 test('enables the chat composer once a WebGPU device is admitted', async ({ page }, testInfo) => {
     test.setTimeout(180_000);
     await setupWorkspace(page);
-    await launch_new_project(page);
+    await launch_new_project_via_ui(page);
 
     if (!(await admitsHardwareWebGpu(page, testInfo))) {
         return;

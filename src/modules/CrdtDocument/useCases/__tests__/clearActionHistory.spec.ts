@@ -4,10 +4,7 @@ import { clearActionHistory } from '../clearActionHistory';
 
 const module_mocks = vi.hoisted(() => ({
     clear_active_document: vi.fn<() => void>(),
-    action_history_store: {
-        clear: vi.fn<() => void>(),
-        set: vi.fn<(state: { entries: unknown[] }) => void>(),
-    },
+    clear_action_history_store: vi.fn<() => void>(),
 }));
 
 vi.mock('../../repositories/clearActionHistoryInActiveDocument', () => ({
@@ -15,14 +12,12 @@ vi.mock('../../repositories/clearActionHistoryInActiveDocument', () => ({
 }));
 
 vi.mock('../../stores/actionHistoryStore', () => ({
-    actionHistoryStore: module_mocks.action_history_store,
-    defaultActionHistoryState: { entries: [] },
+    clearActionHistoryStore: module_mocks.clear_action_history_store,
 }));
 
 describe('clearActionHistory', () => {
     beforeEach(() => {
-        module_mocks.action_history_store.set.mockClear();
-        module_mocks.action_history_store.clear.mockClear();
+        module_mocks.clear_action_history_store.mockClear();
         module_mocks.clear_active_document.mockReset();
     });
 
@@ -30,9 +25,9 @@ describe('clearActionHistory', () => {
         clearActionHistory();
 
         expect(module_mocks.clear_active_document).toHaveBeenCalledTimes(1);
-        expect(module_mocks.action_history_store.set).toHaveBeenCalledWith({ entries: [] });
+        expect(module_mocks.clear_action_history_store).toHaveBeenCalledTimes(1);
         expect(module_mocks.clear_active_document.mock.invocationCallOrder[0]).toBeLessThan(
-            module_mocks.action_history_store.set.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY
+            module_mocks.clear_action_history_store.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY
         );
     });
 
@@ -44,6 +39,6 @@ describe('clearActionHistory', () => {
 
         expect(() => clearActionHistory()).toThrow(failure);
 
-        expect(module_mocks.action_history_store.set).not.toHaveBeenCalled();
+        expect(module_mocks.clear_action_history_store).not.toHaveBeenCalled();
     });
 });

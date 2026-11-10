@@ -6,6 +6,7 @@ import { restoreTakesForClip } from '../../useCases/comping/restoreTakesForClip'
 import { updateTrack } from '../../useCases/updateTrack';
 
 import { recordingRestoreTargetIsClear } from './recordingReplayOwnership';
+import { isRecordingRestoreSessionPayload } from './recordingSessionEntry';
 
 /**
  * Explicit redo of `commitRecording`. Replays the clip, the take-lane state the
@@ -16,6 +17,7 @@ import { recordingRestoreTargetIsClear } from './recordingReplayOwnership';
  * track holds now, so a later edit to that lane survives.
  */
 export const handleRestoreRecording = createHandler<'restoreRecording'>({
+    validateSessionActionArguments: isRecordingRestoreSessionPayload,
     validate: recordingRestoreTargetIsClear,
     execute: (action, context) => {
         if (!recordingRestoreTargetIsClear(action, context)) {

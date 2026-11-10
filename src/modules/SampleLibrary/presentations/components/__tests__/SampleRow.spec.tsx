@@ -1,7 +1,7 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 
-import { type SampleRecord } from '../../../models/LibraryTypes';
+import { type SampleRecord, makeMusicalKey } from '../../../models/LibraryTypes';
 import { SampleRow } from '../SampleRow';
 
 function createSample(overrides: Partial<SampleRecord> = {}): SampleRecord {
@@ -18,6 +18,17 @@ function createSample(overrides: Partial<SampleRecord> = {}): SampleRecord {
         favorite: false,
         ...overrides,
     };
+}
+
+// Ring classes the shared Button base always adds; they style the focus ring and reveal nothing.
+const buttonBaseFocusClasses = [
+    'focus-visible:ring-1',
+    'focus-visible:ring-border-focus/70',
+    'focus-visible:ring-offset-0',
+];
+
+function focusClassesOf(element: Element | null, ignored: readonly string[] = []): string[] {
+    return (element?.className.split(/\s+/) ?? []).filter((c) => c.includes('focus') && !ignored.includes(c));
 }
 
 const baseProps = {
@@ -140,5 +151,140 @@ describe('SampleRow — add-to-track conditional', () => {
     it('renders the Add to track button when onAddToTrack is provided', () => {
         render(<SampleRow sample={createSample()} isPlaying={false} {...baseProps} onAddToTrack={vi.fn()} />);
         expect(screen.getByRole('button', { name: 'Add a to track' })).toBeTruthy();
+    });
+});
+
+describe('SampleRow — hover actions stay keyboard reachable', () => {
+    it('keeps add-to-track, favorite and find-similar focusable and activatable without hover', () => {
+        const onAddToTrack = vi.fn();
+        const onToggleFavorite = vi.fn();
+        const onFindSimilar = vi.fn();
+        render(
+            <SampleRow
+                sample={createSample()}
+                isPlaying={false}
+                {...baseProps}
+                onAddToTrack={onAddToTrack}
+                onToggleFavorite={onToggleFavorite}
+                onFindSimilar={onFindSimilar}
+            />
+        );
+        const actions = [
+            ['Add a to track', onAddToTrack],
+            ['Add a to favorites', onToggleFavorite],
+            ['Find samples similar to a', onFindSimilar],
+        ] as const;
+        for (const [name, handler] of actions) {
+            const button = screen.getByRole('button', { name });
+            button.focus();
+            expect(document.activeElement).toBe(button);
+            fireEvent.click(button);
+            expect(handler).toHaveBeenCalledTimes(1);
+        }
+    });
+});
+
+describe('SampleRow — overlay and decode-warning contracts', () => {
+    it('keeps the action overlay out of pointer hit-testing until hover or keyboard focus reveals it', () => {
+        render(<SampleRow sample={createSample()} isPlaying={false} {...baseProps} onAddToTrack={vi.fn()} />);
+        const overlay = screen.getByRole('button', { name: 'Find samples similar to a' }).parentElement;
+        const classes = overlay?.className.split(/\s+/) ?? [];
+        expect(classes).toContain('pointer-events-none');
+        expect(classes).toContain('group-hover:pointer-events-auto');
+        expect(classes).toContain('group-has-[button:focus-visible]:pointer-events-auto');
+    });
+
+    it('reveals a favorite or find-similar button focused by mouse click, not only by keyboard', () => {
+        render(<SampleRow sample={createSample()} isPlaying={false} {...baseProps} onAddToTrack={vi.fn()} />);
+        const findSimilar = screen.getByRole('button', { name: 'Find samples similar to a' });
+        const favorite = screen.getByRole('button', { name: 'Add a to favorites' });
+        findSimilar.focus();
+        expect(document.activeElement).toBe(findSimilar);
+
+        const overlayClasses = findSimilar.parentElement?.className.split(/\s+/) ?? [];
+        expect(overlayClasses).toContain('group-has-[[data-sample-row-action]:focus]:pointer-events-auto');
+        expect(overlayClasses).toContain('group-has-[[data-sample-row-action]:focus]:opacity-100');
+        expect(overlayClasses).toContain('group-has-[button:focus-visible]:opacity-100');
+
+        const favoriteClasses = favorite.className.split(/\s+/);
+        expect(favoriteClasses).toContain('group-has-[[data-sample-row-action]:focus]:opacity-100');
+        expect(favoriteClasses).toContain('group-has-[button:focus-visible]:opacity-100');
+        expect(favoriteClasses).toContain('focus:opacity-100');
+
+        const metadata = screen.getByText('1.2s').parentElement;
+        const metadataClasses = metadata?.className.split(/\s+/) ?? [];
+        expect(metadataClasses).toContain('group-has-[[data-sample-row-action]:focus]:invisible');
+        expect(metadataClasses).toContain('group-has-[button:focus-visible]:invisible');
+    });
+
+    it('does not let a mouse-focused Play button reveal the actions or hide the metadata', () => {
+        render(<SampleRow sample={createSample()} isPlaying={false} {...baseProps} onAddToTrack={vi.fn()} />);
+        const play = screen.getByRole('button', { name: 'Play a' });
+        play.focus();
+        expect(document.activeElement).toBe(play);
+
+        expect(play.hasAttribute('data-sample-row-action')).toBe(false);
+        const markedButtons = screen
+            .getAllByRole('button')
+            .filter((button) => button.hasAttribute('data-sample-row-action'));
+        const markedLabels = markedButtons.map((button) => button.getAttribute('aria-label'));
+        expect([...markedLabels].sort()).toEqual(['Add a to favorites', 'Add a to track', 'Find samples similar to a']);
+
+        // The only focus-driven reveals are keyboard focus anywhere in the row and any focus on a marked
+        // action; a plain `:focus` on Play (or focus-within / has-[:focus]) must satisfy none of them.
+        expect(focusClassesOf(screen.getByText('1.2s').parentElement)).toEqual([
+            'group-has-[button:focus-visible]:invisible',
+            'group-has-[[data-sample-row-action]:focus]:invisible',
+        ]);
+        expect(focusClassesOf(screen.getByRole('button', { name: 'Find samples similar to a' }).parentElement)).toEqual(
+            [
+                'group-has-[button:focus-visible]:pointer-events-auto',
+                'group-has-[button:focus-visible]:opacity-100',
+                'group-has-[[data-sample-row-action]:focus]:pointer-events-auto',
+                'group-has-[[data-sample-row-action]:focus]:opacity-100',
+            ]
+        );
+        expect(
+            focusClassesOf(screen.getByRole('button', { name: 'Add a to favorites' }), buttonBaseFocusClasses)
+        ).toEqual([
+            'group-has-[button:focus-visible]:opacity-100',
+            'group-has-[[data-sample-row-action]:focus]:opacity-100',
+            'focus:opacity-100',
+        ]);
+    });
+
+    it('never hides the decode warning behind a container-width threshold', () => {
+        render(
+            <SampleRow
+                sample={createSample({ ext: 'aiff' })}
+                isPlaying={false}
+                {...baseProps}
+                showBrowserDecodeWarnings
+            />
+        );
+        const badge = screen.getByTitle('AIFF may not preview in your browser');
+        const classes = badge.className.split(/\s+/);
+        expect(classes.filter((c) => c === 'hidden' || c.startsWith('@['))).toEqual([]);
+    });
+});
+
+describe('SampleRow — key column fits the default sidebar', () => {
+    // Default sidebar (224px) minus aside border and paddings leaves a 199px
+    // listbox with overlay scrollbars; the key must show there. Raising the
+    // threshold above that width fails this case.
+    const DEFAULT_LISTBOX_WIDTH_PX = 199;
+
+    it('shows the key at or below the default listbox width', () => {
+        render(
+            <SampleRow
+                sample={createSample({ analysis: { key: makeMusicalKey('A', 'minor') } })}
+                isPlaying={false}
+                {...baseProps}
+            />
+        );
+        const keyClasses = screen.getByText('Am').className.split(/\s+/);
+        const threshold = keyClasses.map((c) => /^@\[([\d.]+)rem\]:/.exec(c)?.[1]).find((v) => v !== undefined);
+        expect(threshold).toBeDefined();
+        expect(Number(threshold) * 16).toBeLessThanOrEqual(DEFAULT_LISTBOX_WIDTH_PX);
     });
 });

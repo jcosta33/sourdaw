@@ -6,7 +6,7 @@ import { TooltipProvider } from '#/components/ui/tooltip';
 import { LevelMeter } from '../LevelMeter';
 
 const mocks = vi.hoisted(() => ({
-    getMasterPeakLevel: vi.fn<() => number | null>(() => 0),
+    getMasterPeakLevel: vi.fn<(frameTime?: number) => number | null>(() => 0),
     getTrackPeakLevel: vi.fn(() => 0),
     register: vi.fn(),
     unregister: vi.fn(),
@@ -102,6 +102,57 @@ describe('LevelMeter', () => {
 
         const peakHoldCalls = fillRectSpy.mock.calls.filter((call) => call[3] === 1.5);
         expect(peakHoldCalls).toContainEqual([0, 0, 8, 1.5]);
+    });
+
+    // A blown-up native output reads as +Infinity. It is a measurement the meter
+    // must draw as a full-scale clip, then recover from: Infinity carried into
+    // the VU ballistics becomes NaN, and carried into the peak hold it never
+    // decays, so one overload frame would otherwise break the meter until remount.
+    describe('an infinite peak', () => {
+        const drawnArguments = (spy: { mock: { calls: number[][] } }) => spy.mock.calls.flat();
+
+        it('announces "+∞ dB" with a finite numeric value on the infinite frame', () => {
+            mocks.getMasterPeakLevel.mockReturnValue(Number.POSITIVE_INFINITY);
+            const { container } = renderWithTooltip(<LevelMeter trackId={null} />);
+            mocks.scheduledTick!(0, 16);
+
+            const meter = container.querySelector('[role="meter"]');
+            expect(meter!.getAttribute('aria-valuetext')).toBe('+∞ dB');
+            expect(Number.isFinite(Number(meter!.getAttribute('aria-valuenow')))).toBe(true);
+        });
+
+        it('draws the infinite frame as a full-scale clip', () => {
+            const canvasContext = document.createElement('canvas').getContext('2d');
+            const fillRectSpy = vi.spyOn(canvasContext!, 'fillRect');
+
+            mocks.getMasterPeakLevel.mockReturnValue(Number.POSITIVE_INFINITY);
+            renderWithTooltip(<LevelMeter trackId={null} />);
+            mocks.scheduledTick!(0, 16);
+
+            expect(fillRectSpy.mock.calls).toContainEqual([0, 0, 8, 100]);
+            expect(fillRectSpy.mock.calls).toContainEqual([0, 0, 8, 1.5]);
+        });
+
+        it('recovers: the RMS and peak fills stay finite and the hold falls off the top', () => {
+            const canvasContext = document.createElement('canvas').getContext('2d');
+            const fillRectSpy = vi.spyOn(canvasContext!, 'fillRect');
+
+            mocks.getMasterPeakLevel.mockReturnValue(Number.POSITIVE_INFINITY);
+            renderWithTooltip(<LevelMeter trackId={null} />);
+            mocks.scheduledTick!(0, 16);
+
+            mocks.getMasterPeakLevel.mockReturnValue(0.1);
+            fillRectSpy.mockClear();
+            // Past the 1500 ms hold duration the hold decays a step per frame.
+            for (let frame = 0; frame < 60; frame++) {
+                mocks.scheduledTick!(2000 + frame * 16, 16);
+            }
+
+            expect(drawnArguments(fillRectSpy).every(Number.isFinite)).toBe(true);
+            const lastFrameHold = fillRectSpy.mock.calls.findLast((call) => call[3] === 1.5);
+            expect(lastFrameHold).toBeDefined();
+            expect(lastFrameHold![1]).toBeGreaterThan(0);
+        });
     });
 
     // ── "no meter tap" and "measured silence" must not paint the same frame ─────
@@ -224,5 +275,17 @@ describe('LevelMeter', () => {
             // unavailable case must not produce.
             expect(fillRectSpy.mock.calls).toContainEqual([0, 0, 8, 100]);
         });
+    });
+    it.each([null, 'track-17'])('forwards the exact scheduler frame to the %s peak query', (trackId) => {
+        renderWithTooltip(<LevelMeter trackId={trackId} />);
+        expect(mocks.scheduledTick).not.toBeNull();
+        mocks.scheduledTick!(123.456, 16);
+        if (trackId === null) {
+            expect(mocks.getMasterPeakLevel).toHaveBeenCalledExactlyOnceWith(123.456);
+            expect(mocks.getTrackPeakLevel).not.toHaveBeenCalled();
+        } else {
+            expect(mocks.getTrackPeakLevel).toHaveBeenCalledExactlyOnceWith(trackId, 123.456);
+            expect(mocks.getMasterPeakLevel).not.toHaveBeenCalled();
+        }
     });
 });

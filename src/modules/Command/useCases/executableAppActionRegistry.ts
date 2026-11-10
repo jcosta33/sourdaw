@@ -4,8 +4,10 @@ import {
     describeLevelLawDb,
     FADER_GAIN_RANGE_DESCRIPTION,
     FADER_MAX_GAIN_LABEL,
+    METRONOME_LEVEL_LAW,
     SEND_LEVEL_LAW,
     TRACK_FADER_LAW,
+    VCA_LEVEL_LAW,
 } from '#/utils/audioLevelLaw';
 import { type AppAction, type AppActionType } from '#/utils/handlerContract';
 import { getMarkerColorNames } from '#/utils/markerColorPalette';
@@ -317,7 +319,11 @@ export const executableAppActionDescriptors = [
         ],
         parameters: {
             properties: {
-                name: { type: 'string', description: 'Display name (e.g. "Kick", "Vocals", "Synth Pad")' },
+                name: {
+                    type: 'string',
+                    description:
+                        'Display name (e.g. "Kick", "Vocals", "Synth Pad"). Omit it to name the track by its kind and the next free number.',
+                },
                 kind: { type: 'string', enum: ['audio', 'midi', 'folder'], description: 'Track type' },
                 binding: {
                     type: 'string',
@@ -326,7 +332,7 @@ export const executableAppActionDescriptors = [
                         'Optional plan-local name. Later calls may target this newly created track as $<binding>.',
                 },
             },
-            required: ['name', 'kind'],
+            required: ['kind'],
         },
     },
     {
@@ -796,6 +802,65 @@ export const executableAppActionDescriptors = [
                 },
             },
             required: ['clipIds'],
+        },
+    },
+    {
+        actionType: 'quantizeTransients',
+        risk: 'destructive-reversible',
+        description:
+            'Cut one unlocked, unlooped audio clip at its detected transients and move each slice so its hit lands on an explicit beat grid, as one reversible edit; gaps left behind stay silent.',
+        intentPhrases: [
+            'quantize transients',
+            'quantize the transients',
+            'quantize audio',
+            'quantize the audio',
+            'quantize audio clip',
+            'quantize the audio clip',
+            'beat detective',
+        ],
+        targetRules: editableAudioClipTargetRules,
+        valueRules: [{ argument: 'gridSize', kind: 'number-if-present', requiredInPrompt: true, match: 'exact' }],
+        materializedArgumentsValidation: 'owner-required',
+        parameters: {
+            properties: {
+                clipId: { type: 'string', description: 'Existing unlocked, unlooped audio clip ID' },
+                gridSize: {
+                    type: 'number',
+                    minimum: 1 / 32,
+                    maximum: 4,
+                    description: 'Quantize grid in beats, from 1/32 through 4 (0.25 is a sixteenth note)',
+                },
+                strength: {
+                    type: 'number',
+                    minimum: 0,
+                    maximum: 1,
+                    description: 'How far each hit moves toward its grid point, 0 through 1; defaults to 1',
+                },
+                swing: {
+                    type: 'number',
+                    minimum: 0,
+                    maximum: 1,
+                    description: 'Swing applied to off-beat grid points, 0 through 1; defaults to 0',
+                },
+                sensitivity: {
+                    type: 'number',
+                    minimum: 0,
+                    maximum: 1,
+                    description: 'Transient detection sensitivity, 0 through 1; defaults to 0.5',
+                },
+                minConfidence: {
+                    type: 'number',
+                    minimum: 0,
+                    maximum: 1,
+                    description: 'Lowest detection confidence a hit needs to be cut, 0 through 1; defaults to 0',
+                },
+                startBeat: { type: 'number', description: 'Optional song beat the quantized range starts at' },
+                endBeat: {
+                    type: 'number',
+                    description: 'Optional song beat the quantized range ends at; later audio stays where it is',
+                },
+            },
+            required: ['clipId', 'gridSize'],
         },
     },
     {
@@ -1417,6 +1482,19 @@ export const executableAppActionDescriptors = [
         },
     },
     {
+        actionType: 'removeCompRegion',
+        risk: 'bounded-reversible',
+        description: "Remove one existing interval from a track's comp lane.",
+        discoverability: 'hidden',
+        intentPhrases: [],
+        targetRules: existingTrackTargetRules,
+        materializedArgumentsValidation: 'owner-required',
+        parameters: {
+            properties: { trackId: { type: 'string' }, startBeat: { type: 'number', minimum: 0 } },
+            required: ['trackId', 'startBeat'],
+        },
+    },
+    {
         actionType: 'setSoloSafe',
         risk: 'bounded-reversible',
         description: 'Enable or disable solo-safe protection for a track.',
@@ -1596,6 +1674,24 @@ export const executableAppActionDescriptors = [
                 denominator: { type: 'integer', enum: [2, 4, 8, 16], description: 'Beat unit' },
             },
             required: ['numerator', 'denominator'],
+        },
+    },
+    {
+        actionType: 'setProductionBrief',
+        risk: 'authority-sensitive',
+        description:
+            "Replace the project's production brief with the next revision the application composed from a request.",
+        // Only `brief.compile` reaches it: the application composes the whole brief, so no provider
+        // ever names this command or its arguments.
+        discoverability: 'hidden',
+        intentPhrases: [],
+        targetRules: [],
+        parameters: {
+            properties: {
+                expectedRevision: { type: 'integer', minimum: 0 },
+                brief: { type: 'object' },
+            },
+            required: ['expectedRevision', 'brief'],
         },
     },
     {
@@ -1919,15 +2015,39 @@ export const executableAppActionDescriptors = [
     {
         actionType: 'setMetronomeVolume',
         risk: 'bounded-reversible',
-        description: 'Set metronome volume from 0.0 through 1.0.',
-        intentPhrases: ['set metronome volume', 'set the metronome volume', 'change metronome volume'],
+        description: `Set metronome volume in decibels. Exactly one of volumeDb, deltaDb, or volume. ${describeLevelLawDb(METRONOME_LEVEL_LAW)}.`,
+        intentPhrases: [
+            'set metronome volume',
+            'set the metronome volume',
+            'change metronome volume',
+            'turn the metronome volume down',
+            'turn the metronome volume up',
+        ],
         targetRules: [],
         valueRules: [
-            { argument: 'volume', kind: 'number-if-present', requiredInPrompt: true, scale: 'percentage-only' },
+            { argument: 'volumeDb', kind: 'number-if-present', requiredInPrompt: true, levelForm: 'absolute-decibel' },
+            { argument: 'deltaDb', kind: 'number-if-present', requiredInPrompt: true, levelForm: 'relative-decibel' },
+            {
+                argument: 'volume',
+                kind: 'number-if-present',
+                requiredInPrompt: true,
+                scale: 'percentage-only',
+                levelForm: 'linear',
+            },
         ],
         parameters: {
-            properties: { volume: { type: 'number', description: '0.0 to 1.0' } },
-            required: ['volume'],
+            properties: {
+                volumeDb: {
+                    type: 'number',
+                    description: `Absolute metronome level. ${describeLevelLawDb(METRONOME_LEVEL_LAW)}`,
+                },
+                deltaDb: {
+                    type: 'number',
+                    description: 'Relative change in decibels from the current metronome level.',
+                },
+                volume: { type: 'number', description: 'Deprecated linear volume from 0.0 to 1.0; prefer decibels.' },
+            },
+            required: [],
         },
     },
     {
@@ -1998,7 +2118,7 @@ export const executableAppActionDescriptors = [
     {
         actionType: 'setVcaGain',
         risk: 'authority-sensitive',
-        description: 'Set an existing VCA group gain from 0.0 through 2.0.',
+        description: `Set an existing VCA group gain in decibels. Exactly one of gainDb, deltaDb, or gain. ${describeLevelLawDb(VCA_LEVEL_LAW)}.`,
         intentPhrases: [
             'set vca gain',
             'set the vca gain',
@@ -2007,14 +2127,28 @@ export const executableAppActionDescriptors = [
             'set the vca volume',
             'change vca volume',
         ],
+        levelIntentPhrases: [],
+        referencedLevelIntentPhrases: ['set {reference} gain to', 'set {reference} volume to'],
         targetRules: [{ argument: 'vcaGroupId', capability: 'vca-group' }],
-        valueRules: [{ argument: 'gain', kind: 'number-if-present', requiredInPrompt: true, scale: 'percentage-only' }],
+        valueRules: [
+            { argument: 'gainDb', kind: 'number-if-present', requiredInPrompt: true, levelForm: 'absolute-decibel' },
+            { argument: 'deltaDb', kind: 'number-if-present', requiredInPrompt: true, levelForm: 'relative-decibel' },
+            {
+                argument: 'gain',
+                kind: 'number-if-present',
+                requiredInPrompt: true,
+                scale: 'percentage-only',
+                levelForm: 'linear',
+            },
+        ],
         parameters: {
             properties: {
                 vcaGroupId: { type: 'string', description: 'Existing VCA group ID' },
-                gain: { type: 'number', description: '0.0 to 2.0' },
+                gainDb: { type: 'number', description: `Absolute VCA gain. ${describeLevelLawDb(VCA_LEVEL_LAW)}` },
+                deltaDb: { type: 'number', description: 'Relative change in decibels from the current VCA gain.' },
+                gain: { type: 'number', description: 'Deprecated linear gain from 0.0 to 2.0; prefer decibels.' },
             },
-            required: ['vcaGroupId', 'gain'],
+            required: ['vcaGroupId'],
         },
     },
     {
@@ -2371,17 +2505,19 @@ export const executableAppActionDescriptors = [
         actionType: 'automateTrackGainRange',
         risk: 'authority-sensitive',
         description:
-            'Lift an app-grounded set of impact buses by a bounded relative dB amount inside one arrangement section.',
-        intentPhrases: ['make the second chorus hit harder', 'second chorus hit harder'],
+            'Lift each named bus by a bounded relative dB amount as gain automation inside one named arrangement section.',
+        intentPhrases: ['lift', 'gain lift'],
         targetRules: [
             {
                 argument: 'trackIds',
                 capability: 'routable-source',
                 cardinality: 'many',
-                promptRole: 'members',
             },
         ],
-        valueRules: [],
+        valueRules: [
+            { argument: 'sectionName', kind: 'section-reference' },
+            { argument: 'gainDb', kind: 'number-if-present', requiredInPrompt: true },
+        ],
         parameters: {
             properties: {
                 trackIds: {
@@ -2389,14 +2525,14 @@ export const executableAppActionDescriptors = [
                     items: { type: 'string' },
                     minItems: 1,
                     uniqueItems: true,
-                    description: 'Exact app-grounded impact-bus IDs',
+                    description: 'The exact buses the request names',
                 },
-                sectionName: { type: 'string', description: 'Existing target chorus name' },
+                sectionName: { type: 'string', description: 'Existing arrangement section name the request names' },
                 gainDb: {
                     type: 'number',
                     exclusiveMinimum: 0,
                     maximum: 6,
-                    description: 'Bounded decibel lift selected by the planning policy',
+                    description: 'Positive number of decibels the request states to lift the gain inside the section',
                 },
             },
             required: ['trackIds', 'sectionName', 'gainDb'],
@@ -3122,6 +3258,7 @@ export const executableAppActionMutationIdentityRulesByType = {
     setClipColor: CLIP_MUTATION_IDENTITY,
     setClipFade: CLIP_MUTATION_IDENTITY,
     glueClips: MANY_CLIPS_MUTATION_IDENTITY,
+    quantizeTransients: CLIP_MUTATION_IDENTITY,
     crossfadeClips: DUAL_CLIPS_MUTATION_IDENTITY,
     lockClip: CLIP_MUTATION_IDENTITY,
     setClipLoop: CLIP_MUTATION_IDENTITY,
@@ -3147,6 +3284,7 @@ export const executableAppActionMutationIdentityRulesByType = {
     soloTrack: TRACK_MUTATION_IDENTITY,
     selectTake: TRACK_MUTATION_IDENTITY,
     setCompRegion: TRACK_MUTATION_IDENTITY,
+    removeCompRegion: TRACK_MUTATION_IDENTITY,
     setSoloSafe: TRACK_MUTATION_IDENTITY,
     clearSolos: SINGLETON_MUTATION_IDENTITY,
     armTrack: TRACK_MUTATION_IDENTITY,
@@ -3157,6 +3295,7 @@ export const executableAppActionMutationIdentityRulesByType = {
     reorderTrack: TRACK_MUTATION_IDENTITY,
     setTempo: SINGLETON_MUTATION_IDENTITY,
     setTimeSignature: SINGLETON_MUTATION_IDENTITY,
+    setProductionBrief: SINGLETON_MUTATION_IDENTITY,
     setPlayback: SINGLETON_MUTATION_IDENTITY,
     stopPlayback: SINGLETON_MUTATION_IDENTITY,
     seekPlayhead: SINGLETON_MUTATION_IDENTITY,
@@ -3238,6 +3377,7 @@ export const executableAppActionMutationIdempotenceByType = {
     setClipColor: true,
     setClipFade: true,
     glueClips: false,
+    quantizeTransients: false,
     crossfadeClips: false,
     lockClip: true,
     setClipLoop: true,
@@ -3263,6 +3403,7 @@ export const executableAppActionMutationIdempotenceByType = {
     soloTrack: true,
     selectTake: true,
     setCompRegion: false,
+    removeCompRegion: false,
     setSoloSafe: true,
     clearSolos: false,
     armTrack: true,
@@ -3273,6 +3414,7 @@ export const executableAppActionMutationIdempotenceByType = {
     reorderTrack: false,
     setTempo: true,
     setTimeSignature: true,
+    setProductionBrief: false,
     setPlayback: true,
     stopPlayback: false,
     seekPlayhead: false,

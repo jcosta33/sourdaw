@@ -10,7 +10,6 @@ import {
     getCachedAudioBuffer,
     getCurrentTime,
 } from '#/modules/AudioEngine/useCases';
-import { getAssetTransfer } from '#/modules/Collaboration/useCases';
 import {
     MICRO_FADE_SECONDS,
     clampClipFadeInDurationSeconds,
@@ -20,7 +19,7 @@ import { notifyUser } from '#/utils/Notification/notifyUser';
 import { boundStretchRatio } from '#/utils/stretchRatioBound';
 
 import { defaultTransportState } from '../../../models/TransportState';
-import { schedulerSession } from '../../playheadScheduler/schedulerSession';
+import { schedulerSession, stopActiveSources } from '../../playheadScheduler/schedulerSession';
 import { gainNodePool } from '../audioClipSchedulingState';
 import { disposeAudioClipScheduling } from '../disposeAudioClipScheduling';
 import { scheduleAudioClips } from '../scheduleAudioClips';
@@ -30,6 +29,7 @@ import { scheduleFrozenTrack } from '../scheduleFrozenTrack';
 // the clip(s) under test so the clip shape is controlled directly by each test.
 const trackStoreState: { value: { tracks: unknown[] } } = { value: { tracks: [] } };
 vi.mock('#/modules/Arrangement/stores', () => ({
+    gainEnvelopeStore: { value: null },
     trackStore: {
         get value() {
             return trackStoreState.value;
@@ -67,6 +67,12 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
 // real loop projection.
 vi.mock('#/modules/Arrangement/useCases', () => ({
     resolveClipsWithComping: vi.fn(() => []),
+    collaborationAssetTransfer: {
+        read: () => ({
+            isSessionActive: () => collaborationAssetState.sessionActive,
+            current: () => collaborationAssetState.transfer,
+        }),
+    },
 }));
 vi.mock('#/utils/Notification/notifyUser', () => ({
     notifyUser: vi.fn(),
@@ -74,17 +80,10 @@ vi.mock('#/utils/Notification/notifyUser', () => ({
 vi.mock('../scheduleFrozenTrack', () => ({
     scheduleFrozenTrack: vi.fn(() => false),
 }));
-const collaborationStoreState: { value: { isEnabled: boolean } | null } = { value: null };
-vi.mock('#/modules/Collaboration/stores', () => ({
-    collaborationStore: {
-        get value() {
-            return collaborationStoreState.value;
-        },
-    },
-}));
-vi.mock('#/modules/Collaboration/useCases', () => ({
-    getAssetTransfer: vi.fn(() => null),
-}));
+const collaborationAssetState: {
+    sessionActive: boolean;
+    transfer: { requestAsset: (hash: string) => void } | null;
+} = { sessionActive: false, transfer: null };
 // `TempoMap` is deliberately NOT stubbed: it is a pure leaf with its own spec,
 // and the timing these tests pin is exactly the question of which conversion the
 // scheduler asks it for. With an empty map every query falls back to
@@ -147,6 +146,7 @@ function makeFakeSource(): { start: ReturnType<typeof vi.fn<StartFn>>; [k: strin
         buffer: null,
         playbackRate: { value: 1 },
         connect: vi.fn(),
+        disconnect: vi.fn(),
         start: vi.fn<StartFn>((when, offset, duration) => {
             if (when < 0 || offset < 0 || duration < 0) {
                 throw new RangeError('start() arguments must be non-negative');
@@ -156,18 +156,93 @@ function makeFakeSource(): { start: ReturnType<typeof vi.fn<StartFn>>; [k: strin
     };
 }
 
+type GainWrite = { kind: 'set' | 'linear' | 'exponential'; value: number; time: number };
+
+function gainLedger() {
+    const nodes: ReturnType<typeof createGain>[] = [];
+    let seedFailure = false;
+    function createGain() {
+        let intrinsic = 1;
+        const timeline: GainWrite[] = [];
+        const operations: string[] = [];
+        return {
+            timeline,
+            operations,
+            connect: vi.fn(),
+            disconnect: vi.fn(),
+            gain: {
+                get value() {
+                    return intrinsic;
+                },
+                set value(value: number) {
+                    if (seedFailure) {
+                        throw new Error('seed rejected');
+                    }
+                    operations.push('intrinsic');
+                    intrinsic = value;
+                },
+                cancelScheduledValues: vi.fn((time: number) => {
+                    operations.push(`cancel:${time}`);
+                    for (let index = timeline.length - 1; index >= 0; index--) {
+                        if (timeline[index]!.time >= time) {
+                            timeline.splice(index, 1);
+                        }
+                    }
+                }),
+                setValueAtTime: vi.fn((value: number, time: number) => timeline.push({ kind: 'set', value, time })),
+                linearRampToValueAtTime: vi.fn((value: number, time: number) =>
+                    timeline.push({ kind: 'linear', value, time })
+                ),
+                exponentialRampToValueAtTime: vi.fn((value: number, time: number) =>
+                    timeline.push({ kind: 'exponential', value, time })
+                ),
+            },
+        };
+    }
+    const context = {
+        currentTime: 0,
+        createGain: vi.fn(() => {
+            const node = createGain();
+            nodes.push(node);
+            return node;
+        }),
+    };
+    return {
+        nodes,
+        context,
+        rejectSeed: () => {
+            seedFailure = true;
+        },
+    };
+}
+
+function withGainLedger(run: (ledger: ReturnType<typeof gainLedger>) => void): void {
+    const port = vi.mocked(getAudioContext);
+    const original = port.getMockImplementation();
+    if (!original) {
+        throw new Error('Expected the browser hardware boundary');
+    }
+    const ledger = gainLedger();
+    port.mockImplementation(() => ledger.context as unknown as ReturnType<typeof getAudioContext>);
+    try {
+        run(ledger);
+    } finally {
+        port.mockImplementation(original);
+    }
+}
+
 describe('scheduleAudioClips', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         trackStoreState.value = { tracks: [] };
-        collaborationStoreState.value = null;
+        collaborationAssetState.sessionActive = false;
         tempoMapStore.value = { changes: [] };
         // Reset implementations that other tests override via mockReturnValue —
         // clearAllMocks only clears call records, not per-test return values.
         vi.mocked(getCurrentTime).mockReturnValue(0);
         vi.mocked(getCompensationDelay).mockReturnValue(0);
         vi.mocked(getGainEnvelopeSeries).mockReturnValue(undefined);
-        vi.mocked(getAssetTransfer).mockReturnValue(null);
+        collaborationAssetState.transfer = null;
         mockResolveClips.mockReturnValue([]);
         // The seam records are scheduler-session singletons: a case that leaves
         // either standing would floor the next case's emissions as handovers.
@@ -181,6 +256,248 @@ describe('scheduleAudioClips', () => {
         scheduleAudioClips(0, 4, 0, new Set(), new Set(), [], defaultTransportState);
 
         expect(notifyUser).not.toHaveBeenCalled();
+    });
+
+    describe.each([false, true])('fade acquisition with actual pool reuse=%s', (reuse) => {
+        it.each([
+            { label: 'micro attack', clip: { gain: 0.25 }, position: 0, clock: 0, from: 0, seed: 0 },
+            {
+                label: 'remaining drawn attack',
+                clip: { gain: 0.25, fadeInBeats: 2 },
+                position: 9,
+                clock: 4.5,
+                from: 0,
+                seed: 0.125,
+            },
+            {
+                label: 'elapsed drawn attack',
+                clip: { gain: 0.25, fadeInBeats: 2 },
+                position: 11,
+                clock: 5.5,
+                from: 0,
+                seed: 0.25,
+            },
+            {
+                label: 'preroll after drawn attack',
+                clip: { gain: 0.25, fadeInBeats: 0.1, audioOffsetBeats: -2 },
+                position: 11,
+                clock: 5.5,
+                from: 0,
+                seed: 0,
+            },
+            {
+                label: 'nonfirst loop iteration',
+                clip: { gain: 0.25, loopEnabled: true, loopLength: 2 },
+                position: 0,
+                clock: 0,
+                from: 10,
+                seed: 0.25,
+            },
+            {
+                label: 'two millisecond same-time plateau',
+                clip: { gain: 0.25, endBeat: 8.004 },
+                position: 0,
+                clock: 0,
+                from: 0,
+                seed: 0.25,
+            },
+            {
+                label: 'late final two millisecond join',
+                clip: { gain: 0.25 },
+                position: 11.996,
+                clock: 5.998,
+                from: 0,
+                seed: 0.25,
+            },
+        ])('seeds $label before the first native start', ({ clip, position, clock, from, seed }) => {
+            withGainLedger((ledger) => {
+                mockGetCachedAudioBuffer.mockReturnValue({ duration: 100 } as AudioBuffer);
+                trackStoreState.value = { tracks: [makeAudioTrack([])] };
+                if (reuse) {
+                    const warm = makeFakeSource();
+                    mockCreateBufferSource.mockReturnValue(warm as unknown as AudioBufferSourceNode);
+                    mockResolveClips.mockReturnValue([
+                        makeAudioClip({ gain: 0.8, startBeat: 0, endBeat: 0.5 }),
+                    ] as ReturnType<typeof resolveClipsWithComping>);
+                    scheduleAudioClips(0, 16, 0, new Set(), new Set(), [], defaultTransportState);
+                    const end = warm.onended;
+                    expect(typeof end).toBe('function');
+                    ledger.context.currentTime = 1;
+                    (end as () => void)();
+                    expect(gainNodePool[0]).toBe(ledger.nodes[0]);
+                    // This is an actual released private node, with an old unity
+                    // event surviving before the next acquisition's clock.
+                    ledger.nodes[0]!.gain.setValueAtTime(1, 0.5);
+                }
+                vi.mocked(getCurrentTime).mockReturnValue(100 + clock);
+                ledger.context.currentTime = 100 + clock;
+                const source = makeFakeSource();
+                const starts: { intrinsic: number; timeline: GainWrite[]; node: unknown }[] = [];
+                source.start.mockImplementation(() => {
+                    const node = ledger.nodes[0]!;
+                    starts.push({ intrinsic: node.gain.value, timeline: [...node.timeline], node });
+                });
+                mockCreateBufferSource.mockReturnValue(source as unknown as AudioBufferSourceNode);
+                mockResolveClips.mockReturnValue([makeAudioClip(clip)] as ReturnType<typeof resolveClipsWithComping>);
+                scheduleAudioClips(from, 12, position, new Set(), new Set(), [], defaultTransportState);
+                expect(starts).toHaveLength(1);
+                expect(starts[0]!.intrinsic).toBeCloseTo(seed, 12);
+                expect(starts[0]!.timeline).toEqual([]);
+                expect(starts[0]!.node).toBe(ledger.nodes[0]);
+                expect(ledger.context.createGain).toHaveBeenCalledTimes(1);
+            });
+        });
+    });
+
+    it.each([{ series: undefined }, { series: [] }])(
+        'keeps an absent or empty envelope at unity ($series)',
+        ({ series }) => {
+            withGainLedger((ledger) => {
+                vi.mocked(getGainEnvelopeSeries).mockReturnValue(series);
+                mockGetCachedAudioBuffer.mockReturnValue({ duration: 100 } as AudioBuffer);
+                mockResolveClips.mockReturnValue([makeAudioClip()] as ReturnType<typeof resolveClipsWithComping>);
+                trackStoreState.value = { tracks: [makeAudioTrack([])] };
+                const source = makeFakeSource();
+                const snapshots: number[][] = [];
+                source.start.mockImplementation(() => snapshots.push(ledger.nodes.map((node) => node.gain.value)));
+                mockCreateBufferSource.mockReturnValue(source as unknown as AudioBufferSourceNode);
+                scheduleAudioClips(0, 16, 0, new Set(), new Set(), [], defaultTransportState);
+                expect(snapshots).toEqual(series ? [[0, 1]] : [[0]]);
+                expect(getCurrentTime).toHaveBeenCalledTimes(2);
+                if (series) {
+                    expect(ledger.nodes[1]!.operations).toEqual([]);
+                    expect(ledger.nodes[1]!.timeline).toEqual([]);
+                }
+            });
+        }
+    );
+
+    it('initializes a fade acquired from the final released envelope node', () => {
+        withGainLedger((ledger) => {
+            const warm = makeFakeSource();
+            mockCreateBufferSource.mockReturnValue(warm as unknown as AudioBufferSourceNode);
+            mockGetCachedAudioBuffer.mockReturnValue({ duration: 100 } as AudioBuffer);
+            mockResolveClips.mockReturnValue([makeAudioClip({ startBeat: 0, endBeat: 0.5 })] as ReturnType<
+                typeof resolveClipsWithComping
+            >);
+            trackStoreState.value = { tracks: [makeAudioTrack([])] };
+            vi.mocked(getGainEnvelopeSeries).mockReturnValue([
+                { beatOffset: 0, gainDb: -6 },
+                { beatOffset: 0.5, gainDb: 0 },
+            ]);
+            scheduleAudioClips(0, 1, 0, new Set(), new Set(), [], defaultTransportState);
+            const oldEnvelope = ledger.nodes[1]!;
+            expect(oldEnvelope.timeline[0]?.value).toBeCloseTo(0.5011872336272722, 12);
+            const end = warm.onended;
+            expect(typeof end).toBe('function');
+            ledger.context.currentTime = 1;
+            (end as () => void)();
+            expect(gainNodePool.at(-1)).toBe(oldEnvelope);
+            const source = makeFakeSource();
+            source.start.mockImplementation(() => {
+                expect(source.fadeGainNode).toBe(oldEnvelope);
+                expect(oldEnvelope.gain.value).toBe(0);
+                expect(oldEnvelope.timeline).toEqual([]);
+            });
+            vi.mocked(getCurrentTime).mockReturnValue(10);
+            ledger.context.currentTime = 10;
+            vi.mocked(getGainEnvelopeSeries).mockReturnValue(undefined);
+            mockCreateBufferSource.mockReturnValue(source as unknown as AudioBufferSourceNode);
+            scheduleAudioClips(0, 1, 0, new Set(), new Set(), [], defaultTransportState);
+            expect(source.start).toHaveBeenCalledOnce();
+            expect(ledger.context.createGain).toHaveBeenCalledTimes(2);
+        });
+    });
+
+    it.each(['exhausted', 'seed rejected', 'source rejected'] as const)(
+        'releases unstarted gains after %s',
+        (failure) => {
+            withGainLedger((ledger) => {
+                vi.mocked(getGainEnvelopeSeries).mockReturnValue([]);
+                mockGetCachedAudioBuffer.mockReturnValue({ duration: 100 } as AudioBuffer);
+                mockResolveClips.mockReturnValue([
+                    makeAudioClip({ audioOffsetSeconds: failure === 'exhausted' ? 200 : 0 }),
+                ] as ReturnType<typeof resolveClipsWithComping>);
+                trackStoreState.value = { tracks: [makeAudioTrack([])] };
+                const source = makeFakeSource();
+                if (failure === 'seed rejected') {
+                    ledger.rejectSeed();
+                }
+                if (failure === 'source rejected') {
+                    source.start.mockImplementation(() => {
+                        throw new Error('source rejected');
+                    });
+                }
+                mockCreateBufferSource.mockReturnValue(source as unknown as AudioBufferSourceNode);
+                const active: AudioBufferSourceNode[] = [];
+                const emit = () => scheduleAudioClips(0, 16, 0, new Set(), new Set(), active, defaultTransportState);
+                if (failure === 'exhausted') {
+                    expect(emit).not.toThrow();
+                } else {
+                    expect(emit).toThrow(failure);
+                }
+                expect(active).toEqual([]);
+                expect(gainNodePool).toHaveLength(2);
+                expect(ledger.nodes.every((node) => node.disconnect.mock.calls.length === 1)).toBe(true);
+                if (failure !== 'source rejected') {
+                    expect(source.start).not.toHaveBeenCalled();
+                }
+            });
+        }
+    );
+
+    it.each([false, true])('retains shared-pass gain custody through a later native failure=%s', (failSecond) => {
+        withGainLedger((ledger) => {
+            mockGetCachedAudioBuffer.mockReturnValue({ duration: 4 } as AudioBuffer);
+            mockResolveClips.mockReturnValue([
+                makeAudioClip({
+                    startBeat: 6,
+                    endBeat: 10,
+                    loopEnabled: true,
+                    loopLength: 4,
+                    loopOriginBeat: 1,
+                    audioOffsetBeats: 5,
+                }),
+            ] as ReturnType<typeof resolveClipsWithComping>);
+            trackStoreState.value = { tracks: [makeAudioTrack([])] };
+            const sources: ReturnType<typeof makeFakeSource>[] = [];
+            const seeds: number[] = [];
+            mockCreateBufferSource.mockImplementation(() => {
+                const source = makeFakeSource();
+                const index = sources.length;
+                source.start.mockImplementation(() => {
+                    seeds.push(ledger.nodes[0]!.gain.value);
+                    if (index === 1 && failSecond) {
+                        throw new Error('later source rejected');
+                    }
+                });
+                sources.push(source);
+                return source as unknown as AudioBufferSourceNode;
+            });
+            const active: AudioBufferSourceNode[] = [];
+            const emit = () => scheduleAudioClips(6, 10, 0, new Set(), new Set(), active, defaultTransportState);
+            if (failSecond) {
+                expect(emit).toThrow('later source rejected');
+            } else {
+                emit();
+            }
+            expect(seeds).toEqual([0, 0]);
+            expect(active).toEqual(failSecond ? [sources[0]] : sources);
+            expect(ledger.nodes).toHaveLength(1);
+            expect(ledger.nodes[0]!.operations.filter((operation) => operation === 'intrinsic')).toHaveLength(1);
+            const firstEnd = sources[0]!.onended;
+            expect(typeof firstEnd).toBe('function');
+            (firstEnd as () => void)();
+            expect(gainNodePool).toHaveLength(failSecond ? 1 : 0);
+            if (!failSecond) {
+                const lastEnd = sources[1]!.onended;
+                expect(typeof lastEnd).toBe('function');
+                (lastEnd as () => void)();
+            }
+            expect(active).toEqual([]);
+            expect(gainNodePool).toEqual([ledger.nodes[0]]);
+            expect(ledger.nodes[0]!.disconnect).toHaveBeenCalledOnce();
+        });
     });
 
     it('sizes a clip spanning a tempo change by integrating the map, not one flat tempo', () => {
@@ -502,11 +819,15 @@ describe('scheduleAudioClips', () => {
         mockCreateBufferSource.mockReturnValue(fakeSource as unknown as AudioBufferSourceNode);
         mockResolveClips.mockReturnValue([makeAudioClip()] as never);
         trackStoreState.value = { tracks: [makeAudioTrack([])] };
-        const scheduled = new Set<string>(['clip-1:0:4']);
+        mockGetCachedAudioBuffer.mockReturnValue({ duration: 100 } as AudioBuffer);
+        const scheduled = new Set<string>();
+        const active: AudioBufferSourceNode[] = [];
+        scheduleAudioClips(0, 16, 0, scheduled, new Set(), active, defaultTransportState);
+        expect(mockCreateBufferSource).toHaveBeenCalledTimes(1);
 
-        scheduleAudioClips(0, 16, 0, scheduled, new Set(), [], defaultTransportState);
+        scheduleAudioClips(0, 16, 0, scheduled, new Set(), active, defaultTransportState);
 
-        expect(mockCreateBufferSource).not.toHaveBeenCalled();
+        expect(mockCreateBufferSource).toHaveBeenCalledTimes(1);
     });
 
     it('bails when trackStore.value is null', () => {
@@ -561,8 +882,8 @@ describe('scheduleAudioClips', () => {
     // whether the request is still alive, and it re-opens the hash on abort.
     it('asks AssetTransfer for a missing asset on every tick while collaboration is enabled', () => {
         const requestAsset = vi.fn();
-        vi.mocked(getAssetTransfer).mockReturnValue({ requestAsset } as never);
-        collaborationStoreState.value = { isEnabled: true };
+        collaborationAssetState.transfer = { requestAsset };
+        collaborationAssetState.sessionActive = true;
         mockGetCachedAudioBuffer.mockReturnValue(null);
         mockResolveClips.mockReturnValue([makeAudioClip({ audioBufferId: 'buf-1', assetHash: 'hash-1' })] as never);
         trackStoreState.value = { tracks: [makeAudioTrack([])] };
@@ -995,6 +1316,83 @@ describe('scheduleAudioClips', () => {
     });
 
     // ── Loop iterations ─────────────────────────────────────────────────────
+
+    it('schedules three original source parts in one cut loop window once and retires every node', () => {
+        const sources: (ReturnType<typeof makeFakeSource> & { stop: ReturnType<typeof vi.fn> })[] = [];
+        mockCreateBufferSource.mockImplementation(() => {
+            const source = { ...makeFakeSource(), stop: vi.fn() };
+            sources.push(source);
+            return source as unknown as AudioBufferSourceNode;
+        });
+        mockGetCachedAudioBuffer.mockReturnValue({ duration: 100 } as AudioBuffer);
+        mockResolveClips.mockReturnValue([
+            makeAudioClip({
+                startBeat: 2,
+                endBeat: 6,
+                loopEnabled: true,
+                loopLength: 4,
+                loopOriginBeat: 0,
+                stretchMode: 'timestretch',
+                stretchRatio: 2,
+                audioOffsetSeconds: 1.5,
+                audioLoopStartSeconds: 0,
+                audioLoopPassEntrySeconds: 0.5,
+                audioLoopPassOriginBeat: 1,
+            }),
+        ] as ReturnType<typeof resolveClipsWithComping>);
+        trackStoreState.value = { tracks: [makeAudioTrack([])] };
+        const scheduled = new Set<string>();
+        const active: AudioBufferSourceNode[] = [];
+
+        scheduleAudioClips(0, 8, 0, scheduled, new Set(), active, defaultTransportState);
+
+        expect(mockCreateBufferSource).toHaveBeenCalledTimes(3);
+        expect(sources.map((source) => source.start.mock.calls)).toEqual([[[1, 1.5, 2]], [[2, 0, 1]], [[2.5, 0.5, 1]]]);
+        expect(active).toEqual(sources);
+        scheduleAudioClips(0, 8, 0, scheduled, new Set(), active, defaultTransportState);
+        expect(mockCreateBufferSource).toHaveBeenCalledTimes(3);
+        const context = getAudioContext();
+        if (!context) {
+            throw new Error('Expected the scheduler audio context');
+        }
+        stopActiveSources(active, context);
+        for (const source of sources) {
+            expect(source.stop).toHaveBeenCalledExactlyOnceWith(0.005);
+        }
+        expect(active).toEqual([]);
+        for (const source of sources) {
+            expect(typeof source.onended).toBe('function');
+            if (typeof source.onended === 'function') {
+                source.onended();
+            }
+        }
+        expect(active).toEqual([]);
+    });
+
+    it.each([0, 1])('reads canonical source second %s after placement crosses a tempo change', (sourceSeconds) => {
+        tempoMapStore.value = {
+            changes: [
+                { id: 'a', beat: 0, tempo: 120, curve: 'instant' },
+                { id: 'b', beat: 4, tempo: 60, curve: 'instant' },
+            ],
+        };
+        const fakeSource = makeFakeSource();
+        mockCreateBufferSource.mockReturnValue(fakeSource as unknown as AudioBufferSourceNode);
+        mockGetCachedAudioBuffer.mockReturnValue({ duration: 100 } as AudioBuffer);
+        const clips = [makeAudioClip({ audioOffsetBeats: 2, audioOffsetSeconds: sourceSeconds })] as ReturnType<
+            typeof resolveClipsWithComping
+        >;
+        mockResolveClips.mockReturnValue(clips);
+        trackStoreState.value = { tracks: [makeAudioTrack([])] };
+
+        scheduleAudioClips(0, 16, 0, new Set(), new Set(), [], defaultTransportState);
+
+        expect(fakeSource.start).toHaveBeenCalledTimes(1);
+        const [when, offset, duration] = fakeSource.start.mock.calls[0]!;
+        expect(when).toBeCloseTo(6, 9);
+        expect(offset).toBe(sourceSeconds);
+        expect(duration).toBeCloseTo(4, 9);
+    });
 
     it('schedules one source per loop iteration, advancing the start time by loopLength', () => {
         const sources = [makeFakeSource(), makeFakeSource()];
@@ -1529,6 +1927,7 @@ describe('scheduleAudioClips', () => {
         // instant (10.1) is still ahead of the clock (10).
         schedulerSession.pendingSeam = {
             seamAudioTime: 10.1,
+            destinationBeat: 4,
             anchorAudioTime: 9.9,
             anchorPosition: 11.8,
         };

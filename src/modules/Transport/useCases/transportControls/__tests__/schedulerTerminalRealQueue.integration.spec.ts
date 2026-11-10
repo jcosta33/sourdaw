@@ -2,6 +2,7 @@ import { clone as cloneAutomergeDoc, toJS } from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { getProductionCommandHandlerMaps } from '#/app/getProductionCommandHandlerMaps';
+import { registerProjectSlotProjections } from '#/app/registerProjectSlotProjections';
 import * as automergeStorage from '#/infra/store/storage/createAutomergeStorage';
 import {
     configureAutomergeStoragePort,
@@ -81,7 +82,7 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     startAudioRecording: mocks.startAudioRecording,
     stopAudioRecording: mocks.stopAudioRecording,
     readNativeEnginePlayheadSeconds: () => null,
-    audioEngine: { setTransportInfo: vi.fn() },
+    audioEngine: { context: mocks.audioClock, setTransportInfo: vi.fn() },
     refreshSidechainAlignment: vi.fn(),
     scheduleAdjustmentLayers: vi.fn(),
     stopAllScheduled: vi.fn(),
@@ -345,6 +346,7 @@ describe('scheduler terminal through the real snapshot queue', () => {
         removeCrdtDoc('root');
         createCrdtDoc('root');
         registerCrdtStorageRuntime();
+        registerProjectSlotProjections();
         vi.stubGlobal('navigator', { ...navigator, locks: createControlledLockManager().locks });
         branchStore.set({
             branches: [
@@ -472,7 +474,12 @@ describe('scheduler terminal through the real snapshot queue', () => {
         await settle();
         if (replace) {
             expectSuccessorUnchanged(before);
-            expect(mocks.notifyUser).toHaveBeenCalledWith(expect.stringContaining('not kept'), 'warning');
+            // A real commit error stays an error after ownership moves; only
+            // RecordingRootMovedRefusal is the expected warning path.
+            expect(mocks.notifyUser).toHaveBeenCalledWith(
+                'Punch-in recording failed — the take was not kept on this branch.',
+                'error'
+            );
             expect(mocks.notifyUser.mock.calls.every(([message]) => !message.includes('discarded'))).toBe(true);
         } else {
             expect(trackStore.value?.tracks[0]?.clips).toEqual([]);

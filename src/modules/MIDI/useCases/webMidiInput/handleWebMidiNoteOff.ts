@@ -12,7 +12,10 @@ import { type RealtimeMidiEvent } from '../../repositories/webMidi/realtimeMidiP
 import { releaseActiveToasterNote } from '../../repositories/webMidi/releaseActiveToasterNote';
 import { activeNotes, channelToNote } from '../../repositories/webMidi/state';
 
+import { createRecordedAdmittedMidiNote } from './createRecordedAdmittedMidiNote';
+import { isRecordingOnArmedTrack } from './isRecordingOnArmedTrack';
 import { midiMessageHandlerDependencies } from './midiMessageHandlerDependencies';
+import { recordingMidiAdmissionPort } from './recordingMidiAdmissionPort';
 import { releaseKeyInRemovedYeastRack } from './releaseKeyInRemovedYeastRack';
 import { resolveDeviceNode } from './resolveDeviceNode';
 import { resolveInputDispatchFrame } from './resolveInputDispatchFrame';
@@ -23,6 +26,8 @@ import { resolveRecordingPlacement } from './resolveRecordingPlacement';
 import { retireDrainOfRemovedYeast } from './retireDrainOfRemovedYeast';
 import { voiceYeastNoteOn } from './voiceYeastNoteOn';
 import { withRecordedNoteExpression } from './withRecordedNoteExpression';
+
+const { getRecordingMidiAdmission, retireRecordingMidiAdmission } = recordingMidiAdmissionPort;
 
 /** Whether a key still held went through this Yeast on this instrument track. */
 function isYeastRouteHeld(instrumentTrackId: string, yeastDeviceId: string): boolean {
@@ -378,6 +383,22 @@ export const handleWebMidiNoteOff = inject(midiMessageHandlerDependencies)((deps
             }
         }
 
+        if (noteData.recordingExcluded) {
+            return;
+        }
+        if (noteData.recordingAdmissionId) {
+            const admission = getRecordingMidiAdmission(noteData.recordingAdmissionId);
+            if (!admission || !isRecordingOnArmedTrack(deps, targetTrackId)) {
+                return;
+            }
+            const recorded = createRecordedAdmittedMidiNote(admission, eventTime);
+            retireRecordingMidiAdmission(admission.id);
+            if (recorded) {
+                deps.appendRecordedMidiNote({ clipId: admission.clipId, note: recorded });
+            }
+            return;
+        }
+
         // The note belongs to the clip holding its admitted onset and is stored
         // at the beat its heard instant maps to, exactly as controller events
         // of the same take are.
@@ -385,7 +406,10 @@ export const handleWebMidiNoteOff = inject(midiMessageHandlerDependencies)((deps
             trackId: targetTrackId,
             admittedBeat: noteData.startBeat,
         });
-        if (!placement) {
+        if (
+            !placement ||
+            recordingMidiAdmissionPort.isRecordingMidiInputExcluded(noteData.startTime, targetTrackId, placement.clipId)
+        ) {
             return;
         }
         const {
@@ -428,11 +452,14 @@ export const handleWebMidiNoteOff = inject(midiMessageHandlerDependencies)((deps
             noteData.velocity ?? DEFAULT_NOTE_VELOCITY
         );
 
+        // The note keeps the channel it sounded on, so stored playback bends it
+        // only by that channel's recorded wheel, as the live input did.
+        const channelNote = { ...midiNote, channel: noteData.channel };
         if (!getMpeEnabled()) {
-            deps.appendRecordedMidiNote({ clipId, note: midiNote });
+            deps.appendRecordedMidiNote({ clipId, note: channelNote });
             return;
         }
-        const recordedNote = withRecordedNoteExpression(midiNote, noteData, secondsToBeats);
+        const recordedNote = withRecordedNoteExpression(channelNote, noteData, secondsToBeats);
         deps.appendRecordedMidiNote({ clipId, note: recordedNote });
     };
 });

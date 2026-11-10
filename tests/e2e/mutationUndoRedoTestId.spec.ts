@@ -1,5 +1,6 @@
-import { test, expect, type Locator, type Page } from '@playwright/test';
+import { type Locator, type Page } from '@playwright/test';
 
+import { test, expect } from './e2eTest';
 import { launch_new_project, setupWorkspace } from './e2eUtils';
 
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
@@ -25,7 +26,7 @@ function buildSineWav(seconds = 4): Buffer {
     buffer.write('data', 36);
     buffer.writeUInt32LE(dataSize, 40);
     for (let i = 0; i < samples; i += 1) {
-        buffer.writeInt16LE(Math.round((Math.sin((2 * Math.PI * 440 * i) / sampleRate) * 12000)), 44 + i * 2);
+        buffer.writeInt16LE(Math.round(Math.sin((2 * Math.PI * 440 * i) / sampleRate) * 12000), 44 + i * 2);
     }
     return buffer;
 }
@@ -55,7 +56,10 @@ async function addMidiTrackFromEmptyState(page: Page): Promise<void> {
 }
 
 function trackRows(page: Page): Locator {
-    return page.getByRole('grid', { name: /Track list/i }).first().getByRole('row');
+    return page
+        .getByRole('grid', { name: /Track list/i })
+        .first()
+        .getByRole('row');
 }
 
 // Each track nests two rows, so row counts are 2:1 with tracks; the arm
@@ -185,7 +189,7 @@ test.describe('Undo/redo round-trips of major mutations', () => {
         const canvas = await importClipOnFirstTrack(page);
 
         const startBeat = page.getByTestId('selected-clip-start-beat');
-        await expect(startBeat).toHaveText(/@ 0 beats/i);
+        await expect(startBeat).toHaveText(/@ 1\.1\.1/);
 
         const box = await canvas.boundingBox();
         expect(box).not.toBeNull();
@@ -199,7 +203,7 @@ test.describe('Undo/redo round-trips of major mutations', () => {
         }
         await page.mouse.up();
         await page.waitForTimeout(800);
-        await expect(startBeat).not.toHaveText(/@ 0 beats/i);
+        await expect(startBeat).not.toHaveText(/@ 1\.1\.1/);
 
         const undo = page.getByTestId('transport-undo');
         const redo = page.getByTestId('transport-redo');
@@ -207,10 +211,10 @@ test.describe('Undo/redo round-trips of major mutations', () => {
 
         await undo.click();
         await page.waitForTimeout(500);
-        await expect(startBeat).toHaveText(/@ 0 beats/i);
+        await expect(startBeat).toHaveText(/@ 1\.1\.1/);
 
         await redo.click();
         await page.waitForTimeout(500);
-        await expect(startBeat).not.toHaveText(/@ 0 beats/i);
+        await expect(startBeat).not.toHaveText(/@ 1\.1\.1/);
     });
 });

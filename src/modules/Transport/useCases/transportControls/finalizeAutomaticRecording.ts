@@ -1,6 +1,7 @@
 import { activeRecordingRef } from '#/modules/Arrangement/stores';
 import { stopRecording, takeOwnsRecordingRoot } from '#/modules/Arrangement/useCases';
 
+import { captureRecordingEnd } from './captureRecordingEnd';
 import { recordingLifecycle } from './recordingLifecycle';
 
 /**
@@ -19,9 +20,11 @@ import { recordingLifecycle } from './recordingLifecycle';
  * not read as a take this project gained (#5517), so it is not tracked at
  * all.
  */
-export function finalizeAutomaticRecording(atBeat: number): void {
+export function finalizeAutomaticRecording(atBeat: number, receipt?: Parameters<typeof captureRecordingEnd>[0]): void {
     const closesTake = activeRecordingRef.current.length > 0 && takeOwnsRecordingRoot();
-    const finalized = stopRecording(atBeat);
+    const ending = captureRecordingEnd(receipt);
+    recordingLifecycle.endRecording();
+    const finalized = stopRecording(atBeat, ending);
     if (closesTake) {
         recordingLifecycle.trackTakeCommit(finalized);
     }

@@ -405,4 +405,33 @@ export const busMixRecipes: readonly MixRecipe[] = [
         ],
         source: 'A plate impulse has a dense onset with no discrete early reflections, which is why it binds a group without placing it in a recognisable room. Band-limiting the tail between 100 Hz and 9 kHz matches the bandwidth period plates actually had and keeps the ambience behind the dry sources.',
     },
+    {
+        id: 'bus-controlled',
+        descriptor: 'controlled',
+        roles: ['bus'],
+        title: 'Moderate unwanted combined-group level variation',
+        steps: [
+            {
+                kind: 'insert',
+                deviceType: 'builtin-compressor',
+                parameters: [
+                    { paramId: 'comp-threshold', minimum: -18, maximum: -10 },
+                    { paramId: 'comp-ratio', minimum: 2, maximum: 3 },
+                    { paramId: 'comp-attack', minimum: 20, maximum: 30 },
+                    { paramId: 'comp-release', minimum: 150, maximum: 250 },
+                    { paramId: 'comp-knee', minimum: 6, maximum: 10 },
+                ],
+            },
+        ],
+        prerequisites: [
+            'The group balance is already settled and upper group levels reach reduction.',
+            'Softer passages must remain distinguishable; audition for only a few dB of reduction and pumping.',
+        ],
+        contraindications: [
+            'Skip one dominant source pulling the entire group down or intentionally wide group dynamics.',
+            'Retune an existing equivalent bus compressor instead of stacking another.',
+        ],
+        metrics: [{ metric: 'dynamicRangeEstimate', direction: 'decrease' }],
+        source: 'The existing gentle shared-envelope bus window moderates group-level swings after source balance is settled. Reusing that compression technique makes no new glue mechanism, numeric headroom, or loudness claim.',
+    },
 ];

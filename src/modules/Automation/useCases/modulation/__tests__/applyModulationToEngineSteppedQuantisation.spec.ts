@@ -39,6 +39,7 @@ const { mocks } = vi.hoisted(() => {
 
 vi.mock('#/modules/Arrangement/stores', () => ({
     activeRecordingRef: { current: [] },
+    timelineEditingStore: { value: null },
     readMusicalRangeInputs: vi.fn(() => []),
     clipHasActiveGainEnvelope: vi.fn(),
     getGainEnvelopeSeries: vi.fn(),
@@ -64,6 +65,7 @@ vi.mock('#/modules/Arrangement/stores', () => ({
     deriveEffectiveAudibility: vi.fn(),
     adjustmentLayerStore: { value: null },
     vcaGroupStore: { value: null },
+    soloModeStore: { value: null },
     deriveVcaMultiplier: vi.fn(),
     getVcaGroupsState: vi.fn(),
     gainEnvelopeStore: { value: null },

@@ -1,5 +1,6 @@
 /// <reference types="vitest" />
 import { readFileSync } from 'node:fs';
+import { sep } from 'node:path';
 import { env } from 'node:process';
 import { fileURLToPath, URL } from 'node:url';
 
@@ -10,6 +11,8 @@ import react, { reactCompilerPreset } from '@vitejs/plugin-react';
 import { configDefaults, defineConfig, type Plugin } from 'vitest/config';
 
 import { createSourdawRootHeaderMiddleware, isSourdawE2eServeMode } from './scripts/e2eServerIdentity';
+import { sourdawE2eStartupDiagnosticsPlugin } from './scripts/e2eStartupDiagnostics.ts';
+import { sourdawE2eUncachedResponsesPlugin } from './scripts/e2eUncachedResponses';
 
 const { version } = JSON.parse(readFileSync('./package.json', 'utf-8')) as { version: string };
 
@@ -35,7 +38,7 @@ const FAUSTWASM_WORKLET_SCOPE_NAMES = [
 /**
  * E2E-only serving-identity marker. Browser verification on a shared machine
  * must prove which checkout answers before reusing a server, so every dev
- * response in `--mode e2e` carries this checkout's vite root. The plugin
+ * and preview response in `--mode e2e` carries this checkout's vite root. The plugin
  * self-gates on the resolved command and mode: plain `pnpm dev`, vitest, and
  * production builds carry no marker.
  */
@@ -46,6 +49,113 @@ function sourdawE2eServingCheckoutPlugin(): Plugin {
         configureServer(server) {
             server.middlewares.use(createSourdawRootHeaderMiddleware(server.config.root));
         },
+        configurePreviewServer(server) {
+            server.middlewares.use(createSourdawRootHeaderMiddleware(server.config.root));
+        },
+    };
+}
+
+/**
+ * @automerge/automerge v3's `browser` export condition resolves to
+ * `fullfat_bundler.js`, which uses `import * as wasm from "…bg.wasm"` — the ESM
+ * Wasm integration proposal syntax that Rolldown (Vite 8) does not support. The
+ * base64 entrypoint is functionally identical but inlines the .wasm as base64.
+ * Resolve through `import.meta.resolve` so Node walks up from this config file
+ * to the checkout that owns the install (a review worktree has no
+ * `node_modules` of its own), then pin the base64 sibling in that entrypoint.
+ */
+const AUTOMERGE_BASE64_ENTRY = fileURLToPath(
+    new URL('./fullfat_base64.js', import.meta.resolve('@automerge/automerge'))
+);
+const AUTOMERGE_STREAMING_ENTRY = fileURLToPath(
+    new URL('./src/infra/automerge/automergeStreamingEntry.ts', import.meta.url)
+);
+
+/**
+ * Agent lanes and their tooling state live under this checkout's own `.agents/`
+ * and mirror the repository, so a change there must not reload the app this
+ * checkout serves. The check is anchored to this checkout: the watcher matches
+ * absolute paths, and a server running inside a lane has `.agents` in every one
+ * of its own source paths.
+ */
+const AGENT_STATE_DIR = fileURLToPath(new URL('./.agents', import.meta.url));
+
+function isAgentStatePath(file: string): boolean {
+    return file === AGENT_STATE_DIR || file.startsWith(AGENT_STATE_DIR + sep);
+}
+
+/**
+ * Redirects the app build's Automerge import from the base64 entry to the
+ * streaming entry. Worker bundles keep base64: build workers use
+ * `worker.plugins`, and their IIFE format cannot hold the entry's top-level
+ * await. The dev server and Vitest keep it too: dev serves one module URL to
+ * the page and to module workers, and Chromium drops messages posted to a
+ * worker while its top-level await delays the worker's `onmessage`.
+ */
+function sourdawAutomergeStreamingEntryPlugin(): Plugin {
+    return {
+        name: 'sourdaw-automerge-streaming-entry',
+        enforce: 'pre',
+        apply: 'build',
+        resolveId(id, importer) {
+            if (id !== AUTOMERGE_BASE64_ENTRY || importer === AUTOMERGE_STREAMING_ENTRY) {
+                return null;
+            }
+            return AUTOMERGE_STREAMING_ENTRY;
+        },
+    };
+}
+
+const DIRECT_PROJECT_SETUP_ENTRY = fileURLToPath(new URL('./tests/e2e/directProjectSetupEntry.ts', import.meta.url));
+
+/**
+ * The inspection exports and App must share one emitted module graph.
+ * In e2e build mode: emits both entries alongside index.html.
+ * In e2e serve mode: rewrites /e2e/direct-project-setup.js to the source TS
+ * file so the deterministic URL resolves in both dev and built mode.
+ */
+function sourdawE2ePersistenceEntryPlugin(): Plugin {
+    return {
+        name: 'sourdaw-e2e-persistence-entry',
+        apply: (_config, { mode }) => mode === 'e2e',
+        configureServer(server) {
+            server.middlewares.use((req, _res, next) => {
+                if (req.url?.split('?')[0] === '/e2e/direct-project-setup.js') {
+                    req.url = '/tests/e2e/directProjectSetupEntry.ts';
+                }
+                next();
+            });
+        },
+        config(_config, { command }) {
+            if (command !== 'build') {
+                return;
+            }
+            return {
+                build: {
+                    rolldownOptions: {
+                        input: {
+                            index: fileURLToPath(new URL('./index.html', import.meta.url)),
+                            'persisted-hydration': fileURLToPath(
+                                new URL('./tests/e2e/persistedHydrationEntry.ts', import.meta.url)
+                            ),
+                            'direct-project-setup': DIRECT_PROJECT_SETUP_ENTRY,
+                        },
+                        preserveEntrySignatures: 'strict',
+                        output: {
+                            entryFileNames: (chunk: { name: string }) => {
+                                if (chunk.name === 'persisted-hydration') {
+                                    return 'e2e/persisted-hydration.js';
+                                }
+                                if (chunk.name === 'direct-project-setup') {
+                                    return 'e2e/direct-project-setup.js';
+                                }
+                                return 'assets/[name]-[hash].js';
+                            },
+                        },
+                    },
+                },
+            };
+        },
     };
 }
 
@@ -53,7 +163,8 @@ function sourdawE2eServingCheckoutPlugin(): Plugin {
 export default defineConfig({
     base: './',
     optimizeDeps: {
-        include: ['@automerge/automerge/slim'],
+        // ORT pthreads reuse their module URL; late optimization invalidates that URL during session creation.
+        include: ['@automerge/automerge/slim', 'onnxruntime-web'],
     },
     worker: {
         // Force IIFE format for all worker bundles so each processor file is
@@ -65,6 +176,7 @@ export default defineConfig({
     },
     server: {
         hmr: process.env.NO_HMR !== '1',
+        watch: { ignored: [isAgentStatePath] },
         headers: {
             'Cross-Origin-Opener-Policy': 'same-origin',
             'Cross-Origin-Embedder-Policy': 'require-corp',
@@ -79,6 +191,10 @@ export default defineConfig({
         react(),
         tailwindcss(),
         sourdawE2eServingCheckoutPlugin(),
+        sourdawE2eStartupDiagnosticsPlugin(),
+        sourdawE2eUncachedResponsesPlugin(),
+        sourdawE2ePersistenceEntryPlugin(),
+        sourdawAutomergeStreamingEntryPlugin(),
     ],
     test: {
         environment: 'jsdom',
@@ -144,19 +260,9 @@ export default defineConfig({
                 find: /^@automerge\/automerge\/automerge\.wasm$/,
                 replacement: `${fileURLToPath(import.meta.resolve('@automerge/automerge/automerge.wasm'))}?url`,
             },
-            // @automerge/automerge v3's `browser` export condition resolves to
-            // `fullfat_bundler.js`, which uses `import * as wasm from "…bg.wasm"` —
-            // the ESM Wasm integration proposal syntax that Rolldown (Vite 8) does
-            // not support. The base64 entrypoint is functionally identical but
-            // inlines the .wasm as a base64 string, sidestepping the issue entirely.
-            // Resolve through `import.meta.resolve` so Node walks up from this config
-            // file to the checkout that owns the install (a review worktree has no
-            // `node_modules` of its own), then pin the base64 sibling in that entrypoint.
-            {
-                // Public slim and raw-WASM subpaths initialize only their owning Worker.
-                find: /^@automerge\/automerge$/,
-                replacement: fileURLToPath(new URL('./fullfat_base64.js', import.meta.resolve('@automerge/automerge'))),
-            },
+            // Exact match: a string find would prefix-match and break the
+            // `@automerge/automerge/slim` and `/automerge.wasm` subpaths.
+            { find: /^@automerge\/automerge$/, replacement: AUTOMERGE_BASE64_ENTRY },
         ],
     },
     preview: {

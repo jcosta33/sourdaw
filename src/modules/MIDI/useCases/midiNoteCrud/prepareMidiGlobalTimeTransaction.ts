@@ -29,6 +29,8 @@ type MidiGlobalTimeSplitOperation = {
     discardBeforeBeat?: number;
     /** Media windows that stay on the source clip beside the boundary split (#5112). */
     retainOnSourceWindows?: readonly { start: number; end: number }[];
+    /** The source loops: the new clip copies its whole loop, and nothing is partitioned. */
+    copiesLoopMaterial?: true;
 };
 
 type MidiGlobalTimeCopyOperation = {
@@ -125,6 +127,7 @@ const SPLIT_WITH_DISCARD_AND_RETAIN_KEYS = [
     'discardBeforeBeat',
     'retainOnSourceWindows',
 ] as const;
+const SPLIT_COPYING_LOOP_KEYS = ['sourceClipId', 'newClipId', 'splitBeat', 'copiesLoopMaterial'] as const;
 const RETAIN_WINDOW_KEYS = ['start', 'end'] as const;
 const COPY_OPERATION_KEYS = ['sourceClipId', 'newClipId'] as const;
 const REPLAY_PLAN_KEYS = ['version', 'notes'] as const;
@@ -193,9 +196,23 @@ function validateRetainWindows(value: unknown): { start: number; end: number }[]
     return windows;
 }
 
+function validateLoopCopyingSplit(value: Record<string, unknown>): MidiGlobalTimeSplitOperation | null {
+    if (!hasExactKeys(value, SPLIT_COPYING_LOOP_KEYS) || value.copiesLoopMaterial !== true) {
+        return null;
+    }
+    const { sourceClipId, newClipId, splitBeat } = value;
+    if (!isNonEmptyId(sourceClipId) || !isNonEmptyId(newClipId) || !isFiniteNonNegative(splitBeat)) {
+        return null;
+    }
+    return { sourceClipId, newClipId, splitBeat, copiesLoopMaterial: true };
+}
+
 function validateSplitOperation(value: unknown): MidiGlobalTimeSplitOperation | null {
     if (!isPlainObject(value)) {
         return null;
+    }
+    if (Object.hasOwn(value, 'copiesLoopMaterial')) {
+        return validateLoopCopyingSplit(value);
     }
     let retainOnSourceWindows: { start: number; end: number }[] | undefined;
     if (Object.hasOwn(value, 'retainOnSourceWindows')) {
@@ -483,6 +500,9 @@ function createDeleteCommands(
         }
         if (split.retainOnSourceWindows !== undefined) {
             command.retainOnSourceWindows = split.retainOnSourceWindows;
+        }
+        if (split.copiesLoopMaterial === true) {
+            command.copiesLoopMaterial = true;
         }
         commands.push(command);
     }

@@ -80,6 +80,7 @@ import { __resetGainEnvelopesForTest, getEnvelope } from '../../../stores/gainEn
 import { takeLaneStore } from '../../../stores/takeLaneStore';
 import {
     prepareTimeOperationStateRestore,
+    timeOperationRestorePlan,
     UnrecoveredTimeOperationStateError,
 } from '../prepareTimeOperationStateRestore';
 import { setTimeOperationDependencies, type TimeOperationDependencies } from '../timeOperationDependencies';
@@ -976,7 +977,7 @@ describe('prepareTimeOperationStateRestore', () => {
 
         expect(thrown).toBeInstanceOf(UnrecoveredTimeOperationStateError);
         if (!(thrown instanceof UnrecoveredTimeOperationStateError)) {
-            throw new Error('Expected explicit unrecovered restore state');
+            throw new TypeError('Expected explicit unrecovered restore state');
         }
         expect(thrown.compensationFailures).toHaveLength(2);
         expect(thrown.compensationFailures).toContain(timelineFailure);
@@ -1130,6 +1131,36 @@ describe('prepareTimeOperationStateRestore', () => {
             expect(dependencies.prepareAutomation).not.toHaveBeenCalled();
             expect(dependencies.prepareMidi).not.toHaveBeenCalled();
             expect(dependencies.prepareTimelineMap).not.toHaveBeenCalled();
+        }
+    );
+
+    it.each(['restore', 'retire'] as const)(
+        "accepts a %s take retirement while the active alternative's stale stored copy still names the erased clip",
+        (appliedEffect) => {
+            const erased = ClipDummy.create({ id: 'erased', trackId: 'track-1', startBeat: 2, endBeat: 4 });
+            const untouched = ClipDummy.create({ id: 'untouched', trackId: 'track-1', startBeat: 0, endBeat: 1 });
+            // `ghost` left the main row before the delete; only the stale stored
+            // copy, which a time operation never edits, still names it.
+            const ghost = ClipDummy.create({ id: 'ghost', trackId: 'track-1', startBeat: 2, endBeat: 3 });
+            const alternatives = [{ id: 'alt-1', name: 'Alternative 1', clips: [erased, untouched, ghost] }];
+            const before = createTrackState(1, 0, { clips: [erased, untouched], alternatives });
+            const after = createTrackState(1, 0, { clips: [untouched], alternatives });
+            const expectedTrackState = appliedEffect === 'restore' ? after : before;
+            const replacementTrackState = appliedEffect === 'restore' ? before : after;
+            const markerState = createMarkerState(8);
+            setCurrentState(expectedTrackState, markerState);
+            installDependencies();
+            const plan = createPlan({
+                scope: 'global',
+                expectedTrackState,
+                replacementTrackState,
+                expectedMarkerState: markerState,
+                replacementMarkerState: markerState,
+                takeLanes: { version: 1, appliedEffect, removedClipIds: [erased.id], retiredLanes: [] },
+            });
+
+            expect(timeOperationRestorePlan.isValid(plan, { startBeat: 2, endBeat: 4 })).toBe(true);
+            expect(prepareTimeOperationStateRestore(plan).status).toBe('ready');
         }
     );
 

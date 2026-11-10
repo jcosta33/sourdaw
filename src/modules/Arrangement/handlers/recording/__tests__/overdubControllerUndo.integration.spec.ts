@@ -15,15 +15,20 @@ const liveMidi = vi.hoisted(() => {
     return { input, inputs: access.inputs };
 });
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
+import { registerSupportingServicePorts } from '#/app/registerSupportingServicePorts';
+import { createEventBus } from '#/infra/events/createEventBus';
 import { logger } from '#/infra/logger/appLogger';
 import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
+import { audioEngine } from '#/modules/AudioEngine/useCases';
 import { clearHandlerRegistry, macroStore, registerHandlerMap, undoHistoryStore } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
     executeAppAction,
+    executeAppActionBatch,
     productionBriefAdmissionPort,
     redo,
     resetActionReplayAuthority,
@@ -43,8 +48,10 @@ import {
     getWebMidiInputHandlers,
     initWebMidi,
     projectChannelBend,
+    planRecordedControllers,
     resetMidiState,
     setMidiInputTrack,
+    setRecordingMidiAdmissionPort,
     setWebMidiRuntimeEventBus,
 } from '#/modules/MIDI/useCases';
 import { defaultProjectStoreState, projectStore } from '#/modules/Project/stores';
@@ -55,11 +62,27 @@ import { countSettledTakes, isTransportIdle, stopPlayback } from '#/modules/Tran
 import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { takeLaneStore } from '../../../stores/takeLaneStore';
 import { trackStore } from '../../../stores/trackStore';
+import { setArrangementEventBus } from '../../../useCases/arrangementEventBus';
 import { getArrangementHandlers } from '../../../useCases/getArrangementHandlers';
+import { admitRecordingMidiExpression } from '../../../useCases/recording/admitRecordingMidiExpression';
+import { admitRecordingMidiNoteOff } from '../../../useCases/recording/admitRecordingMidiNoteOff';
+import { admitRecordingMidiNoteOn } from '../../../useCases/recording/admitRecordingMidiNoteOn';
+import { findOpenRecordingMidiAdmission } from '../../../useCases/recording/findOpenRecordingMidiAdmission';
+import { findOpenRecordingMidiMemberAdmission } from '../../../useCases/recording/findOpenRecordingMidiMemberAdmission';
+import { getRecordingMidiAdmission } from '../../../useCases/recording/getRecordingMidiAdmission';
+import { hasAutomaticRecordingMidiCapture } from '../../../useCases/recording/hasAutomaticRecordingMidiCapture';
+import { isRecordingMidiInputExcluded } from '../../../useCases/recording/isRecordingMidiInputExcluded';
+import { recordingMidiSourceBeatAt } from '../../../useCases/recording/recordingMidiSourceBeatAt';
+import { retireRecordingMidiAdmission } from '../../../useCases/recording/retireRecordingMidiAdmission';
 import { startRecording } from '../../../useCases/recording/startRecording';
 import { stopRecording } from '../../../useCases/recording/stopRecording';
+import { takeOwnsRecordingRoot } from '../../../useCases/recording/takeOwnsRecordingRoot';
+
+registerDeviceEnginePorts();
+registerSupportingServicePorts();
 
 const TRACK_ID = 'track-midi';
+let disposeRecordingAdmission = (): void => {};
 
 const noActionHistoryMetadataPort = {
     record: () => [],
@@ -106,6 +129,18 @@ describe('overdubbed controller rows and undo', () => {
         });
         takeLaneStore.set({ lanes: [] });
         midiStore.set({ notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} });
+        disposeRecordingAdmission = setRecordingMidiAdmissionPort({
+            admitRecordingMidiNoteOn,
+            admitRecordingMidiNoteOff,
+            admitRecordingMidiExpression,
+            findOpenRecordingMidiAdmission,
+            findOpenRecordingMidiMemberAdmission,
+            getRecordingMidiAdmission,
+            retireRecordingMidiAdmission,
+            takeOwnsRecordingRoot,
+            recordingMidiSourceBeatAt,
+            isRecordingMidiInputExcluded,
+        });
         transportStore.set({
             ...transportStore.value!,
             isRecording: false,
@@ -120,6 +155,7 @@ describe('overdubbed controller rows and undo', () => {
     afterEach(() => {
         transportStore.set({ ...transportStore.value!, isRecording: false, overdubEnabled: false });
         destroyWebMidi();
+        disposeRecordingAdmission();
         clearHandlerRegistry();
         clearUndoHistory();
         resetActionReplayAuthority();
@@ -180,6 +216,233 @@ describe('overdubbed controller rows and undo', () => {
         sendLive(7, 0xe0, 0, 96);
         sendLive(7.5, 0xb0, 64, 127);
     }
+
+    it('keeps a punch bound when overdub creates no clip and excludes late controller rows', async () => {
+        const clipId = await recordFirstTake();
+        const original = readRows(clipId);
+        const descriptor = Object.getOwnPropertyDescriptor(audioEngine.context, 'currentTime');
+        let now = 10;
+        Object.defineProperty(audioEngine.context, 'currentTime', { configurable: true, get: () => now });
+        try {
+            transportStore.set({ ...transportStore.value!, overdubEnabled: true });
+            const provider = () => ({
+                status: 'bounded' as const,
+                startContextSeconds: 10,
+                ending: { contextSeconds: 10.5, midiPosition: { beat: 7, passIndex: 0 } },
+            });
+            expect(startRecording(6, undefined, undefined, provider)).toEqual([]);
+            expect(hasAutomaticRecordingMidiCapture(provider)).toBe(true);
+            expect(hasAutomaticRecordingMidiCapture(() => provider())).toBe(false);
+            transportStore.set({ ...transportStore.value!, isRecording: true });
+            now = 10.25;
+            sendLive(6.5, 0xb0, 1, 90);
+            sendLive(6.5, 0xe0, 0, 96);
+            now = 10.5;
+            sendLive(7, 0xb0, 1, 91);
+            sendLive(7, 0xe0, 127, 127);
+            await endOverdub(8, 2);
+            expect(hasAutomaticRecordingMidiCapture(provider)).toBe(false);
+            const recorded = readRows(clipId);
+            expect(recorded.cc).toEqual([...original.cc, expect.objectContaining({ controller: 1, value: 90 })]);
+            expect(recorded.pitchBend).toEqual([...original.pitchBend, expect.objectContaining({ value: 4096 })]);
+            await undo();
+            expect(readRows(clipId)).toEqual(original);
+            await redo();
+            expect(readRows(clipId)).toEqual(recorded);
+        } finally {
+            if (descriptor) {
+                Object.defineProperty(audioEngine.context, 'currentTime', descriptor);
+            } else {
+                Reflect.deleteProperty(audioEngine.context, 'currentTime');
+            }
+        }
+    });
+
+    it.each(['fresh-arm', 'recreated', 'inserted', 'original-second', 'original-nearest'] as const)(
+        'authenticates the actual real controller destination across %s',
+        async (route) => {
+            const clipId = await recordFirstTake();
+            setArrangementEventBus(createEventBus());
+            const descriptor = Object.getOwnPropertyDescriptor(audioEngine.context, 'currentTime');
+            Object.defineProperty(audioEngine.context, 'currentTime', { configurable: true, get: () => 10.25 });
+            try {
+                const originalTarget = route === 'original-second' || route === 'original-nearest';
+                const targetTrackId = route === 'fresh-arm' ? 'unrelated-new-midi' : TRACK_ID;
+                const targetClipId = route === 'recreated' ? clipId : 'chosen-midi-clip';
+                const targetStart = route === 'recreated' || route === 'fresh-arm' ? 4 : 12;
+                const targetEnd = targetStart + 4;
+                const addTarget = () =>
+                    executeAppAction(
+                        {
+                            type: 'addClip',
+                            payload: {
+                                id: targetClipId,
+                                trackId: targetTrackId,
+                                startBeat: targetStart,
+                                endBeat: targetEnd,
+                                name: 'Chosen MIDI',
+                                type: 'midi',
+                            },
+                        },
+                        { skipUndo: true }
+                    );
+                if (originalTarget) {
+                    await addTarget();
+                }
+                transportStore.set({ ...transportStore.value!, overdubEnabled: true });
+                const provider = () => ({
+                    status: 'bounded' as const,
+                    startContextSeconds: 10,
+                    ending: { contextSeconds: 17, midiPosition: { beat: 20, passIndex: 0 } },
+                });
+                expect(startRecording(6, undefined, undefined, provider)).toEqual([]);
+                transportStore.set({ ...transportStore.value!, isRecording: true });
+                flushAutomergeStorageWrites();
+                if (route === 'fresh-arm') {
+                    await executeAppAction(
+                        { type: 'addTrack', payload: { id: targetTrackId, kind: 'midi', name: 'Unrelated' } },
+                        { skipUndo: true }
+                    );
+                    await executeAppAction(
+                        { type: 'armTrack', payload: { trackId: targetTrackId, armed: true } },
+                        { skipUndo: true }
+                    );
+                } else if (route === 'recreated') {
+                    await executeAppAction({ type: 'removeClip', payload: { clipId } }, { skipUndo: true });
+                }
+                if (!originalTarget) {
+                    await addTarget();
+                }
+                if (route === 'original-nearest') {
+                    transportStore.set({ ...transportStore.value!, isLooping: true, loopStart: 12, loopEnd: 20 });
+                }
+                setMidiInputTrack(targetTrackId);
+                let beat = targetStart + 2.5;
+                if (route === 'original-nearest') {
+                    beat = 17;
+                }
+                sendLive(beat, 0xb0, 1, 90);
+                sendLive(beat, 0xe0, 0, 96);
+                const target = trackStore
+                    .value!.tracks.find((track) => track.id === targetTrackId)!
+                    .clips.find((clip) => clip.id === targetClipId)!;
+                let expected: ClipRows = { cc: [], pitchBend: [] };
+                if (originalTarget) {
+                    expected = {
+                        cc: [expect.objectContaining({ controller: 1, value: 90 })],
+                        pitchBend: [expect.objectContaining({ value: 4096 })],
+                    };
+                }
+                expect(planRecordedControllers({ clip: target })).toEqual(expected);
+                expect(isRecordingMidiInputExcluded(10.25, targetTrackId, targetClipId)).toBe(!originalTarget);
+                if (originalTarget) {
+                    await endOverdub(20, 2);
+                    expect(readRows(targetClipId)).toEqual(expected);
+                    await undo();
+                    expect(readRows(targetClipId)).toEqual({ cc: [], pitchBend: [] });
+                    await redo();
+                    expect(readRows(targetClipId)).toEqual(expected);
+                } else {
+                    await stopRecording(20);
+                    transportStore.set({ ...transportStore.value!, isRecording: false });
+                    expect(readRows(targetClipId)).toEqual({ cc: [], pitchBend: [] });
+                    expect(undoHistoryStore.value!.past).toHaveLength(1);
+                }
+            } finally {
+                if (descriptor) {
+                    Object.defineProperty(audioEngine.context, 'currentTime', descriptor);
+                } else {
+                    Reflect.deleteProperty(audioEngine.context, 'currentTime');
+                }
+            }
+        }
+    );
+
+    it.each(['removed', 'recreated', 'root', 'fresh-arm', 'manual', 'aborted'] as const)(
+        'retains only the admitted automatic MIDI target across %s',
+        async (route) => {
+            const clipId = await recordFirstTake();
+            setArrangementEventBus(createEventBus());
+            transportStore.set({ ...transportStore.value!, overdubEnabled: true });
+            const provider = () => ({
+                status: 'bounded' as const,
+                startContextSeconds: 10,
+                ending: { contextSeconds: 10.5, midiPosition: { beat: 7, passIndex: 0 } },
+            });
+            expect(startRecording(6, undefined, undefined, provider)).toEqual([]);
+            transportStore.set({ ...transportStore.value!, isRecording: true });
+            flushAutomergeStorageWrites();
+            expect(hasAutomaticRecordingMidiCapture(provider)).toBe(true);
+            if (route === 'root') {
+                resetCrdtProjectAuthority('replace automatic MIDI target root');
+            } else if (route === 'manual') {
+                expect(startRecording(6)).toEqual([]);
+            } else if (route === 'recreated') {
+                await executeAppAction({ type: 'removeClip', payload: { clipId } }, { skipUndo: true });
+                await executeAppAction(
+                    {
+                        type: 'addClip',
+                        payload: {
+                            id: clipId,
+                            trackId: TRACK_ID,
+                            startBeat: 4,
+                            endBeat: 8,
+                            name: 'Replacement MIDI',
+                            type: 'midi',
+                        },
+                    },
+                    { skipUndo: true }
+                );
+            } else if (route === 'aborted') {
+                const result = await executeAppActionBatch(
+                    [
+                        { type: 'removeTrack', payload: { trackId: TRACK_ID } },
+                        { type: 'setTrackColor', payload: { trackId: TRACK_ID, color: '#123456' } },
+                    ],
+                    {
+                        shouldExecute: () => {
+                            const visible = trackStore.value!.tracks.some((track) => track.id === TRACK_ID);
+                            if (!visible) {
+                                expect(hasAutomaticRecordingMidiCapture(provider)).toBe(true);
+                            }
+                            return visible;
+                        },
+                    }
+                );
+                expect(result.status).toBe('cancelled');
+                expect(hasAutomaticRecordingMidiCapture(provider)).toBe(true);
+                await stopRecording(8);
+                return;
+            } else {
+                await executeAppAction({ type: 'removeTrack', payload: { trackId: TRACK_ID } }, { skipUndo: true });
+                if (route === 'fresh-arm') {
+                    await executeAppAction(
+                        { type: 'addTrack', payload: { id: 'unrelated-new-midi', kind: 'midi', name: 'Unrelated' } },
+                        { skipUndo: true }
+                    );
+                    await executeAppAction(
+                        {
+                            type: 'addClip',
+                            payload: {
+                                trackId: 'unrelated-new-midi',
+                                startBeat: 4,
+                                endBeat: 8,
+                                name: 'Unrelated MIDI',
+                                type: 'midi',
+                            },
+                        },
+                        { skipUndo: true }
+                    );
+                    await executeAppAction(
+                        { type: 'armTrack', payload: { trackId: 'unrelated-new-midi', armed: true } },
+                        { skipUndo: true }
+                    );
+                }
+            }
+            expect(hasAutomaticRecordingMidiCapture(provider)).toBe(false);
+            await stopRecording(8);
+        }
+    );
 
     it('lands the overdub rows as one undo step that removes exactly them and restores the same ids on redo', async () => {
         const clipId = await recordFirstTake();

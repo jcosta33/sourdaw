@@ -1,4 +1,4 @@
-import { isBeatAdmittedByAnchoredClipLoopWindow } from '#/utils/clipLoopOrigin';
+import { isBeatInEnabledClipLoopWindow } from '#/utils/clipLoopOrigin';
 
 import { type OfflineMidiEventProjector } from '../../repositories/offlineScheduler/offlineMidiEventProjectorState';
 import { type OfflinePpqEndpointProjector } from '../../repositories/offlineScheduler/offlinePpqEndpointProjectorState';
@@ -7,6 +7,7 @@ import { type projectNoteExpressionCurves } from '../noteExpression/projectNoteE
 
 import { projectOfflineYeastClipNotes } from './projectOfflineYeastClipNotes';
 import { projectOfflineYeastNotes } from './projectOfflineYeastNotes';
+import { segmentOfflineYeastPassNotes } from './segmentOfflineYeastPassNotes';
 
 /** The recorded curves a note carries, in the shape the shared projection reads. */
 type OfflineYeastNoteExpression = NonNullable<Parameters<typeof projectNoteExpressionCurves>[0]['note']['expression']>;
@@ -53,6 +54,16 @@ type ProjectOfflineYeastTrackNotesInput = {
     projectPitch: (input: { pitch: number; referenceBeat: number; targetBeat: number }) => number;
 };
 
+/**
+ * The source row a rack input note was cut from, how far into that row the cut begins (absent: at its start), and
+ * whether the project groove already placed it (a push past its pass end, handed on from the pass head).
+ */
+type OfflineYeastRackInput = {
+    sourceNote: OfflineYeastClipNote;
+    beatsIntoNote?: number;
+    sequencerGrooveApplied: boolean;
+};
+
 type ScheduledOfflineYeastNote = {
     id: string;
     pitch: number;
@@ -72,9 +83,20 @@ type ScheduledOfflineYeastNote = {
     clipGain: number;
 };
 
+/**
+ * Where an iteration starts sounding: its pass start, except that a looping
+ * clip's first pass on the anchor's grid can open before the clip head does.
+ */
+function iterationOpeningBeat(iteration: OfflineYeastClipIteration): number {
+    if (!iteration.loopEnabled) {
+        return iteration.iterationStartBeat;
+    }
+    return Math.max(iteration.iterationStartBeat, iteration.clipStartBeat);
+}
+
 function containsBeat(iteration: OfflineYeastClipIteration, beat: number): boolean {
     return (
-        iteration.iterationStartBeat <= beat &&
+        iterationOpeningBeat(iteration) <= beat &&
         beat < Math.min(iteration.iterationStartBeat + iteration.loopLengthBeats, iteration.clipEndBeat)
     );
 }
@@ -93,17 +115,18 @@ export function projectOfflineYeastTrackNotes({
     projectPitch,
 }: ProjectOfflineYeastTrackNotesInput): ScheduledOfflineYeastNote[] {
     const iterationsByRoute = new Map<string, OfflineYeastClipIteration>();
-    const sourceNotesByEventId = new Map<string, OfflineYeastClipNote>();
+    const rackInputsByEventId = new Map<string, OfflineYeastRackInput>();
+    const projectSequencerGroove = (event: { id: string; startBeat: number; velocity: number }) =>
+        projectMidiEvents({ events: [{ ...event, duration: 0 }], phase: 'sequencer-groove' })[0];
     const sourceNotes = iterations.flatMap((iteration, index) => {
         const routeId = `offline-yeast:${trackId}:${index}`;
         iterationsByRoute.set(routeId, iteration);
-        // #5198 — the anchored loop window owns membership on the row's stored
-        // figure before the clip-groove phase offers it to the rack: a row
-        // past the trimmed region end never enters the pass. An unanchored
-        // clip admits without the window, byte-identically to the pre-anchor
-        // projector.
+        // #5198 — the loop window owns membership on the row's stored figure
+        // before the clip-groove phase offers it to the rack: a row past the
+        // trimmed region end, or stored at or past an anchorless loop's
+        // length, never enters the pass.
         const admittedNotes = iteration.sourceNotes.filter((note) =>
-            isBeatAdmittedByAnchoredClipLoopWindow({
+            isBeatInEnabledClipLoopWindow({
                 relativeBeat: note.startBeat - iteration.midiOffsetBeats,
                 startBeat: iteration.clipStartBeat,
                 loopOriginBeat: iteration.loopOriginBeat,
@@ -111,10 +134,8 @@ export function projectOfflineYeastTrackNotes({
                 loopEnabled: iteration.loopEnabled,
             })
         );
-        for (const note of admittedNotes) {
-            sourceNotesByEventId.set(`${routeId}:${note.id}:on`, note);
-        }
-        return projectMidiEvents({
+        const admittedById = new Map(admittedNotes.map((note) => [note.id, note]));
+        const groovedNotes = projectMidiEvents({
             events: admittedNotes,
             clipId: iteration.clipId,
             clipStartBeat: iteration.clipStartBeat,
@@ -124,11 +145,20 @@ export function projectOfflineYeastTrackNotes({
             midiOffsetBeats: iteration.midiOffsetBeats,
             loopEnabled: iteration.loopEnabled,
             phase: 'clip-groove',
-        }).map((note) => ({
-            ...note,
-            startBeat: iteration.iterationStartBeat + note.startBeat,
-            routeId,
-        }));
+        });
+        // The rack is handed each pass's notes at their audible beats, cut as
+        // the live window cuts them, so the bounce and playback feed it alike.
+        return segmentOfflineYeastPassNotes(iteration, groovedNotes, projectSequencerGroove).flatMap((passNote) => {
+            const sourceNote = admittedById.get(passNote.sourceNoteId);
+            if (sourceNote) {
+                rackInputsByEventId.set(`${routeId}:${passNote.id}:on`, {
+                    sourceNote,
+                    beatsIntoNote: passNote.beatsIntoNote > 0 ? passNote.beatsIntoNote : undefined,
+                    sequencerGrooveApplied: passNote.sequencerGrooveApplied,
+                });
+            }
+            return [{ ...passNote, routeId }];
+        });
     });
     const yeastNotes = projectOfflineYeastNotes({
         trackId,
@@ -150,13 +180,16 @@ export function projectOfflineYeastTrackNotes({
             // `startPpq` carries the clip groove and rack re-timing and must
             // never decide membership (#5198 review). A note the rack did not
             // tie back to a source row carries no figure and admits.
-            const sourceNote = sourceNotesByEventId.get(note.id);
+            const rackInput = rackInputsByEventId.get(note.id);
+            const sourceNote = rackInput?.sourceNote;
             const projectedNotes = projectOfflineYeastClipNotes({
                 notes: [
                     {
                         ...note,
                         sourceRelativeBeat:
                             sourceNote === undefined ? undefined : sourceNote.startBeat - iteration.midiOffsetBeats,
+                        beatsIntoNote: rackInput?.beatsIntoNote,
+                        sequencerGrooveApplied: rackInput?.sequencerGrooveApplied,
                     },
                 ],
                 clipId: iteration.clipId,
@@ -176,7 +209,7 @@ export function projectOfflineYeastTrackNotes({
                 projectPitch,
             });
             for (const projectedNote of projectedNotes) {
-                const identifiedNote = sourceNotesByEventId.get(projectedNote.id);
+                const identifiedNote = rackInputsByEventId.get(projectedNote.id)?.sourceNote;
                 const sourceNote = identifiedNote ?? iteration.sourceNotes[0];
                 // A generated note borrows the first source note's scalars, never its recorded curves, which
                 // would replay on a pitch they were not played on.

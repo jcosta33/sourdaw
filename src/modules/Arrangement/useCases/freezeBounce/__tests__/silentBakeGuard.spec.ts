@@ -1,9 +1,24 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
+import {
+    configureAutomergeStoragePort,
+    flushAutomergeStorageWrites,
+} from '#/infra/store/storage/createAutomergeStorage';
 import { cacheAudioBuffer } from '#/modules/AudioEngine/useCases';
 import { automationStore } from '#/modules/Automation/stores';
-import { setMidiStoreState } from '#/modules/MIDI/useCases';
+import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
+import { clearUndoHistory } from '#/modules/Command/useCases';
+import {
+    createCrdtDoc,
+    getCrdtDoc,
+    registerCrdtStorageRuntime,
+    removeCrdtDoc,
+    resetCrdtProjectAuthority,
+} from '#/modules/CrdtDocument/useCases';
+import { getMidiStoreState, setMidiStoreState } from '#/modules/MIDI/useCases';
+import { defaultTransportState, tempoMapStore, transportStore } from '#/modules/Transport/stores';
 
+import { handleRestoreFreezeState } from '../../../handlers/track/restoreFreezeState';
 import { createTrack, type Clip, type Track } from '../../../models/Track';
 import { trackStore } from '../../../stores/trackStore';
 import { bounceSelection } from '../bounceSelection';
@@ -108,12 +123,55 @@ const BOUNCE_REPLACE = {
     destination: 'replace',
 } as const;
 
+let selectionProjectActive = false;
+
+function prepareSelectionProject(): void {
+    configureAutomergeStoragePort(null);
+    resetCrdtProjectAuthority('silent selection fixture');
+    removeCrdtDoc('root');
+    createCrdtDoc('root');
+    registerCrdtStorageRuntime();
+    selectionProjectActive = true;
+    clearUndoHistory();
+    transportStore.set({ ...defaultTransportState, tempo: 60 });
+    tempoMapStore.set({ changes: [] });
+    automationStore.set({ lanes: [] });
+}
+
+function publishedSelectionSource() {
+    flushAutomergeStorageWrites();
+    const document = getCrdtDoc<{
+        tracks?: { tracks: Track[] };
+        midi?: ReturnType<typeof getMidiStoreState>;
+    }>('root');
+    if (!document) {
+        throw new Error('Selection silence assertions require a real published project');
+    }
+    return structuredClone({ clips: document.tracks?.tracks[0]?.clips, midi: document.midi });
+}
+
+function projectedSelectionSource() {
+    return structuredClone({ clips: trackStore.value?.tracks[0]?.clips, midi: getMidiStoreState() });
+}
+
 describe('silent bake guard', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        clearHandlerRegistry();
+        registerHandlerMap({ restoreFreezeState: handleRestoreFreezeState });
         trackStore.set({ tracks: [], selectedTrackId: null });
         automationStore.set(null);
         setMidiStoreState({ notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} });
+    });
+    afterEach(() => {
+        if (selectionProjectActive) {
+            flushAutomergeStorageWrites();
+            clearUndoHistory();
+            configureAutomergeStoragePort(null);
+            removeCrdtDoc('root');
+            selectionProjectActive = false;
+        }
+        clearHandlerRegistry();
     });
 
     // ── The defect: silence baked over material the scheduler was feeding ───
@@ -162,16 +220,46 @@ describe('silent bake guard', () => {
     });
 
     it('refuses a selection bounce whose render is digital silence, before the MIDI is deleted', async () => {
+        prepareSelectionProject();
         const clip = createMidiClip();
         seedTrack([clip]);
         givenNotesFor(clip.id);
         givenRender(createSilentBuffer(), { scheduledNotes: 3 });
+        const before = publishedSelectionSource();
+        expect(before).toEqual(projectedSelectionSource());
+        expect(before.clips).toEqual([clip]);
+        expect(before.midi?.notesByClipId[clip.id]).toHaveLength(1);
 
         const didBounce = await bounceSelection('t1', 0, 8);
 
+        expect(renderTrackOffline).toHaveBeenCalledTimes(1);
         expect(didBounce).toBe(false);
         expect(trackStore.value?.tracks[0]?.clips).toEqual([clip]);
+        expect(publishedSelectionSource()).toEqual(before);
+        expect(projectedSelectionSource()).toEqual(before);
         expect(notification.notifyUser).toHaveBeenCalledWith(expect.stringContaining('Grand Piano'), 'error');
+    });
+
+    it('commits an audible selection render after lawful source admission', async () => {
+        prepareSelectionProject();
+        const clip = createMidiClip();
+        seedTrack([clip]);
+        givenNotesFor(clip.id);
+        givenRender(createAudibleBuffer(), { scheduledNotes: 3 });
+        const before = publishedSelectionSource();
+        expect(before).toEqual(projectedSelectionSource());
+        expect(before.midi?.notesByClipId[clip.id]).toHaveLength(1);
+
+        const didBounce = await bounceSelection('t1', 0, 8);
+
+        expect(renderTrackOffline).toHaveBeenCalledTimes(1);
+        expect(didBounce).toBe(true);
+        const after = publishedSelectionSource();
+        expect(after).toEqual(projectedSelectionSource());
+        expect(after.clips).toHaveLength(1);
+        expect(after.clips?.[0]).toMatchObject({ type: 'audio', startBeat: 0, endBeat: 8 });
+        expect(after.midi?.notesByClipId[clip.id]).toBeUndefined();
+        expect(notification.notifyUser).not.toHaveBeenCalled();
     });
 
     it('still freezes a track whose render carries audio', async () => {

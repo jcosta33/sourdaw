@@ -7,7 +7,8 @@ import {
 } from '#/utils/handlerContract';
 import { isRecord, valuesEqual } from '#/utils/structuralEquality';
 
-import { decodeExactTakeLaneSnapshots } from '../../stores/takeLaneStore';
+import { isExactClipSnapshot as isClipSnapshot } from '../../stores/isExactClipSnapshot';
+import { clipSplitSource } from '../../useCases/clipEditing/clipSplitSource';
 import { isClipRestoreOrderSnapshot } from '../../useCases/clipEditing/isClipRestoreOrderSnapshot';
 import { projectClipSplitSourceWindow } from '../../useCases/clipEditing/projectClipSplitSourceWindow';
 import { retiredTakeSourceMatches } from '../../useCases/comping/retiredTakeSourceMatches';
@@ -15,174 +16,18 @@ import { clipSatelliteStateCodec } from '../../useCases/timeOperations/clipSatel
 import { isReKeyLaneTransition } from '../../useCases/timeOperations/isReKeyLaneTransition';
 import { timeOperationRestorePlan } from '../../useCases/timeOperations/prepareTimeOperationStateRestore';
 import { reverseRestorePlan } from '../../useCases/timeOperations/reverseRestorePlan';
+import { isRetiredTakeLanes } from '../isRetiredTakeLanes';
 
 import { hasFiniteNumbers } from './hasFiniteNumbers';
 import { isClipSplitOrderSnapshot } from './isClipSplitOrderSnapshot';
 import { isRemoveClipSessionPayload } from './isRemoveClipSessionPayload';
+import { splitLeftSourceMatches } from './splitLeftSourceMatches';
 
-import type { TakeLane } from '../../models/TakeLane';
 import type { Clip } from '../../stores/trackStore';
 import type { undoRippleDelete } from '../../useCases/rippleDelete/undoRippleDelete';
 
-function isFiniteNumber(value: unknown): boolean {
-    return typeof value === 'number' && Number.isFinite(value);
-}
-
 function optionalField(value: Record<string, unknown>, key: string, accepts: (field: unknown) => boolean): boolean {
     return !Object.hasOwn(value, key) || value[key] === undefined || accepts(value[key]);
-}
-
-function isKneadBlob(value: unknown): boolean {
-    return (
-        isRecord(value) &&
-        typeof value.id === 'string' &&
-        isFiniteNumber(value.startTime) &&
-        isFiniteNumber(value.endTime) &&
-        isFiniteNumber(value.pitchCenterCents) &&
-        optionalField(value, 'originalPitchCenterCents', isFiniteNumber) &&
-        Array.isArray(value.pitchCurveCents) &&
-        value.pitchCurveCents.every(isFiniteNumber) &&
-        isFiniteNumber(value.voicedConfidence) &&
-        Object.keys(value).every((key) =>
-            [
-                'id',
-                'startTime',
-                'endTime',
-                'pitchCenterCents',
-                'originalPitchCenterCents',
-                'pitchCurveCents',
-                'voicedConfidence',
-            ].includes(key)
-        )
-    );
-}
-
-function isKneadState(value: unknown): boolean {
-    return (
-        isRecord(value) &&
-        Array.isArray(value.blobs) &&
-        value.blobs.every(isKneadBlob) &&
-        isFiniteNumber(value.retuneSpeedMs) &&
-        isFiniteNumber(value.humanizePercent) &&
-        typeof value.formantPreserve === 'boolean' &&
-        Object.keys(value).every((key) =>
-            ['blobs', 'retuneSpeedMs', 'humanizePercent', 'formantPreserve'].includes(key)
-        )
-    );
-}
-
-const optionalClipFields: Record<string, (value: unknown) => boolean> = {
-    audioBufferId: (value) => typeof value === 'string',
-    fileId: (value) => typeof value === 'string',
-    assetHash: (value) => typeof value === 'string',
-    audioOffsetBeats: isFiniteNumber,
-    midiOffsetBeats: isFiniteNumber,
-    stretchMode: (value) => value === 'off' || value === 'repitch' || value === 'timestretch',
-    stretchRatio: isFiniteNumber,
-    loopEnabled: (value) => typeof value === 'boolean',
-    loopLength: isFiniteNumber,
-    loopOriginBeat: isFiniteNumber,
-    followAction: (value) =>
-        value === 'stop' ||
-        value === 'play_next' ||
-        value === 'play_previous' ||
-        value === 'play_random' ||
-        value === 'play_first' ||
-        value === 'play_last',
-    generating: (value) => typeof value === 'boolean',
-    isGhost: (value) => typeof value === 'boolean',
-    isInlineEditing: (value) => typeof value === 'boolean',
-    parentClipId: (value) => typeof value === 'string',
-    isLinkedInstance: (value) => typeof value === 'boolean',
-    sourceKeyRoot: isFiniteNumber,
-    sourceScaleName: (value) => typeof value === 'string',
-    overrides: (value) => isRecord(value) && Object.values(value).every((entry) => typeof entry === 'boolean'),
-    kneadState: isKneadState,
-};
-
-const requiredClipFields = new Set([
-    'id',
-    'trackId',
-    'name',
-    'startBeat',
-    'endBeat',
-    'type',
-    'fadeInBeats',
-    'fadeOutBeats',
-    'gain',
-    'color',
-    'locked',
-    'muted',
-]);
-
-function hasValidClipFields(value: Record<string, unknown>): boolean {
-    return Object.entries(value).every(
-        ([key, field]) =>
-            requiredClipFields.has(key) ||
-            (Object.hasOwn(optionalClipFields, key) && (field === undefined || optionalClipFields[key]!(field)))
-    );
-}
-
-function isRetiredTakeLane(value: unknown, lane: TakeLane, clipId: string, trackId?: string): boolean {
-    if (
-        !isRecord(value) ||
-        typeof value.laneIndex !== 'number' ||
-        !Number.isSafeInteger(value.laneIndex) ||
-        value.laneIndex < 0
-    ) {
-        return false;
-    }
-    if (trackId !== undefined && lane.trackId !== trackId) {
-        return false;
-    }
-    return (
-        optionalField(
-            value,
-            'retiredTakeIds',
-            (ids) =>
-                Array.isArray(ids) &&
-                ids.every(
-                    (id) =>
-                        typeof id === 'string' && lane.takes.some((take) => take.id === id && take.clipId === clipId)
-                )
-        ) && Object.keys(value).every((key) => ['laneIndex', 'lane', 'retiredTakeIds'].includes(key))
-    );
-}
-
-function isRetiredTakeLanes(value: unknown, clipId: string, trackId?: string): boolean {
-    if (!Array.isArray(value)) {
-        return false;
-    }
-    const lanes = decodeExactTakeLaneSnapshots(value.map((entry) => (isRecord(entry) ? entry.lane : undefined)));
-    return (
-        lanes !== null &&
-        new Set(lanes.map((lane) => lane.id)).size === lanes.length &&
-        new Set(lanes.map((lane) => lane.trackId)).size === lanes.length &&
-        value.every((entry, index) => isRetiredTakeLane(entry, lanes[index]!, clipId, trackId))
-    );
-}
-
-function isClipSnapshot(value: unknown, clipId: string, trackId: string): value is Clip {
-    return (
-        isRecord(value) &&
-        value.id === clipId &&
-        value.trackId === trackId &&
-        typeof value.name === 'string' &&
-        typeof value.startBeat === 'number' &&
-        Number.isFinite(value.startBeat) &&
-        value.startBeat >= 0 &&
-        typeof value.endBeat === 'number' &&
-        Number.isFinite(value.endBeat) &&
-        value.endBeat > value.startBeat &&
-        (value.type === 'audio' || value.type === 'midi') &&
-        isFiniteNumber(value.fadeInBeats) &&
-        isFiniteNumber(value.fadeOutBeats) &&
-        isFiniteNumber(value.gain) &&
-        typeof value.color === 'string' &&
-        typeof value.locked === 'boolean' &&
-        typeof value.muted === 'boolean' &&
-        hasValidClipFields(value)
-    );
 }
 
 function isRippleDeleteShift(
@@ -315,6 +160,11 @@ function isSplitSnapshot(value: unknown, clipId: string, rightClipId: string): v
         typeof value.rightClipIndex === 'number' &&
         Number.isSafeInteger(value.rightClipIndex) &&
         value.rightClipIndex >= 0 &&
+        optionalField(
+            value,
+            'audioSourceTempoAtStart',
+            (tempo) => typeof tempo === 'number' && Number.isFinite(tempo) && tempo > 0
+        ) &&
         isClipSplitOrderSnapshot(value.rightClipOrder, clipId, rightClipId) &&
         isExactMidiClipDataActionSnapshot(value.sourceMidi) &&
         isExactMidiClipDataActionSnapshot(value.rightMidi) &&
@@ -358,19 +208,6 @@ function splitSnapshotCaptureOwnersMatch(value: Record<string, unknown>, clipId:
     );
 }
 
-function splitLeftSourceMatches(left: unknown, otherLeft: unknown): boolean {
-    if (!isRecord(left) || !isRecord(otherLeft)) {
-        return false;
-    }
-    // prepareClipSplit changes only these three left-fragment fields. Every
-    // surviving source facet, including optional-field presence, stays exact.
-    const preservedFields = (clip: Record<string, unknown>): Record<string, unknown> =>
-        Object.fromEntries(
-            Object.entries(clip).filter(([key]) => key !== 'name' && key !== 'endBeat' && key !== 'fadeOutBeats')
-        );
-    return valuesEqual(preservedFields(left), preservedFields(otherLeft));
-}
-
 function splitRightSourceMatches(
     clipId: string,
     expected: Record<string, unknown>,
@@ -388,7 +225,7 @@ function splitRightSourceMatches(
         return false;
     }
     const projected = projectClipSplitSourceWindow(whole.leftClip, split.leftClip.endBeat);
-    const fields = ['audioOffsetBeats', 'midiOffsetBeats', 'loopOriginBeat'];
+    const fields = ['audioOffsetBeats', 'midiOffsetBeats', 'loopOriginBeat', 'loopLength'];
     const pick = (clip: Record<string, unknown>, keys: readonly string[]) =>
         Object.fromEntries(keys.filter((key) => clip[key] !== undefined).map((key) => [key, clip[key]]));
     const inherited = [
@@ -399,7 +236,6 @@ function splitRightSourceMatches(
         'stretchMode',
         'stretchRatio',
         'loopEnabled',
-        'loopLength',
         'parentClipId',
         'isLinkedInstance',
     ];
@@ -426,7 +262,7 @@ export function clipSplitCaptureOwnersMatch(value: unknown): boolean {
         typeof value.expected.trackId === 'string' &&
         splitSnapshotCaptureOwnersMatch(value.expected, value.clipId, value.rightClipId) &&
         splitSnapshotCaptureOwnersMatch(value.replacement, value.clipId, value.rightClipId) &&
-        splitLeftSourceMatches(value.expected.leftClip, value.replacement.leftClip) &&
+        splitLeftSourceMatches(value.expected, value.replacement) &&
         isSplitTakeReKeyCapture(value.reKeyedTakeLanes, value.expected.trackId, value.clipId, value.rightClipId)
     );
 }
@@ -478,7 +314,14 @@ function isSplitTakeReKeyCapture(value: unknown, trackId: string, clipId: string
             return false;
         }
         laneIds.add(transition.laneId);
+        const foreignBefore = (transition.baseGapAudioSourcesBefore ?? []).filter(
+            (tile) => tile.clipId !== clipId && tile.clipId !== rightClipId
+        );
+        const foreignAfter = (transition.baseGapAudioSourcesAfter ?? []).filter(
+            (tile) => tile.clipId !== clipId && tile.clipId !== rightClipId
+        );
         if (
+            !valuesEqual(foreignBefore, foreignAfter) ||
             !foreignTakesUnchanged(transition.takesBefore, transition.takesAfter, clipId, rightClipId) ||
             !foreignTakesUnchanged(transition.takesAfter, transition.takesBefore, clipId, rightClipId) ||
             !foreignRegionsUnchanged(
@@ -529,6 +372,7 @@ function splitReplaySnapshotsMatch(
         valuesEqual(inverse.replacement, redo.expected) &&
         valuesEqual(inverse.retiredTakeLanes, redo.retiredTakeLanes) &&
         valuesEqual(inverse.retiredTakeSourceProof, redo.retiredTakeSourceProof) &&
+        valuesEqual(inverse.splitSourceProof, redo.splitSourceProof) &&
         valuesEqual(inverse.reKeyedTakeLanes, redo.reKeyedTakeLanes)
     );
 }
@@ -549,6 +393,44 @@ function splitResolvedBeatMatches(
     );
 }
 
+function savedSplitSourceMatches(
+    entryId: string | undefined,
+    inverse: Extract<AppAction, { type: 'restoreClipSplitState' }>['payload'],
+    redo: Extract<AppAction, { type: 'restoreClipSplitState' }>['payload']
+): boolean {
+    const whole = inverse.replacement;
+    const split = inverse.expected;
+    const snapshots = [inverse.expected, inverse.replacement, redo.expected, redo.replacement];
+    const canonical = [
+        'audioOffsetSeconds',
+        'audioUnwrappedOffsetSeconds',
+        'audioLoopStartSeconds',
+        'audioLoopPassEntrySeconds',
+        'audioLoopPassOriginBeat',
+    ];
+    const modern =
+        Object.hasOwn(inverse, 'splitSourceProof') ||
+        Object.hasOwn(redo, 'splitSourceProof') ||
+        snapshots.some(
+            (snapshot) =>
+                Object.hasOwn(snapshot, 'audioSourceTempoAtStart') ||
+                [snapshot.leftClip, snapshot.rightClip].some(
+                    (clip) => clip && canonical.some((key) => Object.hasOwn(clip, key))
+                )
+        );
+    if (modern) {
+        return (
+            whole.leftClip.type === 'audio' &&
+            valuesEqual(inverse.splitSourceProof, redo.splitSourceProof) &&
+            clipSplitSource.matches(entryId, whole, split, inverse.reKeyedTakeLanes ?? [], inverse.splitSourceProof)
+        );
+    }
+    // Shipped wholly beat-only history keeps its independent original producer
+    // law. Complete removal of every modern marker is the declared legacy
+    // ambiguity; this branch does not authenticate an unknown event's origin.
+    return splitRightSourceMatches(inverse.clipId, split, whole);
+}
+
 export function isSplitClipSessionEntry(entry: HandlerSessionActionEntry): boolean {
     if (
         entry.action.type !== 'splitClip' ||
@@ -567,7 +449,7 @@ export function isSplitClipSessionEntry(entry: HandlerSessionActionEntry): boole
         action.rightClipId === redo.rightClipId &&
         isRestoreClipSplitSessionPayload(inverse) &&
         isRestoreClipSplitSessionPayload(redo) &&
-        splitRightSourceMatches(action.clipId, inverse.expected, inverse.replacement) &&
+        savedSplitSourceMatches(entry.id, inverse, redo) &&
         retiredTakeSourceMatches(
             'splitClipUndo',
             [inverse.rightClipId],

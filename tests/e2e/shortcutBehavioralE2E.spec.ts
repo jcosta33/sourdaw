@@ -1,5 +1,7 @@
-import { expect, test, type Page } from '@playwright/test';
+import { type Page } from '@playwright/test';
 
+import { chooseProjectDirectory } from './chosenProjectDirectory';
+import { expect, test } from './e2eTest';
 import { launch_new_project, setupWorkspace } from './e2eUtils';
 
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
@@ -21,11 +23,12 @@ test.beforeEach(async ({ page }) => {
 
 test.describe('Dirty indicator', () => {
     test('appears after adding a MIDI track and clears on save', async ({ page }) => {
+        await chooseProjectDirectory(page);
         const dirty = page.getByTitle('Unsaved changes');
         await expect(dirty).toHaveCount(0);
 
         await page.keyboard.press('n');
-        await expect(trackList(page).getByText('MIDI', { exact: true })).toBeVisible();
+        await expect(trackList(page).getByText('MIDI 1', { exact: true })).toBeVisible();
         await expect(dirty).toBeVisible();
 
         await page.keyboard.press(`${MOD}+s`);
@@ -38,15 +41,26 @@ test.describe('Track creation shortcuts', () => {
         await expect(page.getByText('Add your first track')).toBeVisible();
 
         await page.keyboard.press('n');
-        await expect(trackList(page).getByText('MIDI', { exact: true })).toBeVisible();
+        await expect(trackList(page).getByText('MIDI 1', { exact: true })).toBeVisible();
         await expect(page.getByText('Add your first track')).toHaveCount(0);
+    });
+
+    test('N pressed twice numbers the MIDI tracks per kind', async ({ page }) => {
+        await page.keyboard.press('Shift+N');
+        await expect(trackList(page).getByText('Audio 1', { exact: true })).toBeVisible();
+
+        await page.keyboard.press('n');
+        await expect(trackList(page).getByText('MIDI 1', { exact: true })).toBeVisible();
+        await page.keyboard.press('n');
+        await expect(trackList(page).getByText('MIDI 2', { exact: true })).toBeVisible();
+        await expect(trackList(page).getByText('MIDI 1', { exact: true })).toHaveCount(1);
     });
 
     test('Shift+N creates an Audio track', async ({ page }) => {
         await expect(page.getByText('Add your first track')).toBeVisible();
 
         await page.keyboard.press('Shift+N');
-        await expect(trackList(page).getByText('Audio', { exact: true })).toBeVisible();
+        await expect(trackList(page).getByText('Audio 1', { exact: true })).toBeVisible();
         await expect(page.getByText('Add your first track')).toHaveCount(0);
     });
 });
@@ -118,7 +132,7 @@ test.describe('Panel shortcuts', () => {
 
     test('Cmd+Shift+K shows then hides the virtual keyboard', async ({ page }) => {
         const toggle = page.getByRole('button', { name: 'Toggle virtual keyboard' });
-        const keyboard = page.getByRole('application', { name: /Virtual Piano Keyboard/i });
+        const keyboard = page.getByRole('region', { name: /Virtual Piano Keyboard/i });
 
         await expect(toggle).not.toHaveAttribute('aria-pressed', 'true');
         await expect(keyboard).toHaveCount(0);

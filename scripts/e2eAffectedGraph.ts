@@ -1,8 +1,9 @@
 import { lstatSync, readFileSync } from 'node:fs';
-import { isAbsolute, posix, resolve } from 'node:path';
+import { posix, resolve } from 'node:path';
 
 import ts from 'typescript';
 
+import { cruiseFileGraph } from './e2eFileGraph.ts';
 import { isPlaywrightCollected } from './vitestCollectionPatterns.ts';
 
 const COMPOSITION_SHELLS = new Set([
@@ -341,11 +342,12 @@ function isQualifiedPlatformWorker(expression: ts.Expression): boolean {
 export function completeRuntimeGraph(
     root: string,
     graph: readonly SourceNode[]
-): { graph: SourceNode[]; opaqueSources: ReadonlySet<string> } {
+): { graph: SourceNode[]; opaqueSources: ReadonlySet<string>; workerEntries: ReadonlySet<string> } {
     const { modules } = reverseGraph(graph);
     const extra = new Map<string, Set<string>>();
     const publicAssets = new Set<string>();
     const opaqueSources = new Set<string>();
+    const workerEntries = new Set<string>();
     const addEdge = (source: string, target: string): void => {
         const dependencies = extra.get(source) ?? new Set<string>();
         dependencies.add(target);
@@ -387,6 +389,7 @@ export function completeRuntimeGraph(
                         opaqueSources.add(path);
                     } else {
                         addEdge(path, target);
+                        workerEntries.add(target);
                     }
                 }
             }
@@ -420,7 +423,51 @@ export function completeRuntimeGraph(
             return { ...module, dependencies };
         }),
         opaqueSources,
+        workerEntries,
     };
+}
+
+// Vite starts a worker or audio worklet from a `?worker`, `?worker&url` or `?url`
+// import of a script: the import yields its URL, and the module runs off the page.
+const SCRIPT_SOURCE = /\.(?:[cm]?[jt]sx?)$/;
+
+function isOffPageScriptImport(dependency: SourceNode['dependencies'][number]): boolean {
+    return (
+        dependency.module?.includes('?') === true &&
+        dependency.resolved.startsWith('src/') &&
+        SCRIPT_SOURCE.test(dependency.resolved)
+    );
+}
+
+/**
+ * Every source a worker or audio worklet can load: the `new Worker(new URL(...))`
+ * targets, the scripts imported by URL, and everything they import. Page coverage
+ * never observes these threads. An opaque runtime edge could start any file, so it
+ * leaves the set unproven.
+ */
+export function offPageSources(runtime: RuntimeGraph): ReadonlySet<string> {
+    if (runtime.opaqueSources.size > 0) {
+        throw new Error(`opaque runtime dependency: ${[...runtime.opaqueSources].sort()[0]}`);
+    }
+    const modules = new Map(runtime.graph.map((module) => [module.source, module]));
+    const pending = [...runtime.workerEntries];
+    for (const module of runtime.graph) {
+        pending.push(...module.dependencies.filter(isOffPageScriptImport).map((dependency) => dependency.resolved));
+    }
+    const reached = new Set<string>();
+    while (pending.length > 0) {
+        const path = pending.pop()!;
+        if (reached.has(path)) {
+            continue;
+        }
+        reached.add(path);
+        for (const dependency of modules.get(path)?.dependencies ?? []) {
+            if (/^(?:src|public)\//.test(dependency.resolved)) {
+                pending.push(dependency.resolved);
+            }
+        }
+    }
+    return reached;
 }
 
 function affectedOwners(
@@ -500,78 +547,42 @@ export function selectAffectedE2e(
     }
 }
 
+export type RuntimeGraph = {
+    kind: 'graph';
+    graph: SourceNode[];
+    opaqueSources: ReadonlySet<string>;
+    workerEntries: ReadonlySet<string>;
+};
+
+/** The resolved production file graph with its syntax-visible runtime edges, or why it cannot be trusted. */
+export async function loadRuntimeGraph(root: string): Promise<RuntimeGraph | { kind: 'full'; reason: string }> {
+    try {
+        const cruised = await cruiseFileGraph(root, {
+            roots: GRAPH_ROOTS,
+            exclude: GRAPH_EXCLUDE_PATTERN,
+            doNotFollow: 'node_modules',
+        });
+        if (cruised.kind === 'full') {
+            return cruised;
+        }
+        return { kind: 'graph', ...completeRuntimeGraph(root, cruised.modules) };
+    } catch (error) {
+        return { kind: 'full', reason: error instanceof Error ? error.message : 'dependency graph failed' };
+    }
+}
+
 export async function loadAffectedE2e(
     root: string,
     changedSources: readonly string[],
-    availableSpecs: readonly string[]
+    availableSpecs: readonly string[],
+    runtime?: RuntimeGraph | { kind: 'full'; reason: string }
 ): Promise<AffectedSelection> {
     try {
         const manifest: unknown = JSON.parse(readFileSync(resolve(root, 'scripts/e2eSuiteOwners.json'), 'utf8'));
-        const configPath = resolve(root, 'tsconfig.json');
-        const config = ts.getParsedCommandLineOfConfigFile(
-            configPath,
-            {},
-            {
-                ...ts.sys,
-                onUnRecoverableConfigFileDiagnostic: (diagnostic) => {
-                    throw new Error(ts.flattenDiagnosticMessageText(diagnostic.messageText, '\n'));
-                },
-            }
-        );
-        if (config === undefined || config.errors.length > 0) {
-            throw new Error('invalid dependency graph TypeScript configuration');
+        const completed = runtime ?? (await loadRuntimeGraph(root));
+        if (completed.kind === 'full') {
+            return completed;
         }
-        if (
-            config.options.baseUrl === undefined &&
-            config.options.paths !== undefined &&
-            Object.keys(config.options.paths).length > 0
-        ) {
-            const declaringBase = config.options.pathsBasePath;
-            // The installed alias plugin rebases inherited baseUrl, but not inherited implicit paths.
-            if (
-                typeof declaringBase !== 'string' ||
-                !isAbsolute(declaringBase) ||
-                resolve(declaringBase) !== resolve(root)
-            ) {
-                return {
-                    kind: 'full',
-                    reason: 'TypeScript alias declaring base is not preserved by the dependency resolver',
-                };
-            }
-        }
-        // The resolver reads aliases from configPath, but otherwise substitutes cwd for an implicit base.
-        const graphConfig = {
-            ...config,
-            options: { ...config.options, baseUrl: config.options.baseUrl ?? resolve(root) },
-        };
-        if (process.env.TS_NODE_PROJECT || process.env.TS_NODE_BASEURL) {
-            return {
-                kind: 'full',
-                reason: 'caller TypeScript alias override prevents proving the requested root',
-            };
-        }
-        const { cruise } = await import('dependency-cruiser');
-        const result = await cruise(
-            [...GRAPH_ROOTS],
-            {
-                baseDir: root,
-                outputType: 'json',
-                doNotFollow: { path: 'node_modules' },
-                exclude: { path: GRAPH_EXCLUDE_PATTERN },
-                tsConfig: { fileName: configPath },
-                tsPreCompilationDeps: 'specify',
-            },
-            undefined,
-            { tsConfig: graphConfig }
-        );
-        if (result.exitCode !== 0 || typeof result.output !== 'string') {
-            return { kind: 'full', reason: 'dependency graph did not complete' };
-        }
-        const parsed: unknown = JSON.parse(result.output);
-        if (typeof parsed !== 'object' || parsed === null || !('modules' in parsed) || !Array.isArray(parsed.modules)) {
-            return { kind: 'full', reason: 'malformed dependency graph' };
-        }
-        const completed = completeRuntimeGraph(root, parsed.modules as SourceNode[]);
         return selectAffectedE2e(changedSources, availableSpecs, manifest, completed.graph, (path) =>
             completed.opaqueSources.has(path)
         );

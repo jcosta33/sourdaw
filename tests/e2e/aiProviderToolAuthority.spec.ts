@@ -1,8 +1,9 @@
-import { expect, test, type Page } from '@playwright/test';
+import { type Page } from '@playwright/test';
 
 import { admitLoopbackProvider } from './admitLoopbackProvider';
+import { expect, test } from './e2eTest';
 import { launch_new_project, setupWorkspace } from './e2eUtils';
-import { startScriptedToolProvider, type ScriptedToolRequest } from './scriptedToolProvider';
+import { literalWholeRequestIntake, startScriptedToolProvider, type ScriptedToolRequest } from './scriptedToolProvider';
 
 type Target = { id: string; name: string; gain: number };
 
@@ -125,7 +126,7 @@ async function addAudioTrack(page: Page, name: string): Promise<void> {
     await palette.getByRole('option', { name: /Add Audio Track/i }).click();
     await expect(arms).toHaveCount(before + 1);
     const inspector = page.getByRole('complementary', { name: 'Inspector panel' });
-    const nameButton = inspector.getByRole('button', { name: 'Audio', exact: true });
+    const nameButton = inspector.getByRole('button', { name: 'Audio 1', exact: true });
     await expect(nameButton).toBeVisible();
     await nameButton.click();
     const rename = inspector.getByRole('textbox').first();
@@ -180,9 +181,14 @@ test.describe('provider tool authority through the live chat composition', () =>
             let proposalCommands: Array<{ name: string; arguments: Record<string, unknown> }> = [];
             const provider = await startScriptedToolProvider((request, turn) => {
                 expect(request.model).toBe(provider.model);
-                // Grounding admits one correction attempt; repeat the malformed proposal there.
-                const planningTurn = scenario === 'malformed' ? turn % 3 : turn;
-                expect(turn).toBeLessThan(scenario === 'malformed' ? 6 : 3);
+                expect(turn).toBeLessThan(scenario === 'malformed' ? 8 : 4);
+                // Grounding admits one correction attempt, which plans again from its own
+                // whole-request intake; repeat the malformed proposal there.
+                const attemptTurn = scenario === 'malformed' ? turn % 4 : turn;
+                if (attemptTurn === 0) {
+                    return [literalWholeRequestIntake(request)];
+                }
+                const planningTurn = attemptTurn - 1;
                 if (planningTurn === 0) {
                     return [
                         {
@@ -266,7 +272,7 @@ test.describe('provider tool authority through the live chat composition', () =>
                 await composer.press('Enter');
                 await expect
                     .poll(() => provider.requests.length, { timeout: 30_000 })
-                    .toBe(scenario === 'undisclosed' ? 2 : scenario === 'malformed' ? 6 : 3);
+                    .toBe(scenario === 'undisclosed' ? 3 : scenario === 'malformed' ? 8 : 4);
                 expect(provider.failures).toEqual([]);
                 expect(disclosedTargets.map((track) => track.id)).toEqual(targets.map((track) => track.id));
                 const confirm = page.getByRole('button', { name: 'Confirm pending actions', exact: true });

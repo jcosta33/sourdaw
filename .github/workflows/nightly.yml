@@ -27,7 +27,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  NODE_VERSION: 24.19.0
+  NODE_VERSION: 24.22.2
 
 jobs:
   decide:
@@ -68,12 +68,14 @@ jobs:
         run: corepack enable
 
       - name: Set up pnpm
-        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+        uses: ./.github/actions/setup-pnpm
         with:
           package_json_file: package.json
 
       - name: Set up Node
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        timeout-minutes: 3
+        continue-on-error: true
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
@@ -152,12 +154,14 @@ jobs:
         run: corepack enable
 
       - name: Set up pnpm
-        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+        uses: ./.github/actions/setup-pnpm
         with:
           package_json_file: package.json
 
       - name: Set up Node
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        timeout-minutes: 3
+        continue-on-error: true
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
@@ -188,12 +192,14 @@ jobs:
         run: corepack enable
 
       - name: Set up pnpm
-        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+        uses: ./.github/actions/setup-pnpm
         with:
           package_json_file: package.json
 
       - name: Set up Node
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        timeout-minutes: 3
+        continue-on-error: true
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
@@ -237,13 +243,13 @@ jobs:
           printf 'root=%s\n' "$tool_root" >> "$GITHUB_OUTPUT"
 
       - name: Set up pnpm
-        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+        uses: ./.github/actions/setup-pnpm
         with:
           dest: ${{ steps.unit_tools.outputs.root }}
           package_json_file: package.json
 
       - name: Set up Node
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: ${{ env.NODE_VERSION }}
 
@@ -255,6 +261,15 @@ jobs:
 
       - name: Install dependencies
         run: node scripts/runIsolatedUnitShard.ts install --context "${{ steps.unit_isolation.outputs.context }}"
+
+      # Real-render specs launch Chromium from inside a loaded shard. Without
+      # the pinned Playwright build they fall back to the image's full Chrome,
+      # whose cold start exceeded a 120s warm-up under shard load (run
+      # 42099824047). The isolated account installs it into its own HOME,
+      # bounded like the required unit shards' install in validation.yml.
+      - name: Install Chromium
+        timeout-minutes: 2
+        run: node scripts/runIsolatedUnitShard.ts browsers --context "${{ steps.unit_isolation.outputs.context }}"
 
       # The suite is dominated by jsdom construction and module loading rather
       # than assertions, so worker count is the lever that matters. The local
@@ -288,12 +303,14 @@ jobs:
         run: corepack enable
 
       - name: Set up pnpm
-        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+        uses: ./.github/actions/setup-pnpm
         with:
           package_json_file: package.json
 
       - name: Set up Node
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        timeout-minutes: 3
+        continue-on-error: true
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
@@ -339,7 +356,7 @@ jobs:
         run: rustup show
 
       - name: Cache cargo build
-        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
 
       # One script so the local run and the CI run cannot drift. It keeps the
       # Rust legs in debug on purpose: `assert_no_alloc`'s `disable_release`
@@ -366,8 +383,17 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      # Node installs unsoftened here; only the npm cache restore below may
+      # fall through, so a failed install cannot leave the runner's own Node.
+      - name: Install Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
       - name: Set up Node
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        timeout-minutes: 3
+        continue-on-error: true
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
@@ -408,7 +434,7 @@ jobs:
         run: rustup show
 
       - name: Cache cargo build
-        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
 
       - name: Test the audio crates
         run: cargo test --package daw-core --package daw-dsp --package daw-engine --all-features
@@ -440,7 +466,7 @@ jobs:
         run: rustup show
 
       - name: Cache cargo build
-        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
 
       - name: Test the audio crates
         run: cargo test --package daw-core --package daw-dsp --package daw-engine --all-features
@@ -467,12 +493,14 @@ jobs:
         run: corepack enable
 
       - name: Set up pnpm
-        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+        uses: ./.github/actions/setup-pnpm
         with:
           package_json_file: package.json
 
       - name: Set up Node
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        timeout-minutes: 3
+        continue-on-error: true
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
@@ -484,7 +512,7 @@ jobs:
         run: rustup show
 
       - name: Cache cargo build
-        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -549,7 +577,7 @@ jobs:
       # baseline is the comparison a later run makes against it.
       - name: Upload the measurement record
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: desktop-latency-${{ github.sha }}
           path: measurements/desktop-latency/nightly-${{ github.sha }}.json
@@ -560,7 +588,7 @@ jobs:
       # discard.
       - name: Upload the agent workspace proof record
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: desktop-agent-workspace-${{ github.sha }}
           path: measurements/desktop-agent-workspace/nightly-${{ github.sha }}.json
@@ -572,7 +600,7 @@ jobs:
     if: needs.decide.outputs.heavy == 'true' && needs.decide.outputs.e2e == 'true'
     runs-on: ubuntu-latest
     container:
-      image: mcr.microsoft.com/playwright:v1.63.0-noble@sha256:eff16c30e6f3f4af0a03fa4b706120d5e9b0891c344a27d64559aff5900a4a27
+      image: mcr.microsoft.com/playwright:v1.65.0-noble@sha256:6e3fb709361521eb27161606e6da6d2674e5e89fa16516cb37d6fdd91372273d
       options: --init --ipc=host
     defaults:
       run:
@@ -591,12 +619,14 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up pnpm
-        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+        uses: ./.github/actions/setup-pnpm
         with:
           package_json_file: package.json
 
       - name: Set up Node
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        timeout-minutes: 3
+        continue-on-error: true
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
@@ -608,7 +638,7 @@ jobs:
       # resolved package can launch them without per-job apt or binary downloads.
       - name: Verify preinstalled browser runtime
         timeout-minutes: 2
-        run: node scripts/verifyPlaywrightRuntime.ts 1.63.0
+        run: node scripts/verifyPlaywrightRuntime.ts 1.65.0
 
       - name: Run shard
         id: run_shard
@@ -625,7 +655,7 @@ jobs:
 
       - name: Upload blob report
         if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: e2e-blob-${{ matrix.shard }}
           path: blob-report/
@@ -639,7 +669,7 @@ jobs:
     # proof and therefore fails, rather than skips, when macOS cannot provide a
     # core non-fallback adapter.
     if: needs.decide.outputs.heavy == 'true' && needs.decide.outputs.e2e == 'true'
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 30
     steps:
       - name: Checkout
@@ -649,12 +679,14 @@ jobs:
         run: corepack enable
 
       - name: Set up pnpm
-        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+        uses: ./.github/actions/setup-pnpm
         with:
           package_json_file: package.json
 
       - name: Set up Node
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        timeout-minutes: 3
+        continue-on-error: true
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
@@ -687,12 +719,14 @@ jobs:
         run: corepack enable
 
       - name: Set up pnpm
-        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+        uses: ./.github/actions/setup-pnpm
         with:
           package_json_file: package.json
 
       - name: Set up Node
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        timeout-minutes: 3
+        continue-on-error: true
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
@@ -701,7 +735,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Download blob reports
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: e2e-blob-*
           path: all-blob-reports
@@ -711,11 +745,131 @@ jobs:
         run: pnpm exec playwright merge-reports --reporter=html all-blob-reports
 
       - name: Upload report
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: playwright-report
           path: playwright-report/
           retention-days: 7
+
+  e2e-coverage:
+    name: End-to-end coverage ${{ matrix.shard }}/12
+    # Records which app source files each browser test executed, for test
+    # impact analysis (docs/affected-e2e.md). It gates nothing: coverage
+    # collection slows the browser, so it stays out of the gating `e2e` train,
+    # whose timing-bounded specs it could push over budget. A failing test is
+    # recorded and always selected by the map; the gating train owns failures.
+    needs: decide
+    if: needs.decide.outputs.heavy == 'true' && needs.decide.outputs.e2e == 'true'
+    runs-on: ubuntu-latest
+    container:
+      image: mcr.microsoft.com/playwright:v1.65.0-noble@sha256:6e3fb709361521eb27161606e6da6d2674e5e89fa16516cb37d6fdd91372273d
+      options: --init --ipc=host
+    defaults:
+      run:
+        shell: bash
+    timeout-minutes: 75
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up pnpm
+        uses: ./.github/actions/setup-pnpm
+        with:
+          package_json_file: package.json
+
+      - name: Set up Node
+        timeout-minutes: 3
+        continue-on-error: true
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify preinstalled browser runtime
+        timeout-minutes: 2
+        run: node scripts/verifyPlaywrightRuntime.ts 1.65.0
+
+      # Test failures leave this step green because each failing test writes a
+      # record the map always selects. The step fails unless at least one
+      # record in the shard is complete and passed: a shard without one, such
+      # as when the coverage fixture breaks for every test, proves nothing.
+      - name: Run shard with coverage
+        env:
+          SHARD: ${{ matrix.shard }}
+        run: |
+          set -uo pipefail
+          export SOURDAW_E2E_COVERAGE_DIR="$PWD/e2e-coverage"
+          status=0
+          pnpm test:e2e --shard="$SHARD/12" --reporter=line || status=$?
+          printf 'Playwright exited with status %s\n' "$status"
+          if ! node scripts/e2eCoverageMap.ts --check-records "$SOURDAW_E2E_COVERAGE_DIR"; then
+            printf '::error title=Unusable coverage records::Shard %s wrote no complete, passed coverage record.\n' "$SHARD"
+            exit 1
+          fi
+
+      - name: Upload coverage records
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: e2e-coverage-${{ matrix.shard }}
+          path: e2e-coverage/
+          if-no-files-found: error
+          retention-days: 7
+
+  e2e-coverage-map:
+    name: End-to-end coverage map
+    needs: e2e-coverage
+    if: ${{ !cancelled() && needs.e2e-coverage.result != 'skipped' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Set up pnpm
+        uses: ./.github/actions/setup-pnpm
+        with:
+          package_json_file: package.json
+
+      - name: Set up Node
+        timeout-minutes: 3
+        continue-on-error: true
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Download coverage records
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: e2e-coverage-*
+          path: all-e2e-coverage
+          merge-multiple: true
+
+      - name: Build the coverage map
+        env:
+          COMMIT: ${{ github.sha }}
+        run: node scripts/e2eCoverageMap.ts --records all-e2e-coverage --commit "$COMMIT" --out e2e-coverage-map.json
+
+      - name: Upload the coverage map
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: e2e-coverage-map
+          path: e2e-coverage-map.json
+          if-no-files-found: error
+          retention-days: 14
 
   codeql:
     name: CodeQL
@@ -734,13 +888,13 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Initialise CodeQL
-        uses: github/codeql-action/init@c16c0f3f2812ec4bb3750a5ed64873fe2ce0fbef # codeql-bundle-v2.26.3
+        uses: github/codeql-action/init@52cf1852265d99e9bea071b03366fc777a602909 # codeql-bundle-v2.27.4
         with:
           languages: javascript-typescript
           queries: security-extended
 
       - name: Analyse
-        uses: github/codeql-action/analyze@c16c0f3f2812ec4bb3750a5ed64873fe2ce0fbef # codeql-bundle-v2.26.3
+        uses: github/codeql-action/analyze@52cf1852265d99e9bea071b03366fc777a602909 # codeql-bundle-v2.27.4
 
   secrets:
     name: Secret scan
@@ -959,13 +1113,15 @@ jobs:
 
       - name: Set up pnpm
         if: env.DEPLOY_CREDENTIAL_PRESENT == 'true'
-        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+        uses: ./.github/actions/setup-pnpm
         with:
           package_json_file: package.json
 
       - name: Set up Node
         if: env.DEPLOY_CREDENTIAL_PRESENT == 'true'
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        timeout-minutes: 3
+        continue-on-error: true
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
@@ -1104,6 +1260,8 @@ jobs:
         desktop-measure,
         e2e,
         e2e-report,
+        e2e-coverage,
+        e2e-coverage-map,
         browser-ai-webgpu,
         codeql,
         secrets,

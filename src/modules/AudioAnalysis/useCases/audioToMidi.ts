@@ -1,9 +1,15 @@
-import { addClip, getAllTracks } from '#/modules/Arrangement/useCases';
+import { getAllTracks } from '#/modules/Arrangement/useCases';
 import { getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
-import { addMidiNote } from '#/modules/MIDI/useCases';
-import { readTempoAtBeat } from '#/modules/Transport/stores';
-import { resolveClipLoopOriginAdvance } from '#/utils/clipLoopOrigin';
+import { executeAppActionBatch } from '#/modules/Command/useCases';
+import {
+    projectRevisionMatchesLiveIgnoringSaveWrites,
+    settlePendingProjectWritesAndCaptureRevision,
+} from '#/modules/CrdtDocument/useCases';
+import { readBeatAtSamples, readSecondsAtBeat, readTempoAtBeat } from '#/modules/Transport/stores';
+import { projectAudioLoopPassSegments } from '#/utils/audioSourceTime';
 import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
+import { type AppAction } from '#/utils/handlerContract';
+import { ADD_NOTES_MAX_NOTES_PER_COMMAND } from '#/utils/midiNoteBatchLimits';
 import { frequencyToMidiNote } from '#/utils/pitch';
 import { boundStretchRatio } from '#/utils/stretchRatioBound';
 
@@ -17,6 +23,7 @@ export type AudioToMidiOptions = {
     minInterval?: number;
     targetPitch?: number;
     mode?: 'rhythm' | 'pitched';
+    signal?: AbortSignal;
 };
 
 const FRAME_SIZE = 1024;
@@ -72,21 +79,11 @@ function estimatePitch(data: Float32Array, start: number, length: number, sample
     return sampleRate / bestLag;
 }
 
-type ClipPlaybackFields = {
-    startBeat: number;
-    endBeat: number;
-    audioOffsetBeats?: number;
-    stretchMode?: string;
-    stretchRatio?: number;
-    loopEnabled?: boolean;
-    loopLength?: number;
-    loopOriginBeat?: number;
-};
+type ClipPlaybackFields = ReturnType<typeof getAllTracks>[number]['clips'][number];
 
 type AudibleSourceSpan = {
-    iteration: number;
-    /** The beat inside the pass where this segment's sound begins, pre-roll included. */
-    passStartBeats: number;
+    /** Absolute song second where this source read first sounds, pre-roll included. */
+    timelineStartSec: number;
     /** The first source second this segment reads. */
     startSec: number;
     /** The source seconds this segment reads. */
@@ -97,28 +94,19 @@ type AudibleClipWindow = {
     clipBeats: number;
     secondsPerBeat: number;
     stretchRatio: number;
-    loopLengthBeats: number;
     spans: AudibleSourceSpan[];
 };
 
 /**
- * The source spans the offline scheduler would play for this clip: trim, slip,
- * stretch, and loop, on a flat tempo. Null when the clip has no positive length.
- *
- * A looped clip's passes read the loop region the clip was looped with, in
- * source beats (`audioOffsetBeats - (startBeat - loopOriginBeat)`, #4988),
- * entering at the trim advance's phase — the same read
- * `projectOfflineAudioClipPlaybacks` and the live scheduler recover — so one
- * pass entered past the region head projects as its region tail and wrapped
- * head, two reads, and material past the region end is never read. An
- * unanchored clip — or a stale-anchored one with the loop off — advances zero,
- * which puts the region at the offset with the entry at the region head: the
- * pre-anchor single read, exactly as before.
+ * The physical source spans live playback reads for a raw clip. The shared
+ * projector owns its canonical entry, wrap, and original pass seams; the
+ * Transport reader owns the tempo map along each destination span.
  */
 function projectAudibleClipWindow(
     clip: ClipPlaybackFields,
     tempo: number,
-    bufferDurationSec: number
+    bufferDurationSec: number,
+    secondsAtBeat: (beat: number) => number
 ): AudibleClipWindow | null {
     const clipBeats = clip.endBeat - clip.startBeat;
     if (!Number.isFinite(clipBeats) || clipBeats <= 0) {
@@ -134,44 +122,26 @@ function projectAudibleClipWindow(
     });
     const loopLen = loop.loopLengthBeats;
 
-    const loopAdvanceBeats = resolveClipLoopOriginAdvance({
-        startBeat: clip.startBeat,
-        loopOriginBeat: clip.loopOriginBeat,
-        loopEnabled: clip.loopEnabled ?? false,
-    });
-    const regionStartBeats = (clip.audioOffsetBeats ?? 0) - loopAdvanceBeats;
-    const regionEntryBeats = ((loopAdvanceBeats % loopLen) + loopLen) % loopLen;
-
-    // The segments one pass reads, mirroring the offline projector's
-    // `buildPassSegments`: the region tail from the entry phase, then the
-    // wrapped region head.
-    function buildPassSegments(
-        passLengthBeats: number
-    ): Array<{ startBeat: number; endBeat: number; sourceStartBeats: number }> {
-        if (regionEntryBeats <= 0) {
-            return [{ startBeat: 0, endBeat: passLengthBeats, sourceStartBeats: regionStartBeats }];
-        }
-        const headSegmentEndBeat = Math.min(passLengthBeats, loopLen - regionEntryBeats);
-        const segments = [
-            { startBeat: 0, endBeat: headSegmentEndBeat, sourceStartBeats: regionStartBeats + regionEntryBeats },
-        ];
-        if (passLengthBeats > headSegmentEndBeat) {
-            segments.push({
-                startBeat: headSegmentEndBeat,
-                endBeat: passLengthBeats,
-                sourceStartBeats: regionStartBeats,
-            });
-        }
-        return segments;
-    }
-
     const spans: AudibleSourceSpan[] = [];
     for (let iteration = 0; iteration < loop.iterationCount && iteration * loopLen < clipBeats; iteration++) {
-        const remainingBeats = Math.min(loopLen, clipBeats - iteration * loopLen);
-        for (const segment of buildPassSegments(remainingBeats)) {
-            const segmentSourceStartSec = segment.sourceStartBeats * secondsPerBeat;
+        const iterationStartBeat = clip.startBeat + iteration * loopLen;
+        const iterationEndBeat = Math.min(clip.endBeat, iterationStartBeat + loopLen);
+        const segments = projectAudioLoopPassSegments({
+            clip,
+            loopLengthBeats: loopLen,
+            iterationStartBeat,
+            iterationEndBeat,
+            stretchRatio,
+            tempoAtClipStart: tempo,
+            secondsAtBeat,
+        });
+        for (const segment of segments) {
+            const segmentSourceStartSec = segment.sourceStartSeconds;
+            const segmentStartSec = secondsAtBeat(iterationStartBeat + segment.startOffsetBeats);
+            const segmentEndSec = secondsAtBeat(iterationStartBeat + segment.endOffsetBeats);
             const segmentPreRollSec = Math.max(0, -segmentSourceStartSec) / stretchRatio;
-            const audibleDestSec = (segment.endBeat - segment.startBeat) * secondsPerBeat - segmentPreRollSec;
+            const timelineStartSec = segmentStartSec + segmentPreRollSec;
+            const audibleDestSec = segmentEndSec - timelineStartSec;
             if (!(audibleDestSec > 0)) {
                 continue;
             }
@@ -182,8 +152,7 @@ function projectAudibleClipWindow(
                 continue;
             }
             spans.push({
-                iteration,
-                passStartBeats: segment.startBeat + segmentPreRollSec / secondsPerBeat,
+                timelineStartSec,
                 startSec: segmentBufferStartSec,
                 durationSec: sourceDurationSec,
             });
@@ -194,7 +163,6 @@ function projectAudibleClipWindow(
         clipBeats,
         secondsPerBeat,
         stretchRatio,
-        loopLengthBeats: loopLen,
         spans,
     };
 }
@@ -254,17 +222,25 @@ function detectPitchForOnsets(
 
 /**
  * Detect onsets in `options.clipId`'s cached audio and write them as MIDI notes on a
- * (possibly newly-created) MIDI track. Returns whether a MIDI clip was actually produced,
- * so callers can distinguish a real conversion from a silent no-op (clip/buffer missing, no
- * onsets detected, or MIDI track resolution failed) or a failed write (e.g. `addMidiNote`
- * throwing because the MIDI store isn't initialized) instead of assuming success whenever the
- * call completes. Like `handlePolyMidi`'s conversion path, the fallible body is caught here so
- * callers only ever need to branch on the boolean return, never on a thrown error.
+ * (possibly newly-created) MIDI track. Success means the complete grouped creation
+ * committed; missing input, no onsets and refused or failed writes return false.
  */
-export function audioToMidi(options: AudioToMidiOptions): boolean {
-    const { clipId, trackId, sensitivity = 0.5, minInterval = 0.25, targetPitch = 36, mode = 'rhythm' } = options;
+export async function audioToMidi(options: AudioToMidiOptions): Promise<boolean> {
+    const {
+        clipId,
+        trackId,
+        sensitivity = 0.5,
+        minInterval = 0.25,
+        targetPitch = 36,
+        mode = 'rhythm',
+        signal,
+    } = options;
 
     try {
+        if (signal?.aborted) {
+            return false;
+        }
+        const projectRevision = settlePendingProjectWritesAndCaptureRevision();
         const clip = getAllTracks()
             .flatMap((time) => time.clips)
             .find((context) => context.id === clipId);
@@ -279,7 +255,8 @@ export function audioToMidi(options: AudioToMidiOptions): boolean {
         }
 
         const tempo = readTempoAtBeat({ beat: clip.startBeat });
-        const audible = projectAudibleClipWindow(clip, tempo, buffer.duration);
+        const secondsAtBeat = (beat: number) => readSecondsAtBeat({ beat });
+        const audible = projectAudibleClipWindow(clip, tempo, buffer.duration, secondsAtBeat);
         if (!audible) {
             return false;
         }
@@ -299,10 +276,8 @@ export function audioToMidi(options: AudioToMidiOptions): boolean {
             }
 
             for (const onset of onsets) {
-                const noteStartBeat =
-                    span.iteration * audible.loopLengthBeats +
-                    span.passStartBeats +
-                    onset.timeSec / audible.stretchRatio / audible.secondsPerBeat;
+                const onsetSongSeconds = span.timelineStartSec + onset.timeSec / audible.stretchRatio;
+                const noteStartBeat = readBeatAtSamples({ samples: onsetSongSeconds, sampleRate: 1 }) - clip.startBeat;
                 if (noteStartBeat < 0 || noteStartBeat >= audible.clipBeats) {
                     continue;
                 }
@@ -314,25 +289,24 @@ export function audioToMidi(options: AudioToMidiOptions): boolean {
             return false;
         }
 
-        const midiTrackId = resolveMidiTrackId(trackId, `${clip.name} (MIDI)`);
-        if (!midiTrackId) {
-            return false;
-        }
-
+        const destination = resolveMidiTrackId(trackId, `${clip.name} (MIDI)`);
+        const midiClipId = `clip-audio-midi-${crypto.randomUUID()}`;
         const clipStartBeat = clip.startBeat;
         const endBeat = clip.endBeat;
-
-        const midiClip = addClip({
-            trackId: midiTrackId,
-            startBeat: clipStartBeat,
-            endBeat: Math.ceil(endBeat),
-            name: `${clip.name} → MIDI`,
-            type: 'midi',
-        });
-
-        if (!midiClip) {
-            return false;
-        }
+        const actions: AppAction[] = [
+            ...destination.actions,
+            {
+                type: 'addClip',
+                payload: {
+                    id: midiClipId,
+                    trackId: destination.trackId,
+                    startBeat: clipStartBeat,
+                    endBeat: Math.ceil(endBeat),
+                    name: `${clip.name} → MIDI`,
+                    type: 'midi',
+                },
+            },
+        ];
 
         let maxAmplitude = 1e-8;
         for (const output of transcribed) {
@@ -341,6 +315,7 @@ export function audioToMidi(options: AudioToMidiOptions): boolean {
             }
         }
 
+        const notes = [];
         for (let index = 0; index < transcribed.length; index++) {
             const onset = transcribed[index]!;
             const startBeat = onset.startBeat;
@@ -349,10 +324,24 @@ export function audioToMidi(options: AudioToMidiOptions): boolean {
             const velocity = Math.max(1, Math.min(127, Math.round((onset.amplitude / maxAmplitude) * 127)));
             const pitch = mode === 'pitched' && onset.pitch !== undefined ? onset.pitch : targetPitch;
 
-            addMidiNote(midiClip.id, pitch, startBeat, duration, velocity);
+            notes.push({ pitch, startBeat, duration, velocity });
         }
-
-        return true;
+        for (let offset = 0; offset < notes.length; offset += ADD_NOTES_MAX_NOTES_PER_COMMAND) {
+            actions.push({
+                type: 'addNotes',
+                payload: { clipId: midiClipId, notes: notes.slice(offset, offset + ADD_NOTES_MAX_NOTES_PER_COMMAND) },
+            });
+        }
+        const result = await executeAppActionBatch(actions, {
+            groupId: `audio-to-midi-${crypto.randomUUID()}`,
+            groupLabel: 'Convert audio to MIDI',
+            source: 'manual',
+            requireCompensation: true,
+            signal,
+            shouldExecute: () =>
+                signal?.aborted !== true && projectRevisionMatchesLiveIgnoringSaveWrites(projectRevision),
+        });
+        return result.status === 'committed' || result.status === 'committed-with-warning';
     } catch {
         return false;
     }

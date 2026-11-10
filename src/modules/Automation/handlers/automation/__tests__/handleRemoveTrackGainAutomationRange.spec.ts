@@ -89,6 +89,17 @@ describe('handleRemoveTrackGainAutomationRange — undo across the widened ceili
         expect(automationStore.value?.lanes).toHaveLength(0);
     });
 
+    it('names the undo entry in bus terms for the section it lifted', () => {
+        const track = primeStores(FADER_MAX_GAIN);
+        const action = makeAction(track);
+        const described = handleRemoveTrackGainAutomationRange.describe?.({
+            ...action,
+            payload: { ...action.payload, sectionName: 'Chorus Two' },
+        });
+
+        expect(described?.label).toBe('Restore bus gains outside Chorus Two');
+    });
+
     it('still refuses when the lane in the document is not the one the lift wrote', () => {
         const track = primeStores(FADER_MAX_GAIN);
         const lane = automationStore.value!.lanes[0]!;

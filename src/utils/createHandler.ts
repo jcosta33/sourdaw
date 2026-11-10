@@ -46,6 +46,8 @@ type HandlerConfig<ActionType extends AppAction['type']> = {
     afterRedoReplay?: (action: Extract<AppAction, { type: ActionType }>) => void;
     isNoop?: (action: Extract<AppAction, { type: ActionType }>) => boolean;
     validateSessionEntry?: (entry: HandlerSessionActionEntry) => boolean;
+    /** See `ActionHandlerCommon.restoreSessionEntry`. */
+    restoreSessionEntry?: (entry: HandlerSessionActionEntry) => void;
     requiresAbortCompensation?: boolean;
     executionKind?: 'project' | 'runtime';
     batchExecution?: 'singleton';
@@ -100,6 +102,7 @@ export function createHandler<ActionType extends AppAction['type']>(
         afterRedoReplay: config.afterRedoReplay,
         isNoop: config.isNoop,
         validateSessionEntry: config.validateSessionEntry,
+        restoreSessionEntry: config.restoreSessionEntry,
         requiresAbortCompensation: config.requiresAbortCompensation,
         executionKind: config.executionKind,
         batchExecution,

@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { logger } from '#/infra/logger/appLogger';
 import { getArrangementHandlers } from '#/modules/Arrangement/useCases';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
@@ -31,6 +32,8 @@ import { materializeActionStateGuards } from '../materializeActionStateGuards';
 import { getPlanningProviderSchemaContract } from '../planningProviderSchema';
 import { type planPromptActions } from '../planPromptActions';
 import { sendChatMessage } from '../sendChatMessage';
+
+registerDeviceEnginePorts();
 
 type PlanPromptActionsInput = Parameters<typeof planPromptActions>[0];
 type PreparedStemReadiness = 'ready' | 'missing' | 'cleanup-pending';
@@ -126,10 +129,12 @@ const STALE_CANCELLATION_WARNING =
 let plannedRunId: string | null = null;
 
 const mocks = vi.hoisted(() => ({
+    stopMeasuredPreviewAudition: vi.fn(async () => ({ status: 'idle' })),
     aiBackendPreference: { value: 'auto' },
     appendChatMessage: vi.fn(),
     captureProjectRevision: vi.fn(),
     settlePendingProjectWritesAndCaptureRevision: vi.fn(),
+    projectRevisionMatchesLiveIgnoringSaveWrites: vi.fn<(expectedRevision: string) => boolean>(),
     chatState: { value: { chatMode: 'chat', isGenerating: false, messages: [] } },
     compileAgentActionExecution: vi.fn(),
     describeAgentRiskApproval: vi.fn(),
@@ -152,6 +157,8 @@ const mocks = vi.hoisted(() => ({
     updateChatMessage: vi.fn(),
 }));
 
+vi.mock('../stopMeasuredPreviewAudition', () => ({ stopMeasuredPreviewAudition: mocks.stopMeasuredPreviewAudition }));
+
 vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Command/useCases')>()),
     executeUserAppAction: vi.fn(),
@@ -164,6 +171,7 @@ vi.mock('#/modules/CrdtDocument/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/CrdtDocument/useCases')>()),
     captureProjectRevision: mocks.captureProjectRevision,
     settlePendingProjectWritesAndCaptureRevision: mocks.settlePendingProjectWritesAndCaptureRevision,
+    projectRevisionMatchesLiveIgnoringSaveWrites: mocks.projectRevisionMatchesLiveIgnoringSaveWrites,
     DOC_BRANCHES: '__branches__',
     DOC_PREFIX_ROOT: 'root',
     captureActiveBranchReference: vi.fn(),
@@ -696,6 +704,11 @@ describe('sendChatMessage retained-provider selection', () => {
         mocks.chatState.value = { chatMode: 'chat', isGenerating: false, messages: [] };
         mocks.captureProjectRevision.mockReturnValue('revision-fixture');
         mocks.settlePendingProjectWritesAndCaptureRevision.mockReturnValue('revision-fixture');
+        // Revisions here are labels with no document behind them, so the save-insensitive question is
+        // answered as equality with the live label; answerAfterSave.spec.ts asks it over a real save.
+        mocks.projectRevisionMatchesLiveIgnoringSaveWrites.mockImplementation(
+            (expectedRevision) => expectedRevision === mocks.captureProjectRevision()
+        );
         mocks.describeAgentRiskApproval.mockReturnValue('Risk approval required.');
         mocks.describePendingActionConfirmation.mockReturnValue({
             actionLabels: ['Fixture action'],
@@ -708,7 +721,12 @@ describe('sendChatMessage retained-provider selection', () => {
         mocks.getCloudProviderInfo.mockReturnValue(null);
         mocks.isCloudAvailable.mockReturnValue(false);
         mocks.getLlmEngine.mockReturnValue(null);
-        mocks.proposePendingActionConfirmation.mockReturnValue({ id: 'confirmation-fixture' });
+        // The shared persistence caller reads the materialized approval snapshot.
+        // Carry only the input's optional metric state; this supplies no proof or permit.
+        mocks.proposePendingActionConfirmation.mockImplementation((input) => ({
+            id: 'confirmation-fixture',
+            approvalSnapshot: { metricGoalState: input.metricGoalState },
+        }));
         mocks.resolveBackend.mockReturnValue('webllm');
         llmStatusStore.set({ state: 'idle' });
     });
@@ -758,22 +776,26 @@ describe('sendChatMessage retained-provider selection', () => {
             'No AI backend available. Configure a hosted provider in the desktop app or use a WebGPU-capable browser.'
         );
 
+        expect(mocks.stopMeasuredPreviewAudition).not.toHaveBeenCalled();
         expect(readAgentRunState().runs).toEqual([]);
         expect(mocks.planPromptActions).not.toHaveBeenCalled();
     });
 
     it('admits prompt planning without a backend and records no model route or provider usage', async () => {
         mocks.resolveBackend.mockReturnValue('none');
-        mocks.planPromptActions.mockResolvedValue({
-            context: {},
-            result: {
-                actions: [],
-                planningOutcome: {
-                    kind: 'denied',
-                    reason: 'No AI backend is available for this request. Configure a hosted provider in the desktop app or use a WebGPU-capable browser.',
+        mocks.planPromptActions.mockImplementation(async () => {
+            expect(mocks.stopMeasuredPreviewAudition).toHaveBeenCalledTimes(1);
+            return {
+                context: {},
+                result: {
+                    actions: [],
+                    planningOutcome: {
+                        kind: 'denied',
+                        reason: 'No AI backend is available for this request. Configure a hosted provider in the desktop app or use a WebGPU-capable browser.',
+                    },
                 },
-            },
-            projectRevision: 'revision-fixture',
+                projectRevision: 'revision-fixture',
+            };
         });
 
         await expect(sendChatMessage('make the chorus warmer', { mode: 'apply' })).resolves.toBeUndefined();

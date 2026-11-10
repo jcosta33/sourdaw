@@ -12,6 +12,10 @@ vi.mock('../../../stores/resolveEligibleClipWriteTarget', () => ({
     resolveEligibleClipWriteTarget: mocks.resolveEligibleClipWriteTarget,
 }));
 
+import { defaultTransportState, readSecondsAtBeat, tempoMapStore, transportStore } from '#/modules/Transport/stores';
+import { projectAudioLoopPassSegments } from '#/utils/audioSourceTime';
+import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
+
 import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { type Clip, type Track } from '../../../models/Track';
@@ -38,10 +42,205 @@ function capturedMapper(): (track: Track) => Track {
     return mapper;
 }
 
+/** The source second the live and offline readers play at `beat` inside an unlooped clip. */
+function readerSourceSecondsAt(clip: Clip, beat: number): number {
+    const segment = projectAudioLoopPassSegments({
+        clip,
+        loopLengthBeats: clip.endBeat - clip.startBeat,
+        iterationStartBeat: beat,
+        iterationEndBeat: clip.endBeat,
+        stretchRatio: clip.stretchMode && clip.stretchMode !== 'off' ? (clip.stretchRatio ?? 1) : 1,
+        tempoAtClipStart: 120,
+        secondsAtBeat: (at) => readSecondsAtBeat({ beat: at }),
+    })[0];
+    if (!segment) {
+        throw new Error('the readers project no segment for the clip');
+    }
+    return segment.sourceStartSeconds;
+}
+
+/** The source second the readers play at `beat`, on the loop grid the scheduler projects for the clip. */
+function loopedReaderSourceSecondsAt(clip: Clip, beat: number): number {
+    const loop = projectClipLoopExpansion({
+        clipDurationBeats: clip.endBeat - clip.startBeat,
+        configuredLoopLengthBeats: clip.loopLength,
+        loopEnabled: clip.loopEnabled ?? false,
+    });
+    const segment = projectAudioLoopPassSegments({
+        clip,
+        loopLengthBeats: loop.loopLengthBeats,
+        iterationStartBeat: beat,
+        iterationEndBeat: clip.endBeat,
+        stretchRatio: clip.stretchMode && clip.stretchMode !== 'off' ? (clip.stretchRatio ?? 1) : 1,
+        tempoAtClipStart: 60,
+        secondsAtBeat: (at) => readSecondsAtBeat({ beat: at }),
+    })[0];
+    if (!segment) {
+        throw new Error('the readers project no segment for the clip');
+    }
+    return segment.sourceStartSeconds;
+}
+
 describe('crossfadeClips', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.resolveEligibleClipWriteTarget.mockReturnValue({ status: 'eligible', trackId: 't1', clipId: 'a' });
+        tempoMapStore.set({ changes: [] });
+        transportStore.set({ ...defaultTransportState, tempo: 60 });
+    });
+
+    describe('canonical clip B source entry', () => {
+        function crossfadeB(clipB: Clip, clipAEnd: number, durationBeats: number): Clip {
+            const track = makeTrack([makeClip('a', 0, clipAEnd), clipB]);
+            mocks.getTrackState.mockReturnValue({ tracks: [track], selectedTrackId: 't1' });
+            expect(crossfadeClips('a', 'b', durationBeats)).toBe(true);
+            const result = capturedMapper()(track).clips.find((clip) => clip.id === 'b');
+            if (!result) {
+                throw new Error('expected clip B in the mapper result');
+            }
+            return result;
+        }
+
+        it('retreats the entry by the source seconds the retreat spans across a tempo change', () => {
+            // 120 BPM to beat 8, then 60. Clip B retreats from 8.25 to 7.75:
+            // 0.25 beat at 120 plus 0.25 beat at 60 is 0.375 s of source.
+            tempoMapStore.set({
+                changes: [
+                    { id: 'tempo-a', beat: 0, tempo: 120, curve: 'instant' },
+                    { id: 'tempo-b', beat: 8, tempo: 60, curve: 'instant' },
+                ],
+            });
+            const before = makeClip('b', 8.25, 12, {
+                audioOffsetBeats: 4,
+                audioOffsetSeconds: 2,
+                audioUnwrappedOffsetSeconds: 2.5,
+            });
+
+            const after = crossfadeB(before, 8, 1);
+
+            expect(after.startBeat).toBe(7.75);
+            expect(after.audioOffsetSeconds).toBeCloseTo(1.625, 12);
+            expect(after.audioUnwrappedOffsetSeconds).toBeCloseTo(2.125, 12);
+            // The material at the old start, and downstream of it, stays on its beat.
+            expect(readerSourceSecondsAt(after, 8.25)).toBeCloseTo(readerSourceSecondsAt(before, 8.25), 12);
+            expect(readerSourceSecondsAt(after, 10)).toBeCloseTo(readerSourceSecondsAt(before, 10), 12);
+        });
+
+        it('bounds the retreat by the canonical pre-roll, not the legacy beat offset', () => {
+            // 0.25 s of media before the entry at 60 BPM allows a quarter beat,
+            // though the stale beat offset would allow four.
+            const after = crossfadeB(makeClip('b', 10, 14, { audioOffsetBeats: 4, audioOffsetSeconds: 0.25 }), 10, 2);
+
+            expect(after.startBeat).toBe(9.75);
+            expect(after.fadeInBeats).toBe(1.25);
+            expect(after.audioOffsetSeconds).toBeCloseTo(0, 12);
+            expect(after.audioOffsetSeconds).toBeGreaterThanOrEqual(0);
+        });
+
+        it('bounds a stretched retreat by the pre-roll the stretched readers consume', () => {
+            // 0.5 s of media before the entry at ratio 2 lasts 0.25 s of song
+            // time, a quarter beat at 60 BPM, though the crossfade asks for one.
+            const before = makeClip('b', 10, 14, {
+                audioOffsetSeconds: 0.5,
+                stretchMode: 'timestretch',
+                stretchRatio: 2,
+            });
+
+            const after = crossfadeB(before, 10, 2);
+
+            expect(after.startBeat).toBe(9.75);
+            expect(after.audioOffsetSeconds).toBeCloseTo(0, 12);
+            expect(after.audioOffsetSeconds).toBeGreaterThanOrEqual(0);
+            expect(readerSourceSecondsAt(after, 10)).toBeCloseTo(0.5, 12);
+        });
+
+        it('keeps a signed leading-silence entry and its start in place', () => {
+            const after = crossfadeB(makeClip('b', 10, 14, { audioOffsetBeats: 1, audioOffsetSeconds: -0.5 }), 10, 2);
+
+            expect(after.startBeat).toBe(10);
+            expect(after.audioOffsetSeconds).toBe(-0.5);
+            expect(after.fadeInBeats).toBe(1);
+        });
+
+        it('retreats a stretched entry by the source the stretched readers consume', () => {
+            const before = makeClip('b', 10, 14, {
+                audioOffsetSeconds: 3,
+                audioUnwrappedOffsetSeconds: 2,
+                stretchMode: 'timestretch',
+                stretchRatio: 2,
+            });
+
+            const after = crossfadeB(before, 10, 1);
+
+            expect(after.startBeat).toBe(9.5);
+            expect(after.audioOffsetSeconds).toBeCloseTo(2, 12);
+            expect(readerSourceSecondsAt(after, 10)).toBeCloseTo(3, 12);
+            // The unwrapped media entry moves by the 0.5 s of song time the
+            // retreat spans, without the rate the audible entry moves by.
+            expect(after.audioUnwrappedOffsetSeconds).toBeCloseTo(1.5, 12);
+        });
+
+        it('keeps a looped stretched clip B on its loop phase at every beat from its old start', () => {
+            const before = makeClip('b', 4, 8, {
+                stretchMode: 'timestretch',
+                stretchRatio: 2,
+                loopEnabled: true,
+                loopLength: 2,
+                loopOriginBeat: 4,
+                audioLoopPassOriginBeat: 4,
+                audioOffsetBeats: 2,
+                audioOffsetSeconds: 2,
+                audioUnwrappedOffsetSeconds: 2,
+                audioLoopStartSeconds: 2,
+                audioLoopPassEntrySeconds: 2,
+            });
+            const beats = [4, 4.5, 5, 5.5, 6, 6.5, 7, 7.5];
+            const readsBefore = beats.map((beat) => loopedReaderSourceSecondsAt(before, beat));
+            expect(readsBefore).toEqual([2, 3, 4, 5, 2, 3, 4, 5]);
+
+            const after = crossfadeB(before, 4, 1);
+
+            expect(after.startBeat).toBe(3.5);
+            for (const [index, beat] of beats.entries()) {
+                expect(loopedReaderSourceSecondsAt(after, beat), `beat ${beat}`).toBeCloseTo(readsBefore[index]!, 12);
+            }
+            // The revealed half beat plays the stretched handle before the entry.
+            expect(loopedReaderSourceSecondsAt(after, 3.5)).toBeCloseTo(1, 12);
+        });
+
+        it('keeps an independent first entry by not retreating past the loop part it opens', () => {
+            // The entry at 3 s is off the repeat grid (the head reads 0 s at 4,
+            // so 1 s at 5). Retreating into the previous pass would hand beat 5
+            // back to the grid, so the retreat stops at the part start, 4.
+            const before = makeClip('b', 5, 9, {
+                loopEnabled: true,
+                loopLength: 2,
+                loopOriginBeat: 4,
+                audioLoopPassOriginBeat: 4,
+                audioOffsetSeconds: 3,
+                audioUnwrappedOffsetSeconds: 3,
+                audioLoopStartSeconds: 0,
+                audioLoopPassEntrySeconds: 0,
+            });
+            const beats = [5, 5.5, 6, 7, 8, 8.5];
+            const readsBefore = beats.map((beat) => loopedReaderSourceSecondsAt(before, beat));
+
+            const after = crossfadeB(before, 5, 4);
+
+            expect(after.startBeat).toBe(4);
+            expect(after.audioOffsetSeconds).toBeCloseTo(2, 12);
+            for (const [index, beat] of beats.entries()) {
+                expect(loopedReaderSourceSecondsAt(after, beat), `beat ${beat}`).toBeCloseTo(readsBefore[index]!, 12);
+            }
+        });
+
+        it('mints no canonical fields on a beat-only clip B', () => {
+            const after = crossfadeB(makeClip('b', 4, 8, { audioOffsetBeats: 2 }), 4, 0.5);
+
+            expect(after).toMatchObject({ startBeat: 3.75, audioOffsetBeats: 1.75 });
+            expect(Object.hasOwn(after, 'audioOffsetSeconds')).toBe(false);
+            expect(Object.hasOwn(after, 'audioUnwrappedOffsetSeconds')).toBe(false);
+        });
     });
 
     it('does nothing with no state', () => {
@@ -352,43 +551,36 @@ describe('crossfadeClips', () => {
         expect(clipA).toMatchObject({ endBeat: 4.5, fadeOutBeats: 0.5 });
     });
 
-    it('clamps MIDI clip B extension to available pre-roll handle when handle is smaller than halfDuration', () => {
-        const clips = [
-            makeClip('a', 0, 4, { type: 'midi' }),
-            makeClip('b', 4, 8, { type: 'midi', midiOffsetBeats: 0.1 }),
-        ];
+    it.each([
+        { name: 'MIDI clip A and audio clip B', a: { type: 'midi' as const }, b: {} },
+        { name: 'audio clip A and MIDI clip B', a: {}, b: { type: 'midi' as const, midiOffsetBeats: 2 } },
+        {
+            name: 'two MIDI clips',
+            a: { type: 'midi' as const },
+            b: { type: 'midi' as const, midiOffsetBeats: 2 },
+        },
+    ])('refuses $name: MIDI playback reads no fades', ({ a, b }) => {
+        const clips = [makeClip('a', 0, 4, a), makeClip('b', 4, 8, b)];
         mocks.getTrackState.mockReturnValue({ tracks: [makeTrack(clips)], selectedTrackId: 't1' });
 
-        expect(crossfadeClips('a', 'b', 1.0)).toBe(true);
-
-        const result = capturedMapper()(makeTrack(clips));
-        const clipA = result.clips.find((context) => context.id === 'a');
-        const clipB = result.clips.find((context) => context.id === 'b');
-        // Pre-roll handle is 0.1 beats -> clipB start clamps to 3.9, midiOffsetBeats clamps to 0.0
-        // clipA ends at 4.5 -> actualOverlap is 4.5 - 3.9 = 0.6
-        expect(clipB?.startBeat).toBeCloseTo(3.9);
-        expect(clipB?.fadeInBeats).toBeCloseTo(0.6);
-        expect(clipB?.midiOffsetBeats).toBeCloseTo(0);
-        expect(clipA?.endBeat).toBeCloseTo(4.5);
-        expect(clipA?.fadeOutBeats).toBeCloseTo(0.6);
+        expect(crossfadeClips('a', 'b', 0.5)).toBe(false);
+        expect(mocks.mapAllTracks).not.toHaveBeenCalled();
     });
 
-    it('clamps MIDI clip B start at its original start when midiOffsetBeats is 0 (zero pre-roll handle)', () => {
-        const clips = [
-            makeClip('a', 0, 4, { type: 'midi' }),
-            makeClip('b', 4, 8, { type: 'midi', midiOffsetBeats: 0 }),
-        ];
-        mocks.getTrackState.mockReturnValue({ tracks: [makeTrack(clips)], selectedTrackId: 't1' });
+    it('refuses audio clips on different tracks', () => {
+        const trackB = TrackDummy.create({ id: 't2', clips: [makeClip('b', 4, 8, { audioOffsetBeats: 2 })] });
+        mocks.getTrackState.mockReturnValue({
+            tracks: [makeTrack([makeClip('a', 0, 4)]), trackB],
+            selectedTrackId: 't1',
+        });
+        mocks.resolveEligibleClipWriteTarget.mockImplementation(({ clipId }) => ({
+            status: 'eligible',
+            trackId: clipId === 'a' ? 't1' : 't2',
+            clipId,
+        }));
 
-        expect(crossfadeClips('a', 'b', 1.0)).toBe(true);
-
-        const result = capturedMapper()(makeTrack(clips));
-        const clipA = result.clips.find((context) => context.id === 'a');
-        const clipB = result.clips.find((context) => context.id === 'b');
-        // Cannot extend earlier than 4 -> startBeat remains 4, midiOffsetBeats remains 0
-        // clipA ends at 4.5 -> actualOverlap is 4.5 - 4.0 = 0.5
-        expect(clipB).toMatchObject({ startBeat: 4, fadeInBeats: 0.5, midiOffsetBeats: 0 });
-        expect(clipA).toMatchObject({ endBeat: 4.5, fadeOutBeats: 0.5 });
+        expect(crossfadeClips('a', 'b', 0.5)).toBe(false);
+        expect(mocks.mapAllTracks).not.toHaveBeenCalled();
     });
 
     it('clamps clip B start at beat zero when source offset allows extending past 0', () => {
@@ -405,20 +597,6 @@ describe('crossfadeClips', () => {
         // clipA ends at 0.25 + 0.5 = 0.75 -> overlap is 0.75 - 0 = 0.75
         expect(clipB).toMatchObject({ startBeat: 0, fadeInBeats: 0.75, audioOffsetBeats: 0.75 });
         expect(clipA).toMatchObject({ endBeat: 0.75, fadeOutBeats: 0.75 });
-    });
-
-    it('updates midiOffsetBeats when extending a MIDI clip B', () => {
-        const clips = [
-            makeClip('a', 0, 4, { type: 'midi' }),
-            makeClip('b', 4, 8, { type: 'midi', midiOffsetBeats: 2 }),
-        ];
-        mocks.getTrackState.mockReturnValue({ tracks: [makeTrack(clips)], selectedTrackId: 't1' });
-
-        expect(crossfadeClips('a', 'b', 0.5)).toBe(true);
-
-        const result = capturedMapper()(makeTrack(clips));
-        const clipB = result.clips.find((context) => context.id === 'b');
-        expect(clipB).toMatchObject({ startBeat: 3.75, fadeInBeats: 0.5, midiOffsetBeats: 1.75 });
     });
 
     it('does not extend untrimmed clip B earlier when audioOffsetBeats is undefined', () => {
@@ -517,29 +695,6 @@ describe('crossfadeClips', () => {
         expect(clipB.loopOriginBeat).toBe(8);
         const advance = clipB.startBeat - (clipB.loopOriginBeat ?? clipB.startBeat);
         expect((clipB.audioOffsetBeats ?? 0) - advance).toBe(4);
-    });
-
-    it('leaves a looped MIDI clip B anchor untouched as its offset retreats by the raw delta', () => {
-        // The MIDI offset retreats by the raw clipBDelta, so the carried
-        // anchor derives the same advance as before the crossfade: shifting
-        // it would slide the region. The anchor rides unchanged.
-        const clips = [
-            makeClip('a', 0, 8, { type: 'midi' }),
-            makeClip('b', 8, 16, {
-                type: 'midi',
-                midiOffsetBeats: 4,
-                loopEnabled: true,
-                loopLength: 4,
-                loopOriginBeat: 8,
-            }),
-        ];
-        mocks.getTrackState.mockReturnValue({ tracks: [makeTrack(clips)], selectedTrackId: 't1' });
-
-        expect(crossfadeClips('a', 'b', 1.0)).toBe(true);
-
-        const result = capturedMapper()(makeTrack(clips));
-        const clipB = result.clips.find((context) => context.id === 'b');
-        expect(clipB).toMatchObject({ startBeat: 7.5, midiOffsetBeats: 3.5, loopOriginBeat: 8 });
     });
 });
 

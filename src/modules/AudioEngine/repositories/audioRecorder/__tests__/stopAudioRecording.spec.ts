@@ -172,7 +172,7 @@ describe('stopAudioRecording', () => {
         return { worker, worklet };
     }
 
-    it('returns false without a terminal callback when setup fails after session registration', async () => {
+    it('rejects without a terminal callback when setup fails after session registration', async () => {
         class InitFailWorker extends FakeWorker {
             override postMessage = vi.fn(() => {
                 throw new Error('worker init failed');
@@ -181,7 +181,9 @@ describe('stopAudioRecording', () => {
         vi.stubGlobal('Worker', InitFailWorker);
         const onTerminal = vi.fn();
 
-        await expect(startAudioRecording('track-init-fail', onTerminal)).resolves.toBe(false);
+        await expect(startAudioRecording('track-init-fail', onTerminal)).rejects.toMatchObject({
+            cause: new Error('worker init failed'),
+        });
 
         expect(onTerminal).not.toHaveBeenCalled();
         expect(activeSessions.get('track-init-fail')).toBeUndefined();

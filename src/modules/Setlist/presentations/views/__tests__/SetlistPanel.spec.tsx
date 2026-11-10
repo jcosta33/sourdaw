@@ -43,13 +43,13 @@ vi.mock('../../../useCases/setlist/toggleAutoAdvance', () => ({
     toggleAutoAdvance: vi.fn(),
 }));
 vi.mock('../../../useCases/setlist/nextItem', () => ({
-    nextItem: vi.fn(),
+    nextItem: vi.fn(() => Promise.resolve()),
 }));
 vi.mock('../../../useCases/setlist/previousItem', () => ({
-    previousItem: vi.fn(),
+    previousItem: vi.fn(() => Promise.resolve()),
 }));
 vi.mock('../../../useCases/setlist/goToItem', () => ({
-    goToItem: vi.fn(),
+    goToItem: vi.fn(() => Promise.resolve()),
 }));
 // Wrap (rather than replace) the real implementations so existing readout
 // assertions keep exercising real computed values while F11's regression
@@ -246,8 +246,8 @@ describe('SetlistPanel', () => {
             render(<SetlistPanel />);
             const toggle = screen.getByRole('button', { name: 'Auto-advance: on' });
             expect(toggle.getAttribute('aria-pressed')).toBe('true');
-            // secondary variant maps to a filled surface with light text
-            expect(toggle.className).toContain('text-white');
+            // secondary variant maps to a filled surface with semantic primary text
+            expect(toggle.className).toContain('text-text-primary');
         });
 
         it('calls toggleAutoAdvance when clicked', () => {

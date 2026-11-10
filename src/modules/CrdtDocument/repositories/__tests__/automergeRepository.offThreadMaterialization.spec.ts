@@ -617,6 +617,55 @@ describe('repository canonical Worker candidate adoption', () => {
         expect(getAuthor(actual!)).toBe(getAuthor(baseline));
     });
 
+    it.each(['mutation', 'validator', 'beforePublication', 'authority'] as const)(
+        'frees a direct prospective candidate exactly once when %s refuses publication',
+        (phase) => {
+            const original = seed();
+            const clones = vi.mocked(native.clone).mockClear();
+            const releases = vi.mocked(native.free).mockClear();
+            let surviving = original;
+            const validateDocument = vi.fn((candidate: Doc<Document>) => {
+                if (phase === 'validator') {
+                    throw new Error('validator refused');
+                }
+                if (phase === 'authority') {
+                    surviving = clone(original);
+                    repository.insertDoc('root', surviving);
+                }
+                expect(candidate.slot.count).toBe(1);
+            });
+            const beforePublication = vi.fn(() => {
+                if (phase === 'beforePublication') {
+                    throw new Error('publication refused');
+                }
+            });
+            expect(() =>
+                repository.changeDoc<Document>(
+                    'root',
+                    (doc) => {
+                        doc.slot.count = 1;
+                        if (phase === 'mutation') {
+                            throw new Error('mutation refused');
+                        }
+                    },
+                    'Detect',
+                    undefined,
+                    ['slot'],
+                    { validateDocument, beforePublication, onPublished: vi.fn() }
+                )
+            ).toThrow();
+            const candidate = clones.mock.results[0]?.value;
+            expect(candidate).toBeDefined();
+            expect(releases.mock.calls.filter(([doc]) => doc === candidate)).toHaveLength(1);
+            expect(releases.mock.calls.some(([doc]) => doc === original)).toBe(false);
+            expect(repository.getDoc('root')).toBe(surviving);
+            repository.changeDoc<Document>('root', (doc) => {
+                doc.slot.count = 7;
+            });
+            expect(repository.getDoc<Document>('root')?.slot.count).toBe(7);
+        }
+    );
+
     it.each([
         'magic',
         'type',

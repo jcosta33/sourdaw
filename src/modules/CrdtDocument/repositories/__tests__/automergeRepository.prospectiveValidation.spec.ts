@@ -392,14 +392,24 @@ describe('separated single-change prospective phases', () => {
             accepted = candidate;
         });
         const unused = vi.fn();
+        const beforeChange = vi.fn();
         transaction.scope(() =>
-            repository.changeDoc<State>('root', unused, 'prepared', undefined, ['count'], {
-                ...callbacks,
-                preparedCandidate: prepared,
-            })
+            repository.changeDoc<State>(
+                'root',
+                unused,
+                'prepared',
+                undefined,
+                ['count'],
+                {
+                    ...callbacks,
+                    preparedCandidate: prepared,
+                },
+                beforeChange
+            )
         );
         const installed = repository.getDoc<State>('root');
         expect(installed).toBe(accepted);
+        expect(beforeChange).toHaveBeenCalledExactlyOnceWith(original);
         expect(unused).not.toHaveBeenCalled();
         expect(callbacks.onPublished).toHaveBeenCalledOnce();
         expect(observer).toHaveBeenCalledOnce();

@@ -197,3 +197,75 @@ export function matchesJsonSchema(value: unknown, schema: unknown, depth = 0): b
     }
     return !isRecord(value) || matchesObjectConstraints(value, schema, depth);
 }
+
+/** Where a value first leaves its schema, as the property names and item indices leading there. */
+export type JsonSchemaViolation = {
+    kind: 'missing-property' | 'undeclared-property' | 'invalid-value';
+    path: readonly (string | number)[];
+};
+
+function locateObjectViolation(
+    value: Record<string, unknown>,
+    schema: Record<string, unknown>,
+    path: readonly (string | number)[],
+    depth: number
+): JsonSchemaViolation | null {
+    const properties = isRecord(schema.properties) ? schema.properties : {};
+    if (Array.isArray(schema.required)) {
+        const required: unknown[] = schema.required;
+        const missing = required.find((key) => typeof key !== 'string' || !(key in value));
+        if (missing !== undefined) {
+            return { kind: 'missing-property', path: typeof missing === 'string' ? [...path, missing] : path };
+        }
+    }
+    for (const [key, item] of Object.entries(value)) {
+        if (key in properties) {
+            if (!matchesJsonSchema(item, properties[key], depth + 1)) {
+                return locateJsonSchemaViolation(item, properties[key], [...path, key], depth + 1);
+            }
+            continue;
+        }
+        if (schema.additionalProperties === false) {
+            return { kind: 'undeclared-property', path: [...path, key] };
+        }
+        if (
+            (isRecord(schema.additionalProperties) || typeof schema.additionalProperties === 'boolean') &&
+            !matchesJsonSchema(item, schema.additionalProperties, depth + 1)
+        ) {
+            return locateJsonSchemaViolation(item, schema.additionalProperties, [...path, key], depth + 1);
+        }
+    }
+    return null;
+}
+
+/**
+ * Descends only where one sub-schema alone decides the failure — a declared property, an
+ * additional property, an array item — and otherwise names the value itself, so a failed
+ * composition or a scalar constraint is reported where it applies rather than guessed into a branch.
+ */
+function locateJsonSchemaViolation(
+    value: unknown,
+    schema: unknown,
+    path: readonly (string | number)[],
+    depth: number
+): JsonSchemaViolation {
+    const here: JsonSchemaViolation = { kind: 'invalid-value', path };
+    if (depth > 64 || !isRecord(schema) || !isJsonValue(value) || !matchesCompositions(value, schema, depth)) {
+        return here;
+    }
+    if (isRecord(value)) {
+        return locateObjectViolation(value, schema, path, depth) ?? here;
+    }
+    if (Array.isArray(value) && schema.items !== undefined) {
+        const index = value.findIndex((item) => !matchesJsonSchema(item, schema.items, depth + 1));
+        if (index >= 0) {
+            return locateJsonSchemaViolation(value[index], schema.items, [...path, index], depth + 1);
+        }
+    }
+    return here;
+}
+
+/** The first place `value` leaves `schema`, or null when it matches. */
+export function findJsonSchemaViolation(value: unknown, schema: unknown): JsonSchemaViolation | null {
+    return matchesJsonSchema(value, schema) ? null : locateJsonSchemaViolation(value, schema, [], 0);
+}

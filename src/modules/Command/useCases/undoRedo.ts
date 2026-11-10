@@ -6,7 +6,7 @@
  * the same entry is consumed twice and one document mutation is undone without its stack
  * bookkeeping. We serialize every mutation through one FIFO promise chain so a second
  * call only reads `undoStore.value` after the first has committed its write. Sequential
- * awaited callers (e.g. `undoToIndex`) still proceed one step at a time.
+ * awaited callers (e.g. `moveHistoryToStep`) still proceed one step at a time.
  */
 let mutationChain: Promise<unknown> = Promise.resolve();
 

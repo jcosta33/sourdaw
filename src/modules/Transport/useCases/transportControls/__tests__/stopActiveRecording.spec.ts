@@ -24,6 +24,9 @@ const overdub = vi.hoisted(() => {
 });
 
 vi.mock('#/modules/MIDI/useCases', () => ({
+    captureEventPositionAt: () => {
+        throw new Error('This manual stop fixture has no automatic MIDI capture position');
+    },
     isOverdubLanding: () => overdub.state.landing !== null,
     countSettledOverdubPasses: () => overdub.state.settled,
     waitForOverdubLanding: async () => {
@@ -36,6 +39,7 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     takeOwnsRecordingRoot: vi.fn(() => true),
 }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    getAudioContext: vi.fn(() => ({ currentTime: 0.2 })),
     stopAudioRecording: vi.fn(),
 }));
 vi.mock('../../../repositories/transport/updateTransportState', () => ({

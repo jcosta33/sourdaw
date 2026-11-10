@@ -111,6 +111,16 @@
     --color-meter-grid: rgba(255, 255, 255, 0.08);
     --color-meter-peakHold: rgba(255, 255, 255, 0.4);
 
+    /* Control rail: the dark inset interior makes the fill read; the edge identifies the control (WCAG 1.4.11).
+       controlRailContrast.spec.ts holds it at 3:1 on the base, default, raised, overlay and dialog surfaces and on the floating-surface composite. */
+    --color-control-rail-edge: #857e78;
+    --color-control-fill-cyan-top: rgba(127, 184, 196, 0.92);
+    --color-control-fill-cyan-bottom: rgba(127, 184, 196, 0.62);
+    --color-control-fill-peach-top: rgba(201, 160, 122, 0.92);
+    --color-control-fill-peach-bottom: rgba(201, 160, 122, 0.6);
+    --color-control-fill-lavender-top: rgba(170, 135, 200, 0.95);
+    --color-control-fill-lavender-bottom: rgba(170, 135, 200, 0.62);
+
     /* Radii */
     --radius-micro: 2px;
     --radius-sm: 4px;
@@ -238,10 +248,98 @@
     --color-gray-400: #808080;
     --color-gray-500: #686868;
 
-    /* == Layer 12: DAW Micro-Typography Scale == */
-    --text-nano: 7px;
-    --text-micro: 8px;
-    --text-caption: 9px;
-    --text-dense: 10px;
-    --text-compact: 11px;
+    /* == Layer 12: Legible DAW typography and semantic roles == */
+    --text-nano: 11px;
+    --text-micro: 11px;
+    --text-caption: 11px;
+    --text-dense: 12px;
+    --text-compact: 12px;
+    --text-metadata: 11px;
+    --text-label: 12px;
+    --text-value: 12px;
+    --text-body: 12px;
+}
+
+:root {
+    color-scheme: dark;
+}
+
+/* Light mode preserves the warm material hierarchy with semantic, measured text and surface pairs. */
+:root.light {
+    color-scheme: light;
+
+    --surface-deep: #ded8cf;
+    --surface-base: #e8e3db;
+    --surface-default: #f0ece5;
+    --surface-raised: #f7f3ed;
+    --surface-overlay: #fcfaf6;
+    --surface-dialog: #fffaf3;
+
+    --color-bg-well: #dfd9d0;
+    --color-bg-recess: #e3ddd4;
+    --color-bg-panelInset: #d8d1c7;
+    --color-bg-scrim: rgba(40, 31, 24, 0.38);
+
+    --color-text-primary: #292521;
+    --color-text-secondary: #4c4540;
+    --color-text-tertiary: #5f5750;
+    --color-text-disabled: #8a8076;
+
+    --color-border-hairline: rgba(61, 50, 42, 0.1);
+    --color-border-soft: rgba(61, 50, 42, 0.16);
+    --color-border-focus: rgba(30, 110, 160, 0.65);
+    --color-border-active: rgba(61, 50, 42, 0.35);
+    --color-light-edge: rgba(255, 255, 255, 0.65);
+    --color-shadow-edge: rgba(70, 55, 40, 0.18);
+
+    --color-accent-cyan: #0f343a;
+    --color-accent-mint: #1f523a;
+    --color-accent-lavender: #53406b;
+    --color-accent-peach: #6c3e23;
+    --color-accent-amber: #3f2a04;
+    --color-accent-red: #753535;
+    --color-accent-orange: #8f430d;
+    --color-accent-pink: #8a4257;
+    --color-accent-coral: #994b3f;
+    --color-accent-sage: #344d2d;
+    --color-accent-steel: #2a4a62;
+    --color-accent-copper: #65402e;
+    --color-accent-mint-bright: #237451;
+    --color-accent-yellow-green: #5c641f;
+    --color-accent-rose: #72303f;
+    --color-accent-indigo: #36437b;
+
+    --color-state-record: #9e3b31;
+    --color-state-clip: #a32e43;
+    --color-state-solo: #7b5c16;
+    --color-state-mute: #91452e;
+    --color-state-play: #23744a;
+    --color-state-selection: #34678e;
+    --color-primary-foreground: #fffaf3;
+
+    --color-led-off-green: #d5e3d2;
+    --color-led-off-amber: #e8dfca;
+    --color-led-off-red: #e8d2cd;
+    --color-led-off-cyan: #d1e0e2;
+    --color-meter-safe: #337447;
+    --color-meter-hot: #806018;
+    --color-meter-clip: #983c32;
+    --color-meter-grid: rgba(40, 31, 24, 0.14);
+    --color-meter-peakHold: rgba(40, 31, 24, 0.45);
+
+    --color-control-rail-edge: #6b625a;
+    --color-control-fill-cyan-top: rgba(47, 111, 123, 0.92);
+    --color-control-fill-cyan-bottom: rgba(47, 111, 123, 0.68);
+    --color-control-fill-peach-top: rgba(138, 85, 52, 0.92);
+    --color-control-fill-peach-bottom: rgba(138, 85, 52, 0.66);
+    --color-control-fill-lavender-top: rgba(108, 86, 140, 0.92);
+    --color-control-fill-lavender-bottom: rgba(108, 86, 140, 0.68);
+
+    --shadow-elevation-raised:
+        inset 0 1px 0 rgba(255, 255, 255, 0.65), 0 2px 4px rgba(70, 55, 40, 0.14), 0 0 0 1px var(--color-border-soft);
+    --shadow-elevation-inset: inset 0 2px 4px rgba(70, 55, 40, 0.18), 0 1px 0 rgba(255, 255, 255, 0.45);
+    --shadow-elevation-floating:
+        inset 0 1px 0 rgba(255, 255, 255, 0.65), 0 8px 16px rgba(70, 55, 40, 0.2), 0 0 0 1px var(--color-border-soft);
+    --shadow-elevation-modal:
+        inset 0 1px 0 rgba(255, 255, 255, 0.65), 0 24px 48px rgba(40, 31, 24, 0.24), 0 0 0 1px var(--color-border-soft);
 }

@@ -35,6 +35,7 @@ const { createdGains } = vi.hoisted(() => ({
     }>,
 }));
 vi.mock('#/modules/Arrangement/stores', () => ({
+    gainEnvelopeStore: { value: null },
     trackStore: {
         get value() {
             return trackStoreState.value;
@@ -73,18 +74,15 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
 }));
 vi.mock('#/modules/Arrangement/useCases', () => ({
     resolveClipsWithComping: vi.fn(() => []),
+    collaborationAssetTransfer: {
+        read: () => ({ isSessionActive: () => false, current: () => null }),
+    },
 }));
 vi.mock('#/utils/Notification/notifyUser', () => ({
     notifyUser: vi.fn(),
 }));
 vi.mock('../scheduleFrozenTrack', () => ({
     scheduleFrozenTrack: vi.fn(() => false),
-}));
-vi.mock('#/modules/Collaboration/stores', () => ({
-    collaborationStore: { value: null },
-}));
-vi.mock('#/modules/Collaboration/useCases', () => ({
-    getAssetTransfer: vi.fn(() => null),
 }));
 
 const mockCreateBufferSource = vi.mocked(createBufferSource);

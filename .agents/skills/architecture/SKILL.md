@@ -47,7 +47,7 @@ Inside `src/modules/Arrangement/`, import relatively (`../stores/trackStore`, `.
 
 ### 3. Stores are a public read contract; writes stay with the owner
 
-Foreign modules read a store by subscribing with `useStore` (`#/infra/store/useStore`) or a selector. They never call `store.set` on a foreign store (ESLint `sourdaw/no-foreign-store-write`, **warn** — canonical rule in `state-and-write-paths` rule 3); mutations go through the owning module's use cases or `executeAppAction` (`#/modules/Command/useCases`). Leaf components must not import a business store **directly** (**error** `components-no-business-store-access`).
+Foreign modules read a store by subscribing with `useStore` (`#/infra/store/useStore`) or a selector. They never call `store.set` on a foreign store (ESLint `sourdaw/no-foreign-store-write`, **error** — canonical rule in `state-and-write-paths` rule 3); mutations go through the owning module's use cases or `executeAppAction` (`#/modules/Command/useCases`). Leaf components must not import a business store **directly** (**error** `components-no-business-store-access`).
 
 **Why:** global visibility without global mutability keeps undo, CRDT, and invariants in one place.
 
@@ -79,7 +79,7 @@ Never `export type` from `useCases/index.ts` (`no-usecase-type-exports-on-index`
 
 ### 7. Repositories touch metal; engine does not import repositories
 
-I/O (storage, Web Audio setup, desktop bridge calls) belongs in the module-root `src/modules/<M>/repositories/` layer, including its `Common/` and `Supporting/` namespaces. Nested `useCases/repositories` and `presentations/repositories` folders are not repository layers. Desktop bridge confinement (allowlist, mock rules, `desktop-ipc-only-in-repositories` **error**) is canonical in `desktop-platform` rule 4. The engine receives deps from use cases and never imports repositories (**error** `usecases-only-write-boundary-to-repositories`).
+I/O (storage, Web Audio setup, desktop bridge calls) belongs in the module-root `src/modules/<M>/repositories/` layer. Nested `useCases/repositories` and `presentations/repositories` folders are not repository layers. Desktop bridge confinement (allowlist, mock rules, `desktop-ipc-only-in-repositories` **error**) is canonical in `desktop-platform` rule 4. The engine receives deps from use cases and never imports repositories (**error** `usecases-only-write-boundary-to-repositories`).
 
 **Why:** engine → repository couples graph/RT code to I/O and breaks the use-case write boundary.
 

@@ -1,7 +1,7 @@
 import { stopAllScheduled } from '#/modules/AudioEngine/useCases';
-import { panicCrumbs } from '#/modules/Crumbs/useCases';
 import { panicLiveNotes } from '#/modules/MIDI/useCases';
 
+import { notePanicParticipants } from './notePanicParticipants';
 import { panicYeastRuntime } from './panicYeastRuntime';
 
 /**
@@ -24,11 +24,14 @@ import { panicYeastRuntime } from './panicYeastRuntime';
  *     the Web Audio graph entirely.
  *
  * Transport owns the ordering because it already owns every other teardown
- * sequence; each module owns its own release.
+ * sequence; each module owns its own release, and the last two reach Transport
+ * as the participants the composition root registers.
  */
 export async function panicAllNotes(): Promise<void> {
     panicLiveNotes();
     stopAllScheduled();
     await panicYeastRuntime();
-    await panicCrumbs();
+    for (const releaseVoices of notePanicParticipants.read('panicAllNotes').voiceReleases) {
+        await releaseVoices();
+    }
 }

@@ -13,7 +13,16 @@ const DEVICE_ID = 'gluten-project-device';
 function glutenTrack(parameterValues: Record<string, number>): Track {
     return {
         ...createTrack({ id: 'track-1', name: 'Drum bus', kind: 'audio' }),
-        devices: [{ id: DEVICE_ID, name: 'Gluten', type: 'gluten', bypassed: false, parameterValues }],
+        devices: [
+            {
+                id: DEVICE_ID,
+                name: 'Gluten',
+                type: 'gluten',
+                bypassed: false,
+                parameterValues,
+                deviceState: { version: 1, data: { disclosureTier: 'lab' } },
+            },
+        ],
     };
 }
 

@@ -1,5 +1,5 @@
 import { type ActionCommandGraph } from './ActionCommandGraph';
-import { type AgentRunBatchSchedule, type AgentRunProviderProposal } from './AgentRun';
+import { type AgentRunProviderProposal, type PlannedAgentRunBatchSchedule } from './AgentRun';
 import { type ApplicationToolReceipt } from './ApplicationOwnedTool';
 import { type CreativeRequestAuthority } from './CreativeInterpretation';
 import { type ExecutableRuntimeAction } from './ExecutableRuntimeAction';
@@ -9,10 +9,12 @@ import { type PlanningRejectionEvidence } from './PlanningRejectionEvidence';
 import { type ProposalGroundingBasis, type ProposalProtectionFacts } from './ProposalGroundingBasis';
 import { type AdoptedRecipe } from './RetainedCompilation';
 import { type SemanticCommandListMatchSelectorRecord } from './SemanticCommandList';
-import { type WholeProjectVibeMixPlan } from './WholeProjectVibeMixPlan';
+import { type VibeRunInitialBaselineRefusal } from './VibeRunPlan';
 import { type WorkflowCapabilityId } from './WorkflowCapability';
 
 export type IntentResult = {
+    /** Versioned app-owned intent and actual preview proof; absent legacy work stays unverified. */
+    metricGoalState?: string;
     actions: ExecutableRuntimeAction[];
     rawText: string;
     requiresConfirmation: boolean;
@@ -26,12 +28,14 @@ export type IntentResult = {
     executionMode?: 'atomic';
     /** Application-validated dependency and batch-local producer metadata aligned to actions. */
     actionCommandGraph?: ActionCommandGraph;
-    /** Structured, inert explanation for a bounded whole-project proposal. */
-    wholeProjectVibeMixPlan?: WholeProjectVibeMixPlan;
     preparationRequest?: 'stem-import';
     workflowCapabilityId?: WorkflowCapabilityId;
     /** Correlated, bounded receipts produced by application-owned read tools during provider planning. */
     applicationToolReceipts?: ApplicationToolReceipt[];
+    /** App-produced classification of optional initial read failures for a brief with no executable recipe schedule. */
+    initialBaselineRefusal?: VibeRunInitialBaselineRefusal;
+    /** Bounded application-owned settlement of deferred terminal controls, separate from metric proof. */
+    terminalMeasurementSettlement?: string;
     /** Bounded metadata retained from the normalized provider proposal; never authority on its own. */
     providerProposal?: AgentRunProviderProposal;
     /** Direct stable targets proven from the provider's semantic list against one project snapshot. */
@@ -57,9 +61,15 @@ export type IntentResult = {
     /**
      * Present when the compiled list expanded past one batch: these actions are batch `position` of
      * the schedule, and the run proposes each later batch only after this one commits. The run's
-     * interaction mode and trust ceiling are bound to it when the plan is recorded.
+     * interaction mode and trust ceiling are bound to it when the plan is recorded. A production brief
+     * whose run the application planned carries a `vibe-run` schedule, of which it is batch 1.
      */
-    batchSchedule?: Omit<AgentRunBatchSchedule, 'interactionMode' | 'trustCeiling'>;
+    batchSchedule?: PlannedAgentRunBatchSchedule;
+    /**
+     * The card lines a brief carrying a vibe run adds: the batches planned after it, or why none was
+     * scheduled. The planned run itself rides `batchSchedule`.
+     */
+    plannedRunLines?: string[];
     /**
      * The confirmation id of the thread's pending proposal this batch replaces, admitted against the
      * thread the request was planned in. Present only on a refinement, which always asks for

@@ -5,6 +5,7 @@ import { recordedControllerTakeState } from '../../repositories/webMidi/recorded
 
 import { readBendRangeSeedRows } from './readBendRangeSeedRows';
 import { readHeldPedalRows } from './readHeldPedalRows';
+import { readHeldWheelRows } from './readHeldWheelRows';
 import { readLiveClipIds } from './readLiveClipIds';
 
 /** The clips of an earlier take that are still on the timeline and whose commit has not run yet. */
@@ -40,8 +41,9 @@ function findOpenedClipOnTrack(trackId: string): string | undefined {
  * The pedals held on the live input are read now, before the take's own
  * messages move them, because a pedal pressed before the take is still down when
  * it begins and no message will say so. So is the pitch-bend range the input
- * declared, which the clip's own rows could not otherwise tell stored playback;
- * both are seeded whether or not the take records anything else. A take that records
+ * declared, which the clip's own rows could not otherwise tell stored playback,
+ * and each wheel held off centre, which a note struck before the wheel next moves
+ * sounds under live; all are seeded whether or not the take records anything else. A take that records
  * into a clip an earlier take holds rows in (an existing clip, or a carried-over one, whose
  * buffer length now marks where the earlier take's rows end) has no seed there, so the
  * state the input held when the take first records into that clip is kept on its buffer
@@ -51,15 +53,22 @@ function findOpenedClipOnTrack(trackId: string): string | undefined {
  * the transport reports recording.
  */
 export function beginRecordedControllerTake(): void {
-    const { buffers, openedClipIds, committedClipIds, carriedOverClips, heldPedalSeeds, bendRangeSeeds } =
-        recordedControllerTakeState;
+    const {
+        buffers,
+        openedClipIds,
+        committedClipIds,
+        carriedOverClips,
+        heldPedalSeeds,
+        bendRangeSeeds,
+        heldWheelSeeds,
+    } = recordedControllerTakeState;
     const awaitingCommit = readClipsAwaitingCommit();
     for (const clipId of [...buffers.keys()]) {
         if (!awaitingCommit.has(clipId)) {
             buffers.delete(clipId);
         }
     }
-    for (const seeds of [heldPedalSeeds, bendRangeSeeds]) {
+    for (const seeds of [heldPedalSeeds, bendRangeSeeds, heldWheelSeeds]) {
         for (const clipId of [...seeds.keys()]) {
             if (!awaitingCommit.has(clipId)) {
                 seeds.delete(clipId);
@@ -87,10 +96,17 @@ export function beginRecordedControllerTake(): void {
     if (seededClipId !== undefined && pedalRows.length > 0) {
         heldPedalSeeds.set(seededClipId, pedalRows);
     }
-    // A clip carried over from an earlier take already holds its own declaration,
-    // with the ids its redo snapshot names; a second one would replace them.
+    // A clip carried over from an earlier take already holds its own declaration and
+    // wheels, with the ids its redo snapshot names; a second seed would replace them.
+    if (seededClipId === undefined || carriedOverClips.has(seededClipId)) {
+        return;
+    }
     const bendRangeRows = readBendRangeSeedRows();
-    if (seededClipId !== undefined && bendRangeRows.length > 0 && !carriedOverClips.has(seededClipId)) {
+    if (bendRangeRows.length > 0) {
         bendRangeSeeds.set(seededClipId, bendRangeRows);
+    }
+    const wheelRows = readHeldWheelRows();
+    if (wheelRows.length > 0) {
+        heldWheelSeeds.set(seededClipId, wheelRows);
     }
 }

@@ -1,5 +1,4 @@
-import { expect, test } from '@playwright/test';
-
+import { expect, test } from './e2eTest';
 import { launch_from_template, setupWorkspace, wait_for_workspace_ready } from './e2eUtils';
 
 // Mixer AI Mix Health Analysis button depth. The button is existence-only
@@ -23,13 +22,13 @@ test.describe('Mixer AI Mix Health — dialog opens on click', () => {
         await expect(button).toBeVisible({ timeout: 10_000 });
 
         // Before: no Mix Health dialog.
-        await expect(page.getByRole('dialog', { name: /Mix Health/i })).toHaveCount(0);
+        await expect(page.getByRole('dialog', { name: 'AI Music Mentor: Mix Health', exact: true })).toHaveCount(0);
 
         // Click — opens the dialog.
         await button.click();
-        await page.waitForTimeout(500);
-
         // The dialog appeared — a real state change.
-        await expect(page.getByRole('dialog').first()).toBeVisible({ timeout: 10_000 });
+        await expect(page.getByRole('dialog', { name: 'AI Music Mentor: Mix Health', exact: true })).toBeVisible({
+            timeout: 10_000,
+        });
     });
 });

@@ -37,6 +37,9 @@ export function getExecutableCommandRegistration<ActionType extends ExecutableAp
         get sessionEntryValidator() {
             return getRegisteredHandler().validateSessionEntry;
         },
+        get sessionEntryRestorer() {
+            return getRegisteredHandler().restoreSessionEntry;
+        },
         toolDescription: descriptor.description,
         intentPhrases: descriptor.intentPhrases,
         levelIntentPhrases: 'levelIntentPhrases' in descriptor ? descriptor.levelIntentPhrases : [],

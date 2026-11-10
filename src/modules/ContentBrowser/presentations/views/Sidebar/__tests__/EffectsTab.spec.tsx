@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { TooltipProvider } from '#/components/ui/tooltip';
@@ -81,6 +81,7 @@ const createPanelActions = (): SidebarPanelActions => ({
     showScoring: vi.fn(),
     showToaster: vi.fn(),
     showYeast: vi.fn(),
+    revealDevice: vi.fn(),
 });
 
 const renderWithTooltip = (ui: React.ReactElement) => {
@@ -192,30 +193,86 @@ describe('EffectsTab', () => {
         expect(buttons.length).toBeGreaterThanOrEqual(0);
     });
 
-    it.each([
-        { query: 'crust', deviceType: 'crust', panelAction: 'showCrust' as const, cardName: /crust/i },
-        { query: 'dutch', deviceType: 'dutch-oven', panelAction: 'showDutchOven' as const, cardName: /dutch oven/i },
-    ])(
+    const premiumPanelCases = [
+        {
+            query: 'proof',
+            deviceType: 'proof',
+            panelAction: 'showProof' as const,
+            cardName: 'Proof',
+            expectedPanelArgs: ['device-77'],
+        },
+        {
+            query: 'gluten',
+            deviceType: 'gluten',
+            panelAction: 'showGluten' as const,
+            cardName: 'Gluten',
+            expectedPanelArgs: ['device-77'],
+        },
+        {
+            query: 'crust',
+            deviceType: 'crust',
+            panelAction: 'showCrust' as const,
+            cardName: 'Crust',
+            expectedPanelArgs: ['device-77'],
+        },
+        {
+            query: 'dutch',
+            deviceType: 'dutch-oven',
+            panelAction: 'showDutchOven' as const,
+            cardName: 'Dutch Oven',
+            expectedPanelArgs: ['device-77'],
+        },
+        {
+            query: 'scoring',
+            deviceType: 'native-scoring',
+            panelAction: 'showScoring' as const,
+            cardName: 'Scoring',
+            expectedPanelArgs: ['device-77'],
+        },
+        {
+            query: 'grinder',
+            deviceType: 'grinder',
+            panelAction: 'showDevice' as const,
+            cardName: 'Grinder',
+            expectedPanelArgs: ['grinder', 'device-77'],
+        },
+        {
+            query: 'bacteria',
+            deviceType: 'bacteria',
+            panelAction: 'showBacteria' as const,
+            cardName: 'Bacteria',
+            expectedPanelArgs: ['device-77'],
+        },
+    ];
+
+    const premiumPlugins = [
+        createPlugin({ id: 'proof', name: 'Proof', category: 'effect' }),
+        createPlugin({ id: 'gluten', name: 'Gluten', category: 'effect' }),
+        createPlugin({ id: 'crust', name: 'Crust', category: 'effect' }),
+        createPlugin({ id: 'dutch-oven', name: 'Dutch Oven', category: 'effect' }),
+        createPlugin({ id: 'native-scoring', name: 'Scoring', category: 'effect' }),
+        createPlugin({ id: 'grinder', name: 'Grinder', category: 'effect' }),
+        createPlugin({ id: 'bacteria', name: 'Bacteria', category: 'effect' }),
+    ];
+
+    it.each(premiumPanelCases)(
         'opens the $deviceType panel only after the action commits',
-        async ({ query, deviceType, panelAction, cardName }) => {
+        async ({ query, deviceType, panelAction, cardName, expectedPanelArgs }) => {
             const panelActions = createPanelActions();
 
             renderWithTooltip(
                 <EffectsTab
                     {...defaultProps}
-                    plugins={[
-                        createPlugin({ id: 'crust', name: 'Crust', category: 'effect' }),
-                        createPlugin({ id: 'dutch-oven', name: 'Dutch Oven', category: 'effect' }),
-                    ]}
+                    plugins={premiumPlugins}
                     searchQuery={query}
                     panelActions={panelActions}
                 />
             );
 
-            fireEvent.click(screen.getByRole('button', { name: cardName }));
+            fireEvent.click(screen.getByRole('button', { name: new RegExp(`^${cardName}`, 'i') }));
 
             expect(arrangementMocks.executeAddDeviceAction).toHaveBeenCalledWith('track-1', deviceType);
-            await waitFor(() => expect(panelActions[panelAction]).toHaveBeenCalledWith('device-77'));
+            await waitFor(() => expect(panelActions[panelAction]).toHaveBeenCalledWith(...expectedPanelArgs));
         }
     );
 
@@ -237,6 +294,27 @@ describe('EffectsTab', () => {
         // instance (#2422), so the panel must open bound to the device the
         // click just added.
         await waitFor(() => expect(panelActions.showYeast).toHaveBeenCalledWith('device-77'));
+    });
+
+    it("leaves Yeast closed when the add is refused, rather than opening the track's existing one", async () => {
+        arrangementMocks.executeAddDeviceAction.mockResolvedValue({ status: 'not-applied', deviceId: null });
+        const panelActions = createPanelActions();
+
+        renderWithTooltip(
+            <EffectsTab
+                {...defaultProps}
+                currentRoute={{ id: 'effects-midifx', title: 'MIDI FX' }}
+                panelActions={panelActions}
+            />
+        );
+
+        fireEvent.click(screen.getByRole('button', { name: /yeast/i }));
+
+        expect(arrangementMocks.executeAddDeviceAction).toHaveBeenCalledWith('track-1', 'yeast');
+        // The continuation is attached to this promise first, so it has run by
+        // the time this await resumes.
+        await arrangementMocks.executeAddDeviceAction.mock.results[0]?.value;
+        expect(panelActions.showYeast).not.toHaveBeenCalled();
     });
 
     it('opens Yeast when addDevice commits but post-commit processing fails', async () => {
@@ -261,22 +339,98 @@ describe('EffectsTab', () => {
         await waitFor(() => expect(panelActions.showYeast).toHaveBeenCalledWith('device-77'));
     });
 
-    it('leaves the panel closed when the add is not applied', async () => {
-        arrangementMocks.executeAddDeviceAction.mockResolvedValue({ status: 'not-applied', deviceId: null });
+    it.each(premiumPanelCases)(
+        'leaves the $deviceType panel closed when the add is refused',
+        async ({ query, deviceType, panelAction, cardName }) => {
+            arrangementMocks.executeAddDeviceAction.mockResolvedValue({ status: 'not-applied', deviceId: null });
+            const panelActions = createPanelActions();
+
+            renderWithTooltip(
+                <EffectsTab
+                    {...defaultProps}
+                    plugins={premiumPlugins}
+                    searchQuery={query}
+                    panelActions={panelActions}
+                />
+            );
+
+            fireEvent.click(screen.getByRole('button', { name: new RegExp(`^${cardName}`, 'i') }));
+
+            expect(arrangementMocks.executeAddDeviceAction).toHaveBeenCalledWith('track-1', deviceType);
+            await arrangementMocks.executeAddDeviceAction.mock.results[0]?.value;
+            expect(panelActions[panelAction]).not.toHaveBeenCalled();
+        }
+    );
+
+    it('opens Proof when the add commits with degraded post-commit processing', async () => {
+        arrangementMocks.executeAddDeviceAction.mockResolvedValue({
+            status: 'committed-degraded',
+            deviceId: 'device-77',
+        });
         const panelActions = createPanelActions();
 
         renderWithTooltip(
             <EffectsTab
                 {...defaultProps}
-                plugins={[createPlugin({ id: 'crust', name: 'Crust', category: 'effect' })]}
-                searchQuery="crust"
+                plugins={[createPlugin({ id: 'proof', name: 'Proof', category: 'effect' })]}
+                searchQuery="proof"
                 panelActions={panelActions}
             />
         );
 
-        fireEvent.click(screen.getByRole('button', { name: /crust/i }));
+        fireEvent.click(screen.getByRole('button', { name: /proof/i }));
 
-        await waitFor(() => expect(panelActions.showCrust).toHaveBeenCalledWith(null));
+        await waitFor(() => expect(panelActions.showProof).toHaveBeenCalledWith('device-77'));
+    });
+
+    describe('plain effect rows', () => {
+        const eqPlugin = createPlugin({ id: 'builtin-eq', name: 'EQ', category: 'effect' });
+        const categoryRoute = { id: 'effects-audiofx-eq-filter', title: 'EQ & Filter' };
+
+        it('reveals the device a plain row adds in the category list', async () => {
+            const panelActions = createPanelActions();
+
+            renderWithTooltip(
+                <EffectsTab
+                    {...defaultProps}
+                    plugins={[eqPlugin]}
+                    currentRoute={categoryRoute}
+                    panelActions={panelActions}
+                />
+            );
+            fireEvent.click(screen.getByText('EQ'));
+
+            expect(arrangementMocks.executeAddDeviceAction).toHaveBeenCalledExactlyOnceWith('track-1', 'builtin-eq');
+            await waitFor(() => expect(panelActions.revealDevice).toHaveBeenCalledExactlyOnceWith('device-77'));
+        });
+
+        it('reveals the device a plain row adds in search results', async () => {
+            const panelActions = createPanelActions();
+
+            renderWithTooltip(
+                <EffectsTab {...defaultProps} plugins={[eqPlugin]} searchQuery="eq" panelActions={panelActions} />
+            );
+            fireEvent.click(screen.getByText('EQ'));
+
+            await waitFor(() => expect(panelActions.revealDevice).toHaveBeenCalledExactlyOnceWith('device-77'));
+        });
+
+        it('does not reveal a device for a premium card, which opens its own panel', async () => {
+            const panelActions = createPanelActions();
+
+            renderWithTooltip(
+                <EffectsTab
+                    {...defaultProps}
+                    plugins={[createPlugin({ id: 'crust', name: 'Crust', category: 'effect' })]}
+                    searchQuery="crust"
+                    panelActions={panelActions}
+                />
+            );
+            fireEvent.click(screen.getByRole('button', { name: /crust/i }));
+
+            await waitFor(() => expect(panelActions.showCrust).toHaveBeenCalledWith('device-77'));
+            expect(panelActions.revealDevice).not.toHaveBeenCalled();
+        });
     });
 
     describe('Audio FX category placement', () => {
@@ -320,5 +474,31 @@ describe('EffectsTab', () => {
             expect(screen.queryByRole('button', { name: /scoring/i })).not.toBeInTheDocument();
             expect(screen.getByText('Empty category.')).toBeInTheDocument();
         });
+    });
+
+    describe('route spacing', () => {
+        it.each([
+            { routeId: 'effects', searchQuery: '', text: 'Seeds & Spores' },
+            { routeId: 'effects-audiofx', searchQuery: '', text: 'EQ & Filter' },
+            { routeId: 'effects-audiofx-eq-filter', searchQuery: '', text: 'Parametric EQ' },
+            { routeId: 'effects-fxpresets', searchQuery: '', text: 'Vocal Chain' },
+            { routeId: 'effects-midifx', searchQuery: '', text: 'No native MIDI effects available yet.' },
+            { routeId: 'effects', searchQuery: 'eq', text: 'Parametric EQ' },
+        ])(
+            'renders $routeId (search "$searchQuery") inside the shared route body with no route animation',
+            ({ routeId, searchQuery, text }) => {
+                const { container } = renderWithTooltip(
+                    <EffectsTab
+                        {...defaultProps}
+                        plugins={[createPlugin({ id: 'builtin-eq', name: 'Parametric EQ', category: 'effect' })]}
+                        searchQuery={searchQuery}
+                        currentRoute={{ id: routeId, title: routeId }}
+                    />
+                );
+
+                expect(within(screen.getByTestId('browser-route-body')).getAllByText(text).length).toBeGreaterThan(0);
+                expect(container.querySelectorAll('[class*="animate-in"]')).toHaveLength(0);
+            }
+        );
     });
 });

@@ -136,17 +136,17 @@ describe('restoreDeletedGrooveTemplate', () => {
         ).toThrow('different template');
     });
 
-    it('restores the template and marks a project write', () => {
+    it('restores the template and reports a project write without notifying', () => {
         const originalCount = mockStore.value.templates.length;
         const snapshot: DeletedGrooveTemplateSnapshot = {
             template: validTemplate,
             templateIndex: 1,
             assignments: [],
         };
-        restoreDeletedGrooveTemplate(snapshot);
+        expect(restoreDeletedGrooveTemplate(snapshot)).toEqual({ status: 'written' });
         expect(mockStore.value.templates).toHaveLength(originalCount + 1);
         expect(mockStore.value.templates.some((t) => t.id === 'groove-custom-1')).toBe(true);
-        expect(mockMarkWrite).toHaveBeenCalledTimes(1);
+        expect(mockMarkWrite).not.toHaveBeenCalled();
     });
 
     it('accepts an identical recreated template whose object keys were reordered', () => {
@@ -155,12 +155,14 @@ describe('restoreDeletedGrooveTemplate', () => {
         const originalCount = mockStore.value.templates.length;
 
         expect(JSON.stringify(reordered)).not.toBe(JSON.stringify(validTemplate));
-        restoreDeletedGrooveTemplate({ template: validTemplate, templateIndex: 1, assignments: [] });
+        expect(restoreDeletedGrooveTemplate({ template: validTemplate, templateIndex: 1, assignments: [] })).toEqual({
+            status: 'no-write',
+        });
 
-        expect(mockStore.set).toHaveBeenCalledTimes(1);
+        expect(mockStore.set).not.toHaveBeenCalled();
         expect(mockStore.value.templates).toHaveLength(originalCount);
         expect(mockStore.value.templates.filter((template) => template.id === validTemplate.id)).toHaveLength(1);
-        expect(mockMarkWrite).toHaveBeenCalledTimes(1);
+        expect(mockMarkWrite).not.toHaveBeenCalled();
     });
 
     it('rejects a recreated identity with changed musical content without writing', () => {
@@ -192,7 +194,7 @@ describe('restoreDeletedGrooveTemplate', () => {
                 },
             ],
         };
-        restoreDeletedGrooveTemplate(snapshot);
+        expect(restoreDeletedGrooveTemplate(snapshot)).toEqual({ status: 'written' });
         // The assignment for clip-1 should now point to groove-custom-1
         const assignments = mockStore.value.assignments as Array<{ consumerId: string; templateId: string }>;
         const assignment = assignments.find((a) => a.consumerId === 'clip-1');

@@ -50,6 +50,16 @@ vi.mock('#/modules/Transport/useCases', () => ({
     countSettledTakes: () => takes.settled,
 }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    openCachedAudioBufferHold: vi.fn(() => {
+        throw new Error('Unexpected audio buffer residency hold in this fixture');
+    }),
+    captureOfflineRenderProjectSource: vi.fn(() => {
+        throw new Error('Unexpected selection render capture in this fixture');
+    }),
+    captureOfflineRenderRuntimeInput: vi.fn(() => {
+        throw new Error('Unexpected selection render capture in this fixture');
+    }),
+    builtinSynthVoice: { read: vi.fn() },
     rearmCommittedTrackInputMonitoring: vi.fn(async () => undefined),
     reconcileAutoInputMonitoring: vi.fn(),
     forgetProjectLatchedPedals: vi.fn(),
@@ -86,6 +96,8 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     garbageCollectCachedAudioBuffersBySize: vi.fn(),
     garbageCollectFreezeAudioBuffers: vi.fn(),
     getCachedAudioBuffer: vi.fn(),
+    restoreUnpinnedAudioBuffersFromIdb: vi.fn(),
+    holdAudioBufferForSession: vi.fn(),
     getDeviceChainTailSeconds: vi.fn(),
     getEngineState: vi.fn(),
     getRuntimeGraphRevision: vi.fn(),
@@ -120,6 +132,11 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     wireSidechainRoute: vi.fn(),
 }));
 vi.mock('#/modules/Command/useCases', () => ({
+    commitUndoEntry: vi.fn(),
+    createUndoEntry: vi.fn(),
+    reconcileSessionUndoForProject: vi.fn(() => {
+        throw new Error('Unexpected reconcileSessionUndoForProject in this fixture');
+    }),
     commitRedoInverseCapture: vi.fn(),
     readUndoEntryForInverse: vi.fn<typeof import('#/modules/Command/useCases').readUndoEntryForInverse>(() => null),
 
@@ -134,7 +151,8 @@ vi.mock('#/modules/Command/useCases', () => ({
     REDO_NOT_APPLIED: Symbol('REDO_NOT_APPLIED'),
     syncActionReplayMetadata: vi.fn(),
 }));
-vi.mock('#/modules/CrdtDocument/useCases', () => ({
+vi.mock('#/modules/CrdtDocument/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/CrdtDocument/useCases')>()),
     commandSourcePublicationMatches: vi.fn<
         typeof import('#/modules/CrdtDocument/useCases').commandSourcePublicationMatches
     >(() => false),
@@ -282,8 +300,12 @@ describe('loadRecentProject', () => {
         );
 
         const load = loadRecentProject('discarded-project', { shouldProceed: () => authorityCurrent });
+        await vi.waitFor(() => expect(readNamedProjectJson).toHaveBeenCalledWith('discarded-project'));
         authorityCurrent = false;
-        resolveRead?.(validProject);
+        if (!resolveRead) {
+            throw new Error('Recent project JSON read did not start');
+        }
+        resolveRead(validProject);
 
         await expect(load).resolves.toBe('aborted');
         expect(resetCrdtProject).not.toHaveBeenCalled();

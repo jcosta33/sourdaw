@@ -45,7 +45,6 @@ const SPARKLINE_HEIGHT = 24;
 
 type AutomationPanelWorkspaceState = {
     activeTool: EditingTool;
-    snapValue: number;
     trackListWidth: number;
     trackListOpen: boolean;
 };
@@ -236,7 +235,8 @@ export const AutomationBottomPanel = (): ReactElement => {
                         compact
                         className="w-full max-w-sm"
                         title="No automation lanes yet"
-                        description='Click "Add Lane" to shape volume, pan, or device parameters over time.'
+                        description="Add a lane to shape volume, pan, or device parameters over time."
+                        action={<AutomationAddLaneControl params={unusedParams} onAdd={handleAddLane} />}
                     />
                 </Row>
             );

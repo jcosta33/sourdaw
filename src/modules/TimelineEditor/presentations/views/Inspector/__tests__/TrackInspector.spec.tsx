@@ -157,6 +157,8 @@ describe('TrackInspector', () => {
     it('should render without crashing', () => {
         render(
             <TrackInspector
+                signalFlowExpanded={false}
+                onSignalFlowExpandedChange={vi.fn()}
                 track={mockTrack}
                 allTracks={mockAllTracks}
                 onSelectClip={mockOnSelectClip}
@@ -170,6 +172,8 @@ describe('TrackInspector', () => {
     it('should render all sections for audio track', () => {
         render(
             <TrackInspector
+                signalFlowExpanded={false}
+                onSignalFlowExpandedChange={vi.fn()}
                 track={mockTrack}
                 allTracks={mockAllTracks}
                 onSelectClip={mockOnSelectClip}
@@ -195,6 +199,8 @@ describe('TrackInspector', () => {
     it('should not render MIDI output section for audio track', () => {
         render(
             <TrackInspector
+                signalFlowExpanded={false}
+                onSignalFlowExpandedChange={vi.fn()}
                 track={mockTrack}
                 allTracks={mockAllTracks}
                 onSelectClip={mockOnSelectClip}
@@ -208,6 +214,8 @@ describe('TrackInspector', () => {
         const midiTrack = { ...mockTrack, kind: 'midi' as const };
         render(
             <TrackInspector
+                signalFlowExpanded={false}
+                onSignalFlowExpandedChange={vi.fn()}
                 track={midiTrack}
                 allTracks={mockAllTracks}
                 onSelectClip={mockOnSelectClip}
@@ -221,6 +229,8 @@ describe('TrackInspector', () => {
         const masterTrack = { ...mockTrack, kind: 'master' as const };
         render(
             <TrackInspector
+                signalFlowExpanded={false}
+                onSignalFlowExpandedChange={vi.fn()}
                 track={masterTrack}
                 allTracks={mockAllTracks}
                 onSelectClip={mockOnSelectClip}
@@ -234,6 +244,8 @@ describe('TrackInspector', () => {
     it('should not render master visualizations for non-master track', () => {
         render(
             <TrackInspector
+                signalFlowExpanded={false}
+                onSignalFlowExpandedChange={vi.fn()}
                 track={mockTrack}
                 allTracks={mockAllTracks}
                 onSelectClip={mockOnSelectClip}
@@ -261,6 +273,8 @@ describe('TrackInspector', () => {
             );
         render(
             <TrackInspector
+                signalFlowExpanded={false}
+                onSignalFlowExpandedChange={vi.fn()}
                 track={mockTrack}
                 allTracks={mockAllTracks}
                 onSelectClip={mockOnSelectClip}

@@ -1,5 +1,9 @@
 import { detectTempo } from '#/modules/AudioAnalysis/useCases';
-import { decodeAudioFile, releasePreviewAudioBuffer } from '#/modules/AudioEngine/useCases';
+import {
+    decodeAudioFile,
+    type openCachedAudioBufferHold,
+    releasePreviewAudioBuffer,
+} from '#/modules/AudioEngine/useCases';
 import { getAssetTransfer } from '#/modules/Collaboration/useCases';
 import { pickFiles } from '#/modules/Project/useCases';
 import { DEFAULT_TEMPO_BPM, transportStore } from '#/modules/Transport/stores';
@@ -45,9 +49,16 @@ function throwIfAborted(signal?: AbortSignal): void {
     }
 }
 
+/**
+ * Every stem is decoded into the audio cache before anything owns it, so the
+ * caller's `residencyHold` retains each one through the rest of the decode loop
+ * until the run's registration takes them over; without it the cache would
+ * evict all but the newest stem whenever the cache is already full.
+ */
 export async function prepareStemImport(
     signal?: AbortSignal,
-    admitWork?: (input: { analysisCount: number; downloadBytes: number; storageBytes: number }) => boolean
+    admitWork?: (input: { analysisCount: number; downloadBytes: number; storageBytes: number }) => boolean,
+    residencyHold?: ReturnType<typeof openCachedAudioBufferHold>
 ) {
     const files = await pickFiles({
         multiple: true,
@@ -100,7 +111,7 @@ export async function prepareStemImport(
     try {
         for (const file of files) {
             throwIfAborted(signal);
-            const decoded = await decodeAudioFile(file);
+            const decoded = await decodeAudioFile(file, residencyHold);
             if (signal?.aborted === true) {
                 releasePreviewAudioBuffer(decoded.id);
                 throwIfAborted(signal);

@@ -7,7 +7,6 @@ import { queryClient } from './queryClient';
 export const router = createRouter({
     routeTree,
     defaultPreload: 'intent',
-    scrollRestoration: true,
     context: {
         queryClient,
     },

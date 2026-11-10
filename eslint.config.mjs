@@ -241,6 +241,7 @@ function isDomainLogicFile(filename) {
     return (
         normalized.includes('/useCases/') ||
         normalized.includes('/services/') ||
+        normalized.includes('/worklets/') ||
         normalized.includes('/validators/') ||
         normalized.includes('/transformers/')
     );
@@ -1836,7 +1837,7 @@ const sourdawPlugin = {
                 type: 'problem',
                 docs: {
                     description:
-                        'Warn when production code writes directly to a store imported from another module stores contract.',
+                        'Report production code that writes directly to a store imported from another module stores contract.',
                 },
                 schema: [],
                 messages: {
@@ -2356,6 +2357,16 @@ export default defineConfig(
             // in-file fix is erased on the next build.
             'src/modules/AudioEngine/wasm/*.js',
             'src/modules/AudioEngine/wasm/*.d.ts',
+            // Pinned codec distribution bytes, including the explicitly modified Vorbis
+            // wrapper; exact provenance and reproduction recipe are recorded under
+            // release/upstream-proofs/audio-export-codecs/. Handwritten adapters stay checked.
+            'src/modules/AudioRendering/workers/vendor/vorbis/ogg-encode.js',
+            'src/modules/AudioRendering/workers/vendor/vorbis/ogg-encode.d.ts',
+            'src/modules/AudioRendering/workers/vendor/opus/opus-encode.js',
+            'src/modules/AudioRendering/workers/vendor/opus/opus-encode.d.ts',
+            'src/modules/AudioRendering/workers/vendor/opus/core.js',
+            'src/modules/AudioRendering/workers/vendor/vorbis/vorbis.wasm.js',
+            'src/modules/AudioRendering/workers/vendor/opus/src/opus.wasm.js',
             'test-debug.mjs',
             'test-manual-fix.mjs',
             'test-manual-fix.ts',
@@ -2580,7 +2591,7 @@ export default defineConfig(
 
             // AGENTS.md L147 / L149 — sourdaw custom rules for forms/imports.
             'sourdaw/no-enum': 'error',
-            'sourdaw/no-foreign-store-write': 'warn',
+            'sourdaw/no-foreign-store-write': 'error',
             'sourdaw/no-model-layer-upward-import': 'error',
             'sourdaw/no-multiple-function-exports': 'error',
             'sourdaw/no-namespace-import': 'error',
@@ -2701,6 +2712,7 @@ export default defineConfig(
             'src/**/events/**/*.ts',
             'src/**/services/**/*.ts',
             'src/**/validators/**/*.ts',
+            'src/**/worklets/**/*.ts',
             'src/helpers/**/*.ts',
         ],
         rules: {
@@ -2754,9 +2766,11 @@ export default defineConfig(
             '**/*.spec.{ts,tsx}',
             '**/*.test.{ts,tsx}',
             '**/setupTests.ts',
-            // Non-.spec test scaffolding: mock factories and __tests__ helpers.
+            // Non-.spec test scaffolding: mock factories, __tests__ helpers and
+            // shared test-support folders (docs/architecture/03-typescript-module.md §4.14).
             '**/*.mock.ts',
             '**/__tests__/**/*.{ts,tsx}',
+            'src/**/testing/**/*.{ts,tsx}',
         ],
         rules: {
             '@eslint-react/no-unnecessary-use-prefix': 'off',

@@ -22,6 +22,7 @@ import { type AppAction } from '#/utils/handlerContract';
 
 import { type ActionUndoEntry } from '../../models/UndoEntry';
 import { undoStore } from '../../stores/undoStore';
+import { captureRecordedRedoContext } from '../captureRecordedRedoContext';
 import { commitRedoInverseCapture } from '../commitRedoInverseCapture';
 import { createUndoEntry } from '../createUndoEntry';
 
@@ -61,6 +62,16 @@ describe('committed Redo inverse capture publication', () => {
         undoStore.set({ past: [], future: [] });
         configureAutomergeStoragePort(null);
         removeCrdtDoc('root');
+    });
+
+    it('binds private Redo context to the exact pending entry and retires it with that entry', () => {
+        const action = actions[0]!;
+        const context = captureRecordedRedoContext(action);
+        expect(context?.inverseAction).toBe(entries[0]!.inverseAction);
+        expect(context?.isCurrent()).toBe(true);
+        expect(captureRecordedRedoContext(structuredClone(action))).toBeUndefined();
+        undoStore.set({ past: [], future: [] });
+        expect(context?.isCurrent()).toBe(false);
     });
 
     function stage(fresh: readonly AppAction[], otherStorage?: typeof storage) {
@@ -107,6 +118,7 @@ describe('committed Redo inverse capture publication', () => {
         'unproved',
         'missing-entry',
         'partial-set',
+        'stale-inverse',
     ] as const)('settles the complete group only on its proven installed publication: %s', (terminal) => {
         const before = Automerge.clone(getCrdtDoc('root')!);
         const previous = entries.map((entry) => entry.inverseAction);
@@ -140,6 +152,9 @@ describe('committed Redo inverse capture publication', () => {
             replaceCrdtDoc({ id: 'root', doc: Automerge.clone(getCrdtDoc('root')!) });
         } else if (terminal === 'clone') {
             replaceCrdtDocInLineage({ id: 'root', doc: Automerge.clone(getCrdtDoc('root')!) });
+        } else if (terminal === 'stale-inverse') {
+            entries[0]!.inverseAction = rename('first', 'New inverse');
+            previous[0] = entries[0]!.inverseAction;
         } else if (terminal === 'missing-entry') {
             undoStore.set({ past: [], future: [entries[0]!] });
         }

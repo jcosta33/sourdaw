@@ -83,7 +83,9 @@ const mocks = vi.hoisted(() => {
             throw new Error('Unexpected project service call in selection drag spec');
         }),
         projectMidiNotesByClipIdThroughRestores: vi.fn(),
-        serializeMidiStateForClips: vi.fn(),
+        // The duplicate's undo guard compares this against what the copy was
+        // created with, so it serializes unchanged MIDI the same way each call.
+        serializeMidiStateForClips: vi.fn(() => '{}'),
         getAutomationLanes: vi.fn(() => []),
         getAutomationLaneCeiling: vi.fn(),
         notifyUser: vi.fn(),
@@ -111,6 +113,15 @@ vi.mock('#/modules/WorkspaceShell/stores', async (importOriginal) => ({
         },
     },
 }));
+// One fixture carries both the active tool (workspace) and the ripple and
+// automation-visibility fields (timeline editing), so each case seeds both.
+vi.mock('../../../stores/timelineEditingStore', () => ({
+    timelineEditingStore: {
+        get value() {
+            return mocks.workspaceStoreValue.value;
+        },
+    },
+}));
 vi.mock('#/modules/WorkspaceShell/useCases', () => ({
     setWorkspaceMode: mocks.setWorkspaceMode,
 }));
@@ -132,6 +143,7 @@ vi.mock('#/modules/Command/useCases', () => ({
     generateGroupId: mocks.generateGroupId,
     pushUndoEntry: mocks.pushUndoEntry,
     resetActionReplayAuthority: mocks.unrelatedService,
+    commitRedoInverseCapture: mocks.unrelatedService,
 }));
 vi.mock('#/modules/Automation/useCases', () => ({
     shiftClipAutomation: mocks.shiftClipAutomation,
@@ -187,7 +199,7 @@ vi.mock('../../../useCases/timelineInteractions/snapToGrid', () => ({ snapToGrid
 vi.mock('../../../useCases/timelineInteractions/snapToGridOrClips', () => ({
     snapToGridOrClips: mocks.snapToGridOrClips,
 }));
-vi.mock('../../../useCases/timelineInteractions/snapToZeroCrossing', () => ({
+vi.mock('../../../useCases/timelineInteractions/snapToZeroCrossingBeat', () => ({
     snapToZeroCrossing: mocks.snapToZeroCrossing,
 }));
 vi.mock('../../../useCases/timelineInteractions/setPlayheadFromClick', () => ({
