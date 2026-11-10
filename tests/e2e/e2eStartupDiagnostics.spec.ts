@@ -86,7 +86,8 @@ test('applies the persisted Light theme before the real entry module paints', as
         expect.soft(decoyEntrySource, `${decoy} must not replace the real entry`).toBe(entrySource);
     }
     const entryUrl = new URL(entrySource, response.url()).href;
-    const gate = deferred<string>();
+    const prepaintGate = deferred<string>();
+    const entryGate = deferred<string>();
     let prepaintRequests = 0;
     let entryRequests = 0;
     await page.addInitScript((key) => {
@@ -96,10 +97,11 @@ test('applies the persisted Light theme before the real entry module paints', as
         const url = new URL(route.request().url());
         if (url.pathname === '/themePrepaint.js') {
             prepaintRequests += 1;
+            await prepaintGate.promise;
         }
         if (route.request().url() === entryUrl) {
             entryRequests += 1;
-            await gate.promise;
+            await entryGate.promise;
         }
         await route.continue();
     });
@@ -107,6 +109,10 @@ test('applies the persisted Light theme before the real entry module paints', as
     try {
         await page.goto('/', { waitUntil: 'commit' });
         await expect.poll(() => prepaintRequests).toBe(1);
+        await expect(page.locator('#entry-startup')).toHaveCount(0);
+        await expect(page.getByLabel(LAUNCH_SCREEN_NAME)).toHaveCount(0);
+
+        prepaintGate.resolve('release prepaint');
         await expect.poll(() => entryRequests).toBe(1);
         await expect(page.locator('html')).toHaveClass('light');
         await expect(page.locator('html')).toHaveCSS('color-scheme', 'light');
@@ -115,10 +121,11 @@ test('applies the persisted Light theme before the real entry module paints', as
         await expect(page.getByLabel(LAUNCH_SCREEN_NAME)).toHaveCount(0);
         expect(entryRequests).toBe(1);
 
-        gate.resolve('release entry');
+        entryGate.resolve('release entry');
         await expect(page.getByLabel(LAUNCH_SCREEN_NAME)).toBeVisible({ timeout: 30_000 });
     } finally {
-        gate.resolve('release entry');
+        prepaintGate.resolve('release prepaint');
+        entryGate.resolve('release entry');
         await page.unrouteAll({ behavior: 'ignoreErrors' });
     }
 });

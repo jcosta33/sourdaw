@@ -6,9 +6,12 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 
+import { DawCompactTextarea } from '#/components/daw/DawCompactTextarea';
+import { DawDiagramFrame } from '#/components/daw/DawDiagramFrame';
 import { DawPluginChip } from '#/components/daw/DawPluginChip';
 import { DawPluginMetricTile } from '#/components/daw/DawPluginMetricTile';
 import { DawSearchInput } from '#/components/daw/DawSearchInput';
+import { Input } from '#/components/ui/input';
 
 const tokens = readFileSync(resolve(process.cwd(), 'src/styles/tokens.css'), 'utf8');
 const indexHtml = readFileSync(resolve(process.cwd(), 'index.html'), 'utf8');
@@ -64,13 +67,13 @@ const entryModuleFrom = (parsed: Document): HTMLScriptElement | null =>
     [...parsed.querySelectorAll<HTMLScriptElement>('script[type="module" i][src]')].findLast(
         (script) => script.namespaceURI === 'http://www.w3.org/1999/xhtml'
     ) ?? null;
-const themePrecedesEntry = (theme: HTMLScriptElement | null, entry: HTMLScriptElement | null): boolean => {
+const themePrecedesEntry = (theme: HTMLScriptElement | null, entry: Element | null): boolean => {
     if (theme === null || entry === null) {
-        throw new Error('Expected active theme and entry scripts');
+        throw new Error('Expected active theme and entry target');
     }
     const themeRoot = theme.getRootNode();
     if (themeRoot !== entry.getRootNode() || themeRoot !== theme.ownerDocument) {
-        throw new Error('Theme and entry scripts must share one connected document');
+        throw new Error('Theme and entry target must share one connected document');
     }
     return (theme.compareDocumentPosition(entry) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
 };
@@ -233,7 +236,7 @@ describe('semantic light theme', () => {
         }
     });
 
-    it('loads the prepaint theme from an external classic script before the entry module', () => {
+    it('loads the prepaint theme before the startup main and entry module', () => {
         expect(startupThemeMatch?.getAttribute('src')).toBe('/themePrepaint.js');
         // An absent or non-JavaScript type can suppress execution; module,
         // async or defer spelling defers the prepaint past first paint and
@@ -243,6 +246,7 @@ describe('semantic light theme', () => {
         expect(startupThemeMatch?.hasAttribute('async')).toBe(false);
         expect(startupThemeMatch?.hasAttribute('defer')).toBe(false);
         expect(startupThemeMatch?.textContent?.trim()).toBe('');
+        expect(themePrecedesEntry(startupThemeMatch, indexDocument.getElementById('entry-startup'))).toBe(true);
         expect(themePrecedesEntry(startupThemeMatch, entryModuleFrom(indexDocument))).toBe(true);
         expect(indexHtml).toContain(':root.light');
     });
@@ -347,6 +351,113 @@ describe('semantic light theme', () => {
 
         const background = readLightColor('--surface-base');
         expect(contrast(placeholderColor(placeholderClass, background), background)).toBeGreaterThanOrEqual(4.5);
+    });
+
+    const controlForeground = (foregroundClass: string, background: string): string => {
+        const match = /^(?:placeholder:)?text-(white|muted-foreground|text-primary|text-disabled)(?:\/(\d+))?$/u.exec(
+            foregroundClass
+        );
+        if (match === null) {
+            throw new Error(`Unsupported control foreground: ${foregroundClass}`);
+        }
+        const foreground = match[1] === 'white' ? '#ffffff' : readLightColor(`--color-${match[1]}`);
+        return match[2] === undefined ? foreground : composite(foreground, background, Number(match[2]) / 100);
+    };
+
+    const diagramTitleClasses = (titleClassName?: string): string[] => {
+        const markup = renderToStaticMarkup(createElement(DawDiagramFrame, { title: 'Signal flow', titleClassName }));
+        const title = [...parseActiveHtml(markup).querySelectorAll('span')].find(
+            (span) => span.textContent === 'Signal flow'
+        );
+        if (title === undefined) {
+            throw new Error('Expected the diagram title to render');
+        }
+        return (title.getAttribute('class') ?? '').split(/\s+/u).filter(Boolean);
+    };
+
+    const dawInsetSurfaceStops = (): Record<string, string> => {
+        const backgroundSource =
+            /background:([\s\S]*?);\n    border:/u.exec(utilityBlock('daw-inset-surface'))?.[1] ?? '';
+        const layers = Array.from(backgroundSource.matchAll(/rgba\([^)]*\)/gu), (match) => parseCssColor(match[0]));
+        const [topWhite, bottomWhite, topBlack] = layers;
+        const fadeEndpoint = Number(/transparent\s+([\d.]+)%/u.exec(backgroundSource)?.[1]);
+        if (
+            topWhite === undefined ||
+            bottomWhite === undefined ||
+            topBlack === undefined ||
+            !Number.isFinite(fadeEndpoint)
+        ) {
+            throw new Error('Missing daw-inset-surface gradient layers');
+        }
+        const panelInset = readToken(lightBlock, '--color-bg-panelInset');
+        const at = (position: number): string => {
+            const whiteAlpha = topWhite.alpha + (bottomWhite.alpha - topWhite.alpha) * (position / 100);
+            const blackAlpha = topBlack.alpha * Math.max(0, 1 - position / fadeEndpoint);
+            return composite(topWhite.color, composite(topBlack.color, panelInset, blackAlpha), whiteAlpha);
+        };
+        return { top: at(0), center: at(50), bottom: at(100) };
+    };
+
+    it('keeps diagram titles readable on both real header stops and preserves caller overrides', () => {
+        const titleClasses = diagramTitleClasses();
+        const foregroundClass = titleClasses.findLast((name) =>
+            /^text-(?:white|muted-foreground|text-primary)(?:\/\d+)?$/u.test(name)
+        );
+        if (foregroundClass === undefined) {
+            throw new Error('Missing final diagram title foreground');
+        }
+        const stopTokens = Array.from(
+            utilityBlock('daw-header-band').matchAll(/var\((--[a-z-]+)\)\s+(?:0|100)%/giu),
+            (match) => match[1]
+        );
+        expect(stopTokens).toEqual(['--color-bg-panelInset', '--color-bg-well']);
+        for (const token of stopTokens) {
+            const background = readLightColor(token ?? '');
+            expect(contrast(controlForeground(foregroundClass, background), background)).toBeGreaterThanOrEqual(4.5);
+        }
+        expect(foregroundClass).toBe('text-muted-foreground');
+
+        const overrideClasses = diagramTitleClasses('text-text-primary');
+        expect(overrideClasses).toContain('text-text-primary');
+        expect(overrideClasses).not.toContain('text-muted-foreground');
+    });
+
+    it('keeps compact textarea placeholders opaque and readable on their actual inset surface', () => {
+        const markup = renderToStaticMarkup(createElement(DawCompactTextarea, { placeholder: 'Track notes' }));
+        const textarea = parseActiveHtml(markup).querySelector('textarea');
+        if (textarea === null) {
+            throw new Error('Expected the compact textarea to render');
+        }
+        const classes = (textarea.getAttribute('class') ?? '').split(/\s+/u).filter(Boolean);
+        expect(classes).toContain('bg-surface-inset');
+        const foregroundClass = classes.findLast((name) => name.startsWith('placeholder:text-'));
+        if (foregroundClass === undefined) {
+            throw new Error('Missing final compact textarea placeholder foreground');
+        }
+        const background = readLightColor('--color-surface-inset');
+        expect(contrast(controlForeground(foregroundClass, background), background)).toBeGreaterThanOrEqual(4.5);
+        expect(foregroundClass).toBe('placeholder:text-muted-foreground');
+    });
+
+    it('keeps enabled input placeholders readable on the top, center, and bottom inset stops', () => {
+        const markup = renderToStaticMarkup(createElement(Input, { placeholder: 'Buffer size' }));
+        const input = parseActiveHtml(markup).querySelector('input');
+        if (input === null) {
+            throw new Error('Expected the shared input to render');
+        }
+        const classes = (input.getAttribute('class') ?? '').split(/\s+/u).filter(Boolean);
+        expect(classes).toContain('daw-inset-surface');
+        const foregroundClass = classes.findLast((name) => name.startsWith('placeholder:text-'));
+        if (foregroundClass === undefined) {
+            throw new Error('Missing final shared input placeholder foreground');
+        }
+        for (const [stop, background] of Object.entries(dawInsetSurfaceStops())) {
+            expect(
+                contrast(controlForeground(foregroundClass, background), background),
+                `Shared input placeholder on ${stop}`
+            ).toBeGreaterThanOrEqual(4.5);
+        }
+        expect(foregroundClass).toBe('placeholder:text-text-primary');
     });
 
     it('keeps Preferences grid group labels readable on the dialog’s actual composite surface', () => {
@@ -666,20 +777,107 @@ describe('semantic light theme', () => {
         }
     });
 
-    it.each(['cyan', 'amber', 'steel', 'copper', 'peach', 'mint', 'sage', 'lavender', 'rose', 'indigo', 'danger'])(
-        'keeps %s active-chip applied text above 4.75:1 on its actual tinted backgrounds',
-        (tone) => {
-            const activeToneSource =
-                /const ACTIVE_TONE_CLASS_NAMES:[\s\S]*?= \{([\s\S]*?)\n\};/u.exec(chipSource)?.[1] ?? '';
-            const toneClass = new RegExp(`\\b${tone}:\\s*'([^']+)'`, 'u').exec(activeToneSource)?.[1];
-            const backgroundToken = toneClass?.match(/bg-\[var\((--[a-z-]+)\)\]\/(\d+)/u)?.[1];
-            const alphaSource = toneClass?.match(/bg-\[var\((--[a-z-]+)\)\]\/(\d+)/u)?.[2];
-            const foregroundToken = toneClass?.match(/text-\[var\((--[a-z-]+)\)\]/u)?.[1];
-            if (backgroundToken === undefined || alphaSource === undefined || foregroundToken === undefined) {
-                throw new Error(`Missing active-chip background or applied foreground for ${tone}`);
+    const activeChipExpectations = [
+        {
+            tone: 'neutral',
+            foregroundClass: 'text-text-primary',
+            backgroundClass: 'bg-surface-raised/60',
+            borderClass: 'border-border-active',
+        },
+        {
+            tone: 'amber',
+            foregroundClass: 'text-[var(--color-accent-amber)]',
+            backgroundClass: 'bg-[var(--color-accent-amber)]/14',
+            borderClass: 'border-[var(--color-accent-amber)]/60',
+        },
+        {
+            tone: 'cyan',
+            foregroundClass: 'text-[var(--color-accent-cyan)]',
+            backgroundClass: 'bg-[var(--color-accent-cyan)]/12',
+            borderClass: 'border-[var(--color-accent-cyan)]/60',
+        },
+        {
+            tone: 'peach',
+            foregroundClass: 'text-[var(--color-accent-peach)]',
+            backgroundClass: 'bg-[var(--color-accent-peach)]/12',
+            borderClass: 'border-[var(--color-accent-peach)]/60',
+        },
+        {
+            tone: 'lavender',
+            foregroundClass: 'text-[var(--color-accent-lavender)]',
+            backgroundClass: 'bg-[var(--color-accent-lavender)]/12',
+            borderClass: 'border-[var(--color-accent-lavender)]/60',
+        },
+        {
+            tone: 'mint',
+            foregroundClass: 'text-[var(--color-accent-mint)]',
+            backgroundClass: 'bg-[var(--color-accent-mint)]/12',
+            borderClass: 'border-[var(--color-accent-mint)]/60',
+        },
+        {
+            tone: 'steel',
+            foregroundClass: 'text-[var(--color-accent-steel)]',
+            backgroundClass: 'bg-[var(--color-accent-steel)]/14',
+            borderClass: 'border-[var(--color-accent-steel)]/60',
+        },
+        {
+            tone: 'danger',
+            foregroundClass: 'text-[var(--color-state-danger)]',
+            backgroundClass: 'bg-[var(--color-state-danger)]/12',
+            borderClass: 'border-[var(--color-state-danger)]/60',
+        },
+        {
+            tone: 'rose',
+            foregroundClass: 'text-[var(--color-accent-rose)]',
+            backgroundClass: 'bg-[var(--color-accent-rose)]/14',
+            borderClass: 'border-[var(--color-accent-rose)]/60',
+        },
+        {
+            tone: 'indigo',
+            foregroundClass: 'text-[var(--color-accent-indigo)]',
+            backgroundClass: 'bg-[var(--color-accent-indigo)]/12',
+            borderClass: 'border-[var(--color-accent-indigo)]/60',
+        },
+        {
+            tone: 'sage',
+            foregroundClass: 'text-[var(--color-accent-sage)]',
+            backgroundClass: 'bg-[var(--color-accent-sage)]/12',
+            borderClass: 'border-[var(--color-accent-sage)]/60',
+        },
+        {
+            tone: 'copper',
+            foregroundClass: 'text-[var(--color-accent-copper)]',
+            backgroundClass: 'bg-[var(--color-accent-copper)]/12',
+            borderClass: 'border-[var(--color-accent-copper)]/60',
+        },
+    ] as const;
+
+    it.each(activeChipExpectations)(
+        'observes the emitted $tone active-chip classes and contrast above 4.75:1',
+        ({ tone, foregroundClass: expectedForeground, backgroundClass: expectedBackground, borderClass }) => {
+            const markup = renderToStaticMarkup(createElement(DawPluginChip, { active: true, tone }, tone));
+            const finalClasses =
+                parseActiveHtml(markup).querySelector('button')?.getAttribute('class')?.split(/\s+/u).filter(Boolean) ??
+                [];
+            expect(finalClasses).toEqual(expect.arrayContaining([expectedForeground, expectedBackground, borderClass]));
+
+            const foregroundClass = finalClasses.findLast((name) =>
+                /^text-(?:\[var\(--[a-z-]+\)\]|text-primary)$/u.test(name)
+            );
+            const foregroundToken =
+                /^text-\[var\((--[a-z-]+)\)\]$/u.exec(foregroundClass ?? '')?.[1] ??
+                (foregroundClass === 'text-text-primary' ? '--color-text-primary' : undefined);
+            const backgroundMatch = finalClasses
+                .map((name) => /^bg-(?:\[var\((--[a-z-]+)\)\]|(surface-raised))\/(\d+)$/u.exec(name))
+                .find((match) => match !== null);
+            const backgroundToken =
+                backgroundMatch?.[1] ?? (backgroundMatch?.[2] === 'surface-raised' ? '--surface-raised' : undefined);
+            const alphaSource = backgroundMatch?.[3];
+            if (foregroundToken === undefined || backgroundToken === undefined || alphaSource === undefined) {
+                throw new Error(`Missing rendered active-chip foreground or background for ${tone}`);
             }
-            const backgroundAccent = readLightColor(backgroundToken);
             const foreground = readLightColor(foregroundToken);
+            const backgroundAccent = readLightColor(backgroundToken);
             for (const surfaceToken of [
                 '--surface-deep',
                 '--surface-base',
