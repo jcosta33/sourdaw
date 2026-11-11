@@ -667,6 +667,76 @@ describe('Crust numeric controller with real Command and CRDT', () => {
         expect(audio.updateDeviceParam).not.toHaveBeenCalledWith(TRACK, DEVICE, 'gain', 0);
     });
 
+    it('flushes an admitted terminal cancelled mid-flush exactly once', async () => {
+        let beat = 4;
+        setGestureClockSource({ getAudioTimeSeconds: () => 0, readNativeCursorBeats: () => beat });
+        const track = trackStore.value?.tracks[0];
+        if (!track) {
+            throw new Error('Missing track');
+        }
+        trackStore.set({ tracks: [{ ...track, automationMode: 'touch' }], selectedTrackId: TRACK, ghostClips: [] });
+        flushAutomergeStorageWrites();
+        transportStore.set({ ...defaultTransportState, isPlaying: true, tempo: 120 });
+        addAutomationLane(TRACK, `${DEVICE}:gain`, 'Input gain');
+        const recordingRelease = vi.fn();
+        const recordingDiscard = vi.fn();
+        const captureRecording = automationApi.captureTouchAutomationRecordingAuthority;
+        vi.spyOn(automationApi, 'captureTouchAutomationRecordingAuthority').mockImplementation(
+            (...args: Parameters<typeof captureRecording>) => {
+                const authority = captureRecording(...args);
+                return {
+                    owner: authority.owner,
+                    release: () => {
+                        recordingRelease();
+                        authority.release();
+                    },
+                    discard: () => {
+                        recordingDiscard();
+                        authority.discard();
+                    },
+                };
+            }
+        );
+        const runtimeRelease = vi.fn();
+        vi.spyOn(engineApi, 'captureDeviceParameterRuntimeWriteAuthority').mockReturnValueOnce({
+            owner: Symbol('controlled engine receipt'),
+            isCurrent: () => true,
+            canCommit: () => true,
+            release: runtimeRelease,
+        });
+        const edit = controller();
+        await edit.change('gain', 9, true);
+        beat = 6;
+        const hold = holdSnapshotAdmission();
+        await hold.entered;
+        const pending = edit.change('gain', 7);
+        try {
+            await hold.admitted;
+        } finally {
+            const released = hold.release(pending);
+            try {
+                while (captureUndoHistory().past.length === 0) {
+                    await Promise.resolve();
+                }
+                edit.cancel('gain');
+                await pending;
+            } finally {
+                await released;
+            }
+        }
+
+        expect(rawDevice().parameterValues.gain).toBe(7);
+        expect(projectedDevice()).toEqual(rawDevice());
+        expect(getCrustState(DEVICE).patch.gain).toBe(7);
+        expect(captureUndoHistory().past).toHaveLength(1);
+        const points = automationStore.value?.lanes.flatMap((lane) => lane.points) ?? [];
+        expect(points.map((point) => point.value)).toContain(9);
+        expect(recordingRelease).toHaveBeenCalledTimes(1);
+        expect(recordingDiscard).not.toHaveBeenCalled();
+        expect(runtimeRelease).toHaveBeenCalledTimes(1);
+        stopAutomationRecording();
+    });
+
     it.each(['cancel', 'dispose'] as const)(
         'discards a refused touch terminal on %s without durable automation or history',
         async (termination) => {

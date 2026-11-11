@@ -35,6 +35,7 @@ type Gesture = {
     reacquirable?: boolean;
     committed: boolean;
     pending?: Promise<void>;
+    settled: boolean;
 };
 type Scope = { deviceId: string; sequence: number; disposed: boolean; gestures: Map<Key, Gesture> };
 
@@ -118,6 +119,7 @@ function retire(
     if (restore) {
         gesture.cancelled = true;
     }
+    gesture.settled = true;
     const errors: unknown[] = [];
     try {
         if (flushRecording) {
@@ -151,6 +153,11 @@ function collectCancellation(scope: Scope, gesture: Gesture, reacquirable = fals
     }
     gesture.cancelled = true;
     gesture.reacquirable = reacquirable;
+    if (gesture.pending) {
+        // The terminal commit is still flushing its storage transaction;
+        // finishCommit settles the gesture exactly once.
+        return undefined;
+    }
     return retire(scope, gesture, !gesture.committed);
 }
 
@@ -229,6 +236,7 @@ function start(scope: Scope, key: Key): number {
         recording: captureTouchAutomationRecordingAuthority(owner.id, createDeviceAutomationTargetId(device.id, key)),
         cancelled: false,
         committed: false,
+        settled: false,
     };
     scope.gestures.set(key, gesture);
     return gesture.token;
@@ -260,7 +268,7 @@ function notifySettlementFailure(errors: unknown[], fallback = 'Crust parameter 
 
 function finishCommit(scope: Scope, gesture: Gesture, admitted: boolean): SettlementFailure | undefined {
     try {
-        if (gesture.cancelled) {
+        if (gesture.settled) {
             return undefined;
         }
         return retire(scope, gesture, !gesture.committed, admitted);
