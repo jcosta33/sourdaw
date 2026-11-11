@@ -11,6 +11,7 @@ import {
     REVIEW_ROUND_FREEZE_THRESHOLD,
     assertReviewRoundsBelowFreeze,
     countReviewerRequestChangesRounds,
+    countReviewerRequestChangesRoundsInHistory,
     logReviewRoundFreezeAtThreshold,
     reviewRoundFreezeFlag,
 } from '../reviewRoundEscalation.ts';
@@ -56,6 +57,57 @@ describe('countReviewerRequestChangesRounds', () => {
         ];
 
         expect(countReviewerRequestChangesRounds(reconstruction(reviews))).toBe(4);
+    });
+});
+
+describe('countReviewerRequestChangesRoundsInHistory', () => {
+    function findingComment(id: number, reviewId: number): PublicReviewComment {
+        return {
+            id,
+            reviewId,
+            actorNodeId: REVIEWER_BOT_NODE_ID,
+            path: 'src/a.ts',
+            line: 1,
+            side: 'RIGHT',
+            body: 'Defect.',
+        };
+    }
+
+    const requested = Array.from({ length: REVIEW_ROUND_FREEZE_THRESHOLD - 1 }, (_, index) =>
+        reviewerReview(index + 1, HEAD, 'CHANGES_REQUESTED')
+    );
+
+    function count(reviews: readonly PublicReview[], comments: readonly PublicReviewComment[]): number {
+        return countReviewerRequestChangesRoundsInHistory(PR, { state: 'OPEN', head: HEAD }, reviews, comments);
+    }
+
+    it('counts a dismissed reviewer review that owns an inline comment as a request-changes round', () => {
+        const dismissed = reviewerReview(50, HEAD, 'DISMISSED');
+        expect(count([...requested, dismissed], [findingComment(500, 50)])).toBe(REVIEW_ROUND_FREEZE_THRESHOLD);
+        expect(() =>
+            assertReviewRoundsBelowFreeze(PR, count([...requested, dismissed], [findingComment(500, 50)]))
+        ).toThrow(/review round freeze/u);
+    });
+
+    it('leaves a dismissed comment-less reviewer review, a stale approval, uncounted', () => {
+        const dismissed = reviewerReview(50, HEAD, 'DISMISSED');
+        expect(count([...requested, dismissed], [findingComment(500, 3)])).toBe(REVIEW_ROUND_FREEZE_THRESHOLD - 1);
+    });
+
+    it('leaves a dismissed review from another actor uncounted even when it owns a comment', () => {
+        const dismissed: PublicReview = {
+            id: 50,
+            state: 'DISMISSED',
+            commitId: HEAD,
+            actorNodeId: ORCHESTRATOR_USER_NODE_ID,
+            body: 'accepted',
+        };
+        expect(count([...requested, dismissed], [findingComment(500, 50)])).toBe(REVIEW_ROUND_FREEZE_THRESHOLD - 1);
+    });
+
+    it('counts a dismissed request for changes once when the history repeats it', () => {
+        const dismissed = reviewerReview(50, HEAD, 'DISMISSED');
+        expect(count([dismissed, dismissed], [findingComment(500, 50), findingComment(501, 50)])).toBe(1);
     });
 });
 

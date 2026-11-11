@@ -14,6 +14,7 @@ import {
     spawnCapture,
     type GhSession,
 } from './githubAppIdentity.ts';
+import { unsafeCredentialReason } from './evidenceSafety.ts';
 import { composeReviewCommentBody, fail, PR_STATE } from './prContract.ts';
 import { reviewBundlePath, type ReviewBundleContext } from './prepareReview.ts';
 import {
@@ -42,6 +43,8 @@ import {
     assertSameApprovalContext,
     publicationApprovalContext,
     readLiveApprovalContext,
+    readLiveReviewComparison,
+    type LiveReviewComparison,
 } from './reviewApprovalContext.ts';
 import { renderReviewDocumentBody } from './reviewApprovalFormat.ts';
 import { assertReviewCommentLinesInBundleDiff } from './reviewCommentDiffPreflight.ts';
@@ -105,6 +108,11 @@ export type PublishReviewPort = {
     readBundleDiff: (path: string) => string;
     writeBundleText?: (path: string, contents: string) => void;
     assertApprovalContext?: (number: number, head: string, bundle: string) => ReviewBundleContext;
+    /**
+     * The live merge base, patch and numstat for the head, read from git objects. A fresh
+     * plan-carrying publication binds its plan and `diff.patch` to them before any remote write.
+     */
+    liveReviewComparison?: (number: number, head: string) => LiveReviewComparison;
     reviewState?: (number: number, expectedHead: string) => ReviewState;
     postReview: (input: {
         number: number;
@@ -229,6 +237,9 @@ function prepareReviewPublication(
         assertReviewerModelDiversity({ actorNodeId, authorLabels: pullRequest.labels ?? [], document });
         assertReviewRoundPublicationAdmitted({ number, head, bundle, port });
     }
+    if (actorNodeId === ORCHESTRATOR_USER_NODE_ID || !replaysRecordedPublication) {
+        assertPublicReviewTextSafe(document);
+    }
     // The approval context and the comment preflight run before the dossier publication, and the
     // order matters: a refusal here must not have written the canonical dossier.
     const approvalContext = publicationApprovalContext(number, head, document, port);
@@ -257,6 +268,20 @@ function prepareReviewPublication(
             })
         ),
     };
+}
+
+/** The public review body and every inline comment body leave the machine; none may carry a credential. */
+function assertPublicReviewTextSafe(document: ReviewDocument): void {
+    const bodyReason = unsafeCredentialReason(renderReviewDocumentBody(document));
+    if (bodyReason !== undefined) {
+        fail(`review body contains ${bodyReason}; refusing to publish it`);
+    }
+    for (const [index, comment] of document.comments.entries()) {
+        const commentReason = unsafeCredentialReason(composeReviewCommentBody(comment));
+        if (commentReason !== undefined) {
+            fail(`review comment[${index}] body contains ${commentReason}; refusing to publish it`);
+        }
+    }
 }
 
 function publishPreparedReviewForActor(
@@ -451,6 +476,7 @@ export function shellPort(
         writeBundleText: (path, contents) => writeFileSync(path, contents),
         assertApprovalContext: (number, head, bundle) =>
             readLiveApprovalContext(primaryRoot, number, head, bundle, session, capture),
+        liveReviewComparison: (number, head) => readLiveReviewComparison(primaryRoot, number, head, session, capture),
         postReview: ({ number, commitId, event, body, comments }) => {
             const input = reviewPublicationPayload({ commitId, event, body, comments });
             markRemoteMutationAttempt();

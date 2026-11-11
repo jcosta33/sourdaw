@@ -64,18 +64,24 @@ export function assertReviewerModelDiversity(input: {
     }
     const authorModels = input.authorLabels
         .map(authorModelFromLabel)
-        .filter((model): model is string => model !== undefined);
+        .filter((model): model is string => model !== undefined)
+        .map(modelToken);
     // Every fenced label names a model some lane publish declared as the author. A republish
     // reconciles the fence: the publisher's metadata edit removes every superseded authorship
     // label (#4296), so the set the pull request wears names the model its latest publish
     // declared. A reviewer matching any declared author is the collusion this check exists
     // to refuse.
     const models = [reviewerModel, ...(input.document.draws ?? []).map((draw) => draw.reviewerModel)];
-    for (const model of new Set(models.map((candidate) => candidate.trim()))) {
+    for (const model of new Set(models.map(modelToken))) {
         if (authorModels.includes(model)) {
             assertSameModelDisclosed(input.document, model, authorModels);
         }
     }
+}
+
+/** Case and compatibility-width spellings of one model name one model. */
+function modelToken(model: string): string {
+    return model.normalize('NFKC').trim().toLowerCase();
 }
 
 function assertSameModelDisclosed(
@@ -104,9 +110,11 @@ function assertSameModelDisclosed(
 /**
  * The model named as a standalone token, not a substring: model tokens share a charset
  * (`a-z0-9.+-`, the lane `--model` grammar), so a body naming only `glm-5.3-flash` must not
- * count as naming `glm-5.3` — the flank characters prove a different, longer token.
+ * count as naming `glm-5.3` — the flank characters prove a different, longer token. The body is
+ * compared in the same normalised form as the model token.
  */
-function bodyNamesModel(body: string, model: string): boolean {
+function bodyNamesModel(publishedBody: string, model: string): boolean {
+    const body = modelToken(publishedBody);
     const tokenCharacter = /[a-z0-9.+-]/u;
     for (let index = body.indexOf(model); index !== -1; index = body.indexOf(model, index + 1)) {
         const before = index > 0 ? body[index - 1] : undefined;

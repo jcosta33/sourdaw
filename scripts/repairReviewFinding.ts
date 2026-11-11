@@ -46,6 +46,7 @@ import {
     readFindingLine,
     readFindingReviewedHead,
     reviewRepairCommitRefusal,
+    reviewRepairRootAuthorRefusal,
     renderReviewRepairReply,
     type ReviewRepairEvidence,
     type ReviewRepairRecord,
@@ -72,7 +73,15 @@ export type RepairReviewFindingThread = {
     pullRequestNumber: number;
     head: string;
     base: string;
-    rootComment: { id: number; path: string; line: number; side: 'LEFT' | 'RIGHT'; reviewedHead: string };
+    rootComment: {
+        id: number;
+        path: string;
+        line: number;
+        side: 'LEFT' | 'RIGHT';
+        reviewedHead: string;
+        /** The root's Bot or User node id; null for a deleted or otherwise unidentified author. */
+        authorNodeId: string | null;
+    };
     replies: RepairReviewFindingReply[];
 };
 
@@ -376,6 +385,10 @@ export function repairReviewFinding(
         fail(`GitHub returned thread ${state.threadId} for requested thread ${input.threadId}`);
     }
     assertThreadPrecondition(state, number, input.head);
+    const rootAuthorRefusal = reviewRepairRootAuthorRefusal(state.rootComment.authorNodeId);
+    if (rootAuthorRefusal !== undefined) {
+        fail(`thread ${state.threadId}: ${rootAuthorRefusal}`);
+    }
     // The freeze flag is advisory here and never blocks a repair: unresolved threads must stay
     // resolvable however many request-changes rounds the pull request has taken.
     logReviewRoundFreezeAtThreshold(number, state.head, port.reviews, port.reviewComments, port.log);
@@ -456,12 +469,17 @@ function readRootComment(
     if (typeof node.path !== 'string' || node.path.trim() === '') {
         fail(`${label} root comment carries no file path`);
     }
+    const author = isRecord(node.author) ? node.author : {};
     return {
         id,
         path: node.path,
         line: readFindingLine(node.line, node.originalLine, `${label} root comment`),
         side,
         reviewedHead: readFindingReviewedHead(node.pullRequestReview, `${label} root comment`),
+        authorNodeId:
+            (author.__typename === 'Bot' || author.__typename === 'User') && typeof author.id === 'string'
+                ? author.id
+                : null,
     };
 }
 
@@ -470,10 +488,11 @@ function readThreadReply(node: ThreadCommentNode, label: string): RepairReviewFi
         fail(`${label} returned an unreadable comment`);
     }
     const author = isRecord(node.author) ? node.author : {};
+    // Only a Bot reply carries an agent identity; a person's reply is never read as a record.
     return {
         id: readCommentDatabaseId(node.databaseId, `${label} comment ${node.id} id`),
         body: node.body,
-        authorNodeId: typeof author.id === 'string' ? author.id : null,
+        authorNodeId: author.__typename === 'Bot' && typeof author.id === 'string' ? author.id : null,
     };
 }
 

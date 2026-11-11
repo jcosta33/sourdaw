@@ -18,6 +18,15 @@ export function assertReviewEvidenceClaimsSafe(document: ReviewDocument): void {
     }
 }
 
+/** Case, compatibility-width and separator spellings of one stance name one stance. */
+function stanceKey(stance: string): string {
+    return stance
+        .normalize('NFKC')
+        .toLowerCase()
+        .replace(/[\s_-]+/gu, ' ')
+        .trim();
+}
+
 /**
  * The machine-checked minimum (ADR 0054): the round's completed draws cover at least the plan's
  * stance floor in distinct stances and every effective draw meets the review-model cost ceiling.
@@ -27,7 +36,7 @@ export function assertReviewEvidenceClaimsSafe(document: ReviewDocument): void {
  */
 export function assertReviewDrawFloor(plan: ReviewRiskPlan, draws: readonly CompletedReviewStance[]): void {
     const floor = reviewStanceFloor(plan);
-    const stances = new Set(draws.map((draw) => draw.stance));
+    const stances = new Set(draws.map((draw) => stanceKey(draw.stance)));
     if (stances.size < floor) {
         fail(
             `review.json draws cover ${stances.size} distinct stances; the ${plan.riskClasses.join(', ')} risk plan requires at least ${floor}`

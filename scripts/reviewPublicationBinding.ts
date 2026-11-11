@@ -17,9 +17,8 @@ import {
     reviewBundlePath,
     type ReviewBundleContext,
 } from './prepareReview.ts';
-import { reconstructReviewRounds } from './reconstructReviewRounds.ts';
 import { renderReviewDocumentBody } from './reviewApprovalFormat.ts';
-import { changedReviewPaths, numstatFromPatch } from './reviewDiffSummary.ts';
+import { changedReviewPaths } from './reviewDiffSummary.ts';
 import {
     REVIEW_DOSSIER_FORMAT,
     appendReviewDossierEvents,
@@ -37,7 +36,7 @@ import {
 } from './reviewDossierViews.ts';
 import { recordedReviewStands } from './reviewPublicationRemoteInspection.ts';
 import { parseReviewRiskPlan, planReviewRisk, type ReviewRiskPlan } from './reviewRiskPolicy.ts';
-import { assertReviewRoundsBelowFreeze, countReviewerRequestChangesRounds } from './reviewRoundEscalation.ts';
+import { assertReviewRoundsBelowFreeze, countReviewerRequestChangesRoundsInHistory } from './reviewRoundEscalation.ts';
 import { assertReviewDrawFloor, assertReviewEvidenceClaimsSafe } from './reviewStructuralAdmission.ts';
 
 import type { PublishReviewPort } from './publishReview.ts';
@@ -92,23 +91,39 @@ function assertReviewRiskPlanBindsBundle(number: number, head: string, plan: Rev
 }
 
 /**
- * A fresh publication recomputes the plan from the bundle's own diff with the planner
- * `review:prepare` used, so a hand-edited `risk-plan.json` cannot lower the floor it is held to.
- * Replays and recovered bindings are exempt: they post nothing and answer to the record they bound.
+ * A fresh publication binds the bundle to live git objects and recomputes the plan from them with
+ * the planner `review:prepare` used, so neither a hand-edited `risk-plan.json`, a replaced
+ * `diff.patch`, nor a moved `baseSha` can lower the floor it is held to or steer the comment
+ * preflight. The plan's `baseSha` is already bound to the manifest; here it must equal the live
+ * merge base. Replays and recovered bindings are exempt: they post nothing and answer to the record
+ * they bound.
  */
-function assertReviewRiskPlanMatchesDiff(plan: ReviewRiskPlan, bundle: string, port: PublishReviewPort): void {
+function assertReviewRiskPlanMatchesLiveDiff(
+    number: number,
+    plan: ReviewRiskPlan,
+    bundle: string,
+    port: PublishReviewPort
+): void {
+    if (port.liveReviewComparison === undefined) {
+        fail('a fresh review publication requires the port to read the live comparison from git objects');
+    }
+    const live = port.liveReviewComparison(number, plan.headSha);
+    const reprepare = `; re-run pnpm review:prepare ${number}`;
+    if (live.mergeBase !== plan.baseSha) {
+        fail(`review risk plan baseSha ${plan.baseSha} is not the live merge base ${live.mergeBase}${reprepare}`);
+    }
+    if (port.readBundleDiff(join(bundle, 'diff.patch')) !== live.patch) {
+        fail(`bundle diff.patch differs from git diff ${plan.baseSha}...${plan.headSha}${reprepare}`);
+    }
     const derived = planReviewRisk({
         pr: plan.pr,
         headSha: plan.headSha,
         baseSha: plan.baseSha,
-        paths: changedReviewPaths(
-            port.primaryRoot(),
-            numstatFromPatch(port.readBundleDiff(join(bundle, 'diff.patch')))
-        ),
+        paths: changedReviewPaths(port.primaryRoot(), live.numstat),
     });
     if (derived.riskClasses.join(',') !== plan.riskClasses.join(',')) {
         fail(
-            `review risk plan riskClasses ${plan.riskClasses.join(', ')} differ from the ${derived.riskClasses.join(', ')} the bundle diff.patch earns`
+            `review risk plan riskClasses ${plan.riskClasses.join(', ')} differ from the ${derived.riskClasses.join(', ')} the live diff earns`
         );
     }
 }
@@ -138,8 +153,11 @@ function observedReviewRoundCount(number: number, head: string, port: PublishRev
     }
     const reviews = port.publicReviews;
     const comments = port.publicReviewComments;
-    return countReviewerRequestChangesRounds(
-        reconstructReviewRounds(number, { state: 'OPEN', head }, reviews(number), comments(number))
+    return countReviewerRequestChangesRoundsInHistory(
+        number,
+        { state: 'OPEN', head },
+        reviews(number),
+        comments(number)
     );
 }
 
@@ -268,7 +286,7 @@ export function prepareReviewDossierPublication(input: DossierPublicationContext
     }
     const publication = buildReviewDossier(buildInput);
     if (publishedReviewId(publication.dossier) === undefined) {
-        assertReviewRiskPlanMatchesDiff(buildInput.plan, input.bundle, input.port);
+        assertReviewRiskPlanMatchesLiveDiff(input.number, buildInput.plan, input.bundle, input.port);
         assertReviewDrawFloor(buildInput.plan, completedStances(publication.dossier));
     }
     persistCanonicalReviewDossier(publication, input.bundle, input.port);
@@ -312,6 +330,11 @@ export function recordedPublicationReplay(
     const recorded = publishedReviewId(dossier);
     if (recorded === undefined) {
         return undefined;
+    }
+    if (dossier.pr !== number || dossier.headSha !== head) {
+        fail(
+            `review dossier records pr ${dossier.pr} head ${dossier.headSha}, not pull request ${number} head ${head}; refusing to replay it`
+        );
     }
     if (port.remoteReview === undefined) {
         fail(`review publication ${recorded} is recorded but the port has no review inspector to replay it`);

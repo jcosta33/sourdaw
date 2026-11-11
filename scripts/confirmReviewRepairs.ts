@@ -307,6 +307,15 @@ function readReply(comment: unknown, label: string): ReviewRepairThreadState['re
     return { id, body: comment.body, authorNodeId: null };
 }
 
+/** The root's Bot or User node id: the owner's own findings are User comments and stay repairable. */
+function readRootAuthorNodeId(root: Record<string, unknown>): string | null {
+    const author = isRecord(root.author) ? root.author : {};
+    if ((author.__typename === 'Bot' || author.__typename === 'User') && typeof author.id === 'string') {
+        return author.id;
+    }
+    return null;
+}
+
 /** A listed thread plus the cursor of its unread comment pages, when the first page was truncated. */
 type ListedThread = { state: ReviewRepairThreadState; commentCursor: string | null };
 
@@ -353,6 +362,7 @@ function readThread(node: unknown, label: string): ListedThread {
             rootLine: readFindingLine(root.line, root.originalLine, `${label} root comment line`),
             rootSide: readSide(node.diffSide, `${label} diff side`),
             rootReviewedHead: readFindingReviewedHead(root.pullRequestReview, `${label} root comment`),
+            rootAuthorNodeId: readRootAuthorNodeId(root),
             replies: [root, ...rest].map((comment) => readReply(comment, label)),
         },
         commentCursor: readCommentCursor(comments, label),

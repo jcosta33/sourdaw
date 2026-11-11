@@ -140,6 +140,32 @@ describe('assertReviewerModelDiversity', () => {
         ).toThrow(/matches one of the PR's authoring models/u);
     });
 
+    it('refuses a reviewer model differing from the authoring model only by case or width', () => {
+        for (const reviewerModel of ['GPT-6-Luna', 'ｇｐｔ-6-luna']) {
+            expect(() =>
+                assertReviewerModelDiversity({
+                    actorNodeId: REVIEWER_BOT_NODE_ID,
+                    authorLabels: [authorLabel],
+                    document: { reviewerModel, body: 'The change held.' },
+                })
+            ).toThrow(/matches one of the PR's authoring models/u);
+        }
+    });
+
+    it('admits the same-model fallback when the body names the reviewer model in another case', () => {
+        expect(() =>
+            assertReviewerModelDiversity({
+                actorNodeId: REVIEWER_BOT_NODE_ID,
+                authorLabels: [{ name: 'glm-5.3', description: 'Authored by glm-5.3' }],
+                document: {
+                    reviewerModel: 'glm-5.3',
+                    modelExhaustion: 'every other harness on this machine is logged out',
+                    body: 'Reviewed on GLM-5.3 under the same-model fallback.',
+                },
+            })
+        ).not.toThrow();
+    });
+
     it('passes when the reviewer model differs from the authoring model', () => {
         expect(() =>
             assertReviewerModelDiversity({

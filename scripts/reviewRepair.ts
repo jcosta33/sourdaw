@@ -24,6 +24,7 @@ import { createHash } from 'node:crypto';
 
 import { canonicalJson, isMarkerLine, lastMarkerLine, parseMarkerPayload } from './canonicalRecord.ts';
 import { REVIEW_EVIDENCE_FIELD_MAX_BYTES, assertPublicationSafeEvidence } from './evidenceSafety.ts';
+import { ORCHESTRATOR_USER_NODE_ID, isReviewerBotNodeId } from './githubAppIdentity.ts';
 import { fail } from './prContract.ts';
 
 export const REVIEW_REPAIR_FORMAT = 'repair-v1';
@@ -66,7 +67,7 @@ const DIFFERENT_RECORD_CONFIRMATION_REFUSAL = 'thread already carries a confirma
  * move with the diff, and a later reply belongs to a different review.
  */
 export const REVIEW_THREAD_COMMENT_FIELDS =
-    'nodes{id databaseId body path line originalLine author{__typename login ... on Bot{id}} pullRequestReview{commit{oid}}} pageInfo{hasNextPage endCursor}';
+    'nodes{id databaseId body path line originalLine author{__typename login ... on Bot{id} ... on User{id}} pullRequestReview{commit{oid}}} pageInfo{hasNextPage endCursor}';
 
 export type ReviewRepairFinding = { commentId: number; path: string; line: number; side: 'LEFT' | 'RIGHT' };
 
@@ -104,6 +105,8 @@ export type ReviewRepairThreadState = {
     rootLine: number;
     rootSide: 'LEFT' | 'RIGHT';
     rootReviewedHead: string;
+    /** The root comment's Bot or User node id; null for a deleted or otherwise unidentified author. */
+    rootAuthorNodeId: string | null;
     replies: { id: number; body: string; authorNodeId: string | null }[];
 };
 
@@ -535,11 +538,26 @@ export function authorRepairRecords(
 }
 
 /**
+ * Only a finding the reviewer App or the owner raised is a review finding the repair route may answer
+ * and resolve; a thread opened by anyone else, a deleted account, or another bot is not one.
+ */
+export function reviewRepairRootAuthorRefusal(rootAuthorNodeId: string | null): string | undefined {
+    if (isReviewerBotNodeId(rootAuthorNodeId) || rootAuthorNodeId === ORCHESTRATOR_USER_NODE_ID) {
+        return undefined;
+    }
+    return `thread root comment author ${rootAuthorNodeId ?? 'unknown (deleted or unidentified)'} is neither the reviewer App nor the owner`;
+}
+
+/**
  * The comment id and side identify the thread root. The finding's path and line describe the position
  * recorded at repair time; GitHub rewrites the root's live path on a rename and moves or nulls its live
  * line on later pushes, so an immutable record cannot keep matching them.
  */
 function findingRefusal(thread: ReviewRepairThreadState, finding: ReviewRepairFinding): string | undefined {
+    const rootAuthor = reviewRepairRootAuthorRefusal(thread.rootAuthorNodeId);
+    if (rootAuthor !== undefined) {
+        return rootAuthor;
+    }
     if (finding.commentId !== thread.rootCommentId) {
         return `finding commentId ${finding.commentId} does not match the thread root ${thread.rootCommentId}`;
     }

@@ -59,6 +59,13 @@ describe('assertReviewDrawFloor', () => {
         expect(() => assertReviewDrawFloor(plan(['small']), repeated)).toThrow(/cover 1 distinct stances/u);
     });
 
+    it('counts case, width and separator variants of one stance once', () => {
+        const variants: CompletedReviewStance[] = ['Lost Review', 'lost-review', 'LOST__review', 'ｌｏｓｔ review'].map(
+            (stance, index) => ({ stance, reviewerModel: `model-${index}`, modelTier: 'standard', outcome: 'clean' })
+        );
+        expect(() => assertReviewDrawFloor(plan(['small']), variants)).toThrow(/cover 1 distinct stances/u);
+    });
+
     it.each(['native-security', 'realtime-audio', 'undo'] as const)(
         'admits a %s specialist plan with standard draws at its unchanged stance floor',
         (riskClass) => {

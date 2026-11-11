@@ -204,3 +204,54 @@ describe('real shell approval context', () => {
         }
     );
 });
+
+describe('real shell live review comparison', () => {
+    function compare(f: ReturnType<typeof fixture>) {
+        const port = shellPort(
+            { configDir: f.root, env: {}, dispose: () => undefined },
+            f.root,
+            (command, args, options) => {
+                if (command === 'gh' && args[0] === 'pr') {
+                    return JSON.stringify(f.live);
+                }
+                if (args.includes('fetch')) {
+                    return '';
+                }
+                return spawnCapture(command, args, options);
+            }
+        );
+        if (port.liveReviewComparison === undefined) {
+            throw new Error('missing real-shell live comparison reader');
+        }
+        return port.liveReviewComparison(42, f.head);
+    }
+
+    it('reads the merge base, patch and numstat from git objects, against a stack parent base too', () => {
+        const f = fixture();
+        try {
+            f.live.baseRefName = 'agent/parent';
+            f.live.baseRefOid = f.advancedMain;
+            const live = compare(f);
+            expect(live.mergeBase).toBe(f.base);
+            expect(live.patch).toBe(
+                spawnCapture('git', ['diff', `${f.base}...${f.head}`], { cwd: f.root, trim: false })
+            );
+            expect(live.patch).toContain('+++ b/child');
+            expect(live.numstat.toString('utf8')).toBe('1\t0\tchild\0');
+        } finally {
+            rmSync(f.root, { recursive: true, force: true });
+        }
+    });
+
+    it('refuses when the pull request no longer stands at the publication head', () => {
+        const f = fixture();
+        try {
+            f.live.headRefOid = f.advancedMain;
+            expect(() => compare(f)).toThrow(
+                `fresh review publication requires pull request #42 to stand at head ${f.head}`
+            );
+        } finally {
+            rmSync(f.root, { recursive: true, force: true });
+        }
+    });
+});

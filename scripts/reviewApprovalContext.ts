@@ -59,16 +59,10 @@ export function publicationApprovalContext(
     return { pr: context.pr, baseRefName: context.baseRefName, baseSha: context.baseSha, headSha: context.headSha };
 }
 
-export function readLiveApprovalContext(
-    primaryRoot: string,
-    number: number,
-    head: string,
-    bundle: string,
-    session: GhSession,
-    capture: typeof spawnCapture
-): ReviewBundleContext {
+function liveCommands(primaryRoot: string, session: GhSession, capture: typeof spawnCapture) {
     const gh = (args: string[]) => capture('gh', args, { cwd: primaryRoot, env: session.env });
     const git = (args: string[]) => capture('git', args, { cwd: primaryRoot, env: session.env });
+    const gitUntrimmed = (args: string[]) => capture('git', args, { cwd: primaryRoot, env: session.env, trim: false });
     const ghExecutable = posixSingleQuote(trustedChildExecutable('gh', session.env));
     const fetch = (shas: string[]) =>
         git([
@@ -81,6 +75,55 @@ export function readLiveApprovalContext(
             GITHUB_HTTPS_REMOTE,
             ...shas,
         ]);
+    return { gh, git, gitUntrimmed, fetch };
+}
+
+/**
+ * The comparison a fresh publication binds its bundle to, read from live pull-request facts and git
+ * objects rather than from caller-editable bundle files. The patch and numstat use exactly the
+ * arguments `review:prepare` writes `diff.patch` and the risk plan from. Any base branch is
+ * accepted: a stack child is reviewed against its parent's head.
+ */
+export type LiveReviewComparison = { mergeBase: string; patch: string; numstat: Buffer };
+
+export function readLiveReviewComparison(
+    primaryRoot: string,
+    number: number,
+    head: string,
+    session: GhSession,
+    capture: typeof spawnCapture
+): LiveReviewComparison {
+    const { gh, git, gitUntrimmed, fetch } = liveCommands(primaryRoot, session, capture);
+    const pr = parseJson<{ headRefOid?: unknown; baseRefOid?: unknown }>(
+        gh(['pr', 'view', String(number), '--repo', REQUIRED_REPOSITORY, '--json', 'headRefOid,baseRefOid']),
+        'live review comparison'
+    );
+    if (
+        pr.headRefOid !== head ||
+        !/^[0-9a-f]{40,64}$/.test(head) ||
+        typeof pr.baseRefOid !== 'string' ||
+        !/^[0-9a-f]{40,64}$/.test(pr.baseRefOid)
+    ) {
+        fail(`fresh review publication requires pull request #${number} to stand at head ${head}`);
+    }
+    fetch([pr.baseRefOid, head]);
+    const mergeBase = git(['merge-base', pr.baseRefOid, head]);
+    return {
+        mergeBase,
+        patch: gitUntrimmed(['diff', `${mergeBase}...${head}`]),
+        numstat: Buffer.from(gitUntrimmed(['diff', '--numstat', '-z', `${mergeBase}...${head}`])),
+    };
+}
+
+export function readLiveApprovalContext(
+    primaryRoot: string,
+    number: number,
+    head: string,
+    bundle: string,
+    session: GhSession,
+    capture: typeof spawnCapture
+): ReviewBundleContext {
+    const { gh, git, fetch } = liveCommands(primaryRoot, session, capture);
     const pr = parseJson<{
         number?: unknown;
         state?: unknown;

@@ -9,7 +9,12 @@ import {
     coordinateConfirmReviewRepairs,
     defaultConfirmReviewRepairsCoordinatorDependencies,
 } from '../confirmReviewRepairs.ts';
-import { AUTHOR_BOT_NODE_ID, REVIEWER_BOT_NODE_ID, type GhSession } from '../githubAppIdentity.ts';
+import {
+    AUTHOR_BOT_NODE_ID,
+    ORCHESTRATOR_USER_NODE_ID,
+    REVIEWER_BOT_NODE_ID,
+    type GhSession,
+} from '../githubAppIdentity.ts';
 import {
     withPullRequestMutationLock,
     withPullRequestReviewPublicationMutationLock,
@@ -90,6 +95,7 @@ function threadState(overrides: Partial<RepairReviewFindingThread> = {}): Repair
             line: FINDING_LINE,
             side: 'RIGHT',
             reviewedHead: REVIEWED_HEAD,
+            authorNodeId: REVIEWER_BOT_NODE_ID,
         },
         replies: [repairReply(ROOT_COMMENT_ID, 'Defect. Consequence. Fix.')],
         ...overrides,
@@ -367,6 +373,54 @@ describe('repairReviewFinding', () => {
             `postReply:${THREAD}:${recordClientMutationId(PR, THREAD, HEAD, COMMIT)}`,
         ]);
         expect(postedRecords(posted)).toEqual([recordFor()]);
+    });
+
+    it.each([
+        ['an unknown user', 'MDQ6VXNlcjEyMzQ1Njc=', 'MDQ6VXNlcjEyMzQ1Njc='],
+        ['another bot', 'BOT_kgDOotherbot', 'BOT_kgDOotherbot'],
+        ['a deleted account', null, 'unknown (deleted or unidentified)'],
+    ])(
+        'should refuse to record a repair on a thread whose root %s wrote, posting nothing',
+        (_label, authorNodeId, named) => {
+            const state = threadState();
+            const { port, calls, posted } = fakePort({ ...state, rootComment: { ...state.rootComment, authorNodeId } });
+            expect(() => repairReviewFinding(PR, repairInput(), port)).toThrow(
+                `thread ${THREAD}: thread root comment author ${named} is neither the reviewer App nor the owner`
+            );
+            expect(posted).toEqual([]);
+            expect(calls).toEqual([`read:${THREAD}`]);
+        }
+    );
+
+    it('should record a repair on a thread the owner opened', () => {
+        const state = threadState();
+        const { port, posted } = fakePort({
+            ...state,
+            rootComment: { ...state.rootComment, authorNodeId: ORCHESTRATOR_USER_NODE_ID },
+        });
+        repairReviewFinding(PR, repairInput(), port);
+        expect(postedRecords(posted)).toEqual([recordFor()]);
+    });
+
+    it('should read a root the owner wrote by its User node id while its reply stays unattributed', () => {
+        const root = threadNode().data.node.comments.nodes[0];
+        const gh = () =>
+            JSON.stringify(
+                threadNode({
+                    comments: {
+                        nodes: [
+                            {
+                                ...root,
+                                author: { __typename: 'User', login: 'jcosta33', id: ORCHESTRATOR_USER_NODE_ID },
+                            },
+                        ],
+                        pageInfo: { hasNextPage: false, endCursor: null },
+                    },
+                })
+            );
+        const thread = readRepairReviewThread(THREAD, gh);
+        expect(thread.rootComment.authorNodeId).toBe(ORCHESTRATOR_USER_NODE_ID);
+        expect(thread.replies).toEqual([{ id: ROOT_COMMENT_ID, body: 'Defect.', authorNodeId: null }]);
     });
 
     it('logs the freeze flag at the threshold and never refuses the repair because of it', () => {
@@ -772,6 +826,7 @@ describe('readRepairReviewThread', () => {
                 line: FINDING_LINE,
                 side: 'RIGHT',
                 reviewedHead: REVIEWED_HEAD,
+                authorNodeId: REVIEWER_BOT_NODE_ID,
             },
             replies: [
                 {
@@ -804,7 +859,7 @@ describe('readRepairReviewThread', () => {
                             path: FINDING_PATH,
                             line: FINDING_LINE,
                             pullRequestReview: { commit: { oid: REVIEWED_HEAD } },
-                            author: null,
+                            author: { __typename: 'Bot', login: 'r', id: REVIEWER_BOT_NODE_ID },
                         },
                     ],
                     pageInfo: { hasNextPage: true, endCursor: 'CURSOR' },
@@ -847,6 +902,7 @@ describe('readRepairReviewThread', () => {
             line: FINDING_LINE,
             side: 'LEFT',
             reviewedHead: REVIEWED_HEAD,
+            authorNodeId: REVIEWER_BOT_NODE_ID,
         });
         expect(calls[1]?.fields.cursor).toBe('CURSOR');
     });
@@ -916,6 +972,7 @@ describe('readRepairReviewThread', () => {
             line: OUTDATED_LINE,
             side: 'RIGHT',
             reviewedHead: REVIEWED_HEAD,
+            authorNodeId: REVIEWER_BOT_NODE_ID,
         });
         expect(calls[0]?.query).toContain('originalLine');
 

@@ -34,7 +34,34 @@ const UNSAFE_VALUE_SHAPES: readonly { readonly reason: string; readonly pattern:
     { reason: 'a serialized chat turn', pattern: CHAT_ROLE_PATTERN },
     { reason: 'a transcript role prefix', pattern: /^(?:Human|Assistant|System):/mu },
     { reason: 'a session transcript marker', pattern: /⏺|<session/u },
+    // Vendor key prefixes count only at a token boundary, so `desk-top` or `task-list` never match.
+    { reason: 'an Anthropic API key', pattern: /(?<![\w-])sk-ant-[\w-]{20,}/u },
+    { reason: 'an OpenAI API key', pattern: /(?<![\w-])sk-(?:proj-)?(?=[\w-]*\d)[\w-]{20,}/u },
+    { reason: 'a Slack token', pattern: /(?<![\w-])xox[abposr]-[A-Za-z0-9-]{10,}/u },
+    { reason: 'a Slack webhook URL', pattern: /hooks\.slack\.com\/(?:services|workflows|triggers)\//iu },
+    { reason: 'a Google API key', pattern: /(?<![\w-])AIza[\w-]{35}/u },
+    { reason: 'a GitLab personal access token', pattern: /(?<![\w-])glpat-[\w-]{20,}/u },
+    { reason: 'an HTTP Basic credential', pattern: /\bauthorization\s*:\s*basic\s+[A-Za-z0-9+/]{4,}={0,2}/iu },
+    { reason: 'a URL carrying credentials', pattern: /\b[a-z][a-z0-9+.-]*:\/\/[^\s/?#@:]+:[^\s/?#@]+@/iu },
 ];
+
+const BASIC_SCHEME_TOKEN_PATTERN = /\bbasic\s+([A-Za-z0-9+/]{4,}={0,2})(?![A-Za-z0-9+/=])/giu;
+const INVISIBLE_CHARACTER_PATTERN = /[\p{Cc}\p{Cf}]/u;
+
+/**
+ * A bare `basic <token>` is prose unless the token is the base64 of a printable `user:password`
+ * pair; decoding separates a credential from a following word, which no character class can.
+ */
+function containsBasicSchemeCredential(value: string): boolean {
+    for (const match of value.matchAll(BASIC_SCHEME_TOKEN_PATTERN)) {
+        const decoded = Buffer.from(match[1] ?? '', 'base64').toString('latin1');
+        const separator = decoded.indexOf(':');
+        if (/^[ -~]+$/u.test(decoded) && separator > 0 && separator < decoded.length - 1) {
+            return true;
+        }
+    }
+    return false;
+}
 
 function assertSafeEvidenceValue(label: string, index: number, value: string): void {
     if (value.trim() === '') {
@@ -45,6 +72,12 @@ function assertSafeEvidenceValue(label: string, index: number, value: string): v
     }
     if (/[\r\n\u2028\u2029]/u.test(value)) {
         fail(`${label} value at index ${index} contains a line separator`);
+    }
+    // Zero-width, bidi and other non-printing characters make two different strings read as one.
+    const invisible = INVISIBLE_CHARACTER_PATTERN.exec(value)?.[0];
+    if (invisible !== undefined) {
+        const codePoint = (invisible.codePointAt(0) ?? 0).toString(16).toUpperCase().padStart(4, '0');
+        fail(`${label} value at index ${index} contains an invisible or control character U+${codePoint}`);
     }
     const bytes = Buffer.byteLength(value, 'utf8');
     if (bytes > REVIEW_EVIDENCE_FIELD_MAX_BYTES) {
@@ -58,7 +91,11 @@ function assertSafeEvidenceValue(label: string, index: number, value: string): v
 
 /** The first unsafe shape a value contains, or `undefined`. Shared so a new egress path reuses this list. */
 export function unsafeCredentialReason(value: string): string | undefined {
-    return UNSAFE_VALUE_SHAPES.find(({ pattern }) => pattern.test(value))?.reason;
+    const shapeReason = UNSAFE_VALUE_SHAPES.find(({ pattern }) => pattern.test(value))?.reason;
+    if (shapeReason !== undefined) {
+        return shapeReason;
+    }
+    return containsBasicSchemeCredential(value) ? 'an HTTP Basic credential' : undefined;
 }
 
 export function assertPublicationSafeEvidence(label: string, values: readonly string[]): void {
