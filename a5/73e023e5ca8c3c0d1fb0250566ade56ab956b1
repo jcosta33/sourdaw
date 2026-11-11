@@ -1,0 +1,16 @@
+src/modules/Crust/useCases/__tests__/createCrustParameterGesture.spec.ts
+  h_beb54bf43b47b7 399-490
+src/modules/Crust/useCases/createCrustParameterGesture.ts
+  h_beb54bf43b47b7 89-102,106,108-112,116,120,127,132,135,142-145,147,232-243,248,293,296-298
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a573e023e5ca8c3c0d1fb0250566ade56ab956b1",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
