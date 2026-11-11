@@ -11,6 +11,18 @@ import { type SourceWithFade } from '../../models/SourceWithFade';
 import { secondsBetweenBeats } from '../../models/TempoMap';
 import { tempoMapStore } from '../../stores/tempoMapStore';
 
+import { projectFrozenTrackWindow } from './projectFrozenTrackWindow';
+
+function retainFrozenSource(source: AudioBufferSourceNode, activeAudioSources: AudioBufferSourceNode[]): void {
+    activeAudioSources.push(source);
+    source.onended = () => {
+        const idx = activeAudioSources.indexOf(source);
+        if (idx >= 0) {
+            activeAudioSources.splice(idx, 1);
+        }
+    };
+}
+
 export function scheduleFrozenTrack(
     track: {
         id: string;
@@ -37,7 +49,8 @@ export function scheduleFrozenTrack(
      * layer the incoming pass's pre-window content underneath it.
      */
     windowStartBeat: number | null,
-    initialSchedulingAnchor?: number
+    initialSchedulingAnchor?: number,
+    replayClock?: NonNullable<SourceWithFade['scheduledFrozenWindow']>
 ): boolean {
     if (track.freezeState.status !== 'frozen' || !track.freezeState.frozenBufferId) {
         return false;
@@ -74,11 +87,14 @@ export function scheduleFrozenTrack(
     // tempo map across the offset. A flat rate here would leave a frozen track
     // drifting against the un-frozen tracks around it the moment a tempo change
     // sat between the playhead and the track's first clip.
+    const schedulingAnchor = replayClock?.anchorTime ?? initialSchedulingAnchor ?? getCurrentTime();
     const startTime =
-        (initialSchedulingAnchor ?? getCurrentTime()) +
+        schedulingAnchor +
         secondsBetweenBeats(changes, accumulatedPosition, trackStartBeat, defaultTempo) +
         compensation;
     const now = getCurrentTime();
+    const floorAnchorTime = replayClock?.floorAnchorTime ?? initialSchedulingAnchor ?? now;
+    const initialFloor = replayClock?.initialFloor ?? initialSchedulingAnchor !== undefined;
     const elapsed = now - startTime;
 
     // The live clip path's window floor (#4784): on an emission whose window
@@ -86,27 +102,23 @@ export function scheduleFrozenTrack(
     // that beat must not sound — the earliest content is the window's first
     // beat, held until its due instant. A floor at or before the buffer's own
     // start changes nothing.
-    let floorSeconds =
-        initialSchedulingAnchor === undefined ? startTime : Math.max(startTime, initialSchedulingAnchor + compensation);
-    if (windowStartBeat !== null && windowStartBeat > trackStartBeat) {
-        floorSeconds = Math.max(
-            floorSeconds,
-            (initialSchedulingAnchor ?? now) +
-                secondsBetweenBeats(changes, accumulatedPosition, windowStartBeat, defaultTempo) +
-                compensation
-        );
-    }
-    const audibleStartSeconds = Math.max(startTime, floorSeconds);
-    const skipSeconds = audibleStartSeconds - startTime;
-
-    // Resolve the timing before building anything. The buffer can already have
-    // played out in full by the time this tick fires, and there is then nothing
-    // to start — creating the source and its fade gain first left a GainNode
-    // wired into the track strip on every such call, with no source to end and
-    // release it. A window floor that skips past the rendered content is the
-    // same outcome. The track still counts as scheduled: `true` is what stops
-    // the caller from retrying it every grain.
-    if ((startTime < now && elapsed >= buffer.duration) || skipSeconds >= buffer.duration) {
+    const { audibleStartSeconds, skipSeconds, exhausted } = projectFrozenTrackWindow({
+        changes,
+        accumulatedPosition,
+        trackStartBeat,
+        defaultTempo,
+        startTime,
+        schedulingAnchor,
+        compensation,
+        now,
+        elapsed,
+        windowStartBeat,
+        floorAnchorTime,
+        initialFloor,
+        duration: buffer.duration,
+    });
+    // Exhausted content is admitted without allocating a strip, source or gain.
+    if (exhausted) {
         return true;
     }
 
@@ -117,6 +129,17 @@ export function scheduleFrozenTrack(
     // fence sample-accurately, and its own shift is the compensation above —
     // the same figure the seam fence spares its tail by (#4784).
     (source as SourceWithFade).compensationSeconds = compensation;
+    (source as SourceWithFade).scheduledTrackId = track.id;
+    (source as SourceWithFade).scheduledBufferId = track.freezeState.frozenBufferId;
+    (source as SourceWithFade).scheduledFrozenKey = `${track.id}:${track.freezeState.frozenBufferId}`;
+    (source as SourceWithFade).scheduledFrozenOriginBeat = trackStartBeat;
+    (source as SourceWithFade).scheduledFrozenWindow = {
+        anchorBeat: accumulatedPosition,
+        anchorTime: schedulingAnchor,
+        floorAnchorTime,
+        floorBeat: windowStartBeat,
+        initialFloor,
+    };
 
     const fadeGain = getAudioContext().createGain();
     (source as SourceWithFade).fadeGainNode = fadeGain;
@@ -127,19 +150,31 @@ export function scheduleFrozenTrack(
         // Held to the window's first beat: the sound begins at that beat's due
         // instant, with the skipped content wound past.
         source.start(audibleStartSeconds, skipSeconds);
+        Object.assign(source, {
+            scheduledStartTime: audibleStartSeconds,
+            scheduledBufferOffset: skipSeconds,
+            scheduledPlaybackRate: 1,
+            scheduledEndTime: audibleStartSeconds + buffer.duration - skipSeconds,
+        });
     } else if (startTime >= now) {
         source.start(startTime);
+        Object.assign(source, {
+            scheduledStartTime: startTime,
+            scheduledBufferOffset: 0,
+            scheduledPlaybackRate: 1,
+            scheduledEndTime: startTime + buffer.duration,
+        });
     } else {
         source.start(now, elapsed);
+        Object.assign(source, {
+            scheduledStartTime: now,
+            scheduledBufferOffset: elapsed,
+            scheduledPlaybackRate: 1,
+            scheduledEndTime: now + buffer.duration - elapsed,
+        });
     }
 
-    activeAudioSources.push(source);
-    source.onended = () => {
-        const idx = activeAudioSources.indexOf(source);
-        if (idx >= 0) {
-            activeAudioSources.splice(idx, 1);
-        }
-    };
+    retainFrozenSource(source, activeAudioSources);
 
     return true;
 }

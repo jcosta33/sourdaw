@@ -39,7 +39,7 @@
     font-size: 0.625rem;
     letter-spacing: 0.24em;
     text-transform: uppercase;
-    color: rgba(255, 255, 255, 0.56);
+    color: var(--color-text-primary);
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
     transition:
         color 120ms ease,

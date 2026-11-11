@@ -286,6 +286,7 @@ describe('app main first paint', () => {
         Reflect.deleteProperty(window, 'sourdaw');
         window.name = '';
         document.documentElement.removeAttribute('data-sourdaw-entry-started');
+        document.documentElement.style.visibility = 'hidden';
         const html = readFileSync(resolve(process.cwd(), 'index.html'), 'utf8');
         document.body.innerHTML = new DOMParser().parseFromString(html, 'text/html').body.innerHTML;
         vi.stubGlobal('reportError', mocks.reportError);
@@ -376,6 +377,7 @@ describe('app main first paint', () => {
             expect(reported.cause).toBe(failure);
 
             expect(document.getElementById('entry-startup-title')?.textContent).toBe('Sourdaw could not start');
+            expect(document.documentElement.style.visibility).toBe('visible');
             expect(document.querySelector('#entry-startup [role="alert"]')).not.toBeNull();
             expect(document.getElementById('entry-startup-reload')?.hasAttribute('hidden')).toBe(false);
             expect(mocks.reportError).toHaveBeenCalledOnce();

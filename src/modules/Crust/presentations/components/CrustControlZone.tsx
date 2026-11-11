@@ -42,7 +42,7 @@ type Props = {
 // ── Shared primitives ─────────────────────────────────────────────────────────
 
 const SectionLabel = ({ children }: { children: string }): ReactElement => (
-    <div className="text-nano font-semibold text-muted-foreground/40 uppercase tracking-widest mb-1.5">{children}</div>
+    <div className="text-nano font-semibold text-muted-foreground uppercase tracking-widest mb-1.5">{children}</div>
 );
 
 function fmtKnob(v: number, unit?: string): string {
@@ -96,9 +96,9 @@ const Knob = ({
             size="sm"
             tone="copper"
         />
-        <span className="text-nano text-muted-foreground/60 leading-none">{label}</span>
+        <span className="text-nano text-muted-foreground leading-none">{label}</span>
         {unit !== undefined ? (
-            <span className="text-[6px] font-mono text-muted-foreground/40">{fmtKnob(value, unit)}</span>
+            <span className="text-[6px] font-mono text-muted-foreground">{fmtKnob(value, unit)}</span>
         ) : null}
     </div>
 );
@@ -141,8 +141,8 @@ const AutoKnob = ({
             size="sm"
             tone="copper"
         />
-        <span className="text-nano text-muted-foreground/60 leading-none">{label}</span>
-        <span className="text-[6px] font-mono text-muted-foreground/40">{auto ? 'Auto' : `${value.toFixed(0)}ms`}</span>
+        <span className="text-nano text-muted-foreground leading-none">{label}</span>
+        <span className="text-[6px] font-mono text-muted-foreground">{auto ? 'Auto' : `${value.toFixed(0)}ms`}</span>
         <DawPluginToggle
             id={toggleId}
             pressed={auto}
@@ -168,7 +168,7 @@ const SliderRow = ({
     onChange: (value: number) => void;
 }): ReactElement => (
     <Row gap={2}>
-        <span className="w-14 shrink-0 text-nano text-muted-foreground/40">{label}</span>
+        <span className="w-14 shrink-0 text-nano text-muted-foreground">{label}</span>
         <Slider
             value={[value]}
             min={0}
@@ -183,7 +183,7 @@ const SliderRow = ({
                 }
             }}
         />
-        <span className="w-8 shrink-0 text-right text-nano font-mono text-muted-foreground/50">{value}%</span>
+        <span className="w-8 shrink-0 text-right text-nano font-mono text-muted-foreground">{value}%</span>
     </Row>
 );
 
@@ -240,16 +240,14 @@ const LevelTile = ({
             'flex h-full flex-1 flex-col items-center justify-center rounded-[14px] border px-3 py-4 transition-all',
             active
                 ? 'border-[var(--color-accent-cyan)]/45 border-l-[3px] bg-white/[0.045] text-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]'
-                : 'border-white/8 bg-black/20 text-white/36 hover:border-white/14 hover:text-white/80'
+                : 'border-white/8 bg-black/20 text-foreground hover:border-white/14'
         )}
         onClick={onClick}
         aria-pressed={active}
         aria-label={`Style ${label}`}
     >
         <span className="text-compact font-semibold leading-tight">{label}</span>
-        <span className="mt-1 whitespace-pre-line text-center text-micro leading-snug text-muted-foreground/45">
-            {subtitle}
-        </span>
+        <span className="mt-1 whitespace-pre-line text-center text-micro leading-snug text-foreground">{subtitle}</span>
     </Button>
 );
 
@@ -288,7 +286,7 @@ const Level2Core = ({ patch, setParam }: { patch: CrustPatch; setParam: Setter }
                     </DawPluginChip>
                 ))}
             </Row>
-            <div className="text-nano text-muted-foreground/40 mt-0.5 min-h-[10px]">
+            <div className="text-nano text-muted-foreground mt-0.5 min-h-[10px]">
                 {ALGORITHMS.find((a) => a.id === patch.algorithm)?.desc ?? ''}
             </div>
         </div>
@@ -596,8 +594,8 @@ const Level5Stats = ({
                     label={label}
                     value={value}
                     className="gap-2"
-                    labelClassName="text-nano text-muted-foreground/40"
-                    valueClassName="text-micro text-foreground/70"
+                    labelClassName="text-nano text-muted-foreground"
+                    valueClassName="text-micro text-foreground"
                 />
             ))}
         </Grid>

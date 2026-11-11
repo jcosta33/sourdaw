@@ -12,6 +12,7 @@ import { type ActionHandler, type AppAction } from '#/utils/handlerContract';
 
 import { type CommandBatchIdempotencyRepository } from '../../models/CommandBatchIdempotency';
 import { commandBatchIdempotencyStore } from '../../stores/commandBatchIdempotencyStore';
+import { undoStore as undoHistoryStore } from '../../stores/undoStore';
 import { type ActionHistoryMetadata } from '../actionHistoryMetadataPort';
 import { commandBatchExecutionAuthorityPort } from '../commandBatchExecutionAuthorityPort';
 import { commandBatchIdempotencyPort } from '../commandBatchIdempotencyPort';
@@ -163,6 +164,7 @@ describe('command batch idempotency', () => {
     let rejectProjectReceiptFinalization: boolean;
     let rejectReceiptPersistence: boolean;
     let rewriteFinalProjectReceiptOnReadback: boolean;
+    let removeRevisionProviderAfterPublication: boolean;
     let runtimeEffectGate: Promise<void> | null;
     let runtimeEffectCount: number;
     let runtimeGain: number;
@@ -184,6 +186,7 @@ describe('command batch idempotency', () => {
         rejectProjectReceiptFinalization = false;
         rejectReceiptPersistence = false;
         rewriteFinalProjectReceiptOnReadback = false;
+        removeRevisionProviderAfterPublication = false;
         runtimeEffectGate = null;
         runtimeEffectCount = 0;
         runtimeGain = 1;
@@ -291,6 +294,10 @@ describe('command batch idempotency', () => {
                 }
                 projectDocument = draft;
                 mutationCount += 1;
+                if (removeRevisionProviderAfterPublication) {
+                    removeRevisionProviderAfterPublication = false;
+                    commandProjectRevisionPort.setProvider(null);
+                }
             },
         });
         commandBatchPreviewPort.setProvider(() => {
@@ -2519,11 +2526,13 @@ describe('command batch idempotency', () => {
         });
     });
 
-    it('keeps the durable checkpoint when no project revision provider can emit finalization evidence', async () => {
+    it('refuses execution without a revision provider before project, checkpoint, undo or runtime effects', async () => {
         const batch = compileBatch({ batchId: 'finalization-revision-provider-unavailable' });
         const proof = await getVersionedCommandBatchCommitProof(batch);
         const onProjectCommitFinalized = vi.fn();
         const onProjectCommitFinalizationUnavailable = vi.fn();
+        const documentBefore = structuredClone(projectDocument);
+        const historyBefore = undoHistoryStore.value;
         commandProjectRevisionPort.setProvider(null);
 
         try {
@@ -2534,8 +2543,56 @@ describe('command batch idempotency', () => {
                 options: { onProjectCommitFinalized, onProjectCommitFinalizationUnavailable },
             });
 
-            expect(result).toMatchObject({ status: 'committed' });
+            expect(result).toMatchObject({
+                status: 'conflicted',
+                reason: 'Command batch execution preparation failed: Command batch postcondition authority requires a configured project revision provider',
+                actions: [],
+                receipt: { outcome: 'verification-failed', observedBase: null, resulting: null, affectedIds: [] },
+            });
+            expect(mutationCount).toBe(0);
+            expect(projectDocument).toEqual(documentBefore);
+            expect(runtimeGain).toBe(1);
+            expect(runtimeEffectCount).toBe(0);
+            expect(undoHistoryStore.value).toEqual(historyBefore);
+            expect(mocks.recordActionHistoryMetadata).not.toHaveBeenCalled();
+            expect(mocks.recordAction).not.toHaveBeenCalled();
+            expect(getProjectCommandBatchIdempotencyCheckpoint(proof)).toMatchObject({ status: 'missing' });
+            expect(onProjectCommitFinalized).not.toHaveBeenCalled();
+            expect(onProjectCommitFinalizationUnavailable).not.toHaveBeenCalled();
+        } finally {
+            commandProjectRevisionPort.setProvider(() => projectRevisionOverride ?? revision(mutationCount));
+        }
+    });
+
+    it('keeps the durable checkpoint when the revision provider disappears after project publication', async () => {
+        const batch = compileBatch({ batchId: 'finalization-provider-lost-after-publication' });
+        const proof = await getVersionedCommandBatchCommitProof(batch);
+        const onProjectCommitFinalized = vi.fn();
+        const onProjectCommitFinalizationUnavailable = vi.fn();
+        const historyCountBefore = undoHistoryStore.value?.past.length ?? 0;
+        removeRevisionProviderAfterPublication = true;
+
+        try {
+            const result = await executeVersionedCommandBatchEnvelope({
+                authority: batch.authority,
+                confirmed: true,
+                serialized: batch.serialized,
+                options: { onProjectCommitFinalized, onProjectCommitFinalizationUnavailable },
+            });
+
+            expect(result).toMatchObject({
+                status: 'committed',
+                receipt: { outcome: 'committed', resulting: null },
+            });
+            expect(projectDocument).toMatchObject({ trackGain: { value: 0.8 } });
+            expect(mutationCount).toBe(2);
+            expect(runtimeGain).toBe(0.8);
+            expect(runtimeEffectCount).toBe(1);
+            expect(undoHistoryStore.value?.past.slice(historyCountBefore)).toMatchObject([
+                { action: { type: 'setTrackGain', payload: { gain: 0.8 } }, groupId: proof.batchId },
+            ]);
             expect(getProjectCommandBatchIdempotencyCheckpoint(proof)).toMatchObject({ status: 'complete' });
+            expect(commandProjectRevisionPort.isConfigured()).toBe(false);
             expect(onProjectCommitFinalized).not.toHaveBeenCalled();
             expect(onProjectCommitFinalizationUnavailable).toHaveBeenCalledExactlyOnceWith({
                 reason: 'The project revision provider is unavailable at the storage commit.',

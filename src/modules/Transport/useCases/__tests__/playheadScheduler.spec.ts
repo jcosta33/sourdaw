@@ -189,6 +189,18 @@ vi.mock('#/modules/MIDI/useCases', () => ({
 }));
 vi.mock('#/modules/CrdtDocument/useCases', () => ({ captureProjectRootIdentity: () => 'scheduler-fixture-root' }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    // No cached/frozen programme in this scheduler-window fixture.
+    getCachedAudioBuffer: vi.fn(() => null),
+    getCurrentTime: () => harness.clock,
+    ensureTrackStrip: vi.fn(() => ({ preFaderTap: { connect: vi.fn() } })),
+    createBufferSource: vi.fn(() => ({
+        buffer: null,
+        playbackRate: { value: 1 },
+        connect: vi.fn(),
+        disconnect: vi.fn(),
+        start: vi.fn(),
+        stop: vi.fn(),
+    })),
     createNativeRecordingCaptureClock: vi.fn(() => ({
         admission: null,
         last: null,
@@ -887,8 +899,13 @@ describe('playhead scheduler tick', () => {
         // Fire tick #1. It advances to the `await scheduleMidiNotes` and suspends.
         harness.clock = 0.05;
         emitSchedulerTick(worker);
-        await Promise.resolve();
-        await Promise.resolve();
+        await vi.waitFor(
+            () => {
+                expect(schedulerSession.tickInFlight).toBe(true);
+                expect(vi.mocked(scheduleMidiNotes)).toHaveBeenCalledTimes(1);
+            },
+            { interval: 1 }
+        );
 
         const positionAfterFirst = playheadPositionRef.current;
         const midiCallsAfterFirst = vi.mocked(scheduleMidiNotes).mock.calls.length;
@@ -900,8 +917,7 @@ describe('playhead scheduler tick', () => {
         // no extra transport sync.
         harness.clock = 0.1;
         emitSchedulerTick(worker);
-        await Promise.resolve();
-        await Promise.resolve();
+        expect(schedulerSession.tickInFlight).toBe(true);
 
         expect(vi.mocked(scheduleMidiNotes).mock.calls.length).toBe(midiCallsAfterFirst);
         expect(playheadPositionRef.current).toBe(positionAfterFirst);
@@ -909,12 +925,14 @@ describe('playhead scheduler tick', () => {
 
         // Release tick #1. A subsequent tick may run normally again.
         releaseMidi!();
-        await Promise.resolve();
-        await Promise.resolve();
+        await vi.waitFor(() => expect(schedulerSession.tickInFlight).toBe(false), { interval: 1 });
 
         harness.clock = 0.15;
         await fireTick();
-        expect(vi.mocked(scheduleMidiNotes).mock.calls.length).toBeGreaterThan(midiCallsAfterFirst);
+        await vi.waitFor(
+            () => expect(vi.mocked(scheduleMidiNotes).mock.calls.length).toBeGreaterThan(midiCallsAfterFirst),
+            { interval: 1 }
+        );
     });
 
     it('contains a rejected Yeast scheduling tick and allows the next tick to run', async () => {

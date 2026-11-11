@@ -21,7 +21,7 @@ describe('ExportDialog controls', () => {
 
         const mixdown = screen.getByTestId('export-mode-mixdown');
         const stems = screen.getByTestId('export-mode-stems');
-        const renderToClip = screen.getByRole('button', { name: /^To Clip/ });
+        const renderToClip = screen.getByRole('button', { name: /^Render to clip/ });
 
         expect(mixdown).toBeVisible();
         expect(stems).toBeVisible();
@@ -41,7 +41,7 @@ describe('ExportDialog controls', () => {
         expect(renderToClip).not.toHaveAttribute('data-variant', 'outline');
         expect(mixdown).toHaveAttribute('data-variant', 'outline');
         expect(stems).toHaveAttribute('data-variant', 'outline');
-        expect(screen.getByTestId('export-start')).toHaveTextContent('Render to Clip');
+        expect(screen.getByTestId('export-start')).toHaveTextContent('Render to clip');
     });
 
     it('shows the whole-project render range selected by default', () => {
@@ -65,14 +65,14 @@ describe('ExportDialog controls', () => {
         expect(marquee).toBeDisabled();
     });
 
-    it('shows WAV as the selected default and enables the default Start Baking button', () => {
+    it('shows WAV as the selected default and enables the default Export mixdown button', () => {
         render(<ExportDialog open onClose={() => {}} />);
 
         const wav = screen.getByTestId('export-format-wav');
         const start = screen.getByTestId('export-start');
 
         expect(wav).toHaveAttribute('aria-checked', 'true');
-        expect(start).toHaveTextContent('Start Baking');
+        expect(start).toHaveTextContent('Export mixdown');
         expect(start).toBeEnabled();
     });
 
@@ -141,11 +141,11 @@ describe('ExportDialog controls', () => {
         };
         render(<ControlledDialog />);
 
-        expect(screen.getByRole('dialog', { name: 'The Bakery' })).toBeVisible();
+        expect(screen.getByRole('dialog', { name: 'Export audio' })).toBeVisible();
         fireEvent.click(screen.getByTestId('export-cancel'));
 
         await waitFor(() => {
-            expect(screen.queryByRole('dialog', { name: 'The Bakery' })).not.toBeInTheDocument();
+            expect(screen.queryByRole('dialog', { name: 'Export audio' })).not.toBeInTheDocument();
         });
     });
 });

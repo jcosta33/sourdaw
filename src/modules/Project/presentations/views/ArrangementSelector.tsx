@@ -23,24 +23,72 @@ export const ArrangementSelector = (): ReactElement | null => {
     const [open, setOpen] = useState(false);
     const [editingId, setEditingId] = useState<string | null>(null);
     const [editName, setEditName] = useState('');
+    const [focusedArrangementId, setFocusedArrangementId] = useState<string | null>(null);
     const inputRef = useRef<HTMLInputElement>(null);
+    const radioRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+    const newArrangementRef = useRef<HTMLButtonElement>(null);
+    const duplicateArrangementRef = useRef<HTMLButtonElement>(null);
 
     // §212.1 — Typed default instead of non-null assertion on live value.
     const state = useStore(arrangementStore, defaultArrangementStoreState);
+    const arrangements = state?.arrangements ?? [];
+    const activeArrangementId = state?.activeArrangementId ?? null;
+    const [hasRenderedMultipleArrangements, setHasRenderedMultipleArrangements] = useState(
+        () => arrangements.length > 1
+    );
+    const renderedEditingId = arrangements.some((arr) => arr.id === editingId) ? editingId : null;
+    const navigableArrangements = arrangements.filter((arr) => arr.id !== renderedEditingId);
+    const focusedRadioId = navigableArrangements.some((arr) => arr.id === focusedArrangementId)
+        ? focusedArrangementId
+        : null;
+    const activeRadioId = navigableArrangements.some((arr) => arr.id === activeArrangementId)
+        ? activeArrangementId
+        : null;
+    const radioTabStopId = focusedRadioId ?? activeRadioId ?? navigableArrangements[0]?.id;
+    const hasCurrentArrangement = arrangements.some((arr) => arr.id === activeArrangementId);
 
     useEffect(() => {
-        if (editingId && inputRef.current) {
-            inputRef.current.focus();
-            inputRef.current.select();
+        if (!renderedEditingId || !inputRef.current) {
+            return;
         }
-    }, [editingId]);
+        inputRef.current.focus();
+        inputRef.current.select();
+    }, [renderedEditingId]);
+
+    useEffect(() => {
+        if (arrangements.length > 1) {
+            setHasRenderedMultipleArrangements(true);
+        }
+    }, [arrangements.length]);
+
+    useEffect(() => {
+        if (editingId && !renderedEditingId) {
+            setEditingId(null);
+        }
+        if (!open || renderedEditingId) {
+            return;
+        }
+        if (!hasCurrentArrangement && document.activeElement === duplicateArrangementRef.current) {
+            newArrangementRef.current?.focus();
+            return;
+        }
+        if (document.activeElement !== document.body) {
+            return;
+        }
+        if (radioTabStopId) {
+            radioRefs.current.get(radioTabStopId)?.focus();
+            return;
+        }
+        newArrangementRef.current?.focus();
+    }, [arrangements, editingId, hasCurrentArrangement, open, radioTabStopId, renderedEditingId]);
 
     if (!state) {
         return null;
     }
 
-    // Only show the selector when there are multiple arrangements
-    if (state.arrangements.length <= 1) {
+    // An initially single arrangement stays hidden. Once shown, keep the
+    // selector mounted so focus recovery retains a surviving radio target.
+    if (arrangements.length <= 1 && !hasRenderedMultipleArrangements) {
         return null;
     }
 
@@ -63,14 +111,28 @@ export const ArrangementSelector = (): ReactElement | null => {
         setEditingId(null);
     };
 
+    const handleSwitch = (id: string, name: string): void => {
+        void switchArrangement(id).catch((error: unknown) => {
+            logger.error(
+                new Error(`Failed to switch arrangement "${id}"`, {
+                    cause: error,
+                })
+            );
+            notifyUser(`Failed to switch to "${name}"`, 'error');
+        });
+    };
+
     return (
         <div className="relative">
             <Popover
                 open={open}
                 onOpenChange={(nextOpen) => {
                     setOpen(nextOpen);
-                    if (!nextOpen) {
+                    if (nextOpen) {
+                        setFocusedArrangementId(state.activeArrangementId);
+                    } else {
                         setEditingId(null);
+                        setFocusedArrangementId(null);
                     }
                 }}
             >
@@ -100,9 +162,37 @@ export const ArrangementSelector = (): ReactElement | null => {
                     role="menu"
                     aria-label="Arrangement menu"
                     className="daw-floating-surface w-56 rounded-md border border-border bg-surface-overlay py-1 select-none"
+                    onOpenAutoFocus={(event) => {
+                        event.preventDefault();
+                        const openingRadioId = activeRadioId ?? navigableArrangements[0]?.id;
+                        if (openingRadioId) {
+                            radioRefs.current.get(openingRadioId)?.focus();
+                            return;
+                        }
+                        newArrangementRef.current?.focus();
+                    }}
+                    onKeyDown={(event) => {
+                        if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') {
+                            return;
+                        }
+                        const controls = Array.from(
+                            event.currentTarget.querySelectorAll<HTMLElement>(
+                                '[role="menuitemradio"], button:not(:disabled)'
+                            )
+                        );
+                        const currentIndex = controls.findIndex((control) => control === document.activeElement);
+                        if (currentIndex === -1) {
+                            return;
+                        }
+                        event.preventDefault();
+                        event.stopPropagation();
+                        const direction = event.key === 'ArrowUp' ? -1 : 1;
+                        const nextControl = controls[(currentIndex + direction + controls.length) % controls.length];
+                        nextControl?.focus();
+                    }}
                     onEscapeKeyDown={(event) => {
                         event.stopPropagation();
-                        if (editingId) {
+                        if (renderedEditingId) {
                             event.preventDefault();
                             setEditingId(null);
                         }
@@ -115,36 +205,16 @@ export const ArrangementSelector = (): ReactElement | null => {
                     <div className="max-h-[300px] overflow-y-auto py-1">
                         {state.arrangements.map((arr) => {
                             const isActive = arr.id === state.activeArrangementId;
-                            const isEditing = editingId === arr.id;
+                            const isEditing = renderedEditingId === arr.id;
 
                             return (
-                                <div
-                                    key={arr.id}
-                                    className={cn(
-                                        'group mx-1 rounded-sm px-2 py-1 cursor-pointer',
-                                        isActive
-                                            ? 'bg-primary/10 text-primary font-medium'
-                                            : 'hover:bg-accent/50 text-foreground transition-colors'
-                                    )}
-                                    onClick={() => {
-                                        if (!isEditing) {
-                                            void switchArrangement(arr.id).catch((error: unknown) => {
-                                                logger.error(
-                                                    new Error(`Failed to switch arrangement "${arr.id}"`, {
-                                                        cause: error,
-                                                    })
-                                                );
-                                                notifyUser(`Failed to switch to "${arr.name}"`, 'error');
-                                            });
-                                        }
-                                    }}
-                                >
+                                <div key={arr.id} className="group mx-1 flex items-center rounded-sm">
                                     {isEditing ? (
                                         <DawCompactInput
                                             ref={inputRef}
                                             type="text"
                                             size="micro"
-                                            className="h-5 flex-1 min-w-0 border-primary/50 bg-background/50 px-1"
+                                            className="mx-2 my-1 h-5 min-w-0 flex-1 border-primary/50 bg-background/50 px-1"
                                             value={editName}
                                             onChange={(event) => setEditName(event.target.value)}
                                             onKeyDown={(event) => {
@@ -157,39 +227,75 @@ export const ArrangementSelector = (): ReactElement | null => {
                                             onClick={(event) => event.stopPropagation()}
                                         />
                                     ) : (
-                                        <DawPickerRow
-                                            heading={arr.name}
-                                            active={isActive}
-                                            compact
-                                            className={cn(
-                                                'flex-1 border-0 bg-transparent px-0 py-0',
-                                                isActive ? 'hover:bg-transparent' : ''
-                                            )}
-                                            startSlot={
-                                                <div className="w-4">
-                                                    {isActive ? <Check className="size-3" /> : null}
-                                                </div>
-                                            }
-                                            endSlot={
-                                                <Button
-                                                    variant="bare"
-                                                    size="bare"
-                                                    type="button"
+                                        <>
+                                            <div
+                                                ref={(element) => {
+                                                    if (element) {
+                                                        radioRefs.current.set(arr.id, element);
+                                                    } else {
+                                                        radioRefs.current.delete(arr.id);
+                                                    }
+                                                }}
+                                                role="menuitemradio"
+                                                aria-checked={isActive}
+                                                tabIndex={arr.id === radioTabStopId ? 0 : -1}
+                                                className={cn(
+                                                    'flex-1 cursor-pointer rounded-sm px-2 py-1',
+                                                    isActive
+                                                        ? 'bg-primary/10 text-primary font-medium'
+                                                        : 'hover:bg-accent/50 text-foreground transition-colors'
+                                                )}
+                                                onClick={() => handleSwitch(arr.id, arr.name)}
+                                                onFocus={() => setFocusedArrangementId(arr.id)}
+                                                onKeyDown={(event) => {
+                                                    if (event.target !== event.currentTarget) {
+                                                        return;
+                                                    }
+                                                    if (event.key !== 'Enter' && event.key !== ' ') {
+                                                        return;
+                                                    }
+                                                    event.preventDefault();
+                                                    event.stopPropagation();
+                                                    handleSwitch(arr.id, arr.name);
+                                                }}
+                                            >
+                                                <DawPickerRow
+                                                    heading={arr.name}
+                                                    active={isActive}
+                                                    compact
                                                     className={cn(
-                                                        'rounded p-0.5 transition-all hover:bg-background/80',
-                                                        isActive ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+                                                        'flex-1 border-0 bg-transparent px-0 py-0',
+                                                        isActive ? 'hover:bg-transparent' : ''
                                                     )}
-                                                    onClick={(event) => {
-                                                        event.stopPropagation();
-                                                        setEditName(arr.name);
-                                                        setEditingId(arr.id);
-                                                    }}
-                                                >
-                                                    <Edit2 className="size-3" />
-                                                </Button>
-                                            }
-                                            title={arr.name}
-                                        />
+                                                    startSlot={
+                                                        <div className="w-4">
+                                                            {isActive ? <Check className="size-3" /> : null}
+                                                        </div>
+                                                    }
+                                                    title={arr.name}
+                                                />
+                                            </div>
+                                            <Button
+                                                variant="bare"
+                                                size="bare"
+                                                type="button"
+                                                aria-label={`Rename ${arr.name}`}
+                                                className={cn(
+                                                    'rounded p-0.5 transition-all hover:bg-background/80',
+                                                    isActive
+                                                        ? 'opacity-100'
+                                                        : 'opacity-0 group-hover:opacity-100 focus-visible:opacity-100'
+                                                )}
+                                                onClick={(event) => {
+                                                    event.stopPropagation();
+                                                    setFocusedArrangementId(arr.id);
+                                                    setEditName(arr.name);
+                                                    setEditingId(arr.id);
+                                                }}
+                                            >
+                                                <Edit2 className="size-3" />
+                                            </Button>
+                                        </>
                                     )}
                                 </div>
                             );
@@ -199,6 +305,7 @@ export const ArrangementSelector = (): ReactElement | null => {
                     <DawMenuSeparator role="separator" />
 
                     <Button
+                        ref={newArrangementRef}
                         variant="bare"
                         size="bare"
                         type="button"
@@ -211,9 +318,11 @@ export const ArrangementSelector = (): ReactElement | null => {
                     </Button>
 
                     <Button
+                        ref={duplicateArrangementRef}
                         variant="bare"
                         size="bare"
                         type="button"
+                        disabled={!currentArrangement}
                         className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-foreground hover:bg-accent/50 transition-colors"
                         role="menuitem"
                         onClick={handleDuplicate}

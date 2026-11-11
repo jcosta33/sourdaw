@@ -20,3 +20,18 @@ export function grColor(gr: number): string {
     }
     return '#C44030';
 }
+
+/** Text uses theme-aware roles; canvas and meter fills keep the fixed DSP palette above. */
+export function grTextColor(gr: number): string {
+    const abs = Math.abs(gr);
+    if (abs <= 1) {
+        return 'var(--color-text-primary)';
+    }
+    if (abs <= 4) {
+        return 'var(--color-state-warning)';
+    }
+    if (abs <= 8) {
+        return 'var(--color-accent-orange)';
+    }
+    return 'var(--color-state-danger)';
+}

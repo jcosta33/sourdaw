@@ -58,9 +58,12 @@ describe('DawPluginChoiceRow — title and detail', () => {
         expect(screen.getByText('Reverb')).toBeInTheDocument();
     });
 
-    it('renders detail when provided', () => {
+    it('renders detail with an opaque semantic foreground', () => {
         render(<DawPluginChoiceRow title="Reverb" detail="Hall" />);
-        expect(screen.getByText('Hall')).toBeInTheDocument();
+        const detail = screen.getByText('Hall');
+        expect(detail).toBeInTheDocument();
+        expect(detail).toHaveClass('text-muted-foreground');
+        expect(detail.className).not.toMatch(/text-muted-foreground\//u);
     });
 
     it('renders subtitle when provided', () => {

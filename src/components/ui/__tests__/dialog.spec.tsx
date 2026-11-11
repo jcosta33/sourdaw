@@ -22,6 +22,27 @@ describe('Dialog', () => {
         expect(screen.getByText('Body')).toBeInTheDocument();
         expect(screen.getByText('Actions')).toBeInTheDocument();
     });
+
+    it('provides a viewport-bounded workspace size for complex settings surfaces', () => {
+        render(
+            <Dialog open>
+                <DialogContent size="workspace" showCloseButton={false} aria-describedby={undefined}>
+                    <DialogTitle>Preferences</DialogTitle>
+                </DialogContent>
+            </Dialog>
+        );
+
+        const dialog = screen.getByRole('dialog');
+        expect(dialog).toHaveClass(
+            'h-[680px]',
+            'max-h-[calc(100dvh-4rem)]',
+            'w-[920px]',
+            'max-w-[calc(100vw-4rem)]',
+            'sm:max-w-[calc(100vw-4rem)]',
+            'overflow-hidden'
+        );
+        expect(dialog).not.toHaveClass('sm:max-w-lg');
+    });
 });
 
 describe('Dialog focus return', () => {

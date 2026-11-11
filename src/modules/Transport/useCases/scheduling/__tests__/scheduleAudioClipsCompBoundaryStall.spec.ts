@@ -13,6 +13,7 @@ const { audioClock, resolvedParts } = vi.hoisted(() => {
     return { audioClock: { seconds: 0 }, resolvedParts: { value: [] as unknown[], byTrack } };
 });
 vi.mock('#/modules/Arrangement/stores', () => ({
+    gainEnvelopeStore: { value: null },
     trackStore: {
         get value() {
             return trackStoreState.value;
@@ -181,9 +182,8 @@ describe('scheduleAudioClips — comp parts', () => {
         disposeAudioClipScheduling();
         resolvedParts.byTrack = {};
         vi.mocked(createBufferSource).mockImplementation(() => makeFakeSource() as unknown as AudioBufferSourceNode);
-        vi.mocked(getCachedAudioBuffer).mockImplementation(({ bufferId }) =>
-            bufferId === 'buf-1' ? ({ duration: 20 } as AudioBuffer) : null
-        );
+        const buffer = { duration: 20 } as AudioBuffer;
+        vi.mocked(getCachedAudioBuffer).mockImplementation(({ bufferId }) => (bufferId === 'buf-1' ? buffer : null));
         trackStoreState.value = {
             tracks: [
                 {
@@ -348,7 +348,7 @@ describe('scheduleAudioClips — comp parts', () => {
             runWindow(playback, 8.2, 8.4, 8.2);
 
             expect(base.stop).not.toHaveBeenCalled();
-            expectStoppedAt(staleTake, 4.105);
+            expectStoppedAt(staleTake, 4.1);
             expect(playback.active).not.toContain(staleTake);
             expectStart(sourceReading(5), { when: 5, offset: 5, duration: 1 });
         });
@@ -414,9 +414,8 @@ describe('scheduleAudioClips — comp parts', () => {
             resolvedParts.value = [compPart(8, 12, 6, { loopEnabled: true, loopLength: 1 })];
             const started = steadyWindow(playback, 9.9);
 
-            for (const superseded of sources.slice(0, 2)) {
-                expectStoppedAt(superseded, 4.955);
-            }
+            expectStoppedAt(sources[0]!, 4.955);
+            expectStoppedAt(sources[1]!, 4.95);
             expect(started).toHaveLength(2);
             expectStart(started[0], { when: 4.95, offset: 3.45, duration: 0.05 });
             expectStart(started[1], { when: 5, offset: 3, duration: 0.5 });
@@ -476,7 +475,11 @@ describe('scheduleAudioClips — comp parts', () => {
 
             // The other clip's buffer finishes decoding in a pass with no edit;
             // what is left of it lies before the window, so it stays silent.
-            vi.mocked(getCachedAudioBuffer).mockReturnValue({ duration: 20 } as AudioBuffer);
+            const original = getCachedAudioBuffer({ bufferId: 'buf-1' });
+            const decoded = { duration: 20 } as AudioBuffer;
+            vi.mocked(getCachedAudioBuffer).mockImplementation(({ bufferId }) =>
+                bufferId === 'buf-1' ? original : decoded
+            );
 
             expect(steadyWindow(playback, 9.9)).toEqual([]);
         });

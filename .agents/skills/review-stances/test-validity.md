@@ -138,7 +138,10 @@ release and provenance drift in `release-provenance-drift.md`.
    zero beside a valid transcript; one case per adapter class. A family-wide claim needs every
    registered member (each handler of a shared transform map) crossed with missing, wrong-kind, frozen,
    locked and duplicate-ID targets, plus an ID duplicated after commit for replay; one representative
-   cannot carry it.
+   cannot carry it. Worker detection must distinguish pending from committed with a held Worker and exercise real
+   Undo/Redo plus divergent refusal. Its performance evidence times a real 120-second source from click through PCM
+   copy, cold Worker, atomic commit and UI completion while recording frames and main-thread tasks over that same
+   interval; a mock that always returns empty hits proves neither suppression nor completion.
    (#4068, #805, #5199, #4987, #2078, #4897, #5209, #4986, #2055, #5858, #2079, #4128, #5274, #4630, #939)
 
 8. **A spec or report diff launders behavior or strands its sites.**

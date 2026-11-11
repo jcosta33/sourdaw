@@ -16,6 +16,69 @@ describe('DawPluginChip', () => {
         expect(onClick).toHaveBeenCalled();
     });
 
+    it('lets a caller foreground replace the active tone foreground', () => {
+        render(
+            <DawPluginChip active tone="amber" className="text-surface-raised">
+                Overridden
+            </DawPluginChip>
+        );
+
+        const chip = screen.getByRole('button', { name: 'Overridden' });
+        expect(chip).toHaveClass('text-surface-raised');
+        expect(chip).not.toHaveClass('text-[var(--color-accent-amber)]');
+    });
+
+    it('uses theme-aware surface and foreground roles for an active neutral chip', () => {
+        render(<DawPluginChip active>Enabled</DawPluginChip>);
+
+        const chip = screen.getByRole('button', { name: 'Enabled' });
+        expect(chip).toHaveClass('bg-surface-raised/60', 'text-text-primary');
+        expect(chip.className).not.toContain('text-white');
+    });
+
+    it('reports a pressed state only when the caller declares one', () => {
+        render(
+            <>
+                <DawPluginChip active>Selected</DawPluginChip>
+                <DawPluginChip active={false}>Unselected</DawPluginChip>
+                <DawPluginChip>Unstated</DawPluginChip>
+                <DawPluginChip aria-pressed={true}>Explicitly pressed</DawPluginChip>
+                <DawPluginChip active aria-pressed={false}>
+                    Explicitly unpressed
+                </DawPluginChip>
+            </>
+        );
+
+        expect(screen.getByRole('button', { name: 'Selected' })).toHaveAttribute('aria-pressed', 'true');
+        expect(screen.getByRole('button', { name: 'Unselected' })).toHaveAttribute('aria-pressed', 'false');
+        expect(screen.getByRole('button', { name: 'Unstated' })).not.toHaveAttribute('aria-pressed');
+        // Only a caller-supplied value can distinguish a spread-order
+        // regression: the computed value is absent here, so `{...props}` must
+        // still land after it for this to stay pressed.
+        expect(screen.getByRole('button', { name: 'Explicitly pressed' })).toHaveAttribute('aria-pressed', 'true');
+        expect(screen.getByRole('button', { name: 'Explicitly unpressed' })).toHaveAttribute('aria-pressed', 'false');
+    });
+
+    it('omits computed pressed state from active and inactive radios', () => {
+        render(
+            <>
+                <DawPluginChip role="radio" active aria-checked={true}>
+                    Selected radio
+                </DawPluginChip>
+                <DawPluginChip role="radio" active={false} aria-checked={false}>
+                    Unselected radio
+                </DawPluginChip>
+            </>
+        );
+
+        const selected = screen.getByRole('radio', { name: 'Selected radio' });
+        const unselected = screen.getByRole('radio', { name: 'Unselected radio' });
+        expect(selected).toHaveAttribute('aria-checked', 'true');
+        expect(selected).not.toHaveAttribute('aria-pressed');
+        expect(unselected).toHaveAttribute('aria-checked', 'false');
+        expect(unselected).not.toHaveAttribute('aria-pressed');
+    });
+
     /**
      * An `aria-disabled` chip has to *look* different from a live one.
      *

@@ -4,6 +4,7 @@ import { getGainEnvelopeSeries } from '#/modules/Arrangement/stores';
 import { resolveClipsWithComping } from '#/modules/Arrangement/useCases';
 import {
     createBufferSource,
+    getAudioContext,
     getCompensationDelay,
     getCachedAudioBuffer,
     getCurrentTime,
@@ -33,6 +34,7 @@ import { scheduleAudioClips } from '../scheduleAudioClips';
 
 const trackStoreState: { value: { tracks: unknown[] } } = { value: { tracks: [] } };
 vi.mock('#/modules/Arrangement/stores', () => ({
+    gainEnvelopeStore: { value: null },
     trackStore: {
         get value() {
             return trackStoreState.value;
@@ -292,5 +294,43 @@ describe('scheduleAudioClips live two-segment seam', () => {
 
         expect(sources).toHaveLength(2);
         expect(reads).toBe(2);
+    });
+
+    it('resolves the legacy floor and drawn fade-out before start while envelope clocks stay after start', () => {
+        let clock = 10;
+        const calls: string[] = [];
+        vi.mocked(getCurrentTime).mockImplementation(() => {
+            calls.push(`read:${clock}`);
+            return clock;
+        });
+        vi.mocked(getCompensationDelay).mockReturnValue(0.25);
+        vi.mocked(getGainEnvelopeSeries).mockReturnValue([
+            { beatOffset: 0, gainDb: -6 },
+            { beatOffset: 4, gainDb: 0 },
+        ]);
+        const source = makeFakeSource();
+        source.start.mockImplementation((when) => {
+            calls.push(`start:${when}`);
+            clock += 0.04;
+        });
+        mockCreateBufferSource.mockReturnValue(source as unknown as AudioBufferSourceNode);
+        mockGetCachedAudioBuffer.mockReturnValue({ duration: 100 } as AudioBuffer);
+        const clip = passClip({ startBeat: 0, endBeat: 4, loopEnabled: false, fadeOutBeats: 1 });
+        mockResolveClips.mockReturnValue([clip] as ReturnType<typeof resolveClipsWithComping>);
+        trackStoreState.value = {
+            tracks: [{ id: 'track-1', kind: 'audio', muted: false, clips: [], freezeState: { status: 'active' } }],
+        };
+
+        scheduleAudioClips(1, 4, 1, new Set(), new Set(), [], defaultTransportState);
+
+        expect(source.start).toHaveBeenCalledExactlyOnceWith(10.25, 0.5, 1.5);
+        expect
+            .soft(calls)
+            .toEqual(['read:10', 'read:10', 'read:10', 'read:10', 'start:10.25', 'read:10.04', 'read:10.04']);
+        const context = vi.mocked(getAudioContext).mock.results[0]!.value;
+        const fade = vi.mocked(context.createGain).mock.results[0]!.value;
+        const envelope = vi.mocked(context.createGain).mock.results[1]!.value;
+        expect.soft(fade.gain.linearRampToValueAtTime).toHaveBeenCalledWith(0, 11.75);
+        expect(envelope.gain.exponentialRampToValueAtTime).toHaveBeenCalledWith(1, 11.79);
     });
 });

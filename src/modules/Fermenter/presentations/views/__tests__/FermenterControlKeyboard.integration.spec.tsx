@@ -108,7 +108,7 @@ describe('Fermenter real controls', () => {
     });
     it('switches Dist to Comp and back with the real controls', () => {
         renderPanel();
-        fireEvent.click(screen.getByRole('button', { name: 'Effects' }));
+        fireEvent.click(screen.getByRole('tab', { name: 'Effects' }));
         const dist = screen.getByRole('button', { name: 'Dist' });
         const comp = screen.getByRole('button', { name: 'Comp' });
         expect(dist).toHaveAttribute('aria-pressed', 'true');
@@ -242,7 +242,7 @@ describe('Fermenter real controls', () => {
     ] as const)('routes %s keyboard steps to their matching parameters', async (name, section, tab, controls) => {
         renderPanel();
         if (section) {
-            fireEvent.click(screen.getAllByRole('button', { name: section })[0]!);
+            fireEvent.click(screen.getAllByRole('tab', { name: section })[0]!);
         }
         if (tab) {
             fireEvent.click(screen.getByRole('button', { name: tab }));

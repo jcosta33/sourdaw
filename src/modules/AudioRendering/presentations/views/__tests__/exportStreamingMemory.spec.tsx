@@ -1130,7 +1130,7 @@ describe('connected stem export output ownership', () => {
         };
         try {
             if (exportStarted && !closed) {
-                const cancel = screen.queryByRole('button', { name: 'Turn off Oven' });
+                const cancel = screen.queryByRole('button', { name: 'Cancel export' });
                 if (cancel) {
                     fireEvent.click(cancel);
                 }

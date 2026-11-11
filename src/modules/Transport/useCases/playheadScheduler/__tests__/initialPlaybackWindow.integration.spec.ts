@@ -42,6 +42,7 @@ const midiStoreState: {
     value: { notesByClipId: Record<string, unknown[]>; probabilitySeed: number } | null;
 } = { value: null };
 const ctxTime = { now: 0 };
+const initialBuffer = vi.hoisted(() => ({ sampleRate: 48_000, length: 48_000, duration: 1 }));
 
 const audioContextStub = {
     sampleRate: 48000,
@@ -49,7 +50,13 @@ const audioContextStub = {
         return ctxTime.now;
     },
     createGain: () => ({
-        gain: { value: 1, cancelScheduledValues: vi.fn(), setValueAtTime: vi.fn(), linearRampToValueAtTime: vi.fn() },
+        gain: {
+            value: 1,
+            cancelScheduledValues: vi.fn(),
+            cancelAndHoldAtTime: vi.fn(),
+            setValueAtTime: vi.fn(),
+            linearRampToValueAtTime: vi.fn(),
+        },
         connect: vi.fn(),
         disconnect: vi.fn(),
     }),
@@ -66,6 +73,7 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({ captureProjectRootIdentity: 
 
 vi.mock('#/infra/logger/appLogger', () => ({ logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn() } }));
 vi.mock('#/modules/Arrangement/stores', () => ({
+    gainEnvelopeStore: { value: null },
     appendClipToTrack: vi.fn(),
     clipSelectionStore: { value: null },
     resolveEligibleClipWriteTarget: vi.fn(),
@@ -222,7 +230,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
         sources.push(source);
         return source;
     },
-    getCachedAudioBuffer: () => ({ sampleRate: 48_000, length: 48_000, duration: 1 }),
+    getCachedAudioBuffer: () => initialBuffer,
     resumeEngine: () => Promise.resolve(),
     nativeLiveGraphSessionOffered: () => false,
     startNativeLiveGraphSession: vi.fn(),
@@ -274,7 +282,14 @@ vi.mock('../../evaluateFollowActions', () => ({
     evaluateFollowActions: (...args: unknown[]) => (evaluateFollowActionsMock as (...a: unknown[]) => unknown)(...args),
 }));
 
-type SourceStart = { start: ReturnType<typeof vi.fn<(when: number, offset: number, duration: number) => void>> };
+type SourceStart = {
+    buffer: AudioBuffer | null;
+    playbackRate: { value: number };
+    connect: ReturnType<typeof vi.fn>;
+    disconnect: ReturnType<typeof vi.fn>;
+    stop: ReturnType<typeof vi.fn>;
+    start: ReturnType<typeof vi.fn<(when: number, offset: number, duration: number) => void>>;
+};
 const sources: SourceStart[] = [];
 const transportPublications: unknown[][] = [];
 const notes: { pitch: number; time: number }[] = [];
@@ -664,7 +679,7 @@ describe('initial browser playback window', () => {
         };
     }
 
-    it('uses the same prepared horizon for both sides of a 100 BPM seam', async () => {
+    it('shares the initial100BPM anchor while admitting later audio passes without extending MIDI', async () => {
         seedSeam(0.125, 100, 0.25);
         playheadClockRef.beat = 0.125;
         const onRoll = vi.fn<(contextSeconds: number, beat: number) => void>();
@@ -674,10 +689,20 @@ describe('initial browser playback window', () => {
         expect(onRoll).toHaveBeenCalledExactlyOnceWith(8.1, 0.125);
         expect(transportStoreState.value?.isPlaying).toBe(true);
         expect(notes.map(({ pitch }) => pitch)).toEqual([60, 67, 72]);
-        expect(sources).toHaveLength(3);
-        expect(sources[0]!.start.mock.calls[0]?.[0]).toBeCloseTo(8.1, 12);
-        expect(sources[1]!.start.mock.calls[0]?.[0]).toBeCloseTo(8.1, 12);
-        expect(sources[2]!.start.mock.calls[0]?.[0]).toBeCloseTo(8.175, 12);
+        expect(sources).toHaveLength(6);
+        // At100BPM a .25beat loop costs.15s. Starting halfway through
+        // it admits the dying pass and two successors within350ms.
+        const expectedStarts = [8.1, 8.1, 8.25, 8.175, 8.4, 8.325];
+        const expectedOffsets = [0.12, 0.195, 0.12, 0.12, 0.12, 0.12];
+        const expectedEnds = [8.175, 8.175, 8.325, 8.325, 8.475, 8.475];
+        for (const [index, source] of sources.entries()) {
+            expect(source.buffer).toBe(initialBuffer);
+            expect(source.start.mock.calls).toHaveLength(1);
+            expect(source.start.mock.calls[0]?.[0]).toBeCloseTo(expectedStarts[index]!, 12);
+            expect(source.start.mock.calls[0]?.[1]).toBeCloseTo(expectedOffsets[index]!, 12);
+            expect(source.stop.mock.calls).toHaveLength(1);
+            expect(source.stop.mock.calls[0]?.[0]).toBeCloseTo(expectedEnds[index]!, 12);
+        }
     });
 
     it('waits for the real seam panic before choosing one future anchor for both passes', async () => {

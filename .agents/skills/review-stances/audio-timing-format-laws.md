@@ -71,6 +71,17 @@ none.
    before the next quantum, so it holds from that quantum's first frame, suspended or running. Render from such a
    frame through a fixture applying Chromium's step rule (a time clamped up to `currentTime`, taking effect on the
    first frame at or after it) and assert the first sample.
+   A future source can also expose pre-event gain: at48kHz, drive the real clip emitter at
+   `21.668000000000003` with nonzero PCM and an undrawn attack. Capture every onset sample for fresh gains
+   and actual onended-to-pool reuse, including the prior unity-reset timeline; `22.42` and an unmodified
+   native replay are controls. The main-base causal probe for#6277 reproduced a full-amplitude first sample
+   removed only by changing acquisition seed, with all other captured samples equal. Fresh default gain
+   was introduced by direct commit`4f410257b2`, pooled reset1 by`134120470a`; no associated PR was found.
+   Later#6129 retained that sequence; its comp/source-call checks did not observe native onset gain.
+   Seed the fade's effective intended value before source.start, including equal-time outgoing plateaus
+   and nonzero drawn progress; preserve envelope/frozen unity. Reverting only the fresh or pooled seed
+   must fail the named first-sample PCM comparison. A mocked source.start snapshot proves construction,
+   not rendered audio; retain whole-interval native replay, exact frames and pooling history.
 8. **MIDI note correlation crosses the rack boundary.** When a transform stores a Note On decision for a
    later Note Off, drive supplied `noteInstanceId` values through `MidiRack`: one equal-pitch note, change the
    deciding parameter while held, then attack and release a second identity first. Assert emitted identity
@@ -100,3 +111,16 @@ none.
     minimum cannot extend the automatic-owned source cap. Both key-up and sealing emit no zero/malformed note
     when no positive interval remains; ordinary manual/no-cap minimum stays a control. Historical private review
     prompts and tiers are unestablished. Owner lifetime: `session-lifecycle.md` probe12; no hardware MIDI claim.
+13. **Recovered clocks do not prove rendered loop continuity (#6277).** The100ms tick-driven buffer window
+    and stop/clear seam route appear in direct commit `4f410257b2`; no associated introducing PR is established.
+    Later public#4897 seam checks and#6004 clock-gap/wrap checks do not establish pre-block successor admission
+    or a rendered interval through a blocked main thread. Withhold200ms of ticks across a2s seam and multiple
+    125ms seams, retaining a source ledger copied before the block and an independent source-time reference.
+    `startPlayheadSchedulerLoopAudioStall.spec.ts` must fail if admission waits for the old100ms window or
+    prepares only one successor. Require the actual completed coverage, recorded completion audio timestamp,
+    250ms endpoint, one-frame-beyond retained-lead control and mapped recovery beyond coverage. Advance the
+    context clock during preparation: tick-entry time cannot certify350ms remaining at completion. Bound
+    work even under an unmoving monotonic clock and tiny legal loops; shortfall must name actual unadmitted
+    coverage. Separately capture real Chromium programme PCM through the block and compare an unstalled
+    reference for missing intervals, phase and duplicates, including existing fades. API calls, positive meters,
+    recovered wrap counts and a+2s-anchor admission benchmark cannot replace that rendered-signal proof.

@@ -1,3 +1,4 @@
+import { type LoopAudioScheduleLifetime } from '../../models/LoopAudioScheduleLifetime';
 import { type SourceWithFade } from '../../models/SourceWithFade';
 import { type TempoChange } from '../../stores/tempoMapStore';
 
@@ -79,6 +80,7 @@ export function stopActiveSources(sources: AudioBufferSourceNode[], ctx: BaseAud
 // object prevents importers from rebinding any of these via `export let`.
 export const schedulerSession = {
     worker: null as Worker | null,
+    loopAudioSchedule: null as LoopAudioScheduleLifetime | null,
     lastTickTime: 0,
     accumulatedPosition: 0,
     lastScheduledBeat: -1,

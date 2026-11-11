@@ -432,21 +432,34 @@ export function discard_warp_states_raw_keys(raw: unknown): unknown {
     return changed ? { ...slot, states: decodedStates } : raw;
 }
 
+const warpStateStorage = createAutomergeStorage<WarpStateStoreState>(DOC_PREFIX_ROOT, 'warpStates', {
+    // Legacy documents carry pre-ADR 0024 stretch-mode ids the sanitizer
+    // maps onto the canonical set; the declaration keeps that mapping from
+    // reading as unrecoverable content loss (see
+    // `discard_warp_states_raw_keys`).
+    //
+    // A document without the `warpStates` slot still resets the store to
+    // empty rather than back-writing this replica's cache (audit CC-2).
+    // Warp states are keyed by clip id, which is not unique across
+    // projects, so a stale entry would attach to an unrelated clip in the
+    // incoming project.
+    discardsRaw: discard_warp_states_raw_keys,
+    hydrateMissing: () => ({ states: {} }),
+});
+
+/** Only the registered Detect owner uses private preparation; ordinary warp callers keep their existing writes. */
+export function prepareTransientWarpState(scope: object | undefined, clipId: string, state: WarpState) {
+    if (isDefaultWarpState(state)) {
+        return undefined;
+    }
+    const current = warpStateStore.value ?? defaultWarpStateStoreState;
+    return warpStateStorage.prepareSet?.(scope, { states: { ...current.states, [clipId]: state } }, (value) =>
+        warpStateStore.set(value)
+    );
+}
+
 export const warpStateStore = createStore<WarpStateStoreState>({
-    storage: createAutomergeStorage<WarpStateStoreState>(DOC_PREFIX_ROOT, 'warpStates', {
-        // Legacy documents carry pre-ADR 0024 stretch-mode ids the sanitizer
-        // maps onto the canonical set; the declaration keeps that mapping from
-        // reading as unrecoverable content loss (see
-        // `discard_warp_states_raw_keys`).
-        //
-        // A document without the `warpStates` slot still resets the store to
-        // empty rather than back-writing this replica's cache (audit CC-2).
-        // Warp states are keyed by clip id, which is not unique across
-        // projects, so a stale entry would attach to an unrelated clip in the
-        // incoming project.
-        discardsRaw: discard_warp_states_raw_keys,
-        hydrateMissing: () => ({ states: {} }),
-    }),
+    storage: warpStateStorage,
     initialData: defaultWarpStateStoreState,
     sanitize: sanitizeWarpStateStoreState,
 });

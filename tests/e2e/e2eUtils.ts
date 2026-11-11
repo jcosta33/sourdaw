@@ -119,7 +119,9 @@ export async function wait_for_workspace_ready(page: Page): Promise<void> {
     // can take well past the 5s default bound; match the panel-open bound
     // so a slow-but-healthy boot is not mistaken for a hang.
     await expect(page.getByLabel(LAUNCH_SCREEN_NAME)).toHaveCount(0, { timeout: 30_000 });
-    await expect(page.getByRole('group', { name: PLAYBACK_CONTROLS_NAME })).toBeVisible();
+    await expect(page.getByRole('group', { name: PLAYBACK_CONTROLS_NAME })).toBeVisible({
+        timeout: 30_000,
+    });
 }
 
 /**

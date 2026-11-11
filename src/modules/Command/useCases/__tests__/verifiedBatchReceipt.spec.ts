@@ -165,6 +165,7 @@ describe('verified batch receipt', () => {
     let protectedFingerprintChanged: boolean;
     let rejectPostconditions: boolean;
     let rejectResultingRevisionCapture: boolean;
+    let removeRevisionProviderAfterPublication: boolean;
 
     function compileArtifactBatch(input: { renderAfterCommit?: () => void } = {}) {
         projectDocument = { markers: { ids: [] }, rendered: { jobIds: [] } };
@@ -317,6 +318,7 @@ describe('verified batch receipt', () => {
         protectedFingerprintChanged = false;
         rejectPostconditions = false;
         rejectResultingRevisionCapture = false;
+        removeRevisionProviderAfterPublication = false;
         projectDocument = { trackGain: { value: 1 }, trackPan: { value: 0 } };
         configureAutomergeStoragePort({
             getDoc: () => projectDocument,
@@ -327,6 +329,10 @@ describe('verified batch receipt', () => {
                 changeFn(draft);
                 projectDocument = draft;
                 mutationCount += 1;
+                if (removeRevisionProviderAfterPublication) {
+                    removeRevisionProviderAfterPublication = false;
+                    commandProjectRevisionPort.setProvider(null);
+                }
             },
         });
         gainStorage = createAutomergeStorage<{ value: number }>('root', 'trackGain');
@@ -1042,8 +1048,11 @@ describe('verified batch receipt', () => {
         });
     });
 
-    it('does not fabricate resulting heads when no revision provider is configured', async () => {
+    it('refuses without writes or fabricated heads when no revision provider is configured before execution', async () => {
         const batch = compileBatch();
+        const documentBefore = structuredClone(projectDocument);
+        const historyBefore = undoHistoryStore.value;
+        const treeBefore = undoTreeStore.value;
         commandProjectRevisionPort.setProvider(null);
 
         const result = await executeVersionedCommandBatchEnvelope({
@@ -1052,14 +1061,59 @@ describe('verified batch receipt', () => {
             serialized: batch.serialized,
         });
 
-        expect(result.status).toBe('committed');
+        expect(result).toMatchObject({
+            status: 'conflicted',
+            reason: 'Command batch execution preparation failed: Command batch postcondition authority requires a configured project revision provider',
+            actions: [],
+        });
+        expect(mutationCount).toBe(0);
+        expect(projectDocument).toEqual(documentBefore);
+        expect(gainStorage.get()).toEqual({ value: 1 });
+        expect(panStorage.get()).toEqual({ value: 0 });
+        expect(undoHistoryStore.value).toEqual(historyBefore);
+        expect(undoTreeStore.value).toEqual(treeBefore);
+        expect(mocks.recordActionHistoryMetadata).not.toHaveBeenCalled();
+        expect(mocks.recordAction).not.toHaveBeenCalled();
         expect(receiptFrom(result)).toMatchObject({
+            outcome: 'verification-failed',
+            commandOutcomes: [{ outcome: 'not-applied' }, { outcome: 'not-applied' }],
+            affectedIds: [],
             observedBase: null,
             resulting: null,
             warnings: [
                 'Observed base revision is unavailable: revision provider is not configured',
                 'Resulting project revision is unavailable: revision provider is not configured',
             ],
+        });
+    });
+
+    it('retains committed effects without fabricating heads when the provider disappears after publication', async () => {
+        const batch = compileBatch();
+        const historyCountBefore = undoHistoryStore.value?.past.length ?? 0;
+        removeRevisionProviderAfterPublication = true;
+
+        const result = await executeVersionedCommandBatchEnvelope({
+            authority: batch.authority,
+            confirmed: true,
+            serialized: batch.serialized,
+        });
+
+        expect(result.status).toBe('committed');
+        expect(mutationCount).toBe(1);
+        expect(projectDocument).toEqual({ trackGain: { value: 0.8 }, trackPan: { value: -0.2 } });
+        expect(gainStorage.get()).toEqual({ value: 0.8 });
+        expect(panStorage.get()).toEqual({ value: -0.2 });
+        expect(undoHistoryStore.value?.past.slice(historyCountBefore)).toMatchObject([
+            { action: { type: 'setTrackGain', payload: { gain: 0.8 } }, groupId: 'batch-receipt' },
+            { action: { type: 'setTrackPan', payload: { pan: -0.2 } }, groupId: 'batch-receipt' },
+        ]);
+        expect(commandProjectRevisionPort.isConfigured()).toBe(false);
+        expect(receiptFrom(result)).toMatchObject({
+            outcome: 'committed',
+            observedBase: { normalizedRevision: revision(0) },
+            resulting: null,
+            commandOutcomes: [{ outcome: 'committed' }, { outcome: 'committed' }],
+            warnings: ['Resulting project revision is unavailable: revision provider is not configured'],
             modelSummary: 'Committed 2 commands atomically, but resulting project heads are unavailable.',
         });
     });

@@ -632,6 +632,14 @@ describe('DeviceParameterControl', () => {
         expect(screen.getByLabelText(/Automate Gain/i)).toBeInTheDocument();
     });
 
+    it('gives the automation action a 24px target and uses semantic type roles', () => {
+        render(<DeviceParameterControl param={mockParam} device={mockDevice} trackId="track-1" />);
+
+        expect(screen.getByLabelText(/Automate Gain/i)).toHaveClass('size-6');
+        expect(screen.getByText('Gain')).toHaveClass('text-label');
+        expect(screen.getByText('0.500')).toHaveClass('text-value');
+    });
+
     it('should call addAutomationLane when automation button is clicked without active lane', () => {
         render(<DeviceParameterControl param={mockParam} device={mockDevice} trackId="track-1" />);
         fireEvent.click(screen.getByLabelText(/Automate Gain/i));

@@ -4,16 +4,14 @@ import {
 } from '#/infra/store/storage/createAutomergeStorage';
 import { type HandlerCommitValidation } from '#/utils/handlerContract';
 
+import { type CommandBatchPostconditionValidation } from './commandBatchValidation';
+
 type Transaction = Pick<ReturnType<typeof runWithAutomergeStorageTransaction>, 'validateCommit' | 'validateDocument'>;
-type DocumentValidation = {
-    documentId: string;
-    validate: HandlerCommitValidation['validateDocument'];
-};
 
 export function registerHandlerCommitValidation(
     transaction: Transaction,
     guards: readonly HandlerCommitValidation[],
-    postcondition?: DocumentValidation
+    postcondition?: CommandBatchPostconditionValidation
 ): void {
     const documentChecks = new Map<string, Array<HandlerCommitValidation['validateDocument']>>();
     const beforeMutationChecks = new Map<string, Array<NonNullable<HandlerCommitValidation['beforeMutation']>>>();

@@ -256,7 +256,7 @@ describe('same-build persistence inspection entry', () => {
         expect(isSafeDirectProjectEntry(entry)).toBe(false);
     });
 
-    it('keeps the real index entry and eight direct namespaces only in e2e builds', async () => {
+    it('keeps the real index entry and direct namespaces only in e2e builds', async () => {
         const e2e = await resolveConfig({ root, mode: 'e2e' }, 'build');
         expect(e2e.build.rolldownOptions.input).toEqual({
             index: resolve(root, 'index.html'),
@@ -280,6 +280,7 @@ describe('same-build persistence inspection entry', () => {
             ['inspection', '../../src/modules/CrdtDocument/useCases/agentProjectInspectionPort'],
             ['audio', '../../src/modules/AudioEngine/useCases'],
             ['command', '../../src/modules/Command/useCases'],
+            ['yeast', '../../src/modules/Yeast/stores'],
         ]);
     });
 

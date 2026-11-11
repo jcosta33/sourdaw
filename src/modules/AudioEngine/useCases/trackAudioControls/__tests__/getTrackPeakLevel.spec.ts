@@ -42,4 +42,25 @@ describe('getTrackPeakLevel', () => {
         expect(readNativeEngineStripPeak).toHaveBeenCalledWith('track-42');
         expect(audioEngine.getTrackPeakLevel).toHaveBeenCalledWith('track-42');
     });
+    it('isolates track identities within a frame and obtains fresh next-frame values', () => {
+        vi.mocked(readNativeEngineStripPeak).mockReturnValue(null);
+        vi.mocked(audioEngine.getTrackPeakLevel).mockImplementation((id) => (id === 'a' ? 0.5 : 0.25));
+        expect(getTrackPeakLevel('a', 100)).toBe(0.5);
+        expect(getTrackPeakLevel('b', 100)).toBe(0.25);
+        vi.mocked(audioEngine.getTrackPeakLevel).mockReturnValue(0);
+        expect(getTrackPeakLevel('a', 100)).toBe(0.5);
+        expect(getTrackPeakLevel('b', 100)).toBe(0.25);
+        expect(getTrackPeakLevel('a', 101)).toBe(0);
+        expect(getTrackPeakLevel('b', 101)).toBe(0);
+    });
+
+    it('shares native measured zero without draining the web fallback and preserves immediate queries', () => {
+        vi.mocked(readNativeEngineStripPeak).mockReturnValue(0);
+        expect(getTrackPeakLevel('native', 200)).toBe(0);
+        vi.mocked(readNativeEngineStripPeak).mockReturnValue(0.75);
+        expect(getTrackPeakLevel('native', 200)).toBe(0);
+        expect(audioEngine.getTrackPeakLevel).not.toHaveBeenCalled();
+        expect(getTrackPeakLevel('native')).toBe(0.75);
+        expect(getTrackPeakLevel('native', 201)).toBe(0.75);
+    });
 });

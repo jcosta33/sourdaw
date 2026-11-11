@@ -9,6 +9,24 @@
 
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
+const elasticWiring = vi.hoisted(() => ({
+    setElasticRootIdentityProvider:
+        vi.fn<typeof import('#/modules/ElasticAudio/useCases').setElasticRootIdentityProvider>(),
+    setElasticSensitivityRootIdentityCapture:
+        vi.fn<typeof import('#/modules/ElasticAudio/useCases').setElasticSensitivityRootIdentityCapture>(),
+}));
+
+// Wrap the real barrel so the wiring assertions observe the calls while every
+// other ElasticAudio export stays the real implementation.
+vi.mock('#/modules/ElasticAudio/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/ElasticAudio/useCases')>();
+    return {
+        ...actual,
+        setElasticRootIdentityProvider: elasticWiring.setElasticRootIdentityProvider,
+        setElasticSensitivityRootIdentityCapture: elasticWiring.setElasticSensitivityRootIdentityCapture,
+    };
+});
+
 async function loadFreshModules() {
     vi.resetModules();
     const [
@@ -19,6 +37,7 @@ async function loadFreshModules() {
         commandInterface,
         controlSurface,
         controlSurfaceStores,
+        crdtDocument,
         cvGateStores,
         midi,
         midiStores,
@@ -35,6 +54,7 @@ async function loadFreshModules() {
         import('#/modules/CommandInterface/useCases'),
         import('#/modules/ControlSurface/useCases'),
         import('#/modules/ControlSurface/stores'),
+        import('#/modules/CrdtDocument/useCases'),
         import('#/modules/CvGate/stores'),
         import('#/modules/MIDI/useCases'),
         import('#/modules/MIDI/stores'),
@@ -52,6 +72,7 @@ async function loadFreshModules() {
         commandInterface,
         controlSurface,
         controlSurfaceStores,
+        crdtDocument,
         cvGateStores,
         midi,
         midiStores,
@@ -195,6 +216,22 @@ describe('registerSupportingServicePorts after registration', () => {
 
         expect(source.readLibrary()).toBe(sampleLibraryStores.libraryStore.value);
         expect(source.searchCatalog).toBe(sampleLibrary.searchAgentCatalog);
+    });
+
+    it("installs ElasticAudio's live root reader for both sensitivity and Worker lifetimes", () => {
+        elasticWiring.setElasticRootIdentityProvider.mockClear();
+        elasticWiring.setElasticSensitivityRootIdentityCapture.mockClear();
+        const { app, crdtDocument } = modules;
+        app.registerSupportingServicePorts();
+
+        // Both lifetimes receive the same live reader, and registration passes
+        // the function without invoking it.
+        expect(elasticWiring.setElasticRootIdentityProvider).toHaveBeenCalledExactlyOnceWith(
+            crdtDocument.captureProjectRootIdentity
+        );
+        expect(elasticWiring.setElasticSensitivityRootIdentityCapture).toHaveBeenCalledExactlyOnceWith(
+            crdtDocument.captureProjectRootIdentity
+        );
     });
 
     it('treats a repeated registration as a no-op', () => {

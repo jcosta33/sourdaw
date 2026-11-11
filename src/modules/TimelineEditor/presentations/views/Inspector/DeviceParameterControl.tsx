@@ -649,7 +649,7 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
                             size="bare"
                             type="button"
                             className={cn(
-                                'size-3 rounded-full border shrink-0 transition-colors cursor-pointer',
+                                'size-6 rounded-full border shrink-0 transition-colors cursor-pointer',
                                 hasAutomation
                                     ? 'border-[var(--color-accent-peach)] bg-[var(--color-accent-peach)]/20'
                                     : 'border-muted-foreground/30 hover:bg-muted'
@@ -665,7 +665,15 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
                                 hasAutomation ? `Remove automation for ${param.name}` : `Automate ${param.name}`
                             }
                             aria-pressed={hasAutomation}
-                        />
+                        >
+                            <span
+                                aria-hidden="true"
+                                className={cn(
+                                    'size-2 rounded-full',
+                                    hasAutomation ? 'bg-[var(--color-accent-peach)]' : 'bg-muted-foreground/40'
+                                )}
+                            />
+                        </Button>
                     </TooltipTrigger>
                     <TooltipContent side="top">
                         {hasAutomation ? 'Remove automation lane' : 'Add automation lane'}
@@ -680,14 +688,14 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
             {isStacked ? (
                 <Row justify="between" wrap gap={1} className="w-full">
                     <label
-                        className="min-w-0 flex-1 truncate text-[10px] font-medium text-foreground"
+                        className="min-w-0 flex-1 truncate text-label font-medium text-foreground"
                         title={param.name}
                     >
                         {param.name}
                     </label>
                     <Row gap={1.5} shrink={false} className="ml-auto mt-0.5">
                         {isDiscrete ? null : (
-                            <span className="shrink-0 font-mono text-[10px] tabular-nums text-muted-foreground">
+                            <span className="shrink-0 font-mono text-value tabular-nums text-muted-foreground">
                                 {displayValue}
                                 {param.unit ? ` ${param.unit}` : ''}
                             </span>
@@ -698,13 +706,13 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
             ) : (
                 <Stack justify="center" grow gap={1.5} className="min-w-0 overflow-hidden">
                     <label
-                        className="w-full min-w-0 truncate text-[10px] font-medium text-foreground"
+                        className="w-full min-w-0 truncate text-label font-medium text-foreground"
                         title={param.name}
                     >
                         {param.name}
                     </label>
                     {!isDiscrete ? (
-                        <span className="min-w-0 truncate font-mono text-[10px] tabular-nums text-muted-foreground">
+                        <span className="min-w-0 truncate font-mono text-value tabular-nums text-muted-foreground">
                             {displayValue}
                             {param.unit ? ` ${param.unit}` : ''}
                         </span>

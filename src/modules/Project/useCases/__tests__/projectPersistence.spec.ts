@@ -117,6 +117,8 @@ vi.mock('#/modules/CrdtDocument/useCases', async (importOriginal) => ({
 }));
 
 vi.mock('#/modules/Command/useCases', () => ({
+    commitUndoEntry: vi.fn(),
+    createUndoEntry: vi.fn(),
     clearUndoHistory: vi.fn(() => {
         throw new Error('Unexpected clearUndoHistory in this fixture');
     }),

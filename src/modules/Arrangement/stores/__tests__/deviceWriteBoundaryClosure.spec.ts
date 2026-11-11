@@ -1022,6 +1022,12 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // compiled action commits through `executeAppActionBatch`; the file
         // writes no store or device.
         'src/modules/ContentBrowser/useCases/placeLibrarySample.ts': 2,
+        // Count provenance: measured 4 — compileLoadPresetActions import/call
+        // and compilePreviewDevices declaration/call. Compiled actions are read
+        // only to construct disposable offline input, never executed or hydrated
+        // into live project/device state. The device-data census below is scoped
+        // to Arrangement/Project; this foreign request-local projection writes neither.
+        'src/modules/ContentBrowser/useCases/renderPresetPreview.ts': 4,
         'src/modules/ContentBrowser/presentations/views/Sidebar/InstrumentsTab.tsx': 4,
         // Count provenance: 0 in code, was 2 — addDeviceThroughAction now
         // delegates to `executeAddDeviceAction`; no compiler named.

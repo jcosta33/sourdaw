@@ -10,7 +10,11 @@ import { setAutomationRecordingDependencies } from '../recordingDependencies';
 import { activeRecording, laneBaselines, pendingPoints, touchActive } from '../recordingSessionState';
 import { stopAutomationRecording } from '../stopAutomationRecording';
 
-vi.mock('#/modules/Command/useCases', () => ({ pushUndoEntry: vi.fn(), executeUserAppAction: vi.fn() }));
+vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Command/useCases')>()),
+    commitUndoEntry: vi.fn(),
+    executeUserAppAction: vi.fn(),
+}));
 
 /**
  * Riding a fader around a loop must leave lap two's curve, not a splice of both

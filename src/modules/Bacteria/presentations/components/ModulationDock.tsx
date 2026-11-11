@@ -35,15 +35,57 @@ type ModulationDockProps = {
 };
 
 const MOD_SOURCES = [
-    { id: 'lfo1', label: 'LFO 1', color: 'rgb(244, 63, 94)', icon: '~' },
-    { id: 'lfo2', label: 'LFO 2', color: 'rgb(251, 146, 60)', icon: '~' },
-    { id: 'env', label: 'Env Follow', color: 'rgb(74, 222, 128)', icon: '▲' },
-    { id: 'lorenz', label: 'Lorenz', color: 'rgb(167, 139, 250)', icon: '∞' },
-    { id: 'stepseq', label: 'Step Seq', color: 'rgb(96, 165, 250)', icon: '▦' },
-    { id: 'macro1', label: 'Macro 1', color: 'rgb(250, 204, 21)', icon: '1' },
-    { id: 'macro2', label: 'Macro 2', color: 'rgb(250, 204, 21)', icon: '2' },
-    { id: 'macro3', label: 'Macro 3', color: 'rgb(250, 204, 21)', icon: '3' },
-    { id: 'macro4', label: 'Macro 4', color: 'rgb(250, 204, 21)', icon: '4' },
+    { id: 'lfo1', label: 'LFO 1', color: 'rgb(244, 63, 94)', textColor: 'var(--color-accent-rose)', icon: '~' },
+    {
+        id: 'lfo2',
+        label: 'LFO 2',
+        color: 'rgb(251, 146, 60)',
+        textColor: 'var(--color-accent-orange)',
+        icon: '~',
+    },
+    { id: 'env', label: 'Env Follow', color: 'rgb(74, 222, 128)', textColor: 'var(--color-accent-mint)', icon: '▲' },
+    {
+        id: 'lorenz',
+        label: 'Lorenz',
+        color: 'rgb(167, 139, 250)',
+        textColor: 'var(--color-accent-lavender)',
+        icon: '∞',
+    },
+    {
+        id: 'stepseq',
+        label: 'Step Seq',
+        color: 'rgb(96, 165, 250)',
+        textColor: 'var(--color-accent-steel)',
+        icon: '▦',
+    },
+    {
+        id: 'macro1',
+        label: 'Macro 1',
+        color: 'rgb(250, 204, 21)',
+        textColor: 'var(--color-accent-amber)',
+        icon: '1',
+    },
+    {
+        id: 'macro2',
+        label: 'Macro 2',
+        color: 'rgb(250, 204, 21)',
+        textColor: 'var(--color-accent-amber)',
+        icon: '2',
+    },
+    {
+        id: 'macro3',
+        label: 'Macro 3',
+        color: 'rgb(250, 204, 21)',
+        textColor: 'var(--color-accent-amber)',
+        icon: '3',
+    },
+    {
+        id: 'macro4',
+        label: 'Macro 4',
+        color: 'rgb(250, 204, 21)',
+        textColor: 'var(--color-accent-amber)',
+        icon: '4',
+    },
 ] as const;
 
 type ModSourceId = (typeof MOD_SOURCES)[number]['id'];
@@ -51,7 +93,7 @@ type ModSourceId = (typeof MOD_SOURCES)[number]['id'];
 /** Sources whose native output swings both ways; the rest rest at zero, not centre. */
 const BIPOLAR_SOURCES: ReadonlySet<string> = new Set<ModSourceId>(['lfo1', 'lfo2', 'env', 'lorenz']);
 
-const selectClasses = 'h-5 rounded-micro border border-border-soft bg-black/30 px-1 text-nano text-foreground/80';
+const selectClasses = 'h-5 rounded-micro border border-border-soft bg-black/30 px-1 text-nano text-foreground';
 
 function SourcePills({ patch, modValues }: { patch: BacteriaPatch; modValues: number[] }): ReactElement {
     return (
@@ -68,10 +110,10 @@ function SourcePills({ patch, modValues }: { patch: BacteriaPatch; modValues: nu
                         style={{
                             borderColor: `${source.color}40`,
                             backgroundColor: `${source.color}10`,
-                            color: source.color,
+                            color: source.textColor,
                         }}
                     >
-                        <span className="text-micro font-bold opacity-60">{source.icon}</span>
+                        <span className="text-micro font-bold">{source.icon}</span>
                         <span>{source.label}</span>
                         {/* Activity indicator */}
                         <div
@@ -83,7 +125,7 @@ function SourcePills({ patch, modValues }: { patch: BacteriaPatch; modValues: nu
                             }}
                         />
                         {activeAssignments.length > 0 ? (
-                            <span className="text-[6px] opacity-50">({activeAssignments.length})</span>
+                            <span className="text-[6px]">({activeAssignments.length})</span>
                         ) : null}
                     </Row>
                 );
@@ -121,7 +163,7 @@ function AddAssignmentRow({
                     </option>
                 ))}
             </select>
-            <span className="text-nano text-muted-foreground/40">→</span>
+            <span className="text-nano text-muted-foreground">→</span>
             <select
                 aria-label="Modulation target"
                 className={selectClasses}
@@ -144,7 +186,7 @@ function AddAssignmentRow({
                 className="w-20 accent-accent-cyan"
                 onChange={(event) => setAmount(Number(event.target.value))}
             />
-            <span className="text-nano text-muted-foreground/40 font-mono">
+            <span className="text-nano text-muted-foreground font-mono">
                 {amount > 0 ? '+' : ''}
                 {(amount * 100).toFixed(0)}%
             </span>
@@ -182,10 +224,12 @@ function AssignmentRow({
     const source = MOD_SOURCES.find((s) => s.id === assignment.sourceId);
     return (
         <Row gap={1} className="text-nano">
-            <span style={{ color: source?.color ?? 'white' }}>{source?.label ?? assignment.sourceId}</span>
-            <span className="text-muted-foreground/30">→</span>
-            <span className="text-foreground/60">{assignment.targetParam}</span>
-            <span className="text-muted-foreground/40 font-mono">
+            <span style={{ color: source?.textColor ?? 'var(--color-text-primary)' }}>
+                {source?.label ?? assignment.sourceId}
+            </span>
+            <span className="text-muted-foreground">→</span>
+            <span className="text-foreground">{assignment.targetParam}</span>
+            <span className="text-muted-foreground font-mono">
                 {assignment.amount > 0 ? '+' : ''}
                 {(assignment.amount * 100).toFixed(0)}%
             </span>
@@ -193,7 +237,7 @@ function AssignmentRow({
                 variant="bare"
                 size="bare"
                 type="button"
-                className="text-[6px] text-muted-foreground/30 hover:text-red-400 ml-auto"
+                className="text-[6px] text-muted-foreground hover:text-state-danger ml-auto"
                 onClick={onRemove}
             >
                 ×
@@ -212,7 +256,7 @@ export const ModulationDock = ({
 
     return (
         <Stack gap={2} className="p-2">
-            <div className="text-micro text-muted-foreground/50 font-medium uppercase tracking-wider">
+            <div className="text-micro text-muted-foreground font-medium uppercase tracking-wider">
                 Modulation Sources
             </div>
 
@@ -226,7 +270,7 @@ export const ModulationDock = ({
 
             {patch.modAssignments.length > 0 ? (
                 <Stack gap={0.5} className="mt-1">
-                    <div className="text-nano text-muted-foreground/40 uppercase">Active Assignments</div>
+                    <div className="text-nano text-muted-foreground uppercase">Active Assignments</div>
                     {patch.modAssignments.map((assignment, idx) => (
                         <AssignmentRow key={idx} assignment={assignment} onRemove={() => onAssignmentRemove(idx)} />
                     ))}

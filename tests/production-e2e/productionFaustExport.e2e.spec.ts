@@ -129,7 +129,7 @@ async function setShortLoop(page: Page, app: FrameLocator): Promise<void> {
 async function openBakery(app: FrameLocator): Promise<Locator> {
     const isMac = await app.locator('body').evaluate(() => navigator.platform.toUpperCase().includes('MAC'));
     await app.locator('body').press(isMac ? 'Meta+Shift+E' : 'Control+Shift+E');
-    const dialog = app.getByRole('dialog').filter({ hasText: /The Bakery/i });
+    const dialog = app.getByRole('dialog').filter({ hasText: /Export audio/i });
     await expect(dialog).toBeVisible();
     const exactLoop = dialog.getByRole('radio', { name: 'Loop region (beat 104.00 → 120.00)', exact: true });
     await expect(exactLoop).toBeVisible();
@@ -176,11 +176,11 @@ async function captureWav(
     capture: FilePickerCapture,
     completed: SavedCapture[]
 ): Promise<Buffer> {
-    await dialog.getByRole('button', { name: 'Start Baking', exact: true }).click();
+    await dialog.getByRole('button', { name: 'Export mixdown', exact: true }).click();
     await expect.poll(() => capture.closeCount(), { timeout: 180_000 }).toBe(1);
     await capture.waitForClose();
     const filename = await capture.pickerFilename;
-    expect(filename).toMatch(/^Sourdaw_Bake_\d+\.wav$/);
+    expect(filename).toMatch(/^Sourdaw_Mixdown_\d+\.wav$/);
     const saved = captureState(capture);
     expect(saved.bytes).toBeGreaterThan(0);
     expect(saved.writes).toBeGreaterThan(0);
@@ -188,8 +188,8 @@ async function captureWav(
     expect(saved.aborts).toBe(0);
     expect(saved.requests).toBe(1);
     expect(saved.writables).toBe(1);
-    await expect(dialog.getByRole('button', { name: 'Close Bakery' })).toBeVisible();
-    await dialog.getByRole('button', { name: 'Close Bakery' }).click();
+    await expect(dialog.getByRole('button', { name: 'Close' })).toBeVisible();
+    await dialog.getByRole('button', { name: 'Close' }).click();
     const path = capture.path;
     const bytes = await readFile(path);
     expect(bytes.length).toBe(saved.bytes);
@@ -371,11 +371,11 @@ test('production Faust plays and exports after slow native loading, refuses a na
         expect(contrast.relativeRms).toBeGreaterThan(0.005);
         await inspector.getByRole('button', { name: 'Enable Tape Delay', exact: true }).click();
         await expect(inspector.getByRole('button', { name: 'Bypass Tape Delay', exact: true })).toBeVisible();
-        const previousSuccess = app.getByRole('alert').filter({ hasText: /^Ding! The audio finished baking$/ });
+        const previousSuccess = app.getByRole('alert').filter({ hasText: /^Audio exported$/ });
         await expect(previousSuccess).toHaveCount(1);
         await expect(previousSuccess).toBeVisible();
         await previousSuccess.getByRole('button', { name: 'Dismiss notification', exact: true }).click();
-        await expect(app.getByText('Ding! The audio finished baking', { exact: true })).toHaveCount(0);
+        await expect(app.getByText('Audio exported', { exact: true })).toHaveCount(0);
         await frame.evaluate(() => {
             window.productionFaustProbe.setMode('reject-offline');
             window.productionFaustProbe.observeSuccess();
@@ -384,8 +384,8 @@ test('production Faust plays and exports after slow native loading, refuses a na
         const failedCapture = await newCapture('native-failure-aborted.incomplete');
         dialog = await openBakery(app);
         const beforeFailure = completed.length;
-        await dialog.getByRole('button', { name: 'Start Baking', exact: true }).click();
-        await expect(dialog.getByText('The bread burned...', { exact: true })).toBeVisible({ timeout: 90_000 });
+        await dialog.getByRole('button', { name: 'Export mixdown', exact: true }).click();
+        await expect(dialog.getByText('Export failed.', { exact: true })).toBeVisible({ timeout: 90_000 });
         await expect(dialog.getByText(/Delay Bus.*Tape Delay|Tape Delay.*Delay Bus/)).toBeVisible();
         const failed = (await frame.evaluate(() => window.productionFaustProbe.snapshot())).loads.findLast(
             (load) => load.context === 'offline'
@@ -404,8 +404,8 @@ test('production Faust plays and exports after slow native loading, refuses a na
         });
         expect(completed).toHaveLength(beforeFailure);
         expect(downloads).toHaveLength(0);
-        await expect(app.getByText('Ding! The audio finished baking', { exact: true })).toHaveCount(0);
-        const retry = dialog.getByRole('button', { name: 'Start Baking', exact: true });
+        await expect(app.getByText('Audio exported', { exact: true })).toHaveCount(0);
+        const retry = dialog.getByRole('button', { name: 'Export mixdown', exact: true });
         await expect(retry).toBeEnabled();
         expect((await frame.evaluate(() => window.productionFaustProbe.snapshot())).successNotifications).toBe(0);
         await frame.evaluate(() => window.productionFaustProbe.stopObservingSuccess());

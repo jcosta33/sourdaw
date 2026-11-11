@@ -1,4 +1,4 @@
-import { getGainEnvelopeSeries, trackStore } from '#/modules/Arrangement/stores';
+import { getGainEnvelopeSeries, gainEnvelopeStore, trackStore } from '#/modules/Arrangement/stores';
 import { collaborationAssetTransfer, resolveClipsWithComping } from '#/modules/Arrangement/useCases';
 import {
     createBufferSource,
@@ -10,11 +10,6 @@ import {
 } from '#/modules/AudioEngine/useCases';
 import { projectAudioLoopPassSegments } from '#/utils/audioSourceTime';
 import {
-    MICRO_FADE_SECONDS,
-    clampClipFadeInDurationSeconds,
-    clampClipFadeOutStartSeconds,
-} from '#/utils/clipFadeScheduleClamp';
-import {
     applyGainCurveAnchorsToParam,
     envelopeGainDbToLinear,
     foldGainCurveAnchorsToAudibleStart,
@@ -22,6 +17,7 @@ import {
 import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 import { boundStretchRatio } from '#/utils/stretchRatioBound';
+import { valuesEqual } from '#/utils/structuralEquality';
 
 import { type SourceWithFade } from '../../models/SourceWithFade';
 import { getTempoAtBeat, secondsBetweenBeats } from '../../models/TempoMap';
@@ -32,6 +28,7 @@ import { schedulerSession } from '../playheadScheduler/schedulerSession';
 
 import { gainNodePool } from './audioClipSchedulingState';
 import { disposeAudioClipScheduling } from './disposeAudioClipScheduling';
+import { projectAudioClipFadeSchedule } from './projectAudioClipFadeSchedule';
 import { scheduleFrozenTrack } from './scheduleFrozenTrack';
 
 function acquireGainNode(ctx: BaseAudioContext): GainNode {
@@ -68,6 +65,7 @@ type ScheduledPartTag = {
     clipId: string;
     partKey: string;
     scheduledKey: string;
+    programme: ReturnType<typeof partProgramme>;
 };
 
 type ScheduledPartSource = SourceWithFade & { scheduledPart?: ScheduledPartTag };
@@ -91,13 +89,49 @@ function audioPartKey(part: ResolvedAudioPart, bufferId: string): string {
     return `${part.id}:${part.regionStartBeat}:${part.regionEndBeat}:${bufferId}:${entry}`;
 }
 
+function partProgramme(part: ResolvedAudioPart) {
+    const envelope = gainEnvelopeStore.value?.envelopes[part.id];
+    const source = [
+        part.startBeat,
+        part.endBeat,
+        part.audioOffsetSeconds,
+        part.audioOffsetBeats,
+        part.audioUnwrappedOffsetSeconds,
+        part.audioLoopStartSeconds,
+        part.audioLoopPassEntrySeconds,
+        part.audioLoopPassOriginBeat,
+        part.loopEnabled,
+        part.loopLength,
+        part.loopOriginBeat,
+        part.stretchMode,
+        part.stretchRatio,
+        part.gain,
+        part.fadeInBeats,
+        part.fadeOutBeats,
+    ];
+    if (!envelope) {
+        return { source, envelope: null };
+    }
+    return {
+        source,
+        envelope: {
+            enabled: envelope.enabled,
+            points: envelope.points.map((point) => [point.beatOffset, point.gainDb]),
+        },
+    };
+}
+
 function resolvesSamePart(parts: readonly ResolvedAudioPart[], tag: ScheduledPartTag): boolean {
     return parts.some((part) => {
         if (part.id !== tag.clipId) {
             return false;
         }
         const bufferId = playableAudioBufferId(part);
-        return bufferId !== null && audioPartKey(part, bufferId) === tag.partKey;
+        return (
+            bufferId !== null &&
+            audioPartKey(part, bufferId) === tag.partKey &&
+            valuesEqual(partProgramme(part), tag.programme)
+        );
     });
 }
 
@@ -120,10 +154,31 @@ function cutSupersededParts(
     for (let index = activeAudioSources.length - 1; index >= 0; index--) {
         const source: ScheduledPartSource = activeAudioSources[index]!;
         const tag = source.scheduledPart;
-        if (!tag || tag.trackId !== trackId || resolvesSamePart(parts, tag)) {
+        if (!tag || tag.trackId !== trackId) {
             continue;
         }
-        cutSource(source, ctx);
+        const replacement = parts.find(
+            (part) =>
+                part.id === tag.clipId &&
+                part.audioBufferId !== undefined &&
+                audioPartKey(part, part.audioBufferId) === tag.partKey
+        );
+        let replacementBuffer: AudioBuffer | null = null;
+        if (replacement?.audioBufferId) {
+            replacementBuffer = getCachedAudioBuffer({ bufferId: replacement.audioBufferId });
+        }
+        const replacedBuffer = replacementBuffer !== null && replacementBuffer !== source.buffer;
+        const changedCompensation = source.compensationSeconds !== getCompensationDelay(trackId);
+        if (resolvesSamePart(parts, tag) && !replacedBuffer && !changedCompensation) {
+            continue;
+        }
+        if (source.scheduledStartTime !== undefined && source.scheduledStartTime >= ctx.currentTime) {
+            source.stop(ctx.currentTime);
+            source.scheduledStopTime = ctx.currentTime;
+        } else {
+            cutSource(source, ctx);
+            source.scheduledStopTime = ctx.currentTime + 0.005;
+        }
         activeAudioSources.splice(index, 1);
         scheduledAudioClipsSet.delete(tag.scheduledKey);
         cutAny = true;
@@ -189,6 +244,141 @@ function emitContinuingParts(
         timing = emitAudioPart(emission, next, audioPartKey(next, bufferId), buffer, timing, 'continuation');
         previous = next;
     }
+}
+
+type AudioSegmentPlan = {
+    soundStartTime: number;
+    playDuration: number;
+    audibleStartTime: number;
+    preRollSeconds: number;
+    startTime: number;
+    bufferOffset: number;
+    bufferDuration: number;
+};
+
+type AudioPassPreparation = Pick<
+    TrackAudioEmission,
+    'changes' | 'transport' | 'fromBeat' | 'floorsToWindowStart' | 'initialSchedulingAnchor' | 'compensation'
+> & {
+    passSegments: ReturnType<typeof projectAudioLoopPassSegments>;
+    iterStartBeat: number;
+    iterStartTime: number;
+    now: number;
+    stretchRatio: number;
+    buffer: AudioBuffer;
+    beatToAudioTime: EmissionTiming['beatToAudioTime'];
+};
+
+function prepareAudioPassSegments(input: AudioPassPreparation): AudioSegmentPlan[] {
+    const {
+        passSegments,
+        changes,
+        transport,
+        fromBeat,
+        floorsToWindowStart,
+        initialSchedulingAnchor,
+        compensation,
+        iterStartBeat,
+        iterStartTime,
+        now,
+        stretchRatio,
+        buffer,
+        beatToAudioTime,
+    } = input;
+    const plans: AudioSegmentPlan[] = [];
+    for (const segment of passSegments) {
+        const segmentStartBeat = iterStartBeat + segment.startOffsetBeats;
+        const segmentEndBeat = iterStartBeat + segment.endOffsetBeats;
+        // Timeline duration of this segment: derived from the same
+        // beat→time mapping as its start so start and length agree
+        // under a tempo curve.
+        const segmentDurationSeconds = secondsBetweenBeats(changes, segmentStartBeat, segmentEndBeat, transport.tempo);
+        // Every segment's start walks beats from the pass head's
+        // one clock read (`iterStartTime`) — never from a fresh
+        // `getCurrentTime()` taken after the previous segment's
+        // source was built, connected and started. Chromium
+        // advances `AudioContext.currentTime` once per 128-sample
+        // render quantum, so a second read could land a quantum
+        // late and open a ~2.67 ms live-only gap at the wrap seam
+        // that the tail's read-anchored end does not have.
+        const segmentStartTime =
+            iterStartTime + secondsBetweenBeats(changes, iterStartBeat, segmentStartBeat, transport.tempo);
+        const segmentSourceStartSeconds = segment.sourceStartSeconds;
+        // A negative source start — reachable and unfloored from
+        // both write paths, `slipClipContent` and a leftward
+        // left-edge drag in `trimClipStart` — puts the segment's
+        // head before the start of its source. Handing that number
+        // to `start()` is the `RangeError` the Web Audio
+        // specification requires, and this call sits in the
+        // scheduler tick with no `catch` around it, so the throw
+        // also skips that tick's automation, VCA and modulation
+        // passes.
+        //
+        // The professional answer (Live, Cubase) is silence across
+        // the negative span and then the file from sample 0, which
+        // is what the offline render bounces. The span is source
+        // seconds, so crossing it costs `span / rate` of the
+        // timeline; the segment still ends where the pass says it
+        // does, so the pre-roll shortens what is heard rather than
+        // moving the tail.
+        const sourceOffsetSeconds = Math.max(0, segmentSourceStartSeconds);
+        const preRollSeconds = Math.max(0, -segmentSourceStartSeconds) / stretchRatio;
+        const soundStartTime = segmentStartTime + preRollSeconds;
+        const playDuration = Math.min(
+            segmentDurationSeconds - preRollSeconds,
+            (buffer.duration - sourceOffsetSeconds) / stretchRatio
+        );
+        // Nothing audible remains in this segment: the pre-roll
+        // swallowed it, or its read already sits past the end of
+        // the material. Starting a zero-length source would only
+        // burn a node.
+        if (playDuration <= 0) {
+            continue;
+        }
+
+        // #4784 — a loop wrap opens the window at loopStart while
+        // the beat→time anchor carries the wrapped playhead past it
+        // (or, on the scheduled seam, a negative-phase beat before
+        // it), so a clip spanning the wrap maps its head deep into
+        // the past. The mid-buffer continuation below answered that
+        // with content at `accumulatedPosition − compensation` —
+        // material from before the loop when the compensation
+        // outruns the distance already travelled into the pass.
+        // The window's own first beat is the earliest content this
+        // emission may sound; when its due instant is still ahead
+        // of the source's own start, the source begins there
+        // instead, holding the window's content.
+        let floorStartTime = segmentStartTime;
+        if (initialSchedulingAnchor !== undefined) {
+            floorStartTime = Math.max(floorStartTime, initialSchedulingAnchor + compensation);
+        }
+        if (floorsToWindowStart && fromBeat > segmentStartBeat) {
+            floorStartTime = Math.max(floorStartTime, beatToAudioTime(fromBeat));
+        }
+        const audibleStartTime = Math.max(soundStartTime, floorStartTime);
+
+        let startTime = audibleStartTime;
+        let bufferOffset = sourceOffsetSeconds + (audibleStartTime - soundStartTime) * stretchRatio;
+        let bufferDuration = (soundStartTime + playDuration - audibleStartTime) * stretchRatio;
+        if (audibleStartTime < now) {
+            startTime = now;
+            bufferOffset = (now - soundStartTime) * stretchRatio + sourceOffsetSeconds;
+            bufferDuration = playDuration * stretchRatio + sourceOffsetSeconds - bufferOffset;
+        }
+        if (bufferOffset >= buffer.duration || bufferDuration <= 0) {
+            continue;
+        }
+        plans.push({
+            soundStartTime,
+            playDuration,
+            audibleStartTime,
+            preRollSeconds,
+            startTime,
+            bufferOffset,
+            bufferDuration,
+        });
+    }
+    return plans;
 }
 
 /**
@@ -280,6 +470,7 @@ function emitAudioPart(
             clipId: clip.id,
             partKey: clipKey,
             scheduledKey: scheduledIterationKey,
+            programme: partProgramme(clip),
         };
 
         const remainingBeats = clip.endBeat - iterStartBeat;
@@ -330,127 +521,123 @@ function emitAudioPart(
         // shares the clock read of the part it continues.
         const iterStartTime = beatToAudioTime(iterStartBeat);
         const now = timing.now ?? getCurrentTime();
-        type StartedSegment = {
-            soundStartTime: number;
-            playDuration: number;
-            audibleStartTime: number;
-            preRollSeconds: number;
-        };
-        const startedSegments: StartedSegment[] = [];
         const startedSources: AudioBufferSourceNode[] = [];
-
-        for (const segment of passSegments) {
-            const segmentStartBeat = iterStartBeat + segment.startOffsetBeats;
-            const segmentEndBeat = iterStartBeat + segment.endOffsetBeats;
-            // Timeline duration of this segment: derived from the same
-            // beat→time mapping as its start so start and length agree
-            // under a tempo curve.
-            const segmentDurationSeconds = secondsBetweenBeats(
+        let plans: AudioSegmentPlan[];
+        let fadeSchedule: ReturnType<typeof projectAudioClipFadeSchedule> | null = null;
+        try {
+            plans = prepareAudioPassSegments({
+                passSegments,
                 changes,
-                segmentStartBeat,
-                segmentEndBeat,
-                transport.tempo
-            );
-            // Every segment's start walks beats from the pass head's
-            // one clock read (`iterStartTime`) — never from a fresh
-            // `getCurrentTime()` taken after the previous segment's
-            // source was built, connected and started. Chromium
-            // advances `AudioContext.currentTime` once per 128-sample
-            // render quantum, so a second read could land a quantum
-            // late and open a ~2.67 ms live-only gap at the wrap seam
-            // that the tail's read-anchored end does not have.
-            const segmentStartTime =
-                iterStartTime + secondsBetweenBeats(changes, iterStartBeat, segmentStartBeat, transport.tempo);
-            const segmentSourceStartSeconds = segment.sourceStartSeconds;
-            // A negative source start — reachable and unfloored from
-            // both write paths, `slipClipContent` and a leftward
-            // left-edge drag in `trimClipStart` — puts the segment's
-            // head before the start of its source. Handing that number
-            // to `start()` is the `RangeError` the Web Audio
-            // specification requires, and this call sits in the
-            // scheduler tick with no `catch` around it, so the throw
-            // also skips that tick's automation, VCA and modulation
-            // passes.
-            //
-            // The professional answer (Live, Cubase) is silence across
-            // the negative span and then the file from sample 0, which
-            // is what the offline render bounces. The span is source
-            // seconds, so crossing it costs `span / rate` of the
-            // timeline; the segment still ends where the pass says it
-            // does, so the pre-roll shortens what is heard rather than
-            // moving the tail.
-            const sourceOffsetSeconds = Math.max(0, segmentSourceStartSeconds);
-            const preRollSeconds = Math.max(0, -segmentSourceStartSeconds) / stretchRatio;
-            const soundStartTime = segmentStartTime + preRollSeconds;
-            const playDuration = Math.min(
-                segmentDurationSeconds - preRollSeconds,
-                (buffer.duration - sourceOffsetSeconds) / stretchRatio
-            );
-            // Nothing audible remains in this segment: the pre-roll
-            // swallowed it, or its read already sits past the end of
-            // the material. Starting a zero-length source would only
-            // burn a node.
-            if (playDuration <= 0) {
-                continue;
-            }
-
-            // #4784 — a loop wrap opens the window at loopStart while
-            // the beat→time anchor carries the wrapped playhead past it
-            // (or, on the scheduled seam, a negative-phase beat before
-            // it), so a clip spanning the wrap maps its head deep into
-            // the past. The mid-buffer continuation below answered that
-            // with content at `accumulatedPosition − compensation` —
-            // material from before the loop when the compensation
-            // outruns the distance already travelled into the pass.
-            // The window's own first beat is the earliest content this
-            // emission may sound; when its due instant is still ahead
-            // of the source's own start, the source begins there
-            // instead, holding the window's content.
-            let floorStartTime = segmentStartTime;
-            if (initialSchedulingAnchor !== undefined) {
-                floorStartTime = Math.max(floorStartTime, initialSchedulingAnchor + compensation);
-            }
-            if (floorsToWindowStart && fromBeat > segmentStartBeat) {
-                floorStartTime = Math.max(floorStartTime, beatToAudioTime(fromBeat));
-            }
-            const audibleStartTime = Math.max(soundStartTime, floorStartTime);
-
-            const source = createBufferSource();
-            source.buffer = buffer;
-            if (stretchRatio !== 1) {
-                source.playbackRate.value = stretchRatio;
-            }
-            // The figure a loop-seam fence spares this source's tail by
-            // (#4784): the material it carries is scheduled this late,
-            // so it is still due this long past the seam.
-            (source as SourceWithFade).compensationSeconds = compensation;
-            (source as SourceWithFade).fadeGainNode = fadeGain;
-            (source as ScheduledPartSource).scheduledPart = partTag;
-            source.connect(outputNode);
-
-            if (audibleStartTime >= now) {
-                const startBufferOffset = sourceOffsetSeconds + (audibleStartTime - soundStartTime) * stretchRatio;
-                const startDuration = (soundStartTime + playDuration - audibleStartTime) * stretchRatio;
-                if (startBufferOffset >= buffer.duration || startDuration <= 0) {
-                    continue;
+                transport,
+                fromBeat,
+                floorsToWindowStart,
+                initialSchedulingAnchor,
+                compensation,
+                iterStartBeat,
+                iterStartTime,
+                now,
+                stretchRatio,
+                buffer,
+                beatToAudioTime,
+            });
+            if (plans.length > 0) {
+                // Resolve the legacy fade-out read after the floor reads, before
+                // any start can advance the clock. Envelope clocks stay below.
+                let fadeInEndTime: number | null = null;
+                if (isFirstIter && clip.fadeInBeats > 0) {
+                    fadeInEndTime =
+                        iterStartTime +
+                        secondsBetweenBeats(changes, iterStartBeat, iterStartBeat + clip.fadeInBeats, transport.tempo);
                 }
-                source.start(audibleStartTime, startBufferOffset, startDuration);
-            } else {
-                const elapsed = now - soundStartTime;
-                const bufferOffset = elapsed * stretchRatio + sourceOffsetSeconds;
-                if (
-                    bufferOffset >= buffer.duration ||
-                    bufferOffset >= playDuration * stretchRatio + sourceOffsetSeconds
-                ) {
-                    // Source isn't started; the pass's shared nodes
-                    // release below if no segment started at all.
-                    continue;
+                let fadeOut: { endTime: number; duration: number } | null = null;
+                if (isLastIter && clip.fadeOutBeats > 0) {
+                    fadeOut = {
+                        endTime: beatToAudioTime(clip.endBeat),
+                        duration: secondsBetweenBeats(
+                            changes,
+                            clip.endBeat - clip.fadeOutBeats,
+                            clip.endBeat,
+                            transport.tempo
+                        ),
+                    };
                 }
-                source.start(now, bufferOffset, playDuration * stretchRatio + sourceOffsetSeconds - bufferOffset);
+                fadeSchedule = projectAudioClipFadeSchedule({
+                    first: plans[0]!,
+                    last: plans[plans.length - 1]!,
+                    now,
+                    clipGain,
+                    fadeInEndTime,
+                    fadeOut,
+                    microFadeIn: needsMicroFadeIn,
+                    microFadeOut: needsMicroFadeOut,
+                });
+                // Only this acquired FREE fade node is reset. Cancel its entire
+                // former timeline: intrinsic gain cannot override a pooled unity event.
+                fadeGain.gain.cancelScheduledValues(0);
+                fadeGain.gain.value = fadeSchedule.initialGain;
             }
+        } catch (error) {
+            releaseGainNode(fadeGain, ctx);
+            if (envGainNode) {
+                releaseGainNode(envGainNode, ctx);
+            }
+            throw error;
+        }
+        for (const plan of plans) {
+            let source: AudioBufferSourceNode | undefined;
+            try {
+                source = createBufferSource();
+                source.buffer = buffer;
+                if (stretchRatio !== 1) {
+                    source.playbackRate.value = stretchRatio;
+                }
+                // The source's compensated tail belongs to this same pass.
+                (source as SourceWithFade).compensationSeconds = compensation;
+                (source as SourceWithFade).fadeGainNode = fadeGain;
+                (source as ScheduledPartSource).scheduledPart = partTag;
+                (source as SourceWithFade).scheduledTrackId = trackId;
+                (source as SourceWithFade).scheduledBufferId = clip.audioBufferId;
+                (source as SourceWithFade).scheduledAudioKey = scheduledIterationKey;
+                source.connect(outputNode);
+                source.start(plan.startTime, plan.bufferOffset, plan.bufferDuration);
+            } catch (error) {
+                source?.disconnect();
+                if (startedSources.length === 0) {
+                    releaseGainNode(fadeGain, ctx);
+                    if (envGainNode) {
+                        releaseGainNode(envGainNode, ctx);
+                    }
+                }
+                throw error;
+            }
+            const startedSource = source;
+            Object.assign(startedSource, {
+                scheduledStartTime: plan.startTime,
+                scheduledBufferOffset: plan.bufferOffset,
+                scheduledPlaybackRate: startedSource.playbackRate.value,
+                scheduledEndTime: plan.startTime + plan.bufferDuration / startedSource.playbackRate.value,
+            });
 
-            startedSources.push(source);
-            startedSegments.push({ soundStartTime, playDuration, audibleStartTime, preRollSeconds });
+            startedSources.push(startedSource);
+            // Publish each successful start before another segment or gain
+            // write can throw, so its pass owner can retire partial work.
+            activeAudioSources.push(startedSource);
+            startedSource.onended = () => {
+                const activeIndex = activeAudioSources.indexOf(startedSource);
+                if (activeIndex >= 0) {
+                    activeAudioSources.splice(activeIndex, 1);
+                }
+                const startedIndex = startedSources.indexOf(startedSource);
+                if (startedIndex >= 0) {
+                    startedSources.splice(startedIndex, 1);
+                }
+                if (startedSources.length === 0) {
+                    releaseGainNode(fadeGain, ctx);
+                    if (envGainNode) {
+                        releaseGainNode(envGainNode, ctx);
+                    }
+                }
+            };
         }
 
         if (isSinglePass) {
@@ -475,94 +662,16 @@ function emitAudioPart(
             continue;
         }
 
-        // The fade in anchors at the pass's first sound and the fade
-        // out at its last: the ramps live on the shared nodes, so they
-        // run unbroken across the wrap seam between the segments.
-        const firstSegment: StartedSegment = startedSegments[0]!;
-        const lastSegment: StartedSegment = startedSegments[startedSegments.length - 1]!;
-        const soundStartTime = firstSegment.soundStartTime;
-        const audibleStartTime = firstSegment.audibleStartTime;
-
-        if (fadeGain) {
-            // Anchored to where sound begins, not to the clip's head:
-            // with no pre-roll the two are the same instant, and with
-            // one there is nothing to ramp until the source reaches
-            // sample 0. A wrap floor (#4784) holds the sound start
-            // later still, and the ramp follows it. Offline clamps the
-            // fade remaining after that sound start
-            // (`userEndSec - startSec`); live feeds the same quantity
-            // so a pre-roll cannot shift the plateau.
-            const effectiveStart = Math.max(audibleStartTime, now);
-
-            if (isFirstIter && clip.fadeInBeats > 0) {
-                // A fade length is a span of the timeline, so it is measured
-                // with the timeline's own mapping. Dividing by the clip's
-                // local rate made the ramp outlast (or undershoot) its beat
-                // span whenever a tempo change fell inside the fade.
-                const userFadeEndTime =
-                    iterStartTime +
-                    secondsBetweenBeats(changes, iterStartBeat, iterStartBeat + clip.fadeInBeats, transport.tempo);
-                const fadeInSeconds = clampClipFadeInDurationSeconds(
-                    userFadeEndTime - soundStartTime,
-                    firstSegment.playDuration
-                );
-                const fadeInEnd = soundStartTime + fadeInSeconds;
-                if (effectiveStart < fadeInEnd) {
-                    const progressRatio = Math.max(0, effectiveStart - soundStartTime) / fadeInSeconds;
-                    fadeGain.gain.setValueAtTime(progressRatio * clipGain, effectiveStart);
-                    fadeGain.gain.linearRampToValueAtTime(clipGain, fadeInEnd);
-                } else if (firstSegment.preRollSeconds > 0) {
-                    // The drawn fade window fully elapsed inside the pre-roll
-                    // silence, so `effectiveStart` lands past `fadeInEnd` with
-                    // nothing left to ramp — but drawing a fade is the gesture
-                    // that says "no click here", and the source is about to
-                    // start on a discontinuity regardless. Give it the same
-                    // anti-click MICRO_FADE_SECONDS gives an undrawn fade,
-                    // rather than jumping straight to the clip's level. This
-                    // leaves the no-pre-roll transport-resume case
-                    // (preRollSeconds === 0) alone: that one starts mid-buffer,
-                    // where the discontinuity is unavoidable and a ramp would
-                    // only mask real material.
-                    fadeGain.gain.setValueAtTime(0, effectiveStart);
-                    fadeGain.gain.linearRampToValueAtTime(clipGain, effectiveStart + MICRO_FADE_SECONDS);
-                } else {
-                    fadeGain.gain.setValueAtTime(clipGain, effectiveStart);
-                }
-            } else if (needsMicroFadeIn) {
-                fadeGain.gain.setValueAtTime(0, effectiveStart);
-                fadeGain.gain.linearRampToValueAtTime(clipGain, effectiveStart + MICRO_FADE_SECONDS);
+        // One ordered programme drives both initialization and automation.
+        // Keep writes after starts so each partial source is already owned if a write fails.
+        for (const event of fadeSchedule!.events) {
+            if (event.kind === 'set') {
+                fadeGain.gain.setValueAtTime(event.gain, event.time);
             } else {
-                fadeGain.gain.setValueAtTime(clipGain, effectiveStart);
-            }
-
-            if (isLastIter && clip.fadeOutBeats > 0) {
-                const clipEndTime = beatToAudioTime(clip.endBeat);
-                const fadeOutStart = clampClipFadeOutStartSeconds(
-                    clipEndTime -
-                        secondsBetweenBeats(changes, clip.endBeat - clip.fadeOutBeats, clip.endBeat, transport.tempo),
-                    lastSegment.soundStartTime,
-                    lastSegment.playDuration
-                );
-                fadeGain.gain.setValueAtTime(clipGain, Math.max(fadeOutStart, effectiveStart));
-                fadeGain.gain.linearRampToValueAtTime(0, clipEndTime);
-            } else if (needsMicroFadeOut) {
-                // The source stops at its sound start plus its play
-                // duration however playback reached it: a start at or
-                // past the sound head plays
-                // `playDuration·stretchRatio` buffer-seconds from the
-                // sound start, and a mid-clip start (transport resume,
-                // loop wrap, locate) plays the remaining
-                // `(playDuration − elapsed)·stretchRatio` from `now` —
-                // both spans land on the same instant, the rate
-                // cancelling on either side. Anchoring on
-                // `effectiveStart` scheduled the ramp `elapsed`
-                // seconds past a source that had already stopped, so
-                // it sounded nothing and the clip clicked (#4690).
-                const sourceEndTime = lastSegment.soundStartTime + lastSegment.playDuration;
-                fadeGain.gain.setValueAtTime(clipGain, Math.max(effectiveStart, sourceEndTime - MICRO_FADE_SECONDS));
-                fadeGain.gain.linearRampToValueAtTime(0, sourceEndTime);
+                fadeGain.gain.linearRampToValueAtTime(event.gain, event.time);
             }
         }
+        const audibleStartTime = plans[0]!.audibleStartTime;
 
         if (envGainNode && envelopeSeries) {
             // #2865 — the envelope's breakpoints, mapped through the
@@ -582,28 +691,6 @@ function emitAudioPart(
                 Math.max(audibleStartTime, now)
             );
             applyGainCurveAnchorsToParam(envGainNode.gain, anchors);
-        }
-
-        // The pass's segments share the fade and envelope nodes; the
-        // last source to end releases them.
-        let sourcesStillPlaying = startedSources.length;
-        for (const source of startedSources) {
-            activeAudioSources.push(source);
-            source.onended = () => {
-                const idx = activeAudioSources.indexOf(source);
-                if (idx >= 0) {
-                    activeAudioSources.splice(idx, 1);
-                }
-                sourcesStillPlaying -= 1;
-                if (sourcesStillPlaying === 0) {
-                    if (fadeGain) {
-                        releaseGainNode(fadeGain, ctx);
-                    }
-                    if (envGainNode) {
-                        releaseGainNode(envGainNode, ctx);
-                    }
-                }
-            };
         }
     }
     return continuation;
@@ -759,6 +846,9 @@ export function scheduleAudioClips(
         };
 
         for (const clip of resolvedAudioClips) {
+            if (reachesTransportLoopEnd(emission, clip.startBeat)) {
+                continue;
+            }
             const bufferId = playableAudioBufferId(clip);
             if (bufferId === null) {
                 continue;

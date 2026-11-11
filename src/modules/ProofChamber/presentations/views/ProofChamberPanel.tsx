@@ -180,7 +180,7 @@ function StatusTile({ label, value, accent }: { label: string; value: string; ac
             className="proof-chamber-window min-w-[90px]"
             label={label}
             value={value}
-            labelClassName="text-white/48"
+            labelClassName="text-text-secondary"
             valueClassName="font-mono text-[13px]"
             style={{ color: accent }}
         />
@@ -202,7 +202,7 @@ function SectionCard({
             title={title}
             detail={detail ? <ChamberLed>{detail}</ChamberLed> : undefined}
             detailMode="badge"
-            titleClassName="text-[var(--color-accent-amber)]/72"
+            titleClassName="text-[var(--color-accent-amber)]"
         >
             {children}
         </DawPluginSectionCard>
@@ -305,8 +305,8 @@ function KnobCell({
                 disabled={gate.isInert}
                 title={gate.explanation ?? undefined}
             />
-            <div className="text-[8px] uppercase tracking-[0.2em] text-white/58">{label}</div>
-            {readout ? <div className="font-mono text-[9px] text-white/42">{readout}</div> : null}
+            <div className="text-[8px] uppercase tracking-[0.2em] text-text-secondary">{label}</div>
+            {readout ? <div className="font-mono text-[9px] text-text-secondary">{readout}</div> : null}
         </Stack>
     );
 }
@@ -650,8 +650,8 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
             <DawPluginRail className="h-full w-[248px] shrink-0">
                 <SectionCard title="Space tray" detail={params.space}>
                     <div>
-                        <div className="text-[18px] font-semibold text-white/92">Dutch Oven</div>
-                        <div className="mt-1 text-[11px] text-white/44">
+                        <div className="text-[18px] font-semibold text-text-primary">Dutch Oven</div>
+                        <div className="mt-1 text-[11px] text-text-secondary">
                             Reverb spaces, flavor switches, and the IR tray stay parked here.
                         </div>
                     </div>
@@ -769,10 +769,10 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
             <Stack as="section" grow gap={3} className="min-w-0 overflow-y-auto pr-1">
                 <Row as="header" wrap gap={2.5} shrink={false} className="proof-chamber-window px-3 py-2">
                     <Stack gap={1}>
-                        <div className="text-[8px] uppercase tracking-[0.28em] text-[var(--color-accent-amber)]/72">
+                        <div className="text-[8px] uppercase tracking-[0.28em] text-[var(--color-accent-amber)]">
                             Reverb stage
                         </div>
-                        <div className="text-[14px] font-semibold text-white/92">
+                        <div className="text-[14px] font-semibold text-text-primary">
                             {SPACES.find((space) => space.id === params.space)?.label ?? 'Hall'}
                         </div>
                     </Stack>
@@ -810,7 +810,9 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
                     <div className="proof-chamber-window min-h-[280px] overflow-hidden">
                         <Stack className="h-full">
                             <Row justify="between" className="px-3 py-2">
-                                <div className="text-[9px] uppercase tracking-[0.24em] text-white/44">Tail view</div>
+                                <div className="text-[9px] uppercase tracking-[0.24em] text-text-secondary">
+                                    Tail view
+                                </div>
                                 <ChamberLed>{tailViewLed}</ChamberLed>
                             </Row>
                             <div className="relative min-h-0 flex-1 border-t border-white/6">
@@ -869,26 +871,26 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
                                 <DawReadoutRow
                                     label="High cut"
                                     value={formatValue(params.highCut, 'Hz')}
-                                    labelClassName="text-white/56"
-                                    valueClassName="text-white/82"
+                                    labelClassName="text-text-secondary"
+                                    valueClassName="text-text-primary"
                                 />
                                 <DawReadoutRow
                                     label="Low cut"
                                     value={formatValue(params.lowCut, 'Hz')}
-                                    labelClassName="text-white/56"
-                                    valueClassName="text-white/82"
+                                    labelClassName="text-text-secondary"
+                                    valueClassName="text-text-primary"
                                 />
                                 <DawReadoutRow
                                     label="Damping"
                                     value={formatValue(effectiveDamping, '%')}
-                                    labelClassName="text-white/56"
-                                    valueClassName="text-white/82"
+                                    labelClassName="text-text-secondary"
+                                    valueClassName="text-text-primary"
                                 />
                                 <DawReadoutRow
                                     label="Gravity"
                                     value={formatValue(params.gravity, 'bipolar')}
-                                    labelClassName="text-white/56"
-                                    valueClassName="text-white/82"
+                                    labelClassName="text-text-secondary"
+                                    valueClassName="text-text-primary"
                                 />
                             </DawPluginReadoutList>
                         </SectionCard>
@@ -967,10 +969,12 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
                 <section className="proof-chamber-window shrink-0 p-3">
                     <Row justify="between" gap={3} className="mb-3">
                         <div>
-                            <div className="text-[9px] uppercase tracking-[0.24em] text-white/44">Control deck</div>
-                            <div className="mt-1 text-[13px] font-semibold text-white/88">Space, tone, motion</div>
+                            <div className="text-[9px] uppercase tracking-[0.24em] text-text-secondary">
+                                Control deck
+                            </div>
+                            <div className="mt-1 text-[13px] font-semibold text-text-primary">Space, tone, motion</div>
                         </div>
-                        <Row gap={2} className="text-[10px] text-white/48">
+                        <Row gap={2} className="text-[10px] text-text-secondary">
                             <Waves className="size-3.5" />
                             <span>Keep the tail centered, tweak the edges on the right.</span>
                         </Row>
@@ -1204,7 +1208,7 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
                                         className="proof-chamber-window"
                                         title="Algorithm"
                                         headerSize="xs"
-                                        titleClassName="text-white/46"
+                                        titleClassName="text-text-secondary"
                                     >
                                         <Row align="stretch" wrap gap={1.5}>
                                             {ALGORITHMS.map((algorithm) => (
@@ -1222,7 +1226,7 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
                                         className="proof-chamber-window"
                                         title="State"
                                         headerSize="xs"
-                                        titleClassName="text-white/46"
+                                        titleClassName="text-text-secondary"
                                     >
                                         <Row align="stretch" wrap gap={1.5}>
                                             <ChamberLed>{params.freeze ? 'Freeze on' : 'Freeze off'}</ChamberLed>

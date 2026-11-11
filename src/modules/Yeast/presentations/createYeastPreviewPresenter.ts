@@ -1,16 +1,16 @@
 import { YEAST_PREVIEW_CAPACITY } from '../models/YeastPreviewSnapshot';
 
 import type {
+    YeastPreviewEvent,
+    YeastPreviewProcessorProvenance,
+    YeastPreviewSnapshot,
+} from '../models/YeastPreviewSnapshot';
+import type {
     DenseRenderer,
     YeastPreviewFeedback,
     YeastPreviewProcessorActivity,
     YeastPreviewRenderModel,
 } from './YeastPreviewTypes';
-import type {
-    YeastPreviewEvent,
-    YeastPreviewProcessorProvenance,
-    YeastPreviewSnapshot,
-} from '../models/YeastPreviewSnapshot';
 
 type PresenterDependencies = {
     renderer: DenseRenderer<YeastPreviewRenderModel>;

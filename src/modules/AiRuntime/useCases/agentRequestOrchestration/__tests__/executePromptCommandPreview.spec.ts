@@ -40,7 +40,8 @@ vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
 }));
 
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
-    captureProjectRevision: mocks.captureProjectRevision,
+    settlePendingProjectWritesAndCaptureRevision: vi.fn(),
+    projectRevisionMatchesLiveIgnoringSaveWrites: (revision: string) => mocks.captureProjectRevision() === revision,
 }));
 
 vi.mock('../../../stores/chatStore', () => ({
@@ -199,11 +200,16 @@ describe('executePromptCommandPreview', () => {
         });
         mocks.updateBatchStatus.mockImplementation(() => ordering.push('batch-failed'));
         releaseCancellation.mockImplementation(() => ordering.push('abort-unregistered'));
+        let signalResourceRelease!: () => void;
+        const resourceReleaseStarted = new Promise<void>((resolve) => {
+            signalResourceRelease = resolve;
+        });
         let finishResourceRelease: () => void = () => undefined;
         releasePreparedResources.mockImplementation(
             () =>
                 new Promise<void>((resolve) => {
                     ordering.push('resource-release-started');
+                    signalResourceRelease();
                     finishResourceRelease = () => {
                         ordering.push('resource-release-finished');
                         resolve();
@@ -217,8 +223,7 @@ describe('executePromptCommandPreview', () => {
             rejected = true;
             throw error;
         });
-        await Promise.resolve();
-        await Promise.resolve();
+        await resourceReleaseStarted;
 
         expect(rejected).toBe(false);
         expect(ordering).toEqual([

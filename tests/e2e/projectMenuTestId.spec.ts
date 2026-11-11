@@ -53,11 +53,11 @@ test.describe('Project menu', () => {
         await expect(page.getByRole('group', { name: 'Playback controls' })).toBeVisible();
     });
 
-    test('Export Audio opens The Bakery and Cancel closes it', async ({ page }) => {
+    test('Export Audio opens the export dialog and Cancel closes it', async ({ page }) => {
         await page.getByRole('button', { name: 'Project menu', exact: true }).click();
         await page.getByRole('menuitem', { name: /^Export Audio/ }).click();
 
-        const bakery = page.getByRole('dialog').filter({ hasText: 'The Bakery' });
+        const bakery = page.getByRole('dialog').filter({ hasText: 'Export audio' });
         await expect(bakery).toBeVisible();
         await bakery.getByRole('button', { name: 'Cancel', exact: true }).click();
         await expect(bakery).toHaveCount(0);

@@ -18,6 +18,7 @@ import {
 } from '#/modules/AudioEngine/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import {
+    getAutomationHandlers,
     recordAutomationValue,
     releaseTouchAutomation,
     setAutomationRecordingDependencies,
@@ -524,6 +525,7 @@ describe('Bass DI compressor parameter prompt workflow', () => {
         configureAiWorkflowCommandPreflightFixture();
         clearHandlerRegistry();
         registerHandlerMap(getArrangementHandlers());
+        registerHandlerMap(getAutomationHandlers());
         clearUndoHistory();
         resetActionReplayAuthority();
         setActionHistoryMetadataPort(noActionHistoryMetadataPort);
