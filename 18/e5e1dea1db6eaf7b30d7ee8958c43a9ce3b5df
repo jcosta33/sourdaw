@@ -1,0 +1,28 @@
+src/modules/Arrangement/useCases/__tests__/revealClip.spec.ts
+  h_beb54bf43b47b7 1-68
+src/modules/Arrangement/useCases/index.ts
+  h_beb54bf43b47b7 138
+src/modules/Arrangement/useCases/revealClip.ts
+  h_beb54bf43b47b7 1-37
+src/modules/Project/presentations/views/MissingMediaPanel.tsx
+  h_beb54bf43b47b7 8,15,40,43-58,97-115
+src/modules/Project/presentations/views/__tests__/MissingMediaPanel.spec.tsx
+  h_beb54bf43b47b7 4-5,11,14-16,102,104-161
+src/modules/Project/useCases/__tests__/locateMissingMedia.spec.ts
+  h_beb54bf43b47b7 1-219
+src/modules/Project/useCases/index.ts
+  h_beb54bf43b47b7 28
+src/modules/Project/useCases/locateMissingMedia.ts
+  h_beb54bf43b47b7 1-148
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "18e5e1dea1db6eaf7b30d7ee8958c43a9ce3b5df",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
