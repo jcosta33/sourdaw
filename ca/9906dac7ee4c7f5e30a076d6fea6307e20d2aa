@@ -1,0 +1,154 @@
+scripts/__tests__/pruneLane.spec.ts
+  s_c145dcc26d5369::t_b7900d364e01e7 429-432
+  s_c145dcc26d5369::t_c5f40931eeb85a 458,461-495,590,600
+  s_c145dcc26d5369::t_0b2cff1bc01e15 310-312,314
+  s_c145dcc26d5369::t_1309e578a5fa29 350-354,356-357,360-361,366-367,370-372,375,378-380,385-428,433-457,459,585,589,601
+  s_c145dcc26d5369::t_0bde663b0a43b7 1
+  s_c145dcc26d5369::t_0b371ee175ab14 2-11
+  s_c145dcc26d5369::t_b652a9a0264509 19
+  s_0207af29e0b307::t_633e0bd495a200 460,571-584,586-588,591-599
+scripts/pruneLane.ts
+  s_c145dcc26d5369::t_951bdcf45a60bc 296-313
+  s_c145dcc26d5369::t_14e05c207b6167 44-45,47,52
+  s_c145dcc26d5369::t_8e41e897465f52 33-34,42
+  s_c145dcc26d5369::t_bafa6696a4940e 248,250-251,255-257,259,261-263
+  s_c145dcc26d5369::t_ff29a6ba6bae26 258
+  s_c145dcc26d5369::t_a0e8048f155519 323-324,326-327
+  s_c145dcc26d5369::t_94ea52ab3fb646 55
+scripts/cleanupLaneBookkeeping.ts
+  s_c145dcc26d5369::t_2a478be38c139f 160
+  s_c145dcc26d5369::t_2039b5443f97e1 18
+  s_c145dcc26d5369::t_5283fe1778e048 179
+scripts/__tests__/installCleanupLanes.spec.ts
+  s_c145dcc26d5369::t_5eb63a6070ec06 9,580,587-654
+  s_c145dcc26d5369::t_8bda73f63aeb15 655
+scripts/claimTrackerIssue.ts
+  s_c145dcc26d5369::t_76d88abe6447bb 61-66,76-77,80-96,263-266,275
+  s_1e5aa73c944d6f::t_607390e53657e9 78-79
+scripts/cleanupLanes.ts
+  s_c145dcc26d5369::t_1938bef31aeab2 43
+  s_c145dcc26d5369::t_6e89996fcf3da9 463
+scripts/__tests__/fileTrackerIssue.spec.ts
+  s_c145dcc26d5369::t_429a7d16d6d630 144-160,176
+  s_c145dcc26d5369::t_110c52d41d8d87 172-175,177
+scripts/removeLane.ts
+  s_c145dcc26d5369::t_98d776d33080aa 480,484
+  s_c145dcc26d5369::t_1ec0d2c1ae3f8e 72
+  s_c145dcc26d5369::t_6ba761081a8cc9 492
+  s_c145dcc26d5369::t_950f2bea859160 1117,1120-1133
+  s_c145dcc26d5369::t_53ba42e0936927 617-632
+  s_c145dcc26d5369::t_f024a575cfd683 784
+  s_c145dcc26d5369::t_ebad3a93222bc3 174-181,186,192-194
+  s_c145dcc26d5369::t_ba54b4c04c3000 1186-1189,1194-1199
+  s_c145dcc26d5369::t_7da9a2f75c1a09 465,513
+  s_c145dcc26d5369::t_be332ed456426c 296
+  s_c145dcc26d5369::t_31898c94fe8bf8 787
+  s_c145dcc26d5369::t_af86f0a8280c39 1134,1162-1170
+  s_c145dcc26d5369::t_5161ca40475bb1 373
+  s_c145dcc26d5369::t_c16f3eacb57eed 487,524
+  s_c145dcc26d5369::t_7da9358762f0f1 307
+  s_c145dcc26d5369::t_8a9b96ccd53c97 859
+  s_c145dcc26d5369::t_0b590762a2c807 393-397,403-409,411,413,415,419
+  s_c145dcc26d5369::t_c48a5a99231b83 517,521
+  s_c145dcc26d5369::t_af0344475d8f5d 447,763
+  s_c145dcc26d5369::t_215ad479a0af5a 459,775
+  s_c145dcc26d5369::t_61925da36fcb9f 450,766
+  s_c145dcc26d5369::t_c5c65bd92f8dd5 48
+  s_c145dcc26d5369::t_4c35919ca1ef23 87-92,97-98
+  s_c145dcc26d5369::t_4c8305973e5d0a 355-370
+  s_c145dcc26d5369::t_d934dfef2021a1 99,614-615,824-837,842-845
+  s_c145dcc26d5369::t_25188ea28ca8d1 1096-1102
+  s_c145dcc26d5369::t_625e7f597ae89c 444,605
+  s_c145dcc26d5369::t_03f5f94c8e6951 543
+  s_c145dcc26d5369::t_51e1636c784c38 653
+  s_c145dcc26d5369::t_b8b46ad86ed047 261
+  s_c145dcc26d5369::t_8e1510b641badc 697-705,709-710,823
+  s_c145dcc26d5369::t_a878e6ef36ee96 863-864,871,881-888
+  s_c145dcc26d5369::t_897be6e32984d0 500,554,613
+  s_c145dcc26d5369::t_01096863e7a929 271,274
+  s_c145dcc26d5369::t_f4abd18423a951 455,771
+  s_c145dcc26d5369::t_0334e1a2bb1b7d 760
+  s_c145dcc26d5369::t_344a0d1f3eda2d 470
+  s_c145dcc26d5369::t_3db20ee1fa332a 535
+  s_c145dcc26d5369::t_a00230040768ff 641,657,665
+  s_c145dcc26d5369::t_6c5e59f402adce 669-670
+  s_c145dcc26d5369::t_8f9f51bbc56696 893
+  s_c145dcc26d5369::t_68a73e4f10d860 319
+  s_c145dcc26d5369::t_0f40a716db7f21 551
+  s_c145dcc26d5369::t_9f3091d1486e4f 100,616
+scripts/__tests__/claimTrackerIssue.spec.ts
+  s_c145dcc26d5369::t_325e75814f30c0 91-100,102,106,118-120,215,219-249,449,452,458,466,475
+scripts/__tests__/cleanupLanes.spec.ts
+  s_c145dcc26d5369::t_bc6af17c382bb7 97
+  s_c145dcc26d5369::t_383b8380fbfbc0 393
+  s_c145dcc26d5369::t_db200454367031 612-662
+  s_c145dcc26d5369::t_3354c14a1e07e0 425
+scripts/installCleanupLanes.ts
+  s_c145dcc26d5369::t_27f1c31689b629 5-15,271-299,341,364,383-392
+  s_131b426bba0f96::t_2910bb5df96d77 395
+scripts/__tests__/removeLane.spec.ts
+  s_c145dcc26d5369::t_a8d8af384eada5 1540-1542,1928
+  s_c145dcc26d5369::t_cc0d498c79795b 296-317
+  s_c145dcc26d5369::t_93db868fd50a96 1672,1688-1689
+  s_c145dcc26d5369::t_40eb6c8881642d 1703-1707,1715-1719,1721-1729
+  s_c145dcc26d5369::t_ba9352a03ade21 1023-1035
+  s_c145dcc26d5369::t_028073833cf66c 1547-1582
+  s_c145dcc26d5369::t_677658fe4db898 2142
+  s_c145dcc26d5369::t_1705793e9053b6 1921,1923,1925-1927,1929
+  s_c145dcc26d5369::t_4a740f744a0088 103
+  s_c145dcc26d5369::t_517720fc270d60 1175-1181,1183-1190,1192-1198,1200-1206,1208-1215,1217
+  s_c145dcc26d5369::t_26864972771244 1216
+  s_c145dcc26d5369::t_b456127d6f578f 81
+  s_c145dcc26d5369::t_b6a526ac37cbe1 1627-1630,1643-1644,1647,1649-1658
+  s_c145dcc26d5369::t_ad2c93bcae92df 1885,1892-1898
+  s_c145dcc26d5369::t_e462eec803bf3e 1182,1191
+  s_c145dcc26d5369::t_19d91be2f98fd8 1199,1207
+  s_c145dcc26d5369::t_64e19947819e17 1422,1428,1435,1444
+  s_c145dcc26d5369::t_12c6bdd6631468 165,168-175
+  s_c145dcc26d5369::t_08ecc83ef082ba 189
+  s_c145dcc26d5369::t_853a2b402cba0e 128-131
+  s_c145dcc26d5369::t_eadd79671ce449 1351
+  s_c145dcc26d5369::t_a07c840f17c118 1583,1899-1900
+scripts/fileTrackerIssue.ts
+  s_c145dcc26d5369::t_70b6dd9d02e2a4 114,141,167-174
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ca9906dac7ee4c7f5e30a076d6fea6307e20d2aa",
+  "prompts": {},
+  "sessions": {
+    "s_0207af29e0b307": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f246cd62-2d2d-4584-ad3e-050fad80f22b",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_131b426bba0f96": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dec81aab-5eda-40a7-90d1-889fad31bc7f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_1e5aa73c944d6f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ecb39bb6-10c2-4e53-aaea-b7cd666f8172",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_c145dcc26d5369": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0fdf4e1b-0f0f-48bd-96c3-1653143867d3",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
