@@ -630,7 +630,7 @@ describe('mixed MIDI media ownership during non-loop playback', () => {
         expect(frame(effectiveEnd(bake!))).toBeLessThanOrEqual(frame(original[1]!.start.when));
     });
 
-    it('holds the frozen owner through a preceding MIDI rack await until the original joins', async () => {
+    it('retires the frozen owner before a preceding MIDI rack await can delay the original rejoin', async () => {
         const mixed = seedTrack('left', 0.4, false, 0, true);
         const waiting = createTrack({ id: 'waiting', name: 'waiting', kind: 'midi', withoutDefaultDevice: true });
         waiting.devices = [
@@ -676,7 +676,8 @@ describe('mixed MIDI media ownership during non-loop playback', () => {
         try {
             await vi.waitFor(() => expect(processYeastMidi).toHaveBeenCalledOnce(), { interval: 1 });
             expect(schedulerSession.tickInFlight).toBe(true);
-            expect(snapshotSources().find((source) => source.bufferId === 'bake')?.stops).toHaveLength(0);
+            expect(snapshotSources().find((source) => source.bufferId === 'bake')?.stops).toHaveLength(1);
+            expect(snapshotSources().filter((source) => source.bufferId === 'left-buffer')).toHaveLength(1);
             ctxTime.now += 0.005;
         } finally {
             release();

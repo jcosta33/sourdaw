@@ -1633,11 +1633,11 @@ export function startPlayheadScheduler(
             windowBufferPool = loopAudioSchedule.poolAt(schedulerSession.pendingSeam.seamAudioTime, true);
         }
         const bufferInput = { transport: current, changes, position: publishedBeat, audioTime: now };
-        function retireBeforeMidi(pool: typeof dyingBufferPool): void {
+        function retireBeforeMidi(pool: typeof dyingBufferPool): boolean {
             if (loopAudioSchedule.active || !cancellation.isCurrent()) {
-                return;
+                return false;
             }
-            retireSupersededMidiMedia(
+            return retireSupersededMidiMedia(
                 trackStore.value?.tracks.filter((track) => track.kind === 'midi') ?? [],
                 ctx,
                 pool?.audio ?? schedulerSession.scheduledAudioClips,
@@ -1645,6 +1645,7 @@ export function startPlayheadScheduler(
                 pool?.sources ?? schedulerSession.activeAudioSources
             );
         }
+        let mediaOwnerRetired = false;
         const initialMidiEmissions: Promise<void>[] = [];
         const initialEmissionErrors: unknown[] = [];
         function observeInitialMidi(emission: Promise<void>): void {
@@ -1717,7 +1718,7 @@ export function startPlayheadScheduler(
             // the position the dying pass holds at `now`, so its last events
             // land at their own grid times — all at or before the seam instant.
             scheduleMetronome(seam.passHighWater, seam.passUpTo, seam.passPosition, current, eventSchedulingAnchor);
-            retireBeforeMidi(dyingBufferPool);
+            mediaOwnerRetired = retireBeforeMidi(dyingBufferPool);
             const retainDyingFrozen = loopAudioSchedule.watchFrozenMidiWindow(
                 dyingBufferPool,
                 seam.passHighWater,
@@ -1764,7 +1765,8 @@ export function startPlayheadScheduler(
                     dyingBufferPool?.frozen ?? schedulerSession.scheduledFrozenTracks,
                     dyingBufferPool?.sources ?? schedulerSession.activeAudioSources,
                     current,
-                    initial ? initialSchedulingAnchor : undefined
+                    initial ? initialSchedulingAnchor : undefined,
+                    mediaOwnerRetired
                 );
             } else {
                 loopAudioSchedule.recoverMappedWindow(dyingBufferPool, seam.passHighWater, seam.passUpTo, bufferInput);
@@ -1806,7 +1808,7 @@ export function startPlayheadScheduler(
             // stored controllers are restored to what is in force there. The
             // dying window above already posted everything up to the seam, which
             // is why this path lifts nothing frameless.
-            retireBeforeMidi(incomingBufferPool);
+            mediaOwnerRetired = retireBeforeMidi(incomingBufferPool);
             const retainIncomingFrozen = loopAudioSchedule.watchFrozenMidiWindow(
                 incomingBufferPool,
                 current.loopStart,
@@ -1845,7 +1847,8 @@ export function startPlayheadScheduler(
                     incomingBufferPool?.frozen ?? schedulerSession.scheduledFrozenTracks,
                     incomingBufferPool?.sources ?? schedulerSession.activeAudioSources,
                     current,
-                    initial ? initialSchedulingAnchor : undefined
+                    initial ? initialSchedulingAnchor : undefined,
+                    mediaOwnerRetired
                 );
             } else {
                 loopAudioSchedule.recoverMappedWindow(
@@ -1871,7 +1874,7 @@ export function startPlayheadScheduler(
             // A late wrap, a follow-action jump, an edit's re-emit and a stall's
             // skip open this window at their destination, so it restores the
             // stored controllers there too.
-            retireBeforeMidi(windowBufferPool);
+            mediaOwnerRetired = retireBeforeMidi(windowBufferPool);
             const retainWindowFrozen = loopAudioSchedule.watchFrozenMidiWindow(
                 windowBufferPool,
                 schedulerSession.lastScheduledBeat,
@@ -1910,7 +1913,8 @@ export function startPlayheadScheduler(
                     windowBufferPool?.frozen ?? schedulerSession.scheduledFrozenTracks,
                     windowBufferPool?.sources ?? schedulerSession.activeAudioSources,
                     current,
-                    initial ? initialSchedulingAnchor : undefined
+                    initial ? initialSchedulingAnchor : undefined,
+                    mediaOwnerRetired
                 );
             } else {
                 loopAudioSchedule.recoverMappedWindow(

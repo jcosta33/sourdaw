@@ -705,7 +705,8 @@ export function scheduleAudioClips(
     scheduledFrozenTracks: Set<string>,
     activeAudioSources: AudioBufferSourceNode[],
     transport: TransportState,
-    initialSchedulingAnchor?: number
+    initialSchedulingAnchor?: number,
+    mediaOwnerRetired = false
 ): void {
     const tracks = trackStore.value?.tracks;
     if (!tracks) {
@@ -819,8 +820,22 @@ export function scheduleAudioClips(
     // it through the late branch; the dedup set keeps every part an earlier
     // pass emitted from starting again. A window that floors to its own start
     // (a wrap handover or landing) holds nothing before it to rejoin, and a
-    // pass that cut nothing leaves the window rules alone.
-    const rejoinsAtPlayhead = cutAny && !floorsToWindowStart && accumulatedPosition < fromBeat;
+    // pass that cut nothing leaves the window rules alone. The scheduler can
+    // retire a MIDI owner before an awaited rack emission; direct callers still
+    // have their superseded owner here, so detect it without changing the
+    // replacement-onset retirement below.
+    const supersededOwnerPresent = retireSupersededMidiMedia(
+        unfrozenTracks,
+        ctx,
+        scheduledAudioClipsSet,
+        scheduledFrozenTracks,
+        activeAudioSources,
+        'detect'
+    );
+    const rejoinsAtPlayhead =
+        (cutAny || mediaOwnerRetired || supersededOwnerPresent) &&
+        !floorsToWindowStart &&
+        accumulatedPosition < fromBeat;
 
     for (const { track, parts: resolvedAudioClips } of audioTracks) {
         const compensation = getCompensationDelay(track.id);
