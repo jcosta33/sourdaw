@@ -8,7 +8,9 @@ const mocks = vi.hoisted(() => ({
     tracks: { value: { tracks: [] as { id: string; kind: string; clips: [] }[], selectedTrackId: null } },
     getCachedAudioBuffer: vi.fn(),
     decodeAudioFile: vi.fn(),
-    discardDecodedAudioFile: vi.fn(),
+    discardDecodedAudioFileIfCurrent: vi.fn(),
+    restoreUnpinnedAudioBuffersFromIdb: vi.fn(),
+    releaseAudio: vi.fn(),
     ensureFactorySampleBuffer: vi.fn(),
     resolveDroppedSampleFile: vi.fn(),
     rememberLibraryAssetMapping: vi.fn(),
@@ -53,7 +55,8 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     ...(await importOriginal<any>()),
     getCachedAudioBuffer: mocks.getCachedAudioBuffer,
     decodeAudioFile: mocks.decodeAudioFile,
-    discardDecodedAudioFile: mocks.discardDecodedAudioFile,
+    discardDecodedAudioFileIfCurrent: mocks.discardDecodedAudioFileIfCurrent,
+    restoreUnpinnedAudioBuffersFromIdb: mocks.restoreUnpinnedAudioBuffersFromIdb,
 }));
 
 vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
@@ -98,6 +101,12 @@ describe('placeLibrarySample', () => {
         }
         mocks.tracks.value = { tracks: [{ id: 't1', kind: 'audio', clips: [] }], selectedTrackId: null };
         mocks.getCachedAudioBuffer.mockReturnValue(bufferOf(2));
+        mocks.restoreUnpinnedAudioBuffersFromIdb.mockResolvedValue({
+            absentIds: [],
+            initiallyUncachedIds: [],
+            restoredBuffers: new Map<string, AudioBuffer>(),
+            release: mocks.releaseAudio,
+        });
         mocks.ensureFactorySampleBuffer.mockResolvedValue({ status: 'not-factory' });
         mocks.stageClipAudioAsset.mockResolvedValue({ hash: 'h', leaseId: 'lease' });
         mocks.getAssetTransfer.mockReturnValue({
@@ -120,11 +129,39 @@ describe('placeLibrarySample', () => {
         expect(mocks.promoteStagedAsset).toHaveBeenCalledTimes(1);
         expect(mocks.promoteStagedAsset).toHaveBeenCalledWith('lease');
         expect(mocks.releaseStagedAsset).not.toHaveBeenCalled();
+        expect(mocks.restoreUnpinnedAudioBuffersFromIdb).toHaveBeenCalledWith({
+            bufferIds: ['b1'],
+            isCurrent: authority.isCurrent,
+        });
+        expect(mocks.releaseAudio).toHaveBeenCalledTimes(1);
+    });
+
+    it('refuses commit admission when preflight replaces the exact cached PCM', async () => {
+        const original = mocks.getCachedAudioBuffer({ bufferId: 'b1' });
+        const replacement = bufferOf(2);
+        let admitted: boolean | undefined;
+        vi.mocked(executeAppActionBatch).mockImplementation(async (_actions, options) => {
+            mocks.getCachedAudioBuffer.mockReturnValue(replacement);
+            admitted = options?.shouldExecute?.() ?? true;
+            if (admitted) {
+                return { status: 'committed', actions: [] };
+            }
+            return { status: 'cancelled', reason: 'PCM replaced', actions: [] };
+        });
+
+        await place({ id: 's1', name: 'Kick', audioBufferId: 'b1' }, 't1');
+
+        expect(original).not.toBe(replacement);
+        expect(admitted).toBe(false);
+        expect(mocks.releaseStagedAsset).toHaveBeenCalledWith('lease');
+        expect(mocks.promoteStagedAsset).not.toHaveBeenCalled();
+        expect(mocks.notifyUser).toHaveBeenCalledTimes(1);
     });
 
     it('falls back to the factory buffer when nothing is cached and keys the clip by the sample id', async () => {
-        mocks.getCachedAudioBuffer.mockReturnValue(null);
-        mocks.ensureFactorySampleBuffer.mockResolvedValue({ status: 'resolved', buffer: bufferOf(1) });
+        const factoryBuffer = bufferOf(1);
+        mocks.getCachedAudioBuffer.mockReturnValueOnce(null).mockReturnValue(factoryBuffer);
+        mocks.ensureFactorySampleBuffer.mockResolvedValue({ status: 'resolved', buffer: factoryBuffer });
 
         await place({ id: 'factory-kick', name: 'Kick' }, 't1');
 
@@ -132,11 +169,43 @@ describe('placeLibrarySample', () => {
         expect(clipPayload()).toEqual(expect.objectContaining({ audioBufferId: 'factory-kick' }));
     });
 
-    it('decodes and stages a library file when no buffer exists, and binds the hash to the library path', async () => {
+    it('does not stage a factory buffer after its awaited lookup loses project authority', async () => {
+        let announceLookup!: () => void;
+        const lookupStarted = new Promise<void>((resolve) => {
+            announceLookup = resolve;
+        });
+        let resolveLookup!: (result: { status: 'resolved'; buffer: AudioBuffer }) => void;
         mocks.getCachedAudioBuffer.mockReturnValue(null);
+        mocks.ensureFactorySampleBuffer.mockImplementation(() => {
+            announceLookup();
+            return new Promise((resolve) => {
+                resolveLookup = resolve;
+            });
+        });
+        let current = true;
+        const placement = placeLibrarySample({
+            sample: { id: 'factory-kick', name: 'Kick' },
+            placement: { trackId: 't1', startBeat: 8 },
+            authority: { isCurrent: () => current },
+            origin: 'browser-add',
+            readTempo: () => 120,
+        });
+        await lookupStarted;
+        current = false;
+        resolveLookup({ status: 'resolved', buffer: bufferOf(1) });
+        await placement;
+        expect(mocks.stageClipAudioAsset).not.toHaveBeenCalled();
+        expect(executeAppActionBatch).not.toHaveBeenCalled();
+        expect(mocks.releaseAudio).toHaveBeenCalledTimes(1);
+        expect(mocks.notifyUser).not.toHaveBeenCalled();
+    });
+
+    it('decodes and stages a library file when no buffer exists, and binds the hash to the library path', async () => {
+        const decodedBuffer = bufferOf(3);
+        mocks.getCachedAudioBuffer.mockReturnValueOnce(null).mockReturnValue(decodedBuffer);
         const file = new File(['x'], 'Loop.wav');
         mocks.resolveDroppedSampleFile.mockResolvedValue({ status: 'resolved', file });
-        mocks.decodeAudioFile.mockResolvedValue({ id: 'decoded-id', buffer: bufferOf(3) });
+        mocks.decodeAudioFile.mockResolvedValue({ id: 'decoded-id', buffer: decodedBuffer });
         mocks.stageLocalAsset.mockResolvedValue({ hash: 'file-hash', leaseId: 'file-lease' });
         mocks.rememberLibraryAssetMapping.mockResolvedValue(true);
 
@@ -159,7 +228,7 @@ describe('placeLibrarySample', () => {
                 relativePath: 'a/Loop.wav',
             })
         );
-        expect(mocks.discardDecodedAudioFile).not.toHaveBeenCalled();
+        expect(mocks.discardDecodedAudioFileIfCurrent).not.toHaveBeenCalled();
     });
 
     it('notifies and writes nothing when staging the cached audio fails', async () => {
@@ -173,14 +242,15 @@ describe('placeLibrarySample', () => {
     });
 
     it('releases the staged lease and the decoded buffer when staging a library file fails', async () => {
-        mocks.getCachedAudioBuffer.mockReturnValue(null);
+        const decodedBuffer = bufferOf(3);
+        mocks.getCachedAudioBuffer.mockReturnValueOnce(null).mockReturnValue(decodedBuffer);
         mocks.resolveDroppedSampleFile.mockResolvedValue({ status: 'resolved', file: new File(['x'], 'Loop.wav') });
-        mocks.decodeAudioFile.mockResolvedValue({ id: 'decoded-id', buffer: bufferOf(3) });
+        mocks.decodeAudioFile.mockResolvedValue({ id: 'decoded-id', buffer: decodedBuffer });
         mocks.stageLocalAsset.mockRejectedValue(new Error('no'));
 
         await place({ id: 's2', name: 'Loop', libraryRootId: 'root', path: 'a/Loop.wav' }, 't1');
 
-        expect(mocks.discardDecodedAudioFile).toHaveBeenCalledWith('decoded-id');
+        expect(mocks.discardDecodedAudioFileIfCurrent).toHaveBeenCalledWith('decoded-id', decodedBuffer);
         expect(mocks.notifyUser).toHaveBeenCalledWith('Failed to import "Loop" — asset registration failed', 'error');
         expect(executeAppActionBatch).not.toHaveBeenCalled();
     });

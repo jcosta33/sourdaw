@@ -5,7 +5,13 @@ import {
     retainedCreation,
     stageClipAudioAsset,
 } from '#/modules/Arrangement/useCases';
-import { decodeAudioFile, discardDecodedAudioFile, getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
+import {
+    decodeAudioFile,
+    discardDecodedAudioFileIfCurrent,
+    getCachedAudioBuffer,
+    openCachedAudioBufferHold,
+    restoreUnpinnedAudioBuffersFromIdb,
+} from '#/modules/AudioEngine/useCases';
 import { getAssetTransfer } from '#/modules/Collaboration/useCases';
 import { executeAppActionBatch } from '#/modules/Command/useCases';
 import {
@@ -48,9 +54,11 @@ const BATCH_NAMING: Record<PlaceLibrarySampleInput['origin'], { groupIdPrefix: s
 type CreationBatchAction = Parameters<typeof executeAppActionBatch>[0][number];
 type AssetTransfer = ReturnType<typeof getAssetTransfer>;
 type Authority = PlaceLibrarySampleInput['authority'];
+type AudioHold = ReturnType<typeof openCachedAudioBufferHold>;
 
 /** A sample made ready to place: its audio, length, and the resources held until the clip commits or fails. */
 type PreparedSample = {
+    audioBuffer: AudioBuffer;
     audioBufferId: string;
     durationBeats: number;
     assetHash?: string;
@@ -79,12 +87,12 @@ function beatsForSeconds(seconds: number, readTempo: () => number): number {
     return Math.max(1, Math.ceil((seconds / 60) * readTempo()));
 }
 
-function releasePrepared(prepared: Partial<PreparedSample>, assetTransfer: AssetTransfer): void {
+function releasePrepared(prepared: PreparedSample, assetTransfer: AssetTransfer): void {
     if (prepared.assetLeaseId) {
         assetTransfer?.releaseStagedAsset(prepared.assetLeaseId);
     }
     if (prepared.decodedAudioBufferId) {
-        discardDecodedAudioFile(prepared.decodedAudioBufferId);
+        discardDecodedAudioFileIfCurrent(prepared.decodedAudioBufferId, prepared.audioBuffer);
     }
 }
 
@@ -109,7 +117,13 @@ async function prepareCachedSample(
         const staged = await stageClipAudioAsset(buffer, sample.name);
         return {
             status: 'ready',
-            prepared: { audioBufferId, durationBeats, assetHash: staged?.hash, assetLeaseId: staged?.leaseId },
+            prepared: {
+                audioBuffer: buffer,
+                audioBufferId,
+                durationBeats,
+                assetHash: staged?.hash,
+                assetLeaseId: staged?.leaseId,
+            },
         };
     } catch {
         notifyIfCurrent(authority, `Failed to import "${sample.name}" — asset registration failed`);
@@ -157,11 +171,13 @@ async function decodeLibraryFile(
     sample: LibrarySamplePayload,
     file: File,
     authority: Authority,
-    readTempo: () => number
+    readTempo: () => number,
+    hold: AudioHold
 ): Promise<PreparedSample | null> {
     try {
-        const result = await decodeAudioFile(file);
+        const result = await decodeAudioFile(file, hold);
         return {
+            audioBuffer: result.buffer,
             audioBufferId: result.id,
             decodedAudioBufferId: result.id,
             durationBeats: beatsForSeconds(result.buffer.duration, readTempo),
@@ -179,7 +195,8 @@ async function prepareLibraryFileSample(
     sample: LibrarySamplePayload,
     authority: Authority,
     assetTransfer: AssetTransfer,
-    readTempo: () => number
+    readTempo: () => number,
+    hold: AudioHold
 ): Promise<Preparation> {
     if (!sample.libraryRootId || !sample.path) {
         notifyIfCurrent(authority, `Could not access "${sample.name}" — audio buffer is not available.`);
@@ -202,7 +219,7 @@ async function prepareLibraryFileSample(
             return ABANDONED;
         }
         const { file } = resolvedSampleFile;
-        const decoded = await decodeLibraryFile(sample, file, authority, readTempo);
+        const decoded = await decodeLibraryFile(sample, file, authority, readTempo, hold);
         if (!decoded) {
             return ABANDONED;
         }
@@ -220,21 +237,50 @@ async function prepareLibraryFileSample(
     }
 }
 
+type SampleRestoration = {
+    initiallyUncached: boolean;
+    restoredBuffer: AudioBuffer | undefined;
+};
+
 // Factory (and any already-decoded) samples keep their AudioBuffer in the
 // cache under the sample id — there is no file to re-read and the factory root
 // is handle-less, so the SampleLibrary file resolver would have nothing to
-// resolve. The buffer is taken from the cache, or re-obtained for a factory
-// sample, before any file access or decode.
+// resolve. A cold gesture uses only the exact buffer its restoration returned;
+// another same-ID cache entry is not that gesture's audio and is left alone.
 async function prepareSample(
     sample: LibrarySamplePayload,
     authority: Authority,
     assetTransfer: AssetTransfer,
-    readTempo: () => number
+    readTempo: () => number,
+    hold: AudioHold,
+    restoration: SampleRestoration
 ): Promise<Preparation> {
     const candidateBufferId = sample.audioBufferId ?? sample.id;
     let cachedBuffer = getCachedAudioBuffer({ bufferId: candidateBufferId });
+    if (restoration.initiallyUncached) {
+        if (restoration.restoredBuffer) {
+            cachedBuffer = restoration.restoredBuffer;
+        } else if (cachedBuffer) {
+            notifyIfCurrent(authority, `Could not place "${sample.name}" — its audio changed before placement.`);
+            return ABANDONED;
+        }
+    }
     if (!cachedBuffer) {
-        const factoryBuffer = await ensureFactorySampleBuffer({ sampleId: candidateBufferId });
+        let rejectedFactoryCache = false;
+        const factoryBufferOptions: Parameters<typeof ensureFactorySampleBuffer>[0] = {
+            sampleId: candidateBufferId,
+        };
+        if (restoration.initiallyUncached) {
+            factoryBufferOptions.shouldAdoptCachedBuffer = () => {
+                rejectedFactoryCache = true;
+                return false;
+            };
+        }
+        const factoryBuffer = await ensureFactorySampleBuffer(factoryBufferOptions);
+        if (rejectedFactoryCache) {
+            notifyIfCurrent(authority, `Could not place "${sample.name}" — its audio changed before placement.`);
+            return ABANDONED;
+        }
         if (factoryBuffer.status === 'unavailable') {
             notifyIfCurrent(authority, `Could not access "${sample.name}" — audio buffer is not available.`);
             return ABANDONED;
@@ -243,10 +289,13 @@ async function prepareSample(
             cachedBuffer = factoryBuffer.buffer;
         }
     }
+    if (!authority.isCurrent()) {
+        return ABANDONED;
+    }
     if (cachedBuffer) {
         return prepareCachedSample(sample, candidateBufferId, cachedBuffer, authority, readTempo);
     }
-    return prepareLibraryFileSample(sample, authority, assetTransfer, readTempo);
+    return prepareLibraryFileSample(sample, authority, assetTransfer, readTempo, hold);
 }
 
 function buildPlacementActions(
@@ -290,6 +339,10 @@ async function promoteCommittedSample(
     }
 }
 
+function isPreparedSampleCurrent(prepared: PreparedSample, authority: Authority): boolean {
+    return authority.isCurrent() && getCachedAudioBuffer({ bufferId: prepared.audioBufferId }) === prepared.audioBuffer;
+}
+
 /**
  * Places a browser sample as one audio clip in one batch of registered
  * actions (one undo step, #4618). The sample is prepared first — cached or
@@ -307,38 +360,67 @@ export async function placeLibrarySample({
     const assetTransfer = getAssetTransfer();
     let prepared: PreparedSample | null = null;
     let committed = false;
+    let releaseAudio: (() => void) | undefined;
+    const decodeHold = openCachedAudioBufferHold();
     try {
-        const preparation = await prepareSample(sample, authority, assetTransfer, readTempo);
+        const candidateBufferId = sample.audioBufferId ?? sample.id;
+        const restored = await restoreUnpinnedAudioBuffersFromIdb({
+            bufferIds: [candidateBufferId],
+            isCurrent: authority.isCurrent,
+        });
+        releaseAudio = restored.release;
+        if (!authority.isCurrent()) {
+            return;
+        }
+        const preparation = await prepareSample(sample, authority, assetTransfer, readTempo, decodeHold, {
+            initiallyUncached: restored.initiallyUncachedIds.includes(candidateBufferId),
+            restoredBuffer: restored.restoredBuffers.get(candidateBufferId),
+        });
         if (preparation.status === 'abandoned') {
             return;
         }
-        prepared = preparation.prepared;
-        const targetPlan = authority.isCurrent() ? resolveAudioTarget(placement, sample.name) : null;
+        const preparedSample = preparation.prepared;
+        prepared = preparedSample;
+        const canCommit = () => {
+            const current = isPreparedSampleCurrent(preparedSample, authority);
+            if (!current) {
+                notifyIfCurrent(authority, `Could not place "${sample.name}" — its audio changed before placement.`);
+            }
+            return current;
+        };
+        if (!canCommit()) {
+            releasePrepared(preparedSample, assetTransfer);
+            return;
+        }
+        const targetPlan = resolveAudioTarget(placement, sample.name);
         if (!targetPlan) {
-            releasePrepared(prepared, assetTransfer);
+            releasePrepared(preparedSample, assetTransfer);
             return;
         }
         const naming = BATCH_NAMING[origin];
         const batchResult = await executeAppActionBatch(
-            buildPlacementActions(sample, prepared, placement, targetPlan),
+            buildPlacementActions(sample, preparedSample, placement, targetPlan),
             {
                 groupId: `${naming.groupIdPrefix}-${crypto.randomUUID()}`,
                 groupLabel: `${naming.groupLabelPrefix}: ${sample.name}`,
                 source: 'manual',
                 requireCompensation: true,
-                shouldExecute: () => authority.isCurrent(),
+                shouldExecute: canCommit,
             }
         ).catch(() => null);
         if (!retainedCreation(batchResult)) {
-            releasePrepared(prepared, assetTransfer);
+            releasePrepared(preparedSample, assetTransfer);
             return;
         }
         committed = true;
-        await promoteCommittedSample(prepared, batchResult, authority, assetTransfer);
+        await promoteCommittedSample(preparedSample, batchResult, authority, assetTransfer);
     } catch {
         if (prepared && !committed) {
             releasePrepared(prepared, assetTransfer);
         }
         notifyIfCurrent(authority, LIBRARY_SAMPLE_MALFORMED_MESSAGE);
+    } finally {
+        decodeHold.release();
+        releaseAudio?.();
     }
 }
