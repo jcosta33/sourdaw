@@ -1,0 +1,40 @@
+.agents/skills/review-stances/command-entry-and-state-oracles.md
+  h_beb54bf43b47b7 98-112
+.agents/skills/review-stances/correctness.md
+  h_beb54bf43b47b7 48-49
+.agents/skills/review-stances/test-timing-and-isolation.md
+  h_beb54bf43b47b7 101-109
+release/open-source-inventory.json
+  h_beb54bf43b47b7 1216
+src/modules/Arrangement/handlers/__tests__/planDefaultTrackName.spec.ts
+  h_beb54bf43b47b7 1-207
+src/modules/Arrangement/handlers/planDefaultTrackName.ts
+  h_beb54bf43b47b7 1,7-63,65-69,74
+src/modules/Arrangement/handlers/track/__tests__/handleAddTrackDefaultName.integration.spec.ts
+  h_beb54bf43b47b7 1,6,11,15,25,29,31,60,82,94-164,198-247
+src/modules/Arrangement/handlers/track/handleAddTrack.ts
+  h_beb54bf43b47b7 96
+src/modules/Command/useCases/__tests__/executeAppActionMaterializedObserver.spec.ts
+  h_beb54bf43b47b7 8-10,12,31-62,123-384
+src/modules/Command/useCases/executeAppAction.ts
+  h_beb54bf43b47b7 201-209,302-305
+src/modules/MixerConsole/presentations/views/Mixer/IOSection.tsx
+  h_beb54bf43b47b7 24-26
+src/modules/MixerConsole/presentations/views/Mixer/__tests__/IOSection.spec.tsx
+  h_beb54bf43b47b7 129-143
+src/utils/createHandler.ts
+  h_beb54bf43b47b7 38
+src/utils/handlerContract.ts
+  h_beb54bf43b47b7 3735-3741
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "35d0de1bdbc0492a46b33c519dde762469cbe2c8",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
