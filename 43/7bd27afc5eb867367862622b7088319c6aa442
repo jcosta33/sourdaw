@@ -1,0 +1,54 @@
+src/app/__tests__/bootstrap.spec.ts
+  h_beb54bf43b47b7 602,965
+src/app/__tests__/getProductionCommandHandlerMaps.spec.ts
+  h_beb54bf43b47b7 80
+src/app/getProductionCommandHandlerMaps.ts
+  h_beb54bf43b47b7 16,70
+src/modules/Command/useCases/versionedCommandArgumentKeys.ts
+  h_beb54bf43b47b7 2662-2685,2707,2718,2756,2761,2804,2809,2927,2933,2951,2956,3023,3051,3070,3098,3121-3122,3145,3164,3172,3181,3192-3194,3208-3210,3241,3247,3256,3267,3275,3286-3287,3309,3331-3332,3357-3358,3413,3421,3482,3500,3506,3554,3562,3571,3580-3581,3586-3591,3626,3633,3649,3657,3717-3718,3842,3848,3873,3910,3925,3930,3948,3951-3952,3972,3986-3987,3996,3998,4010-4011,4019-4020,4032,4048,4058,4076,4084-4086,4093,4114-4115,4129-4130,4144-4145,4189-4190,4266-4267,4347-4348,4490,4496,4500-4501,4526,4537,4619-4620,4647-4648,4670,4684,4693,4715,4729,4736,4743-4745,4783-4785,4807,4812,4824,4831,4836,4838,4844,4849,4851-4852,4871,4878,4886-4887,4893,4896,4940-4941,4950-4951,5014,5020-5021,5034-5035,5061,5066-5067,5101,5108,5113-5114,5130,5135-5136,5148,5158,5165,5171,5176,5185-5186,5208,5213-5214,5251-5252,5272,5286-5287,5295-5296,5387,5394,5400-5401,5408,5422,5437,5451,5456-5459,5488,5494,5508,5514,5559,5561,5576,5585-5586,5588,5601-5602,5605,5612,5617,5644,5649,5744,5751,5779,5787,5793,5801-5802,5842,5853,5861,5867,5874,5879,5887-5888,5914,5926,5931-5932,5942-5943,6144,6160,6177,6184-6185,6188,6219,6232-6235,6245-6246,6291,6305,6310,6312,6351,6362,6368,6375,6380,6382-6385,6401,6440,6445,6463,6468,6500,6505,6568,6577,6589,6601,6622,6634,6640,6646-6647,6672,6678-6679,6743,6749,6759,6764,6766,6775,6777,6786,6834,6839,6858,6863,6948-6953,6960-6984,6986-7016,7020,7022-7042,7045,7047-7057,7059-7060,7067-7101,7107-7108,7111-7115,7117-7118,7120,7122-7134,7136-7138,7140-7144,7146-7147,7149-7151,7153-7165,7167,7169-7171,7176-7178,7180-7183,7187-7192,7197,7199-7200,7202-7203,7206-7220,7222-7226,7228-7231,7235-7250
+src/modules/Fermenter/handlers/handleSetFermenterPatch.ts
+  h_beb54bf43b47b7 1-83
+src/modules/Fermenter/models/FermenterPatchState.ts
+  h_beb54bf43b47b7 1-181
+src/modules/Fermenter/models/__tests__/FermenterPatchState.spec.ts
+  h_beb54bf43b47b7 1-56
+src/modules/Fermenter/presentations/components/PresetBrowser.tsx
+  h_beb54bf43b47b7 7,23,27,62,66,72-88,216,218-242
+src/modules/Fermenter/presentations/components/__tests__/PresetBrowser.spec.tsx
+  h_beb54bf43b47b7 23-24,196-247
+src/modules/Fermenter/presentations/views/FermenterPanel.tsx
+  h_beb54bf43b47b7 1,19-24,32,36,163,165-169,171-175,428-429,431-432,436,457-511,525,551-589,591,596-627,631-633,637-639,690-694,762-782,786,790
+src/modules/Fermenter/presentations/views/__tests__/FermenterPanel.spec.tsx
+  h_beb54bf43b47b7 54,79-82,355,359,361,366,369,391,393
+src/modules/Fermenter/presentations/views/__tests__/fermenterPatchAuditionUndo.integration.spec.tsx
+  h_beb54bf43b47b7 1-410
+src/modules/Fermenter/presentations/views/__tests__/fermenterProjectHydration.spec.tsx
+  h_beb54bf43b47b7 8-9,15,18-20,84-107
+src/modules/Fermenter/useCases/commitFermenterPatch.ts
+  h_beb54bf43b47b7 1-97
+src/modules/Fermenter/useCases/fermenterParamBridge/loadFermenterPatchWithAudio.ts
+  h_beb54bf43b47b7 3,7,43-50
+src/modules/Fermenter/useCases/fermenterPatchOperations.ts
+  h_beb54bf43b47b7 1-57
+src/modules/Fermenter/useCases/getFermenterHandlers.ts
+  h_beb54bf43b47b7 1-5
+src/modules/Fermenter/useCases/hydrateFermenterFromProject.ts
+  h_beb54bf43b47b7 4,28-31,46,48-69,71,74-75
+src/modules/Fermenter/useCases/index.ts
+  h_beb54bf43b47b7 4
+src/modules/Fermenter/useCases/reconcileFermenterPatchFromProject.ts
+  h_beb54bf43b47b7 1-22
+src/utils/handlerContract.ts
+  h_beb54bf43b47b7 2001-2013
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "437bd27afc5eb867367862622b7088319c6aa442",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
