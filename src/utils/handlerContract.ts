@@ -3721,8 +3721,13 @@ type ActionHandlerCommon<Action extends AppAction> = {
     canReportConflict?: boolean;
     /** Resolve deterministic application-owned payload fields, without project/runtime writes, before hashing. */
     materializeCommandArguments?: (action: Action, context?: HandlerMaterializationContext) => void;
-    /** Capture read-only project authority synchronously when a batch is admitted, before its snapshot wait. */
-    materializeCommandArgumentsAt?: 'admission';
+    /**
+     * `admission` captures batch authority before its snapshot wait. `execution` opts fresh project singleton
+     * dispatches into materialization after that wait and cancellation, before admission guards and execution.
+     * Runtime, supplied-envelope and authenticated Redo dispatches retain early materialization; compilation and
+     * batch materialization are unchanged. Omission retains the existing early singleton behavior.
+     */
+    materializeCommandArgumentsAt?: 'admission' | 'execution';
     /** Owner-provided strict validation for a payload after application-owned materialization. */
     validateMaterializedCommandArguments?: (payload: unknown) => boolean;
     /** Owner-provided strict validation for an internal persisted replay payload. */

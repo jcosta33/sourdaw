@@ -77,6 +77,7 @@ export { resolveToasterPadBinding } from './resolveToasterPadBinding';
 export { decodeAudioFile } from './decodeAudioFile';
 export { decodeAudioFileBuffer } from './decodeAudioFileBuffer';
 export { discardDecodedAudioFile } from './discardDecodedAudioFile';
+export { discardDecodedAudioFileIfCurrent } from './discardDecodedAudioFileIfCurrent';
 
 export { updateDeviceParam } from './deviceControls/updateDeviceParam';
 export { captureDeviceParameterRuntimeWriteAuthority } from './deviceControls/captureDeviceParameterRuntimeWriteAuthority';

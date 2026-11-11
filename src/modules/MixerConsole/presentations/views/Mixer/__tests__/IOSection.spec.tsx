@@ -126,6 +126,21 @@ describe('IOSection', () => {
         expect(screen.queryByRole('listbox', { name: 'Output routing' })).not.toBeInTheDocument();
     });
 
+    it('shows a human-readable hardware output label and preserves the raw output ID when routing', () => {
+        mocks.tracks = [makeBus({ id: 'bus-1', name: 'Reverb' })];
+        const track: Track = { ...baseTrack, id: 'track-9', outputId: 'hw_out' };
+
+        render(<IOSection track={track} />);
+        fireEvent.click(screen.getByRole('button', { name: 'Hardware output' }));
+        fireEvent.click(screen.getByRole('option', { name: 'Master' }));
+
+        expect(executeAppAction).toHaveBeenCalledExactlyOnceWith({
+            type: 'setTrackOutput',
+            payload: { trackId: 'track-9', outputId: 'master', expectedOutputId: 'hw_out' },
+        });
+        expect(screen.queryByRole('listbox', { name: 'Output routing' })).not.toBeInTheDocument();
+    });
+
     it('does not offer a bus that already feeds this track, by output or by send', () => {
         mocks.tracks = [
             makeBus({ id: 'bus-1', name: 'Drum Bus' }),
