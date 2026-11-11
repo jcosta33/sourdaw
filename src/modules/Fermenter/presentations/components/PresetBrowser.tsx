@@ -128,7 +128,9 @@ export const PresetBrowser = ({
                             type="button"
                             aria-pressed={category === cat.id}
                             className={`min-h-6 shrink-0 whitespace-nowrap rounded px-2 text-[length:var(--text-nano)] font-medium transition-colors ${
-                                category === cat.id ? 'text-white' : 'text-muted-foreground hover:text-foreground'
+                                category === cat.id
+                                    ? 'text-surface-default'
+                                    : 'text-muted-foreground hover:text-foreground'
                             }`}
                             style={pillStyle}
                             onClick={() => {

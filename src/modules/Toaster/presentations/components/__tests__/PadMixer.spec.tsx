@@ -160,6 +160,13 @@ describe('PadMixer', () => {
         expect(mute).toHaveClass('size-6', 'text-[length:var(--text-nano)]');
         expect(solo).toHaveClass('size-6', 'text-[length:var(--text-nano)]');
         expect(mute.parentElement).toHaveClass('gap-0.5');
-        expect(mute.closest('.w-9')).toBeNull();
+        expect(mute.parentElement?.parentElement).toHaveClass('w-[52px]');
+    });
+
+    it('uses a dark foreground on the muted danger background', () => {
+        const pad = { ...makePad(0), muted: true };
+        render(<PadMixer pads={[pad]} onPadParam={vi.fn()} />);
+
+        expect(screen.getByRole('button', { name: 'Mute P0', pressed: true })).toHaveClass('text-surface-default');
     });
 });
