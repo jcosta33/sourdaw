@@ -5,8 +5,8 @@ settles a process group, on an operating-system observation that was partial, st
 Deleting storage another process still holds, and retaining storage forever, are both defects: a run whose own
 work succeeded ended `FAILED (leak)` and stopped its lane (#5337). Each probe names the failure, the input, and
 the check that must go red. The owning specs are `scripts/__tests__/resourceGuardStorage.spec.ts` and
-`scripts/__tests__/resourceGuard.spec.ts`. Historical reviewer prompts and tiers are unestablished unless a probe
-says otherwise.
+`scripts/__tests__/resourceGuard.spec.ts`, except probe 11, whose process-group owner is `scripts/nativeCommand.ts`.
+Historical reviewer prompts and tiers are unestablished unless a probe says otherwise.
 
 ## Standing probes
 
@@ -87,8 +87,9 @@ says otherwise.
    require the parsed path to veto reclamation. Unrooted errors and ambiguous stat/readlink suffixes stay
    fail-closed; whole/scoped replacement proof and the deadline are preserved; retain only bounded PID,
    descriptor, type and matched-category context, never unrelated catalog names or environment text. Reverting
-   the pathname distinction must fail the parser assertion; dropping the retained context must fail the
-   whole/scoped diagnostic assertions.
+   the pathname distinction in `parseLsofCensus` must fail `scripts/__tests__/resourceGuardStorage.spec.ts` "keeps
+   diagnostic words in absolute Darwin $type paths as storage references"; dropping the retained context must fail
+   its "reports bounded Darwin inspection context for $type $match $kind" cases.
 10. **Linux proof must stay fresh across arrival, exit settlement and output attribution (#5274, #5443).** A single
     unrelated newborn does not probe successive arrivals, and eager diagnostic output does not prove byte-exact
     child output after recovery. Run the owning cases in `scripts/__tests__/resourceGuardStorage.spec.ts`:
@@ -108,6 +109,12 @@ evidence out of the child output unless it explains retention`, where startup, s
     keep unchanged escalation/confirmation bounds, and reject persistent uncertainty with typed diagnostics. Inject
     EPERM then ESRCH around a real owned child, persistent EPERM through the deadline, and termination EPERM
     followed by absence; only the first recovers, with no extra group signals and no loss of prior fatal evidence.
+    The owner is `ownedProcessGroup` in `scripts/nativeCommand.ts`, and the owning cases are in
+    `scripts/__tests__/verifyNativeTransportMutations.spec.ts`: "settles a timed-out owned child only after
+    provisional inspection EPERM becomes ESRCH", "retains a bounded termination %s error after the group is later
+    absent" and "retains the mutated source and refuses proof when bounded %s ownership confirmation is exhausted".
+    Treating inspection EPERM as absence (returning `false` with the group marked absent from the `alive` EPERM
+    branch) must fail the first case, which requires settlement only after the later ESRCH.
 
 [xnu-sig]: https://github.com/apple-oss-distributions/xnu/blob/main/bsd/kern/kern_sig.c
 [xnu-exit]: https://github.com/apple-oss-distributions/xnu/blob/main/bsd/kern/kern_exit.c

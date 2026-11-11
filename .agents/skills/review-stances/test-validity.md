@@ -81,14 +81,18 @@ src/modules/Arrangement/stores/__tests__/deviceWriteBoundaryClosure.spec.ts` and
    Guard output collection and mocked emission do not prove delivery through the CLI pipe (#3057):
    send output larger than pipe capacity through the real CLI and require the complete byte-exact
    body and markers for success and failure, correct channels and exit codes, and prompt exit.
-   Check the bounded default failure tail and signal cleanup; restoring forced exit must lose output.
+   Check the bounded default failure tail and signal cleanup; restoring forced exit must fail
+   `scripts/__tests__/resourceGuardShowOutput.spec.ts` "drains complete piped %s output when the child exits %i",
+   beside "keeps the default bounded failure tail and reports omitted bytes through the CLI" and "exits on %s after
+   its child has stopped".
    Public Enable Audio Warping wrote only a preview Map and declared undo without an inverse while its specs
    asserted mocked delegation (#415). Drive the registered public action with an off-mode audio clip carrying a
    non-unit ratio, a keeper clip and a prior independent edit. Require raw CRDT and projected clip mode, the real
    history metadata and inverse, repeated-enable no-op, exact Undo/Redo, and missing/MIDI target non-effects. The
-   real offline playback projection must change rate with enable and Undo. Restoring the preview-only route or
-   dropping the inverse must fail
-   `src/modules/AudioEngine/handlers/finalFeature/__tests__/publicWarpActionsAuthority.integration.spec.ts`; a mock
+   real offline playback projection (`projectOfflineAudioClipPlaybacks`) must change rate with enable and Undo.
+   Restoring the preview-only route or dropping the inverse must fail
+   `src/modules/AudioEngine/handlers/finalFeature/__tests__/publicWarpActionsAuthority.integration.spec.ts` "enables
+   repitch from %s with exact undo/redo and durable history", whose rate assertions observe that projection; a mock
    call cannot prove clip enablement, output or reversible project history.
    (#3905, #2648, #1049, #5277, #5339, #4128, #2811, #2083, #5643, #5254, #5247, #5215, #474, #5798, #5565, #5387, #5805)
 

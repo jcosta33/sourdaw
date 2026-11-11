@@ -69,7 +69,9 @@ hardware audibility. Runtime-session companions live in `session-lifecycle.md`.
    key and edge retire immediately; a shared eligible `b` keeps the same capture, edge and stream; in the last-owner
    case the old input stops. Do not recreate the absent strip or request permission again. Abort re-admits the
    current input; commit removes `a`; a same-input abort retains its original owner and capture. A keyed owner that
-   retargets only on explicit start, or a sweep covering only Auto owners, fails this case.
+   retargets only on explicit start, or a sweep covering only Auto owners, must fail
+   `src/modules/AudioEngine/repositories/audioRecorder/__tests__/removeTrackInputMonitoring.integration.spec.ts`
+   "retires a hidden On owner after a committed selector change before its shared-input removal commits".
 7. **Committed Undo restores the monitoring runtime too (#5091).** Strip reconstruction alone does not restore the
    capture owners. Admit two On tracks through the real recorder, delete one and Undo, then remove all and Undo;
    inspect raw membership and modes, the store projection, actual owners, source connections and stream stops.

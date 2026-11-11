@@ -139,6 +139,11 @@ shared Git publication in `trusted-script-delivery.md`.
     vs the producer's fixed deadline with zero, negative and `1e309` costs (#2725); filtered keyed
     measurements must keep producer keys (invalid middle calibration plus a missing referenced tail,
     #974). Request each type alone: a `legalSet`-declaring descriptor was the reproduction (#2011).
+    The red check is a case at the worst admitted unit, measured with the consumer's own expression, that fails
+    when the producer's estimate or a fixed cap replaces that expression: clamping the built-in body's `ir_length`
+    in `crates/daw-dsp/src/bacteria/convolution.rs` to 4096 samples must fail
+    `engine_output_retains_late_wood_tail_at_384khz` in `crates/daw-dsp/tests/bacteria_body_switch_rt.rs` under
+    `pnpm guard --profile focused -- pnpm cargo:test --package daw-dsp engine_output_retains_late_wood_tail`.
 13. **Refusal attribution and reallocation.** For every refusal added or moved, state which units it
     stops and what reason each records; a per-unit property read as a run property reports unrelated
     units under a cause that never happened (#4491). A rank or order added for one pairwise inversion

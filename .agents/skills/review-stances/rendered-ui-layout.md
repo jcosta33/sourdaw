@@ -22,10 +22,19 @@ row multiplicity.
    duplicate trees leave stale portals, focus and mutable DOM refs; a case that finds a second copy of the hidden
    tree in the DOM fails this probe.
 3. **A footer disclosure that owns a portaled menu hands focus off safely (#4056).** Track the menu content ref in
-   each responsive mode. On a mode change both portals close, and focus is restored only when the active element
-   belongs to the footer or that portal. Recheck focus immediately before an asynchronous handoff and cancel it on
-   cleanup. Choose an outside target during the handoff: it keeps keyboard control; a restore that steals focus
-   from the newly chosen target fails this probe.
+   each responsive mode of `StatusBar`. On a mode change both portals close, and focus is restored only when the
+   active element belongs to the footer or that portal. Recheck focus immediately before the deferred handoff and
+   cancel it on cleanup; an outside target chosen during the handoff keeps keyboard control. In
+   `src/modules/WorkspaceShell/presentations/views/__tests__/StatusBar.spec.tsx`, deleting the
+   `focusMovedOutsideFooter` recheck inside `StatusBar.tsx`'s deferred `requestAnimationFrame` restoration must
+   fail "keeps focus moved outside the footer before deferred mode restoration runs", and dropping the
+   `footerOwnsFocus || moreOwnsFocus || projectLinksOwnFocus` condition that arms
+   `restoreFocusAfterModeChangeRef` on a mode change must fail "keeps unrelated focus outside the footer through a mode change", each under
+   `pnpm guard --profile focused -- pnpm test:run
+src/modules/WorkspaceShell/presentations/views/__tests__/StatusBar.spec.tsx`. Focus restored from portaled
+   Project Links items across real mode changes is observed only in the browser: read the affected end-to-end job
+   that runs "restores focus from portaled Project Links items after each mode change at 2 UI scale" in
+   `tests/e2e/statusBarResponsive.spec.ts` on the head.
 4. **A canvas surface proves a fresh paint, not presence (Crumbs waveform, #5780; ruler, #5247).** Runs: CI; the
    reviewer reads the affected end-to-end job that runs the paint case on the head, and runs the ruler
    subscription mutation against

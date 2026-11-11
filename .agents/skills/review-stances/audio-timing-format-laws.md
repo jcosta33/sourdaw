@@ -80,9 +80,16 @@ input, state or mutation to run, and the check that must go red. Report the conc
    Note Off, drive supplied `noteInstanceId` values through `MidiRack`: one equal-pitch note, change the deciding
    parameter while held, then attack and release a second identity first. Assert emitted identity and pitch or
    suppression; channel/pitch FIFO must fail. Keep identityless FIFO apart.
-9. **Expression ordering around note release (#805).** Hold the note-on's async worker, admit pressure, CC74,
-   bend, release and the next same-channel note; read the curve points and execution order; an idle unrelated
-   channel stays immediate.
+9. **Expression ordering around note release (#805).** A note-on can await a Yeast worker round trip, so
+   expression arriving behind it either overtakes it (the opening bend finds no channel-to-note entry and is
+   dropped) or, if serialized behind every note event, waits for an unrelated channel and voices late. Hold the
+   first note-on's promise, then send channel pressure, CC74, pitch bend, the note-off and the next note-on on
+   the same channel: `handleWebMidiMessage.spec.ts` (`commits release only after admitted member expression,
+before the next note on that channel`) must observe exactly `on60, pressure, slide, bend, off60, on62`. A
+   bend on an idle unrelated channel voices at its own arrival frame (`should not delay expression past its
+arrival frame behind an unrelated note-on`). Running expression immediately instead of behind its
+   channel's tail in `dispatchExpressionHandler` must fail the release-order case; queuing expression behind
+   the global note tail (`midiInputTail`) must fail the unrelated-channel case.
 10. **A boundary known in advance must not wait for the look-ahead window.** A main-thread stall longer than the
     look-ahead lets anything a window has not yet reached fall due unscheduled and join late, mid-buffer. Comp
     parts of one clip keyed and gated separately schedule the take after a comp boundary only when a window
