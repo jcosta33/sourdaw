@@ -197,6 +197,38 @@ describe('SamplesTab', () => {
         expect(screen.queryByRole('button', { name: 'Preview sound' })).toBeNull();
     });
 
+    it.each([
+        ['Kick', { id: 's1', name: 'Kick', audioBufferId: 'b1', durationSeconds: 1.0 }],
+        ['Snare', { id: 's2', name: 'Snare', audioBufferId: 'b2', durationSeconds: 0.5 }],
+    ])('exposes a native Add action for %s and places that sample once', (sampleName, expected) => {
+        renderSamplesTab();
+
+        const addButton = screen.getByRole('button', { name: `Add ${sampleName} to timeline` });
+        expect(addButton.tagName).toBe('BUTTON');
+        fireEvent.click(addButton);
+
+        expect(addBrowserSample).toHaveBeenCalledTimes(1);
+        expect(addBrowserSample).toHaveBeenCalledWith(expected);
+    });
+
+    it('keeps Preview and Favorite separate from sample placement', () => {
+        const onToggleFavorite = vi.fn<(id: string) => void>();
+        renderWithTooltip(
+            <SamplesTab
+                samples={mockSamples}
+                favorites={new Set()}
+                onToggleFavorite={onToggleFavorite}
+                preview={createPreview()}
+            />
+        );
+
+        fireEvent.click(screen.getByRole('button', { name: 'Preview Kick' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Add Kick to favorites' }));
+
+        expect(addBrowserSample).not.toHaveBeenCalled();
+        expect(onToggleFavorite).toHaveBeenCalledExactlyOnceWith('s1');
+    });
+
     it('hands a clicked sample to the shared browser placement', () => {
         renderSamplesTab();
 
