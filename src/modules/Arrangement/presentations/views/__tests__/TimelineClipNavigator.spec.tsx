@@ -382,6 +382,34 @@ describe('TimelineClipNavigator', () => {
         expect(details).toHaveTextContent('0 transients, 1 user, 0 locked');
     });
 
+    it('steps to the previous result when ArrowUp is pressed in the search field', () => {
+        act(() => {
+            trackStore.set({
+                ...defaultTrackState,
+                tracks: [
+                    track('voice', 'Voice', [
+                        clip('one', 'voice', 0, 'One'),
+                        clip('two', 'voice', 4, 'Two'),
+                        clip('three', 'voice', 8, 'Three'),
+                    ]),
+                ],
+            });
+        });
+        const listbox = openNavigator();
+        const search = screen.getByRole('searchbox', { name: 'Search clips' });
+        fireEvent.keyDown(search, { key: 'ArrowDown' });
+        fireEvent.keyDown(listbox, { key: 'ArrowDown' });
+        expect(activeOption(listbox)).toHaveAccessibleName(/Three, Voice/);
+
+        act(() => search.focus());
+        fireEvent.keyDown(search, { key: 'ArrowUp' });
+
+        expect(activeOption(listbox)).toHaveAccessibleName(/Two, Voice/);
+        expect(listbox).toHaveFocus();
+        fireEvent.keyDown(listbox, { key: 'Enter' });
+        expect(clipSelectionStore.value?.selectedClipIds).toEqual(['two']);
+    });
+
     it('filters clip and track names by type and current track with announced counts', () => {
         const audioTake: Clip = { ...clip('take', 'voice', 4, 'Take'), type: 'audio' };
         act(() => {
@@ -397,6 +425,11 @@ describe('TimelineClipNavigator', () => {
         const listbox = openNavigator();
         const search = screen.getByRole('searchbox', { name: 'Search clips' });
         expect(screen.getByText('3 of 3 clips')).toBeInTheDocument();
+
+        fireEvent.change(search, { target: { value: 'drums' } });
+        expect(within(listbox).getAllByRole('option')).toHaveLength(1);
+        expect(activeOption(listbox)).toHaveAccessibleName(/Fill, Drums, MIDI clip/);
+        expect(screen.getByText('1 of 3 clips')).toBeInTheDocument();
 
         fireEvent.change(search, { target: { value: 'TAK' } });
         expect(within(listbox).getAllByRole('option')).toHaveLength(1);
@@ -421,6 +454,11 @@ describe('TimelineClipNavigator', () => {
         expect(screen.getByText('1 of 3 clips')).toBeInTheDocument();
         expect(trackStore.value?.selectedTrackId).toBe('voice');
         expect(clipSelectionStore.value?.selectedClipIds).toEqual([]);
+
+        act(() => trackStore.set({ ...trackStore.value!, selectedTrackId: null }));
+        expect(screen.getByRole('button', { name: 'Current track' })).toBeDisabled();
+        expect(within(listbox).getAllByRole('option')).toHaveLength(2);
+        expect(screen.getByText('2 of 3 clips')).toBeInTheDocument();
 
         fireEvent.keyDown(search, { key: 'Escape' });
         expect(screen.queryByRole('listbox', { name: 'Timeline clips' })).not.toBeInTheDocument();

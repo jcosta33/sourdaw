@@ -71,7 +71,7 @@ export function TimelineClipNavigator({ onClose }: { onClose: () => void }): Rea
         if (typeFilter !== 'all' && item.clip.type !== typeFilter) {
             return false;
         }
-        if (currentTrackOnly && item.track.id !== selectedTrackId) {
+        if (currentTrackOnly && selectedTrackId && item.track.id !== selectedTrackId) {
             return false;
         }
         return (
@@ -138,7 +138,11 @@ export function TimelineClipNavigator({ onClose }: { onClose: () => void }): Rea
             onClose();
             return;
         }
-        moveTo(event.key === 'ArrowDown' ? Math.min(activeIndex + 1, filteredClips.length - 1) : 0);
+        moveTo(
+            event.key === 'ArrowDown'
+                ? Math.min(activeIndex + 1, filteredClips.length - 1)
+                : Math.max(activeIndex - 1, 0)
+        );
         listboxRef.current?.focus();
     }
 
