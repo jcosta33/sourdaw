@@ -15,6 +15,7 @@ import { renderFactoryLibraryPack } from './factoryLibrary/renderFactoryLibraryP
 
 type EnsureFactorySampleBufferInput = {
     sampleId: string;
+    shouldAdoptCachedBuffer?: () => boolean;
 };
 
 type EnsureFactorySampleBufferResult =
@@ -68,7 +69,11 @@ function publishRenderedBuffer(sampleId: string, buffer: AudioBuffer, publicatio
  * shared by every concurrent caller, and publish this sample alone. Every other
  * sample is left as it is, since a saved project may play its stored audio.
  */
-async function renderSampleBuffer(sampleId: string, publication: RenderPublication): Promise<AudioBuffer | null> {
+async function renderSampleBuffer(
+    sampleId: string,
+    publication: RenderPublication,
+    shouldAdoptCachedBuffer?: () => boolean
+): Promise<AudioBuffer | null> {
     let samples: Awaited<ReturnType<typeof renderFactoryLibraryPack>>;
     try {
         samples = await renderFactoryLibraryPack(getAudioContext());
@@ -83,7 +88,7 @@ async function renderSampleBuffer(sampleId: string, publication: RenderPublicati
     // A concurrent caller for the same sample may have cached it already.
     const cached = getCachedAudioBuffer({ bufferId: sampleId });
     if (cached) {
-        return cached;
+        return shouldAdoptCachedBuffer?.() === false ? null : cached;
     }
     const rendered = samples.find((sample) => sample.id === sampleId);
     if (!rendered) {
@@ -103,10 +108,13 @@ async function renderSampleBuffer(sampleId: string, publication: RenderPublicati
  */
 export async function ensureFactorySampleBuffer({
     sampleId,
+    shouldAdoptCachedBuffer,
 }: EnsureFactorySampleBufferInput): Promise<EnsureFactorySampleBufferResult> {
     const resident = getCachedAudioBuffer({ bufferId: sampleId });
     if (resident) {
-        return { status: 'resolved', buffer: resident };
+        return shouldAdoptCachedBuffer?.() === false
+            ? { status: 'unavailable' }
+            : { status: 'resolved', buffer: resident };
     }
     if (!isFactorySample(sampleId)) {
         return { status: 'not-factory' };
@@ -116,9 +124,11 @@ export async function ensureFactorySampleBuffer({
     }
     const stored = await readStoredBuffer(sampleId);
     if (stored.status === 'restored') {
-        return { status: 'resolved', buffer: stored.buffer };
+        return shouldAdoptCachedBuffer?.() === false
+            ? { status: 'unavailable' }
+            : { status: 'resolved', buffer: stored.buffer };
     }
     const publication = stored.status === 'unreadable' ? 'session-only' : 'cache';
-    const buffer = await renderSampleBuffer(sampleId, publication);
+    const buffer = await renderSampleBuffer(sampleId, publication, shouldAdoptCachedBuffer);
     return buffer ? { status: 'resolved', buffer } : { status: 'unavailable' };
 }

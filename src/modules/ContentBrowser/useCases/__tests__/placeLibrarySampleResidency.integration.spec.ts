@@ -45,6 +45,7 @@ import {
     removeCrdtDoc,
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
+import { libraryStore } from '#/modules/SampleLibrary/stores';
 import {
     setNotificationEventBus,
     type NotifyPayload,
@@ -60,17 +61,28 @@ vi.mock('#/modules/SampleLibrary/useCases', async (importOriginal) => ({
     resolveDroppedSampleFile: filesystem.read,
 }));
 
-const batchAdmission = vi.hoisted(() => ({ pressure: undefined as (() => void) | undefined }));
+const factoryRender = vi.hoisted(() => vi.fn());
+vi.mock('#/modules/FactorySynthesis/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/FactorySynthesis/useCases')>()),
+    renderFactorySamples: factoryRender,
+}));
+
+const batchAdmission = vi.hoisted(() => ({
+    pressure: undefined as (() => void) | undefined,
+    actions: [] as unknown[],
+}));
 vi.mock('#/modules/Command/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/Command/useCases')>();
-    const executeBatch: typeof actual.executeAppActionBatch = (actions, options) =>
-        actual.executeAppActionBatch(actions, {
+    const executeBatch: typeof actual.executeAppActionBatch = (actions, options) => {
+        batchAdmission.actions.push(actions);
+        return actual.executeAppActionBatch(actions, {
             ...options,
             shouldExecute: () => {
                 batchAdmission.pressure?.();
                 return options?.shouldExecute?.() ?? true;
             },
         });
+    };
     return { ...actual, executeAppActionBatch: executeBatch };
 });
 
@@ -248,6 +260,8 @@ describe('imported sample placement after real cache eviction', () => {
     beforeEach(async () => {
         extraProtectedIds = [];
         batchAdmission.pressure = undefined;
+        batchAdmission.actions = [];
+        factoryRender.mockReset();
         filesystem.read.mockReset();
         configureAutomergeStoragePort(null);
         resetCrdtProjectAuthority('library sample residency');
@@ -898,5 +912,190 @@ describe('imported sample placement after real cache eviction', () => {
         expect(getCachedAudioBuffer({ bufferId: decodedId })).toBe(replacement);
         expect(getAssetTransfer()?.promoteStagedAsset(staged.leaseId)).toBe(false);
         expect(notifications).toMatchObject([{ level: 'error' }]);
+    });
+
+    it('refuses a concurrent same-ID cache fill while cold factory rendering is pending', async () => {
+        const factoryId = 'factory-cold-race';
+        const previousLibrary = libraryStore.value;
+        if (!previousLibrary) {
+            throw new Error('Expected sample library state');
+        }
+        const rendered = originalPcm();
+        const replacement = originalPcm();
+        replacement.copyToChannel(new Float32Array([0.75, -0.25, 0.875, 0.5, -0.5, 0.125, -0.9375]), 0);
+        replacement.copyToChannel(new Float32Array([-0.125, 0.625, -0.75, 0.25, 0.5, -0.375, 0.8125]), 1);
+        const renderStarted = deferred<void>();
+        const continueRender = deferred<void>();
+        factoryRender.mockImplementation(async () => {
+            renderStarted.resolve();
+            await continueRender.promise;
+            return [{ id: factoryId, name: NAME, category: 'drums', tags: ['factory'], buffer: rendered }];
+        });
+        libraryStore.set({
+            ...previousLibrary,
+            roots: [
+                {
+                    id: 'factory',
+                    name: 'Factory',
+                    provider: 'browser',
+                    rootRef: '',
+                    connectedAt: 0,
+                    status: 'ready',
+                    fileCount: 1,
+                    settings: { recursive: true },
+                },
+            ],
+            samples: [
+                {
+                    id: factoryId,
+                    libraryRootId: 'factory',
+                    relativePath: `${NAME}.factory`,
+                    displayName: NAME,
+                    ext: 'factory',
+                    folder: '',
+                    sync: { exists: true, status: 'analyzed' },
+                    format: {
+                        durationSec: rendered.duration,
+                        sampleRate: rendered.sampleRate,
+                        channels: rendered.numberOfChannels,
+                        bitDepth: 32,
+                    },
+                    tags: ['factory'],
+                    favorite: false,
+                },
+            ],
+        });
+        const beforeRaw = structuredClone(rootTracks());
+        const beforeProjected = structuredClone(projectedTracks());
+        const beforeHistory = history();
+        let stageCalls = 0;
+        const stagedBuffers: AudioBuffer[] = [];
+        setClipAudioAssetStager(async (buffer, name) => {
+            stageCalls += 1;
+            stagedBuffers.push(buffer);
+            return stageAudioBufferAsset(buffer, name);
+        });
+        const placement = placeLibrarySample({
+            sample: { id: factoryId, name: NAME },
+            placement: { trackId: 'target', startBeat: 8 },
+            authority: { isCurrent: () => true },
+            origin: 'timeline-drop',
+            readTempo: () => 120,
+        });
+        try {
+            await Promise.race([
+                renderStarted.promise,
+                placement.then(() => {
+                    throw new Error('Placement ended before factory rendering');
+                }),
+            ]);
+            cacheAudioBuffer({ bufferId: factoryId, buffer: replacement });
+            expect(getCachedAudioBuffer({ bufferId: factoryId })).toBe(replacement);
+        } finally {
+            continueRender.resolve();
+            await placement;
+            libraryStore.set(previousLibrary);
+        }
+
+        expect(batchAdmission.actions).toEqual([]);
+        expect(stageCalls).toBe(0);
+        expect(stagedBuffers).toEqual([]);
+        expect(rootTracks()).toStrictEqual(beforeRaw);
+        expect(projectedTracks()).toStrictEqual(beforeProjected);
+        expect(history()).toStrictEqual(beforeHistory);
+        expect(getCachedAudioBuffer({ bufferId: factoryId })).toBe(replacement);
+        expect(notifications).toMatchObject([
+            { message: `Could not place "${NAME}" — its audio changed before placement.`, level: 'error' },
+        ]);
+    });
+
+    it('places freshly rendered PCM when cold factory resolution has no cache race', async () => {
+        const factoryId = 'factory-cold-render';
+        const previousLibrary = libraryStore.value;
+        if (!previousLibrary) {
+            throw new Error('Expected sample library state');
+        }
+        const rendered = originalPcm();
+        factoryRender.mockResolvedValue([
+            { id: factoryId, name: NAME, category: 'drums', tags: ['factory'], buffer: rendered },
+        ]);
+        libraryStore.set({
+            ...previousLibrary,
+            roots: [
+                {
+                    id: 'factory',
+                    name: 'Factory',
+                    provider: 'browser',
+                    rootRef: '',
+                    connectedAt: 0,
+                    status: 'ready',
+                    fileCount: 1,
+                    settings: { recursive: true },
+                },
+            ],
+            samples: [
+                {
+                    id: factoryId,
+                    libraryRootId: 'factory',
+                    relativePath: `${NAME}.factory`,
+                    displayName: NAME,
+                    ext: 'factory',
+                    folder: '',
+                    sync: { exists: true, status: 'analyzed' },
+                    format: {
+                        durationSec: rendered.duration,
+                        sampleRate: rendered.sampleRate,
+                        channels: rendered.numberOfChannels,
+                        bitDepth: 32,
+                    },
+                    tags: ['factory'],
+                    favorite: false,
+                },
+            ],
+        });
+        const stagedBuffers: AudioBuffer[] = [];
+        let staged: Awaited<ReturnType<typeof stageAudioBufferAsset>> | undefined;
+        setClipAudioAssetStager(async (buffer, name) => {
+            stagedBuffers.push(buffer);
+            staged = await stageAudioBufferAsset(buffer, name);
+            return staged;
+        });
+        const priorPast = [...history().past];
+        try {
+            await placeLibrarySample({
+                sample: { id: factoryId, name: NAME },
+                placement: { trackId: 'target', startBeat: 8 },
+                authority: { isCurrent: () => true },
+                origin: 'timeline-drop',
+                readTempo: () => 120,
+            });
+        } finally {
+            libraryStore.set(previousLibrary);
+        }
+
+        expect(factoryRender).toHaveBeenCalledTimes(1);
+        expect(batchAdmission.actions).toHaveLength(1);
+        expect(stagedBuffers).toHaveLength(1);
+        expect(stagedBuffers[0]).toBe(rendered);
+        if (!staged) {
+            throw new Error('Expected freshly rendered PCM to be staged');
+        }
+        const placed = projectedTracks()[0]!.clips;
+        expect(placed).toHaveLength(1);
+        expect(placed[0]).toMatchObject({
+            trackId: 'target',
+            type: 'audio',
+            name: NAME,
+            startBeat: 8,
+            endBeat: 9,
+            audioBufferId: factoryId,
+            assetHash: staged.hash,
+        });
+        expect(rootTracks()).toEqual(projectedTracks());
+        expect(history().past).toHaveLength(priorPast.length + 1);
+        expect(history().past.slice(0, -1)).toStrictEqual(priorPast);
+        expect(history().future).toEqual([]);
+        expect(getCachedAudioBuffer({ bufferId: factoryId })).toBe(rendered);
+        expect(notifications).toEqual([]);
     });
 });

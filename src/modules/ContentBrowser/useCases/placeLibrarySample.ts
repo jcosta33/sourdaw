@@ -266,7 +266,22 @@ async function prepareSample(
         }
     }
     if (!cachedBuffer) {
-        const factoryBuffer = await ensureFactorySampleBuffer({ sampleId: candidateBufferId });
+        let rejectedFactoryCache = false;
+        const factoryBuffer = await ensureFactorySampleBuffer({
+            sampleId: candidateBufferId,
+            ...(restoration.initiallyUncached
+                ? {
+                      shouldAdoptCachedBuffer: () => {
+                          rejectedFactoryCache = true;
+                          return false;
+                      },
+                  }
+                : {}),
+        });
+        if (rejectedFactoryCache) {
+            notifyIfCurrent(authority, `Could not place "${sample.name}" — its audio changed before placement.`);
+            return ABANDONED;
+        }
         if (factoryBuffer.status === 'unavailable') {
             notifyIfCurrent(authority, `Could not access "${sample.name}" — audio buffer is not available.`);
             return ABANDONED;
