@@ -16,7 +16,7 @@ import { takeLaneStore } from '../../stores/takeLaneStore';
 import {
     setAutoScroll,
     setScrollX,
-    setTimelineViewportHeight,
+    setTimelineViewportSize,
     setTimelineZoom,
     timelineViewStore,
 } from '../../stores/timelineViewStore';
@@ -327,9 +327,9 @@ export const TimelineSurface = (): ReactElement => {
             for (const entry of entries) {
                 const { width, height } = entry.contentRect;
                 rendererRef.current?.resize(width, height);
-                // The store clamps vertical scroll against this viewport, so it
-                // must be right before the first wheel event, not after it.
-                setTimelineViewportHeight(height);
+                // Both restored offsets are clamped against the real canvas,
+                // which must be recorded before the first wheel event.
+                setTimelineViewportSize({ viewportWidth: width, viewportHeight: height });
             }
             // Immediately re-render after resize to prevent a 1-frame flash.
             // Setting canvas.width/height clears all pixel data, but the dirty

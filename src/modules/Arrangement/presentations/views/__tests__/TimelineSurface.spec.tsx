@@ -7,7 +7,7 @@ import { playheadPositionRef } from '#/modules/Transport/stores';
 
 import { createTrack, type Clip, type Track } from '../../../models/Track';
 import { clipSelectionStore } from '../../../stores/clipSelectionStore';
-import { setAutoScroll, setScrollX, setTimelineViewportHeight } from '../../../stores/timelineViewStore';
+import { setAutoScroll, setScrollX, setTimelineViewportSize } from '../../../stores/timelineViewStore';
 import { useTimelineInteractions } from '../../hooks/useTimelineInteractions';
 import { TimelineSurface } from '../TimelineSurface';
 
@@ -145,7 +145,7 @@ vi.mock('../../../stores/timelineViewStore', () => {
     return {
         timelineViewStore: store,
         setAutoScroll: vi.fn(),
-        setTimelineViewportHeight: vi.fn(),
+        setTimelineViewportSize: vi.fn(),
         setScrollX: vi.fn(setScrollX),
         setTimelineZoom: vi.fn(setTimelineZoom),
     };
@@ -299,7 +299,7 @@ describe('TimelineSurface', () => {
         expect(screen.queryByRole('listbox', { name: 'Timeline clips' })).not.toBeInTheDocument();
     });
 
-    it('reports the canvas viewport height whenever its container resizes', () => {
+    it('reports both canvas viewport dimensions whenever its container resizes', () => {
         const resizeCallbacks: ResizeObserverCallback[] = [];
         vi.stubGlobal(
             'ResizeObserver',
@@ -315,7 +315,7 @@ describe('TimelineSurface', () => {
 
         try {
             renderWithTooltip(<TimelineSurface />);
-            expect(setTimelineViewportHeight).not.toHaveBeenCalled();
+            expect(setTimelineViewportSize).not.toHaveBeenCalled();
 
             for (const callback of resizeCallbacks) {
                 callback(
@@ -324,7 +324,7 @@ describe('TimelineSurface', () => {
                 );
             }
 
-            expect(setTimelineViewportHeight).toHaveBeenCalledWith(312);
+            expect(setTimelineViewportSize).toHaveBeenCalledWith({ viewportWidth: 900, viewportHeight: 312 });
         } finally {
             vi.unstubAllGlobals();
         }

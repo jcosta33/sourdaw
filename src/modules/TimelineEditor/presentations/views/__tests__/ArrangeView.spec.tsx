@@ -1,8 +1,13 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
+import { getTimelineHorizontalContentWidth as calculateTimelineContentWidth } from '#/modules/Arrangement/models/TimelineHorizontalExtent';
 import { setScrollX } from '#/modules/Arrangement/stores';
-import { importMidiFile, setTimelineHorizontalScrollbarScrollX } from '#/modules/Arrangement/useCases';
+import {
+    getTimelineHorizontalContentWidth,
+    importMidiFile,
+    setTimelineHorizontalScrollbarScrollX,
+} from '#/modules/Arrangement/useCases';
 import { decodeAudioFile, discardDecodedAudioFile } from '#/modules/AudioEngine/useCases';
 import { executeAppActionBatch } from '#/modules/Command/useCases';
 import { defaultWorkspaceState } from '#/modules/WorkspaceShell/stores';
@@ -260,6 +265,7 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
         };
     }),
     importMidiFile: vi.fn(),
+    getTimelineHorizontalContentWidth: vi.fn(calculateTimelineContentWidth),
     setTimelineHorizontalScrollbarScrollX: vi.fn(),
 }));
 
@@ -355,6 +361,7 @@ const makeTrack = ({ clipEndBeat }: { clipEndBeat: number }): Track => ({
 });
 
 const renderOverflowingTimeline = (): HTMLElement => {
+    vi.mocked(getTimelineHorizontalContentWidth).mockReturnValue(4800);
     vi.mocked(useTracks).mockReturnValue({
         tracks: [makeTrack({ clipEndBeat: 400 })],
         selectedTrackId: 'track-1',

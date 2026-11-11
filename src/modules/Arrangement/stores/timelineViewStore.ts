@@ -1,5 +1,6 @@
 import { createStore } from '#/infra/store/createStore';
 
+import { getTimelineHorizontalContentWidth } from '../models/TimelineHorizontalExtent';
 import { getTimelineContentHeight } from '../transformers/getTimelineContentHeight';
 
 import { trackStore } from './trackStore';
@@ -10,19 +11,21 @@ export type TimelineViewState = {
     pixelsPerBeat: number;
     autoScrollEnabled: boolean;
     /**
+     * The real, currently-visible timeline canvas viewport in CSS pixels. Zero
+     * means the canvas has not measured itself yet; horizontal clamping then
+     * retains the legacy lower bound rather than inventing a width.
+     */
+    viewportWidth?: number;
+    /**
      * The real, currently-visible timeline canvas viewport height in pixels,
      * as last reported by the canvas owner via {@link setTimelineViewportHeight}.
-     * Optional (and treated as `0` when absent) so the many pre-existing
-     * `useStore(timelineViewStore, { ...fallback })` call sites across other
-     * modules — which predate this field and are out of this module's scope
-     * to edit — keep type-checking without having to name it. `0` (or
-     * absent) under-clamps rather than assuming a viewport size no caller
-     * actually has, which was the F7 defect: `setScrollY` used to default an
-     * unset viewport height to a hardcoded `200`, mis-clamping every caller
-     * whose real container was a different height.
+     * Optional (and treated as `0` when absent) so existing fallback states keep
+     * type-checking without having to name it.
      */
     viewportHeight?: number;
 };
+
+export type TimelineWorkingView = Pick<TimelineViewState, 'scrollX' | 'scrollY' | 'pixelsPerBeat'>;
 
 export const timelineViewStore = createStore<TimelineViewState>({
     initialData: {
@@ -30,6 +33,7 @@ export const timelineViewStore = createStore<TimelineViewState>({
         scrollY: 0,
         pixelsPerBeat: 12,
         autoScrollEnabled: true,
+        viewportWidth: 0,
         viewportHeight: 0,
     },
 });
@@ -38,13 +42,32 @@ function clampPixelsPerBeat(pixelsPerBeat: number): number {
     return Math.max(2, Math.min(80, pixelsPerBeat));
 }
 
+function clampScrollX(scrollX: number, pixelsPerBeat: number, viewportWidth: number): number {
+    const nonNegative = Math.max(0, scrollX);
+    if (viewportWidth <= 0) {
+        return nonNegative;
+    }
+    const contentWidth = getTimelineHorizontalContentWidth(trackStore.value?.tracks ?? [], pixelsPerBeat);
+    return Math.min(Math.max(0, contentWidth - viewportWidth), nonNegative);
+}
+
+function clampScrollY(scrollY: number, viewportHeight: number): number {
+    const totalHeight = getTimelineContentHeight(trackStore.value?.tracks ?? []);
+    const maxY = Math.max(0, totalHeight - viewportHeight);
+    return Math.max(0, Math.min(maxY, scrollY));
+}
+
 export function zoomTimeline(delta: number): void {
     const state = timelineViewStore.value;
     if (!state) {
         return;
     }
-    const newPpb = clampPixelsPerBeat(state.pixelsPerBeat + delta);
-    timelineViewStore.set({ ...state, pixelsPerBeat: newPpb });
+    const pixelsPerBeat = clampPixelsPerBeat(state.pixelsPerBeat + delta);
+    timelineViewStore.set({
+        ...state,
+        pixelsPerBeat,
+        scrollX: clampScrollX(state.scrollX, pixelsPerBeat, state.viewportWidth ?? 0),
+    });
 }
 
 /**
@@ -61,7 +84,7 @@ export function setTimelineZoom(pixelsPerBeat: number, scrollStartBeat: number):
     timelineViewStore.set({
         ...state,
         pixelsPerBeat: clampedPixelsPerBeat,
-        scrollX: Math.max(0, scrollStartBeat * clampedPixelsPerBeat),
+        scrollX: clampScrollX(scrollStartBeat * clampedPixelsPerBeat, clampedPixelsPerBeat, state.viewportWidth ?? 0),
     });
 }
 
@@ -70,7 +93,7 @@ export function scrollTimeline(deltaX: number): void {
     if (!state) {
         return;
     }
-    timelineViewStore.set({ ...state, scrollX: Math.max(0, state.scrollX + deltaX) });
+    setScrollX(state.scrollX + deltaX);
 }
 
 export function setScrollX(scrollX: number): void {
@@ -78,7 +101,10 @@ export function setScrollX(scrollX: number): void {
     if (!state) {
         return;
     }
-    timelineViewStore.set({ ...state, scrollX: Math.max(0, scrollX) });
+    const clamped = clampScrollX(scrollX, state.pixelsPerBeat, state.viewportWidth ?? 0);
+    if (state.scrollX !== clamped) {
+        timelineViewStore.set({ ...state, scrollX: clamped });
+    }
 }
 
 export function setAutoScroll(enabled: boolean): void {
@@ -97,63 +123,72 @@ export function toggleAutoScroll(): void {
     timelineViewStore.set({ ...state, autoScrollEnabled: !state.autoScrollEnabled });
 }
 
-/**
- * Records the real, currently-visible timeline canvas viewport height so
- * {@link setScrollY} can clamp against it. The timeline canvas owner calls
- * this with its measured height (`clientHeight`) whenever that height is known
- * to have changed. The track-list scroller never writes it: it carries a
- * bottom spacer that makes its scroll range equal the canvas's.
- */
-export function setTimelineViewportHeight(viewportHeight: number): void {
+/** Record both canvas dimensions and pull restored offsets into their new range. */
+export function setTimelineViewportSize({
+    viewportWidth,
+    viewportHeight,
+}: {
+    viewportWidth: number;
+    viewportHeight: number;
+}): void {
     const state = timelineViewStore.value;
-    if (!state || (state.viewportHeight ?? 0) === viewportHeight) {
+    if (!state || ((state.viewportWidth ?? 0) === viewportWidth && (state.viewportHeight ?? 0) === viewportHeight)) {
         return;
     }
-    // A taller viewport lowers the scroll ceiling: pull the offset back in the
-    // same write so the canvas never shows blank space below the last row.
     timelineViewStore.set({
         ...state,
+        viewportWidth,
         viewportHeight,
+        scrollX: clampScrollX(state.scrollX, state.pixelsPerBeat, viewportWidth),
         scrollY: clampScrollY(state.scrollY, viewportHeight),
     });
 }
 
-function clampScrollY(scrollY: number, viewportHeight: number): number {
-    const totalHeight = getTimelineContentHeight(trackStore.value?.tracks ?? []);
-    const maxY = Math.max(0, totalHeight - viewportHeight);
-    return Math.max(0, Math.min(maxY, scrollY));
+/**
+ * Records the real, currently-visible timeline canvas viewport height so
+ * {@link setScrollY} can clamp against it. The timeline canvas owner reports
+ * both dimensions through {@link setTimelineViewportSize}; this remains for
+ * callers that only know the height.
+ */
+export function setTimelineViewportHeight(viewportHeight: number): void {
+    const state = timelineViewStore.value;
+    if (!state) {
+        return;
+    }
+    setTimelineViewportSize({ viewportWidth: state.viewportWidth ?? 0, viewportHeight });
 }
 
 /**
- * F7 — the shared `viewportHeight` field is written by exactly one owner
- * (the timeline canvas, via {@link setTimelineViewportHeight}), so it is only
- * ever correct for that view's own clamp. A second scrollable view (the
- * automation panel) must not clamp against it: doing so makes its scroll
- * ceiling depend on an unrelated view's size, and — because a mounted
- * `TrackListView` also *reads* `scrollY` back to sync its own native
- * `scrollTop` — a clamp computed from the wrong viewport can write a
- * `scrollY` that visibly desyncs the track list's real scroll position.
- *
- * `viewportHeightOverride` lets a caller that owns its own scrollable
- * container (and measures its own real height, e.g. from the wheel event's
- * `currentTarget`) clamp against that height directly instead, without
- * writing it into the shared field and without disturbing `TrackListView`'s
- * own no-argument call, which keeps using `state.viewportHeight` exactly as
- * before.
+ * The shared `viewportHeight` is written only by the timeline canvas. A second
+ * scrollable view must not clamp against it: the automation panel supplies its
+ * own measured height per call, otherwise its scroll ceiling depends on an
+ * unrelated view and can desynchronize the track list's native scroll position.
+ * With no override, the track list and canvas continue sharing the canvas height.
  */
 export function setScrollY(scrollY: number, viewportHeightOverride?: number): void {
     const state = timelineViewStore.value;
     if (!state) {
         return;
     }
-    // Clamp to prevent scrolling past the last track, against the real
-    // viewport height the store was last told about (see
-    // `setTimelineViewportHeight`) rather than an assumed constant — unless
-    // the caller supplied its own real height, in which case that value is
-    // authoritative for this call.
     const viewportHeight = viewportHeightOverride ?? state.viewportHeight ?? 0;
     const clamped = clampScrollY(scrollY, viewportHeight);
     if (state.scrollY !== clamped) {
         timelineViewStore.set({ ...state, scrollY: clamped });
     }
+}
+
+/** Restore only persistent view fields; measurements stay owned by the live canvas. */
+export function replaceTimelineWorkingView(view: TimelineWorkingView | null): void {
+    const state = timelineViewStore.value;
+    if (!state) {
+        return;
+    }
+    const pixelsPerBeat = clampPixelsPerBeat(view?.pixelsPerBeat ?? 12);
+    timelineViewStore.set({
+        ...state,
+        pixelsPerBeat,
+        scrollX: clampScrollX(view?.scrollX ?? 0, pixelsPerBeat, state.viewportWidth ?? 0),
+        scrollY: clampScrollY(view?.scrollY ?? 0, state.viewportHeight ?? 0),
+        autoScrollEnabled: view ? state.autoScrollEnabled : true,
+    });
 }

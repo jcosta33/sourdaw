@@ -291,6 +291,8 @@ export { hasVariationLanes } from './hasVariationLanes';
 export { getAlternativeClips } from './getAlternativeClips';
 export { getHeldClips } from './getHeldClips';
 export { getTimelineSurfaceMinimumHeight } from './getTimelineSurfaceMinimumHeight';
+export { getTimelineHorizontalContentWidth } from './getTimelineHorizontalContentWidth';
+export { resetTimelineWorkingView, restoreTimelineWorkingView } from './projectWorkingView';
 export { scrollTimelineViewportFromWheel } from './scrollTimelineViewportFromWheel';
 export { scrollTimelineViewportHorizontallyFromWheel } from './scrollTimelineViewportHorizontallyFromWheel';
 export { setTimelineHorizontalScrollbarScrollX } from './setTimelineHorizontalScrollbarScrollX';

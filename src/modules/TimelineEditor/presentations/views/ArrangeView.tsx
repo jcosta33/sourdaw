@@ -24,7 +24,12 @@ import {
     TIMELINE_HORIZONTAL_SCROLLBAR_HEIGHT,
 } from '#/modules/Arrangement/presentations/views';
 import { adjustmentLayerStore, timelineViewStore, markerStore } from '#/modules/Arrangement/stores';
-import { createTrack, importMidiFile, setTimelineHorizontalScrollbarScrollX } from '#/modules/Arrangement/useCases';
+import {
+    createTrack,
+    getTimelineHorizontalContentWidth,
+    importMidiFile,
+    setTimelineHorizontalScrollbarScrollX,
+} from '#/modules/Arrangement/useCases';
 import { decodeAudioFile, discardDecodedAudioFile } from '#/modules/AudioEngine/useCases';
 import { executeAppActionBatch, executeUserAppAction } from '#/modules/Command/useCases';
 import { chordTrackStore } from '#/modules/MIDI/stores';
@@ -366,14 +371,7 @@ const TimelineHScrollbar = ({
     tracks: HScrollbarTrack[];
     viewportWidth: number;
 }): ReactElement => {
-    // Reduce rather than `Math.max(256, ...allEndBeats)`: a project with enough
-    // clips blows the engine's call-argument limit and throws
-    // `RangeError: Maximum call stack size exceeded` instead of computing a width.
-    const maxEndBeat = tracks.reduce(
-        (outerMax, track) => track.clips.reduce((innerMax, clip) => Math.max(innerMax, clip.endBeat), outerMax),
-        256
-    );
-    const totalContentWidth = maxEndBeat * pixelsPerBeat;
+    const totalContentWidth = getTimelineHorizontalContentWidth(tracks, pixelsPerBeat);
 
     // The strip is always reserved, because the track list ends with a spacer of
     // the same height; only the thumb depends on the content overflowing.
