@@ -74,12 +74,12 @@ export const PresetBrowser = ({
             return;
         }
         const currentIndex = filtered.findIndex((preset) => preset.id === currentPresetId);
-        const nextIndex =
-            currentIndex < 0
-                ? direction === 1
-                    ? 0
-                    : filtered.length - 1
-                : (currentIndex + direction + filtered.length) % filtered.length;
+        let nextIndex: number;
+        if (currentIndex < 0) {
+            nextIndex = direction === 1 ? 0 : filtered.length - 1;
+        } else {
+            nextIndex = (currentIndex + direction + filtered.length) % filtered.length;
+        }
         const nextPreset = filtered[nextIndex];
         if (nextPreset) {
             onStepPreset(nextPreset.id);

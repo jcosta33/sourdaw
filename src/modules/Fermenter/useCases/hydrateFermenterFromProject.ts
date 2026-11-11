@@ -45,27 +45,20 @@ export function hydrateFermenterFromProject(deviceId: string): FermenterPatch | 
     const currentPatch = currentInstance?.patch ?? DEFAULT_PATCH;
     const persistedPatch = fromFermenterDeviceState(device.deviceState);
     const isUnseeded = currentInstance === undefined;
-    const patch = persistedPatch
-        ? cloneFermenterPatch(persistedPatch)
-        : {
-              ...currentPatch,
-              // Undo of a first discrete selection removes its leaf, restoring the default.
-              oscEngine: Object.hasOwn(device.parameterValues ?? {}, 'oscEngine')
-                  ? currentPatch.oscEngine
-                  : DEFAULT_PATCH.oscEngine,
-              filterModel: Object.hasOwn(device.parameterValues ?? {}, 'filterModel')
-                  ? currentPatch.filterModel
-                  : DEFAULT_PATCH.filterModel,
-              filterMode: Object.hasOwn(device.parameterValues ?? {}, 'filterMode')
-                  ? currentPatch.filterMode
-                  : DEFAULT_PATCH.filterMode,
-              macros: [...currentPatch.macros],
-              macroMappings: currentPatch.macroMappings
-                  ? currentPatch.macroMappings.map((mapping) => ({
-                        targets: mapping.targets.map((target) => ({ ...target })),
-                    }))
-                  : undefined,
-          };
+    const patch = cloneFermenterPatch(persistedPatch ?? currentPatch);
+    if (!persistedPatch) {
+        const parameterValues = device.parameterValues ?? {};
+        // Undo of a first discrete selection removes its leaf, restoring the default.
+        if (!Object.hasOwn(parameterValues, 'oscEngine')) {
+            patch.oscEngine = DEFAULT_PATCH.oscEngine;
+        }
+        if (!Object.hasOwn(parameterValues, 'filterModel')) {
+            patch.filterModel = DEFAULT_PATCH.filterModel;
+        }
+        if (!Object.hasOwn(parameterValues, 'filterMode')) {
+            patch.filterMode = DEFAULT_PATCH.filterMode;
+        }
+    }
 
     if (device.parameterValues) {
         applyParameterValues(patch, device.parameterValues, persistedPatch !== null || isUnseeded);

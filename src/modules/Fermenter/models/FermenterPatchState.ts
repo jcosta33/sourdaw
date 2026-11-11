@@ -36,7 +36,16 @@ function cloneMacros(macros: FermenterPatch['macros']): FermenterPatch['macros']
 }
 
 function cloneMacroMappings(macroMappings: FermenterMacroMapping[] | undefined): FermenterMacroMapping[] | undefined {
-    return macroMappings?.map((mapping) => ({ targets: mapping.targets.map((target) => ({ ...target })) }));
+    return macroMappings?.map((mapping) => ({
+        targets: mapping.targets.map((target) => ({
+            target: target.target,
+            center: target.center,
+            depth: target.depth,
+            min: target.min,
+            max: target.max,
+            curve: target.curve,
+        })),
+    }));
 }
 
 export function cloneFermenterPatch(patch: FermenterPatch): FermenterPatch {

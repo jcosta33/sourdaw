@@ -599,21 +599,24 @@ export const FermenterPanel = ({ deviceId }: { deviceId: string }): ReactElement
 
         const currentPatch = cloneFermenterPatch(getFermenterState(deviceId).patch);
         const existing = auditionSessionRef.current;
-        const next: AuditionSession = existing
-            ? {
-                  ...(saveActiveSlot() ?? existing),
-                  b: { patch: loadedPatch, referencePatch: cloneFermenterPatch(loadedPatch), presetId },
-                  active: 'b',
-              }
-            : {
-                  a: {
-                      patch: currentPatch,
-                      referencePatch: cloneFermenterPatch(currentPatch),
-                      presetId: currentPresetId,
-                  },
-                  b: { patch: loadedPatch, referencePatch: cloneFermenterPatch(loadedPatch), presetId },
-                  active: 'b',
-              };
+        let next: AuditionSession;
+        if (existing) {
+            next = {
+                ...(saveActiveSlot() ?? existing),
+                b: { patch: loadedPatch, referencePatch: cloneFermenterPatch(loadedPatch), presetId },
+                active: 'b',
+            };
+        } else {
+            next = {
+                a: {
+                    patch: currentPatch,
+                    referencePatch: cloneFermenterPatch(currentPatch),
+                    presetId: currentPresetId,
+                },
+                b: { patch: loadedPatch, referencePatch: cloneFermenterPatch(loadedPatch), presetId },
+                active: 'b',
+            };
+        }
         updateSession(next);
         setCurrentPresetId(presetId);
         void applyCommittedPatch(loadedPatch, 'Audition Fermenter preset');

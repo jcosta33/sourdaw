@@ -8,7 +8,6 @@ import {
     flushAutomergeStorageWrites,
     runWithAutomergeStorageTransaction,
 } from '#/infra/store/storage/createAutomergeStorage';
-import { transactSnapshot } from '#/modules/CrdtDocument/useCases';
 import {
     persistDeviceParam,
     resolveEligibleDeviceWriteTarget,
@@ -40,6 +39,7 @@ import {
     registerCrdtStorageRuntime,
     removeCrdtDoc,
     resetCrdtProjectAuthority,
+    transactSnapshot,
 } from '#/modules/CrdtDocument/useCases';
 import { defaultProjectStoreState, projectStore } from '#/modules/Project/stores';
 import { runProjectLoadTransaction, setProjectIdentityTransitionDependencies } from '#/modules/Project/useCases';
@@ -81,14 +81,6 @@ function projectedTrack(): Track {
         throw new Error('Expected the Fermenter track projection');
     }
     return track;
-}
-
-function projectedDevice(deviceId = DEVICE_ID) {
-    const device = projectedTrack().devices.find((candidate) => candidate.id === deviceId);
-    if (!device) {
-        throw new Error('Expected the Fermenter device projection');
-    }
-    return device;
 }
 
 function rawDevice(deviceId = DEVICE_ID) {
