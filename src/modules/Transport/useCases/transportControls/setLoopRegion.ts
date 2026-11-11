@@ -16,7 +16,7 @@ export function setLoopRegion(startBeat: number, endBeat: number, enableLooping 
     const loopEnd = Math.max(startBeat, endBeat);
 
     if (!enableLooping) {
-        updateTransportState({ loopStart, loopEnd });
+        updateTransportState({ loopStart, loopEnd, isLooping: false });
         return true;
     }
 

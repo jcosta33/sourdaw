@@ -1,4 +1,5 @@
-import { getTransportState, seekPlayhead } from '#/modules/Transport/useCases';
+import { playheadPositionRef } from '#/modules/Transport/stores';
+import { seekPlayhead } from '#/modules/Transport/useCases';
 import { createHandler } from '#/utils/createHandler';
 
 import { type ArrangementSection } from '../../models/Marker';
@@ -11,7 +12,7 @@ function compareSections(first: ArrangementSection, second: ArrangementSection):
 
 export const handleNavigateSection = createHandler<'navigateSection'>({
     execute: (action) => {
-        const playhead = getTransportState()?.playheadPosition ?? 0;
+        const playhead = playheadPositionRef.current;
         const sections = (getMarkerState()?.sections ?? [])
             .filter((section) => section.endBeat > section.startBeat)
             .sort(compareSections);

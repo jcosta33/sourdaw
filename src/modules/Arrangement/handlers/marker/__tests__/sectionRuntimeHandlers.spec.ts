@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { defaultTransportState } from '#/modules/Transport/models/TransportState';
-import { getTransportState, seekPlayhead, setLoopRegion, setPlayback } from '#/modules/Transport/useCases';
+import { playheadPositionRef, transportStore } from '#/modules/Transport/stores';
+import { seekPlayhead, setLoopRegion, setPlayback } from '#/modules/Transport/useCases';
 
 import { type MusicalRangeReference } from '../../../models/MusicalRange';
 import { type ArrangementSection } from '../../../models/Marker';
@@ -10,8 +10,12 @@ import { getMarkerState } from '../../../useCases/timelineQueries';
 import { handleNavigateSection } from '../handleNavigateSection';
 import { handleRehearseSection } from '../handleRehearseSection';
 
+vi.mock('#/modules/Transport/stores', () => ({
+    playheadPositionRef: { current: 0 },
+    transportStore: { value: { isPlaying: true, playheadPosition: 0 } },
+}));
 vi.mock('#/modules/Transport/useCases', () => ({
-    getTransportState: vi.fn(),
+    getTransportState: vi.fn(() => ({ playheadPosition: 0 })),
     seekPlayhead: vi.fn(),
     setLoopRegion: vi.fn(() => true),
     setPlayback: vi.fn(),
@@ -34,7 +38,7 @@ const unsortedSections = [
 ];
 
 function atPlayhead(playheadPosition: number): void {
-    vi.mocked(getTransportState).mockReturnValue({ ...defaultTransportState, playheadPosition });
+    playheadPositionRef.current = playheadPosition;
 }
 
 function withSections(sections: ArrangementSection[]): void {
@@ -55,6 +59,15 @@ beforeEach(() => {
 });
 
 describe('handleNavigateSection', () => {
+    it('uses the live playhead when the playing transport store snapshot is stale', () => {
+        expect(transportStore.value).toMatchObject({ isPlaying: true, playheadPosition: 0 });
+        atPlayhead(20);
+
+        handleNavigateSection.execute({ type: 'navigateSection', payload: { direction: 'next' } });
+
+        expect(seekPlayhead).toHaveBeenCalledExactlyOnceWith(32);
+    });
+
     it.each([
         { playhead: 0, direction: 'next' as const, target: 4 },
         { playhead: 5, direction: 'next' as const, target: 16 },

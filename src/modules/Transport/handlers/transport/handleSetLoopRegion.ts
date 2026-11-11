@@ -28,7 +28,7 @@ export const handleSetLoopRegion = createHandler<'setLoopRegion'>({
     isNoop: (action) => {
         const state = getTransportState();
         const { loopStart, loopEnd } = normalizeLoopRegion(action.payload.startBeat, action.payload.endBeat);
-        return state?.loopStart === loopStart && state.loopEnd === loopEnd;
+        return state?.loopStart === loopStart && state.loopEnd === loopEnd && !state.isLooping;
     },
     describe: (action) => {
         const previous = getTransportState();
@@ -44,7 +44,7 @@ export const handleSetLoopRegion = createHandler<'setLoopRegion'>({
             loopEnd: previous.loopEnd,
             isLooping: previous.isLooping,
         };
-        const after = { loopStart, loopEnd, isLooping: previous.isLooping };
+        const after = { loopStart, loopEnd, isLooping: false };
 
         return {
             label,

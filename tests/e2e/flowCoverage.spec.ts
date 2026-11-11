@@ -152,14 +152,18 @@ test.describe('Arrangement sections', () => {
         await page.getByTestId('transport-stop').click();
     });
 
-    test('Play Section starts at the section without enabling looping', async ({ page }) => {
+    test('Play Section starts at the section and disables an active loop', async ({ page }) => {
         await createSection(page);
+        const loopButton = page.getByRole('button', { name: 'Loop', exact: true });
+        await loopButton.click();
+        await expect(loopButton).toHaveAttribute('aria-pressed', 'true');
         await openSectionMenu(page);
         await page.getByRole('menu').getByRole('button', { name: 'Play Section', exact: true }).click();
 
         await expect
             .poll(() => readSectionTransport(page))
             .toMatchObject({
+                playheadPosition: 4,
                 loopStart: 4,
                 loopEnd: 20,
                 isLooping: false,
