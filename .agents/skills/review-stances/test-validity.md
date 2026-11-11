@@ -20,6 +20,9 @@ release and provenance drift in `release-provenance-drift.md`.
 ## Standing probes
 
 1. **Conditional admission: the case can finish without reaching its subject.**
+   Runs: CI; the reviewer reads the "Affected end-to-end" jobs on the head for a Playwright case. From the fixed
+   commit the reviewer reads whether any assertion is reachable only through the conditional; a Vitest case takes
+   the mutation under the focused guard directly.
    A body inside `if (await locator.isVisible().catch(() => false))`, an optional locator, an early
    successful return, input sent to an element the consumer does not listen on, a parameter name the
    engine ignores, or a fixture on another branch can end green with no assertion. Probe: make the
@@ -46,8 +49,9 @@ release and provenance drift in `release-provenance-drift.md`.
    validation before the intended live identity matcher decides (#5387/#5805): build output fixtures
    through the production `createWebAudioNode` compiler, require a positive control, and prove the
    injected mismatch is deciding by disabling only that matcher. When a repair adds a `compile`-named
-   production route, run the device-write
-   boundary closure census and account for each new match by its actual runtime or document effect.
+   production route, run `pnpm guard --profile focused -- pnpm test:run
+src/modules/Arrangement/stores/__tests__/deviceWriteBoundaryClosure.spec.ts` and account for each new match by its
+   actual runtime or document effect.
    (#2927, #5852, #5829, #1650, #2712, #3328, #4108, #5646, #4128, #5291, #4486, #4904, #5387, #5805)
 
 3. **The test drives a helper while the production caller takes another route.**
@@ -78,17 +82,14 @@ release and provenance drift in `release-provenance-drift.md`.
    send output larger than pipe capacity through the real CLI and require the complete byte-exact
    body and markers for success and failure, correct channels and exit codes, and prompt exit.
    Check the bounded default failure tail and signal cleanup; restoring forced exit must lose output.
-   Public Enable Audio Warping wrote only a preview Map and declared undo without an inverse:
-   handler commit `7de8489e3a3e857969cc288492bf664063358927` introduced the route, while
-   `f8348057fba44a1a5d91d7b734557e4bbd7baaef` added only mocked delegation assertions. GitHub
-   reports no associated PR for either commit; PR #415 relocated and retained them. Historical
-   private review stances are unestablished. Drive the registered public action with an off-mode
-   audio clip carrying a non-unit ratio, a keeper clip and a prior independent edit. Require raw
-   CRDT and projected clip mode, the real history metadata and inverse, repeated-enable no-op,
-   exact Undo/Redo, and missing/MIDI target non-effects. The resulting real offline playback
-   projection must change rate with enable and Undo. Restoring the preview-only route or dropping
-   the inverse must fail `publicWarpActionsAuthority.integration.spec.ts`; a mock call cannot prove
-   clip enablement, output or reversible project history.
+   Public Enable Audio Warping wrote only a preview Map and declared undo without an inverse while its specs
+   asserted mocked delegation (#415). Drive the registered public action with an off-mode audio clip carrying a
+   non-unit ratio, a keeper clip and a prior independent edit. Require raw CRDT and projected clip mode, the real
+   history metadata and inverse, repeated-enable no-op, exact Undo/Redo, and missing/MIDI target non-effects. The
+   real offline playback projection must change rate with enable and Undo. Restoring the preview-only route or
+   dropping the inverse must fail
+   `src/modules/AudioEngine/handlers/finalFeature/__tests__/publicWarpActionsAuthority.integration.spec.ts`; a mock
+   call cannot prove clip enablement, output or reversible project history.
    (#3905, #2648, #1049, #5277, #5339, #4128, #2811, #2083, #5643, #5254, #5247, #5215, #474, #5798, #5565, #5387, #5805)
 
 4. **The oracle is computed by the code under test.**
@@ -139,9 +140,10 @@ release and provenance drift in `release-provenance-drift.md`.
    registered member (each handler of a shared transform map) crossed with missing, wrong-kind, frozen,
    locked and duplicate-ID targets, plus an ID duplicated after commit for replay; one representative
    cannot carry it. Worker detection must distinguish pending from committed with a held Worker and exercise real
-   Undo/Redo plus divergent refusal. Its performance evidence times a real 120-second source from click through PCM
-   copy, cold Worker, atomic commit and UI completion while recording frames and main-thread tasks over that same
-   interval; a mock that always returns empty hits proves neither suppression nor completion.
+   Undo/Redo plus divergent refusal. Its author-recorded performance evidence must time a real 120-second source from
+   click through PCM copy, cold Worker, atomic commit and UI completion, with frames and main-thread tasks recorded
+   over that same interval; the reviewer checks the recorded interval covers all of it. A mock that always returns
+   empty hits proves neither suppression nor completion.
    (#4068, #805, #5199, #4987, #2078, #4897, #5209, #4986, #2055, #5858, #2079, #4128, #5274, #4630, #939)
 
 8. **A spec or report diff launders behavior or strands its sites.**
@@ -156,50 +158,6 @@ release and provenance drift in `release-provenance-drift.md`.
    mutating that value (a depth-two checkout for a full-history edit) must fail the assertion.
    (#2988, #3060, #1084, #974, #5199)
 
-## Automation tests must reach the real runtime consumer
-
-PR #1648's snapshot reset lost a driving receipt before Off could restore its saved base. The unit
-fixture changed a nested `automationMode` in place, whereas the real public setter publishes an
-immutable track-store object. PR #3847 later retained the same reset. Historical private reviewer
-prompts, stances and tiers are unestablished. Exercise the actual setter and observe the required
-runtime restore before accepting a negative history claim.
-
-First prove live Command, raw/semantic/session history, active macro recording and Undo/Redo through
-a real manual edit. Capture the actual post-Redo baseline: manual Redo deliberately records the
-forward macro action again. Then require exact playback/restore preservation after the required
-runtime event. Pair ordinary immutable updates with real root and scheduler replacements, including
-null/empty intermediate observations. A one-device fixture or disabled history port cannot prove
-the route matrix or the negative claim.
-
-Carrier positives must also use admitted parameters. The prior Knead/`shift_semitones` fixture
-passed because stored undeclared keys were accepted, although Knead declares no device parameters.
-Retain its routing call counts, slew values and full-versus-fallback assertions with Bacteria/`mix`,
-plus an independent real Knead refusal. Crumbs has an ordinary Web route and its actual native
-fallback door refuses; forcing a carried predicate cannot prove a native body exists.
-
-The target omission traces to playback in `4f410257b212bbbd2210fa6553f7aaa3394f69bc` (no associated
-PR) and restoration in PR #807. PR #831 deliberately retained the global missing-descriptor
-fallback; it did not originate that omission. Historical private reviewer prompts, stances and tiers
-are unestablished. Pair declared delivery with unknown stored Bacteria and bogus Yeast/Knead
-refusals, current-owner admission loss before restore, unknown-family compatibility and hosted
-parameter/no-base-restore asymmetry. Preserve the existing internal-key denial when adding declared
-membership. A declared-values-only fixture cannot expose the permissive fallback.
-
-A getter test does not prove its runtime caller admits the input. Linked-lane commit
-`2a0e594f94d36a6e1898a8a567b6b9c5de2ca0d9` let the getter resolve an empty follower before inspecting
-local points, while Transport still returned early. GitHub reports no associated PR; historical
-private reviewer prompts, stances and tiers are unestablished. Later cycle hardening and PR #765's
-offline parity did not introduce this mismatch. The connected witness observed a valid source
-runtime event but no scaled follower event. An earlier clip assertion had masked this case until
-the legitimate removed-lane restore was separated from the next ownership baseline.
-
-Use empty followers without dummy points and require real scaled events on both track and clip
-routes, with raw truth, bases, history and macro state unchanged. Retain dangling/cyclic links,
-nonlinked empty lanes, Off/disabled/recording and duplicate-material controls. A source/helper value
-alone is not follower playback evidence. Future targeted gate/fence mutations must fail those
-oracles; they were not executed in this change. Controlled engine-boundary events establish no
-actual sound, native IPC landing or save/reopen acceptance.
-
 ## Retired lessons
 
 - Listing `vi.mock` barrel factories break when a diff adds a barrel export or import → enforced by `pnpm test:barrel-mocks` (`scripts/checkBarrelMockCoverage.ts`), Validation › Types and contracts › Barrel mock coverage
@@ -208,10 +166,6 @@ actual sound, native IPC landing or save/reopen acceptance.
 - The required Rust job fetched its compiler before restoring caches → enforced by `scripts/__tests__/healthGatesWorkflow.spec.ts` "restores only an exact installed Linux compiler before setup and health gates"
 - An exact Rust toolchain cache hit missing the host `rust-std` → enforced by `scripts/__tests__/ensurePinnedRustToolchain.spec.ts` "rejects an exact hit missing only the host standard library without installing", "rejects metadata-present host standard libraries that rustc cannot use" and "rejects an expected-name restore whose channel manifest declares another nightly"
 - Literal launch-overlay waits below the shared first-paint bound → enforced by `scripts/__tests__/e2eLaunchOverlayBound.spec.ts` "gives every explicit overlay wait the shared first-paint bound"
-- Don't Save guard reading its own load transaction as a newer transition, hidden by mocked authority at epoch 0 → enforced by `src/modules/Project/useCases/projectPersistence/__tests__/discardProjectChanges.realPath.spec.ts` "with a project-load epoch already activated" cases (lesson owned by `project-integrity.md`)
-- A single-head view hid concurrent checkpoint-only descendants (#5681) → enforced by `src/modules/CrdtDocument/useCases/__tests__/projectRevisionMatchesLiveIgnoringCommandCheckpoint.spec.ts` "accepts checkpoint-only descendants of both captured root heads" and "rejects a branch project edit hidden by a captured sibling conflict winner", plus `src/modules/AiRuntime/useCases/__tests__/concurrentCheckpointApproval.spec.ts` "executes the original approval exactly once and retains its receipt and undo after checkpoint-only sync" and "refuses conflicting whole-map checkpoints without applying or rebinding the original approval"
-- A projected Off erased committed On intent across an aborted repair (#5286) → enforced by `src/modules/Transport/useCases/__tests__/repairRuntimeGraphFromProject.optimisticRestore.integration.spec.ts` "rearms committed On when Off is projected %s and then aborted" (lesson owned by `project-integrity.md`)
-- A held removal hid a committed retarget from runtime owners (#5283) → enforced by `src/modules/AudioEngine/repositories/audioRecorder/__tests__/removeTrackInputMonitoring.integration.spec.ts` "retires a hidden On owner after a committed selector change before its shared-input removal commits" (lesson owned by `project-integrity.md`)
 
 ## Relocated
 
@@ -224,3 +178,15 @@ actual sound, native IPC landing or save/reopen acceptance.
 - The optimizer-reload HMR fence (#5874) → `maintained-e2e-specs.md` probe 8.
 - App import reattempt (#3356) → `startup-entry-availability.md` probe 4.
 - Rewrite destination ancestry (#4271) → `trusted-script-delivery.md` probe 6.
+- Device automation receipts reset by ordinary immutable edits, and the post-Redo manual baseline (#1648, #3847) →
+  `session-lifecycle.md` probe 9.
+- Stored undeclared automation keys accepted by carrier fixtures (Knead `shift_semitones`, #807, #831) →
+  `project-integrity.md` probe 13.
+- Empty linked followers proved by a getter instead of the runtime caller → `project-integrity.md` probe 14.
+- Don't Save guard reading its own load transaction, hidden by mocked authority at epoch 0 (#5573) →
+  `replay-authority.md` probe 5 and its Retired lessons.
+- A single-head view hiding concurrent checkpoint-only descendants (#5681) → `replay-authority.md` probe 5 and its
+  Retired lessons.
+- A projected Off erasing committed On intent across an aborted repair (#5286) → `input-monitoring-ownership.md`
+  Retired lessons.
+- A held removal hiding a committed retarget from runtime owners (#5283) → `input-monitoring-ownership.md` probe 6.

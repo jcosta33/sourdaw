@@ -57,26 +57,37 @@ Report the concrete break or none.
    content comparison with raw heads must fail the save case; accepting only the final snapshot must fail
    the reverted edit. A storage-owner write authorization is not read-only content admission; execution
    still requires its own write authority.
-
 8. **Whole-owner protections apply before measured-run inventory (#6311).** Feed the original
    request a whole-track preservation clause and require that owner to be absent from both the recipe
    inventory and every initial measurement. Keep a compatible fader-only or pan-only protection
    eligible for processing, keep clip ownership separate, and refuse an unresolved explicit owner.
-   Retain the later grounding guards: a candidate-stage exclusion never replaces them. Mutating the
-   planner to consult only brief locks while ignoring the original request must fail the production
-   brief-to-measured-run case. The omission reached main in [#6311](https://github.com/jcosta33/sourdaw/pull/6311);
-   its public later-approval target-effects review probed continuation, which did not establish
-   exclusion before initial collection.
-
-9. **Project content effects reach protected clips without target arguments (#5971).** Drive plain
-   and real compiler-backed tempo proposals beside a named clip protection, with an admitted
+   Retain the later grounding guards: a candidate-stage exclusion never replaces them. Probing only
+   continuation does not establish exclusion before initial collection. Mutating the planner to consult
+   only brief locks while ignoring the original request must fail the production brief-to-measured-run
+   case.
+9. **Project content effects reach protected clips without target arguments (#5888, #5971).** Drive
+   plain and real compiler-backed tempo proposals beside a named clip protection, with an admitted
    unprotected control. Require a whole-batch protection refusal, including a mixed tempo-and-gain
    request, a tempo-only whole-track protection, retained refinement facts, inactive alternative
    identities and approval-time checks. Read unconditional scope and dimensions from Command; target
    arguments alone cannot describe the reach. Keep clip protection separate from its track's fader,
    preserve facet-only restrictions, and admit unrelated project-timing effects. Conditional metadata
    does not establish unconditional content reach; its execution-time policy still applies.
-   Removing project-effect expansion must fail `plainTempoClipProtection.spec.ts`. Source promotion
-   and tempo's arrangement/audio declaration landed in [#5888](https://github.com/jcosta33/sourdaw/pull/5888);
-   its public approvals attacked source/history and seam behavior, which did not establish the
-   original-request protection boundary for targetless writes.
+   Attacking source/history and seam behavior does not establish the original-request protection
+   boundary for targetless writes. Removing project-effect expansion must fail
+   `src/modules/AiRuntime/useCases/agentReference/__tests__/plainTempoClipProtection.spec.ts`.
+10. **Control receipt admission precedes semantic authority (#4128).** A parser that advances
+    interpretation after bounding its receipt, without checking whether bounding replaced success with
+    failure, lets staged authority survive an unadmitted control; schema-valid selector arguments hide it.
+    Promote authority only after the actual bounded success receipt passes every carrier and byte
+    admission. A compacted carrier, a failed receipt, or an oversized raw control cannot substitute for
+    that witness: discard unadmitted staged intent and keep effectful schemas and calls closed. Select an
+    otherwise-valid control from the actual published catalog, then drive effectful use through the real
+    parser and the correction route; require no continuation, escaped authority or proposal, and the
+    correlated failure preserved. Keep genuine in-budget local and hosted controls that restore the full
+    effectful contracts. Remove only the responsible discard or admission edge and require the
+    `src/modules/AiRuntime/useCases/__tests__/metricIntent.spec.ts` case "does not let the actual %s carry
+    failed control authority into a following proposal" to fail independently of manifest pins. That case,
+    "retains a genuine in-budget control and projects only the %s receipt copy" and "publishes complete
+    semantic intake and safe reads before restoring exact effectful contracts after success" are partial
+    coverage: none asserts the compacted-carrier input, so add one.

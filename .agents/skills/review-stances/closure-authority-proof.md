@@ -11,8 +11,7 @@ unestablished unless a probe says otherwise.
 
 ## Standing probes
 
-1. **Cleanup must prove release and survive removal refusal (lane removal #1802 `4404e50fdc`, cwd-only activity
-   inspection `2a13a418e1`).** A process outside the lane could hold a lane file open without blocking
+1. **Cleanup must prove release and survive removal refusal (#1802, #5869).** A process outside the lane could hold a lane file open without blocking
    deletion; a refused native removal after unlock lost the original author lock; a manual-only exit left merged
    worktrees behind when delivery or its caller stopped before removal. Probe native removal with a spawned
    process whose cwd is elsewhere but whose descriptor holds a lane file; incomplete or denied lsof catalogs and
@@ -20,57 +19,55 @@ unestablished unless a probe says otherwise.
    original author lock restored. Kill the worker after durable queue publication and require a later process to
    reclaim only after fresh merged-head proof. Race a second worker, move HEAD, reuse the same directory path,
    and tamper with the installed runtime and manifest; stale authority or unverifiable bytes must never delete
-   work.
+   work. The owning specs are `scripts/__tests__/removeLane.spec.ts` and `scripts/__tests__/cleanupLanes.spec.ts`.
 2. **Merge state alone does not prove the work reached `main`.** An exact PR head merged into an open stack
    parent is still unlanded. Require a live `main` base and valid merge timestamp for author and review heads,
    and for the merged replacement of a closed superseded lane; missing metadata stays unproven and a missing
    `merged_at` never maps to merged. Probe non-main and unknown bases, missing or malformed timestamps,
    open-state/timestamp contradictions, and a base transition between the two ownership reads. Preserve valid
-   `main` merges and closed stack lanes whose truthful replacement landed on `main`. The pre-publication
-   integration probe exposed this gap before automatic cleanup shipped.
-3. **A current branch ref substituted an unrelated historical parent (#5615 `8d1d45758b`; reproduced on #5627's
-   distinct-replacement path).** #5615 bound the child's current base ref to the named parent's final head but
-   never established the parent belonged to the old child's history; the older same-replacement gap is
-   source-established, base-head execution was not performed. The old child's original parent work was absent
-   from the merged replacement, yet a reused parent ref plus genuine replacement ancestry still permitted
-   closure, and two unbound child markers permitted deleted-ref replay through the wrong parent. Use a real
+   `main` merges and closed stack lanes whose truthful replacement landed on `main`.
+3. **A current branch ref must not substitute an unrelated historical parent (#5615, #5627).** Binding the child's
+   current base ref to the named parent's final head never establishes that the parent belonged to the old
+   child's history: with the old child's original parent work absent from the merged replacement, a reused parent
+   ref plus genuine replacement ancestry permitted closure, and two unbound child markers permitted deleted-ref
+   replay through the wrong parent. Use a real
    content-bearing Git DAG with unrelated parents sharing a base. Require final-parent containment or previously
    registered native fork provenance, and reject cached or common ancestry alone. Keep a genuine late-parent
    control whose final head is absent from the old child. Preserve the exact admitted binding in an authorized
    canonical marker; delete local metadata and the ref before replay, then substitute another parent or a
    malformed or missing binding and require zero writes. Never reconstruct missing provenance from reviews,
    workflow associations or prose.
-4. **Dependency authority changed during its final thread response (#5615, carried into #5627).** The parent core
-   was read before separate marker and thread requests. Controlled native-adapter cases at the reviewed head
-   reopened the parent during its last thread response while head, branch and child ref stayed unchanged;
-   post-close verification and CLOSED replay still reported success. The missed risk was movement inside each
-   dependency authority's composed proof, beyond the child-only final witness. For every proof subject, mutate
+4. **Dependency authority must not change during its final thread response (#5615, #5627).** A parent core read
+   before separate marker and thread requests let controlled native-adapter cases reopen the parent during its
+   last thread response while head, branch and child ref stayed unchanged, and post-close verification and CLOSED
+   replay still reported success. The risk is movement inside each dependency authority's composed proof, beyond
+   the child-only final witness. For every proof subject, mutate
    its core during its last dependent response; drive the actual shell adapters and the serialized transaction at
    pre-write, mid-proof, post-close and replay boundaries. Require an independent current core for the parent
    and both replacements after all dependent reads, then the existing final child witness. Preserve compensation
    before close and retained owner and markers after uncertain closure.
-5. **Split PR metadata could close a head that arrived during comment reads (#2357 `1f249ee008`, extracted by
-   #4420 `789351350a` into `supersedePullRequestGh.ts`; #5413 is not the introduction).** Core metadata was read
-   before a separate comment request, then closed by node ID alone. A production-adapter probe moved the head
-   during the final comment response and observed CLOSE before the command refused. Drive the real inspection
+5. **Split PR metadata must not close a head that arrived during comment reads (#2357, #4420).** In
+   `scripts/supersedePullRequestGh.ts`, core metadata read before a separate comment request and a close by node ID
+   alone let a production-adapter probe move the head during the final comment response and observe CLOSE before
+   the command refused. Drive the real inspection
    and close adapters together, move the head between core and comment responses, and require refusal before
    CLOSE. Observe an independent, bound core response after all composite marker and review reads, directly
    before mutation; malformed or wrongly bound witnesses must refuse too. Finish post-close and CLOSED replay
    proof with the same witness. Preserve a stable control and ambiguous-close evidence.
    `ClosePullRequestInput` carries no expected-head CAS.
-6. **An acknowledged marker vanished from reads and released its owner (#5639 `256933a3bf`).** An acknowledged
+6. **An acknowledged marker that vanishes from reads must not release its owner (#5639).** An acknowledged
    comment ID omitted from later inspections received no delete, yet an apparently original OPEN comment set
-   certified rollback and released ownership. The final review included a strongest-tier
-   ambiguous-write/altered-rollback stance; the acknowledged-write, omitted-read input was missed. Keep a real
+   certified rollback and released ownership; an ambiguous-write/altered-rollback stance does not reach the
+   acknowledged-write, omitted-read input. Keep a real
    marker after a valid creation receipt while every later inspection omits its ID; drive both serialized
    retirement and supersession and require zero unverified deletes, the real journaled owner retained, and its
    exact native recovery command. Pair with observed exact deletion and verified OPEN rollback release. A
    missing read cannot discharge a known remote write. After shared-owner recovery on stable OPEN or CLOSED
    state, require guidance to rerun the original operation with its original bound inputs; clearing a shared
    owner does not select delivery or authorize a merge.
-7. **Authoritative fields must survive from the native parser to the final equality witness (#5627).** The new
-   historical-parent observation cut exposed an inherited omission of the child's live `baseRef`; cached
-   `baseRefOid` did not bind its name, repository, target or presence. Change each ref field, remove it, or
+7. **Authoritative fields must survive from the native parser to the final equality witness (#5627).** A child's
+   live `baseRef` can be omitted from the final witness while cached `baseRefOid` binds none of its name,
+   repository, target or presence. Change each ref field, remove it, or
    recreate it after an admitted cleanup while returning the final parent marker response. Require the actual
    final child core to observe and refuse the change before closure or replay success, retaining owner and
    markers after an attempted close. An inspected null ref is bound absence; an internal core-only projection
@@ -94,20 +91,21 @@ unestablished unless a probe says otherwise.
    registration and for fork children with actual final-parent containment; the latter must ignore an
    unrelated same-named local ledger, and a recorded null source is eligible only through that independent
    containment route and only while its observed identity still matches.
-10. **Immutable identity must be selectable on the remote schema (#5705 `7f4299b2f4`).** The query selected
-    `author { id }` from GitHub's Actor interface, which exposes no `id`; live GitHub rejected it before
-    historical admission observed either author, while parser fixtures supplied IDs directly. The missed stance
-    was remote identity availability across the actual query/parser boundary. Validate the native query against
+10. **Immutable identity must be selectable on the remote schema (#5705).** A query selecting `author { id }`
+    from GitHub's Actor interface, which exposes no `id`, is rejected by live GitHub before historical admission
+    observes either author, while parser fixtures that supply IDs directly stay green. Attack remote identity
+    availability across the actual query/parser boundary. Validate the native query against
     the remote schema, selecting immutable IDs only on supported concrete Node types. Pair real Bot and User
     responses with missing and unsupported author refusals; never substitute a mutable login or silently admit
-    absent identity. Restoring direct `Actor.id` must fail the emitted-query regression and the read-only live
-    query.
-11. **Git pathnames that authorize deletion are NUL-framed and captured raw (#1802 `d3cfd6f01d`, #5655, #2954).**
-    `lane:remove` split `git ls-files --ignored --directory` on lines; Git C-quotes a pathname containing a line
-    feed, so the `.agents/` protection missed the quoted record while its `/dist/` component matched the generic
-    disposable rule, and `lane:remove` and `lane:strand` admitted deletion (#2954 NUL-framed `lane:prune` but left
-    the removal reader). The first #5655 repair added `-z` but both shell captures still called `stdout.trim()`,
-    turning a first record `<line feed>dist/receipt.json` into the different, disposable `dist/receipt.json`.
+    absent identity. Restoring direct `Actor.id` must fail the emitted-query regression in
+    `scripts/__tests__/historicalStackAdmission.spec.ts`, and the emitted query run through read-only
+    `gh api graphql` must be rejected.
+11. **Git pathnames that authorize deletion are NUL-framed and captured raw (#1802, #2954, #5655).** Splitting
+    `git ls-files --ignored --directory` on lines fails because Git C-quotes a pathname containing a line feed: the
+    `.agents/` protection misses the quoted record while its `/dist/` component matches the generic disposable
+    rule, and removal and stranding admit deletion. Adding `-z` is not enough while a shell capture calls
+    `stdout.trim()`, which turns a first record `<line feed>dist/receipt.json` into the different, disposable
+    `dist/receipt.json`.
     Read every deletion-authorizing Git pathname stream with `-z` through an explicit raw-stdout capture (non-path
     output keeps its trimming and error handling) and split on NUL before classification. In a real disposable
     Git fixture ignore `.agents/records<line feed>/dist/receipt.json` and a leading-line-feed ignored file (each
@@ -116,7 +114,8 @@ unestablished unless a probe says otherwise.
     `strandLane` with fake mutation ports: both refuse before unlock, worktree removal, receipt write or branch
     deletion, while `node_modules/` stays admitted; `lane:prune` selects only `node_modules/` and preserves the
     protected data and the sentinel. Replacing NUL framing with line splitting, or either reader with trimmed
-    stdout, must fail the corresponding real-Git test.
+    stdout, must fail the corresponding real-Git test in `scripts/__tests__/removeLane.spec.ts` or
+    `scripts/__tests__/pruneLane.spec.ts`.
 12. **Git pathname components stay opaque (#5655).** The shared `disposableIgnored` classifier replaced each
     backslash with `/`, but Git's `-z` contract emits the pathname verbatim and a POSIX backslash is a filename
     character, so an ignored regular file literally named `node_modules\\receipt.json` passed the
@@ -124,13 +123,13 @@ unestablished unless a probe says otherwise.
     only on the slash Git emits and never convert backslashes before applying disposable rules. Keep direct
     cases for backslash-only lookalikes and slash-delimited controls, plus a real Git fixture with the literal
     backslash leaf: removal and stranding refuse before mutation, and pruning preserves the file.
-
-13. **A surviving fork marker blocked proof from the actual final parent (#5682 `e86b83e3c6`, #6143).**
-    Supersession read the strict publication ledger before testing final-parent ancestry. The public #5682 review
-    covered malformed evidence and changed authority but missed a single valid fork with its descriptor absent.
+13. **A surviving fork marker must not block proof from the actual final parent (#5682, #6143).** Reading the
+    strict publication ledger before testing final-parent ancestry refuses a single valid fork with its descriptor
+    absent; malformed-evidence and changed-authority attacks do not reach that input.
     Drive the native reader over real Git config and history. A contained final parent can close while the fork
     survives unchanged; a shared fork without final-parent containment must refuse. Change a valid fork during
     the last core read or after a marker write. Also install a descriptor naming a different parent while the final
     OPEN witness returns; checking only the orphan collapses registered evidence into absence and permits a close.
     Require no close on OPEN, verified compensation, and retained evidence after an ambiguous close. Exercise
-    changes to registered fields, disappearance, a completed nested parent and CLOSED replay as well.
+    changes to registered fields, disappearance, a completed nested parent and CLOSED replay as well; the owning
+    spec is `scripts/__tests__/supersedePullRequest.spec.ts`.
