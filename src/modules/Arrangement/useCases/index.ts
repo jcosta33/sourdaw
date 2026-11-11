@@ -135,6 +135,7 @@ export { toggleClipInSelection } from './clipSelection/toggleClipInSelection';
 export { selectAllClips } from './clipSelection/selectAllClips';
 export { clearClipSelection } from './clipSelection/clearClipSelection';
 export { setMarqueeSelection } from './clipSelection/setMarqueeSelection';
+export { revealClip } from './revealClip';
 
 // ── Device Selection ──────────────────────────────────────────────────────────
 

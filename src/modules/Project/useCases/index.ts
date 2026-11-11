@@ -25,6 +25,7 @@ export { reportProjectLoadFailure } from './reportProjectLoadFailure';
 export { setProjectKeyRoot } from './setProjectKeyRoot';
 export { setProjectScaleName } from './setProjectScaleName';
 export { pickFiles } from './fileDialog';
+export { locateMissingMedia } from './locateMissingMedia';
 export { createFromTemplate } from './projectTemplates/templateDefinitions/createFromTemplate';
 export { getTemplates } from './projectTemplates/templateDefinitions/getTemplates';
 export { getPreviewLoop } from './projectTemplates/templatePreviews/previewLoops';

@@ -5,12 +5,14 @@ import { AlertTriangle } from 'lucide-react';
 import { Button } from '#/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '#/components/ui/popover';
 import { useStore } from '#/infra/store/useStore';
+import { revealClip } from '#/modules/Arrangement/useCases';
 
 import {
     defaultMissingMediaStoreState,
     type MissingMediaItem,
     missingMediaStore,
 } from '../../stores/missingMediaStore';
+import { locateMissingMedia } from '../../useCases/locateMissingMedia';
 
 /** Frozen tracks have no relink affordance — the repair is to unfreeze and
  * re-render — so the two kinds get different guidance. */
@@ -35,8 +37,25 @@ function rowKey(item: MissingMediaItem): string {
 export const MissingMediaPanel = (): ReactElement | null => {
     const missingMedia = useStore(missingMediaStore, defaultMissingMediaStoreState);
     const [open, setOpen] = useState(false);
+    const [locatingBufferId, setLocatingBufferId] = useState<string | null>(null);
 
     const items = missingMedia.items;
+    const primaryRowByBuffer = new Map<string, string>();
+    for (const item of items) {
+        if (item.kind === 'clip' && !primaryRowByBuffer.has(item.bufferId)) {
+            primaryRowByBuffer.set(item.bufferId, rowKey(item));
+        }
+    }
+
+    const handleLocate = async (item: MissingMediaItem): Promise<void> => {
+        setLocatingBufferId(item.bufferId);
+        try {
+            await locateMissingMedia({ sourceBufferId: item.bufferId, label: item.label });
+        } finally {
+            setLocatingBufferId(null);
+        }
+    };
+
     if (items.length === 0) {
         return null;
     }
@@ -75,6 +94,25 @@ export const MissingMediaPanel = (): ReactElement | null => {
                                 <p className="text-sm">{item.label}</p>
                                 <p className="text-xs text-muted-foreground">{item.trackName}</p>
                                 <p className="text-xs text-muted-foreground/80">{describeRepair(item)}</p>
+                                {item.kind === 'clip' ? (
+                                    <div className="mt-1 flex gap-1">
+                                        {primaryRowByBuffer.get(item.bufferId) === rowKey(item) ? (
+                                            <Button
+                                                size="sm"
+                                                variant="outline"
+                                                disabled={locatingBufferId !== null}
+                                                onClick={() => void handleLocate(item)}
+                                            >
+                                                {locatingBufferId === item.bufferId ? 'Locating…' : 'Locate…'}
+                                            </Button>
+                                        ) : null}
+                                        {item.clipId ? (
+                                            <Button size="sm" variant="ghost" onClick={() => revealClip(item.clipId!)}>
+                                                Reveal clip
+                                            </Button>
+                                        ) : null}
+                                    </div>
+                                ) : null}
                             </li>
                         ))}
                     </ul>
