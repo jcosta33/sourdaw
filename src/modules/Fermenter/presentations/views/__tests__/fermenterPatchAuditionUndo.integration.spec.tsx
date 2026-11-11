@@ -342,9 +342,11 @@ describe('Fermenter whole-patch auditioning through Command', () => {
         fireEvent.click(screen.getByRole('button', { name: 'Show patch B' }));
         await waitFor(() => expect(getFermenterState(DEVICE_ID).patch).toEqual(editedB));
         expect(getFermenterState(DEVICE_ID).patch.macroMappings?.[4]?.targets[0]?.center).toBe(0.63);
+        expect(screen.getByText('Modified')).toBeInTheDocument();
 
         fireEvent.click(screen.getByRole('button', { name: 'Show patch A' }));
         await waitFor(() => expect(getFermenterState(DEVICE_ID).patch).toEqual(editedA));
+        expect(screen.getByText('Modified')).toBeInTheDocument();
         expect(depth()).toBe(4);
     });
 

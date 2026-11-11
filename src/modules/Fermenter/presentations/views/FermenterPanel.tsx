@@ -565,12 +565,16 @@ export const FermenterPanel = ({ deviceId }: { deviceId: string }): ReactElement
         return next;
     }
 
-    async function applyCommittedPatch(value: FermenterPatch, label: string): Promise<boolean> {
+    async function applyCommittedPatch(
+        value: FermenterPatch,
+        label: string,
+        comparisonReference?: FermenterPatch
+    ): Promise<boolean> {
         const operation = patchOperationRef.current + 1;
         patchOperationRef.current = operation;
         const next = cloneFermenterPatch(value);
         const unchanged = fermenterPatchesEqual(getFermenterState(deviceId).patch, next);
-        updateReference(next);
+        updateReference(comparisonReference ?? next);
         if (!unchanged) {
             localCommitRef.current = toFermenterDeviceState(next);
             observedLocalCommitRef.current = false;
@@ -623,8 +627,7 @@ export const FermenterPanel = ({ deviceId }: { deviceId: string }): ReactElement
         const slot = current[active];
         updateSession({ ...current, active });
         setCurrentPresetId(slot.presetId);
-        updateReference(slot.referencePatch);
-        void applyCommittedPatch(slot.patch, `Show Fermenter patch ${active.toUpperCase()}`);
+        void applyCommittedPatch(slot.patch, `Show Fermenter patch ${active.toUpperCase()}`, slot.referencePatch);
     }
 
     function initPatch(): void {
