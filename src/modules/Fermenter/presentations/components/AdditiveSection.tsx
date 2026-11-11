@@ -30,6 +30,7 @@ export const AdditiveSection = ({
         <Grid cols={2} gap={2}>
             <Stack align="center" gap={0.5}>
                 <RotaryKnob
+                    aria-label="Additive partials"
                     value={partials}
                     onChange={(v) => onParam('additivePartials', v)}
                     min={1}
@@ -44,6 +45,7 @@ export const AdditiveSection = ({
             </Stack>
             <Stack align="center" gap={0.5}>
                 <RotaryKnob
+                    aria-label="Additive tilt"
                     value={tilt}
                     onChange={(v) => onParam('additiveTilt', v)}
                     min={-6}
@@ -58,6 +60,7 @@ export const AdditiveSection = ({
             </Stack>
             <Stack align="center" gap={0.5}>
                 <RotaryKnob
+                    aria-label="Additive odd emphasis"
                     value={oddEmphasis}
                     onChange={(v) => onParam('additiveOdd', v)}
                     min={0}
@@ -72,6 +75,7 @@ export const AdditiveSection = ({
             </Stack>
             <Stack align="center" gap={0.5}>
                 <RotaryKnob
+                    aria-label="Additive inharmonicity"
                     value={inharmonicity}
                     onChange={(v) => onParam('additiveInharm', v)}
                     min={0}

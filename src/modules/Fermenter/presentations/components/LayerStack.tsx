@@ -105,6 +105,7 @@ export const LayerStack = ({
         <Row align="end" gap={2} className="px-1 pt-1 border-t border-border/20">
             <Stack align="center" gap={0.5}>
                 <RotaryKnob
+                    aria-label={`Layer ${activeLayer + 1} level`}
                     value={layerLevel}
                     onChange={onLevelChange}
                     min={0}
@@ -118,6 +119,7 @@ export const LayerStack = ({
             </Stack>
             <Stack align="center" gap={0.5}>
                 <RotaryKnob
+                    aria-label={`Layer ${activeLayer + 1} pan`}
                     value={layerPan}
                     onChange={onPanChange}
                     min={-1}

@@ -64,6 +64,7 @@ export const WarpSection = ({
                     <Row align="end" gap={2} className="px-1">
                         <Stack align="center" gap={0.5}>
                             <RotaryKnob
+                                aria-label="Warp amount"
                                 value={warpAmount}
                                 onChange={(v) => onParam('warpAmount', v)}
                                 min={0}
@@ -99,6 +100,7 @@ export const WarpSection = ({
                     <Row align="end" gap={2} className="px-1">
                         <Stack align="center" gap={0.5}>
                             <RotaryKnob
+                                aria-label="Audio-rate modulation rate"
                                 value={audioModRate}
                                 onChange={(v) => onParam('audioModRate', v)}
                                 min={0}
@@ -113,6 +115,7 @@ export const WarpSection = ({
                         </Stack>
                         <Stack align="center" gap={0.5}>
                             <RotaryKnob
+                                aria-label="Audio-rate modulation depth"
                                 value={audioModDepth}
                                 onChange={(v) => onParam('audioModDepth', v)}
                                 min={0}

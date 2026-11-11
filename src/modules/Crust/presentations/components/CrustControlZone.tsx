@@ -87,6 +87,7 @@ const Knob = ({
         aria-disabled={disabled}
     >
         <RotaryKnob
+            aria-label={label}
             value={value}
             onChange={disabled ? () => {} : onChange}
             min={min}
@@ -132,6 +133,7 @@ const AutoKnob = ({
 }): ReactElement => (
     <Stack align="center" gap={0.5}>
         <RotaryKnob
+            aria-label={label}
             value={value}
             onChange={onChange}
             min={min}

@@ -39,8 +39,16 @@ vi.mock('#/components/daw/DawHeaderBand', () => ({
 }));
 
 vi.mock('#/components/daw/RotaryKnob', () => ({
-    RotaryKnob: ({ value, onChange }: { value: number; onChange: (v: number) => void }) => (
-        <button data-testid="knob" data-value={value} onClick={() => onChange(0.5)}>
+    RotaryKnob: ({
+        value,
+        onChange,
+        'aria-label': ariaLabel,
+    }: {
+        value: number;
+        onChange: (v: number) => void;
+        'aria-label'?: string;
+    }) => (
+        <button aria-label={ariaLabel} data-testid="knob" data-value={value} onClick={() => onChange(0.5)}>
             knob
         </button>
     ),
@@ -134,6 +142,22 @@ describe('TrackMidiFxSection', () => {
         render(<TrackMidiFxSection track={makeTrack([arpFx, velocityFx])} />);
         expect(screen.getByText('Arpeggiator')).toBeInTheDocument();
         expect(screen.getByText('Velocity')).toBeInTheDocument();
+    });
+
+    it('qualifies MIDI effect parameter names with their device names', () => {
+        render(
+            <TrackMidiFxSection
+                track={makeTrack([
+                    { ...arpFx, name: 'Lead Arp' },
+                    { ...velocityFx, name: 'Lead Velocity' },
+                    { ...probabilityFx, name: 'Lead Probability' },
+                ])}
+            />
+        );
+
+        for (const name of ['Lead Arp rate', 'Lead Velocity scale', 'Lead Velocity offset', 'Lead Probability seed']) {
+            expect(screen.getByRole('button', { name })).toBeInTheDocument();
+        }
     });
 
     it('should toggle bypass with the inverse of the current state', () => {

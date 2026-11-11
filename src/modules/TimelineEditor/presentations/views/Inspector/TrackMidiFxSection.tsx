@@ -100,6 +100,7 @@ export const TrackMidiFxSection = ({ track }: TrackMidiFxSectionProps): ReactEle
                                 <>
                                     <Stack align="center" gap={1}>
                                         <RotaryKnob
+                                            aria-label={`${fx.name} rate`}
                                             size="sm"
                                             value={fx.parameterValues.rate || 0.25}
                                             min={0.125}
@@ -129,6 +130,7 @@ export const TrackMidiFxSection = ({ track }: TrackMidiFxSectionProps): ReactEle
                                 <>
                                     <Stack align="center" gap={1}>
                                         <RotaryKnob
+                                            aria-label={`${fx.name} scale`}
                                             size="sm"
                                             value={fx.parameterValues.scale || 1.0}
                                             min={0.1}
@@ -139,6 +141,7 @@ export const TrackMidiFxSection = ({ track }: TrackMidiFxSectionProps): ReactEle
                                     </Stack>
                                     <Stack align="center" gap={1}>
                                         <RotaryKnob
+                                            aria-label={`${fx.name} offset`}
                                             size="sm"
                                             value={fx.parameterValues.offset || 0}
                                             min={-64}
@@ -152,6 +155,7 @@ export const TrackMidiFxSection = ({ track }: TrackMidiFxSectionProps): ReactEle
                             {fx.type === 'probability' ? (
                                 <Stack align="center" gap={1}>
                                     <RotaryKnob
+                                        aria-label={`${fx.name} seed`}
                                         size="sm"
                                         value={fx.parameterValues.seed || 12345}
                                         min={1}

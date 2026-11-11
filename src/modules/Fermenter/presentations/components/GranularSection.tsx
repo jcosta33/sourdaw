@@ -30,6 +30,7 @@ export const GranularSection = ({
         <Grid cols={3} gap={2}>
             <Stack align="center" gap={0.5}>
                 <RotaryKnob
+                    aria-label="Granular density"
                     value={density}
                     onChange={(v) => onParam('grainDensity', v)}
                     min={1}
@@ -44,6 +45,7 @@ export const GranularSection = ({
             </Stack>
             <Stack align="center" gap={0.5}>
                 <RotaryKnob
+                    aria-label="Granular size"
                     value={size}
                     onChange={(v) => onParam('grainSize', v)}
                     min={5}
@@ -58,6 +60,7 @@ export const GranularSection = ({
             </Stack>
             <Stack align="center" gap={0.5}>
                 <RotaryKnob
+                    aria-label="Granular position"
                     value={position}
                     onChange={(v) => onParam('grainPosition', v)}
                     min={0}
@@ -71,6 +74,7 @@ export const GranularSection = ({
             </Stack>
             <Stack align="center" gap={0.5}>
                 <RotaryKnob
+                    aria-label="Granular spray"
                     value={spray}
                     onChange={(v) => onParam('grainSpray', v)}
                     min={0}
@@ -84,6 +88,7 @@ export const GranularSection = ({
             </Stack>
             <Stack align="center" gap={0.5}>
                 <RotaryKnob
+                    aria-label="Granular pitch variation"
                     value={pitchVar}
                     onChange={(v) => onParam('grainPitchVar', v)}
                     min={0}
@@ -98,6 +103,7 @@ export const GranularSection = ({
             </Stack>
             <Stack align="center" gap={0.5}>
                 <RotaryKnob
+                    aria-label="Granular pan spread"
                     value={panSpread}
                     onChange={(v) => onParam('grainPanSpread', v)}
                     min={0}
