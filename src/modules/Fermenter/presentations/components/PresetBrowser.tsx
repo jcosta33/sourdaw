@@ -115,9 +115,12 @@ export const PresetBrowser = ({
                 {CATEGORIES.map((cat) => {
                     let pillStyle: React.CSSProperties | undefined = undefined;
                     if (category === cat.id && cat.color) {
-                        pillStyle = { backgroundColor: cat.color };
+                        pillStyle = { backgroundColor: cat.color, color: 'var(--color-surface-panel)' };
                     } else if (category === cat.id) {
-                        pillStyle = { backgroundColor: 'var(--color-accent-lavender)' };
+                        pillStyle = {
+                            backgroundColor: 'var(--color-accent-lavender)',
+                            color: 'var(--color-surface-panel)',
+                        };
                     }
 
                     return (
@@ -129,7 +132,7 @@ export const PresetBrowser = ({
                             aria-pressed={category === cat.id}
                             className={`min-h-6 shrink-0 whitespace-nowrap rounded px-2 text-[length:var(--text-nano)] font-medium transition-colors ${
                                 category === cat.id
-                                    ? 'text-surface-default'
+                                    ? 'text-surface-panel'
                                     : 'text-muted-foreground hover:text-foreground'
                             }`}
                             style={pillStyle}

@@ -163,10 +163,17 @@ describe('PadMixer', () => {
         expect(mute.parentElement?.parentElement).toHaveClass('w-[52px]');
     });
 
-    it('uses a dark foreground on the muted danger background', () => {
-        const pad = { ...makePad(0), muted: true };
+    it('renders pressed mute and solo highlights with a dark foreground', () => {
+        const pad = { ...makePad(0), muted: true, soloed: true };
         render(<PadMixer pads={[pad]} onPadParam={vi.fn()} />);
 
-        expect(screen.getByRole('button', { name: 'Mute P0', pressed: true })).toHaveClass('text-surface-default');
+        expect(screen.getByRole('button', { name: 'Mute P0', pressed: true })).toHaveClass(
+            'bg-[var(--color-state-danger)]/80',
+            'text-surface-panel'
+        );
+        expect(screen.getByRole('button', { name: 'Solo P0', pressed: true })).toHaveClass(
+            'bg-[var(--color-state-warning)]/80',
+            'text-surface-panel'
+        );
     });
 });

@@ -53,7 +53,7 @@ export const BandStrip = ({ index, band, isActive, onSelect, onParamChange }: Ba
                     title={`Solo band ${index + 1}`}
                     className={`size-6 rounded text-[length:var(--text-nano)] font-bold transition-colors ${
                         band.solo
-                            ? 'bg-[var(--color-state-warning)] text-surface-default'
+                            ? 'bg-[var(--color-state-warning)] text-surface-panel'
                             : 'text-muted-foreground hover:text-foreground'
                     }`}
                     onClick={(e) => {
@@ -72,7 +72,7 @@ export const BandStrip = ({ index, band, isActive, onSelect, onParamChange }: Ba
                     title={`Mute band ${index + 1}`}
                     className={`size-6 rounded text-[length:var(--text-nano)] font-bold transition-colors ${
                         band.mute
-                            ? 'bg-[var(--color-state-danger)] text-surface-default'
+                            ? 'bg-[var(--color-state-danger)] text-surface-panel'
                             : 'text-muted-foreground hover:text-foreground'
                     }`}
                     onClick={(e) => {

@@ -131,7 +131,7 @@ export const PadMixer = ({ pads, onPadParam }: PadMixerProps): ReactElement => {
                             aria-label={`Mute ${pad.name}`}
                             aria-pressed={pad.muted}
                             title={`Mute ${pad.name}`}
-                            className={`flex size-6 items-center justify-center rounded text-[length:var(--text-nano)] font-bold leading-none ${pad.muted ? 'bg-[var(--color-state-danger)]/80 text-surface-default' : 'bg-surface-inset/50 text-muted-foreground hover:text-foreground'}`}
+                            className={`flex size-6 items-center justify-center rounded text-[length:var(--text-nano)] font-bold leading-none ${pad.muted ? 'bg-[var(--color-state-danger)]/80 text-surface-panel' : 'bg-surface-inset/50 text-muted-foreground hover:text-foreground'}`}
                             onClick={() => onPadParam(index, 'muted', pad.muted ? 0 : 1)}
                         >
                             M
@@ -148,7 +148,7 @@ export const PadMixer = ({ pads, onPadParam }: PadMixerProps): ReactElement => {
                             aria-label={`Solo ${pad.name}`}
                             aria-pressed={pad.soloed}
                             title={`Solo ${pad.name}`}
-                            className={`flex size-6 items-center justify-center rounded text-[length:var(--text-nano)] font-bold leading-none ${pad.soloed ? 'bg-[var(--color-state-warning)]/80 text-surface-default' : 'bg-surface-inset/50 text-muted-foreground hover:text-foreground'}`}
+                            className={`flex size-6 items-center justify-center rounded text-[length:var(--text-nano)] font-bold leading-none ${pad.soloed ? 'bg-[var(--color-state-warning)]/80 text-surface-panel' : 'bg-surface-inset/50 text-muted-foreground hover:text-foreground'}`}
                             onClick={() => onPadParam(index, 'soloed', pad.soloed ? 0 : 1)}
                         >
                             S

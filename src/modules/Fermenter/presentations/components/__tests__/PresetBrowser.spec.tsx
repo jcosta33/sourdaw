@@ -84,12 +84,14 @@ describe('PresetBrowser', () => {
             expect(screen.getByText('2 presets')).toBeTruthy();
         });
 
-        it('marks the active category pill with a dark foreground', () => {
+        it('marks the active category pill with the rendered surface foreground', () => {
             render(<PresetBrowser {...defaultProps()} />);
             const bassPill = screen.getByText('Bass', { selector: 'button' });
-            expect(bassPill.className).not.toContain('text-surface-default');
+            expect(bassPill).not.toHaveClass('text-surface-panel');
+            expect(bassPill.style.color).toBe('');
             fireEvent.click(bassPill);
-            expect(bassPill.className).toContain('text-surface-default');
+            expect(bassPill).toHaveClass('text-surface-panel');
+            expect(bassPill.style.color).toBe('var(--color-surface-panel)');
         });
 
         it('sets the active pill inline background to the category color token', () => {
