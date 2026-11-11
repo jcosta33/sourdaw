@@ -31,6 +31,38 @@ type LayerStackProps = {
     onPanChange: (v: number) => void;
 };
 
+type LayerButtonProps = {
+    index: number;
+    active: boolean;
+    currentEngine: number;
+    onActiveLayerChange: (layer: number) => void;
+};
+
+const LayerButton = ({ index, active, currentEngine, onActiveLayerChange }: LayerButtonProps): ReactElement => (
+    <Button
+        variant="bare"
+        size="bare"
+        type="button"
+        className={`flex items-center gap-2 px-2 py-1 rounded text-left transition-all ${
+            active
+                ? 'bg-surface-raised border border-border/50'
+                : 'hover:bg-surface-raised/50 border border-transparent'
+        }`}
+        onClick={() => onActiveLayerChange(index)}
+    >
+        <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: LAYER_COLORS[index] }} />
+        <div className="flex-1 min-w-0">
+            <div className="text-[9px] font-medium text-foreground">Layer {index + 1}</div>
+            <div className="text-[7px] text-muted-foreground/60">
+                {active ? (ENGINE_NAMES[currentEngine] ?? 'Wavetable') : '—'}
+            </div>
+        </div>
+        {active ? (
+            <div className="w-1 h-4 rounded-full" style={{ backgroundColor: LAYER_COLORS[index], opacity: 0.5 }} />
+        ) : null}
+    </Button>
+);
+
 export const LayerStack = ({
     numLayers,
     activeLayer,
@@ -71,33 +103,14 @@ export const LayerStack = ({
 
         {/* Layer buttons */}
         <Stack gap={0.5}>
-            {Array.from({ length: numLayers }, (_, i) => (
-                <Button
-                    variant="bare"
-                    size="bare"
-                    key={i}
-                    type="button"
-                    className={`flex items-center gap-2 px-2 py-1 rounded text-left transition-all ${
-                        activeLayer === i
-                            ? 'bg-surface-raised border border-border/50'
-                            : 'hover:bg-surface-raised/50 border border-transparent'
-                    }`}
-                    onClick={() => onActiveLayerChange(i)}
-                >
-                    <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: LAYER_COLORS[i] }} />
-                    <div className="flex-1 min-w-0">
-                        <div className="text-[9px] font-medium text-foreground">Layer {i + 1}</div>
-                        <div className="text-[7px] text-muted-foreground/60">
-                            {activeLayer === i ? (ENGINE_NAMES[currentEngine] ?? 'Wavetable') : '—'}
-                        </div>
-                    </div>
-                    {activeLayer === i ? (
-                        <div
-                            className="w-1 h-4 rounded-full"
-                            style={{ backgroundColor: LAYER_COLORS[i], opacity: 0.5 }}
-                        />
-                    ) : null}
-                </Button>
+            {Array.from({ length: numLayers }, (_, index) => (
+                <LayerButton
+                    key={index}
+                    index={index}
+                    active={activeLayer === index}
+                    currentEngine={currentEngine}
+                    onActiveLayerChange={onActiveLayerChange}
+                />
             ))}
         </Stack>
 
