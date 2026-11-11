@@ -1,0 +1,32 @@
+src/modules/CommandInterface/models/CommandEntry.ts
+  h_beb54bf43b47b7 20,23-28
+src/modules/CommandInterface/presentations/views/CommandPalette.tsx
+  h_beb54bf43b47b7 14-20,32,42,44,46,50-51,54,57-61,64,72-77,80,86-129,135-136,140-147,149-150,164-167,179,183,185,208,224,231
+src/modules/CommandInterface/presentations/views/__tests__/CommandPalette.spec.tsx
+  h_beb54bf43b47b7 36-42,110-116,157,161,166,168,174-180,208,210-212,217-218,221,226-232,269-270,275-308
+src/modules/CommandInterface/presentations/views/commandRegistry.ts
+  h_beb54bf43b47b7 31-35
+src/modules/CommandInterface/services/__tests__/commandSearch.spec.ts
+  h_beb54bf43b47b7 4,60-138
+src/modules/CommandInterface/services/commandSearch.ts
+  h_beb54bf43b47b7 2-3,7,11-17,33-65,67-68,71-146
+src/modules/CommandInterface/useCases/commands/AutomationCommands.ts
+  h_beb54bf43b47b7 13,26,39
+src/modules/CommandInterface/useCases/commands/ClipCommands.ts
+  h_beb54bf43b47b7 19,47,61,74,87,100,121
+src/modules/CommandInterface/useCases/commands/ElasticCommands.ts
+  h_beb54bf43b47b7 13,26,39
+src/modules/CommandInterface/useCases/commands/MidiCommands.ts
+  h_beb54bf43b47b7 13,26,39,52,65,78,91,104
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7247196b01e5358dbe37e91a3a6d617320133cc6",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
