@@ -25,6 +25,7 @@ import {
 
 export type ReconcileTrackerIssueArgs = {
     help: boolean;
+    recoverLeaseToken?: string;
     issueNumber?: number;
     expectedBodySha256?: string;
     editsFile?: string;
@@ -32,7 +33,8 @@ export type ReconcileTrackerIssueArgs = {
 };
 
 const usage =
-    'usage: pnpm issue:reconcile <issue-number> --expected-body-sha256 <64-hex> (--edits-file <json> | --superseded-by <issue-number>)';
+    'usage: pnpm issue:reconcile <issue-number> --expected-body-sha256 <64-hex> (--edits-file <json> | --superseded-by <issue-number>)\n' +
+    '       pnpm issue:reconcile --recover-lease <token>';
 
 export function parseReconcileTrackerIssueArgs(args: string[]): ReconcileTrackerIssueArgs {
     if (args[0] === '--help') {
@@ -40,6 +42,12 @@ export function parseReconcileTrackerIssueArgs(args: string[]): ReconcileTracker
             fail('--help takes no other arguments');
         }
         return { help: true };
+    }
+    if (args[0] === '--recover-lease') {
+        if (args.length !== 2 || args[1] === undefined || args[1].trim() === '') {
+            fail(usage);
+        }
+        return { help: false, recoverLeaseToken: args[1] };
     }
     if (
         args.length !== 5 ||
@@ -116,21 +124,137 @@ export type Gh = (args: string[]) => string;
 
 type TrackerMutationLease = <Value>(operation: () => Value) => Value;
 
+export type TrackerMutationLeaseDependencies = {
+    /** True only when the owner process is proven gone; live, reused, or unreadable is false. */
+    processIsProvenDead: (pid: number) => boolean;
+};
+
+type TrackerMutationLeaseOwner = { pid: number; token: string };
+
+const TRACKER_MUTATION_LEASE_VERSION = 2;
+const UNPROVABLE_LEASE_REMEDY = 'remove it manually after confirming no reconcile or deliver is running';
+
+/**
+ * `kill(pid, 0)` answering ESRCH proves the pid is unused. The owner held its pid for as long as it
+ * held the lease, so an unused pid means the owner is gone; pid reuse can only make a dead owner
+ * look live, which refuses recovery. Success, EPERM, and any other error prove nothing.
+ */
+export function processIsProvenDead(pid: number): boolean {
+    try {
+        process.kill(pid, 0);
+        return false;
+    } catch (error) {
+        return errorCode(error) === 'ESRCH';
+    }
+}
+
+const defaultLeaseDependencies: TrackerMutationLeaseDependencies = { processIsProvenDead };
+
+function trackerMutationLeasePath(primaryRoot: string): string {
+    return join(primaryRoot, '.git', 'sourdaw-tracker-mutation.lease');
+}
+
+/** Reads only what this file writes: the versioned owner, or the unversioned `{ pid, token }` before it. */
+function parseTrackerMutationLeaseOwner(contents: string): TrackerMutationLeaseOwner | undefined {
+    let value: unknown;
+    try {
+        value = JSON.parse(contents) as unknown;
+    } catch {
+        return undefined;
+    }
+    if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+        return undefined;
+    }
+    const owner = value as Record<string, unknown>;
+    const keys = Object.keys(owner).sort().join(',');
+    const versioned = keys === 'pid,token,version' && owner.version === TRACKER_MUTATION_LEASE_VERSION;
+    if (
+        (!versioned && keys !== 'pid,token') ||
+        typeof owner.pid !== 'number' ||
+        !Number.isSafeInteger(owner.pid) ||
+        owner.pid <= 0 ||
+        typeof owner.token !== 'string' ||
+        !/^[0-9A-Za-z-]+$/u.test(owner.token)
+    ) {
+        return undefined;
+    }
+    return { pid: owner.pid, token: owner.token };
+}
+
+function busyLeaseMessage(leasePath: string, dependencies: TrackerMutationLeaseDependencies): string {
+    let contents: string;
+    try {
+        contents = readFileSync(leasePath, 'utf8');
+    } catch {
+        return `tracker mutation lease is busy and its owner record at ${leasePath} is unreadable; retry`;
+    }
+    const owner = parseTrackerMutationLeaseOwner(contents);
+    if (owner === undefined) {
+        return `tracker mutation lease is busy and its owner record at ${leasePath} is unprovable; ${UNPROVABLE_LEASE_REMEDY}`;
+    }
+    const prefix = `tracker mutation lease is busy: owner pid ${owner.pid}, token ${owner.token}`;
+    if (!dependencies.processIsProvenDead(owner.pid)) {
+        return `${prefix}; the owner is live or unprovable`;
+    }
+    return (
+        `${prefix}; the owner is proven dead; ` + `recover it with: pnpm issue:reconcile --recover-lease ${owner.token}`
+    );
+}
+
+/**
+ * Removes a lease only when it names the supplied token and its owner is proven dead, and only if the
+ * lease bytes are still the proven ones immediately before the unlink. Acquisition never does this.
+ */
+export function recoverRepositoryTrackerMutationLease(
+    primaryRoot: string,
+    token: string,
+    dependencies: TrackerMutationLeaseDependencies = defaultLeaseDependencies
+): void {
+    const leasePath = trackerMutationLeasePath(primaryRoot);
+    let proven: string;
+    try {
+        proven = readFileSync(leasePath, 'utf8');
+    } catch (error) {
+        if (errorCode(error) === 'ENOENT') {
+            fail(`no tracker mutation lease exists at ${leasePath}`);
+        }
+        fail(`tracker mutation lease at ${leasePath} is unreadable; nothing removed`);
+    }
+    const owner = parseTrackerMutationLeaseOwner(proven);
+    if (owner === undefined) {
+        fail(`tracker mutation lease at ${leasePath} is unprovable; ${UNPROVABLE_LEASE_REMEDY}`);
+    }
+    if (owner.token !== token) {
+        fail(`tracker mutation lease token ${owner.token} does not match ${token}; nothing removed`);
+    }
+    if (!dependencies.processIsProvenDead(owner.pid)) {
+        fail(`tracker mutation lease owner pid ${owner.pid} is live or unprovable; nothing removed`);
+    }
+    if (readFileSync(leasePath, 'utf8') !== proven) {
+        fail(`tracker mutation lease at ${leasePath} changed while it was proven; nothing removed`);
+    }
+    unlinkSync(leasePath);
+}
+
 /**
  * GitHub's issue PATCH endpoint has no conditional compare-and-swap.
  * Only sanctioned local writers are serialized through this repository-owned lease, held from the
  * final read/digest check through the verified PATCH. External GitHub issue body edits are unsupported
  * because they cannot participate in this cooperative serialization boundary.
  */
-export function withRepositoryTrackerMutationLease<Value>(primaryRoot: string, operation: () => Value): Value {
-    const leasePath = join(primaryRoot, '.git', 'sourdaw-tracker-mutation.lease');
-    const owner = JSON.stringify({ pid: process.pid, token: randomUUID() });
+export function withRepositoryTrackerMutationLease<Value>(
+    primaryRoot: string,
+    operation: () => Value,
+    dependencies: TrackerMutationLeaseDependencies = defaultLeaseDependencies
+): Value {
+    const leasePath = trackerMutationLeasePath(primaryRoot);
+    const owner = JSON.stringify({ version: TRACKER_MUTATION_LEASE_VERSION, pid: process.pid, token: randomUUID() });
     let descriptor: number;
     try {
         descriptor = openSync(leasePath, 'wx', 0o600);
     } catch (error) {
         if (errorCode(error) === 'EEXIST') {
-            fail('tracker mutation lease is busy; remove a confirmed stale lease manually');
+            fail(busyLeaseMessage(leasePath, dependencies));
         }
         throw error;
     }
@@ -355,10 +479,26 @@ function isUnknownArray(value: unknown): value is unknown[] {
     return Array.isArray(value);
 }
 
-export async function runReconcileTrackerIssueCli(args: string[]): Promise<number> {
+export type ReconcileTrackerIssueCliDependencies = Partial<TrackerMutationLeaseDependencies> & {
+    resolvePrimaryRoot?: () => string;
+    authenticateTrackerAuthor?: typeof authenticateTrackerAuthor;
+};
+
+export async function runReconcileTrackerIssueCli(
+    args: string[],
+    dependencies: ReconcileTrackerIssueCliDependencies = {}
+): Promise<number> {
     const parsed = parseReconcileTrackerIssueArgs(args);
     if (parsed.help) {
         console.log(`Usage: ${usage.slice('usage: '.length)}`);
+        return 0;
+    }
+    const primaryRoot = (dependencies.resolvePrimaryRoot ?? resolvePrimaryRoot)();
+    if (parsed.recoverLeaseToken !== undefined) {
+        recoverRepositoryTrackerMutationLease(primaryRoot, parsed.recoverLeaseToken, {
+            processIsProvenDead: dependencies.processIsProvenDead ?? processIsProvenDead,
+        });
+        console.log(`tracker-mutation-lease-recovered:${parsed.recoverLeaseToken}`);
         return 0;
     }
     if (parsed.issueNumber === undefined || parsed.expectedBodySha256 === undefined) {
@@ -366,8 +506,7 @@ export async function runReconcileTrackerIssueCli(args: string[]): Promise<numbe
     }
 
     const cwd = process.cwd();
-    const primaryRoot = resolvePrimaryRoot();
-    const auth = await authenticateTrackerAuthor({ primaryRoot });
+    const auth = await (dependencies.authenticateTrackerAuthor ?? authenticateTrackerAuthor)({ primaryRoot });
     try {
         assertRequiredRepository(
             spawnCapture('gh', ['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner'], {
