@@ -1,0 +1,48 @@
+.agents/decisions/0057-fresh-review-draws-stay-within-the-low-cost-tiers.md
+  s_8f62528cf75f92::t_c9d259bdde4872 1-43
+.agents/skills/delivery-orchestration/references/lane-publication.md
+  s_8f62528cf75f92::t_42b1d448d2431e 75-80
+.agents/decisions/README.md
+  s_8f62528cf75f92::t_888ba2563048fb 17-73
+.agents/skills/delivery-orchestration/references/closure-and-retirement.md
+  s_8f62528cf75f92::t_00345e5f61b398 10-37,43-72
+.agents/skills/delivery-orchestration/SKILL.md
+  s_8f62528cf75f92::t_888ba2563048fb 42,49-50
+  s_8f62528cf75f92::t_c4fb9fd4736042 474-476,498-500,512-517,577-578
+  s_8f62528cf75f92::t_a97dee3a065b05 76-77,82-86,155-156,265,355-358,473
+AGENTS.md
+  s_8f62528cf75f92::t_815678b26c02ef 180-184,271-274,309-310
+  s_8f62528cf75f92::t_3e01461b33a2a1 198-200,368,453-455,498-500,576-577,586,642,668-670
+.agents/skills/delivery-orchestration/references/repair-and-lock-recovery.md
+  s_8f62528cf75f92::t_cc0009b766f901 137-138,140
+  s_8f62528cf75f92::t_10525361da1017 139
+  s_8f62528cf75f92::t_42b1d448d2431e 135-136
+.dependency-cruiser.cjs
+  s_eec9d24f84ae15::t_18362f0ba0e8cc 100-101
+docs/architecture/03-typescript-module.md
+  s_eec9d24f84ae15::t_48b99a95ca3831 431,440
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2e332243542ace1a89b24bc0c9913d9d53d35971",
+  "prompts": {},
+  "sessions": {
+    "s_8f62528cf75f92": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1c29af72-5388-4e1c-97b2-12a14f011f7b",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_eec9d24f84ae15": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cc8d-d36d-71b3-be5c-15c29b38b9aa",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
