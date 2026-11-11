@@ -84,6 +84,7 @@ import type {
     DeliveryReceiptComment,
     DeliveryReceiptProof,
     DeliveryPort,
+    GateProvenanceFacts,
     PersistedDeliveryReceiptAuthority,
     PersistedPreparedPostMergeValidation,
     PullRequestSnapshot,
@@ -252,6 +253,35 @@ async function expectAmbiguousDeliveryMutationRetainsOwner(
         restorePs();
         removeTemporaryDirectory(root);
     }
+}
+
+/** One health-gates run whose only attempt's Gate job is the head's one succeeded Gate check run. */
+function cleanGateProvenance(head: string): GateProvenanceFacts {
+    return {
+        commitStatusContexts: [],
+        gateCheckRuns: [
+            { id: 2002, status: 'completed', conclusion: 'success', appNodeId: 'MDM6QXBwMTUzNjg=', checkSuiteId: 1000 },
+        ],
+        workflowRuns: [
+            {
+                id: 100,
+                path: '.github/workflows/health-gates.yml',
+                headSha: head,
+                checkSuiteId: 1000,
+                runAttempt: 1,
+                attempts: [
+                    {
+                        attempt: 1,
+                        conclusion: 'success',
+                        jobs: [
+                            { id: 2001, name: 'Plan required checks', conclusion: 'success' },
+                            { id: 2002, name: 'Gate', conclusion: 'success' },
+                        ],
+                    },
+                ],
+            },
+        ],
+    };
 }
 
 function pullRequestSnapshot(overrides: Partial<PullRequestSnapshot> = {}): PullRequestSnapshot {
@@ -920,6 +950,7 @@ describe('package scripts and gitignore', () => {
                 }
                 return expect.fail(`unexpected pull request read: ${number}`);
             },
+            gateProvenance: (_number, head) => cleanGateProvenance(head),
             gateRequiredCheckNames: () => new Set(['Gate']),
             gateRequiredSkipAliases: () => new Map(),
             headCheckRuns: () => [],
@@ -3903,6 +3934,7 @@ describe('package scripts and gitignore', () => {
                         expect(snapshotNumber).toBe(number);
                         return pullRequestSnapshot({ baseRefOid: baseSha, headRefOid: baseSha });
                     },
+                    gateProvenance: () => expect.fail('delivery domain should not run'),
                     gateRequiredCheckNames: () => expect.fail('delivery domain should not run'),
                     gateRequiredSkipAliases: () => expect.fail('delivery domain should not run'),
                     headCheckRuns: () => expect.fail('delivery domain should not run'),
@@ -3969,6 +4001,7 @@ describe('package scripts and gitignore', () => {
                 expect(number).toBe(2495);
                 return pullRequestSnapshot({ baseRefOid: baseSha, headRefOid: baseSha });
             },
+            gateProvenance: () => expect.fail('delivery domain should not run'),
             gateRequiredCheckNames: () => expect.fail('delivery domain should not run'),
             gateRequiredSkipAliases: () => expect.fail('delivery domain should not run'),
             headCheckRuns: () => expect.fail('delivery domain should not run'),
@@ -4505,6 +4538,7 @@ describe('package scripts and gitignore', () => {
                 expect(number).toBe(2495);
                 return pullRequestSnapshot({ baseRefOid: baseSha, headRefOid: baseSha });
             },
+            gateProvenance: () => expect.fail('delivery domain should be injected in this coordinator test'),
             gateRequiredCheckNames: () => expect.fail('delivery domain should be injected in this coordinator test'),
             gateRequiredSkipAliases: () => expect.fail('delivery domain should be injected in this coordinator test'),
             headCheckRuns: () => expect.fail('delivery domain should be injected in this coordinator test'),

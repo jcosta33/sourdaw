@@ -43,6 +43,7 @@ import {
     type StackedPullRequest,
     type TrackerCompletionPort,
     type DeliveryAuthorizationBinding,
+    type GateProvenanceFacts,
     run,
 } from '../deliverPullRequest';
 import {
@@ -571,6 +572,10 @@ function stackedDeliveryPort(finalSettings: MergeSettings, primaryRoot: string) 
             if (joined.includes('.delete_branch_on_merge')) {
                 return 'false';
             }
+            const gateProvenance = shellGateProvenanceResponse(args);
+            if (gateProvenance !== undefined) {
+                return gateProvenance;
+            }
             if (joined.includes('issues/42/comments?per_page=100')) {
                 return JSON.stringify([
                     [
@@ -698,6 +703,134 @@ function shellMergedByGraphql(
             },
         },
     });
+}
+
+const ACTIONS_APP_NODE_ID = 'MDM6QXBwMTUzNjg=';
+type GateWorkflowRunFixture = GateProvenanceFacts['workflowRuns'][number];
+type GateWorkflowAttemptFixture = GateWorkflowRunFixture['attempts'][number];
+
+function gateAttempt(
+    attempt: number,
+    conclusion: string,
+    gateJobId: number,
+    planConclusion: string = 'success'
+): GateWorkflowAttemptFixture {
+    return {
+        attempt,
+        conclusion,
+        jobs: [
+            { id: gateJobId - 1, name: 'Plan required checks', conclusion: planConclusion },
+            { id: gateJobId, name: 'Gate', conclusion: conclusion === 'cancelled' ? 'failure' : conclusion },
+        ],
+    };
+}
+
+function gateWorkflowRun(
+    id: number,
+    head: string,
+    attempts: GateWorkflowAttemptFixture[],
+    overrides: Partial<GateWorkflowRunFixture> = {}
+): GateWorkflowRunFixture {
+    return {
+        id,
+        path: WORKFLOW_PATH,
+        headSha: head,
+        checkSuiteId: id * 10,
+        runAttempt: attempts.length,
+        attempts,
+        ...overrides,
+    };
+}
+
+/** The Gate check runs GitHub reports for these runs: one per attempt, carrying its Gate job's id. */
+function gateCheckRunsFor(runs: GateWorkflowRunFixture[]): GateProvenanceFacts['gateCheckRuns'] {
+    return runs.flatMap((run) =>
+        run.attempts.flatMap((attempt) =>
+            attempt.jobs
+                .filter((job) => job.name === 'Gate')
+                .map((job) => ({
+                    id: job.id,
+                    status: 'completed',
+                    conclusion: job.conclusion,
+                    appNodeId: ACTIONS_APP_NODE_ID,
+                    checkSuiteId: run.checkSuiteId,
+                }))
+        )
+    );
+}
+
+function gateProvenanceFor(runs: GateWorkflowRunFixture[]): GateProvenanceFacts {
+    return { commitStatusContexts: [], gateCheckRuns: gateCheckRunsFor(runs), workflowRuns: runs };
+}
+
+/**
+ * GitHub's REST answers for one clean health-gates run on `head`, for shell-port fixtures that run a
+ * whole delivery. Returns undefined for any other read so the fixture keeps refusing unknown calls.
+ */
+function shellGateProvenanceResponse(args: string[], head = 'head'): string | undefined {
+    const endpoint = args.at(-1) ?? '';
+    const paginated = args.includes('--paginate') && args.includes('--slurp');
+    const commit = `repos/jcosta33/sourdaw/commits/${head}`;
+    const attempt = 'repos/jcosta33/sourdaw/actions/runs/100/attempts/1';
+    if (paginated && endpoint === `${commit}/statuses?per_page=100`) {
+        return JSON.stringify([[]]);
+    }
+    if (paginated && endpoint === `${commit}/check-runs?check_name=Gate&filter=all&per_page=100`) {
+        return JSON.stringify([
+            {
+                total_count: 1,
+                check_runs: [
+                    {
+                        id: 2002,
+                        name: 'Gate',
+                        status: 'completed',
+                        conclusion: 'success',
+                        app: { node_id: ACTIONS_APP_NODE_ID },
+                        check_suite: { id: 1000 },
+                    },
+                ],
+            },
+        ]);
+    }
+    if (
+        paginated &&
+        endpoint === `repos/jcosta33/sourdaw/actions/runs?head_sha=${head}&event=pull_request&per_page=100`
+    ) {
+        return JSON.stringify([
+            {
+                total_count: 2,
+                workflow_runs: [
+                    { id: 100, path: WORKFLOW_PATH, head_sha: head, check_suite_id: 1000, run_attempt: 1 },
+                    {
+                        id: 101,
+                        path: '.github/workflows/pr-checks.yml',
+                        head_sha: head,
+                        check_suite_id: 1010,
+                        run_attempt: 1,
+                    },
+                ],
+            },
+        ]);
+    }
+    if (!paginated && endpoint === attempt) {
+        return JSON.stringify({ id: 100, run_attempt: 1, conclusion: 'success' });
+    }
+    if (paginated && endpoint === `${attempt}/jobs?per_page=100`) {
+        return JSON.stringify([
+            {
+                total_count: 2,
+                jobs: [
+                    { id: 2001, name: 'Plan required checks', conclusion: 'success' },
+                    { id: 2002, name: 'Gate', conclusion: 'success' },
+                ],
+            },
+        ]);
+    }
+    return undefined;
+}
+
+function cleanGateProvenance(head: string): GateProvenanceFacts {
+    return gateProvenanceFor([gateWorkflowRun(100, head, [gateAttempt(1, 'success', 2002)])]);
 }
 
 function checkRun(overrides: Partial<HeadCheckRun> = {}): HeadCheckRun {
@@ -900,6 +1033,8 @@ type FakeInput = {
     mergedPrimaryAfterMerge?: Partial<PullRequestSnapshot>;
     syncAuthorshipNotes?: DeliveryPort['syncAuthorshipNotes'];
     mergeCommitMessages?: Record<string, string>;
+    gateProvenance?: GateProvenanceFacts | Error;
+    gateProvenanceReads?: Array<GateProvenanceFacts | Error>;
 };
 
 type DeliveryReceiptComment = {
@@ -1016,6 +1151,7 @@ function fakePort(input: FakeInput = {}) {
     const reviewStates = [...(input.reviewStates ?? [])];
     const dependentSets = input.dependentSets?.map((set) => [...set]) ?? [[stacked()], [stacked()]];
     const headCheckRunReads = input.headCheckRunReads?.map((entry) => (entry instanceof Error ? entry : [...entry]));
+    const gateProvenanceReads = [...(input.gateProvenanceReads ?? [])];
     const pullRequests = new Map<number, PullRequestSnapshot>();
     if (input.dependents !== undefined) {
         for (const dependent of input.dependents) {
@@ -1126,6 +1262,14 @@ function fakePort(input: FakeInput = {}) {
                 throw runs;
             }
             return structuredClone(runs);
+        },
+        gateProvenance: (number, headRefOid) => {
+            calls.push(`gate-provenance:${number}:${headRefOid}`);
+            const facts = gateProvenanceReads.shift() ?? input.gateProvenance ?? cleanGateProvenance(headRefOid);
+            if (facts instanceof Error) {
+                throw facts;
+            }
+            return structuredClone(facts);
         },
         reviewState: (number, expectedHead) => {
             calls.push(`review:${number}:${expectedHead}`);
@@ -7646,13 +7790,31 @@ describe('pull-request delivery', () => {
      * head carries both attempts, the newest is the verdict, and counting the retired one refuses a
      * head whose every check has since been decided.
      */
-    it('merges an UNSTABLE head whose failed check was rerun to success on the same commit', () => {
+    it('refuses an UNSTABLE head whose failed check was rerun to success on the same commit', () => {
         const unstable = { mergeStateStatus: 'UNSTABLE' };
         const { port, calls } = fakePort({
             primary: [pullRequest(unstable), pullRequest(unstable)],
             headCheckRuns: [
                 ...withGatedCoverage(supersededRunCheckRuns()),
                 checkRun({ name: 'Validation / Unit suite 2/4', conclusion: 'FAILURE', startedAt: PUSH_RUN_START }),
+                checkRun({ name: 'Validation / Unit suite 2/4', startedAt: REVIEW_RUN_START }),
+            ],
+        });
+
+        expect(() => deliverPullRequestWithRequiredCi(42, port)).toThrow(
+            'PR #42 merge state is UNSTABLE and check Validation / Unit suite 2/4 concluded FAILURE'
+        );
+        expect(calls).not.toContain('add-receipt:42');
+        expect(calls).not.toContain('merge:42:head');
+    });
+
+    it('still retires a non-FAILURE verdict such as TIMED_OUT behind a later success on the same commit', () => {
+        const unstable = { mergeStateStatus: 'UNSTABLE' };
+        const { port, calls } = fakePort({
+            primary: [pullRequest(unstable), pullRequest(unstable)],
+            headCheckRuns: [
+                ...withGatedCoverage(supersededRunCheckRuns()),
+                checkRun({ name: 'Validation / Unit suite 2/4', conclusion: 'TIMED_OUT', startedAt: PUSH_RUN_START }),
                 checkRun({ name: 'Validation / Unit suite 2/4', startedAt: REVIEW_RUN_START }),
             ],
         });
@@ -8699,6 +8861,146 @@ describe('pull-request delivery', () => {
                 expect(authority.postMergeValidation).toEqual(persistedPostMergeValidation('head', closes, 2372));
             }
         });
+    });
+});
+
+describe('Gate provenance', () => {
+    const modes = [
+        ['advisory', deliverPullRequest],
+        ['required', deliverPullRequestWithRequiredCi],
+    ] as const;
+    const draftFailure = gateWorkflowRun(100, 'head', [gateAttempt(1, 'failure', 1002, 'skipped')]);
+    const cancelledRun = gateWorkflowRun(101, 'head', [gateAttempt(1, 'cancelled', 1102, 'cancelled')]);
+    const greenRun = gateWorkflowRun(102, 'head', [gateAttempt(1, 'success', 1202)]);
+    const clean = gateProvenanceFor([greenRun]);
+
+    const refusals: Array<[string, GateProvenanceFacts, RegExp]> = [
+        [
+            'a commit status named Gate',
+            { ...clean, commitStatusContexts: ['ci/other', 'Gate'] },
+            /commit status named Gate/,
+        ],
+        [
+            'a Gate check run from another app',
+            {
+                ...clean,
+                gateCheckRuns: [
+                    ...clean.gateCheckRuns,
+                    {
+                        id: 999,
+                        status: 'completed',
+                        conclusion: 'success',
+                        appNodeId: 'MDM6QXBwOTk5OTk=',
+                        checkSuiteId: greenRun.checkSuiteId,
+                    },
+                ],
+            },
+            /check run 999 named Gate is not the health-gates Gate job/,
+        ],
+        [
+            'a GitHub Actions Gate check run outside every health-gates pull_request suite',
+            {
+                ...clean,
+                gateCheckRuns: [
+                    ...clean.gateCheckRuns,
+                    {
+                        id: 999,
+                        status: 'completed',
+                        conclusion: 'success',
+                        appNodeId: ACTIONS_APP_NODE_ID,
+                        checkSuiteId: 4242,
+                    },
+                ],
+            },
+            /check run 999 named Gate is not the health-gates Gate job/,
+        ],
+        [
+            'a health-gates run for another head',
+            gateProvenanceFor([gateWorkflowRun(102, 'other-head', greenRun.attempts)]),
+            /no health-gates pull_request run/,
+        ],
+        [
+            'a newest Gate that has not succeeded',
+            {
+                ...clean,
+                gateCheckRuns: clean.gateCheckRuns.map((run) => ({
+                    ...run,
+                    status: 'in_progress',
+                    conclusion: null,
+                })),
+            },
+            /newest Gate check run 1202 is in_progress/,
+        ],
+        [
+            'a newest Gate that is not the latest attempt Gate job of the newest run',
+            {
+                ...clean,
+                workflowRuns: [gateWorkflowRun(102, 'head', [gateAttempt(1, 'success', 1302)])],
+                gateCheckRuns: clean.gateCheckRuns.map((run) => ({ ...run, checkSuiteId: 1020 })),
+            },
+            /newest Gate check run 1202 is not the Gate job 1302/,
+        ],
+        ['no Gate check run at all', { ...clean, gateCheckRuns: [] }, /no Gate check run/],
+        [
+            'a real Gate failure retried to green on the same head',
+            gateProvenanceFor([
+                gateWorkflowRun(102, 'head', [gateAttempt(1, 'failure', 1202), gateAttempt(2, 'success', 1302)]),
+            ]),
+            /attempt 1 of health-gates run 102 failed.*push a new commit/,
+        ],
+        [
+            'an earlier real failure under an older run beside a later green run',
+            gateProvenanceFor([gateWorkflowRun(100, 'head', [gateAttempt(1, 'failure', 1002)]), greenRun]),
+            /attempt 1 of health-gates run 100 failed/,
+        ],
+        [
+            'a run whose attempts are incompletely listed',
+            gateProvenanceFor([gateWorkflowRun(102, 'head', [gateAttempt(2, 'success', 1302)], { runAttempt: 2 })]),
+            /attempts of health-gates run 102 are incomplete/,
+        ],
+    ];
+
+    for (const [mode, deliver] of modes) {
+        it.each(refusals)(`refuses ${mode} delivery on %s before any remote write`, (_label, facts, message) => {
+            const { port, calls, tracker } = fakePort({ gateProvenance: facts });
+
+            expect(() => deliver(42, port, tracker)).toThrow(message);
+            expect(calls).toContain('gate-provenance:42:head');
+            expect(calls).not.toContain('add-receipt:42');
+            expect(calls).not.toContain('merge:42:head');
+            expect(calls.filter((call) => call.startsWith('receipt-authority:write'))).toHaveLength(0);
+        });
+
+        it.each([
+            ['one clean health-gates run', clean],
+            ['a draft-run failure followed by a non-draft success', gateProvenanceFor([draftFailure, greenRun])],
+            ['a cancelled superseded run followed by a success', gateProvenanceFor([cancelledRun, greenRun])],
+        ])(`delivers in ${mode} mode on %s`, (_label, facts) => {
+            const { port, calls, tracker } = fakePort({ gateProvenance: facts });
+
+            deliver(42, port, tracker);
+
+            expect(calls).toContain('merge:42:head');
+        });
+
+        it(`re-proves Gate provenance at the final ${mode} validation`, () => {
+            const retried = gateProvenanceFor([
+                gateWorkflowRun(102, 'head', [gateAttempt(1, 'failure', 1202), gateAttempt(2, 'success', 1302)]),
+            ]);
+            const { port, calls, tracker } = fakePort({ gateProvenanceReads: [clean, retried] });
+
+            expect(() => deliver(42, port, tracker)).toThrow(/attempt 1 of health-gates run 102 failed/);
+            expect(calls.filter((call) => call === 'gate-provenance:42:head')).toHaveLength(2);
+            expect(calls).not.toContain('merge:42:head');
+        });
+    }
+
+    it('refuses when the Gate provenance read is unavailable', () => {
+        const { port, calls, tracker } = fakePort({ gateProvenance: new Error('actions api offline') });
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/actions api offline/);
+        expect(calls).not.toContain('add-receipt:42');
+        expect(calls).not.toContain('merge:42:head');
     });
 });
 
@@ -9780,6 +10082,12 @@ describe('delivery author authentication', () => {
             };
         };
         const buildPort = (): DeliveryPort => ({
+            gateProvenance: () => {
+                throw new Error('classification never reads Gate provenance');
+            },
+            mergeCommitMessage: () => {
+                throw new Error('classification never reads a merge commit');
+            },
             gateRequiredCheckNames: () => new Set(['Gate']),
             gateRequiredSkipAliases: () => new Map(),
             headCheckRuns: () => [],
@@ -11609,6 +11917,10 @@ describe('delivery shell boundary', () => {
                             captures.push('merge-attempted');
                             return JSON.stringify({ merged: true, message: 'merged' });
                         }
+                        const gateProvenance = shellGateProvenanceResponse(args);
+                        if (gateProvenance !== undefined) {
+                            return gateProvenance;
+                        }
                         throw new Error(`unexpected capture: ${joined}`);
                     },
                     run: () => undefined,
@@ -12582,6 +12894,81 @@ describe('delivery shell boundary', () => {
             command: 'gh',
             args: ['api', '--method', 'PATCH', 'repos/jcosta33/sourdaw/pulls/43', '-f', 'base=main', '--silent'],
         });
+    });
+
+    it('reads Gate provenance through complete paginated REST listings for the exact head', () => {
+        const captures: string[][] = [];
+        const shell: ShellRunner = {
+            capture: (_command, args) => {
+                captures.push(args);
+                return shellGateProvenanceResponse(args) ?? expect.fail(`unexpected capture: ${args.join(' ')}`);
+            },
+            run: () => expect.fail('reading Gate provenance must not write'),
+        };
+
+        expect(shellPort('jcosta33/sourdaw', shell).gateProvenance(42, 'head')).toEqual(cleanGateProvenance('head'));
+        expect(captures).toEqual([
+            ['api', '--paginate', '--slurp', 'repos/jcosta33/sourdaw/commits/head/statuses?per_page=100'],
+            [
+                'api',
+                '--paginate',
+                '--slurp',
+                'repos/jcosta33/sourdaw/commits/head/check-runs?check_name=Gate&filter=all&per_page=100',
+            ],
+            [
+                'api',
+                '--paginate',
+                '--slurp',
+                'repos/jcosta33/sourdaw/actions/runs?head_sha=head&event=pull_request&per_page=100',
+            ],
+            ['api', 'repos/jcosta33/sourdaw/actions/runs/100/attempts/1'],
+            ['api', '--paginate', '--slurp', 'repos/jcosta33/sourdaw/actions/runs/100/attempts/1/jobs?per_page=100'],
+        ]);
+    });
+
+    it.each([
+        [
+            'a check-run listing shorter than its total',
+            (args: string[]) =>
+                args.at(-1)?.includes('check-runs')
+                    ? JSON.stringify([{ total_count: 2, check_runs: [] }])
+                    : shellGateProvenanceResponse(args),
+            /check runs is incomplete/,
+        ],
+        [
+            'a workflow-run listing whose total moves between pages',
+            (args: string[]) =>
+                args.at(-1)?.includes('actions/runs?')
+                    ? JSON.stringify([
+                          { total_count: 1, workflow_runs: [] },
+                          { total_count: 2, workflow_runs: [] },
+                      ])
+                    : shellGateProvenanceResponse(args),
+            /workflow runs changed while it was read/,
+        ],
+        [
+            'an attempt summary for a different attempt',
+            (args: string[]) =>
+                args.at(-1) === 'repos/jcosta33/sourdaw/actions/runs/100/attempts/1'
+                    ? JSON.stringify({ id: 100, run_attempt: 2, conclusion: 'success' })
+                    : shellGateProvenanceResponse(args),
+            /run 100 attempt 1 is unreadable/,
+        ],
+        [
+            'a commit-status page that is not a list',
+            (args: string[]) =>
+                args.at(-1)?.includes('/statuses')
+                    ? JSON.stringify([{ context: 'Gate' }])
+                    : shellGateProvenanceResponse(args),
+            /commit statuses are unreadable/,
+        ],
+    ])('fails closed on %s', (_label, answer, message) => {
+        const shell: ShellRunner = {
+            capture: (_command, args) => answer(args) ?? expect.fail(`unexpected capture: ${args.join(' ')}`),
+            run: () => expect.fail('reading Gate provenance must not write'),
+        };
+
+        expect(() => shellPort('jcosta33/sourdaw', shell).gateProvenance(42, 'head')).toThrow(message);
     });
 
     it('reads a merge commit message exactly as GitHub stores it, trailing newline included', () => {

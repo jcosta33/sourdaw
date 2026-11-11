@@ -101,11 +101,42 @@ export type StackedPullRequest = Pick<
  * branch. Only the one caller that judges the head asks for check runs.
  */
 export type CheckEvidencePort = {
+    /** Raw facts identifying every `Gate` on the head, read completely or not at all. */
+    gateProvenance: (number: number, headRefOid: string) => GateProvenanceFacts;
     gateRequiredCheckNames: () => ReadonlySet<string>;
     gateRequiredSkipAliases: () => ReadonlyMap<string, string>;
     headCheckRuns: (number: number, headRefOid: string) => HeadCheckRun[];
     /** The `required_status_checks` contexts on the live `main` ruleset, read fresh from GitHub. */
     requiredStatusCheckContexts: () => string[];
+};
+
+/**
+ * The REST facts that say which `Gate` satisfies the ruleset. The ruleset requires the context by
+ * name with no integration pin, so any app's check run or a commit status named `Gate` would count.
+ * Statuses and conclusions are GitHub's lower-case REST values.
+ */
+export type GateProvenanceFacts = {
+    commitStatusContexts: string[];
+    gateCheckRuns: Array<{
+        id: number;
+        status: string;
+        conclusion: string | null;
+        appNodeId: string | null;
+        checkSuiteId: number | null;
+    }>;
+    /** The health-gates.yml `pull_request` runs for the head, each with every attempt it made. */
+    workflowRuns: Array<{
+        id: number;
+        path: string;
+        headSha: string;
+        checkSuiteId: number;
+        runAttempt: number;
+        attempts: Array<{
+            attempt: number;
+            conclusion: string | null;
+            jobs: Array<{ id: number; name: string; conclusion: string | null }>;
+        }>;
+    }>;
 };
 
 export type DeliveryPort = CheckEvidencePort & {
@@ -254,6 +285,7 @@ const SETTLED_CHECK_STATUS = 'COMPLETED';
 const SUPERSEDED_CONCLUSION = 'CANCELLED';
 const PASSING_CONCLUSION = 'SUCCESS';
 const SKIPPED_CONCLUSION = 'SKIPPED';
+const FAILED_CONCLUSION = 'FAILURE';
 /**
  * `SKIPPED` is a designed outcome: the workflow's path filters skip whole legs, and `Gate` is built
  * to pass on a skipped dependency. Nothing in it is designed to conclude `NEUTRAL`, which reports a
@@ -433,9 +465,103 @@ function validatePullRequest(
 function validateCiAdmission(pullRequest: PullRequestSnapshot, checks: CheckEvidencePort, mode: CiAdmissionMode): void {
     if (mode === 'advisory') {
         validateAdvisoryMergeGate(pullRequest, checks);
-        return;
+    } else {
+        validateRequiredCiAdmission(pullRequest, checks);
     }
-    validateRequiredCiAdmission(pullRequest, checks);
+    validateGateProvenance(pullRequest, checks.gateProvenance(pullRequest.number, pullRequest.headRefOid));
+}
+
+/** GitHub Actions' immutable app node id; the app's slug and name are display only. */
+const GITHUB_ACTIONS_APP_NODE_ID = 'MDM6QXBwMTUzNjg=';
+/**
+ * The health-gates.yml `scope` job, which a draft run skips by design. A draft run's `Gate` fails
+ * without having judged anything, so only a failed attempt whose scope job did not skip is a verdict.
+ */
+const DRAFT_SKIPPED_SCOPE_JOB_NAME = 'Plan required checks';
+
+/**
+ * Positively identifies the `Gate` deliver relies on: no commit status may claim the name, every
+ * `Gate` check run must be a GitHub Actions job in a health-gates.yml `pull_request` run for this
+ * exact head, and the newest of them must be the succeeded `Gate` job of the newest run's latest
+ * attempt. Check-run ids are allocated in increasing order, so the highest id is the newest run.
+ *
+ * A real `Gate` failure on the head is never retired by a later success: a rerun to green is the
+ * flake the repository rules forbid laundering, and the remedy is a new push. A draft run's failure
+ * and a superseded run's cancellation are not verdicts and stay tolerated.
+ */
+function validateGateProvenance(pullRequest: PullRequestSnapshot, facts: GateProvenanceFacts): void {
+    const head = pullRequest.headRefOid;
+    const label = `PR #${pullRequest.number} Gate on ${head}`;
+    if (facts.commitStatusContexts.includes(REQUIRED_CHECK_NAME)) {
+        fail(
+            `${label} has a commit status named ${REQUIRED_CHECK_NAME}; only the health-gates Gate job may satisfy it`
+        );
+    }
+    const runs = facts.workflowRuns.filter((run) => run.path === HEALTH_GATES_WORKFLOW_PATH && run.headSha === head);
+    if (runs.length === 0) {
+        fail(`${label} has no health-gates pull_request run`);
+    }
+    const suites = new Set(runs.map((run) => run.checkSuiteId));
+    const foreign = facts.gateCheckRuns.find(
+        (run) =>
+            run.appNodeId !== GITHUB_ACTIONS_APP_NODE_ID || run.checkSuiteId === null || !suites.has(run.checkSuiteId)
+    );
+    if (foreign !== undefined) {
+        fail(`${label}: check run ${foreign.id} named ${REQUIRED_CHECK_NAME} is not the health-gates Gate job`);
+    }
+    for (const run of runs) {
+        assertNoRealGateFailure(label, run);
+    }
+    assertNewestGateIsNewestRunGateJob(label, runs, facts.gateCheckRuns);
+}
+
+function assertNoRealGateFailure(label: string, run: GateProvenanceFacts['workflowRuns'][number]): void {
+    const numbers = run.attempts.map((attempt) => attempt.attempt).sort((left, right) => left - right);
+    if (numbers.length !== run.runAttempt || numbers.some((attempt, index) => attempt !== index + 1)) {
+        fail(`${label}: the attempts of health-gates run ${run.id} are incomplete`);
+    }
+    for (const attempt of run.attempts) {
+        const scope = attempt.jobs.find((job) => job.name === DRAFT_SKIPPED_SCOPE_JOB_NAME);
+        if (attempt.conclusion === 'failure' && scope?.conclusion !== 'skipped') {
+            fail(
+                `${label}: attempt ${attempt.attempt} of health-gates run ${run.id} failed, and a later success ` +
+                    `never retires a real Gate failure; push a new commit`
+            );
+        }
+    }
+}
+
+function assertNewestGateIsNewestRunGateJob(
+    label: string,
+    runs: GateProvenanceFacts['workflowRuns'],
+    gateCheckRuns: GateProvenanceFacts['gateCheckRuns']
+): void {
+    const newestGate = gateCheckRuns.reduce<GateProvenanceFacts['gateCheckRuns'][number] | undefined>(
+        (newest, run) => (newest === undefined || run.id > newest.id ? run : newest),
+        undefined
+    );
+    if (newestGate === undefined) {
+        fail(`${label}: no ${REQUIRED_CHECK_NAME} check run reported`);
+    }
+    if (newestGate.status !== 'completed' || newestGate.conclusion !== 'success') {
+        fail(
+            `${label}: the newest ${REQUIRED_CHECK_NAME} check run ${newestGate.id} is ` +
+                `${newestGate.status === 'completed' ? (newestGate.conclusion ?? 'unconcluded') : newestGate.status}`
+        );
+    }
+    const newestRun = runs.reduce((newest, run) => (run.id > newest.id ? run : newest));
+    const latestAttempt = newestRun.attempts.find((attempt) => attempt.attempt === newestRun.runAttempt);
+    const gateJobs = latestAttempt?.jobs.filter((job) => job.name === REQUIRED_CHECK_NAME) ?? [];
+    const gateJob = gateJobs.length === 1 ? gateJobs[0] : undefined;
+    if (gateJob === undefined) {
+        fail(`${label}: the latest attempt of health-gates run ${newestRun.id} has no single Gate job`);
+    }
+    if (gateJob.id !== newestGate.id) {
+        fail(
+            `${label}: the newest ${REQUIRED_CHECK_NAME} check run ${newestGate.id} is not the Gate job ` +
+                `${gateJob.id} of the latest attempt of health-gates run ${newestRun.id}`
+        );
+    }
 }
 
 /**
@@ -642,9 +768,13 @@ function unretiredFailedCheckRun(checkRuns: HeadCheckRun[]): HeadCheckRun | unde
  *
  * Attempts GitHub reports no start for, and attempts that share a start, order nothing and so retire
  * nothing: absent or ambiguous recency leaves the failure standing rather than guessing it away.
+ *
+ * A `FAILURE` is never retired at all. It is a real verdict on this commit, and a green rerun over it
+ * is the retry-to-green the repository forbids treating as clean; the remedy is a new push.
  */
 function retiresAttempt(candidate: HeadCheckRun, attempt: HeadCheckRun): boolean {
     return (
+        attempt.conclusion !== FAILED_CONCLUSION &&
         candidate.name === attempt.name &&
         candidate.status === SETTLED_CHECK_STATUS &&
         !NON_VERDICT_CONCLUSIONS.has(candidate.conclusion ?? '') &&
@@ -3683,6 +3813,156 @@ function readRequiredStatusCheckContexts(repository: string, shell: ShellRunner)
     return [...new Set(requiredStatusCheckArrays.flat().map((check) => check.context))];
 }
 
+function readPaginatedRestPages(shell: Pick<ShellRunner, 'capture'>, path: string, label: string): unknown[] {
+    const pages = parseJson<unknown>(shell.capture('gh', ['api', '--paginate', '--slurp', path]), label);
+    if (!Array.isArray(pages) || pages.length === 0) {
+        fail(`${label} is unreadable`);
+    }
+    return pages;
+}
+
+/** Every item of a `{ total_count, <key>: [] }` listing, refused unless the pages add up to the total. */
+function readCountedRestItems(
+    shell: Pick<ShellRunner, 'capture'>,
+    path: string,
+    key: string,
+    label: string
+): Record<string, unknown>[] {
+    let total: number | undefined;
+    const items: unknown[] = [];
+    for (const page of readPaginatedRestPages(shell, path, label)) {
+        if (!isRecord(page) || !Number.isSafeInteger(page.total_count) || !Array.isArray(page[key])) {
+            fail(`${label} is unreadable`);
+        }
+        if (total !== undefined && total !== page.total_count) {
+            fail(`${label} changed while it was read`);
+        }
+        total = page.total_count as number;
+        items.push(...(page[key] as unknown[]));
+    }
+    if (items.length !== total) {
+        fail(`${label} is incomplete: ${items.length} of ${String(total)} item(s) read`);
+    }
+    if (!items.every(isRecord)) {
+        fail(`${label} is unreadable`);
+    }
+    return items;
+}
+
+function isPositiveInteger(value: unknown): value is number {
+    return typeof value === 'number' && Number.isSafeInteger(value) && value > 0;
+}
+
+function isNullableString(value: unknown): value is string | null {
+    return value === null || typeof value === 'string';
+}
+
+function readGateProvenance(
+    repository: string,
+    number: number,
+    head: string,
+    shell: Pick<ShellRunner, 'capture'>
+): GateProvenanceFacts {
+    const label = `PR #${number} Gate provenance on ${head}`;
+    const commit = `repos/${repository}/commits/${encodeURIComponent(head)}`;
+    const commitStatusContexts = readPaginatedRestPages(
+        shell,
+        `${commit}/statuses?per_page=100`,
+        `${label} commit statuses`
+    ).flatMap((page) => {
+        if (!Array.isArray(page) || !page.every((status) => isRecord(status) && typeof status.context === 'string')) {
+            fail(`${label} commit statuses are unreadable`);
+        }
+        return page.map((status: { context: string }) => status.context);
+    });
+    const gateCheckRuns = readCountedRestItems(
+        shell,
+        `${commit}/check-runs?check_name=${REQUIRED_CHECK_NAME}&filter=all&per_page=100`,
+        'check_runs',
+        `${label} check runs`
+    ).map((run) => {
+        const app = run.app;
+        const suite = run.check_suite;
+        if (
+            !isPositiveInteger(run.id) ||
+            run.name !== REQUIRED_CHECK_NAME ||
+            typeof run.status !== 'string' ||
+            !isNullableString(run.conclusion) ||
+            (app !== null && !isRecord(app)) ||
+            (suite !== null && !isRecord(suite))
+        ) {
+            fail(`${label} check runs are unreadable`);
+        }
+        const appNodeId = app?.node_id;
+        const checkSuiteId = suite?.id;
+        return {
+            id: run.id,
+            status: run.status,
+            conclusion: run.conclusion,
+            appNodeId: typeof appNodeId === 'string' ? appNodeId : null,
+            checkSuiteId: isPositiveInteger(checkSuiteId) ? checkSuiteId : null,
+        };
+    });
+    const workflowRuns = readCountedRestItems(
+        shell,
+        `repos/${repository}/actions/runs?head_sha=${encodeURIComponent(head)}&event=pull_request&per_page=100`,
+        'workflow_runs',
+        `${label} workflow runs`
+    )
+        .map((run) => {
+            if (
+                !isPositiveInteger(run.id) ||
+                typeof run.path !== 'string' ||
+                typeof run.head_sha !== 'string' ||
+                !isPositiveInteger(run.check_suite_id) ||
+                !isPositiveInteger(run.run_attempt)
+            ) {
+                fail(`${label} workflow runs are unreadable`);
+            }
+            return {
+                id: run.id,
+                path: run.path,
+                headSha: run.head_sha,
+                checkSuiteId: run.check_suite_id,
+                runAttempt: run.run_attempt,
+            };
+        })
+        .filter((run) => run.path === HEALTH_GATES_WORKFLOW_PATH && run.headSha === head)
+        .map((run) => ({ ...run, attempts: readWorkflowRunAttempts(repository, run, label, shell) }));
+    return { commitStatusContexts, gateCheckRuns, workflowRuns };
+}
+
+function readWorkflowRunAttempts(
+    repository: string,
+    run: { id: number; runAttempt: number },
+    label: string,
+    shell: Pick<ShellRunner, 'capture'>
+): GateProvenanceFacts['workflowRuns'][number]['attempts'] {
+    return Array.from({ length: run.runAttempt }, (_unused, index) => {
+        const attempt = index + 1;
+        const path = `repos/${repository}/actions/runs/${run.id}/attempts/${attempt}`;
+        const attemptLabel = `${label} run ${run.id} attempt ${attempt}`;
+        const summary = parseJson<unknown>(shell.capture('gh', ['api', path]), attemptLabel);
+        if (
+            !isRecord(summary) ||
+            summary.id !== run.id ||
+            summary.run_attempt !== attempt ||
+            !isNullableString(summary.conclusion)
+        ) {
+            fail(`${attemptLabel} is unreadable`);
+        }
+        const jobs = readCountedRestItems(shell, `${path}/jobs?per_page=100`, 'jobs', `${attemptLabel} jobs`).map(
+            (job) => {
+                if (!isPositiveInteger(job.id) || typeof job.name !== 'string' || !isNullableString(job.conclusion)) {
+                    fail(`${attemptLabel} jobs are unreadable`);
+                }
+                return { id: job.id, name: job.name, conclusion: job.conclusion };
+            }
+        );
+        return { attempt, conclusion: summary.conclusion, jobs };
+    });
+}
+
 export function shellPort(
     repository: string,
     shell: ShellRunner = { capture, run },
@@ -3805,6 +4085,7 @@ export function shellPort(
                 mergedByActorNodeId: readMergedByActorNodeId(number, { owner, name }, shell),
             };
         },
+        gateProvenance: (number, headRefOid) => readGateProvenance(repository, number, headRefOid, shell),
         headCheckRuns: (number, headRefOid) =>
             readHeadCheckRuns(number, (cursor) => readRollupPage(number, headRefOid, cursor)),
         gateRequiredCheckNames: () => readGateRequiredCheckNames(),
