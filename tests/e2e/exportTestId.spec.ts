@@ -5,7 +5,7 @@ async function openExportDialog(page: import('@playwright/test').Page): Promise<
     // Open via keyboard shortcut Cmd/Ctrl+Shift+E.
     const isMac = await page.evaluate(() => navigator.platform.toUpperCase().includes('MAC'));
     await page.keyboard.press(isMac ? 'Meta+Shift+E' : 'Control+Shift+E');
-    await expect(page.getByRole('dialog').filter({ hasText: /The Bakery/i })).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByRole('dialog').filter({ hasText: /Export audio/i })).toBeVisible({ timeout: 10_000 });
 }
 
 test.describe('Export dialog — test-id targeted', () => {
@@ -35,7 +35,7 @@ test.describe('Export dialog — test-id targeted', () => {
         await expect(cancel).toBeVisible();
         await cancel.click();
 
-        // Dialog should close — "The Bakery" title disappears.
-        await expect(page.getByText('The Bakery')).not.toBeVisible({ timeout: 5000 });
+        // Dialog should close — "Export audio" title disappears.
+        await expect(page.getByText('Export audio')).not.toBeVisible({ timeout: 5000 });
     });
 });

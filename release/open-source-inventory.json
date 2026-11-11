@@ -168,8 +168,8 @@
             "digests": [
                 "sha256:c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4:LICENSE",
                 "sha256:c148064afc3d904d474c5f20ee39052ff86085a02d148552ce59f4d0ebd7aeb9:NOTICE",
-                "sha256:6dbcbd99a94810411208450d604b910efc763dd6abe89d364e04d0ce78b03f29:public/legal/DEPENDENCY-LICENSES.txt",
-                "sha256:cbd81a3f3928fc9e678b8c0c8782636cead8ac9f6f7a677f1f9da73b0fd0446b:release/dependency-license-proofs.json"
+                "sha256:3135c1befc711ec081d2680b4783b9ab7f9f0b3f73143429c1fe0fae4d1f2f4d:public/legal/DEPENDENCY-LICENSES.txt",
+                "sha256:6f175db2c8a9c6b161726fcbd79b772a7f3537725489530e1eee69e18c5f37b5:release/dependency-license-proofs.json"
             ],
             "licenses": [
                 "Apache-2.0",
@@ -281,7 +281,7 @@
                 "exact collaboration-server npm lock graph"
             ],
             "digests": [
-                "sha256:ad60a48b9053b5392e061fded83412a0fae023114db84efd117a6c41776f768a",
+                "sha256:8699a2bc66926ecc08621ec524328b7b138475064a18cde0c4a272a68afcf331",
                 "sha256:d5943b73cb367ddf580983190df0e0c073383c75ebce9611aefb3340c1a380b7"
             ],
             "licenses": [
@@ -404,7 +404,7 @@
                 "exact Cargo lock graph"
             ],
             "digests": [
-                "sha256:48588572a92db3a3dd8c60a1248f3eed04be68131ffe4e43ead0ed7d2381e0b1",
+                "sha256:9310e8f1debd75adf4b82f062948457313b89b0a18b02763ba531707344c4010",
                 "sha256:57f5b3fc8207b24fad956e3a8a52cfd2d527420cb753257bbd5f698d0cfc3e1e:public/legal/PLUGIN-INTERFACE-NOTICES.txt"
             ],
             "licenses": [
@@ -1212,10 +1212,10 @@
                 "tracked-set-sha256:428b6c1285337ce7af016a553a558c7111f6009a64f9b85f9265cf179fa2c290:grand-boule-admission-decision",
                 "tracked-set-sha256:20bcf828794365a588f32d7e13808657502a13d0e8427a6543cf78c2cec789ce:grand-boule-discovery-catalog",
                 "tracked-set-sha256:7cbd0ef290ff1d6ab57caeba94627a5db5646b02fde0a91434606161fae713fb:grand-boule-factory-admission",
-                "tracked-set-sha256:5665326f8203c93c946f6e5b3acc1fc55d793321fe3f4739b09014091c5e2b17:grand-boule-live-runtime",
+                "tracked-set-sha256:f6c8777df4577ebfc7d9c07c9b076c6643c06180ce928487ba51b1396b664bbe:grand-boule-live-runtime",
                 "tracked-set-sha256:274eb7c29240ca5b806ed43e2bb6a1f93a3c28e8512bcd7256cb2fa02ff9e6f0:grand-boule-project-state",
                 "tracked-set-sha256:7e8d66187434f55ff0f62c3bc22b5f49cba512b0813f672a28a7524f8cfd1085:grand-boule-offline-composition",
-                "tracked-set-sha256:8604fc488744c3a6ed8751b490dd77279460feb5adbc6c2782af3f8b0686299c:grand-boule-release-proof"
+                "tracked-set-sha256:fdada292f3fbbf2b5cdd14ce381ac79cc710cebe78e05024e67861cfca822381:grand-boule-release-proof"
             ],
             "licenses": [
                 "Apache-2.0"
@@ -1343,16 +1343,16 @@
             ],
             "revisions": [
                 "rust nightly-2026-04-14",
-                "wasm-pack 0.14.0",
-                "wasm-bindgen 0.2.127",
-                "wasm-opt bundled-by-wasm-pack@0.14.0",
-                "daw-dsp sha256:313700439a07dccfd62943c4694bcd468f25c626e84ee5f9e79268e1c9f7a06e",
-                "daw-wasm-decoder sha256:83667bb9f21ff44fe45b511037a8abae2292e65a227eb9cdc864f867b4e71861",
-                "proof-chamber sha256:e3accb055ef47620ddcd8f28817a7521e4392c8000ce67152f9817df66832efe",
-                "scoring sha256:3971cf823cd8473cd7bf9722ec635a001c8c45c8c08386cd09e272dce4c77f19"
+                "wasm-pack 0.15.1",
+                "wasm-bindgen 0.2.130",
+                "wasm-opt bundled-by-wasm-pack@0.15.1",
+                "daw-dsp sha256:dec050feae2a21549cf21e877cb11f0ccf9ec156d40c539b08dabdcfab66b524",
+                "daw-wasm-decoder sha256:955945d152e1d77ca32d1c40e2863e781c983ec411670ad9f402fb553e4ccc9a",
+                "proof-chamber sha256:585883d0b78a8689d8bdaf4f38e566ddefc235d84dfa348838fb12c87e3c826a",
+                "scoring sha256:e8b5a91f9f4409062b70b5431911a970f3d4f8e20ab79bbd57012a5710fba6b6"
             ],
             "digests": [
-                "sha256:85f23ae1b8ce24eef6098b57d2294b9b4c7fc626b9526eef78e533a0ff79e644:public/wasm/manifest.json"
+                "sha256:a04f1c3e6d0389b60ee1b3c3ceafc1374587c3ead2deb0586e2fccd2311ccdcb:public/wasm/manifest.json"
             ],
             "licenses": [
                 "Apache-2.0",
@@ -1389,7 +1389,7 @@
                 "not-applicable:direct-project-source"
             ],
             "digests": [
-                "sha256:c0537f9e862db90028295659eb03c694f645a2c8d795f82d9ed19ded0bae5bda:public/entryLoadRecovery.js"
+                "sha256:fa331cffeae10f5f4cde03834a0fade75ba999c3758d401f624d070d2d696d61:public/entryLoadRecovery.js"
             ],
             "licenses": [
                 "Apache-2.0"
@@ -1399,6 +1399,42 @@
             ],
             "evidence": [
                 "Directly authored classic browser source; no generator, vendored source, or third-party code."
+            ],
+            "obligations": [
+                "Ship the project LICENSE and NOTICE with every distribution."
+            ]
+        },
+        {
+            "id": "theme-prepaint-source",
+            "kind": "project-source",
+            "retention": "keep-with-obligations",
+            "owner": "OS-10",
+            "releaseModes": [
+                "source",
+                "web",
+                "desktop"
+            ],
+            "paths": [
+                "public/themePrepaint.js"
+            ],
+            "sources": [
+                "public/themePrepaint.js"
+            ],
+            "revisions": [
+                "not-applicable:direct-project-source"
+            ],
+            "digests": [
+                "sha256:dd1a7b1ec591d45a4a23b354a565b0f9c21a31b2fb2d263ccd4f8dce553deccc:public/themePrepaint.js"
+            ],
+            "licenses": [
+                "Apache-2.0"
+            ],
+            "productSurfaces": [
+                "browser startup theme restoration",
+                "desktop webview startup theme restoration"
+            ],
+            "evidence": [
+                "The startup script is direct project source; no generator or second source tree exists."
             ],
             "obligations": [
                 "Ship the project LICENSE and NOTICE with every distribution."
@@ -1822,7 +1858,7 @@
     "snapshots": [
         {
             "path": "package.json",
-            "sha256": "cfb1a079ac712ff2a413821221ce7259bbdf171c69ba2581b8b0fa5c793e6cac"
+            "sha256": "512ef1dcced4af1a094c156ff41e22b910aca3bdbba7e8fd5ed73aa2ff2d1cbf"
         },
         {
             "path": "server/package.json",
@@ -1834,7 +1870,7 @@
         },
         {
             "path": "pnpm-lock.yaml",
-            "sha256": "ad60a48b9053b5392e061fded83412a0fae023114db84efd117a6c41776f768a"
+            "sha256": "8699a2bc66926ecc08621ec524328b7b138475064a18cde0c4a272a68afcf331"
         },
         {
             "path": "Cargo.toml",
@@ -1842,7 +1878,7 @@
         },
         {
             "path": "Cargo.lock",
-            "sha256": "48588572a92db3a3dd8c60a1248f3eed04be68131ffe4e43ead0ed7d2381e0b1"
+            "sha256": "9310e8f1debd75adf4b82f062948457313b89b0a18b02763ba531707344c4010"
         },
         {
             "path": "src/modules/AiRuntime/repositories/webLlm/webLlmArtifactManifest.generated.json",
@@ -1850,7 +1886,7 @@
         },
         {
             "path": "public/wasm/manifest.json",
-            "sha256": "85f23ae1b8ce24eef6098b57d2294b9b4c7fc626b9526eef78e533a0ff79e644"
+            "sha256": "a04f1c3e6d0389b60ee1b3c3ceafc1374587c3ead2deb0586e2fccd2311ccdcb"
         }
     ],
     "externalReferences": [

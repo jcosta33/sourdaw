@@ -65,6 +65,7 @@ describe('setYeastArpPattern', () => {
         // use case re-reads it to build the runtime projection.
         commit.mockImplementation((processors: readonly YeastProcessorInfo[]) => {
             store.value = { ...store.value, processors: [...processors] };
+            return true;
         });
     });
 
@@ -74,7 +75,7 @@ describe('setYeastArpPattern', () => {
             { ...defaultStep(), stepType: 'rest' as const },
         ];
 
-        await setYeastArpPattern('arp-1', pattern);
+        expect(await setYeastArpPattern('arp-1', pattern)).toBe(true);
 
         expect(decodeArpPatternParams(committedArpParams())).toEqual(pattern);
         // The runtime must see the same edit — a commit that never reaches the
@@ -115,7 +116,7 @@ describe('setYeastArpPattern', () => {
     });
 
     it('ignores an unknown processor id', async () => {
-        await setYeastArpPattern('missing', [{ ...defaultStep() }]);
+        expect(await setYeastArpPattern('missing', [{ ...defaultStep() }])).toBe(false);
 
         expect(commit).not.toHaveBeenCalled();
     });

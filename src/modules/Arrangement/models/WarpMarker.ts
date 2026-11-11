@@ -1,3 +1,5 @@
+import { bytesToBase64 } from '#/utils/base64';
+
 export type WarpMarkerOrigin = 'user' | 'transient-auto' | 'grid-snap';
 
 export type WarpMarker = {
@@ -22,12 +24,23 @@ export type WarpState = {
     originalTempo: number | null;
 };
 
+// Preserve every UUID bit while creating fewer native CRDT Text characters.
+function createWarpMarkerId(): string {
+    const hex = crypto.randomUUID().replaceAll('-', '');
+    const bytes = new Uint8Array(16);
+    for (let index = 0; index < bytes.length; index++) {
+        const offset = index * 2;
+        bytes[index] = Number.parseInt(hex.slice(offset, offset + 2), 16);
+    }
+    return `warp-${bytesToBase64(bytes).replaceAll('+', '-').replaceAll('/', '_').replace(/=+$/, '')}`;
+}
+
 export const createWarpMarker = (
     originalBeat: number,
     warpedBeat: number,
     options?: { origin?: WarpMarkerOrigin; confidence?: number; locked?: boolean }
 ): WarpMarker => ({
-    id: `warp-${crypto.randomUUID()}`,
+    id: createWarpMarkerId(),
     originalBeat,
     warpedBeat,
     origin: options?.origin ?? 'user',

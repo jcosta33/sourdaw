@@ -5,6 +5,7 @@ import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stor
 import {
     commandBatchPreflightPort,
     commandBatchPreviewPort,
+    commandProjectRevisionPort,
     commandTrackDefaultsPort,
     compilePartialCommandBatchAcceptance,
     executeVersionedCommandBatchEnvelope,
@@ -233,6 +234,7 @@ describe('compileArbitraryCommandList', () => {
         clearHandlerRegistry();
         commandBatchPreflightPort.setProvider(null);
         commandBatchPreviewPort.setProvider(null);
+        commandProjectRevisionPort.setProvider(null);
         commandTrackDefaultsPort.setTrackColorProvider(null);
     });
 
@@ -2262,6 +2264,7 @@ describe('compileArbitraryCommandList', () => {
         if (parsed.status !== 'valid') {
             return;
         }
+        commandProjectRevisionPort.setProvider(() => 'revision-duplicate-closure');
         const preview = await executeVersionedCommandBatchEnvelope({
             authority: compiled.commandBatch.authority,
             serialized: compiled.commandBatch.serialized,
@@ -4290,6 +4293,7 @@ describe('compileArbitraryCommandList', () => {
                 producerCommandId: producer?.commandId,
             },
         ]);
+        commandProjectRevisionPort.setProvider(() => 'revision-graph');
         const preview = await executeVersionedCommandBatchEnvelope({
             authority: compiled.commandBatch.authority,
             serialized: compiled.commandBatch.serialized,
@@ -5526,6 +5530,7 @@ describe('compileArbitraryCommandList', () => {
         expect(clipCommand?.applicationAssignedIds).toContainEqual({ argument: 'id', value: clipId });
         expect(compiled.commandBatch.authority.scope.targetIds).toEqual([trackId]);
 
+        commandProjectRevisionPort.setProvider(() => 'revision-typed-creation');
         const preview = await executeVersionedCommandBatchEnvelope({
             authority: compiled.commandBatch.authority,
             serialized: compiled.commandBatch.serialized,

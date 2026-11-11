@@ -3,6 +3,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
 
+import { handleRestoreAutomationLanePoints } from '../../../handlers/automation/handleRestoreAutomationLanePoints';
 import { createAutomationLane } from '../../../models/Automation';
 import { automationStore } from '../../../stores/automationStore';
 import { getAutomationValueAtBeat } from '../../automation/getAutomationValueAtBeat';
@@ -13,14 +14,24 @@ import { releaseTouchAutomation } from '../releaseTouchAutomation';
 import { startAutomationRecording } from '../startAutomationRecording';
 import { stopAutomationRecording } from '../stopAutomationRecording';
 
-const undoEntries = vi.hoisted(() => new Array<{ undo: () => void; redo: () => void }>());
+const undoEntries = vi.hoisted(
+    () => new Array<ReturnType<typeof import('#/modules/Command/useCases').createUndoEntry>>()
+);
 
-vi.mock('#/modules/Command/useCases', () => ({
-    pushUndoEntry: (_label: string, undo: () => void, redo: () => void) => {
-        undoEntries.push({ undo, redo });
+vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Command/useCases')>()),
+    commitUndoEntry: (entry: (typeof undoEntries)[number]) => {
+        undoEntries.push(entry);
     },
     executeUserAppAction: vi.fn(),
 }));
+
+function replay(action: (typeof undoEntries)[number]['inverseAction']): void {
+    if (action?.type !== 'restoreAutomationLanePoints') {
+        throw new Error('Expected recorded points replay');
+    }
+    expect(handleRestoreAutomationLanePoints.execute(action)).toEqual({ status: 'written' });
+}
 
 /**
  * Write and latch hold their last gesture value from the final gesture to the
@@ -272,13 +283,13 @@ describe('automation recording committed through the transport stop boundary', (
         stopAutomationRecording(8);
         expect(undoEntries).toHaveLength(1);
 
-        undoEntries[0]!.undo();
+        replay(undoEntries[0]!.inverseAction);
         expect(recordedPoints()).toEqual([
             { beat: 4, value: 0.4 },
             { beat: 8, value: 0.6 },
         ]);
 
-        undoEntries[0]!.redo();
+        replay(undoEntries[0]!.action);
         const points = recordedPoints();
         expect(points.find((point) => point.beat === 4)).toBeUndefined();
         expect(points.find((point) => point.beat === 8)?.value).toBe(0.8);

@@ -14,9 +14,10 @@ describe('DawPluginChip — active vs inactive', () => {
         expect(btn.className).toContain('amber');
     });
 
-    it('inactive chip has inactive styling (black/20)', () => {
+    it('inactive chip uses semantic surface and text colors', () => {
         const btn = renderChip({ active: false, tone: 'amber' });
-        expect(btn.className).toContain('black/20');
+        expect(btn.className).toContain('bg-surface-well/50');
+        expect(btn.className).toContain('text-text-secondary');
         expect(btn.className).not.toContain('accent-amber');
     });
 });
@@ -44,14 +45,16 @@ describe('DawPluginChip — tone variants', () => {
 });
 
 describe('DawPluginChip — size variants', () => {
-    it('default size is xs', () => {
+    it('default size uses the legible metadata role and a 24px minimum height', () => {
         const btn = renderChip();
-        expect(btn.className).toContain('text-[7px]');
+        expect(btn.style.fontSize).toBe('var(--text-metadata)');
+        expect(btn.className).toContain('min-h-6');
     });
 
-    it('size sm renders larger text', () => {
+    it('size sm uses the label role and a 24px minimum height', () => {
         const btn = renderChip({ size: 'sm' });
-        expect(btn.className).toContain('text-[10px]');
+        expect(btn.style.fontSize).toBe('var(--text-label)');
+        expect(btn.className).toContain('min-h-6');
     });
 });
 

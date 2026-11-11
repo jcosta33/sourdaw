@@ -31,6 +31,8 @@ export function stopPlayheadScheduler(): void {
     schedulerSession.automaticPunch = null;
     releasePlayheadClockHold(schedulerSession.generation);
     schedulerSession.generation += 1;
+    schedulerSession.loopAudioSchedule?.reset();
+    schedulerSession.loopAudioSchedule = null;
     stopAutomationRecording(boundaryBeat);
     if (schedulerSession.worker) {
         schedulerSession.worker.postMessage({ type: 'stop' });

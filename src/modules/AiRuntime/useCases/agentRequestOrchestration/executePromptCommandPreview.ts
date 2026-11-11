@@ -1,6 +1,5 @@
 import { logger } from '#/infra/logger/appLogger';
 import { executeVersionedCommandBatchEnvelope } from '#/modules/Command/useCases';
-import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
 
 import { type ExecutableRuntimeAction } from '../../models/ExecutableRuntimeAction';
 import { updateChatMessage } from '../../stores/chatStore';
@@ -8,6 +7,7 @@ import { createStemImportConfirmationResourceLease } from '../agentReference/cre
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { agentRunWorkLease } from '../agentRunWorkLease';
 import { agentRunCancellation } from '../cancelAgentRun';
+import { settledProjectContentMatches } from '../settledProjectContentMatches';
 
 import { settleAgentRunWorkLeaseSafely } from './settleAgentRunWorkLeaseSafely';
 
@@ -66,7 +66,7 @@ export async function executePromptCommandPreview(input: ExecutePromptCommandPre
             await agentRunCancellation.cancel({ runId: input.runId, reason: preview.reason });
         } else if (
             (preview.status === 'rejected' || preview.status === 'conflicted' || preview.status === 'failed') &&
-            captureProjectRevision() !== input.projectRevision
+            !settledProjectContentMatches(input.projectRevision)
         ) {
             await agentRunCancellation.cancel({ runId: input.runId, reason: preview.reason });
         }

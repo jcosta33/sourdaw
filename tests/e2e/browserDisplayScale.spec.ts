@@ -90,6 +90,10 @@ async function expectUiScaleDragKeepsGeometryUntilCommit(page: Page, frame: Fram
     const slider = dialog.getByRole('slider', { name: 'UI Scale' });
     const sliderRoot = dialog.locator('[data-slot="slider"]');
     await expect(sliderRoot).toHaveCount(1);
+    // The workspace dialog transitions max-height on entry; measure only after its final geometry arrives.
+    await dialog.evaluate(async (element) => {
+        await Promise.all(element.getAnimations().map((animation) => animation.finished));
+    });
     const sliderBox = requireBox(await slider.boundingBox(), 'UI Scale slider thumb');
     const sliderRootBox = requireBox(await sliderRoot.boundingBox(), 'UI Scale slider');
     const dialogBox = requireBox(await dialog.boundingBox(), 'Preferences dialog');
@@ -378,7 +382,7 @@ async function expectEqCanvasDrag(page: Page, app: FrameLocator): Promise<void> 
 async function expectExportUsable(page: Page, app: FrameLocator): Promise<void> {
     const isMac = await page.evaluate(() => navigator.platform.toUpperCase().includes('MAC'));
     await app.locator('body').press(isMac ? 'Meta+Shift+E' : 'Control+Shift+E');
-    const dialog = app.getByRole('dialog').filter({ hasText: /The Bakery/i });
+    const dialog = app.getByRole('dialog').filter({ hasText: /Export audio/i });
     await expect(dialog).toBeVisible();
     const start = dialog.getByTestId('export-start');
     await expect(start).toBeVisible();

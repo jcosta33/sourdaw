@@ -64,7 +64,7 @@ export const DawSearchInput = ({
     return (
         <div
             className={cn(
-                'relative flex items-center w-full transition-colors focus-within:ring-1 focus-within:ring-ring',
+                'relative flex min-w-0 items-center w-full transition-colors focus-within:ring-1 focus-within:ring-ring',
                 VARIANT_CLASS[variant],
                 SIZE_CONTAINER_CLASS[size],
                 containerClassName,
@@ -78,7 +78,7 @@ export const DawSearchInput = ({
                 onChange={(event) => onChange(event.target.value)}
                 onKeyDown={handleKeyDown}
                 className={cn(
-                    'min-w-0 flex-1 bg-transparent text-foreground outline-none placeholder:text-muted-foreground/45 [&::-webkit-search-cancel-button]:hidden',
+                    'min-w-0 flex-1 bg-transparent text-foreground outline-none placeholder:text-muted-foreground [&::-webkit-search-cancel-button]:hidden',
                     SIZE_TEXT_CLASS[size],
                     inputClassName
                 )}

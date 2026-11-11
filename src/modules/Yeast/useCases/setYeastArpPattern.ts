@@ -19,28 +19,29 @@ import { createYeastRuntimeProjection } from './createYeastRuntimeProjection';
  * a cell), not a drag, so nothing here needs the preview-only projection path
  * that `setYeastProcessorParam` uses for continuous knob motion.
  */
-export async function setYeastArpPattern(id: string, steps: readonly ArpStep[]): Promise<void> {
+export async function setYeastArpPattern(id: string, steps: readonly ArpStep[]): Promise<boolean> {
     const state = yeastStore.value;
     if (!state) {
-        return;
+        return false;
     }
 
     const processor = state.processors.find((entry) => entry.id === id);
     if (!processor || processor.type !== 'arpeggiator') {
-        return;
+        return false;
     }
 
     const revisionDetails = { processorId: id, parameterName: 'pattern', transient: false };
     const revision = publishPendingYeastPreviewRevision(revisionDetails);
-    commitYeastProjection(
+    const grooveChanged = commitYeastProjection(
         state.processors.map((entry) =>
             entry.id === id ? { ...entry, params: withArpPatternParams(entry.params, steps) } : entry
         )
     );
     const currentState = yeastStore.value;
     if (!currentState) {
-        return;
+        return grooveChanged;
     }
     await applyYeastControlProjection(createYeastRuntimeProjection(currentState.processors));
     publishAppliedYeastPreviewRevision({ ...revisionDetails, revision });
+    return grooveChanged;
 }

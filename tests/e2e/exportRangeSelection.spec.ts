@@ -39,7 +39,7 @@ async function setLoopRegionViaRuler(page: import('@playwright/test').Page): Pro
 async function openExportDialog(page: import('@playwright/test').Page): Promise<void> {
     const isMac = await page.evaluate(() => navigator.platform.toUpperCase().includes('MAC'));
     await page.keyboard.press(isMac ? 'Meta+Shift+E' : 'Control+Shift+E');
-    await expect(page.getByRole('dialog').filter({ hasText: /The Bakery/i })).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByRole('dialog').filter({ hasText: /Export audio/i })).toBeVisible({ timeout: 10_000 });
 }
 
 test.describe('Export range radio selection — depth', () => {

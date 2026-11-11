@@ -111,9 +111,13 @@ describe('handler commit validation through single and atomic Command routes', (
         expect(guard.release).toHaveBeenCalledTimes(1);
     });
 
-    it('composes guards for one root with the existing final batch postcondition', async () => {
+    it('composes guards for one root after preparing the pure final batch postcondition', async () => {
+        const phases: string[] = [];
         const first = proof(
-            () => null,
+            () => {
+                phases.push('guard');
+                return null;
+            },
             (draft) => (JSON.stringify(draft.editingTool) === JSON.stringify({ tool: 'draw' }) ? null : 'missing tool')
         );
         const second = proof(
@@ -136,15 +140,65 @@ describe('handler commit validation through single and atomic Command routes', (
                 requiresAbortCompensation: false,
             },
         });
-        const final = vi.fn(() => null);
+        const final = vi.fn(() => {
+            phases.push('candidate');
+            return null;
+        });
         const result = await executeAppActionBatch([action, { type: 'setSnapValue', payload: { value: 2 } }], {
-            prepareValidation: () => ({ status: 'ready', postconditions: { documentId: 'root', validate: final } }),
+            prepareValidation: () => ({
+                status: 'ready',
+                prepareExecution: () => ({
+                    status: 'ready',
+                    validation: {
+                        preparePostconditions: () => {
+                            phases.push('prepare');
+                            flushAutomergeStorageWrites();
+                            expect(document).toEqual({ editingTool: { tool: 'select' }, snapValue: { value: 1 } });
+                            return { status: 'ready', postconditions: { documentId: 'root', validate: final } };
+                        },
+                    },
+                }),
+            }),
         });
         expect(result.status).toBe('committed');
+        expect(phases).toEqual(['prepare', 'guard', 'candidate']);
         expect(final).toHaveBeenCalledTimes(1);
         expect(first.release).toHaveBeenCalledTimes(1);
         expect(second.release).toHaveBeenCalledTimes(1);
         expect(document).toEqual({ editingTool: { tool: 'draw' }, snapValue: { value: 2 } });
+    });
+
+    it('rechecks execution authority after final preparation settles the source', async () => {
+        let authorized = true;
+        const guard = proof(
+            () => null,
+            () => null
+        );
+        registerHandlerMap({
+            setEditingTool: handler(() => {
+                tool.set({ tool: 'draw' });
+                return { status: 'written', commitValidation: guard };
+            }),
+        });
+        const validate = vi.fn(() => null);
+        const preparePostconditions = vi.fn(() => {
+            flushAutomergeStorageWrites();
+            authorized = false;
+            return { status: 'ready' as const, postconditions: { documentId: 'root', validate } };
+        });
+        const result = await executeAppActionBatch([action], {
+            shouldExecute: () => authorized,
+            prepareValidation: () => ({
+                status: 'ready',
+                prepareExecution: () => ({ status: 'ready', validation: { preparePostconditions } }),
+            }),
+        });
+        expect(result.status).toBe('cancelled');
+        expect(preparePostconditions).toHaveBeenCalledOnce();
+        expect(validate).not.toHaveBeenCalled();
+        expect(document).toEqual({ editingTool: { tool: 'select' }, snapValue: { value: 1 } });
+        expect(tool.get()).toEqual({ tool: 'select' });
+        expect(guard.release).toHaveBeenCalledOnce();
     });
 
     it.each(['refusal', 'throw'] as const)('releases earlier guards and aborts on a later batch %s', async (kind) => {

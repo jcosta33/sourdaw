@@ -884,6 +884,33 @@ anything a running process holds, report what was freed), which AGENTS.md delibe
 Unavailable or invalid disk sampling fails closed with `monitor`. Cleanup uncertainty never turns a
 stopped run into success.
 
+A stopped `pnpm dev` command cannot prove recovery by exiting zero on its own. Supply an explicit
+finite proof after `--`, for example `pnpm guard --recover --profile broad -- pnpm test:e2e
+tests/e2e/launchFlows.spec.ts`. The guard runs that proof instead of replaying the server, from the
+receipt's canonical in-lane directory and under the receipt's profile unless `--profile` overrides
+it, as in that example; the memory budget resolves
+against the proof command itself, so a `pnpm test:e2e` proof runs under its measured budget unless
+`--max-rss-mib` overrides it. The proof is refused outright — exit 1 before anything spawns, leaving
+the receipt stopped — while the recorded origin already answers: the proof's own server cannot take
+an occupied port, so the run could only exercise the occupying server, which proves nothing about
+this checkout's recovery. Stop the occupying server and retry. The proof child receives the recorded
+port as `SOURDAW_E2E_PORT` and a
+freshly issued per-run token as `SOURDAW_E2E_RUN_TOKEN` — no proof file the command tree could
+fabricate, because the token only counts when a server stamps it, and the guard verifies the server
+directly. While the proof runs, the guard itself polls the recorded loopback origin and requires a
+response carrying this checkout's e2e marker AND this run's token before it clears the unchanged
+original receipt; the token binds the observation to the run, so a leftover e2e server that binds
+after the unserved-origin check stamps the checkout root but no (or a stale) token and cannot
+satisfy the watch. What the guard can prove is that a server this proof started answered at the
+recorded origin; what it cannot prove is that the browser suite exercised the app — the proof's
+own exit code covers that. The guard still owns
+resource enforcement and process-tree cleanup. An unrelated command's zero exit, an unmarked or
+foreign server at the recorded origin, a failed proof, signal, timeout, resource stop, cleanup
+leak, or concurrently replaced receipt preserves the stop. Explicit proofs require a recorded
+`pnpm dev` or `pnpm run dev` receipt; other scripts, including `dev:no-hmr`, are ineligible.
+Explicit proofs cannot be combined with lint-target replacement; ordinary `--recover` replay is
+unchanged.
+
 Existing running commands and old lane copies keep their original guard. After this change lands,
 their next verification must invoke the updated guard, or merge the fix into the owned lane when
 needed. Do not rewrite or clean another agent's lane to upgrade it.
@@ -914,10 +941,9 @@ Do not:
 
 `Gate` requires validation, the affected browser plan, its selected E2E workflows and hardware
 proof, and applicable CodeQL execution. The aggregate and its assertion step always run, including
-after cancellation, and reject cancelled or unexpectedly skipped dependencies. Every push runs only
-the scope plan and validation (`pr-checks.yml`); the heavy run and `Gate` start when the reviewer App
-labels its approval of the exact head, so concurrent agent pushes no longer queue the browser and
-security train, and any other label event fails `Gate` with the admission reason.
+after cancellation, and reject cancelled or unexpectedly skipped dependencies. Every non-draft
+pull request runs that full path. A draft fails `Gate` without the heavy jobs, because a skipped
+required check would pass.
 
 The deterministic selector in `scripts/prValidationScope.ts` reads the complete Git diff between
 immutable base/head revisions, including both rename paths. It publishes `pr-validation-scope`

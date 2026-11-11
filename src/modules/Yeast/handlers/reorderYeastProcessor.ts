@@ -1,3 +1,4 @@
+import { markGrooveTemplateProjectWrite } from '#/modules/MIDI/useCases';
 import { createHandler } from '#/utils/createHandler';
 import { type HandlerValidationContext } from '#/utils/handlerContract';
 
@@ -52,8 +53,15 @@ export const handleReorderYeastProcessor = createHandler<'reorderYeastProcessor'
         if (fromIndex === action.payload.toIndex) {
             return { status: 'no-write' };
         }
-        reorderYeastProcessor(fromIndex, action.payload.toIndex);
-        return { status: 'written' };
+        const grooveChanged = reorderYeastProcessor(fromIndex, action.payload.toIndex);
+        if (!grooveChanged) {
+            return { status: 'written' };
+        }
+        return {
+            status: 'written',
+            afterCommit: markGrooveTemplateProjectWrite,
+            afterAmbiguousCommit: markGrooveTemplateProjectWrite,
+        };
     },
     isNoop: (action) => {
         const processor = findLiveProcessor(action.payload.processorId);

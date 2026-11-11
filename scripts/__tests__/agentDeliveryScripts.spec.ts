@@ -628,7 +628,6 @@ function trustedReviewMutationFixture(root: string, mutationLog: string): void {
         'reviewPublicationRemoteInspection.ts',
         'reviewPublicationBinding.ts',
         'pullRequestReviewState.ts',
-        'reviewApprovalLabel.ts',
         ...approvalSources.map((path) => path.slice('scripts/'.length)),
     ]) {
         writeFileSync(join(root, 'scripts', path), 'export {};\n');
@@ -1041,19 +1040,13 @@ describe('package scripts and gitignore', () => {
             'only the gate job may emit the stable Gate summary check name'
         );
         expect(gate.if).toBe(REQUIRED_GATE_CONDITION);
-        expect(workflowArrayAt(gate, 'needs')).toEqual([
-            'admission',
-            'scope',
-            'e2e-build',
-            'validation',
-            'affected',
-            'codeql',
-        ]);
+        expect(workflowArrayAt(gate, 'needs')).toEqual(['scope', 'e2e-build', 'validation', 'affected', 'codeql']);
         const gateStep = workflowStep(gate, 'Require selected checks to succeed');
         expect(gateStep.if).toBe(REQUIRED_GATE_CONDITION);
         expect(workflowRecordAt(gateStep, 'env')).toEqual({
             RESULTS: '${{ toJSON(needs) }}',
             MATRIX: '${{ needs.scope.outputs.matrix }}',
+            DRAFT: '${{ github.event.pull_request.draft }}',
         });
         expect(gateStep.run).toContain(
             'if type != "object" or (.include | type) != "array" then error("invalid E2E plan")'
@@ -1110,7 +1103,6 @@ describe('package scripts and gitignore', () => {
             'publishLane.ts',
             'prepareReview.ts',
             'publishReview.ts',
-            'reviewApprovalLabel.ts',
             'recoverPublishReviewLock.ts',
             'reviewPublicationReceiptAdoption.ts',
             'reviewCommentDiffPreflight.ts',
@@ -1158,8 +1150,10 @@ describe('package scripts and gitignore', () => {
             'scripts/cleanupLanes.ts',
             'scripts/deliveryLockLegacyIncidents.ts',
             'scripts/deliveryRemoteInspection.ts',
+            'scripts/e2eServerIdentity.ts',
             'scripts/evidenceSafety.ts',
             'scripts/githubAppIdentity.ts',
+            'scripts/guardRecoveryProof.ts',
             'scripts/laneActivity.ts',
             'scripts/pnpmModulesPreflight.ts',
             'scripts/prContract.ts',
@@ -1200,7 +1194,6 @@ describe('package scripts and gitignore', () => {
             'scripts/reviewRepair.ts',
             'scripts/reviewRoundEscalation.ts',
             'scripts/publishReview.ts',
-            'scripts/reviewApprovalLabel.ts',
             'scripts/pullRequestReviewState.ts',
             'scripts/reviewCommentDiffPreflight.ts',
             'scripts/reviewDocumentParser.ts',
@@ -1310,8 +1303,10 @@ describe('package scripts and gitignore', () => {
                     'scripts/cleanupLanes.ts',
                     'scripts/deliveryLockLegacyIncidents.ts',
                     'scripts/deliveryRemoteInspection.ts',
+                    'scripts/e2eServerIdentity.ts',
                     'scripts/evidenceSafety.ts',
                     'scripts/githubAppIdentity.ts',
+                    'scripts/guardRecoveryProof.ts',
                     'scripts/laneActivity.ts',
                     'scripts/pnpmModulesPreflight.ts',
                     'scripts/prContract.ts',
@@ -1351,7 +1346,6 @@ describe('package scripts and gitignore', () => {
                     'scripts/reviewRepair.ts',
                     'scripts/reviewRoundEscalation.ts',
                     'scripts/publishReview.ts',
-                    'scripts/reviewApprovalLabel.ts',
                     'scripts/pullRequestReviewState.ts',
                     'scripts/reviewCommentDiffPreflight.ts',
                     'scripts/reviewDocumentParser.ts',
@@ -1384,7 +1378,6 @@ describe('package scripts and gitignore', () => {
                 expected: [
                     'scripts/trustedGithubWriteBootstrap.ts',
                     'scripts/publishReview.ts',
-                    'scripts/reviewApprovalLabel.ts',
                     'scripts/reconstructReviewRounds.ts',
                     'scripts/reviewRepair.ts',
                     'scripts/reviewRoundEscalation.ts',
@@ -1425,7 +1418,6 @@ describe('package scripts and gitignore', () => {
                     'scripts/reviewRepair.ts',
                     'scripts/reviewRoundEscalation.ts',
                     'scripts/publishReview.ts',
-                    'scripts/reviewApprovalLabel.ts',
                     'scripts/pullRequestReviewState.ts',
                     'scripts/reviewCommentDiffPreflight.ts',
                     'scripts/reviewDocumentParser.ts',
@@ -3575,8 +3567,6 @@ describe('package scripts and gitignore', () => {
                     unresolvedThreads: 0,
                 }),
                 postReview: () => expect.fail('review creation should not start'),
-                applyApprovalLabel: () => expect.fail('review creation should not start'),
-                removeApprovalLabel: () => expect.fail('review creation should not start'),
                 log: () => undefined,
             }),
             publish: () => {

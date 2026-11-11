@@ -137,11 +137,15 @@ describe('mainStylesheetRules', () => {
         expect(() => parseStylesheet('.desktop-titlebar-region { app-region: drag;')).toThrow('unclosed block');
     });
 
-    it('defines canonical DAW micro-typography scale tokens in @theme', () => {
-        expect(tokensStylesheet).toContain('--text-nano: 7px;');
-        expect(tokensStylesheet).toContain('--text-micro: 8px;');
-        expect(tokensStylesheet).toContain('--text-caption: 9px;');
-        expect(tokensStylesheet).toContain('--text-dense: 10px;');
-        expect(tokensStylesheet).toContain('--text-compact: 11px;');
+    it('keeps dense metadata legible and defines semantic type roles in @theme', () => {
+        expect(tokensStylesheet).toContain('--text-nano: 11px;');
+        expect(tokensStylesheet).toContain('--text-micro: 11px;');
+        expect(tokensStylesheet).toContain('--text-caption: 11px;');
+        expect(tokensStylesheet).toContain('--text-dense: 12px;');
+        expect(tokensStylesheet).toContain('--text-compact: 12px;');
+        expect(tokensStylesheet).toContain('--text-metadata: 11px;');
+        expect(tokensStylesheet).toContain('--text-label: 12px;');
+        expect(tokensStylesheet).toContain('--text-value: 12px;');
+        expect(tokensStylesheet).toContain('--text-body: 12px;');
     });
 });

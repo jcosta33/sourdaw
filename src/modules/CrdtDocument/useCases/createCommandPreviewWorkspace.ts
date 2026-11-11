@@ -1,15 +1,27 @@
 import { type Doc } from '@automerge/automerge';
 
-import { createAutomergeStoragePreview } from '#/infra/store/storage/createAutomergeStorage';
+import {
+    createAutomergeStoragePreview,
+    hasForeignPendingAutomergeStorageWrites,
+    runOutsideAutomergeStoragePublisherScope,
+} from '#/infra/store/storage/createAutomergeStorage';
 
 import { DOC_PREFIX_ROOT } from '../models/CrdtDocumentTypes';
 import { automergeRepository } from '../repositories/automergeRepository';
 
-import { captureProjectRevision } from './captureProjectRevision';
+import { settledProjectRevisionMatchesLiveIgnoringSaveWrites } from './settledProjectRevisionMatchesLiveIgnoringSaveWrites';
 
 export function createCommandPreviewWorkspace(expectedRevision: string) {
-    if (captureProjectRevision() !== expectedRevision) {
+    if (!settledProjectRevisionMatchesLiveIgnoringSaveWrites(expectedRevision)) {
         throw new Error('Command batch base revision does not match current project state');
+    }
+
+    // A private workspace cannot inherit the live caller's pending-write exemption.
+    const hasPendingProjectWrites = runOutsideAutomergeStoragePublisherScope(() =>
+        automergeRepository.getDocIds().some(hasForeignPendingAutomergeStorageWrites)
+    );
+    if (hasPendingProjectWrites) {
+        throw new Error('Command preview has pending project writes');
     }
 
     const documents = new Map<string, Doc<Record<string, unknown>>>();
