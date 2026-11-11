@@ -1,6 +1,7 @@
-import { getTimelineHorizontalContentWidth as getContentWidth } from '../models/TimelineHorizontalExtent';
-
-type TimelineExtentTrack = { clips: readonly { endBeat: number }[] };
+import {
+    getTimelineHorizontalContentWidth as getContentWidth,
+    type TimelineExtentTrack,
+} from '../models/TimelineHorizontalExtent';
 
 export function getTimelineHorizontalContentWidth(
     tracks: readonly TimelineExtentTrack[],

@@ -299,22 +299,28 @@ describe('TimelineSurface', () => {
         expect(screen.queryByRole('listbox', { name: 'Timeline clips' })).not.toBeInTheDocument();
     });
 
-    it('reports both canvas viewport dimensions whenever its container resizes', () => {
+    it('observes the rendered container and reports both canvas viewport dimensions', () => {
         const resizeCallbacks: ResizeObserverCallback[] = [];
+        const observedTargets: Element[] = [];
         vi.stubGlobal(
             'ResizeObserver',
             class {
                 constructor(callback: ResizeObserverCallback) {
                     resizeCallbacks.push(callback);
                 }
-                observe(): void {}
+                observe(target: Element): void {
+                    observedTargets.push(target);
+                }
                 unobserve(): void {}
                 disconnect(): void {}
             }
         );
 
         try {
-            renderWithTooltip(<TimelineSurface />);
+            const { container } = renderWithTooltip(<TimelineSurface />);
+            const canvasContainer = container.querySelector('canvas')?.parentElement;
+            expect(canvasContainer).not.toBeNull();
+            expect(observedTargets).toContain(canvasContainer);
             expect(setTimelineViewportSize).not.toHaveBeenCalled();
 
             for (const callback of resizeCallbacks) {

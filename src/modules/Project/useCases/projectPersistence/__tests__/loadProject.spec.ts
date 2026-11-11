@@ -52,6 +52,14 @@ const mocks = vi.hoisted(() => ({
     stopActiveAutoSave: vi.fn(),
     setAutoSaveHandle: vi.fn(),
     migrateActiveProjectIdentity: vi.fn(() => Promise.resolve(false)),
+    importCachedAudioBuffers: vi.fn(() => Promise.resolve({ cancel: vi.fn(), publish: vi.fn() })),
+    clearRuntimeCachedAudioBuffers: vi.fn(() => Promise.resolve()),
+    resetAudioGraph: vi.fn(),
+    compactProject: vi.fn(() => Promise.resolve()),
+    restoreOriginalMedia: vi.fn(() => Promise.resolve()),
+    activateOriginalMedia: vi.fn(() => Promise.resolve()),
+    stopPlayback: vi.fn(() => Promise.resolve()),
+    unloadLoadedExternalPlugins: vi.fn(() => Promise.resolve()),
 }));
 
 vi.mock('../../../stores/projectStore', () => ({
@@ -72,6 +80,9 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     discardDecodedAudioFile: vi.fn(),
     cancelPendingAudioBufferImport: vi.fn(),
     getAudioContext: vi.fn(() => ({})),
+    importCachedAudioBuffers: mocks.importCachedAudioBuffers,
+    clearRuntimeCachedAudioBuffers: mocks.clearRuntimeCachedAudioBuffers,
+    resetAudioGraph: mocks.resetAudioGraph,
     prepareCachedAudioBuffersFromIdb: mocks.prepareCachedAudioBuffersFromIdb,
     addMidiFxToStrip: vi.fn(),
     analyzePitchForClip: vi.fn(),
@@ -133,6 +144,7 @@ vi.mock('#/modules/CrdtDocument/useCases', async (importOriginal) => ({
     readOwnedProjectPublications: vi.fn(() => []),
     createCrdtDoc: vi.fn(),
     createCrdtProject: mocks.createCrdtProject,
+    compactProject: mocks.compactProject,
     DOC_BRANCHES: '__branches__',
     DOC_PREFIX_ROOT: 'root',
     getCrdtDoc: mocks.getCrdtDoc,
@@ -207,10 +219,27 @@ vi.mock('../helpers/autoSaveHandle', () => ({ setAutoSaveHandle: mocks.setAutoSa
 vi.mock('../migrateActiveProjectIdentity', () => ({
     migrateActiveProjectIdentity: mocks.migrateActiveProjectIdentity,
 }));
+vi.mock('../projectOriginalMediaPort', () => ({
+    projectOriginalMediaPort: {
+        restore: mocks.restoreOriginalMedia,
+        activate: mocks.activateOriginalMedia,
+    },
+}));
+vi.mock('#/modules/Transport/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Transport/useCases')>()),
+    stopPlayback: mocks.stopPlayback,
+}));
+vi.mock('#/modules/PluginHost/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/PluginHost/useCases')>()),
+    unloadPlugin: mocks.unloadLoadedExternalPlugins,
+}));
 
 describe('loadProject', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        mocks.projectStoreSet.mockImplementation((next: ProjectStoreState) => {
+            mocks.projectStoreValue.value = next;
+        });
         mocks.projectStoreValue.value = {
             projectId: CANONICAL_PROJECT_ID,
             loading: false,
@@ -356,6 +385,26 @@ describe('loadProject', () => {
         expect(recoveryAuthority?.ownerId).toBe(CANONICAL_PROJECT_ID);
         expect(recoveryAuthority?.isCurrent()).toBe(true);
         expect(recoveryAuthority?.signal.aborted).toBe(false);
+    });
+
+    it('publishes a directory-load transition before tearing down module stores', async () => {
+        const directory = {
+            projectId: CANONICAL_PROJECT_ID,
+            projectName: 'Directory project',
+            createdAt: 1,
+            decodedAudioBuffers: {},
+            frozenAudioBuffers: {},
+            media: new Map<string, Uint8Array>(),
+            commitDocument: vi.fn(() => Promise.resolve(true)),
+        };
+
+        await expect(loadProject({ directory, explicit: true })).resolves.toBe(true);
+
+        const loadingCall = mocks.projectStoreSet.mock.calls.findIndex(([state]) => state.loading === true);
+        expect(loadingCall).toBeGreaterThanOrEqual(0);
+        expect(mocks.projectStoreSet.mock.invocationCallOrder[loadingCall]!).toBeLessThan(
+            mocks.resetModuleStores.mock.invocationCallOrder[0]!
+        );
     });
 
     it('lands on the launch screen without creating a document when persistence is empty', async () => {

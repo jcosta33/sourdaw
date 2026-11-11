@@ -107,8 +107,8 @@ export function initProjectWorkingViewPersistence(): () => void {
         }
 
         const restored = readProjectWorkingView(settledProjectId) ?? createDefaultProjectWorkingView();
-        restoreTimelineWorkingView(restored.timeline);
         updateWorkspaceState(restored.workspace);
+        restoreTimelineWorkingView(restored.timeline, { deferViewportClamp: true });
         activeProjectId = settledProjectId;
         durableView = captureCurrentView();
     };

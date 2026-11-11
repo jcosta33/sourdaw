@@ -178,7 +178,10 @@ export function setScrollY(scrollY: number, viewportHeightOverride?: number): vo
 }
 
 /** Restore only persistent view fields; measurements stay owned by the live canvas. */
-export function replaceTimelineWorkingView(view: TimelineWorkingView | null): void {
+export function replaceTimelineWorkingView(
+    view: TimelineWorkingView | null,
+    { deferViewportClamp = false }: { deferViewportClamp?: boolean } = {}
+): void {
     const state = timelineViewStore.value;
     if (!state) {
         return;
@@ -187,8 +190,10 @@ export function replaceTimelineWorkingView(view: TimelineWorkingView | null): vo
     timelineViewStore.set({
         ...state,
         pixelsPerBeat,
-        scrollX: clampScrollX(view?.scrollX ?? 0, pixelsPerBeat, state.viewportWidth ?? 0),
-        scrollY: clampScrollY(view?.scrollY ?? 0, state.viewportHeight ?? 0),
+        scrollX: clampScrollX(view?.scrollX ?? 0, pixelsPerBeat, deferViewportClamp ? 0 : (state.viewportWidth ?? 0)),
+        scrollY: deferViewportClamp
+            ? Math.max(0, view?.scrollY ?? 0)
+            : clampScrollY(view?.scrollY ?? 0, state.viewportHeight ?? 0),
         autoScrollEnabled: view ? state.autoScrollEnabled : true,
     });
 }

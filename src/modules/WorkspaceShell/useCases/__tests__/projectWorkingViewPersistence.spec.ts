@@ -162,6 +162,43 @@ describe('project working view persistence', () => {
         expect(projectStore.value?.dirty).toBe(false);
     });
 
+    it('persists a timeline-only scroll edit without a workspace change', () => {
+        start();
+
+        setScrollX(144);
+        vi.advanceTimersByTime(300);
+
+        expect(writeProjectWorkingView).toHaveBeenCalledTimes(1);
+        expect(writeProjectWorkingView).toHaveBeenCalledWith(
+            PROJECT_A,
+            expect.objectContaining({
+                timeline: expect.objectContaining({ scrollX: 144 }),
+            })
+        );
+    });
+
+    it('restores raw offsets before the incoming canvas measurement clamps them', () => {
+        const views = new Map([[PROJECT_B, savedView(2500, 340)]]);
+        vi.mocked(readProjectWorkingView).mockImplementation((projectId) => views.get(projectId) ?? null);
+        vi.mocked(writeProjectWorkingView).mockImplementation((projectId, view) => {
+            views.set(projectId, structuredClone(view));
+            return true;
+        });
+        setTimelineViewportSize({ viewportWidth: 800, viewportHeight: 600 });
+        start();
+
+        publishProject(PROJECT_B, true);
+        publishProject(PROJECT_B, false);
+
+        expect(workspaceStore.value?.sidebarWidth).toBe(340);
+        expect(timelineViewStore.value?.scrollX).toBe(2500);
+
+        setTimelineViewportSize({ viewportWidth: 600, viewportHeight: 600 });
+        expect(timelineViewStore.value?.scrollX).toBe(2472);
+        vi.advanceTimersByTime(300);
+        expect(views.get(PROJECT_B)?.timeline.scrollX).toBe(2472);
+    });
+
     it('flushes the outgoing project, resets during the switch, and restores each project independently', () => {
         const views = new Map([
             [PROJECT_A, savedView(120, 260)],

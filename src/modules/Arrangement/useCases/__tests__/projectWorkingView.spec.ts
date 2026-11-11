@@ -16,8 +16,9 @@ import { initTimelineScrollClamp } from '../initTimelineScrollClamp';
 import { resetTimelineWorkingView, restoreTimelineWorkingView } from '../projectWorkingView';
 
 function addTrackWithClip(id: string, endBeat: number): void {
+    const tracks = trackStore.value?.tracks ?? [];
     trackStore.set({
-        tracks: [...(trackStore.value?.tracks ?? []), createTrack({ id, name: id, kind: 'audio' })],
+        tracks: [...tracks, createTrack({ id, name: id, kind: 'audio' })],
         selectedTrackId: null,
     });
     const clip = addClip({ id: `${id}-clip`, trackId: id, name: id, startBeat: 0, endBeat, type: 'audio' });
@@ -48,6 +49,28 @@ describe('project timeline working view', () => {
         addTrackWithClip('long', 400);
 
         expect(getTimelineHorizontalContentWidth(trackStore.value?.tracks ?? [], 10)).toBe(4000);
+    });
+
+    it('includes clips drawn in visible variation lanes without counting the stale active copy', () => {
+        addTrackWithClip('main', 8);
+        const track = trackStore.value?.tracks[0];
+        const activeAlternative = track?.alternatives[0];
+        const mainClip = track?.clips[0];
+        if (!track || !activeAlternative || !mainClip) {
+            throw new Error('Expected the variation-lane fixture track');
+        }
+        const laneTrack = {
+            ...track,
+            showVariationLanes: true,
+            alternatives: [
+                { ...activeAlternative, clips: [{ ...mainClip, id: 'stale-active', endBeat: 900 }] },
+                { id: 'inactive', name: 'Inactive', clips: [{ ...mainClip, id: 'lane-long', endBeat: 400 }] },
+            ],
+        };
+        trackStore.set({ tracks: [laneTrack], selectedTrackId: null });
+
+        expect(getTimelineHorizontalContentWidth([laneTrack], 10)).toBe(4000);
+        expect(getTimelineHorizontalContentWidth([{ ...laneTrack, showVariationLanes: false }], 10)).toBe(2560);
     });
 
     it('computes a large arrangement extent without spreading every clip into Math.max', () => {
@@ -123,6 +146,19 @@ describe('project timeline working view', () => {
             viewportWidth: 500,
             viewportHeight: 50,
         });
+    });
+
+    it('can defer restored offsets to the next real viewport measurement', () => {
+        addTrackWithClip('a', 400);
+        addTrackWithClip('b', 8);
+        setTimelineViewportSize({ viewportWidth: 500, viewportHeight: 50 });
+
+        restoreTimelineWorkingView({ scrollX: 9000, scrollY: 900, pixelsPerBeat: 10 }, { deferViewportClamp: true });
+
+        expect(timelineViewStore.value).toMatchObject({ scrollX: 9000, scrollY: 900, pixelsPerBeat: 10 });
+
+        setTimelineViewportSize({ viewportWidth: 1000, viewportHeight: 150 });
+        expect(timelineViewStore.value).toMatchObject({ scrollX: 3000, scrollY: 10 });
     });
 
     it('clamps restored zoom and reset offsets without discarding viewport measurements', () => {
