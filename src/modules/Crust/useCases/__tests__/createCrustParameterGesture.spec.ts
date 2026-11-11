@@ -327,6 +327,37 @@ describe('Crust numeric controller with real Command and CRDT', () => {
         expect(captureUndoHistory().past).toHaveLength(0);
     });
 
+    it('clears a failed commit after restoration failure so a recovered edit can start', async () => {
+        vi.spyOn(engineApi, 'captureDeviceParameterRuntimeWriteAuthority').mockReturnValueOnce({
+            owner: Symbol('controlled engine receipt'),
+            isCurrent: () => true,
+            canCommit: () => true,
+            release: vi.fn(),
+        });
+        const edit = controller();
+        await edit.change('gain', 9, true);
+        audio.updateDeviceParam.mockImplementation(() => {
+            throw new Error('Engine refused gain');
+        });
+
+        const failed = edit.settle('gain');
+        await failed.catch(() => undefined);
+        expect(rawDevice().parameterValues.gain).toBe(0);
+        expect(captureUndoHistory().past).toHaveLength(0);
+
+        audio.updateDeviceParam.mockReset();
+        const token = edit.start('gain');
+        const recovered = edit.change('gain', 6);
+        expect(token).toBeGreaterThan(0);
+        expect(recovered).not.toBe(failed);
+        await recovered;
+
+        expect(rawDevice().parameterValues.gain).toBe(6);
+        expect(projectedDevice()).toEqual(rawDevice());
+        expect(getCrustState(DEVICE).patch.gain).toBe(6);
+        expect(captureUndoHistory().past).toHaveLength(1);
+    });
+
     it('does not restore over a newer runtime producer under controlled public runtime authority', async () => {
         let current = true;
         const release = vi.fn();

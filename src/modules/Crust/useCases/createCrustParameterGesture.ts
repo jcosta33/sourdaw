@@ -241,9 +241,12 @@ async function commit(scope: Scope, gesture: Gesture): Promise<void> {
     } catch (error) {
         notifyUser(error instanceof Error ? error.message : 'Crust parameter change failed', 'error');
     } finally {
-        retire(scope, gesture, !gesture.committed);
-        if (scope.gestures.get(gesture.key) === gesture) {
-            scope.gestures.delete(gesture.key);
+        try {
+            retire(scope, gesture, !gesture.committed);
+        } finally {
+            if (scope.gestures.get(gesture.key) === gesture) {
+                scope.gestures.delete(gesture.key);
+            }
         }
     }
 }
