@@ -249,6 +249,11 @@ function settleWithoutRedo({
     }
 }
 
+export type RedoResult = {
+    /** Whether this call re-applied a history unit rather than refusing or only purging inert entries. */
+    readonly headConsumed: boolean;
+};
+
 type StepOverRedoInput = {
     readonly initialFuture: readonly UndoEntry[];
     /** The running `future`, positioned at the conflicted unit's first entry. */
@@ -293,11 +298,11 @@ async function stepOverConflictedRedoOrSettle({
     initialFuture,
     futureAtConflict,
     conflictedEntries,
-}: StepOverRedoInput): Promise<void> {
+}: StepOverRedoInput): Promise<RedoResult> {
     const next = takeRedoCandidate(futureAtConflict.slice(conflictedEntries.length));
     if (!next || !next.entries.every(isRedoStepOverCapableMember)) {
         settleWithoutRedo({ initialFuture, futureAtConflict });
-        return;
+        return { headConsumed: false };
     }
 
     const outcome = next.head.groupId ? await executeActionGroupRedo(next.entries) : await executeRedo(next.head);
@@ -308,14 +313,14 @@ async function stepOverConflictedRedoOrSettle({
         // notification already reported the blocked redo. No third unit is
         // touched.
         settleWithoutRedo({ initialFuture, futureAtConflict });
-        return;
+        return { headConsumed: false };
     }
     if (outcome.status === 'not-applied') {
         // Unreachable — the gate admits only action entries whose replay runs
         // a flagged handler — but settling keeps everything in place rather
         // than guess at a purge.
         settleWithoutRedo({ initialFuture, futureAtConflict });
-        return;
+        return { headConsumed: false };
     }
 
     notifySkippedRedoConflict(undoEntryLabel(conflictedEntries[0]!), undoEntryLabel(next.head));
@@ -323,12 +328,13 @@ async function stepOverConflictedRedoOrSettle({
     if (outcome.status === 'committed') {
         throw outcome.error;
     }
+    return { headConsumed: true };
 }
 
-async function redoImpl(stepOverConflicts: boolean): Promise<void> {
+async function redoImpl(stepOverConflicts: boolean): Promise<RedoResult> {
     const stored = undoStore.value;
     if (!stored || stored.future.length === 0) {
-        return;
+        return { headConsumed: false };
     }
     const state = normalizeSingletonUndoGroups(stored);
     if (state !== stored) {
@@ -361,14 +367,13 @@ async function redoImpl(stepOverConflicts: boolean): Promise<void> {
                     notifyUser(`Cannot redo "${label}": project state has changed`, 'warning');
                     if (!stepOverConflicts) {
                         settleWithoutRedo({ initialFuture: state.future, futureAtConflict: future });
-                        return;
+                        return { headConsumed: false };
                     }
-                    await stepOverConflictedRedoOrSettle({
+                    return stepOverConflictedRedoOrSettle({
                         initialFuture: state.future,
                         futureAtConflict: future,
                         conflictedEntries: groupEntries,
                     });
-                    return;
                 }
 
                 future = future.slice(groupEntries.length);
@@ -376,7 +381,7 @@ async function redoImpl(stepOverConflicts: boolean): Promise<void> {
                 if (outcome.status === 'committed') {
                     throw outcome.error;
                 }
-                return;
+                return { headConsumed: true };
             }
         }
 
@@ -390,14 +395,13 @@ async function redoImpl(stepOverConflicts: boolean): Promise<void> {
             // the gate admits that replay.
             if (!stepOverConflicts) {
                 settleWithoutRedo({ initialFuture: state.future, futureAtConflict: future });
-                return;
+                return { headConsumed: false };
             }
-            await stepOverConflictedRedoOrSettle({
+            return stepOverConflictedRedoOrSettle({
                 initialFuture: state.future,
                 futureAtConflict: future,
                 conflictedEntries: [entry],
             });
-            return;
         }
 
         future = remainingFuture;
@@ -406,7 +410,7 @@ async function redoImpl(stepOverConflicts: boolean): Promise<void> {
             if (outcome.status === 'committed') {
                 throw outcome.error;
             }
-            return;
+            return { headConsumed: true };
         }
         // Not-applied entry: dropped; keep scanning.
     }
@@ -415,6 +419,7 @@ async function redoImpl(stepOverConflicts: boolean): Promise<void> {
     if (future.length !== state.future.length) {
         commitRedoTransition(state.future, future, []);
     }
+    return { headConsumed: false };
 }
 
 export type RedoOptions = {
@@ -430,6 +435,6 @@ export type RedoOptions = {
     readonly stepOverConflicts?: boolean;
 };
 
-export function redo(options: RedoOptions = {}): Promise<void> {
+export function redo(options: RedoOptions = {}): Promise<RedoResult> {
     return runUndoRedoExclusive(() => redoImpl(options.stepOverConflicts ?? true));
 }

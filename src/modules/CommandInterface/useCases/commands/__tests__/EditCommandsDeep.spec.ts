@@ -3,8 +3,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const { mockExecuteUserAppAction, mockUndo, mockRedo, mockCopy, mockCut, mockSelectAll, mockDeselectAll } = vi.hoisted(
     () => ({
         mockExecuteUserAppAction: vi.fn().mockResolvedValue(undefined),
-        mockUndo: vi.fn().mockResolvedValue(undefined),
-        mockRedo: vi.fn().mockResolvedValue(undefined),
+        mockUndo: vi.fn().mockResolvedValue({ headConsumed: false }),
+        mockRedo: vi.fn().mockResolvedValue({ headConsumed: false }),
         mockCopy: vi.fn(),
         mockCut: vi.fn(),
         mockSelectAll: vi.fn(),
@@ -26,7 +26,7 @@ vi.mock('../../deselectAllClips', () => ({ deselectAllClips: mockDeselectAll }))
 
 import { editCommands } from '../EditCommands';
 
-function runAction(id: string): void {
+function runAction(id: string, onCommitted?: () => void): void {
     const cmd = editCommands.find((c) => c.id === id);
     if (!cmd) {
         throw new Error(`Command ${id} not found`);
@@ -34,7 +34,7 @@ function runAction(id: string): void {
     if (typeof cmd.action !== 'function') {
         throw new TypeError(`Command ${id} action is not callable`);
     }
-    cmd.action();
+    cmd.action(onCommitted);
 }
 
 describe('editCommands', () => {
@@ -50,6 +50,33 @@ describe('editCommands', () => {
     it('redo calls the redo function', () => {
         runAction('redo');
         expect(mockRedo).toHaveBeenCalledTimes(1);
+    });
+
+    it('records undo and redo only when they consume a history head', async () => {
+        mockUndo.mockResolvedValueOnce({ headConsumed: true });
+        mockRedo.mockResolvedValueOnce({ headConsumed: true });
+        const undoCommitted = vi.fn();
+        const redoCommitted = vi.fn();
+
+        runAction('undo', undoCommitted);
+        runAction('redo', redoCommitted);
+
+        await vi.waitFor(() => {
+            expect(undoCommitted).toHaveBeenCalledOnce();
+            expect(redoCommitted).toHaveBeenCalledOnce();
+        });
+    });
+
+    it('does not record empty or refused undo and redo attempts', async () => {
+        const undoCommitted = vi.fn();
+        const redoCommitted = vi.fn();
+
+        runAction('undo', undoCommitted);
+        runAction('redo', redoCommitted);
+        await new Promise((resolve) => setTimeout(resolve, 0));
+
+        expect(undoCommitted).not.toHaveBeenCalled();
+        expect(redoCommitted).not.toHaveBeenCalled();
     });
 
     it('copy-clip calls copySelectedClip', () => {

@@ -138,4 +138,34 @@ describe('command discovery', () => {
             entries: [{ id: 'save' }, { id: 'play' }],
         });
     });
+
+    it('caps discovery at eight categories with every applicable command ahead of gated commands', () => {
+        const gated = () => 'Select a clip first.';
+        const registry = [
+            entry({ id: 'gated-clip', category: 'Clip', getInapplicabilityReason: gated }),
+            entry({ id: 'play', category: 'Transport' }),
+            entry({ id: 'gated-midi', category: 'MIDI', getInapplicabilityReason: gated }),
+            entry({ id: 'save', category: 'Project' }),
+            entry({ id: 'zoom', category: 'View' }),
+            entry({ id: 'add-track', category: 'Track' }),
+            entry({ id: 'undo', category: 'Edit' }),
+            entry({ id: 'automation', category: 'Automation' }),
+            entry({ id: 'browser', category: 'Browser' }),
+            entry({ id: 'mixer', category: 'Mixer' }),
+        ];
+
+        const groups = discoverCommands(registry, []);
+
+        expect(groups).toHaveLength(8);
+        expect(groups.map((group) => group.entries[0]!.id)).toEqual([
+            'play',
+            'save',
+            'zoom',
+            'add-track',
+            'undo',
+            'automation',
+            'browser',
+            'mixer',
+        ]);
+    });
 });

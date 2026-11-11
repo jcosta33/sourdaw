@@ -15,7 +15,11 @@ export const editCommands: CallableCommandEntry[] = [
         category: 'Edit',
         shortcut: '⌘Z',
         action: (onCommitted?: () => void) => {
-            void undo().then(onCommitted);
+            void undo().then((result) => {
+                if (result.headConsumed) {
+                    onCommitted?.();
+                }
+            });
         },
     },
     {
@@ -25,7 +29,11 @@ export const editCommands: CallableCommandEntry[] = [
         category: 'Edit',
         shortcut: '⌘⇧Z',
         action: (onCommitted?: () => void) => {
-            void redo().then(onCommitted);
+            void redo().then((result) => {
+                if (result.headConsumed) {
+                    onCommitted?.();
+                }
+            });
         },
     },
     {

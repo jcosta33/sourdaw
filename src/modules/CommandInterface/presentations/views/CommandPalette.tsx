@@ -11,13 +11,9 @@ import { workspaceStore } from '#/modules/WorkspaceShell/stores';
 import { closeCommandPalette } from '#/modules/WorkspaceShell/useCases';
 import { cn } from '#/utils/Styles/cn';
 
-import {
-    discoverCommands,
-    getCommandInapplicabilityReason,
-    searchCommands,
-    updateRecentCommandIds,
-    type CommandEntry,
-} from './commandRegistry';
+import { getCommandInapplicabilityReason } from '../../useCases/getCommandInapplicabilityReason';
+
+import { discoverCommands, searchCommands, updateRecentCommandIds, type CommandEntry } from './commandRegistry';
 
 type CommandOptionProps = {
     cmd: CommandEntry;
@@ -137,9 +133,12 @@ export const CommandPalette = (): ReactElement | null => {
     const inputRef = useRef<HTMLInputElement>(null);
 
     const results = searchCommands(query);
-    const groups: CommandGroup[] = query.trim()
-        ? [{ id: 'search-results', label: null, entries: results }]
-        : discoverCommands(results, recentCommandIds);
+    let groups: CommandGroup[];
+    if (query.trim()) {
+        groups = [{ id: 'search-results', label: null, entries: results }];
+    } else {
+        groups = discoverCommands(results, recentCommandIds);
+    }
     const flattenedResults = groups.flatMap((group) => group.entries);
 
     // Every keyboard and active-descendant lookup uses the same visual order

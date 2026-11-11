@@ -6,6 +6,7 @@ import { promptUser } from '#/utils/Notification/promptUser';
 import { executeCommandAction } from '../executeCommandAction';
 import { type CallableCommandEntry } from '../searchCommandRegistry';
 import { getSelectedClipId } from '../selectionHelpers/getSelectedClipId';
+import { getSelectedClipIdOfType } from '../selectionHelpers/getSelectedClipIdOfType';
 import { getSelectedClipIds } from '../selectionHelpers/getSelectedClipIds';
 import { getSelectedTrackId } from '../selectionHelpers/getSelectedTrackId';
 
@@ -60,9 +61,9 @@ export const clipCommands: CallableCommandEntry[] = [
         label: 'Normalize Clip',
         description: 'Peak-normalize the selected audio clip',
         category: 'Clip',
-        getInapplicabilityReason: () => (getSelectedClipId() ? null : 'Select a clip first.'),
+        getInapplicabilityReason: () => (getSelectedClipIdOfType('audio') ? null : 'Select an audio clip first.'),
         action: (onCommitted?: () => void) => {
-            const clipId = getSelectedClipId();
+            const clipId = getSelectedClipIdOfType('audio');
             if (clipId) {
                 void executeCommandAction(onCommitted, { type: 'normalizeClip', payload: { clipId } });
             }
@@ -73,9 +74,9 @@ export const clipCommands: CallableCommandEntry[] = [
         label: 'Reverse Clip',
         description: 'Reverse the selected audio clip',
         category: 'Clip',
-        getInapplicabilityReason: () => (getSelectedClipId() ? null : 'Select a clip first.'),
+        getInapplicabilityReason: () => (getSelectedClipIdOfType('audio') ? null : 'Select an audio clip first.'),
         action: (onCommitted?: () => void) => {
-            const clipId = getSelectedClipId();
+            const clipId = getSelectedClipIdOfType('audio');
             if (clipId) {
                 void executeCommandAction(onCommitted, { type: 'reverseClip', payload: { clipId } });
             }

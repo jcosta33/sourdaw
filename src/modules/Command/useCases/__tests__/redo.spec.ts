@@ -472,4 +472,17 @@ describe('redo', () => {
         expect(mocks.undoStoreSet).not.toHaveBeenCalled();
         expect(mocks.undoTreeMoveTo).not.toHaveBeenCalled();
     });
+
+    it('reports whether redo consumed a history head', async () => {
+        mocks.undoStoreValue.value = { past: [], future: [actionEntry()] };
+        await expect(redo()).resolves.toEqual({ headConsumed: true });
+
+        await expect(redo()).resolves.toEqual({ headConsumed: false });
+
+        mocks.undoStoreValue.value = {
+            past: [],
+            future: [callbackEntry({ redo: () => REDO_NOT_APPLIED })],
+        };
+        await expect(redo()).resolves.toEqual({ headConsumed: false });
+    });
 });

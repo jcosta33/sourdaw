@@ -69,13 +69,12 @@ export function searchCommands<Entry extends SearchableCommandEntry>(registry: E
         return registry;
     }
 
-    return registry
-        .flatMap((command, index) => {
-            const rank = matchRank(normalizedQuery, command);
-            return rank === null ? [] : [{ command, index, rank }];
-        })
-        .sort((left, right) => left.rank - right.rank || left.index - right.index)
-        .map((candidate) => candidate.command);
+    const ranked = registry.flatMap((command, index) => {
+        const rank = matchRank(normalizedQuery, command);
+        return rank === null ? [] : [{ command, index, rank }];
+    });
+    ranked.sort((left, right) => left.rank - right.rank || left.index - right.index);
+    return ranked.map((candidate) => candidate.command);
 }
 
 /** A broken context gate fails closed instead of dispatching an unknown action. */

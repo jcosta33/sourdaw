@@ -4,10 +4,11 @@ import { notifyUser } from '#/utils/Notification/notifyUser';
 import { executeCommandAction } from '../executeCommandAction';
 import { type CallableCommandEntry } from '../searchCommandRegistry';
 import { getSelectedClipId } from '../selectionHelpers/getSelectedClipId';
+import { getSelectedClipIdOfType } from '../selectionHelpers/getSelectedClipIdOfType';
 
 function requireMidiClip(fn: (clipId: string, onCommitted?: () => void) => void): (onCommitted?: () => void) => void {
     return (onCommitted) => {
-        const clipId = getSelectedClipId();
+        const clipId = getSelectedClipIdOfType('midi');
         if (!clipId) {
             notifyUser('Select a MIDI clip first', 'error');
             return;
@@ -72,7 +73,8 @@ export const aiCommands: CallableCommandEntry[] = [
         label: 'AI: Generate Bassline',
         description: 'Create a bassline that follows the selected MIDI clip harmonically',
         category: 'AI',
-        action: requireMidiClip((clipId) => {
+        getInapplicabilityReason: () => (getSelectedClipIdOfType('midi') ? null : 'Select a MIDI clip first.'),
+        action: requireMidiClip((clipId, onCommitted) => {
             void executeCommandAction(onCommitted, {
                 type: 'generateBassline',
                 payload: { clipId, style: 'root-fifth' },
@@ -84,7 +86,8 @@ export const aiCommands: CallableCommandEntry[] = [
         label: 'AI: Complete MIDI (continue clip)',
         description: 'Extend the selected MIDI clip forward with AI-generated notes',
         category: 'AI',
-        action: requireMidiClip((clipId) => {
+        getInapplicabilityReason: () => (getSelectedClipIdOfType('midi') ? null : 'Select a MIDI clip first.'),
+        action: requireMidiClip((clipId, onCommitted) => {
             void executeCommandAction(onCommitted, { type: 'completeMidi', payload: { clipId, bars: 4 } });
         }),
     },
@@ -93,7 +96,8 @@ export const aiCommands: CallableCommandEntry[] = [
         label: 'AI: Create MIDI Variation',
         description: 'Create a variation of the selected MIDI clip on the same track',
         category: 'AI',
-        action: requireMidiClip((clipId) => {
+        getInapplicabilityReason: () => (getSelectedClipIdOfType('midi') ? null : 'Select a MIDI clip first.'),
+        action: requireMidiClip((clipId, onCommitted) => {
             void executeCommandAction(onCommitted, { type: 'variationMidi', payload: { clipId, amount: 0.3 } });
         }),
     },
@@ -102,7 +106,8 @@ export const aiCommands: CallableCommandEntry[] = [
         label: 'AI: Create Subtle MIDI Variation',
         description: 'Gentle variation (10% divergence) of the selected MIDI clip',
         category: 'AI',
-        action: requireMidiClip((clipId) => {
+        getInapplicabilityReason: () => (getSelectedClipIdOfType('midi') ? null : 'Select a MIDI clip first.'),
+        action: requireMidiClip((clipId, onCommitted) => {
             void executeCommandAction(onCommitted, { type: 'variationMidi', payload: { clipId, amount: 0.1 } });
         }),
     },
@@ -111,7 +116,8 @@ export const aiCommands: CallableCommandEntry[] = [
         label: 'AI: Create Wild MIDI Variation',
         description: 'Major variation (60% divergence) of the selected MIDI clip',
         category: 'AI',
-        action: requireMidiClip((clipId) => {
+        getInapplicabilityReason: () => (getSelectedClipIdOfType('midi') ? null : 'Select a MIDI clip first.'),
+        action: requireMidiClip((clipId, onCommitted) => {
             void executeCommandAction(onCommitted, { type: 'variationMidi', payload: { clipId, amount: 0.6 } });
         }),
     },
