@@ -1,0 +1,41 @@
+src/modules/Arrangement/models/TimelineHorizontalExtent.ts
+  s_131b426bba0f96::t_141c75d9dd42c4 2-4,8-30,37-38
+src/modules/Arrangement/stores/timelineViewStore.ts
+  s_131b426bba0f96::t_799cdbf27b7899 181-184,193-196
+src/modules/Arrangement/useCases/__tests__/projectWorkingView.spec.ts
+  s_0207af29e0b307::t_57911c2291b526 19,21,54-75,151-163
+src/modules/Arrangement/useCases/getTimelineHorizontalContentWidth.ts
+  s_131b426bba0f96::t_5a6137ba13f7ed 1-4
+src/modules/Arrangement/useCases/projectWorkingView.ts
+  s_131b426bba0f96::t_3cb16cde78efe3 3-7
+src/modules/Project/useCases/projectPersistence/__tests__/loadProject.spec.ts
+  s_0207af29e0b307::t_d33824e2634104 55-62,83-85,147,222-235,240-242,390-409
+src/modules/Project/useCases/projectPersistence/loadProject.ts
+  s_131b426bba0f96::t_9dfe0f5b7e0d9b 206-211
+src/modules/WorkspaceShell/useCases/initProjectWorkingViewPersistence.ts
+  s_131b426bba0f96::t_9cbe4774640a69 111
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "11d0b97b836b3a2f6aed640a762ba0d5ed871aad",
+  "prompts": {},
+  "sessions": {
+    "s_0207af29e0b307": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f246cd62-2d2d-4584-ad3e-050fad80f22b",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_131b426bba0f96": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dec81aab-5eda-40a7-90d1-889fad31bc7f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
