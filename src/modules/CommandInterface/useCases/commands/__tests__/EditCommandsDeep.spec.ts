@@ -54,7 +54,10 @@ describe('editCommands', () => {
 
     it('records undo and redo only when they consume a history head', async () => {
         mockUndo.mockResolvedValueOnce({ headConsumed: true });
-        mockRedo.mockResolvedValueOnce({ headConsumed: true });
+        mockRedo.mockImplementationOnce((options) => {
+            options.onCommitted();
+            return Promise.resolve();
+        });
         const undoCommitted = vi.fn();
         const redoCommitted = vi.fn();
 

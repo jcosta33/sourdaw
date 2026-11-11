@@ -28,7 +28,7 @@ import { type CallableCommandEntry, searchCommandRegistry } from '../../useCases
 // ── Re-exports for in-module consumers ────────────────────────────────────
 
 export type CommandEntry = CallableCommandEntry;
-export { discoverCommands, updateRecentCommandIds } from '../../useCases/searchCommandRegistry';
+export { discoverCommands, updateRecentCommandIds } from '../../services/commandSearch';
 
 // ── Aggregated registry ────────────────────────────────────────────────────
 

@@ -473,16 +473,20 @@ describe('redo', () => {
         expect(mocks.undoTreeMoveTo).not.toHaveBeenCalled();
     });
 
-    it('reports whether redo consumed a history head', async () => {
+    it('reports a commit only when redo consumes a history head', async () => {
+        const onCommitted = vi.fn();
         mocks.undoStoreValue.value = { past: [], future: [actionEntry()] };
-        await expect(redo()).resolves.toEqual({ headConsumed: true });
+        await expect(redo({ onCommitted })).resolves.toBeUndefined();
+        expect(onCommitted).toHaveBeenCalledOnce();
 
-        await expect(redo()).resolves.toEqual({ headConsumed: false });
+        await redo({ onCommitted });
+        expect(onCommitted).toHaveBeenCalledOnce();
 
         mocks.undoStoreValue.value = {
             past: [],
             future: [callbackEntry({ redo: () => REDO_NOT_APPLIED })],
         };
-        await expect(redo()).resolves.toEqual({ headConsumed: false });
+        await redo({ onCommitted });
+        expect(onCommitted).toHaveBeenCalledOnce();
     });
 });

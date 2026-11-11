@@ -29,11 +29,7 @@ export const editCommands: CallableCommandEntry[] = [
         category: 'Edit',
         shortcut: '⌘⇧Z',
         action: (onCommitted?: () => void) => {
-            void redo().then((result) => {
-                if (result.headConsumed) {
-                    onCommitted?.();
-                }
-            });
+            void redo({ onCommitted });
         },
     },
     {

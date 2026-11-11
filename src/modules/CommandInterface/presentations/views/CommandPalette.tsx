@@ -124,6 +124,14 @@ const CommandListbox = ({ id, groups, activeIndex, onSelect, onHover }: CommandL
     );
 };
 
+function getCommandGroups(query: string, recentCommandIds: readonly string[]): CommandGroup[] {
+    const results = searchCommands(query);
+    if (query.trim()) {
+        return [{ id: 'search-results', label: null, entries: results }];
+    }
+    return discoverCommands(results, recentCommandIds);
+}
+
 export const CommandPalette = (): ReactElement | null => {
     const commandPaletteOpen = useStore(workspaceStore)?.commandPaletteOpen ?? false;
     const [query, setQuery] = useState('');
@@ -132,13 +140,7 @@ export const CommandPalette = (): ReactElement | null => {
     const [recentCommandIds, setRecentCommandIds] = useState<string[]>([]);
     const inputRef = useRef<HTMLInputElement>(null);
 
-    const results = searchCommands(query);
-    let groups: CommandGroup[];
-    if (query.trim()) {
-        groups = [{ id: 'search-results', label: null, entries: results }];
-    } else {
-        groups = discoverCommands(results, recentCommandIds);
-    }
+    const groups = getCommandGroups(query, recentCommandIds);
     const flattenedResults = groups.flatMap((group) => group.entries);
 
     // Every keyboard and active-descendant lookup uses the same visual order

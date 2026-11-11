@@ -433,8 +433,13 @@ export type RedoOptions = {
      * move tells that nothing was applied.
      */
     readonly stepOverConflicts?: boolean;
+    /** Called only when this call re-applies a history unit. */
+    readonly onCommitted?: () => void;
 };
 
-export function redo(options: RedoOptions = {}): Promise<RedoResult> {
-    return runUndoRedoExclusive(() => redoImpl(options.stepOverConflicts ?? true));
+export async function redo(options: RedoOptions = {}): Promise<void> {
+    const result = await runUndoRedoExclusive(() => redoImpl(options.stepOverConflicts ?? true));
+    if (result.headConsumed) {
+        options.onCommitted?.();
+    }
 }
