@@ -1767,6 +1767,10 @@ type UnpinnedStoredPcmRead =
 type UnpinnedStoredPcmRestoration = {
     /** Ids storage holds no record for and this session holds no PCM for. */
     absent: string[];
+    /** Ids that were not resident when this restoration began. */
+    initiallyUncached: string[];
+    /** The exact PCM objects this restoration made resident. */
+    restored: Map<string, AudioBuffer>;
 };
 
 /**
@@ -1844,10 +1848,15 @@ async function readUnpinnedStoredPcm(tx: IDBTransaction, id: string): Promise<Un
  * a failed read restores nothing and reports no id absent, so a caller never
  * treats stored audio it could not read as missing.
  */
-async function restoreUnpinnedStoredBuffers(ids: readonly string[]): Promise<UnpinnedStoredPcmRestoration> {
+async function restoreUnpinnedStoredBuffers(
+    ids: readonly string[],
+    isCurrent?: () => boolean
+): Promise<UnpinnedStoredPcmRestoration> {
     const candidateIds = [...new Set(ids)].filter((id) => !cache.has(id));
+    const initiallyUncached = [...candidateIds];
+    const restored = new Map<string, AudioBuffer>();
     if (candidateIds.length === 0) {
-        return { absent: [] };
+        return { absent: [], initiallyUncached, restored };
     }
     let reads: UnpinnedStoredPcmRead[];
     try {
@@ -1859,11 +1868,11 @@ async function restoreUnpinnedStoredBuffers(ids: readonly string[]): Promise<Unp
             ids: candidateIds,
             error,
         });
-        return { absent: [] };
+        return { absent: [], initiallyUncached, restored };
     }
     const absent: string[] = [];
     for (const read of reads) {
-        if (read.status === 'refused' || cache.has(read.id)) {
+        if (isCurrent?.() === false || read.status === 'refused' || cache.has(read.id)) {
             continue;
         }
         // A write or removal that landed while storage was read supersedes it.
@@ -1876,12 +1885,14 @@ async function restoreUnpinnedStoredBuffers(ids: readonly string[]): Promise<Unp
         }
         if (read.status === 'session') {
             audioCacheSet(read.id, read.buffer, read.source.freezeProjectId, true);
+            restored.set(read.id, read.buffer);
             continue;
         }
         audioCacheSet(read.id, read.buffer, read.metadata?.freezeProjectId, read.metadata !== undefined);
         recordHydratedDurabilitySource(read.id, read.metadata, read.persistenceRevision);
+        restored.set(read.id, read.buffer);
     }
-    return { absent };
+    return { absent, initiallyUncached, restored };
 }
 
 type GarbageCollectFreezeFilesInput = {

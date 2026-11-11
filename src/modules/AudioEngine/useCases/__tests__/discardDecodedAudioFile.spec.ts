@@ -11,6 +11,7 @@ import {
 
 let audioBufferCache: typeof import('../../stores/audioBufferCache').audioBufferCache;
 let discardDecodedAudioFile: typeof import('../discardDecodedAudioFile').discardDecodedAudioFile;
+let discardDecodedAudioFileIfCurrent: typeof import('../discardDecodedAudioFileIfCurrent').discardDecodedAudioFileIfCurrent;
 let setDurableAudioBufferOwnershipProvider: typeof import('../../stores/durableAudioBufferOwnership').setDurableAudioBufferOwnershipProvider;
 let lockManager: ReturnType<typeof createControlledLockManager>;
 
@@ -32,12 +33,17 @@ describe('discardDecodedAudioFile', () => {
         vi.resetModules();
         lockManager = createControlledLockManager();
         vi.stubGlobal('navigator', { ...navigator, locks: lockManager.locks });
-        [{ audioBufferCache }, { discardDecodedAudioFile }, { setDurableAudioBufferOwnershipProvider }] =
-            await Promise.all([
-                import('../../stores/audioBufferCache'),
-                import('../discardDecodedAudioFile'),
-                import('../../stores/durableAudioBufferOwnership'),
-            ]);
+        [
+            { audioBufferCache },
+            { discardDecodedAudioFile },
+            { discardDecodedAudioFileIfCurrent },
+            { setDurableAudioBufferOwnershipProvider },
+        ] = await Promise.all([
+            import('../../stores/audioBufferCache'),
+            import('../discardDecodedAudioFile'),
+            import('../discardDecodedAudioFileIfCurrent'),
+            import('../../stores/durableAudioBufferOwnership'),
+        ]);
         setDurableAudioBufferOwnershipProvider(() => Promise.resolve([]));
     });
 
@@ -83,5 +89,20 @@ describe('discardDecodedAudioFile', () => {
         if (retainedDurability.status === 'durable') {
             retainedDurability.release();
         }
+    });
+
+    it('discards decoded PCM only while the cache holds the exact object', () => {
+        installFakeAudioIndexedDb({ existingStores: [BUFFER_STORE, META_STORE, RECOVERY_STORE] });
+        const decoded = createAudioBuffer();
+        const replacement = createAudioBuffer();
+        audioBufferCache.set('audio-decoded', decoded);
+
+        discardDecodedAudioFileIfCurrent('audio-decoded', replacement);
+
+        expect(audioBufferCache.get('audio-decoded')).toBe(decoded);
+
+        discardDecodedAudioFileIfCurrent('audio-decoded', decoded);
+
+        expect(audioBufferCache.has('audio-decoded')).toBe(false);
     });
 });
