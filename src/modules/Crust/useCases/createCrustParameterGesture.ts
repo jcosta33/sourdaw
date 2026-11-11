@@ -204,7 +204,9 @@ async function commit(scope: Scope, gesture: Gesture): Promise<void> {
     const value = gesture.preview;
     if (value === undefined || value === (gesture.value ?? gesture.defaultValue)) {
         retire(scope, gesture, true);
-        scope.gestures.delete(gesture.key);
+        if (scope.gestures.get(gesture.key) === gesture) {
+            scope.gestures.delete(gesture.key);
+        }
         return;
     }
     try {

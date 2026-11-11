@@ -212,6 +212,32 @@ describe('Crust numeric controller with real Command and CRDT', () => {
         expect(getCrustState(DEVICE).patch.gain).toBe(0);
     });
 
+    it('preserves a successor started while retiring a no-op commit', async () => {
+        let edit: ReturnType<typeof createCrustParameterGesture>;
+        let shouldStartSuccessor = true;
+        let successorToken = -1;
+        vi.spyOn(engineApi, 'captureDeviceParameterRuntimeWriteAuthority').mockReturnValueOnce({
+            owner: Symbol('controlled engine receipt'),
+            isCurrent: () => true,
+            canCommit: () => true,
+            release: () => {
+                if (!shouldStartSuccessor) {
+                    return;
+                }
+                shouldStartSuccessor = false;
+                successorToken = edit.start('gain');
+            },
+        });
+        edit = controller();
+        await edit.change('gain', 9, true);
+        await edit.change('gain', 0, true);
+
+        await edit.settle('gain');
+
+        expect(successorToken).toBeGreaterThan(0);
+        expect(edit.isCurrent('gain', successorToken)).toBe(true);
+    });
+
     it.each(['removed', 'duplicate', 'frozen'] as const)(
         'refuses a preview terminal after its %s target changes',
         async (change) => {
