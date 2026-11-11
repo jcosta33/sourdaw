@@ -99,6 +99,75 @@ test.describe('Arrangement sections', () => {
         await expect(sections.getByText('Right-click to add arrangement sections')).toHaveCount(0);
         await expect(sections.getByText(/New Section/i)).toBeVisible();
     });
+
+    async function createSection(page: import('@playwright/test').Page): Promise<void> {
+        const sections = page.getByRole('region', { name: 'Arrangement sections' });
+        const box = await sections.boundingBox();
+        if (!box) {
+            throw new Error('sections region missing');
+        }
+        await sections.click({ button: 'right', position: { x: 50, y: box.height * 0.5 } });
+        await page.getByRole('menu').getByRole('button', { name: 'Add Section', exact: true }).click();
+        await expect(sections.getByText('New Section', { exact: true })).toBeVisible();
+    }
+
+    async function openSectionMenu(page: import('@playwright/test').Page): Promise<void> {
+        const sections = page.getByRole('region', { name: 'Arrangement sections' });
+        await sections.click({ button: 'right', position: { x: 60, y: 10 } });
+        await expect(page.getByRole('menu')).toBeVisible();
+    }
+
+    async function readSectionTransport(page: import('@playwright/test').Page) {
+        return page.evaluate(async () => {
+            const { transportStore }: typeof import('../../src/modules/Transport/stores') =
+                await import('/src/modules/Transport/stores/index.ts');
+            const state = transportStore.value;
+            if (!state) {
+                throw new Error('transport state missing');
+            }
+            return {
+                playheadPosition: state.playheadPosition,
+                loopStart: state.loopStart,
+                loopEnd: state.loopEnd,
+                isLooping: state.isLooping,
+                isPlaying: state.isPlaying,
+            };
+        });
+    }
+
+    test('Loop Section starts playback over its exact section range', async ({ page }) => {
+        await createSection(page);
+        await openSectionMenu(page);
+        await page.getByRole('menu').getByRole('button', { name: 'Loop Section', exact: true }).click();
+
+        await expect
+            .poll(() => readSectionTransport(page))
+            .toMatchObject({
+                loopStart: 4,
+                loopEnd: 20,
+                isLooping: true,
+                isPlaying: true,
+            });
+        await expect(page.getByRole('button', { name: 'Loop', exact: true })).toHaveAttribute('aria-pressed', 'true');
+        await page.getByTestId('transport-stop').click();
+    });
+
+    test('Play Section starts at the section without enabling looping', async ({ page }) => {
+        await createSection(page);
+        await openSectionMenu(page);
+        await page.getByRole('menu').getByRole('button', { name: 'Play Section', exact: true }).click();
+
+        await expect
+            .poll(() => readSectionTransport(page))
+            .toMatchObject({
+                loopStart: 4,
+                loopEnd: 20,
+                isLooping: false,
+                isPlaying: true,
+            });
+        await expect(page.getByRole('button', { name: 'Loop', exact: true })).toHaveAttribute('aria-pressed', 'false');
+        await page.getByTestId('transport-stop').click();
+    });
 });
 
 // ---------------------------------------------------------------------------

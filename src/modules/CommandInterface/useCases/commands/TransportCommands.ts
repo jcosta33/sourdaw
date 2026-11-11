@@ -89,6 +89,20 @@ export const transportCommands: CallableCommandEntry[] = [
         },
     },
     {
+        id: 'next-section',
+        label: 'Next Section',
+        description: 'Move the playhead to the next section in musical order',
+        category: 'Transport',
+        action: { type: 'navigateSection', payload: { direction: 'next' } },
+    },
+    {
+        id: 'prev-section',
+        label: 'Previous Section',
+        description: 'Move the playhead to the previous section in musical order',
+        category: 'Transport',
+        action: { type: 'navigateSection', payload: { direction: 'previous' } },
+    },
+    {
         id: 'panic-all-notes',
         label: 'MIDI Panic — All Notes Off',
         description: 'Force every held note to release: live MIDI input, every instrument, Yeast racks and Crumbs',

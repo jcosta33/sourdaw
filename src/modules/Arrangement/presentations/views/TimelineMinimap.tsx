@@ -16,6 +16,9 @@ import {
     TIMELINE_MINIMAP_DEFAULT_HEIGHT,
 } from '#/utils/TimelineMinimap/timelineMinimapHeight';
 
+import { SECTION_COLORS } from '../../models/ColorPalette';
+import { type ArrangementSection } from '../../models/Marker';
+import { defaultMarkerStoreState, markerStore } from '../../stores/markerStore';
 import { timelineViewStore, type TimelineViewState } from '../../stores/timelineViewStore';
 import { trackStore, type TrackStoreState } from '../../stores/trackStore';
 import { setTimelineMinimapAutoScroll } from '../../useCases/setTimelineMinimapAutoScroll';
@@ -44,14 +47,19 @@ function getDevicePixelRatio(): number {
     return dpr;
 }
 
-/** The span the minimap draws: the project's last clip end plus headroom, never under a minimum. */
-function getMinimapTotalBeats(tracks: TrackStoreState['tracks']): number {
+/** The span the minimap draws: the project's last clip or section end plus headroom. */
+function getMinimapTotalBeats(tracks: TrackStoreState['tracks'], sections: ArrangementSection[]): number {
     let maxEndBeat = 0;
     for (const track of tracks) {
         for (const clip of track.clips) {
             if (clip.endBeat > maxEndBeat) {
                 maxEndBeat = clip.endBeat;
             }
+        }
+    }
+    for (const section of sections) {
+        if (section.endBeat > maxEndBeat) {
+            maxEndBeat = section.endBeat;
         }
     }
     return Math.max(MIN_PROJECT_BEATS, maxEndBeat * 1.1);
@@ -79,9 +87,11 @@ export const TimelineMinimap = ({ height = TIMELINE_MINIMAP_DEFAULT_HEIGHT }: Ti
     const [canvasMetrics, setCanvasMetrics] = useState<CanvasMetrics>({ width: 0, dpr: 1 });
 
     const trackState = useStore(trackStore, defaultTrackState);
+    const markerState = useStore(markerStore, defaultMarkerStoreState);
     const viewState = useStore(timelineViewStore, defaultTimelineView);
 
     const tracks = trackState.tracks;
+    const sections = markerState.sections;
     const pixelsPerBeat = viewState.pixelsPerBeat;
     const scrollX = viewState.scrollX;
 
@@ -92,7 +102,7 @@ export const TimelineMinimap = ({ height = TIMELINE_MINIMAP_DEFAULT_HEIGHT }: Ti
         defaultNumerator: transport.timeSignatureNumerator,
         defaultDenominator: transport.timeSignatureDenominator,
     };
-    const sliderMaxBeats = Math.round(getMinimapTotalBeats(tracks));
+    const sliderMaxBeats = Math.round(getMinimapTotalBeats(tracks, sections));
     const readoutPixelsPerBeat = pixelsPerBeat > 0 && Number.isFinite(pixelsPerBeat) ? pixelsPerBeat : 12;
     const scrollStartBeat = Math.max(0, scrollX / readoutPixelsPerBeat);
     const sliderStartBeat = Math.min(sliderMaxBeats, Math.round(scrollStartBeat));
@@ -129,9 +139,11 @@ export const TimelineMinimap = ({ height = TIMELINE_MINIMAP_DEFAULT_HEIGHT }: Ti
 
         const trackCount = tracks.length;
 
-        const totalBeats = getMinimapTotalBeats(tracks);
+        const totalBeats = getMinimapTotalBeats(tracks, sections);
         const beatsToPixels = canvasWidth / totalBeats;
-        const drawableHeight = Math.max(1, activeHeight - 2);
+        const sectionLabelHeight = sections.length > 0 && activeHeight >= 22 ? 11 : 0;
+        const contentTop = 1 + sectionLabelHeight;
+        const drawableHeight = Math.max(1, activeHeight - contentTop - 1);
         const laneStep = trackCount > 0 ? drawableHeight / trackCount : drawableHeight;
 
         // Dark background with subtle gradient
@@ -144,7 +156,7 @@ export const TimelineMinimap = ({ height = TIMELINE_MINIMAP_DEFAULT_HEIGHT }: Ti
         if (trackCount > 0) {
             for (let index = 0; index < tracks.length; index++) {
                 const track = tracks[index]!;
-                const y = 1 + index * laneStep;
+                const y = contentTop + index * laneStep;
                 const availableHeight = Math.max(1, activeHeight - 1 - y);
                 const clipHeight = Math.min(Math.max(1, laneStep - 1), availableHeight);
 
@@ -166,6 +178,48 @@ export const TimelineMinimap = ({ height = TIMELINE_MINIMAP_DEFAULT_HEIGHT }: Ti
             }
             ctx.globalAlpha = 1;
         }
+
+        const orderedSections = sections
+            .filter((section) => section.endBeat > section.startBeat)
+            .toSorted(
+                (first, second) =>
+                    first.startBeat - second.startBeat ||
+                    first.endBeat - second.endBeat ||
+                    first.id.localeCompare(second.id)
+            );
+        let previousLabelRight = -Infinity;
+        for (const [index, section] of orderedSections.entries()) {
+            const startX = section.startBeat * beatsToPixels;
+            const endX = section.endBeat * beatsToPixels;
+            const color = section.color || SECTION_COLORS[index % SECTION_COLORS.length]!;
+
+            ctx.strokeStyle = color;
+            ctx.globalAlpha = 0.45;
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(startX + 0.5, 0.5);
+            ctx.lineTo(startX + 0.5, activeHeight - 0.5);
+            ctx.moveTo(endX - 0.5, 0.5);
+            ctx.lineTo(endX - 0.5, activeHeight - 0.5);
+            ctx.stroke();
+
+            if (sectionLabelHeight === 0) {
+                continue;
+            }
+            const labelX = startX + 4;
+            const labelWidth = ctx.measureText(section.name).width;
+            const labelRight = labelX + labelWidth;
+            if (labelRight > endX - 3 || labelRight > canvasWidth || labelX < previousLabelRight + 4) {
+                continue;
+            }
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.86)';
+            ctx.globalAlpha = 0.9;
+            ctx.font = '9px sans-serif';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(section.name, labelX, sectionLabelHeight / 2);
+            previousLabelRight = labelRight;
+        }
+        ctx.globalAlpha = 1;
 
         const safePixelsPerBeat = pixelsPerBeat > 0 && Number.isFinite(pixelsPerBeat) ? pixelsPerBeat : 12;
         const viewportStartPx = (scrollX / safePixelsPerBeat) * beatsToPixels;
@@ -195,7 +249,7 @@ export const TimelineMinimap = ({ height = TIMELINE_MINIMAP_DEFAULT_HEIGHT }: Ti
             ctx.lineTo(boundedViewportStart + boundedViewportWidth - 0.5, 0.5);
             ctx.stroke();
         }
-    }, [tracks, pixelsPerBeat, scrollX, canvasMetrics, activeHeight]);
+    }, [tracks, sections, pixelsPerBeat, scrollX, canvasMetrics, activeHeight]);
 
     useLayoutEffect(() => {
         const container = containerRef.current;
@@ -269,7 +323,7 @@ export const TimelineMinimap = ({ height = TIMELINE_MINIMAP_DEFAULT_HEIGHT }: Ti
         const rect = container.getBoundingClientRect();
         const canvasWidth = rect.width;
 
-        const totalBeats = getMinimapTotalBeats(tracks);
+        const totalBeats = getMinimapTotalBeats(tracks, sections);
         const beatsToPixels = canvasWidth / totalBeats;
         const visibleBeats = canvasWidth / pixelsPerBeat;
         const viewportWidthPx = Math.max(VIEWPORT_MIN_WIDTH, visibleBeats * beatsToPixels);

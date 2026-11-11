@@ -19,6 +19,11 @@ const storeOverrides = vi.hoisted(() => ({
 }));
 
 const meterMapStoreMock = vi.hoisted(() => ({ value: { changes: [] } }));
+const markerStoreMock = vi.hoisted(() => ({
+    value: { markers: [], sections: [] },
+    subscribe: () => () => undefined,
+    set: () => undefined,
+}));
 const timelineViewStoreMock = vi.hoisted(() => ({
     value: { scrollX: 0, scrollY: 0, pixelsPerBeat: 12, autoScrollEnabled: true },
     subscribe: () => () => undefined,
@@ -46,6 +51,11 @@ const trackStoreMock = vi.hoisted(() => ({
 
 vi.mock('../../../stores/trackStore', () => ({
     trackStore: trackStoreMock,
+}));
+
+vi.mock('../../../stores/markerStore', () => ({
+    markerStore: markerStoreMock,
+    defaultMarkerStoreState: { markers: [], sections: [] },
 }));
 
 vi.mock('../../../stores/timelineViewStore', () => ({
@@ -197,6 +207,16 @@ describe('TimelineMinimap', () => {
             const slider = screen.getByRole('slider');
             expect(slider).toHaveAttribute('aria-valuemax', String(Math.round(200 * 1.1)));
             expect(slider).toHaveAttribute('aria-valuenow', '220');
+        });
+
+        it('extends the minimap span to include sections beyond the last clip', () => {
+            storeOverrides.values.set(markerStoreMock, {
+                markers: [],
+                sections: [{ id: 'outro', name: 'Outro', startBeat: 160, endBeat: 240, color: '#778899' }],
+            });
+            renderWithTooltip(<TimelineMinimap />);
+
+            expect(screen.getByRole('slider')).toHaveAttribute('aria-valuemax', '264');
         });
     });
 

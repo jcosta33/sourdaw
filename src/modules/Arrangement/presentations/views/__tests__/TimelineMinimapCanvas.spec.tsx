@@ -1,11 +1,14 @@
 import { act, render } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { type ArrangementSection } from '../../../models/Marker';
 import { TimelineMinimap } from '../TimelineMinimap';
 
 const stores = vi.hoisted(() => ({
     trackStore: { kind: 'tracks' },
+    markerStore: { kind: 'markers' },
     timelineViewStore: { kind: 'view' },
+    markers: { markers: [], sections: [] as ArrangementSection[] },
     tracks: {
         tracks: [
             {
@@ -24,6 +27,9 @@ vi.mock('#/infra/store/useStore', () => ({
         if (store === stores.trackStore) {
             return stores.tracks;
         }
+        if (store === stores.markerStore) {
+            return stores.markers;
+        }
         if (store === stores.timelineViewStore) {
             return stores.view;
         }
@@ -37,6 +43,10 @@ vi.mock('#/modules/Transport/stores', async (importOriginal) => ({
 }));
 
 vi.mock('../../../stores/trackStore', () => ({ trackStore: stores.trackStore }));
+vi.mock('../../../stores/markerStore', () => ({
+    markerStore: stores.markerStore,
+    defaultMarkerStoreState: { markers: [], sections: [] },
+}));
 vi.mock('../../../stores/timelineViewStore', () => ({ timelineViewStore: stores.timelineViewStore }));
 vi.mock('../../../useCases/setTimelineMinimapScrollX', () => ({ setTimelineMinimapScrollX: vi.fn() }));
 vi.mock('../../../useCases/setTimelineMinimapAutoScroll', () => ({ setTimelineMinimapAutoScroll: vi.fn() }));
@@ -89,6 +99,10 @@ const context = {
     strokeStyle: '',
     lineWidth: 1,
     globalAlpha: 1,
+    font: '',
+    textBaseline: '',
+    fillText: vi.fn(),
+    measureText: vi.fn((text: string) => ({ width: text.length * 5 })),
 };
 
 describe('TimelineMinimap canvas sizing and drawing', () => {
@@ -96,6 +110,7 @@ describe('TimelineMinimap canvas sizing and drawing', () => {
 
     beforeEach(() => {
         vi.clearAllMocks();
+        stores.markers = { markers: [], sections: [] };
         resizeObserverHarness.callback = null;
         densityObserverHarness.query = null;
         cssWidth = 200;
@@ -200,6 +215,53 @@ describe('TimelineMinimap canvas sizing and drawing', () => {
         for (const value of expandedClip.slice(0, 4)) {
             expect(Number.isFinite(Number(value))).toBe(true);
         }
+    });
+
+    it('draws sparse section labels above clips and keeps the viewport overlay last', () => {
+        stores.markers.sections = [
+            { id: 'intro', name: 'Intro', startBeat: 0, endBeat: 16, color: '#aa3300' },
+            { id: 'verse', name: 'Verse', startBeat: 16, endBeat: 32, color: '#00aa33' },
+        ];
+
+        render(<TimelineMinimap height={28} />);
+
+        expect(context.fillText.mock.calls.map(([text]) => text)).toEqual(['Intro', 'Verse']);
+        const clip = context.roundRect.mock.calls[0];
+        if (!clip) {
+            throw new Error('Expected the clip to be drawn');
+        }
+        expect(Number(clip[1])).toBeGreaterThanOrEqual(11);
+        expect(context.strokeRect).toHaveBeenCalledTimes(1);
+        expect(context.strokeRect.mock.invocationCallOrder[0]).toBeGreaterThan(
+            context.fillText.mock.invocationCallOrder.at(-1)!
+        );
+    });
+
+    it('suppresses labels at dense landmark spacing without dropping boundaries or the viewport', () => {
+        stores.markers.sections = Array.from({ length: 24 }, (_, index) => ({
+            id: `section-${index}`,
+            name: `Section ${index}`,
+            startBeat: index * 2,
+            endBeat: index * 2 + 2,
+            color: '#778899',
+        }));
+
+        render(<TimelineMinimap height={28} />);
+
+        expect(context.fillText).not.toHaveBeenCalled();
+        expect(context.moveTo).toHaveBeenCalledTimes(49);
+        expect(context.strokeRect).toHaveBeenCalledTimes(1);
+    });
+
+    it('redraws labels from the current section snapshot after an edit', () => {
+        stores.markers.sections = [{ id: 'intro', name: 'Intro', startBeat: 0, endBeat: 16, color: '#aa3300' }];
+        const { rerender } = render(<TimelineMinimap height={28} />);
+        expect(context.fillText).toHaveBeenCalledWith('Intro', expect.any(Number), expect.any(Number));
+
+        stores.markers.sections = [{ id: 'intro', name: 'Opening', startBeat: 0, endBeat: 16, color: '#aa3300' }];
+        rerender(<TimelineMinimap height={28} />);
+
+        expect(context.fillText).toHaveBeenCalledWith('Opening', expect.any(Number), expect.any(Number));
     });
 
     it('survives a zero-to-positive width transition with finite geometry', () => {
