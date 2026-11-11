@@ -306,8 +306,8 @@ isolation, leaked state, or environment); fix it, open a lane, or file it. Green
 failure like weakened tests. DAW concurrency and scheduling make flakes likely real timing defects.
 For a pull request blocked by a filed failure, use the
 [failed-Gate recovery procedure](./.agents/skills/delivery-orchestration/SKILL.md#recovering-a-blocked-gate);
-a retry never authorizes delivery. That rule is the orchestrator's to keep: `deliver` does not read
-run attempts, and GitHub's ruleset counts the newest run of `Gate`, so a green retry satisfies both.
+a retry never authorizes delivery. Keep that rule yourself: GitHub's ruleset counts the newest run
+of `Gate`, so a green retry satisfies the ruleset.
 
 ## Map
 
@@ -666,8 +666,7 @@ a new lane; merge each as soon as its Gate and approval allow. If reviewers cann
 whole, reassess its scope under Delegation before review.
 A finished change waits only on its GitHub review. Enable hooks: `git config core.hooksPath .githooks`.
 The `commit-msg` hook refuses a subject that is not `type(scope)!: subject` or is longer than 100
-characters. It also admits `style` and `revert`, which `lane:publish`'s title rule refuses, so the
-hook passing does not prove a lane commit can title its PR.
+characters.
 
 ## Safety
 

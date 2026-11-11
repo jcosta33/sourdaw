@@ -79,11 +79,6 @@ launch location with `trusted GitHub writes must be launched from the protected 
 and runs the script closure from one pinned `origin/main` snapshot. Lane files are data, never
 executable delivery code. Snapshot and environment controls: [trust boundary](references/trust-boundary.md).
 
-`review:prepare` and `branch:prune` do not go through that launcher, yet both load a role
-credential from the primary root (`review:prepare` the reviewer's, `branch:prune` the author's)
-whatever directory they run from. Run them only from the protected primary checkout as well; the
-`review:prepare` caveats are in [review round](#f-review-round).
-
 Each script validates its own preconditions and refuses rather than repairs. Read the refusal, fix
 its named cause, and run the same command again; never route around it.
 
@@ -512,9 +507,8 @@ clarify code, not threads. Full eligibility, ancestry, and crash-recovery mechan
 `Gate` already ran on this head. A later push starts it again and needs a fresh review. The merge
 is your decision: confirm the whole `Health gates` workflow succeeded on this head (step e), then run
 `pnpm deliver <pr>` from the protected primary checkout. The script squash-merges as the immutable
-author App once the reviewer APPROVE binds the current head. It does not itself require a green
-`Gate`: GitHub's live ruleset requires the `Gate` context by name, and `deliver` only refuses a
-`BLOCKED` merge state before any remote write ([CI admission](#ci-admission)).
+author App once the reviewer APPROVE binds the current head. GitHub's live ruleset requires the
+`Gate` context by name; what `deliver` checks itself is under [CI admission](#ci-admission).
 
 #### Validation order
 
