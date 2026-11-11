@@ -97,7 +97,7 @@ test.describe('SpatialPanner and ArrangementSelector', () => {
 
         await page.keyboard.press('Shift+Tab');
 
-        const inactiveRename = menu.getByRole('button', { name: 'Rename Arrangement 1' });
+        const inactiveRename = menu.getByRole('menuitem', { name: 'Rename Arrangement 1' });
         await expect(inactiveRename).toBeFocused();
         await expect(inactiveRename).toHaveCSS('opacity', '1');
 
