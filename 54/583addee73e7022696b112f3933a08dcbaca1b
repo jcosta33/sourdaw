@@ -1,0 +1,20 @@
+src/modules/Arrangement/presentations/hooks/__tests__/useTimelineFileDrop.spec.tsx
+  h_beb54bf43b47b7 152-162,284,368-370,624,676,742,789,821,863,905,1309,1348,1384,1450,1480,1558,1583
+src/modules/ContentBrowser/useCases/__tests__/addBrowserSample.spec.ts
+  h_beb54bf43b47b7 140-142
+src/modules/ContentBrowser/useCases/__tests__/placeLibrarySample.spec.ts
+  h_beb54bf43b47b7 141-144,240-241,243
+src/modules/ContentBrowser/useCases/__tests__/placeLibrarySampleResidency.integration.spec.ts
+  h_beb54bf43b47b7 63-76,250,522,524-532,536,552-556,627-630,634
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "54583addee73e7022696b112f3933a08dcbaca1b",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
