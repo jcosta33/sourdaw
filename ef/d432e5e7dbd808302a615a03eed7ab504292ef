@@ -1,0 +1,28 @@
+src/modules/AudioEngine/engine/__tests__/scoringReferenceAuthority.integration.spec.tsx
+  h_beb54bf43b47b7 356
+src/modules/Fermenter/presentations/components/EffectsSection.tsx
+  h_beb54bf43b47b7 358,369,380,396,407,418
+src/modules/Fermenter/presentations/components/__tests__/RotaryAccessibleNames.spec.tsx
+  h_beb54bf43b47b7 1,6,94-126
+src/modules/Fermenter/presentations/views/__tests__/FermenterControlKeyboard.integration.spec.tsx
+  h_beb54bf43b47b7 238-239
+src/modules/TimelineEditor/presentations/views/Inspector/TrackMidiFxSection.tsx
+  h_beb54bf43b47b7 70,103,133,144,158
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/TrackMidiFxSection.spec.tsx
+  h_beb54bf43b47b7 147,158-163,168-174
+tests/e2e/tuner.spec.ts
+  h_beb54bf43b47b7 49,77
+tests/e2e/tunerReferenceHomeEnd.spec.ts
+  h_beb54bf43b47b7 40
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "efd432e5e7dbd808302a615a03eed7ab504292ef",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
