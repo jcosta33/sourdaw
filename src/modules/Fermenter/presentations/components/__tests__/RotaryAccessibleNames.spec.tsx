@@ -55,7 +55,7 @@ describe('Fermenter rotary accessible names', () => {
     });
 
     it('names granular and active-layer controls with their device and layer context', () => {
-        render(
+        const { rerender } = render(
             <>
                 <GranularSection
                     density={20}
@@ -67,7 +67,7 @@ describe('Fermenter rotary accessible names', () => {
                     onParam={vi.fn()}
                 />
                 <LayerStack
-                    numLayers={2}
+                    numLayers={4}
                     activeLayer={1}
                     layerLevel={1}
                     layerPan={0}
@@ -90,6 +90,24 @@ describe('Fermenter rotary accessible names', () => {
             'Layer 2 level',
             'Layer 2 pan',
         ]);
+
+        rerender(
+            <LayerStack
+                numLayers={4}
+                activeLayer={2}
+                layerLevel={1}
+                layerPan={0}
+                currentEngine={0}
+                onActiveLayerChange={vi.fn()}
+                onNumLayersChange={vi.fn()}
+                onLevelChange={vi.fn()}
+                onPanChange={vi.fn()}
+            />
+        );
+
+        expectSliders(['Layer 3 level', 'Layer 3 pan']);
+        expect(screen.queryByRole('slider', { name: 'Layer 2 level' })).not.toBeInTheDocument();
+        expect(screen.queryByRole('slider', { name: 'Layer 2 pan' })).not.toBeInTheDocument();
     });
 
     it('distinguishes every Chorus and Phaser rotary control', () => {
