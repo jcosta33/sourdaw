@@ -1,0 +1,20 @@
+src/modules/Arrangement/useCases/__tests__/revealClip.spec.ts
+  h_beb54bf43b47b7 60-136
+src/modules/Arrangement/useCases/revealClip.ts
+  h_beb54bf43b47b7 1-2,8-9,13-52,55,57-69,78-85,87-90,92
+src/modules/Project/useCases/__tests__/locateMissingMedia.spec.ts
+  h_beb54bf43b47b7 4-5,143-150,229-254
+src/modules/Project/useCases/locateMissingMedia.ts
+  h_beb54bf43b47b7 101-106,111,114,116
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ec1d79f46edd7fdd1274f4e82cef9104738f7b75",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
