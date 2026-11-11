@@ -149,6 +149,17 @@ const batchPayload = (type: string): Record<string, unknown> => {
     return action.payload;
 };
 
+function decodedAudio(id: string, duration: number) {
+    const buffer = { duration };
+    mocks.getCachedAudioBuffer.mockImplementation(({ bufferId }: { bufferId: string }) => {
+        if (bufferId === id) {
+            return buffer;
+        }
+        return null;
+    });
+    return { id, buffer };
+}
+
 vi.mock('../../../useCases/importMidiFile', async (importOriginal) => ({
     ...(await importOriginal<any>()),
     importMidiFile: mocks.importMidiFile,
@@ -270,7 +281,7 @@ describe('useTimelineFileDrop', () => {
         mocks.hitTestTrack.mockReturnValue(null);
         const file = new File(['audio'], 'kick.wav', { type: 'audio/wav' });
         mocks.resolveDroppedSampleFile.mockResolvedValue({ status: 'resolved', provider: 'browser', file });
-        mocks.decodeAudioFile.mockResolvedValue({ id: 'buf1', buffer: { duration: 2 } });
+        mocks.decodeAudioFile.mockResolvedValue(decodedAudio('buf1', 2));
 
         await act(async () => {
             await result.current.handleFileDrop(mockEvent as any);
@@ -354,7 +365,9 @@ describe('useTimelineFileDrop', () => {
 
     it('places an evicted factory sample once the library obtains its buffer', async () => {
         const { result } = renderHook(() => useTimelineFileDrop({ getCanvasCoords, getBeatFromX }));
-        mocks.ensureFactorySampleBuffer.mockResolvedValue({ status: 'resolved', buffer: { duration: 2 } });
+        const factoryBuffer = { duration: 2 };
+        mocks.getCachedAudioBuffer.mockReturnValueOnce(null).mockReturnValue(factoryBuffer);
+        mocks.ensureFactorySampleBuffer.mockResolvedValue({ status: 'resolved', buffer: factoryBuffer });
         mocks.hitTestTrack.mockReturnValue(null);
 
         await act(async () => {
@@ -608,7 +621,7 @@ describe('useTimelineFileDrop', () => {
         const { result } = renderHook(() => useTimelineFileDrop({ getCanvasCoords, getBeatFromX }));
         const file = new File(['audio'], 'kick.wav', { type: 'audio/wav' });
         mocks.resolveDroppedSampleFile.mockResolvedValue({ status: 'resolved', provider: 'desktop', file });
-        mocks.decodeAudioFile.mockResolvedValue({ id: 'buf-native', buffer: { duration: 2 } });
+        mocks.decodeAudioFile.mockResolvedValue(decodedAudio('buf-native', 2));
         mocks.hitTestTrack.mockReturnValue(null);
 
         const mockEvent = {
@@ -660,7 +673,7 @@ describe('useTimelineFileDrop', () => {
         const { result } = renderHook(() => useTimelineFileDrop({ getCanvasCoords, getBeatFromX }));
         const file = new File(['audio'], 'clap.wav', { type: 'audio/wav' });
         mocks.resolveDroppedSampleFile.mockResolvedValue({ status: 'resolved', provider: 'browser', file });
-        mocks.decodeAudioFile.mockResolvedValue({ id: 'buf-browser', buffer: { duration: 1.5 } });
+        mocks.decodeAudioFile.mockResolvedValue(decodedAudio('buf-browser', 1.5));
         mocks.hitTestTrack.mockReturnValue('t1');
         mocks.trackStoreValue.value = { tracks: [{ id: 't1', kind: 'audio' }], selectedTrackId: 't1' };
 
@@ -726,7 +739,7 @@ describe('useTimelineFileDrop', () => {
             };
             return { status: 'resolved', provider: 'browser', file };
         });
-        mocks.decodeAudioFile.mockResolvedValueOnce({ id: 'buf-browser', buffer: { duration: 1 } });
+        mocks.decodeAudioFile.mockResolvedValueOnce(decodedAudio('buf-browser', 1));
         const { result } = renderHook(() => useTimelineFileDrop({ getCanvasCoords, getBeatFromX }));
 
         await act(async () => {
@@ -773,7 +786,7 @@ describe('useTimelineFileDrop', () => {
             selectedTrackId: 'captured-track',
         };
         mocks.resolveDroppedSampleFile.mockResolvedValueOnce({ status: 'resolved', provider: 'browser', file });
-        mocks.decodeAudioFile.mockResolvedValueOnce({ id: 'gone-buffer', buffer: { duration: 1 } });
+        mocks.decodeAudioFile.mockResolvedValueOnce(decodedAudio('gone-buffer', 1));
         const { result } = renderHook(() => useTimelineFileDrop({ getCanvasCoords, getBeatFromX }));
 
         await act(async () => {
@@ -805,7 +818,7 @@ describe('useTimelineFileDrop', () => {
         mocks.hitTestTrack.mockReturnValue('t1');
         mocks.trackStoreValue.value = { tracks: [{ id: 't1', kind: 'audio' }], selectedTrackId: 't1' };
         mocks.resolveDroppedSampleFile.mockResolvedValueOnce({ status: 'resolved', provider: 'browser', file });
-        mocks.decodeAudioFile.mockResolvedValueOnce({ id: 'unstaged-buffer', buffer: { duration: 1 } });
+        mocks.decodeAudioFile.mockResolvedValueOnce(decodedAudio('unstaged-buffer', 1));
         mocks.getAssetTransfer.mockReturnValueOnce({
             stageLocalAsset: vi.fn().mockRejectedValue(new Error('AssetTransfer is disposed')),
             releaseStagedAsset: vi.fn(),
@@ -847,7 +860,7 @@ describe('useTimelineFileDrop', () => {
             selectedTrackId: 'same-track',
         };
         mocks.resolveDroppedSampleFile.mockResolvedValueOnce({ status: 'resolved', provider: 'browser', file });
-        mocks.decodeAudioFile.mockResolvedValueOnce({ id: 'stale-stage-buffer', buffer: { duration: 1 } });
+        mocks.decodeAudioFile.mockResolvedValueOnce(decodedAudio('stale-stage-buffer', 1));
         mocks.getAssetTransfer.mockReturnValueOnce({
             stageLocalAsset: vi.fn(async () => {
                 projectEpoch.advance();
@@ -889,7 +902,7 @@ describe('useTimelineFileDrop', () => {
             provider: 'browser',
             file: successorFile,
         });
-        mocks.decodeAudioFile.mockResolvedValueOnce({ id: 'successor-buffer', buffer: { duration: 1 } });
+        mocks.decodeAudioFile.mockResolvedValueOnce(decodedAudio('successor-buffer', 1));
         await act(async () => {
             await result.current.handleFileDrop({
                 preventDefault: vi.fn(),
@@ -1293,7 +1306,7 @@ describe('useTimelineFileDrop', () => {
 
         mocks.hitTestTrack.mockReturnValue('t1');
         mocks.trackStoreValue.value = { tracks: [{ id: 't1', kind: 'audio' }] };
-        mocks.decodeAudioFile.mockResolvedValue({ id: 'buf2', buffer: { duration: 1 } });
+        mocks.decodeAudioFile.mockResolvedValue(decodedAudio('buf2', 1));
 
         await act(async () => {
             await result.current.handleFileDrop(mockEvent as any);
@@ -1332,7 +1345,7 @@ describe('useTimelineFileDrop', () => {
                 ],
                 selectedTrackId: 't2',
             };
-            return { id: 'held-buffer', buffer: { duration: 1 } };
+            return decodedAudio('held-buffer', 1);
         });
         const { result } = renderHook(() => useTimelineFileDrop({ getCanvasCoords, getBeatFromX }));
 
@@ -1368,7 +1381,7 @@ describe('useTimelineFileDrop', () => {
             tracks: [{ id: 'captured-track', kind: 'audio', clips: [] }],
             selectedTrackId: 'captured-track',
         };
-        mocks.decodeAudioFile.mockResolvedValueOnce({ id: 'gone-buffer', buffer: { duration: 1 } });
+        mocks.decodeAudioFile.mockResolvedValueOnce(decodedAudio('gone-buffer', 1));
         const { result } = renderHook(() => useTimelineFileDrop({ getCanvasCoords, getBeatFromX }));
 
         await act(async () => {
@@ -1434,7 +1447,7 @@ describe('useTimelineFileDrop', () => {
 
         mocks.hitTestTrack.mockReturnValue('t1');
         mocks.trackStoreValue.value = { tracks: [{ id: 't1', kind: 'audio' }] };
-        mocks.decodeAudioFile.mockResolvedValue({ id: 'buf-flac', buffer: { duration: 1 } });
+        mocks.decodeAudioFile.mockResolvedValue(decodedAudio('buf-flac', 1));
 
         await act(async () => {
             await result.current.handleFileDrop(mockEvent as any);
@@ -1464,7 +1477,7 @@ describe('useTimelineFileDrop', () => {
         // No eligible track and a refusing batch -> abort, nothing retained.
         mocks.hitTestTrack.mockReturnValue(null);
         mocks.trackStoreValue.value = { tracks: [], selectedTrackId: null };
-        mocks.decodeAudioFile.mockResolvedValue({ id: 'raw-buffer', buffer: { duration: 1 } });
+        mocks.decodeAudioFile.mockResolvedValue(decodedAudio('raw-buffer', 1));
         mocks.executeAppActionBatch.mockResolvedValue({
             status: 'conflicted',
             reason: 'the track could not be created',
@@ -1542,7 +1555,7 @@ describe('useTimelineFileDrop', () => {
             promoteStagedAsset: vi.fn(),
         };
         mocks.getAssetTransfer.mockReturnValue(transfer);
-        mocks.decodeAudioFile.mockResolvedValue({ id: 'audio-stale', buffer: { duration: 1 } });
+        mocks.decodeAudioFile.mockResolvedValue(decodedAudio('audio-stale', 1));
         const file = new File(['audio'], 'stale.wav', { type: 'audio/wav' });
         const { result } = renderHook(() => useTimelineFileDrop({ getCanvasCoords, getBeatFromX }));
 
@@ -1567,7 +1580,7 @@ describe('useTimelineFileDrop', () => {
         mocks.hitTestTrack.mockReturnValue('raw-track');
         mocks.trackStoreValue.value = { tracks: [{ id: 'raw-track', kind: 'audio' }], selectedTrackId: 'raw-track' };
         mocks.resolveDroppedSampleFile.mockResolvedValue({ status: 'resolved', provider: 'desktop', file });
-        mocks.decodeAudioFile.mockResolvedValue({ id: 'raw-buffer', buffer: { duration: 1 } });
+        mocks.decodeAudioFile.mockResolvedValue(decodedAudio('raw-buffer', 1));
         return file;
     }
 

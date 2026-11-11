@@ -137,8 +137,9 @@ describe('addBrowserSample', () => {
     });
 
     it('re-obtains an uncached factory sample buffer before placing it', async () => {
-        vi.mocked(getCachedAudioBuffer).mockReturnValue(null);
-        mocks.ensureFactorySampleBuffer.mockResolvedValue({ status: 'resolved', buffer: bufferOf(2) });
+        const factoryBuffer = bufferOf(2);
+        vi.mocked(getCachedAudioBuffer).mockReturnValueOnce(null).mockReturnValue(factoryBuffer);
+        mocks.ensureFactorySampleBuffer.mockResolvedValue({ status: 'resolved', buffer: factoryBuffer });
 
         await addBrowserSample({ id: 'factory-kick', name: 'Factory Kick' });
 

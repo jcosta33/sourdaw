@@ -138,9 +138,10 @@ describe('placeLibrarySample', () => {
         vi.mocked(executeAppActionBatch).mockImplementation(async (_actions, options) => {
             mocks.getCachedAudioBuffer.mockReturnValue(replacement);
             admitted = options?.shouldExecute?.() ?? true;
-            return admitted
-                ? { status: 'committed', actions: [] }
-                : { status: 'cancelled', reason: 'PCM replaced', actions: [] };
+            if (admitted) {
+                return { status: 'committed', actions: [] };
+            }
+            return { status: 'cancelled', reason: 'PCM replaced', actions: [] };
         });
 
         await place({ id: 's1', name: 'Kick', audioBufferId: 'b1' }, 't1');
@@ -236,9 +237,10 @@ describe('placeLibrarySample', () => {
     });
 
     it('releases the staged lease and the decoded buffer when staging a library file fails', async () => {
-        mocks.getCachedAudioBuffer.mockReturnValue(null);
+        const decodedBuffer = bufferOf(3);
+        mocks.getCachedAudioBuffer.mockReturnValueOnce(null).mockReturnValue(decodedBuffer);
         mocks.resolveDroppedSampleFile.mockResolvedValue({ status: 'resolved', file: new File(['x'], 'Loop.wav') });
-        mocks.decodeAudioFile.mockResolvedValue({ id: 'decoded-id', buffer: bufferOf(3) });
+        mocks.decodeAudioFile.mockResolvedValue({ id: 'decoded-id', buffer: decodedBuffer });
         mocks.stageLocalAsset.mockRejectedValue(new Error('no'));
 
         await place({ id: 's2', name: 'Loop', libraryRootId: 'root', path: 'a/Loop.wav' }, 't1');

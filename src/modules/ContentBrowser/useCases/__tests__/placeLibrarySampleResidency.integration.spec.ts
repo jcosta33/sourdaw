@@ -60,6 +60,20 @@ vi.mock('#/modules/SampleLibrary/useCases', async (importOriginal) => ({
     resolveDroppedSampleFile: filesystem.read,
 }));
 
+const batchAdmission = vi.hoisted(() => ({ pressure: undefined as (() => void) | undefined }));
+vi.mock('#/modules/Command/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/Command/useCases')>();
+    const executeBatch: typeof actual.executeAppActionBatch = (actions, options) =>
+        actual.executeAppActionBatch(actions, {
+            ...options,
+            shouldExecute: () => {
+                batchAdmission.pressure?.();
+                return options?.shouldExecute?.() ?? true;
+            },
+        });
+    return { ...actual, executeAppActionBatch: executeBatch };
+});
+
 // Web Audio is the external boundary; each declared frame has coherent PCM.
 class PcmBuffer implements AudioBuffer {
     readonly duration: number;
@@ -233,6 +247,7 @@ describe('imported sample placement after real cache eviction', () => {
 
     beforeEach(async () => {
         extraProtectedIds = [];
+        batchAdmission.pressure = undefined;
         filesystem.read.mockReset();
         configureAutomergeStoragePort(null);
         resetCrdtProjectAuthority('library sample residency');
@@ -500,29 +515,25 @@ describe('imported sample placement after real cache eviction', () => {
         expect(audioBufferCache.has(BUFFER_ID)).toBe(false);
         const entered = deferred<void>();
         const continueStaging = deferred<void>();
-        let stagingFinished = false;
         let checkedCommitAdmission = false;
         setClipAudioAssetStager(async (buffer, name) => {
             entered.resolve();
             await continueStaging.promise;
-            const staged = await stageAudioBufferAsset(buffer, name);
-            stagingFinished = true;
-            return staged;
+            return stageAudioBufferAsset(buffer, name);
         });
+        batchAdmission.pressure = () => {
+            if (checkedCommitAdmission) {
+                return;
+            }
+            checkedCommitAdmission = true;
+            expect(rootTracks()[0]!.clips).toEqual([]);
+            evictUnprotected();
+            expect(audioBufferCache.has(BUFFER_ID)).toBe(true);
+        };
         const placement = placeLibrarySample({
             sample: { id: `user-${BUFFER_ID}`, name: NAME, audioBufferId: BUFFER_ID },
             placement: { trackId: 'target', startBeat: 8 },
-            authority: {
-                isCurrent: () => {
-                    if (stagingFinished && !checkedCommitAdmission) {
-                        checkedCommitAdmission = true;
-                        expect(rootTracks()[0]!.clips).toEqual([]);
-                        evictUnprotected();
-                        expect(audioBufferCache.has(BUFFER_ID)).toBe(true);
-                    }
-                    return true;
-                },
-            },
+            authority: { isCurrent: () => true },
             origin: 'browser-add',
             readTempo: () => 120,
         });
@@ -538,7 +549,11 @@ describe('imported sample placement after real cache eviction', () => {
             expect(rootTracks()[0]!.clips).toEqual([]);
         } finally {
             continueStaging.resolve();
-            await placement;
+            try {
+                await placement;
+            } finally {
+                batchAdmission.pressure = undefined;
+            }
         }
         expect(checkedCommitAdmission).toBe(true);
         expect(rootTracks()).toEqual(projectedTracks());
@@ -609,12 +624,14 @@ describe('imported sample placement after real cache eviction', () => {
             await placement;
         }
         const cached = getCachedAudioBuffer({ bufferId: BUFFER_ID });
+        let durabilitySourceRevision: number | undefined;
+        if (cached) {
+            durabilitySourceRevision = audioBufferCache.readRuntimeMaterialPublication(BUFFER_ID, cached);
+        }
 
         expect({
             cacheResident: cached !== null,
-            durabilitySourceRevision: cached
-                ? audioBufferCache.readRuntimeMaterialPublication(BUFFER_ID, cached)
-                : undefined,
+            durabilitySourceRevision,
             stageCalls,
         }).toEqual({ cacheResident: false, durabilitySourceRevision: undefined, stageCalls: 0 });
         expect(rootTracks()).toStrictEqual(beforeRaw);
