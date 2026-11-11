@@ -1645,7 +1645,7 @@ export function startPlayheadScheduler(
                 pool?.sources ?? schedulerSession.activeAudioSources
             );
         }
-        let mediaOwnerRetired = false;
+        let mediaOwnerRetired: boolean;
         const initialMidiEmissions: Promise<void>[] = [];
         const initialEmissionErrors: unknown[] = [];
         function observeInitialMidi(emission: Promise<void>): void {
