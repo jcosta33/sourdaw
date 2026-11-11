@@ -144,7 +144,7 @@ describe('TrackMidiFxSection', () => {
         expect(screen.getByText('Velocity')).toBeInTheDocument();
     });
 
-    it('qualifies MIDI effect parameter names with their device names', () => {
+    it('qualifies MIDI effect parameter names with their device names and positions', () => {
         render(
             <TrackMidiFxSection
                 track={makeTrack([
@@ -155,9 +155,21 @@ describe('TrackMidiFxSection', () => {
             />
         );
 
-        for (const name of ['Lead Arp rate', 'Lead Velocity scale', 'Lead Velocity offset', 'Lead Probability seed']) {
+        for (const name of [
+            'Lead Arp 1 rate',
+            'Lead Velocity 2 scale',
+            'Lead Velocity 2 offset',
+            'Lead Probability 3 seed',
+        ]) {
             expect(screen.getByRole('button', { name })).toBeInTheDocument();
         }
+    });
+
+    it('distinguishes repeated instances of the same MIDI effect', () => {
+        render(<TrackMidiFxSection track={makeTrack([arpFx, { ...arpFx, id: 'fx-arp-second' }])} />);
+
+        expect(screen.getByRole('button', { name: 'Arpeggiator 1 rate' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Arpeggiator 2 rate' })).toBeInTheDocument();
     });
 
     it('should toggle bypass with the inverse of the current state', () => {

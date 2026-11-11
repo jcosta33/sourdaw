@@ -67,7 +67,7 @@ export const TrackMidiFxSection = ({ track }: TrackMidiFxSectionProps): ReactEle
                 }
             />
             <Stack gap={2}>
-                {midiFx.map((fx) => (
+                {midiFx.map((fx, index) => (
                     <ChoiceCard key={fx.id} className={cn('flex flex-col gap-2 p-2', fx.bypassed ? 'opacity-50' : '')}>
                         <Row justify="between" className="w-full">
                             <Row gap={1.5}>
@@ -100,7 +100,7 @@ export const TrackMidiFxSection = ({ track }: TrackMidiFxSectionProps): ReactEle
                                 <>
                                     <Stack align="center" gap={1}>
                                         <RotaryKnob
-                                            aria-label={`${fx.name} rate`}
+                                            aria-label={`${fx.name} ${index + 1} rate`}
                                             size="sm"
                                             value={fx.parameterValues.rate || 0.25}
                                             min={0.125}
@@ -130,7 +130,7 @@ export const TrackMidiFxSection = ({ track }: TrackMidiFxSectionProps): ReactEle
                                 <>
                                     <Stack align="center" gap={1}>
                                         <RotaryKnob
-                                            aria-label={`${fx.name} scale`}
+                                            aria-label={`${fx.name} ${index + 1} scale`}
                                             size="sm"
                                             value={fx.parameterValues.scale || 1.0}
                                             min={0.1}
@@ -141,7 +141,7 @@ export const TrackMidiFxSection = ({ track }: TrackMidiFxSectionProps): ReactEle
                                     </Stack>
                                     <Stack align="center" gap={1}>
                                         <RotaryKnob
-                                            aria-label={`${fx.name} offset`}
+                                            aria-label={`${fx.name} ${index + 1} offset`}
                                             size="sm"
                                             value={fx.parameterValues.offset || 0}
                                             min={-64}
@@ -155,7 +155,7 @@ export const TrackMidiFxSection = ({ track }: TrackMidiFxSectionProps): ReactEle
                             {fx.type === 'probability' ? (
                                 <Stack align="center" gap={1}>
                                     <RotaryKnob
-                                        aria-label={`${fx.name} seed`}
+                                        aria-label={`${fx.name} ${index + 1} seed`}
                                         size="sm"
                                         value={fx.parameterValues.seed || 12345}
                                         min={1}

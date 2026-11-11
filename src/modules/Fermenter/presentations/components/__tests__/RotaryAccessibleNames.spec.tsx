@@ -1,8 +1,9 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 import { AdditiveSection } from '../AdditiveSection';
 import { CrumbsSection } from '../CrumbsSection';
+import { EffectsSection } from '../EffectsSection';
 import { GranularSection } from '../GranularSection';
 import { KarplusSection } from '../KarplusSection';
 import { LayerStack } from '../LayerStack';
@@ -89,5 +90,38 @@ describe('Fermenter rotary accessible names', () => {
             'Layer 2 level',
             'Layer 2 pan',
         ]);
+    });
+
+    it('distinguishes every Chorus and Phaser rotary control', () => {
+        render(
+            <EffectsSection
+                reverbType={0}
+                reverbMix={0.2}
+                reverbDecay={0.5}
+                delayTime={0.375}
+                delayFeedback={0.35}
+                delayMix={0}
+                chorusRate={1.2}
+                chorusDepth={0.4}
+                chorusMix={0}
+                phaserRate={0.5}
+                phaserDepth={0.5}
+                phaserMix={0}
+                distDrive={0}
+                distTone={0.5}
+                distMix={0}
+                compThreshold={-20}
+                compRatio={4}
+                compAttack={10}
+                compRelease={100}
+                compMix={0}
+                stereoWidth={1}
+                masterGain={1}
+                onParam={vi.fn()}
+            />
+        );
+        fireEvent.click(screen.getByRole('button', { name: 'Chorus/Phaser' }));
+
+        expectSliders(['Chorus Mix', 'Chorus Rate', 'Chorus Depth', 'Phaser Mix', 'Phaser Rate', 'Phaser Depth']);
     });
 });
