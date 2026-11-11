@@ -1,0 +1,34 @@
+scripts/__tests__/deliverPullRequest.spec.ts
+  s_131b426bba0f96::t_02ea7f9db21229 8539
+  s_131b426bba0f96::t_207d453a4e26e6 1731-1736,1739,1770-1776,1780,8514-8515,8517-8519,8550-8551,8553-8555,8578-8579,8581,8583,8605,8669,8675
+  s_131b426bba0f96::t_3c2411e77d6153 8565,8592,12587-12622
+  s_131b426bba0f96::t_bb481ae7592b92 318-323,902,1174-1181,8500-8513,8516,8520-8538,8540-8549,8552,8556-8564,8566-8577,8580,8582,8584-8591,8593-8594,8611,8615,8681
+scripts/__tests__/agentDeliveryScripts.spec.ts
+  s_131b426bba0f96::t_18fa19f679eaa8 935,3914,3980,4518
+scripts/deliverPullRequest.ts
+  s_f72f901cff0ec9::t_c8a666a15aa051 118-119,2847-2880,2950-2952,3861-3873
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "73d6659212bf49e12522a671c823dc9c545ab52d",
+  "prompts": {},
+  "sessions": {
+    "s_131b426bba0f96": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dec81aab-5eda-40a7-90d1-889fad31bc7f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_f72f901cff0ec9": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "979d497e-1af0-48d9-a9b5-97d6805a7b91",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
