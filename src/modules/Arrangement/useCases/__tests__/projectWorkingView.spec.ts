@@ -15,9 +15,9 @@ import { getTimelineHorizontalContentWidth } from '../getTimelineHorizontalConte
 import { initTimelineScrollClamp } from '../initTimelineScrollClamp';
 import { resetTimelineWorkingView, restoreTimelineWorkingView } from '../projectWorkingView';
 
-function addTrackWithClip(id: string, endBeat: number, height = 100): void {
+function addTrackWithClip(id: string, endBeat: number): void {
     trackStore.set({
-        tracks: [...(trackStore.value?.tracks ?? []), createTrack({ id, name: id, kind: 'audio', height })],
+        tracks: [...(trackStore.value?.tracks ?? []), createTrack({ id, name: id, kind: 'audio' })],
         selectedTrackId: null,
     });
     const clip = addClip({ id: `${id}-clip`, trackId: id, name: id, startBeat: 0, endBeat, type: 'audio' });
@@ -48,6 +48,16 @@ describe('project timeline working view', () => {
         addTrackWithClip('long', 400);
 
         expect(getTimelineHorizontalContentWidth(trackStore.value?.tracks ?? [], 10)).toBe(4000);
+    });
+
+    it('computes a large arrangement extent without spreading every clip into Math.max', () => {
+        const tracks = [
+            {
+                clips: Array.from({ length: 200_000 }, (_, index) => ({ endBeat: index })),
+            },
+        ];
+
+        expect(getTimelineHorizontalContentWidth(tracks, 10)).toBe(1_999_990);
     });
 
     it('keeps legacy lower-only clamping while viewport width is unknown', () => {

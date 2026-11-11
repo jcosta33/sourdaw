@@ -88,7 +88,7 @@ describe('ProjectWorkingView', () => {
             workspace: {
                 ...defaultWorkspaceState,
                 commandPaletteOpen: true,
-                activeTool: 'erase',
+                activeTool: 'cut',
                 timelineMinimapPreviewHeight: 72,
             },
             timeline: { scrollX: 0, scrollY: 0, pixelsPerBeat: 12 },
