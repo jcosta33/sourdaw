@@ -92,8 +92,12 @@ function cutSourceAcrossHandoff(src: SourceWithFade, ctx: BaseAudioContext, stop
     const releaseAt = stopAt + MICRO_FADE_SECONDS;
     try {
         if (src.fadeGainNode) {
-            src.fadeGainNode.gain.cancelScheduledValues(stopAt);
-            src.fadeGainNode.gain.setValueAtTime(src.fadeGainNode.gain.value, stopAt);
+            // Hold the value actually being rendered at the onset — when the
+            // retiring source is inside its own drawn fade-out, a plain cancel
+            // drops the pending ramp back to the last full-level anchor and the
+            // seeded step re-reads the stale mid-ramp value: two full-scale
+            // steps within the micro fade, an audible click.
+            src.fadeGainNode.gain.cancelAndHoldAtTime(stopAt);
             src.fadeGainNode.gain.linearRampToValueAtTime(0, releaseAt);
         }
         src.stop(releaseAt);

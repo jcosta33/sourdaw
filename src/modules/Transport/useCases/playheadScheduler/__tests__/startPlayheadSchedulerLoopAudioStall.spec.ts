@@ -104,7 +104,10 @@ const audioContextStub = {
                 }
             },
             cancelAndHoldAtTime: (time: number) => {
-                events.push({ kind: 'cancel-hold', time });
+                // A hold freezes the value actually being rendered at the
+                // instant — the pending interpolation contributes, where a
+                // plain cancel would drop back to the previous anchor.
+                events.push({ kind: 'cancel-hold', time, gain: evaluateGainValue(events, intrinsic, time) });
             },
             setValueAtTime: (value: number, time: number) => {
                 events.push({ kind: 'set', gain: value, time });
@@ -459,6 +462,11 @@ function resolveProgramme(events: readonly GainEvent[]): GainEvent[] {
                 if (resolved[index]!.time >= event.time) {
                     resolved.splice(index, 1);
                 }
+            }
+            // A hold re-anchors the param at the value it froze, computed at
+            // submission; a plain cancel leaves the previous anchor standing.
+            if (event.kind === 'cancel-hold') {
+                resolved.push({ kind: 'set', gain: event.gain, time: event.time });
             }
         } else {
             resolved.push(event);
@@ -1072,6 +1080,61 @@ describe('mixed MIDI media ownership during non-loop playback', () => {
         const unrelatedAfter = snapshotSources().filter((source) => source.bufferId === 'right-buffer');
         expect(unrelatedAfter).toHaveLength(1);
         expect(unrelatedAfter[0]!.stops).toHaveLength(0);
+    });
+
+    it('holds the rendered mid-fade-out gain across a handoff onset inside the drawn fade', async () => {
+        const track = seedTrack('left', 4, false, 0.375);
+        track.clips[0]!.fadeOutBeats = 1;
+        buffers.set('bake', { duration: 16, sampleRate: SAMPLE_RATE } as AudioBuffer);
+        trackStoreState.value = { tracks: [track] };
+        transportStoreState.value = { ...defaultTransportState, isPlaying: true, tempo: 120, isLooping: false };
+
+        startPlayheadScheduler();
+        await tickAt(0);
+        expect(snapshotSources().filter((source) => source.bufferId === 'left-buffer')).toHaveLength(1);
+
+        // Freeze halfway through the drawn fade-out: at 120 BPM the clip's
+        // fade-out window spans beats 3–4, i.e. 11.5 s–12 s on the anchor
+        // clock, and the handoff falls at 11.75 s.
+        track.freezeState = { status: 'frozen', frozenBufferId: 'bake', compensationSeconds: 0 };
+        await tickAt(84_000);
+        const after = snapshotSources();
+        const retiring = after.find((source) => source.bufferId === 'left-buffer')!;
+        const bake = after.find((source) => source.bufferId === 'bake')!;
+        const onset = bake.start.when;
+        expect(frame(onset)).toBe(ANCHOR_FRAME + 84_000);
+        // The overlap booking stands: the retiring source stops one micro
+        // fade past the replacement onset.
+        expect(retiring.stops.length).toBeGreaterThan(0);
+        expect(frame(effectiveEnd(retiring))).toBe(frame(onset) + MICRO_FADE_FRAMES);
+
+        // The retiring source is inside its own fade-out at the onset: a
+        // plain cancel drops the pending ramp back to the full-level anchor
+        // and the stale-seed step then re-tracks the mid-ramp read — two
+        // full-scale steps within the micro fade. The hold must instead
+        // anchor at the value the drawn ramp was rendering at the onset:
+        // halfway down the 0.5 s fade-out → 0.5.
+        const resolved = resolveProgramme(gainProgrammeFor(after, snapshotGainProgrammes(), retiring));
+        const hold = resolved.at(-2)!;
+        expect(hold.kind).toBe('set');
+        expect(hold.time).toBeCloseTo(onset, 12);
+        expect(hold.gain).toBeCloseTo(0.5, 12);
+        const release = resolved.at(-1)!;
+        expect(release.kind).toBe('linear');
+        expect(release.gain).toBe(0);
+        expect(release.time).toBeCloseTo(onset + MICRO_FADE_SECONDS, 12);
+        // Continuity: no event steps back up to a previous anchor — the
+        // implied gain is monotonically non-increasing from the fade-out
+        // plateau on.
+        const fadeOutPlateau = resolved.findIndex((event) => event.kind === 'set' && event.time >= 11.5);
+        expect(fadeOutPlateau).toBeGreaterThanOrEqual(0);
+        let level = resolved[fadeOutPlateau]!.gain!;
+        for (const event of resolved.slice(fadeOutPlateau + 1)) {
+            if (event.kind === 'set') {
+                expect(event.gain!).toBeLessThanOrEqual(level);
+                level = event.gain!;
+            }
+        }
     });
 
     it('retires a sounding owner exactly at the compensated frozen replacement onset', async () => {
