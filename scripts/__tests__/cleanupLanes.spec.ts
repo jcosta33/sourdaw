@@ -94,6 +94,7 @@ function fixture() {
             fetch: () => {},
             pullRequests: () => [pr],
             commitPullRequests: () => [pr],
+            reopenedAt: () => [],
             currentDirectory: () => root,
             active: () => false,
             remoteHead: () => undefined,
@@ -389,6 +390,7 @@ describe('automatic lane cleanup', () => {
                         authorNodeId: AUTHOR_BOT_NODE_ID,
                         authorType: 'Bot',
                         authorLogin: 'fixture',
+                        createdAt: '2026-08-15T00:00:00Z',
                     },
                 ];
                 f.port.removal.replacement = (number) =>
@@ -420,6 +422,7 @@ describe('automatic lane cleanup', () => {
                     authorNodeId: AUTHOR_BOT_NODE_ID,
                     authorType: 'Bot',
                     authorLogin: 'fixture',
+                    createdAt: '2026-08-15T00:00:00Z',
                 },
             ];
             f.port.removal.replacement = (number) => ({
@@ -601,6 +604,57 @@ describe('automatic lane cleanup', () => {
             cleanupLanes(f.port);
             expect(readCleanupRecords(f.root)[0]?.status).toBe('protected');
             expect(readCleanupRecords(f.root)[0]?.attempts).toBe(0);
+        } finally {
+            f.dispose();
+        }
+    });
+
+    it('keeps an unreadable replacement answer pending and trips the inspection circuit', () => {
+        const f = fixture();
+        try {
+            f.pr.state = 'CLOSED';
+            f.pr.mergedAt = null;
+            f.port.removal.comments = () => [
+                {
+                    body: 'Superseded by #99.',
+                    authorNodeId: AUTHOR_BOT_NODE_ID,
+                    authorType: 'Bot',
+                    authorLogin: 'fixture',
+                    createdAt: '2026-08-15T00:00:00Z',
+                },
+            ];
+            // The real REST reader: GitHub answering with an error page instead of JSON.
+            f.port.removal.replacement = shellPort({
+                capture: (_command, args) => (args.includes('nameWithOwner') ? 'jcosta33/sourdaw' : '<html>502</html>'),
+                run: () => {},
+            }).replacement;
+            expect(() => f.port.removal.replacement(99)).toThrow(/^PR #99 query returned invalid JSON$/);
+
+            const [outcome] = cleanupLanes(f.port);
+
+            expect(outcome).toMatchObject({ status: 'pending', reason: 'PR #99 query returned invalid JSON' });
+            const [record] = readCleanupRecords(f.root);
+            expect(record?.attempts).toBe(1);
+            const circuitPath = join(cleanupDirectory(f.root), 'inspection-backoff.json');
+            expect(JSON.parse(readFileSync(circuitPath, 'utf8'))).toEqual({
+                nextAttemptAt: record?.nextAttemptAt,
+                reason: 'PR #99 query returned invalid JSON',
+            });
+            expect(existsSync(f.lane)).toBe(true);
+        } finally {
+            f.dispose();
+        }
+    });
+
+    it('protects a dirty lane as a safety refusal without tripping the inspection circuit', () => {
+        const f = fixture();
+        try {
+            writeFileSync(join(f.lane, 'tracked'), 'uncommitted');
+
+            expect(cleanupLanes(f.port)[0]).toMatchObject({ status: 'protected', reason: 'worktree is dirty' });
+            expect(readCleanupRecords(f.root)[0]?.attempts).toBe(0);
+            expect(existsSync(join(cleanupDirectory(f.root), 'inspection-backoff.json'))).toBe(false);
+            expect(readFileSync(join(f.lane, 'tracked'), 'utf8')).toBe('uncommitted');
         } finally {
             f.dispose();
         }

@@ -78,6 +78,7 @@ function supersessionReceipt(replacement = 99, overrides: Partial<IssueComment> 
         authorNodeId: AUTHOR_BOT_NODE_ID,
         authorLogin: 'renamed-author[bot]',
         authorType: 'Bot',
+        createdAt: '2026-08-15T00:00:00Z',
         ...overrides,
     };
 }
@@ -99,6 +100,7 @@ type FakeInput = {
     pullRequests?: PullRequest[];
     commitPullRequests?: PullRequest[];
     comments?: IssueComment[];
+    reopenedAt?: string[];
     replacement?: Partial<ReplacementPullRequest>;
 };
 
@@ -122,6 +124,10 @@ function fakePort(input: FakeInput = {}) {
         comments: (number) => {
             calls.push(`comments:${number}`);
             return input.comments ?? [];
+        },
+        reopenedAt: (number) => {
+            calls.push(`reopenedAt:${number}`);
+            return input.reopenedAt ?? [];
         },
         replacement: (number) => {
             calls.push(`replacement:${number}`);
@@ -156,8 +162,17 @@ function fakeStrandPort(input: FakeInput = {}) {
     // The receipt files as the strand flow sees them: written by `writeReceipt`, read back by
     // `readReceipt`, exactly like the primary root's `.agents/lane-strands/` directory.
     const receiptFiles = new Map<string, string>();
+    const refs = new Map<string, string>();
     const port: LaneStrandPort = {
         ...base.port,
+        readRef: (ref) => refs.get(ref),
+        createRef: (ref, head) => {
+            if (refs.has(ref)) {
+                throw new Error(`cannot lock ref '${ref}': reference already exists`);
+            }
+            refs.set(ref, head);
+            base.calls.push(`ref:${ref}:${head}`);
+        },
         readReceipt: (laneName) => receiptFiles.get(laneName),
         writeReceipt: (laneName, body) => {
             receipts.push({ laneName, body });
@@ -171,7 +186,7 @@ function fakeStrandPort(input: FakeInput = {}) {
             base.calls.push(`log:${message}`);
         },
     };
-    return { port, calls: base.calls, receipts, receiptFiles };
+    return { port, calls: base.calls, receipts, receiptFiles, refs };
 }
 
 function withGitFixture(fn: (context: { repository: string; git: (args: string[], cwd?: string) => string }) => void) {
@@ -278,6 +293,28 @@ describe('disposableIgnored', () => {
         ['node_modules\\receipt.json', false],
         ['package\\node_modules\\receipt.json', false],
         ['node_modules/file\\receipt.json', true],
+        ['x/dist/.env', false],
+        ['dist/.env.local', false],
+        ['node_modules/foo/.npmrc', false],
+        ['target/id_rsa', false],
+        ['target/id_ed25519.pub', false],
+        ['coverage/server.pem', false],
+        ['test-results/signing.key', false],
+        ['dist/bundle.p12', false],
+        ['playwright-report/cert.pfx', false],
+        ['target/release.keystore', false],
+        ['target/upload.jks', false],
+        ['dist/.netrc', false],
+        ['dist/.pgpass', false],
+        ['dist/credentials.json', false],
+        ['dist/.env/', false],
+        ['electron/out/.env', false],
+        ['release/desktop/credentials', false],
+        ['.agents/guard-storage-fixtures/id_ecdsa', false],
+        ['x/dist/bundle.js', true],
+        ['node_modules/foo/index.js', true],
+        ['target/debug/keys.rlib', true],
+        ['dist/environment.js', true],
     ])('treats %s as disposable: %s', (path, expected) => {
         expect(disposableIgnored(path)).toBe(expected);
     });
@@ -983,6 +1020,19 @@ describe('lane removal', () => {
         expect(calls).toContain(`remove:${target}`);
     });
 
+    it('removes a superseded lane reopened only before its receipt was posted', () => {
+        const { port, calls } = fakePort({
+            pullRequests: [supersededPullRequest()],
+            comments: [supersessionReceipt(99)],
+            reopenedAt: ['2026-08-14T23:59:59Z'],
+        });
+
+        removeLane(target, port);
+
+        expect(calls).toContain('reopenedAt:42');
+        expect(calls).toContain(`remove:${target}`);
+    });
+
     /**
      * `supersessionReplacement` returns `undefined` for a comment that is not receipt-shaped, and
      * that entry must not still count toward the receipt total: one parsed receipt plus one
@@ -1122,6 +1172,49 @@ describe('lane removal', () => {
             },
             /names itself as its replacement/,
         ],
+        [
+            'reopened, pushed to and closed again after its receipt',
+            {
+                pullRequests: [supersededPullRequest()],
+                comments: [supersessionReceipt(99)],
+                reopenedAt: ['2026-08-10T00:00:00Z', '2026-08-16T09:30:00Z'],
+            },
+            /: PR #42 was reopened after its supersession receipt$/,
+        ],
+        [
+            'reopened in the same second its receipt was posted',
+            {
+                pullRequests: [supersededPullRequest()],
+                comments: [supersessionReceipt(99)],
+                reopenedAt: ['2026-08-15T00:00:00Z'],
+            },
+            /: PR #42 was reopened after its supersession receipt$/,
+        ],
+        [
+            'carrying a receipt without a creation time',
+            {
+                pullRequests: [supersededPullRequest()],
+                comments: [supersessionReceipt(99, { createdAt: null })],
+            },
+            /: PR #42 supersession receipt has no readable timestamp$/,
+        ],
+        [
+            'carrying a receipt with an unparseable creation time',
+            {
+                pullRequests: [supersededPullRequest()],
+                comments: [supersessionReceipt(99, { createdAt: 'yesterday' })],
+            },
+            /: PR #42 supersession receipt has no readable timestamp$/,
+        ],
+        [
+            'whose reopen history carries an unreadable time',
+            {
+                pullRequests: [supersededPullRequest()],
+                comments: [supersessionReceipt(99)],
+                reopenedAt: [''],
+            },
+            /: PR #42 reopen history has an unreadable timestamp$/,
+        ],
     ])('refuses to remove a lane %s', (_case, input, message) => {
         const { port, calls } = fakePort(input);
 
@@ -1255,6 +1348,7 @@ describe('lane removal', () => {
                     }),
                 ],
                 comments: () => [],
+                reopenedAt: () => [],
                 replacement: (number) => ({
                     number,
                     state: 'MERGED',
@@ -1325,18 +1419,20 @@ describe('lane stranding', () => {
         expect(calls).toEqual([
             'fetch',
             `lock:${target}`,
+            'ref:refs/sourdaw/strands/feature:head',
             'receipt:feature',
             `unlock:${target}`,
             `remove:${target}`,
             'branch:-D:feat/work',
             'clearGuardFailure:feature',
-            'log:stranded feature; receipt in .agents/lane-strands/feature.json',
+            'log:stranded feature; receipt in .agents/lane-strands/feature.json, head kept at refs/sourdaw/strands/feature',
         ]);
         const receipt = JSON.parse(receipts[0]?.body ?? '{}') as {
             lane: string;
             path: string;
             branch: string;
             head: string;
+            ref: string;
             reason: string;
             strandedAt: string;
         };
@@ -1345,6 +1441,7 @@ describe('lane stranding', () => {
             path: target,
             branch: 'feat/work',
             head: 'head',
+            ref: 'refs/sourdaw/strands/feature',
             reason: 'branch was force-pushed after close; ownership unproven',
         });
         expect(Number.isNaN(Date.parse(receipt.strandedAt))).toBe(false);
@@ -1440,8 +1537,48 @@ describe('lane stranding', () => {
 
         expect(thrown, 'a same-head retry was refused by its own receipt').toBeUndefined();
         expect(strand.calls.filter((call) => call.startsWith('receipt:'))).toHaveLength(2);
+        expect(strand.calls.filter((call) => call.startsWith('ref:'))).toEqual([
+            'ref:refs/sourdaw/strands/feature:head',
+        ]);
         expect(strand.calls).toContain(`remove:${target}`);
         expect(strand.calls).toContain('branch:-D:feat/work');
+    });
+
+    it('refuses to move a strand ref that pins a different head, before receipting or destroying', () => {
+        const strand = fakeStrandPort({ pullRequests: [supersededPullRequest()], comments: [] });
+        strand.refs.set('refs/sourdaw/strands/feature', 'earlier-head');
+
+        expect(() => strandLane(target, 'second abandonment under a spent name', strand.port)).toThrow(
+            'strand ref refs/sourdaw/strands/feature already records head earlier-head; refusing to move it for head head'
+        );
+
+        expect(strand.refs.get('refs/sourdaw/strands/feature')).toBe('earlier-head');
+        expect(strand.calls.some((call) => call.startsWith('receipt:'))).toBe(false);
+        expect(strand.calls.some((call) => call.startsWith('remove:'))).toBe(false);
+        expect(strand.calls.some((call) => call.startsWith('branch:-D:'))).toBe(false);
+    });
+
+    it('puts the author lock back when the native removal of an author-locked lane fails', () => {
+        const strand = fakeStrandPort({
+            lane: worktree({ locked: true, lockReason: AUTHOR_LOCK_REASON }),
+            pullRequests: [supersededPullRequest()],
+            comments: [],
+        });
+        const locks: Array<string | undefined> = [];
+        const lock = strand.port.lock;
+        strand.port.lock = (path, reason) => {
+            locks.push(reason);
+            lock(path, reason);
+        };
+        strand.port.remove = () => {
+            throw new Error('worktree remove failed');
+        };
+
+        expect(() => strandLane(target, 'attempt', strand.port)).toThrow('worktree remove failed');
+
+        expect(locks).toEqual([AUTHOR_LOCK_REASON]);
+        expect(strand.port.worktrees()[1]?.locked, 'a failed strand left the author lane unlocked').toBe(true);
+        expect(strand.calls.slice(-2)).toEqual([`unlock:${target}`, `lock:${target}`]);
     });
 
     it.each([
@@ -1487,7 +1624,10 @@ describe('lane stranding', () => {
         expect(calls).toEqual(['fetch']);
     });
 
-    it('receipts and strands a real worktree the strict gate refuses', () => {
+    it.each([
+        ['an unpushed commit on its branch', false],
+        ['a detached commit no branch holds', true],
+    ])('receipts and strands a real worktree holding %s, keeping the head reachable', (_case, detached) => {
         const repository = mkdtempSync(join(tmpdir(), 'sourdaw-lane-strand-'));
         const lane = join(repository, '.agents/worktrees/feature');
         const git = (args: string[], cwd = repository) => execFileSync('git', args, { cwd, encoding: 'utf8' }).trim();
@@ -1500,10 +1640,22 @@ describe('lane stranding', () => {
             git(['add', '.']);
             git(['commit', '-m', 'fixture']);
             mkdirSync(join(repository, '.agents/worktrees'), { recursive: true });
-            git(['worktree', 'add', lane, '-b', 'feat/work']);
+            git(detached ? ['worktree', 'add', '--detach', lane] : ['worktree', 'add', lane, '-b', 'feat/work']);
+            git(['commit', '--allow-empty', '-m', 'unlanded work'], lane);
             git(['worktree', 'lock', '--reason', 'active:sourdaw-author', lane]);
             const head = git(['rev-parse', 'HEAD'], lane);
+            expect(git(['rev-parse', 'main'])).not.toBe(head);
             const resolvedLane = realpathSync(lane);
+            const refs = shellPort(
+                {
+                    capture: (command, args) =>
+                        execFileSync(command, args, { cwd: repository, encoding: 'utf8' }).trim(),
+                    run: (command, args) => {
+                        execFileSync(command, args, { cwd: repository });
+                    },
+                },
+                repository
+            );
             const port: LaneStrandPort = {
                 fetch: () => undefined,
                 repository: () => 'jcosta33/sourdaw',
@@ -1517,6 +1669,7 @@ describe('lane stranding', () => {
                 remoteHead: () => undefined,
                 pullRequests: () => [pullRequest({ headRefOid: head, state: 'CLOSED', mergedAt: null })],
                 comments: () => [],
+                reopenedAt: () => [],
                 replacement: (number) => ({
                     number,
                     state: 'MERGED',
@@ -1532,6 +1685,8 @@ describe('lane stranding', () => {
                 remove: (path) => {
                     git(['worktree', 'remove', path]);
                 },
+                readRef: refs.readRef,
+                createRef: refs.createRef,
                 readReceipt: () => undefined,
                 writeReceipt: (laneName, body) => {
                     const directory = join(repository, STRAND_RECEIPTS_DIR);
@@ -1545,9 +1700,11 @@ describe('lane stranding', () => {
                 log: () => undefined,
             };
 
-            expect(() => removeLane(resolvedLane, port), 'the strict gate must keep refusing this lane').toThrow(
-                /closed without a supersession receipt/
-            );
+            if (!detached) {
+                expect(() => removeLane(resolvedLane, port), 'the strict gate must keep refusing this lane').toThrow(
+                    /closed without a supersession receipt/
+                );
+            }
 
             strandLane(resolvedLane, 'branch was force-pushed after close; ownership unproven', port);
 
@@ -1555,12 +1712,21 @@ describe('lane stranding', () => {
             expect(git(['branch', '--list', 'feat/work'])).toBe('');
             const receiptPath = join(repository, STRAND_RECEIPTS_DIR, 'feature.json');
             expect(existsSync(receiptPath)).toBe(true);
-            const receipt = JSON.parse(readFileSync(receiptPath, 'utf8')) as { head: string; branch: string };
+            const receipt = JSON.parse(readFileSync(receiptPath, 'utf8')) as {
+                head: string;
+                branch: string | null;
+                ref: string;
+            };
             expect(receipt.head).toBe(head);
-            expect(receipt.branch).toBe('feat/work');
-            // The recorded head is the recovery path for the force-deleted branch.
-            expect(git(['rev-parse', `${receipt.head}^{commit}`])).toBe(head);
-            git(['branch', 'revived', receipt.head]);
+            expect(receipt.branch).toBe(detached ? null : 'feat/work');
+            expect(receipt.ref).toBe('refs/sourdaw/strands/feature');
+            // A bare SHA resolves even when unreachable; only a ref keeps it from `git gc`.
+            expect(git(['rev-parse', '--verify', receipt.ref])).toBe(head);
+            expect(git(['for-each-ref', '--contains', head, '--format=%(refname)'])).toBe(receipt.ref);
+            git(['reflog', 'expire', '--expire=now', '--all']);
+            git(['gc', '--prune=now', '--quiet']);
+            expect(git(['cat-file', '-t', head])).toBe('commit');
+            git(['branch', 'revived', receipt.ref]);
             expect(git(['rev-parse', 'refs/heads/revived'])).toBe(head);
         } finally {
             rmSync(repository, { recursive: true, force: true });
@@ -1716,10 +1882,20 @@ describe('lane-removal shell boundary', () => {
                         [
                             {
                                 body: 'Superseded by #99.',
+                                created_at: '2026-08-15T00:00:00Z',
                                 user: { node_id: AUTHOR_BOT_NODE_ID, login: 'renamed-author[bot]', type: 'Bot' },
                             },
                         ],
                         [{ body: 'drive by', user: null }],
+                    ]);
+                }
+                if (args.includes('repos/jcosta33/sourdaw/issues/42/events?per_page=100')) {
+                    return JSON.stringify([
+                        [
+                            { event: 'closed', created_at: '2026-08-14T00:00:00Z' },
+                            { event: 'reopened', created_at: '2026-08-16T00:00:00Z' },
+                        ],
+                        [{ event: 'reopened', created_at: 7 }, { event: 'head_ref_force_pushed' }],
                     ]);
                 }
                 if (args.includes('repos/jcosta33/sourdaw/pulls/99')) {
@@ -1742,9 +1918,15 @@ describe('lane-removal shell boundary', () => {
                 authorNodeId: AUTHOR_BOT_NODE_ID,
                 authorLogin: 'renamed-author[bot]',
                 authorType: 'Bot',
+                createdAt: '2026-08-15T00:00:00Z',
             },
-            { body: 'drive by', authorNodeId: null, authorLogin: null, authorType: null },
+            { body: 'drive by', authorNodeId: null, authorLogin: null, authorType: null, createdAt: null },
         ]);
+        // Every page counts, and a reopen whose time is not a string surfaces as unreadable.
+        expect(port.reopenedAt(42)).toEqual(['2026-08-16T00:00:00Z', '']);
+        expect(
+            captures.find((entry) => entry.args.includes('repos/jcosta33/sourdaw/issues/42/events?per_page=100'))?.args
+        ).toEqual(['api', '--paginate', '--slurp', 'repos/jcosta33/sourdaw/issues/42/events?per_page=100']);
         // GitHub reports a merged pull request as `closed`; only `merged_at` says it landed.
         expect(port.replacement(99)).toEqual({
             number: 99,
@@ -1957,6 +2139,7 @@ describe('lane-removal shell boundary', () => {
                 remoteHead: () => undefined,
                 pullRequests: () => [pullRequest({ headRefOid: head })],
                 comments: () => [],
+                reopenedAt: () => [],
                 replacement: (number) => ({
                     number,
                     state: 'MERGED',

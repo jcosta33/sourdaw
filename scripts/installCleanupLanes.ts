@@ -2,7 +2,17 @@
 
 import { execFileSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
-import { lstatSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import {
+    lstatSync,
+    mkdirSync,
+    readFileSync,
+    readdirSync,
+    realpathSync,
+    renameSync,
+    rmSync,
+    statSync,
+    writeFileSync,
+} from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, isAbsolute, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -258,6 +268,35 @@ function launchFailure(observation: LaunchObservation, node: string, primaryRoot
     return undefined;
 }
 
+function assertCanonicalRuntimes(runtimes: string): void {
+    const stat = lstatSync(runtimes);
+    if (!stat.isDirectory() || stat.isSymbolicLink() || realpathSync(runtimes) !== runtimes) {
+        throw new Error('cleanup runtime directory is not inside the primary checkout');
+    }
+}
+
+/** Symlinked entries are skipped, never followed, so pruning cannot reach outside the runtimes directory. */
+function pruneSupersededRuntimes(runtimes: string, current: string): void {
+    assertCanonicalRuntimes(runtimes);
+    for (const entry of readdirSync(runtimes, { withFileTypes: true })) {
+        const path = join(runtimes, entry.name);
+        if (path === current || !entry.isDirectory() || entry.isSymbolicLink()) {
+            continue;
+        }
+        rmSync(path, { recursive: true });
+    }
+}
+
+/** Puts back the job the failed install replaced, or leaves none when there was none before. */
+function restorePreviousJob(port: CleanupInstallationPort, plist: string, previous: string | undefined): void {
+    if (previous === undefined) {
+        rmSync(plist);
+        return;
+    }
+    atomicWrite(plist, previous);
+    port.run('/bin/launchctl', ['bootstrap', `gui/${port.uid}`, plist]);
+}
+
 export function installCleanupLanes(port: CleanupInstallationPort): { plist: string; runtime: string } {
     if (port.platform !== 'darwin') {
         throw new Error('lane cleanup installation requires macOS launchd');
@@ -299,13 +338,7 @@ export function installCleanupLanes(port: CleanupInstallationPort): { plist: str
     const directory = cleanupDirectory(root);
     const runtimes = join(directory, 'runtimes');
     mkdirSync(runtimes, { recursive: true, mode: 0o700 });
-    if (
-        !lstatSync(runtimes).isDirectory() ||
-        lstatSync(runtimes).isSymbolicLink() ||
-        realpathSync(runtimes) !== runtimes
-    ) {
-        throw new Error('cleanup runtime directory is not inside the primary checkout');
-    }
+    assertCanonicalRuntimes(runtimes);
     for (const name of ['worker.log', 'worker-error.log']) {
         assertExclusiveCleanupLog(join(directory, name));
     }
@@ -328,6 +361,7 @@ export function installCleanupLanes(port: CleanupInstallationPort): { plist: str
     refreshCleanupLauncher(port, commit, directory);
     const agents = cleanupLaunchAgents(port.home);
     const plist = join(agents, `${CLEANUP_LABEL}.plist`);
+    const previousPlist = readCleanupFile(plist)?.bytes.toString('utf8');
     atomicWrite(plist, cleanupPlist(binding, runtime));
     const service = `gui/${port.uid}/${CLEANUP_LABEL}`;
     let loaded = false;
@@ -346,9 +380,19 @@ export function installCleanupLanes(port: CleanupInstallationPort): { plist: str
     const failure = launchFailure(observeFirstLaunch(port, service), binding.node, root);
     if (failure !== undefined) {
         port.run('/bin/launchctl', ['bootout', service]);
-        rmSync(plist);
+        let restoreFailure: string | undefined;
+        try {
+            restorePreviousJob(port, plist, previousPlist);
+        } catch (error) {
+            restoreFailure = error instanceof Error ? error.message : String(error);
+        }
+        rmSync(runtime, { recursive: true });
+        if (restoreFailure !== undefined) {
+            throw new Error(`${failure} The previous cleanup job could not be restored: ${restoreFailure}`);
+        }
         throw new Error(failure);
     }
+    pruneSupersededRuntimes(runtimes, runtime);
     return { plist, runtime };
 }
 

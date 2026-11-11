@@ -6,6 +6,7 @@ import {
     mkdirSync,
     mkdtempSync,
     readFileSync,
+    readdirSync,
     realpathSync,
     renameSync,
     rmSync,
@@ -576,9 +577,79 @@ describe('cleanup installation', () => {
             expect(f.events.at(-2)?.[0]).toBe('print');
             expect(f.events.at(-1)).toEqual(['bootout', `gui/501/${CLEANUP_LABEL}`]);
             expect(existsSync(join(f.root, 'Library/LaunchAgents', `${CLEANUP_LABEL}.plist`))).toBe(false);
+            expect(readdirSync(join(f.root, '.agents/lane-cleanup/runtimes'))).toEqual([]);
             expect(f.waits).toHaveLength(0);
         } finally {
             f.dispose();
+        }
+    });
+
+    it('restores and re-bootstraps the previous job and removes the new runtime when a reinstall cannot launch', () => {
+        const f = fixture();
+        try {
+            const previous = installCleanupLanes(f.port);
+            const previousBytes = readFileSync(previous.plist, 'utf8');
+            const runtimes = dirname(previous.runtime);
+            f.events.length = 0;
+            f.launch.prints = [printed({ runs: '1', exit: '78: EX_CONFIG' })];
+
+            expect(() => installCleanupLanes(f.port)).toThrow(/could not initialize.*Full Disk Access/);
+
+            expect(readFileSync(previous.plist, 'utf8')).toBe(previousBytes);
+            expect(f.events.slice(-3)).toEqual([
+                ['print', `gui/501/${CLEANUP_LABEL}`],
+                ['bootout', `gui/501/${CLEANUP_LABEL}`],
+                ['bootstrap', 'gui/501', previous.plist],
+            ]);
+            expect(readdirSync(runtimes)).toEqual([basename(previous.runtime)]);
+        } finally {
+            f.dispose();
+        }
+    });
+
+    it('says the previous job could not be restored when its re-bootstrap fails', () => {
+        const f = fixture();
+        try {
+            const previous = installCleanupLanes(f.port);
+            const previousBytes = readFileSync(previous.plist, 'utf8');
+            f.launch.prints = [printed({ runs: '1', exit: '78: EX_CONFIG' })];
+            let bootstraps = 0;
+            const port: CleanupInstallationPort = {
+                ...f.port,
+                run: (command, args) => {
+                    if (args[0] === 'bootstrap' && ++bootstraps === 2) {
+                        throw new Error('Bootstrap failed: 5: Input/output error');
+                    }
+                    f.port.run(command, args);
+                },
+            };
+
+            expect(() => installCleanupLanes(port)).toThrow(
+                /could not initialize.*previous cleanup job could not be restored: Bootstrap failed: 5/
+            );
+            expect(readFileSync(previous.plist, 'utf8')).toBe(previousBytes);
+        } finally {
+            f.dispose();
+        }
+    });
+
+    it('prunes earlier runtimes only after the new launch is verified, skipping symlinked entries', () => {
+        const f = fixture();
+        const foreign = realpathSync(mkdtempSync(join(tmpdir(), 'sourdaw-cleanup-runtime-alias-')));
+        try {
+            const first = installCleanupLanes(f.port);
+            const runtimes = dirname(first.runtime);
+            writeFileSync(join(foreign, 'keep'), 'foreign bytes\n');
+            symlinkSync(foreign, join(runtimes, 'aliased-runtime'), 'dir');
+
+            const second = installCleanupLanes(f.port);
+
+            expect(readdirSync(runtimes).sort()).toEqual([basename(second.runtime), 'aliased-runtime'].sort());
+            expect(existsSync(first.runtime)).toBe(false);
+            expect(readFileSync(join(foreign, 'keep'), 'utf8')).toBe('foreign bytes\n');
+        } finally {
+            f.dispose();
+            rmSync(foreign, { recursive: true });
         }
     });
 

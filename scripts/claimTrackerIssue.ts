@@ -58,9 +58,12 @@ export type ClaimBoardItem = {
 
 /**
  * The label swap runs before the board move: the labels are the claim another agent's survey
- * reads. A rerun cannot repair boards a partial claim left behind — once status:active is on the
- * issue the refusal below fires first — so the operator completes a stranded board move by hand
- * under the manual-gh exception for an issue's own project membership.
+ * reads. The claim reads the labels back after the edit and moves no board until the swap is
+ * observed. The read-back proves the write landed, not exclusivity: two operators claiming at
+ * once both add an already-present label without error, so it cannot detect a concurrent claim.
+ * A rerun cannot repair boards a partial claim left behind — once status:active is on the issue
+ * the refusal below fires first — so the operator completes a stranded board move by hand under
+ * the manual-gh exception for an issue's own project membership.
  */
 export function labelSwapPlan(labels: string[]): { add: string; remove: string[] } {
     return {
@@ -70,7 +73,27 @@ export function labelSwapPlan(labels: string[]): { add: string; remove: string[]
 }
 
 export function issueLabelsArgs(issue: number): string[] {
-    return ['issue', 'view', String(issue), '--repo', REQUIRED_REPOSITORY, '--json', 'labels'];
+    return ['issue', 'view', String(issue), '--repo', REQUIRED_REPOSITORY, '--json', 'labels,state'];
+}
+
+type IssueClaimRow = { labels: string[]; state: string };
+
+function readIssueClaimRow(issue: number, gh: Gh): IssueClaimRow {
+    const label = `issue #${issue} labels`;
+    const row = parseJson<{ labels?: unknown; state?: unknown }>(gh(issueLabelsArgs(issue)), label);
+    if (typeof row.state !== 'string') {
+        fail(`${label} returned malformed data`);
+    }
+    return { labels: labelNamesFromRow(row, label), state: row.state };
+}
+
+function assertLabelSwapObserved(issue: number, labels: string[], plan: { add: string; remove: string[] }): void {
+    const missing = labels.includes(plan.add) ? [] : [`${plan.add} missing`];
+    const lingering = plan.remove.filter((label) => labels.includes(label)).map((label) => `${label} still present`);
+    const problems = [...missing, ...lingering];
+    if (problems.length > 0) {
+        fail(`issue #${issue} label edit was not observed: ${problems.join(', ')}; no board was moved`);
+    }
 }
 
 export function labelNamesFromRow(row: { labels?: unknown }, label: string): string[] {
@@ -237,10 +260,10 @@ export function itemEditArgs(board: ClaimBoardItem, ids: { fieldId: string; opti
 export type Gh = (args: string[]) => string;
 
 export function claimTrackerIssue(issue: number, gh: Gh, log: (message: string) => void): void {
-    const labels = labelNamesFromRow(
-        parseJson<{ labels?: unknown }>(gh(issueLabelsArgs(issue)), `issue #${issue} labels`),
-        `issue #${issue} labels`
-    );
+    const { labels, state } = readIssueClaimRow(issue, gh);
+    if (state !== 'OPEN') {
+        fail(`issue #${issue} is closed; reopen it or choose open work before claiming`);
+    }
     if (labels.includes(ACTIVE_STATUS_LABEL)) {
         fail(
             `issue #${issue} already carries ${ACTIVE_STATUS_LABEL}; another lane has claimed it — ` +
@@ -249,6 +272,7 @@ export function claimTrackerIssue(issue: number, gh: Gh, log: (message: string) 
     }
     const plan = labelSwapPlan(labels);
     gh(issueEditLabelsArgs(issue, plan));
+    assertLabelSwapObserved(issue, readIssueClaimRow(issue, gh).labels, plan);
     const removed = plan.remove.length > 0 ? `, removed ${plan.remove.join(', ')}` : '';
     log(`issue #${issue}: added ${ACTIVE_STATUS_LABEL}${removed}`);
     const boards = boardsFromGraphql(

@@ -1,5 +1,14 @@
-import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { execFileSync, spawn } from 'node:child_process';
+import {
+    existsSync,
+    mkdirSync,
+    mkdtempSync,
+    readFileSync,
+    realpathSync,
+    rmSync,
+    symlinkSync,
+    writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
@@ -7,6 +16,7 @@ import { describe, expect, it } from 'vitest';
 
 import { AUTHOR_LOCK_REASON } from '../githubAppIdentity.ts';
 import {
+    assertTrustedClosure,
     isStale,
     laneLockRefusal,
     parsePruneArgs,
@@ -297,8 +307,11 @@ describe('prune shell boundary', () => {
         const shell = {
             capture: (command: string, args: string[]) => {
                 captures.push({ command, args });
+                if (command === 'ps') {
+                    return `${process.pid} ${process.getuid?.()}`;
+                }
                 if (command === 'lsof') {
-                    return `p999\nfcwd\nn${target}`;
+                    return `p${process.pid}\0\nfcwd\0tDIR\0n${target}\0\n`;
                 }
                 if (args[0] === 'worktree') {
                     return '';
@@ -334,35 +347,151 @@ describe('prune capture', () => {
 });
 
 describe('prune lane-in-use detection', () => {
-    // A cwd-restricted lsof lists only the working-directory entries, as the real tool does for `-d cwd`.
-    const portWithLsof = (output: string) =>
-        shellPort({
+    const uid = process.getuid?.();
+    // The census lane removal trusts: a same-user process list and a NUL-framed per-user lsof catalog.
+    const portWithCensus = (lsof: string, ps = `${process.pid} ${uid}\n999 ${uid}`) => {
+        const lsofCalls: string[][] = [];
+        const port = shellPort({
             capture: (command: string, args: string[]) => {
-                if (command === 'lsof' && args.includes('cwd')) {
-                    return output
-                        .split('\n')
-                        .filter((line, index, lines) => !line.startsWith('n') || lines[index - 1] === 'fcwd')
-                        .join('\n');
+                if (command === 'ps') {
+                    return ps;
                 }
                 if (command === 'lsof') {
-                    return output;
+                    lsofCalls.push(args);
+                    return lsof;
                 }
                 throw new Error(`unexpected capture: ${command}`);
             },
         });
+        return { port, lsofCalls };
+    };
 
     it('treats a lane as in use when another process holds a file open under it from elsewhere', () => {
-        const port = portWithLsof(`p999\nfcwd\nn/elsewhere/build\nf12\nn${target}/target/debug/deps/lib.rlib`);
+        const { port, lsofCalls } = portWithCensus(
+            `p999\0\nfcwd\0tDIR\0n/elsewhere/build\0\nf12\0tREG\0n${target}/target/debug/deps/lib.rlib\0\n`
+        );
 
         expect(port.active(target)).toBe(true);
+        expect(lsofCalls[0]).toEqual(['-nP', '-a', '-u', String(uid), '-F0pftn']);
     });
 
-    it('ignores open files outside the lane and this process own descriptors', () => {
-        const port = portWithLsof(
-            `p999\nfcwd\nn/elsewhere/build\nf3\nn${target}-sibling/file\np${process.pid}\nf4\nn${target}/x`
+    it('proves a lane idle only from a complete same-user census', () => {
+        const { port } = portWithCensus(
+            `p${process.pid}\0\nfcwd\0tDIR\0n/elsewhere/build\0\np999\0\nf3\0tREG\0n${target}-sibling/file\0\n`
         );
 
         expect(port.active(target)).toBe(false);
+    });
+
+    it('refuses to call a lane idle when the open-file census is incomplete', () => {
+        const { port } = portWithCensus(`p999\nfcwd\nn/elsewhere/build`);
+
+        expect(() => port.active(target)).toThrow('open-file inspection was incomplete');
+    });
+
+    it('refuses to call a lane idle when the census omits a live same-user process', () => {
+        const live = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 60_000)']);
+        try {
+            const { port } = portWithCensus(
+                `p${process.pid}\0\nfcwd\0tDIR\0n/elsewhere\0\n`,
+                `${process.pid} ${uid}\n${live.pid} ${uid}`
+            );
+
+            expect(() => port.active(target)).toThrow('open-file inspection omitted a live process');
+        } finally {
+            live.kill('SIGKILL');
+        }
+    });
+});
+
+describe('prune fleet path identity', () => {
+    it('canonicalizes symlinked worktree paths so a busy lane reached through an alias is refused', () => {
+        const repository = realpathSync(mkdtempSync(join(tmpdir(), 'sourdaw-lane-prune-alias-')));
+        const aliasParent = mkdtempSync(join(tmpdir(), 'sourdaw-lane-prune-alias-link-'));
+        const alias = join(aliasParent, 'repository');
+        const lane = join(repository, '.agents/worktrees/feature');
+        const uid = process.getuid?.();
+        try {
+            mkdirSync(join(lane, 'node_modules'), { recursive: true });
+            symlinkSync(repository, alias, 'dir');
+            const aliasedLane = join(alias, '.agents/worktrees/feature');
+            const visited: string[] = [];
+            const port = shellPort({
+                capture: (command: string, args: string[]) => {
+                    if (command === 'ps') {
+                        return `${process.pid} ${uid}\n999 ${uid}`;
+                    }
+                    if (command === 'lsof') {
+                        // lsof reports the real path of the build's open file, never git's alias.
+                        return `p${process.pid}\0\nfcwd\0tDIR\0n/elsewhere\0\np999\0\nf12\0tREG\0n${lane}/node_modules/x\0\n`;
+                    }
+                    if (args[0] === 'worktree') {
+                        return (
+                            `worktree ${alias}\0HEAD root\0branch refs/heads/main\0\0` +
+                            `worktree ${aliasedLane}\0HEAD head\0branch refs/heads/feat/work\0\0`
+                        );
+                    }
+                    if (args.includes('status')) {
+                        visited.push(args[1] ?? '');
+                        return '';
+                    }
+                    if (args.includes('ls-files')) {
+                        return 'node_modules/\0';
+                    }
+                    throw new Error(`unexpected capture: ${command} ${args.join(' ')}`);
+                },
+            });
+
+            expect(port.worktrees().map((worktree) => worktree.path)).toEqual([repository, lane]);
+            const outcome = pruneFleet({ ...port, log: () => undefined });
+
+            expect(outcome).toEqual({
+                pruned: [],
+                refused: [{ lane, reason: 'worktree is active in another process' }],
+            });
+            expect(existsSync(join(lane, 'node_modules'))).toBe(true);
+            expect(visited).toEqual([]);
+        } finally {
+            rmSync(aliasParent, { recursive: true, force: true });
+            rmSync(repository, { recursive: true, force: true });
+        }
+    });
+});
+
+describe('prunes a real worktree without touching credentials', () => {
+    it('deletes build output beside an ignored credential inside a build-product directory but keeps the credential', () => {
+        const repository = realpathSync(mkdtempSync(join(tmpdir(), 'sourdaw-lane-prune-credential-')));
+        const lane = join(repository, '.agents/worktrees/feature');
+        const git = (args: string[], cwd = repository) => execFileSync('git', args, { cwd, encoding: 'utf8' }).trim();
+        try {
+            git(['init', '-b', 'main']);
+            git(['config', 'user.name', 'Fixture']);
+            git(['config', 'user.email', 'fixture@example.com']);
+            writeFileSync(join(repository, '.gitignore'), '.env\ndist/*.js\n');
+            mkdirSync(join(repository, 'dist'));
+            writeFileSync(join(repository, 'dist/README.md'), 'tracked\n');
+            git(['add', '.']);
+            git(['commit', '-m', 'fixture']);
+            mkdirSync(join(repository, '.agents/worktrees'), { recursive: true });
+            git(['worktree', 'add', lane, '-b', 'feat/work']);
+            writeFileSync(join(lane, 'dist/.env'), 'SECRET=keep\n');
+            writeFileSync(join(lane, 'dist/bundle.js'), 'generated\n');
+            const port: LanePrunePort = {
+                ...shellPort(),
+                worktrees: () => parseWorktrees(git(['worktree', 'list', '--porcelain', '-z'])),
+                currentDirectory: () => repository,
+                active: () => false,
+                log: () => undefined,
+            };
+            expect(port.ignored(lane).sort()).toEqual(['dist/.env', 'dist/bundle.js']);
+
+            expect(pruneTarget(lane, port)).toEqual(['dist/bundle.js']);
+
+            expect(readFileSync(join(lane, 'dist/.env'), 'utf8')).toBe('SECRET=keep\n');
+            expect(existsSync(join(lane, 'dist/bundle.js'))).toBe(false);
+        } finally {
+            rmSync(repository, { recursive: true, force: true });
+        }
     });
 });
 
@@ -437,5 +566,36 @@ describe('prunes a real worktree without touching git state', () => {
         } finally {
             rmSync(repository, { recursive: true, force: true });
         }
+    });
+});
+
+describe('prune source trust', () => {
+    const sourceRoot = resolve(import.meta.dirname, '../..');
+    const approved = (path: string) => readFileSync(join(sourceRoot, path), 'utf8');
+
+    it('reads every file in the prune import closure, the removal contract included', () => {
+        const read: string[] = [];
+        assertTrustedClosure(
+            'scripts/pruneLane.ts',
+            (path) => {
+                read.push(path);
+                return approved(path);
+            },
+            approved
+        );
+
+        expect(read).toEqual(
+            expect.arrayContaining(['scripts/pruneLane.ts', 'scripts/removeLane.ts', 'scripts/laneActivity.ts'])
+        );
+    });
+
+    it('refuses a mutated removal script inside the prune closure', () => {
+        expect(() =>
+            assertTrustedClosure(
+                'scripts/pruneLane.ts',
+                (path) => (path === 'scripts/removeLane.ts' ? `${approved(path)}\n// mutated\n` : approved(path)),
+                approved
+            )
+        ).toThrow('scripts/removeLane.ts does not match origin/main; refusing to run a mutated copy');
     });
 });

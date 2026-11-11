@@ -40,6 +40,7 @@ import {
 import {
     capture as captureRemoval,
     inside,
+    LaneSafetyRefusal,
     laneIdentity,
     removeLane,
     sameLaneIdentity,
@@ -459,9 +460,7 @@ export function cleanupLanes(port: CleanupPort, onlyHead?: string, queueOnly = f
                     attemptCleanupRemoval(record, port, directory);
                 } catch (error) {
                     record.reason = cleanupFailureReason(error);
-                    const safetyRefusal = /^(?:worktree|refusing|PR #|branch |detached review|queued worktree)/.test(
-                        record.reason
-                    );
+                    const safetyRefusal = error instanceof LaneSafetyRefusal;
                     record.status = safetyRefusal ? 'protected' : 'pending';
                     if (safetyRefusal) {
                         // Attempts count consecutive inspection failures; a refusal is a normal cadence check.
