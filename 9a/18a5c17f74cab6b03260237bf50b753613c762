@@ -1,0 +1,42 @@
+src/modules/Arrangement/handlers/marker/__tests__/sectionRuntimeHandlers.spec.ts
+  h_beb54bf43b47b7 1-143
+src/modules/Arrangement/handlers/marker/handleNavigateSection.ts
+  h_beb54bf43b47b7 1-33
+src/modules/Arrangement/handlers/marker/handleRehearseSection.ts
+  h_beb54bf43b47b7 1-27
+src/modules/Arrangement/presentations/views/ArrangementBar.tsx
+  h_beb54bf43b47b7 265-275,421-423
+src/modules/Arrangement/presentations/views/TimelineMinimap.tsx
+  h_beb54bf43b47b7 19-21,50-51,60-64,90,94,105,142,144-146,159,182-223,252,326
+src/modules/Arrangement/presentations/views/__tests__/ArrangementBar.spec.tsx
+  h_beb54bf43b47b7 145-162
+src/modules/Arrangement/presentations/views/__tests__/TimelineMinimap.spec.tsx
+  h_beb54bf43b47b7 22-26,56-60,211-220
+src/modules/Arrangement/presentations/views/__tests__/TimelineMinimapCanvas.spec.tsx
+  h_beb54bf43b47b7 4,9,11,30-32,46-49,102-105,113,220-266
+src/modules/Arrangement/useCases/getArrangementHandlers.ts
+  h_beb54bf43b47b7 41-42,210-211
+src/modules/CommandInterface/stores/__tests__/shortcutStoreBindings.spec.ts
+  h_beb54bf43b47b7 44-59
+src/modules/CommandInterface/stores/shortcutStore.ts
+  h_beb54bf43b47b7 129-142
+src/modules/CommandInterface/useCases/commands/TransportCommands.ts
+  h_beb54bf43b47b7 91-104
+src/modules/CommandInterface/useCases/commands/__tests__/TransportCommands.spec.ts
+  h_beb54bf43b47b7 45-46,65-66
+src/utils/handlerContract.ts
+  h_beb54bf43b47b7 2091-2092
+tests/e2e/flowCoverage.spec.ts
+  h_beb54bf43b47b7 102-170
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9a18a5c17f74cab6b03260237bf50b753613c762",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
