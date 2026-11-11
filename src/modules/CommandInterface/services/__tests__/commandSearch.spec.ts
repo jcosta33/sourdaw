@@ -101,14 +101,16 @@ describe('searchCommands', () => {
 });
 
 describe('command discovery', () => {
-    it('moves the latest execution to the front, deduplicates, and bounds recents', () => {
-        const recent = ['b', 'a', 'c', 'd', 'e'].reduce(
+    it('moves the latest execution to the front, deduplicates, and evicts the sixth distinct execution', () => {
+        const recent = ['a', 'b', 'a', 'c', 'd', 'e', 'f'].reduce(
             (ids, id) => updateRecentCommandIds(ids, id),
-            updateRecentCommandIds([], 'a')
+            [] as string[]
         );
 
-        expect(recent).toEqual(['e', 'd', 'c', 'a', 'b']);
-        expect(updateRecentCommandIds(recent, 'c')).toEqual(['c', 'e', 'd', 'a', 'b']);
+        expect(recent).toEqual(['f', 'e', 'd', 'c', 'a']);
+        expect(recent).toHaveLength(5);
+        expect(recent).not.toContain('b');
+        expect(updateRecentCommandIds(recent, 'c')).toEqual(['c', 'f', 'e', 'd', 'a']);
     });
 
     it('groups a small applicable discovery set and orders recents before categories', () => {

@@ -29,6 +29,9 @@ describe('CommandPalette', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         vi.mocked(useStore).mockReturnValue({ commandPaletteOpen: true });
+        vi.mocked(executeUserAppAction).mockImplementation(async (_action, options) => {
+            options?.onCommitted?.();
+        });
     });
 
     it('exposes ARIA combobox and listbox active-descendant relationships when open', () => {
@@ -218,7 +221,7 @@ describe('CommandPalette', () => {
         expect(input).toHaveAttribute('aria-activedescendant', 'command-palette-option-add-audio-track');
         fireEvent.keyDown(input, { key: 'Enter' });
 
-        expect(executeUserAppAction).toHaveBeenCalledWith(command.action);
+        expect(executeUserAppAction).toHaveBeenCalledWith(command.action, { onCommitted: expect.any(Function) });
     });
 
     it('updates selection and aria-activedescendant on pointer move over an option', () => {
@@ -264,12 +267,15 @@ describe('CommandPalette', () => {
         expect(screen.queryByRole('option')).not.toBeInTheDocument();
     });
 
-    it('dispatches an activated entry through executeUserAppAction on click', () => {
+    it('dispatches an activated entry with a committed-outcome observer on click', () => {
         render(<CommandPalette />);
         fireEvent.change(screen.getByRole('combobox'), { target: { value: 'metronome' } });
         fireEvent.click(screen.getByRole('option', { name: /Toggle Metronome/ }));
 
-        expect(executeUserAppAction).toHaveBeenCalledWith({ type: 'toggleMetronome' });
+        expect(executeUserAppAction).toHaveBeenCalledWith(
+            { type: 'toggleMetronome' },
+            { onCommitted: expect.any(Function) }
+        );
     });
 
     it('shows a small categorized discovery set instead of the full registry for an empty query', () => {
@@ -280,16 +286,34 @@ describe('CommandPalette', () => {
         expect(screen.getByRole('group', { name: 'Edit' })).toBeInTheDocument();
     });
 
-    it('puts an executed command in Recent when the query is cleared', () => {
+    it.each([
+        { query: 'metronome', option: /Toggle Metronome/ },
+        { query: 'Add Bus Track', option: /Add Bus Track/ },
+    ])('puts the committed $option command in Recent when the query is cleared', async ({ query, option }) => {
         render(<CommandPalette />);
         const input = screen.getByRole('combobox');
 
-        fireEvent.change(input, { target: { value: 'metronome' } });
-        fireEvent.click(screen.getByRole('option', { name: /Toggle Metronome/ }));
+        fireEvent.change(input, { target: { value: query } });
+        fireEvent.click(screen.getByRole('option', { name: option }));
         fireEvent.change(input, { target: { value: '' } });
 
-        expect(screen.getByRole('group', { name: 'Recent' })).toBeInTheDocument();
-        expect(screen.getAllByRole('option')[0]).toHaveAccessibleName(/Toggle Metronome/);
+        await waitFor(() => expect(screen.getByRole('group', { name: 'Recent' })).toBeInTheDocument());
+        expect(screen.getAllByRole('option')[0]).toHaveAccessibleName(option);
+    });
+
+    it.each([
+        { query: 'metronome', option: /Toggle Metronome/ },
+        { query: 'Add Bus Track', option: /Add Bus Track/ },
+    ])('keeps the uncommitted $option command out of Recent', ({ query, option }) => {
+        vi.mocked(executeUserAppAction).mockResolvedValue(undefined);
+        render(<CommandPalette />);
+        const input = screen.getByRole('combobox');
+
+        fireEvent.change(input, { target: { value: query } });
+        fireEvent.click(screen.getByRole('option', { name: option }));
+        fireEvent.change(input, { target: { value: '' } });
+
+        expect(screen.queryByRole('group', { name: 'Recent' })).not.toBeInTheDocument();
     });
 
     it('explains a missing clip selection before execution without dispatching the command', () => {

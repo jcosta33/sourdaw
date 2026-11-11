@@ -164,12 +164,14 @@ export const CommandPalette = (): ReactElement | null => {
         if (getCommandInapplicabilityReason(entry) !== null) {
             return;
         }
-        setRecentCommandIds((recentIds) => updateRecentCommandIds(recentIds, entry.id));
+        const onCommitted = () => {
+            setRecentCommandIds((recentIds) => updateRecentCommandIds(recentIds, entry.id));
+        };
         close();
         if (typeof entry.action === 'function') {
-            entry.action();
+            entry.action(onCommitted);
         } else {
-            void executeUserAppAction(entry.action);
+            void executeUserAppAction(entry.action, { onCommitted });
         }
     };
 

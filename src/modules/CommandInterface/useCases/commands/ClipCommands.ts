@@ -1,9 +1,9 @@
 import { trackStore } from '#/modules/Arrangement/stores';
 import { renameClip, splitClip } from '#/modules/Arrangement/useCases';
-import { executeUserAppAction } from '#/modules/Command/useCases';
 import { transportStore, playheadPositionRef } from '#/modules/Transport/stores';
 import { promptUser } from '#/utils/Notification/promptUser';
 
+import { executeCommandAction } from '../executeCommandAction';
 import { type CallableCommandEntry } from '../searchCommandRegistry';
 import { getSelectedClipId } from '../selectionHelpers/getSelectedClipId';
 import { getSelectedClipIds } from '../selectionHelpers/getSelectedClipIds';
@@ -17,7 +17,7 @@ export const clipCommands: CallableCommandEntry[] = [
         description: 'Rename the selected clip',
         category: 'Clip',
         getInapplicabilityReason: () => (getSelectedClipId() ? null : 'Select a clip first.'),
-        action: () => {
+        action: (onCommitted?: () => void) => {
             const clipId = getSelectedClipId();
             if (!clipId) {
                 return;
@@ -35,6 +35,7 @@ export const clipCommands: CallableCommandEntry[] = [
                 });
                 if (name) {
                     renameClip(clipId, name);
+                    onCommitted?.();
                 }
             })();
         },
@@ -45,11 +46,12 @@ export const clipCommands: CallableCommandEntry[] = [
         description: 'Split the selected clip at the current playhead position',
         category: 'Clip',
         getInapplicabilityReason: () => (getSelectedClipId() ? null : 'Select a clip first.'),
-        action: () => {
+        action: (onCommitted?: () => void) => {
             const clipId = getSelectedClipId();
             const beat = transportStore.value ? playheadPositionRef.current : 0;
             if (clipId) {
                 splitClip(clipId, beat);
+                onCommitted?.();
             }
         },
     },
@@ -59,10 +61,10 @@ export const clipCommands: CallableCommandEntry[] = [
         description: 'Peak-normalize the selected audio clip',
         category: 'Clip',
         getInapplicabilityReason: () => (getSelectedClipId() ? null : 'Select a clip first.'),
-        action: () => {
+        action: (onCommitted?: () => void) => {
             const clipId = getSelectedClipId();
             if (clipId) {
-                void executeUserAppAction({ type: 'normalizeClip', payload: { clipId } });
+                void executeCommandAction(onCommitted, { type: 'normalizeClip', payload: { clipId } });
             }
         },
     },
@@ -72,10 +74,10 @@ export const clipCommands: CallableCommandEntry[] = [
         description: 'Reverse the selected audio clip',
         category: 'Clip',
         getInapplicabilityReason: () => (getSelectedClipId() ? null : 'Select a clip first.'),
-        action: () => {
+        action: (onCommitted?: () => void) => {
             const clipId = getSelectedClipId();
             if (clipId) {
-                void executeUserAppAction({ type: 'reverseClip', payload: { clipId } });
+                void executeCommandAction(onCommitted, { type: 'reverseClip', payload: { clipId } });
             }
         },
     },
@@ -85,10 +87,10 @@ export const clipCommands: CallableCommandEntry[] = [
         description: 'Merge selected clips into one',
         category: 'Clip',
         getInapplicabilityReason: () => (getSelectedClipIds().length >= 2 ? null : 'Select at least two clips first.'),
-        action: () => {
+        action: (onCommitted?: () => void) => {
             const ids = getSelectedClipIds();
             if (ids.length >= 2) {
-                void executeUserAppAction({ type: 'glueClips', payload: { clipIds: ids } });
+                void executeCommandAction(onCommitted, { type: 'glueClips', payload: { clipIds: ids } });
             }
         },
     },
@@ -98,14 +100,14 @@ export const clipCommands: CallableCommandEntry[] = [
         description: 'Consolidate the selection range into a single clip',
         category: 'Clip',
         getInapplicabilityReason: () => (getSelectedClipId() ? null : 'Select a clip first.'),
-        action: () => {
+        action: (onCommitted?: () => void) => {
             const trackId = getSelectedTrackId();
             const clipId = getSelectedClipId();
             if (trackId && clipId) {
                 const track = trackStore.value?.tracks.find((time) => time.id === trackId);
                 const clip = track?.clips.find((context) => context.id === clipId);
                 if (clip) {
-                    void executeUserAppAction({
+                    void executeCommandAction(onCommitted, {
                         type: 'consolidateSelection',
                         payload: { trackId, startBeat: clip.startBeat, endBeat: clip.endBeat },
                     });
@@ -119,7 +121,7 @@ export const clipCommands: CallableCommandEntry[] = [
         description: 'Enable or disable looping on the selected clip',
         category: 'Clip',
         getInapplicabilityReason: () => (getSelectedClipId() ? null : 'Select a clip first.'),
-        action: () => {
+        action: (onCommitted?: () => void) => {
             const clipId = getSelectedClipId();
             if (clipId) {
                 const track = trackStore.value?.tracks.find((time) =>
@@ -127,7 +129,10 @@ export const clipCommands: CallableCommandEntry[] = [
                 );
                 const clip = track?.clips.find((context) => context.id === clipId);
                 if (clip) {
-                    void executeUserAppAction({ type: 'setClipLoop', payload: { clipId, enabled: !clip.loopEnabled } });
+                    void executeCommandAction(onCommitted, {
+                        type: 'setClipLoop',
+                        payload: { clipId, enabled: !clip.loopEnabled },
+                    });
                 }
             }
         },

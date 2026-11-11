@@ -1,12 +1,13 @@
 import { resolveEligibleClipWriteTarget, trackStore } from '#/modules/Arrangement/stores';
 import { duplicateTrack } from '#/modules/Arrangement/useCases';
-import { executeUserAppAction, isAppActionCommittedError } from '#/modules/Command/useCases';
+import { isAppActionCommittedError } from '#/modules/Command/useCases';
 import { arrangementStore } from '#/modules/Project/stores';
 import { captureProjectTransitionAuthority } from '#/modules/Project/useCases';
 import { confirmUser } from '#/utils/Notification/confirmUser';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 import { promptUser } from '#/utils/Notification/promptUser';
 
+import { executeCommandAction } from '../executeCommandAction';
 import { type CallableCommandEntry } from '../searchCommandRegistry';
 import { getSelectedTrackId } from '../selectionHelpers/getSelectedTrackId';
 
@@ -33,8 +34,8 @@ export const trackCommands: CallableCommandEntry[] = [
         label: 'Add Bus Track',
         description: 'Create a new bus track',
         category: 'Track',
-        action: () => {
-            void executeUserAppAction({ type: 'createBus', payload: { name: 'Bus' } });
+        action: (onCommitted?: () => void) => {
+            void executeCommandAction(onCommitted, { type: 'createBus', payload: { name: 'Bus' } });
         },
     },
     {
@@ -50,10 +51,10 @@ export const trackCommands: CallableCommandEntry[] = [
         description: 'Duplicate the selected track with all clips and devices',
         category: 'Track',
         shortcut: '⌘⇧D',
-        action: () => {
+        action: (onCommitted?: () => void) => {
             const id = getSelectedTrackId();
-            if (id) {
-                duplicateTrack(id);
+            if (id && duplicateTrack(id)) {
+                onCommitted?.();
             }
         },
     },
@@ -62,10 +63,10 @@ export const trackCommands: CallableCommandEntry[] = [
         label: 'Delete Track',
         description: 'Remove the selected track',
         category: 'Track',
-        action: () => {
+        action: (onCommitted?: () => void) => {
             const id = getSelectedTrackId();
             if (id) {
-                void executeUserAppAction({ type: 'removeTrack', payload: { trackId: id } });
+                void executeCommandAction(onCommitted, { type: 'removeTrack', payload: { trackId: id } });
             }
         },
     },
@@ -74,7 +75,7 @@ export const trackCommands: CallableCommandEntry[] = [
         label: 'Rename Track',
         description: 'Rename the selected track',
         category: 'Track',
-        action: () => {
+        action: (onCommitted?: () => void) => {
             const id = getSelectedTrackId();
             if (!id) {
                 return;
@@ -88,7 +89,7 @@ export const trackCommands: CallableCommandEntry[] = [
                     confirmLabel: 'Rename',
                 });
                 if (name) {
-                    await executeUserAppAction({ type: 'renameTrack', payload: { trackId: id, name } });
+                    await executeCommandAction(onCommitted, { type: 'renameTrack', payload: { trackId: id, name } });
                 }
             })();
         },
@@ -98,10 +99,10 @@ export const trackCommands: CallableCommandEntry[] = [
         label: 'Freeze Track',
         description: 'Freeze the selected track to save CPU',
         category: 'Track',
-        action: () => {
+        action: (onCommitted?: () => void) => {
             const id = getSelectedTrackId();
             if (id) {
-                void executeUserAppAction({ type: 'freezeTrack', payload: { trackId: id } });
+                void executeCommandAction(onCommitted, { type: 'freezeTrack', payload: { trackId: id } });
             }
         },
     },
@@ -110,10 +111,10 @@ export const trackCommands: CallableCommandEntry[] = [
         label: 'Unfreeze Track',
         description: 'Unfreeze the selected track',
         category: 'Track',
-        action: () => {
+        action: (onCommitted?: () => void) => {
             const id = getSelectedTrackId();
             if (id) {
-                void executeUserAppAction({ type: 'unfreezeTrack', payload: { trackId: id } });
+                void executeCommandAction(onCommitted, { type: 'unfreezeTrack', payload: { trackId: id } });
             }
         },
     },
@@ -122,7 +123,7 @@ export const trackCommands: CallableCommandEntry[] = [
         label: 'Flatten Track',
         description: 'Commit a frozen track to audio',
         category: 'Track',
-        action: () => {
+        action: (onCommitted?: () => void) => {
             const trackId = getSelectedTrackId();
             if (!trackId) {
                 return;
@@ -150,7 +151,8 @@ export const trackCommands: CallableCommandEntry[] = [
                 }
 
                 const admission = { declined: false };
-                await executeUserAppAction(
+                await executeCommandAction(
+                    onCommitted,
                     { type: 'flattenTrack', payload: { trackId } },
                     {
                         shouldExecute: () => {
@@ -195,10 +197,10 @@ export const trackCommands: CallableCommandEntry[] = [
         label: 'Bounce to New Track',
         description: 'Render the selected track to a new audio track',
         category: 'Track',
-        action: () => {
+        action: (onCommitted?: () => void) => {
             const trackId = getSelectedTrackId();
             if (trackId) {
-                void executeUserAppAction({ type: 'bounceToNewTrack', payload: { trackId } });
+                void executeCommandAction(onCommitted, { type: 'bounceToNewTrack', payload: { trackId } });
             }
         },
     },
@@ -207,10 +209,10 @@ export const trackCommands: CallableCommandEntry[] = [
         label: 'Bounce in Place',
         description: 'Render the selected track to audio in place',
         category: 'Track',
-        action: () => {
+        action: (onCommitted?: () => void) => {
             const id = getSelectedTrackId();
             if (id) {
-                void executeUserAppAction({ type: 'bounceInPlace', payload: { trackId: id } });
+                void executeCommandAction(onCommitted, { type: 'bounceInPlace', payload: { trackId: id } });
             }
         },
     },
@@ -219,10 +221,10 @@ export const trackCommands: CallableCommandEntry[] = [
         label: 'Arm Track',
         description: 'Arm the selected track for recording',
         category: 'Track',
-        action: () => {
+        action: (onCommitted?: () => void) => {
             const id = getSelectedTrackId();
             if (id) {
-                void executeUserAppAction({ type: 'armTrack', payload: { trackId: id, armed: true } });
+                void executeCommandAction(onCommitted, { type: 'armTrack', payload: { trackId: id, armed: true } });
             }
         },
     },
@@ -231,10 +233,10 @@ export const trackCommands: CallableCommandEntry[] = [
         label: 'Solo Track',
         description: 'Solo the selected track',
         category: 'Track',
-        action: () => {
+        action: (onCommitted?: () => void) => {
             const id = getSelectedTrackId();
             if (id) {
-                void executeUserAppAction({ type: 'soloTrack', payload: { trackId: id, soloed: true } });
+                void executeCommandAction(onCommitted, { type: 'soloTrack', payload: { trackId: id, soloed: true } });
             }
         },
     },
@@ -243,11 +245,11 @@ export const trackCommands: CallableCommandEntry[] = [
         label: 'Mute Track',
         description: 'Mute the selected track',
         category: 'Track',
-        action: () => {
+        action: (onCommitted?: () => void) => {
             const id = getSelectedTrackId();
             const track = trackStore.value?.tracks.find((candidate) => candidate.id === id);
             if (track) {
-                void executeUserAppAction({
+                void executeCommandAction(onCommitted, {
                     type: 'muteTrack',
                     payload: { trackId: track.id, muted: true, expectedMuted: track.muted },
                 });
@@ -259,10 +261,13 @@ export const trackCommands: CallableCommandEntry[] = [
         label: 'Group Selected Tracks',
         description: 'Link selected tracks into a group',
         category: 'Track',
-        action: () => {
+        action: (onCommitted?: () => void) => {
             const id = getSelectedTrackId();
             if (id) {
-                void executeUserAppAction({ type: 'groupTracks', payload: { trackIds: [id], name: 'Group' } });
+                void executeCommandAction(onCommitted, {
+                    type: 'groupTracks',
+                    payload: { trackIds: [id], name: 'Group' },
+                });
             }
         },
     },
@@ -286,12 +291,15 @@ export const trackCommands: CallableCommandEntry[] = [
         label: 'Ungroup Tracks',
         description: 'Remove track grouping',
         category: 'Track',
-        action: () => {
+        action: (onCommitted?: () => void) => {
             const id = getSelectedTrackId();
             if (id) {
                 const track = trackStore.value?.tracks.find((time) => time.id === id);
                 if (track?.groupId) {
-                    void executeUserAppAction({ type: 'ungroupTracks', payload: { groupId: track.groupId } });
+                    void executeCommandAction(onCommitted, {
+                        type: 'ungroupTracks',
+                        payload: { groupId: track.groupId },
+                    });
                 }
             }
         },

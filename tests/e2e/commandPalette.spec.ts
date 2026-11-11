@@ -57,18 +57,18 @@ test.describe('Command Palette', () => {
         const input = palette.getByPlaceholder(/Type a command/i);
         await expect(input).toBeFocused();
 
-        // With an empty query the full catalog is listed. Move the pointer onto a
-        // deep-in-the-list option so the keyboard selection index is bumped high.
-        const hoverTarget = palette.getByRole('option', { name: /Toggle Metronome/i });
+        // With an empty query a small discovery set is listed. Move the pointer
+        // beyond the first suggestion so the keyboard selection index is bumped.
+        const hoverTarget = palette.getByRole('option', { name: /Add Audio Track/i });
         await expect(hoverTarget).toBeVisible();
         await hoverTarget.hover();
 
         // Now filter the list down so the previously hovered index is out of range
         // for the new, shorter results.
-        await input.fill('Add Audio Track');
+        await input.fill('Toggle Metronome');
 
         // The top match must be the active selection — not a stale hovered index.
-        const topMatch = palette.getByRole('option', { name: /Add Audio Track/i });
+        const topMatch = palette.getByRole('option', { name: /Toggle Metronome/i });
         await expect(topMatch).toBeVisible();
         await expect(topMatch).toHaveAttribute('aria-selected', 'true');
 
