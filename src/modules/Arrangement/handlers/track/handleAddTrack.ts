@@ -93,6 +93,7 @@ function executeAddTrackAction(action: AddTrackAction, context?: HandlerMaterial
 
 export const handleAddTrack = createHandler<'addTrack'>({
     validateSessionEntry: isAddTrackSessionEntry,
+    materializeCommandArgumentsAt: 'execution',
     materializeCommandArguments: (action, context) => {
         ensureTrackName(action, context);
     },

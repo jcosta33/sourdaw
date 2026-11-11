@@ -98,6 +98,15 @@ Report a probe that cannot run with its exact mutation, named check and limitati
    Publish newer same-slot authority from inside each guarded terminal or hydrate callback, with
    projectors that return null or throw and no configured initial value. A failed initialization must
    replay its original error to later requests with no second construction or ready reply.
+   Sequential completed additions hid #6202's default-name read before the snapshot wait. Start both real UI
+   commands while that transaction is held, observe both wait admissions, then release and await every command.
+   Distinct IDs, complete persisted track arrays and recorded history names must agree before requiring distinct
+   consecutive names; transient selection and ghost state are not persisted-slot fields. Reverting only the owner's
+   late naming phase must fail `handleAddTrackDefaultName.integration.spec.ts`. Cleanup releases and settles every
+   created promise even when an earlier assertion fails; a later await preserves the original command failure.
+   A batch materializes arguments before member writes: addition-only prefixes miss earlier renames, removals and
+   restorations. Exercise real rename/remove-then-add groups and producer-captured restore tuples, distinguishing
+   actual stored names from event metadata; a terminal name assertion without raw/history agreement cannot prove it.
    (#2357, #4420, #5615, #5639, #4586, #5677, #2747, #5461, #5091, #5556, #5520, #806, #576, #5227, #187)
 
 5. **The spec collects only where an optional native binary happens to be installed.**
