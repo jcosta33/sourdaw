@@ -323,6 +323,79 @@ describe('Crust numeric controller with real Command and CRDT', () => {
         expect(captureUndoHistory().past).toHaveLength(1);
     });
 
+    it('reports canonical and restoration failures once with the original error', async () => {
+        const runtimeRelease = vi.fn();
+        vi.spyOn(engineApi, 'captureDeviceParameterRuntimeWriteAuthority').mockReturnValueOnce({
+            owner: Symbol('controlled engine receipt'),
+            isCurrent: () => true,
+            canCommit: () => true,
+            release: runtimeRelease,
+        });
+        const edit = controller();
+        await edit.change('gain', 9, true);
+        audio.updateDeviceParam
+            .mockImplementationOnce(() => {
+                throw new Error('Canonical write failed');
+            })
+            .mockImplementation(() => {
+                throw new Error('Restoration failed');
+            });
+
+        const failed = edit.settle('gain');
+        await failed.catch(() => undefined);
+
+        expect(notices).toHaveLength(1);
+        expect(notices[0]?.level).toBe('error');
+        expect(notices[0]?.message).toContain('Canonical write failed');
+        expect(notices[0]?.message).toContain('Runtime parameter rollback failed');
+        expect(notices[0]?.message).toContain('Restoration failed');
+        expect(runtimeRelease).toHaveBeenCalledTimes(1);
+        expect(rawDevice().parameterValues.gain).toBe(0);
+        expect(captureUndoHistory().past).toHaveLength(0);
+    });
+
+    it('restores and releases after persistent recording failures before a healthy edit', async () => {
+        const recordingRelease = vi.fn(() => {
+            throw new Error('Recording release failed');
+        });
+        const runtimeRelease = vi.fn();
+        vi.spyOn(automationApi, 'captureTouchAutomationRecordingAuthority').mockReturnValueOnce({
+            owner: Symbol('controlled recording receipt'),
+            release: recordingRelease,
+        });
+        vi.spyOn(engineApi, 'captureDeviceParameterRuntimeWriteAuthority').mockReturnValueOnce({
+            owner: Symbol('controlled engine receipt'),
+            isCurrent: () => true,
+            canCommit: () => true,
+            release: runtimeRelease,
+        });
+        const edit = controller();
+        await edit.change('gain', 9, true);
+
+        const failed = edit.settle('gain');
+        await failed.catch(() => undefined);
+
+        expect(recordingRelease).toHaveBeenCalledTimes(2);
+        expect(runtimeRelease).toHaveBeenCalledTimes(1);
+        expect(notices).toEqual([{ message: 'Recording release failed', level: 'error' }]);
+        expect(rawDevice().parameterValues.gain).toBe(0);
+        expect(projectedDevice()).toEqual(rawDevice());
+        expect(getCrustState(DEVICE).patch.gain).toBe(0);
+        expect(audio.updateDeviceParam).toHaveBeenLastCalledWith(TRACK, DEVICE, 'gain', 0);
+        expect(captureUndoHistory().past).toHaveLength(0);
+
+        const token = edit.start('gain');
+        const recovered = edit.change('gain', 6);
+        expect(token).toBeGreaterThan(0);
+        expect(recovered).not.toBe(failed);
+        await recovered;
+
+        expect(rawDevice().parameterValues.gain).toBe(6);
+        expect(projectedDevice()).toEqual(rawDevice());
+        expect(getCrustState(DEVICE).patch.gain).toBe(6);
+        expect(captureUndoHistory().past).toHaveLength(1);
+    });
+
     it.each(['removed', 'duplicate', 'frozen'] as const)(
         'refuses a preview terminal after its %s target changes',
         async (change) => {

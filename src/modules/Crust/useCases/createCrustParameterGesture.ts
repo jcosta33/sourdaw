@@ -100,17 +100,33 @@ function restorePreview(scope: Scope, gesture: Gesture): void {
     hydrate(scope);
 }
 
+type SettlementFailure = { error: unknown };
+
 function retire(scope: Scope, gesture: Gesture, restore: boolean): void {
     if (restore) {
         gesture.cancelled = true;
     }
-    gesture.recording.release();
+    let failure: SettlementFailure | undefined;
+    try {
+        gesture.recording.release();
+    } catch (error) {
+        failure = { error };
+    }
     try {
         if (restore) {
             restorePreview(scope, gesture);
         }
+    } catch (error) {
+        failure ??= { error };
     } finally {
-        gesture.runtime.release();
+        try {
+            gesture.runtime.release();
+        } catch (error) {
+            failure ??= { error };
+        }
+    }
+    if (failure) {
+        throw failure.error;
     }
 }
 
@@ -209,17 +225,19 @@ function notifyCommitFailure(error: unknown): void {
     notifyUser(error instanceof Error ? error.message : 'Crust parameter change failed', 'error');
 }
 
-function finishCommit(scope: Scope, gesture: Gesture): void {
+function finishCommit(scope: Scope, gesture: Gesture): SettlementFailure | undefined {
     try {
         retire(scope, gesture, !gesture.committed);
+        return undefined;
     } catch (error) {
-        notifyCommitFailure(error);
+        return { error };
     } finally {
         deleteInstalledGesture(scope, gesture);
     }
 }
 
 async function commit(scope: Scope, gesture: Gesture): Promise<void> {
+    let failure: SettlementFailure | undefined;
     try {
         gesture.recording.release();
         const value = gesture.preview;
@@ -257,9 +275,13 @@ async function commit(scope: Scope, gesture: Gesture): Promise<void> {
             }
         );
     } catch (error) {
-        notifyCommitFailure(error);
+        failure = { error };
     } finally {
-        finishCommit(scope, gesture);
+        const cleanupFailure = finishCommit(scope, gesture);
+        failure ??= cleanupFailure;
+        if (failure) {
+            notifyCommitFailure(failure.error);
+        }
     }
 }
 
