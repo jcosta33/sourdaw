@@ -135,16 +135,20 @@ function retire(scope: Scope, gesture: Gesture, restore: boolean): SettlementFai
     return errors.length > 0 ? { errors } : undefined;
 }
 
-function cancel(scope: Scope, gesture: Gesture, reacquirable = false): void {
+function collectCancellation(scope: Scope, gesture: Gesture, reacquirable = false): SettlementFailure | undefined {
     gesture.cancelled = true;
     gesture.reacquirable = reacquirable;
+    return retire(scope, gesture, !gesture.committed);
+}
+
+function cancel(scope: Scope, gesture: Gesture, reacquirable = false): void {
     try {
-        const failure = retire(scope, gesture, !gesture.committed);
+        const failure = collectCancellation(scope, gesture, reacquirable);
         if (failure) {
-            notifyUser(failureDetail(failure.errors[0], 'Crust preview restoration failed'), 'error');
+            notifySettlementFailure(failure.errors, 'Crust preview restoration failed');
         }
     } catch (error) {
-        notifyUser(failureDetail(error, 'Crust preview restoration failed'), 'error');
+        notifySettlementFailure([error], 'Crust preview restoration failed');
     }
 }
 
@@ -229,10 +233,10 @@ function deleteInstalledGesture(scope: Scope, gesture: Gesture): void {
     }
 }
 
-function notifyCommitFailure(errors: unknown[]): void {
+function notifySettlementFailure(errors: unknown[], fallback = 'Crust parameter change failed'): void {
     let message = '';
     for (const error of errors) {
-        const detail = failureDetail(error, 'Crust parameter change failed');
+        const detail = failureDetail(error, fallback);
         if (message.includes(detail)) {
             continue;
         }
@@ -295,7 +299,7 @@ async function commit(scope: Scope, gesture: Gesture): Promise<void> {
         const cleanupFailure = finishCommit(scope, gesture);
         const errors = [...(failure?.errors ?? []), ...(cleanupFailure?.errors ?? [])];
         if (errors.length > 0) {
-            notifyCommitFailure(errors);
+            notifySettlementFailure(errors);
         }
     }
 }
@@ -327,8 +331,8 @@ function applyChange(
         gesture.pending = commit(scope, gesture);
         return gesture.pending;
     } catch (error) {
-        cancel(scope, gesture, true);
-        notifyUser(error instanceof Error ? error.message : 'Crust parameter preview failed', 'error');
+        const cleanupFailure = collectCancellation(scope, gesture, true);
+        notifySettlementFailure([error, ...(cleanupFailure?.errors ?? [])], 'Crust parameter preview failed');
         return Promise.resolve();
     }
 }

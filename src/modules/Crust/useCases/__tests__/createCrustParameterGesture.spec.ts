@@ -586,6 +586,97 @@ describe('Crust numeric controller with real Command and CRDT', () => {
         expect(captureUndoHistory().past).toHaveLength(1);
     });
 
+    it('reports every distinct explicit-cancel cleanup fault once', async () => {
+        const recordingRelease = vi.fn(() => {
+            throw new Error('Cancel recording release failed');
+        });
+        const runtimeRelease = vi.fn(() => {
+            throw new Error('Cancel runtime release failed');
+        });
+        vi.spyOn(automationApi, 'captureTouchAutomationRecordingAuthority').mockReturnValueOnce({
+            owner: Symbol('controlled recording receipt'),
+            release: recordingRelease,
+        });
+        vi.spyOn(engineApi, 'captureDeviceParameterRuntimeWriteAuthority').mockReturnValueOnce({
+            owner: Symbol('controlled engine receipt'),
+            isCurrent: () => true,
+            canCommit: () => true,
+            release: runtimeRelease,
+        });
+        const edit = controller();
+        await edit.change('gain', 9, true);
+        audio.updateDeviceParam.mockImplementation(() => {
+            throw new Error('Cancel restoration failed');
+        });
+
+        edit.cancel('gain');
+
+        expect(notices).toHaveLength(1);
+        const message = notices[0]?.message ?? '';
+        expect(message).toContain('Cancel recording release failed');
+        expect(message).toContain('Cancel restoration failed');
+        expect(message).toContain('Cancel runtime release failed');
+        expect(recordingRelease).toHaveBeenCalledTimes(1);
+        expect(runtimeRelease).toHaveBeenCalledTimes(1);
+        expect(rawDevice().parameterValues.gain).toBe(0);
+        expect(getCrustState(DEVICE).patch.gain).toBe(0);
+        expect(captureUndoHistory().past).toHaveLength(0);
+
+        audio.updateDeviceParam.mockReset();
+        await edit.change('gain', 6);
+        expect(rawDevice().parameterValues.gain).toBe(6);
+        expect(getCrustState(DEVICE).patch.gain).toBe(6);
+        expect(captureUndoHistory().past).toHaveLength(1);
+    });
+
+    it('reports preview and cleanup faults together for one failed terminal', async () => {
+        const recordingRelease = vi.fn(() => {
+            throw new Error('Preview recording release failed');
+        });
+        const runtimeRelease = vi.fn(() => {
+            throw new Error('Preview runtime release failed');
+        });
+        vi.spyOn(automationApi, 'captureTouchAutomationRecordingAuthority').mockReturnValueOnce({
+            owner: Symbol('controlled recording receipt'),
+            release: recordingRelease,
+        });
+        vi.spyOn(engineApi, 'captureDeviceParameterRuntimeWriteAuthority').mockReturnValueOnce({
+            owner: Symbol('controlled engine receipt'),
+            isCurrent: () => true,
+            canCommit: () => true,
+            release: runtimeRelease,
+        });
+        const edit = controller();
+        await edit.change('gain', 9, true);
+        audio.updateDeviceParam
+            .mockImplementationOnce(() => {
+                throw new Error('Preview write failed');
+            })
+            .mockImplementation(() => {
+                throw new Error('Preview restoration failed');
+            });
+
+        await edit.change('gain', 6);
+
+        expect(notices).toHaveLength(1);
+        const message = notices[0]?.message ?? '';
+        expect(message).toContain('Preview write failed');
+        expect(message).toContain('Preview recording release failed');
+        expect(message).toContain('Preview restoration failed');
+        expect(message).toContain('Preview runtime release failed');
+        expect(recordingRelease).toHaveBeenCalledTimes(1);
+        expect(runtimeRelease).toHaveBeenCalledTimes(1);
+        expect(rawDevice().parameterValues.gain).toBe(0);
+        expect(getCrustState(DEVICE).patch.gain).toBe(0);
+        expect(captureUndoHistory().past).toHaveLength(0);
+
+        audio.updateDeviceParam.mockReset();
+        await edit.change('gain', 6);
+        expect(rawDevice().parameterValues.gain).toBe(6);
+        expect(getCrustState(DEVICE).patch.gain).toBe(6);
+        expect(captureUndoHistory().past).toHaveLength(1);
+    });
+
     it('restores an emitted preview after a later engine failure without adding history', async () => {
         const edit = controller();
         await edit.change('gain', 9, true);
