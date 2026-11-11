@@ -44,7 +44,6 @@ import { resetMetronomeBeat } from '../scheduling/resetMetronomeBeat';
 import { scheduleAudioClips } from '../scheduling/scheduleAudioClips';
 import { scheduleMetronome } from '../scheduling/scheduleMetronome';
 import { scheduleMidiNotes } from '../scheduling/scheduleMidiNotes';
-import { retireSupersededMidiMedia } from './retireSupersededMidiMedia';
 import { commitRecoveredAudioRecording } from '../transportControls/commitRecoveredAudioRecording';
 import { createAutomaticPunchEnding } from '../transportControls/createAutomaticPunchEnding';
 import { createRecordingCaptureClocks } from '../transportControls/createRecordingCaptureClocks';
@@ -67,6 +66,7 @@ import {
     SCHEDULE_AHEAD_SECONDS,
 } from './projectLoopSeamWindow';
 import { readNativeEngineCursorBeats } from './readNativeEngineCursorBeats';
+import { retireSupersededMidiMedia } from './retireSupersededMidiMedia';
 import { schedulerLookAheadBeats } from './schedulerLookAheadBeats';
 import { schedulerSession, stopActiveSources } from './schedulerSession';
 import { schedulerTimingDiagnostics } from './schedulerTimingDiagnostics';
@@ -1633,12 +1633,23 @@ export function startPlayheadScheduler(
             windowBufferPool = loopAudioSchedule.poolAt(schedulerSession.pendingSeam.seamAudioTime, true);
         }
         const bufferInput = { transport: current, changes, position: publishedBeat, audioTime: now };
-        function retireBeforeMidi(pool: typeof dyingBufferPool): boolean {
+        function retireMidiMediaForReplacement(
+            pool: typeof dyingBufferPool,
+            replacement: 'frozen' | 'unfrozen'
+        ): boolean {
             if (loopAudioSchedule.active || !cancellation.isCurrent()) {
                 return false;
             }
+            const tracks = trackStore.value?.tracks.filter((track) => {
+                if (track.kind !== 'midi') {
+                    return false;
+                }
+                const hasFrozenReplacement =
+                    track.freezeState.status === 'frozen' && Boolean(track.freezeState.frozenBufferId);
+                return hasFrozenReplacement === (replacement === 'frozen');
+            });
             return retireSupersededMidiMedia(
-                trackStore.value?.tracks.filter((track) => track.kind === 'midi') ?? [],
+                tracks ?? [],
                 ctx,
                 pool?.audio ?? schedulerSession.scheduledAudioClips,
                 pool?.frozen ?? schedulerSession.scheduledFrozenTracks,
@@ -1718,7 +1729,7 @@ export function startPlayheadScheduler(
             // the position the dying pass holds at `now`, so its last events
             // land at their own grid times — all at or before the seam instant.
             scheduleMetronome(seam.passHighWater, seam.passUpTo, seam.passPosition, current, eventSchedulingAnchor);
-            mediaOwnerRetired = retireBeforeMidi(dyingBufferPool);
+            mediaOwnerRetired = retireMidiMediaForReplacement(dyingBufferPool, 'frozen');
             const retainDyingFrozen = loopAudioSchedule.watchFrozenMidiWindow(
                 dyingBufferPool,
                 seam.passHighWater,
@@ -1751,6 +1762,7 @@ export function startPlayheadScheduler(
             if (!cancellation.isCurrent()) {
                 return;
             }
+            mediaOwnerRetired = retireMidiMediaForReplacement(dyingBufferPool, 'unfrozen') || mediaOwnerRetired;
             // Audio clips read their window end inclusively, so shave one beat
             // epsilon: a clip sitting exactly on loopEnd is post-loopEnd
             // material and must not be started by the dying pass — the seam
@@ -1808,7 +1820,7 @@ export function startPlayheadScheduler(
             // stored controllers are restored to what is in force there. The
             // dying window above already posted everything up to the seam, which
             // is why this path lifts nothing frameless.
-            mediaOwnerRetired = retireBeforeMidi(incomingBufferPool);
+            mediaOwnerRetired = retireMidiMediaForReplacement(incomingBufferPool, 'frozen');
             const retainIncomingFrozen = loopAudioSchedule.watchFrozenMidiWindow(
                 incomingBufferPool,
                 current.loopStart,
@@ -1838,6 +1850,7 @@ export function startPlayheadScheduler(
             if (!cancellation.isCurrent()) {
                 return;
             }
+            mediaOwnerRetired = retireMidiMediaForReplacement(incomingBufferPool, 'unfrozen') || mediaOwnerRetired;
             if (!loopAudioSchedule.active) {
                 scheduleAudioClips(
                     current.loopStart,
@@ -1874,7 +1887,7 @@ export function startPlayheadScheduler(
             // A late wrap, a follow-action jump, an edit's re-emit and a stall's
             // skip open this window at their destination, so it restores the
             // stored controllers there too.
-            mediaOwnerRetired = retireBeforeMidi(windowBufferPool);
+            mediaOwnerRetired = retireMidiMediaForReplacement(windowBufferPool, 'frozen');
             const retainWindowFrozen = loopAudioSchedule.watchFrozenMidiWindow(
                 windowBufferPool,
                 schedulerSession.lastScheduledBeat,
@@ -1904,6 +1917,7 @@ export function startPlayheadScheduler(
             if (!cancellation.isCurrent()) {
                 return;
             }
+            mediaOwnerRetired = retireMidiMediaForReplacement(windowBufferPool, 'unfrozen') || mediaOwnerRetired;
             if (!loopAudioSchedule.active) {
                 scheduleAudioClips(
                     schedulerSession.lastScheduledBeat,

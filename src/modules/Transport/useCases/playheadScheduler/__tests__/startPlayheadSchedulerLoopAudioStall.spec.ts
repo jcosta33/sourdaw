@@ -516,7 +516,9 @@ async function reproduceSeamStall(
             .toEqual([ANCHOR_FRAME + (pass + 1) * passFrames, ANCHOR_FRAME + (pass + 1) * passFrames]);
     }
 
+    const pitch60EmissionsBeforeRecovery = scheduleNoteSpy.mock.calls.filter((call) => call[2] === 60).length;
     await tickAt(recoveryFrame);
+    const pitch60EmissionsAfterRecovery = scheduleNoteSpy.mock.calls.filter((call) => call[2] === 60).length;
     expect(playheadWrapCountRef.current).toBe(crossedSeams);
     expect(playheadClockRef.beat).toBeCloseTo((recoveryFrame % passFrames) / 24_000, 12);
     const afterRecovery = snapshotSources();
@@ -536,6 +538,7 @@ async function reproduceSeamStall(
             .toEqual([]);
         expect.soft(scheduled.map((source) => frame(effectiveEnd(source)))).toEqual([nextSeam, nextSeam]);
     }
+    return { pitch60EmissionsBeforeRecovery, pitch60EmissionsAfterRecovery };
 }
 
 beforeEach(() => {
@@ -599,9 +602,14 @@ describe('browser buffer admission before a loop-seam main-thread stall (#6277)'
         await reproduceSeamStall(6_000, 5_952, true, true);
         expect(scheduleNoteSpy).not.toHaveBeenCalled();
     });
-    it('pre-submits mixed MIDI-track audio once per pass while retaining MIDI notes across a stall', async () => {
-        await reproduceSeamStall(6_000, 5_952, false, true);
-        expect(scheduleNoteSpy.mock.calls.some((call) => call[2] === 60)).toBe(true);
+    it('emits a fresh MIDI note on recovery while pre-submitting mixed MIDI-track audio once per pass', async () => {
+        const { pitch60EmissionsBeforeRecovery, pitch60EmissionsAfterRecovery } = await reproduceSeamStall(
+            6_000,
+            5_952,
+            false,
+            true
+        );
+        expect(pitch60EmissionsAfterRecovery).toBeGreaterThan(pitch60EmissionsBeforeRecovery);
     });
 });
 
@@ -630,7 +638,7 @@ describe('mixed MIDI media ownership during non-loop playback', () => {
         expect(frame(effectiveEnd(bake!))).toBeLessThanOrEqual(frame(original[1]!.start.when));
     });
 
-    it('retires the frozen owner before a preceding MIDI rack await can delay the original rejoin', async () => {
+    it('retains the frozen owner through a preceding MIDI rack await until the original rejoins', async () => {
         const mixed = seedTrack('left', 0.4, false, 0, true);
         const waiting = createTrack({ id: 'waiting', name: 'waiting', kind: 'midi', withoutDefaultDevice: true });
         waiting.devices = [
@@ -676,7 +684,7 @@ describe('mixed MIDI media ownership during non-loop playback', () => {
         try {
             await vi.waitFor(() => expect(processYeastMidi).toHaveBeenCalledOnce(), { interval: 1 });
             expect(schedulerSession.tickInFlight).toBe(true);
-            expect(snapshotSources().find((source) => source.bufferId === 'bake')?.stops).toHaveLength(1);
+            expect(snapshotSources().find((source) => source.bufferId === 'bake')?.stops).toHaveLength(0);
             expect(snapshotSources().filter((source) => source.bufferId === 'left-buffer')).toHaveLength(1);
             ctxTime.now += 0.005;
         } finally {
