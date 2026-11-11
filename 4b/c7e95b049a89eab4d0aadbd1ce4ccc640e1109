@@ -1,0 +1,16 @@
+src/infra/dialogService/__tests__/useNotificationQueue.spec.ts
+  h_beb54bf43b47b7 118,123,125-127,132,139-140
+src/infra/dialogService/useNotificationQueue.ts
+  h_beb54bf43b47b7 102
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4bc7e95b049a89eab4d0aadbd1ce4ccc640e1109",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
