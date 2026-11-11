@@ -1,0 +1,22 @@
+src/modules/Automation/useCases/automationRecording/__tests__/releaseTouchAutomation.spec.ts
+  h_beb54bf43b47b7 4,7,9,15,31,43,117-154
+src/modules/Automation/useCases/automationRecording/captureTouchAutomationRecordingAuthority.ts
+  h_beb54bf43b47b7 3,18-20
+src/modules/Automation/useCases/automationRecording/discardTouchAutomation.ts
+  h_beb54bf43b47b7 1-15
+src/modules/Crust/useCases/__tests__/createCrustParameterGesture.spec.ts
+  h_beb54bf43b47b7 13,15-19,93-117,285,301,318,326,341,343-346,357,391,399,413,416,418-420,431,435-437,444,472,622-724,735,779
+src/modules/Crust/useCases/createCrustParameterGesture.ts
+  h_beb54bf43b47b7 112-117,123-127,148-151,238,261,263-266,274,278,298-304,313,321,428-430
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2b9cfb932639286fb3477c1513958e23dbb3d51e",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
