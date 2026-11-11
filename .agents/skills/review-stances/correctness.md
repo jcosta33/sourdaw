@@ -45,7 +45,8 @@ shared Git publication in `trusted-script-delivery.md`.
    selector or layout has readers the author did not name. Grep `src/**/__tests__`, `tests/e2e/**` and
    `scripts/desktopLatency*.ts` for the field, type, literal placeholder or label, name every hit, and
    require a run of each (`pendingEffectContinuations`, #3506; compact StatusBar moved "Out" behind a
-   popover the nightly harness reads by label).
+   popover the nightly harness reads by label). For a reserved routing endpoint such as `hw_out`, the
+   component witness must assert both its human-readable label and the raw ID retained by selection.
 6. **Boundaries and quantized clocks.** Probe one quantum each side of every boundary: the value the
    report named and its neighbour. On a quantized clock list every strict inequality and require each
    remaining one justified by uniqueness (trace binder starts vs ends, #4068); cluster tolerances need
