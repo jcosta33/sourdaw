@@ -116,13 +116,13 @@ describe('loop command undo and redo', () => {
             expect(getCrdtDoc<RootDocument>('root')?.transport).toMatchObject({
                 loopStart: 2,
                 loopEnd: 12,
-                isLooping: false,
+                isLooping: true,
             });
         });
 
         await undo();
 
-        expect(loopTriple()).toEqual({ loopStart: 2, loopEnd: 12, isLooping: false });
+        expect(loopTriple()).toEqual({ loopStart: 2, loopEnd: 12, isLooping: true });
         expect(undoStore.value?.past).toHaveLength(1);
         expect(getCrdtDoc<RootDocument>('root')?.transport).toMatchObject(loopTriple());
     });

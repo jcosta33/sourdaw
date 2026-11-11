@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { playheadPositionRef, transportStore } from '#/modules/Transport/stores';
-import { seekPlayhead, setLoopRegion, setPlayback } from '#/modules/Transport/useCases';
+import { seekPlayhead, setLoopEnabled, setLoopRegion, setPlayback } from '#/modules/Transport/useCases';
 
 import { type MusicalRangeReference } from '../../../models/MusicalRange';
 import { type ArrangementSection } from '../../../models/Marker';
@@ -17,6 +17,7 @@ vi.mock('#/modules/Transport/stores', () => ({
 vi.mock('#/modules/Transport/useCases', () => ({
     getTransportState: vi.fn(() => ({ playheadPosition: 0 })),
     seekPlayhead: vi.fn(),
+    setLoopEnabled: vi.fn(() => true),
     setLoopRegion: vi.fn(() => true),
     setPlayback: vi.fn(),
 }));
@@ -56,6 +57,7 @@ beforeEach(() => {
         return { kind: 'resolved', startBeat: range.startBeat, endBeat: range.endBeat };
     });
     vi.mocked(setLoopRegion).mockReturnValue(true);
+    vi.mocked(setLoopEnabled).mockReturnValue(true);
 });
 
 describe('handleNavigateSection', () => {
@@ -117,6 +119,17 @@ describe('handleRehearseSection', () => {
 
         expect(readMusicalRange).toHaveBeenCalledWith({ range: { startBeat: 4.5, endBeat: 12.75 } });
         expect(setLoopRegion).toHaveBeenCalledExactlyOnceWith(4.5, 12.75, loop);
+        if (loop) {
+            expect(setLoopEnabled).not.toHaveBeenCalled();
+        } else {
+            expect(setLoopEnabled).toHaveBeenCalledExactlyOnceWith(false);
+            expect(vi.mocked(setLoopRegion).mock.invocationCallOrder[0]!).toBeLessThan(
+                vi.mocked(setLoopEnabled).mock.invocationCallOrder[0]!
+            );
+            expect(vi.mocked(setLoopEnabled).mock.invocationCallOrder[0]!).toBeLessThan(
+                vi.mocked(seekPlayhead).mock.invocationCallOrder[0]!
+            );
+        }
         expect(seekPlayhead).toHaveBeenCalledExactlyOnceWith(4.5);
         expect(setPlayback).toHaveBeenCalledExactlyOnceWith(true);
         expect(vi.mocked(setLoopRegion).mock.invocationCallOrder[0]!).toBeLessThan(
@@ -125,6 +138,17 @@ describe('handleRehearseSection', () => {
         expect(vi.mocked(seekPlayhead).mock.invocationCallOrder[0]!).toBeLessThan(
             vi.mocked(setPlayback).mock.invocationCallOrder[0]!
         );
+    });
+
+    it('does not seek or play when disabling the loop cannot be written', () => {
+        vi.mocked(setLoopEnabled).mockReturnValue(false);
+
+        handleRehearseSection.execute({ type: 'rehearseSection', payload: { sectionId: 'chorus', loop: false } });
+
+        expect(setLoopRegion).toHaveBeenCalledExactlyOnceWith(32, 48, false);
+        expect(setLoopEnabled).toHaveBeenCalledExactlyOnceWith(false);
+        expect(seekPlayhead).not.toHaveBeenCalled();
+        expect(setPlayback).not.toHaveBeenCalled();
     });
 
     it('re-resolves the section ID after an edit instead of reusing a context-menu range', () => {

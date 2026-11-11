@@ -20,7 +20,7 @@ describe('handleSetLoopRegion', () => {
             ...defaultTransportState,
             loopStart: 4,
             loopEnd: 12,
-            isLooping: true,
+            isLooping: false,
         });
     });
 
@@ -38,7 +38,7 @@ describe('handleSetLoopRegion', () => {
                 type: 'restoreLoopRegion',
                 payload: {
                     expected: { loopStart: 0, loopEnd: 8, isLooping: false },
-                    replacement: { loopStart: 4, loopEnd: 12, isLooping: true },
+                    replacement: { loopStart: 4, loopEnd: 12, isLooping: false },
                 },
             },
         });
@@ -50,7 +50,7 @@ describe('handleSetLoopRegion', () => {
         ).toBe('Set loop region from beat 4 to 12');
     });
 
-    it('treats matching bounds as a write only when the command must disable looping', () => {
+    it('compares only normalized bounds for no-op detection', () => {
         vi.mocked(getTransportState).mockReturnValue({
             ...defaultTransportState,
             loopStart: 4,
@@ -59,7 +59,7 @@ describe('handleSetLoopRegion', () => {
         });
 
         expect(handleSetLoopRegion.isNoop?.({ type: 'setLoopRegion', payload: { startBeat: 12, endBeat: 4 } })).toBe(
-            false
+            true
         );
 
         vi.mocked(getTransportState).mockReturnValue({

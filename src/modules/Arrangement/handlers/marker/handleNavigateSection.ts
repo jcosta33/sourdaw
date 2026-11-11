@@ -16,10 +16,12 @@ export const handleNavigateSection = createHandler<'navigateSection'>({
         const sections = (getMarkerState()?.sections ?? [])
             .filter((section) => section.endBeat > section.startBeat)
             .sort(compareSections);
-        const target =
-            action.payload.direction === 'next'
-                ? sections.find((section) => section.startBeat > playhead)
-                : sections.findLast((section) => section.startBeat < playhead);
+        let target: ArrangementSection | undefined;
+        if (action.payload.direction === 'next') {
+            target = sections.find((section) => section.startBeat > playhead);
+        } else {
+            target = sections.findLast((section) => section.startBeat < playhead);
+        }
         if (!target) {
             return;
         }

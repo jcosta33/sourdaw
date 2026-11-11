@@ -15,6 +15,7 @@ import {
     normalizeTimelineMinimapHeight,
     TIMELINE_MINIMAP_DEFAULT_HEIGHT,
 } from '#/utils/TimelineMinimap/timelineMinimapHeight';
+import { resolveToken } from '#/utils/UI/resolveToken';
 
 import { SECTION_COLORS } from '../../models/ColorPalette';
 import { type ArrangementSection } from '../../models/Marker';
@@ -187,6 +188,9 @@ export const TimelineMinimap = ({ height = TIMELINE_MINIMAP_DEFAULT_HEIGHT }: Ti
                     first.endBeat - second.endBeat ||
                     first.id.localeCompare(second.id)
             );
+        const sectionLabelColor = resolveToken('--color-text-primary', '#eaeaea');
+        ctx.font = '9px sans-serif';
+        ctx.textBaseline = 'middle';
         let previousLabelRight = -Infinity;
         for (const [index, section] of orderedSections.entries()) {
             const startX = section.startBeat * beatsToPixels;
@@ -212,10 +216,8 @@ export const TimelineMinimap = ({ height = TIMELINE_MINIMAP_DEFAULT_HEIGHT }: Ti
             if (labelRight > endX - 3 || labelRight > canvasWidth || labelX < previousLabelRight + 4) {
                 continue;
             }
-            ctx.fillStyle = 'rgba(255, 255, 255, 0.86)';
+            ctx.fillStyle = sectionLabelColor;
             ctx.globalAlpha = 0.9;
-            ctx.font = '9px sans-serif';
-            ctx.textBaseline = 'middle';
             ctx.fillText(section.name, labelX, sectionLabelHeight / 2);
             previousLabelRight = labelRight;
         }

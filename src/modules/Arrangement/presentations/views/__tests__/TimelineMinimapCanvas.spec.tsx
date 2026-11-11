@@ -1,6 +1,8 @@
 import { act, render } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { resetResolvedTokenCache } from '#/utils/UI/resolveToken';
+
 import { type ArrangementSection } from '../../../models/Marker';
 import { TimelineMinimap } from '../TimelineMinimap';
 
@@ -102,14 +104,30 @@ const context = {
     font: '',
     textBaseline: '',
     fillText: vi.fn(),
-    measureText: vi.fn((text: string) => ({ width: text.length * 5 })),
+    measureText: vi.fn(),
 };
+
+const labelFillStyles: string[] = [];
+const measuredLabelFonts: string[] = [];
 
 describe('TimelineMinimap canvas sizing and drawing', () => {
     let cssWidth = 200;
 
     beforeEach(() => {
         vi.clearAllMocks();
+        resetResolvedTokenCache();
+        document.documentElement.style.removeProperty('--color-text-primary');
+        labelFillStyles.length = 0;
+        measuredLabelFonts.length = 0;
+        context.fillStyle = '';
+        context.font = '10px sans-serif';
+        context.fillText.mockImplementation(() => {
+            labelFillStyles.push(context.fillStyle);
+        });
+        context.measureText.mockImplementation((text: string) => {
+            measuredLabelFonts.push(context.font);
+            return { width: text.length * 5 };
+        });
         stores.markers = { markers: [], sections: [] };
         resizeObserverHarness.callback = null;
         densityObserverHarness.query = null;
@@ -145,6 +163,8 @@ describe('TimelineMinimap canvas sizing and drawing', () => {
     });
 
     afterEach(() => {
+        document.documentElement.style.removeProperty('--color-text-primary');
+        resetResolvedTokenCache();
         vi.restoreAllMocks();
         vi.unstubAllGlobals();
     });
@@ -235,6 +255,19 @@ describe('TimelineMinimap canvas sizing and drawing', () => {
         expect(context.strokeRect.mock.invocationCallOrder[0]).toBeGreaterThan(
             context.fillText.mock.invocationCallOrder.at(-1)!
         );
+    });
+
+    it('resolves label color from the theme and sets the font before every measurement', () => {
+        document.documentElement.style.setProperty('--color-text-primary', '#123456');
+        stores.markers.sections = [
+            { id: 'intro', name: 'Intro', startBeat: 0, endBeat: 16, color: '#aa3300' },
+            { id: 'verse', name: 'Verse', startBeat: 16, endBeat: 32, color: '#00aa33' },
+        ];
+
+        render(<TimelineMinimap height={28} />);
+
+        expect(labelFillStyles).toEqual(['#123456', '#123456']);
+        expect(measuredLabelFonts).toEqual(['9px sans-serif', '9px sans-serif']);
     });
 
     it('suppresses labels at dense landmark spacing without dropping boundaries or the viewport', () => {

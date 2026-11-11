@@ -50,6 +50,7 @@ export { adjustTempoPoint } from './tempoMapping/operations/adjustTempoPoint';
 export { panicAllNotes } from './transportControls/panicAllNotes';
 export { seekPlayhead } from './transportControls/seekPlayhead';
 export { setCountInBars } from './transportControls/setCountInBars';
+export { setLoopEnabled } from './transportControls/setLoopEnabled';
 export { setLoopRegion } from './transportControls/setLoopRegion';
 export { setMetronomeVolume } from './transportControls/setMetronomeVolume';
 export { setPreRollBars } from './transportControls/setPreRollBars';

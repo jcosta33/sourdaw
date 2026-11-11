@@ -1,4 +1,4 @@
-import { seekPlayhead, setLoopRegion, setPlayback } from '#/modules/Transport/useCases';
+import { seekPlayhead, setLoopEnabled, setLoopRegion, setPlayback } from '#/modules/Transport/useCases';
 import { createHandler } from '#/utils/createHandler';
 
 import { readMusicalRange } from '../../stores/readMusicalRange';
@@ -12,6 +12,9 @@ export const handleRehearseSection = createHandler<'rehearseSection'>({
         }
         const range = readMusicalRange({ range: { startBeat: section.startBeat, endBeat: section.endBeat } });
         if (range.kind !== 'resolved' || !setLoopRegion(range.startBeat, range.endBeat, action.payload.loop)) {
+            return;
+        }
+        if (!action.payload.loop && !setLoopEnabled(false)) {
             return;
         }
         seekPlayhead(range.startBeat);
