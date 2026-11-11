@@ -1,12 +1,14 @@
 ---
 name: state-and-write-paths
 description: >-
-    Classify every state value and route every write through its owning boundary
-    before adding or changing state. ALWAYS apply when adding, editing, or reviewing
-    project truth, stores, selectors/projections, undo/redo, commands, events, async
-    fetch/cache state, UI state, or telemetry — even if it looks like "just one more
-    store field". Skip pure presentational props with no persistence, and
-    engine-internal RT buffers.
+    Classify every state value into one state category and choose its owning write
+    path before adding or changing state. ALWAYS apply when adding, editing, or
+    reviewing where a value lives — project truth, stores, selectors/projections,
+    commands, events, async fetch/cache state, UI state, runtime state, or
+    telemetry — and who may write it, even if it looks like "just one more store
+    field". Skip transaction, undo, and persistence mechanics (crdt-collaboration),
+    import and layer placement (architecture), pure presentational props with no
+    persistence, and engine-internal RT buffers.
 ---
 
 ## Purpose
@@ -24,9 +26,9 @@ Unclassified state is how DAW truth corrupts: a store field that is half project
 | Persistent UI     | Local prefs (zoom, layout, sidebar)                                                                  | Prefs storage — not the project file                       |
 | Ephemeral UI      | Selection, tool, drag, hover                                                                         | Feature/view; disposable                                   |
 | Local component   | Draft input, popover open                                                                            | `useState` / form in that component                        |
-| Engine/runtime    | Live graph, playhead execution, meters                                                               | Engine only — non-serializable                             |
+| Engine/runtime    | `AudioContext`, audio nodes, live graph, plugin instances                                            | Engine/runtime only — non-serializable                     |
 | Async fetch/cache | Server/query results                                                                                 | TanStack Query or equivalent — not business writes         |
-| Telemetry         | Logs, metrics                                                                                        | Side channel — never truth                                 |
+| Telemetry         | Meters, playhead display, underruns, CPU load                                                        | Runtime/relay layer — never fed back into truth            |
 
 Never invent a new category: fit the value or split it.
 
@@ -44,11 +46,11 @@ Feature A never mutates feature B’s project slice. Cross-feature intent goes t
 
 ### 3. Stores are a public read contract, not a write API for business truth
 
-Foreign modules may `useStore` / select. `store.set` only inside the owning module’s write path (use cases / handlers); everyone else goes through use cases or `executeAppAction`. Leaf components must not **directly** import business stores.
+Foreign modules may `useStore` / select. A business store is written only by its owning module's write path (handler / use case), and a CRDT-backed store only while that write runs inside an action's transaction — the synchronous part of `executeAppAction`, or a `scope(...)` captured before the first `await` (`crdt-collaboration` rule 2). Everyone else dispatches through the owner's use cases or `executeAppAction`. A business-store write from presentation, a write to a foreign module's store, or a CRDT-backed write outside any action transaction is the defect. Leaf components must not **directly** import business stores.
 
-**Why:** write discipline is what prevents global mutability.
+**Why:** write discipline is what prevents global mutability, and a write outside the owner's transaction is never seen by the document, undo, persistence, or collaboration.
 
-**Enforced by:** ESLint `sourdaw/no-foreign-store-write` (**error**); dependency-cruiser `components-no-business-store-access` (**error**).
+**Enforced by:** ESLint `sourdaw/no-foreign-store-write` (**error**) for foreign-module writes; dependency-cruiser `components-no-business-store-access` (**error**); an owner's write outside a transaction is review only.
 
 ### 4. Project truth is serializable; engine/runtime state is not
 
