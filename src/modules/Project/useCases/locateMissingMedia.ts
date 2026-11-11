@@ -98,16 +98,22 @@ async function offerSameFolderRecovery(excludedBufferId: string, isCurrent: () =
     if (!files) {
         return;
     }
+    const selectedNameCounts = new Map<string, number>();
+    for (const file of files) {
+        const name = comparableSourceName(file.name);
+        selectedNameCounts.set(name, (selectedNameCounts.get(name) ?? 0) + 1);
+    }
+
     const matchedBufferIds = new Set<string>();
     let skippedCount = 0;
     let repaired = false;
     for (const file of files) {
+        const name = comparableSourceName(file.name);
         const matches = candidates.filter(
             (candidate) =>
-                !matchedBufferIds.has(candidate.sourceBufferId) &&
-                comparableSourceName(candidate.label) === comparableSourceName(file.name)
+                !matchedBufferIds.has(candidate.sourceBufferId) && comparableSourceName(candidate.label) === name
         );
-        if (matches.length !== 1) {
+        if (matches.length !== 1 || selectedNameCounts.get(name) !== 1) {
             skippedCount++;
             continue;
         }

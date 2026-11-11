@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { type Clip, type Track, trackStore } from '#/modules/Arrangement/stores';
+import { pushUndoEntry } from '#/modules/Command/useCases';
+import { clearClipPitchAnalysis } from '#/modules/Knead/useCases';
 import { confirmUser } from '#/utils/Notification/confirmUser';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
@@ -138,6 +140,14 @@ describe('locateMissingMedia', () => {
             'decoded-replacement.wav',
         ]);
         expect(missingMediaStore.value).toEqual(defaultMissingMediaStoreState);
+        expect(pushUndoEntry).toHaveBeenCalledTimes(1);
+        expect(pushUndoEntry).toHaveBeenCalledWith('Relink audio source', expect.any(Function), expect.any(Function), {
+            restoresBufferIds: ['decoded-replacement.wav'],
+        });
+        expect(vi.mocked(clearClipPitchAnalysis).mock.calls.map((call) => call[0])).toEqual([
+            'clip-left',
+            'clip-right',
+        ]);
     });
 
     it('leaves project and missing-media state untouched when the picker is cancelled', async () => {
@@ -215,5 +225,31 @@ describe('locateMissingMedia', () => {
         ]);
         expect(mocks.decodeAudioFile).toHaveBeenCalledTimes(2);
         expect(missingMediaStore.value).toEqual(defaultMissingMediaStoreState);
+    });
+
+    it('skips one missing source matched by two selected files and warns without relinking it', async () => {
+        arrange([
+            audioClip('clip-guitar', 'track-one', 'buf-guitar', 'Guitar.wav'),
+            audioClip('clip-bass', 'track-two', 'buf-bass', 'Bass.wav'),
+        ]);
+        vi.mocked(pickFilesFromNativeDialog)
+            .mockResolvedValueOnce([replacement('guitar-replacement.wav')])
+            .mockResolvedValueOnce([replacement('Bass.WAV'), replacement('bass.wav')]);
+        vi.mocked(confirmUser).mockResolvedValue(true);
+
+        await locateMissingMedia({ sourceBufferId: 'buf-guitar', label: 'Guitar.wav' });
+
+        expect(trackStore.value?.tracks.map((track) => track.clips[0]?.audioBufferId)).toEqual([
+            'decoded-guitar-replacement.wav',
+            'buf-bass',
+        ]);
+        expect(mocks.decodeAudioFile).toHaveBeenCalledTimes(1);
+        expect(missingMediaStore.value?.items).toEqual([
+            expect.objectContaining({ bufferId: 'buf-bass', clipId: 'clip-bass' }),
+        ]);
+        expect(notifyUser).toHaveBeenCalledWith(
+            '2 selected files did not uniquely match a missing clip name and were left unchanged.',
+            'warning'
+        );
     });
 });
