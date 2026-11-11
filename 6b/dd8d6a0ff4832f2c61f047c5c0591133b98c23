@@ -1,0 +1,26 @@
+src/infra/dialogService/NotificationToast.tsx
+  h_beb54bf43b47b7 1,3,7,11,15-23,25-33,36-152,154-157,159,161,166-175,177-179,181-182,184-207,209
+src/infra/dialogService/__tests__/NotificationToast.spec.tsx
+  h_beb54bf43b47b7 110-130
+src/infra/dialogService/__tests__/useNotificationQueue.spec.ts
+  h_beb54bf43b47b7 11-19,85-198
+src/infra/dialogService/useNotificationQueue.ts
+  h_beb54bf43b47b7 3-4,7-11,16-24,27-37,40-41,43-45,47-49,52,58-60,62-64,66-69,74-76,82,87-148,150-152,154-177,179
+src/utils/Notification/__tests__/notifyUser.spec.ts
+  h_beb54bf43b47b7 28-34
+src/utils/Notification/notificationEventBus.ts
+  h_beb54bf43b47b7 8-19,21-25
+src/utils/Notification/notifyUser.ts
+  h_beb54bf43b47b7 3,7-12
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "6bdd8d6a0ff4832f2c61f047c5c0591133b98c23",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
