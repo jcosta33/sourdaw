@@ -1,0 +1,18 @@
+src/modules/ContentBrowser/useCases/__tests__/placeLibrarySampleResidency.integration.spec.ts
+  h_beb54bf43b47b7 48,64-73,76-78,85,263-264,916-1100
+src/modules/ContentBrowser/useCases/placeLibrarySample.ts
+  h_beb54bf43b47b7 269-284
+src/modules/SampleLibrary/useCases/ensureFactorySampleBuffer.ts
+  h_beb54bf43b47b7 18,72-76,91,111,115-117,127-129,132
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "990f1abb00a94cc70b54339a7ea0e894eed1c553",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
