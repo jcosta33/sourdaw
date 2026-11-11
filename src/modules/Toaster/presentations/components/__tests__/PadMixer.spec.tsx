@@ -117,12 +117,12 @@ describe('PadMixer', () => {
         const pad = makePad(0);
         const { rerender } = render(<PadMixer pads={[pad]} onPadParam={onPadParam} />);
 
-        fireEvent.click(screen.getByRole('button', { name: 'S' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Solo P0' }));
         expect(onPadParam).toHaveBeenCalledWith(0, 'soloed', 1);
 
         onPadParam.mockClear();
         rerender(<PadMixer pads={[{ ...pad, soloed: true }]} onPadParam={onPadParam} />);
-        fireEvent.click(screen.getByRole('button', { name: 'S' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Solo P0' }));
         expect(onPadParam).toHaveBeenCalledWith(0, 'soloed', 0);
     });
 
@@ -131,7 +131,7 @@ describe('PadMixer', () => {
         const pads = Array.from({ length: 4 }, (_, index) => makePad(index));
         render(<PadMixer pads={pads} onPadParam={onPadParam} />);
 
-        const soloButtons = screen.getAllByRole('button', { name: 'S' });
+        const soloButtons = screen.getAllByRole('button', { name: /^Solo P\d$/ });
         fireEvent.click(soloButtons[2]!);
 
         expect(onPadParam).toHaveBeenCalledWith(2, 'soloed', 1);
@@ -149,5 +149,17 @@ describe('PadMixer', () => {
         onPadParam.mockClear();
         fireEvent.pointerMove(document, { clientY: 40 });
         expect(onPadParam).not.toHaveBeenCalled();
+    });
+
+    it('provides non-overlapping 24 pixel mute and solo targets with legible names', () => {
+        const pad = makePad(0);
+        render(<PadMixer pads={[pad]} onPadParam={vi.fn()} />);
+
+        const mute = screen.getByRole('button', { name: 'Mute P0', pressed: false });
+        const solo = screen.getByRole('button', { name: 'Solo P0', pressed: false });
+        expect(mute).toHaveClass('size-6', 'text-[length:var(--text-nano)]');
+        expect(solo).toHaveClass('size-6', 'text-[length:var(--text-nano)]');
+        expect(mute.parentElement).toHaveClass('gap-0.5');
+        expect(mute.closest('.w-9')).toBeNull();
     });
 });

@@ -31,7 +31,7 @@ const EFFECT_INDICATORS = [
 
 export const BandStrip = ({ index, band, isActive, onSelect, onParamChange }: BandStripProps): ReactElement => (
     <div
-        className={`flex flex-col gap-1 p-1.5 rounded-md border transition-colors cursor-pointer min-w-[70px] ${
+        className={`flex flex-col gap-1 p-1.5 rounded-md border transition-colors cursor-pointer min-w-[104px] ${
             isActive ? 'border-rose-500/40 bg-rose-500/5' : 'border-border/20 hover:border-border/40'
         }`}
         onClick={onSelect}
@@ -48,8 +48,13 @@ export const BandStrip = ({ index, band, isActive, onSelect, onParamChange }: Ba
                     variant="bare"
                     size="bare"
                     type="button"
-                    className={`w-3.5 h-3.5 rounded text-[5px] font-bold transition-colors ${
-                        band.solo ? 'bg-amber-500 text-black' : 'text-muted-foreground hover:text-foreground'
+                    aria-label={`Solo band ${index + 1}`}
+                    aria-pressed={band.solo}
+                    title={`Solo band ${index + 1}`}
+                    className={`size-6 rounded text-[length:var(--text-nano)] font-bold transition-colors ${
+                        band.solo
+                            ? 'bg-[var(--color-state-warning)] text-surface-default'
+                            : 'text-muted-foreground hover:text-foreground'
                     }`}
                     onClick={(e) => {
                         e.stopPropagation();
@@ -62,8 +67,13 @@ export const BandStrip = ({ index, band, isActive, onSelect, onParamChange }: Ba
                     variant="bare"
                     size="bare"
                     type="button"
-                    className={`w-3.5 h-3.5 rounded text-[5px] font-bold transition-colors ${
-                        band.mute ? 'bg-red-500 text-black' : 'text-muted-foreground hover:text-foreground'
+                    aria-label={`Mute band ${index + 1}`}
+                    aria-pressed={band.mute}
+                    title={`Mute band ${index + 1}`}
+                    className={`size-6 rounded text-[length:var(--text-nano)] font-bold transition-colors ${
+                        band.mute
+                            ? 'bg-[var(--color-state-danger)] text-surface-default'
+                            : 'text-muted-foreground hover:text-foreground'
                     }`}
                     onClick={(e) => {
                         e.stopPropagation();

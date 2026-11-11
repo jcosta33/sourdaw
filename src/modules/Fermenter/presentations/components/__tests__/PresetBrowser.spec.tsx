@@ -191,4 +191,17 @@ describe('PresetBrowser', () => {
             expect(onLoadPreset).toHaveBeenCalledWith('p3');
         });
     });
+
+    it('gives filtering and preset controls minimum targets with legible semantic labels', () => {
+        render(<PresetBrowser {...defaultProps()} />);
+
+        expect(screen.getByPlaceholderText('Search presets…')).toHaveClass('h-6', 'text-[length:var(--text-nano)]');
+        for (const control of [
+            screen.getByRole('button', { name: 'Lead', pressed: false }),
+            screen.getByRole('button', { name: '#warm' }),
+            screen.getByRole('button', { name: 'Lead One' }),
+        ]) {
+            expect(control).toHaveClass('min-h-6', 'text-[length:var(--text-nano)]');
+        }
+    });
 });
