@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createEventBus } from '#/infra/events/createEventBus';
@@ -217,6 +217,67 @@ describe('Crust numeric gestures through real Command and CRDT', () => {
         await act(() => undo());
         await waitFor(() => expect(gain).toHaveAttribute('aria-valuenow', '0'));
         expect(rawDevice().parameterValues.gain).toBe(0);
+    });
+
+    it('keeps an external Link Trans edit when a second pointer replaces an abandoned preview', async () => {
+        render(<CrustPanel deviceId={DEVICE} />);
+        const group = screen.getByRole('group', { name: 'Effect control detail' });
+        fireEvent.click(within(group).getByRole('button', { name: 'shape' }));
+        await waitFor(() =>
+            expect(within(group).getByRole('button', { name: 'shape' })).toHaveAttribute('aria-pressed', 'true')
+        );
+        const link = screen.getByRole('slider', { name: 'Link Trans' });
+        const root = link.closest('[data-slot="slider"]');
+        if (!(root instanceof HTMLElement)) {
+            throw new TypeError('Missing Link Trans slider root');
+        }
+        const capture = { held: false };
+        Object.defineProperties(root, {
+            setPointerCapture: { configurable: true, value: () => (capture.held = true) },
+            releasePointerCapture: { configurable: true, value: () => (capture.held = false) },
+            hasPointerCapture: { configurable: true, value: () => capture.held },
+        });
+        vi.spyOn(root, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 100, 20));
+
+        fireEvent.pointerDown(root, { pointerId: 1, button: 0, clientX: 65, clientY: 10 });
+        expect(link).toHaveAttribute('aria-valuenow', '65');
+        expect(rawDevice().parameterValues.channelLinkTransient).toBeUndefined();
+        expect(captureUndoHistory().past).toHaveLength(0);
+
+        await act(() =>
+            executeUserAppAction({
+                type: 'setDeviceParameter',
+                payload: {
+                    deviceId: DEVICE,
+                    paramId: 'channelLinkTransient',
+                    value: 10,
+                    automationRecordingPolicy: 'suppressed',
+                },
+            })
+        );
+        expect(rawDevice().parameterValues.channelLinkTransient).toBe(10);
+        expect(captureUndoHistory().past).toHaveLength(1);
+
+        await act(async () => {
+            fireEvent.pointerDown(root, { pointerId: 2, button: 0, clientX: 10, clientY: 10 });
+        });
+        expect(rawDevice().parameterValues.channelLinkTransient).toBe(10);
+        expect(captureUndoHistory().past).toHaveLength(1);
+        expect(captureUndoHistory().past[0]).toMatchObject({
+            kind: 'action',
+            action: { type: 'setDeviceParameter', payload: { paramId: 'channelLinkTransient', value: 10 } },
+        });
+
+        await act(async () => {
+            fireEvent.pointerUp(root, { pointerId: 1 });
+            fireEvent.pointerCancel(root, { pointerId: 2 });
+            fireEvent.lostPointerCapture(root, { pointerId: 1 });
+            fireEvent.lostPointerCapture(root, { pointerId: 2 });
+            fireEvent.blur(window);
+        });
+        expect(rawDevice().parameterValues.channelLinkTransient).toBe(10);
+        expect(captureUndoHistory().past).toHaveLength(1);
+        expect(projectedDevice()).toEqual(rawDevice());
     });
 
     it('keeps a sparse gain preview through an unrelated real ceiling commit and restores absence on Undo', async () => {
