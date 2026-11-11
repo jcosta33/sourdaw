@@ -10,6 +10,7 @@ export const automationCommands: CallableCommandEntry[] = [
         label: 'Scale Automation',
         description: 'Scale automation values by a factor',
         category: 'Automation',
+        getInapplicabilityReason: () => (automationStore.value?.lanes[0] ? null : 'Create an automation lane first.'),
         action: () => {
             const lane = automationStore.value?.lanes[0];
             if (lane) {
@@ -22,6 +23,7 @@ export const automationCommands: CallableCommandEntry[] = [
         label: 'Invert Automation',
         description: 'Invert automation values around the center',
         category: 'Automation',
+        getInapplicabilityReason: () => (automationStore.value?.lanes[0] ? null : 'Create an automation lane first.'),
         action: () => {
             const lane = automationStore.value?.lanes[0];
             if (lane) {
@@ -34,6 +36,7 @@ export const automationCommands: CallableCommandEntry[] = [
         label: 'Thin Automation Points',
         description: 'Reduce automation point density while preserving shape',
         category: 'Automation',
+        getInapplicabilityReason: () => (automationStore.value?.lanes[0] ? null : 'Create an automation lane first.'),
         action: () => {
             const lane = automationStore.value?.lanes[0];
             if (lane) {

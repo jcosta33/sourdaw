@@ -33,7 +33,13 @@ describe('CommandPalette', () => {
 
     it('exposes ARIA combobox and listbox active-descendant relationships when open', () => {
         render(<CommandPalette />);
-        const commands = searchCommands('');
+        const commands = ['toggle-playback', 'undo'].map((id) => {
+            const command = searchCommands('').find((candidate) => candidate.id === id);
+            if (!command) {
+                throw new Error(`Expected registered command ${id}`);
+            }
+            return command;
+        });
         const firstCommand = commands[0];
         const secondCommand = commands[1];
         expect(firstCommand).toBeDefined();
@@ -101,7 +107,13 @@ describe('CommandPalette', () => {
 
     it('advances selection and updates aria-activedescendant on ArrowDown keydown', () => {
         render(<CommandPalette />);
-        const commands = searchCommands('');
+        const commands = ['toggle-playback', 'undo'].map((id) => {
+            const command = searchCommands('').find((candidate) => candidate.id === id);
+            if (!command) {
+                throw new Error(`Expected registered command ${id}`);
+            }
+            return command;
+        });
         const firstCommand = commands[0];
         const secondCommand = commands[1];
         expect(firstCommand).toBeDefined();
@@ -142,23 +154,30 @@ describe('CommandPalette', () => {
         expect(screen.queryByRole('option', { name: /Save Project/ })).not.toBeInTheDocument();
     });
 
-    it('restores named command options when the positive query is cleared', () => {
+    it('restores discovery and finds named commands after the positive query is cleared', () => {
         render(<CommandPalette />);
         const input = screen.getByRole('combobox');
 
-        expect(screen.getByRole('option', { name: /Save Project/ })).toBeInTheDocument();
+        expect(screen.getByRole('option', { name: /Add Audio Track/ })).toBeInTheDocument();
         fireEvent.change(input, { target: { value: 'track' } });
         expect(screen.queryByRole('option', { name: /Save Project/ })).not.toBeInTheDocument();
 
         fireEvent.change(input, { target: { value: '' } });
+        expect(screen.getByRole('option', { name: /Add Audio Track/ })).toBeInTheDocument();
 
-        expect(screen.getByRole('option', { name: /Add MIDI Track/ })).toBeInTheDocument();
+        fireEvent.change(input, { target: { value: 'save project' } });
         expect(screen.getByRole('option', { name: /Save Project/ })).toBeInTheDocument();
     });
 
     it('moves selection back up on ArrowUp keydown', () => {
         render(<CommandPalette />);
-        const commands = searchCommands('');
+        const commands = ['toggle-playback', 'undo'].map((id) => {
+            const command = searchCommands('').find((candidate) => candidate.id === id);
+            if (!command) {
+                throw new Error(`Expected registered command ${id}`);
+            }
+            return command;
+        });
         const firstCommand = commands[0];
         const secondCommand = commands[1];
         expect(firstCommand).toBeDefined();
@@ -186,26 +205,31 @@ describe('CommandPalette', () => {
         expect(option1).toHaveAttribute('aria-selected', 'false');
     });
 
-    it('executes the active option on Enter keydown', () => {
+    it('executes the active option from flattened grouped order on Enter keydown', () => {
         render(<CommandPalette />);
-        const commands = searchCommands('');
-        const secondCommand = commands[1];
-        expect(secondCommand).toBeDefined();
-        if (!secondCommand) {
-            throw new Error('Expected at least two registered commands');
+        const command = searchCommands('').find((candidate) => candidate.id === 'add-audio-track');
+        if (!command) {
+            throw new Error('Expected registered Add Audio Track command');
         }
-
         const input = screen.getByRole('combobox');
 
         fireEvent.keyDown(input, { key: 'ArrowDown' });
+        fireEvent.keyDown(input, { key: 'ArrowDown' });
+        expect(input).toHaveAttribute('aria-activedescendant', 'command-palette-option-add-audio-track');
         fireEvent.keyDown(input, { key: 'Enter' });
 
-        expect(executeUserAppAction).toHaveBeenCalledWith(secondCommand.action);
+        expect(executeUserAppAction).toHaveBeenCalledWith(command.action);
     });
 
     it('updates selection and aria-activedescendant on pointer move over an option', () => {
         render(<CommandPalette />);
-        const commands = searchCommands('');
+        const commands = ['toggle-playback', 'undo'].map((id) => {
+            const command = searchCommands('').find((candidate) => candidate.id === id);
+            if (!command) {
+                throw new Error(`Expected registered command ${id}`);
+            }
+            return command;
+        });
         const secondCommand = commands[1];
         expect(secondCommand).toBeDefined();
         if (!secondCommand) {
@@ -242,10 +266,44 @@ describe('CommandPalette', () => {
 
     it('dispatches an activated entry through executeUserAppAction on click', () => {
         render(<CommandPalette />);
-        const entry = screen.getByText('Toggle Metronome');
-        fireEvent.click(entry.closest('[role="option"]') ?? entry);
+        fireEvent.change(screen.getByRole('combobox'), { target: { value: 'metronome' } });
+        fireEvent.click(screen.getByRole('option', { name: /Toggle Metronome/ }));
 
         expect(executeUserAppAction).toHaveBeenCalledWith({ type: 'toggleMetronome' });
+    });
+
+    it('shows a small categorized discovery set instead of the full registry for an empty query', () => {
+        render(<CommandPalette />);
+
+        expect(screen.getAllByRole('option').length).toBeLessThan(searchCommands('').length);
+        expect(screen.getByRole('group', { name: 'Transport' })).toBeInTheDocument();
+        expect(screen.getByRole('group', { name: 'Edit' })).toBeInTheDocument();
+    });
+
+    it('puts an executed command in Recent when the query is cleared', () => {
+        render(<CommandPalette />);
+        const input = screen.getByRole('combobox');
+
+        fireEvent.change(input, { target: { value: 'metronome' } });
+        fireEvent.click(screen.getByRole('option', { name: /Toggle Metronome/ }));
+        fireEvent.change(input, { target: { value: '' } });
+
+        expect(screen.getByRole('group', { name: 'Recent' })).toBeInTheDocument();
+        expect(screen.getAllByRole('option')[0]).toHaveAccessibleName(/Toggle Metronome/);
+    });
+
+    it('explains a missing clip selection before execution without dispatching the command', () => {
+        render(<CommandPalette />);
+        const input = screen.getByRole('combobox');
+        fireEvent.change(input, { target: { value: 'Quantize Notes' } });
+
+        const option = screen.getByRole('option', { name: /Quantize Notes/ });
+        expect(option).toHaveAccessibleName(/Select a MIDI clip first/);
+        expect(option).toHaveAttribute('aria-disabled', 'true');
+        fireEvent.keyDown(input, { key: 'Enter' });
+
+        expect(executeUserAppAction).not.toHaveBeenCalled();
+        expect(input).toBeInTheDocument();
     });
 
     it('pulls focus back to the input when something outside the open palette takes it', async () => {

@@ -10,6 +10,7 @@ export const midiCommands: CallableCommandEntry[] = [
         label: 'Quantize Notes',
         description: 'Quantize MIDI notes in the selected clip to the grid',
         category: 'MIDI',
+        getInapplicabilityReason: () => (getSelectedClipId() ? null : 'Select a MIDI clip first.'),
         action: () => {
             const clipId = getSelectedClipId();
             if (clipId) {
@@ -22,6 +23,7 @@ export const midiCommands: CallableCommandEntry[] = [
         label: 'Transpose Up',
         description: 'Transpose notes up one semitone',
         category: 'MIDI',
+        getInapplicabilityReason: () => (getSelectedClipId() ? null : 'Select a MIDI clip first.'),
         action: () => {
             const clipId = getSelectedClipId();
             if (clipId) {
@@ -34,6 +36,7 @@ export const midiCommands: CallableCommandEntry[] = [
         label: 'Transpose Down',
         description: 'Transpose notes down one semitone',
         category: 'MIDI',
+        getInapplicabilityReason: () => (getSelectedClipId() ? null : 'Select a MIDI clip first.'),
         action: () => {
             const clipId = getSelectedClipId();
             if (clipId) {
@@ -46,6 +49,7 @@ export const midiCommands: CallableCommandEntry[] = [
         label: 'Transpose Up Octave',
         description: 'Transpose notes up 12 semitones',
         category: 'MIDI',
+        getInapplicabilityReason: () => (getSelectedClipId() ? null : 'Select a MIDI clip first.'),
         action: () => {
             const clipId = getSelectedClipId();
             if (clipId) {
@@ -58,6 +62,7 @@ export const midiCommands: CallableCommandEntry[] = [
         label: 'Transpose Down Octave',
         description: 'Transpose notes down 12 semitones',
         category: 'MIDI',
+        getInapplicabilityReason: () => (getSelectedClipId() ? null : 'Select a MIDI clip first.'),
         action: () => {
             const clipId = getSelectedClipId();
             if (clipId) {
@@ -70,6 +75,7 @@ export const midiCommands: CallableCommandEntry[] = [
         label: 'Humanize Notes',
         description: 'Add subtle timing and velocity variation',
         category: 'MIDI',
+        getInapplicabilityReason: () => (getSelectedClipId() ? null : 'Select a MIDI clip first.'),
         action: () => {
             const clipId = getSelectedClipId();
             if (clipId) {
@@ -82,6 +88,7 @@ export const midiCommands: CallableCommandEntry[] = [
         label: 'Invert Notes',
         description: 'Mirror MIDI notes around the center pitch',
         category: 'MIDI',
+        getInapplicabilityReason: () => (getSelectedClipId() ? null : 'Select a MIDI clip first.'),
         action: () => {
             const clipId = getSelectedClipId();
             if (clipId) {
@@ -94,6 +101,7 @@ export const midiCommands: CallableCommandEntry[] = [
         label: 'Arpeggiate MIDI',
         description: 'Arpeggiate the selected MIDI clip (up/down/random patterns)',
         category: 'MIDI',
+        getInapplicabilityReason: () => (getSelectedClipId() ? null : 'Select a MIDI clip first.'),
         action: () => {
             const clipId = getSelectedClipId();
             if (clipId) {

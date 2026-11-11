@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 
 import { type CommandEntry } from '../../models/CommandEntry';
-import { fuzzyMatch, searchCommands } from '../commandSearch';
+import { discoverCommands, fuzzyMatch, searchCommands, updateRecentCommandIds } from '../commandSearch';
 
 type TestCommandEntry = CommandEntry<() => void>;
 
@@ -56,5 +56,84 @@ describe('searchCommands', () => {
 
     it('should return an empty array when nothing matches', () => {
         expect(searchCommands(registry, 'zzzz')).toEqual([]);
+    });
+
+    it('ranks label matches above broad fuzzy description matches', () => {
+        const quantizeRegistry = [
+            entry({
+                id: 'analyze',
+                label: 'Analyze Mix',
+                description: 'Run frequency and level analysis on the mix',
+                category: 'AI',
+            }),
+            entry({ id: 'elastic', label: 'Elastic: Quantize Selected Clip', description: 'Quantize audio' }),
+            entry({ id: 'notes', label: 'Quantize Notes', description: 'Quantize MIDI notes' }),
+            entry({ id: 'audio', label: 'Audio Quantize', description: 'Quantize audio' }),
+        ];
+
+        expect(searchCommands(quantizeRegistry, 'quant').map((command) => command.id)).toEqual([
+            'notes',
+            'elastic',
+            'audio',
+            'analyze',
+        ]);
+    });
+
+    it('ranks exact, prefix, substring, description, category, and fuzzy matches in that order', () => {
+        const rankedRegistry = [
+            entry({ id: 'fuzzy', label: 'Q-U-A-N-T-I-Z-E', description: 'Nothing relevant' }),
+            entry({ id: 'category', label: 'Settings', description: 'Nothing relevant', category: 'Quantize' }),
+            entry({ id: 'description', label: 'Settings', description: 'Open quantize settings' }),
+            entry({ id: 'substring', label: 'Elastic Quantize', description: 'Nothing relevant' }),
+            entry({ id: 'prefix', label: 'Quantize Notes', description: 'Nothing relevant' }),
+            entry({ id: 'exact', label: 'Quantize', description: 'Nothing relevant' }),
+        ];
+
+        expect(searchCommands(rankedRegistry, 'quantize').map((command) => command.id)).toEqual([
+            'exact',
+            'prefix',
+            'substring',
+            'description',
+            'category',
+            'fuzzy',
+        ]);
+    });
+});
+
+describe('command discovery', () => {
+    it('moves the latest execution to the front, deduplicates, and bounds recents', () => {
+        const recent = ['b', 'a', 'c', 'd', 'e'].reduce(
+            (ids, id) => updateRecentCommandIds(ids, id),
+            updateRecentCommandIds([], 'a')
+        );
+
+        expect(recent).toEqual(['e', 'd', 'c', 'a', 'b']);
+        expect(updateRecentCommandIds(recent, 'c')).toEqual(['c', 'e', 'd', 'a', 'b']);
+    });
+
+    it('groups a small applicable discovery set and orders recents before categories', () => {
+        const registry = [
+            entry({
+                id: 'blocked',
+                label: 'Blocked',
+                category: 'Clip',
+                getInapplicabilityReason: () => 'Select a clip.',
+            }),
+            entry({ id: 'play', label: 'Play', category: 'Transport' }),
+            entry({ id: 'stop', label: 'Stop', category: 'Transport' }),
+            entry({ id: 'save', label: 'Save', category: 'Project' }),
+        ];
+
+        expect(
+            discoverCommands(registry, []).map((group) => [group.label, group.entries.map((command) => command.id)])
+        ).toEqual([
+            ['Transport', ['play']],
+            ['Project', ['save']],
+            ['Clip', ['blocked']],
+        ]);
+        expect(discoverCommands(registry, ['save', 'missing', 'play'])[0]).toMatchObject({
+            label: 'Recent',
+            entries: [{ id: 'save' }, { id: 'play' }],
+        });
     });
 });

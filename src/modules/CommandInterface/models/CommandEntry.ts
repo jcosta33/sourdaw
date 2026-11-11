@@ -17,7 +17,13 @@ export type CommandEntry<Action = AppAction> = {
      *
      * This is not for commands that are merely inapplicable right now (no clip
      * selected, transport stopped); those stay listed and explain themselves
-     * when invoked.
+     * before invocation through getInapplicabilityReason.
      */
     isAvailable?: () => boolean;
+    /**
+     * Optional context gate for an installed command that cannot usefully run
+     * right now. A human-readable reason keeps the entry visible but blocks
+     * dispatch; null means the current context supports execution.
+     */
+    getInapplicabilityReason?: () => string | null;
 };

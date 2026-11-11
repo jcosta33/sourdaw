@@ -10,6 +10,7 @@ export const elasticCommands: CallableCommandEntry[] = [
         label: 'Elastic: Detect Transients',
         description: 'Run transient detection on the selected audio clip',
         category: 'Editing',
+        getInapplicabilityReason: () => (getSelectedClipId() ? null : 'Select an audio clip first.'),
         action: () => {
             const clipId = getSelectedClipId();
             if (clipId) {
@@ -22,6 +23,7 @@ export const elasticCommands: CallableCommandEntry[] = [
         label: 'Elastic: Open Editor for Selected Clip',
         description: 'Open the Elastic Audio editor panel for the selected clip',
         category: 'Editing',
+        getInapplicabilityReason: () => (getSelectedClipId() ? null : 'Select an audio clip first.'),
         action: () => {
             const clipId = getSelectedClipId();
             if (clipId) {
@@ -34,6 +36,7 @@ export const elasticCommands: CallableCommandEntry[] = [
         label: 'Elastic: Quantize Selected Clip',
         description: 'Cut the selected clip at its transients and move each hit onto the snap grid',
         category: 'Editing',
+        getInapplicabilityReason: () => (getSelectedClipId() ? null : 'Select an audio clip first.'),
         action: () => {
             const clipId = getSelectedClipId();
             if (clipId) {
