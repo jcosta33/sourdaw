@@ -1,0 +1,29 @@
+scripts/__tests__/deliverPullRequest.spec.ts
+  s_131b426bba0f96::t_e423afe3e4455b 1158,1162,1869-1879,12357,12378-12379
+scripts/deliverPullRequest.ts
+  s_0207af29e0b307::t_cc7e487a098468 116-127,2803-2806,3016-3022,3783,3800
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "23740cb40fca2bd8e1163f24a57fb915bedd691d",
+  "prompts": {},
+  "sessions": {
+    "s_0207af29e0b307": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f246cd62-2d2d-4584-ad3e-050fad80f22b",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_131b426bba0f96": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dec81aab-5eda-40a7-90d1-889fad31bc7f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
