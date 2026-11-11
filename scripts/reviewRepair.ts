@@ -24,7 +24,6 @@ import { createHash } from 'node:crypto';
 
 import { canonicalJson, isMarkerLine, lastMarkerLine, parseMarkerPayload } from './canonicalRecord.ts';
 import { REVIEW_EVIDENCE_FIELD_MAX_BYTES, assertPublicationSafeEvidence } from './evidenceSafety.ts';
-import { ORCHESTRATOR_USER_NODE_ID, isReviewerBotNodeId } from './githubAppIdentity.ts';
 import { fail } from './prContract.ts';
 
 export const REVIEW_REPAIR_FORMAT = 'repair-v1';
@@ -121,7 +120,10 @@ type RepairCandidate = { record: ReviewRepairRecord; replyId: number };
 type AuthorRepairRecords =
     { kind: 'none' } | { kind: 'one'; candidate: RepairCandidate } | { kind: 'many'; count: number };
 
-type RepairConfirmation = {
+/** The identities whose thread roots are review findings: the reviewer App and the owner. */
+export type ReviewRepairAccountableRoots = { reviewerNodeId: string; ownerNodeId: string };
+
+type RepairConfirmation = ReviewRepairAccountableRoots & {
     pr: number;
     head: string;
     base: string;
@@ -541,8 +543,11 @@ export function authorRepairRecords(
  * Only a finding the reviewer App or the owner raised is a review finding the repair route may answer
  * and resolve; a thread opened by anyone else, a deleted account, or another bot is not one.
  */
-export function reviewRepairRootAuthorRefusal(rootAuthorNodeId: string | null): string | undefined {
-    if (isReviewerBotNodeId(rootAuthorNodeId) || rootAuthorNodeId === ORCHESTRATOR_USER_NODE_ID) {
+export function reviewRepairRootAuthorRefusal(
+    rootAuthorNodeId: string | null,
+    accountable: ReviewRepairAccountableRoots
+): string | undefined {
+    if (rootAuthorNodeId === accountable.reviewerNodeId || rootAuthorNodeId === accountable.ownerNodeId) {
         return undefined;
     }
     return `thread root comment author ${rootAuthorNodeId ?? 'unknown (deleted or unidentified)'} is neither the reviewer App nor the owner`;
@@ -553,8 +558,12 @@ export function reviewRepairRootAuthorRefusal(rootAuthorNodeId: string | null): 
  * recorded at repair time; GitHub rewrites the root's live path on a rename and moves or nulls its live
  * line on later pushes, so an immutable record cannot keep matching them.
  */
-function findingRefusal(thread: ReviewRepairThreadState, finding: ReviewRepairFinding): string | undefined {
-    const rootAuthor = reviewRepairRootAuthorRefusal(thread.rootAuthorNodeId);
+function findingRefusal(
+    thread: ReviewRepairThreadState,
+    finding: ReviewRepairFinding,
+    accountable: ReviewRepairAccountableRoots
+): string | undefined {
+    const rootAuthor = reviewRepairRootAuthorRefusal(thread.rootAuthorNodeId, accountable);
     if (rootAuthor !== undefined) {
         return rootAuthor;
     }
@@ -586,7 +595,7 @@ function confirmationRefusal(
     if (record.head !== confirmation.head && !confirmation.isAncestor(record.head, confirmation.head)) {
         return `head ${record.head} does not match the confirmed head ${confirmation.head}`;
     }
-    const finding = findingRefusal(thread, record.finding);
+    const finding = findingRefusal(thread, record.finding, confirmation);
     if (finding !== undefined) {
         return finding;
     }
@@ -669,6 +678,7 @@ export function selectEligibleRepairs(input: {
     base: string;
     authorNodeId: string;
     reviewerNodeId: string;
+    ownerNodeId: string;
     isAncestor: (commit: string, head: string) => boolean;
 }): ReviewRepairSelection {
     const eligible: ReviewRepairSelection['eligible'] = [];

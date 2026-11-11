@@ -25,6 +25,7 @@ import { spawnSync } from 'node:child_process';
 import {
     AUTHOR_BOT_NODE_ID,
     CONFIRM_REVIEWER_MINT_PERMISSIONS,
+    ORCHESTRATOR_USER_NODE_ID,
     REVIEWER_BOT_NODE_ID,
     assertRequiredRepository,
     authenticateRole,
@@ -181,6 +182,7 @@ export function confirmReviewRepairs(
         base,
         authorNodeId: AUTHOR_BOT_NODE_ID,
         reviewerNodeId: REVIEWER_BOT_NODE_ID,
+        ownerNodeId: ORCHESTRATOR_USER_NODE_ID,
         isAncestor: port.isAncestor,
     });
     logReasons('repair-ignored', number, selection.ignored, port.log);

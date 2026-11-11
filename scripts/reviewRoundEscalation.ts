@@ -8,7 +8,7 @@
  * Pure by construction: counting takes data, never a live session.
  */
 
-import { isReviewerBotNodeId } from './githubAppIdentity.ts';
+import { REVIEWER_BOT_NODE_ID } from './githubAppIdentity.ts';
 import { fail } from './prContract.ts';
 import {
     reconstructReviewRounds,
@@ -55,7 +55,7 @@ export function countReviewerRequestChangesRoundsInHistory(
     for (const review of reviews) {
         if (
             review.state === 'DISMISSED' &&
-            isReviewerBotNodeId(review.actorNodeId) &&
+            review.actorNodeId === REVIEWER_BOT_NODE_ID &&
             commentedReviews.has(review.id)
         ) {
             rounds.add(review.id);

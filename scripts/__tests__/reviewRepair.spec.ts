@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
 import { renderConfirmationReply, threadCommentsPage, threadPage } from '../confirmReviewRepairs.ts';
-import { ORCHESTRATOR_USER_NODE_ID, REVIEWER_BOT_NODE_ID } from '../githubAppIdentity.ts';
 import { threadQuery } from '../repairReviewFinding.ts';
 import {
     REVIEW_REPAIR_FORMAT,
@@ -24,6 +23,7 @@ import type { ReviewRepairRecord, ReviewRepairSelection, ReviewRepairThreadState
 const REPAIR_MARKER = 'sourdaw-repair-v1';
 const AUTHOR_NODE_ID = 'BOT_author';
 const FOREIGN_NODE_ID = 'BOT_reviewer';
+const OWNER_NODE_ID = 'USER_owner';
 const PR = 3_000;
 const HEAD = 'a'.repeat(40);
 const BASE = 'f'.repeat(40);
@@ -93,7 +93,7 @@ function threadState(overrides: Partial<ReviewRepairThreadState> = {}): ReviewRe
         rootLine: FINDING_LINE,
         rootSide: 'RIGHT',
         rootReviewedHead: REVIEWED_HEAD,
-        rootAuthorNodeId: REVIEWER_BOT_NODE_ID,
+        rootAuthorNodeId: FOREIGN_NODE_ID,
         replies: [repairReply(11, repairRecord())],
         ...overrides,
     };
@@ -133,6 +133,7 @@ function selectRepairs(
         base,
         authorNodeId: AUTHOR_NODE_ID,
         reviewerNodeId: FOREIGN_NODE_ID,
+        ownerNodeId: OWNER_NODE_ID,
         isAncestor,
     });
 }
@@ -466,8 +467,8 @@ describe('selectEligibleRepairs', () => {
     });
 
     it.each([
-        ['the reviewer App', REVIEWER_BOT_NODE_ID],
-        ['the owner', ORCHESTRATOR_USER_NODE_ID],
+        ['the reviewer App', FOREIGN_NODE_ID],
+        ['the owner', OWNER_NODE_ID],
     ])('should keep a repair eligible on a thread whose root %s wrote', (_label, rootAuthorNodeId) => {
         const record = repairRecord();
         const selection = selectRepairs([threadState({ rootAuthorNodeId, replies: [repairReply(11, record)] })]);

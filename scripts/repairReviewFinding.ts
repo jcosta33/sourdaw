@@ -21,6 +21,8 @@ import { readFileSync } from 'node:fs';
 import { shellIsAncestor } from './gitAncestry.ts';
 import {
     AUTHOR_BOT_NODE_ID,
+    ORCHESTRATOR_USER_NODE_ID,
+    REVIEWER_BOT_NODE_ID,
     assertRequiredRepository,
     authenticateRole,
     isAuthorBotNodeId,
@@ -385,7 +387,10 @@ export function repairReviewFinding(
         fail(`GitHub returned thread ${state.threadId} for requested thread ${input.threadId}`);
     }
     assertThreadPrecondition(state, number, input.head);
-    const rootAuthorRefusal = reviewRepairRootAuthorRefusal(state.rootComment.authorNodeId);
+    const rootAuthorRefusal = reviewRepairRootAuthorRefusal(state.rootComment.authorNodeId, {
+        reviewerNodeId: REVIEWER_BOT_NODE_ID,
+        ownerNodeId: ORCHESTRATOR_USER_NODE_ID,
+    });
     if (rootAuthorRefusal !== undefined) {
         fail(`thread ${state.threadId}: ${rootAuthorRefusal}`);
     }
