@@ -1,0 +1,21 @@
+scripts/__tests__/reconcileTrackerIssue.spec.ts
+  s_ef9f05977e53bd::t_5d7fed26d5fc50 2,13-14,324-506
+scripts/reconcileTrackerIssue.ts
+  s_ef9f05977e53bd::t_d75c2579104e6c 28,36-37,46-51,127-238,245-251,257,482-490,496-503,509
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e07bd6ab2e0842f15b463b96e6ade5de66664d44",
+  "prompts": {},
+  "sessions": {
+    "s_ef9f05977e53bd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_ef9f05977e53bd",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
