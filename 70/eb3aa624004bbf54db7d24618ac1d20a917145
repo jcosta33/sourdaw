@@ -1,0 +1,22 @@
+src/modules/Fermenter/models/FermenterPatchState.ts
+  h_beb54bf43b47b7 39-48
+src/modules/Fermenter/presentations/components/PresetBrowser.tsx
+  h_beb54bf43b47b7 77-82
+src/modules/Fermenter/presentations/views/FermenterPanel.tsx
+  h_beb54bf43b47b7 602-619
+src/modules/Fermenter/presentations/views/__tests__/fermenterPatchAuditionUndo.integration.spec.tsx
+  h_beb54bf43b47b7 42
+src/modules/Fermenter/useCases/hydrateFermenterFromProject.ts
+  h_beb54bf43b47b7 48-61
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "70eb3aa624004bbf54db7d24618ac1d20a917145",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
