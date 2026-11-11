@@ -1,0 +1,23 @@
+scripts/__tests__/deliverPullRequest.spec.ts
+  s_131b426bba0f96::t_5c4a35c4f9af4f 29,636-642,646,6722-6783
+scripts/deliverPullRequest.ts
+  s_131b426bba0f96::t_d7dd2867fcd89b 70-71,166-173,1426-1431,1434,1456-1477,2941,3016,3665
+scripts/__tests__/agentDeliveryScripts.spec.ts
+  s_131b426bba0f96::t_36fd79db102f07 260-261
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "aa955b9c91e7465c0d5c90d0fbc36ff463c251b8",
+  "prompts": {},
+  "sessions": {
+    "s_131b426bba0f96": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dec81aab-5eda-40a7-90d1-889fad31bc7f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
