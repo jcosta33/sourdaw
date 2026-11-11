@@ -115,6 +115,8 @@ export type DeliveryPort = CheckEvidencePort & {
     reviewBundleDeliveryAuthorization: (number: number, head: string) => DeliveryAuthorizationBinding;
     dependents: (baseBranch: string) => StackedPullRequest[];
     repositoryDeletesMergedBranches: () => boolean;
+    /** The full message of a commit on the repository, exactly as GitHub stores it. */
+    mergeCommitMessage: (oid: string) => string;
     /**
      * `expectedMessage` pins the squash commit body. Without it GitHub composes the message from the
      * live pull-request body at merge time, so an edit landing after the final validated read would
@@ -2842,6 +2844,40 @@ function squashCommitTitle(pullRequest: Pick<PullRequestSnapshot, 'number' | 'ti
     return `${pullRequest.title} (#${pullRequest.number})`;
 }
 
+/**
+ * What GitHub may append after the pinned squash message: a final newline, and a co-author trailer
+ * block, optionally behind its `---------` separator. Anything else means the message is not the one
+ * deliver pinned.
+ */
+const SQUASH_MESSAGE_TRAILER_PATTERN =
+    /^(?:\n\n(?:-{9}\n\n)?Co-authored-by: [^\n]+(?:\nCo-authored-by: [^\n]+)*)?\n?$/u;
+
+/**
+ * Without a receipt, the only closing target this recovery has is the live pull-request body, which
+ * stays editable after merge. The squash message deliver pins is that body as it was validated, so
+ * the target is trusted only when the merged commit still carries exactly the current title and body.
+ * Older merges whose message GitHub composed and line-wrapped itself cannot be bound this way.
+ */
+function assertClosingTargetBoundToMergeCommit(
+    pullRequest: PullRequestSnapshot,
+    target: number,
+    port: Pick<DeliveryPort, 'mergeCommitMessage'>
+): void {
+    const unbound =
+        `PR #${pullRequest.number} closing target #${target} cannot be bound to the merged commit; ` +
+        `if closing #${target} is appropriate, close it by hand`;
+    const oid = pullRequest.mergeCommit?.oid;
+    if (oid === undefined || oid === '') {
+        fail(`${unbound} (the merge commit is unknown)`);
+    }
+    const body = pullRequest.body ?? '';
+    const pinned = body === '' ? squashCommitTitle(pullRequest) : `${squashCommitTitle(pullRequest)}\n\n${body}`;
+    const message = port.mergeCommitMessage(oid);
+    if (!message.startsWith(pinned) || !SQUASH_MESSAGE_TRAILER_PATTERN.test(message.slice(pinned.length))) {
+        fail(`${unbound} (merge commit ${oid} does not carry the current title and body)`);
+    }
+}
+
 function validateFreshMerger(pullRequest: PullRequestSnapshot): void {
     if (!isAuthorBotNodeId(pullRequest.mergedByActorNodeId)) {
         fail(`PR #${pullRequest.number} fresh merge was not performed by the author App`);
@@ -2910,6 +2946,9 @@ function deliverPullRequestWithCiAdmission(
                 if (remaining.length === 0 && target === undefined) {
                     port.log(`PR #${number} was already merged; repaired 0 remaining dependent(s)`);
                     return;
+                }
+                if (target !== undefined) {
+                    assertClosingTargetBoundToMergeCommit(initial, target, port);
                 }
                 recoveryPostMergeValidation = persistedPreparedPostMergeValidation(initial, target);
                 receipt = ensureDeliveryReceipt(initial, target, port, ciAdmissionMode);
@@ -3819,6 +3858,19 @@ export function shellPort(
         },
         repositoryDeletesMergedBranches: () =>
             shell.capture('gh', ['api', `repos/${repository}`, '--jq', '.delete_branch_on_merge']) === 'true',
+        mergeCommitMessage: (oid) => {
+            if (!/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/u.test(oid)) {
+                fail(`merge commit ${oid} is not a commit object id`);
+            }
+            const message = parseJson<unknown>(
+                shell.capture('gh', ['api', `repos/${repository}/commits/${oid}`, '--jq', '.commit.message | tojson']),
+                `merge commit ${oid} message`
+            );
+            if (typeof message !== 'string') {
+                fail(`merge commit ${oid} message is unreadable`);
+            }
+            return message;
+        },
         merge: (number, expectedHead, hasDependents, expectedTitle, expectedMessage) => {
             const policy = repositoryMergePolicy(repository, shell);
             if (hasDependents && policy.deletesMergedBranches) {

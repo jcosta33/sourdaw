@@ -932,6 +932,7 @@ describe('package scripts and gitignore', () => {
             reviewBundleDeliveryAuthorization: () => ({ kind: 'legacy' }),
             dependents: (baseBranch) => (dependentAfter.baseRefName === baseBranch ? [dependentAfter] : []),
             repositoryDeletesMergedBranches: () => false,
+            mergeCommitMessage: () => expect.fail('the merged recovery path should not run'),
             merge: () => expect.fail('merge should not run after the final snapshot is already merged'),
             retarget: (number, baseBranch) => {
                 retargets.push({ number, base: baseBranch });
@@ -3910,6 +3911,7 @@ describe('package scripts and gitignore', () => {
                     reviewBundleDeliveryAuthorization: () => expect.fail('delivery domain should not run'),
                     dependents: () => expect.fail('delivery domain should not run'),
                     repositoryDeletesMergedBranches: () => expect.fail('delivery domain should not run'),
+                    mergeCommitMessage: () => expect.fail('delivery domain should not run'),
                     merge: () => expect.fail('delivery domain should not run'),
                     retarget: () => expect.fail('delivery domain should not run'),
                     deliveryReceipts: () => expect.fail('delivery domain should not run'),
@@ -3975,6 +3977,7 @@ describe('package scripts and gitignore', () => {
             reviewBundleDeliveryAuthorization: () => expect.fail('delivery domain should not run'),
             dependents: () => expect.fail('delivery domain should not run'),
             repositoryDeletesMergedBranches: () => expect.fail('delivery domain should not run'),
+            mergeCommitMessage: () => expect.fail('delivery domain should not run'),
             merge: () => expect.fail('delivery domain should not run'),
             retarget: () => expect.fail('delivery domain should not run'),
             deliveryReceipts: () => expect.fail('delivery domain should not run'),
@@ -4512,6 +4515,7 @@ describe('package scripts and gitignore', () => {
                 expect.fail('delivery domain should be injected in this coordinator test'),
             dependents: () => [],
             repositoryDeletesMergedBranches: () => false,
+            mergeCommitMessage: () => expect.fail('the merged recovery path should not run'),
             merge: () => expect.fail('delivery domain should be injected in this coordinator test'),
             retarget: () => expect.fail('delivery domain should be injected in this coordinator test'),
             deliveryReceipts: () => [],

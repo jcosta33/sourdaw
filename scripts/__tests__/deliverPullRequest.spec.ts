@@ -315,6 +315,12 @@ function persistedPostMergeValidation(
 }
 
 const body = relationshipBody('None.');
+const MERGE_COMMIT_OID = 'f'.repeat(40);
+
+/** The squash message GitHub writes when deliver pins `commit_title` and `commit_message`. */
+function squashMessage(pullRequestBody: string, title = 'feat(delivery): add gate'): string {
+    return `${title} (#42)\n\n${pullRequestBody}`;
+}
 const ORDERED_RECEIPT_PROOF_QUERY_FRAGMENT =
     'comments(first:100,after:$cursor,orderBy:{field:UPDATED_AT,direction:ASC}){totalCount pageInfo{hasNextPage endCursor} nodes{id lastEditedAt}}';
 const ORDERED_RECEIPT_PROOF_QUERY = `query=query($owner:String!,$name:String!,$number:Int!,$cursor:String){repository(owner:$owner,name:$name){pullRequest(number:$number){${ORDERED_RECEIPT_PROOF_QUERY_FRAGMENT}}}}`;
@@ -893,6 +899,7 @@ type FakeInput = {
     deliveryReceiptProof?: DeliveryReceiptProof;
     mergedPrimaryAfterMerge?: Partial<PullRequestSnapshot>;
     syncAuthorshipNotes?: DeliveryPort['syncAuthorshipNotes'];
+    mergeCommitMessages?: Record<string, string>;
 };
 
 type DeliveryReceiptComment = {
@@ -1164,6 +1171,14 @@ function fakePort(input: FakeInput = {}) {
             });
         },
         repositoryDeletesMergedBranches: () => input.deletesMergedBranches ?? false,
+        mergeCommitMessage: (oid) => {
+            calls.push(`merge-commit-message:${oid}`);
+            const message = input.mergeCommitMessages?.[oid];
+            if (message === undefined) {
+                throw new Error(`missing merge commit ${oid} fixture`);
+            }
+            return message;
+        },
         merge: (number, head, hasDependents, expectedTitle, expectedMessage) => {
             calls.push(`merge:${number}:${head}`);
             calls.push(`merge-has-dependents:${hasDependents}`);
@@ -1713,9 +1728,15 @@ describe('pull-request delivery', () => {
             const { port, calls, tracker } = fakePort({
                 primary: [
                     pullRequest({ body, mergeable: 'UNKNOWN' }),
-                    pullRequest({ body, state: 'MERGED', mergedByActorNodeId: AUTHOR_BOT_NODE_ID }),
+                    pullRequest({
+                        body,
+                        state: 'MERGED',
+                        mergedByActorNodeId: AUTHOR_BOT_NODE_ID,
+                        mergeCommit: { oid: MERGE_COMMIT_OID },
+                    }),
                 ],
                 dependentSets: recoveryWork ? [[stacked()], [stacked()]] : [[], []],
+                mergeCommitMessages: { [MERGE_COMMIT_OID]: squashMessage(body) },
             });
             deliverPullRequest(42, port, tracker);
             expect(calls.some((call) => call.startsWith('merge:'))).toBe(false);
@@ -1746,10 +1767,17 @@ describe('pull-request delivery', () => {
                         state: initialState,
                         mergeable: 'UNKNOWN',
                         mergedByActorNodeId: initialState === 'MERGED' ? merger : null,
+                        ...(initialState === 'MERGED' ? { mergeCommit: { oid: MERGE_COMMIT_OID } } : {}),
                     }),
-                    pullRequest({ body, state: 'MERGED', mergedByActorNodeId: merger }),
+                    pullRequest({
+                        body,
+                        state: 'MERGED',
+                        mergedByActorNodeId: merger,
+                        mergeCommit: { oid: MERGE_COMMIT_OID },
+                    }),
                 ],
                 dependentSets: recoveryWork ? [[stacked()], [stacked()]] : [[], []],
+                mergeCommitMessages: { [MERGE_COMMIT_OID]: squashMessage(body) },
             });
             deliverPullRequest(42, port, tracker);
             expect(calls.some((call) => call.startsWith('merge:'))).toBe(false);
@@ -8469,6 +8497,101 @@ describe('pull-request delivery', () => {
             expect(calls).toContain('PR #42 was already merged; repaired 0 remaining dependent(s)');
             expect(calls.filter((call) => call.startsWith('complete:'))).toHaveLength(0);
             expect(calls.filter((call) => call.startsWith('add-receipt:'))).toHaveLength(0);
+            expect(calls.filter((call) => call.startsWith('merge-commit-message:'))).toHaveLength(0);
+        });
+
+        it.each([
+            ['carries a trailing newline', (message: string) => `${message}\n`],
+            [
+                'carries the co-author trailer block GitHub appends',
+                (message: string) =>
+                    `${message}\n\n---------\n\nCo-authored-by: a <a@example.test>\nCo-authored-by: b <b@example.test>\n`,
+            ],
+        ])('completes the closing issue when the merge commit message %s', (_label, decorate) => {
+            const closes = relationshipBody('Closes #2372');
+            const { port, calls, tracker } = fakePort({
+                primary: [
+                    pullRequest({
+                        state: 'MERGED',
+                        body: closes,
+                        mergedByActorNodeId: AUTHOR_BOT_NODE_ID,
+                        mergeCommit: { oid: MERGE_COMMIT_OID },
+                    }),
+                ],
+                dependentSets: [[]],
+                receipts: [],
+                persistedReceiptAuthority: undefined,
+                mergeCommitMessages: { [MERGE_COMMIT_OID]: decorate(squashMessage(closes)) },
+            });
+
+            deliverPullRequest(42, port, tracker);
+
+            expect(calls).toContain('complete:2372');
+        });
+
+        it.each([
+            [
+                'the body was edited after merge to close an issue the merged commit never named',
+                squashMessage(relationshipBody('None.')),
+            ],
+            [
+                'GitHub line-wrapped the body it composed for an older merge',
+                squashMessage(relationshipBody('Closes #2372')).replace('issues & additional', 'issues &\nadditional'),
+            ],
+            [
+                'the merged commit carries a trailer other than co-authors',
+                `${squashMessage(relationshipBody('Closes #2372'))}\n\nSigned-off-by: someone <s@example.test>`,
+            ],
+            ['the pull request was retitled after merge', squashMessage(relationshipBody('Closes #2372'), 'feat: old')],
+        ])('refuses to close the target when %s', (_label, mergedMessage) => {
+            const closes = relationshipBody('Closes #2372');
+            const { port, calls, tracker } = fakePort({
+                primary: [
+                    pullRequest({
+                        state: 'MERGED',
+                        body: closes,
+                        mergedByActorNodeId: AUTHOR_BOT_NODE_ID,
+                        mergeCommit: { oid: MERGE_COMMIT_OID },
+                    }),
+                ],
+                dependentSets: [[]],
+                receipts: [],
+                persistedReceiptAuthority: undefined,
+                mergeCommitMessages: { [MERGE_COMMIT_OID]: mergedMessage },
+            });
+
+            expect(() => deliverPullRequest(42, port, tracker)).toThrow(
+                /closing target #2372 cannot be bound to the merged commit.*close it by hand/
+            );
+            expect(calls.filter((call) => call.startsWith('complete:'))).toHaveLength(0);
+            expect(calls.filter((call) => call.startsWith('add-receipt:'))).toHaveLength(0);
+            expect(calls.filter((call) => call.startsWith('receipt-authority:write'))).toHaveLength(0);
+        });
+
+        it.each([
+            ['absent', {}],
+            ['null', { mergeCommit: null }],
+        ])('refuses to close the target when the merge commit is %s', (_label, mergeCommit) => {
+            const closes = relationshipBody('Closes #2372');
+            const { port, calls, tracker } = fakePort({
+                primary: [
+                    pullRequest({
+                        state: 'MERGED',
+                        body: closes,
+                        mergedByActorNodeId: AUTHOR_BOT_NODE_ID,
+                        ...mergeCommit,
+                    }),
+                ],
+                dependentSets: [[]],
+                receipts: [],
+                persistedReceiptAuthority: undefined,
+            });
+
+            expect(() => deliverPullRequest(42, port, tracker)).toThrow(
+                /closing target #2372 cannot be bound to the merged commit/
+            );
+            expect(calls.filter((call) => call.startsWith('complete:'))).toHaveLength(0);
+            expect(calls.filter((call) => call.startsWith('add-receipt:'))).toHaveLength(0);
         });
 
         it('mints missing delivery receipt and completes issue when merged with missing receipt authority and an open closing issue', () => {
@@ -8479,14 +8602,17 @@ describe('pull-request delivery', () => {
                         state: 'MERGED',
                         body: closes,
                         mergedByActorNodeId: AUTHOR_BOT_NODE_ID,
+                        mergeCommit: { oid: MERGE_COMMIT_OID },
                     }),
                 ],
                 dependentSets: [[]],
                 receipts: [],
                 persistedReceiptAuthority: undefined,
+                mergeCommitMessages: { [MERGE_COMMIT_OID]: squashMessage(closes) },
             });
 
             expect(() => deliverPullRequest(42, port, tracker)).not.toThrow();
+            expect(calls).toContain(`merge-commit-message:${MERGE_COMMIT_OID}`);
             expect(calls).toContain('add-receipt:42');
             expect(calls).toContain('complete:2372');
             expect(calls).toContain('receipt-authority:write:merge-authorized:IC_delivery_42_1');
@@ -8540,16 +8666,19 @@ describe('pull-request delivery', () => {
                         state: 'MERGED',
                         body: closes,
                         mergedByActorNodeId: AUTHOR_BOT_NODE_ID,
+                        mergeCommit: { oid: MERGE_COMMIT_OID },
                     }),
                     pullRequest({
                         state: 'MERGED',
                         body: closes,
                         mergedByActorNodeId: AUTHOR_BOT_NODE_ID,
+                        mergeCommit: { oid: MERGE_COMMIT_OID },
                     }),
                 ],
                 dependentSets: [[], []],
                 receipts: [],
                 persistedReceiptAuthority: undefined,
+                mergeCommitMessages: { [MERGE_COMMIT_OID]: squashMessage(closes) },
             });
 
             expect(() => deliverPullRequest(42, port, tracker)).not.toThrow();
@@ -12454,6 +12583,42 @@ describe('delivery shell boundary', () => {
             args: ['api', '--method', 'PATCH', 'repos/jcosta33/sourdaw/pulls/43', '-f', 'base=main', '--silent'],
         });
     });
+
+    it('reads a merge commit message exactly as GitHub stores it, trailing newline included', () => {
+        const captures: Array<{ command: string; args: string[] }> = [];
+        const shell: ShellRunner = {
+            capture: (command, args) => {
+                captures.push({ command, args });
+                return JSON.stringify('feat: subject (#42)\n\nbody\n');
+            },
+            run: () => expect.fail('reading a commit message must not write'),
+        };
+
+        expect(shellPort('jcosta33/sourdaw', shell).mergeCommitMessage('a'.repeat(40))).toBe(
+            'feat: subject (#42)\n\nbody\n'
+        );
+        expect(captures).toEqual([
+            {
+                command: 'gh',
+                args: ['api', `repos/jcosta33/sourdaw/commits/${'a'.repeat(40)}`, '--jq', '.commit.message | tojson'],
+            },
+        ]);
+    });
+
+    it.each([['not-an-oid'], [JSON.stringify({ message: 'x' })]])(
+        'refuses an unreadable merge commit message read (%s)',
+        (variant) => {
+            const shell: ShellRunner = {
+                capture: () => (variant === 'not-an-oid' ? expect.fail('must not read') : variant),
+                run: () => expect.fail('reading a commit message must not write'),
+            };
+            const oid = variant === 'not-an-oid' ? variant : 'a'.repeat(40);
+
+            expect(() => shellPort('jcosta33/sourdaw', shell).mergeCommitMessage(oid)).toThrow(
+                /not a commit object id|message is unreadable/
+            );
+        }
+    );
 
     it.each([
         [
