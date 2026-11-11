@@ -396,6 +396,98 @@ describe('Crust numeric controller with real Command and CRDT', () => {
         expect(captureUndoHistory().past).toHaveLength(1);
     });
 
+    it('reports every distinct compound cleanup fault once', async () => {
+        const recordingRelease = vi
+            .fn()
+            .mockImplementationOnce(() => undefined)
+            .mockImplementationOnce(() => {
+                throw new Error('Final recording release failed');
+            });
+        const runtimeRelease = vi.fn(() => {
+            throw new Error('Runtime release failed');
+        });
+        vi.spyOn(automationApi, 'captureTouchAutomationRecordingAuthority').mockReturnValueOnce({
+            owner: Symbol('controlled recording receipt'),
+            release: recordingRelease,
+        });
+        vi.spyOn(engineApi, 'captureDeviceParameterRuntimeWriteAuthority').mockReturnValueOnce({
+            owner: Symbol('controlled engine receipt'),
+            isCurrent: () => true,
+            canCommit: () => true,
+            release: runtimeRelease,
+        });
+        const edit = controller();
+        await edit.change('gain', 9, true);
+        audio.updateDeviceParam
+            .mockImplementationOnce(() => {
+                throw new Error('Canonical write failed');
+            })
+            .mockImplementation(() => {
+                throw new Error('Restoration failed');
+            });
+
+        const failed = edit.settle('gain');
+        await failed.catch(() => undefined);
+
+        expect(notices).toHaveLength(1);
+        const message = notices[0]?.message ?? '';
+        expect(message).toContain('Canonical write failed');
+        expect(message).toContain('Runtime parameter rollback failed');
+        expect(message).toContain('Final recording release failed');
+        expect(message).toContain('Runtime release failed');
+        expect(message.match(/Restoration failed/g)).toHaveLength(1);
+        expect(recordingRelease).toHaveBeenCalledTimes(2);
+        expect(runtimeRelease).toHaveBeenCalledTimes(1);
+        expect(rawDevice().parameterValues.gain).toBe(0);
+        expect(captureUndoHistory().past).toHaveLength(0);
+    });
+
+    it('hydrates the durable baseline when the restoration write fails', async () => {
+        const runtimeRelease = vi.fn();
+        vi.spyOn(engineApi, 'captureDeviceParameterRuntimeWriteAuthority').mockReturnValueOnce({
+            owner: Symbol('controlled engine receipt'),
+            isCurrent: () => true,
+            canCommit: () => true,
+            release: runtimeRelease,
+        });
+        const edit = controller();
+        await edit.change('gain', 9, true);
+        audio.updateDeviceParam
+            .mockImplementationOnce(() => {
+                throw new Error('Canonical write failed');
+            })
+            .mockImplementation(() => {
+                throw new Error('Restoration failed');
+            });
+
+        const failed = edit.settle('gain');
+        await failed.catch(() => undefined);
+
+        expect(rawDevice().parameterValues.gain).toBe(0);
+        expect(projectedDevice()).toEqual(rawDevice());
+        expect(getCrustState(DEVICE).patch.gain).toBe(0);
+        expect(runtimeRelease).toHaveBeenCalledTimes(1);
+        expect(notices).toHaveLength(1);
+        expect(captureUndoHistory().past).toHaveLength(0);
+
+        audio.updateDeviceParam.mockReset();
+        const token = edit.start('gain');
+        const recovered = edit.change('gain', 6);
+        expect(token).toBeGreaterThan(0);
+        expect(recovered).not.toBe(failed);
+        await recovered;
+        expect(rawDevice().parameterValues.gain).toBe(6);
+        expect(getCrustState(DEVICE).patch.gain).toBe(6);
+        expect(captureUndoHistory().past).toHaveLength(1);
+
+        await undo();
+        expect(rawDevice().parameterValues.gain).toBe(0);
+        expect(getCrustState(DEVICE).patch.gain).toBe(0);
+        await redo();
+        expect(rawDevice().parameterValues.gain).toBe(6);
+        expect(getCrustState(DEVICE).patch.gain).toBe(6);
+    });
+
     it.each(['removed', 'duplicate', 'frozen'] as const)(
         'refuses a preview terminal after its %s target changes',
         async (change) => {

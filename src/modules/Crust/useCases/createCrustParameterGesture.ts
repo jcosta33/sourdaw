@@ -86,57 +86,65 @@ function restorePreview(scope: Scope, gesture: Gesture): void {
         return;
     }
     const value = device.parameterValues[gesture.key] ?? gesture.defaultValue;
-    if (
-        gesture.preview !== undefined &&
-        gesture.preview !== value &&
-        gesture.runtime.isCurrent() &&
-        gesture.runtime.canCommit()
-    ) {
-        setDeviceParameter(gesture.deviceId, gesture.key, value, {
-            transient: true,
-            automationRecordingPolicy: 'suppressed',
-        });
+    try {
+        if (
+            gesture.preview !== undefined &&
+            gesture.preview !== value &&
+            gesture.runtime.isCurrent() &&
+            gesture.runtime.canCommit()
+        ) {
+            setDeviceParameter(gesture.deviceId, gesture.key, value, {
+                transient: true,
+                automationRecordingPolicy: 'suppressed',
+            });
+        }
+    } finally {
+        hydrate(scope);
     }
-    hydrate(scope);
 }
 
-type SettlementFailure = { error: unknown };
+type SettlementFailure = { errors: unknown[] };
 
-function retire(scope: Scope, gesture: Gesture, restore: boolean): void {
+function failureDetail(error: unknown, fallback: string): string {
+    return error instanceof Error ? error.message : fallback;
+}
+
+function retire(scope: Scope, gesture: Gesture, restore: boolean): SettlementFailure | undefined {
     if (restore) {
         gesture.cancelled = true;
     }
-    let failure: SettlementFailure | undefined;
+    const errors: unknown[] = [];
     try {
         gesture.recording.release();
     } catch (error) {
-        failure = { error };
+        errors.push(error);
     }
     try {
         if (restore) {
             restorePreview(scope, gesture);
         }
     } catch (error) {
-        failure ??= { error };
+        errors.push(error);
     } finally {
         try {
             gesture.runtime.release();
         } catch (error) {
-            failure ??= { error };
+            errors.push(error);
         }
     }
-    if (failure) {
-        throw failure.error;
-    }
+    return errors.length > 0 ? { errors } : undefined;
 }
 
 function cancel(scope: Scope, gesture: Gesture, reacquirable = false): void {
     gesture.cancelled = true;
     gesture.reacquirable = reacquirable;
     try {
-        retire(scope, gesture, !gesture.committed);
+        const failure = retire(scope, gesture, !gesture.committed);
+        if (failure) {
+            notifyUser(failureDetail(failure.errors[0], 'Crust preview restoration failed'), 'error');
+        }
     } catch (error) {
-        notifyUser(error instanceof Error ? error.message : 'Crust preview restoration failed', 'error');
+        notifyUser(failureDetail(error, 'Crust preview restoration failed'), 'error');
     }
 }
 
@@ -221,16 +229,23 @@ function deleteInstalledGesture(scope: Scope, gesture: Gesture): void {
     }
 }
 
-function notifyCommitFailure(error: unknown): void {
-    notifyUser(error instanceof Error ? error.message : 'Crust parameter change failed', 'error');
+function notifyCommitFailure(errors: unknown[]): void {
+    let message = '';
+    for (const error of errors) {
+        const detail = failureDetail(error, 'Crust parameter change failed');
+        if (message.includes(detail)) {
+            continue;
+        }
+        message = message ? `${message}; ${detail}` : detail;
+    }
+    if (message) {
+        notifyUser(message, 'error');
+    }
 }
 
 function finishCommit(scope: Scope, gesture: Gesture): SettlementFailure | undefined {
     try {
-        retire(scope, gesture, !gesture.committed);
-        return undefined;
-    } catch (error) {
-        return { error };
+        return retire(scope, gesture, !gesture.committed);
     } finally {
         deleteInstalledGesture(scope, gesture);
     }
@@ -275,12 +290,12 @@ async function commit(scope: Scope, gesture: Gesture): Promise<void> {
             }
         );
     } catch (error) {
-        failure = { error };
+        failure = { errors: [error] };
     } finally {
         const cleanupFailure = finishCommit(scope, gesture);
-        failure ??= cleanupFailure;
-        if (failure) {
-            notifyCommitFailure(failure.error);
+        const errors = [...(failure?.errors ?? []), ...(cleanupFailure?.errors ?? [])];
+        if (errors.length > 0) {
+            notifyCommitFailure(errors);
         }
     }
 }
