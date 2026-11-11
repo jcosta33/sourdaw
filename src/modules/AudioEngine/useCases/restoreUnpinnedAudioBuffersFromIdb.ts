@@ -3,11 +3,16 @@ import { openAudioBufferResidencyHold } from '../stores/audioBufferResidencyHold
 
 type RestoreUnpinnedAudioBuffersFromIdbInput = {
     bufferIds: readonly string[];
+    isCurrent?: () => boolean;
 };
 
 type RestoreUnpinnedAudioBuffersFromIdbOutput = {
     /** Ids storage holds no record for and this session holds no PCM for. */
     absentIds: readonly string[];
+    /** Ids that were not resident when this restoration began. */
+    initiallyUncachedIds: readonly string[];
+    /** The exact PCM objects this restoration made resident. */
+    restoredBuffers: ReadonlyMap<string, AudioBuffer>;
     release: () => void;
 };
 
@@ -22,14 +27,20 @@ type RestoreUnpinnedAudioBuffersFromIdbOutput = {
  */
 export async function restoreUnpinnedAudioBuffersFromIdb({
     bufferIds,
+    isCurrent,
 }: RestoreUnpinnedAudioBuffersFromIdbInput): Promise<RestoreUnpinnedAudioBuffersFromIdbOutput> {
     const hold = openAudioBufferResidencyHold();
     for (const id of bufferIds) {
         hold.retain(id);
     }
     try {
-        const { absent } = await audioBufferCache.restoreUnpinned(bufferIds);
-        return { absentIds: absent, release: hold.release };
+        const { absent, initiallyUncached, restored } = await audioBufferCache.restoreUnpinned(bufferIds, isCurrent);
+        return {
+            absentIds: absent,
+            initiallyUncachedIds: initiallyUncached,
+            restoredBuffers: restored,
+            release: hold.release,
+        };
     } catch (error) {
         hold.release();
         throw error;

@@ -198,8 +198,15 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
                     materializationContext.recordedRedo = recordedRedo;
                 }
             }
-            action = materializeCommandHandlerArguments(action, handler, materializationContext);
-            bindCanonicalRedoAction(requestedAction, action, recordedRedo);
+            const materializeAtExecution =
+                handler.materializeCommandArgumentsAt === 'execution' &&
+                handler.executionKind !== 'runtime' &&
+                options?.commandEnvelope === undefined &&
+                recordedRedo === undefined;
+            if (!materializeAtExecution) {
+                action = materializeCommandHandlerArguments(action, handler, materializationContext);
+                bindCanonicalRedoAction(requestedAction, action, recordedRedo);
+            }
             const historyGroupId = handler.batchExecution === 'singleton' ? undefined : options?.groupId;
             const historyGroupLabel = historyGroupId ? options?.groupLabel : undefined;
             if (
@@ -290,6 +297,10 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
 
             if (options?.shouldExecute && !options.shouldExecute()) {
                 return;
+            }
+
+            if (materializeAtExecution) {
+                action = materializeCommandHandlerArguments(action, handler, materializationContext);
             }
 
             const authorizationFailure = options?.authorizeFirstHandler?.() ?? null;
