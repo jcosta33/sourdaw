@@ -1,0 +1,16 @@
+src/components/ui/slider-gesture.ts
+  h_beb54bf43b47b7 170-171
+src/modules/Crust/presentations/views/__tests__/crustParameterUndo.integration.spec.tsx
+  h_beb54bf43b47b7 1,222-282
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "585908cd0a9a72db500c559abaa5fc3f63e2ebd9",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
