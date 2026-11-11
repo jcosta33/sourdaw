@@ -520,15 +520,11 @@ async function reproduceSeamStall(
     const pitch60CallsBeforeRecovery = scheduleNoteSpy.mock.calls.filter((call) => call[2] === 60);
     const pitch60EmissionsBeforeRecovery = pitch60CallsBeforeRecovery.length;
     const preRecoveryPitch60Frames = pitch60CallsBeforeRecovery.map((call) => frame(call[3]));
-    const preRecoveryPitch60FrameSet = new Set(preRecoveryPitch60Frames);
     await tickAt(recoveryFrame);
     const pitch60EmissionsAfterRecovery = scheduleNoteSpy.mock.calls.filter((call) => call[2] === 60).length;
     const recoveryPitch60Frames = scheduleNoteSpy.mock.calls
         .slice(emissionCountBeforeRecovery)
-        .filter((call) => {
-            const onset = frame(call[3]);
-            return call[2] === 60 && onset >= ANCHOR_FRAME + recoveryFrame && !preRecoveryPitch60FrameSet.has(onset);
-        })
+        .filter((call) => call[2] === 60)
         .map((call) => frame(call[3]));
     expect(playheadWrapCountRef.current).toBe(crossedSeams);
     expect(playheadClockRef.beat).toBeCloseTo((recoveryFrame % passFrames) / 24_000, 12);

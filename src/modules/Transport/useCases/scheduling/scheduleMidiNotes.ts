@@ -1171,23 +1171,25 @@ export async function scheduleMidiNotes(
 
                     for (const projectedNote of projectedNotes) {
                         const unswungStartBeat = projectedNote.startBeat;
+                        // No projected start may land before the audio clock: a
+                        // late wrap rewinds the window to loopStart while the
+                        // playhead is already inside the pass, and must not replay
+                        // that pass's old onset. A re-anchor can also land a
+                        // segment behind its owning window, so
+                        // `admittedSegmentFloorBeat` gates on the clock position
+                        // instead of a window grace. The drop is strict beyond its
+                        // rounding tolerance: a landing on the clock computes
+                        // `getCurrentTime()`, the onset's own due instant, and still
+                        // schedules (#4924). Swing only delays a start, so the
+                        // unswung coordinate is the safe comparison.
+                        if (unswungStartBeat < admittedSegmentFloorBeat) {
+                            continue;
+                        }
                         // #4910 admitted the note on its owned coordinate, so its
                         // segments schedule where the projection lands them — a
-                        // groove displacement past `toBeat` included. What they may
-                        // never do is start before the audio clock: a re-anchor
-                        // lands a segment behind the owning window by an amount
-                        // arbitrarily small, so `admittedSegmentFloorBeat` gates
-                        // on the clock position instead of a window grace, and the
-                        // drop is strict beyond its rounding tolerance: a landing
-                        // on the clock computes `getCurrentTime()`, the onset's own
-                        // due instant, and still schedules (#4924). Swing only
-                        // delays a start, so the unswung coordinate is the safe
-                        // comparison.
-                        if (admittedOnOwnedBeat) {
-                            if (unswungStartBeat < admittedSegmentFloorBeat) {
-                                continue;
-                            }
-                        } else if (unswungStartBeat < fromBeat || unswungStartBeat >= toBeat) {
+                        // groove displacement past `toBeat` included. Every other
+                        // note belongs to this window's own half-open beat range.
+                        if (!admittedOnOwnedBeat && (unswungStartBeat < fromBeat || unswungStartBeat >= toBeat)) {
                             continue;
                         }
                         if (!isCurrent()) {
