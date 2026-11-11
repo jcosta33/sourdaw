@@ -1,0 +1,54 @@
+src/modules/CommandInterface/presentations/views/CommandPalette.tsx
+  h_beb54bf43b47b7 167-169,172,174
+src/modules/CommandInterface/presentations/views/__tests__/CommandPalette.spec.tsx
+  h_beb54bf43b47b7 32-34,224,270,275-278,289-292,296-313,316
+src/modules/CommandInterface/services/__tests__/commandSearch.spec.ts
+  h_beb54bf43b47b7 104-105,107,110-113
+src/modules/CommandInterface/useCases/commands/AiCommands.ts
+  h_beb54bf43b47b7 4,8-9,15,76-79,88,97,106,115,137,140,149,152,161,164,173,176-179
+src/modules/CommandInterface/useCases/commands/AutomationCommands.ts
+  h_beb54bf43b47b7 2,13,16-19,29,32,42,45
+src/modules/CommandInterface/useCases/commands/ClipCommands.ts
+  h_beb54bf43b47b7 6,20,38,49,54,64,67,77,80,90,93,103,110,124,132-135
+src/modules/CommandInterface/useCases/commands/EditCommands.ts
+  h_beb54bf43b47b7 2,5,17-18,27-28,37,39,48,52,61,65,74,76,90,92
+src/modules/CommandInterface/useCases/commands/ElasticCommands.ts
+  h_beb54bf43b47b7 3,5,13-15,17,26-28,30,39-41,44
+src/modules/CommandInterface/useCases/commands/MidiCommands.ts
+  h_beb54bf43b47b7 1,3,12-14,16,25-27,29,38-40,42,51-53,55,64-66,68,77-79,81,90-92,94,103-105,107
+src/modules/CommandInterface/useCases/commands/MiscCommands.ts
+  h_beb54bf43b47b7 5,22,24,87-96,104,116,279,282,348,351
+src/modules/CommandInterface/useCases/commands/ProjectCommands.ts
+  h_beb54bf43b47b7 19,31-35,45-50,59,61,90-95,117,119
+src/modules/CommandInterface/useCases/commands/TrackCommands.ts
+  h_beb54bf43b47b7 3,10,37-38,54,56-57,66,69,78,92,102,105,114,117,126,154-155,200,203,212,215,224,227,236,239,248,252,264,267-270,294,299-302
+src/modules/CommandInterface/useCases/commands/TransportCommands.ts
+  h_beb54bf43b47b7 57,59,68,70,79,81,90,92,101-106
+src/modules/CommandInterface/useCases/commands/ViewCommands.ts
+  h_beb54bf43b47b7 13,26,28,37,39,48,50,59,61,70,72,81,83,100,102,111,113,138,141,153,156,168,171,183,186,197,200,260,262
+src/modules/CommandInterface/useCases/commands/__tests__/ElasticCommands.spec.ts
+  h_beb54bf43b47b7 9-10,23-24,79-80,88-99
+src/modules/CommandInterface/useCases/commands/__tests__/MidiCommands.spec.ts
+  h_beb54bf43b47b7 8-9,33-34,130-131,139-151
+src/modules/CommandInterface/useCases/executeCommandAction.ts
+  h_beb54bf43b47b7 1-13
+src/modules/CommandInterface/useCases/searchCommandRegistry.ts
+  h_beb54bf43b47b7 6
+src/modules/CommandInterface/useCases/selectionHelpers/getSelectedClipIdOfType.ts
+  h_beb54bf43b47b7 1-12
+tests/e2e/commandPalette.spec.ts
+  h_beb54bf43b47b7 60-62,68,71
+tests/e2e/crossFeatureWorkflowTestId.spec.ts
+  h_beb54bf43b47b7 133
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "76e2e4454dfea9bd7491b6c0a1565d5c7e81e995",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
