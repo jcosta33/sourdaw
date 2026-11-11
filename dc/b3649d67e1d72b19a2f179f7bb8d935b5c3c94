@@ -1,0 +1,35 @@
+scripts/deliverPullRequest.ts
+  s_131b426bba0f96::t_5587d820c3d1c2 288,468-563,771-773,777
+  s_0207af29e0b307::t_ac60f0d665af2c 104-105,113-141,3816-3965,4088
+scripts/__tests__/agentDeliveryScripts.spec.ts
+  s_131b426bba0f96::t_9c666bca03b4d6 258-286,953,3937,4004,4541
+  s_0207af29e0b307::t_7a1817bd992f9a 87
+scripts/__tests__/deliverPullRequest.spec.ts
+  s_131b426bba0f96::t_ccb085dbd96a36 575-578,708-835,1036-1037,1154,1266-1273,7793,7804-7817,7819,8878,8882-8883,8885,8889,8891-8892,8895-8897,8899-8900,8902,8906,8908-8909,8912-8914,8916-8917,8921-8922,8924,8931,8933-8934,8936,8940,8942,8944,8950-8951,8955-8956,8960,8996,9002-9004,11920-11923,12899-12972
+  s_131b426bba0f96::t_eb0600a7f0c212 10085-10090
+  s_131b426bba0f96::t_208aef2c09dde0 46,7818,7820-7821,8867-8877,8879-8881,8884,8886-8888,8890,8893-8894,8898,8901,8903-8905,8907,8910-8911,8915,8918-8920,8923,8925-8930,8932,8935,8937-8939,8941,8943,8945-8949,8952-8954,8957-8959,8961-8995,8997-9001,9005-9006,12973
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "dcb3649d67e1d72b19a2f179f7bb8d935b5c3c94",
+  "prompts": {},
+  "sessions": {
+    "s_0207af29e0b307": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f246cd62-2d2d-4584-ad3e-050fad80f22b",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_131b426bba0f96": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dec81aab-5eda-40a7-90d1-889fad31bc7f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
