@@ -1,3 +1,5 @@
+import { MICRO_FADE_SECONDS } from '#/utils/clipFadeScheduleClamp';
+
 import { type SourceWithFade } from '../../models/SourceWithFade';
 
 import { cutSource } from './cutSource';
@@ -75,6 +77,31 @@ function releaseDedupOwnership(
     }
 }
 
+/**
+ * Cut a retiring owner whose stop instant sits inside the micro-fade window of
+ * the clock — the moment a media-owner handoff happens "now" (unfreezing a
+ * sounding track mid-clip, a compensated onset already due). The replacement
+ * is already scheduled with its own micro fade-in beginning at the onset, so
+ * the default 5 ms ramp would collapse to a zero-duration step to zero exactly
+ * where the replacement is still at zero: an audible click plus a ~3 ms
+ * dropout. Hold the retiring source at its current level through the onset,
+ * then ramp to zero over the same micro fade and stop past it, so the two gain
+ * programmes overlap and their sum never reaches zero.
+ */
+function cutSourceAcrossHandoff(src: SourceWithFade, ctx: BaseAudioContext, stopAt: number): void {
+    const releaseAt = stopAt + MICRO_FADE_SECONDS;
+    try {
+        if (src.fadeGainNode) {
+            src.fadeGainNode.gain.cancelScheduledValues(stopAt);
+            src.fadeGainNode.gain.setValueAtTime(src.fadeGainNode.gain.value, stopAt);
+            src.fadeGainNode.gain.linearRampToValueAtTime(0, releaseAt);
+        }
+        src.stop(releaseAt);
+    } catch {
+        /* already stopped */
+    }
+}
+
 function retireSource(
     source: SourceWithFade,
     index: number,
@@ -90,15 +117,22 @@ function retireSource(
     } else {
         const futureStart = source.scheduledStartTime !== undefined && source.scheduledStartTime >= now;
         const actualStop = futureStart ? now : Math.max(now, stopAt);
-        if (source.scheduledStopTime !== actualStop) {
+        // A stop instant inside the micro-fade window is a handoff at the clock
+        // instant: cut it across the replacement onset, and book the real stop
+        // time so `scheduledStopTime` comparisons below stay consistent.
+        const overlapsHandoff = !futureStart && actualStop - now <= MICRO_FADE_SECONDS;
+        const stopTime = overlapsHandoff ? actualStop + MICRO_FADE_SECONDS : actualStop;
+        if (source.scheduledStopTime !== stopTime) {
             if (futureStart) {
-                source.stop(actualStop);
+                source.stop(stopTime);
+            } else if (overlapsHandoff) {
+                cutSourceAcrossHandoff(source, ctx, actualStop);
             } else {
                 cutSource(source, ctx, actualStop);
             }
-            source.scheduledStopTime = actualStop;
+            source.scheduledStopTime = stopTime;
         }
-        source.scheduledMediaOwnerStopTime = actualStop;
+        source.scheduledMediaOwnerStopTime = stopTime;
         if (actualStop <= now) {
             activeAudioSources.splice(index, 1);
         }

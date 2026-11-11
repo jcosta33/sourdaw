@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { createTrack } from '#/modules/Arrangement/useCases';
 import { processYeastMidi } from '#/modules/Yeast/useCases';
+import { MICRO_FADE_SECONDS } from '#/utils/clipFadeScheduleClamp';
 
 import { defaultTransportState } from '../../../models/TransportState';
 import { playheadClockRef } from '../../../stores/playheadClockRef';
@@ -46,27 +47,79 @@ const sourceStartClockAdvance = { armed: false, seconds: 0, invocations: 0 };
 const gainFailure = { enabled: false };
 const compensation = { seconds: 0 };
 
+type GainEvent = { kind: 'set' | 'cancel' | 'cancel-hold' | 'linear'; gain?: number; time: number };
+// Every gain param the fixture mints records its automation here, so a source's
+// fade programme is observable through the ledger (see snapshotGainProgrammes).
+const gainEventRegistry = new Map<object, GainEvent[]>();
+
+/**
+ * The value a recorded programme holds at an instant: events before the
+ * instant apply in order (a linear event mid-ramp interpolates from the
+ * previous anchor), a partial cancel voids the events at or after it.
+ */
+function evaluateGainValue(events: readonly GainEvent[], intrinsic: number, now: number): number {
+    let value = intrinsic;
+    let anchorTime = Number.NEGATIVE_INFINITY;
+    for (const event of resolveProgramme(events)) {
+        if (event.kind !== 'set' && event.kind !== 'linear') {
+            continue;
+        }
+        if (event.time > now) {
+            if (event.kind === 'linear' && anchorTime !== Number.NEGATIVE_INFINITY && event.time > anchorTime) {
+                value += ((event.gain ?? value) - value) * ((now - anchorTime) / (event.time - anchorTime));
+            }
+            break;
+        }
+        value = event.gain ?? value;
+        anchorTime = event.time;
+    }
+    return value;
+}
+
 const audioContextStub = {
     sampleRate: 48000,
     get currentTime() {
         return ctxTime.now;
     },
-    createGain: () => ({
-        connect: () => {},
-        disconnect: () => {},
-        gain: {
-            value: 1,
-            cancelScheduledValues: () => {},
-            cancelAndHoldAtTime: () => {},
-            setValueAtTime: () => {},
+    createGain: () => {
+        const events: GainEvent[] = [];
+        let intrinsic = 1;
+        const gain = {
+            get value() {
+                return evaluateGainValue(events, intrinsic, ctxTime.now);
+            },
+            set value(next: number) {
+                // A direct assignment is a set at the current instant that voids
+                // the scheduled programme, as on a real AudioParam.
+                intrinsic = next;
+                events.length = 0;
+            },
+            cancelScheduledValues: (time: number) => {
+                // The pool's full reset (time 0) starts a fresh programme; a
+                // partial cancel only voids events at or after its instant.
+                if (time <= 0) {
+                    events.length = 0;
+                } else {
+                    events.push({ kind: 'cancel', time });
+                }
+            },
+            cancelAndHoldAtTime: (time: number) => {
+                events.push({ kind: 'cancel-hold', time });
+            },
+            setValueAtTime: (value: number, time: number) => {
+                events.push({ kind: 'set', gain: value, time });
+            },
             exponentialRampToValueAtTime: () => {},
-            linearRampToValueAtTime: () => {
+            linearRampToValueAtTime: (value: number, time: number) => {
                 if (gainFailure.enabled) {
                     throw new Error('Fixture gain submission failed');
                 }
+                events.push({ kind: 'linear', gain: value, time });
             },
-        },
-    }),
+        };
+        gainEventRegistry.set(gain, events);
+        return { connect: () => {}, disconnect: () => {}, gain };
+    },
 };
 
 const trackStripStub = {
@@ -207,15 +260,17 @@ type SourceLedger = {
     start: Start | null;
     stops: Stop[];
     bufferDuration: number;
+    /** The source double itself, so its assigned fade gain can be resolved. */
+    node: { fadeGainNode?: { gain: object } | null } | null;
 };
-type SourceSnapshot = Omit<SourceLedger, 'stops' | 'start'> & { start: Start; stops: Stop[] };
+type SourceSnapshot = Omit<SourceLedger, 'stops' | 'start' | 'node'> & { start: Start; stops: Stop[] };
 const sourceLedger = vi.hoisted(() => [] as SourceLedger[]);
 const buffers = vi.hoisted(() => new Map<string, AudioBuffer>());
 const scheduleClickSpy = vi.hoisted(() => vi.fn());
 const scheduleNoteSpy = vi.hoisted(() => vi.fn());
 
 function createSource() {
-    const ledger: SourceLedger = { bufferId: '', buffer: null, start: null, stops: [], bufferDuration: 0 };
+    const ledger: SourceLedger = { bufferId: '', buffer: null, start: null, stops: [], bufferDuration: 0, node: null };
     sourceLedger.push(ledger);
     const source = {
         buffer: null as AudioBuffer | null,
@@ -247,6 +302,7 @@ function createSource() {
         },
         onended: null,
     };
+    ledger.node = source;
     return source;
 }
 
@@ -354,6 +410,61 @@ function snapshotSources(): SourceSnapshot[] {
 
 function frame(seconds: number): number {
     return Math.round(seconds * SAMPLE_RATE);
+}
+
+const MICRO_FADE_FRAMES = frame(MICRO_FADE_SECONDS);
+
+type GainProgramme = { bufferId: string; startWhen: number; events: GainEvent[] };
+
+/**
+ * The fade-gain automation recorded for every started source, in ledger order —
+ * index-aligned with `snapshotSources()`. Production code writes its ramps
+ * through this double, so whether a handoff overlaps the replacement onset is
+ * observable here, not just its stop ledger.
+ */
+function snapshotGainProgrammes(): GainProgramme[] {
+    return sourceLedger.flatMap((ledger) => {
+        if (!ledger.start) {
+            return [];
+        }
+        const gain = ledger.node?.fadeGainNode?.gain;
+        return [
+            {
+                bufferId: ledger.bufferId,
+                startWhen: ledger.start.when,
+                events: gain ? [...(gainEventRegistry.get(gain) ?? [])] : [],
+            },
+        ];
+    });
+}
+
+function gainProgrammeFor(
+    snapshots: readonly SourceSnapshot[],
+    programmes: readonly GainProgramme[],
+    source: SourceSnapshot
+): GainEvent[] {
+    return programmes[snapshots.indexOf(source)]?.events ?? [];
+}
+
+/**
+ * The programme an event list leaves on the param: a partial cancel voids every
+ * earlier event at or after its instant; the pool's full reset (cancel at time
+ * 0) already cleared the record, so it never appears here.
+ */
+function resolveProgramme(events: readonly GainEvent[]): GainEvent[] {
+    const resolved: GainEvent[] = [];
+    for (const event of events) {
+        if (event.kind === 'cancel' || event.kind === 'cancel-hold') {
+            for (let index = resolved.length - 1; index >= 0; index--) {
+                if (resolved[index]!.time >= event.time) {
+                    resolved.splice(index, 1);
+                }
+            }
+        } else {
+            resolved.push(event);
+        }
+    }
+    return resolved;
 }
 
 function effectiveEnd(source: SourceSnapshot): number {
@@ -579,6 +690,7 @@ beforeEach(() => {
     compensation.seconds = 0;
     disposePlayheadScheduler();
     sourceLedger.length = 0;
+    gainEventRegistry.clear();
     buffers.clear();
     ctxTime.now = ANCHOR_FRAME / SAMPLE_RATE;
     tickSequence = 0;
@@ -733,7 +845,8 @@ describe('mixed MIDI media ownership during non-loop playback', () => {
         expect(original).toHaveLength(2);
         expect(frame(original[1]!.start.when)).toBe(ANCHOR_FRAME + 2_400);
         expect(frame(original[1]!.start.offset)).toBe(2_400);
-        expect(frame(effectiveEnd(bake!))).toBeLessThanOrEqual(frame(original[1]!.start.when));
+        // The handoff cut overlaps the replacement onset by one micro fade.
+        expect(frame(effectiveEnd(bake!))).toBe(frame(original[1]!.start.when) + MICRO_FADE_FRAMES);
     });
 
     it.each(['waiting-first', 'mixed-first'] as const)(
@@ -790,7 +903,8 @@ describe('mixed MIDI media ownership during non-loop playback', () => {
                 if (order === 'mixed-first') {
                     expect(original).toHaveLength(2);
                     expect(bake?.stops).toHaveLength(1);
-                    expect(frame(effectiveEnd(bake!))).toBeLessThanOrEqual(frame(original[1]!.start.when));
+                    // The handoff cut overlaps the replacement onset by one micro fade.
+                    expect(frame(effectiveEnd(bake!))).toBe(frame(original[1]!.start.when) + MICRO_FADE_FRAMES);
                 } else {
                     expect(original).toHaveLength(1);
                     expect(bake?.stops).toHaveLength(0);
@@ -805,7 +919,8 @@ describe('mixed MIDI media ownership during non-loop playback', () => {
             const bake = sources.find((source) => source.bufferId === 'bake');
             expect(original).toHaveLength(2);
             expect(bake?.stops).toHaveLength(1);
-            expect(frame(effectiveEnd(bake!))).toBeLessThanOrEqual(frame(original[1]!.start.when));
+            // The handoff cut overlaps the replacement onset by one micro fade.
+            expect(frame(effectiveEnd(bake!))).toBe(frame(original[1]!.start.when) + MICRO_FADE_FRAMES);
         }
     );
 
@@ -882,7 +997,21 @@ describe('mixed MIDI media ownership during non-loop playback', () => {
         expect(original).toBeDefined();
         expect(firstBake).toBeDefined();
         expect(original!.stops).toHaveLength(1);
-        expect(frame(effectiveEnd(original!))).toBeLessThanOrEqual(frame(firstBake!.start.when));
+        // The handoff cut overlaps the replacement onset by one micro fade.
+        expect(frame(effectiveEnd(original!))).toBe(frame(firstBake!.start.when) + MICRO_FADE_FRAMES);
+        // Click-free at the clock instant: the retiring source holds full level
+        // through the onset and ramps out over the micro fade — a zero-duration
+        // step to zero here would click against the bake's full-level start.
+        const freezeProgrammes = snapshotGainProgrammes();
+        const retiringOut = resolveProgramme(gainProgrammeFor(afterFreeze, freezeProgrammes, original!));
+        expect(retiringOut.at(-2)!.kind).toBe('set');
+        expect(retiringOut.at(-2)!.gain).toBe(1);
+        expect(retiringOut.at(-2)!.time).toBeCloseTo(firstBake!.start.when, 12);
+        expect(retiringOut.at(-1)!.kind).toBe('linear');
+        expect(retiringOut.at(-1)!.gain).toBe(0);
+        expect(retiringOut.at(-1)!.time).toBeCloseTo(firstBake!.start.when + MICRO_FADE_SECONDS, 12);
+        // The frozen bake has no fade-in: it is at full level from its onset.
+        expect(gainProgrammeFor(afterFreeze, freezeProgrammes, firstBake!)).toEqual([]);
 
         mixed.freezeState = { status: 'unfrozen' };
         await tickAt(2_400);
@@ -892,7 +1021,29 @@ describe('mixed MIDI media ownership during non-loop playback', () => {
         expect(resumed).toHaveLength(2);
         expect(frame(resumed[1]!.start.offset)).toBeGreaterThan(0);
         expect(retiredBake?.stops).toHaveLength(1);
-        expect(frame(effectiveEnd(retiredBake!))).toBeLessThanOrEqual(frame(resumed[1]!.start.when));
+        // The handoff cut overlaps the replacement onset by one micro fade.
+        expect(frame(effectiveEnd(retiredBake!))).toBe(frame(resumed[1]!.start.when) + MICRO_FADE_FRAMES);
+        // Click-free across the onset: the retiring bake holds full level until
+        // the replacement starts and ramps out over exactly the replacement's
+        // micro fade-in, so at every instant at least one side is at full level
+        // and the summed gain never dips. A zero-duration cut would reach zero
+        // at the onset, where the replacement is still at zero.
+        const unfreezeOnset = resumed[1]!.start.when;
+        const unfreezeProgrammes = snapshotGainProgrammes();
+        const retiringBakeOut = resolveProgramme(gainProgrammeFor(afterUnfreeze, unfreezeProgrammes, retiredBake!));
+        expect(retiringBakeOut.at(-2)!.kind).toBe('set');
+        expect(retiringBakeOut.at(-2)!.gain).toBe(1);
+        expect(retiringBakeOut.at(-2)!.time).toBeCloseTo(unfreezeOnset, 12);
+        expect(retiringBakeOut.at(-1)!.kind).toBe('linear');
+        expect(retiringBakeOut.at(-1)!.gain).toBe(0);
+        expect(retiringBakeOut.at(-1)!.time).toBeCloseTo(unfreezeOnset + MICRO_FADE_SECONDS, 12);
+        const fadingIn = resolveProgramme(gainProgrammeFor(afterUnfreeze, unfreezeProgrammes, resumed[1]!));
+        expect(fadingIn[0]!.kind).toBe('set');
+        expect(fadingIn[0]!.gain).toBe(0);
+        expect(fadingIn[0]!.time).toBeCloseTo(unfreezeOnset, 12);
+        expect(fadingIn[1]!.kind).toBe('linear');
+        expect(fadingIn[1]!.gain).toBe(1);
+        expect(fadingIn[1]!.time).toBeCloseTo(unfreezeOnset + MICRO_FADE_SECONDS, 12);
 
         mixed.freezeState = { status: 'frozen', frozenBufferId: 'bake', compensationSeconds: 0 };
         await tickAt(3_600);
@@ -901,7 +1052,20 @@ describe('mixed MIDI media ownership during non-loop playback', () => {
         expect(bakes).toHaveLength(2);
         const resumedAfterRefreeze = afterRefreeze.filter((source) => source.bufferId === 'left-buffer')[1]!;
         expect(resumedAfterRefreeze.stops).toHaveLength(1);
-        expect(frame(effectiveEnd(resumedAfterRefreeze))).toBeLessThanOrEqual(frame(bakes[1]!.start.when));
+        // The handoff cut overlaps the replacement onset by one micro fade.
+        expect(frame(effectiveEnd(resumedAfterRefreeze))).toBe(frame(bakes[1]!.start.when) + MICRO_FADE_FRAMES);
+        // Click-free at the clock instant, same overlap as the freeze handoff.
+        const refreezeProgrammes = snapshotGainProgrammes();
+        const retiringOriginalOut = resolveProgramme(
+            gainProgrammeFor(afterRefreeze, refreezeProgrammes, resumedAfterRefreeze)
+        );
+        expect(retiringOriginalOut.at(-2)!.kind).toBe('set');
+        expect(retiringOriginalOut.at(-2)!.gain).toBe(1);
+        expect(retiringOriginalOut.at(-2)!.time).toBeCloseTo(bakes[1]!.start.when, 12);
+        expect(retiringOriginalOut.at(-1)!.kind).toBe('linear');
+        expect(retiringOriginalOut.at(-1)!.gain).toBe(0);
+        expect(retiringOriginalOut.at(-1)!.time).toBeCloseTo(bakes[1]!.start.when + MICRO_FADE_SECONDS, 12);
+        expect(gainProgrammeFor(afterRefreeze, refreezeProgrammes, bakes[1]!)).toEqual([]);
         await tickAt(4_800);
         expect(snapshotSources().filter((source) => source.bufferId === 'bake')).toHaveLength(2);
 
@@ -930,6 +1094,22 @@ describe('mixed MIDI media ownership during non-loop playback', () => {
         expect(frame(bake!.start.when)).toBe(ANCHOR_FRAME + 24_000);
         expect(frame(old!.stops[0]!.when)).toBe(frame(bake!.start.when));
         expect(frame(effectiveEnd(old!))).toBe(frame(bake!.start.when));
+        // Click-free at the boundary: this onset is ahead of the clock, so the
+        // ordinary 5 ms ramp stands, and it must end exactly where the
+        // replacement begins — the bake (a frozen buffer) has no fade-in and is
+        // at full level from its first sample, so the replacement reaches full
+        // level no earlier than the retiring source reaches zero and the handoff
+        // never leaves both sides below full level at once past the onset.
+        const compensatedOnset = bake!.start.when;
+        const programmes = snapshotGainProgrammes();
+        const retiringOut = resolveProgramme(gainProgrammeFor(after, programmes, old!));
+        expect(retiringOut.at(-2)!.kind).toBe('set');
+        expect(retiringOut.at(-2)!.gain).toBe(1);
+        expect(retiringOut.at(-2)!.time).toBeCloseTo(compensatedOnset - 0.005, 12);
+        expect(retiringOut.at(-1)!.kind).toBe('linear');
+        expect(retiringOut.at(-1)!.gain).toBe(0);
+        expect(retiringOut.at(-1)!.time).toBeCloseTo(compensatedOnset, 12);
+        expect(gainProgrammeFor(after, programmes, bake!)).toEqual([]);
     });
 
     it('moves a pending compensated stop to an earlier uncompensated resume and preserves later handoffs', async () => {
@@ -959,12 +1139,15 @@ describe('mixed MIDI media ownership during non-loop playback', () => {
         const resumed = originals[1]!;
         expect(originals).toHaveLength(2);
         expect(frame(resumed.start.when)).toBe(492_000);
-        expect(originals[0]!.stops.map((stop) => frame(stop.when))).toEqual([504_000, 492_000]);
+        // The second cut moves the stop to the resume onset and overlaps it by
+        // one micro fade.
+        expect(originals[0]!.stops.map((stop) => frame(stop.when))).toEqual([504_000, 492_000 + MICRO_FADE_FRAMES]);
         const retiredBake = afterUnfreeze.find((source) => source.bufferId === 'bake')!;
         expect(retiredBake.stops.map((stop) => frame(stop.when))).toEqual([492_000]);
-        for (const source of [originals[0]!, retiredBake]) {
-            expect(frame(effectiveEnd(source))).toBeLessThanOrEqual(frame(resumed.start.when));
-        }
+        // The resumed handoff cut overlaps its onset by one micro fade; the
+        // never-started bake is cancelled exactly at the resume instant.
+        expect(frame(effectiveEnd(originals[0]!))).toBe(frame(resumed.start.when) + MICRO_FADE_FRAMES);
+        expect(frame(effectiveEnd(retiredBake))).toBeLessThanOrEqual(frame(resumed.start.when));
 
         mixed.freezeState = { status: 'frozen', frozenBufferId: 'bake', compensationSeconds: 0 };
         await tickAt(12_000);
@@ -1065,7 +1248,8 @@ describe('mixed MIDI media ownership during non-loop playback', () => {
                     expect(bake).toBeDefined();
                     expect(frame(bake!.start.when)).toBe(ANCHOR_FRAME + 1_200);
                     expect(frame(old!.start.when + old!.start.duration!)).toBe(576_000);
-                    expect(frame(effectiveEnd(old!))).toBeLessThanOrEqual(frame(bake!.start.when));
+                    // The handoff cut overlaps the replacement onset by one micro fade.
+                    expect(frame(effectiveEnd(old!))).toBe(frame(bake!.start.when) + MICRO_FADE_FRAMES);
                 } else {
                     expect(old?.stops).toHaveLength(0);
                     expect(bake).toBeUndefined();
@@ -1080,7 +1264,8 @@ describe('mixed MIDI media ownership during non-loop playback', () => {
             const bake = after.find((source) => source.bufferId === 'bake');
             expect(old).toBeDefined();
             expect(bake).toBeDefined();
-            expect(frame(effectiveEnd(old!))).toBeLessThanOrEqual(frame(bake!.start.when));
+            // The handoff cut overlaps the replacement onset by one micro fade.
+            expect(frame(effectiveEnd(old!))).toBe(frame(bake!.start.when) + MICRO_FADE_FRAMES);
         }
     );
     it('cancels a future compensated source without touching another track’s future source', async () => {
