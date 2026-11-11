@@ -68,8 +68,8 @@ describe('addTrack default names', () => {
         resetActionReplayAuthority();
         setActionHistoryMetadataPort(noActionHistoryMetadataPort);
         seedTracks([
-            createTrack({ id: 't-audio', name: 'Audio 1', kind: 'audio', color: '#123456' }),
-            createTrack({ id: 't-lead', name: 'Lead', kind: 'midi', color: '#123456' }),
+            createTrack({ id: 't-audio', name: 'Audio 1', kind: 'audio' }),
+            createTrack({ id: 't-lead', name: 'Lead', kind: 'midi' }),
         ]);
     });
 
@@ -198,11 +198,11 @@ describe('addTrack default names', () => {
     it.each(['remove', 'rename'] as const)(
         'names an addition from the actual %s prefix and replays the batch',
         async (change) => {
-            const first = createTrack({ id: 'audio-1', name: 'Audio 1', kind: 'audio', color: '#123456' });
+            const first = createTrack({ id: 'audio-1', name: 'Audio 1', kind: 'audio' });
             let prior: AppAction;
             let expected: string[];
             if (change === 'remove') {
-                seedTracks([first, createTrack({ id: 'audio-2', name: 'Audio 2', kind: 'audio', color: '#123456' })]);
+                seedTracks([first, createTrack({ id: 'audio-2', name: 'Audio 2', kind: 'audio' })]);
                 prior = { type: 'removeTrack', payload: { trackId: 'audio-2' } };
                 expected = ['Audio 1', 'Audio 2'];
             } else {
