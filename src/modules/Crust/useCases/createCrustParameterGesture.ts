@@ -199,14 +199,30 @@ function current(scope: Scope, gesture: Gesture): boolean {
     );
 }
 
+function deleteInstalledGesture(scope: Scope, gesture: Gesture): void {
+    if (scope.gestures.get(gesture.key) === gesture) {
+        scope.gestures.delete(gesture.key);
+    }
+}
+
+function finishNoOpCommit(scope: Scope, gesture: Gesture): void {
+    retire(scope, gesture, true);
+    deleteInstalledGesture(scope, gesture);
+}
+
+function finishCommit(scope: Scope, gesture: Gesture): void {
+    try {
+        retire(scope, gesture, !gesture.committed);
+    } finally {
+        deleteInstalledGesture(scope, gesture);
+    }
+}
+
 async function commit(scope: Scope, gesture: Gesture): Promise<void> {
     gesture.recording.release();
     const value = gesture.preview;
     if (value === undefined || value === (gesture.value ?? gesture.defaultValue)) {
-        retire(scope, gesture, true);
-        if (scope.gestures.get(gesture.key) === gesture) {
-            scope.gestures.delete(gesture.key);
-        }
+        finishNoOpCommit(scope, gesture);
         return;
     }
     try {
@@ -243,13 +259,40 @@ async function commit(scope: Scope, gesture: Gesture): Promise<void> {
     } catch (error) {
         notifyUser(error instanceof Error ? error.message : 'Crust parameter change failed', 'error');
     } finally {
-        try {
-            retire(scope, gesture, !gesture.committed);
-        } finally {
-            if (scope.gestures.get(gesture.key) === gesture) {
-                scope.gestures.delete(gesture.key);
-            }
+        finishCommit(scope, gesture);
+    }
+}
+
+function applyChange(
+    scope: Scope,
+    gesture: Gesture,
+    value: number,
+    transient: boolean,
+    recordingSample: boolean
+): Promise<void> {
+    try {
+        const bounded = clampDeviceParameterValue({ deviceType: 'crust', paramId: gesture.key, value });
+        const accepted = setDeviceParameter(scope.deviceId, gesture.key, bounded, {
+            transient: true,
+            runtimeOwner: gesture.runtime.owner,
+            automationRecordingOwner: gesture.recording.owner,
+            automationRecordingPolicy: recordingSample && gesture.recordingEligible ? undefined : 'suppressed',
+        });
+        if (!accepted) {
+            cancel(scope, gesture, true);
+            return Promise.resolve();
         }
+        gesture.preview = bounded;
+        setCrustParam(scope.deviceId, gesture.key, bounded);
+        if (transient) {
+            return Promise.resolve();
+        }
+        gesture.pending = commit(scope, gesture);
+        return gesture.pending;
+    } catch (error) {
+        cancel(scope, gesture, true);
+        notifyUser(error instanceof Error ? error.message : 'Crust parameter preview failed', 'error');
+        return Promise.resolve();
     }
 }
 
@@ -275,30 +318,7 @@ function change(scope: Scope, key: Key, value: number, transient = false, record
         cancel(scope, gesture);
         return Promise.resolve();
     }
-    try {
-        const bounded = clampDeviceParameterValue({ deviceType: 'crust', paramId: key, value });
-        const accepted = setDeviceParameter(scope.deviceId, key, bounded, {
-            transient: true,
-            runtimeOwner: gesture.runtime.owner,
-            automationRecordingOwner: gesture.recording.owner,
-            automationRecordingPolicy: recordingSample && gesture.recordingEligible ? undefined : 'suppressed',
-        });
-        if (!accepted) {
-            cancel(scope, gesture, true);
-            return Promise.resolve();
-        }
-        gesture.preview = bounded;
-        setCrustParam(scope.deviceId, key, bounded);
-        if (transient) {
-            return Promise.resolve();
-        }
-        gesture.pending = commit(scope, gesture);
-        return gesture.pending;
-    } catch (error) {
-        cancel(scope, gesture, true);
-        notifyUser(error instanceof Error ? error.message : 'Crust parameter preview failed', 'error');
-        return Promise.resolve();
-    }
+    return applyChange(scope, gesture, value, transient, recordingSample);
 }
 
 /** One mounted panel owns numeric previews; project truth changes only at a physical terminal. */
