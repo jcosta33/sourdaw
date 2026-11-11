@@ -58,6 +58,7 @@ type AudioHold = ReturnType<typeof openCachedAudioBufferHold>;
 
 /** A sample made ready to place: its audio, length, and the resources held until the clip commits or fails. */
 type PreparedSample = {
+    audioBuffer: AudioBuffer;
     audioBufferId: string;
     durationBeats: number;
     assetHash?: string;
@@ -116,7 +117,13 @@ async function prepareCachedSample(
         const staged = await stageClipAudioAsset(buffer, sample.name);
         return {
             status: 'ready',
-            prepared: { audioBufferId, durationBeats, assetHash: staged?.hash, assetLeaseId: staged?.leaseId },
+            prepared: {
+                audioBuffer: buffer,
+                audioBufferId,
+                durationBeats,
+                assetHash: staged?.hash,
+                assetLeaseId: staged?.leaseId,
+            },
         };
     } catch {
         notifyIfCurrent(authority, `Failed to import "${sample.name}" — asset registration failed`);
@@ -170,6 +177,7 @@ async function decodeLibraryFile(
     try {
         const result = await decodeAudioFile(file, hold);
         return {
+            audioBuffer: result.buffer,
             audioBufferId: result.id,
             decodedAudioBufferId: result.id,
             durationBeats: beatsForSeconds(result.buffer.duration, readTempo),
@@ -303,6 +311,10 @@ async function promoteCommittedSample(
     }
 }
 
+function isPreparedSampleCurrent(prepared: PreparedSample, authority: Authority): boolean {
+    return authority.isCurrent() && getCachedAudioBuffer({ bufferId: prepared.audioBufferId }) === prepared.audioBuffer;
+}
+
 /**
  * Places a browser sample as one audio clip in one batch of registered
  * actions (one undo step, #4618). The sample is prepared first — cached or
@@ -325,6 +337,7 @@ export async function placeLibrarySample({
     try {
         const restored = await restoreUnpinnedAudioBuffersFromIdb({
             bufferIds: [sample.audioBufferId ?? sample.id],
+            isCurrent: authority.isCurrent,
         });
         releaseAudio = restored.release;
         if (!authority.isCurrent()) {
@@ -334,29 +347,41 @@ export async function placeLibrarySample({
         if (preparation.status === 'abandoned') {
             return;
         }
-        prepared = preparation.prepared;
-        const targetPlan = authority.isCurrent() ? resolveAudioTarget(placement, sample.name) : null;
+        const preparedSample = preparation.prepared;
+        prepared = preparedSample;
+        const canCommit = () => {
+            const current = isPreparedSampleCurrent(preparedSample, authority);
+            if (!current) {
+                notifyIfCurrent(authority, `Could not place "${sample.name}" — its audio changed before placement.`);
+            }
+            return current;
+        };
+        if (!canCommit()) {
+            releasePrepared(preparedSample, assetTransfer);
+            return;
+        }
+        const targetPlan = resolveAudioTarget(placement, sample.name);
         if (!targetPlan) {
-            releasePrepared(prepared, assetTransfer);
+            releasePrepared(preparedSample, assetTransfer);
             return;
         }
         const naming = BATCH_NAMING[origin];
         const batchResult = await executeAppActionBatch(
-            buildPlacementActions(sample, prepared, placement, targetPlan),
+            buildPlacementActions(sample, preparedSample, placement, targetPlan),
             {
                 groupId: `${naming.groupIdPrefix}-${crypto.randomUUID()}`,
                 groupLabel: `${naming.groupLabelPrefix}: ${sample.name}`,
                 source: 'manual',
                 requireCompensation: true,
-                shouldExecute: () => authority.isCurrent(),
+                shouldExecute: canCommit,
             }
         ).catch(() => null);
         if (!retainedCreation(batchResult)) {
-            releasePrepared(prepared, assetTransfer);
+            releasePrepared(preparedSample, assetTransfer);
             return;
         }
         committed = true;
-        await promoteCommittedSample(prepared, batchResult, authority, assetTransfer);
+        await promoteCommittedSample(preparedSample, batchResult, authority, assetTransfer);
     } catch {
         if (prepared && !committed) {
             releasePrepared(prepared, assetTransfer);

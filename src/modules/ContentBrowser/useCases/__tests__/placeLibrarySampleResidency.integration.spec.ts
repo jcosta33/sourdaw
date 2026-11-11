@@ -18,6 +18,7 @@ import { createTrack, getArrangementHandlers, setClipAudioAssetStager } from '#/
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
 import {
     cacheAudioBuffer,
+    clearRuntimeCachedAudioBuffers,
     configureDurableAudioBufferOwnership,
     configureLiveAudioBufferReferences,
     getCachedAudioBuffer,
@@ -211,6 +212,7 @@ async function holdStorageWrites() {
 }
 
 describe('imported sample placement after real cache eviction', () => {
+    const bus = createEventBus<NotificationEvents>();
     let storage: ReturnType<typeof installTransactionalIndexedDb>;
     let notifications: NotifyPayload[];
     let unsubscribe: () => void;
@@ -223,6 +225,10 @@ describe('imported sample placement after real cache eviction', () => {
         vi.stubGlobal('Blob', NodeBlob);
         vi.stubGlobal('navigator', { ...navigator, locks: createControlledLockManager().locks });
         storage = installTransactionalIndexedDb();
+        unsubscribe = bus.on('ui.notify', (event) => {
+            notifications.push(event);
+        });
+        setNotificationEventBus(bus);
     });
 
     beforeEach(async () => {
@@ -263,19 +269,13 @@ describe('imported sample placement after real cache eviction', () => {
                 track.clips.flatMap((clip) => (clip.audioBufferId ? [clip.audioBufferId] : []))
             ),
         ]);
-        const bus = createEventBus<NotificationEvents>();
         notifications = [];
-        unsubscribe = bus.on('ui.notify', (event) => {
-            notifications.push(event);
-        });
-        setNotificationEventBus(bus);
     });
 
     afterEach(async () => {
         await releaseWrites?.();
         releaseWrites = undefined;
         getAssetTransfer()?.dispose();
-        unsubscribe();
         clearUndoHistory();
         resetActionReplayAuthority();
         clearHandlerRegistry();
@@ -289,6 +289,7 @@ describe('imported sample placement after real cache eviction', () => {
     });
 
     afterAll(async () => {
+        unsubscribe();
         await storage.dispose();
         vi.unstubAllGlobals();
     });
@@ -549,6 +550,79 @@ describe('imported sample placement after real cache eviction', () => {
         expect(notifications).toEqual([]);
     });
 
+    it('does not publish a cold storage read after its placement authority is revoked', async () => {
+        const original = originalPcm();
+        cacheAudioBuffer({ bufferId: BUFFER_ID, buffer: original });
+        await withProjectAudioStorageLock(async () => undefined);
+        await clearRuntimeCachedAudioBuffers();
+        expect(audioBufferCache.has(BUFFER_ID)).toBe(false);
+        const beforeRaw = structuredClone(rootTracks());
+        const beforeProjected = structuredClone(projectedTracks());
+        const beforeHistory = history();
+        let stageCalls = 0;
+        setClipAudioAssetStager(async (buffer, name) => {
+            stageCalls += 1;
+            return stageAudioBufferAsset(buffer, name);
+        });
+        const readStarted = deferred<void>();
+        const finishRead = deferred<void>();
+        const { IDBObjectStore: FakeIDBObjectStore } = await import('fake-indexeddb');
+        const nativeGet = FakeIDBObjectStore.prototype.get;
+        vi.spyOn(FakeIDBObjectStore.prototype, 'get').mockImplementation(function (this: IDBObjectStore, ...args) {
+            const request = nativeGet.apply(this, args);
+            if (this.name !== 'buffers' || this.transaction.mode !== 'readonly' || args[0] !== BUFFER_ID) {
+                return request;
+            }
+            let success: ((this: IDBRequest, event: Event) => unknown) | null = null;
+            Object.defineProperty(request, 'onsuccess', {
+                configurable: true,
+                get: () => (event: Event) => {
+                    readStarted.resolve();
+                    void finishRead.promise.then(() => success?.call(request, event));
+                },
+                set: (callback) => {
+                    success = callback;
+                },
+            });
+            return request;
+        });
+        let current = true;
+        const placement = placeLibrarySample({
+            sample: { id: `user-${BUFFER_ID}`, name: NAME, audioBufferId: BUFFER_ID },
+            placement: { trackId: 'target', startBeat: 8 },
+            authority: { isCurrent: () => current },
+            origin: 'timeline-drop',
+            readTempo: () => 120,
+        });
+        try {
+            await Promise.race([
+                readStarted.promise,
+                placement.then(() => {
+                    throw new Error('Placement ended before its stored PCM read completed');
+                }),
+            ]);
+            current = false;
+            owner += 1;
+            await clearRuntimeCachedAudioBuffers();
+        } finally {
+            finishRead.resolve();
+            await placement;
+        }
+        const cached = getCachedAudioBuffer({ bufferId: BUFFER_ID });
+
+        expect({
+            cacheResident: cached !== null,
+            durabilitySourceRevision: cached
+                ? audioBufferCache.readRuntimeMaterialPublication(BUFFER_ID, cached)
+                : undefined,
+            stageCalls,
+        }).toEqual({ cacheResident: false, durabilitySourceRevision: undefined, stageCalls: 0 });
+        expect(rootTracks()).toStrictEqual(beforeRaw);
+        expect(projectedTracks()).toStrictEqual(beforeProjected);
+        expect(history()).toStrictEqual(beforeHistory);
+        expect(notifications).toEqual([]);
+    });
+
     it.each(['staging-failure', 'stale-authority'] as const)(
         'releases restored PCM without project effects after %s',
         async (outcome) => {
@@ -614,4 +688,62 @@ describe('imported sample placement after real cache eviction', () => {
             expect(audioBufferCache.has(BUFFER_ID)).toBe(false);
         }
     );
+
+    it('refuses placement when a same-ID cache write replaces the PCM captured for staging', async () => {
+        const original = originalPcm();
+        cacheAudioBuffer({ bufferId: BUFFER_ID, buffer: original });
+        await withProjectAudioStorageLock(async () => undefined);
+        evictUnprotected();
+        expect(audioBufferCache.has(BUFFER_ID)).toBe(false);
+        const beforeRaw = structuredClone(rootTracks());
+        const beforeProjected = structuredClone(projectedTracks());
+        const beforeHistory = history();
+        const entered = deferred<void>();
+        const continueStaging = deferred<void>();
+        let staged: Awaited<ReturnType<typeof stageAudioBufferAsset>> | undefined;
+        setClipAudioAssetStager(async (buffer, name) => {
+            for (let channel = 0; channel < original.numberOfChannels; channel += 1) {
+                expect(buffer.getChannelData(channel)).toStrictEqual(original.getChannelData(channel));
+            }
+            entered.resolve();
+            await continueStaging.promise;
+            staged = await stageAudioBufferAsset(buffer, name);
+            return staged;
+        });
+        const replacement = originalPcm();
+        replacement.copyToChannel(new Float32Array([0.75, -0.25, 0.875, 0.5, -0.5, 0.125, -0.9375]), 0);
+        replacement.copyToChannel(new Float32Array([-0.125, 0.625, -0.75, 0.25, 0.5, -0.375, 0.8125]), 1);
+        const placement = placeLibrarySample({
+            sample: { id: `user-${BUFFER_ID}`, name: NAME, audioBufferId: BUFFER_ID },
+            placement: { trackId: 'target', startBeat: 8 },
+            authority: { isCurrent: () => true },
+            origin: 'timeline-drop',
+            readTempo: () => 120,
+        });
+        try {
+            await Promise.race([
+                entered.promise,
+                placement.then(() => {
+                    throw new Error('Placement ended before real asset staging');
+                }),
+            ]);
+            cacheAudioBuffer({ bufferId: BUFFER_ID, buffer: replacement });
+            expect(getCachedAudioBuffer({ bufferId: BUFFER_ID })).toBe(replacement);
+        } finally {
+            continueStaging.resolve();
+            await placement;
+        }
+
+        expect(rootTracks()).toStrictEqual(beforeRaw);
+        expect(projectedTracks()).toStrictEqual(beforeProjected);
+        expect(history()).toStrictEqual(beforeHistory);
+        expect(getCachedAudioBuffer({ bufferId: BUFFER_ID })).toBe(replacement);
+        expect(notifications).toMatchObject([{ level: 'error' }]);
+        if (!staged) {
+            throw new Error('Expected the original PCM to finish staging');
+        }
+        expect(getAssetTransfer()?.promoteStagedAsset(staged.leaseId)).toBe(false);
+        evictUnprotected();
+        expect(audioBufferCache.has(BUFFER_ID)).toBe(false);
+    });
 });

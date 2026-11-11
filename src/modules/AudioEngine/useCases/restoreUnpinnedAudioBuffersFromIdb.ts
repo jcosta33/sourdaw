@@ -3,6 +3,7 @@ import { openAudioBufferResidencyHold } from '../stores/audioBufferResidencyHold
 
 type RestoreUnpinnedAudioBuffersFromIdbInput = {
     bufferIds: readonly string[];
+    isCurrent?: () => boolean;
 };
 
 type RestoreUnpinnedAudioBuffersFromIdbOutput = {
@@ -22,13 +23,14 @@ type RestoreUnpinnedAudioBuffersFromIdbOutput = {
  */
 export async function restoreUnpinnedAudioBuffersFromIdb({
     bufferIds,
+    isCurrent,
 }: RestoreUnpinnedAudioBuffersFromIdbInput): Promise<RestoreUnpinnedAudioBuffersFromIdbOutput> {
     const hold = openAudioBufferResidencyHold();
     for (const id of bufferIds) {
         hold.retain(id);
     }
     try {
-        const { absent } = await audioBufferCache.restoreUnpinned(bufferIds);
+        const { absent } = await audioBufferCache.restoreUnpinned(bufferIds, isCurrent);
         return { absentIds: absent, release: hold.release };
     } catch (error) {
         hold.release();

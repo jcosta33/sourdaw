@@ -1844,7 +1844,10 @@ async function readUnpinnedStoredPcm(tx: IDBTransaction, id: string): Promise<Un
  * a failed read restores nothing and reports no id absent, so a caller never
  * treats stored audio it could not read as missing.
  */
-async function restoreUnpinnedStoredBuffers(ids: readonly string[]): Promise<UnpinnedStoredPcmRestoration> {
+async function restoreUnpinnedStoredBuffers(
+    ids: readonly string[],
+    isCurrent?: () => boolean
+): Promise<UnpinnedStoredPcmRestoration> {
     const candidateIds = [...new Set(ids)].filter((id) => !cache.has(id));
     if (candidateIds.length === 0) {
         return { absent: [] };
@@ -1863,7 +1866,7 @@ async function restoreUnpinnedStoredBuffers(ids: readonly string[]): Promise<Unp
     }
     const absent: string[] = [];
     for (const read of reads) {
-        if (read.status === 'refused' || cache.has(read.id)) {
+        if (isCurrent?.() === false || read.status === 'refused' || cache.has(read.id)) {
             continue;
         }
         // A write or removal that landed while storage was read supersedes it.
