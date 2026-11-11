@@ -22,6 +22,8 @@ export type TimelineViewState = {
      * whose real container was a different height.
      */
     viewportHeight?: number;
+    /** The measured CSS-pixel width used by clip reveal and horizontal navigation. */
+    viewportWidth?: number;
 };
 
 export const timelineViewStore = createStore<TimelineViewState>({
@@ -116,6 +118,14 @@ export function setTimelineViewportHeight(viewportHeight: number): void {
         viewportHeight,
         scrollY: clampScrollY(state.scrollY, viewportHeight),
     });
+}
+
+export function setTimelineViewportWidth(viewportWidth: number): void {
+    const state = timelineViewStore.value;
+    if (!state || (state.viewportWidth ?? 0) === viewportWidth) {
+        return;
+    }
+    timelineViewStore.set({ ...state, viewportWidth });
 }
 
 function clampScrollY(scrollY: number, viewportHeight: number): number {

@@ -16,6 +16,7 @@ import { type ActionHandler } from '#/utils/handlerContract';
 
 import { createTrack, type Clip, type Track } from '../../../models/Track';
 import { clipSelectionStore, defaultClipSelectionState } from '../../../stores/clipSelectionStore';
+import { timelineViewStore } from '../../../stores/timelineViewStore';
 import { defaultTrackState, trackStore } from '../../../stores/trackStore';
 import { getWarpState } from '../../../stores/warpStates';
 import { moveClip } from '../../../useCases/clip/moveClip';
@@ -110,6 +111,14 @@ describe('TimelineClipNavigator', () => {
         act(() => {
             clipSelectionStore.set(defaultClipSelectionState);
             trackStore.set({ ...defaultTrackState, tracks: [] });
+            timelineViewStore.set({
+                scrollX: 0,
+                scrollY: 0,
+                pixelsPerBeat: 12,
+                autoScrollEnabled: true,
+                viewportHeight: 0,
+                viewportWidth: 0,
+            });
         });
     });
 
@@ -121,6 +130,7 @@ describe('TimelineClipNavigator', () => {
         act(() => {
             clipSelectionStore.set(defaultClipSelectionState);
             trackStore.set({ ...defaultTrackState, tracks: [] });
+            timelineViewStore.set(null);
         });
     });
 
@@ -135,11 +145,13 @@ describe('TimelineClipNavigator', () => {
             });
         });
         const listbox = openNavigator();
-        expect(listbox).toHaveFocus();
+        const search = screen.getByRole('searchbox', { name: 'Search clips' });
+        expect(search).toHaveFocus();
         expect(activeOption(listbox)).toHaveAccessibleName(/Verse, Voice, MIDI clip, start beat 0, end beat 2/);
         expect(within(listbox).getAllByRole('option')).toHaveLength(2);
 
-        fireEvent.keyDown(listbox, { key: 'ArrowDown' });
+        fireEvent.keyDown(search, { key: 'ArrowDown' });
+        expect(listbox).toHaveFocus();
         expect(activeOption(listbox)).toHaveAccessibleName(/Fill, Drums, MIDI clip, start beat 8, end beat 10/);
         expect(clipSelectionStore.value?.selectedClipIds).toEqual([]);
         expect(within(listbox).getByRole('option', { name: /Fill/ })).toHaveAttribute('aria-selected', 'false');
@@ -254,7 +266,7 @@ describe('TimelineClipNavigator', () => {
             })
         );
         expect(activeOption(listbox)).toHaveAccessibleName(/near/);
-        expect(listbox).toHaveFocus();
+        expect(screen.getByRole('searchbox', { name: 'Search clips' })).toHaveFocus();
 
         act(() => trackStore.set({ ...defaultTrackState, tracks: [] }));
         expect(screen.getByText('No clips')).toBeInTheDocument();
@@ -362,11 +374,123 @@ describe('TimelineClipNavigator', () => {
         expect(details).toHaveTextContent('0 transients, 1 user, 0 locked');
 
         const listbox = openNavigator();
-        expect(listbox).toHaveFocus();
+        expect(screen.getByRole('searchbox', { name: 'Search clips' })).toHaveFocus();
         fireEvent.keyDown(listbox, { key: 'Delete' });
         fireEvent.keyDown(listbox, { key: 'Backspace' });
 
         expect(getWarpState('one').markers).toEqual(before);
         expect(details).toHaveTextContent('0 transients, 1 user, 0 locked');
+    });
+
+    it('filters clip and track names by type and current track with announced counts', () => {
+        const audioTake: Clip = { ...clip('take', 'voice', 4, 'Take'), type: 'audio' };
+        act(() => {
+            trackStore.set({
+                ...defaultTrackState,
+                selectedTrackId: 'voice',
+                tracks: [
+                    track('voice', 'Voice', [clip('lead', 'voice', 0, 'Lead'), audioTake]),
+                    track('drums', 'Drums', [clip('fill', 'drums', 8, 'Fill')]),
+                ],
+            });
+        });
+        const listbox = openNavigator();
+        const search = screen.getByRole('searchbox', { name: 'Search clips' });
+        expect(screen.getByText('3 of 3 clips')).toBeInTheDocument();
+
+        fireEvent.change(search, { target: { value: 'TAK' } });
+        expect(within(listbox).getAllByRole('option')).toHaveLength(1);
+        expect(activeOption(listbox)).toHaveAccessibleName(/Take, Voice, audio clip/);
+        expect(screen.getByText('1 of 3 clips')).toBeInTheDocument();
+
+        fireEvent.click(screen.getByRole('button', { name: 'MIDI', exact: true }));
+        expect(within(listbox).queryAllByRole('option')).toHaveLength(0);
+        expect(screen.getByText('No matching clips')).toBeInTheDocument();
+        expect(screen.getByText('0 of 3 clips')).toBeInTheDocument();
+        expect(listbox).not.toHaveAttribute('aria-activedescendant');
+
+        fireEvent.change(search, { target: { value: '' } });
+        expect(
+            within(listbox)
+                .getAllByRole('option')
+                .map((option) => option.textContent)
+        ).toEqual(['Lead · Voice', 'Fill · Drums']);
+        fireEvent.click(screen.getByRole('button', { name: 'Current track' }));
+        expect(within(listbox).getAllByRole('option')).toHaveLength(1);
+        expect(activeOption(listbox)).toHaveAccessibleName(/Lead, Voice, MIDI clip/);
+        expect(screen.getByText('1 of 3 clips')).toBeInTheDocument();
+        expect(trackStore.value?.selectedTrackId).toBe('voice');
+        expect(clipSelectionStore.value?.selectedClipIds).toEqual([]);
+
+        fireEvent.keyDown(search, { key: 'Escape' });
+        expect(screen.queryByRole('listbox', { name: 'Timeline clips' })).not.toBeInTheDocument();
+    });
+
+    it('selects and minimally reveals an off-screen result without changing zoom', () => {
+        act(() => {
+            trackStore.set({
+                ...defaultTrackState,
+                tracks: [
+                    track('near-track', 'Near', [clip('near', 'near-track', 0, 'Near')]),
+                    track('far-track', 'Far', [clip('far', 'far-track', 100, 'Far')]),
+                ],
+            });
+            selectClipWithFocus('near');
+            timelineViewStore.set({
+                scrollX: 0,
+                scrollY: 0,
+                pixelsPerBeat: 10,
+                autoScrollEnabled: true,
+                viewportHeight: 80,
+                viewportWidth: 200,
+            });
+        });
+        const listbox = openNavigator();
+        const search = screen.getByRole('searchbox', { name: 'Search clips' });
+        fireEvent.change(search, { target: { value: 'Far' } });
+
+        fireEvent.keyDown(search, { key: 'Enter' });
+
+        expect(trackStore.value?.selectedTrackId).toBe('far-track');
+        expect(clipSelectionStore.value?.selectedClipIds).toEqual(['far']);
+        expect(timelineViewStore.value).toMatchObject({
+            scrollX: 820,
+            scrollY: 80,
+            pixelsPerBeat: 10,
+        });
+        const clipStartX = 100 * 10;
+        const clipEndX = 102 * 10;
+        const { scrollX = 0, scrollY = 0 } = timelineViewStore.value ?? {};
+        expect(clipStartX).toBeGreaterThanOrEqual(scrollX);
+        expect(clipEndX).toBeLessThanOrEqual(scrollX + 200);
+        expect(80).toBeGreaterThanOrEqual(scrollY);
+        expect(160).toBeLessThanOrEqual(scrollY + 80);
+        expect(screen.getByRole('listbox', { name: 'Timeline clips' })).toBe(listbox);
+
+        fireEvent.keyDown(search, { key: 'Enter' });
+        expect(timelineViewStore.value).toMatchObject({ scrollX: 820, scrollY: 80, pixelsPerBeat: 10 });
+    });
+
+    it('retargets a filtered active descendant after deletion and undo restoration', () => {
+        const first = clip('first', 'voice', 0, 'Keep A');
+        const second = clip('second', 'voice', 4, 'Keep B');
+        act(() => trackStore.set({ ...defaultTrackState, tracks: [track('voice', 'Voice', [first, second])] }));
+        const listbox = openNavigator();
+        const search = screen.getByRole('searchbox', { name: 'Search clips' });
+        fireEvent.change(search, { target: { value: 'Keep' } });
+        fireEvent.keyDown(search, { key: 'ArrowDown' });
+        fireEvent.keyDown(listbox, { key: 'End' });
+        expect(activeOption(listbox)).toHaveAccessibleName(/Keep B/);
+
+        act(() => trackStore.set({ ...defaultTrackState, tracks: [track('voice', 'Voice', [first])] }));
+        expect(activeOption(listbox)).toHaveAccessibleName(/Keep A/);
+        expect(document.getElementById(listbox.getAttribute('aria-activedescendant')!)).toBeInTheDocument();
+
+        act(() => trackStore.set({ ...defaultTrackState, tracks: [track('voice', 'Voice', [first, second])] }));
+        fireEvent.keyDown(listbox, { key: 'End' });
+        expect(activeOption(listbox)).toHaveAccessibleName(/Keep B/);
+        act(() => trackStore.set({ ...defaultTrackState, tracks: [] }));
+        expect(screen.getByText('No clips')).toBeInTheDocument();
+        expect(listbox).not.toHaveAttribute('aria-activedescendant');
     });
 });
