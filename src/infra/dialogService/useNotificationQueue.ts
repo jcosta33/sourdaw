@@ -99,7 +99,7 @@ export function useNotificationQueue(): {
             }))
         );
 
-        let valid = false;
+        let valid: boolean;
         try {
             valid = action.isValid();
         } catch {
