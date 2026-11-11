@@ -1,0 +1,16 @@
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerLoopAudioStall.spec.ts
+  h_beb54bf43b47b7 5,50-78,84-111,113,117,119-122,263-264,266,273,305,415-469,693,848-849,906-907,922-923,1000-1014,1024-1046,1055-1068,1097-1112,1142-1144,1147-1150,1251-1252,1267-1268
+src/modules/Transport/useCases/playheadScheduler/retireSupersededMidiMedia.ts
+  h_beb54bf43b47b7 1-2,80-104,120-125,127-129,133,135
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "edca083340390bbf551937f32282af2276ead6d8",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
