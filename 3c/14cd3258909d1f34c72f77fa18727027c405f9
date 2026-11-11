@@ -1,0 +1,22 @@
+src/modules/Arrangement/presentations/views/TimelineClipNavigator.tsx
+  h_beb54bf43b47b7 74,141-145
+src/modules/Arrangement/presentations/views/__tests__/TimelineClipNavigator.spec.tsx
+  h_beb54bf43b47b7 385-412,429-433,458-462
+src/modules/WorkspaceShell/presentations/hooks/__tests__/useNativeApplicationMenuFocus.integration.spec.tsx
+  h_beb54bf43b47b7 182-183,224
+src/modules/WorkspaceShell/presentations/views/__tests__/TransportBar.spec.tsx
+  h_beb54bf43b47b7 364-365,390-391,443-444,451,464,482
+tests/e2e/timelineClipAccessibility.spec.ts
+  h_beb54bf43b47b7 22-23,116-117
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3c14cd3258909d1f34c72f77fa18727027c405f9",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
