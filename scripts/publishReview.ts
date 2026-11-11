@@ -102,7 +102,13 @@ export const EXPECTED_REVIEW_STATE: Record<ReviewEvent, string> = {
 
 export type PublishReviewPort = {
     primaryRoot: () => string;
-    pullRequest: (number: number) => { state: string; head: string; labels?: AuthorshipLabel[] };
+    pullRequest: (number: number) => {
+        state: string;
+        head: string;
+        labels?: AuthorshipLabel[];
+        /** GitHub's `createdAt`; a plan-less bundle publishes only for a pull request opened before plans existed. */
+        createdAt?: string;
+    };
     readReviewJson: (path: string) => unknown;
     bundleFileExists: (path: string) => boolean;
     readBundleDiff: (path: string) => string;
@@ -253,7 +259,7 @@ function prepareReviewPublication(
         assertApprovalWithoutOpenThreads(number, head, port);
     }
     if (actorNodeId !== ORCHESTRATOR_USER_NODE_ID) {
-        prepareReviewDossierPublication({ number, head, bundle, document, port });
+        prepareReviewDossierPublication({ number, head, createdAt: pullRequest.createdAt, bundle, document, port });
     }
     return {
         head,
@@ -440,8 +446,21 @@ export function shellPort(
     return {
         primaryRoot: () => primaryRoot,
         pullRequest: (number) => {
-            const pullRequest = parseJson<{ state?: unknown; headRefOid?: unknown; labels?: unknown }>(
-                gh(['pr', 'view', String(number), '--repo', REQUIRED_REPOSITORY, '--json', 'state,headRefOid,labels']),
+            const pullRequest = parseJson<{
+                state?: unknown;
+                headRefOid?: unknown;
+                labels?: unknown;
+                createdAt?: unknown;
+            }>(
+                gh([
+                    'pr',
+                    'view',
+                    String(number),
+                    '--repo',
+                    REQUIRED_REPOSITORY,
+                    '--json',
+                    'state,headRefOid,labels,createdAt',
+                ]),
                 'review publication pull request'
             );
             if (typeof pullRequest.state !== 'string' || typeof pullRequest.headRefOid !== 'string') {
@@ -467,7 +486,12 @@ export function shellPort(
                       return [entry];
                   })
                 : undefined;
-            return { state: pullRequest.state, head: pullRequest.headRefOid, labels };
+            return {
+                state: pullRequest.state,
+                head: pullRequest.headRefOid,
+                labels,
+                ...(typeof pullRequest.createdAt === 'string' ? { createdAt: pullRequest.createdAt } : {}),
+            };
         },
         reviewState: (number, head) => readPullRequestReviewState(number, head, REQUIRED_REPOSITORY, gh),
         readReviewJson: (path) => JSON.parse(readFileSync(path, 'utf8')) as unknown,

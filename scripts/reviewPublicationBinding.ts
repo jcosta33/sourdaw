@@ -44,6 +44,11 @@ import type { ReviewState } from './pullRequestReviewState.ts';
 import type { DeliveryAuthorization, ReviewDocument } from './reviewDocumentParser.ts';
 
 const REVIEW_RISK_PLAN_NAME = 'risk-plan.json';
+/**
+ * The merge of #4399, when `review:prepare` began writing risk plans. A pull request opened at or
+ * after it has always been prepared with a plan, so a plan-less bundle for it is a deleted plan.
+ */
+export const PLANLESS_REVIEW_BUNDLE_CUTOVER = '2026-09-19T06:51:45Z';
 const REVIEW_DOSSIER_NAME = 'dossier.json';
 /** Caller documents the retired contract required; ADR 0054 reads none of them. */
 const RETIRED_CALLER_DOCUMENTS = ['stances.json', 'discarded.json', 'reassessment.json'] as const;
@@ -244,10 +249,30 @@ function bundleRecordedPublicationId(bundle: string, port: PublishReviewPort): n
 type DossierPublicationContext = {
     number: number;
     head: string;
+    /** The live pull request's GitHub `createdAt`, read with its head; only a plan-less bundle needs it. */
+    createdAt?: string;
     bundle: string;
     document: ReviewDocument;
     port: PublishReviewPort;
 };
+
+/** A fresh plan-less publication is admitted only for a pull request GitHub records as opened before the cutover. */
+function assertPlanlessBundlePredatesRiskPlans(number: number, planPath: string, createdAt: string | undefined): void {
+    const opened =
+        createdAt !== undefined && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/u.test(createdAt)
+            ? Date.parse(createdAt)
+            : Number.NaN;
+    if (Number.isNaN(opened)) {
+        fail(
+            `missing review risk plan at ${planPath} and pull request #${number} has no readable createdAt; re-run pnpm review:prepare ${number}`
+        );
+    }
+    if (opened >= Date.parse(PLANLESS_REVIEW_BUNDLE_CUTOVER)) {
+        fail(
+            `missing review risk plan at ${planPath}: pull request #${number} was opened at ${createdAt}, after risk plans began (${PLANLESS_REVIEW_BUNDLE_CUTOVER}); re-run pnpm review:prepare ${number}`
+        );
+    }
+}
 
 function readReviewDossierBuildInput(
     input: DossierPublicationContext
@@ -260,6 +285,7 @@ function readReviewDossierBuildInput(
         if (readBundleGeneratedSet(input.bundle)?.has(REVIEW_RISK_PLAN_NAME) === true) {
             fail(`missing review risk plan at ${planPath}; the bundle manifest records generating it`);
         }
+        assertPlanlessBundlePredatesRiskPlans(input.number, planPath, input.createdAt);
         logIgnoredCallerDocuments(input.bundle, undefined, input.port);
         return undefined;
     }

@@ -68,7 +68,11 @@ import {
     publishedFindings,
     publishedReviewId,
 } from '../reviewDossierViews.ts';
-import { recordedPublicationReplay, recordPublicationBindings } from '../reviewPublicationBinding.ts';
+import {
+    PLANLESS_REVIEW_BUNDLE_CUTOVER,
+    recordedPublicationReplay,
+    recordPublicationBindings,
+} from '../reviewPublicationBinding.ts';
 import { legacyReviewPublicationIncidents } from '../reviewPublicationLegacyIncidents.ts';
 import { OPERATOR_ABSENT_ATTESTATION, type RecoveryReceipt } from '../reviewPublicationRecoveryReceipt.ts';
 import {
@@ -159,6 +163,9 @@ function writeRawLockOwner(root: string, contents: string): string {
     return result.stdout.trim();
 }
 
+/** A pull request opened before `review:prepare` wrote risk plans, so its plan-less bundle may publish. */
+const PRE_RISK_PLAN_CREATED_AT = '2026-09-01T00:00:00Z';
+
 function fakePort(
     input: {
         head?: string;
@@ -172,6 +179,8 @@ function fakePort(
         login?: string;
         labels?: { name: string; description?: string }[];
         unresolvedThreads?: number;
+        /** GitHub's createdAt; null reads none. Defaults before the plan-less cutover, as these bundles carry no plan. */
+        createdAt?: string | null;
     } = {}
 ) {
     const calls: string[] = [];
@@ -191,7 +200,13 @@ function fakePort(
             if (input.laterState !== undefined) {
                 state = input.laterState;
             }
-            return { state: currentState, head: current, labels: input.labels };
+            const createdAt = input.createdAt === undefined ? PRE_RISK_PLAN_CREATED_AT : input.createdAt;
+            return {
+                state: currentState,
+                head: current,
+                labels: input.labels,
+                ...(createdAt === null ? {} : { createdAt }),
+            };
         },
         readReviewJson: (path) => {
             // A plain fake bundle carries only the review or acceptance document: the publication's
@@ -358,6 +373,7 @@ async function runFailingReviewPublication(root: string, number: number, head: s
                         return JSON.stringify({
                             number,
                             state: 'OPEN',
+                            createdAt: PRE_RISK_PLAN_CREATED_AT,
                             headRefOid: head,
                             headRefName: 'agent/test',
                             baseRefName: 'main',
@@ -1176,7 +1192,7 @@ describe('review publish', () => {
                 reviewPort: (_session, _primaryRoot, markRemoteMutationAttempt) => ({
                     primaryRoot: () => root,
                     assertApprovalContext: (number, head) => approvalContext(head, number),
-                    pullRequest: () => ({ state: 'OPEN', head: 'a'.repeat(40) }),
+                    pullRequest: () => ({ state: 'OPEN', head: 'a'.repeat(40), createdAt: PRE_RISK_PLAN_CREATED_AT }),
                     readReviewJson: (path) => {
                         if (path.endsWith('/risk-plan.json')) {
                             throw new Error('ENOENT');
@@ -2330,6 +2346,7 @@ describe('shellPort postReview state verification', () => {
                 return JSON.stringify({
                     state: 'OPEN',
                     headRefOid: 'headsha',
+                    createdAt: PRE_RISK_PLAN_CREATED_AT,
                     labels: [
                         { name: 'bug', description: 'Something is broken' },
                         { name: 'claude-sonnet-4.5', description: 'Authored by claude-sonnet-4.5' },
@@ -2349,10 +2366,11 @@ describe('shellPort postReview state verification', () => {
                 { name: 'claude-sonnet-4.5', description: 'Authored by claude-sonnet-4.5' },
                 { name: 'no-description' },
             ],
+            createdAt: PRE_RISK_PLAN_CREATED_AT,
         });
         // The field list is the acquisition path itself: dropping `labels` from it silently
         // disables the diversity enforcement in production while every fake-port test stays green.
-        expect(requests).toEqual([`pr view 42 --repo jcosta33/sourdaw --json state,headRefOid,labels`]);
+        expect(requests).toEqual([`pr view 42 --repo jcosta33/sourdaw --json state,headRefOid,labels,createdAt`]);
     });
 
     it('refuses a same-model review end to end through the production shellPort label fetch', () => {
@@ -2381,6 +2399,7 @@ describe('shellPort postReview state verification', () => {
                 if (command === 'gh' && args[0] === 'pr') {
                     return JSON.stringify({
                         state: 'OPEN',
+                        createdAt: PRE_RISK_PLAN_CREATED_AT,
                         headRefOid: head,
                         labels: [{ name: 'claude-sonnet-4.5', description: 'Authored by claude-sonnet-4.5' }],
                     });
@@ -5262,6 +5281,8 @@ describe('fresh reviewer dossier publication', () => {
             documentName?: string;
             manifest?: Record<string, unknown>;
             labels?: { name: string; description?: string }[];
+            /** GitHub's createdAt; null reads none. Defaults before the plan-less cutover. */
+            createdAt?: string | null;
             writable?: boolean;
             reviewComments?: PublishedReviewComment[];
             remoteReviews?: Record<number, RemotePublishedReview | undefined>;
@@ -5312,7 +5333,10 @@ describe('fresh reviewer dossier publication', () => {
                 }
                 return approvalContext(publishedHead, publishedNumber);
             },
-            pullRequest: () => ({ state: 'OPEN', head, labels: input.labels }),
+            pullRequest: () => {
+                const createdAt = input.createdAt === undefined ? PRE_RISK_PLAN_CREATED_AT : input.createdAt;
+                return { state: 'OPEN', head, labels: input.labels, ...(createdAt === null ? {} : { createdAt }) };
+            },
             readReviewJson: (path) => {
                 calls.push(`read:${path}`);
                 return readJsonFile(path);
@@ -6879,6 +6903,63 @@ describe('fresh reviewer dossier publication', () => {
             expect(fixture.posted.review?.event).toBe('APPROVE');
             expect(fixture.writes).toEqual([]);
             expect(fixture.calls.some((call) => call.endsWith('dossier.json'))).toBe(false);
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it('publishes a plan-less bundle for a pull request opened just before risk plans began', () => {
+        const fixture = dossierFixture({ createdAt: '2026-09-19T06:51:44Z' });
+        try {
+            expect(publishReview(number, fixture.port)).toBe(99);
+            expect(fixture.posted.review?.event).toBe('APPROVE');
+            expect(fixture.writes).toEqual([]);
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it.each([
+        ['at the cutover', PLANLESS_REVIEW_BUNDLE_CUTOVER],
+        ['after the cutover', '2026-11-01T12:00:00Z'],
+    ])('refuses a plan-less bundle for a pull request opened %s before any write', (_label, createdAt) => {
+        const fixture = dossierFixture({ createdAt });
+        try {
+            const message = refusalMessage(() => publishReview(number, fixture.port));
+            expect(message).toMatch(/missing review risk plan at .*risk-plan\.json/u);
+            expect(message).toContain(`was opened at ${createdAt}, after risk plans began`);
+            expect(message).toContain(`re-run pnpm review:prepare ${number}`);
+            expect(fixture.calls).not.toContain('post');
+            expect(fixture.posted.review).toBeUndefined();
+            expect(fixture.writes).toEqual([]);
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it.each([
+        ['absent', null],
+        ['unparsable', 'yesterday'],
+        ['not a calendar instant', '2026-02-31T25:00:00Z'],
+    ])('refuses a plan-less bundle when the pull request createdAt is %s', (_label, createdAt) => {
+        const fixture = dossierFixture({ createdAt });
+        try {
+            const message = refusalMessage(() => publishReview(number, fixture.port));
+            expect(message).toContain(`pull request #${number} has no readable createdAt`);
+            expect(message).toContain(`re-run pnpm review:prepare ${number}`);
+            expect(fixture.calls).not.toContain('post');
+            expect(fixture.posted.review).toBeUndefined();
+            expect(fixture.writes).toEqual([]);
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it('publishes a plan-carrying bundle whatever the pull request createdAt', () => {
+        const fixture = dossierFixture({ plan: riskPlan(), createdAt: null });
+        try {
+            expect(publishReview(number, fixture.port)).toBe(99);
+            expect(fixture.posted.review?.event).toBe('APPROVE');
         } finally {
             removeTemporaryDirectory(fixture.root);
         }
