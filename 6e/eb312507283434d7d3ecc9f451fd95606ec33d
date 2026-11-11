@@ -1,0 +1,32 @@
+.agents/skills/review-stances/correctness.md
+  s_51bd2c5eff37cf::t_ddc93e284b8eb6 143-144
+  s_51bd2c5eff37cf::t_8ef7970a02d4c1 142
+  s_51bd2c5eff37cf::t_b71766a8ebef5d 145-146
+.agents/skills/review-stances/audio-timing-format-laws.md
+  s_51bd2c5eff37cf::t_c6d645fe51a3b7 83-92
+.agents/skills/review-stances/guard-reclamation-proof.md
+  s_51bd2c5eff37cf::t_217cb62b24bce1 8-9
+  s_51bd2c5eff37cf::t_210a407cc8c79d 90-92,112-117
+.agents/skills/review-stances/rendered-ui-layout.md
+  s_51bd2c5eff37cf::t_c1ca5b1e971678 25-37
+.agents/skills/review-stances/input-monitoring-ownership.md
+  s_51bd2c5eff37cf::t_51eb10628daa2b 72-74
+.agents/skills/review-stances/test-validity.md
+  s_51bd2c5eff37cf::t_84c5516a80533d 84-87,92-95
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "6eeb312507283434d7d3ecc9f451fd95606ec33d",
+  "prompts": {},
+  "sessions": {
+    "s_51bd2c5eff37cf": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a7200200-3dc3-4527-84b3-151df1591d6c",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
