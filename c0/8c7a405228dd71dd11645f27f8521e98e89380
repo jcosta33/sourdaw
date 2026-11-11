@@ -1,0 +1,66 @@
+.agents/skills/review-stances/asset-cache-publication.md
+  h_beb54bf43b47b7 72-82
+.agents/skills/review-stances/command-entry-and-state-oracles.md
+  h_beb54bf43b47b7 98-112
+.agents/skills/review-stances/correctness.md
+  h_beb54bf43b47b7 48-49
+.agents/skills/review-stances/test-timing-and-isolation.md
+  h_beb54bf43b47b7 101-109
+release/open-source-inventory.json
+  h_beb54bf43b47b7 1216
+src/modules/Arrangement/handlers/__tests__/planDefaultTrackName.spec.ts
+  h_beb54bf43b47b7 1-207
+src/modules/Arrangement/handlers/planDefaultTrackName.ts
+  h_beb54bf43b47b7 1,7-63,65-69,74
+src/modules/Arrangement/handlers/track/__tests__/handleAddTrackDefaultName.integration.spec.ts
+  h_beb54bf43b47b7 1,6,11,15,25,29,31,60,82,94-164,198-247
+src/modules/Arrangement/handlers/track/handleAddTrack.ts
+  h_beb54bf43b47b7 96
+src/modules/Arrangement/presentations/hooks/__tests__/useTimelineFileDrop.spec.tsx
+  h_beb54bf43b47b7 32,107,109-114,160-170,182-186,292,376-378,632,662-665,684,715-718,750,797,820-823,832,859-862,877,909-912,922,1326,1365,1401,1467,1497,1522-1524,1540-1546,1551-1557,1575,1600,1644-1648,1670,1709
+src/modules/AudioEngine/stores/__tests__/audioBufferCacheUnpinnedRestore.spec.ts
+  h_beb54bf43b47b7 32,92,180-183,191,194-198,324-355
+src/modules/AudioEngine/stores/audioBufferCache.ts
+  h_beb54bf43b47b7 1770-1773,1851-1854,1856-1857,1859,1871,1875,1888,1893,1895
+src/modules/AudioEngine/useCases/__tests__/discardDecodedAudioFile.spec.ts
+  h_beb54bf43b47b7 14,36-46,93-107
+src/modules/AudioEngine/useCases/discardDecodedAudioFileIfCurrent.ts
+  h_beb54bf43b47b7 1-9
+src/modules/AudioEngine/useCases/index.ts
+  h_beb54bf43b47b7 80
+src/modules/AudioEngine/useCases/restoreUnpinnedAudioBuffersFromIdb.ts
+  h_beb54bf43b47b7 6,12-15,30,37-43
+src/modules/Command/useCases/__tests__/executeAppActionMaterializedObserver.spec.ts
+  h_beb54bf43b47b7 8-10,12,31-62,123-384
+src/modules/Command/useCases/executeAppAction.ts
+  h_beb54bf43b47b7 201-209,302-305
+src/modules/ContentBrowser/useCases/__tests__/addBrowserSample.spec.ts
+  h_beb54bf43b47b7 47-52,146-148
+src/modules/ContentBrowser/useCases/__tests__/placeLibrarySample.spec.ts
+  h_beb54bf43b47b7 11-13,58-59,104-109,132-158,162-164,172-177,179-205,208,231,245-246,248,253
+src/modules/ContentBrowser/useCases/__tests__/placeLibrarySampleResidency.integration.spec.ts
+  h_beb54bf43b47b7 1-1101
+src/modules/ContentBrowser/useCases/placeLibrarySample.ts
+  h_beb54bf43b47b7 8-14,57,61,90,95,120-126,174-175,178,180,198-199,222,240-244,248-249,254-256,260-267,269-283,292-294,298,342-345,363-364,366-378,382-395,397,402,408,412,416,422-424
+src/modules/MixerConsole/presentations/views/Mixer/IOSection.tsx
+  h_beb54bf43b47b7 24-26
+src/modules/MixerConsole/presentations/views/Mixer/__tests__/IOSection.spec.tsx
+  h_beb54bf43b47b7 129-143
+src/modules/SampleLibrary/useCases/ensureFactorySampleBuffer.ts
+  h_beb54bf43b47b7 18,72-76,91,111,115-117,128-130,134
+src/utils/createHandler.ts
+  h_beb54bf43b47b7 38
+src/utils/handlerContract.ts
+  h_beb54bf43b47b7 3724-3730
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c08c7a405228dd71dd11645f27f8521e98e89380",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
