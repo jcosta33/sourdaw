@@ -297,6 +297,60 @@ function restorePreviousJob(port: CleanupInstallationPort, plist: string, previo
     port.run('/bin/launchctl', ['bootstrap', `gui/${port.uid}`, plist]);
 }
 
+function bootoutIfLoaded(port: CleanupInstallationPort, service: string): void {
+    try {
+        port.run('/bin/launchctl', ['bootout', service]);
+    } catch (error) {
+        if (
+            !(error instanceof Error) ||
+            !/Could not find service|service not found|No such process/i.test(error.message)
+        ) {
+            throw error;
+        }
+    }
+}
+
+/** Replaces any loaded job with the new plist and returns the launch failure, if any. */
+function activateCleanupJob(
+    port: CleanupInstallationPort,
+    service: string,
+    plist: string,
+    node: string,
+    root: string
+): string | undefined {
+    let loaded = false;
+    try {
+        port.capture('/bin/launchctl', ['print', service]);
+        loaded = true;
+    } catch (error) {
+        if (!(error instanceof Error) || !/Could not find service|service not found/i.test(error.message)) {
+            throw error;
+        }
+    }
+    if (loaded) {
+        port.run('/bin/launchctl', ['bootout', service]);
+    }
+    port.run('/bin/launchctl', ['bootstrap', `gui/${port.uid}`, plist]);
+    return launchFailure(observeFirstLaunch(port, service), node, root);
+}
+
+type CleanupRollback = { service: string; plist: string; previousPlist: string | undefined; runtime: string };
+
+function rollBackCleanupJob(port: CleanupInstallationPort, rollback: CleanupRollback, failure: Error): never {
+    let restoreFailure: string | undefined;
+    try {
+        bootoutIfLoaded(port, rollback.service);
+        restorePreviousJob(port, rollback.plist, rollback.previousPlist);
+    } catch (error) {
+        restoreFailure = error instanceof Error ? error.message : String(error);
+    }
+    rmSync(rollback.runtime, { recursive: true });
+    if (restoreFailure !== undefined) {
+        throw new Error(`${failure.message} The previous cleanup job could not be restored: ${restoreFailure}`);
+    }
+    throw failure;
+}
+
 export function installCleanupLanes(port: CleanupInstallationPort): { plist: string; runtime: string } {
     if (port.platform !== 'darwin') {
         throw new Error('lane cleanup installation requires macOS launchd');
@@ -364,33 +418,15 @@ export function installCleanupLanes(port: CleanupInstallationPort): { plist: str
     const previousPlist = readCleanupFile(plist)?.bytes.toString('utf8');
     atomicWrite(plist, cleanupPlist(binding, runtime));
     const service = `gui/${port.uid}/${CLEANUP_LABEL}`;
-    let loaded = false;
+    const rollback: CleanupRollback = { service, plist, previousPlist, runtime };
+    let failure: string | undefined;
     try {
-        port.capture('/bin/launchctl', ['print', service]);
-        loaded = true;
+        failure = activateCleanupJob(port, service, plist, binding.node, root);
     } catch (error) {
-        if (!(error instanceof Error) || !/Could not find service|service not found/i.test(error.message)) {
-            throw error;
-        }
+        rollBackCleanupJob(port, rollback, error instanceof Error ? error : new Error(String(error)));
     }
-    if (loaded) {
-        port.run('/bin/launchctl', ['bootout', service]);
-    }
-    port.run('/bin/launchctl', ['bootstrap', `gui/${port.uid}`, plist]);
-    const failure = launchFailure(observeFirstLaunch(port, service), binding.node, root);
     if (failure !== undefined) {
-        port.run('/bin/launchctl', ['bootout', service]);
-        let restoreFailure: string | undefined;
-        try {
-            restorePreviousJob(port, plist, previousPlist);
-        } catch (error) {
-            restoreFailure = error instanceof Error ? error.message : String(error);
-        }
-        rmSync(runtime, { recursive: true });
-        if (restoreFailure !== undefined) {
-            throw new Error(`${failure} The previous cleanup job could not be restored: ${restoreFailure}`);
-        }
-        throw new Error(failure);
+        rollBackCleanupJob(port, rollback, new Error(failure));
     }
     pruneSupersededRuntimes(runtimes, runtime);
     return { plist, runtime };

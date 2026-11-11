@@ -660,6 +660,26 @@ describe('automatic lane cleanup', () => {
         }
     });
 
+    it('protects a review lane whose head belongs to another pull request without tripping the circuit', () => {
+        const f = fixture();
+        try {
+            const review = join(f.root, '.agents/review-worktrees/review-42');
+            f.git(['worktree', 'add', '--detach', review, f.head]);
+            f.port.removal.commitPullRequests = () => [{ ...f.pr, number: 43 }];
+
+            const outcome = cleanupLanes(f.port).find((item) => item.lane === review);
+
+            expect(outcome).toMatchObject({
+                status: 'protected',
+                reason: `PR head ${f.head} does not match lane PR #42`,
+            });
+            expect(existsSync(review)).toBe(true);
+            expect(existsSync(join(cleanupDirectory(f.root), 'inspection-backoff.json'))).toBe(false);
+        } finally {
+            f.dispose();
+        }
+    });
+
     it('schedules a safety refusal one backoff step out even after a generic failure', () => {
         const f = fixture();
         try {

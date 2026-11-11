@@ -233,6 +233,23 @@ describe('claim tracker issue', () => {
         expect(calls.some((call) => call[0] === 'api' || call[0] === 'project')).toBe(false);
     });
 
+    it('refuses an issue closed during the claim before any board write', () => {
+        const { gh, calls } = fakeGh(['bug', 'status:ready'], [ROADMAP]);
+        const closesOnEdit: Gh = (args) => {
+            const output = gh(args);
+            if (args[0] === 'issue' && args[1] === 'view' && callsWith(calls, ['issue', 'edit']).length > 0) {
+                return JSON.stringify({ ...JSON.parse(output), state: 'CLOSED' });
+            }
+            return output;
+        };
+
+        expect(() => claimTrackerIssue(7, closesOnEdit, () => undefined)).toThrow(
+            'issue #7 closed during the claim; status labels were edited, no board was moved'
+        );
+        expect(callsWith(calls, ['issue', 'edit'])).toHaveLength(1);
+        expect(calls.some((call) => call[0] === 'api' || call[0] === 'project')).toBe(false);
+    });
+
     it('reads the labels back after the edit and refuses when only a planned removal is still present', () => {
         const { gh, calls } = fakeGh(['bug', 'status:ready'], [ROADMAP]);
         const keepsReady: Gh = (args) => {

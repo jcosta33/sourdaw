@@ -171,8 +171,42 @@ function underProtectedAgentState(rawPath: string): boolean {
     return rawPath === '.agents' || rawPath.startsWith('.agents/');
 }
 
-const CREDENTIAL_NAME =
-    /^(?:\.env(?:\..*)?|.*\.(?:pem|key|p12|pfx|keystore|jks)|id_(?:rsa|ed25519|ecdsa).*|\.npmrc|\.netrc|\.pgpass|credentials.*)$/i;
+/**
+ * Credential file-name globs: the one source for both the path-component test below and the git
+ * pathspecs `listIgnored` uses to find credentials inside wholly ignored directories.
+ */
+const CREDENTIAL_GLOBS = [
+    '.env',
+    '.env.*',
+    '*.pem',
+    '*.key',
+    '*.p12',
+    '*.pfx',
+    '*.keystore',
+    '*.jks',
+    'id_rsa*',
+    'id_ed25519*',
+    'id_ecdsa*',
+    '.npmrc',
+    '.netrc',
+    '.pgpass',
+    'credentials*',
+];
+
+function globPattern(glob: string): string {
+    return glob
+        .split('*')
+        .map((literal) => literal.replaceAll(/[.+?^${}()|[\]\\]/g, '\\$&'))
+        .join('.*');
+}
+
+const CREDENTIAL_NAME = new RegExp(`^(?:${CREDENTIAL_GLOBS.map(globPattern).join('|')})$`, 'i');
+
+/** Files named like a credential, or under a directory named like one; `node_modules` is skipped. */
+const CREDENTIAL_PATHSPECS = [
+    ...CREDENTIAL_GLOBS.flatMap((glob) => [`:(glob,icase)**/${glob}`, `:(glob,icase)**/${glob}/**`]),
+    ':(exclude,glob)**/node_modules/**',
+];
 
 /** A credential is never regenerable output, whatever build-product directory it sits under. */
 function credentialShaped(rawPath: string): boolean {
@@ -184,6 +218,11 @@ function credentialShaped(rawPath: string): boolean {
  * products, nothing else. Removal refuses a lane carrying ignored data that is not this, and
  * pruning (`lane:prune`) deletes exactly what this admits — the same contract read from both ends.
  * A credential-shaped name is never admitted, even inside a build-product directory.
+ *
+ * Git reports a wholly ignored directory as one entry, so `listIgnored` adds every ignored file
+ * named like a credential beneath one. It deliberately skips `node_modules` subtrees: packages
+ * routinely ship `*.pem` and `*.key` fixtures, and refusing them would strand almost every lane, so
+ * a credential placed inside `node_modules` is not protected.
  */
 export function disposableIgnored(path: string): boolean {
     // Git's `-z` pathname output is verbatim. Its slash separators define path components; a
@@ -210,6 +249,26 @@ export function disposableIgnored(path: string): boolean {
         /^crates\/sourdaw-native\/[^/]+\.node$/.test(rawPath) ||
         /^crates\/sourdaw-native\/sourdaw-plugin-scan-helper(?:\.exe)?$/.test(rawPath)
     );
+}
+
+function ignoredListing(path: string, shell: Pick<ShellRunner, 'capture'>, args: string[]): string[] {
+    return shell
+        .capture('git', ['-C', path, 'ls-files', '--others', '--ignored', '--exclude-standard', ...args], {
+            preserveStdout: true,
+        })
+        .split('\0')
+        .filter((candidate) => candidate !== '');
+}
+
+/**
+ * Ignored paths as removal and pruning judge them. `-z` is the byte-faithful form: no quoting, so an
+ * unusual path can never be misread. `--directory` keeps a wholly ignored build tree to one entry;
+ * the second listing names the credential-shaped files that one entry would otherwise hide.
+ */
+export function listIgnored(path: string, shell: Pick<ShellRunner, 'capture'>): string[] {
+    const entries = ignoredListing(path, shell, ['--directory', '-z']);
+    const credentials = ignoredListing(path, shell, ['-z', '--', ...CREDENTIAL_PATHSPECS]);
+    return [...new Set([...entries, ...credentials])];
 }
 
 export function parseWorktrees(value: string): Worktree[] {
@@ -251,11 +310,11 @@ function locateAgentWorktree(target: string, verb: string, port: LaneRemovalPort
         fail(`${target} is not a registered worktree`);
     }
     if (matches.length !== 1) {
-        fail(`${target} does not identify one registered worktree`);
+        refuse(`${target} does not identify one registered worktree`);
     }
     const [lane] = matches;
     if (lane === undefined) {
-        fail(`${target} does not identify one registered worktree`);
+        refuse(`${target} does not identify one registered worktree`);
     }
     if (canonicalTarget === canonicalRoot) {
         refuse(`refusing to ${verb} the primary worktree`);
@@ -265,7 +324,7 @@ function locateAgentWorktree(target: string, verb: string, port: LaneRemovalPort
         (canonicalTarget === agentRoot || !inside(agentRoot, canonicalTarget)) &&
         !(lane.detached && lane.branch === undefined && isExpectedReviewLanePath(canonicalTarget, canonicalRoot))
     ) {
-        fail(`${target} is not an agent worktree`);
+        refuse(`${target} is not an agent worktree`);
     }
     if (inside(canonicalTarget, canonicalPath(port.currentDirectory()))) {
         refuse(`refusing to ${verb} the active worktree`);
@@ -391,10 +450,11 @@ function assertMainMergeBase(number: number, baseRefName: string | null): void {
  * that it arrived, so the named replacement must itself be merged before this lane counts as
  * spent.
  *
- * The receipt also binds the head the pull request held when it was posted. GitHub cannot move a
- * closed pull request's head; changing it takes a reopen. So a reopen at or after the receipt means
- * the head now checked may carry work the replacement never absorbed, and a receipt whose time
- * cannot be read cannot rule that out — both refuse.
+ * What this checks beyond the receipt is only that the pull request was not reopened at or after
+ * the receipt was posted, and that the receipt's time is readable. GitHub cannot move a closed pull
+ * request's head without a reopen, so that rules out pushes after closing. It does not cover the
+ * window between posting the receipt and closing, while the pull request is still open: that rests
+ * on `pr:supersede` verifying the head after it closes the pull request.
  */
 function supersededReplacement(number: number, port: LaneRemovalPort): { number: number; mergedAt: string } {
     const receipts = port
@@ -473,7 +533,7 @@ function validateOwnership(
         if (lanePr !== undefined) {
             candidates = candidates.filter((pr) => pr.number === lanePr);
             if (candidates.length === 0) {
-                fail(`PR head ${expected.head} does not match lane PR #${lanePr}`);
+                refuse(`PR head ${expected.head} does not match lane PR #${lanePr}`);
             }
         }
         if (candidates.length !== 1) {
@@ -977,15 +1037,7 @@ export function shellPort(shell: ShellRunner = { capture, run }, root?: string):
             }
         },
         dirty: (path) => shell.capture('git', ['-C', path, 'status', '--porcelain=v1', '--untracked-files=all']) !== '',
-        ignored: (path) =>
-            shell
-                .capture(
-                    'git',
-                    ['-C', path, 'ls-files', '--others', '--ignored', '--exclude-standard', '--directory', '-z'],
-                    { preserveStdout: true }
-                )
-                .split('\0')
-                .filter((candidate) => candidate !== ''),
+        ignored: (path) => listIgnored(path, shell),
         operation: (path) => {
             const candidates = [
                 ['index update', 'index.lock'],

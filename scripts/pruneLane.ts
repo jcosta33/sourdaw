@@ -47,6 +47,7 @@ import {
     capture as captureRemoval,
     disposableIgnored,
     inside,
+    listIgnored,
     parseWorktrees,
     resolveLaneTarget,
     type ShellRunner,
@@ -117,9 +118,19 @@ export function parsePruneArgs(args: string[]): PruneArgs {
     return fail(PRUNE_USAGE);
 }
 
-/** The ignored entries pruning may delete: exactly the output lane removal tolerates discarding. */
+/**
+ * The ignored entries pruning may delete: exactly the output lane removal tolerates discarding, and
+ * never a directory holding an entry it does not — deleting `dist/` would take `dist/.env` with it.
+ */
 export function prunableEntries(ignored: string[]): string[] {
-    return ignored.filter((entry) => disposableIgnored(entry));
+    const kept = ignored.filter((entry) => !disposableIgnored(entry));
+    return ignored.filter(
+        (entry) => disposableIgnored(entry) && !kept.some((other) => other.startsWith(directoryPrefix(entry)))
+    );
+}
+
+function directoryPrefix(entry: string): string {
+    return entry.endsWith('/') ? entry : `${entry}/`;
 }
 
 /**
@@ -275,15 +286,7 @@ export function shellPort(shell: PruneShell = { capture }): LanePrunePort {
             return date === '' ? undefined : date;
         },
         // `-z` is the byte-faithful form: no quoting, so an unusual path can never be misread.
-        ignored: (path) =>
-            shell
-                .capture(
-                    'git',
-                    ['-C', path, 'ls-files', '--others', '--ignored', '--exclude-standard', '--directory', '-z'],
-                    { preserveStdout: true }
-                )
-                .split('\0')
-                .filter((entry) => entry !== ''),
+        ignored: (path) => listIgnored(path, shell),
         deleteEntry: (lane, entry) => {
             rmSync(resolve(lane, entry), { recursive: true, force: true });
         },

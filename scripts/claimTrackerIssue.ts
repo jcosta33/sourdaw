@@ -272,7 +272,11 @@ export function claimTrackerIssue(issue: number, gh: Gh, log: (message: string) 
     }
     const plan = labelSwapPlan(labels);
     gh(issueEditLabelsArgs(issue, plan));
-    assertLabelSwapObserved(issue, readIssueClaimRow(issue, gh).labels, plan);
+    const edited = readIssueClaimRow(issue, gh);
+    if (edited.state !== 'OPEN') {
+        fail(`issue #${issue} closed during the claim; status labels were edited, no board was moved`);
+    }
+    assertLabelSwapObserved(issue, edited.labels, plan);
     const removed = plan.remove.length > 0 ? `, removed ${plan.remove.join(', ')}` : '';
     log(`issue #${issue}: added ${ACTIVE_STATUS_LABEL}${removed}`);
     const boards = boardsFromGraphql(

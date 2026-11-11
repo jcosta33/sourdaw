@@ -633,6 +633,55 @@ describe('cleanup installation', () => {
         }
     });
 
+    function failingFirstBootstrap(port: CleanupInstallationPort): CleanupInstallationPort {
+        let bootstraps = 0;
+        return {
+            ...port,
+            run: (command, args) => {
+                if (args[0] === 'bootstrap' && ++bootstraps === 1) {
+                    throw new Error('Bootstrap failed: 5: Input/output error');
+                }
+                port.run(command, args);
+            },
+        };
+    }
+
+    it('restores the previous job and removes the new runtime when the new bootstrap throws', () => {
+        const f = fixture();
+        try {
+            const previous = installCleanupLanes(f.port);
+            const previousBytes = readFileSync(previous.plist, 'utf8');
+            f.events.length = 0;
+
+            expect(() => installCleanupLanes(failingFirstBootstrap(f.port))).toThrow(
+                /^Bootstrap failed: 5: Input\/output error$/
+            );
+
+            expect(readFileSync(previous.plist, 'utf8')).toBe(previousBytes);
+            expect(f.events.slice(-2)).toEqual([
+                ['bootout', `gui/501/${CLEANUP_LABEL}`],
+                ['bootstrap', 'gui/501', previous.plist],
+            ]);
+            expect(readdirSync(dirname(previous.runtime))).toEqual([basename(previous.runtime)]);
+        } finally {
+            f.dispose();
+        }
+    });
+
+    it('removes the new plist and runtime when the first bootstrap throws with no previous job', () => {
+        const f = fixture();
+        try {
+            expect(() => installCleanupLanes(failingFirstBootstrap(f.port))).toThrow(
+                /^Bootstrap failed: 5: Input\/output error$/
+            );
+
+            expect(existsSync(join(f.root, 'Library/LaunchAgents', `${CLEANUP_LABEL}.plist`))).toBe(false);
+            expect(readdirSync(join(f.root, '.agents/lane-cleanup/runtimes'))).toEqual([]);
+        } finally {
+            f.dispose();
+        }
+    });
+
     it('prunes earlier runtimes only after the new launch is verified, skipping symlinked entries', () => {
         const f = fixture();
         const foreign = realpathSync(mkdtempSync(join(tmpdir(), 'sourdaw-cleanup-runtime-alias-')));

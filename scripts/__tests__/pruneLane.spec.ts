@@ -459,6 +459,43 @@ describe('prune fleet path identity', () => {
 });
 
 describe('prunes a real worktree without touching credentials', () => {
+    it('keeps a wholly ignored dist/ that holds a credential under this repository ignore rules', () => {
+        const repository = realpathSync(mkdtempSync(join(tmpdir(), 'sourdaw-lane-prune-ignored-dist-')));
+        const lane = join(repository, '.agents/worktrees/feature');
+        const git = (args: string[], cwd = repository) => execFileSync('git', args, { cwd, encoding: 'utf8' }).trim();
+        try {
+            git(['init', '-b', 'main']);
+            git(['config', 'user.name', 'Fixture']);
+            git(['config', 'user.email', 'fixture@example.com']);
+            writeFileSync(join(repository, '.gitignore'), 'dist/\n.env\n.env.*\nnode_modules\n');
+            writeFileSync(join(repository, 'tracked.txt'), 'fixture\n');
+            git(['add', '.']);
+            git(['commit', '-m', 'fixture']);
+            mkdirSync(join(repository, '.agents/worktrees'), { recursive: true });
+            git(['worktree', 'add', lane, '-b', 'feat/work']);
+            mkdirSync(join(lane, 'dist'));
+            writeFileSync(join(lane, 'dist/.env'), 'SECRET=keep\n');
+            writeFileSync(join(lane, 'dist/bundle.js'), 'generated\n');
+            mkdirSync(join(lane, 'node_modules/pkg'), { recursive: true });
+            writeFileSync(join(lane, 'node_modules/pkg/index.js'), 'generated\n');
+            const port: LanePrunePort = {
+                ...shellPort(),
+                worktrees: () => parseWorktrees(git(['worktree', 'list', '--porcelain', '-z'])),
+                currentDirectory: () => repository,
+                active: () => false,
+                log: () => undefined,
+            };
+
+            expect(pruneTarget(lane, port)).toEqual(['node_modules/']);
+
+            expect(readFileSync(join(lane, 'dist/.env'), 'utf8')).toBe('SECRET=keep\n');
+            expect(existsSync(join(lane, 'dist/bundle.js'))).toBe(true);
+            expect(existsSync(join(lane, 'node_modules'))).toBe(false);
+        } finally {
+            rmSync(repository, { recursive: true, force: true });
+        }
+    });
+
     it('deletes build output beside an ignored credential inside a build-product directory but keeps the credential', () => {
         const repository = realpathSync(mkdtempSync(join(tmpdir(), 'sourdaw-lane-prune-credential-')));
         const lane = join(repository, '.agents/worktrees/feature');

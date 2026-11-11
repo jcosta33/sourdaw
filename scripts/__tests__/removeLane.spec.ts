@@ -23,6 +23,7 @@ import {
     inside,
     isExpectedReviewLaneName,
     isExpectedReviewLanePath,
+    LaneSafetyRefusal,
     parseReviewLanePrNumber,
     parseStrandArgs,
     parseWorktrees,
@@ -320,7 +321,46 @@ describe('disposableIgnored', () => {
     });
 });
 
+/** This repository's own ignore rules: `dist/` is wholly ignored, so git collapses it to one entry. */
+function withCredentialInIgnoredDirectory(
+    fn: (input: { repository: string; lane: string; ignored: string[] }) => void
+) {
+    withGitFixture(({ repository, git }) => {
+        const lane = join(repository, '.agents/worktrees/feature');
+        mkdirSync(join(lane, 'dist'), { recursive: true });
+        mkdirSync(join(lane, 'node_modules/pkg'), { recursive: true });
+        git(['init', '-b', 'main'], lane);
+        writeFileSync(join(lane, '.gitignore'), 'dist/\n.env\n.env.*\nnode_modules\n');
+        writeFileSync(join(lane, 'dist/.env'), 'SECRET=keep\n');
+        writeFileSync(join(lane, 'dist/bundle.js'), 'generated\n');
+        writeFileSync(join(lane, 'node_modules/pkg/test.pem'), 'package fixture\n');
+        fn({ repository, lane, ignored: shellPort().ignored(lane) });
+    });
+}
+
 describe('ignored path framing', () => {
+    it('lists a credential inside a wholly ignored build directory, but not inside node_modules', () => {
+        withCredentialInIgnoredDirectory(({ ignored }) => {
+            expect([...ignored].sort()).toEqual(['dist/', 'dist/.env', 'node_modules/']);
+            expect(prunableEntries(ignored)).toEqual(['node_modules/']);
+        });
+    });
+
+    it('refuses removal and stranding of a lane whose wholly ignored dist/ holds a credential', () => {
+        withCredentialInIgnoredDirectory(({ repository, lane, ignored }) => {
+            const removal = fakePort({ root: repository, lane: worktree({ path: lane }), ignored });
+            expect(() => removeLane(lane, removal.port)).toThrow(/^worktree contains ignored data: dist\/\.env$/);
+            expect(removal.calls).not.toContain(`remove:${lane}`);
+
+            const strand = fakeStrandPort({ root: repository, lane: worktree({ path: lane }), ignored });
+            expect(() => strandLane(lane, 'attempt', strand.port)).toThrow(
+                /^worktree contains ignored data: dist\/\.env$/
+            );
+            expect(strand.receipts).toEqual([]);
+            expect(existsSync(join(lane, 'dist/.env'))).toBe(true);
+        });
+    });
+
     it('refuses removal for a raw ignored leaf whose backslash looks like a separator', () => {
         withBackslashIgnoredLane(({ repository, lane, ignored }) => {
             expect(ignored).toContain('node_modules\\receipt.json');
@@ -1313,6 +1353,24 @@ describe('lane removal', () => {
         ]);
     });
 
+    it('refuses a detached review lane whose head belongs to another pull request as lane state', () => {
+        const { port, calls } = fakePort({
+            lane: worktree({ path: reviewTarget, branch: undefined, detached: true }),
+            commitPullRequests: [pullRequest({ number: 2000, headRefOid: 'head' })],
+        });
+
+        let thrown: unknown;
+        try {
+            removeLane(reviewTarget, port);
+        } catch (error) {
+            thrown = error;
+        }
+
+        expect(thrown).toBeInstanceOf(LaneSafetyRefusal);
+        expect((thrown as Error).message).toBe('PR head head does not match lane PR #1976');
+        expect(calls.some((call) => call.startsWith('remove:'))).toBe(false);
+    });
+
     it('removes a real detached review worktree with matching merged PR', () => {
         withGitFixture(({ repository, git }) => {
             const reviewLane = join(repository, '.agents/worktrees/review-1976');
@@ -1556,6 +1614,39 @@ describe('lane stranding', () => {
         expect(strand.calls.some((call) => call.startsWith('receipt:'))).toBe(false);
         expect(strand.calls.some((call) => call.startsWith('remove:'))).toBe(false);
         expect(strand.calls.some((call) => call.startsWith('branch:-D:'))).toBe(false);
+    });
+
+    it('refuses when another strand creates the same ref between reading and creating it', () => {
+        withGitFixture(({ repository, git }) => {
+            const earlier = git(['rev-parse', 'HEAD']);
+            git(['commit', '--allow-empty', '-m', 'stranded work']);
+            const head = git(['rev-parse', 'HEAD']);
+            const ref = 'refs/sourdaw/strands/feature';
+            const native = shellPort(
+                {
+                    capture: (command, args) =>
+                        execFileSync(command, args, { cwd: repository, encoding: 'utf8' }).trim(),
+                    run: (command, args) => {
+                        execFileSync(command, args, { cwd: repository, stdio: 'ignore' });
+                    },
+                },
+                repository
+            );
+            const strand = fakeStrandPort({ lane: worktree({ head }), pullRequests: [supersededPullRequest()] });
+            strand.port.readRef = (name) => {
+                const seen = native.readRef(name);
+                git(['update-ref', ref, earlier]);
+                return seen;
+            };
+            strand.port.createRef = native.createRef;
+
+            expect(() => strandLane(target, 'racing strand', strand.port)).toThrow();
+
+            expect(git(['rev-parse', ref])).toBe(earlier);
+            expect(strand.receipts).toEqual([]);
+            expect(strand.calls.some((call) => call.startsWith('remove:'))).toBe(false);
+            expect(strand.calls.some((call) => call.startsWith('branch:-D:'))).toBe(false);
+        });
     });
 
     it('puts the author lock back when the native removal of an author-locked lane fails', () => {
@@ -1805,6 +1896,22 @@ describe('lane-removal shell boundary', () => {
             rmSync(aliasParent, { recursive: true, force: true });
             rmSync(repository, { recursive: true, force: true });
         }
+    });
+
+    it('refuses a strand ref read that matches more than one ref', () => {
+        const port = shellPort({
+            capture: (_command, args) => {
+                if (args[0] === 'for-each-ref') {
+                    return `${'a'.repeat(40)}\n${'b'.repeat(40)}`;
+                }
+                throw new Error(`unexpected capture: ${args.join(' ')}`);
+            },
+            run: () => undefined,
+        });
+
+        expect(() => port.readRef('refs/sourdaw/strands/feature')).toThrow(
+            'strand ref refs/sourdaw/strands/feature does not name one ref'
+        );
     });
 
     it('paginates exact-repository ownership and uses native lock and removal commands', () => {
