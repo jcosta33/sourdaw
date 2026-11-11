@@ -706,7 +706,8 @@ export function scheduleAudioClips(
     activeAudioSources: AudioBufferSourceNode[],
     transport: TransportState,
     initialSchedulingAnchor?: number,
-    mediaOwnerTransition = false
+    mediaOwnerTransition = false,
+    onlyTrackId?: string
 ): void {
     const tracks = trackStore.value?.tracks;
     if (!tracks) {
@@ -760,15 +761,20 @@ export function scheduleAudioClips(
         (transport.isLooping === true && fromBeat === transport.loopStart) ||
         playheadInWrapHandover;
 
-    // Every track's superseded sources are cut before any track emits. An
-    // edit's replacement need not sit on the track or span it cut — a clip
-    // moved to another track, or nudged — and a dedup key dropped by a later
-    // track's cut would otherwise still read as emitted to an earlier track.
+    // Every selected track's superseded sources are cut before any selected
+    // track emits. An edit's replacement need not sit on the track or span it
+    // cut — a clip moved to another track, or nudged — and a dedup key dropped
+    // by a later track's cut would otherwise still read as emitted to an
+    // earlier track. A completed-MIDI handoff selects one track; the ordinary
+    // whole-window pass selects them all.
     const audioTracks: { track: (typeof tracks)[number]; parts: ResolvedAudioPart[] }[] = [];
     const unfrozenTracks: (typeof tracks)[number][] = [];
     let cutAny = false;
     for (const track of tracks) {
-        if (track.kind !== 'audio' && track.kind !== 'midi') {
+        if (
+            (track.kind !== 'audio' && track.kind !== 'midi') ||
+            (onlyTrackId !== undefined && track.id !== onlyTrackId)
+        ) {
             continue;
         }
         if (track.freezeState.status === 'frozen' && track.freezeState.frozenBufferId) {

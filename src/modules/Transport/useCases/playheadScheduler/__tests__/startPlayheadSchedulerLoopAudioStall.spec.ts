@@ -462,11 +462,14 @@ function assertPassAlreadySubmitted(
     }
 }
 
+type SeamStallOptions = { noteStartBeat?: number; compensationSeconds?: number };
+
 async function reproduceSeamStall(
     passFrames: number,
     lastRefillFrame: number,
     frozen: boolean,
-    frozenMidi = false
+    frozenMidi = false,
+    options: SeamStallOptions = {}
 ): Promise<void> {
     const loopEnd = passFrames / 24_000; // Fixed fixture:120BPM means24000frames per quarter-note beat.
     const left = seedTrack('left', loopEnd, frozen, 0.375, frozenMidi);
@@ -474,7 +477,14 @@ async function reproduceSeamStall(
     if (frozenMidi && !frozen) {
         left.clips.push({ ...left.clips[0]!, id: 'left-midi', type: 'midi', audioBufferId: undefined });
         midiStoreState.value!.notesByClipId['left-midi'] = [
-            { id: 'mixed-note', pitch: 60, startBeat: 0, duration: 0.05, velocity: 100, probability: 100 },
+            {
+                id: 'mixed-note',
+                pitch: 60,
+                startBeat: options.noteStartBeat ?? 0,
+                duration: 0.05,
+                velocity: 100,
+                probability: 100,
+            },
         ];
     }
     trackStoreState.value = {
@@ -520,6 +530,7 @@ async function reproduceSeamStall(
     const pitch60CallsBeforeRecovery = scheduleNoteSpy.mock.calls.filter((call) => call[2] === 60);
     const pitch60EmissionsBeforeRecovery = pitch60CallsBeforeRecovery.length;
     const preRecoveryPitch60Frames = pitch60CallsBeforeRecovery.map((call) => frame(call[3]));
+    compensation.seconds = options.compensationSeconds ?? 0;
     await tickAt(recoveryFrame);
     const pitch60EmissionsAfterRecovery = scheduleNoteSpy.mock.calls.filter((call) => call[2] === 60).length;
     const recoveryPitch60Frames = scheduleNoteSpy.mock.calls
@@ -529,23 +540,26 @@ async function reproduceSeamStall(
     expect(playheadWrapCountRef.current).toBe(crossedSeams);
     expect(playheadClockRef.beat).toBeCloseTo((recoveryFrame % passFrames) / 24_000, 12);
     const afterRecovery = snapshotSources();
-    for (let pass = 1; pass <= crossedSeams; pass++) {
-        const seamFrame = ANCHOR_FRAME + pass * passFrames;
-        const scheduled = afterRecovery.filter((source) => frame(source.start.when) === seamFrame);
-        // One source per track, with no recovery-time duplicate at the seam or late in the pass.
-        expect.soft(scheduled.map((source) => source.bufferId)).toEqual(['left-buffer', 'right-buffer']);
-        const nextSeam = seamFrame + passFrames;
-        expect
-            .soft(
-                afterRecovery.filter((source) => {
-                    const onset = frame(source.start.when);
-                    return onset > seamFrame && onset < Math.min(nextSeam, ANCHOR_FRAME + recoveryFrame + 1);
-                })
-            )
-            .toEqual([]);
-        expect.soft(scheduled.map((source) => frame(effectiveEnd(source)))).toEqual([nextSeam, nextSeam]);
+    if (compensation.seconds === 0) {
+        for (let pass = 1; pass <= crossedSeams; pass++) {
+            const seamFrame = ANCHOR_FRAME + pass * passFrames;
+            const scheduled = afterRecovery.filter((source) => frame(source.start.when) === seamFrame);
+            // One source per track, with no recovery-time duplicate at the seam or late in the pass.
+            expect.soft(scheduled.map((source) => source.bufferId)).toEqual(['left-buffer', 'right-buffer']);
+            const nextSeam = seamFrame + passFrames;
+            expect
+                .soft(
+                    afterRecovery.filter((source) => {
+                        const onset = frame(source.start.when);
+                        return onset > seamFrame && onset < Math.min(nextSeam, ANCHOR_FRAME + recoveryFrame + 1);
+                    })
+                )
+                .toEqual([]);
+            expect.soft(scheduled.map((source) => frame(effectiveEnd(source)))).toEqual([nextSeam, nextSeam]);
+        }
     }
     return {
+        emissionCountBeforeRecovery,
         pitch60EmissionsBeforeRecovery,
         pitch60EmissionsAfterRecovery,
         preRecoveryPitch60Frames,
@@ -626,6 +640,51 @@ describe('browser buffer admission before a loop-seam main-thread stall (#6277)'
         expect(new Set(preRecoveryPitch60Frames).size).toBe(preRecoveryPitch60Frames.length);
         expect(preRecoveryPitch60Frames).not.toContain(ANCHOR_FRAME + 18_000);
     });
+    it.each([
+        {
+            label: 'future under positive compensation',
+            compensationSeconds: 0.1,
+            currentOnset: 499_200,
+            nextOnset: 505_200,
+        },
+        {
+            label: 'exactly due under positive compensation',
+            compensationSeconds: 0.024,
+            currentOnset: 495_552,
+            nextOnset: 501_552,
+        },
+        {
+            label: 'genuinely past without compensation',
+            compensationSeconds: 0,
+            currentOnset: null,
+            nextOnset: 500_400,
+        },
+        {
+            label: 'genuinely past under negative compensation',
+            compensationSeconds: -0.05,
+            currentOnset: null,
+            nextOnset: 498_000,
+        },
+    ])('admits a recovered note only when its audible onset is $label', async (scenario) => {
+        const { emissionCountBeforeRecovery, recoveryPitch60Frames } = await reproduceSeamStall(
+            6_000,
+            5_952,
+            false,
+            true,
+            { noteStartBeat: 0.1, compensationSeconds: scenario.compensationSeconds }
+        );
+        expect(recoveryPitch60Frames).toEqual(scenario.currentOnset === null ? [] : [scenario.currentOnset]);
+
+        // Open the next window so the following pass's occurrence is due too.
+        await tickAt(16_752);
+        const emittedDuringRecovery = scheduleNoteSpy.mock.calls
+            .slice(emissionCountBeforeRecovery)
+            .filter((call) => call[2] === 60)
+            .map((call) => frame(call[3]));
+        expect(emittedDuringRecovery).toEqual(
+            scenario.currentOnset === null ? [scenario.nextOnset] : [scenario.currentOnset, scenario.nextOnset]
+        );
+    });
 });
 
 describe('mixed MIDI media ownership during non-loop playback', () => {
@@ -675,7 +734,80 @@ describe('mixed MIDI media ownership during non-loop playback', () => {
         expect(frame(effectiveEnd(bake!))).toBeLessThanOrEqual(frame(original[1]!.start.when));
     });
 
-    it('retains the frozen owner through a preceding MIDI rack await until the original rejoins', async () => {
+    it.each(['waiting-first', 'mixed-first'] as const)(
+        'hands off an unfrozen original around a held MIDI rack await (%s)',
+        async (order) => {
+            const mixed = seedTrack('left', 0.4, false, 0, true);
+            const waiting = createTrack({ id: 'waiting', name: 'waiting', kind: 'midi', withoutDefaultDevice: true });
+            waiting.devices = [
+                { id: 'waiting-rack', name: 'waiting', type: 'yeast', bypassed: false, parameterValues: {} },
+            ];
+            waiting.clips = [{ ...mixed.clips[0]!, id: 'waiting-clip', trackId: 'waiting', type: 'midi' }];
+            midiStoreState.value!.notesByClipId['waiting-clip'] = [
+                { id: 'waiting-note', pitch: 72, startBeat: 0, duration: 0.5, velocity: 100, probability: 100 },
+            ];
+            buffers.set('bake', { duration: 16, sampleRate: SAMPLE_RATE } as AudioBuffer);
+            trackStoreState.value = { tracks: order === 'waiting-first' ? [waiting, mixed] : [mixed, waiting] };
+            transportStoreState.value = { ...defaultTransportState, isPlaying: true, tempo: 120, isLooping: false };
+            startPlayheadScheduler();
+            await tickAt(0);
+            mixed.freezeState = { status: 'frozen', frozenBufferId: 'bake', compensationSeconds: 0 };
+            await tickAt(1_200);
+            expect(snapshotSources().filter((source) => source.bufferId === 'bake')).toHaveLength(1);
+            vi.mocked(processYeastMidi).mockClear();
+
+            let release!: () => void;
+            const held = new Promise<void>((resolve) => {
+                release = resolve;
+            });
+            vi.mocked(processYeastMidi).mockImplementationOnce(async (block) => {
+                await held;
+                return [...block.events];
+            });
+            mixed.freezeState = { status: 'unfrozen' };
+            ctxTime.now = (ANCHOR_FRAME + 2_400) / SAMPLE_RATE;
+            const receivedAtMs = performance.timeOrigin + performance.now();
+            if (!workerHarness?.onmessage) {
+                throw new Error('The real scheduler must have installed its worker callback');
+            }
+            workerHarness.onmessage({
+                data: {
+                    type: 'tick',
+                    generation: schedulerSession.generation,
+                    sequence: ++tickSequence,
+                    scheduledAtMs: receivedAtMs - 2,
+                    sentAtMs: receivedAtMs - 1,
+                },
+            });
+            try {
+                await vi.waitFor(() => expect(processYeastMidi).toHaveBeenCalledOnce(), { interval: 1 });
+                expect(schedulerSession.tickInFlight).toBe(true);
+                const during = snapshotSources();
+                const original = during.filter((source) => source.bufferId === 'left-buffer');
+                const bake = during.find((source) => source.bufferId === 'bake');
+                if (order === 'mixed-first') {
+                    expect(original).toHaveLength(2);
+                    expect(bake?.stops).toHaveLength(1);
+                    expect(frame(effectiveEnd(bake!))).toBeLessThanOrEqual(frame(original[1]!.start.when));
+                } else {
+                    expect(original).toHaveLength(1);
+                    expect(bake?.stops).toHaveLength(0);
+                }
+                ctxTime.now += 0.005;
+            } finally {
+                release();
+            }
+            await vi.waitFor(() => expect(schedulerSession.tickInFlight).toBe(false), { interval: 1 });
+            const sources = snapshotSources();
+            const original = sources.filter((source) => source.bufferId === 'left-buffer');
+            const bake = sources.find((source) => source.bufferId === 'bake');
+            expect(original).toHaveLength(2);
+            expect(bake?.stops).toHaveLength(1);
+            expect(frame(effectiveEnd(bake!))).toBeLessThanOrEqual(frame(original[1]!.start.when));
+        }
+    );
+
+    it('rejoins an uncached bake’s original before a later MIDI rack await', async () => {
         const mixed = seedTrack('left', 0.4, false, 0, true);
         const waiting = createTrack({ id: 'waiting', name: 'waiting', kind: 'midi', withoutDefaultDevice: true });
         waiting.devices = [
@@ -685,14 +817,12 @@ describe('mixed MIDI media ownership during non-loop playback', () => {
         midiStoreState.value!.notesByClipId['waiting-clip'] = [
             { id: 'waiting-note', pitch: 72, startBeat: 0, duration: 0.5, velocity: 100, probability: 100 },
         ];
-        buffers.set('bake', { duration: 16, sampleRate: SAMPLE_RATE } as AudioBuffer);
-        trackStoreState.value = { tracks: [waiting, mixed] };
+        mixed.freezeState = { status: 'frozen', frozenBufferId: 'missing-bake', compensationSeconds: 0 };
+        trackStoreState.value = { tracks: [mixed, waiting] };
         transportStoreState.value = { ...defaultTransportState, isPlaying: true, tempo: 120, isLooping: false };
         startPlayheadScheduler();
         await tickAt(0);
-        mixed.freezeState = { status: 'frozen', frozenBufferId: 'bake', compensationSeconds: 0 };
-        await tickAt(1_200);
-        expect(snapshotSources().filter((source) => source.bufferId === 'bake')).toHaveLength(1);
+        expect(snapshotSources()).toEqual([]);
         vi.mocked(processYeastMidi).mockClear();
 
         let release!: () => void;
@@ -704,7 +834,7 @@ describe('mixed MIDI media ownership during non-loop playback', () => {
             return [...block.events];
         });
         mixed.freezeState = { status: 'unfrozen' };
-        ctxTime.now = (ANCHOR_FRAME + 2_400) / SAMPLE_RATE;
+        ctxTime.now = (ANCHOR_FRAME + 1_200) / SAMPLE_RATE;
         const receivedAtMs = performance.timeOrigin + performance.now();
         if (!workerHarness?.onmessage) {
             throw new Error('The real scheduler must have installed its worker callback');
@@ -720,20 +850,15 @@ describe('mixed MIDI media ownership during non-loop playback', () => {
         });
         try {
             await vi.waitFor(() => expect(processYeastMidi).toHaveBeenCalledOnce(), { interval: 1 });
-            expect(schedulerSession.tickInFlight).toBe(true);
-            expect(snapshotSources().find((source) => source.bufferId === 'bake')?.stops).toHaveLength(0);
-            expect(snapshotSources().filter((source) => source.bufferId === 'left-buffer')).toHaveLength(1);
-            ctxTime.now += 0.005;
+            const original = snapshotSources().filter((source) => source.bufferId === 'left-buffer');
+            expect(original).toHaveLength(1);
+            expect(frame(original[0]!.start.when)).toBe(ANCHOR_FRAME + 1_200);
+            expect(frame(original[0]!.start.offset)).toBe(1_200);
         } finally {
             release();
         }
         await vi.waitFor(() => expect(schedulerSession.tickInFlight).toBe(false), { interval: 1 });
-        const sources = snapshotSources();
-        const original = sources.filter((source) => source.bufferId === 'left-buffer');
-        const bake = sources.find((source) => source.bufferId === 'bake');
-        expect(original).toHaveLength(2);
-        expect(bake?.stops).toHaveLength(1);
-        expect(frame(effectiveEnd(bake!))).toBeLessThanOrEqual(frame(original[1]!.start.when));
+        expect(snapshotSources().filter((source) => source.bufferId === 'left-buffer')).toHaveLength(1);
     });
 
     it('cuts each previous owner at the replacement onset and restores the same bake after an unfreeze', async () => {
@@ -805,65 +930,78 @@ describe('mixed MIDI media ownership during non-loop playback', () => {
         expect(frame(effectiveEnd(old!))).toBe(frame(bake!.start.when));
     });
 
-    it('retains a sounding owner through a preceding MIDI rack await until the frozen replacement exists', async () => {
-        const mixed = seedTrack('left', 4, false, 0, true);
-        const waiting = createTrack({ id: 'waiting', name: 'waiting', kind: 'midi', withoutDefaultDevice: true });
-        waiting.devices = [
-            { id: 'waiting-rack', name: 'waiting', type: 'yeast', bypassed: false, parameterValues: {} },
-        ];
-        waiting.clips = [{ ...mixed.clips[0]!, id: 'waiting-clip', trackId: 'waiting', type: 'midi' }];
-        midiStoreState.value!.notesByClipId['waiting-clip'] = [
-            { id: 'waiting-note', pitch: 72, startBeat: 0, duration: 0.5, velocity: 100, probability: 100 },
-        ];
-        buffers.set('bake', { duration: 16, sampleRate: SAMPLE_RATE } as AudioBuffer);
-        trackStoreState.value = { tracks: [waiting, mixed] };
-        transportStoreState.value = { ...defaultTransportState, isPlaying: true, tempo: 120, isLooping: false };
-        startPlayheadScheduler();
-        await tickAt(0);
-        expect(snapshotSources().filter((source) => source.bufferId === 'left-buffer')).toHaveLength(1);
-        vi.mocked(processYeastMidi).mockClear();
+    it.each(['waiting-first', 'mixed-first'] as const)(
+        'hands off a frozen replacement around a held MIDI rack await (%s)',
+        async (order) => {
+            const mixed = seedTrack('left', 4, false, 0, true);
+            const waiting = createTrack({ id: 'waiting', name: 'waiting', kind: 'midi', withoutDefaultDevice: true });
+            waiting.devices = [
+                { id: 'waiting-rack', name: 'waiting', type: 'yeast', bypassed: false, parameterValues: {} },
+            ];
+            waiting.clips = [{ ...mixed.clips[0]!, id: 'waiting-clip', trackId: 'waiting', type: 'midi' }];
+            midiStoreState.value!.notesByClipId['waiting-clip'] = [
+                { id: 'waiting-note', pitch: 72, startBeat: 0, duration: 0.5, velocity: 100, probability: 100 },
+            ];
+            buffers.set('bake', { duration: 16, sampleRate: SAMPLE_RATE } as AudioBuffer);
+            trackStoreState.value = { tracks: order === 'waiting-first' ? [waiting, mixed] : [mixed, waiting] };
+            transportStoreState.value = { ...defaultTransportState, isPlaying: true, tempo: 120, isLooping: false };
+            startPlayheadScheduler();
+            await tickAt(0);
+            expect(snapshotSources().filter((source) => source.bufferId === 'left-buffer')).toHaveLength(1);
+            vi.mocked(processYeastMidi).mockClear();
 
-        let release!: () => void;
-        const held = new Promise<void>((resolve) => {
-            release = resolve;
-        });
-        vi.mocked(processYeastMidi).mockImplementationOnce(async (block) => {
-            await held;
-            return [...block.events];
-        });
-        mixed.freezeState = { status: 'frozen', frozenBufferId: 'bake', compensationSeconds: 0 };
-        ctxTime.now = (ANCHOR_FRAME + 1_200) / SAMPLE_RATE;
-        const receivedAtMs = performance.timeOrigin + performance.now();
-        if (!workerHarness?.onmessage) {
-            throw new Error('The real scheduler must have installed its worker callback');
+            let release!: () => void;
+            const held = new Promise<void>((resolve) => {
+                release = resolve;
+            });
+            vi.mocked(processYeastMidi).mockImplementationOnce(async (block) => {
+                await held;
+                return [...block.events];
+            });
+            mixed.freezeState = { status: 'frozen', frozenBufferId: 'bake', compensationSeconds: 0 };
+            ctxTime.now = (ANCHOR_FRAME + 1_200) / SAMPLE_RATE;
+            const receivedAtMs = performance.timeOrigin + performance.now();
+            if (!workerHarness?.onmessage) {
+                throw new Error('The real scheduler must have installed its worker callback');
+            }
+            workerHarness.onmessage({
+                data: {
+                    type: 'tick',
+                    generation: schedulerSession.generation,
+                    sequence: ++tickSequence,
+                    scheduledAtMs: receivedAtMs - 2,
+                    sentAtMs: receivedAtMs - 1,
+                },
+            });
+            try {
+                await vi.waitFor(() => expect(processYeastMidi).toHaveBeenCalledOnce(), { interval: 1 });
+                expect(schedulerSession.tickInFlight).toBe(true);
+                const during = snapshotSources();
+                const old = during.find((source) => source.bufferId === 'left-buffer');
+                const bake = during.find((source) => source.bufferId === 'bake');
+                if (order === 'mixed-first') {
+                    expect(old?.stops).toHaveLength(1);
+                    expect(bake).toBeDefined();
+                    expect(frame(bake!.start.when)).toBe(ANCHOR_FRAME + 1_200);
+                    expect(frame(old!.start.when + old!.start.duration!)).toBe(576_000);
+                    expect(frame(effectiveEnd(old!))).toBeLessThanOrEqual(frame(bake!.start.when));
+                } else {
+                    expect(old?.stops).toHaveLength(0);
+                    expect(bake).toBeUndefined();
+                }
+                ctxTime.now += 0.04;
+            } finally {
+                release();
+            }
+            await vi.waitFor(() => expect(schedulerSession.tickInFlight).toBe(false), { interval: 1 });
+            const after = snapshotSources();
+            const old = after.find((source) => source.bufferId === 'left-buffer');
+            const bake = after.find((source) => source.bufferId === 'bake');
+            expect(old).toBeDefined();
+            expect(bake).toBeDefined();
+            expect(frame(effectiveEnd(old!))).toBeLessThanOrEqual(frame(bake!.start.when));
         }
-        workerHarness.onmessage({
-            data: {
-                type: 'tick',
-                generation: schedulerSession.generation,
-                sequence: ++tickSequence,
-                scheduledAtMs: receivedAtMs - 2,
-                sentAtMs: receivedAtMs - 1,
-            },
-        });
-        try {
-            await vi.waitFor(() => expect(processYeastMidi).toHaveBeenCalledOnce(), { interval: 1 });
-            expect(schedulerSession.tickInFlight).toBe(true);
-            const heldOwner = snapshotSources().find((source) => source.bufferId === 'left-buffer');
-            expect(heldOwner?.stops).toHaveLength(0);
-            expect(snapshotSources().some((source) => source.bufferId === 'bake')).toBe(false);
-            ctxTime.now += 0.04;
-        } finally {
-            release();
-        }
-        await vi.waitFor(() => expect(schedulerSession.tickInFlight).toBe(false), { interval: 1 });
-        const after = snapshotSources();
-        const old = after.find((source) => source.bufferId === 'left-buffer');
-        const bake = after.find((source) => source.bufferId === 'bake');
-        expect(old).toBeDefined();
-        expect(bake).toBeDefined();
-        expect(frame(effectiveEnd(old!))).toBeLessThanOrEqual(frame(bake!.start.when));
-    });
+    );
     it('cancels a future compensated source without touching another track’s future source', async () => {
         compensation.seconds = 0.5;
         const mixed = seedTrack('left', 4, false, 0, true);

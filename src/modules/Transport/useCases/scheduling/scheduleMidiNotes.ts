@@ -493,7 +493,8 @@ export async function scheduleMidiNotes(
     opensAtRelocation = false,
     preparedInitialWindow?: PreparedInitialMidiWindow,
     initialSchedulingAnchor?: number,
-    eventSchedulingAnchor = initialSchedulingAnchor
+    eventSchedulingAnchor = initialSchedulingAnchor,
+    onTrackComplete?: (trackId: string) => void
 ): Promise<void> {
     const isCurrent = () => (cancellation?.isCurrent() ?? true) && (preparedInitialWindow?.isCurrent() ?? true);
     if (preparedInitialWindow && !isCurrent()) {
@@ -533,30 +534,20 @@ export async function scheduleMidiNotes(
             (schedulerSession.pendingSeam !== null || schedulerSession.lastLoopSeamAudioTime !== null));
     const changes = tempoMapStore.value?.changes ?? [];
     const automationLanes = automationStore.value?.lanes ?? [];
-    // #4924 — the earliest start an admitted Yeast segment may still schedule
-    // (the gate below). After the rack a segment can land behind the window
-    // that owns its note: a sequencer push across the pass end re-anchors it
-    // onto the pass head, and a rack may re-time it, arbitrarily close behind
-    // that window — so staleness is a clock question, not a window-grace
-    // question (a note's own tail past the pass end is no such segment: the
-    // rack is handed it as its own note on the pass head, owned there):
-    // `accumulatedPosition` is the beat the event anchor stands for this tick
-    // (the same position the note time formula measures against), and a start
-    // behind it computes a time in the past that Web Audio clamps to an
-    // immediate fire. The window's groove-reach bound stays as the floor for
-    // clocks trailing the window by more than one groove stage, where it still
-    // drops the far-behind wraps. `BEAT_EPSILON` absorbs the wrap re-anchor's
-    // modulo round-trip noise — ulp-scale, orders below any musical distance —
-    // so a landing at the clock reads as due, not stale.
+    // #4924 — a segment re-anchored behind its owning window is stale when its
+    // audible onset, not its raw beat, is behind the event clock. Positive
+    // compensation can put that onset in the future even when the raw beat has
+    // passed; the per-note gate below compares both on the same compensated
+    // clock as the actual emission. `BEAT_EPSILON` absorbs the wrap re-anchor's
+    // modulo round-trip noise, so a landing on the clock reads as due.
     //
-    // A continuing window the scheduler admitted overdue — its tick late by
-    // less than one look-ahead — opens behind the clock, and plays what it owns
-    // late as every other note kind does; only content landing behind the
+    // A continuing window the scheduler admitted overdue opens behind the
+    // clock and still plays what it owns late; only content landing behind the
     // window start is stale there. A relocation opens at its destination, so
-    // the clock alone decides.
+    // the clock alone decides. The independent raw floor still drops material
+    // beyond the clip/groove ownership reach.
     const clockFloorBeat = opensAtRelocation ? accumulatedPosition : Math.min(accumulatedPosition, fromBeat);
-    const admittedSegmentFloorBeat =
-        Math.max(fromBeat - MAX_GROOVE_STAGE_DISPLACEMENT_BEATS, clockFloorBeat) - BEAT_EPSILON;
+    const rawSegmentFloorBeat = fromBeat - MAX_GROOVE_STAGE_DISPLACEMENT_BEATS - BEAT_EPSILON;
     // #4591 — the MIDI twin of scheduleAudioClips' cue-send rule: the strip's
     // mute sits downstream of the pre-fader tap, so a muted MIDI track still
     // feeds its pre-fader (cue) sends, and the offline mixdown schedules those
@@ -782,8 +773,14 @@ export async function scheduleMidiNotes(
         // the next note the instrument starts on that pitch.
         const playbackReceiverId = resolvePlaybackReceiverId(track.devices);
         keepHeldNoteExpressionOnReceiver(track.id, playbackReceiverId);
+        const completeTrack = () => {
+            if (isCurrent()) {
+                onTrackComplete?.(track.id);
+            }
+        };
         if (track.muted && !track.sends.some((send) => send.preFader && busTrackIds.has(send.busId))) {
             noteStoredControllersTrackMuteWithheld(track.id);
+            completeTrack();
             continue;
         }
 
@@ -811,6 +808,7 @@ export async function scheduleMidiNotes(
                     scheduledFrozenTracks.add(frozenKey);
                 }
             }
+            completeTrack();
             continue;
         }
 
@@ -818,6 +816,7 @@ export async function scheduleMidiNotes(
         const activeMidiClips = resolveMidiWindowClips(track, fromBeat, toBeat);
         if (activeMidiClips.length === 0) {
             settleGapWindow(track, resumesAfterMute);
+            completeTrack();
             continue;
         }
 
@@ -917,6 +916,14 @@ export async function scheduleMidiNotes(
             const strip = ensureTrackStrip(track.id);
             const ctx = getAudioContext();
             const sr = ctx.sampleRate;
+            const accumulatedSamples = beatToSamples(changes, accumulatedPosition, transport.tempo, sr);
+            const clockFloorFrame = placeSamplesOnClock({
+                startSamples: beatToSamples(changes, clockFloorBeat - BEAT_EPSILON, transport.tempo, sr),
+                accumulatedSamples,
+                sampleRate: sr,
+                compensation: 0,
+                currentTime: eventSchedulingAnchor,
+            }).sampleFrame;
 
             // §154.2 — Hoist parent-track + sibling-pad resolution out of the
             // per-note loop. These are functions of (track, tracks) only and
@@ -1171,18 +1178,22 @@ export async function scheduleMidiNotes(
 
                     for (const projectedNote of projectedNotes) {
                         const unswungStartBeat = projectedNote.startBeat;
-                        // No projected start may land before the audio clock: a
-                        // late wrap rewinds the window to loopStart while the
-                        // playhead is already inside the pass, and must not replay
-                        // that pass's old onset. A re-anchor can also land a
-                        // segment behind its owning window, so
-                        // `admittedSegmentFloorBeat` gates on the clock position
-                        // instead of a window grace. The drop is strict beyond its
-                        // rounding tolerance: a landing on the clock computes
-                        // `getCurrentTime()`, the onset's own due instant, and still
-                        // schedules (#4924). Swing only delays a start, so the
-                        // unswung coordinate is the safe comparison.
-                        if (unswungStartBeat < admittedSegmentFloorBeat) {
+                        // Keep clip/groove ownership on raw beats, but decide
+                        // staleness on the audible clock. Positive compensation
+                        // can make a raw-beat-past onset due now or in the future;
+                        // an exactly-due frame is admitted (#4924). Swing only
+                        // delays a start, so the unswung onset is the safe comparison.
+                        if (unswungStartBeat < rawSegmentFloorBeat) {
+                            continue;
+                        }
+                        const audibleOnsetFrame = placeSamplesOnClock({
+                            startSamples: beatToSamples(changes, unswungStartBeat, transport.tempo, sr),
+                            accumulatedSamples,
+                            sampleRate: sr,
+                            compensation,
+                            currentTime: eventSchedulingAnchor,
+                        }).sampleFrame;
+                        if (audibleOnsetFrame < clockFloorFrame) {
                             continue;
                         }
                         // #4910 admitted the note on its owned coordinate, so its
@@ -1227,7 +1238,6 @@ export async function scheduleMidiNotes(
                         const noteEndBeat = unswungEndBeat + swingOffsetBeats;
                         const noteStartSamples = beatToSamples(changes, noteStartBeat, transport.tempo, sr);
                         const noteEndSamples = beatToSamples(changes, noteEndBeat, transport.tempo, sr);
-                        const accumulatedSamples = beatToSamples(changes, accumulatedPosition, transport.tempo, sr);
                         const { time, sampleFrame } = placeSamplesOnClock({
                             startSamples: noteStartSamples,
                             accumulatedSamples,
@@ -1463,6 +1473,7 @@ export async function scheduleMidiNotes(
             restoreStoredControllersOnTrack(track, storedControllerTarget, posts);
         }
         posts.flush(isCurrent);
+        completeTrack();
     }
     if (opensAtRelocation && isCurrent()) {
         const { sampleRate } = getAudioContext();

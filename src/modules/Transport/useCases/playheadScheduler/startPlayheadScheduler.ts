@@ -912,6 +912,12 @@ export function startPlayheadScheduler(
                 currentFrozenMidiOwners.set(track.id, `${track.id}:${track.freezeState.frozenBufferId}`);
             }
         }
+        const changedMidiMediaTrackIds = new Set<string>();
+        for (const trackId of new Set([...previousFrozenMidiOwners.keys(), ...currentFrozenMidiOwners.keys()])) {
+            if (previousFrozenMidiOwners.get(trackId) !== currentFrozenMidiOwners.get(trackId)) {
+                changedMidiMediaTrackIds.add(trackId);
+            }
+        }
         const unfrozeMidiMedia = tracks.some(
             (track) =>
                 track.kind === 'midi' &&
@@ -1659,6 +1665,42 @@ export function startPlayheadScheduler(
                 pool?.sources ?? schedulerSession.activeAudioSources
             );
         }
+        function reconcileCompletedMidiTrack(
+            pool: typeof dyingBufferPool,
+            fromBeat: number,
+            toBeat: number,
+            position: number,
+            trackId: string
+        ): void {
+            if (loopAudioSchedule.active || !cancellation.isCurrent() || !changedMidiMediaTrackIds.has(trackId)) {
+                return;
+            }
+            const track = trackStore.value?.tracks.find(
+                (candidate) => candidate.id === trackId && candidate.kind === 'midi'
+            );
+            if (!track) {
+                return;
+            }
+            const audio = pool?.audio ?? schedulerSession.scheduledAudioClips;
+            const frozen = pool?.frozen ?? schedulerSession.scheduledFrozenTracks;
+            const sources = pool?.sources ?? schedulerSession.activeAudioSources;
+            // Finish this track's media handoff before a later MIDI rack can
+            // await. The final whole-window pass remains responsible for every
+            // other track; these dedup sets keep this emission single-shot.
+            scheduleAudioClips(
+                fromBeat,
+                toBeat,
+                position,
+                audio,
+                frozen,
+                sources,
+                current,
+                initial ? initialSchedulingAnchor : undefined,
+                unfrozeMidiMedia,
+                trackId
+            );
+            retireSupersededMidiMedia([track], ctx, audio, frozen, sources);
+        }
         let mediaOwnerTransition: boolean;
         const initialMidiEmissions: Promise<void>[] = [];
         const initialEmissionErrors: unknown[] = [];
@@ -1753,7 +1795,15 @@ export function startPlayheadScheduler(
                     reemitAfterEdit || skipsStalledSpan || seam.afterLateWrap,
                     initial ? preparedMidi?.midiWindow(seam.passHighWater, seam.passUpTo) : undefined,
                     initial ? initialSchedulingAnchor : undefined,
-                    eventSchedulingAnchor
+                    eventSchedulingAnchor,
+                    (trackId) =>
+                        reconcileCompletedMidiTrack(
+                            dyingBufferPool,
+                            seam.passHighWater,
+                            seam.passUpTo - BEAT_EPSILON,
+                            seam.passPosition,
+                            trackId
+                        )
                 )
             );
             if (initial) {
@@ -1840,7 +1890,15 @@ export function startPlayheadScheduler(
                     true,
                     initial ? preparedMidi?.midiWindow(current.loopStart, seam.wrappedUpTo) : undefined,
                     initial ? initialSchedulingAnchor : undefined,
-                    eventSchedulingAnchor
+                    eventSchedulingAnchor,
+                    (trackId) =>
+                        reconcileCompletedMidiTrack(
+                            incomingBufferPool,
+                            current.loopStart,
+                            seam.wrappedUpTo,
+                            newPosition,
+                            trackId
+                        )
                 )
             );
             if (initial) {
@@ -1906,7 +1964,15 @@ export function startPlayheadScheduler(
                     lateWrap || jumpToPosition !== null || reemitAfterEdit || skipsStalledSpan,
                     initial ? preparedMidi?.midiWindow(schedulerSession.lastScheduledBeat, scheduleUpTo) : undefined,
                     initial ? initialSchedulingAnchor : undefined,
-                    eventSchedulingAnchor
+                    eventSchedulingAnchor,
+                    (trackId) =>
+                        reconcileCompletedMidiTrack(
+                            windowBufferPool,
+                            schedulerSession.lastScheduledBeat,
+                            scheduleUpTo,
+                            schedulerSession.accumulatedPosition,
+                            trackId
+                        )
                 )
             );
             if (initial) {

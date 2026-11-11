@@ -275,4 +275,41 @@ describe('loop buffer work and lifetime ownership', () => {
         expect(windows[nextRepair]?.anchor).toBe(10.125);
         expect(windows.slice(nextRepair).some((window) => window.anchor === 10)).toBe(false);
     });
+    it('keeps an unchanged compensated successor when only another MIDI track unfreezes', () => {
+        fixture.compensationSeconds = 0.5;
+        fixture.tracks.push({
+            id: 'midi',
+            kind: 'midi',
+            muted: false,
+            sends: [],
+            freezeState: { status: 'frozen', frozenBufferId: 'midi-bake' },
+            clips: [{ id: 'midi-clip', type: 'midi', startBeat: 0, endBeat: 4, audioBufferId: 'midi-bake' }],
+        });
+        let bounded = false;
+        let emissionsBeforeChange = 0;
+        let previousHorizon = Number.NEGATIVE_INFINITY;
+        const owner = make(() =>
+            bounded && (emitted.at(-1)?.scheduledStartTime ?? Infinity) <= previousHorizon ? 40 : 0
+        );
+        owner.refill(input());
+        const successor = owner.poolAt(10.125, true)!.sources[0]!;
+        expect(successor.scheduledStartTime).toBe(10.625);
+        const stopsBeforeChange = vi.mocked(successor.stop).mock.calls.map((call) => [...call]);
+
+        fixture.tracks[1]!.freezeState = { status: 'unfrozen' };
+        fixture.time = 10.624;
+        emissionsBeforeChange = emitted.length;
+        previousHorizon = Math.max(...emitted.map((source) => source.scheduledStartTime ?? 0));
+        bounded = true;
+        const coverage = owner.refill(input(0.25, 10.624, 0.15));
+
+        expect(vi.mocked(successor.stop).mock.calls).toEqual(stopsBeforeChange);
+        const newEmissions = emitted.slice(emissionsBeforeChange);
+        expect(newEmissions.length).toBeGreaterThan(0);
+        for (const source of newEmissions) {
+            expect(source.scheduledStartTime).toBeGreaterThan(previousHorizon);
+        }
+        expect(coverage.shortfall).toBeNull();
+        expect(coverage.through).toBeGreaterThanOrEqual(coverage.target);
+    });
 });
