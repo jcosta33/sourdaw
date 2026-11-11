@@ -1,9 +1,10 @@
 import { createRafBatcher } from '#/utils/DOM/createRafBatcher';
 
-import { type FermenterPatch } from '../../models/FermenterPatch';
+import { DEFAULT_PATCH, type FermenterPatch } from '../../models/FermenterPatch';
 import { loadFermenterPatch } from '../../stores/fermenterStore';
 import { getFermenterDependencies } from '../getFermenterDependencies';
 
+import { fermenterParamBatcher } from './fermenterParamBatcher';
 import { mapFermenterPatchToDspPatch } from './mapFermenterPatchToDspPatch';
 
 // §33.2 — Coalesce full-patch engine + persistence writes to once per frame.
@@ -38,4 +39,12 @@ export function loadFermenterPatchWithAudio(deviceId: string, patch: FermenterPa
 
     loadFermenterPatch(deviceId, patch);
     patchBatcher.schedule(deviceId, { deviceId: target.deviceId, patch }, flushPatch);
+}
+
+/** A committed whole patch supersedes only this instance's older frame writes. */
+export function cancelPendingFermenterPatchWrites(deviceId: string): void {
+    patchBatcher.cancel(deviceId);
+    for (const key of Object.keys(DEFAULT_PATCH)) {
+        fermenterParamBatcher.cancel(`${deviceId}:${key}`);
+    }
 }

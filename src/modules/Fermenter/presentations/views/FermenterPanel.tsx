@@ -1,4 +1,4 @@
-import { type ReactElement, useEffect, useState } from 'react';
+import { type ReactElement, useEffect, useRef, useState } from 'react';
 
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Cpu, RotateCcw, Save, Shuffle } from 'lucide-react';
@@ -17,15 +17,23 @@ import { MidiLearnRotaryKnob } from '#/modules/ControlSurface/presentations/view
 
 import { DEFAULT_PATCH, type FermenterPatch, ENGINE_NAMES } from '../../models/FermenterPatch';
 import {
+    cloneFermenterPatch,
+    fermenterPatchesEqual,
+    toFermenterDeviceState,
+    type FermenterDeviceStateChunk,
+} from '../../models/FermenterPatchState';
+import {
     fermenterStore,
     getFermenterState,
     setFermenterUiLevel,
     type FermenterState,
 } from '../../stores/fermenterStore';
 import { applyFermenterMacroMapping } from '../../useCases/applyFermenterMacroMapping';
+import { commitFermenterPatch } from '../../useCases/commitFermenterPatch';
 import { loadFermenterPatchWithAudio } from '../../useCases/fermenterParamBridge/loadFermenterPatchWithAudio';
 import { setFermenterParamWithAudio } from '../../useCases/fermenterParamBridge/setFermenterParamWithAudio';
 import { FERMENTER_PRESETS } from '../../useCases/fermenterQueries/helpers';
+import { randomizeFermenterPatch, resolveFermenterPresetPatch } from '../../useCases/fermenterPatchOperations';
 import { hydrateFermenterFromProject } from '../../useCases/hydrateFermenterFromProject';
 import { selectFermenterFilterChoice } from '../../useCases/selectFermenterFilterChoice';
 import { selectFermenterOscillatorEngine } from '../../useCases/selectFermenterOscillatorEngine';
@@ -152,63 +160,19 @@ const SectionHeader = ({
     </Row>
 );
 
-function loadPresetPatch(
-    presetId: string,
-    userPatches: Array<{ id: string; name: string; patch: FermenterPatch }>
-): FermenterPatch | null {
-    const userPatch = userPatches.find((patch) => patch.id === presetId);
-    if (userPatch) {
-        return userPatch.patch;
-    }
+export { randomizeFermenterPatch as randomizePatch };
 
-    const preset = FERMENTER_PRESETS.find((entry) => entry.id === presetId);
-    if (!preset) {
-        return null;
-    }
+type AuditionSlot = {
+    patch: FermenterPatch;
+    referencePatch: FermenterPatch;
+    presetId: string | null;
+};
 
-    const values = preset.devices[0]?.parameterValues;
-    if (!values) {
-        return null;
-    }
-
-    const patch: FermenterPatch = { ...DEFAULT_PATCH, name: preset.name, macros: [...DEFAULT_PATCH.macros] };
-    for (const [key, value] of Object.entries(values)) {
-        if (key in patch && typeof value === 'number') {
-            (patch as Record<string, unknown>)[key] = value;
-        } else if (key.startsWith('macro') && typeof value === 'number') {
-            const idx = parseInt(key.slice(5), 10);
-            if (idx >= 0 && idx < 8) {
-                patch.macros[idx] = value;
-            }
-        }
-    }
-
-    return patch;
-}
-
-export function randomizePatch(): FermenterPatch {
-    const range = (min: number, max: number) => min + Math.random() * (max - min);
-    const randomInt = (min: number, max: number) => Math.floor(range(min, max + 1));
-
-    return {
-        ...DEFAULT_PATCH,
-        name: 'Random',
-        oscEngine: randomInt(0, 6),
-        oscWaveform: randomInt(0, 3),
-        oscLevel: range(0.5, 1),
-        filterModel: randomInt(0, 5),
-        filterCutoff: range(200, 12000),
-        filterResonance: range(0.5, 8),
-        ampAttack: range(0.001, 0.5),
-        ampDecay: range(0.05, 1),
-        ampSustain: range(0, 1),
-        ampRelease: range(0.05, 2),
-        filterEnvAmount: range(-0.8, 0.8),
-        reverbMix: range(0, 0.6),
-        masterGain: range(0.6, 1),
-        macros: [0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5],
-    };
-}
+type AuditionSession = {
+    a: AuditionSlot;
+    b: AuditionSlot;
+    active: 'a' | 'b';
+};
 
 function renderEngineControls(patch: FermenterPatch, onParam: (key: string, value: number) => void): ReactElement {
     if (patch.oscEngine === 2) {
@@ -461,16 +425,15 @@ function renderSectionContent(
 }
 
 export const FermenterPanel = ({ deviceId }: { deviceId: string }): ReactElement => {
-    const projectParameterValues = useStoreSelector(
-        trackStore,
-        (state) =>
-            (state?.tracks ?? []).flatMap((track) => track.devices).find((device) => device.id === deviceId)
-                ?.parameterValues
+    const projectDevice = useStoreSelector(trackStore, (state) =>
+        (state?.tracks ?? []).flatMap((track) => track.devices).find((device) => device.id === deviceId)
     );
+    const projectParameterValues = projectDevice?.parameterValues;
+    const projectDeviceState = projectDevice?.deviceState;
 
     useEffect(() => {
         hydrateFermenterFromProject(deviceId);
-    }, [deviceId, projectParameterValues]);
+    }, [deviceId, projectParameterValues, projectDeviceState]);
 
     const { patch, activeVoices, uiLevel } = useStoreSelector(
         fermenterStore,
@@ -491,6 +454,61 @@ export const FermenterPanel = ({ deviceId }: { deviceId: string }): ReactElement
     const [section, setSection] = useState<FermenterSection>('osc');
     const [showSave, setShowSave] = useState(false);
     const [saveName, setSaveName] = useState('');
+    const [referencePatch, setReferencePatch] = useState(() => cloneFermenterPatch(patch));
+    const referencePatchRef = useRef(referencePatch);
+    const [auditionSession, setAuditionSession] = useState<AuditionSession | null>(null);
+    const auditionSessionRef = useRef<AuditionSession | null>(null);
+    const [currentPresetId, setCurrentPresetId] = useState<string | null>(null);
+    const localCommitRef = useRef<FermenterDeviceStateChunk | null>(null);
+    const observedLocalCommitRef = useRef(false);
+    const hydratedDeviceRef = useRef<string | null>(null);
+    const patchOperationRef = useRef(0);
+
+    function updateReference(value: FermenterPatch): void {
+        const next = cloneFermenterPatch(value);
+        referencePatchRef.current = next;
+        setReferencePatch(next);
+    }
+
+    function updateSession(value: AuditionSession | null): void {
+        auditionSessionRef.current = value;
+        setAuditionSession(value);
+    }
+
+    function restoreProjectReference(value: FermenterPatch): void {
+        updateReference(value);
+        updateSession(null);
+        setCurrentPresetId(null);
+    }
+
+    useEffect(() => {
+        const hydrated = hydrateFermenterFromProject(deviceId);
+        if (!hydrated) {
+            return;
+        }
+        const firstHydration = hydratedDeviceRef.current !== deviceId;
+        hydratedDeviceRef.current = deviceId;
+        if (firstHydration) {
+            localCommitRef.current = null;
+            observedLocalCommitRef.current = false;
+            restoreProjectReference(hydrated);
+            return;
+        }
+        if (localCommitRef.current) {
+            if (fermenterPatchesEqual(hydrated, referencePatchRef.current)) {
+                observedLocalCommitRef.current = true;
+                return;
+            }
+            if (!observedLocalCommitRef.current) {
+                return;
+            }
+            localCommitRef.current = null;
+            observedLocalCommitRef.current = false;
+        }
+        if (projectDeviceState !== undefined) {
+            restoreProjectReference(hydrated);
+        }
+    }, [deviceId, projectDeviceState]);
 
     // User patches come from the TanStack Query cache — never a render-body
     // read (a per-render loadUserPatches() put a synchronous localStorage
@@ -504,6 +522,7 @@ export const FermenterPanel = ({ deviceId }: { deviceId: string }): ReactElement
         staleTime: Infinity,
     });
     const sectionMeta = getSectionMeta(section);
+    const modified = !fermenterPatchesEqual(patch, referencePatch);
 
     function onParam(key: string, value: number): void {
         if (key === 'oscEngine') {
@@ -529,21 +548,95 @@ export const FermenterPanel = ({ deviceId }: { deviceId: string }): ReactElement
         );
     }
 
+    function saveActiveSlot(): AuditionSession | null {
+        const current = auditionSessionRef.current;
+        if (!current) {
+            return null;
+        }
+        const active = current.active;
+        const next = {
+            ...current,
+            [active]: {
+                ...current[active],
+                patch: cloneFermenterPatch(getFermenterState(deviceId).patch),
+            },
+        };
+        updateSession(next);
+        return next;
+    }
+
+    async function applyCommittedPatch(value: FermenterPatch, label: string): Promise<boolean> {
+        const operation = patchOperationRef.current + 1;
+        patchOperationRef.current = operation;
+        const next = cloneFermenterPatch(value);
+        const unchanged = fermenterPatchesEqual(getFermenterState(deviceId).patch, next);
+        updateReference(next);
+        if (!unchanged) {
+            localCommitRef.current = toFermenterDeviceState(next);
+            observedLocalCommitRef.current = false;
+        }
+        const committed = await commitFermenterPatch({ deviceId, patch: next, label });
+        if (patchOperationRef.current !== operation) {
+            return false;
+        }
+        if (!committed) {
+            localCommitRef.current = null;
+            observedLocalCommitRef.current = false;
+            restoreProjectReference(getFermenterState(deviceId).patch);
+        }
+        return committed;
+    }
+
     function loadPreset(presetId: string): void {
-        const loadedPatch = loadPresetPatch(presetId, userPatches);
+        const loadedPatch = resolveFermenterPresetPatch(presetId, userPatches);
         if (!loadedPatch) {
             return;
         }
 
-        loadFermenterPatchWithAudio(deviceId, loadedPatch);
+        const currentPatch = cloneFermenterPatch(getFermenterState(deviceId).patch);
+        const existing = auditionSessionRef.current;
+        const next: AuditionSession = existing
+            ? {
+                  ...(saveActiveSlot() ?? existing),
+                  b: { patch: loadedPatch, referencePatch: cloneFermenterPatch(loadedPatch), presetId },
+                  active: 'b',
+              }
+            : {
+                  a: {
+                      patch: currentPatch,
+                      referencePatch: cloneFermenterPatch(currentPatch),
+                      presetId: currentPresetId,
+                  },
+                  b: { patch: loadedPatch, referencePatch: cloneFermenterPatch(loadedPatch), presetId },
+                  active: 'b',
+              };
+        updateSession(next);
+        setCurrentPresetId(presetId);
+        void applyCommittedPatch(loadedPatch, 'Audition Fermenter preset');
+    }
+
+    function showAuditionSlot(active: 'a' | 'b'): void {
+        const current = saveActiveSlot();
+        if (!current || current.active === active) {
+            return;
+        }
+        const slot = current[active];
+        updateSession({ ...current, active });
+        setCurrentPresetId(slot.presetId);
+        updateReference(slot.referencePatch);
+        void applyCommittedPatch(slot.patch, `Show Fermenter patch ${active.toUpperCase()}`);
     }
 
     function initPatch(): void {
-        loadFermenterPatchWithAudio(deviceId, { ...DEFAULT_PATCH });
+        updateSession(null);
+        setCurrentPresetId(null);
+        void applyCommittedPatch(cloneFermenterPatch(DEFAULT_PATCH), 'Reset Fermenter patch');
     }
 
     function applyRandomPatch(): void {
-        loadFermenterPatchWithAudio(deviceId, randomizePatch());
+        updateSession(null);
+        setCurrentPresetId(null);
+        void applyCommittedPatch(randomizeFermenterPatch(), 'Randomize Fermenter patch');
     }
 
     function handleSave(): void {
@@ -594,6 +687,11 @@ export const FermenterPanel = ({ deviceId }: { deviceId: string }): ReactElement
                             Current scene
                         </div>
                         <div className="truncate text-[11px] text-foreground">{patch.name}</div>
+                        {modified ? (
+                            <div className="mt-0.5 text-[8px] font-medium uppercase tracking-[0.16em] text-[var(--color-accent-peach)]">
+                                Modified
+                            </div>
+                        ) : null}
                     </div>
                     <Row align="stretch" gap={1}>
                         {showSave ? (
@@ -661,12 +759,35 @@ export const FermenterPanel = ({ deviceId }: { deviceId: string }): ReactElement
                     </Row>
                 </Row>
 
+                <Row align="center" justify="between" gap={1} shrink={false} className="fermenter-window px-2 py-1.5">
+                    <span className="text-[8px] uppercase tracking-[0.2em] text-muted-foreground/55">Compare</span>
+                    <Row gap={0.5} shrink={false}>
+                        {(['a', 'b'] as const).map((slot) => (
+                            <Button
+                                key={slot}
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                aria-label={`Show patch ${slot.toUpperCase()}`}
+                                aria-pressed={auditionSession?.active === slot}
+                                disabled={!auditionSession}
+                                className="h-6 min-w-8 px-2 text-[9px]"
+                                onClick={() => showAuditionSlot(slot)}
+                            >
+                                {slot.toUpperCase()}
+                            </Button>
+                        ))}
+                    </Row>
+                </Row>
+
                 <div className="fermenter-window min-h-[160px] flex-1 shrink-0 overflow-hidden">
                     <PresetBrowser
                         currentName={patch.name}
+                        currentPresetId={currentPresetId}
                         userPatches={userPatches}
                         presets={FERMENTER_PRESETS}
                         onLoadPreset={loadPreset}
+                        onStepPreset={loadPreset}
                     />
                 </div>
             </Stack>

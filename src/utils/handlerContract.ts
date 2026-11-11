@@ -1999,6 +1999,19 @@ export type AppAction =
       }
     | { type: 'setDeviceState'; payload: { deviceId: string; state: DeviceStateChunkSnapshot } }
     | {
+          type: 'setFermenterPatch';
+          payload: {
+              deviceId: string;
+              before: DeviceStateChunkSnapshot;
+              after: DeviceStateChunkSnapshot;
+              expectedCurrent: DeviceStateChunkSnapshot;
+              expectedTrackId: string;
+              expectedDeviceIds: readonly string[];
+              expectedTrackFrozen: boolean;
+              label: string;
+          };
+      }
+    | {
           type: 'setGrandBouleDeviceState';
           payload: {
               deviceId: string;

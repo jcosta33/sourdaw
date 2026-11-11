@@ -20,6 +20,8 @@ function defaultProps(overrides: Partial<ComponentProps<typeof PresetBrowser>> =
         userPatches: [{ id: 'u1', name: 'My Patch' }],
         presets: FIXTURE_PRESETS,
         onLoadPreset: vi.fn(),
+        onStepPreset: vi.fn(),
+        currentPresetId: 'p1',
         ...overrides,
     };
 }
@@ -189,6 +191,58 @@ describe('PresetBrowser', () => {
             render(<PresetBrowser {...defaultProps({ onLoadPreset })} />);
             fireEvent.click(screen.getByText('Pad Drift'));
             expect(onLoadPreset).toHaveBeenCalledWith('p3');
+        });
+    });
+
+    describe('filtered preset stepping', () => {
+        it('steps through search results rather than registry neighbours and wraps at both ends', () => {
+            const onStepPreset = vi.fn();
+            render(<PresetBrowser {...defaultProps({ onStepPreset })} />);
+            fireEvent.change(screen.getByPlaceholderText(/search/i), { target: { value: 'warm' } });
+
+            fireEvent.click(screen.getByRole('button', { name: 'Next preset' }));
+            expect(onStepPreset).toHaveBeenLastCalledWith('p3');
+            fireEvent.click(screen.getByRole('button', { name: 'Previous preset' }));
+            expect(onStepPreset).toHaveBeenLastCalledWith('p3');
+        });
+
+        it('steps through user patches and wraps from the first patch to the last', () => {
+            const onStepPreset = vi.fn();
+            render(
+                <PresetBrowser
+                    {...defaultProps({
+                        currentPresetId: 'u1',
+                        onStepPreset,
+                        userPatches: [
+                            { id: 'u1', name: 'My Patch' },
+                            { id: 'u2', name: 'Second Patch' },
+                        ],
+                    })}
+                />
+            );
+            fireEvent.click(screen.getByText('My Patches'));
+
+            fireEvent.click(screen.getByRole('button', { name: 'Previous preset' }));
+            expect(onStepPreset).toHaveBeenLastCalledWith('u2');
+            fireEvent.click(screen.getByRole('button', { name: 'Next preset' }));
+            expect(onStepPreset).toHaveBeenLastCalledWith('u2');
+        });
+
+        it('starts at the first filtered result when the current patch is outside the result set', () => {
+            const onStepPreset = vi.fn();
+            render(<PresetBrowser {...defaultProps({ currentPresetId: 'p2', onStepPreset })} />);
+            fireEvent.change(screen.getByPlaceholderText(/search/i), { target: { value: 'lead' } });
+
+            fireEvent.click(screen.getByRole('button', { name: 'Next preset' }));
+            expect(onStepPreset).toHaveBeenLastCalledWith('p1');
+        });
+
+        it('disables both explicitly named stepping controls when no preset matches', () => {
+            render(<PresetBrowser {...defaultProps()} />);
+            fireEvent.change(screen.getByPlaceholderText(/search/i), { target: { value: 'zzzz' } });
+
+            expect(screen.getByRole('button', { name: 'Previous preset' })).toBeDisabled();
+            expect(screen.getByRole('button', { name: 'Next preset' })).toBeDisabled();
         });
     });
 });
