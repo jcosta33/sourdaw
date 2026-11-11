@@ -1,0 +1,149 @@
+scripts/__tests__/reviewRoundEscalation.spec.ts
+  s_0207af29e0b307::t_f6646bcd69e7ca 65-73,87-89
+  s_0207af29e0b307::t_0fab16f88ed4f4 14,63-64,74-86,90-111
+  s_0207af29e0b307::t_ae2052076dd2c7 112-113
+scripts/__tests__/recoverPublishReviewLock5008.spec.ts
+  s_0207af29e0b307::t_28c9b13d0af409 260,297-299,304-315,732-734
+  s_0207af29e0b307::t_52cbf7d4aa27e6 33
+scripts/__tests__/reviewApprovalContext.spec.ts
+  s_0207af29e0b307::t_f6646bcd69e7ca 210-220,222,236-238,250-252
+  s_0207af29e0b307::t_96eeed2661b46c 207-209,221,223-235,239-249,253-257
+scripts/reviewRoundEscalation.ts
+  s_0207af29e0b307::t_f6646bcd69e7ca 56-60
+  s_0207af29e0b307::t_a64f98c7d26e9a 11,27-30,37-55,61-64,99
+scripts/publishReview.ts
+  s_0207af29e0b307::t_11fa068f14ed9a 46-47,111-115,479
+  s_0207af29e0b307::t_53a8f502dce16c 274
+  s_76ccd61d453edf::t_e475244c28ead7 17,240-242,273,275-286
+scripts/__tests__/evidenceSafety.spec.ts
+  s_0207af29e0b307::t_c84776fed839d9 1-50,55-78,80-86
+  s_0207af29e0b307::t_f3cc027a664015 53
+  s_c145dcc26d5369::t_1a796590ea5e56 51-52,54,79
+scripts/reviewRiskPolicy.ts
+  s_0207af29e0b307::t_f6646bcd69e7ca 312
+  s_0207af29e0b307::t_ad0e21b96e106e 12,73,86-88,90-93,310
+scripts/reviewApprovalContext.ts
+  s_0207af29e0b307::t_bf0f784e7d7d12 62,79-95,97-112,115-126
+  s_f72f901cff0ec9::t_fbe086e2d10f59 65,78,96,113-114
+scripts/__tests__/reviewerModelDiversity.spec.ts
+  s_0207af29e0b307::t_2f797c21e82a5b 143-168
+scripts/evidenceSafety.ts
+  s_0207af29e0b307::t_43ceb7bbae1030 37-45,48-57,60-64
+  s_0207af29e0b307::t_297b7991cd654f 94-98
+  s_0207af29e0b307::t_922b60e87f9715 76-81
+  s_0207af29e0b307::t_f2cde5e3d721f1 58-59
+  s_131b426bba0f96::t_5cfa07568b24fb 65
+scripts/__tests__/reviewStructuralAdmission.spec.ts
+  s_0207af29e0b307::t_2f797c21e82a5b 62-68
+scripts/reviewDossierPublication.ts
+  s_0207af29e0b307::t_007d21f7f643bc 174-176,207-208
+scripts/reviewPublicationBinding.ts
+  s_0207af29e0b307::t_f6646bcd69e7ca 156-160
+  s_0207af29e0b307::t_b66ca55c475517 334-338
+  s_0207af29e0b307::t_11fa068f14ed9a 21,39,94-99,101-117,122,126,289
+scripts/repairReviewFinding.ts
+  s_0207af29e0b307::t_9f0be5af51e8e9 49,76-84,388-391,472,479-482,491,495
+scripts/__tests__/repairReviewFinding.spec.ts
+  s_0207af29e0b307::t_a5363b7c9f3561 862
+  s_0207af29e0b307::t_9b95a1b4ff664f 98,829,905,975
+  s_0207af29e0b307::t_192b04e931753b 13-17,378-381,394-410,417-424
+  s_0207af29e0b307::t_f6646bcd69e7ca 382-393,411-416
+  s_0207af29e0b307::t_1c77d64ee81042 12,425
+scripts/__tests__/confirmReviewRepairs.spec.ts
+  s_0207af29e0b307::t_f6646bcd69e7ca 398-413,1196-1200,1203-1224
+  s_0207af29e0b307::t_5293681b9d579a 1195,1201-1202,1225
+  s_0207af29e0b307::t_38694c688500a1 31-36
+  s_0207af29e0b307::t_a1faa33c2897c4 394-397,414-425
+  s_0207af29e0b307::t_ca42bd1c81184b 111,1181
+scripts/reviewerModelDiversity.ts
+  s_0207af29e0b307::t_c543c7e3fb6579 67-68,75,82-86,113-114,116-117
+scripts/__tests__/publishReview.spec.ts
+  s_0207af29e0b307::t_e3bf63aebb4be8 5858-5863,5871-5890
+  s_0207af29e0b307::t_c340b90d980184 542-545,550-569,6348
+  s_0207af29e0b307::t_f6646bcd69e7ca 546-549,5864-5870
+  s_0207af29e0b307::t_7fd9c1e5befb70 71,6203-6206,6209-6210,6314-6344
+  s_0207af29e0b307::t_52cbf7d4aa27e6 54
+  s_0207af29e0b307::t_50cc4987653f22 5676
+  s_0207af29e0b307::t_f429e389b0534b 6270,6277,6280-6282
+  s_0207af29e0b307::t_1e6c6f776ee098 83,5271-5272,5322-5330,5666,5673-5675,5677-5707,5716-5724,5732
+  s_0207af29e0b307::t_a2acb49ae86ac7 5708-5715
+  s_0207af29e0b307::t_8e58cee39c6e0c 6345-6347,6349
+scripts/recoverPublishReviewLock.ts
+  s_0207af29e0b307::t_15caee391d7f93 225-227,231-233
+  s_0207af29e0b307::t_2e2ee24921bf67 213,224,228-230,234-250
+  s_0207af29e0b307::t_d5f8a59dd563c7 251-252
+scripts/__tests__/recoverPublishReviewLockReceiptReplay.spec.ts
+  s_0207af29e0b307::t_0236b9c099dbf5 626-629,636,640,647
+  s_0207af29e0b307::t_f6646bcd69e7ca 630-635,637-639,641-646
+scripts/reviewStructuralAdmission.ts
+  s_0207af29e0b307::t_c543c7e3fb6579 21-29,39
+scripts/__tests__/reviewRepair.spec.ts
+  s_0207af29e0b307::t_f6646bcd69e7ca 485-487
+  s_0207af29e0b307::t_47213352b9aad9 468-484,488-497
+  s_0207af29e0b307::t_3a4d11d7d018da 4
+  s_0207af29e0b307::t_8fe4c567c53edf 1052,1055,1061,1064,1070,1096
+  s_0207af29e0b307::t_61cd2e99e959a7 96
+scripts/__tests__/reviewRiskPolicy.spec.ts
+  s_0207af29e0b307::t_6ae0efbbcd3c38 203-226
+scripts/savedProjectStatePaths.ts
+  s_0207af29e0b307::t_d761f33bd64b3e 5-8,512
+scripts/__tests__/savedProjectStatePaths.spec.ts
+  s_0207af29e0b307::t_7eebcbc127db30 1-33
+scripts/__tests__/reviewDossierPublication.spec.ts
+  s_0207af29e0b307::t_f429e389b0534b 271-276
+scripts/prepareReview.ts
+  s_0207af29e0b307::t_d6cca91fc250ce 25
+  s_0207af29e0b307::t_19081356579e87 149
+scripts/confirmReviewRepairs.ts
+  s_131b426bba0f96::t_bab1e8e7523023 310-318,365
+scripts/reviewRepair.ts
+  s_131b426bba0f96::t_56a66d3d40b207 27,70,108-109,540-550,557-560
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0f4c08129f9474903c5d088c51ca3ad6ab2de3de",
+  "prompts": {},
+  "sessions": {
+    "s_0207af29e0b307": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f246cd62-2d2d-4584-ad3e-050fad80f22b",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_131b426bba0f96": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dec81aab-5eda-40a7-90d1-889fad31bc7f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_76ccd61d453edf": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "108ea70a-a924-42ce-b7b8-fd9c1012e902",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_c145dcc26d5369": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0fdf4e1b-0f0f-48bd-96c3-1653143867d3",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_f72f901cff0ec9": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "979d497e-1af0-48d9-a9b5-97d6805a7b91",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
