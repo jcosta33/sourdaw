@@ -6,6 +6,7 @@ import { Cpu, RotateCcw, Save, Shuffle } from 'lucide-react';
 import { DawPluginChip } from '#/components/daw/DawPluginChip';
 import { DawPluginLed } from '#/components/daw/DawPluginLed';
 import { DawPluginMetricTile } from '#/components/daw/DawPluginMetricTile';
+import { getDawTabId } from '#/components/daw/DawTabStrip';
 import { Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { Input } from '#/components/ui/input';
@@ -47,7 +48,12 @@ import { OscillatorSection } from '../components/OscillatorSection';
 import { Oscilloscope } from '../components/Oscilloscope';
 import { OutputMeter } from '../components/OutputMeter';
 import { PresetBrowser } from '../components/PresetBrowser';
-import { SectionNav, type FermenterSection } from '../components/SectionNav';
+import {
+    FERMENTER_SECTION_PANEL_ID,
+    FERMENTER_SECTION_TAB_ID_PREFIX,
+    SectionNav,
+    type FermenterSection,
+} from '../components/SectionNav';
 import { SignalFlowView } from '../components/SignalFlowView';
 import { SpectrumAnalyzer } from '../components/SpectrumAnalyzer';
 import { UnisonSection } from '../components/UnisonSection';
@@ -675,9 +681,9 @@ export const FermenterPanel = ({ deviceId }: { deviceId: string }): ReactElement
                     className="fermenter-window min-h-[32px] px-2.5 py-1"
                 >
                     <Row align="center" gap={1.5} shrink={false}>
-                        <DawPluginChip active tone="sage" size="xs">
+                        <DawPluginLed tone="sage">
                             {LEVELS.find((level) => level.id === uiLevel)?.eyebrow ?? 'Scene'}
-                        </DawPluginChip>
+                        </DawPluginLed>
                         <DawPluginLed tone="sage">{ENGINE_NAMES[patch.oscEngine] ?? 'Wavetable'}</DawPluginLed>
                     </Row>
 
@@ -753,7 +759,13 @@ export const FermenterPanel = ({ deviceId }: { deviceId: string }): ReactElement
                             </div>
                         </Stack>
 
-                        <div className="min-h-[180px] flex-1 overflow-y-auto px-1">
+                        <div
+                            role="tabpanel"
+                            id={FERMENTER_SECTION_PANEL_ID}
+                            aria-labelledby={getDawTabId(FERMENTER_SECTION_TAB_ID_PREFIX, section)}
+                            tabIndex={0}
+                            className="min-h-[180px] flex-1 overflow-y-auto px-1"
+                        >
                             <div className="pb-2">{renderSectionContent(section, patch, onParam)}</div>
                             {uiLevel >= 4 ? (
                                 <div className="mt-3 border-t border-border/15 pt-3">

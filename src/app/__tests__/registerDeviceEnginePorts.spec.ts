@@ -338,14 +338,22 @@ describe('registerDeviceEnginePorts after registration', () => {
         expect(authoring.addProcessor).toBe(yeast.addYeastProcessor);
         authoring.focusRack('template-arpeggiator-port');
         authoring.addProcessor('arpeggiator', 'template-arp', 'Template arp');
+        const created = yeastStores.yeastStore.value?.processors.find((processor) => processor.id === 'template-arp');
+        if (!created) {
+            throw new Error('Expected the template Arpeggiator to be added');
+        }
+        const initialParams = structuredClone(created.params);
         const result = await authoring.setProcessorParam('template-arp', 'rate_denom', 16);
         expect(result).toBeUndefined();
+        expect(
+            yeastStores.yeastStore.value?.processors.find((processor) => processor.id === 'template-arp')?.params
+        ).toEqual({ ...initialParams, rate_denom: 16 });
         expect(yeastStores.yeastStore.value?.processors).toContainEqual(
             expect.objectContaining({
                 id: 'template-arp',
                 name: 'Template arp',
                 type: 'arpeggiator',
-                params: { rate_denom: 16 },
+                params: { ...initialParams, rate_denom: 16 },
             })
         );
         const parameterWriter = authoring.setProcessorParam;

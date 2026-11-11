@@ -49,7 +49,7 @@ describe('CrustControlZone level 2 (algorithm chips)', () => {
         renderZone({ uiLevel: 2, style: 'loud', algorithm: 'wall' });
 
         expect(screen.getByRole('button', { name: 'Wall' })).toHaveAttribute('aria-pressed', 'true');
-        expect(screen.getByRole('button', { name: 'Transparent' })).not.toHaveAttribute('aria-pressed');
+        expect(screen.getByRole('button', { name: 'Transparent' })).toHaveAttribute('aria-pressed', 'false');
     });
 
     it('prevents level 2 core controls from collapsing with shrink-0', () => {
