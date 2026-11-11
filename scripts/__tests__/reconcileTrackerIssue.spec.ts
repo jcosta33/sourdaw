@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { AUTHOR_BOT_NODE_ID as AUTHOR_BOT_LOGIN } from '../githubAppIdentity.ts';
 import {
@@ -358,6 +358,20 @@ describe('tracker issue reconciliation', () => {
             expect(processIsProvenDead(child.pid)).toBe(true);
         });
 
+        // Spying on `process.kill` makes the EPERM answer independent of the caller's uid; a real probe
+        // of pid 1 only answers EPERM to a non-root caller and would prove nothing when run as root.
+        it.each(['EPERM', 'EINVAL'])('does not prove an owner dead when the probe answers %s', (code) => {
+            const kill = vi.spyOn(process, 'kill').mockImplementation(() => {
+                throw Object.assign(new Error(`kill ${code}`), { code });
+            });
+            try {
+                expect(processIsProvenDead(ownerPid)).toBe(false);
+                expect(kill).toHaveBeenCalledWith(ownerPid, 0);
+            } finally {
+                kill.mockRestore();
+            }
+        });
+
         it('records a versioned owner while the lease is held', () => {
             withLeaseRoot(undefined, (root, leasePath) => {
                 withRepositoryTrackerMutationLease(root, () => {
@@ -496,6 +510,25 @@ describe('tracker issue reconciliation', () => {
             expect(() => parseReconcileTrackerIssueArgs(['--recover-lease', token, '2372'])).toThrow(
                 /--recover-lease <token>/
             );
+        });
+
+        it('refuses CLI recovery of a live owner through the real liveness probe', async () => {
+            const liveLease = JSON.stringify({ version: 2, pid: process.pid, token });
+            const root = mkdtempSync(join(tmpdir(), 'sourdaw-tracker-lease-cli-live-'));
+            mkdirSync(join(root, '.git'));
+            const leasePath = join(root, '.git', 'sourdaw-tracker-mutation.lease');
+            writeFileSync(leasePath, liveLease);
+            try {
+                await expect(
+                    runReconcileTrackerIssueCli(['--recover-lease', token], {
+                        resolvePrimaryRoot: () => root,
+                        authenticateTrackerAuthor: () => expect.fail('lease recovery must not authenticate'),
+                    })
+                ).rejects.toThrow(/live or unprovable; nothing removed/);
+                expect(readFileSync(leasePath, 'utf8')).toBe(liveLease);
+            } finally {
+                rmSync(root, { recursive: true, force: true });
+            }
         });
 
         it('recovers from the CLI without authenticating to GitHub', async () => {
