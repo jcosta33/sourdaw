@@ -1,0 +1,28 @@
+src/modules/Command/useCases/__tests__/redo.spec.ts
+  h_beb54bf43b47b7 476-477,479-480,482-483,489-490
+src/modules/Command/useCases/redo.ts
+  h_beb54bf43b47b7 436-437,440-444
+src/modules/CommandInterface/presentations/views/CommandPalette.tsx
+  h_beb54bf43b47b7 127-134,143
+src/modules/CommandInterface/presentations/views/commandRegistry.ts
+  h_beb54bf43b47b7 31
+src/modules/CommandInterface/useCases/commands/AutomationCommands.ts
+  h_beb54bf43b47b7 2
+src/modules/CommandInterface/useCases/commands/EditCommands.ts
+  h_beb54bf43b47b7 32
+src/modules/CommandInterface/useCases/commands/__tests__/EditCommandsDeep.spec.ts
+  h_beb54bf43b47b7 57-60
+src/modules/CommandInterface/useCases/getCommandInapplicabilityReason.ts
+  h_beb54bf43b47b7 2
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "463b7a682ff9a66cd49d6fc86a1ea200880b0bd2",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
