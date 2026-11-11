@@ -61,7 +61,7 @@ export function hydrateFermenterFromProject(deviceId: string): FermenterPatch | 
     }
 
     if (device.parameterValues) {
-        applyParameterValues(patch, device.parameterValues, persistedPatch !== null || isUnseeded);
+        applyParameterValues(patch, device.parameterValues, persistedPatch === null && isUnseeded);
     }
 
     if (isUnseeded || !fermenterPatchesEqual(currentPatch, patch)) {

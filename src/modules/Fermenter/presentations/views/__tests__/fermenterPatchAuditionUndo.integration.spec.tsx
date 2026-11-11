@@ -378,26 +378,49 @@ describe('Fermenter whole-patch auditioning through Command', () => {
         });
     });
 
-    it('refuses a queued action after its device is replaced', async () => {
+    it('clears a modified-slot audition when undo restores another project patch', async () => {
+        renderPanel();
+        await waitFor(() => expect(getFermenterState(DEVICE_ID).patch).toEqual(initialPatch));
+        const preset = FERMENTER_PRESETS.find((candidate) => candidate.id !== 'fermenter-init');
+        if (!preset) {
+            throw new Error('Expected a non-init Fermenter preset');
+        }
+        fireEvent.click(screen.getByRole('button', { name: preset.name.replace('Fermenter — ', '') }));
+        await waitFor(() => expect(getFermenterState(DEVICE_ID).patch.name).toBe(preset.name));
+
+        const editedB = cloneFermenterPatch(getFermenterState(DEVICE_ID).patch);
+        editedB.name = 'Edited B';
+        act(() => loadFermenterPatch(DEVICE_ID, editedB));
+        fireEvent.click(screen.getByRole('button', { name: 'Show patch A' }));
+        await waitFor(() => expect(getFermenterState(DEVICE_ID).patch).toEqual(initialPatch));
+        fireEvent.click(screen.getByRole('button', { name: 'Show patch B' }));
+        await waitFor(() => expect(getFermenterState(DEVICE_ID).patch).toEqual(editedB));
+
+        await act(() => undo());
+        await waitFor(() => expect(getFermenterState(DEVICE_ID).patch).toEqual(initialPatch));
+
+        expect(screen.getByRole('button', { name: 'Show patch A' })).toBeDisabled();
+        expect(screen.getByRole('button', { name: 'Show patch B' })).toBeDisabled();
+        expect(screen.queryByText('Modified')).toBeNull();
+    });
+
+    it('refuses a queued action after a non-target project revision', async () => {
         const hold = await holdSnapshot();
         let pending!: Promise<boolean>;
         act(() => {
             pending = commitFermenterPatch({ deviceId: DEVICE_ID, patch: patchNamed('Stale', 700), label: 'Audition' });
         });
         hold.change(() => {
-            replaceTrack({
-                ...projectedTrack(),
-                devices: projectedTrack().devices.map((device) =>
-                    device.id === DEVICE_ID ? { ...device, type: 'builtin-synth' } : device
-                ),
-            });
+            replaceTrack({ ...projectedTrack(), name: 'Renamed while the patch action was queued' });
         });
         await act(async () => {
             await hold.finish();
         });
         expect(await pending).toBe(false);
 
-        expect(rawDevice().type).toBe('builtin-synth');
+        expect(projectedTrack().name).toBe('Renamed while the patch action was queued');
+        expect(rawDevice().type).toBe('fermenter');
+        expect(committedPatch()).toEqual(initialPatch);
         expect(depth()).toBe(0);
         expect(audio.updateDevicePatch).not.toHaveBeenCalled();
     });

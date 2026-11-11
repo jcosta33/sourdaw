@@ -19,6 +19,7 @@ import { DEFAULT_PATCH, type FermenterPatch, ENGINE_NAMES } from '../../models/F
 import {
     cloneFermenterPatch,
     fermenterPatchesEqual,
+    fromFermenterDeviceState,
     toFermenterDeviceState,
     type FermenterDeviceStateChunk,
 } from '../../models/FermenterPatchState';
@@ -495,7 +496,8 @@ export const FermenterPanel = ({ deviceId }: { deviceId: string }): ReactElement
             return;
         }
         if (localCommitRef.current) {
-            if (fermenterPatchesEqual(hydrated, referencePatchRef.current)) {
+            const localCommit = fromFermenterDeviceState(localCommitRef.current);
+            if (localCommit && fermenterPatchesEqual(hydrated, localCommit)) {
                 observedLocalCommitRef.current = true;
                 return;
             }
@@ -505,9 +507,7 @@ export const FermenterPanel = ({ deviceId }: { deviceId: string }): ReactElement
             localCommitRef.current = null;
             observedLocalCommitRef.current = false;
         }
-        if (projectDeviceState !== undefined) {
-            restoreProjectReference(hydrated);
-        }
+        restoreProjectReference(hydrated);
     }, [deviceId, projectDeviceState]);
 
     // User patches come from the TanStack Query cache — never a render-body
@@ -601,8 +601,9 @@ export const FermenterPanel = ({ deviceId }: { deviceId: string }): ReactElement
         const existing = auditionSessionRef.current;
         let next: AuditionSession;
         if (existing) {
+            const saved = saveActiveSlot() ?? existing;
             next = {
-                ...(saveActiveSlot() ?? existing),
+                ...saved,
                 b: { patch: loadedPatch, referencePatch: cloneFermenterPatch(loadedPatch), presetId },
                 active: 'b',
             };

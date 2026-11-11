@@ -5,10 +5,26 @@ import {
     cloneFermenterPatch,
     fermenterPatchesEqual,
     fromFermenterDeviceState,
+    readFermenterPatchFromProjectDevice,
     toFermenterDeviceState,
 } from '../FermenterPatchState';
 
 describe('FermenterPatchState', () => {
+    it('keeps committed whole-patch macros authoritative over legacy parameter leaves', () => {
+        const committed = cloneFermenterPatch({
+            ...DEFAULT_PATCH,
+            macros: [0.11, 0.22, 0.33, 0.44, 0.55, 0.66, 0.77, 0.88],
+        });
+
+        const restored = readFermenterPatchFromProjectDevice({
+            parameterValues: { filterCutoff: 1400, macro0: 0.99 },
+            deviceState: toFermenterDeviceState(committed),
+        });
+
+        expect(restored.filterCutoff).toBe(1400);
+        expect(restored.macros).toEqual(committed.macros);
+    });
+
     it('round-trips the complete patch without sharing nested macro state', () => {
         const original = cloneFermenterPatch({
             ...DEFAULT_PATCH,

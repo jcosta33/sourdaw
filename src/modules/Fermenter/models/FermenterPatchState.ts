@@ -173,17 +173,20 @@ export function fermenterPatchesEqual(left: FermenterPatch, right: FermenterPatc
 
 /** Read the audible project patch: the whole snapshot, overlaid by continuous numeric writes. */
 export function readFermenterPatchFromProjectDevice(device: ProjectDevice): FermenterPatch {
-    const patch = fromFermenterDeviceState(device.deviceState) ?? cloneFermenterPatch(DEFAULT_PATCH);
+    const persistedPatch = fromFermenterDeviceState(device.deviceState);
+    const patch = persistedPatch ?? cloneFermenterPatch(DEFAULT_PATCH);
     for (const key of NUMERIC_PATCH_KEYS) {
         const value = device.parameterValues[key];
         if (isFiniteNumber(value)) {
             Object.assign(patch, { [key]: value });
         }
     }
-    for (let index = 0; index < 8; index += 1) {
-        const value = device.parameterValues[`macro${index}`];
-        if (isFiniteNumber(value)) {
-            patch.macros[index] = value;
+    if (!persistedPatch) {
+        for (let index = 0; index < 8; index += 1) {
+            const value = device.parameterValues[`macro${index}`];
+            if (isFiniteNumber(value)) {
+                patch.macros[index] = value;
+            }
         }
     }
     return patch;

@@ -19,6 +19,9 @@ const presetBrowserMock = vi.hoisted(() =>
                 <button type="button" onClick={() => onLoadPreset('fermenter-init')}>
                     Load Init
                 </button>
+                <button type="button" onClick={() => onLoadPreset('fermenter-sub-bass')}>
+                    Load Sub Bass
+                </button>
                 <button type="button" onClick={() => onLoadPreset('nonexistent-preset')}>
                     Load Missing
                 </button>
@@ -352,13 +355,17 @@ describe('FermenterPanel', () => {
     });
 
     describe('preset loading', () => {
-        it('loads a factory preset by id and commits its parameterValues to the device', () => {
+        it('loads a non-init factory preset with its overridden values', () => {
             renderPanel();
-            fireEvent.click(screen.getByText('Load Init'));
+            fireEvent.click(screen.getByText('Load Sub Bass'));
 
-            const initCall = commitFermenterPatchMock.mock.calls.find(([input]) => input.patch?.name === 'Blank Dough');
-            expect(initCall).toBeTruthy();
-            expect(initCall![0].deviceId).toBe('fermenter-1');
+            const call = commitFermenterPatchMock.mock.calls.find(
+                ([input]) => input.patch?.name === 'Sourdough Starter'
+            );
+            expect(call).toBeTruthy();
+            expect(call![0].deviceId).toBe('fermenter-1');
+            expect(call![0].patch.filterCutoff).toBe(500);
+            expect(DEFAULT_PATCH.filterCutoff).not.toBe(500);
         });
 
         it('returns without applying when the preset id does not exist', () => {

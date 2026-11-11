@@ -6,13 +6,17 @@ import { type Track, trackStore } from '#/modules/Arrangement/stores';
 import { createTrack } from '#/modules/Arrangement/useCases';
 
 import { DEFAULT_PATCH } from '../../../models/FermenterPatch';
-import { cloneFermenterPatch, toFermenterDeviceState } from '../../../models/FermenterPatchState';
+import {
+    cloneFermenterPatch,
+    type FermenterDeviceStateChunk,
+    toFermenterDeviceState,
+} from '../../../models/FermenterPatchState';
 import { fermenterStore, getFermenterState } from '../../../stores/fermenterStore';
 import { FermenterPanel } from '../FermenterPanel';
 
 const DEVICE_ID = 'fermenter-project-device';
 
-function fermenterTrack(parameterValues: Record<string, number>, deviceState?: unknown): Track {
+function fermenterTrack(parameterValues: Record<string, number>, deviceState?: FermenterDeviceStateChunk): Track {
     return {
         ...createTrack({ id: 'track-1', name: 'Synth', kind: 'midi' }),
         devices: [
