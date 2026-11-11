@@ -1,0 +1,16 @@
+src/modules/Arrangement/presentations/views/TimelineClipNavigator.tsx
+  h_beb54bf43b47b7 141-145
+src/modules/Arrangement/presentations/views/__tests__/TimelineClipNavigator.spec.tsx
+  h_beb54bf43b47b7 439
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e7251cb4fbd5575d16eed899f57547dd240c2f80",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
