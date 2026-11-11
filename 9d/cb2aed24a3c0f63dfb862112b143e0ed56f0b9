@@ -1,0 +1,24 @@
+evidence/agent-campaign/manifest.json
+  h_beb54bf43b47b7 10
+src/components/daw/RotaryKnob.tsx
+  h_beb54bf43b47b7 213
+src/modules/Arrangement/useCases/__tests__/getDeviceContractVersionForCommand.spec.ts
+  h_beb54bf43b47b7 38-39
+src/modules/Crust/presentations/views/__tests__/crustParameterUndo.integration.spec.tsx
+  h_beb54bf43b47b7 222-294
+src/modules/Crust/useCases/__tests__/createCrustParameterGesture.spec.ts
+  h_beb54bf43b47b7 297,299-319,323-324
+src/modules/Crust/useCases/createCrustParameterGesture.ts
+  h_beb54bf43b47b7 35,117,119,255-256,260,266-268,282,293,333
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9dcb2aed24a3c0f63dfb862112b143e0ed56f0b9",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
