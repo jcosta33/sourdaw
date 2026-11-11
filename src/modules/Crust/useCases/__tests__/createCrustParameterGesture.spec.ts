@@ -86,12 +86,18 @@ function controller(id = DEVICE) {
 }
 
 describe('Crust numeric controller with real Command and CRDT', () => {
+    let notices: NotifyPayload[];
+
     beforeEach(async () => {
+        notices = [];
         const bus = createEventBus<{
             'ui.notify': NotifyPayload;
             'ui.confirm': ConfirmPayload;
             'ui.prompt': PromptPayload;
         }>();
+        bus.on('ui.notify', (notice) => {
+            notices.push(notice);
+        });
         setNotificationEventBus(bus);
         setProjectIdentityTransitionDependencies({ leaveCollaborationSession: leaveSession });
         const transition = runProjectLoadTransaction();
@@ -236,6 +242,85 @@ describe('Crust numeric controller with real Command and CRDT', () => {
 
         expect(successorToken).toBeGreaterThan(0);
         expect(edit.isCurrent('gain', successorToken)).toBe(true);
+    });
+
+    it('reports a no-op runtime release failure and recovers with one canonical write', async () => {
+        const recordingRelease = vi.fn();
+        const runtimeRelease = vi.fn(() => {
+            throw new Error('Runtime release failed');
+        });
+        vi.spyOn(automationApi, 'captureTouchAutomationRecordingAuthority').mockReturnValueOnce({
+            owner: Symbol('controlled recording receipt'),
+            release: recordingRelease,
+        });
+        vi.spyOn(engineApi, 'captureDeviceParameterRuntimeWriteAuthority').mockReturnValueOnce({
+            owner: Symbol('controlled engine receipt'),
+            isCurrent: () => true,
+            canCommit: () => true,
+            release: runtimeRelease,
+        });
+        const edit = controller();
+        await edit.change('gain', 9, true);
+        await edit.change('gain', 0, true);
+
+        const failed = edit.settle('gain');
+        await failed.catch(() => undefined);
+
+        expect(notices).toEqual([{ message: 'Runtime release failed', level: 'error' }]);
+        expect(recordingRelease).toHaveBeenCalledTimes(2);
+        expect(runtimeRelease).toHaveBeenCalledTimes(1);
+        expect(rawDevice().parameterValues.gain).toBe(0);
+        expect(captureUndoHistory().past).toHaveLength(0);
+
+        const token = edit.start('gain');
+        const recovered = edit.change('gain', 6);
+        expect(token).toBeGreaterThan(0);
+        expect(recovered).not.toBe(failed);
+        await recovered;
+
+        expect(rawDevice().parameterValues.gain).toBe(6);
+        expect(projectedDevice()).toEqual(rawDevice());
+        expect(getCrustState(DEVICE).patch.gain).toBe(6);
+        expect(captureUndoHistory().past).toHaveLength(1);
+    });
+
+    it('reports an initial recording release failure and recovers with one canonical write', async () => {
+        const recordingRelease = vi.fn().mockImplementationOnce(() => {
+            throw new Error('Recording release failed');
+        });
+        const runtimeRelease = vi.fn();
+        vi.spyOn(automationApi, 'captureTouchAutomationRecordingAuthority').mockReturnValueOnce({
+            owner: Symbol('controlled recording receipt'),
+            release: recordingRelease,
+        });
+        vi.spyOn(engineApi, 'captureDeviceParameterRuntimeWriteAuthority').mockReturnValueOnce({
+            owner: Symbol('controlled engine receipt'),
+            isCurrent: () => true,
+            canCommit: () => true,
+            release: runtimeRelease,
+        });
+        const edit = controller();
+        await edit.change('gain', 9, true);
+
+        const failed = edit.settle('gain');
+        await failed.catch(() => undefined);
+
+        expect(notices).toEqual([{ message: 'Recording release failed', level: 'error' }]);
+        expect(recordingRelease).toHaveBeenCalledTimes(2);
+        expect(runtimeRelease).toHaveBeenCalledTimes(1);
+        expect(rawDevice().parameterValues.gain).toBe(0);
+        expect(captureUndoHistory().past).toHaveLength(0);
+
+        const token = edit.start('gain');
+        const recovered = edit.change('gain', 6);
+        expect(token).toBeGreaterThan(0);
+        expect(recovered).not.toBe(failed);
+        await recovered;
+
+        expect(rawDevice().parameterValues.gain).toBe(6);
+        expect(projectedDevice()).toEqual(rawDevice());
+        expect(getCrustState(DEVICE).patch.gain).toBe(6);
+        expect(captureUndoHistory().past).toHaveLength(1);
     });
 
     it.each(['removed', 'duplicate', 'frozen'] as const)(

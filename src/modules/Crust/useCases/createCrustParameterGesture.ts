@@ -205,27 +205,27 @@ function deleteInstalledGesture(scope: Scope, gesture: Gesture): void {
     }
 }
 
-function finishNoOpCommit(scope: Scope, gesture: Gesture): void {
-    retire(scope, gesture, true);
-    deleteInstalledGesture(scope, gesture);
+function notifyCommitFailure(error: unknown): void {
+    notifyUser(error instanceof Error ? error.message : 'Crust parameter change failed', 'error');
 }
 
 function finishCommit(scope: Scope, gesture: Gesture): void {
     try {
         retire(scope, gesture, !gesture.committed);
+    } catch (error) {
+        notifyCommitFailure(error);
     } finally {
         deleteInstalledGesture(scope, gesture);
     }
 }
 
 async function commit(scope: Scope, gesture: Gesture): Promise<void> {
-    gesture.recording.release();
-    const value = gesture.preview;
-    if (value === undefined || value === (gesture.value ?? gesture.defaultValue)) {
-        finishNoOpCommit(scope, gesture);
-        return;
-    }
     try {
+        gesture.recording.release();
+        const value = gesture.preview;
+        if (value === undefined || value === (gesture.value ?? gesture.defaultValue)) {
+            return;
+        }
         await executeUserAppAction(
             {
                 type: 'setDeviceParameter',
@@ -257,7 +257,7 @@ async function commit(scope: Scope, gesture: Gesture): Promise<void> {
             }
         );
     } catch (error) {
-        notifyUser(error instanceof Error ? error.message : 'Crust parameter change failed', 'error');
+        notifyCommitFailure(error);
     } finally {
         finishCommit(scope, gesture);
     }
