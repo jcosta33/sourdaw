@@ -930,6 +930,54 @@ describe('mixed MIDI media ownership during non-loop playback', () => {
         expect(frame(effectiveEnd(old!))).toBe(frame(bake!.start.when));
     });
 
+    it('moves a pending compensated stop to an earlier uncompensated resume and preserves later handoffs', async () => {
+        const mixed = seedTrack('left', 4, false, 0, true);
+        buffers.set('bake', { duration: 16, sampleRate: SAMPLE_RATE } as AudioBuffer);
+        trackStoreState.value = { tracks: [mixed] };
+        transportStoreState.value = { ...defaultTransportState, isPlaying: true, tempo: 120, isLooping: false };
+        startPlayheadScheduler();
+        await tickAt(0);
+
+        compensation.seconds = 0.5;
+        mixed.freezeState = { status: 'frozen', frozenBufferId: 'bake', compensationSeconds: 0.5 };
+        await tickAt(1_200);
+        const afterFreeze = snapshotSources();
+        const oldOriginal = afterFreeze.find((source) => source.bufferId === 'left-buffer')!;
+        const firstBake = afterFreeze.find((source) => source.bufferId === 'bake')!;
+        expect(oldOriginal.stops.map((stop) => frame(stop.when))).toEqual([504_000]);
+        expect(frame(firstBake.start.when)).toBe(504_000);
+        expect(firstBake.stops).toEqual([]);
+        expect(frame(effectiveEnd(firstBake))).toBe(1_272_000);
+
+        compensation.seconds = 0;
+        mixed.freezeState = { status: 'unfrozen' };
+        await tickAt(12_000);
+        const afterUnfreeze = snapshotSources();
+        const originals = afterUnfreeze.filter((source) => source.bufferId === 'left-buffer');
+        const resumed = originals[1]!;
+        expect(originals).toHaveLength(2);
+        expect(frame(resumed.start.when)).toBe(492_000);
+        expect(originals[0]!.stops.map((stop) => frame(stop.when))).toEqual([504_000, 492_000]);
+        const retiredBake = afterUnfreeze.find((source) => source.bufferId === 'bake')!;
+        expect(retiredBake.stops.map((stop) => frame(stop.when))).toEqual([492_000]);
+        for (const source of [originals[0]!, retiredBake]) {
+            expect(frame(effectiveEnd(source))).toBeLessThanOrEqual(frame(resumed.start.when));
+        }
+
+        mixed.freezeState = { status: 'frozen', frozenBufferId: 'bake', compensationSeconds: 0 };
+        await tickAt(12_000);
+        const afterRefreeze = snapshotSources();
+        const bakes = afterRefreeze.filter((source) => source.bufferId === 'bake');
+        expect(bakes).toHaveLength(2);
+        expect(frame(bakes[1]!.start.when)).toBe(492_000);
+        const resumedAfterRefreeze = afterRefreeze.filter((source) => source.bufferId === 'left-buffer')[1]!;
+        expect(resumedAfterRefreeze.stops.map((stop) => frame(stop.when))).toEqual([492_000]);
+        expect(frame(effectiveEnd(resumedAfterRefreeze))).toBeLessThanOrEqual(frame(bakes[1]!.start.when));
+
+        await tickAt(13_200);
+        expect(snapshotSources().filter((source) => source.bufferId === 'bake')).toHaveLength(2);
+    });
+
     it.each(['waiting-first', 'mixed-first'] as const)(
         'hands off a frozen replacement around a held MIDI rack await (%s)',
         async (order) => {

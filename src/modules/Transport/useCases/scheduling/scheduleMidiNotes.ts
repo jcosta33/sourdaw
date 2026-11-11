@@ -1178,16 +1178,16 @@ export async function scheduleMidiNotes(
 
                     for (const projectedNote of projectedNotes) {
                         const unswungStartBeat = projectedNote.startBeat;
+                        const swingOffsetBeats = toasterRoute?.getSwingOffsetBeats(unswungStartBeat) ?? 0;
+                        const noteStartBeat = unswungStartBeat + swingOffsetBeats;
                         // Keep clip/groove ownership on raw beats, but decide
-                        // staleness on the audible clock. Positive compensation
-                        // can make a raw-beat-past onset due now or in the future;
-                        // an exactly-due frame is admitted (#4924). Swing only
-                        // delays a start, so the unswung onset is the safe comparison.
+                        // staleness on the actual swung, compensated audible clock.
+                        // An exactly-due frame is admitted (#4924).
                         if (unswungStartBeat < rawSegmentFloorBeat) {
                             continue;
                         }
                         const audibleOnsetFrame = placeSamplesOnClock({
-                            startSamples: beatToSamples(changes, unswungStartBeat, transport.tempo, sr),
+                            startSamples: beatToSamples(changes, noteStartBeat, transport.tempo, sr),
                             accumulatedSamples,
                             sampleRate: sr,
                             compensation,
@@ -1219,8 +1219,6 @@ export async function scheduleMidiNotes(
                             }
                         }
 
-                        const swingOffsetBeats = toasterRoute?.getSwingOffsetBeats(unswungStartBeat) ?? 0;
-                        const noteStartBeat = unswungStartBeat + swingOffsetBeats;
                         let pitch = note.pitch;
                         if (track.followChordTrack && !drumKitDef && !drumKit && !toasterRoute) {
                             const refChord = getChordAtBeat(clip.startBeat);

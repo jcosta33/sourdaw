@@ -14,6 +14,10 @@ function currentFrozenKeyOf(track: MediaTrack): string | null {
         : null;
 }
 
+function ownsCurrentMedia(source: SourceWithFade, currentFrozenKey: string | null): boolean {
+    return currentFrozenKey ? source.scheduledFrozenKey === currentFrozenKey : source.scheduledAudioKey !== undefined;
+}
+
 function findReplacementStart(
     track: MediaTrack,
     currentFrozenKey: string | null,
@@ -21,10 +25,12 @@ function findReplacementStart(
 ): number {
     let replacementStart = Infinity;
     for (const candidate of activeAudioSources as SourceWithFade[]) {
-        const currentOwner = currentFrozenKey
-            ? candidate.scheduledFrozenKey === currentFrozenKey
-            : candidate.scheduledAudioKey !== undefined;
-        if (candidate.scheduledTrackId === track.id && currentOwner && candidate.scheduledStartTime !== undefined) {
+        if (
+            candidate.scheduledTrackId === track.id &&
+            ownsCurrentMedia(candidate, currentFrozenKey) &&
+            candidate.scheduledStopTime === undefined &&
+            candidate.scheduledStartTime !== undefined
+        ) {
             replacementStart = Math.min(replacementStart, candidate.scheduledStartTime);
         }
     }
@@ -41,6 +47,27 @@ function isSuperseded(source: SourceWithFade, currentFrozenKey: string | null): 
     );
 }
 
+function releaseDedupOwnership(
+    source: SourceWithFade,
+    scheduledAudioClipsSet: Set<string>,
+    scheduledFrozenTracks: Set<string>,
+    activeAudioSources: readonly AudioBufferSourceNode[]
+): void {
+    const sources = activeAudioSources as SourceWithFade[];
+    if (
+        source.scheduledAudioKey &&
+        !sources.some((candidate) => candidate !== source && candidate.scheduledAudioKey === source.scheduledAudioKey)
+    ) {
+        scheduledAudioClipsSet.delete(source.scheduledAudioKey);
+    }
+    if (
+        source.scheduledFrozenKey &&
+        !sources.some((candidate) => candidate !== source && candidate.scheduledFrozenKey === source.scheduledFrozenKey)
+    ) {
+        scheduledFrozenTracks.delete(source.scheduledFrozenKey);
+    }
+}
+
 function retireSource(
     source: SourceWithFade,
     index: number,
@@ -51,21 +78,26 @@ function retireSource(
     activeAudioSources: AudioBufferSourceNode[]
 ): void {
     const now = ctx.currentTime;
-    const futureStart = source.scheduledStartTime !== undefined && source.scheduledStartTime >= now;
-    const actualStop = futureStart ? now : Math.max(now, stopAt);
-    if (futureStart) {
-        source.stop(actualStop);
+    if (source.scheduledStopTime !== undefined && source.scheduledStopTime <= now) {
+        activeAudioSources.splice(index, 1);
     } else {
-        cutSource(source, ctx, actualStop);
+        const futureStart = source.scheduledStartTime !== undefined && source.scheduledStartTime >= now;
+        const actualStop = futureStart ? now : Math.max(now, stopAt);
+        if (source.scheduledStopTime !== actualStop) {
+            if (futureStart) {
+                source.stop(actualStop);
+            } else {
+                cutSource(source, ctx, actualStop);
+            }
+            source.scheduledStopTime = actualStop;
+        }
+        if (actualStop <= now) {
+            activeAudioSources.splice(index, 1);
+        }
     }
-    source.scheduledStopTime = actualStop;
-    activeAudioSources.splice(index, 1);
-    if (source.scheduledAudioKey) {
-        scheduledAudioClipsSet.delete(source.scheduledAudioKey);
-    }
-    if (source.scheduledFrozenKey) {
-        scheduledFrozenTracks.delete(source.scheduledFrozenKey);
-    }
+    // A future-stopped source remains available for a reversed handoff, but its
+    // key must not block the replacement. Never drop a key that replacement owns.
+    releaseDedupOwnership(source, scheduledAudioClipsSet, scheduledFrozenTracks, activeAudioSources);
 }
 
 /** Retire sources whose track has changed media owner, without disturbing other tracks or the new owner. */
@@ -90,7 +122,16 @@ export function retireSupersededMidiMedia(
         );
         for (let index = activeAudioSources.length - 1; index >= 0; index--) {
             const source: SourceWithFade = activeAudioSources[index]!;
-            if (source.scheduledTrackId !== track.id || !isSuperseded(source, currentFrozenKey)) {
+            if (source.scheduledTrackId !== track.id) {
+                continue;
+            }
+            const superseded = isSuperseded(source, currentFrozenKey);
+            const replacedPendingOwner =
+                !superseded &&
+                ownsCurrentMedia(source, currentFrozenKey) &&
+                source.scheduledStopTime !== undefined &&
+                Number.isFinite(replacementStart);
+            if (!superseded && !replacedPendingOwner) {
                 continue;
             }
             retired = true;
