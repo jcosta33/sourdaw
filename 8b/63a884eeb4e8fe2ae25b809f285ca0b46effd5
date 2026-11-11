@@ -1,0 +1,18 @@
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerLoopAudioStall.spec.ts
+  h_beb54bf43b47b7 519-523,526-532,552-557,621-627,629-631,636-657,790-812,857
+src/modules/Transport/useCases/playheadScheduler/startPlayheadScheduler.ts
+  h_beb54bf43b47b7 421,909-921,1650,1655,1662,1767,1783,1854,1865,1920,1931
+src/modules/Transport/useCases/scheduling/scheduleAudioClips.ts
+  h_beb54bf43b47b7 709,824-826,836
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "8b63a884eeb4e8fe2ae25b809f285ca0b46effd5",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
