@@ -257,6 +257,8 @@ async function expectAmbiguousDeliveryMutationRetainsOwner(
 function pullRequestSnapshot(overrides: Partial<PullRequestSnapshot> = {}): PullRequestSnapshot {
     return {
         number: 2495,
+        // Opened before the risk-plan policy: these ports bind a legacy, plan-less review bundle.
+        createdAt: '2026-09-18T12:00:00Z',
         state: 'OPEN',
         isDraft: false,
         title: 'fix(delivery): keep recovery fenced',

@@ -67,6 +67,8 @@ export type HeadCheckRun = {
 
 export type PullRequestSnapshot = {
     number: number;
+    /** GitHub's own creation instant; no caller-editable file can move it. */
+    createdAt: string;
     state: string;
     isDraft: boolean;
     title: string;
@@ -160,6 +162,14 @@ export type DeliveryAuthorizationBinding =
           /** The dossier digest with any delivery-authorized event stripped — what acceptance authorized. */
           dossierDigest: string;
       };
+
+/**
+ * `review:prepare` has generated a risk plan for every bundle since the policy merged (PR #4399).
+ * The bundle files are gitignored and caller-editable, so deleting the plan cannot be told apart from
+ * a bundle that never had one; only a pull request GitHub records as opened strictly before this
+ * instant may still be delivered on a plan-less bundle.
+ */
+export const RISK_PLAN_POLICY_CUTOVER = '2026-09-19T06:51:45Z';
 
 /**
  * A plan-less bundle is legacy only when its head-bound manifest says it never generated one.
@@ -1413,9 +1423,15 @@ function validateReview(number: number, review: ReviewState): void {
  * and the authorized evidence is exactly the evidence this head carries. `parseReviewDossier` has
  * already proven the persisted chain when the port read the record.
  */
-function validateDeliveryAuthorization(number: number, head: string, review: ReviewState, port: DeliveryPort): void {
+function validateDeliveryAuthorization(
+    pullRequest: PullRequestSnapshot,
+    review: ReviewState,
+    port: DeliveryPort
+): void {
+    const { number, headRefOid: head } = pullRequest;
     const binding = port.reviewBundleDeliveryAuthorization(number, head);
     if (binding.kind === 'legacy') {
+        validateLegacyBundleAdmission(pullRequest);
         return;
     }
     const authorization = binding.authorization;
@@ -1435,6 +1451,28 @@ function validateDeliveryAuthorization(number: number, head: string, review: Rev
     ) {
         fail(`PR #${number} delivery authorization does not bind the live reviewer approval review`);
     }
+}
+
+function validateLegacyBundleAdmission(pullRequest: Pick<PullRequestSnapshot, 'number' | 'createdAt'>): void {
+    const createdAt = parseIsoInstant(pullRequest.createdAt);
+    if (createdAt === undefined) {
+        fail(`PR #${pullRequest.number} creation instant ${JSON.stringify(pullRequest.createdAt)} is malformed`);
+    }
+    if (createdAt >= Date.parse(RISK_PLAN_POLICY_CUTOVER)) {
+        fail(
+            `PR #${pullRequest.number} has a plan-less review bundle, and a plan-less review bundle cannot ` +
+                `authorize a pull request created after the risk-plan policy (${RISK_PLAN_POLICY_CUTOVER}); ` +
+                `re-run review:prepare and review:publish on the current head`
+        );
+    }
+}
+
+function parseIsoInstant(value: unknown): number | undefined {
+    if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/u.test(value)) {
+        return undefined;
+    }
+    const instant = Date.parse(value);
+    return Number.isFinite(instant) ? instant : undefined;
 }
 
 /**
@@ -2900,7 +2938,7 @@ function deliverPullRequestWithCiAdmission(
     validatePullRequest(initial, port, ciAdmissionMode);
     const initialReview = port.reviewState(number, initial.headRefOid);
     validateReview(number, initialReview);
-    validateDeliveryAuthorization(number, initial.headRefOid, initialReview, port);
+    validateDeliveryAuthorization(initial, initialReview, port);
 
     const dependents = port.dependents(initial.headRefName).filter((candidate) => candidate.number !== number);
     if (dependents.length > 0 && port.repositoryDeletesMergedBranches()) {
@@ -2975,7 +3013,7 @@ function deliverPullRequestWithCiAdmission(
                 validateBaseBranch(finalSnapshot);
                 const finalReview = port.reviewState(number, finalSnapshot.headRefOid);
                 validateReview(number, finalReview);
-                validateDeliveryAuthorization(number, finalSnapshot.headRefOid, finalReview, port);
+                validateDeliveryAuthorization(finalSnapshot, finalReview, port);
                 const finalDependents = port
                     .dependents(finalSnapshot.headRefName)
                     .filter((candidate) => candidate.number !== number);
@@ -3624,6 +3662,7 @@ export function shellPort(
     const primaryRoot = options.primaryRoot ?? process.cwd();
     const pullRequestFields = [
         'number',
+        'createdAt',
         'state',
         'isDraft',
         'title',

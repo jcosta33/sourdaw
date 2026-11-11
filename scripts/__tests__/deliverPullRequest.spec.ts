@@ -26,6 +26,7 @@ import {
     gateRequiredSkipAliases,
     parseCliArgs,
     readGateRequiredCheckNames,
+    RISK_PLAN_POLICY_CUTOVER,
     runDeliverCli,
     shellPort,
     withPullRequestDeliveryLock,
@@ -632,9 +633,17 @@ function stackedDeliveryPort(finalSettings: MergeSettings, primaryRoot: string) 
     return { captures, mergeCaptures, port };
 }
 
+/**
+ * The fake port's default review binding is `legacy`, so the default fixture models a pull request
+ * opened before the risk-plan policy; cases about the plan-carrying era set a later `createdAt`.
+ */
+const PRE_RISK_PLAN_CREATED_AT = '2026-09-18T12:00:00Z';
+const POST_RISK_PLAN_CREATED_AT = '2026-11-11T08:00:00Z';
+
 function pullRequest(overrides: Partial<PullRequestSnapshot> = {}): PullRequestSnapshot {
     return {
         number: 42,
+        createdAt: PRE_RISK_PLAN_CREATED_AT,
         state: 'OPEN',
         isDraft: false,
         title: 'feat(delivery): add gate',
@@ -6710,7 +6719,68 @@ describe('pull-request delivery', () => {
     });
 
     it('merges a legacy bundle head without any recorded delivery authorization', () => {
-        const { port, calls } = fakePort({ deliveryAuthorization: { kind: 'legacy' } });
+        const { port, calls } = fakePort({
+            primary: [pullRequest({ createdAt: PRE_RISK_PLAN_CREATED_AT })],
+            deliveryAuthorization: { kind: 'legacy' },
+        });
+
+        deliverPullRequest(42, port);
+
+        expect(calls).toContain('merge:42:head');
+    });
+
+    it.each([
+        ['created after the risk-plan policy', POST_RISK_PLAN_CREATED_AT],
+        ['created at the risk-plan policy instant', RISK_PLAN_POLICY_CUTOVER],
+    ])('refuses a plan-less bundle for a pull request %s before any remote write', (_label, createdAt) => {
+        const { port, calls } = fakePort({
+            primary: [pullRequest({ createdAt })],
+            deliveryAuthorization: { kind: 'legacy' },
+        });
+
+        expect(() => deliverPullRequest(42, port)).toThrow(
+            /plan-less review bundle cannot authorize a pull request created after the risk-plan policy.*review:prepare/
+        );
+        expect(calls).not.toContain('merge:42:head');
+        expect(calls).not.toContain('add-receipt:42');
+        expect(calls.filter((call) => call.startsWith('receipt-authority:write'))).toHaveLength(0);
+    });
+
+    it.each(['', 'yesterday', '2026-13-45T00:00:00Z'])(
+        'refuses a plan-less bundle when the pull-request creation instant %j is malformed',
+        (createdAt) => {
+            const { port, calls } = fakePort({
+                primary: [pullRequest({ createdAt })],
+                deliveryAuthorization: { kind: 'legacy' },
+            });
+
+            expect(() => deliverPullRequest(42, port)).toThrow(/creation instant .* is malformed/);
+            expect(calls).not.toContain('merge:42:head');
+            expect(calls).not.toContain('add-receipt:42');
+        }
+    );
+
+    it('delivers a pull request created after the risk-plan policy through its required authorization', () => {
+        const digest = 'd'.repeat(64);
+        const { port, calls } = fakePort({
+            primary: [pullRequest({ createdAt: POST_RISK_PLAN_CREATED_AT })],
+            review: {
+                latestReviewerReviewDatabaseId: 777,
+                latestReviewerStateOnHead: 'APPROVED',
+                unresolvedThreads: 0,
+            },
+            deliveryAuthorization: {
+                kind: 'required',
+                authorization: {
+                    reviewId: 777,
+                    approvalReviewId: 777,
+                    evidenceManifestDigest: digest,
+                    unresolvedThreads: 0,
+                    intent: 'deliver',
+                },
+                dossierDigest: digest,
+            },
+        });
 
         deliverPullRequest(42, port);
 
