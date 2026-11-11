@@ -7,7 +7,7 @@ import {
 } from '#/modules/Arrangement/useCases';
 import {
     decodeAudioFile,
-    discardDecodedAudioFile,
+    discardDecodedAudioFileIfCurrent,
     getCachedAudioBuffer,
     openCachedAudioBufferHold,
     restoreUnpinnedAudioBuffersFromIdb,
@@ -87,12 +87,12 @@ function beatsForSeconds(seconds: number, readTempo: () => number): number {
     return Math.max(1, Math.ceil((seconds / 60) * readTempo()));
 }
 
-function releasePrepared(prepared: Partial<PreparedSample>, assetTransfer: AssetTransfer): void {
+function releasePrepared(prepared: PreparedSample, assetTransfer: AssetTransfer): void {
     if (prepared.assetLeaseId) {
         assetTransfer?.releaseStagedAsset(prepared.assetLeaseId);
     }
     if (prepared.decodedAudioBufferId) {
-        discardDecodedAudioFile(prepared.decodedAudioBufferId);
+        discardDecodedAudioFileIfCurrent(prepared.decodedAudioBufferId, prepared.audioBuffer);
     }
 }
 
@@ -237,20 +237,34 @@ async function prepareLibraryFileSample(
     }
 }
 
+type SampleRestoration = {
+    initiallyUncached: boolean;
+    restoredBuffer: AudioBuffer | undefined;
+};
+
 // Factory (and any already-decoded) samples keep their AudioBuffer in the
 // cache under the sample id — there is no file to re-read and the factory root
 // is handle-less, so the SampleLibrary file resolver would have nothing to
-// resolve. The buffer is taken from the cache, or re-obtained for a factory
-// sample, before any file access or decode.
+// resolve. A cold gesture uses only the exact buffer its restoration returned;
+// another same-ID cache entry is not that gesture's audio and is left alone.
 async function prepareSample(
     sample: LibrarySamplePayload,
     authority: Authority,
     assetTransfer: AssetTransfer,
     readTempo: () => number,
-    hold: AudioHold
+    hold: AudioHold,
+    restoration: SampleRestoration
 ): Promise<Preparation> {
     const candidateBufferId = sample.audioBufferId ?? sample.id;
     let cachedBuffer = getCachedAudioBuffer({ bufferId: candidateBufferId });
+    if (restoration.initiallyUncached) {
+        if (restoration.restoredBuffer) {
+            cachedBuffer = restoration.restoredBuffer;
+        } else if (cachedBuffer) {
+            notifyIfCurrent(authority, `Could not place "${sample.name}" — its audio changed before placement.`);
+            return ABANDONED;
+        }
+    }
     if (!cachedBuffer) {
         const factoryBuffer = await ensureFactorySampleBuffer({ sampleId: candidateBufferId });
         if (factoryBuffer.status === 'unavailable') {
@@ -335,15 +349,19 @@ export async function placeLibrarySample({
     let releaseAudio: (() => void) | undefined;
     const decodeHold = openCachedAudioBufferHold();
     try {
+        const candidateBufferId = sample.audioBufferId ?? sample.id;
         const restored = await restoreUnpinnedAudioBuffersFromIdb({
-            bufferIds: [sample.audioBufferId ?? sample.id],
+            bufferIds: [candidateBufferId],
             isCurrent: authority.isCurrent,
         });
         releaseAudio = restored.release;
         if (!authority.isCurrent()) {
             return;
         }
-        const preparation = await prepareSample(sample, authority, assetTransfer, readTempo, decodeHold);
+        const preparation = await prepareSample(sample, authority, assetTransfer, readTempo, decodeHold, {
+            initiallyUncached: restored.initiallyUncachedIds.includes(candidateBufferId),
+            restoredBuffer: restored.restoredBuffers.get(candidateBufferId),
+        });
         if (preparation.status === 'abandoned') {
             return;
         }

@@ -8,7 +8,7 @@ const mocks = vi.hoisted(() => ({
     tracks: { value: { tracks: [] as { id: string; kind: string; clips: [] }[], selectedTrackId: null } },
     getCachedAudioBuffer: vi.fn(),
     decodeAudioFile: vi.fn(),
-    discardDecodedAudioFile: vi.fn(),
+    discardDecodedAudioFileIfCurrent: vi.fn(),
     restoreUnpinnedAudioBuffersFromIdb: vi.fn(),
     releaseAudio: vi.fn(),
     ensureFactorySampleBuffer: vi.fn(),
@@ -55,7 +55,7 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     ...(await importOriginal<any>()),
     getCachedAudioBuffer: mocks.getCachedAudioBuffer,
     decodeAudioFile: mocks.decodeAudioFile,
-    discardDecodedAudioFile: mocks.discardDecodedAudioFile,
+    discardDecodedAudioFileIfCurrent: mocks.discardDecodedAudioFileIfCurrent,
     restoreUnpinnedAudioBuffersFromIdb: mocks.restoreUnpinnedAudioBuffersFromIdb,
 }));
 
@@ -101,7 +101,12 @@ describe('placeLibrarySample', () => {
         }
         mocks.tracks.value = { tracks: [{ id: 't1', kind: 'audio', clips: [] }], selectedTrackId: null };
         mocks.getCachedAudioBuffer.mockReturnValue(bufferOf(2));
-        mocks.restoreUnpinnedAudioBuffersFromIdb.mockResolvedValue({ absentIds: [], release: mocks.releaseAudio });
+        mocks.restoreUnpinnedAudioBuffersFromIdb.mockResolvedValue({
+            absentIds: [],
+            initiallyUncachedIds: [],
+            restoredBuffers: new Map<string, AudioBuffer>(),
+            release: mocks.releaseAudio,
+        });
         mocks.ensureFactorySampleBuffer.mockResolvedValue({ status: 'not-factory' });
         mocks.stageClipAudioAsset.mockResolvedValue({ hash: 'h', leaseId: 'lease' });
         mocks.getAssetTransfer.mockReturnValue({
@@ -223,7 +228,7 @@ describe('placeLibrarySample', () => {
                 relativePath: 'a/Loop.wav',
             })
         );
-        expect(mocks.discardDecodedAudioFile).not.toHaveBeenCalled();
+        expect(mocks.discardDecodedAudioFileIfCurrent).not.toHaveBeenCalled();
     });
 
     it('notifies and writes nothing when staging the cached audio fails', async () => {
@@ -245,7 +250,7 @@ describe('placeLibrarySample', () => {
 
         await place({ id: 's2', name: 'Loop', libraryRootId: 'root', path: 'a/Loop.wav' }, 't1');
 
-        expect(mocks.discardDecodedAudioFile).toHaveBeenCalledWith('decoded-id');
+        expect(mocks.discardDecodedAudioFileIfCurrent).toHaveBeenCalledWith('decoded-id', decodedBuffer);
         expect(mocks.notifyUser).toHaveBeenCalledWith('Failed to import "Loop" — asset registration failed', 'error');
         expect(executeAppActionBatch).not.toHaveBeenCalled();
     });

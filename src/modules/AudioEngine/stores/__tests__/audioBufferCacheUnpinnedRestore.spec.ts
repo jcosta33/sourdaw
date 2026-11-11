@@ -177,7 +177,10 @@ describe('restoring stored audio without pinning it', () => {
         expect(cachedSample(later, 'stored-sample')).toBeNull();
         controls.resetByteCounters();
 
-        const { absentIds, release } = await later.restoreUnpinned({ bufferIds: ['stored-sample'] });
+        const { absentIds, initiallyUncachedIds, restoredBuffers, release } = await later.restoreUnpinned({
+            bufferIds: ['stored-sample'],
+        });
+        const restored = restoredBuffers.get('stored-sample');
         release();
         // Already persisted: a durable receipt needs no write either.
         const receipt = await later.ensure(['stored-sample']);
@@ -185,9 +188,14 @@ describe('restoring stored audio without pinning it', () => {
             receipt.release();
         }
         await flushIndexedDbTasks();
+        const cached = later.get({ bufferId: 'stored-sample' });
 
         expect(absentIds).toEqual([]);
-        expect(cachedSample(later, 'stored-sample')).toBe(Math.fround(0.25));
+        expect(initiallyUncachedIds).toEqual(['stored-sample']);
+        expect(restoredBuffers.size).toBe(1);
+        expect(restored).toBeDefined();
+        expect(cached).toBe(restored);
+        expect(cached?.getChannelData(0)[0]).toBe(Math.fround(0.25));
         expect(receipt.status).toBe('durable');
         expect(controls.bytesWritten()).toBe(0);
         expect(controls.committed.get('stored-sample')?.channelData[0]?.[0]).toBe(Math.fround(0.25));
@@ -321,7 +329,7 @@ describe('restoring stored audio without pinning it', () => {
         let replaced = false;
         let newerRevision: number | undefined;
 
-        const { release } = await later.restoreUnpinned({
+        const { restoredBuffers, release } = await later.restoreUnpinned({
             bufferIds: ['stored-sample'],
             isCurrent: () => {
                 if (controls.bytesRead() === 0) {
@@ -339,6 +347,7 @@ describe('restoring stored audio without pinning it', () => {
 
         expect(replaced).toBe(true);
         expect(newerRevision).toEqual(expect.any(Number));
+        expect(restoredBuffers.has('stored-sample')).toBe(false);
         expect(later.get({ bufferId: 'stored-sample' })).toBe(newer);
         expect(cachedSample(later, 'stored-sample')).toBe(Math.fround(0.75));
         expect(later.publication('stored-sample', newer)).toBe(newerRevision);

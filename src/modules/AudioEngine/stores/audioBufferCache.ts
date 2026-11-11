@@ -1767,6 +1767,10 @@ type UnpinnedStoredPcmRead =
 type UnpinnedStoredPcmRestoration = {
     /** Ids storage holds no record for and this session holds no PCM for. */
     absent: string[];
+    /** Ids that were not resident when this restoration began. */
+    initiallyUncached: string[];
+    /** The exact PCM objects this restoration made resident. */
+    restored: Map<string, AudioBuffer>;
 };
 
 /**
@@ -1849,8 +1853,10 @@ async function restoreUnpinnedStoredBuffers(
     isCurrent?: () => boolean
 ): Promise<UnpinnedStoredPcmRestoration> {
     const candidateIds = [...new Set(ids)].filter((id) => !cache.has(id));
+    const initiallyUncached = [...candidateIds];
+    const restored = new Map<string, AudioBuffer>();
     if (candidateIds.length === 0) {
-        return { absent: [] };
+        return { absent: [], initiallyUncached, restored };
     }
     let reads: UnpinnedStoredPcmRead[];
     try {
@@ -1862,7 +1868,7 @@ async function restoreUnpinnedStoredBuffers(
             ids: candidateIds,
             error,
         });
-        return { absent: [] };
+        return { absent: [], initiallyUncached, restored };
     }
     const absent: string[] = [];
     for (const read of reads) {
@@ -1879,12 +1885,14 @@ async function restoreUnpinnedStoredBuffers(
         }
         if (read.status === 'session') {
             audioCacheSet(read.id, read.buffer, read.source.freezeProjectId, true);
+            restored.set(read.id, read.buffer);
             continue;
         }
         audioCacheSet(read.id, read.buffer, read.metadata?.freezeProjectId, read.metadata !== undefined);
         recordHydratedDurabilitySource(read.id, read.metadata, read.persistenceRevision);
+        restored.set(read.id, read.buffer);
     }
-    return { absent };
+    return { absent, initiallyUncached, restored };
 }
 
 type GarbageCollectFreezeFilesInput = {

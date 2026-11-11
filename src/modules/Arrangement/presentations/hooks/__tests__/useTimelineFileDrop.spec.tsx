@@ -29,6 +29,7 @@ const mocks = vi.hoisted(() => {
         getAssetTransfer: vi.fn(),
         decodeAudioFile: vi.fn(),
         discardDecodedAudioFile: vi.fn(),
+        discardDecodedAudioFileIfCurrent: vi.fn(),
         getCachedAudioBuffer: vi.fn(),
         resolveDroppedSampleFile: vi.fn(),
         ensureFactorySampleBuffer: vi.fn(),
@@ -103,7 +104,14 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     ...(await importOriginal<any>()),
     decodeAudioFile: mocks.decodeAudioFile,
     discardDecodedAudioFile: mocks.discardDecodedAudioFile,
+    discardDecodedAudioFileIfCurrent: mocks.discardDecodedAudioFileIfCurrent,
     getCachedAudioBuffer: mocks.getCachedAudioBuffer,
+    restoreUnpinnedAudioBuffersFromIdb: vi.fn().mockResolvedValue({
+        absentIds: [],
+        initiallyUncachedIds: [],
+        restoredBuffers: new Map<string, AudioBuffer>(),
+        release: vi.fn(),
+    }),
 }));
 
 vi.mock('#/modules/Project/useCases', () => ({
@@ -809,7 +817,10 @@ describe('useTimelineFileDrop', () => {
 
         expect(mocks.executeAppActionBatch).not.toHaveBeenCalled();
         expect(transfer.releaseStagedAsset).toHaveBeenCalledWith('gone-lease');
-        expect(mocks.discardDecodedAudioFile).toHaveBeenCalledWith('gone-buffer');
+        expect(mocks.discardDecodedAudioFileIfCurrent).toHaveBeenCalledWith(
+            'gone-buffer',
+            expect.objectContaining({ duration: 1 })
+        );
         expect(mocks.trackStoreValue.value.tracks[0]?.clips).toEqual([{ id: 'successor-clip' }]);
     });
 
@@ -845,7 +856,10 @@ describe('useTimelineFileDrop', () => {
         });
 
         expect(mocks.executeAppActionBatch).not.toHaveBeenCalled();
-        expect(mocks.discardDecodedAudioFile).toHaveBeenCalledWith('unstaged-buffer');
+        expect(mocks.discardDecodedAudioFileIfCurrent).toHaveBeenCalledWith(
+            'unstaged-buffer',
+            expect.objectContaining({ duration: 1 })
+        );
         expect(mocks.notifyUser).toHaveBeenCalledWith(
             'Failed to import "Unstaged" — asset registration failed',
             'error'
@@ -892,7 +906,10 @@ describe('useTimelineFileDrop', () => {
         expect(projectEpoch.latest()?.isCurrent()).toBe(false);
         expect(projectEpoch.currentAuthority().isCurrent()).toBe(true);
         expect(mocks.executeAppActionBatch).not.toHaveBeenCalled();
-        expect(mocks.discardDecodedAudioFile).toHaveBeenCalledWith('stale-stage-buffer');
+        expect(mocks.discardDecodedAudioFileIfCurrent).toHaveBeenCalledWith(
+            'stale-stage-buffer',
+            expect.objectContaining({ duration: 1 })
+        );
         expect(mocks.notifyUser).not.toHaveBeenCalled();
         expect(mocks.trackStoreValue.value.tracks[0]?.clips).toEqual([{ id: 'successor-clip' }]);
 
@@ -1650,7 +1667,7 @@ describe('useTimelineFileDrop', () => {
             await dispatchRawLibraryDrop();
             expect(mocks.rememberLibraryAssetMapping).not.toHaveBeenCalled();
             expect(mocks.getAssetTransfer().releaseStagedAsset).not.toHaveBeenCalled();
-            expect(mocks.discardDecodedAudioFile).not.toHaveBeenCalled();
+            expect(mocks.discardDecodedAudioFileIfCurrent).not.toHaveBeenCalled();
         }
     );
 
@@ -1689,7 +1706,7 @@ describe('useTimelineFileDrop', () => {
         mocks.rememberLibraryAssetMapping.mockRejectedValue(new Error('controlled settings quota'));
         await dispatchRawLibraryDrop();
         expect(mocks.getAssetTransfer().releaseStagedAsset).not.toHaveBeenCalled();
-        expect(mocks.discardDecodedAudioFile).not.toHaveBeenCalled();
+        expect(mocks.discardDecodedAudioFileIfCurrent).not.toHaveBeenCalled();
         expect(mocks.notifyUser).not.toHaveBeenCalled();
         expect(batchPayload('addClip').assetHash).toBe('hash');
     });

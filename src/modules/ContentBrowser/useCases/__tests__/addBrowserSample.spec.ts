@@ -44,6 +44,12 @@ vi.mock('#/modules/Collaboration/useCases', async (importOriginal) => ({
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     ...(await importOriginal<any>()),
     getCachedAudioBuffer: vi.fn(),
+    restoreUnpinnedAudioBuffersFromIdb: vi.fn().mockResolvedValue({
+        absentIds: [],
+        initiallyUncachedIds: [],
+        restoredBuffers: new Map<string, AudioBuffer>(),
+        release: vi.fn(),
+    }),
 }));
 
 vi.mock('#/utils/Notification/notifyUser', () => ({
