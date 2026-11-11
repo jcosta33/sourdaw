@@ -72,8 +72,12 @@ refuses if the PR is no longer open when the push lands.
 
 ## branch:prune
 
-`branch:prune` defaults to dry run and deletes only branches whose every PR is
-merged or closed. It retains a branch that is the last remote holder of a
+`pnpm branch:prune [--apply] [--limit <n>] [--branch <name>]...` defaults to
+dry run and deletes only branches whose every PR is merged or closed. Each
+`--branch` narrows the run to that remote branch and refuses a name the remote
+does not list; pass your own spent branches so a prune never decides another
+agent's. Run it only from the protected primary checkout: it loads the author
+App credential from the primary root wherever it runs. It retains a branch that is the last remote holder of a
 measurement source revision a tracked table records, because the admission
 resolves that revision by SHA and squash delivery never lands the lane head on
 `main`. A recorded revision the remote independently confirms is gone is

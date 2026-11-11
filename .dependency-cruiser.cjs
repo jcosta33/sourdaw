@@ -97,8 +97,8 @@ module.exports = {
         // unavoidable. For every other cycle, prefer a real fix: extract shared
         // logic into a third file, flip an ownership edge, or emit a
         // signal/event instead of calling back. See
-        // `.agents/skills/architecture-violations/SKILL.md` §4.2 (fake
-        // compliance).
+        // `.agents/skills/architecture-violations/SKILL.md` rule 1 (fix the
+        // violation properly — never hack around the rules).
         {
             name: 'no-circular',
             // NOTE: the file-level cycles have all been cleared (`depcruise src`
