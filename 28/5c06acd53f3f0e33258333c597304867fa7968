@@ -1,0 +1,14 @@
+tests/e2e/spatialPannerArrangementTestId.spec.ts
+  h_beb54bf43b47b7 100
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "285c06acd53f3f0e33258333c597304867fa7968",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
