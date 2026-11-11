@@ -4,19 +4,23 @@ import { captureTouchAutomationRecordingAuthority } from '../captureTouchAutomat
 import { discardTouchAutomation } from '../discardTouchAutomation';
 import { releaseTouchAutomation } from '../releaseTouchAutomation';
 
-const { activeRecording, pendingPoints, touchActive, flushPendingPoints, trackSnapshot } = vi.hoisted(() => {
-    const activeRecording = new Map<string, import('../recordingSessionState').RecordingSession>();
-    const pendingPoints = new Map<string, import('../../../models/Automation').AutomationPoint[]>();
-    const touchActive = new Set<string>();
-    const trackSnapshot: { value: { tracks: { id: string; automationMode: string }[] } | null } = { value: null };
-    return {
-        trackSnapshot,
-        activeRecording,
-        pendingPoints,
-        touchActive,
-        flushPendingPoints: vi.fn(),
-    };
-});
+const { activeRecording, pendingPoints, pendingOwners, touchActive, flushPendingPoints, trackSnapshot } = vi.hoisted(
+    () => {
+        const activeRecording = new Map<string, import('../recordingSessionState').RecordingSession>();
+        const pendingPoints = new Map<string, import('../../../models/Automation').AutomationPoint[]>();
+        const pendingOwners = new Map<string, Array<symbol | undefined>>();
+        const touchActive = new Set<string>();
+        const trackSnapshot: { value: { tracks: { id: string; automationMode: string }[] } | null } = { value: null };
+        return {
+            trackSnapshot,
+            activeRecording,
+            pendingPoints,
+            pendingOwners,
+            touchActive,
+            flushPendingPoints: vi.fn(),
+        };
+    }
+);
 
 vi.mock('#/modules/Arrangement/stores', () => ({
     trackStore: {
@@ -29,6 +33,7 @@ vi.mock('#/modules/Arrangement/stores', () => ({
 vi.mock('../recordingSessionState', () => ({
     activeRecording,
     pendingPoints,
+    pendingOwners,
     touchActive,
 }));
 
@@ -41,6 +46,7 @@ describe('releaseTouchAutomation', () => {
         vi.clearAllMocks();
         activeRecording.clear();
         pendingPoints.clear();
+        pendingOwners.clear();
         touchActive.clear();
         trackSnapshot.value = null;
     });
@@ -126,6 +132,7 @@ describe('releaseTouchAutomation', () => {
             } else if (producer === 'successor') {
                 recordingOwner = Symbol('new gesture');
             }
+            pendingOwners.set('t1::gain', [recordingOwner]);
             if (producer !== 'absent') {
                 activeRecording.set('t1::gain', {
                     parameterId: 'gain',
@@ -141,6 +148,7 @@ describe('releaseTouchAutomation', () => {
 
             expect(flushPendingPoints).not.toHaveBeenCalled();
             expect(pendingPoints.get('t1::gain')).toEqual(producer === 'owned' ? [] : [point]);
+            expect(pendingOwners.get('t1::gain')).toEqual(producer === 'owned' ? [] : [recordingOwner]);
             expect(touchActive.has('t1::gain')).toBe(producer === 'successor' || producer === 'ownerless');
             let expectedLastValue: number | null | undefined = 0.5;
             if (producer === 'owned') {
@@ -151,6 +159,85 @@ describe('releaseTouchAutomation', () => {
             expect(activeRecording.get('t1::gain')?.lastValue).toBe(expectedLastValue);
         }
     );
+
+    // Mixed producer buffer: every admitted producer supersedes the release
+    // authority, but a discard must destroy only the discarding producer's own
+    // samples. An ownerless predecessor recorded before the authority's
+    // gesture survives, keeps the buffer's tail as the latch window, and keeps
+    // the touch arm — another producer is still touching the same lane.
+    it('removes only the discarding authority samples from a mixed buffer, keeping a foreign predecessor', () => {
+        const authority = captureTouchAutomationRecordingAuthority('t1', 'gain');
+        const foreign = { beat: 2, value: 0.3, curve: 'linear' as const, tension: 0 };
+        const own = { beat: 4, value: 0.7, curve: 'linear' as const, tension: 0 };
+        pendingPoints.set('t1::gain', [foreign, own]);
+        pendingOwners.set('t1::gain', [undefined, authority.owner]);
+        activeRecording.set('t1::gain', {
+            parameterId: 'gain',
+            trackId: 't1',
+            startBeat: 0,
+            lastValue: 0.7,
+            recordingOwner: authority.owner,
+        });
+        touchActive.add('t1::gain');
+
+        authority.discard();
+
+        expect(pendingPoints.get('t1::gain')).toEqual([foreign]);
+        expect(pendingOwners.get('t1::gain')).toEqual([undefined]);
+        expect(activeRecording.get('t1::gain')?.lastValue).toBe(0.3);
+        expect(touchActive.has('t1::gain')).toBe(true);
+    });
+
+    // Same mixed ownership with the foreign sample at the tail: removing the
+    // authority's earlier point re-anchors the latch window to the remaining
+    // tail instead of ending it.
+    it('removes only the discarding authority samples from a mixed buffer, keeping a foreign successor', () => {
+        const authority = captureTouchAutomationRecordingAuthority('t1', 'gain');
+        const own = { beat: 2, value: 0.7, curve: 'linear' as const, tension: 0 };
+        const foreign = { beat: 4, value: 0.3, curve: 'linear' as const, tension: 0 };
+        pendingPoints.set('t1::gain', [own, foreign]);
+        pendingOwners.set('t1::gain', [authority.owner, Symbol('other producer')]);
+        activeRecording.set('t1::gain', {
+            parameterId: 'gain',
+            trackId: 't1',
+            startBeat: 0,
+            lastValue: 0.3,
+            recordingOwner: authority.owner,
+        });
+        touchActive.add('t1::gain');
+
+        authority.discard();
+
+        expect(pendingPoints.get('t1::gain')).toEqual([foreign]);
+        expect(activeRecording.get('t1::gain')?.lastValue).toBe(0.3);
+        expect(touchActive.has('t1::gain')).toBe(true);
+    });
+
+    // The all-owned row above covers the fully-owned clear; an ownerless
+    // discarding authority must likewise remove only ownerless points, not a
+    // producer's samples that share the same buffer.
+    it('discards only ownerless points when the discarding authority recorded no owner', () => {
+        const ownerless = { beat: 2, value: 0.3, curve: 'linear' as const, tension: 0 };
+        const owned = { beat: 4, value: 0.7, curve: 'linear' as const, tension: 0 };
+        const producer = Symbol('producing gesture');
+        pendingPoints.set('t1::gain', [ownerless, owned]);
+        pendingOwners.set('t1::gain', [undefined, producer]);
+        activeRecording.set('t1::gain', {
+            parameterId: 'gain',
+            trackId: 't1',
+            startBeat: 0,
+            lastValue: 0.7,
+            recordingOwner: undefined,
+        });
+        touchActive.add('t1::gain');
+
+        discardTouchAutomation('t1', 'gain');
+
+        expect(pendingPoints.get('t1::gain')).toEqual([owned]);
+        expect(pendingOwners.get('t1::gain')).toEqual([producer]);
+        expect(activeRecording.get('t1::gain')?.lastValue).toBe(0.7);
+        expect(touchActive.has('t1::gain')).toBe(true);
+    });
 
     it.each(['read', 'off', 'touch', 'latch', 'write'] as const)(
         'gesture completion follows live %s mode without requiring another sample',
