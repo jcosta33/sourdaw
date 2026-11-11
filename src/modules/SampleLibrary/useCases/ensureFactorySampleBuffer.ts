@@ -112,9 +112,10 @@ export async function ensureFactorySampleBuffer({
 }: EnsureFactorySampleBufferInput): Promise<EnsureFactorySampleBufferResult> {
     const resident = getCachedAudioBuffer({ bufferId: sampleId });
     if (resident) {
-        return shouldAdoptCachedBuffer?.() === false
-            ? { status: 'unavailable' }
-            : { status: 'resolved', buffer: resident };
+        if (shouldAdoptCachedBuffer?.() === false) {
+            return { status: 'unavailable' };
+        }
+        return { status: 'resolved', buffer: resident };
     }
     if (!isFactorySample(sampleId)) {
         return { status: 'not-factory' };
@@ -124,9 +125,10 @@ export async function ensureFactorySampleBuffer({
     }
     const stored = await readStoredBuffer(sampleId);
     if (stored.status === 'restored') {
-        return shouldAdoptCachedBuffer?.() === false
-            ? { status: 'unavailable' }
-            : { status: 'resolved', buffer: stored.buffer };
+        if (shouldAdoptCachedBuffer?.() === false) {
+            return { status: 'unavailable' };
+        }
+        return { status: 'resolved', buffer: stored.buffer };
     }
     const publication = stored.status === 'unreadable' ? 'session-only' : 'cache';
     const buffer = await renderSampleBuffer(sampleId, publication, shouldAdoptCachedBuffer);

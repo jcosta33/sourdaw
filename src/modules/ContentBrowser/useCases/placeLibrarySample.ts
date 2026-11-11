@@ -267,17 +267,16 @@ async function prepareSample(
     }
     if (!cachedBuffer) {
         let rejectedFactoryCache = false;
-        const factoryBuffer = await ensureFactorySampleBuffer({
+        const factoryBufferOptions: Parameters<typeof ensureFactorySampleBuffer>[0] = {
             sampleId: candidateBufferId,
-            ...(restoration.initiallyUncached
-                ? {
-                      shouldAdoptCachedBuffer: () => {
-                          rejectedFactoryCache = true;
-                          return false;
-                      },
-                  }
-                : {}),
-        });
+        };
+        if (restoration.initiallyUncached) {
+            factoryBufferOptions.shouldAdoptCachedBuffer = () => {
+                rejectedFactoryCache = true;
+                return false;
+            };
+        }
+        const factoryBuffer = await ensureFactorySampleBuffer(factoryBufferOptions);
         if (rejectedFactoryCache) {
             notifyIfCurrent(authority, `Could not place "${sample.name}" — its audio changed before placement.`);
             return ABANDONED;
