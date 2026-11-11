@@ -107,4 +107,25 @@ describe('NotificationToast', () => {
         expect(alert).toHaveTextContent('Message 1');
         expect(screen.getByText('+2 more')).toBeInTheDocument();
     });
+
+    it('filters retained notifications by severity and clears unread count when opened', async () => {
+        notifyHandlerRef.current = null;
+        render(<NotificationToast />);
+        await waitFor(() => {
+            expect(notifyHandlerRef.current).not.toBeNull();
+        });
+        act(() => {
+            notifyHandlerRef.current!({ message: 'First message', level: 'info' });
+            notifyHandlerRef.current!({ message: 'Second message', level: 'error' });
+        });
+
+        fireEvent.click(screen.getByRole('button', { name: /Notification history/ }));
+        expect(screen.getByRole('button', { name: 'Notification history' })).toBeInTheDocument();
+        fireEvent.change(screen.getByRole('combobox', { name: 'Filter notifications by severity' }), {
+            target: { value: 'error' },
+        });
+
+        expect(screen.getByRole('listitem', { name: /Second message/ })).toBeInTheDocument();
+        expect(screen.queryByRole('listitem', { name: /First message/ })).not.toBeInTheDocument();
+    });
 });
