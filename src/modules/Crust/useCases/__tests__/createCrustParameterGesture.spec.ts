@@ -294,12 +294,34 @@ describe('Crust numeric controller with real Command and CRDT', () => {
         expect(captureUndoHistory().past).toHaveLength(1);
     });
 
-    it('restores UI truth after a current engine failure without adding history', async () => {
+    it('reacquires a cancelled preview for a later terminal edit without an explicit start', async () => {
         const edit = controller();
+        await edit.change('gain', 9, true);
+        edit.cancel('gain');
+        expect(rawDevice().parameterValues.gain).toBe(0);
+        expect(getCrustState(DEVICE).patch.gain).toBe(0);
+        expect(captureUndoHistory().past).toHaveLength(0);
+
+        await edit.change('gain', 6);
+
+        expect(rawDevice().parameterValues.gain).toBe(6);
+        expect(projectedDevice()).toEqual(rawDevice());
+        expect(getCrustState(DEVICE).patch.gain).toBe(6);
+        expect(captureUndoHistory().past).toHaveLength(1);
+    });
+
+    it('restores an emitted preview after a later engine failure without adding history', async () => {
+        const edit = controller();
+        await edit.change('gain', 9, true);
+        expect(rawDevice().parameterValues.gain).toBe(0);
+        expect(getCrustState(DEVICE).patch.gain).toBe(9);
+        expect(audio.updateDeviceParam).toHaveBeenLastCalledWith(TRACK, DEVICE, 'gain', 9, expect.any(Symbol));
+
         audio.updateDeviceParam.mockImplementationOnce(() => {
             throw new Error('Engine refused gain');
         });
-        await edit.change('gain', 9);
+        await edit.change('gain', 12);
+
         expect(rawDevice().parameterValues.gain).toBe(0);
         expect(getCrustState(DEVICE).patch.gain).toBe(0);
         expect(captureUndoHistory().past).toHaveLength(0);

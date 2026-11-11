@@ -32,6 +32,7 @@ type Gesture = {
     recording: ReturnType<typeof captureTouchAutomationRecordingAuthority>;
     preview?: number;
     cancelled: boolean;
+    reacquirable?: boolean;
     committed: boolean;
     pending?: Promise<void>;
 };
@@ -113,8 +114,9 @@ function retire(scope: Scope, gesture: Gesture, restore: boolean): void {
     }
 }
 
-function cancel(scope: Scope, gesture: Gesture): void {
+function cancel(scope: Scope, gesture: Gesture, reacquirable = false): void {
     gesture.cancelled = true;
+    gesture.reacquirable = reacquirable;
     try {
         retire(scope, gesture, !gesture.committed);
     } catch (error) {
@@ -250,15 +252,19 @@ function change(scope: Scope, key: Key, value: number, transient = false, record
     if (!Number.isFinite(value) || scope.disposed || (key === 'outputBitDepth' && !isOutputBitDepth(value))) {
         return Promise.resolve();
     }
-    if (!scope.gestures.has(key)) {
+    const previous = scope.gestures.get(key);
+    if (!previous || (previous.cancelled && previous.reacquirable && !previous.pending)) {
         start(scope, key);
     }
     const gesture = scope.gestures.get(key);
-    if (!gesture || gesture.cancelled) {
+    if (!gesture) {
         return Promise.resolve();
     }
     if (gesture.pending) {
         return gesture.pending;
+    }
+    if (gesture.cancelled) {
+        return Promise.resolve();
     }
     if (!current(scope, gesture) || (!recordingSample && !gesture.runtime.canCommit())) {
         cancel(scope, gesture);
@@ -273,7 +279,7 @@ function change(scope: Scope, key: Key, value: number, transient = false, record
             automationRecordingPolicy: recordingSample && gesture.recordingEligible ? undefined : 'suppressed',
         });
         if (!accepted) {
-            cancel(scope, gesture);
+            cancel(scope, gesture, true);
             return Promise.resolve();
         }
         gesture.preview = bounded;
@@ -284,7 +290,7 @@ function change(scope: Scope, key: Key, value: number, transient = false, record
         gesture.pending = commit(scope, gesture);
         return gesture.pending;
     } catch (error) {
-        cancel(scope, gesture);
+        cancel(scope, gesture, true);
         notifyUser(error instanceof Error ? error.message : 'Crust parameter preview failed', 'error');
         return Promise.resolve();
     }
@@ -324,7 +330,7 @@ export function createCrustParameterGesture(deviceId: string) {
         cancel: (key: Key) => {
             const gesture = scope.gestures.get(key);
             if (gesture) {
-                cancel(scope, gesture);
+                cancel(scope, gesture, true);
             }
         },
         dispose: () => {

@@ -219,6 +219,79 @@ describe('Crust numeric gestures through real Command and CRDT', () => {
         expect(rawDevice().parameterValues.gain).toBe(0);
     });
 
+    it('commits a real rotary drag exactly once and clears its transient drag state', async () => {
+        render(<CrustPanel deviceId={DEVICE} />);
+        const group = screen.getByRole('group', { name: 'Effect control detail' });
+        fireEvent.click(within(group).getByRole('button', { name: 'shape' }));
+        await waitFor(() =>
+            expect(within(group).getByRole('button', { name: 'shape' })).toHaveAttribute('aria-pressed', 'true')
+        );
+        const lookahead = screen.getByRole('slider', { name: 'Lookahead' });
+        const releasePointerCapture = vi.fn();
+        Object.defineProperties(lookahead, {
+            setPointerCapture: { configurable: true, value: vi.fn() },
+            releasePointerCapture: { configurable: true, value: releasePointerCapture },
+        });
+
+        fireEvent.pointerDown(lookahead, { button: 0, pointerId: 21, clientY: 100 });
+        expect(lookahead).toHaveAttribute('data-dragging', '');
+        fireEvent.pointerMove(lookahead, { pointerId: 21, clientY: 70 });
+        expect(lookahead).toHaveAttribute('aria-valuenow', '4');
+        expect(Object.hasOwn(rawDevice().parameterValues, 'lookahead')).toBe(false);
+        expect(captureUndoHistory().past).toHaveLength(0);
+        fireEvent.pointerUp(lookahead, { pointerId: 21 });
+
+        await waitFor(() => expect(captureUndoHistory().past).toHaveLength(1));
+        expect(rawDevice().parameterValues.lookahead).toBe(4);
+        expect(projectedDevice()).toEqual(rawDevice());
+        expect(lookahead).not.toHaveAttribute('data-dragging');
+        expect(releasePointerCapture).toHaveBeenCalledWith(21);
+        await act(() => undo());
+        expect(Object.hasOwn(rawDevice().parameterValues, 'lookahead')).toBe(false);
+    });
+
+    it('accepts Alt-reset after a cancelled rotary preview', async () => {
+        await act(() =>
+            executeUserAppAction({
+                type: 'setDeviceParameter',
+                payload: {
+                    deviceId: DEVICE,
+                    paramId: 'lookahead',
+                    value: 4,
+                    automationRecordingPolicy: 'suppressed',
+                },
+            })
+        );
+        clearUndoHistory();
+        render(<CrustPanel deviceId={DEVICE} />);
+        const group = screen.getByRole('group', { name: 'Effect control detail' });
+        fireEvent.click(within(group).getByRole('button', { name: 'shape' }));
+        await waitFor(() =>
+            expect(within(group).getByRole('button', { name: 'shape' })).toHaveAttribute('aria-pressed', 'true')
+        );
+        const lookahead = screen.getByRole('slider', { name: 'Lookahead' });
+        Object.defineProperties(lookahead, {
+            setPointerCapture: { configurable: true, value: vi.fn() },
+            releasePointerCapture: { configurable: true, value: vi.fn() },
+        });
+        audio.updateDeviceParam.mockImplementationOnce(() => {
+            throw new Error('Engine refused lookahead');
+        });
+        fireEvent.pointerDown(lookahead, { button: 0, pointerId: 22, clientY: 100 });
+        fireEvent.pointerMove(lookahead, { pointerId: 22, clientY: 70 });
+        fireEvent.pointerUp(lookahead, { pointerId: 22 });
+        expect(rawDevice().parameterValues.lookahead).toBe(4);
+        expect(getCrustState(DEVICE).patch.lookahead).toBe(4);
+        expect(captureUndoHistory().past).toHaveLength(0);
+
+        fireEvent.pointerDown(lookahead, { button: 0, pointerId: 23, altKey: true });
+
+        await waitFor(() => expect(rawDevice().parameterValues.lookahead).toBe(2));
+        expect(projectedDevice()).toEqual(rawDevice());
+        expect(getCrustState(DEVICE).patch.lookahead).toBe(2);
+        expect(captureUndoHistory().past).toHaveLength(1);
+    });
+
     it('keeps an external Link Trans edit when a second pointer replaces an abandoned preview', async () => {
         render(<CrustPanel deviceId={DEVICE} />);
         const group = screen.getByRole('group', { name: 'Effect control detail' });
