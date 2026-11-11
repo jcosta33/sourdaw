@@ -478,6 +478,12 @@ const GITHUB_ACTIONS_APP_NODE_ID = 'MDM6QXBwMTUzNjg=';
  * without having judged anything, so only a failed attempt whose scope job did not skip is a verdict.
  */
 const DRAFT_SKIPPED_SCOPE_JOB_NAME = 'Plan required checks';
+/**
+ * A job verdict that stands even when its attempt was later cancelled (a convert-to-draft cancels the
+ * run in progress). `Gate` is judged by the attempt conclusion instead: under `always()` a cancelled
+ * run's `Gate` fails derivatively, without any job having failed.
+ */
+const REAL_JOB_FAILURE_CONCLUSIONS = new Set(['failure', 'timed_out']);
 
 /**
  * Positively identifies the `Gate` deliver relies on: no commit status may claim the name, every
@@ -522,7 +528,13 @@ function assertNoRealGateFailure(label: string, run: GateProvenanceFacts['workfl
     }
     for (const attempt of run.attempts) {
         const scope = attempt.jobs.find((job) => job.name === DRAFT_SKIPPED_SCOPE_JOB_NAME);
-        if (attempt.conclusion === 'failure' && scope?.conclusion !== 'skipped') {
+        if (scope?.conclusion === 'skipped') {
+            continue;
+        }
+        const failedJob = attempt.jobs.find(
+            (job) => job.name !== REQUIRED_CHECK_NAME && REAL_JOB_FAILURE_CONCLUSIONS.has(job.conclusion ?? '')
+        );
+        if (attempt.conclusion === 'failure' || failedJob !== undefined) {
             fail(
                 `${label}: attempt ${attempt.attempt} of health-gates run ${run.id} failed, and a later success ` +
                     `never retires a real Gate failure; push a new commit`

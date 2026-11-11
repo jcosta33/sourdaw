@@ -8873,6 +8873,11 @@ describe('Gate provenance', () => {
     const cancelledRun = gateWorkflowRun(101, 'head', [gateAttempt(1, 'cancelled', 1102, 'cancelled')]);
     const greenRun = gateWorkflowRun(102, 'head', [gateAttempt(1, 'success', 1202)]);
     const clean = gateProvenanceFor([greenRun]);
+    function cancelledAttemptWith(conclusion: string): GateWorkflowAttemptFixture {
+        const attempt = gateAttempt(1, 'cancelled', 1102);
+        return { ...attempt, jobs: [...attempt.jobs, { id: 1100, name: 'Validation / Lint', conclusion }] };
+    }
+    const draftFailureAfterGreen = gateWorkflowRun(103, 'head', [gateAttempt(1, 'failure', 1302, 'skipped')]);
 
     const refusals: Array<[string, GateProvenanceFacts, RegExp]> = [
         [
@@ -8954,6 +8959,21 @@ describe('Gate provenance', () => {
             /attempt 1 of health-gates run 100 failed/,
         ],
         [
+            'a cancelled non-draft attempt whose Validation job had already failed',
+            gateProvenanceFor([gateWorkflowRun(101, 'head', [cancelledAttemptWith('failure')]), greenRun]),
+            /attempt 1 of health-gates run 101 failed/,
+        ],
+        [
+            'a cancelled non-draft attempt whose Validation job had already timed out',
+            gateProvenanceFor([gateWorkflowRun(101, 'head', [cancelledAttemptWith('timed_out')]), greenRun]),
+            /attempt 1 of health-gates run 101 failed/,
+        ],
+        [
+            'a newest Gate job that concluded failure on a draft run after an earlier green run',
+            gateProvenanceFor([greenRun, draftFailureAfterGreen]),
+            /newest Gate check run 1302 is failure/,
+        ],
+        [
             'a run whose attempts are incompletely listed',
             gateProvenanceFor([gateWorkflowRun(102, 'head', [gateAttempt(2, 'success', 1302)], { runAttempt: 2 })]),
             /attempts of health-gates run 102 are incomplete/,
@@ -8975,6 +8995,46 @@ describe('Gate provenance', () => {
             ['one clean health-gates run', clean],
             ['a draft-run failure followed by a non-draft success', gateProvenanceFor([draftFailure, greenRun])],
             ['a cancelled superseded run followed by a success', gateProvenanceFor([cancelledRun, greenRun])],
+            [
+                'a cancelled attempt whose other jobs only succeeded, skipped, or were cancelled, then a green run',
+                gateProvenanceFor([
+                    gateWorkflowRun(101, 'head', [
+                        {
+                            ...cancelledAttemptWith('cancelled'),
+                            jobs: [
+                                ...cancelledAttemptWith('cancelled').jobs,
+                                { id: 1098, name: 'Validation / Build', conclusion: 'success' },
+                                { id: 1099, name: 'Validation / Native audio backend (macOS)', conclusion: 'skipped' },
+                            ],
+                        },
+                    ]),
+                    greenRun,
+                ]),
+            ],
+            [
+                'a draft run whose jobs failed, then a green run',
+                gateProvenanceFor([
+                    gateWorkflowRun(100, 'head', [
+                        {
+                            ...gateAttempt(1, 'failure', 1002, 'skipped'),
+                            jobs: [
+                                ...gateAttempt(1, 'failure', 1002, 'skipped').jobs,
+                                { id: 1000, name: 'Validation / Lint', conclusion: 'failure' },
+                            ],
+                        },
+                    ]),
+                    greenRun,
+                ]),
+            ],
+            [
+                'a run whose cancelled first attempt was re-run to green, judged on its latest attempt',
+                gateProvenanceFor([
+                    gateWorkflowRun(102, 'head', [
+                        gateAttempt(1, 'cancelled', 1202, 'cancelled'),
+                        gateAttempt(2, 'success', 1302),
+                    ]),
+                ]),
+            ],
         ])(`delivers in ${mode} mode on %s`, (_label, facts) => {
             const { port, calls, tracker } = fakePort({ gateProvenance: facts });
 

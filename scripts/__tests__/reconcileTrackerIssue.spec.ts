@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -10,6 +11,7 @@ import {
     githubTrackerIssuePort,
     inspectTrackerIssue,
     parseReconcileTrackerIssueArgs,
+    processIsProvenDead,
     recoverRepositoryTrackerMutationLease,
     runReconcileTrackerIssueCli,
     withRepositoryTrackerMutationLease,
@@ -343,6 +345,18 @@ describe('tracker issue reconciliation', () => {
         }
 
         const v2Lease = JSON.stringify({ version: 2, pid: ownerPid, token });
+
+        it('does not prove the running process dead', () => {
+            expect(processIsProvenDead(process.pid)).toBe(false);
+        });
+
+        // spawnSync returns only after the child exited and was reaped, so its pid is unused. A reuse
+        // in between would read as live and fail this case; it can never pass falsely.
+        it('proves an exited and reaped child process dead', () => {
+            const child = spawnSync(process.execPath, ['-e', '']);
+            expect(child.status).toBe(0);
+            expect(processIsProvenDead(child.pid)).toBe(true);
+        });
 
         it('records a versioned owner while the lease is held', () => {
             withLeaseRoot(undefined, (root, leasePath) => {
