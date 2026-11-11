@@ -706,7 +706,7 @@ export function scheduleAudioClips(
     activeAudioSources: AudioBufferSourceNode[],
     transport: TransportState,
     initialSchedulingAnchor?: number,
-    mediaOwnerRetired = false
+    mediaOwnerTransition = false
 ): void {
     const tracks = trackStore.value?.tracks;
     if (!tracks) {
@@ -821,9 +821,9 @@ export function scheduleAudioClips(
     // pass emitted from starting again. A window that floors to its own start
     // (a wrap handover or landing) holds nothing before it to rejoin, and a
     // pass that cut nothing leaves the window rules alone. The scheduler can
-    // retire a MIDI owner before an awaited rack emission; direct callers still
-    // have their superseded owner here, so detect it without changing the
-    // replacement-onset retirement below.
+    // retire a MIDI owner after an awaited rack emission and report that
+    // transition here; direct callers still have their superseded owner here,
+    // so detect it without changing the replacement-onset retirement below.
     const supersededOwnerPresent = retireSupersededMidiMedia(
         unfrozenTracks,
         ctx,
@@ -833,7 +833,7 @@ export function scheduleAudioClips(
         'detect'
     );
     const rejoinsAtPlayhead =
-        (cutAny || mediaOwnerRetired || supersededOwnerPresent) &&
+        (cutAny || mediaOwnerTransition || supersededOwnerPresent) &&
         !floorsToWindowStart &&
         accumulatedPosition < fromBeat;
 

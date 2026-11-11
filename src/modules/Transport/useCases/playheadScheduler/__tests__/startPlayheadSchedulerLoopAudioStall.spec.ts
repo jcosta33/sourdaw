@@ -516,9 +516,20 @@ async function reproduceSeamStall(
             .toEqual([ANCHOR_FRAME + (pass + 1) * passFrames, ANCHOR_FRAME + (pass + 1) * passFrames]);
     }
 
-    const pitch60EmissionsBeforeRecovery = scheduleNoteSpy.mock.calls.filter((call) => call[2] === 60).length;
+    const emissionCountBeforeRecovery = scheduleNoteSpy.mock.calls.length;
+    const pitch60CallsBeforeRecovery = scheduleNoteSpy.mock.calls.filter((call) => call[2] === 60);
+    const pitch60EmissionsBeforeRecovery = pitch60CallsBeforeRecovery.length;
+    const preRecoveryPitch60Frames = pitch60CallsBeforeRecovery.map((call) => frame(call[3]));
+    const preRecoveryPitch60FrameSet = new Set(preRecoveryPitch60Frames);
     await tickAt(recoveryFrame);
     const pitch60EmissionsAfterRecovery = scheduleNoteSpy.mock.calls.filter((call) => call[2] === 60).length;
+    const recoveryPitch60Frames = scheduleNoteSpy.mock.calls
+        .slice(emissionCountBeforeRecovery)
+        .filter((call) => {
+            const onset = frame(call[3]);
+            return call[2] === 60 && onset >= ANCHOR_FRAME + recoveryFrame && !preRecoveryPitch60FrameSet.has(onset);
+        })
+        .map((call) => frame(call[3]));
     expect(playheadWrapCountRef.current).toBe(crossedSeams);
     expect(playheadClockRef.beat).toBeCloseTo((recoveryFrame % passFrames) / 24_000, 12);
     const afterRecovery = snapshotSources();
@@ -538,7 +549,12 @@ async function reproduceSeamStall(
             .toEqual([]);
         expect.soft(scheduled.map((source) => frame(effectiveEnd(source)))).toEqual([nextSeam, nextSeam]);
     }
-    return { pitch60EmissionsBeforeRecovery, pitch60EmissionsAfterRecovery };
+    return {
+        pitch60EmissionsBeforeRecovery,
+        pitch60EmissionsAfterRecovery,
+        preRecoveryPitch60Frames,
+        recoveryPitch60Frames,
+    };
 }
 
 beforeEach(() => {
@@ -602,18 +618,43 @@ describe('browser buffer admission before a loop-seam main-thread stall (#6277)'
         await reproduceSeamStall(6_000, 5_952, true, true);
         expect(scheduleNoteSpy).not.toHaveBeenCalled();
     });
-    it('emits a fresh MIDI note on recovery while pre-submitting mixed MIDI-track audio once per pass', async () => {
-        const { pitch60EmissionsBeforeRecovery, pitch60EmissionsAfterRecovery } = await reproduceSeamStall(
-            6_000,
-            5_952,
-            false,
-            true
-        );
+    it('emits exactly one fresh MIDI note at the recovery pass onset', async () => {
+        const {
+            pitch60EmissionsBeforeRecovery,
+            pitch60EmissionsAfterRecovery,
+            preRecoveryPitch60Frames,
+            recoveryPitch60Frames,
+        } = await reproduceSeamStall(6_000, 5_952, false, true);
         expect(pitch60EmissionsAfterRecovery).toBeGreaterThan(pitch60EmissionsBeforeRecovery);
+        expect(recoveryPitch60Frames).toEqual([ANCHOR_FRAME + 18_000]);
+        expect(new Set(preRecoveryPitch60Frames).size).toBe(preRecoveryPitch60Frames.length);
+        expect(preRecoveryPitch60Frames).not.toContain(ANCHOR_FRAME + 18_000);
     });
 });
 
 describe('mixed MIDI media ownership during non-loop playback', () => {
+    it('rejoins the residual original after an uncached frozen bake is removed', async () => {
+        const mixed = seedTrack('left', 0.15, false, 0, true);
+        const unrelated = seedTrack('right', 4, false, 0.25);
+        mixed.freezeState = { status: 'frozen', frozenBufferId: 'missing-bake', compensationSeconds: 0 };
+        trackStoreState.value = { tracks: [mixed, unrelated] };
+        transportStoreState.value = { ...defaultTransportState, isPlaying: true, tempo: 120, isLooping: false };
+
+        startPlayheadScheduler();
+        await tickAt(0);
+        expect(snapshotSources().map((source) => source.bufferId)).toEqual(['right-buffer']);
+
+        mixed.freezeState = { status: 'unfrozen' };
+        await tickAt(1_200);
+        const original = snapshotSources().filter((source) => source.bufferId === 'left-buffer');
+        expect(original).toHaveLength(1);
+        expect(frame(original[0]!.start.when)).toBe(ANCHOR_FRAME + 1_200);
+        expect(frame(original[0]!.start.offset)).toBe(1_200);
+        const unrelatedAfter = snapshotSources().filter((source) => source.bufferId === 'right-buffer');
+        expect(unrelatedAfter).toHaveLength(1);
+        expect(unrelatedAfter[0]!.stops).toHaveLength(0);
+    });
+
     it('rejoins a short audio tail between the playhead and the existing look-ahead after unfreeze', async () => {
         const mixed = seedTrack('left', 0.15, false, 0, true);
         buffers.set('bake', { duration: 16, sampleRate: SAMPLE_RATE } as AudioBuffer);
@@ -746,7 +787,29 @@ describe('mixed MIDI media ownership during non-loop playback', () => {
         expect(unrelatedAfter[0]!.stops).toHaveLength(0);
     });
 
-    it('retires a sounding owner before a preceding MIDI rack await can delay the frozen replacement', async () => {
+    it('retires a sounding owner exactly at the compensated frozen replacement onset', async () => {
+        const mixed = seedTrack('left', 4, false, 0, true);
+        buffers.set('bake', { duration: 16, sampleRate: SAMPLE_RATE } as AudioBuffer);
+        trackStoreState.value = { tracks: [mixed] };
+        transportStoreState.value = { ...defaultTransportState, isPlaying: true, tempo: 120, isLooping: false };
+        startPlayheadScheduler();
+        await tickAt(0);
+        expect(snapshotSources().filter((source) => source.bufferId === 'left-buffer')).toHaveLength(1);
+
+        compensation.seconds = 0.5;
+        mixed.freezeState = { status: 'frozen', frozenBufferId: 'bake', compensationSeconds: 0.5 };
+        await tickAt(1_200);
+        const after = snapshotSources();
+        const old = after.find((source) => source.bufferId === 'left-buffer');
+        const bake = after.find((source) => source.bufferId === 'bake');
+        expect(old?.stops).toHaveLength(1);
+        expect(bake).toBeDefined();
+        expect(frame(bake!.start.when)).toBe(ANCHOR_FRAME + 24_000);
+        expect(frame(old!.stops[0]!.when)).toBe(frame(bake!.start.when));
+        expect(frame(effectiveEnd(old!))).toBe(frame(bake!.start.when));
+    });
+
+    it('retains a sounding owner through a preceding MIDI rack await until the frozen replacement exists', async () => {
         const mixed = seedTrack('left', 4, false, 0, true);
         const waiting = createTrack({ id: 'waiting', name: 'waiting', kind: 'midi', withoutDefaultDevice: true });
         waiting.devices = [
@@ -791,7 +854,7 @@ describe('mixed MIDI media ownership during non-loop playback', () => {
             await vi.waitFor(() => expect(processYeastMidi).toHaveBeenCalledOnce(), { interval: 1 });
             expect(schedulerSession.tickInFlight).toBe(true);
             const heldOwner = snapshotSources().find((source) => source.bufferId === 'left-buffer');
-            expect(heldOwner?.stops).toHaveLength(1);
+            expect(heldOwner?.stops).toHaveLength(0);
             expect(snapshotSources().some((source) => source.bufferId === 'bake')).toBe(false);
             ctxTime.now += 0.04;
         } finally {
