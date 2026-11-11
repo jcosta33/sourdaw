@@ -286,7 +286,6 @@ describe('loop buffer work and lifetime ownership', () => {
             clips: [{ id: 'midi-clip', type: 'midi', startBeat: 0, endBeat: 4, audioBufferId: 'midi-bake' }],
         });
         let bounded = false;
-        let emissionsBeforeChange = 0;
         let previousHorizon = Number.NEGATIVE_INFINITY;
         const owner = make(() =>
             bounded && (emitted.at(-1)?.scheduledStartTime ?? Infinity) <= previousHorizon ? 40 : 0
@@ -298,7 +297,7 @@ describe('loop buffer work and lifetime ownership', () => {
 
         fixture.tracks[1]!.freezeState = { status: 'unfrozen' };
         fixture.time = 10.624;
-        emissionsBeforeChange = emitted.length;
+        const emissionsBeforeChange = emitted.length;
         previousHorizon = Math.max(...emitted.map((source) => source.scheduledStartTime ?? 0));
         bounded = true;
         const coverage = owner.refill(input(0.25, 10.624, 0.15));

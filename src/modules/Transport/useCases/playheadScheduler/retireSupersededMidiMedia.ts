@@ -88,7 +88,7 @@ function releaseDedupOwnership(
  * then ramp to zero over the same micro fade and stop past it, so the two gain
  * programmes overlap and their sum never reaches zero.
  */
-function cutSourceAcrossHandoff(src: SourceWithFade, ctx: BaseAudioContext, stopAt: number): void {
+function cutSourceAcrossHandoff(src: SourceWithFade, stopAt: number): void {
     const releaseAt = stopAt + MICRO_FADE_SECONDS;
     try {
         if (src.fadeGainNode) {
@@ -130,7 +130,7 @@ function retireSource(
             if (futureStart) {
                 source.stop(stopTime);
             } else if (overlapsHandoff) {
-                cutSourceAcrossHandoff(source, ctx, actualStop);
+                cutSourceAcrossHandoff(source, actualStop);
             } else {
                 cutSource(source, ctx, actualStop);
             }

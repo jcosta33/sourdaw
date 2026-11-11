@@ -431,13 +431,15 @@ function snapshotGainProgrammes(): GainProgramme[] {
             return [];
         }
         const gain = ledger.node?.fadeGainNode?.gain;
-        return [
-            {
-                bufferId: ledger.bufferId,
-                startWhen: ledger.start.when,
-                events: gain ? [...(gainEventRegistry.get(gain) ?? [])] : [],
-            },
-        ];
+        const snapshot: GainProgramme = {
+            bufferId: ledger.bufferId,
+            startWhen: ledger.start.when,
+            events: [],
+        };
+        if (gain) {
+            snapshot.events = gainEventRegistry.get(gain)?.slice() ?? [];
+        }
+        return [snapshot];
     });
 }
 

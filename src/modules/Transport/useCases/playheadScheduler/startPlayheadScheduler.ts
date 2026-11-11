@@ -1672,7 +1672,12 @@ export function startPlayheadScheduler(
             position: number,
             trackId: string
         ): void {
-            if (loopAudioSchedule.active || !cancellation.isCurrent() || !changedMidiMediaTrackIds.has(trackId)) {
+            if (
+                !current ||
+                loopAudioSchedule.active ||
+                !cancellation.isCurrent() ||
+                !changedMidiMediaTrackIds.has(trackId)
+            ) {
                 return;
             }
             const track = trackStore.value?.tracks.find(

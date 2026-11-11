@@ -157,11 +157,12 @@ function findChangedTrackIds(state: LoopAudioScheduleState, read: ReturnType<typ
             changed.add(trackId);
         }
     }
-    const replacedBufferIds = new Set(
-        [...read.cached]
-            .filter(([id, buffer]) => buffer !== null && state.buffers.has(id) && buffer !== state.buffers.get(id))
-            .map(([id]) => id)
-    );
+    const replacedBufferIds = new Set<string>();
+    for (const [id, buffer] of read.cached) {
+        if (buffer !== null && state.buffers.has(id) && buffer !== state.buffers.get(id)) {
+            replacedBufferIds.add(id);
+        }
+    }
     for (const track of read.view) {
         if (track.media.some((bufferId) => replacedBufferIds.has(bufferId))) {
             changed.add(track.id);
