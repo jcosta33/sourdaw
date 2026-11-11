@@ -32,7 +32,7 @@ export const DawPluginMetricTile = ({
         <span
             className={cn(
                 compact ? 'text-[7px] tracking-[0.2em]' : 'text-[8px] tracking-[0.24em]',
-                'uppercase text-muted-foreground/55',
+                'uppercase text-text-secondary',
                 labelClassName
             )}
         >
@@ -50,7 +50,7 @@ export const DawPluginMetricTile = ({
         {detail ? (
             <span
                 className={cn(
-                    'text-muted-foreground/55',
+                    'text-text-secondary',
                     compact ? 'text-[8px] leading-tight' : 'text-[9px] leading-4',
                     detailClassName
                 )}

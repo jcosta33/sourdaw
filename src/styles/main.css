@@ -346,7 +346,7 @@
 @utility grinder-window {
     background:
         linear-gradient(180deg, rgba(255, 255, 255, 0.032), rgba(255, 255, 255, 0.01)),
-        linear-gradient(180deg, rgba(0, 0, 0, 0.18), transparent 22%), var(--color-bg-panelInset);
+        linear-gradient(180deg, rgba(241, 165, 75, 0.06), transparent 22%), var(--color-bg-panelInset);
     border: 1px solid rgba(255, 255, 255, 0.08);
     border-top-color: rgba(255, 255, 255, 0.12);
     border-radius: 22px;
@@ -367,7 +367,7 @@
     font-size: 0.625rem;
     letter-spacing: 0.24em;
     text-transform: uppercase;
-    color: rgba(255, 255, 255, 0.56);
+    color: var(--color-text-primary);
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
     transition:
         color 120ms ease,

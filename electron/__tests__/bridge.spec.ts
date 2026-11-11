@@ -261,6 +261,57 @@ describe('native menu transport', () => {
 });
 
 describe('command admission', () => {
+    describe.each([
+        'collab_apply_change',
+        'collab_create_project',
+        'collab_get_document_state',
+        'collab_load_bundle',
+        'collab_merge_bundle',
+        'collab_save_bundle',
+    ])('private native CRDT command %s', (command) => {
+        it('refuses invoke before IPC', async () => {
+            const fake = fakeIpc();
+            const bridge = createSourdawBridge(fake.ipc);
+
+            await expect(bridge.invoke(command, ['root'])).rejects.toThrow(/Unknown or denied/u);
+
+            expect(fake.invoke).not.toHaveBeenCalled();
+        });
+
+        it.each([
+            { kind: 'small', bytes: new Uint8Array([1, 2, 3]) },
+            { kind: 'empty', bytes: new Uint8Array() },
+            { kind: 'subarray', bytes: new Uint8Array([9, 1, 2, 9]).subarray(1, 3) },
+        ])('refuses invokeBinary with $kind bytes before IPC', async ({ bytes }) => {
+            const fake = fakeIpc();
+            const bridge = createSourdawBridge(fake.ipc);
+
+            await expect(bridge.invokeBinary(command, ['root'], bytes)).rejects.toThrow(/Unknown or denied/u);
+
+            expect(fake.invoke).not.toHaveBeenCalled();
+        });
+
+        it('refuses invokeBinaryResponse before IPC', async () => {
+            const fake = fakeIpc(() => new Uint8Array([1, 2, 3]));
+            const bridge = createSourdawBridge(fake.ipc);
+
+            await expect(bridge.invokeBinaryResponse(command, ['root'])).rejects.toThrow(/Unknown or denied/u);
+
+            expect(fake.invoke).not.toHaveBeenCalled();
+        });
+
+        it('refuses stream before IPC or delivery', async () => {
+            const fake = fakeIpc();
+            const bridge = createSourdawBridge(fake.ipc);
+            const onMessage = vi.fn();
+
+            await expect(bridge.stream(command, ['root'], onMessage)).rejects.toThrow(/Unknown or denied/u);
+
+            expect(fake.invoke).not.toHaveBeenCalled();
+            expect(onMessage).not.toHaveBeenCalled();
+        });
+    });
+
     it('sends an exposed command down its own channel, with positional arguments', async () => {
         const fake = fakeIpc(() => 'ok');
         const bridge = createSourdawBridge(fake.ipc);

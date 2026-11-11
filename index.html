@@ -9,6 +9,25 @@
         <link rel="icon" type="image/x-icon" href="/favicon.ico" />
         <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png" />
         <link rel="apple-touch-icon" href="/icon-192.png" />
+        <script id="sourdaw-theme" type="text/javascript" src="/themePrepaint.js" async></script>
+        <style>
+            :root {
+                visibility: hidden;
+                --entry-startup-background: #020100;
+                --entry-startup-color: #eee;
+            }
+            :root.light {
+                --entry-startup-background: #ded8cf;
+                --entry-startup-color: #292521;
+            }
+        </style>
+        <noscript>
+            <style>
+                :root {
+                    visibility: visible;
+                }
+            </style>
+        </noscript>
         <script defer src="/entryLoadRecovery.js"></script>
     </head>
     <body class="bg-background text-foreground antialiased">
@@ -19,8 +38,8 @@
                     min-height: 100vh;
                     display: grid;
                     place-items: center;
-                    background: #020100;
-                    color: #eee;
+                    background: var(--entry-startup-background);
+                    color: var(--entry-startup-color);
                     font-family: system-ui;
                     text-align: center;
                 "

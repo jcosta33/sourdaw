@@ -1,8 +1,6 @@
 import { STRAIGHT_GROOVE_TEMPLATE_ID, type GrooveTemplate } from '../../models/GrooveTemplate';
 import { type GrooveTemplateAssignment, grooveTemplateStore } from '../../stores/grooveTemplateStore';
 
-import { markGrooveTemplateProjectWrite } from './markGrooveTemplateProjectWrite';
-
 export type DeletedGrooveTemplateSnapshot = {
     template: GrooveTemplate;
     templateIndex: number;
@@ -33,6 +31,5 @@ export function deleteGrooveTemplate(templateId: string): DeletedGrooveTemplateS
                 : assignment
         ),
     });
-    markGrooveTemplateProjectWrite();
     return { template: structuredClone(template), templateIndex, assignments };
 }

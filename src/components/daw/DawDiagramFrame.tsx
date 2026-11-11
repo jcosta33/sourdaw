@@ -37,7 +37,7 @@ export const DawDiagramFrame = ({
                 compact={compact}
                 title={title}
                 actions={actions}
-                titleClassName={cn('text-white/56', titleClassName)}
+                titleClassName={cn('text-muted-foreground', titleClassName)}
                 className="border-b border-white/[0.06] bg-black/[0.12]"
             />
         ) : null}

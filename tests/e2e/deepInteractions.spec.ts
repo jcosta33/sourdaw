@@ -36,9 +36,9 @@ test.describe('Export dialog deep interactions', () => {
         await page.keyboard.press('Escape');
     });
 
-    test('Export dialog exposes a Start Baking action button', async ({ page }) => {
+    test('Export dialog exposes an Export mixdown action button', async ({ page }) => {
         const dialog = page.getByRole('dialog').filter({ hasText: /Bakery|Export/i });
-        await expect(dialog.getByRole('button', { name: /Start Baking|Export|Bake/i })).toBeVisible();
+        await expect(dialog.getByRole('button', { name: /Export mixdown/i })).toBeVisible();
     });
 
     test('Export dialog closes with Escape', async ({ page }) => {

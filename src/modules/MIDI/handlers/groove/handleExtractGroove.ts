@@ -5,6 +5,7 @@ import { valuesEqual } from '#/utils/structuralEquality';
 import { GrooveExtractionActionError } from '../../errors/GrooveExtractionActionError';
 import { createGrooveTemplate } from '../../useCases/grooveTemplates/createGrooveTemplate';
 import { getGrooveTemplate } from '../../useCases/grooveTemplates/getGrooveTemplate';
+import { markGrooveTemplateProjectWrite } from '../../useCases/grooveTemplates/markGrooveTemplateProjectWrite';
 import { prepareGrooveExtraction } from '../../useCases/grooveTemplates/prepareGrooveExtraction';
 
 type ExtractGrooveAction = Extract<AppAction, { type: 'extractGroove' }>;
@@ -99,8 +100,15 @@ export const handleExtractGroove = createHandler<'extractGroove'>({
             throw plan.error;
         }
         if (plan.outcome === 'create') {
-            createGrooveTemplate(plan.template);
-            return { status: 'written' };
+            const result = createGrooveTemplate(plan.template);
+            if (result.status === 'no-write') {
+                return { status: 'no-write' };
+            }
+            return {
+                status: 'written',
+                afterCommit: markGrooveTemplateProjectWrite,
+                afterAmbiguousCommit: markGrooveTemplateProjectWrite,
+            };
         }
         return { status: 'no-write' };
     },

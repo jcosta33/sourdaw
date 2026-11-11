@@ -49,6 +49,7 @@ function applyInverse(inverse: AppAction | null | undefined): boolean {
     if (inverse.type !== 'restoreAutomationLanePoints') {
         throw new Error(`Unexpected inverse: ${inverse.type}`);
     }
+    expect(handleRestoreAutomationLanePoints.validate?.(inverse, { actions: [inverse], actionIndex: 0 })).toBe(true);
     expect(handleRestoreAutomationLanePoints.execute(inverse)).toEqual({ status: 'written' });
     return true;
 }
@@ -159,9 +160,11 @@ describe('automation transform handlers — execute → undo restores pre-state'
             // The transform mutated the lane (otherwise the test would not prove undo).
             expect(currentPoints()).not.toEqual(before);
 
-            expect(describeResult.inverseAction).toMatchObject({
-                payload: { expectedPoints: currentPoints() },
-            });
+            const inverse = describeResult.inverseAction;
+            if (inverse?.type !== 'restoreAutomationLanePoints') {
+                throw new Error('Expected restoreAutomationLanePoints inverse');
+            }
+            expect(inverse.payload.expectedPoints).toEqual(currentPoints());
 
             // The handler captured a real inverse (the MAJOR regression: this was null,
             // making undo an inert no-op).

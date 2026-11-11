@@ -1,4 +1,4 @@
-// @wasm-bindgen-dts crate-source: sha256:e3accb055ef47620ddcd8f28817a7521e4392c8000ce67152f9817df66832efe
+// @wasm-bindgen-dts crate-source: sha256:585883d0b78a8689d8bdaf4f38e566ddefc235d84dfa348838fb12c87e3c826a
 /* tslint:disable */
 /* eslint-disable */
 
@@ -24,11 +24,11 @@ export class ProofChamberInstance {
     /**
      * Load an IR for the convolution engine.
      */
-    load_ir(ir_data: Float32Array, channels: number): void;
+    load_ir(ir_data: Float32Array | number[], channels: number): void;
     constructor(sample_rate: number);
     process(frames: number): number;
-    set_param(name: string, value: number): void;
     set_param_by_id(param_id: number, value: number): void;
+    set_param(name: string, value: number): void;
 }
 
 /**

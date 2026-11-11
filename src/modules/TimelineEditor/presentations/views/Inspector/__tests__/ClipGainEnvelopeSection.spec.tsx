@@ -97,6 +97,8 @@ vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
 // action-routed graph pulls more of the barrel in than the view itself calls,
 // so the mock has to supply every name the graph imports.
 vi.mock('#/modules/Command/useCases', () => ({
+    commitUndoEntry: vi.fn(),
+    createUndoEntry: vi.fn(),
     commitRedoInverseCapture: vi.fn(),
     readUndoEntryForInverse: vi.fn<typeof import('#/modules/Command/useCases').readUndoEntryForInverse>(() => null),
 

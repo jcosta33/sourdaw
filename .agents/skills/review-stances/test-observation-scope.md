@@ -28,6 +28,13 @@ Report a probe that cannot run with its exact mutation, named check and limitati
 3. **A flag, setter or presence stands for what the musician consumes.**
    Probe: observe PCM against an independent input, decoded bytes, painted pixels and console output during
    load, never a flag, setter, DOM presence, returned length or metadata.
+   Preset audition must inspect the PCM of a successful live buffer start, excluding offline sources,
+   and distinguish real catalog instrument envelopes/spectra and an effects tail under identical excitation.
+   Restoring the common oscillator route must fail buffer admission; substituting one common PCM buffer
+   across presets must fail musical discrimination. Admit project/history preservation only after the
+   inspection bridge observes a genuine UI edit in the same app singleton; an empty bridge must fail.
+   The original preset placeholder asserted its common tone rather than the sound it claimed to audition
+   (introduced in `22a84b216658f593391e7e141d90f7c84d13648b`, retained through #6180).
    (#187, #5013, #4904, #5812)
 
 4. **Fixtures or history bytes the real producer would never write.**
@@ -78,6 +85,15 @@ Report a probe that cannot run with its exact mutation, named check and limitati
     require erased-edge cases to stay out of the graph and every retained-edge case to expose a downstream
     missing key. Reverting the classification or dropping every empty-name edge must fail these planted
     cases. (#1572)
+
+    A module-initialization guard must distinguish lazy function bodies from executed initializers (#6307, #6367).
+    The retired whole-file constructor regex rejected a lazy `new Set()` in the real inspection reader; restoring
+    it must fail the positive entry case. Classify AST initializers after normalizing erased assertions,
+    `satisfies`, non-null and generic-instantiation wrappers. Accept identifier aliases only to imported runtime
+    bindings, implemented local functions or prior validated bindings. Type-only imports and `declare function`
+    declarations emit no binding: read an ambient getter with the emitted JavaScript and require that control to
+    fail admission. Keep actual top-level calls/constructors, wrapped work, dynamic imports and wrong aliases as
+    negative controls; passing a handwritten text fixture alone does not prove the served entry's runtime boundary.
 
 7. **A configuration value, snapshot or count stands for runtime behavior.**
    Probe: a configuration value, successful scan, snapshot, literal checkout depth or request count proves no

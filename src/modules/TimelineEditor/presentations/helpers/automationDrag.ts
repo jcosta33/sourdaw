@@ -201,7 +201,8 @@ export const onPointMouseDown = (
     lane: AutomationLane,
     setDragPointBeat: SetStateFn<number | null>,
     setSelectedPoints: SetStateFn<number[]>,
-    coords: CoordFns
+    coords: CoordFns,
+    pointId?: string
 ): DragCancel => {
     event.stopPropagation();
     const rect = coords.getRect();
@@ -216,14 +217,24 @@ export const onPointMouseDown = (
         return noopCancel;
     }
 
-    const origPoint = lane.points.find((param) => param.beat === pointBeat);
+    const candidates = lane.points.filter((point) => {
+        if (pointId !== undefined) {
+            return pointId.length > 0 && point.id === pointId;
+        }
+        return Math.abs(point.beat - pointBeat) < 0.05;
+    });
+    if (candidates.length !== 1) {
+        return noopCancel;
+    }
+    const origPoint = candidates[0];
     if (!origPoint) {
         return noopCancel;
     }
+    const capturedId = origPoint.id;
     const origBeat = origPoint.beat;
     const origValue = origPoint.value;
-    let currentBeat = pointBeat;
-    setDragPointBeat(pointBeat);
+    let currentBeat = origBeat;
+    setDragPointBeat(origBeat);
 
     return startMouseDrag(
         (me) => {
@@ -238,19 +249,24 @@ export const onPointMouseDown = (
                     newBeat = origBeat;
                 }
             }
-            updateAutomationPoint(lane.id, currentBeat, newValue, newBeat);
+            if (!updateAutomationPoint(lane.id, currentBeat, newValue, newBeat, capturedId)) {
+                return;
+            }
             currentBeat = newBeat;
             setDragPointBeat(newBeat);
         },
         () => {
             setDragPointBeat(null);
             const finalLane = automationStore.value?.lanes.find((length) => length.id === lane.id);
-            // Exact match: `currentBeat` is the precise value the last move wrote
-            // to the point (see `updateAutomationPoint(..., currentBeat, ...)`
-            // above), not a pointer-derived approximation. A `< 0.05` tolerance
-            // here can pick a *different* point that happens to have landed
-            // nearby, corrupting that point's undo/redo instead of this one's.
-            const finalPoint = finalLane?.points.find((param) => param.beat === currentBeat);
+            // Identified gestures keep their original target across crossings and
+            // same-beat neighbors. Legacy points have only a unique exact beat.
+            const finalCandidates = finalLane?.points.filter((point) => {
+                if (capturedId !== undefined) {
+                    return point.id === capturedId;
+                }
+                return point.beat === currentBeat;
+            });
+            const finalPoint = finalCandidates?.length === 1 ? finalCandidates[0] : undefined;
             const hasMoved =
                 finalPoint !== undefined && (finalPoint.beat !== origBeat || finalPoint.value !== origValue);
             if (hasMoved) {
@@ -259,10 +275,10 @@ export const onPointMouseDown = (
                 pushUndoEntry(
                     'Move automation point',
                     () => {
-                        updateAutomationPoint(lane.id, finalBeat, origValue, origBeat);
+                        updateAutomationPoint(lane.id, finalBeat, origValue, origBeat, capturedId);
                     },
                     () => {
-                        updateAutomationPoint(lane.id, origBeat, finalValue, finalBeat);
+                        updateAutomationPoint(lane.id, origBeat, finalValue, finalBeat, capturedId);
                     }
                 );
             }
@@ -273,7 +289,7 @@ export const onPointMouseDown = (
             // through the same use case a commit would use — rather than just
             // clearing local UI state. No undo entry: reverting makes this a net
             // no-op, so there is nothing for the user to undo.
-            updateAutomationPoint(lane.id, currentBeat, origValue, origBeat);
+            updateAutomationPoint(lane.id, currentBeat, origValue, origBeat, capturedId);
             setDragPointBeat(null);
         }
     );

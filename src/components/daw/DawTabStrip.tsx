@@ -138,12 +138,23 @@ type ScrollEdgeButtonProps = {
     direction: 'left' | 'right';
     visible: boolean;
     onScroll: () => void;
+    scrollRef: RefObject<HTMLDivElement | null>;
 };
 
-const ScrollEdgeButton = ({ direction, visible, onScroll }: ScrollEdgeButtonProps): ReactElement => {
+const ScrollEdgeButton = ({ direction, visible, onScroll, scrollRef }: ScrollEdgeButtonProps): ReactElement => {
+    const buttonRef = useRef<HTMLButtonElement>(null);
     const Chevron = direction === 'left' ? ChevronLeft : ChevronRight;
+
+    useEffect(() => {
+        if (visible || document.activeElement !== buttonRef.current) {
+            return;
+        }
+        scrollRef.current?.querySelector<HTMLElement>('[role="tab"][tabindex="0"]')?.focus();
+    }, [scrollRef, visible]);
+
     return (
         <Button
+            ref={buttonRef}
             variant="bare"
             size="bare"
             type="button"
@@ -238,11 +249,13 @@ export const DawTabStrip = <TId extends string>({
                 direction="left"
                 visible={canScrollLeft}
                 onScroll={() => scrollRef.current?.scrollBy({ left: -SCROLL_STEP_PX, behavior: 'smooth' })}
+                scrollRef={scrollRef}
             />
             <ScrollEdgeButton
                 direction="right"
                 visible={canScrollRight}
                 onScroll={() => scrollRef.current?.scrollBy({ left: SCROLL_STEP_PX, behavior: 'smooth' })}
+                scrollRef={scrollRef}
             />
         </div>
     );

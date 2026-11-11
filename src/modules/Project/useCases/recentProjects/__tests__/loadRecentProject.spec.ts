@@ -132,6 +132,8 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     wireSidechainRoute: vi.fn(),
 }));
 vi.mock('#/modules/Command/useCases', () => ({
+    commitUndoEntry: vi.fn(),
+    createUndoEntry: vi.fn(),
     reconcileSessionUndoForProject: vi.fn(() => {
         throw new Error('Unexpected reconcileSessionUndoForProject in this fixture');
     }),

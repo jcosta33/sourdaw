@@ -95,6 +95,7 @@ export { projectClipMidiEvents } from './grooveTemplates/projectClipMidiEvents';
 export { projectCommittedGroove } from './grooveTemplates/projectCommittedGroove';
 export { renameGrooveTemplate } from './grooveTemplates/renameGrooveTemplate';
 export { restoreDeletedGrooveTemplate } from './grooveTemplates/restoreDeletedGrooveTemplate';
+export { markGrooveTemplateProjectWrite } from './grooveTemplates/markGrooveTemplateProjectWrite';
 export { restoreGrooveAssignment } from './grooveTemplates/restoreGrooveAssignment';
 export { snapshotGrooveTemplateDeletion } from './grooveTemplates/snapshotGrooveTemplateDeletion';
 

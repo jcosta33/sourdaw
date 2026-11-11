@@ -1,5 +1,5 @@
-import type { HydratableProjectData, HydratableProjectTrack } from './isHydratableProjectData';
 import type { ProjectClip } from '../../../models/ProjectData';
+import type { HydratableProjectData, HydratableProjectTrack } from './isHydratableProjectData';
 
 function addTrackHashes(tracks: readonly HydratableProjectTrack[], hashes: Set<string>): void {
     const addClip = (clip: ProjectClip): void => {

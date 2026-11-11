@@ -28,6 +28,7 @@ const { removeYeastGrooveAssignments } = await import('../removeYeastGrooveAssig
 describe('removeYeastGrooveAssignments', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        mocks.restoreGrooveAssignment.mockReturnValue({ status: 'written' });
         mocks.assignments = [
             { consumerType: 'yeast-processor', consumerId: 'groove-1', templateId: 'straight', amount: 0.5 },
             {
@@ -42,7 +43,7 @@ describe('removeYeastGrooveAssignments', () => {
     });
 
     it('removes only the legacy and scoped assignments owned by the processor', () => {
-        removeYeastGrooveAssignments('groove-1');
+        expect(removeYeastGrooveAssignments('groove-1')).toBe(true);
 
         expect(mocks.restoreGrooveAssignment).toHaveBeenCalledTimes(2);
         expect(mocks.restoreGrooveAssignment).toHaveBeenCalledWith({

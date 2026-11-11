@@ -3,6 +3,7 @@ import { createHandler } from '#/utils/createHandler';
 import { canonicalizeGrooveTemplateId } from '../../models/GrooveTemplate';
 import { createGrooveTemplate } from '../../useCases/grooveTemplates/createGrooveTemplate';
 import { getGrooveTemplate } from '../../useCases/grooveTemplates/getGrooveTemplate';
+import { markGrooveTemplateProjectWrite } from '../../useCases/grooveTemplates/markGrooveTemplateProjectWrite';
 
 export const handleCreateGrooveTemplate = createHandler<'createGrooveTemplate'>({
     execute: (action) => {
@@ -11,7 +12,14 @@ export const handleCreateGrooveTemplate = createHandler<'createGrooveTemplate'>(
             throw new Error('Groove template ID must be nonempty');
         }
         const result = createGrooveTemplate({ ...action.payload, id });
-        return { status: result.status };
+        if (result.status === 'no-write') {
+            return { status: 'no-write' };
+        }
+        return {
+            status: 'written',
+            afterCommit: markGrooveTemplateProjectWrite,
+            afterAmbiguousCommit: markGrooveTemplateProjectWrite,
+        };
     },
     describe: (action) => {
         const id = canonicalizeGrooveTemplateId(action.payload.id);

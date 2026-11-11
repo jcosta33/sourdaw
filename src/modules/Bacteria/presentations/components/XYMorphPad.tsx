@@ -90,7 +90,7 @@ export const XYMorphPad = ({ x, y, onChange, snapshots, width, height }: XYMorph
                 return (
                     <span
                         key={snap.id}
-                        className="absolute text-micro font-bold text-rose-400/40 pointer-events-none"
+                        className="absolute text-micro font-bold text-[var(--color-accent-rose)] pointer-events-none"
                         style={corners[i]}
                     >
                         {labels[i]}

@@ -28,6 +28,8 @@ export function disposePlayheadScheduler(): void {
     schedulerSession.automaticPunch = null;
     releasePlayheadClockHold(schedulerSession.generation);
     schedulerSession.generation += 1;
+    schedulerSession.loopAudioSchedule?.reset();
+    schedulerSession.loopAudioSchedule = null;
     advanceSchedulerDiscontinuityEpoch();
     if (schedulerSession.worker) {
         schedulerSession.worker.postMessage({ type: 'stop' });

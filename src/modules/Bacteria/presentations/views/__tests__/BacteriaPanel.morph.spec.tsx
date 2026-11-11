@@ -89,4 +89,28 @@ describe('BacteriaPanel morph wiring', () => {
         expect(captureBacteriaSnapshot).toHaveBeenLastCalledWith('dev-1', 3);
         expect(applyBacteriaMorphWithAudio).not.toHaveBeenCalled();
     });
+
+    it('keeps capture one-shot actions while highlighting populated corners', () => {
+        const state = makeState();
+        state.patch.snapshots = state.patch.snapshots.map((snapshot, index) => {
+            const paramValues: Record<string, number> = index === 0 ? { mix: 0.5 } : {};
+            return { ...snapshot, paramValues };
+        });
+        bacteriaStore.set({ 'dev-1': state });
+        render(<BacteriaPanel deviceId="dev-1" />);
+
+        const populatedCapture = screen.getByRole('button', { name: 'Capture snapshot A' });
+        const emptyCapture = screen.getByRole('button', { name: 'Capture snapshot B' });
+        expect(populatedCapture).not.toHaveAttribute('aria-pressed');
+        expect(emptyCapture).not.toHaveAttribute('aria-pressed');
+        expect(populatedCapture).toHaveClass('text-[var(--color-accent-mint)]');
+        expect(emptyCapture).not.toHaveClass('text-[var(--color-accent-mint)]');
+        // The populated state is not colour-only: it reaches the accessible
+        // description so assistive tech can tell the corners apart.
+        expect(populatedCapture).toHaveAttribute(
+            'aria-description',
+            'Populated; capturing overwrites the stored snapshot'
+        );
+        expect(emptyCapture).not.toHaveAttribute('aria-description');
+    });
 });

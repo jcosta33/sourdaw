@@ -24,7 +24,9 @@ import { templateArpeggiatorAuthoring } from '../templateArpeggiatorAuthoring';
 templateArpeggiatorAuthoring.configure({
     focusRack: setActiveYeastDevice,
     addProcessor: addYeastProcessor,
-    setProcessorParam: setYeastProcessorParam,
+    setProcessorParam: async (processorId, name, value) => {
+        await setYeastProcessorParam(processorId, name, value);
+    },
 });
 
 function makeTrack(devices: Track['devices']): Track {

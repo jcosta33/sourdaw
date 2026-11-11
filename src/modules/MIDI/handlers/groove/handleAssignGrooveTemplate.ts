@@ -3,6 +3,7 @@ import { createHandler } from '#/utils/createHandler';
 import { assignGrooveTemplate } from '../../useCases/grooveTemplates/assignGrooveTemplate';
 import { canonicalizeGrooveTemplateAssignment } from '../../useCases/grooveTemplates/canonicalizeGrooveTemplateAssignment';
 import { getGrooveAssignment } from '../../useCases/grooveTemplates/getGrooveAssignment';
+import { markGrooveTemplateProjectWrite } from '../../useCases/grooveTemplates/markGrooveTemplateProjectWrite';
 
 export const handleAssignGrooveTemplate = createHandler<'assignGrooveTemplate'>({
     isNoop: (action) => {
@@ -21,6 +22,14 @@ export const handleAssignGrooveTemplate = createHandler<'assignGrooveTemplate'>(
         if (!result.ok) {
             throw new Error(`Groove assignment rejected: ${result.error.code}`);
         }
+        if (result.status === 'no-write') {
+            return { status: 'no-write' };
+        }
+        return {
+            status: 'written',
+            afterCommit: markGrooveTemplateProjectWrite,
+            afterAmbiguousCommit: markGrooveTemplateProjectWrite,
+        };
     },
     describe: (action) => {
         const expectedAssignment = canonicalizeGrooveTemplateAssignment(action.payload);

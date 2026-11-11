@@ -50,6 +50,12 @@ describe('createGrooveTemplate', () => {
         grooveTemplateStore.set(structuredClone(defaultGrooveTemplateState));
     });
 
+    it('reports creation without notifying before publication', () => {
+        expect(createGrooveTemplate(input)).toMatchObject({ status: 'written', template: { id: input.id } });
+        expect(grooveTemplateStore.value?.templates).toContainEqual(prepareGrooveTemplateCreation(input));
+        expect(mockMarkWrite).not.toHaveBeenCalled();
+    });
+
     it('returns no-write for an existing template whose object keys were reordered', () => {
         const canonical = prepareGrooveTemplateCreation(input);
         const reordered = reorderTemplate(canonical);

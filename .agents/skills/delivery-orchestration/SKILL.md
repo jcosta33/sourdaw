@@ -198,10 +198,9 @@ milestone and project mechanics, branch-type warnings, and off-convention lanes:
 
 ### e. Wait for push checks and mergeability
 
-- Wait for the entire `PR checks` workflow on the exact head to conclude `SUCCESS`; a green
-  `Plan push checks` job alone is not the workflow result.
-- A model-label event may trigger a pre-approval `Gate` failure; that separate run is expected and is
-  not awaited before independent review and reviewer-App approval.
+- Wait for the entire `Health gates` workflow on the exact head to conclude `SUCCESS`; a green
+  `Plan required checks` job alone is not the workflow result. A draft fails `Gate` without running
+  the heavy jobs.
 - Use one observer per PR; back off on read failures or use a connected reader that returns complete
   checks. Job pages can omit results: establish completion from the whole exact-head workflow or a
   complete check rollup, never a green subset, and do not rerun CI because a status read failed.
@@ -235,21 +234,37 @@ Derive the stances under AGENTS.md [Review](../../../AGENTS.md#review) and the
 plan's classes name risk surfaces the stance enumeration must weigh and set the draw floor; they
 never name the stances:
 
-| Class                                                                                       | Earns                                                     | Draw floor |
-| ------------------------------------------------------------------------------------------- | --------------------------------------------------------- | ---------- |
-| `docs-only` (every path Markdown outside `public/`)                                         | correctness                                               | 1          |
-| `test-only` (every path a test)                                                             | test-validity                                             | 1          |
-| `small` (no specialist surface, within the line budget, handwritten paths all under `src/`) | correctness, test-validity                                | 2          |
-| `small-tooling` (the same, with handwritten paths outside `src/`)                           | correctness, module-boundaries, test-validity             | 3          |
-| `ordinary` (no specialist surface, over the budget)                                         | correctness, code-craft, module-boundaries, test-validity | 3          |
-| `cross-domain`                                                                              | correctness, module-boundaries, test-validity             | 3          |
-| `realtime-audio`                                                                            | correctness, realtime-audio, test-validity                | 3          |
-| `native-security`                                                                           | correctness, security-platform, test-validity             | 3          |
-| `undo`                                                                                      | correctness, project-integrity-undo, test-validity        | 3          |
+| Class                                                                                       | Earns                                                     | Machine draw floor |
+| ------------------------------------------------------------------------------------------- | --------------------------------------------------------- | ------------------ |
+| `docs-only` (Markdown outside `public/` and `.github/`, not a test fixture)                 | correctness                                               | 1                  |
+| `test-only` (every path a test outside `.github/`)                                          | test-validity                                             | 1                  |
+| `small` (no specialist surface, within the line budget, handwritten paths all under `src/`) | correctness, test-validity                                | 2                  |
+| `small-tooling` (the same, with handwritten paths outside `src/`)                           | correctness, module-boundaries, test-validity             | 3                  |
+| `ordinary` (no specialist surface, over the budget)                                         | correctness, code-craft, module-boundaries, test-validity | 3                  |
+| `cross-domain`                                                                              | correctness, module-boundaries, test-validity             | 3                  |
+| `realtime-audio`                                                                            | correctness, realtime-audio, test-validity                | 3                  |
+| `native-security`                                                                           | correctness, security-platform, test-validity             | 3                  |
+| `undo`                                                                                      | correctness, project-integrity-undo, test-validity        | 3                  |
 
-A plan of several classes needs three distinct stances, or every stance its classes earn when they
-earn fewer. Specialist classes keep those stance and evidence obligations within the same reviewer
-cost ceiling.
+**The floor is what `review:publish` can prove, not the review this procedure asks for.** Any change
+that is not absolutely tiny and harmless must carry at least **three distinct stances**, whatever its
+size class says. `small`'s floor of two is a tolerance for a genuinely trivial edit, never a licence
+to review a behavior change through two lenses. A round about to run on such a head with fewer than
+three stances is not this procedure: stop and dispatch the third.
+
+Stances are the mechanism, not the paperwork. One reader finds what the reader already expects; three
+blind stances with distinct failure modes find the silent ones — a check that cannot fail, a suite the
+push workflow never ran, the state a theme was never given. A change is absolutely tiny and harmless
+only when it cannot alter what the product does, what a test proves, what a rule, procedure, contract
+or decision requires or records, which document or section a requirement points at, a persisted or
+generated artifact, or a build or delivery path; such a change may honestly run one, subject to the
+machine floor of its class. Any other change carries three.
+
+A stance is a failure mode, never a file, a path, or a role: "correctness" above all is the baseline
+every reviewer already holds, not a stance. Three stance _names_ satisfy `review:publish` even when
+they describe one failure mode; the script counts names and cannot check independence, so
+independence is the orchestrator's judgement. Do not spend the floor on synonyms. Specialist classes
+keep those stance and evidence obligations within the same reviewer cost ceiling.
 
 Before reading any stance report, review the whole head yourself under AGENTS.md
 [Review](../../../AGENTS.md#review): no stance, against the request and the author brief. Read the
@@ -339,7 +354,7 @@ bundles or posted reviews. Keep detailed logs in the session and the concise hea
 verification record in structured bundle evidence. The public approval carries only its short
 conclusion; the structured evidence never leaves the bundle.
 
-A minimal `REQUEST_CHANGES` on a `small` plan, with one finding and one clean draw:
+A minimal `REQUEST_CHANGES` on a `small` plan, with one finding and two clean draws:
 
 ```json
 {
@@ -369,13 +384,19 @@ A minimal `REQUEST_CHANGES` on a `small` plan, with one finding and one clean dr
             "reviewerModel": "gpt-6-luna",
             "tier": "economy",
             "outcome": "clean"
+        },
+        {
+            "stance": "non-finite-tempo-input",
+            "reviewerModel": "gpt-6-luna",
+            "tier": "economy",
+            "outcome": "clean"
         }
     ],
     "discarded": [{ "finding": "rename tempo to bpm in setTempo", "reason": "personal style, no defect" }]
 }
 ```
 
-A minimal `APPROVE` on the same plan:
+A minimal `APPROVE` on the same plan, with three clean draws:
 
 ```json
 {
@@ -392,6 +413,12 @@ A minimal `APPROVE` on the same plan:
         },
         {
             "stance": "tempo-undo-restores-stale-map",
+            "reviewerModel": "gpt-6-luna",
+            "tier": "economy",
+            "outcome": "clean"
+        },
+        {
+            "stance": "non-finite-tempo-input",
             "reviewerModel": "gpt-6-luna",
             "tier": "economy",
             "outcome": "clean"
@@ -412,7 +439,7 @@ A minimal `APPROVE` on the same plan:
 
 ### i. Before any APPROVE publish
 
-- The whole `PR checks` workflow is `SUCCESS` on that exact head (step e).
+- The whole `Health gates` workflow is `SUCCESS` on that exact head (step e).
 - `gh pr view <pr> --json mergeable` reads `MERGEABLE`; wait out `UNKNOWN`, and resolve `CONFLICTING`
   with a new head and a fresh round.
 - Zero unresolved review threads, CodeQL `github-advanced-security` threads included.
@@ -422,6 +449,9 @@ A minimal `APPROVE` on the same plan:
   [repair](#k-repair), never by approving over them.
 - Your [global review](#f-review-round) of this exact head holds, and you would merge it; never
   approve a head you judge unfit, whatever the draws say.
+- The round carried at least three distinct stances on this head unless the change is absolutely tiny
+  and harmless under [review round](#f-review-round); a thinner round is a review defect, not a
+  shortcut.
 - The document carries no inline comments and its body fits 600 Unicode code points; observations go
   in the body as `Nit:` or `Optional:`, or are filed.
 
@@ -436,15 +466,10 @@ another post. A legacy bundle without a risk plan retains its historical shape. 
 replay contract: [review records](references/review-records.md).
 
 Post validated blockers as a `REQUEST_CHANGES` review BEFORE dispatching any repair.
-`REQUEST_CHANGES` removes the `ci:approved` label.
 
 On a clean round, the reviewer posts one APPROVE; that reviewer APPROVE on the current head records
-the delivery authorization in the head's dossier, and `review:publish` then re-applies the
-`ci:approved` label as the reviewer App, after its publication lock is released; a failed label write
-exits nonzero naming the pull request, and a plain re-run replays the review and retries it. That
-label event alone starts the heavy checks and `Gate`, so CI capacity is spent once per approved
-head. Re-running `review:publish` on the same head replays the review and re-applies the label,
-which restarts a `Gate` that a later label event failed or cancelled.
+the delivery authorization in the head's dossier. Approval does not start CI: `Health gates` already
+ran for the non-draft head, and a later push starts it again.
 
 ### k. Repair
 
@@ -469,7 +494,7 @@ clarify code, not threads. Full eligibility, ancestry, and crash-recovery mechan
 
 ### l. Gate and deliver
 
-Wait for the approval-triggered `Gate`. The merge is your decision: run `pnpm deliver <pr>` from the
+`Gate` already ran on this head. A later push starts it again and needs a fresh review. The merge is your decision: run `pnpm deliver <pr>` from the
 protected primary checkout, and the script squash-merges as the immutable author App after the
 reviewer APPROVE and a green `Gate`.
 
@@ -648,7 +673,7 @@ author brief's approach and reasoning never reach a reviewer, the bundle, or the
 
 ## Freeze
 
-At five reviewer `REQUEST_CHANGES` rounds a PR is frozen to fresh publication under AGENTS.md
+At ten reviewer `REQUEST_CHANGES` rounds a PR is frozen to fresh publication under AGENTS.md
 [Review](../../../AGENTS.md#review); mechanics in [review records](references/review-records.md).
 
 ## References

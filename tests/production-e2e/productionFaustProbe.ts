@@ -229,7 +229,7 @@ export function installFaustProbe(): void {
             successObserver = new MutationObserver((mutations) => {
                 for (const mutation of mutations) {
                     for (const node of mutation.addedNodes) {
-                        if (node.textContent?.includes('Ding! The audio finished baking')) {
+                        if (node.textContent?.includes('Audio exported')) {
                             successNotifications++;
                         }
                     }

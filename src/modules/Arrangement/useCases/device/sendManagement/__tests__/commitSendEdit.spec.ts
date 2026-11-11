@@ -14,6 +14,8 @@ const mocks = vi.hoisted(() => ({
 // The real Routing barrel below reaches modules that import the other names, so
 // the factory names them; none is called by the code under test.
 vi.mock('#/modules/Command/useCases', () => ({
+    commitUndoEntry: vi.fn(),
+    createUndoEntry: vi.fn(),
     executeAppAction: mocks.executeAppAction,
     executeUserAppAction: vi.fn(),
     getExecutableAppActionEffect: vi.fn(),

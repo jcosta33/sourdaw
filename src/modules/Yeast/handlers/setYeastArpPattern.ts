@@ -1,3 +1,4 @@
+import { markGrooveTemplateProjectWrite } from '#/modules/MIDI/useCases';
 import { createHandler } from '#/utils/createHandler';
 import { type HandlerValidationContext } from '#/utils/handlerContract';
 
@@ -57,8 +58,15 @@ export const handleSetYeastArpPattern = createHandler<'setYeastArpPattern'>({
         // The use case writes the store before its first await, so the write
         // lands inside the dispatch's storage transaction; the awaited tail
         // only pushes the runtime projection to the worker.
-        await setYeastArpPattern(action.payload.processorId, action.payload.steps);
-        return { status: 'written' };
+        const grooveChanged = await setYeastArpPattern(action.payload.processorId, action.payload.steps);
+        if (!grooveChanged) {
+            return { status: 'written' };
+        }
+        return {
+            status: 'written',
+            afterCommit: markGrooveTemplateProjectWrite,
+            afterAmbiguousCommit: markGrooveTemplateProjectWrite,
+        };
     },
     isNoop: (action) => {
         const processor = findLiveProcessor(action.payload.processorId);
