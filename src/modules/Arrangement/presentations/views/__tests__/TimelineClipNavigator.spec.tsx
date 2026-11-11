@@ -436,7 +436,7 @@ describe('TimelineClipNavigator', () => {
         expect(activeOption(listbox)).toHaveAccessibleName(/Take, Voice, audio clip/);
         expect(screen.getByText('1 of 3 clips')).toBeInTheDocument();
 
-        fireEvent.click(screen.getByRole('button', { name: 'MIDI', exact: true }));
+        fireEvent.click(screen.getByRole('button', { name: 'MIDI' }));
         expect(within(listbox).queryAllByRole('option')).toHaveLength(0);
         expect(screen.getByText('No matching clips')).toBeInTheDocument();
         expect(screen.getByText('0 of 3 clips')).toBeInTheDocument();

@@ -138,11 +138,11 @@ export function TimelineClipNavigator({ onClose }: { onClose: () => void }): Rea
             onClose();
             return;
         }
-        moveTo(
-            event.key === 'ArrowDown'
-                ? Math.min(activeIndex + 1, filteredClips.length - 1)
-                : Math.max(activeIndex - 1, 0)
-        );
+        if (event.key === 'ArrowDown') {
+            moveTo(Math.min(activeIndex + 1, filteredClips.length - 1));
+        } else {
+            moveTo(Math.max(activeIndex - 1, 0));
+        }
         listboxRef.current?.focus();
     }
 
