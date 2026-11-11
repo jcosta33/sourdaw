@@ -1,0 +1,26 @@
+src/modules/Fermenter/presentations/components/PresetBrowser.tsx
+  h_beb54bf43b47b7 131-133
+src/modules/Fermenter/presentations/components/__tests__/PresetBrowser.spec.tsx
+  h_beb54bf43b47b7 87,90,92
+src/modules/Toaster/presentations/components/PadMixer.tsx
+  h_beb54bf43b47b7 134
+src/modules/Toaster/presentations/components/__tests__/PadMixer.spec.tsx
+  h_beb54bf43b47b7 163-170
+src/modules/Toaster/presentations/views/__tests__/ToasterPadMuteWiring.spec.tsx
+  h_beb54bf43b47b7 85
+src/modules/Toaster/presentations/views/__tests__/ToasterPadSoloWiring.spec.tsx
+  h_beb54bf43b47b7 83
+tests/e2e/toasterPadMixerTestId.spec.ts
+  h_beb54bf43b47b7 17,23
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "fbb9f82da220928e6118fa7c8ec8644fd9a87b71",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
