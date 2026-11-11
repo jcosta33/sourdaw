@@ -75,14 +75,12 @@ export function revealClip(clipId: string): boolean {
         const preceding = visibleTracks[index]!;
         trackTop += getTimelineTrackHeight(preceding) + getVariationLaneExtent(preceding);
     }
-    const targetTop =
-        located.variationLaneIndex === null
-            ? trackTop
-            : trackTop + getTimelineTrackHeight(track) + located.variationLaneIndex * VARIATION_LANE_HEIGHT;
-    const targetBottom =
-        located.variationLaneIndex === null
-            ? trackTop + getTimelineTrackHeight(track)
-            : targetTop + VARIATION_LANE_HEIGHT;
+    let targetTop = trackTop;
+    let targetBottom = trackTop + getTimelineTrackHeight(track);
+    if (located.variationLaneIndex !== null) {
+        targetTop = trackTop + getTimelineTrackHeight(track) + located.variationLaneIndex * VARIATION_LANE_HEIGHT;
+        targetBottom = targetTop + VARIATION_LANE_HEIGHT;
+    }
     const viewportHeight = view.viewportHeight ?? 0;
     if (targetTop < view.scrollY) {
         setScrollY(targetTop);

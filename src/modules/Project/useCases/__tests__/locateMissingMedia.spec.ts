@@ -23,8 +23,14 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     discardDecodedAudioFile: mocks.discardDecodedAudioFile,
     getCachedAudioBuffer: ({ bufferId }: { bufferId: string }) => mocks.buffers.get(bufferId) ?? null,
 }));
-vi.mock('#/modules/Command/useCases', () => ({ pushUndoEntry: vi.fn() }));
-vi.mock('#/modules/Knead/useCases', () => ({ clearClipPitchAnalysis: vi.fn() }));
+vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Command/useCases')>()),
+    pushUndoEntry: vi.fn(),
+}));
+vi.mock('#/modules/Knead/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Knead/useCases')>()),
+    clearClipPitchAnalysis: vi.fn(),
+}));
 vi.mock('../projectPersistence/captureProjectTransitionAuthority', () => ({
     captureProjectTransitionAuthority: () => ({ isCurrent: mocks.isCurrentProject }),
 }));
@@ -249,6 +255,74 @@ describe('locateMissingMedia', () => {
         ]);
         expect(notifyUser).toHaveBeenCalledWith(
             '2 selected files did not uniquely match a missing clip name and were left unchanged.',
+            'warning'
+        );
+    });
+
+    it('does not strip a dotted source label when its suffix is not an audio extension', async () => {
+        arrange([
+            audioClip('clip-guitar', 'track-one', 'buf-guitar', 'Guitar.wav'),
+            audioClip('clip-mix', 'track-two', 'buf-mix', 'mix.v2'),
+        ]);
+        vi.mocked(pickFilesFromNativeDialog)
+            .mockResolvedValueOnce([replacement('guitar-replacement.wav')])
+            .mockResolvedValueOnce([replacement('mix.wav')]);
+        vi.mocked(confirmUser).mockResolvedValue(true);
+
+        await locateMissingMedia({ sourceBufferId: 'buf-guitar', label: 'Guitar.wav' });
+
+        expect(trackStore.value?.tracks.map((track) => track.clips[0]?.audioBufferId)).toEqual([
+            'decoded-guitar-replacement.wav',
+            'buf-mix',
+        ]);
+        expect(mocks.decodeAudioFile).toHaveBeenCalledTimes(1);
+        expect(notifyUser).toHaveBeenCalledWith(
+            '1 selected file did not uniquely match a missing clip name and was left unchanged.',
+            'warning'
+        );
+    });
+
+    it('matches a dotted source label to its audio filename', async () => {
+        arrange([
+            audioClip('clip-guitar', 'track-one', 'buf-guitar', 'Guitar.wav'),
+            audioClip('clip-mix', 'track-two', 'buf-mix', 'mix.v2'),
+        ]);
+        vi.mocked(pickFilesFromNativeDialog)
+            .mockResolvedValueOnce([replacement('guitar-replacement.wav')])
+            .mockResolvedValueOnce([replacement('mix.v2.wav')]);
+        vi.mocked(confirmUser).mockResolvedValue(true);
+
+        await locateMissingMedia({ sourceBufferId: 'buf-guitar', label: 'Guitar.wav' });
+
+        expect(trackStore.value?.tracks.map((track) => track.clips[0]?.audioBufferId)).toEqual([
+            'decoded-guitar-replacement.wav',
+            'decoded-mix.v2.wav',
+        ]);
+        expect(mocks.decodeAudioFile).toHaveBeenCalledTimes(2);
+        expect(missingMediaStore.value).toEqual(defaultMissingMediaStoreState);
+    });
+
+    it('leaves two missing sources with the same normalized name unchanged', async () => {
+        arrange([
+            audioClip('clip-guitar', 'track-one', 'buf-guitar', 'Guitar.wav'),
+            audioClip('clip-bass-one', 'track-two', 'buf-bass-one', 'Bass.wav'),
+            audioClip('clip-bass-two', 'track-three', 'buf-bass-two', 'Bass.wav'),
+        ]);
+        vi.mocked(pickFilesFromNativeDialog)
+            .mockResolvedValueOnce([replacement('guitar-replacement.wav')])
+            .mockResolvedValueOnce([replacement('Bass.wav')]);
+        vi.mocked(confirmUser).mockResolvedValue(true);
+
+        await locateMissingMedia({ sourceBufferId: 'buf-guitar', label: 'Guitar.wav' });
+
+        expect(trackStore.value?.tracks.map((track) => track.clips[0]?.audioBufferId)).toEqual([
+            'decoded-guitar-replacement.wav',
+            'buf-bass-one',
+            'buf-bass-two',
+        ]);
+        expect(mocks.decodeAudioFile).toHaveBeenCalledTimes(1);
+        expect(notifyUser).toHaveBeenCalledWith(
+            '1 selected file did not uniquely match a missing clip name and was left unchanged.',
             'warning'
         );
     });

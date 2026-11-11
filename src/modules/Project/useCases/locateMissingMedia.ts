@@ -1,6 +1,6 @@
 import { relinkClipAudioSource } from '#/modules/Arrangement/useCases';
 import { decodeAudioFile, discardDecodedAudioFile } from '#/modules/AudioEngine/useCases';
-import { AUDIO_EXTENSION_ROSTER, isAudioFile } from '#/utils/audioFileExtensions';
+import { AUDIO_EXTENSION_ROSTER, AUDIO_EXTENSIONS, isAudioFile } from '#/utils/audioFileExtensions';
 import { confirmUser } from '#/utils/Notification/confirmUser';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
@@ -20,7 +20,11 @@ type MissingSource = {
 function comparableSourceName(name: string): string {
     const normalized = name.trim().toLowerCase();
     const extensionStart = normalized.lastIndexOf('.');
-    return extensionStart > 0 ? normalized.slice(0, extensionStart) : normalized;
+    const extension = normalized.slice(extensionStart + 1);
+    if (extensionStart <= 0 || !AUDIO_EXTENSIONS.has(extension)) {
+        return normalized;
+    }
+    return normalized.slice(0, extensionStart);
 }
 
 async function pickReplacements(multiple: boolean): Promise<File[] | null> {
