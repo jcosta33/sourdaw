@@ -35,7 +35,7 @@ type HandlerConfig<ActionType extends AppAction['type']> = {
         action: Extract<AppAction, { type: ActionType }>,
         context?: HandlerMaterializationContext
     ) => void;
-    materializeCommandArgumentsAt?: 'admission';
+    materializeCommandArgumentsAt?: 'admission' | 'execution';
     validateMaterializedCommandArguments?: (payload: unknown) => boolean;
     validateSessionActionArguments?: (payload: unknown) => boolean;
     prepareAbort?: (
