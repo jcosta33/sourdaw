@@ -1,0 +1,42 @@
+src/modules/Command/useCases/__tests__/redo.spec.ts
+  h_beb54bf43b47b7 475-487
+src/modules/Command/useCases/redo.ts
+  h_beb54bf43b47b7 252-256,301,305,316,323,331,334,337,370,372,384,398,400,413,422,438
+src/modules/CommandInterface/presentations/views/CommandPalette.tsx
+  h_beb54bf43b47b7 14-16,136-141
+src/modules/CommandInterface/presentations/views/commandRegistry.ts
+  h_beb54bf43b47b7 31
+src/modules/CommandInterface/services/__tests__/commandSearch.spec.ts
+  h_beb54bf43b47b7 141-170
+src/modules/CommandInterface/services/commandSearch.ts
+  h_beb54bf43b47b7 72-77
+src/modules/CommandInterface/useCases/commands/AiCommands.ts
+  h_beb54bf43b47b7 7,11,76-77,89-90,99-100,109-110,119-120
+src/modules/CommandInterface/useCases/commands/ClipCommands.ts
+  h_beb54bf43b47b7 9,64,66,77,79
+src/modules/CommandInterface/useCases/commands/EditCommands.ts
+  h_beb54bf43b47b7 18-22,32-36
+src/modules/CommandInterface/useCases/commands/__tests__/AiCommands.spec.ts
+  h_beb54bf43b47b7 11,22,27,34,36,93,110,113-116,121-122,133-145
+src/modules/CommandInterface/useCases/commands/__tests__/ClipCommands.spec.ts
+  h_beb54bf43b47b7 24,43-45,102-114
+src/modules/CommandInterface/useCases/commands/__tests__/EditCommandsDeep.spec.ts
+  h_beb54bf43b47b7 6-7,29,37,55-81
+src/modules/CommandInterface/useCases/commands/__tests__/ProjectCommands.spec.ts
+  h_beb54bf43b47b7 31
+src/modules/CommandInterface/useCases/getCommandInapplicabilityReason.ts
+  h_beb54bf43b47b7 1-6
+src/modules/CommandInterface/useCases/searchCommandRegistry.ts
+  h_beb54bf43b47b7 6-7
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9db766bce3026136f0b60b17ae9a58bae722620c",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
