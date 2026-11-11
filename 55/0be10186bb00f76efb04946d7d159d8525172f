@@ -1,0 +1,50 @@
+scripts/__tests__/cleanupLanes.spec.ts
+  s_c145dcc26d5369::t_24a163da7d17b8 663-682
+scripts/__tests__/pruneLane.spec.ts
+  s_c145dcc26d5369::t_ffe5306cd1d32a 462-498
+scripts/__tests__/installCleanupLanes.spec.ts
+  s_c145dcc26d5369::t_81ff17e316e8df 636-684
+scripts/__tests__/removeLane.spec.ts
+  s_c145dcc26d5369::t_343c0d15078788 1901-1916
+  s_c145dcc26d5369::t_b2107d8e28337f 324,328-340,342-363
+  s_c145dcc26d5369::t_7329b21bbc57d2 26
+  s_c145dcc26d5369::t_af2f1a8c7eee50 1356-1373
+  s_c145dcc26d5369::t_c03e40c297bcbe 325-327
+  s_c145dcc26d5369::t_bd19992ecdf6bf 1619-1651
+scripts/installCleanupLanes.ts
+  s_c145dcc26d5369::t_771d276c082cbe 300-313,321-353,421-422,424,426,429
+  s_c145dcc26d5369::t_5ae3104c34c456 314-320
+scripts/claimTrackerIssue.ts
+  s_c145dcc26d5369::t_771d276c082cbe 275-279
+scripts/removeLane.ts
+  s_c145dcc26d5369::t_fe86d9975b3f16 327
+  s_c145dcc26d5369::t_3ab64d818b33be 174-209,221-225
+  s_c145dcc26d5369::t_5912f7e60c2354 254-273
+  s_c145dcc26d5369::t_6eda16bf071b5d 536
+  s_c145dcc26d5369::t_40e661c76c68bb 453-457
+  s_c145dcc26d5369::t_57781e761be3dd 1040
+  s_c145dcc26d5369::t_9c5bd73c742b74 313,317
+scripts/__tests__/claimTrackerIssue.spec.ts
+  s_c145dcc26d5369::t_81ff17e316e8df 236-252
+scripts/pruneLane.ts
+  s_c145dcc26d5369::t_222579a701e458 128
+  s_c145dcc26d5369::t_e4260b88126c8c 289
+  s_c145dcc26d5369::t_75d8baa4cabe12 50
+  s_c145dcc26d5369::t_0bfce3c8d605f4 121-124,126-127,129-133
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "550be10186bb00f76efb04946d7d159d8525172f",
+  "prompts": {},
+  "sessions": {
+    "s_c145dcc26d5369": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0fdf4e1b-0f0f-48bd-96c3-1653143867d3",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
