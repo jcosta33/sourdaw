@@ -1,0 +1,54 @@
+src/infra/store/storage/LocalStorageKeys.ts
+  h_beb54bf43b47b7 108-110
+src/modules/Arrangement/models/TimelineHorizontalExtent.ts
+  h_beb54bf43b47b7 1-13
+src/modules/Arrangement/presentations/views/TimelineSurface.tsx
+  h_beb54bf43b47b7 19,330-332
+src/modules/Arrangement/presentations/views/__tests__/TimelineSurface.spec.tsx
+  h_beb54bf43b47b7 10,148,302,318,327
+src/modules/Arrangement/stores/index.ts
+  h_beb54bf43b47b7 29-30
+src/modules/Arrangement/stores/timelineViewStore.ts
+  h_beb54bf43b47b7 3,13-18,22-23,28-29,36,45-59,65-70,87,96,104-107,126-133,135,140,142,147-158,162-166,179-194
+src/modules/Arrangement/useCases/__tests__/projectWorkingView.spec.ts
+  h_beb54bf43b47b7 1-147
+src/modules/Arrangement/useCases/getTimelineHorizontalContentWidth.ts
+  h_beb54bf43b47b7 1-10
+src/modules/Arrangement/useCases/index.ts
+  h_beb54bf43b47b7 294-295
+src/modules/Arrangement/useCases/initTimelineScrollClamp.ts
+  h_beb54bf43b47b7 1,5-6,10
+src/modules/Arrangement/useCases/projectWorkingView.ts
+  h_beb54bf43b47b7 1-9
+src/modules/TimelineEditor/presentations/views/ArrangeView.tsx
+  h_beb54bf43b47b7 27-32,374
+src/modules/TimelineEditor/presentations/views/__tests__/ArrangeView.spec.tsx
+  h_beb54bf43b47b7 4,6-10,268,364
+src/modules/WorkspaceShell/models/ProjectWorkingView.ts
+  h_beb54bf43b47b7 1-155
+src/modules/WorkspaceShell/models/__tests__/ProjectWorkingView.spec.ts
+  h_beb54bf43b47b7 1-105
+src/modules/WorkspaceShell/presentations/hooks/__tests__/useAppInitialization.spec.ts
+  h_beb54bf43b47b7 111-114
+src/modules/WorkspaceShell/presentations/hooks/useAppInitialization.ts
+  h_beb54bf43b47b7 34-35,41
+src/modules/WorkspaceShell/repositories/projectWorkingViewStorage.ts
+  h_beb54bf43b47b7 1-27
+src/modules/WorkspaceShell/useCases/__tests__/projectWorkingViewPersistence.spec.ts
+  h_beb54bf43b47b7 1-213
+src/modules/WorkspaceShell/useCases/initProjectWorkingViewPersistence.ts
+  h_beb54bf43b47b7 1-138
+tests/e2e/projectWorkingView.spec.ts
+  h_beb54bf43b47b7 1-127
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7d37c8c60161bbf201a2b10fd74efad7f2976df2",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
