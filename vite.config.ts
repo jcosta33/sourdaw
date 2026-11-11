@@ -10,7 +10,11 @@ import { tanstackRouter } from '@tanstack/router-plugin/vite';
 import react, { reactCompilerPreset } from '@vitejs/plugin-react';
 import { configDefaults, defineConfig, type Plugin } from 'vitest/config';
 
-import { createSourdawRootHeaderMiddleware, isSourdawE2eServeMode } from './scripts/e2eServerIdentity';
+import {
+    createSourdawRootHeaderMiddleware,
+    isSourdawE2eServeMode,
+    SOURDAW_E2E_RUN_TOKEN_ENV,
+} from './scripts/e2eServerIdentity';
 import { sourdawE2eStartupDiagnosticsPlugin } from './scripts/e2eStartupDiagnostics.ts';
 import { sourdawE2eUncachedResponsesPlugin } from './scripts/e2eUncachedResponses';
 
@@ -38,19 +42,24 @@ const FAUSTWASM_WORKLET_SCOPE_NAMES = [
 /**
  * E2E-only serving-identity marker. Browser verification on a shared machine
  * must prove which checkout answers before reusing a server, so every dev
- * and preview response in `--mode e2e` carries this checkout's vite root. The plugin
- * self-gates on the resolved command and mode: plain `pnpm dev`, vitest, and
- * production builds carry no marker.
+ * and preview response in `--mode e2e` carries this checkout's vite root, plus
+ * the guard-issued run token when the server was started under a recovery
+ * proof. The plugin self-gates on the resolved command and mode: plain
+ * `pnpm dev`, vitest, and production builds carry no marker.
  */
 function sourdawE2eServingCheckoutPlugin(): Plugin {
     return {
         name: 'sourdaw-e2e-serving-checkout',
         apply: (_config, { command, mode }) => command === 'serve' && isSourdawE2eServeMode(mode),
         configureServer(server) {
-            server.middlewares.use(createSourdawRootHeaderMiddleware(server.config.root));
+            server.middlewares.use(
+                createSourdawRootHeaderMiddleware(server.config.root, process.env[SOURDAW_E2E_RUN_TOKEN_ENV])
+            );
         },
         configurePreviewServer(server) {
-            server.middlewares.use(createSourdawRootHeaderMiddleware(server.config.root));
+            server.middlewares.use(
+                createSourdawRootHeaderMiddleware(server.config.root, process.env[SOURDAW_E2E_RUN_TOKEN_ENV])
+            );
         },
     };
 }
@@ -164,7 +173,7 @@ export default defineConfig({
     base: './',
     optimizeDeps: {
         // ORT pthreads reuse their module URL; late optimization invalidates that URL during session creation.
-        include: ['onnxruntime-web'],
+        include: ['@automerge/automerge/slim', 'onnxruntime-web'],
     },
     worker: {
         // Force IIFE format for all worker bundles so each processor file is
@@ -256,6 +265,10 @@ export default defineConfig({
     resolve: {
         alias: [
             { find: '#', replacement: fileURLToPath(new URL('./src', import.meta.url)) },
+            {
+                find: /^@automerge\/automerge\/automerge\.wasm$/,
+                replacement: `${fileURLToPath(import.meta.resolve('@automerge/automerge/automerge.wasm'))}?url`,
+            },
             // Exact match: a string find would prefix-match and break the
             // `@automerge/automerge/slim` and `/automerge.wasm` subpaths.
             { find: /^@automerge\/automerge$/, replacement: AUTOMERGE_BASE64_ENTRY },

@@ -105,5 +105,12 @@ describe('BacteriaPanel morph wiring', () => {
         expect(emptyCapture).not.toHaveAttribute('aria-pressed');
         expect(populatedCapture).toHaveClass('text-[var(--color-accent-mint)]');
         expect(emptyCapture).not.toHaveClass('text-[var(--color-accent-mint)]');
+        // The populated state is not colour-only: it reaches the accessible
+        // description so assistive tech can tell the corners apart.
+        expect(populatedCapture).toHaveAttribute(
+            'aria-description',
+            'Populated; capturing overwrites the stored snapshot'
+        );
+        expect(emptyCapture).not.toHaveAttribute('aria-description');
     });
 });

@@ -20,6 +20,8 @@ export const devServerOnlySpecs: readonly string[] = [
     'tests/e2e/controlGallery.spec.ts',
     'tests/e2e/controlledRecipesEffect.spec.ts',
     'tests/e2e/crdtPersistence.native.spec.ts',
+    'tests/e2e/e2eStartupDiagnostics.spec.ts',
+    'tests/e2e/elasticTransientWorkerPerformance.spec.ts',
     'tests/e2e/grinderOfflineNumericParity.spec.ts',
     'tests/e2e/grinderStackedLstmAdmission.spec.ts',
     'tests/e2e/kokoroNeuralPipeline.spec.ts',

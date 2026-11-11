@@ -98,6 +98,15 @@ Report a probe that cannot run with its exact mutation, named check and limitati
    Publish newer same-slot authority from inside each guarded terminal or hydrate callback, with
    projectors that return null or throw and no configured initial value. A failed initialization must
    replay its original error to later requests with no second construction or ready reply.
+   Sequential completed additions hid #6202's default-name read before the snapshot wait. Start both real UI
+   commands while that transaction is held, observe both wait admissions, then release and await every command.
+   Distinct IDs, complete persisted track arrays and recorded history names must agree before requiring distinct
+   consecutive names; transient selection and ghost state are not persisted-slot fields. Reverting only the owner's
+   late naming phase must fail `handleAddTrackDefaultName.integration.spec.ts`. Cleanup releases and settles every
+   created promise even when an earlier assertion fails; a later await preserves the original command failure.
+   A batch materializes arguments before member writes: addition-only prefixes miss earlier renames, removals and
+   restorations. Exercise real rename/remove-then-add groups and producer-captured restore tuples, distinguishing
+   actual stored names from event metadata; a terminal name assertion without raw/history agreement cannot prove it.
    (#2357, #4420, #5615, #5639, #4586, #5677, #2747, #5461, #5091, #5556, #5520, #806, #576, #5227, #187)
 
 5. **The spec collects only where an optional native binary happens to be installed.**
@@ -105,7 +114,13 @@ Report a probe that cannot run with its exact mutation, named check and limitati
    plugin bindings) and mock only the native boundary before importing the subject, keeping real project modules
    and their asserted values in the graph. Run the exact spec in an install-script-free environment where the
    native package entry cannot run: it must collect and execute assertions without evaluating that entry, since a
-   cached host binary conceals a CI install that skips native downloads. `windowCloseCoordinator.spec.ts` imported
+   cached host binary conceals a CI install that skips native downloads. Trace every direct and transitive pure-spec importer of a shared native-adjacent constant module, not just the
+   first fixture repaired. `rendererSessionLifecycle.spec.ts` reaches the coordinator and its real `APP_TITLE`
+   transitively, and `appIpc.spec.ts` reaches the same title through `appIpc.ts`; isolate only the native
+   boundary in both, preserving the real modules and assertions. #5700
+   repaired the coordinator fixture but missed this caller; its public record does not establish the prior reviewer
+   stance, prompt or tier. #4289 introduced the coordinator import of `APP_TITLE`, and #3141 introduced the
+   lifecycle spec. `windowCloseCoordinator.spec.ts` imported
    `APP_TITLE` from `protocol.ts`, which imports `electron`, and failed collection with `Electron failed to
 install correctly` on hosted unit2 (run 40195635280 at `fd9e41a4b3`); mock only `electron`, keep `protocol.ts`,
    `APP_TITLE`, the coordinator and an assertion for each coordinator state transition real.

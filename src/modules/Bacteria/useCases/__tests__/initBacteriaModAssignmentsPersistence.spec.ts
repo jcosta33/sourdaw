@@ -14,6 +14,8 @@ const mocks = vi.hoisted(() => ({
 // `executeUserAppAction`; the barrel-mock coverage check needs both named here
 // even though no test calls them.
 vi.mock('#/modules/Command/useCases', () => ({
+    commitUndoEntry: vi.fn(),
+    createUndoEntry: vi.fn(),
     getExecutableAppActionEffect: vi.fn(() => null),
     executeAppAction: mocks.executeAppAction,
     executeUserAppAction: vi.fn(),

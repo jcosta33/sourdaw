@@ -126,6 +126,8 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     sendNativeLiveMidiNote: () => Promise.resolve(true),
 }));
 vi.mock('#/modules/Command/useCases', () => ({
+    commitUndoEntry: vi.fn(),
+    createUndoEntry: vi.fn(),
     reconcileSessionUndoForProject: vi.fn(() => {
         throw new Error('Unexpected reconcileSessionUndoForProject in this fixture');
     }),

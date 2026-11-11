@@ -37,7 +37,7 @@ export const DawPluginChoiceRow = ({
                 <Row justify="between" gap={2}>
                     <span className="truncate text-[11px] font-medium text-foreground">{title}</span>
                     {detail ? (
-                        <span className="shrink-0 text-[8px] uppercase tracking-[0.2em] text-muted-foreground/45">
+                        <span className="shrink-0 text-[8px] uppercase tracking-[0.2em] text-muted-foreground">
                             {detail}
                         </span>
                     ) : null}

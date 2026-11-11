@@ -69,7 +69,7 @@
             },
             {
                 "path": "scripts/buildNativeAddon.ts",
-                "sha256": "229b3f82ff399b9b7690f8a4d18c47de629e5c37133c988bd82627fd15160d50"
+                "sha256": "87ac59fba9b32642964edc3d6e02ace51c9978f790721991575c89b9013aa1d1"
             }
         ],
         "featureSelection": {

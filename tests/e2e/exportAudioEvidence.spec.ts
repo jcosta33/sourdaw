@@ -84,7 +84,7 @@ test('exports a 30 s loop region of the Nebula Drift mix as a stereo WAV', async
 
         const isMac = await page.evaluate(() => navigator.platform.toUpperCase().includes('MAC'));
         await page.keyboard.press(isMac ? 'Meta+Shift+E' : 'Control+Shift+E');
-        const dialog = page.getByRole('dialog').filter({ hasText: /The Bakery/i });
+        const dialog = page.getByRole('dialog').filter({ hasText: /Export audio/i });
         await expect(dialog).toBeVisible();
         await expect(dialog.getByTestId('export-format-wav')).toHaveAttribute('aria-checked', 'true');
         await expect(dialog.getByRole('checkbox', { name: 'MP3 Lossy crust', exact: true })).toHaveAttribute(
@@ -114,21 +114,22 @@ test('exports a 30 s loop region of the Nebula Drift mix as a stereo WAV', async
 
         const byteFloor = LOOP_SECONDS * WAV_BYTES_PER_SECOND * BYTE_FLOOR_RATIO;
         const pickerFilename = capture.pickerFilename;
-        await dialog.getByRole('button', { name: 'Start Baking' }).click();
-        // A failed bake leaves the dialog without a Close Bakery button, so wait on either ending
-        // and fail at once on the refusal instead of burning the whole budget.
-        const closeBakery = dialog.getByRole('button', { name: 'Close Bakery' });
-        const refusal = dialog.getByText(/The bread burned/);
+        await dialog.getByRole('button', { name: 'Export mixdown' }).click();
+        // The corner Close remains available after an error, so completion must
+        // come from the status rather than from any visible Close button.
+        const completion = dialog.getByText(/Export complete/);
+        const refusal = dialog.getByText(/Export failed/);
         await expect
-            .poll(async () => (await closeBakery.isVisible()) || (await refusal.isVisible()), {
+            .poll(async () => (await completion.isVisible()) || (await refusal.isVisible()), {
                 timeout: EXPORT_COMPLETION_TIMEOUT_MS,
             })
             .toBe(true);
         await expect(refusal).toBeHidden();
-        await expect(closeBakery).toBeVisible();
+        await expect(completion).toBeVisible();
+        await expect(dialog.getByRole('button', { name: 'Close' })).toBeVisible();
         await capture.waitForClose();
 
-        expect(await pickerFilename).toMatch(/^Sourdaw_Bake_\d+\.wav$/);
+        expect(await pickerFilename).toMatch(/^Sourdaw_Mixdown_\d+\.wav$/);
         expect(capture.writeCount()).toBeGreaterThan(0);
         expect(capture.bytesWritten()).toBeGreaterThan(byteFloor);
         expect(capture.abortCount()).toBe(0);

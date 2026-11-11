@@ -275,7 +275,10 @@ export const Sidebar = ({ style, onClose, panelActions }: SidebarProps): ReactEl
                 activeId={activeTab}
                 items={TAB_ITEMS}
                 panelId={browserPanelId}
-                onChange={setActiveTab}
+                onChange={(tab) => {
+                    preview.stop();
+                    setActiveTab(tab);
+                }}
                 className="shrink-0 border-b border-border/20 bg-surface-base/80"
                 scrollerClassName="w-full px-1 py-1.5"
                 tabClassName={MAIN_TAB_CLASS_NAME}

@@ -25,6 +25,10 @@ import type { subscribeToPublishedActionHistory } from '#/modules/CrdtDocument/u
 import type { setProjectIdentityTransitionDependencies } from '#/modules/Project/useCases';
 import type { NotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
+const elasticRootMocks = vi.hoisted(() => ({
+    install: vi.fn<typeof import('#/modules/ElasticAudio/useCases').setElasticRootIdentityProvider>(),
+}));
+
 // bootstrap.ts is the app's composition root: it imports ~40 module barrels
 // and, at import time (not inside a callable function), wires their runtime
 // dependencies and hands every module's `get<Module>Handlers()` result to the
@@ -579,6 +583,7 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
 }));
 
 vi.mock('#/modules/ElasticAudio/useCases', () => ({
+    setElasticRootIdentityProvider: elasticRootMocks.install,
     setElasticSensitivityRootIdentityCapture: setElasticSensitivityRootIdentityCaptureMock,
 }));
 
@@ -868,12 +873,15 @@ function getDurableAssetOwnerRecoveryAfterProjectLoad(): DurableAssetOwnerRecove
 }
 
 describe('bootstrap', () => {
-    it('wires the live root identity reader before project transition configuration', () => {
-        expect(setElasticSensitivityRootIdentityCaptureMock).toHaveBeenCalledExactlyOnceWith(
-            captureProjectRootIdentityMock
-        );
-        expect(setElasticSensitivityRootIdentityCaptureMock.mock.invocationCallOrder[0]).toBeLessThan(
-            setProjectIdentityTransitionDependenciesMock.mock.invocationCallOrder[0] ?? 0
+    it('delegates the live root reader installation for sensitivity and Worker lifetimes before consumers', () => {
+        // The wiring itself lives in registerSupportingServicePorts; bootstrap must
+        // delegate to it before any command handler can consume transient detection.
+        expect(registerSupportingServicePortsMock).toHaveBeenCalledExactlyOnceWith();
+        expect(elasticRootMocks.install).not.toHaveBeenCalled();
+        expect(setElasticSensitivityRootIdentityCaptureMock).not.toHaveBeenCalled();
+        expect(captureProjectRootIdentityMock).not.toHaveBeenCalled();
+        expect(registerSupportingServicePortsMock.mock.invocationCallOrder[0]!).toBeLessThan(
+            registerProductionCommandHandlersMock.mock.invocationCallOrder[0]!
         );
     });
     it('binds committed project access during bootstrap', () => {

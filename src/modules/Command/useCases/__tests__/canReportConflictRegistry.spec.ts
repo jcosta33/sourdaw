@@ -432,6 +432,18 @@ const CONFLICT_CAPABLE_FIXTURES: readonly DivergedFixture[] = [
         },
     },
     {
+        title: 'restoreAutomationLanePoints refuses a diverged recorded-lane snapshot',
+        actionType: 'restoreAutomationLanePoints',
+        divergedAction: {
+            type: 'restoreAutomationLanePoints',
+            payload: {
+                laneId: 'automation-follower',
+                points: [],
+                expectedPoints: [{ id: 'automation-point', beat: 4, value: 0.9, curve: 'linear', tension: 0 }],
+            },
+        },
+    },
+    {
         // Live lane 'automation-follower' still holds 'automation-point', which no earlier
         // member of the undo batch removes.
         title: 'removeAutomationLane refuses to remove a lane holding a point it did not create',

@@ -44,6 +44,8 @@ vi.mock('#/infra/store/useStore', () => ({
 }));
 
 vi.mock('#/modules/Command/useCases', () => ({
+    commitUndoEntry: vi.fn(),
+    createUndoEntry: vi.fn(),
     getExecutableAppActionEffect: vi.fn(() => null),
     // Unread graph stub: disclosure's project-identity import also reaches reset helpers.
     resetActionReplayAuthority: vi.fn(),

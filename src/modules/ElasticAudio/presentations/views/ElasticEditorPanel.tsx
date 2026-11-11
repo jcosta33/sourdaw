@@ -24,6 +24,7 @@ import {
     updateWarpMarkerBeat,
 } from '#/modules/Arrangement/useCases';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
+import { executeAppAction } from '#/modules/Command/useCases';
 import { preferencesStore } from '#/modules/Preferences/stores';
 import { defaultPreferences } from '#/modules/Preferences/useCases';
 import { resolveToken } from '#/utils/UI/resolveToken';
@@ -33,7 +34,7 @@ import { defaultElasticAudioState, elasticAudioStore, type ElasticEditorTool } f
 import { getAlgorithmInfo } from '../../useCases/audioWarping/getAlgorithmInfo';
 import { setDefaultAlgorithm } from '../../useCases/audioWarping/setDefaultAlgorithm';
 import { addManualMarker } from '../../useCases/elasticAudio/addManualMarker';
-import { detectTransientsForClip } from '../../useCases/elasticAudio/detectTransientsForClip';
+import { cancelTransientDetection } from '../../useCases/elasticAudio/cancelTransientDetection';
 import { markElasticDetectionComplete } from '../../useCases/elasticAudio/markElasticDetectionComplete';
 import { removeMarker } from '../../useCases/elasticAudio/removeMarker';
 import { resolveElasticEditorTarget } from '../../useCases/elasticAudio/resolveElasticEditorTarget';
@@ -113,6 +114,17 @@ export const ElasticEditorPanel = (): ReactElement => {
     const isAudioClip = clip !== null && clip.type === 'audio';
 
     const warpState = (clipId === null ? undefined : warpStates.states[clipId]) ?? EMPTY_WARP_STATE;
+    const [detectionStatus, setDetectionStatus] = useState('');
+    const detectRequest = useRef(0);
+    useEffect(() => {
+        setDetectionStatus('');
+        return () => {
+            detectRequest.current++;
+            if (clipId) {
+                cancelTransientDetection(clipId);
+            }
+        };
+    }, [clipId]);
     const [zoom, setZoom] = useState(1);
     const [viewScrollLeft, setViewScrollLeft] = useState(0);
     const containerRef = useRef<HTMLDivElement>(null);
@@ -177,8 +189,25 @@ export const ElasticEditorPanel = (): ReactElement => {
     }
 
     const handleDetect = (): void => {
-        detectTransientsForClip(clipId, preferences.elasticTransientSensitivity);
-        markElasticDetectionComplete();
+        const request = ++detectRequest.current;
+        setDetectionStatus('Detecting…');
+        void executeAppAction({
+            type: 'detectTransients',
+            payload: { clipId, sensitivity: preferences.elasticTransientSensitivity },
+        }).then(
+            () => {
+                if (request !== detectRequest.current) {
+                    return;
+                }
+                markElasticDetectionComplete();
+                setDetectionStatus('Detection complete');
+            },
+            () => {
+                if (request === detectRequest.current) {
+                    setDetectionStatus('Detection cancelled or failed. Try again.');
+                }
+            }
+        );
     };
 
     const handleQuantize = (): void => {
@@ -190,9 +219,20 @@ export const ElasticEditorPanel = (): ReactElement => {
     };
 
     const handleSensitivity = (value: number): void => {
-        // Fire-and-forget settings dispatch from a slider handler; the new
-        // Sensitivity is observed reactively through preferences, with no rejection to await.
-        void setElasticSensitivity(value);
+        const request = ++detectRequest.current;
+        setDetectionStatus('Detecting…');
+        void setElasticSensitivity(value).then(
+            () => {
+                if (request === detectRequest.current) {
+                    setDetectionStatus('');
+                }
+            },
+            () => {
+                if (request === detectRequest.current) {
+                    setDetectionStatus('Detection cancelled or failed. Try again.');
+                }
+            }
+        );
     };
 
     const handleStretchMode = (mode: StretchMode): void => {
@@ -453,6 +493,7 @@ export const ElasticEditorPanel = (): ReactElement => {
                 <span>
                     {counts.transient} transient{plural(counts.transient)}, {counts.user} user, {counts.locked} locked
                 </span>
+                <span role="status">{detectionStatus}</span>
                 <span className="text-[9px] opacity-70">T: transient tool · G: quantize · Delete: remove selected</span>
             </Row>
         </Stack>

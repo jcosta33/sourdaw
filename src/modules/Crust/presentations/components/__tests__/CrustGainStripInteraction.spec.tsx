@@ -26,21 +26,29 @@ describe('CrustGainStrip readout and slider attributes', () => {
         expect(slider).toHaveAttribute('aria-valuetext', '9.3 dB');
     });
 
-    it('colours the readout amber above 6 dB and red above 12 dB, default at and below 6 dB', () => {
+    it('uses semantic readout colors above the unchanged 6 dB and 12 dB thresholds', () => {
         const atSix = render(<CrustGainStrip value={6} onChange={vi.fn()} />);
-        expect(atSix.container.querySelector('span[aria-hidden="true"]')).toHaveStyle({ color: '#E8E6E0' });
+        expect(atSix.container.querySelector('span[aria-hidden="true"]')?.getAttribute('style')).toContain(
+            'color: var(--color-text-primary)'
+        );
         atSix.unmount();
 
         const aboveSix = render(<CrustGainStrip value={6.1} onChange={vi.fn()} />);
-        expect(aboveSix.container.querySelector('span[aria-hidden="true"]')).toHaveStyle({ color: '#D4A847' });
+        expect(aboveSix.container.querySelector('span[aria-hidden="true"]')?.getAttribute('style')).toContain(
+            'color: var(--color-state-warning)'
+        );
         aboveSix.unmount();
 
         const atTwelve = render(<CrustGainStrip value={12} onChange={vi.fn()} />);
-        expect(atTwelve.container.querySelector('span[aria-hidden="true"]')).toHaveStyle({ color: '#D4A847' });
+        expect(atTwelve.container.querySelector('span[aria-hidden="true"]')?.getAttribute('style')).toContain(
+            'color: var(--color-state-warning)'
+        );
         atTwelve.unmount();
 
         const aboveTwelve = render(<CrustGainStrip value={12.1} onChange={vi.fn()} />);
-        expect(aboveTwelve.container.querySelector('span[aria-hidden="true"]')).toHaveStyle({ color: '#C44030' });
+        expect(aboveTwelve.container.querySelector('span[aria-hidden="true"]')?.getAttribute('style')).toContain(
+            'color: var(--color-state-danger)'
+        );
     });
 });
 

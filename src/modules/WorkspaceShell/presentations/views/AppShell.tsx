@@ -12,6 +12,8 @@ import {
 
 import { X } from 'lucide-react';
 
+import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
+import { DawPanelSurface } from '#/components/daw/DawPanelSurface';
 import { DawTabStrip, getDawTabId, type DawTabStripItem } from '#/components/daw/DawTabStrip';
 import { Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
@@ -1058,25 +1060,16 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                                         }
                                     }}
                                 />
-                                <Stack
-                                    className="contain-strict bg-surface-base overflow-hidden"
+                                <DawPanelSurface
+                                    tone="dock"
+                                    className="shrink contain-strict overflow-hidden"
                                     style={{
                                         height: activeBottomTab === 'editor' ? editorHeight : mixerHeight,
                                         minHeight: activeBottomTab === 'editor' ? EDITOR_MIN_HEIGHT : MIXER_MIN_HEIGHT,
                                     }}
                                 >
                                     {/* Bottom panel tab bar */}
-                                    <Row
-                                        gap={0.5}
-                                        shrink={false}
-                                        className="px-2 py-0.5"
-                                        style={{
-                                            background: 'linear-gradient(180deg, #0c0c0c 0%, #0a0a0a 100%)',
-                                            boxShadow:
-                                                'inset 0 1px 0 rgba(255,255,255,0.04), 0 1px 3px rgba(0,0,0,0.4)',
-                                            borderBottom: '1px solid rgba(0,0,0,0.4)',
-                                        }}
-                                    >
+                                    <DawHeaderBand compact className="flex items-center gap-0.5 px-2 py-0.5">
                                         <DawTabStrip
                                             label="Bottom dock"
                                             idPrefix={BOTTOM_TAB_ID_PREFIX}
@@ -1096,7 +1089,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                                         >
                                             <X className="size-3.5" />
                                         </Button>
-                                    </Row>
+                                    </DawHeaderBand>
                                     {/* Panel content */}
                                     <div
                                         role="tabpanel"
@@ -1107,7 +1100,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                                     >
                                         <ErrorBoundary variant="inline">{renderBottomTabContent()}</ErrorBoundary>
                                     </div>
-                                </Stack>
+                                </DawPanelSurface>
                             </>
                         ) : null}
 

@@ -38,7 +38,9 @@ export const BandStrip = ({ index, band, isActive, onSelect, onParamChange }: Ba
     >
         {/* Band header */}
         <Row justify="between">
-            <span className={`text-micro font-bold ${isActive ? 'text-rose-400' : 'text-muted-foreground/60'}`}>
+            <span
+                className={`text-micro font-bold ${isActive ? 'text-[var(--color-accent-rose)]' : 'text-muted-foreground'}`}
+            >
                 Band {index + 1}
             </span>
             <Row align="stretch" gap={0.5}>
@@ -47,7 +49,7 @@ export const BandStrip = ({ index, band, isActive, onSelect, onParamChange }: Ba
                     size="bare"
                     type="button"
                     className={`w-3.5 h-3.5 rounded text-[5px] font-bold transition-colors ${
-                        band.solo ? 'bg-amber-500 text-black' : 'text-muted-foreground/30 hover:text-foreground'
+                        band.solo ? 'bg-amber-500 text-black' : 'text-muted-foreground hover:text-foreground'
                     }`}
                     onClick={(e) => {
                         e.stopPropagation();
@@ -61,7 +63,7 @@ export const BandStrip = ({ index, band, isActive, onSelect, onParamChange }: Ba
                     size="bare"
                     type="button"
                     className={`w-3.5 h-3.5 rounded text-[5px] font-bold transition-colors ${
-                        band.mute ? 'bg-red-500 text-white' : 'text-muted-foreground/30 hover:text-foreground'
+                        band.mute ? 'bg-red-500 text-black' : 'text-muted-foreground hover:text-foreground'
                     }`}
                     onClick={(e) => {
                         e.stopPropagation();
@@ -79,7 +81,7 @@ export const BandStrip = ({ index, band, isActive, onSelect, onParamChange }: Ba
                 <span
                     key={key}
                     className={`text-[5px] px-0.5 rounded font-mono ${
-                        band[key] ? `${color} text-white` : 'bg-surface-inset text-muted-foreground/20'
+                        band[key] ? `${color} text-black` : 'bg-surface-inset text-muted-foreground'
                     }`}
                 >
                     {label}
@@ -100,7 +102,7 @@ export const BandStrip = ({ index, band, isActive, onSelect, onParamChange }: Ba
                 tone="mint"
                 aria-label={`Band ${index + 1} gain`}
             />
-            <span className="text-[6px] text-muted-foreground/40 font-mono">
+            <span className="text-[6px] text-muted-foreground font-mono">
                 {band.gain > 0 ? '+' : ''}
                 {band.gain.toFixed(1)} dB
             </span>

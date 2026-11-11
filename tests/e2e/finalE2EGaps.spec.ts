@@ -10,7 +10,7 @@ async function add_track(page: import('@playwright/test').Page, kind: string): P
 }
 
 // ---------------------------------------------------------------------------
-// Export dialog — Start Baking button + Escape close.
+// Export dialog — Export mixdown button + Escape close.
 // ---------------------------------------------------------------------------
 
 test.describe('Export dialog deep', () => {
@@ -21,9 +21,9 @@ test.describe('Export dialog deep', () => {
         await expect(page.getByRole('dialog').filter({ hasText: /Bakery|Export/i })).toBeVisible({ timeout: 5000 });
     });
 
-    test('Export dialog exposes a Start Baking action button', async ({ page }) => {
+    test('Export dialog exposes an Export mixdown action button', async ({ page }) => {
         const dialog = page.getByRole('dialog').filter({ hasText: /Bakery|Export/i });
-        await expect(dialog.getByRole('button', { name: /Start Baking|Export|Bake/i })).toBeVisible();
+        await expect(dialog.getByRole('button', { name: /Export mixdown/i })).toBeVisible();
     });
 
     test.afterEach(async ({ page }) => {

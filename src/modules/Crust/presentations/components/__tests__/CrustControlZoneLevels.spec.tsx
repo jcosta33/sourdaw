@@ -165,6 +165,47 @@ describe('CrustControlZone level 5 (loudness stats)', () => {
         expect(stats).toHaveTextContent('-2.3 dB');
     });
 
+    it('uses an opaque semantic role for every loudness label', () => {
+        renderZone({ uiLevel: 5 });
+
+        for (const label of ['Integrated', 'ST Max', 'MOM Max', 'LRA', 'TP Max', 'GR Max']) {
+            expect(screen.getByText(label)).toHaveClass('text-muted-foreground');
+            expect(screen.getByText(label)).not.toHaveClass('text-muted-foreground/40');
+        }
+    });
+
+    it('uses opaque semantic roles for advanced control labels and loudness values', () => {
+        renderZone({ uiLevel: 5, scHpfEnabled: true });
+
+        const labels = [
+            'Algorithm',
+            'Clean ceiling, no color',
+            'Lookahead',
+            'Attack',
+            'Release',
+            'Link Trans',
+            'Link Rel',
+            'Drive',
+            'Mix',
+            'Multi-band',
+            'Stereo',
+            'SC HPF',
+            'HPF',
+            'Dithering',
+        ];
+        for (const label of labels) {
+            const element = screen.getByText(label);
+            expect(element, label).toHaveClass('text-muted-foreground');
+            expect(element.className, label).not.toMatch(/text-muted-foreground\//u);
+        }
+
+        for (const value of ['-14.2 LUFS', '-13.6 LUFS', '-12.1 LUFS', '4.5 LU', '-0.8 dBTP', '-2.3 dB']) {
+            const element = screen.getByText(value);
+            expect(element, value).toHaveClass('text-foreground');
+            expect(element.className, value).not.toMatch(/text-foreground\//u);
+        }
+    });
+
     it('prevents loudness statistics grid from collapsing with shrink-0', () => {
         renderZone({ uiLevel: 5 });
         const stats = screen.getByRole('group', { name: /loudness statistics/i });

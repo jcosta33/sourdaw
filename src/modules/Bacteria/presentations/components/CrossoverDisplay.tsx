@@ -158,7 +158,7 @@ export const CrossoverDisplay = ({
                         className="absolute top-0 pointer-events-none"
                         style={{ left: x, width: 1, height: DISPLAY_HEIGHT, background: 'rgba(255,249,242,0.04)' }}
                     >
-                        <span className="absolute bottom-0.5 left-1 text-[6px] text-muted-foreground/30 font-mono">
+                        <span className="absolute bottom-0.5 left-1 text-[6px] text-muted-foreground font-mono">
                             {freq >= 1000 ? `${freq / 1000}k` : freq}
                         </span>
                     </div>
@@ -182,14 +182,21 @@ export const CrossoverDisplay = ({
                                 i > 0 ? `1px solid ${BAND_BORDER_COLORS[i % BAND_BORDER_COLORS.length]}` : undefined,
                             opacity: activeBand === i ? 1 : 0.5,
                         }}
+                    />
+                );
+            })}
+
+            {/* Labels stay outside the dimmed regions so inactive-band text remains opaque. */}
+            {Array.from({ length: bandCount }, (_, i) => {
+                const lo = freqToX(i === 0 ? 20 : crossoverFreqs[i - 1]!, layoutWidth);
+                return (
+                    <span
+                        key={`band-label-${i}`}
+                        className="absolute top-1 text-nano font-bold text-foreground pointer-events-none"
+                        style={{ left: lo + 4 }}
                     >
-                        <span
-                            className="absolute top-1 left-1 text-nano font-bold pointer-events-none"
-                            style={{ color: BAND_BORDER_COLORS[i % BAND_BORDER_COLORS.length] }}
-                        >
-                            {i + 1}
-                        </span>
-                    </div>
+                        {i + 1}
+                    </span>
                 );
             })}
 
@@ -215,7 +222,7 @@ export const CrossoverDisplay = ({
             })}
 
             {/* Mode indicator */}
-            <span className="absolute top-1 right-1 text-[6px] text-muted-foreground/30 font-mono uppercase">
+            <span className="absolute top-1 right-1 text-[6px] text-muted-foreground font-mono uppercase">
                 {crossoverMode}
             </span>
         </div>

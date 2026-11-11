@@ -144,18 +144,23 @@ export const DeviceInspector = ({ device, trackId, onBack }: DeviceInspectorProp
 
     return (
         <Stack gap={4} className="@container p-3">
-            <InspectorDetailHeader
-                title={<h3 className="truncate text-xs font-medium text-foreground">{device.name}</h3>}
-                onBack={onBack}
-                backLabel="Back to track"
-                actions={
-                    <MechanicalSwitch
-                        checked={!device.bypassed}
-                        onChange={(context) => bypassDevice(device.id, !context)}
-                        size="sm"
-                    />
-                }
-            />
+            <div
+                data-testid="device-inspector-header"
+                className="sticky top-0 z-10 -mx-3 -mt-3 border-b border-border-soft bg-surface-tray px-3 pt-3 pb-2"
+            >
+                <InspectorDetailHeader
+                    title={<h3 className="truncate text-xs font-medium text-foreground">{device.name}</h3>}
+                    onBack={onBack}
+                    backLabel="Back to track"
+                    actions={
+                        <MechanicalSwitch
+                            checked={!device.bypassed}
+                            onChange={(context) => bypassDevice(device.id, !context)}
+                            size="sm"
+                        />
+                    }
+                />
+            </div>
             {/* ── Registry-based layout ── */}
             {renderDeviceLayout()}
         </Stack>

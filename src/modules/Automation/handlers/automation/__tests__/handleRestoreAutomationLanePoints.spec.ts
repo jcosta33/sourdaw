@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { type AppAction } from '#/utils/handlerContract';
+
 vi.mock('../../../useCases/getAutomationStoreState', () => ({
     getAutomationStoreState: vi.fn(),
 }));
@@ -38,6 +40,64 @@ function setLane(points: Record<string, unknown>[] | null): void {
 
 beforeEach(() => {
     vi.clearAllMocks();
+});
+
+describe('handleRestoreAutomationLanePoints — batch payload admission', () => {
+    const valid = { id: 'p1', beat: 0, value: 0.5, curve: 'linear', tension: 0 };
+
+    it('admits valid payload shapes independently of the live expected-state guard', () => {
+        const action = {
+            type: 'restoreAutomationLanePoints',
+            payload: { laneId: 'lane1', points: [valid], expectedPoints: [{ ...valid, value: 0.9 }] },
+        } satisfies AppAction;
+        setLane([makePoint({ value: 0.4 })]);
+
+        expect(handleRestoreAutomationLanePoints.validate?.(action, { actions: [action], actionIndex: 0 })).toBe(true);
+        expect(handleRestoreAutomationLanePoints.batchExecution).toBeUndefined();
+        expect(handleRestoreAutomationLanePoints.previewExecution).toBe('isolated-project');
+        expect(handleRestoreAutomationLanePoints.requiresAbortCompensation).toBe(false);
+        expect(handleRestoreAutomationLanePoints.execute(action)).toEqual({ status: 'conflict' });
+        expect(mockedRestore).not.toHaveBeenCalled();
+    });
+
+    it.each(['laneId', 'points', 'expectedPoints', 'undefined expectedPoints'] as const)(
+        'refuses malformed %s in validation, direct execution and no-op detection',
+        (field) => {
+            const action = {
+                type: 'restoreAutomationLanePoints',
+                payload: { laneId: 'lane1', points: [valid], expectedPoints: [valid] },
+            } satisfies AppAction;
+            if (field === 'laneId') {
+                action.payload.laneId = '';
+            } else if (field === 'undefined expectedPoints') {
+                Object.assign(action.payload, { expectedPoints: undefined });
+            } else {
+                action.payload[field] = [{ ...valid, curve: 'unknown-curve' }];
+            }
+            setLane([makePoint()]);
+
+            expect(handleRestoreAutomationLanePoints.validate?.(action, { actions: [action], actionIndex: 0 })).toBe(
+                false
+            );
+            expect(handleRestoreAutomationLanePoints.execute(action)).toEqual({ status: 'conflict' });
+            expect(handleRestoreAutomationLanePoints.isNoop?.(action)).toBe(false);
+            expect(mockedRestore).not.toHaveBeenCalled();
+        }
+    );
+
+    it('rejects an own undefined expected control even when its known fields match live points', () => {
+        const expected = { ...valid, cp1: undefined };
+        const action = {
+            type: 'restoreAutomationLanePoints',
+            payload: { laneId: 'lane1', points: [{ ...valid, value: 0.75 }], expectedPoints: [expected] },
+        } satisfies AppAction;
+        setLane([makePoint()]);
+
+        expect(handleRestoreAutomationLanePoints.validate?.(action, { actions: [action], actionIndex: 0 })).toBe(false);
+        expect(handleRestoreAutomationLanePoints.execute(action)).toEqual({ status: 'conflict' });
+        expect(handleRestoreAutomationLanePoints.isNoop?.(action)).toBe(false);
+        expect(mockedRestore).not.toHaveBeenCalled();
+    });
 });
 
 describe('handleRestoreAutomationLanePoints — execute', () => {

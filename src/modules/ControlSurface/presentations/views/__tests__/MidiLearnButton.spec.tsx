@@ -78,6 +78,11 @@ describe('MidiLearnButton — default state', () => {
         renderButton();
         expect(screen.getByRole('button')).toHaveAttribute('aria-pressed', 'false');
     });
+
+    it('provides a 24px target and label-sized text', () => {
+        renderButton();
+        expect(screen.getByRole('button')).toHaveClass('size-6', 'text-label');
+    });
 });
 
 describe('MidiLearnButton — learning state', () => {

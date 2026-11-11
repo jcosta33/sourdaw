@@ -192,11 +192,11 @@ describe('WorkspaceMobileGate', () => {
         expect(childMounted).toHaveBeenCalledTimes(1);
     });
 
-    it('should not apply a stored scale or mount its children on a phone', () => {
+    it('should synchronize appearance without mounting its children on a phone', () => {
         setDevice(PHONE_PORTRAIT);
         displayScaleMocks.preferences.current = { uiScale: 0.5 };
 
-        render(
+        const { unmount } = render(
             <WorkspaceMobileGate>
                 <ShellProbe />
             </WorkspaceMobileGate>
@@ -205,14 +205,19 @@ describe('WorkspaceMobileGate', () => {
         expect(screen.getByText('Desktop DAW')).toBeInTheDocument();
         expect(screen.queryByTestId('shell-probe')).not.toBeInTheDocument();
         expect(childMounted).not.toHaveBeenCalled();
-        expect(applyDisplayScale).not.toHaveBeenCalled();
+        expect(applyDisplayScale).toHaveBeenCalledWith(0.5);
+        expect(document.documentElement).toHaveClass('dark');
+        expect(document.documentElement.style.visibility).toBe('visible');
+        expect(displayScaleMocks.listeners.size).toBe(2);
+
+        unmount();
         expect(displayScaleMocks.listeners.size).toBe(0);
     });
 
     it('should not mount its children while a phone rotates to landscape and back', () => {
         setDevice(PHONE_PORTRAIT);
 
-        render(
+        const { unmount } = render(
             <WorkspaceMobileGate>
                 <ShellProbe />
             </WorkspaceMobileGate>
@@ -224,11 +229,14 @@ describe('WorkspaceMobileGate', () => {
         expect(screen.getByText('Desktop DAW')).toBeInTheDocument();
         expect(screen.queryByTestId('shell-probe')).not.toBeInTheDocument();
         expect(childMounted).not.toHaveBeenCalled();
-        expect(applyDisplayScale).not.toHaveBeenCalled();
+        expect(applyDisplayScale).toHaveBeenCalledWith(1);
+        expect(displayScaleMocks.listeners.size).toBe(2);
+
+        unmount();
         expect(displayScaleMocks.listeners.size).toBe(0);
     });
 
-    it('should mount its children and sync display scale on a coarse-pointer tablet in portrait', () => {
+    it('should mount its children and sync appearance on a coarse-pointer tablet in portrait', () => {
         setDevice(TABLET_PORTRAIT);
         displayScaleMocks.preferences.current = { uiScale: 1.5 };
 
@@ -241,7 +249,8 @@ describe('WorkspaceMobileGate', () => {
         expect(screen.getByTestId('shell-probe')).toBeInTheDocument();
         expect(childMounted).toHaveBeenCalledTimes(1);
         expect(applyDisplayScale).toHaveBeenCalledWith(1.5);
-        expect(displayScaleMocks.listeners.size).toBe(1);
+        expect(document.documentElement).toHaveClass('dark');
+        expect(displayScaleMocks.listeners.size).toBe(2);
 
         unmount();
         expect(displayScaleMocks.listeners.size).toBe(0);

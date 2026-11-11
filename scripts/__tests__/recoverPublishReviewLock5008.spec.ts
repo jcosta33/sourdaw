@@ -861,8 +861,8 @@ describe('review-publication recovery of a landed review among thread-reply revi
 
     it('binds a landed review without re-running the round freeze, even once the history reaches it', async () => {
         const fixture = fixtureFor({ planCarrying: true });
-        // Four earlier rounds (three here plus the incident's own previous round) admit the fresh
-        // post; the landed fifth then puts the history at the freeze.
+        // Nine earlier rounds (eight here plus the incident's own previous round) admit the fresh
+        // post; the landed tenth then puts the history at the freeze.
         const remote = fakeGitHub({
             posted: false,
             priorReviews: Array.from({ length: REVIEW_ROUND_FREEZE_THRESHOLD - 2 }, (_, index) =>

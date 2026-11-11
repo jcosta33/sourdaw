@@ -132,6 +132,14 @@ or none.
     must redden `scripts/__tests__/desktopPackaging.spec.ts`; removing identity/kind/bounds checks must redden
     `scripts/__tests__/verifyPackagedNativeArtifacts.spec.ts`. Header fixtures prove neither platform build
     provenance nor installed-package/native-ABI compatibility.
+    Attack the producer independently: set `CARGO_BUILD_TARGET` to Cargo's reported host and use a relative
+    or absolute output root containing spaces. Both builds must command that concrete host and explicit
+    directories, then stage bytes only from those target-specific paths. A conflicting environment target
+    must fail before compilation; configuration defaults must be overridden by the explicit flags.
+    Removing either build's `--target` or `--target-dir`, reverting its source path to a guessed `release`
+    directory, letting a failed Cargo process stage an existing artifact, or disconnecting the CLI runner
+    must redden `scripts/__tests__/buildNativeAddon.spec.ts`. Its real filesystem and subprocess-boundary
+    doubles do not prove actual cross-platform compilation or loadability.
 
 ## MIDI API present but permission refused
 

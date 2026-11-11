@@ -84,4 +84,94 @@ test.describe('Gluten panel — preset search filtering', () => {
         await expect.poll(() => readyCount(page)).toBe(baseline);
         await expect(page.getByRole('button', { name: /Bus Glue/ })).toBeVisible();
     });
+
+    test('uses the wide layout by default and contains stacked content at narrow widths', async ({ page }) => {
+        await page.setViewportSize({ width: 1440, height: 900 });
+        const faceplate = page.locator('.gluten-faceplate');
+        const workspace = faceplate.locator(':scope > div').first();
+        const panelBody = page.getByTestId('instrument-bottom-panel-body').filter({ has: faceplate });
+        const defaultGeometry = await faceplate.evaluate((element) => ({
+            width: element.getBoundingClientRect().width,
+            columns: getComputedStyle(element.firstElementChild as Element).gridTemplateColumns,
+            viewport: window.innerWidth,
+        }));
+        expect(defaultGeometry.width, JSON.stringify(defaultGeometry)).toBeGreaterThanOrEqual(896);
+        await expect
+            .poll(() =>
+                workspace.evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(' ').length)
+            )
+            .toBe(3);
+
+        const disclosure = page.getByRole('group', { name: 'Effect control detail' });
+        await disclosure.getByRole('button', { name: 'lab', exact: true }).click();
+        await expect(page.getByRole('slider', { name: 'SC HPF', exact: true })).toBeVisible();
+
+        await expect
+            .poll(() =>
+                faceplate.evaluate((element) => {
+                    const content = element.firstElementChild;
+                    if (!content) {
+                        throw new Error('Expected the Gluten workspace grid');
+                    }
+                    return element.getBoundingClientRect().bottom - content.getBoundingClientRect().bottom;
+                })
+            )
+            .toBeGreaterThanOrEqual(11);
+
+        for (const label of ['Gluten dynamics overview', 'Gluten controls']) {
+            const column = page.getByLabel(label, { exact: true });
+            await expect.poll(() => column.evaluate((element) => element.clientHeight)).toBeGreaterThanOrEqual(440);
+        }
+
+        const controls = page.getByLabel('Gluten controls', { exact: true });
+        await expect
+            .poll(() => controls.evaluate((element) => element.scrollHeight - element.clientHeight))
+            .toBeGreaterThan(0);
+        await controls.evaluate((element) => {
+            element.scrollTop = element.scrollHeight;
+        });
+        await expect.poll(() => controls.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+
+        await page.setViewportSize({ width: 900, height: 700 });
+        await expect
+            .poll(() =>
+                workspace.evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(' ').length)
+            )
+            .toBe(1);
+        await expect
+            .poll(() =>
+                faceplate.evaluate((element) => {
+                    const content = element.firstElementChild;
+                    if (!content) {
+                        throw new Error('Expected the Gluten workspace grid');
+                    }
+                    return element.getBoundingClientRect().bottom - content.getBoundingClientRect().bottom;
+                })
+            )
+            .toBeGreaterThanOrEqual(-1);
+        await expect
+            .poll(() => panelBody.evaluate((element) => element.scrollWidth - element.clientWidth))
+            .toBeLessThanOrEqual(0);
+
+        // Narrow reachability: the stacked workspace stays scrollable to its
+        // last card. An overflow clip on the root wrapper would leave the card
+        // below the scrollport while every assertion above stays green.
+        await expect
+            .poll(() => panelBody.evaluate((element) => element.scrollHeight - element.clientHeight))
+            .toBeGreaterThan(0);
+        await panelBody.evaluate((element) => {
+            element.scrollTop = element.scrollHeight;
+        });
+        const lastCard = panelBody.locator('.gluten-window').last();
+        await expect
+            .poll(async () => {
+                const scrollerBox = await panelBody.boundingBox();
+                const cardBox = await lastCard.boundingBox();
+                if (scrollerBox === null || cardBox === null) {
+                    throw new Error('Expected the panel body and its last control card');
+                }
+                return cardBox.y + cardBox.height - (scrollerBox.y + scrollerBox.height);
+            })
+            .toBeLessThanOrEqual(1);
+    });
 });

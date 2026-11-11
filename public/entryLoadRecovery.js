@@ -36,6 +36,7 @@
     }
 
     function showFailure() {
+        document.documentElement.style.visibility = 'visible';
         const title = document.getElementById('entry-startup-title');
         const description = document.getElementById('entry-startup-description');
         const button = document.getElementById('entry-startup-reload');

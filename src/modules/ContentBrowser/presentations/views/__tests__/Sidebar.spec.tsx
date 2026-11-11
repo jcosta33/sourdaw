@@ -6,6 +6,7 @@ import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { Sidebar } from '../Sidebar';
 
+const previewStop = vi.hoisted(() => vi.fn());
 type DecodeAudioFileFn = typeof import('#/modules/AudioEngine/useCases').decodeAudioFile;
 type ImportedSampleDecodeHold = NonNullable<Parameters<DecodeAudioFileFn>[1]>;
 
@@ -20,7 +21,7 @@ vi.mock('../../hooks/useTracks', () => ({
 vi.mock('../../hooks/usePreviewAudio', () => ({
     usePreviewAudio: vi.fn(() => ({
         play: vi.fn(),
-        stop: vi.fn(),
+        stop: previewStop,
     })),
 }));
 
@@ -154,6 +155,16 @@ describe('Sidebar', () => {
         window.localStorage.clear();
         holdLifecycle.released = false;
         audioEngineMocks.decodeAudioFileMock.mockImplementation(audioEngineMocks.decodeImportedFile);
+    });
+
+    it('stops the active or preparing preview through the actual main-tab handler', () => {
+        render(<Sidebar />);
+        for (const name of ['Effects', 'Library', 'Macros', 'Project', 'Instruments']) {
+            fireEvent.click(screen.getByRole('tab', { name }));
+            expect(previewStop).toHaveBeenCalledTimes(
+                ['Effects', 'Library', 'Macros', 'Project', 'Instruments'].indexOf(name) + 1
+            );
+        }
     });
 
     it('should render Instruments tab by default', () => {

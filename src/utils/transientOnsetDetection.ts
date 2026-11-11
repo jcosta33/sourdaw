@@ -9,6 +9,21 @@
 const FFT_SIZE = 2048;
 const HOP_SIZE = 512;
 
+// Keep the exact Float64 trigonometric values and arithmetic order of each FFT
+// stage, reusing them across frames instead of recomputing them per butterfly.
+const FFT_TWIDDLES = Array.from({ length: Math.log2(FFT_SIZE) }, (_, stage) => {
+    const size = 2 << stage;
+    const real = new Float64Array(size / 2);
+    const imaginary = new Float64Array(size / 2);
+    const angleStep = (-2 * Math.PI) / size;
+    for (let k = 0; k < size / 2; k++) {
+        const angle = angleStep * k;
+        real[k] = Math.cos(angle);
+        imaginary[k] = Math.sin(angle);
+    }
+    return { real, imaginary };
+});
+
 export type TransientHit = {
     sampleOffset: number;
     confidence: number;
@@ -42,9 +57,18 @@ function computeSpectralFlux(samples: Float32Array): Float32Array {
 
     for (let f = 0; f < frameCount; f++) {
         const start = f * HOP_SIZE;
+        let hasEnergy = false;
         for (let i = 0; i < FFT_SIZE; i++) {
             re[i] = samples[start + i]! * window[i]!;
             im[i] = 0;
+            hasEnergy ||= re[i] !== 0;
+        }
+        if (!hasEnergy) {
+            // A zero window has zero magnitude and contributes no positive flux.
+            // Reset the preceding spectrum exactly as its FFT would, so the
+            // next attack still compares against silence rather than stale energy.
+            previousMag.fill(0);
+            continue;
         }
         fftInPlace(re, im);
         let frameFlux = 0;
@@ -138,14 +162,14 @@ function fftInPlace(re: Float32Array, im: Float32Array): void {
             im[j] = ti;
         }
     }
+    let stage = 0;
     for (let size = 2; size <= n; size <<= 1) {
         const half = size >> 1;
-        const angleStep = (-2 * Math.PI) / size;
+        const twiddles = FFT_TWIDDLES[stage++]!;
         for (let start = 0; start < n; start += size) {
             for (let k = 0; k < half; k++) {
-                const angle = angleStep * k;
-                const wr = Math.cos(angle);
-                const wi = Math.sin(angle);
+                const wr = twiddles.real[k]!;
+                const wi = twiddles.imaginary[k]!;
                 const a = start + k;
                 const b = a + half;
                 const tre = re[b]! * wr - im[b]! * wi;
