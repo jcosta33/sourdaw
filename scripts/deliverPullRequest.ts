@@ -113,7 +113,18 @@ export type DeliveryPort = CheckEvidencePort & {
     reviewBundleDeliveryAuthorization: (number: number, head: string) => DeliveryAuthorizationBinding;
     dependents: (baseBranch: string) => StackedPullRequest[];
     repositoryDeletesMergedBranches: () => boolean;
-    merge: (number: number, expectedHead: string, hasDependents: boolean, expectedTitle?: string) => void;
+    /**
+     * `expectedMessage` pins the squash commit body. Without it GitHub composes the message from the
+     * live pull-request body at merge time, so an edit landing after the final validated read would
+     * reach history unvalidated.
+     */
+    merge: (
+        number: number,
+        expectedHead: string,
+        hasDependents: boolean,
+        expectedTitle?: string,
+        expectedMessage?: string
+    ) => void;
     retarget: (number: number, baseBranch: string) => void;
     deliveryReceipts: (number: number) => DeliveryReceiptComment[];
     deliveryReceiptProof: (number: number) => DeliveryReceiptProof;
@@ -2789,6 +2800,10 @@ function completeIssueAfterMerge(
     }
 }
 
+function squashCommitTitle(pullRequest: Pick<PullRequestSnapshot, 'number' | 'title'>): string {
+    return `${pullRequest.title} (#${pullRequest.number})`;
+}
+
 function validateFreshMerger(pullRequest: PullRequestSnapshot): void {
     if (!isAuthorBotNodeId(pullRequest.mergedByActorNodeId)) {
         fail(`PR #${pullRequest.number} fresh merge was not performed by the author App`);
@@ -2998,7 +3013,13 @@ function deliverPullRequestWithCiAdmission(
         fail('automatic merged-branch deletion must be disabled before delivering a stacked PR');
     }
     try {
-        port.merge(number, finalSnapshot.headRefOid, hasDependents, `${finalSnapshot.title} (#${number})`);
+        port.merge(
+            number,
+            finalSnapshot.headRefOid,
+            hasDependents,
+            squashCommitTitle(finalSnapshot),
+            finalSnapshot.body ?? ''
+        );
     } catch (error) {
         if (error instanceof DeliveryMergeRejectedError) {
             if (error.certainty === 'definitive-no-merge') {
@@ -3759,7 +3780,7 @@ export function shellPort(
         },
         repositoryDeletesMergedBranches: () =>
             shell.capture('gh', ['api', `repos/${repository}`, '--jq', '.delete_branch_on_merge']) === 'true',
-        merge: (number, expectedHead, hasDependents, expectedTitle) => {
+        merge: (number, expectedHead, hasDependents, expectedTitle, expectedMessage) => {
             const policy = repositoryMergePolicy(repository, shell);
             if (hasDependents && policy.deletesMergedBranches) {
                 fail('automatic merged-branch deletion must be disabled before delivering a stacked PR');
@@ -3776,6 +3797,7 @@ export function shellPort(
                 '-f',
                 `merge_method=${policy.method}`,
                 ...(expectedTitle === undefined ? [] : ['-f', `commit_title=${expectedTitle}`]),
+                ...(expectedMessage === undefined ? [] : ['-f', `commit_message=${expectedMessage}`]),
             ];
             let response: string;
             try {

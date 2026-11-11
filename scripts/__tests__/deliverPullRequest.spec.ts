@@ -1155,10 +1155,11 @@ function fakePort(input: FakeInput = {}) {
             });
         },
         repositoryDeletesMergedBranches: () => input.deletesMergedBranches ?? false,
-        merge: (number, head, hasDependents, expectedTitle) => {
+        merge: (number, head, hasDependents, expectedTitle, expectedMessage) => {
             calls.push(`merge:${number}:${head}`);
             calls.push(`merge-has-dependents:${hasDependents}`);
             calls.push(`merge-title:${expectedTitle ?? 'none'}`);
+            calls.push(`merge-message:${expectedMessage ?? 'none'}`);
             if (lastPrimary === undefined) {
                 throw new Error('merge requires a primary snapshot');
             }
@@ -1863,6 +1864,17 @@ describe('pull-request delivery', () => {
         deliverPullRequest(42, port, tracker);
 
         expect(calls).toContain('merge-title:feat(delivery): retitled in UI (#42)');
+    });
+
+    it('pins the squash commit message to the validated final body rather than letting GitHub read it live', () => {
+        const closes = relationshipBody('Closes #2372');
+        const { port, calls, tracker } = fakePort({
+            primary: [pullRequest({ body: closes }), pullRequest({ body: closes })],
+        });
+
+        deliverPullRequest(42, port, tracker);
+
+        expect(calls).toContain(`merge-message:${closes}`);
     });
 
     it('fails closed when an UNKNOWN initial refresh becomes a merged author-App head with no persisted receipt authority', () => {
@@ -12342,7 +12354,7 @@ describe('delivery shell boundary', () => {
         });
         expect(port.dependents('feat/gate')).toEqual([stacked()]);
         expect(port.repositoryDeletesMergedBranches()).toBe(false);
-        port.merge(42, 'head', false, 'feat(delivery): committed subject');
+        port.merge(42, 'head', false, 'feat(delivery): committed subject', 'validated body\n\nsecond paragraph');
         port.retarget(43, 'main');
 
         expect(
@@ -12363,6 +12375,8 @@ describe('delivery shell boundary', () => {
                 'merge_method=squash',
                 '-f',
                 'commit_title=feat(delivery): committed subject',
+                '-f',
+                'commit_message=validated body\n\nsecond paragraph',
             ],
         });
         expect(runs).toContainEqual({
