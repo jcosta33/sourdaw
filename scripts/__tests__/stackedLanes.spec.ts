@@ -170,14 +170,30 @@ describe('stack lineage admission', () => {
             stackPublicationBase(descriptor, child, main, { ...port, parents: () => [{ ...parent, headSha: child }] })
         ).toThrow(/moved/);
         const merged = { ...port, parents: () => [{ ...parent, state: 'MERGED' as const, mergeCommit: landed }] };
-        expect(stackPublicationBase(descriptor, child, main, merged).branch).toBe('main');
+        const pinned = { ...descriptor, parentPullRequest: 12 };
+        expect(stackPublicationBase(pinned, child, main, merged)).toEqual({
+            branch: 'main',
+            head: main,
+            parent: { ...parent, state: 'MERGED', mergeCommit: landed },
+        });
         expect(() =>
-            stackPublicationBase(descriptor, child, main, {
+            stackPublicationBase(pinned, child, main, {
                 ...merged,
                 isAncestor: (a: string, d: string) => !(a === landed && d === child),
             })
         ).toThrow(/reconciliation/);
         expect(() => assertLandedStackParent(descriptor, child, main, merged)).toThrow(/reconciliation/);
+    });
+
+    it('refuses to publish a merged-parent child whose descriptor never pinned the parent pull request', () => {
+        const merged = {
+            parents: () => [{ ...parent, state: 'MERGED' as const, mergeCommit: landed }],
+            isAncestor: () => true,
+        };
+        expect(descriptor.parentPullRequest).toBeUndefined();
+        expect(() => stackPublicationBase(descriptor, child, main, merged)).toThrow(
+            `pnpm lane:sync-parent --lane <child>`
+        );
         expect(assertLandedStackParent({ ...descriptor, parentPullRequest: 12 }, child, main, merged).number).toBe(12);
     });
 

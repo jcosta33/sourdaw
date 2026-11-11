@@ -97,6 +97,40 @@ describe('pull-request contract', () => {
         expect(() => assertConventionalSubject('WIP identities', 'title')).toThrow(/not conventional/);
     });
 
+    it.each([
+        ['a line feed', '\n'],
+        ['a carriage return', '\r'],
+        ['a tab', '\t'],
+        ['a NUL', '\u0000'],
+        ['a next-line control', '\u0085'],
+        ['a line separator', '\u2028'],
+        ['a paragraph separator', '\u2029'],
+    ])('refuses a title carrying %s in its description or scope', (_label, character) => {
+        for (const title of [
+            `feat: x${character}Closes #1`,
+            `feat: x${character}`,
+            `feat(sco${character}pe): x`,
+            `feat(scope${character}): x`,
+        ]) {
+            expect(TITLE_PATTERN.test(title)).toBe(false);
+            expect(() => assertConventionalSubject(title, 'title')).toThrow(/title is not conventional/);
+            expect(conventionalType(title)).toBeUndefined();
+        }
+    });
+
+    it('still accepts ordinary titles with a scope, a breaking marker, unicode text and an emoji joiner', () => {
+        for (const title of [
+            'feat(vcs): add identities',
+            'fix(fermenter,proof-chamber)!: correct the plate',
+            'docs: explain the Ångström délai — überall',
+            'chore: tidy \u{1F468}\u200D\u{1F4BB} notes',
+        ]) {
+            expect(TITLE_PATTERN.test(title)).toBe(true);
+            expect(() => assertConventionalSubject(title, 'title')).not.toThrow();
+        }
+        expect(conventionalType('fix(fermenter,proof-chamber)!: correct the plate')).toBe('fix');
+    });
+
     it('composes a body with Closes and every required heading, and no retired Screenshots one', () => {
         const body = composePublishBody(2164, TITLE, SUMMARY, TEST_INSTRUCTIONS);
         expect(body).toContain('Closes #2164');
@@ -464,7 +498,62 @@ describe('pull-request contract', () => {
                 'feat(vcs): resolves https://github.com/owner/repo/issues/99',
                 TEST_INSTRUCTIONS
             )
+        ).toThrow(/unexpected issue-closing references/);
+    });
+
+    it('refuses a closing keyword followed by an issue or pull-request URL beside the expected reference', () => {
+        const prefix = '### 📌 Related issues & additional notes\n';
+        const repository = 'jcosta33/sourdaw';
+        expect(
+            refusal(() =>
+                issueRelationshipFromBody(
+                    `Fixes https://github.com/jcosta33/sourdaw/issues/999\n${prefix}Closes #10`,
+                    10,
+                    repository
+                )
+            )
+        ).toContain('"Fixes https://github.com/jcosta33/sourdaw/issues/999"');
+        for (const phrase of [
+            'fixes http://github.com/jcosta33/sourdaw/issues/999',
+            'Resolves: https://www.github.com/other/repo/issues/999',
+            'closes HTTPS://GitHub.COM/jcosta33/sourdaw/issues/999',
+            'Closed https://github.com/jcosta33/sourdaw/pull/999',
+            'Fixes https://github.com/other/repo/issues/10',
+        ]) {
+            expect(
+                refusal(() => issueRelationshipFromBody(`${phrase}\n${prefix}Closes #10`, 10, repository))
+            ).toContain(`"${phrase}"`);
+        }
+    });
+
+    it('refuses a closing URL in a relates body and accepts a URL in prose without a keyword', () => {
+        expect(
+            refusal(() =>
+                composePublishBody(
+                    10,
+                    TITLE,
+                    'Follows up on review, fixes https://github.com/jcosta33/sourdaw/issues/10',
+                    TEST_INSTRUCTIONS,
+                    'relates'
+                )
+            )
+        ).toContain('"fixes https://github.com/jcosta33/sourdaw/issues/10"');
+        expect(() =>
+            composePublishBody(
+                10,
+                TITLE,
+                'Background lives in https://github.com/jcosta33/sourdaw/issues/999 and the fix follows it.',
+                TEST_INSTRUCTIONS
+            )
         ).not.toThrow();
+        const prefix = '### 📌 Related issues & additional notes\n';
+        expect(
+            issueRelationshipFromBody(
+                `See https://github.com/jcosta33/sourdaw/issues/999 for context.\n${prefix}Closes #10`,
+                10,
+                'jcosta33/sourdaw'
+            )
+        ).toBe('closes');
     });
 
     it('refuses closing keywords in the summary naming the offending phrase and rule', () => {

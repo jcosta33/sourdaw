@@ -11,13 +11,17 @@ set -uo pipefail
 msg_file="$1"
 subject="$(head -1 "$msg_file")"
 
-# Let git's own generated messages through untouched.
+# Let git's merge and transient autosquash messages through untouched. Merges never become the
+# lane's pull-request title, and fixup!/squash! commits are folded away before publishing. Revert
+# and Reapply subjects are not passed: lane:publish titles the pull request from the newest
+# non-merge subject, so a type it refuses must be refused here too. The types below are exactly
+# LANE_CHANGE_TYPES in scripts/prContract.ts; scripts/__tests__/commitMsgHook.spec.ts pins them.
 case "$subject" in
-  "Merge "*|"Revert "*|"fixup! "*|"squash! "*|"Reapply "*) exit 0 ;;
+  "Merge "*|"fixup! "*|"squash! "*) exit 0 ;;
   "#"*|"") exit 0 ;;
 esac
 
-pattern='^(feat|fix|chore|docs|test|refactor|perf|build|ci|style|revert)(\([a-z0-9,._/-]+\))?!?: .+'
+pattern='^(feat|fix|chore|docs|test|refactor|perf|build|ci)(\([a-z0-9,._/-]+\))?!?: .+'
 
 if printf '%s' "$subject" | grep -Eq "$pattern"; then
   if [ "${#subject}" -gt 100 ]; then
@@ -34,7 +38,7 @@ commit-msg: subject does not match this repo's convention.
   $subject
 
 Expected  type(scope): subject
-Types     feat fix chore docs test refactor perf build ci style revert
+Types     feat fix chore docs test refactor perf build ci
 Scope     the module or crate — fermenter, proof-chamber, arrangement, infra …
 
   fix(fermenter): correct the plate tank delays that read a sample short

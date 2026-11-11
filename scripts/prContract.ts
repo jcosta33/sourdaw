@@ -27,9 +27,22 @@ export type LaneChangeType = (typeof LANE_CHANGE_TYPES)[number];
 const LANE_CHANGE_TYPE_ALTERNATION = LANE_CHANGE_TYPES.join('|');
 const LANE_CHANGE_TYPE_LIST = LANE_CHANGE_TYPES.join(', ');
 
-export const TITLE_PATTERN = new RegExp(`^(?:${LANE_CHANGE_TYPE_ALTERNATION})(?:\\([^)]+\\))?!?: .+`);
+/**
+ * A title is one line: control characters and Unicode line or paragraph separators are refused in
+ * the scope and the description, and the pattern is anchored at both ends, so a newline cannot
+ * smuggle a second line (a closing keyword, say) past the check. Format characters (`\p{Cf}`, the
+ * emoji zero-width joiner among them) stay allowed.
+ */
+const TITLE_REFUSED_CHARACTERS = '\\p{Cc}\\p{Zl}\\p{Zp}';
+const TITLE_TEXT = `[^${TITLE_REFUSED_CHARACTERS}]`;
+const TITLE_SCOPE = `(?:\\([^)${TITLE_REFUSED_CHARACTERS}]+\\))?`;
 
-const CONVENTIONAL_TYPE_PATTERN = new RegExp(`^(${LANE_CHANGE_TYPE_ALTERNATION})(?:\\([^)]+\\))?!?: .+`);
+export const TITLE_PATTERN = new RegExp(`^(?:${LANE_CHANGE_TYPE_ALTERNATION})${TITLE_SCOPE}!?: ${TITLE_TEXT}+$`, 'u');
+
+const CONVENTIONAL_TYPE_PATTERN = new RegExp(
+    `^(${LANE_CHANGE_TYPE_ALTERNATION})${TITLE_SCOPE}!?: ${TITLE_TEXT}+$`,
+    'u'
+);
 
 /** The type a conventional subject or title carries, or `undefined` when it carries none of the allowed ones. */
 export function conventionalType(subject: string): LaneChangeType | undefined {
@@ -324,8 +337,12 @@ export type DeliveryReceiptPayload = {
         | 'unavailable';
 };
 
+/**
+ * A closing keyword followed by `#N`, `owner/repo#N`, or a full GitHub issue or pull-request URL;
+ * GitHub links and closes on the URL form as well, so detection must see it to fail closed.
+ */
 const CLOSING_REFERENCE_PATTERN =
-    /\b(?:close(?:s|d)?|fix(?:es|ed)?|resolve(?:s|d)?):?\s+(?:#([1-9][0-9]*)|([\w.-]+\/[\w.-]+)#([1-9][0-9]*))\b/gi;
+    /\b(?:close(?:s|d)?|fix(?:es|ed)?|resolve(?:s|d)?):?\s+(?:#([1-9][0-9]*)|([\w.-]+\/[\w.-]+)#([1-9][0-9]*)|https?:\/\/(?:www\.)?github\.com\/([\w.-]+\/[\w.-]+)\/(issues|pull)\/([1-9][0-9]*))\b/gi;
 const CLOSING_RELATIONSHIP_PATTERN =
     /^(?:close(?:s|d)?|fix(?:es|ed)?|resolve(?:s|d)?):?\s+(?:#([1-9][0-9]*)|([\w.-]+\/[\w.-]+)#([1-9][0-9]*))$/i;
 const RELATED_RELATIONSHIP_PATTERN = /^Related #([1-9][0-9]*)$/;
@@ -350,6 +367,24 @@ function referencesIssue(reference: ClosingReference, issue: number, repository:
     );
 }
 
+/**
+ * The issue a closing phrase names. A pull-request URL names no issue, so it never counts as the
+ * expected reference; a URL always carries its repository, so it counts only in the same one.
+ */
+function closingReference(match: RegExpMatchArray): ClosingReference | undefined {
+    const [, shortIssue, qualifiedRepository, qualifiedIssue, urlRepository, urlKind, urlIssue] = match;
+    if (shortIssue !== undefined) {
+        return { issue: shortIssue };
+    }
+    if (qualifiedIssue !== undefined) {
+        return { repository: qualifiedRepository, issue: qualifiedIssue };
+    }
+    if (urlKind?.toLowerCase() === 'issues' && urlIssue !== undefined) {
+        return { repository: urlRepository, issue: urlIssue };
+    }
+    return undefined;
+}
+
 function assertIssueClosingReferences(
     body: string,
     issue: number | undefined,
@@ -362,9 +397,13 @@ function assertIssueClosingReferences(
     let matchedExpected = false;
 
     for (const match of matches) {
-        const reference: ClosingReference =
-            match[1] === undefined ? { repository: match[2], issue: match[3] ?? '' } : { issue: match[1] };
-        if (expected !== undefined && !matchedExpected && referencesIssue(reference, expected, repository)) {
+        const reference = closingReference(match);
+        if (
+            reference !== undefined &&
+            expected !== undefined &&
+            !matchedExpected &&
+            referencesIssue(reference, expected, repository)
+        ) {
             matchedExpected = true;
         } else {
             unexpectedPhrases.push(match[0]);
