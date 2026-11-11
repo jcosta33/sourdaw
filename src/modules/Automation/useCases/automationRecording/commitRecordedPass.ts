@@ -76,6 +76,7 @@ export function commitRecordedPass(key: string, mode: PassMode, boundaryRawBeat:
     if (!points) {
         points = [];
         pendingPoints.set(key, points);
+        pendingOwners.set(key, []);
     }
     const lastGestureBeat = points.length > 0 ? points[points.length - 1]!.beat : null;
 

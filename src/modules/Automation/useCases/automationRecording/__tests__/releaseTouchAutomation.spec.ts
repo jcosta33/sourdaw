@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { pendingAutoMatch } from '../autoMatchState';
 import { captureTouchAutomationRecordingAuthority } from '../captureTouchAutomationRecordingAuthority';
 import { discardTouchAutomation } from '../discardTouchAutomation';
 import { releaseTouchAutomation } from '../releaseTouchAutomation';
@@ -48,6 +49,7 @@ describe('releaseTouchAutomation', () => {
         pendingPoints.clear();
         pendingOwners.clear();
         touchActive.clear();
+        pendingAutoMatch.clear();
         trackSnapshot.value = null;
     });
 
@@ -211,6 +213,75 @@ describe('releaseTouchAutomation', () => {
         expect(pendingPoints.get('t1::gain')).toEqual([foreign]);
         expect(activeRecording.get('t1::gain')?.lastValue).toBe(0.3);
         expect(touchActive.has('t1::gain')).toBe(true);
+    });
+
+    // Moved-on head: the session head is producer B, but producer A is
+    // discarding. Removal is by ledger membership, not head membership, so
+    // A's own samples still leave the shared buffer while B's — and the
+    // session state anchored to B — stay untouched. Without the removal,
+    // A's refused gesture would flush into the lane at the next release,
+    // loop-wrap commit, or stop.
+    it('removes a moved-on producer samples while the session head keeps the lane', () => {
+        const producerA = Symbol('producer A');
+        const producerB = Symbol('producer B');
+        const pointA = { beat: 2, value: 0.3, curve: 'linear' as const, tension: 0 };
+        const pointB = { beat: 4, value: 0.7, curve: 'linear' as const, tension: 0 };
+        pendingPoints.set('t1::gain', [pointA, pointB]);
+        pendingOwners.set('t1::gain', [producerA, producerB]);
+        activeRecording.set('t1::gain', {
+            parameterId: 'gain',
+            trackId: 't1',
+            startBeat: 0,
+            lastValue: 0.7,
+            recordingOwner: producerB,
+        });
+        touchActive.add('t1::gain');
+
+        discardTouchAutomation('t1', 'gain', producerA);
+
+        expect(pendingPoints.get('t1::gain')).toEqual([pointB]);
+        expect(pendingOwners.get('t1::gain')).toEqual([producerB]);
+        expect(activeRecording.get('t1::gain')?.lastValue).toBe(0.7);
+        expect(activeRecording.get('t1::gain')?.recordingOwner).toBe(producerB);
+        expect(touchActive.has('t1::gain')).toBe(true);
+    });
+
+    // Head discarded with a foreign survivor: the partial discard must
+    // re-anchor recording authority to the surviving producer, or that
+    // producer's later release fails the owner guard and silently no-ops —
+    // no flush, no touchActive disarm, no AutoMatch glide, and the touch
+    // arm outlives every live producer.
+    it('re-anchors recording authority to a foreign survivor, whose release then flushes and glides', () => {
+        const producerF = Symbol('foreign survivor');
+        const producerD = Symbol('discarded head');
+        const pointF = { beat: 2, value: 0.3, curve: 'linear' as const, tension: 0 };
+        const pointD = { beat: 4, value: 0.7, curve: 'linear' as const, tension: 0 };
+        pendingPoints.set('t1::gain', [pointF, pointD]);
+        pendingOwners.set('t1::gain', [producerF, producerD]);
+        activeRecording.set('t1::gain', {
+            parameterId: 'gain',
+            trackId: 't1',
+            startBeat: 0,
+            lastValue: 0.7,
+            recordingOwner: producerD,
+        });
+        touchActive.add('t1::gain');
+
+        discardTouchAutomation('t1', 'gain', producerD);
+
+        expect(pendingPoints.get('t1::gain')).toEqual([pointF]);
+        expect(pendingOwners.get('t1::gain')).toEqual([producerF]);
+        expect(activeRecording.get('t1::gain')?.lastValue).toBe(0.3);
+        expect(activeRecording.get('t1::gain')?.recordingOwner).toBe(producerF);
+        expect(touchActive.has('t1::gain')).toBe(true);
+
+        releaseTouchAutomation('t1', 'gain', producerF);
+
+        expect(flushPendingPoints).toHaveBeenCalledTimes(1);
+        expect(flushPendingPoints).toHaveBeenCalledWith('t1::gain');
+        expect(touchActive.has('t1::gain')).toBe(false);
+        expect(activeRecording.get('t1::gain')?.lastValue).toBeNull();
+        expect(pendingAutoMatch.get('t1::gain')).toEqual({ releasedValue: 0.3, startedAtSeconds: null });
     });
 
     // The all-owned row above covers the fully-owned clear; an ownerless

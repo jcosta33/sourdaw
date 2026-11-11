@@ -4,9 +4,6 @@ import { activeRecording, pendingOwners, pendingPoints, touchActive } from './re
 export function discardTouchAutomation(trackId: string, parameterId: string, recordingOwner?: symbol): void {
     const key = makeKey(trackId, parameterId);
     const session = activeRecording.get(key);
-    if (recordingOwner !== undefined && session?.recordingOwner !== recordingOwner) {
-        return;
-    }
 
     const points = pendingPoints.get(key) ?? [];
     const owners = pendingOwners.get(key);
@@ -22,13 +19,17 @@ export function discardTouchAutomation(trackId: string, parameterId: string, rec
         touchActive.delete(key);
         if (session) {
             session.lastValue = null;
+            session.recordingOwner = undefined;
         }
         return;
     }
 
-    // Remove only the discarding producer's own samples. An undefined owner
-    // is its own class: an ownerless discarding authority removes only
-    // ownerless points, never another producer's.
+    // Remove only the discarding producer's own samples — by ledger
+    // membership, never by who heads the session: a producer that has moved
+    // on must still be able to withdraw its own samples from a buffer the
+    // session head now shares with a successor. An undefined owner is its
+    // own class: an ownerless discarding authority removes only ownerless
+    // points, never another producer's.
     const keptPoints: typeof points = [];
     const keptOwners: typeof owners = [];
     for (let index = 0; index < points.length; index += 1) {
@@ -46,16 +47,20 @@ export function discardTouchAutomation(trackId: string, parameterId: string, rec
         touchActive.delete(key);
         if (session) {
             session.lastValue = null;
+            session.recordingOwner = undefined;
         }
         return;
     }
 
     // Foreign samples remain in flight: keep the buffer and the touch arm —
     // another producer is still touching this lane — and re-anchor the latch
-    // window to the remaining tail instead of ending it.
+    // window and the release authority to the remaining tail instead of the
+    // discarded head, so the surviving producer's later release passes the
+    // owner guard.
     pendingPoints.set(key, keptPoints);
     pendingOwners.set(key, keptOwners);
     if (session) {
         session.lastValue = keptPoints[keptPoints.length - 1]!.value;
+        session.recordingOwner = keptOwners[keptOwners.length - 1];
     }
 }
