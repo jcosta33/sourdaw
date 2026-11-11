@@ -1,0 +1,21 @@
+.agents/skills/delivery-orchestration/SKILL.md
+  s_8f62528cf75f92::t_e18b85386540f0 510-511
+AGENTS.md
+  s_8f62528cf75f92::t_025f1227eee13e 309-310,669
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "6fed75e187c492190a32537d229064ff49ddfe51",
+  "prompts": {},
+  "sessions": {
+    "s_8f62528cf75f92": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1c29af72-5388-4e1c-97b2-12a14f011f7b",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
