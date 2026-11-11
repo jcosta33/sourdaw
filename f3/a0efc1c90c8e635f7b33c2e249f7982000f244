@@ -1,0 +1,19 @@
+src/modules/Transport/useCases/playheadScheduler/retireSupersededMidiMedia.ts
+  s_131b426bba0f96::t_47d51c0a53bd12 95-100
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f3a0efc1c90c8e635f7b33c2e249f7982000f244",
+  "prompts": {},
+  "sessions": {
+    "s_131b426bba0f96": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dec81aab-5eda-40a7-90d1-889fad31bc7f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
