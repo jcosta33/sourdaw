@@ -10,8 +10,13 @@ import {
 import { type Track, trackStore } from '#/modules/Arrangement/stores';
 import { createTrack, getArrangementHandlers } from '#/modules/Arrangement/useCases';
 import * as engineApi from '#/modules/AudioEngine/useCases';
+import { automationStore } from '#/modules/Automation/stores';
 import * as automationApi from '#/modules/Automation/useCases';
-import { setAutomationRecordingDependencies, stopAutomationRecording } from '#/modules/Automation/useCases';
+import {
+    addAutomationLane,
+    setAutomationRecordingDependencies,
+    stopAutomationRecording,
+} from '#/modules/Automation/useCases';
 import { leaveSession } from '#/modules/Collaboration/useCases';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 import {
@@ -83,6 +88,31 @@ function controller(id = DEVICE) {
     const result = createCrustParameterGesture(id);
     controllers.push(result);
     return result;
+}
+
+function holdSnapshotAdmission() {
+    const entered = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const admitted = Promise.withResolvers<void>();
+    const waitOriginal = automergeStorage.waitForAutomergeSnapshotTransaction;
+    const wait = vi.spyOn(automergeStorage, 'waitForAutomergeSnapshotTransaction').mockImplementation((...args) => {
+        admitted.resolve();
+        return waitOriginal(...args);
+    });
+    const snapshot = crdtApi.transactSnapshot(async () => {
+        entered.resolve();
+        await release.promise;
+    });
+    return {
+        entered: entered.promise,
+        admitted: admitted.promise,
+        release: async (pending: Promise<void>) => {
+            release.resolve();
+            await Promise.allSettled([snapshot, pending]);
+            wait.mockRestore();
+            await pending;
+        },
+    };
 }
 
 describe('Crust numeric controller with real Command and CRDT', () => {
@@ -252,6 +282,7 @@ describe('Crust numeric controller with real Command and CRDT', () => {
         vi.spyOn(automationApi, 'captureTouchAutomationRecordingAuthority').mockReturnValueOnce({
             owner: Symbol('controlled recording receipt'),
             release: recordingRelease,
+            discard: recordingRelease,
         });
         vi.spyOn(engineApi, 'captureDeviceParameterRuntimeWriteAuthority').mockReturnValueOnce({
             owner: Symbol('controlled engine receipt'),
@@ -267,7 +298,7 @@ describe('Crust numeric controller with real Command and CRDT', () => {
         await failed.catch(() => undefined);
 
         expect(notices).toEqual([{ message: 'Runtime release failed', level: 'error' }]);
-        expect(recordingRelease).toHaveBeenCalledTimes(2);
+        expect(recordingRelease).toHaveBeenCalledTimes(1);
         expect(runtimeRelease).toHaveBeenCalledTimes(1);
         expect(rawDevice().parameterValues.gain).toBe(0);
         expect(captureUndoHistory().past).toHaveLength(0);
@@ -284,7 +315,7 @@ describe('Crust numeric controller with real Command and CRDT', () => {
         expect(captureUndoHistory().past).toHaveLength(1);
     });
 
-    it('reports an initial recording release failure and recovers with one canonical write', async () => {
+    it('reports a recording release failure after an admitted canonical write', async () => {
         const recordingRelease = vi.fn().mockImplementationOnce(() => {
             throw new Error('Recording release failed');
         });
@@ -292,6 +323,7 @@ describe('Crust numeric controller with real Command and CRDT', () => {
         vi.spyOn(automationApi, 'captureTouchAutomationRecordingAuthority').mockReturnValueOnce({
             owner: Symbol('controlled recording receipt'),
             release: recordingRelease,
+            discard: recordingRelease,
         });
         vi.spyOn(engineApi, 'captureDeviceParameterRuntimeWriteAuthority').mockReturnValueOnce({
             owner: Symbol('controlled engine receipt'),
@@ -306,10 +338,12 @@ describe('Crust numeric controller with real Command and CRDT', () => {
         await failed.catch(() => undefined);
 
         expect(notices).toEqual([{ message: 'Recording release failed', level: 'error' }]);
-        expect(recordingRelease).toHaveBeenCalledTimes(2);
+        expect(recordingRelease).toHaveBeenCalledTimes(1);
         expect(runtimeRelease).toHaveBeenCalledTimes(1);
-        expect(rawDevice().parameterValues.gain).toBe(0);
-        expect(captureUndoHistory().past).toHaveLength(0);
+        expect(rawDevice().parameterValues.gain).toBe(9);
+        expect(projectedDevice()).toEqual(rawDevice());
+        expect(getCrustState(DEVICE).patch.gain).toBe(9);
+        expect(captureUndoHistory().past).toHaveLength(1);
 
         const token = edit.start('gain');
         const recovered = edit.change('gain', 6);
@@ -320,7 +354,7 @@ describe('Crust numeric controller with real Command and CRDT', () => {
         expect(rawDevice().parameterValues.gain).toBe(6);
         expect(projectedDevice()).toEqual(rawDevice());
         expect(getCrustState(DEVICE).patch.gain).toBe(6);
-        expect(captureUndoHistory().past).toHaveLength(1);
+        expect(captureUndoHistory().past).toHaveLength(2);
     });
 
     it('reports canonical and restoration failures once with the original error', async () => {
@@ -354,7 +388,7 @@ describe('Crust numeric controller with real Command and CRDT', () => {
         expect(captureUndoHistory().past).toHaveLength(0);
     });
 
-    it('restores and releases after persistent recording failures before a healthy edit', async () => {
+    it('reports a recording release failure without restoring over the admitted write', async () => {
         const recordingRelease = vi.fn(() => {
             throw new Error('Recording release failed');
         });
@@ -362,6 +396,7 @@ describe('Crust numeric controller with real Command and CRDT', () => {
         vi.spyOn(automationApi, 'captureTouchAutomationRecordingAuthority').mockReturnValueOnce({
             owner: Symbol('controlled recording receipt'),
             release: recordingRelease,
+            discard: recordingRelease,
         });
         vi.spyOn(engineApi, 'captureDeviceParameterRuntimeWriteAuthority').mockReturnValueOnce({
             owner: Symbol('controlled engine receipt'),
@@ -375,14 +410,14 @@ describe('Crust numeric controller with real Command and CRDT', () => {
         const failed = edit.settle('gain');
         await failed.catch(() => undefined);
 
-        expect(recordingRelease).toHaveBeenCalledTimes(2);
+        expect(recordingRelease).toHaveBeenCalledTimes(1);
         expect(runtimeRelease).toHaveBeenCalledTimes(1);
         expect(notices).toEqual([{ message: 'Recording release failed', level: 'error' }]);
-        expect(rawDevice().parameterValues.gain).toBe(0);
+        expect(rawDevice().parameterValues.gain).toBe(9);
         expect(projectedDevice()).toEqual(rawDevice());
-        expect(getCrustState(DEVICE).patch.gain).toBe(0);
-        expect(audio.updateDeviceParam).toHaveBeenLastCalledWith(TRACK, DEVICE, 'gain', 0);
-        expect(captureUndoHistory().past).toHaveLength(0);
+        expect(getCrustState(DEVICE).patch.gain).toBe(9);
+        expect(audio.updateDeviceParam).not.toHaveBeenCalledWith(TRACK, DEVICE, 'gain', 0);
+        expect(captureUndoHistory().past).toHaveLength(1);
 
         const token = edit.start('gain');
         const recovered = edit.change('gain', 6);
@@ -393,22 +428,20 @@ describe('Crust numeric controller with real Command and CRDT', () => {
         expect(rawDevice().parameterValues.gain).toBe(6);
         expect(projectedDevice()).toEqual(rawDevice());
         expect(getCrustState(DEVICE).patch.gain).toBe(6);
-        expect(captureUndoHistory().past).toHaveLength(1);
+        expect(captureUndoHistory().past).toHaveLength(2);
     });
 
     it('reports every distinct compound cleanup fault once', async () => {
-        const recordingRelease = vi
-            .fn()
-            .mockImplementationOnce(() => undefined)
-            .mockImplementationOnce(() => {
-                throw new Error('Final recording release failed');
-            });
+        const recordingRelease = vi.fn(() => {
+            throw new Error('Final recording release failed');
+        });
         const runtimeRelease = vi.fn(() => {
             throw new Error('Runtime release failed');
         });
         vi.spyOn(automationApi, 'captureTouchAutomationRecordingAuthority').mockReturnValueOnce({
             owner: Symbol('controlled recording receipt'),
             release: recordingRelease,
+            discard: recordingRelease,
         });
         vi.spyOn(engineApi, 'captureDeviceParameterRuntimeWriteAuthority').mockReturnValueOnce({
             owner: Symbol('controlled engine receipt'),
@@ -436,7 +469,7 @@ describe('Crust numeric controller with real Command and CRDT', () => {
         expect(message).toContain('Final recording release failed');
         expect(message).toContain('Runtime release failed');
         expect(message.match(/Restoration failed/g)).toHaveLength(1);
-        expect(recordingRelease).toHaveBeenCalledTimes(2);
+        expect(recordingRelease).toHaveBeenCalledTimes(1);
         expect(runtimeRelease).toHaveBeenCalledTimes(1);
         expect(rawDevice().parameterValues.gain).toBe(0);
         expect(captureUndoHistory().past).toHaveLength(0);
@@ -586,6 +619,109 @@ describe('Crust numeric controller with real Command and CRDT', () => {
         expect(captureUndoHistory().past).toHaveLength(1);
     });
 
+    it('keeps cancellation idempotent across store updates and settle before reacquiring', async () => {
+        const runtimeRelease = vi.fn();
+        vi.spyOn(engineApi, 'captureDeviceParameterRuntimeWriteAuthority').mockReturnValueOnce({
+            owner: Symbol('controlled engine receipt'),
+            isCurrent: () => true,
+            canCommit: () => true,
+            release: runtimeRelease,
+        });
+        const edit = controller();
+        await edit.change('gain', 9, true);
+        edit.cancel('gain');
+        const track = trackStore.value?.tracks[0];
+        if (!track) {
+            throw new Error('Missing track');
+        }
+
+        trackStore.set({ tracks: [{ ...track, frozen: true }], selectedTrackId: TRACK, ghostClips: [] });
+        trackStore.set({ tracks: [track], selectedTrackId: TRACK, ghostClips: [] });
+        await edit.settle('gain');
+
+        expect(runtimeRelease).toHaveBeenCalledTimes(1);
+        await edit.change('gain', 6);
+        expect(rawDevice().parameterValues.gain).toBe(6);
+        expect(projectedDevice()).toEqual(rawDevice());
+        expect(getCrustState(DEVICE).patch.gain).toBe(6);
+        expect(captureUndoHistory().past).toHaveLength(1);
+    });
+
+    it('lets a held terminal commit once after disposal without restoring over it', async () => {
+        const hold = holdSnapshotAdmission();
+        await hold.entered;
+        const edit = controller();
+        const pending = edit.change('gain', 9);
+        try {
+            await hold.admitted;
+            edit.dispose();
+            expect(edit.start('gain')).toBe(-1);
+        } finally {
+            await hold.release(pending);
+        }
+
+        expect(rawDevice().parameterValues.gain).toBe(9);
+        expect(projectedDevice()).toEqual(rawDevice());
+        expect(getCrustState(DEVICE).patch.gain).toBe(9);
+        expect(captureUndoHistory().past).toHaveLength(1);
+        expect(audio.updateDeviceParam).not.toHaveBeenCalledWith(TRACK, DEVICE, 'gain', 0);
+    });
+
+    it.each(['cancel', 'dispose'] as const)(
+        'discards a refused touch terminal on %s without durable automation or history',
+        async (termination) => {
+            setGestureClockSource({ getAudioTimeSeconds: () => 0, readNativeCursorBeats: () => 4 });
+            const track = trackStore.value?.tracks[0];
+            if (!track) {
+                throw new Error('Missing track');
+            }
+            trackStore.set({ tracks: [{ ...track, automationMode: 'touch' }], selectedTrackId: TRACK, ghostClips: [] });
+            flushAutomergeStorageWrites();
+            transportStore.set({ ...defaultTransportState, isPlaying: true, tempo: 120 });
+            addAutomationLane(TRACK, `${DEVICE}:gain`, 'Input gain');
+            const runtimeRelease = vi.fn();
+            vi.spyOn(engineApi, 'captureDeviceParameterRuntimeWriteAuthority').mockReturnValueOnce({
+                owner: Symbol('controlled engine receipt'),
+                isCurrent: () => true,
+                canCommit: () => true,
+                release: runtimeRelease,
+            });
+            const hold = holdSnapshotAdmission();
+            await hold.entered;
+            const edit = controller();
+            const pending = edit.change('gain', 9);
+            try {
+                await hold.admitted;
+                agentProjectRepairStateStore.set({
+                    audioGraphValid: false,
+                    detectedRevision: 'repair-revision',
+                    inspectionAvailable: true,
+                    projectInvariantsValid: false,
+                    rawProjectRetained: true,
+                    repairCandidates: [],
+                    status: 'repair-required',
+                });
+                if (termination === 'cancel') {
+                    edit.cancel('gain');
+                } else {
+                    edit.dispose();
+                }
+            } finally {
+                await hold.release(pending);
+            }
+            stopAutomationRecording();
+
+            expect(rawDevice().parameterValues.gain).toBe(0);
+            expect(projectedDevice()).toEqual(rawDevice());
+            expect(getCrustState(DEVICE).patch.gain).toBe(0);
+            expect(captureUndoHistory().past).toHaveLength(0);
+            expect(automationStore.value?.lanes.flatMap((lane) => lane.points) ?? []).toEqual([]);
+            expect(runtimeRelease).toHaveBeenCalledTimes(1);
+            expect(notices).toHaveLength(1);
+            expect(notices.map((notice) => notice.message).join(';')).toMatch(/refused|repair/i);
+        }
+    );
+
     it('reports every distinct explicit-cancel cleanup fault once', async () => {
         const recordingRelease = vi.fn(() => {
             throw new Error('Cancel recording release failed');
@@ -596,6 +732,7 @@ describe('Crust numeric controller with real Command and CRDT', () => {
         vi.spyOn(automationApi, 'captureTouchAutomationRecordingAuthority').mockReturnValueOnce({
             owner: Symbol('controlled recording receipt'),
             release: recordingRelease,
+            discard: recordingRelease,
         });
         vi.spyOn(engineApi, 'captureDeviceParameterRuntimeWriteAuthority').mockReturnValueOnce({
             owner: Symbol('controlled engine receipt'),
@@ -639,6 +776,7 @@ describe('Crust numeric controller with real Command and CRDT', () => {
         vi.spyOn(automationApi, 'captureTouchAutomationRecordingAuthority').mockReturnValueOnce({
             owner: Symbol('controlled recording receipt'),
             release: recordingRelease,
+            discard: recordingRelease,
         });
         vi.spyOn(engineApi, 'captureDeviceParameterRuntimeWriteAuthority').mockReturnValueOnce({
             owner: Symbol('controlled engine receipt'),

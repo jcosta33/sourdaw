@@ -109,13 +109,22 @@ function failureDetail(error: unknown, fallback: string): string {
     return error instanceof Error ? error.message : fallback;
 }
 
-function retire(scope: Scope, gesture: Gesture, restore: boolean): SettlementFailure | undefined {
+function retire(
+    scope: Scope,
+    gesture: Gesture,
+    restore: boolean,
+    flushRecording = false
+): SettlementFailure | undefined {
     if (restore) {
         gesture.cancelled = true;
     }
     const errors: unknown[] = [];
     try {
-        gesture.recording.release();
+        if (flushRecording) {
+            gesture.recording.release();
+        } else {
+            gesture.recording.discard();
+        }
     } catch (error) {
         errors.push(error);
     }
@@ -136,6 +145,10 @@ function retire(scope: Scope, gesture: Gesture, restore: boolean): SettlementFai
 }
 
 function collectCancellation(scope: Scope, gesture: Gesture, reacquirable = false): SettlementFailure | undefined {
+    if (gesture.cancelled) {
+        gesture.reacquirable ||= reacquirable;
+        return undefined;
+    }
     gesture.cancelled = true;
     gesture.reacquirable = reacquirable;
     return retire(scope, gesture, !gesture.committed);
@@ -222,9 +235,7 @@ function start(scope: Scope, key: Key): number {
 }
 
 function current(scope: Scope, gesture: Gesture): boolean {
-    return (
-        !scope.disposed && !gesture.cancelled && scope.gestures.get(gesture.key) === gesture && !!readTarget(gesture)
-    );
+    return !gesture.cancelled && scope.gestures.get(gesture.key) === gesture && !!readTarget(gesture);
 }
 
 function deleteInstalledGesture(scope: Scope, gesture: Gesture): void {
@@ -247,9 +258,12 @@ function notifySettlementFailure(errors: unknown[], fallback = 'Crust parameter 
     }
 }
 
-function finishCommit(scope: Scope, gesture: Gesture): SettlementFailure | undefined {
+function finishCommit(scope: Scope, gesture: Gesture, admitted: boolean): SettlementFailure | undefined {
     try {
-        return retire(scope, gesture, !gesture.committed);
+        if (gesture.cancelled) {
+            return undefined;
+        }
+        return retire(scope, gesture, !gesture.committed, admitted);
     } finally {
         deleteInstalledGesture(scope, gesture);
     }
@@ -257,10 +271,11 @@ function finishCommit(scope: Scope, gesture: Gesture): SettlementFailure | undef
 
 async function commit(scope: Scope, gesture: Gesture): Promise<void> {
     let failure: SettlementFailure | undefined;
+    let admitted = false;
     try {
-        gesture.recording.release();
         const value = gesture.preview;
         if (value === undefined || value === (gesture.value ?? gesture.defaultValue)) {
+            admitted = true;
             return;
         }
         await executeUserAppAction(
@@ -280,7 +295,13 @@ async function commit(scope: Scope, gesture: Gesture): Promise<void> {
                 },
             },
             {
-                shouldExecute: () => current(scope, gesture),
+                shouldExecute: () => {
+                    const admissible = current(scope, gesture);
+                    if (!admissible) {
+                        failure = { errors: [new Error('Crust parameter change was refused')] };
+                    }
+                    return admissible;
+                },
                 deviceParameterRuntimeAuthority: {
                     trackId: gesture.trackId,
                     deviceId: gesture.deviceId,
@@ -289,6 +310,7 @@ async function commit(scope: Scope, gesture: Gesture): Promise<void> {
                     isCurrent: gesture.runtime.canCommit,
                 },
                 onCommitted: () => {
+                    admitted = true;
                     gesture.committed = true;
                 },
             }
@@ -296,7 +318,7 @@ async function commit(scope: Scope, gesture: Gesture): Promise<void> {
     } catch (error) {
         failure = { errors: [error] };
     } finally {
-        const cleanupFailure = finishCommit(scope, gesture);
+        const cleanupFailure = finishCommit(scope, gesture, admitted);
         const errors = [...(failure?.errors ?? []), ...(cleanupFailure?.errors ?? [])];
         if (errors.length > 0) {
             notifySettlementFailure(errors);
@@ -403,7 +425,9 @@ export function createCrustParameterGesture(deviceId: string) {
             scope.disposed = true;
             unsubscribe();
             for (const gesture of scope.gestures.values()) {
-                cancel(scope, gesture);
+                if (!gesture.pending) {
+                    cancel(scope, gesture);
+                }
             }
         },
     };
