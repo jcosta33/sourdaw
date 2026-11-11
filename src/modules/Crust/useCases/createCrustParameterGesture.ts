@@ -327,7 +327,13 @@ async function commit(scope: Scope, gesture: Gesture): Promise<void> {
         failure = { errors: [error] };
     } finally {
         const cleanupFailure = finishCommit(scope, gesture, admitted);
-        const errors = [...(failure?.errors ?? []), ...(cleanupFailure?.errors ?? [])];
+        const errors: unknown[] = [];
+        if (failure) {
+            errors.push(...failure.errors);
+        }
+        if (cleanupFailure) {
+            errors.push(...cleanupFailure.errors);
+        }
         if (errors.length > 0) {
             notifySettlementFailure(errors);
         }
@@ -362,7 +368,11 @@ function applyChange(
         return gesture.pending;
     } catch (error) {
         const cleanupFailure = collectCancellation(scope, gesture, true);
-        notifySettlementFailure([error, ...(cleanupFailure?.errors ?? [])], 'Crust parameter preview failed');
+        const errors = [error];
+        if (cleanupFailure) {
+            errors.push(...cleanupFailure.errors);
+        }
+        notifySettlementFailure(errors, 'Crust parameter preview failed');
         return Promise.resolve();
     }
 }
