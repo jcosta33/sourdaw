@@ -1,0 +1,58 @@
+src/modules/Crust/presentations/components/CrustControlZone.tsx
+  h_beb54bf43b47b7 90,136
+src/modules/Crust/presentations/components/__tests__/CrustControlZone.accessibility.spec.tsx
+  h_beb54bf43b47b7 1-26
+src/modules/Fermenter/presentations/components/AdditiveSection.tsx
+  h_beb54bf43b47b7 33,48,63,78
+src/modules/Fermenter/presentations/components/CrumbsSection.tsx
+  h_beb54bf43b47b7 43,58
+src/modules/Fermenter/presentations/components/GranularSection.tsx
+  h_beb54bf43b47b7 33,48,63,77,91,106
+src/modules/Fermenter/presentations/components/KarplusSection.tsx
+  h_beb54bf43b47b7 30,45
+src/modules/Fermenter/presentations/components/LayerStack.tsx
+  h_beb54bf43b47b7 108,122
+src/modules/Fermenter/presentations/components/ModulationSection.tsx
+  h_beb54bf43b47b7 32,53,68
+src/modules/Fermenter/presentations/components/WarpSection.tsx
+  h_beb54bf43b47b7 67,103,118
+src/modules/Fermenter/presentations/components/__tests__/RotaryAccessibleNames.spec.tsx
+  h_beb54bf43b47b7 1-93
+src/modules/GrandBoule/presentations/components/PerNoteEditor.tsx
+  h_beb54bf43b47b7 99
+src/modules/GrandBoule/presentations/components/__tests__/PerNoteEditor.spec.tsx
+  h_beb54bf43b47b7 23,42-48
+src/modules/Grinder/presentations/views/GrinderPanel.tsx
+  h_beb54bf43b47b7 717,727,737,755,765,775,1271
+src/modules/Grinder/presentations/views/__tests__/GrinderPanel.spec.tsx
+  h_beb54bf43b47b7 91-93,280-286
+src/modules/Levain/presentations/components/ExpressionPanel.tsx
+  h_beb54bf43b47b7 165,184,207,224,242
+src/modules/Levain/presentations/components/HumanizePanel.tsx
+  h_beb54bf43b47b7 29,49,67,85,103
+src/modules/Levain/presentations/components/LegatoTuning.tsx
+  h_beb54bf43b47b7 142,158,174
+src/modules/Levain/presentations/components/MicBlendSlider.tsx
+  h_beb54bf43b47b7 80,162
+src/modules/Levain/presentations/components/__tests__/RotaryAccessibleNames.spec.tsx
+  h_beb54bf43b47b7 1-80
+src/modules/TimelineEditor/presentations/views/Inspector/TrackMidiFxSection.tsx
+  h_beb54bf43b47b7 103,133,144,158
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/TrackMidiFxSection.spec.tsx
+  h_beb54bf43b47b7 42-51,147-162
+src/modules/Tuner/presentations/views/TunerPanel.tsx
+  h_beb54bf43b47b7 205
+src/modules/Tuner/presentations/views/__tests__/TunerPanel.spec.tsx
+  h_beb54bf43b47b7 163,170,177,227
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "8f3390d5d27747f77db285197aa3161e6c1ca3ca",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
