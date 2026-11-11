@@ -18,6 +18,13 @@ function ownsCurrentMedia(source: SourceWithFade, currentFrozenKey: string | nul
     return currentFrozenKey ? source.scheduledFrozenKey === currentFrozenKey : source.scheduledAudioKey !== undefined;
 }
 
+function hasMediaOwnerStop(source: SourceWithFade): boolean {
+    return (
+        source.scheduledMediaOwnerStopTime !== undefined &&
+        source.scheduledMediaOwnerStopTime === source.scheduledStopTime
+    );
+}
+
 function findReplacementStart(
     track: MediaTrack,
     currentFrozenKey: string | null,
@@ -28,7 +35,7 @@ function findReplacementStart(
         if (
             candidate.scheduledTrackId === track.id &&
             ownsCurrentMedia(candidate, currentFrozenKey) &&
-            candidate.scheduledStopTime === undefined &&
+            !hasMediaOwnerStop(candidate) &&
             candidate.scheduledStartTime !== undefined
         ) {
             replacementStart = Math.min(replacementStart, candidate.scheduledStartTime);
@@ -91,6 +98,7 @@ function retireSource(
             }
             source.scheduledStopTime = actualStop;
         }
+        source.scheduledMediaOwnerStopTime = actualStop;
         if (actualStop <= now) {
             activeAudioSources.splice(index, 1);
         }
@@ -129,7 +137,7 @@ export function retireSupersededMidiMedia(
             const replacedPendingOwner =
                 !superseded &&
                 ownsCurrentMedia(source, currentFrozenKey) &&
-                source.scheduledStopTime !== undefined &&
+                hasMediaOwnerStop(source) &&
                 Number.isFinite(replacementStart);
             if (!superseded && !replacedPendingOwner) {
                 continue;

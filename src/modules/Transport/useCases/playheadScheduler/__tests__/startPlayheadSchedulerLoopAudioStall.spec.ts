@@ -8,12 +8,14 @@ import { playheadClockRef } from '../../../stores/playheadClockRef';
 import { playheadWrapCountRef } from '../../../stores/playheadWrapCountRef';
 import { liveMidiProcessor } from '../../scheduling/liveMidiProcessor';
 import { metronomeSchedulingState } from '../../scheduling/metronomeSchedulingState';
+import { scheduleAudioClips } from '../../scheduling/scheduleAudioClips';
 import { scheduleMidiNotes } from '../../scheduling/scheduleMidiNotes';
 import { executePlayheadSeek } from '../../transportControls/executePlayheadSeek';
 import { notePanicParticipants } from '../../transportControls/notePanicParticipants';
 import { pausePlayback } from '../../transportControls/pausePlayback';
 import { createLoopAudioSchedule } from '../createLoopAudioSchedule';
 import { disposePlayheadScheduler } from '../disposePlayheadScheduler';
+import { fenceSource } from '../fenceSource';
 import { schedulerSession } from '../schedulerSession';
 import { startPlayheadScheduler } from '../startPlayheadScheduler';
 import { stopPlayheadScheduler } from '../stopPlayheadScheduler';
@@ -976,6 +978,37 @@ describe('mixed MIDI media ownership during non-loop playback', () => {
 
         await tickAt(13_200);
         expect(snapshotSources().filter((source) => source.bufferId === 'bake')).toHaveLength(2);
+    });
+
+    it('keeps an ordinary same-track loop fence when an overlapping clip joins the pass', () => {
+        const track = seedTrack('left', 6, false, 0);
+        track.clips[0]!.startBeat = 2;
+        trackStoreState.value = { tracks: [track] };
+        const scheduledAudio = new Set<string>();
+        const scheduledFrozen = new Set<string>();
+        const active: AudioBufferSourceNode[] = [];
+        const transport = { ...defaultTransportState, tempo: 120, isLooping: true, loopStart: 0, loopEnd: 4 };
+        ctxTime.now = 10;
+
+        scheduleAudioClips(0, 4, 0, scheduledAudio, scheduledFrozen, active, transport, 10);
+        expect(active).toHaveLength(1);
+        expect(snapshotSources()[0]!.start.when).toBe(11);
+        const firstKey = [...scheduledAudio][0]!;
+        fenceSource(active[0]!, audioContextStub as unknown as BaseAudioContext, 12);
+        expect(snapshotSources()[0]!.stops.map((stop) => stop.when)).toEqual([12]);
+
+        track.clips.push({ ...track.clips[0]!, id: 'left-overlap', startBeat: 3, endBeat: 5 });
+        scheduleAudioClips(0, 4, 0, scheduledAudio, scheduledFrozen, active, transport, 10);
+
+        const after = snapshotSources();
+        const first = after.find((source) => source.start.when === 11)!;
+        const overlap = after.find((source) => source.start.when === 11.5)!;
+        expect(after).toHaveLength(2);
+        expect(first.stops.map((stop) => stop.when)).toEqual([12]);
+        expect(overlap.stops).toEqual([]);
+        expect(active).toHaveLength(2);
+        expect(scheduledAudio).toHaveLength(2);
+        expect(scheduledAudio.has(firstKey)).toBe(true);
     });
 
     it.each(['waiting-first', 'mixed-first'] as const)(
