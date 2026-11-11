@@ -115,23 +115,27 @@ describe('useNotificationQueue — session history', () => {
         expect(result.current.history.filter((item) => item.message === 'notification-54')).toHaveLength(1);
     });
 
-    it('acknowledges toast dismissal and removes history dismissal from both surfaces', () => {
+    it('acknowledges toast dismissal and removes a queued history entry from both surfaces', () => {
         const { result } = renderHook(() => useNotificationQueue());
         act(() => {
             emit!({ message: 'first', level: 'info' });
             emit!({ message: 'second', level: 'info' });
         });
         const firstId = result.current.history[1]!.id;
+        const secondId = result.current.history[0]!.id;
 
         act(() => {
             result.current.dismissCurrent();
         });
+        expect(result.current.items.map((item) => item.message)).toEqual(['second']);
         expect(result.current.history.find((item) => item.id === firstId)).toMatchObject({ read: true });
+        expect(result.current.history.find((item) => item.id === secondId)).toMatchObject({ read: false });
 
         act(() => {
-            result.current.dismissNotification(firstId);
+            result.current.dismissNotification(secondId);
         });
-        expect(result.current.history.some((item) => item.id === firstId)).toBe(false);
+        expect(result.current.items).toEqual([]);
+        expect(result.current.history.some((item) => item.id === secondId)).toBe(false);
 
         act(() => {
             result.current.markAllRead();
