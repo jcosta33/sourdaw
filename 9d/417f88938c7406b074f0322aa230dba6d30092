@@ -1,0 +1,136 @@
+.agents/skills/review-stances/guard-reclamation-proof.md
+  s_51bd2c5eff37cf::t_0779e3f1ff3009 7,13-19,26-37,45-89,93-97,99,101,103-111,119-120
+  s_51bd2c5eff37cf::t_094eb30e46577d 98,100,102
+  s_51bd2c5eff37cf::t_217cb62b24bce1 8-9
+  s_51bd2c5eff37cf::t_210a407cc8c79d 90-92,112-117
+.agents/skills/review-stances/maintained-e2e-specs.md
+  s_51bd2c5eff37cf::t_094eb30e46577d 83,105
+  s_51bd2c5eff37cf::t_4469f451687fe2 5,14-18,26-27,31,35-38,42-43,47-48,50-55,58-62,66-72,76-82,84-86,90-97,101-102,104,106
+  s_51bd2c5eff37cf::t_c65d7f9fe310e7 103
+.agents/skills/review-stances/test-validity.md
+  s_51bd2c5eff37cf::t_094eb30e46577d 53
+  s_51bd2c5eff37cf::t_cccdd8d9d61d7c 23-25,88-91,96,185-196
+  s_51bd2c5eff37cf::t_cffd2de5f5b994 52,54,147-150
+  s_51bd2c5eff37cf::t_84c5516a80533d 84-87,92-95
+.agents/skills/review-stances/provider-egress.md
+  s_51bd2c5eff37cf::t_70b5bf01714cef 13,20,29,37
+  s_51bd2c5eff37cf::t_cf2eaf8fe300c3 3-9,14-19,21-28,30-36,38-63
+.agents/skills/review-stances/keyboard-action-accessibility.md
+  s_51bd2c5eff37cf::t_8af4cfd62ab752 3-7,16,18-42
+  s_51bd2c5eff37cf::t_a43bfdf54ec691 11-15
+  s_51bd2c5eff37cf::t_094eb30e46577d 17
+.agents/skills/review-stances/validation-scope-selection.md
+  s_51bd2c5eff37cf::t_eab7ce2ef71b66 5-9,13-22,29-36,38-71
+  s_51bd2c5eff37cf::t_5dce57472bc996 26-28
+.agents/skills/review-stances/correctness.md
+  s_51bd2c5eff37cf::t_6802865103f196 50-51
+  s_51bd2c5eff37cf::t_da6a80650a2672 37,44-46,49,162,164,178-185
+  s_51bd2c5eff37cf::t_ddc93e284b8eb6 143-144
+  s_51bd2c5eff37cf::t_8ef7970a02d4c1 142
+  s_51bd2c5eff37cf::t_b71766a8ebef5d 145-146
+.agents/skills/review-stances/test-observation-scope.md
+  s_51bd2c5eff37cf::t_d04aa374c9a7cb 4,36,89-90,103-104,114-117
+.agents/skills/review-stances/public-repair-records.md
+  s_51bd2c5eff37cf::t_25f0f961cf52e0 14,20-23,28,58-60,66-68,71,78-80,86-97
+  s_51bd2c5eff37cf::t_2c70b3bea1ef6f 4-5
+.agents/skills/review-stances/asset-cache-publication.md
+  s_51bd2c5eff37cf::t_f886e5de95b1f5 4-8,12-18,43-46,50-81
+  s_51bd2c5eff37cf::t_9916872fea8682 47-48
+  s_51bd2c5eff37cf::t_5d56fea5abad69 49
+.agents/skills/review-stances/replay-authority.md
+  s_51bd2c5eff37cf::t_324735188faa70 72,79,106-108,125-128,141-143,150,159-162
+.agents/skills/review-stances/input-monitoring-ownership.md
+  s_51bd2c5eff37cf::t_04e471608400da 172
+  s_51bd2c5eff37cf::t_704bbb1aee8895 25-26,59-60,71,82-83,88-89,104,108,114,157,165,167-171
+  s_51bd2c5eff37cf::t_51eb10628daa2b 72-74
+.agents/skills/review-stances/async-file-imports.md
+  s_51bd2c5eff37cf::t_59e441fd88ee9b 12-26,31-45,48-53
+.agents/skills/review-stances/meter-reading-ownership.md
+  s_51bd2c5eff37cf::t_9de9a70b56b65d 1,3-7,17,21-22,24-33
+.agents/skills/review-stances/collaboration-teardown.md
+  s_51bd2c5eff37cf::t_c017957b835abb 5,48-52
+.agents/skills/review-stances/runtime-instance-lifetimes.md
+  s_51bd2c5eff37cf::t_bdd85052f1f0dd 6-8,13-15,17-35,49-51,54-126
+.agents/skills/review-stances/README.md
+  s_51bd2c5eff37cf::t_2b9ca802e1bd95 50-95
+  s_51bd2c5eff37cf::t_7d835e8674e57c 120
+  s_51bd2c5eff37cf::t_7a83441a3f70ee 33-36
+  s_51bd2c5eff37cf::t_6201ee5c3fd351 167-169
+  s_51bd2c5eff37cf::t_3fbcce8cb7c27b 121-122
+.agents/skills/review-stances/closure-authority-proof.md
+  s_51bd2c5eff37cf::t_c81fd3e847f7f6 14,22,28-33,40-44,49-52,58,60-61,68-70,94-97,100-108,117-118,126-128,134-135
+.agents/skills/review-stances/release-provenance-drift.md
+  s_51bd2c5eff37cf::t_e77b3137671905 22-23
+  s_51bd2c5eff37cf::t_35d79d21615fab 3-9,13-21,24-38
+.agents/skills/review-stances/session-lifecycle.md
+  s_51bd2c5eff37cf::t_094eb30e46577d 43
+  s_51bd2c5eff37cf::t_b290be9345542d 86-95,97-108,146,169
+  s_51bd2c5eff37cf::t_1f72316d9a87cb 3-7,9-12,16-38,40-42,44-59,61-85,96,109-127,129-134,136-145,147-151,157-159,167
+.agents/skills/review-stances/audio-timing-format-laws.md
+  s_51bd2c5eff37cf::t_beee2bdd2aca5a 5-7,11-82,93-132
+  s_51bd2c5eff37cf::t_c6d645fe51a3b7 83-92
+.agents/skills/review-stances/audio-source-time.md
+  s_51bd2c5eff37cf::t_949c8d03115608 6-9,13-14,16-73,75-88,90-127,129-136,138-141
+  s_51bd2c5eff37cf::t_f2a47e031d7993 128
+.agents/skills/review-stances/rendered-ui-layout.md
+  s_51bd2c5eff37cf::t_1e4d364f979e22 1,3-9,13-23,38-66,69-82
+  s_51bd2c5eff37cf::t_094eb30e46577d 67,83
+  s_51bd2c5eff37cf::t_c1ca5b1e971678 25-37
+.agents/skills/review-stances/command-entry-and-state-oracles.md
+  s_51bd2c5eff37cf::t_094eb30e46577d 109
+  s_51bd2c5eff37cf::t_5cf46e65c353f2 4-5
+  s_51bd2c5eff37cf::t_c99b6524c01d6d 51,60,66,72-94,96-108,110-121,123-124
+.agents/skills/review-stances/security-and-platform.md
+  s_51bd2c5eff37cf::t_c2516a08c97b7d 118-119
+  s_51bd2c5eff37cf::t_b15e5fc914cd2c 5-6,10-19,23-48,50-81,83,88-117,120-147,155,169,174
+  s_51bd2c5eff37cf::t_6ffade9e6c25db 20-21,84-87
+.agents/skills/review-stances/review-authorization.md
+  s_51bd2c5eff37cf::t_cbb0e45611c2d2 11,19,21-22,41-46,68-72,75-82
+.agents/skills/review-stances/moving-coordinate-inverses.md
+  s_51bd2c5eff37cf::t_702b1c46942018 1,13-53,55,68-88
+.agents/skills/review-stances/project-integrity.md
+  s_51bd2c5eff37cf::t_bea78c40bf1ff4 157
+  s_51bd2c5eff37cf::t_074281c37554b4 152-153
+  s_51bd2c5eff37cf::t_0a0fde0b4d6f78 6-12,15-16,117-124,126-136,145-151,154-156,158-166,173-182
+.agents/skills/review-stances/code-craft.md
+  s_51bd2c5eff37cf::t_2c3d8c1c1a40f0 3-8,12-52
+.agents/skills/review-stances/bundled-model-assets.md
+  s_51bd2c5eff37cf::t_11405ac0b6da4b 41-42
+  s_51bd2c5eff37cf::t_dd43caf883fb2a 9-16,18-23,28-35,38-40,43-44
+.agents/skills/review-stances/ai-request-authority.md
+  s_51bd2c5eff37cf::t_3b620be558698c 64-69,76-93
+scripts/__tests__/codeqlNightlyEvidence.spec.ts
+  s_51bd2c5eff37cf::t_75e358f1999ee0 16
+.agents/skills/review-stances/startup-entry-availability.md
+  s_51bd2c5eff37cf::t_b194a15d285631 10-12,16-68,70,72-81,84-91,93-99,103-107
+.agents/skills/review-stances/test-timing-and-isolation.md
+  s_51bd2c5eff37cf::t_b6e7f300606816 29-30
+  s_51bd2c5eff37cf::t_7bcabff891a33e 68-69
+  s_51bd2c5eff37cf::t_788f49368922a4 22-26,38-40,45-46,53-54,97-114
+.agents/skills/review-stances/trusted-script-delivery.md
+  s_76ccd61d453edf::t_34c85b463d0e44 22-28,31,35,52-56,61-63,65-67,70
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9d417f88938c7406b074f0322aa230dba6d30092",
+  "prompts": {},
+  "sessions": {
+    "s_51bd2c5eff37cf": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a7200200-3dc3-4527-84b3-151df1591d6c",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_76ccd61d453edf": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "108ea70a-a924-42ce-b7b8-fd9c1012e902",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
