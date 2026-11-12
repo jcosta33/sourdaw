@@ -228,30 +228,38 @@ type ExplicitRecoveryProof = {
     origin: string;
 };
 
+function createNodeE2eRecoveryProof(
+    receipt: GuardFailureReceipt,
+    recoveryCwd: string,
+    laneRoot: string
+): ExplicitRecoveryProof {
+    const canonicalLaneRoot = realpathSync(laneRoot);
+    const entrypoint = join(canonicalLaneRoot, 'scripts', 'e2eDevServer.ts');
+    if (
+        recoveryCwd !== canonicalLaneRoot ||
+        realpathSync(entrypoint) !== entrypoint ||
+        !statSync(entrypoint).isFile()
+    ) {
+        throw new Error('recorded node E2E server must use its own lane-root entrypoint and cwd');
+    }
+    const rawPort = receipt.args[1];
+    if (receipt.args.length !== 2 || rawPort === undefined || !/^[0-9]+$/.test(rawPort)) {
+        throw new Error('recorded node E2E server requires exactly one explicit decimal port');
+    }
+    const port = Number(rawPort);
+    if (!Number.isInteger(port) || port < 1 || port > 65535) {
+        throw new Error(`recorded node E2E server has an invalid port: ${rawPort}`);
+    }
+    return { port, origin: `http://127.0.0.1:${port}` };
+}
+
 function createExplicitRecoveryProof(
     receipt: GuardFailureReceipt,
     recoveryCwd: string,
     laneRoot: string
 ): ExplicitRecoveryProof {
     if (receipt.command === 'node' && receipt.args[0] === 'scripts/e2eDevServer.ts') {
-        const canonicalLaneRoot = realpathSync(laneRoot);
-        const entrypoint = join(canonicalLaneRoot, 'scripts', 'e2eDevServer.ts');
-        if (
-            recoveryCwd !== canonicalLaneRoot ||
-            realpathSync(entrypoint) !== entrypoint ||
-            !statSync(entrypoint).isFile()
-        ) {
-            throw new Error('recorded node E2E server must use its own lane-root entrypoint and cwd');
-        }
-        const rawPort = receipt.args[1];
-        if (receipt.args.length !== 2 || rawPort === undefined || !/^[0-9]+$/.test(rawPort)) {
-            throw new Error('recorded node E2E server requires exactly one explicit decimal port');
-        }
-        const port = Number(rawPort);
-        if (!Number.isInteger(port) || port < 1 || port > 65535) {
-            throw new Error(`recorded node E2E server has an invalid port: ${rawPort}`);
-        }
-        return { port, origin: `http://127.0.0.1:${port}` };
+        return createNodeE2eRecoveryProof(receipt, recoveryCwd, laneRoot);
     }
     let port = 5173;
     for (let index = 0; index < receipt.args.length; index++) {

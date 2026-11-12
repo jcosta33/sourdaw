@@ -2870,21 +2870,22 @@ describe('guard failure stop enforcement', { timeout: GUARDED_CASE_TIMEOUT_MS },
                         cwd: fixture.lane.worktreePath,
                         detectLane: () => fixture.lane,
                         runCommand: async (input) => {
-                            const token =
-                                label === 'missing token'
-                                    ? undefined
-                                    : label === 'stale token'
-                                      ? 'stale-token-from-another-run'
-                                      : input.env?.[SOURDAW_E2E_RUN_TOKEN_ENV];
+                            let token = input.env?.[SOURDAW_E2E_RUN_TOKEN_ENV];
+                            if (label === 'missing token') {
+                                token = undefined;
+                            }
+                            if (label === 'stale token') {
+                                token = 'stale-token-from-another-run';
+                            }
                             marker = await startMarkerServer(
                                 label === 'another checkout' ? fixture.repoRoot : fixture.lane.worktreePath,
                                 fixture.port,
                                 token
                             );
-                            return fakeResult({
-                                code: label === 'failed command' ? 1 : 0,
-                                ...(label === 'failed cleanup' ? { reason: 'leak' } : {}),
-                            });
+                            if (label === 'failed cleanup') {
+                                return fakeResult({ code: 0, reason: 'leak' });
+                            }
+                            return fakeResult({ code: label === 'failed command' ? 1 : 0 });
                         },
                         assertModulesPreflight: () => undefined,
                         error: (message) => errors.push(message),
