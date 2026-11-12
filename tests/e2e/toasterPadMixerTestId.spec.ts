@@ -14,13 +14,13 @@ test.describe('Toaster Pad mixer mute', () => {
         await expect(view).toHaveValue('full');
     });
 
-    test('Kick mixer M overlays Mute on the pad and clears it', async ({ page }) => {
+    test('Kick mixer mute overlays Mute on the pad and clears it', async ({ page }) => {
         const kick = page.getByRole('button', { name: 'Trigger Kick', exact: true });
         const muteOverlay = kick.getByText('Mute', { exact: true });
         const kickMute = page
             .getByRole('slider', { name: 'Kick volume', exact: true })
             .locator('xpath=..')
-            .getByRole('button', { name: 'M', exact: true });
+            .getByRole('button', { name: 'Mute Kick', exact: true });
 
         await expect(muteOverlay).toHaveCount(0);
 

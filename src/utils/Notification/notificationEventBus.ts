@@ -5,8 +5,24 @@ import { Container } from '#/infra/di/Container';
 // producers (confirmUser / notifyUser / promptUser) and the consumers
 // (#/infra/dialogService use cases) import them from this module, and
 // Workspace's WorkspaceEvents re-exports them for its own event map.
+export type NotificationAction = {
+    label: string;
+    /** Revalidate the captured target immediately before execution. */
+    isValid: () => boolean;
+    /** Return false or reject to report a refused/failed action honestly. */
+    execute: () => boolean | void | Promise<boolean | void>;
+    staleMessage?: string;
+    refusedMessage?: string;
+    successMessage?: string;
+    failureMessage?: string;
+};
+
 /** Payload for the notification (`ui.notify`) event. */
-export type NotifyPayload = { message: string; level: 'info' | 'success' | 'warning' | 'error' };
+export type NotifyPayload = {
+    message: string;
+    level: 'info' | 'success' | 'warning' | 'error';
+    action?: NotificationAction;
+};
 
 /**
  * Payload for the async confirmation dialog event (§183.1 / §196.1). Carries a
