@@ -125,6 +125,25 @@ export const APPLICATION_OWNED_TOOL_LOOP_LIMITS = {
     maxReceiptBytesPerTurn: 32_768,
     maxTotalReceiptBytes: 65_536,
 } as const;
+
+/**
+ * Bounds on the receipts the application measures itself, at turn 0 with origin
+ * `application-verification`: a vibe run's initial baselines and every approval preview. They are
+ * persisted run-plan evidence and never provider context — `runApplicationOwnedToolLoop` starts
+ * its receipt context empty and counts only its own turns' receipts, and the collections that
+ * write these call no provider — so the provider-context caps above are the wrong bound for them.
+ * `maxBytesPerCollection` bounds one collection (one initial baseline set or one batch's preview);
+ * `maxTotalBytes` bounds everything a run persists, prior receipts included. Sized on an
+ * ordinary song (24 tracks, eight sections, warm and wide; `vibeRunRealProject.spec.ts`): its
+ * initial figures take 269,478 bytes and its first three-track batch preview 264,263. A preview's
+ * receipts grow with its targets, so the run's eleven previews of 24 targets come to about 2.1 MB
+ * at that rate, and the initial figures bring the run to about 2.4 MB. Each bound leaves about
+ * twice what it was sized on.
+ */
+export const APPLICATION_VERIFICATION_RECEIPT_LIMITS = {
+    maxBytesPerCollection: 524_288,
+    maxTotalBytes: 4_194_304,
+} as const;
 /** One extra turn so query, search, discovery, interpretation and proposal all fit in one run. */
 const CREATIVE_TURN_ALLOWANCE = 1;
 const MAX_CALL_ID_LENGTH = 256;

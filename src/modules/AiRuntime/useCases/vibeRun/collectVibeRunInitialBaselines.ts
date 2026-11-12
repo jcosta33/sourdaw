@@ -11,7 +11,11 @@ import {
 import { readVibeRunInitialReceipt } from '../../validators/readVibeRunInitialReceipt';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { agentRunWorkLease } from '../agentRunWorkLease';
-import { ApplicationOwnedToolLoopRequestError, APPLICATION_OWNED_TOOL_LOOP_LIMITS } from '../applicationOwnedToolLoop';
+import {
+    ApplicationOwnedToolLoopRequestError,
+    APPLICATION_OWNED_TOOL_LOOP_LIMITS,
+    APPLICATION_VERIFICATION_RECEIPT_LIMITS,
+} from '../applicationOwnedToolLoop';
 import { agentRunCancellation } from '../cancelAgentRun';
 import { measurementFailureReceipt, projectMeasurementReceipt } from '../executeAnalysisMeasure';
 import { measureProjectUnit, type MeasurementUnitProgress } from '../measureProjectUnit';
@@ -117,8 +121,8 @@ async function measureRequests(
                 realReceipts: raw.map((entry) => entry.receipt),
                 turn: 0,
                 totalReceiptBytesSoFar: priorBytes,
-                maxReceiptBytesPerTurn: APPLICATION_OWNED_TOOL_LOOP_LIMITS.maxReceiptBytesPerTurn,
-                maxTotalReceiptBytes: APPLICATION_OWNED_TOOL_LOOP_LIMITS.maxTotalReceiptBytes,
+                maxReceiptBytesPerTurn: APPLICATION_VERIFICATION_RECEIPT_LIMITS.maxBytesPerCollection,
+                maxTotalReceiptBytes: APPLICATION_VERIFICATION_RECEIPT_LIMITS.maxTotalBytes,
             });
             assertCurrent();
             const failed = receipts.find((receipt) => readVibeRunInitialReceipt(receipt) === null);

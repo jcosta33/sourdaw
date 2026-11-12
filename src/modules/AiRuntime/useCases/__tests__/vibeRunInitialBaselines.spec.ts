@@ -19,11 +19,12 @@ import { getProjectHandlers } from '#/modules/Project/useCases';
 import { transportStore } from '#/modules/Transport/stores';
 import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
+import { ANALYSIS_MEASURE_MAX_TARGETS } from '../../models/AnalysisMeasureLimits';
 import { DEFAULT_AGENT_RESOURCE_LIMITS } from '../../models/AgentResourceLimits';
 import { type ToolCallResult } from '../../models/ToolCallResult';
 import { type ToolSchema } from '../../models/ToolDefinitions';
 import { type MeasuredScheduledVibeRunPlan } from '../../models/VibeRunPlan';
-import { agentResourceLimitsStore } from '../../stores/agentResourceLimitsStore';
+import { agentResourceLimitsStore, readAgentResourceLimits } from '../../stores/agentResourceLimitsStore';
 import { readAgentRunState, sanitizeAgentRunState } from '../../stores/agentRunStore';
 import { clearAiHistory } from '../../stores/aiActionHistoryStore';
 import { chatStore } from '../../stores/chatStore';
@@ -149,6 +150,18 @@ vi.hoisted(() => {
         writable: true,
         value: AudioWorkletNodeWithClosablePort,
     });
+});
+
+/** The verification-receipt allowance, read live so one case can shrink it below what its reads hold. */
+const verificationLimits = vi.hoisted(() => ({
+    configured: { maxBytesPerCollection: 0, maxTotalBytes: 0 },
+    live: { maxBytesPerCollection: 0, maxTotalBytes: 0 },
+}));
+vi.mock('../applicationOwnedToolLoop', async (importOriginal) => {
+    const original = await importOriginal<typeof import('../applicationOwnedToolLoop')>();
+    Object.assign(verificationLimits.configured, original.APPLICATION_VERIFICATION_RECEIPT_LIMITS);
+    Object.assign(verificationLimits.live, original.APPLICATION_VERIFICATION_RECEIPT_LIMITS);
+    return { ...original, APPLICATION_VERIFICATION_RECEIPT_LIMITS: verificationLimits.live };
 });
 
 const audio = vi.hoisted(() => ({
@@ -379,6 +392,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+    Object.assign(verificationLimits.live, verificationLimits.configured);
     for (const trackId of [DRUMS_ID, VOCAL_ID, BASS_ID]) {
         removeTrackStrip(trackId);
     }
@@ -415,6 +429,27 @@ function keepDrumsOnly() {
         throw new Error('Missing tracks.');
     }
     landProjectEdit(() => trackStore.set({ ...state, tracks: state.tracks.filter((track) => track.id === DRUMS_ID) }));
+}
+
+/** Five drum tracks, roles stated in the brief: more targets than one measurement unit holds, so initial figures take two units. */
+const DRUM_KIT = ['Kick', 'Snare', 'Hats', 'Toms', 'Overheads'] as const;
+
+function useDrumKit() {
+    landProjectEdit(() => {
+        const state = trackStore.value;
+        if (state === null) {
+            throw new Error('Missing tracks.');
+        }
+        const ids = DRUM_KIT.map((name) => `track-${name.toLowerCase()}`);
+        trackStore.set({ ...state, tracks: DRUM_KIT.map((name, index) => sourceTrack(ids[index]!, name)) });
+        projectStore.set({
+            ...structuredClone(defaultProjectStoreState),
+            productionBrief: {
+                ...seededBrief(),
+                trackRoles: ids.map((trackId) => ({ id: `role-${trackId}`, trackId, role: 'drums', createdAt: 100 })),
+            },
+        });
+    });
 }
 
 function useShortMeasuredSections() {
@@ -523,11 +558,12 @@ describe('initial role and exact-section baselines through the brief pipeline', 
         expect(vi.mocked(generateToolPlanningOutcome)).toHaveBeenCalledTimes(3);
     });
 
-    it('fits one drum target and two sections at exactly nine renders, six reductions and five commands', async () => {
+    it('fits one drum target and two sections at exactly three renders, six reductions and five commands', async () => {
         keepDrumsOnly();
         agentResourceLimitsStore.set({
             ...DEFAULT_AGENT_RESOURCE_LIMITS,
-            maxRenderJobs: 9,
+            // One initial render covers the arrangement and both sections; the preview renders live and the batch once.
+            maxRenderJobs: 3,
             localAnalysis: 6,
             maxCommands: 5,
         });
@@ -556,9 +592,9 @@ describe('initial role and exact-section baselines through the brief pipeline', 
         expect(state?.proofs.every((proof) => proof.preview.revision !== initial.sourceRevision)).toBe(true);
         await expect(confirmPendingChatActions({ confirmationId: batch.id })).resolves.toEqual({ status: 'executed' });
         expect(trackDeviceTypes(DRUMS_ID)).toEqual(['builtin-eq']);
-        expect(audio.renderTrackSubgraphOffline).toHaveBeenCalledTimes(9);
+        expect(audio.renderTrackSubgraphOffline).toHaveBeenCalledTimes(3);
         expect(agentRunLifecycle.get(brief.runId)?.budgets.consumed).toMatchObject({
-            maxRenderJobs: 9,
+            maxRenderJobs: 3,
             localAnalysis: 6,
             maxCommands: 5,
         });
@@ -574,9 +610,9 @@ describe('initial role and exact-section baselines through the brief pipeline', 
     });
 
     it.each([
-        { maxRenderJobs: 8, localAnalysis: 6, category: 'maxRenderJobs', needed: '9 renders' },
-        { maxRenderJobs: 9, localAnalysis: 5, category: 'localAnalysis', needed: '6 reductions' },
-        { maxRenderJobs: 9, localAnalysis: 6, maxCommands: 4, category: 'maxCommands', needed: '5 commands' },
+        { maxRenderJobs: 2, localAnalysis: 6, category: 'maxRenderJobs', needed: '3 renders' },
+        { maxRenderJobs: 3, localAnalysis: 5, category: 'localAnalysis', needed: '6 reductions' },
+        { maxRenderJobs: 3, localAnalysis: 6, maxCommands: 4, category: 'maxCommands', needed: '5 commands' },
     ])('refuses an impossible complete run before rendering ($category)', async ({ category, needed, ...limits }) => {
         keepDrumsOnly();
         agentResourceLimitsStore.set({ ...DEFAULT_AGENT_RESOURCE_LIMITS, ...limits });
@@ -709,12 +745,13 @@ describe('initial role and exact-section baselines through the brief pipeline', 
         if (change === 'save') {
             const brief = requireOnlyProposedCard();
             expect(measuredPlan(brief).initial.sourceRevision).toBe(initialRevision);
-            expect(audio.renderTrackSubgraphOffline).toHaveBeenCalledTimes(3);
+            expect(measuredPlan(brief).initial.receipts).toHaveLength(3);
         } else {
             expect(proposedCards()).toEqual([]);
-            expect(audio.renderTrackSubgraphOffline).toHaveBeenCalledTimes(1);
             expect(trackDeviceTypes(DRUMS_ID)).toEqual([]);
         }
+        // The held render is the only one: it covers the arrangement and both sections.
+        expect(audio.renderTrackSubgraphOffline).toHaveBeenCalledTimes(1);
         expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(3);
     });
 
@@ -786,7 +823,8 @@ describe('initial role and exact-section baselines through the brief pipeline', 
             ]) {
                 expect(readScheduledVibeRunPlan(JSON.stringify(tamper(structuredClone(plan))))).toBeNull();
             }
-            expect(audio.renderTrackSubgraphOffline).toHaveBeenCalledTimes(27);
+            // Three targets render once for every range, and each of the three batch previews twice.
+            expect(audio.renderTrackSubgraphOffline).toHaveBeenCalledTimes(9);
         },
         MULTI_BATCH_TEST_TIMEOUT_MS
     );
@@ -993,17 +1031,19 @@ describe('initial role and exact-section baselines through the brief pipeline', 
         const state = metricGoalStateCodec(batch.approvalSnapshot.metricGoalState);
         expect(measuredPlan(brief).initial.receipts).toHaveLength(2);
         expect(new Set(state?.proofs.map((proof) => proof.preview.range.sectionId))).toEqual(new Set([null, 'entire']));
-        expect(audio.renderTrackSubgraphOffline).toHaveBeenCalledTimes(6);
+        // One initial render holds both ranges; the preview renders live and the batch once each.
+        expect(audio.renderTrackSubgraphOffline).toHaveBeenCalledTimes(3);
     });
 
     it('refuses budget movement between initial chunks and retains its real failure receipt', async () => {
-        keepDrumsOnly();
-        agentResourceLimitsStore.set({ ...DEFAULT_AGENT_RESOURCE_LIMITS, maxRenderJobs: 9 });
+        useDrumKit();
         audio.renderTrackSubgraphOffline.mockImplementationOnce(async (input: RenderInput) => {
             const run = readAgentRunState().runs.at(-1);
             if (run === undefined) {
                 throw new Error('Missing run');
             }
+            // The first unit reserved its four renders; competing work takes everything else.
+            const left = readAgentResourceLimits().maxRenderJobs - ANALYSIS_MEASURE_MAX_TARGETS;
             expect(
                 agentRunLifecycle.reserveBudgetBatch({
                     runId: run.runId,
@@ -1011,7 +1051,7 @@ describe('initial role and exact-section baselines through the brief pipeline', 
                         {
                             attemptId: 'competing-work',
                             category: 'maxRenderJobs',
-                            estimate: 8,
+                            estimate: left,
                             provenance: 'versioned-estimate',
                         },
                     ],
@@ -1030,15 +1070,17 @@ describe('initial role and exact-section baselines through the brief pipeline', 
                 error: expect.objectContaining({ code: 'measurement-budget-exhausted' }),
             })
         );
-        expect(audio.renderTrackSubgraphOffline).toHaveBeenCalledTimes(1);
+        // The first unit rendered its four targets once; the second was refused before it rendered.
+        expect(audio.renderTrackSubgraphOffline).toHaveBeenCalledTimes(ANALYSIS_MEASURE_MAX_TARGETS);
         expect(run?.workLeases.every((lease) => lease.terminalState !== null)).toBe(true);
         await expect(confirmPendingChatActions({ confirmationId: card.id })).resolves.toEqual({ status: 'executed' });
-        expect(trackDeviceTypes(DRUMS_ID)).toEqual([]);
+        expect(trackStore.value?.tracks.every((track) => track.devices.length === 0)).toBe(true);
         expect(proposedCards()).toEqual([]);
     });
 
-    it('refuses successful raw reads whose admitted receipt does not fit the application-turn byte cap', async () => {
+    it('refuses successful raw reads whose admitted receipt does not fit the verification-receipt allowance', async () => {
         keepDrumsOnly();
+        verificationLimits.live.maxBytesPerCollection = 8_192;
         const markers = markerStore.value;
         const tracks = trackStore.value;
         if (markers === null || tracks === null) {
@@ -1080,8 +1122,8 @@ describe('initial role and exact-section baselines through the brief pipeline', 
                 error: expect.objectContaining({ code: expect.stringMatching(/receipt-budget-spent/u) }),
             })
         );
-        expect(audio.renderTrackSubgraphOffline.mock.calls.length).toBeGreaterThan(1);
-        expect(audio.renderTrackSubgraphOffline.mock.calls.length).toBeLessThan(21);
+        // The unit renders once for all 21 ranges; the allowance refuses at admission, after the reductions.
+        expect(audio.renderTrackSubgraphOffline).toHaveBeenCalledTimes(1);
         expect(run?.workLeases.every((lease) => lease.terminalState !== null)).toBe(true);
         await expect(confirmPendingChatActions({ confirmationId: card.id })).resolves.toEqual({ status: 'executed' });
         expect(trackStore.value?.tracks.every((track) => track.devices.length === 0)).toBe(true);
@@ -1147,7 +1189,8 @@ describe('initial role and exact-section baselines through the brief pipeline', 
         expect(trackStore.value).toEqual(tracks);
         expect(undoHistoryStore.value).toEqual(history);
         expect(liveBriefRevision()).toBe(BRIEF_REVISION);
-        expect(audio.renderTrackSubgraphOffline).toHaveBeenCalledTimes(9);
+        // Planning rendered each of the three targets once, for every range.
+        expect(audio.renderTrackSubgraphOffline).toHaveBeenCalledTimes(3);
     });
 
     it('keeps protected truth and adds one global recipe chain whose single batch Undo removes it', async () => {
@@ -1237,7 +1280,8 @@ describe('initial role and exact-section baselines through the brief pipeline', 
             });
             expect(trackDeviceTypes(VOCAL_ID)).toEqual(['builtin-eq']);
             expect(trackStore.value?.tracks.find((track) => track.id === VOCAL_ID)?.gain).toBe(gain);
-            expect(audio.renderTrackSubgraphOffline).toHaveBeenCalledTimes(27);
+            // Three targets render once for every range, and each of the three batch previews twice.
+            expect(audio.renderTrackSubgraphOffline).toHaveBeenCalledTimes(9);
         },
         MULTI_BATCH_TEST_TIMEOUT_MS
     );
@@ -1278,9 +1322,11 @@ describe('initial role and exact-section baselines through the brief pipeline', 
 
     it('rechecks the remaining whole-run fit after the last successful initial read', async () => {
         keepDrumsOnly();
-        agentResourceLimitsStore.set({ ...DEFAULT_AGENT_RESOURCE_LIMITS, maxRenderJobs: 9 });
+        // Exactly the run: one initial render of every range, then the batch preview's two.
+        agentResourceLimitsStore.set({ ...DEFAULT_AGENT_RESOURCE_LIMITS, maxRenderJobs: 3 });
         audio.renderTrackSubgraphOffline.mockImplementation(async (input: RenderInput) => {
-            if (audio.renderTrackSubgraphOffline.mock.calls.length === 3) {
+            // The initial render is the last initial read; competing work takes one render while it runs.
+            if (audio.renderTrackSubgraphOffline.mock.calls.length === 1) {
                 const run = readAgentRunState().runs.at(-1);
                 if (run === undefined) {
                     throw new Error('Missing run.');
@@ -1305,9 +1351,9 @@ describe('initial role and exact-section baselines through the brief pipeline', 
         await sendChatMessage(PROMPT);
         const brief = requireOnlyProposedCard();
         expect(agentRunLifecycle.get(brief.runId)?.plan?.batchSchedule).toBeUndefined();
-        expect(cardContent(brief)).toContain('6 renders');
-        expect(cardContent(brief)).toContain('5 this run');
-        expect(audio.renderTrackSubgraphOffline).toHaveBeenCalledTimes(3);
+        expect(cardContent(brief)).toContain('2 renders');
+        expect(cardContent(brief)).toContain('1 this run');
+        expect(audio.renderTrackSubgraphOffline).toHaveBeenCalledTimes(1);
         await expect(confirmPendingChatActions({ confirmationId: brief.id })).resolves.toEqual({ status: 'executed' });
         expect(trackDeviceTypes(DRUMS_ID)).toEqual([]);
     });

@@ -19,7 +19,10 @@ import { aiBackendPreferenceStore } from '../stores/aiBackendPreferenceStore';
 import { agentRunLifecycle } from './agentRunLifecycle';
 import { agentRunWorkLease } from './agentRunWorkLease';
 import { agentWorkBudget } from './agentWorkBudget';
-import { APPLICATION_OWNED_TOOL_LOOP_LIMITS } from './applicationOwnedToolLoop';
+import {
+    APPLICATION_OWNED_TOOL_LOOP_LIMITS,
+    APPLICATION_VERIFICATION_RECEIPT_LIMITS,
+} from './applicationOwnedToolLoop';
 import { bindMetricGoalsToBatch } from './bindMetricGoalsToBatch';
 import { agentRunCancellation } from './cancelAgentRun';
 import { collectMetricGoalProof } from './collectMetricGoalProof';
@@ -364,8 +367,8 @@ async function measurePreviewRequests(
         realReceipts: rawReceipts,
         turn: 0,
         totalReceiptBytesSoFar: priorBytes,
-        maxReceiptBytesPerTurn: APPLICATION_OWNED_TOOL_LOOP_LIMITS.maxReceiptBytesPerTurn,
-        maxTotalReceiptBytes: APPLICATION_OWNED_TOOL_LOOP_LIMITS.maxTotalReceiptBytes,
+        maxReceiptBytesPerTurn: APPLICATION_VERIFICATION_RECEIPT_LIMITS.maxBytesPerCollection,
+        maxTotalReceiptBytes: APPLICATION_VERIFICATION_RECEIPT_LIMITS.maxTotalBytes,
     });
     return { compilations, receipts };
 }
