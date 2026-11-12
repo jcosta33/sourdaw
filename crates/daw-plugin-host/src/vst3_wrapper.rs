@@ -1486,10 +1486,14 @@ impl Vst3Wrapper {
             return;
         }
 
-        if self.processor.is_none() {
+        // Borrowed, not cloned: cloning would put an `AddRef`/`Release` pair —
+        // vendor code, and an atomic each — on every block. Bound once here so
+        // the check and the `process` call below share one borrow, leaving no
+        // second lookup that could panic on the audio thread.
+        let Some(processor) = self.processor.as_ref() else {
             Self::pass_through(inputs, outputs, num_samples);
             return;
-        }
+        };
 
         let samples = num_samples.min(MAX_BUFFER);
         let fed_channels = self.bus_layout.main_input_channels().min(CHANNELS);
@@ -1561,12 +1565,6 @@ impl Vst3Wrapper {
                 },
             };
 
-            // Borrowed, not cloned: cloning would put an `AddRef`/`Release`
-            // pair — vendor code, and an atomic each — on every block.
-            let processor = self
-                .processor
-                .as_ref()
-                .expect("the processor was checked before this block began");
             processor.process(&mut data) != kResultOk
         };
 
