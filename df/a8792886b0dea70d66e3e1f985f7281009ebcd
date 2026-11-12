@@ -1,0 +1,67 @@
+tsconfig.json
+  s_126e3d478b4f75::t_b37293ac287cbd 27-28
+src/modules/PluginHost/__tests__/faustSoundOracle.ts
+  s_126e3d478b4f75::t_b37293ac287cbd 45,151-156,158-164,179,233,329
+scripts/__tests__/check-dependency-boundaries.spec.ts
+  s_126e3d478b4f75::t_b37293ac287cbd 234-236,251-256,261,270,298,300
+  s_126e3d478b4f75::t_dcb0eeb32c3f72 237-250,257-260,262-269,271-297,299
+scripts/__tests__/pnpmLock.spec.ts
+  s_126e3d478b4f75::t_b37293ac287cbd 78-79,107,109-110,113
+scripts/__tests__/checkElectronRuntimeProvenance.spec.ts
+  s_126e3d478b4f75::t_b37293ac287cbd 178-183
+src/modules/PluginHost/useCases/faustEngine/__tests__/shippedDspSoundPreservation.spec.ts
+  s_126e3d478b4f75::t_b37293ac287cbd 302-307
+.github/workflows/nightly.yml
+  s_126e3d478b4f75::t_b37293ac287cbd 274,278
+scripts/__tests__/setupPnpm.spec.ts
+  s_126e3d478b4f75::t_b37293ac287cbd 43,512-514,550-552,595-598,600-612
+.github/workflows/validation.yml
+  s_126e3d478b4f75::t_b37293ac287cbd 538,542
+scripts/basicPitchAssets.ts
+  s_126e3d478b4f75::t_b37293ac287cbd 12-20,32,64-66,69-74
+scripts/cargoMetadata.ts
+  s_126e3d478b4f75::t_b37293ac287cbd 18-36
+scripts/__tests__/healthGatesWorkflow.spec.ts
+  s_126e3d478b4f75::t_b37293ac287cbd 4743
+scripts/__tests__/fixtures/health-gate-workflows.snapshot.json
+  s_126e3d478b4f75::t_b37293ac287cbd 906,1720
+scripts/runIsolatedUnitShard.ts
+  s_126e3d478b4f75::t_b37293ac287cbd 165
+scripts/__tests__/cargoMetadata.spec.ts
+  s_126e3d478b4f75::t_b37293ac287cbd 15-19,91
+scripts/__tests__/checkLgplRuntimeProvenance.spec.ts
+  s_126e3d478b4f75::t_b37293ac287cbd 254-256,269-274
+scripts/faustCorrespondingSource.ts
+  s_126e3d478b4f75::t_b37293ac287cbd 40-42,71-73,76-78,83-88,94-96,129-131,134,136,149-151,156-158,175,177,181,183,187-189,207,209,215,217,221-223,235,237,239,241
+scripts/__tests__/faustCorrespondingSource.spec.ts
+  s_126e3d478b4f75::t_b37293ac287cbd 54-56,71,76,82
+scripts/pnpmLock.ts
+  s_126e3d478b4f75::t_b37293ac287cbd 47,65,100
+src/modules/AudioAnalysis/repositories/basicPitchModel.d.ts
+  s_126e3d478b4f75::t_b37293ac287cbd 1-2
+scripts/__tests__/runIsolatedUnitShard.spec.ts
+  s_126e3d478b4f75::t_b37293ac287cbd 156
+scripts/setupPnpm.ts
+  s_126e3d478b4f75::t_b37293ac287cbd 217
+.agents/skills/review-stances/validation-scope-selection.md
+  s_126e3d478b4f75::t_b37293ac287cbd 67-74
+scripts/__tests__/pnpmModulesPreflight.spec.ts
+  s_126e3d478b4f75::t_dcb0eeb32c3f72 473-475
+  s_126e3d478b4f75::t_b37293ac287cbd 16,404-406,408-409,476-482
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "dfa8792886b0dea70d66e3e1f985f7281009ebcd",
+  "prompts": {},
+  "sessions": {
+    "s_126e3d478b4f75": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cefa-4460-7913-80c3-c339638913d0",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
