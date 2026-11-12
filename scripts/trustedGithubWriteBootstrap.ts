@@ -183,6 +183,7 @@ export const trustedDependencyGraphs: Record<TrustedGithubWriteCommand, readonly
         'scripts/laneActivity.ts',
         'scripts/pnpmModulesPreflight.ts',
         'scripts/prContract.ts',
+        'scripts/processSnapshot.ts',
         'scripts/pullRequestMutationLock.ts',
         'scripts/pullRequestReviewState.ts',
         'scripts/reconcileTrackerIssue.ts',
