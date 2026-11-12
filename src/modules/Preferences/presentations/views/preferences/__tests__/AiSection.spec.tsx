@@ -47,7 +47,11 @@ vi.mock('#/infra/store/useStore', () => ({
 }));
 
 vi.mock('#/modules/AiRuntime/stores', () => ({
-    aiBackendPreferenceStore: {},
+    aiBackendPreferenceStore: {
+        get value() {
+            return mocks.backendPreference.value;
+        },
+    },
     hostedLlmProviderStatusStore: {},
     llmStatusStore: {},
 }));
@@ -553,6 +557,49 @@ describe('AiSection', () => {
             await connectWithKey('sk-first');
 
             expect(mocks.configureCloudProvider).toHaveBeenCalledOnce();
+            expect(screen.queryByRole('group', { name: QUESTION })).not.toBeInTheDocument();
+            expect(preferencesStore.value?.hostedBackendQuestionAsked).toEqual([]);
+        });
+
+        it('reads the selector as it is when a pending save completes', async () => {
+            let completeSave: () => void = () => undefined;
+            mocks.configureCloudProvider.mockImplementationOnce(
+                () =>
+                    new Promise<void>((resolve) => {
+                        completeSave = resolve;
+                    })
+            );
+            mocks.backendPreference.value = 'cloud';
+            render(<AiSection />);
+            fireEvent.change(screen.getByLabelText('Hosted AI API key'), { target: { value: 'sk-first' } });
+            fireEvent.click(screen.getByRole('button', { name: 'Connect' }));
+            mocks.backendPreference.value = 'auto';
+
+            completeSave();
+
+            expect(await screen.findByRole('group', { name: QUESTION })).toBeInTheDocument();
+            expect(preferencesStore.value?.hostedBackendQuestionAsked).toEqual(['anthropic']);
+        });
+
+        it('records nothing when the selector leaves Automatic while the save is pending', async () => {
+            let completeSave: () => void = () => undefined;
+            mocks.configureCloudProvider.mockImplementationOnce(
+                () =>
+                    new Promise<void>((resolve) => {
+                        completeSave = resolve;
+                    })
+            );
+            render(<AiSection />);
+            const apiKey = screen.getByLabelText('Hosted AI API key');
+            fireEvent.change(apiKey, { target: { value: 'sk-first' } });
+            fireEvent.click(screen.getByRole('button', { name: 'Connect' }));
+            mocks.backendPreference.value = 'cloud';
+
+            completeSave();
+
+            await waitFor(() => {
+                expect(apiKey).toHaveValue('');
+            });
             expect(screen.queryByRole('group', { name: QUESTION })).not.toBeInTheDocument();
             expect(preferencesStore.value?.hostedBackendQuestionAsked).toEqual([]);
         });

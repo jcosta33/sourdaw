@@ -187,9 +187,10 @@ export const AiSection = (): ReactElement => {
         return { type: 'enabled', budgetTokens: Number(thinkingBudget) };
     };
     // Automatic never sends a request to a hosted provider, so a provider saved under it would go
-    // unused without a word; the user is asked once per provider whether to select it.
+    // unused without a word; the user is asked once per provider whether to select it. The selector
+    // stays editable while a save is pending, so it is read as it is when the save completes.
     const askToSelectHostedProvider = (): void => {
-        if (backendPreference !== 'auto' || !hostedProvidersAvailable) {
+        if ((aiBackendPreferenceStore.value ?? 'auto') !== 'auto' || !hostedProvidersAvailable) {
             return;
         }
         const identity = hostedBackendQuestionIdentity({ provider, baseUrl });
