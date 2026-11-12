@@ -5,11 +5,12 @@ import { branchHoldsRevision, recordedRevisionsInTables, type RemoteBranch } fro
 import {
     classifyRemoteBranch,
     deleteRemoteBranch,
-    encodeBranchRefPath,
     parsePruneRemoteBranchesArgs,
     parsePullRequestListing,
     pruneRemoteBranches,
     queryBaseDependents,
+    runPruneRemoteBranchesCli,
+    trustedPruneRuntime,
     type BranchPullRequest,
     type DeleteOutcome,
     type PruneRemoteBranchesArgs,
@@ -20,14 +21,14 @@ import {
 function branch(name: string, tip: string): RemoteBranch {
     return { name, tip };
 }
-function mergedPr(number: number, headRefOid: string): BranchPullRequest {
-    return { number, state: 'MERGED', headRefOid };
+function mergedPr(number: number, headRefOid: string, baseRefName = 'main'): BranchPullRequest {
+    return { number, state: 'MERGED', headRefOid, baseRefName };
 }
 function closedPr(number: number, headRefOid: string): BranchPullRequest {
-    return { number, state: 'CLOSED', headRefOid };
+    return { number, state: 'CLOSED', headRefOid, baseRefName: 'main' };
 }
 function openPr(number: number, headRefOid: string): BranchPullRequest {
-    return { number, state: 'OPEN', headRefOid };
+    return { number, state: 'OPEN', headRefOid, baseRefName: 'main' };
 }
 
 describe('classifyRemoteBranch', () => {
@@ -56,9 +57,25 @@ describe('classifyRemoteBranch', () => {
         expect(classifyRemoteBranch(value, [mergedPr(1, 'tip-alpha')], true)).toBe('spent');
     });
 
-    it('should classify a branch whose tip matches a CLOSED pull-request head as spent', () => {
+    it('should keep a branch whose tip matches only a closed-unmerged pull-request head as unmerged', () => {
         const value = branch('beta', 'tip-beta');
-        expect(classifyRemoteBranch(value, [closedPr(2, 'tip-beta')], true)).toBe('spent');
+        expect(classifyRemoteBranch(value, [closedPr(2, 'tip-beta')], true)).toBe('unmerged');
+    });
+
+    it('should keep a branch whose tip was merged only into another base as unmerged', () => {
+        const value = branch('child', 'tip-child');
+        expect(classifyRemoteBranch(value, [mergedPr(4, 'tip-child', 'fix/parent')], true)).toBe('unmerged');
+    });
+
+    it('should call a branch spent once any pull request merged its exact tip into main', () => {
+        const value = branch('child', 'tip-child');
+        expect(
+            classifyRemoteBranch(
+                value,
+                [closedPr(3, 'tip-child'), mergedPr(4, 'tip-child', 'fix/parent'), mergedPr(5, 'tip-child')],
+                true
+            )
+        ).toBe('spent');
     });
 
     it('should classify an incompletely listed branch as unlisted even when a fetched node is OPEN', () => {
@@ -134,12 +151,6 @@ describe('queryBaseDependents', () => {
         };
 
         expect(() => queryBaseDependents(['parent'], runner)).toThrow('GraphQL unavailable');
-    });
-});
-
-describe('encodeBranchRefPath', () => {
-    it('should keep / between segments and encode # and spaces within a segment', () => {
-        expect(encodeBranchRefPath('feature/my branch#1')).toBe('feature/my%20branch%231');
     });
 });
 
@@ -226,7 +237,7 @@ function fakePort(input: FakePortInput): {
             branchTipCalls.push(name);
             return (input.branchTip ?? defaultBranchTip)(name);
         },
-        deleteBranch: (name) => {
+        deleteBranch: ({ name }) => {
             deleteCalls.push(name);
             return input.deleteBranch === undefined ? 'deleted' : input.deleteBranch(name);
         },
@@ -258,7 +269,7 @@ function threeSpentMaster(): Map<string, BranchPullRequest[]> {
     return new Map([
         ['alpha', [mergedPr(1, 'ta')]],
         ['beta', [mergedPr(2, 'tb')]],
-        ['gamma', [closedPr(3, 'tc')]],
+        ['gamma', [mergedPr(3, 'tc')]],
     ]);
 }
 
@@ -543,7 +554,7 @@ describe('pruneRemoteBranches', () => {
         expect(deleteCalls).toEqual(['alpha', 'beta', 'gamma']);
         expect(lines).toContain('deleted alpha (ta, #1 MERGED)');
         expect(lines).toContain('deleted beta (tb, #2 MERGED)');
-        expect(lines).toContain('deleted gamma (tc, #3 CLOSED)');
+        expect(lines).toContain('deleted gamma (tc, #3 MERGED)');
     });
 
     it('should honour --limit, attempting only that many spent branches and reporting the remainder', () => {
@@ -1160,78 +1171,130 @@ describe('pruneRemoteBranches comparison-failure classification', () => {
 });
 
 describe('deleteRemoteBranch', () => {
-    it('should resolve already-gone when the runner throws an HTTP 422 Reference-does-not-exist error', () => {
-        const runner = (): string => {
-            throw new Error('gh: Reference does not exist (HTTP 422)');
-        };
-        expect(deleteRemoteBranch('gone-branch', runner)).toBe('already-gone');
-    });
+    const repositoryId = 'R_kgDOexample';
+    const target = branch('feature/my branch', 'c'.repeat(40));
+    const updated = JSON.stringify({ data: { updateRefs: { clientMutationId: null } } });
 
-    it('should resolve already-gone when the runner throws an HTTP 404 Reference-does-not-exist error', () => {
-        const runner = (): string => {
-            throw new Error('gh: Reference does not exist (HTTP 404)');
-        };
-        expect(deleteRemoteBranch('raced-branch', runner)).toBe('already-gone');
-    });
-
-    it('should reject an HTTP 404 Not Found, naming the branch and carrying the original error as cause', () => {
-        const original = new Error('gh: Not Found (HTTP 404)');
-        const runner = (): string => {
-            throw original;
-        };
-        let caught: unknown;
-        try {
-            deleteRemoteBranch('unreachable-branch', runner);
-        } catch (error) {
-            caught = error;
-        }
-        expect(caught).toBeInstanceOf(Error);
-        expect((caught as Error).message).toContain('unreachable-branch');
-        expect((caught as Error).cause).toBe(original);
-    });
-
-    it('should reject with an error naming the branch and carrying the original error as cause on any other failure', () => {
-        const original = new Error('gh: some other failure (HTTP 404)');
-        const runner = (): string => {
-            throw original;
-        };
-        let caught: unknown;
-        try {
-            deleteRemoteBranch('missing-branch', runner);
-        } catch (error) {
-            caught = error;
-        }
-        expect(caught).toBeInstanceOf(Error);
-        expect((caught as Error).message).toContain('missing-branch');
-        expect((caught as Error).cause).toBe(original);
-    });
-
-    it('should reject an HTTP 422 that is not Reference-does-not-exist, naming the branch and carrying the original error as cause', () => {
-        const original = new Error('gh: Validation Failed: Cannot delete a protected branch (HTTP 422)');
-        const runner = (): string => {
-            throw original;
-        };
-        let caught: unknown;
-        try {
-            deleteRemoteBranch('main', runner);
-        } catch (error) {
-            caught = error;
-        }
-        expect(caught).toBeInstanceOf(Error);
-        expect((caught as Error).message).toContain('main');
-        expect((caught as Error).cause).toBe(original);
-    });
-
-    it('should delete via gh api -X DELETE at the percent-encoded ref path and return deleted', () => {
+    it('deletes through updateRefs only while the ref still points at the classified tip', () => {
         const calls: string[][] = [];
         const runner = (args: string[]): string => {
             calls.push(args);
-            return '';
+            return updated;
         };
-        const outcome = deleteRemoteBranch('feature/my branch', runner);
+        const outcome = deleteRemoteBranch(target, repositoryId, runner, () => {
+            throw new Error('a successful delete reads no tip');
+        });
+
         expect(outcome).toBe('deleted');
-        expect(calls).toEqual([
-            ['api', '-X', 'DELETE', `repos/${REQUIRED_REPOSITORY}/git/refs/heads/feature/my%20branch`],
+        expect(calls).toHaveLength(1);
+        const call = calls[0] ?? [];
+        expect(call.slice(0, 2)).toEqual(['api', 'graphql']);
+        const query = call.find((arg) => arg.startsWith('query=')) ?? '';
+        expect(query).toContain(
+            'updateRefs(input:{repositoryId:$repositoryId,refUpdates:[{name:$name,beforeOid:$beforeOid,afterOid:$afterOid,force:false}]})'
+        );
+        expect(call).toEqual(
+            expect.arrayContaining([
+                `repositoryId=${repositoryId}`,
+                'name=refs/heads/feature/my branch',
+                `beforeOid=${'c'.repeat(40)}`,
+                `afterOid=${'0'.repeat(40)}`,
+            ])
+        );
+        expect(call.join(' ')).not.toContain('DELETE');
+    });
+
+    it('answers already-gone when the refused update left no ref', () => {
+        const runner = (): string => {
+            throw new Error('gh: Reference cannot be updated');
+        };
+        expect(deleteRemoteBranch(target, repositoryId, runner, () => undefined)).toBe('already-gone');
+    });
+
+    it('answers moved, not deleted, when the refused update left the ref on another tip', () => {
+        const runner = (): string => {
+            throw new Error('gh: Reference cannot be updated');
+        };
+        expect(deleteRemoteBranch(target, repositoryId, runner, () => 'd'.repeat(40))).toBe('moved');
+    });
+
+    it('rethrows, naming the branch and keeping the cause, when the ref still holds the tip it refused to delete', () => {
+        const original = new Error('gh: Resource not accessible by integration (HTTP 403)');
+        const runner = (): string => {
+            throw original;
+        };
+        let caught: unknown;
+        try {
+            deleteRemoteBranch(target, repositoryId, runner, () => target.tip);
+        } catch (error) {
+            caught = error;
+        }
+        expect(caught).toBeInstanceOf(Error);
+        expect((caught as Error).message).toContain('feature/my branch');
+        expect((caught as Error).cause).toBe(original);
+    });
+
+    it('treats a GraphQL error envelope as a refused update', () => {
+        const runner = (): string => JSON.stringify({ data: null, errors: [{ message: 'stale' }] });
+        expect(deleteRemoteBranch(target, repositoryId, runner, () => 'd'.repeat(40))).toBe('moved');
+    });
+});
+
+describe('pruneRemoteBranches retained classes', () => {
+    it('reports closed-unmerged and other-base tips as unmerged and never deletes them', () => {
+        const master = new Map<string, BranchPullRequest[]>([
+            ['closed', [closedPr(1, 'tc')]],
+            ['child', [mergedPr(2, 'td', 'fix/parent')]],
+            ['landed', [mergedPr(3, 'te')]],
         ]);
+        const { port, deleteCalls } = fakePort({
+            branches: [branch('closed', 'tc'), branch('child', 'td'), branch('landed', 'te')],
+            pullRequestsFor: (names) => mapFor(master, names),
+        });
+        const { log, lines } = collectingLog();
+
+        expect(pruneRemoteBranches(applyArgs(), port, log)).toBe(0);
+        expect(deleteCalls).toEqual(['landed']);
+        expect(lines).toContain('unmerged: 2');
+        expect(lines).toEqual(expect.arrayContaining(['unmerged:', '  closed', '  child']));
+    });
+
+    it('keeps a branch whose ref moved between re-check and delete out of the deleted count', () => {
+        const { port, deleteCalls } = fakePort({
+            branches: threeSpentBranches,
+            pullRequestsFor: (names) => mapFor(threeSpentMaster(), names),
+            deleteBranch: (name) => (name === 'beta' ? 'moved' : 'deleted'),
+        });
+        const { log, lines } = collectingLog();
+
+        expect(pruneRemoteBranches(applyArgs(), port, log)).toBe(0);
+        expect(deleteCalls).toEqual(['alpha', 'beta', 'gamma']);
+        expect(lines).toContain('kept beta: moved at delete');
+        expect(lines).toContain('deleted 2, already gone 0, kept at re-check 1, remaining spent 0');
+    });
+});
+
+describe('runPruneRemoteBranchesCli launcher binding', () => {
+    const launcherEnv = {
+        SOURDAW_TRUSTED_PRIMARY_ROOT: '/primary',
+        SOURDAW_TRUSTED_ORIGIN_COMMIT: 'a'.repeat(40),
+        SOURDAW_TRUSTED_GIT_PATH: '/usr/bin/git',
+        SOURDAW_TRUSTED_GH_PATH: '/usr/bin/gh',
+    };
+
+    it('accepts the runtime the launcher hands it', () => {
+        expect(trustedPruneRuntime(launcherEnv)).toEqual({ primaryRoot: '/primary', originCommit: 'a'.repeat(40) });
+    });
+
+    it.each([
+        ['no launcher environment', {}],
+        ['a relative primary root', { ...launcherEnv, SOURDAW_TRUSTED_PRIMARY_ROOT: 'primary' }],
+        ['a non-commit pin', { ...launcherEnv, SOURDAW_TRUSTED_ORIGIN_COMMIT: 'main' }],
+        ['an unfrozen git', { ...launcherEnv, SOURDAW_TRUSTED_GIT_PATH: 'git' }],
+        ['an unfrozen gh', { ...launcherEnv, SOURDAW_TRUSTED_GH_PATH: undefined }],
+    ])('refuses %s before authenticating', async (_label, env) => {
+        await expect(runPruneRemoteBranchesCli(['--apply'], env)).rejects.toThrow(
+            'branch:prune must run through the protected primary checkout launcher'
+        );
     });
 });

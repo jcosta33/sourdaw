@@ -14,17 +14,21 @@ import { tmpdir } from 'node:os';
 import { delimiter, dirname, isAbsolute, join, posix, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import {
-    TRUSTED_COMMON_DIR_ENV,
-    TRUSTED_GATE_WORKFLOW_ENV,
-    TRUSTED_GH_PATH_ENV,
-    TRUSTED_GIT_PATH_ENV,
-    TRUSTED_ORIGIN_COMMIT_ENV,
-    TRUSTED_POWERSHELL_PATH_ENV,
-    TRUSTED_PRIMARY_ROOT_ENV,
-    TRUSTED_PS_PATH_ENV,
-    TRUSTED_GIT_AI_PATH_ENV,
-} from './prContract.ts';
+/**
+ * The environment names the launcher hands each runner. They are spelled here rather than imported
+ * because the launcher compares only its own file with the pinned blob: any working-tree module it
+ * imported would be evaluated, unchecked, before that comparison. The runners read the same names
+ * from `prContract.ts`, and the spec holds the two spellings equal.
+ */
+export const TRUSTED_PRIMARY_ROOT_ENV = 'SOURDAW_TRUSTED_PRIMARY_ROOT';
+export const TRUSTED_COMMON_DIR_ENV = 'SOURDAW_TRUSTED_COMMON_DIR';
+export const TRUSTED_GIT_PATH_ENV = 'SOURDAW_TRUSTED_GIT_PATH';
+export const TRUSTED_GH_PATH_ENV = 'SOURDAW_TRUSTED_GH_PATH';
+export const TRUSTED_PS_PATH_ENV = 'SOURDAW_TRUSTED_PS_PATH';
+export const TRUSTED_GIT_AI_PATH_ENV = 'SOURDAW_TRUSTED_GIT_AI_PATH';
+export const TRUSTED_POWERSHELL_PATH_ENV = 'SOURDAW_TRUSTED_POWERSHELL_PATH';
+export const TRUSTED_ORIGIN_COMMIT_ENV = 'SOURDAW_TRUSTED_ORIGIN_COMMIT';
+export const TRUSTED_GATE_WORKFLOW_ENV = 'SOURDAW_TRUSTED_GATE_WORKFLOW';
 
 export type TrustedGithubWriteCommand =
     | 'deliver'
@@ -41,7 +45,9 @@ export type TrustedGithubWriteCommand =
     | 'review:resolve'
     | 'review:shadow-status'
     | 'pr:retire'
-    | 'ruleset:harden';
+    | 'ruleset:harden'
+    | 'branch:prune'
+    | 'release:cut';
 
 export const BOOTSTRAP_PATH = 'scripts/trustedGithubWriteBootstrap.ts';
 export const HEALTH_GATES_WORKFLOW_PATH = '.github/workflows/health-gates.yml';
@@ -414,6 +420,21 @@ export const trustedDependencyGraphs: Record<TrustedGithubWriteCommand, readonly
         'scripts/githubAppIdentity.ts',
         'scripts/prContract.ts',
     ],
+    'branch:prune': [
+        'scripts/trustedGithubWriteBootstrap.ts',
+        'scripts/pruneRemoteBranches.ts',
+        'scripts/measurementRevisionHolders.ts',
+        'scripts/githubAppIdentity.ts',
+        'scripts/prContract.ts',
+    ],
+    'release:cut': [
+        'scripts/trustedGithubWriteBootstrap.ts',
+        'scripts/cutRelease.ts',
+        'scripts/releaseHistory.ts',
+        'scripts/releaseVersion.ts',
+        'scripts/githubAppIdentity.ts',
+        'scripts/prContract.ts',
+    ],
     'pr:retire': [
         'scripts/trustedGithubWriteBootstrap.ts',
         'scripts/retirePullRequest.ts',
@@ -448,6 +469,8 @@ export const commandEntries: Record<TrustedGithubWriteCommand, { path: string; r
     'review:shadow-status': { path: 'scripts/reviewShadowStatus.ts', runner: 'runReviewShadowStatusCli' },
     'ruleset:harden': { path: 'scripts/rulesetHardening.ts', runner: 'runRulesetHardeningCli' },
     'pr:retire': { path: 'scripts/retirePullRequest.ts', runner: 'runRetirePullRequestCli' },
+    'branch:prune': { path: 'scripts/pruneRemoteBranches.ts', runner: 'runPruneRemoteBranchesCli' },
+    'release:cut': { path: 'scripts/cutRelease.ts', runner: 'runCutReleaseCli' },
 };
 
 export function trustedDependencyPaths(command: TrustedGithubWriteCommand): readonly string[] {
@@ -6094,20 +6117,33 @@ export function resolveTrustedExecutable(
     parent: NodeJS.ProcessEnv = process.env,
     platform: NodeJS.Platform = process.platform
 ): string {
-    const extensions = platform === 'win32' ? ['.exe'] : [''];
+    const found = firstExecutableOnPath(name, parent, platform);
+    if (found === undefined) {
+        throw new Error(`cannot resolve trusted ${name} executable from the launcher PATH`);
+    }
+    return found;
+}
+
+/**
+ * The first executable named `name` in an absolute PATH directory. An empty or relative entry names
+ * the working directory, which a lane can populate, so it is skipped rather than resolved. The
+ * protected launcher freezes the executable it finds before any lane-selected child starts.
+ */
+function firstExecutableOnPath(name: string, parent: NodeJS.ProcessEnv, platform: NodeJS.Platform): string | undefined {
+    const suffix = platform === 'win32' ? '.exe' : '';
     for (const directory of (parent.PATH ?? '').split(platform === 'win32' ? ';' : delimiter)) {
-        for (const extension of extensions) {
-            const candidate = resolve(directory || process.cwd(), `${name}${extension.toLowerCase()}`);
-            try {
-                accessSync(candidate, constants.X_OK);
-                return realpathSync(candidate);
-            } catch {
-                // Try the next operator-provided PATH entry. The protected launcher freezes the
-                // first executable it finds before any lane-selected child starts.
-            }
+        if (!isAbsolute(directory)) {
+            continue;
+        }
+        const candidate = resolve(directory, `${name}${suffix}`);
+        try {
+            accessSync(candidate, constants.X_OK);
+            return realpathSync(candidate);
+        } catch {
+            // Try the next operator-provided PATH entry.
         }
     }
-    throw new Error(`cannot resolve trusted ${name} executable from the launcher PATH`);
+    return undefined;
 }
 
 /**
@@ -6126,25 +6162,15 @@ function resolveOptionalTrustedExecutable(
     }
 }
 
-function resolveTrustedPowerShellExecutable(
+export function resolveTrustedPowerShellExecutable(
     parent: NodeJS.ProcessEnv = process.env,
     platform: NodeJS.Platform = process.platform
 ): string {
-    const extensions = platform === 'win32' ? ['.exe'] : [''];
-    for (const directory of (parent.PATH ?? '').split(platform === 'win32' ? ';' : delimiter)) {
-        for (const extension of extensions) {
-            const suffix = extension === '' ? '' : extension.toLowerCase();
-            const candidate = resolve(directory || process.cwd(), `powershell${suffix}`);
-            try {
-                accessSync(candidate, constants.X_OK);
-                return realpathSync(candidate);
-            } catch {
-                // Try the next operator-provided PATH entry. The protected launcher freezes the
-                // first executable it finds before any lane-selected child starts.
-            }
-        }
+    const found = firstExecutableOnPath('powershell', parent, platform);
+    if (found === undefined) {
+        throw new Error('cannot resolve trusted powershell executable from the launcher PATH');
     }
-    throw new Error('cannot resolve trusted powershell executable from the launcher PATH');
+    return found;
 }
 
 function repositoryCommonDir(checkoutRoot: string, gitPath: string): string {
@@ -6192,57 +6218,131 @@ function commandRequiresTrustedPowerShell(
 }
 
 /**
- * The launcher's snapshot is only as current as whatever process last fetched the primary's
- * origin/main ref: run right after a lane merges, a launcher that resolves without fetching
- * silently executes the pre-merge closure and reproduces failures the merge just fixed (#4436).
- * Every resolution therefore fetches first, under the operator's ambient environment — the
- * pre-trust window the delivery skill already treats as trusted — because the scrubbed
- * read-only environment strips the credential helper a non-anonymous remote needs. A failed
- * fetch never refuses the run: offline operation keeps working against the local ref, but
- * never silently — the staleness risk and the fetch error are both reported.
+ * The commit every trusted write executes is the one GitHub reports for main, never a local ref. Both
+ * `refs/remotes/origin/main` and the `origin` URL live in the shared repository any lane can write, so
+ * resolving either would let a lane choose the code that runs beside an App key. The launcher asks
+ * GitHub by explicit URL and pins the reported SHA; the fetch only brings that commit's objects, which
+ * are content-addressed, so a lane cannot forge them, and it refreshes the tracking ref for humans.
+ *
+ * Both network calls run under the scrubbed read environment, which ignores global and system config
+ * and prompts, plus `-c` overrides that beat the repository config for every transport setting a lane
+ * could plant: hooks (the fetch runs the reference-transaction hook), fsmonitor, TLS verification,
+ * proxy, credential helpers and askpass programs. URL rewrites (`url.<base>.insteadOf`) and URL-scoped `http.<url>.*`
+ * settings cannot be overridden that way — the former is additive, the latter outranks a plain key —
+ * so a rewrite of the origin URL, or any URL-scoped HTTP setting, refuses before the network is touched.
+ *
+ * Every failure refuses. There is no offline mode: each trusted command writes to GitHub anyway, so a
+ * run that cannot reach it has nothing to do, and running a stale or lane-chosen snapshot is exactly
+ * what this pin exists to prevent (#4436 is the staleness half of the same failure).
  */
-export type OriginFetchOutcome = { fresh: true } | { fresh: false; reason: string };
+export type OriginFetchOutcome = { commit: string };
 
 export type OriginFetchSpawn = (
     command: string,
     args: string[],
     options: { cwd: string; env: NodeJS.ProcessEnv }
-) => { status: number | null; stderr: string | undefined };
+) => { status: number | null; stdout: string | undefined; stderr: string | undefined };
+
+/** The public repository the launcher pins; it is read anonymously, so no credential is involved. */
+export const GITHUB_ORIGIN_URL = 'https://github.com/jcosta33/sourdaw.git';
+
+const ORIGIN_NETWORK_OVERRIDES = [
+    '-c',
+    'core.hooksPath=/dev/null',
+    '-c',
+    'core.fsmonitor=false',
+    '-c',
+    'http.sslVerify=true',
+    '-c',
+    'http.proxy=',
+    '-c',
+    'credential.helper=',
+    '-c',
+    'core.askPass=',
+];
+
+const UNOVERRIDABLE_TRANSPORT_CONFIG = '^(url\\..*\\.insteadof|http\\..+\\..+)$';
+
+function refuseOriginPin(reason: string): never {
+    throw new Error(
+        `cannot pin origin/main from GitHub: ${reason}; refusing to run a trusted write from an unverified snapshot`
+    );
+}
+
+function spawnDiagnostic(result: { status: number | null; stderr: string | undefined }, label: string): string {
+    const detail = result.stderr?.trim();
+    return detail === undefined || detail === ''
+        ? `${label} failed without diagnostics (exit ${result.status ?? 'signal'})`
+        : `${label} failed: ${detail}`;
+}
+
+/**
+ * Reads `git config -z` entries (`key\nvalue\0`). A URL-scoped `http.<url>.*` key refuses outright,
+ * because its URL matching has wildcard and normalization rules this check will not reimplement. An
+ * `insteadOf` refuses when its value prefixes the origin URL, which is when Git would rewrite it; a
+ * rewrite of some other URL, such as one a publishing fixture points at a local remote, cannot
+ * redirect this pin.
+ */
+function assertNoOriginRewrite(entries: string): void {
+    for (const entry of entries.split('\0').filter((candidate) => candidate !== '')) {
+        const separator = entry.indexOf('\n');
+        const key = separator === -1 ? entry : entry.slice(0, separator);
+        const value = separator === -1 ? '' : entry.slice(separator + 1);
+        if (!key.startsWith('url.') || GITHUB_ORIGIN_URL.startsWith(value)) {
+            refuseOriginPin(`repository config rewrites or scopes the remote transport (${key})`);
+        }
+    }
+}
+
+function reportedMainCommit(stdout: string | undefined): string {
+    const lines = (stdout ?? '').split('\n').filter((line) => line !== '');
+    const match = lines.length === 1 ? /^([0-9a-f]{40})\trefs\/heads\/main$/u.exec(lines[0] ?? '') : null;
+    if (match?.[1] === undefined) {
+        refuseOriginPin('git ls-remote did not report exactly one refs/heads/main');
+    }
+    return match[1];
+}
 
 export function fetchOriginMain(
     input: { gitPath: string; primaryRoot: string },
     spawn: OriginFetchSpawn = (command, args, options) => spawnSync(command, args, { ...options, encoding: 'utf8' })
 ): OriginFetchOutcome {
-    const result = spawn(input.gitPath, ['fetch', 'origin', 'main'], {
-        cwd: input.primaryRoot,
-        env: process.env,
-    });
-    if (result.status === 0) {
-        return { fresh: true };
+    const env = trustedGitReadEnv();
+    const git = (args: string[]) => spawn(input.gitPath, args, { cwd: input.primaryRoot, env });
+
+    const transport = git(['config', '-z', '--get-regexp', UNOVERRIDABLE_TRANSPORT_CONFIG]);
+    if (transport.status === 0) {
+        assertNoOriginRewrite(transport.stdout ?? '');
+    } else if (transport.status !== 1 || (transport.stdout ?? '') !== '') {
+        refuseOriginPin(spawnDiagnostic(transport, 'reading the repository transport config'));
     }
-    const detail = result.stderr?.trim();
-    if (detail !== undefined && detail !== '') {
-        return { fresh: false, reason: detail };
+
+    const listed = git([...ORIGIN_NETWORK_OVERRIDES, 'ls-remote', GITHUB_ORIGIN_URL, 'refs/heads/main']);
+    if (listed.status !== 0) {
+        refuseOriginPin(spawnDiagnostic(listed, 'git ls-remote'));
     }
-    return { fresh: false, reason: `git fetch failed without diagnostics (exit ${result.status ?? 'signal'})` };
+    const commit = reportedMainCommit(listed.stdout);
+
+    const fetched = git([
+        ...ORIGIN_NETWORK_OVERRIDES,
+        'fetch',
+        '--no-tags',
+        GITHUB_ORIGIN_URL,
+        '+refs/heads/main:refs/remotes/origin/main',
+    ]);
+    if (fetched.status !== 0) {
+        refuseOriginPin(spawnDiagnostic(fetched, 'git fetch'));
+    }
+    const verified = git(['cat-file', '-e', `${commit}^{commit}`]);
+    if (verified.status !== 0) {
+        refuseOriginPin(spawnDiagnostic(verified, `verifying ${commit}`));
+    }
+    return { commit };
 }
 
 export function defaultPort(binding: TrustedLauncherBinding): TrustedSourcePort {
     return {
-        resolveOriginMain: () => {
-            const fetch = fetchOriginMain(binding);
-            if (!fetch.fresh) {
-                console.error(
-                    `cannot fetch origin/main (${fetch.reason}); the trusted snapshot may be stale — ` +
-                        'this run executes whatever refs/remotes/origin/main last fetched'
-                );
-            }
-            return captureGit(binding.primaryRoot, binding.gitPath, [
-                'rev-parse',
-                '--verify',
-                'refs/remotes/origin/main^{commit}',
-            ]).trim();
-        },
+        resolveOriginMain: () => fetchOriginMain(binding).commit,
         readOriginSource: (commit, path) =>
             captureGit(binding.primaryRoot, binding.gitPath, ['show', `${commit}:${path}`]),
         executeSnapshot: (command, args, snapshot) =>
@@ -6266,12 +6366,14 @@ function parseCommand(value: string | undefined): TrustedGithubWriteCommand {
         value === 'review:resolve' ||
         value === 'review:shadow-status' ||
         value === 'pr:retire' ||
-        value === 'ruleset:harden'
+        value === 'ruleset:harden' ||
+        value === 'branch:prune' ||
+        value === 'release:cut'
     ) {
         return value;
     }
     throw new Error(
-        'usage: trustedGithubWriteBootstrap.ts <deliver|issue:claim|issue:reconcile|lane:publish|lane:sync-parent|pr:supersede|review:accept|review:publish|review:publish:recover|review:repair|review:confirm|review:resolve|review:shadow-status|pr:retire|ruleset:harden> [args...]'
+        'usage: trustedGithubWriteBootstrap.ts <deliver|issue:claim|issue:reconcile|lane:publish|lane:sync-parent|pr:supersede|review:accept|review:publish|review:publish:recover|review:repair|review:confirm|review:resolve|review:shadow-status|pr:retire|ruleset:harden|branch:prune|release:cut> [args...]'
     );
 }
 

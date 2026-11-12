@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+import { isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
@@ -22,11 +22,24 @@ import {
     type BranchClass,
     type RemoteBranch,
 } from './measurementRevisionHolders.ts';
-import { fail, PR_STATE, type PullRequestState } from './prContract.ts';
+import {
+    fail,
+    PR_STATE,
+    TRUSTED_GH_PATH_ENV,
+    TRUSTED_GIT_PATH_ENV,
+    TRUSTED_ORIGIN_COMMIT_ENV,
+    TRUSTED_PRIMARY_ROOT_ENV,
+    type PullRequestState,
+} from './prContract.ts';
 
 export type { PullRequestState };
-export type BranchPullRequest = { number: number; state: PullRequestState; headRefOid: string };
-export type DeleteOutcome = 'deleted' | 'already-gone';
+export type BranchPullRequest = {
+    number: number;
+    state: PullRequestState;
+    headRefOid: string;
+    baseRefName: string;
+};
+export type DeleteOutcome = 'deleted' | 'already-gone' | 'moved';
 export type PullRequestListing = { pullRequests: BranchPullRequest[]; complete: boolean };
 
 export type PruneRemoteBranchesPort = {
@@ -34,7 +47,7 @@ export type PruneRemoteBranchesPort = {
     pullRequestsFor: (branches: string[]) => Map<string, PullRequestListing>;
     baseDependentsFor: (branches: string[]) => Map<string, PullRequestListing>;
     branchTip: (name: string) => string | undefined;
-    deleteBranch: (name: string) => DeleteOutcome;
+    deleteBranch: (branch: RemoteBranch) => DeleteOutcome;
     recordedMeasurementRevisions: () => string[];
     baseBranchTip: () => RemoteBranch;
     branchHoldsRevision: (branch: RemoteBranch, revision: string) => boolean;
@@ -103,10 +116,6 @@ function parsePositiveLimit(value: string | undefined): number {
     return parsed;
 }
 
-export function encodeBranchRefPath(name: string): string {
-    return name.split('/').map(encodeURIComponent).join('/');
-}
-
 export function classifyRemoteBranch(
     branch: RemoteBranch,
     pullRequests: BranchPullRequest[],
@@ -127,7 +136,22 @@ export function classifyRemoteBranch(
     if (!pullRequests.some((pullRequest) => pullRequest.headRefOid === branch.tip)) {
         return 'moved';
     }
+    if (!pullRequests.some((pullRequest) => landedTip(branch, pullRequest))) {
+        return 'unmerged';
+    }
     return 'spent';
+}
+
+/**
+ * Only a merge into main proves a branch's work landed: a closed-unmerged pull request leaves its
+ * commits nowhere else, and a child merged into its parent's branch has not reached main yet.
+ */
+function landedTip(branch: RemoteBranch, pullRequest: BranchPullRequest): boolean {
+    return (
+        pullRequest.state === PR_STATE.MERGED &&
+        pullRequest.baseRefName === REQUIRED_BASE_BRANCH &&
+        pullRequest.headRefOid === branch.tip
+    );
 }
 
 function batchNames(names: string[], size: number): string[][] {
@@ -201,6 +225,7 @@ function countByClass(classes: Map<string, BranchClass>): Record<BranchClass, nu
         open: 0,
         unpublished: 0,
         moved: 0,
+        unmerged: 0,
         spent: 0,
     };
     for (const value of classes.values()) {
@@ -210,7 +235,7 @@ function countByClass(classes: Map<string, BranchClass>): Record<BranchClass, nu
 }
 
 function matchingPullRequest(branch: RemoteBranch, pullRequests: BranchPullRequest[]): BranchPullRequest {
-    const matching = pullRequests.find((pullRequest) => pullRequest.headRefOid === branch.tip);
+    const matching = pullRequests.find((pullRequest) => landedTip(branch, pullRequest));
     if (matching === undefined) {
         fail(`spent branch ${branch.name} has no matching pull request`);
     }
@@ -260,6 +285,7 @@ function printPlan(
         }
     }
     printNamesUnderHeading('moved', branches, classes, log);
+    printNamesUnderHeading('unmerged', branches, classes, log);
     printNamesUnderHeading('unpublished', branches, classes, log);
     printUnlistedBranches(branches, classes, log);
 }
@@ -278,10 +304,12 @@ function applyDeletion(
     port: PruneRemoteBranchesPort,
     log: (message: string) => void
 ): DeleteOutcome {
-    const outcome = port.deleteBranch(branch.name);
+    const outcome = port.deleteBranch(branch);
     if (outcome === 'deleted') {
         const pr = matchingPullRequest(branch, freshPullRequests);
         log(`deleted ${branch.name} (${branch.tip.slice(0, 9)}, #${pr.number} ${pr.state})`);
+    } else if (outcome === 'moved') {
+        log(`kept ${branch.name}: moved at delete`);
     } else {
         log(`already gone ${branch.name}`);
     }
@@ -344,6 +372,8 @@ function applySpentBranches(
         }
         if (outcome === 'deleted') {
             deleted += 1;
+        } else if (outcome === 'moved') {
+            keptAtRecheck += 1;
         } else {
             alreadyGone += 1;
         }
@@ -461,16 +491,17 @@ function listRemoteBranches(gh: Gh): RemoteBranch[] {
 }
 
 function toBranchPullRequest(value: unknown): BranchPullRequest {
-    const node = value as { number?: unknown; state?: unknown; headRefOid?: unknown };
+    const node = value as { number?: unknown; state?: unknown; headRefOid?: unknown; baseRefName?: unknown };
     if (
         typeof node.number !== 'number' ||
         !Number.isSafeInteger(node.number) ||
         (node.state !== PR_STATE.OPEN && node.state !== PR_STATE.MERGED && node.state !== PR_STATE.CLOSED) ||
-        typeof node.headRefOid !== 'string'
+        typeof node.headRefOid !== 'string' ||
+        typeof node.baseRefName !== 'string'
     ) {
         fail('invalid pull-request node');
     }
-    return { number: node.number, state: node.state, headRefOid: node.headRefOid };
+    return { number: node.number, state: node.state, headRefOid: node.headRefOid, baseRefName: node.baseRefName };
 }
 
 function pullRequestBatchQuery(size: number): string {
@@ -478,7 +509,7 @@ function pullRequestBatchQuery(size: number): string {
     const aliases = Array.from(
         { length: size },
         (_unused, index) =>
-            `b${index}: pullRequests(headRefName:$n${index}, first:10, states:[OPEN,MERGED,CLOSED], orderBy:{field:CREATED_AT,direction:DESC}){totalCount nodes{number state headRefOid}}`
+            `b${index}: pullRequests(headRefName:$n${index}, first:10, states:[OPEN,MERGED,CLOSED], orderBy:{field:CREATED_AT,direction:DESC}){totalCount nodes{number state headRefOid baseRefName}}`
     ).join(' ');
     return `query(${params}){repository(owner:"${REQUIRED_OWNER}",name:"${REQUIRED_NAME}"){${aliases}}}`;
 }
@@ -488,7 +519,7 @@ function baseDependentBatchQuery(size: number): string {
     const aliases = Array.from(
         { length: size },
         (_unused, index) =>
-            `b${index}: pullRequests(baseRefName:$n${index}, first:10, states:[OPEN], orderBy:{field:CREATED_AT,direction:DESC}){totalCount nodes{number state headRefOid}}`
+            `b${index}: pullRequests(baseRefName:$n${index}, first:10, states:[OPEN], orderBy:{field:CREATED_AT,direction:DESC}){totalCount nodes{number state headRefOid baseRefName}}`
     ).join(' ');
     return `query(${params}){repository(owner:"${REQUIRED_OWNER}",name:"${REQUIRED_NAME}"){${aliases}}}`;
 }
@@ -560,20 +591,62 @@ function fetchBranchTip(name: string, gh: Gh): string | undefined {
     return ref.target.oid;
 }
 
-export function deleteRemoteBranch(name: string, gh: Gh): DeleteOutcome {
-    const path = `repos/${REQUIRED_REPOSITORY}/git/refs/heads/${encodeBranchRefPath(name)}`;
+const ZERO_OID = '0'.repeat(40);
+const DELETE_REF_MUTATION =
+    'mutation($repositoryId:ID!,$name:GitRefname!,$beforeOid:GitObjectID!,$afterOid:GitObjectID!){' +
+    'updateRefs(input:{repositoryId:$repositoryId,refUpdates:[{name:$name,beforeOid:$beforeOid,afterOid:$afterOid,force:false}]})' +
+    '{clientMutationId}}';
+
+/**
+ * Deletes the branch only while it still points at the tip it was classified on: `updateRefs`
+ * refuses the whole update when `beforeOid` no longer matches, so a push landing after the re-check
+ * survives. A refusal does not say why, so the ref is read again: absent is already gone, another tip
+ * moved, and the classified tip still in place means the refusal was something else and is reported.
+ */
+export function deleteRemoteBranch(
+    branch: RemoteBranch,
+    repositoryId: string,
+    gh: Gh,
+    readTip: (name: string) => string | undefined
+): DeleteOutcome {
     try {
-        gh(['api', '-X', 'DELETE', path]);
+        graphql(
+            gh,
+            DELETE_REF_MUTATION,
+            [
+                '-f',
+                `repositoryId=${repositoryId}`,
+                '-f',
+                `name=refs/heads/${branch.name}`,
+                '-f',
+                `beforeOid=${branch.tip}`,
+                '-f',
+                `afterOid=${ZERO_OID}`,
+            ],
+            `delete branch ${branch.name}`
+        );
         return 'deleted';
     } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        // Deleting an absent ref has answered both 422 and, while two prunes raced, 404; both carry
-        // this body, while an access failure reads `Not Found`.
-        if (/\bHTTP 4(?:04|22)\b/u.test(message) && message.includes('Reference does not exist')) {
+        const tip = readTip(branch.name);
+        if (tip === undefined) {
             return 'already-gone';
         }
-        throw new Error(`delete branch ${name}: ${message}`, { cause: error });
+        if (tip !== branch.tip) {
+            return 'moved';
+        }
+        const message = error instanceof Error ? error.message : String(error);
+        throw new Error(`delete branch ${branch.name}: ${message}`, { cause: error });
     }
+}
+
+function fetchRepositoryId(gh: Gh): string {
+    const query = `query{repository(owner:"${REQUIRED_OWNER}",name:"${REQUIRED_NAME}"){id}}`;
+    const response = graphql(gh, query, [], 'repository id') as { data?: { repository?: { id?: unknown } } };
+    const id = response.data?.repository?.id;
+    if (typeof id !== 'string' || id === '') {
+        fail('invalid repository id response');
+    }
+    return id;
 }
 
 export function shellPort(session: GhSession, cwd: string = process.cwd()): PruneRemoteBranchesPort {
@@ -582,12 +655,16 @@ export function shellPort(session: GhSession, cwd: string = process.cwd()): Prun
         cwd
     );
     const gh: Gh = (args) => spawnCapture('gh', args, { cwd: primaryRoot, env: session.env });
+    let repositoryId: string | undefined;
     return {
         listBranches: () => listRemoteBranches(gh),
         pullRequestsFor: (names) => pullRequestsForBranches(names, gh),
         baseDependentsFor: (names) => queryBaseDependents(names, gh),
         branchTip: (name) => fetchBranchTip(name, gh),
-        deleteBranch: (name) => deleteRemoteBranch(name, gh),
+        deleteBranch: (branch) => {
+            repositoryId ??= fetchRepositoryId(gh);
+            return deleteRemoteBranch(branch, repositoryId, gh, (name) => fetchBranchTip(name, gh));
+        },
         recordedMeasurementRevisions: () => fetchRecordedMeasurementRevisions(gh),
         baseBranchTip: () => {
             const base = listRemoteBranches(gh).find((branch) => branch.name === REQUIRED_BASE_BRANCH);
@@ -600,19 +677,43 @@ export function shellPort(session: GhSession, cwd: string = process.cwd()): Prun
     };
 }
 
-async function main(): Promise<number> {
-    const parsed = parsePruneRemoteBranchesArgs(process.argv.slice(2));
+/**
+ * The launcher hands its runner the primary root, the commit it pinned, and the git and gh it froze.
+ * A run without them was not launched through the protected primary checkout, whose snapshot is the
+ * only source of this closure trusted beside the author key, so it stops before authenticating.
+ */
+export function trustedPruneRuntime(env: NodeJS.ProcessEnv): { primaryRoot: string; originCommit: string } {
+    const primaryRoot = env[TRUSTED_PRIMARY_ROOT_ENV];
+    const originCommit = env[TRUSTED_ORIGIN_COMMIT_ENV];
+    const gitPath = env[TRUSTED_GIT_PATH_ENV];
+    const ghPath = env[TRUSTED_GH_PATH_ENV];
+    if (
+        primaryRoot === undefined ||
+        originCommit === undefined ||
+        gitPath === undefined ||
+        ghPath === undefined ||
+        !isAbsolute(primaryRoot) ||
+        !isAbsolute(gitPath) ||
+        !isAbsolute(ghPath) ||
+        !/^[0-9a-f]{40,64}$/.test(originCommit)
+    ) {
+        fail('branch:prune must run through the protected primary checkout launcher');
+    }
+    return { primaryRoot, originCommit };
+}
+
+export async function runPruneRemoteBranchesCli(args: string[], env: NodeJS.ProcessEnv = process.env): Promise<number> {
+    const parsed = parsePruneRemoteBranchesArgs(args);
     if (parsed.help) {
         console.log(`Usage: ${usage.slice('usage: '.length)}`);
         return 0;
     }
-    const cwd = process.cwd();
+    const { primaryRoot, originCommit } = trustedPruneRuntime(env);
     assertTrustedExecutingBlob(
         'scripts/pruneRemoteBranches.ts',
         fileURLToPath(import.meta.url),
-        originMainBlob('scripts/pruneRemoteBranches.ts', cwd)
+        originMainBlob('scripts/pruneRemoteBranches.ts', primaryRoot, undefined, 'git', originCommit)
     );
-    const primaryRoot = resolvePrimaryRoot();
     const auth = await authenticateRole({ primaryRoot, role: 'author' });
     try {
         if (!isAuthorBotNodeId(auth.minted.actorNodeId)) {
@@ -624,17 +725,8 @@ async function main(): Promise<number> {
                 cwd: primaryRoot,
             })
         );
-        return pruneRemoteBranches(parsed, shellPort(auth.session), (message) => console.log(message));
+        return pruneRemoteBranches(parsed, shellPort(auth.session, primaryRoot), (message) => console.log(message));
     } finally {
         auth.session.dispose();
     }
-}
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
-    void main().then(
-        (code) => process.exit(code),
-        (error: unknown) => {
-            console.error(error instanceof Error ? error.message : error);
-            process.exit(1);
-        }
-    );
 }
