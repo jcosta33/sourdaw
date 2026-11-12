@@ -5,7 +5,7 @@ import { type TrackStoreState, trackStore } from '../stores/trackStore';
 import { captureRelinkAudioSourceTargets } from './clipEditing/captureRelinkAudioSourceTargets';
 import { relinkAudioSourceTargetsMatch } from './clipEditing/relinkAudioSourceTargetsMatch';
 
-export type RelinkAudioSourceEligibility = 'eligible' | 'frozen' | 'blocked' | 'missing';
+type RelinkAudioSourceEligibility = 'eligible' | 'frozen' | 'blocked' | 'missing';
 
 /** Read every live and inactive alias through the same target law used by relink. */
 export function readRelinkAudioSourceEligibility(
