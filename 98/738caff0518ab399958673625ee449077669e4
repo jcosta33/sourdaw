@@ -1,0 +1,51 @@
+eslint.config.mjs
+  s_db65665fc1d0c1::t_b0d901cd1aa6e9 2702
+  s_db65665fc1d0c1::t_dd271cd755e8e6 2708-2710
+  s_db65665fc1d0c1::t_0b179c3168aff5 2700-2701,2703-2707,2711-2723,3076,3111-3114,3116,3118-3123,3126-3133
+  s_db65665fc1d0c1::t_ce2fd30f431072 2687-2691
+  s_db65665fc1d0c1::t_f58706bb34ab66 2646,2652,2654-2660,2666-2667,2670,2672,3173,3175-3177,3179-3180
+  s_76ccd61d453edf::t_6bafc68972d4aa 3181-3183
+  s_db65665fc1d0c1::t_b4bbe41a73ba50 3174,3178
+src/components/ui/popover.tsx
+  s_db65665fc1d0c1::t_a9f6aa48770b0d 1
+  s_db65665fc1d0c1::t_fca86d02b04be7 11-12
+src/components/ui/dropdown-menu.tsx
+  s_db65665fc1d0c1::t_25b36d5c7d046e 23,45,66,91,111,138,165,184
+  s_db65665fc1d0c1::t_726b34b06c730e 21,44,65,89,110,137,163,183
+  s_db65665fc1d0c1::t_4073b359c4c40f 1
+  s_db65665fc1d0c1::t_85fdb78064d079 198
+scripts/__tests__/eslintConfig.spec.ts
+  s_db65665fc1d0c1::t_89350793782561 16
+  s_db65665fc1d0c1::t_5c3b13d759d45b 8-15,17-23
+  s_db65665fc1d0c1::t_52a19e29cf23ab 95-118
+  s_db65665fc1d0c1::t_e3e5a479e1c267 24
+  s_db65665fc1d0c1::t_439ceb8d2cb354 2,119-133
+  s_db65665fc1d0c1::t_7657e1d20f918a 134-135
+  s_db65665fc1d0c1::t_5d53c168f5bcab 136-141,144,146-152,154-157,160,173-174
+  s_db65665fc1d0c1::t_ef9972111ab9cd 142-143,158-159,161-172
+  s_db65665fc1d0c1::t_6e9ae093f30699 145,153
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "98738caff0518ab399958673625ee449077669e4",
+  "prompts": {},
+  "sessions": {
+    "s_76ccd61d453edf": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "108ea70a-a924-42ce-b7b8-fd9c1012e902",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_db65665fc1d0c1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f79ceb19-eb31-4445-8d19-e07aa8e75dd6",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
