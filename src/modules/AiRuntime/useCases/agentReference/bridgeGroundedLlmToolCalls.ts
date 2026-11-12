@@ -4318,6 +4318,7 @@ function getRangeStatementText(
  * two choruses) is left to the range write's own state guard, which asks which one the request means.
  */
 function groundStatedRange(
+    actionName: string,
     assertedRange: unknown,
     scopeStart: number,
     prompt: string,
@@ -4328,7 +4329,13 @@ function groundStatedRange(
     if (asserted?.kind === 'ambiguous-section') {
         return null;
     }
-    const stated = readStatedRangeBeats(getRangeStatementText(scopeStart, prompt, catalog, context), context);
+    const entry = catalog.find((candidate) => candidate.actionType === actionName);
+    const actionPhrases = [...(entry?.intentPhrases ?? []), ...(entry?.levelIntentPhrases ?? [])];
+    const stated = readStatedRangeBeats(
+        getRangeStatementText(scopeStart, prompt, catalog, context),
+        context,
+        actionPhrases
+    );
     if (
         asserted?.kind !== 'resolved' ||
         stated === null ||
@@ -5445,6 +5452,7 @@ function groundToolCall({
     }
     if (declaresRange(call.name) && !admitsPlanCreatedObject && !admitsCreativeCall) {
         const rangeRejection = groundStatedRange(
+            call.name,
             groundedArguments.range,
             resolvedActionScope?.start ?? 0,
             prompt,
