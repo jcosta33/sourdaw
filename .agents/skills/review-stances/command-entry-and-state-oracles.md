@@ -78,6 +78,15 @@ boundaries.
    state. Probe: public command entry, then raw document, owner projection, control state and engine projection
    agree. Replace the aggregate reusing IDs and exercise an empty prior state; create history through the real
    producer, persist, reload, hydrate, replay (an injected entry proves neither producer nor saved contract).
+   Missing-source relink (#4013, introducing commit `df26a52990d22767d65ca78d56aecab530139f57`) recorded callback
+   history whose Undo overwrote a later authoritative source; its historical review stance is unestablished.
+   The store adapter did commit CRDT, so lack of dispatch alone did not prove a lost write. Drive Locate, a later
+   supported source replacement or real CRDT publication, then actual Command Undo/Redo: any changed captured
+   alias, owner, source tuple or write eligibility refuses the entire replay while unrelated gain survives.
+   Hold picker and decode completion across arrangement A → B and A → B → A with the same missing buffer: the
+   outgoing intent cannot repair B or revive on return to A, and stale decoded assets are released. Removing the
+   source guard or arrangement authority must fail the corresponding real-owner integration in `test-validity.md`
+   probe 3; raw source pointers and runtime/audio delivery remain separate claims.
 7. **Transcription completes only after every generated entity commits.** Failure: a conversion reports success
    while its track, clip or note chunks are still uncommitted or only partly written. Direct clip/note writes and a
    dispatched but unawaited destination cannot witness one completed conversion. Drive the registered runtime

@@ -5,6 +5,7 @@ export { getProjectSnapshotKey } from './projectPersistence/getProjectSnapshotKe
 export { quiesceProjectSession } from './projectPersistence/quiesceProjectSession';
 export { cancelProjectSessionQuiesce } from './projectPersistence/cancelProjectSessionQuiesce';
 export { captureProjectTransitionAuthority } from './projectPersistence/captureProjectTransitionAuthority';
+export { captureArrangementMediaAuthority } from './captureArrangementMediaAuthority';
 export { saveProject } from './projectPersistence/saveProject/saveProject';
 export { saveProjectBeforeReplacement } from './projectPersistence/saveProject/saveProjectBeforeReplacement';
 export { pendingProjectReplacements } from './projectPersistence/pendingProjectReplacements';

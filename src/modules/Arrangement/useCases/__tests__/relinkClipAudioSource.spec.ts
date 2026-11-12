@@ -1,6 +1,25 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { arrangementStore, defaultArrangementId } from '#/modules/Project/stores';
+import {
+    arrangementStore,
+    defaultArrangementId,
+    projectStore,
+    defaultProjectStoreState,
+} from '#/modules/Project/stores';
+import { runProjectLoadTransaction, setProjectIdentityTransitionDependencies } from '#/modules/Project/useCases';
+import {
+    configureAutomergeStoragePort,
+    flushAutomergeStorageWrites,
+} from '#/infra/store/storage/createAutomergeStorage';
+import {
+    createCrdtDoc,
+    removeCrdtDoc,
+    registerCrdtStorageRuntime,
+    resetCrdtProjectAuthority,
+} from '#/modules/CrdtDocument/useCases';
+import { clearHandlerRegistry, registerHandlerMap, undoStore } from '#/modules/Command/stores';
+import { clearUndoHistory, undo, redo } from '#/modules/Command/useCases';
+import { getArrangementHandlers } from '../getArrangementHandlers';
 
 import { TrackDummy } from '../../__tests__/TrackDummy';
 import { type Clip } from '../../models/Track';
@@ -8,32 +27,23 @@ import { trackStore } from '../../stores/trackStore';
 import { relinkClipAudioSource } from '../relinkClipAudioSource';
 
 const mocks = vi.hoisted(() => ({
-    pushUndoEntry:
-        vi.fn<
-            (
-                label: string,
-                undoFn: () => void,
-                redoFn: () => unknown,
-                options?: { restoresBufferIds?: readonly string[] }
-            ) => void
-        >(),
     getCachedAudioBuffer: vi.fn<(input: { bufferId: string }) => AudioBuffer | null>(),
     clearClipPitchAnalysis: vi.fn<(clipId: string) => void>(),
     resolveEligibleClipWriteTarget:
         vi.fn<
             (input: {
-                clipId: string;
-            }) => { status: 'eligible'; trackId: string; clipId: string } | { status: 'missing' | 'ineligible' }
+                clipId?: string;
+                trackId?: string;
+            }) => { status: 'eligible'; trackId: string; clipId?: string } | { status: 'missing' | 'ineligible' }
         >(),
 }));
 
-vi.mock('#/modules/Command/useCases', () => ({
-    pushUndoEntry: mocks.pushUndoEntry,
-}));
-vi.mock('#/modules/AudioEngine/useCases', () => ({
+vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
     getCachedAudioBuffer: mocks.getCachedAudioBuffer,
 }));
-vi.mock('#/modules/Knead/useCases', () => ({
+vi.mock('#/modules/Knead/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Knead/useCases')>()),
     clearClipPitchAnalysis: mocks.clearClipPitchAnalysis,
 }));
 vi.mock('../../stores/resolveEligibleClipWriteTarget', () => ({
@@ -141,33 +151,39 @@ function storedSnapshot(id: string, tracks: StoredTrack[]): StoredSnapshot {
     };
 }
 
-function capturedUndoEntry(): {
-    label: string;
-    undoFn: () => void;
-    redoFn: () => unknown;
-    options: { restoresBufferIds?: readonly string[] } | undefined;
-} {
-    const call = mocks.pushUndoEntry.mock.calls[0];
-    if (!call) {
-        throw new Error('expected pushUndoEntry to be called');
-    }
-    return { label: call[0], undoFn: call[1], redoFn: call[2], options: call[3] };
-}
-
 function expectLiveClipBufferIds(bufferIds: readonly (string | undefined)[]): void {
     const live = trackStore.value?.tracks.flatMap((track) => track.clips.map((clip) => clip.audioBufferId)) ?? [];
     expect(live).toEqual(bufferIds);
 }
 
 describe('relinkClipAudioSource', () => {
-    beforeEach(() => {
+    afterEach(() => {
+        flushAutomergeStorageWrites();
+        clearHandlerRegistry();
+        configureAutomergeStoragePort(null);
+        removeCrdtDoc('root');
+    });
+    beforeEach(async () => {
+        setProjectIdentityTransitionDependencies({ leaveCollaborationSession: async () => undefined });
+        const transition = runProjectLoadTransaction();
+        expect(await transition.prepare()).toBe(true);
+        expect(transition.activate()).toBe(true);
+        configureAutomergeStoragePort(null);
+        resetCrdtProjectAuthority('relink owning fixture');
+        removeCrdtDoc('root');
+        createCrdtDoc('root');
+        registerCrdtStorageRuntime();
+        clearHandlerRegistry();
+        registerHandlerMap(getArrangementHandlers());
+        clearUndoHistory();
+        projectStore.set({ ...defaultProjectStoreState, loading: false });
         vi.clearAllMocks();
         // A null from the cache is what "missing" means; tests that need a
         // resolved source override this.
         mocks.getCachedAudioBuffer.mockReturnValue(null);
-        mocks.resolveEligibleClipWriteTarget.mockImplementation(({ clipId }) => ({
+        mocks.resolveEligibleClipWriteTarget.mockImplementation(({ clipId, trackId }) => ({
             status: 'eligible',
-            trackId: clipId === 'clip-a' ? 'track-1' : 'track-2',
+            trackId: trackId ?? (clipId === 'clip-a' ? 'track-1' : 'track-2'),
             clipId,
         }));
         trackStore.set({
@@ -178,12 +194,13 @@ describe('relinkClipAudioSource', () => {
             selectedTrackId: null,
         });
         arrangementStore.set({ arrangements: [], activeArrangementId: defaultArrangementId });
+        flushAutomergeStorageWrites();
     });
 
-    it('relinks every clip sharing the missing source across tracks and keeps each clip intact', () => {
+    it('relinks every clip sharing the missing source across tracks and keeps each clip intact', async () => {
         const setTrackState = vi.spyOn(trackStore, 'set');
 
-        const result = relinkClipAudioSource({ sourceBufferId: 'buf-missing', replacementBufferId: 'buf-new' });
+        const result = await relinkClipAudioSource({ sourceBufferId: 'buf-missing', replacementBufferId: 'buf-new' });
 
         expect(result).toEqual({ status: 'relinked', relinkedClipIds: ['clip-a', 'clip-b'] });
         expect(setTrackState).toHaveBeenCalledTimes(1);
@@ -210,28 +227,42 @@ describe('relinkClipAudioSource', () => {
         });
     });
 
-    it('clears the stale pitch analysis of every relinked clip', () => {
-        relinkClipAudioSource({ sourceBufferId: 'buf-missing', replacementBufferId: 'buf-new' });
+    it('clears the stale pitch analysis of every relinked clip', async () => {
+        await relinkClipAudioSource({ sourceBufferId: 'buf-missing', replacementBufferId: 'buf-new' });
 
         expect(mocks.clearClipPitchAnalysis.mock.calls.map((call) => call[0])).toEqual(['clip-a', 'clip-b']);
     });
 
-    it('records one undo entry that restores both clips and redoes the relink', () => {
-        relinkClipAudioSource({ sourceBufferId: 'buf-missing', replacementBufferId: 'buf-new' });
+    it('restores an omitted source pointer exactly when the clip ID is its missing cache key', async () => {
+        const { audioBufferId: _source, ...withoutPointer } = clipA;
+        trackStore.set({
+            tracks: [TrackDummy.create({ id: 'track-1', clips: [withoutPointer] })],
+            selectedTrackId: null,
+        });
+        flushAutomergeStorageWrites();
+        expect(await relinkClipAudioSource({ sourceBufferId: 'clip-a', replacementBufferId: 'buf-new' })).toMatchObject(
+            { status: 'relinked' }
+        );
+        await undo();
+        const restored = trackStore.value?.tracks[0]?.clips[0];
+        expect(restored).toBeDefined();
+        expect(Object.hasOwn(restored!, 'audioBufferId')).toBe(false);
+        await redo();
+        expect(trackStore.value?.tracks[0]?.clips[0]?.audioBufferId).toBe('buf-new');
+    });
 
-        expect(mocks.pushUndoEntry).toHaveBeenCalledTimes(1);
-        const entry = capturedUndoEntry();
-        expect(entry.label).toBe('Relink audio source');
-        expect(entry.options).toEqual({ restoresBufferIds: ['buf-new'] });
+    it('records one undo entry that restores both clips and redoes the relink', async () => {
+        await relinkClipAudioSource({ sourceBufferId: 'buf-missing', replacementBufferId: 'buf-new' });
 
-        entry.undoFn();
+        expect(undoStore.value?.past).toHaveLength(1);
+        expect(undoStore.value?.past[0]?.label).toBe('Relink audio source');
+        await undo();
         expectLiveClipBufferIds(['buf-missing', 'buf-missing']);
-
-        entry.redoFn();
+        await redo();
         expectLiveClipBufferIds(['buf-new', 'buf-new']);
     });
 
-    it('does not clobber a clip already repaired onto the replacement buffer', () => {
+    it('does not clobber a clip already repaired onto the replacement buffer', async () => {
         trackStore.set({
             tracks: [
                 TrackDummy.create({ id: 'track-1', clips: [clipA] }),
@@ -243,26 +274,26 @@ describe('relinkClipAudioSource', () => {
             bufferId === 'buf-new' ? decodedBuffer : null
         );
 
-        const result = relinkClipAudioSource({ sourceBufferId: 'buf-missing', replacementBufferId: 'buf-new' });
+        const result = await relinkClipAudioSource({ sourceBufferId: 'buf-missing', replacementBufferId: 'buf-new' });
 
         expect(result).toEqual({ status: 'relinked', relinkedClipIds: ['clip-a'] });
         const second = trackStore.value?.tracks[1]?.clips[0];
         expect(second).toMatchObject({ id: 'clip-b', audioBufferId: 'buf-new' });
     });
 
-    it('refuses to relink when the source buffer resolves in the cache at write time', () => {
+    it('refuses to relink when the source buffer resolves in the cache at write time', async () => {
         mocks.getCachedAudioBuffer.mockReturnValue(decodedBuffer);
         const before = trackStore.value;
 
-        const result = relinkClipAudioSource({ sourceBufferId: 'buf-missing', replacementBufferId: 'buf-new' });
+        const result = await relinkClipAudioSource({ sourceBufferId: 'buf-missing', replacementBufferId: 'buf-new' });
 
         expect(result).toEqual({ status: 'source-not-missing' });
         expect(trackStore.value).toBe(before);
-        expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
+        expect(undoStore.value?.past).toEqual([]);
         expect(mocks.clearClipPitchAnalysis).not.toHaveBeenCalled();
     });
 
-    it('relinks inactive track-alternative clips carrying the same missing source', () => {
+    it('relinks inactive track-alternative clips carrying the same missing source', async () => {
         const alternativeClip: Clip = { ...clipA, id: 'clip-alt' };
         trackStore.set({
             tracks: [
@@ -279,7 +310,7 @@ describe('relinkClipAudioSource', () => {
             selectedTrackId: null,
         });
 
-        const result = relinkClipAudioSource({ sourceBufferId: 'buf-missing', replacementBufferId: 'buf-new' });
+        const result = await relinkClipAudioSource({ sourceBufferId: 'buf-missing', replacementBufferId: 'buf-new' });
 
         expect(result).toEqual({ status: 'relinked', relinkedClipIds: ['clip-a', 'clip-alt'] });
         expect(trackStore.value?.tracks[0]?.clips[0]?.audioBufferId).toBe('buf-new');
@@ -289,7 +320,7 @@ describe('relinkClipAudioSource', () => {
         });
     });
 
-    it('leaves stored inactive arrangements untouched — the project aggregate owns them', () => {
+    it('leaves stored inactive arrangements untouched — the project aggregate owns them', async () => {
         const inactiveSnapshot = storedSnapshot('arrangement-2', [storedTrack()]);
         arrangementStore.set({
             arrangements: [storedSnapshot(defaultArrangementId, []), inactiveSnapshot],
@@ -297,52 +328,54 @@ describe('relinkClipAudioSource', () => {
         });
         const storedBefore = structuredClone(arrangementStore.value);
 
-        const result = relinkClipAudioSource({ sourceBufferId: 'buf-missing', replacementBufferId: 'buf-new' });
+        const result = await relinkClipAudioSource({ sourceBufferId: 'buf-missing', replacementBufferId: 'buf-new' });
 
         expect(result).toEqual({ status: 'relinked', relinkedClipIds: ['clip-a', 'clip-b'] });
         expect(arrangementStore.value).toEqual(storedBefore);
     });
 
-    it('rejects without writing when no clip carries the missing source', () => {
+    it('rejects without writing when no clip carries the missing source', async () => {
         const before = trackStore.value;
 
-        const result = relinkClipAudioSource({ sourceBufferId: 'buf-nowhere', replacementBufferId: 'buf-new' });
+        const result = await relinkClipAudioSource({ sourceBufferId: 'buf-nowhere', replacementBufferId: 'buf-new' });
 
         expect(result).toEqual({ status: 'rejected' });
         expect(trackStore.value).toBe(before);
-        expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
+        expect(undoStore.value?.past).toEqual([]);
     });
 
-    it('rejects atomically when an active matched clip fails the clip-write trust boundary', () => {
-        mocks.resolveEligibleClipWriteTarget.mockImplementation(({ clipId }) =>
-            clipId === 'clip-b' ? { status: 'ineligible' } : { status: 'eligible', trackId: 'track-1', clipId }
+    it('rejects atomically when an active matched clip fails the clip-write trust boundary', async () => {
+        mocks.resolveEligibleClipWriteTarget.mockImplementation(({ clipId, trackId }) =>
+            clipId === 'clip-b'
+                ? { status: 'ineligible' }
+                : { status: 'eligible', trackId: trackId ?? 'track-1', clipId }
         );
         const before = trackStore.value;
 
-        const result = relinkClipAudioSource({ sourceBufferId: 'buf-missing', replacementBufferId: 'buf-new' });
+        const result = await relinkClipAudioSource({ sourceBufferId: 'buf-missing', replacementBufferId: 'buf-new' });
 
         expect(result).toEqual({ status: 'rejected' });
         expect(trackStore.value).toBe(before);
         expect(mocks.clearClipPitchAnalysis).not.toHaveBeenCalled();
-        expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
+        expect(undoStore.value?.past).toEqual([]);
     });
 
-    it('rejects empty ids without touching the store', () => {
+    it('rejects empty ids without touching the store', async () => {
         const before = trackStore.value;
 
-        expect(relinkClipAudioSource({ sourceBufferId: '', replacementBufferId: 'buf-new' })).toEqual({
+        expect(await relinkClipAudioSource({ sourceBufferId: '', replacementBufferId: 'buf-new' })).toEqual({
             status: 'rejected',
         });
-        expect(relinkClipAudioSource({ sourceBufferId: 'buf-missing', replacementBufferId: '' })).toEqual({
+        expect(await relinkClipAudioSource({ sourceBufferId: 'buf-missing', replacementBufferId: '' })).toEqual({
             status: 'rejected',
         });
         expect(trackStore.value).toBe(before);
     });
 
-    it('rejects when the track store is uninitialized', () => {
+    it('rejects when the track store is uninitialized', async () => {
         trackStore.set(null);
 
-        const result = relinkClipAudioSource({ sourceBufferId: 'buf-missing', replacementBufferId: 'buf-new' });
+        const result = await relinkClipAudioSource({ sourceBufferId: 'buf-missing', replacementBufferId: 'buf-new' });
 
         expect(result).toEqual({ status: 'rejected' });
     });

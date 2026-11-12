@@ -25,6 +25,7 @@ import { handleNudgeClip } from './handleNudgeClip';
 import { handlePasteClip } from './handlePasteClip';
 import { handleQuantizeTransients } from './handleQuantizeTransients';
 import { handleRemoveClip } from './handleRemoveClip';
+import { handleRelinkClipAudioSources } from './handleRelinkClipAudioSources';
 import { handleRenameClip } from './handleRenameClip';
 import { handleRestoreClipGlueState } from './handleRestoreClipGlueState';
 import { handleRestoreClipLoop } from './handleRestoreClipLoop';
@@ -62,6 +63,7 @@ export const clipHandlers = {
     duplicateClip: handleDuplicateClip,
     duplicateClipToNextBar: handleDuplicateClipToNextBar,
     removeClip: handleRemoveClip,
+    relinkClipAudioSources: handleRelinkClipAudioSources,
     renameClip: handleRenameClip,
     splitClip: handleSplitClip,
     restoreClipSplitState: handleRestoreClipSplitState,

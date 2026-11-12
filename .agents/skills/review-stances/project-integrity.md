@@ -79,6 +79,16 @@ Split out (a stance matching one carries that file, not this one): replay agains
    edit. For coordinate captures hydrate both history directions (`moving-coordinate-inverses.md` probes 4 and 5)
    and inject a pre-commit storage failure: document, projections, both captures, history, tree and mirror
    unchanged. A retained handle refuses once clip geometry changed.
+   For missing-source relink (#4013; provenance in `command-entry-and-state-oracles.md` probe 6), create real
+   history for active clips and inactive alternatives, then change one captured source or owner through an
+   authoritative write. Actual Undo and Redo must refuse atomically, preserving raw CRDT, projections and the
+   retained history unit; an unrelated gain edit must survive a permitted source replay. Probe the
+   publication fence with a peer source write after handler staging: raw truth and its projection must agree on
+   refusal. If a nested projection rebase drops the staged source intent, refuse without history or a commit claim
+   and release the uncommitted replacement; preserving peer gain does not imply unconditional concurrent admission.
+   Inspect the existing action/inverse buffer-retention reader on both history sides so Undo cannot abandon PCM needed by
+   Redo. A label-only history view, callback spy or store-only fixture does not establish those contracts. Add real
+   save/binary-reopen and audible observations before claiming durability or playback beyond the raw document.
 6. **Identity namespaces are declared, scoped by path, and fail closed across reload and replay (#5157, #4036,
    #1857, #5570).** Failure: the ID walk marks a valid project repair-required (blocking Save, Undo), copied
    subtrees collide, or a replayed entry remints IDs. Probe: load each shipped demo and template, save, reload:

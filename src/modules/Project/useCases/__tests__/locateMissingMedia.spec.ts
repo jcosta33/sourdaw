@@ -1,13 +1,27 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { type Clip, type Track, trackStore } from '#/modules/Arrangement/stores';
-import { pushUndoEntry } from '#/modules/Command/useCases';
+import { clearUndoHistory } from '#/modules/Command/useCases';
+import { clearHandlerRegistry, registerHandlerMap, undoStore, undoHistoryStore } from '#/modules/Command/stores';
+import { getArrangementHandlers } from '#/modules/Arrangement/useCases';
+import {
+    configureAutomergeStoragePort,
+    flushAutomergeStorageWrites,
+} from '#/infra/store/storage/createAutomergeStorage';
+import {
+    createCrdtDoc,
+    removeCrdtDoc,
+    registerCrdtStorageRuntime,
+    resetCrdtProjectAuthority,
+} from '#/modules/CrdtDocument/useCases';
+import { projectStore, defaultProjectStoreState } from '../../stores/projectStore';
 import { clearClipPitchAnalysis } from '#/modules/Knead/useCases';
 import { confirmUser } from '#/utils/Notification/confirmUser';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { pickFiles as pickFilesFromNativeDialog } from '../../repositories/nativeFileDialog/pickFiles';
 import { defaultMissingMediaStoreState, missingMediaStore } from '../../stores/missingMediaStore';
+import { arrangementStore } from '../../stores/arrangementStore';
 import { locateMissingMedia } from '../locateMissingMedia';
 
 const mocks = vi.hoisted(() => ({
@@ -22,10 +36,6 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     decodeAudioFile: mocks.decodeAudioFile,
     discardDecodedAudioFile: mocks.discardDecodedAudioFile,
     getCachedAudioBuffer: ({ bufferId }: { bufferId: string }) => mocks.buffers.get(bufferId) ?? null,
-}));
-vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
-    ...(await importOriginal<typeof import('#/modules/Command/useCases')>()),
-    pushUndoEntry: vi.fn(),
 }));
 vi.mock('#/modules/Knead/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Knead/useCases')>()),
@@ -116,7 +126,34 @@ function replacement(name: string): File {
 }
 
 describe('locateMissingMedia', () => {
+    let releases: Array<ReturnType<typeof vi.fn<() => void>>>;
+    afterEach(() => {
+        for (const release of releases) {
+            expect(release).toHaveBeenCalledTimes(1);
+        }
+        vi.restoreAllMocks();
+        flushAutomergeStorageWrites();
+        clearHandlerRegistry();
+        configureAutomergeStoragePort(null);
+        removeCrdtDoc('root');
+    });
     beforeEach(() => {
+        releases = [];
+        const subscribe = arrangementStore.subscribe;
+        vi.spyOn(arrangementStore, 'subscribe').mockImplementation((listener) => {
+            const release = vi.fn(subscribe(listener));
+            releases.push(release);
+            return release;
+        });
+        configureAutomergeStoragePort(null);
+        resetCrdtProjectAuthority('Locate owning fixture');
+        removeCrdtDoc('root');
+        createCrdtDoc('root');
+        registerCrdtStorageRuntime();
+        clearHandlerRegistry();
+        registerHandlerMap(getArrangementHandlers());
+        clearUndoHistory();
+        projectStore.set({ ...defaultProjectStoreState, loading: false });
         vi.clearAllMocks();
         mocks.buffers.clear();
         mocks.isCurrentProject.mockReturnValue(true);
@@ -130,6 +167,7 @@ describe('locateMissingMedia', () => {
             audioClip('clip-right', 'track-two', 'buf-guitar', 'Guitar.wav'),
         ]);
         vi.mocked(confirmUser).mockResolvedValue(false);
+        flushAutomergeStorageWrites();
     });
 
     it('uses the picker and shared-source relink, then clears every repaired reference', async () => {
@@ -146,10 +184,8 @@ describe('locateMissingMedia', () => {
             'decoded-replacement.wav',
         ]);
         expect(missingMediaStore.value).toEqual(defaultMissingMediaStoreState);
-        expect(pushUndoEntry).toHaveBeenCalledTimes(1);
-        expect(pushUndoEntry).toHaveBeenCalledWith('Relink audio source', expect.any(Function), expect.any(Function), {
-            restoresBufferIds: ['decoded-replacement.wav'],
-        });
+        expect(undoStore.value?.past).toHaveLength(1);
+        expect(undoHistoryStore.value?.past[0]?.kind).toBe('action');
         expect(vi.mocked(clearClipPitchAnalysis).mock.calls.map((call) => call[0])).toEqual([
             'clip-left',
             'clip-right',
@@ -194,7 +230,7 @@ describe('locateMissingMedia', () => {
         expect(notifyUser).toHaveBeenCalledWith(expect.stringContaining('could not be decoded'), 'error');
     });
 
-    it('discards a decoded replacement when the project changes during the picker flow', async () => {
+    it('does not decode a picker result after its project authority changes', async () => {
         vi.mocked(pickFilesFromNativeDialog).mockResolvedValue([replacement('stale.wav')]);
         mocks.isCurrentProject.mockReturnValue(false);
         const tracksBefore = trackStore.value;
@@ -204,7 +240,8 @@ describe('locateMissingMedia', () => {
 
         expect(trackStore.value).toBe(tracksBefore);
         expect(missingMediaStore.value).toBe(missingBefore);
-        expect(mocks.discardDecodedAudioFile).toHaveBeenCalledExactlyOnceWith('decoded-stale.wav');
+        expect(mocks.decodeAudioFile).not.toHaveBeenCalled();
+        expect(mocks.discardDecodedAudioFile).not.toHaveBeenCalled();
         expect(confirmUser).not.toHaveBeenCalled();
     });
 

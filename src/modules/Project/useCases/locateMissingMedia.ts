@@ -7,7 +7,7 @@ import { notifyUser } from '#/utils/Notification/notifyUser';
 import { missingMediaStore } from '../stores/missingMediaStore';
 
 import { pickFiles } from './fileDialog';
-import { captureProjectTransitionAuthority } from './projectPersistence/captureProjectTransitionAuthority';
+import { captureArrangementMediaAuthority } from './captureArrangementMediaAuthority';
 import { verifyAudioBufferReferences } from './projectPersistence/helpers/verifyAudioBufferReferences';
 
 const AUDIO_FILTER = { name: 'Audio files', extensions: [...AUDIO_EXTENSION_ROSTER] };
@@ -54,10 +54,17 @@ async function relinkReplacement(source: MissingSource, file: File, isCurrent: (
         return false;
     }
 
-    const result = relinkClipAudioSource({
-        sourceBufferId: source.sourceBufferId,
-        replacementBufferId,
-    });
+    let result: Awaited<ReturnType<typeof relinkClipAudioSource>>;
+    try {
+        result = await relinkClipAudioSource({
+            sourceBufferId: source.sourceBufferId,
+            replacementBufferId,
+            shouldExecute: isCurrent,
+        });
+    } catch (error) {
+        discardDecodedAudioFile(replacementBufferId);
+        throw error;
+    }
     if (result.status === 'relinked') {
         return true;
     }
@@ -99,7 +106,7 @@ async function offerSameFolderRecovery(excludedBufferId: string, isCurrent: () =
     }
 
     const files = await pickReplacements(true);
-    if (!files) {
+    if (!files || !isCurrent()) {
         return;
     }
     const selectedNameCounts = new Map<string, number>();
@@ -112,6 +119,9 @@ async function offerSameFolderRecovery(excludedBufferId: string, isCurrent: () =
     let skippedCount = 0;
     let repaired = false;
     for (const file of files) {
+        if (!isCurrent()) {
+            return;
+        }
         const name = comparableSourceName(file.name);
         const matches = candidates.filter(
             (candidate) =>
@@ -143,16 +153,21 @@ async function offerSameFolderRecovery(excludedBufferId: string, isCurrent: () =
 
 /** Locate one replacement through the platform picker and repair every reference to its missing source. */
 export async function locateMissingMedia(source: MissingSource): Promise<void> {
-    const authority = captureProjectTransitionAuthority();
-    const files = await pickReplacements(false);
-    const file = files?.[0];
-    if (!file) {
-        return;
-    }
-    if (!(await relinkReplacement(source, file, authority.isCurrent)) || !authority.isCurrent()) {
-        return;
-    }
+    const authority = captureArrangementMediaAuthority();
+    const isCurrent = authority.isCurrent;
+    try {
+        const files = await pickReplacements(false);
+        const file = files?.[0];
+        if (!file || !isCurrent()) {
+            return;
+        }
+        if (!(await relinkReplacement(source, file, isCurrent)) || !isCurrent()) {
+            return;
+        }
 
-    verifyAudioBufferReferences();
-    await offerSameFolderRecovery(source.sourceBufferId, authority.isCurrent);
+        verifyAudioBufferReferences();
+        await offerSameFolderRecovery(source.sourceBufferId, isCurrent);
+    } finally {
+        authority.dispose();
+    }
 }
