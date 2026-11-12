@@ -1,75 +1,163 @@
 import { resolveMusicalRange } from '#/modules/Arrangement/useCases';
 import { getBarStartBeat } from '#/modules/Transport/useCases';
+import { isRecord } from '#/utils/structuralEquality';
 
 import { type ProjectContext } from '../../../models/ProjectContext';
 
 type StatedRange = Parameters<typeof resolveMusicalRange>[0]['range'];
 
+/** The beats a range covers once the project resolves it. */
+export type RangeBeats = { startBeat: number; endBeat: number };
+
+/** One range phrase a request states: where it sits in the text and the beats it names. */
+export type RangePhrase = RangeBeats & { start: number; end: number };
+
 /** Punctuation and spacing a range phrase may close on. */
 const CLOSING = String.raw`[\p{P}\s]*$`;
 
-const SECTION_CONNECTOR_PATTERN = /\s(?:in|during)\s+/giu;
+const NUMBER = String.raw`\d+(?:\.\d+)?`;
+
+const SECTION_CONNECTOR_PATTERN = /(?<=^|\s)(?:in|during)\s+/giu;
 
 const BAR_RANGE_PATTERN = new RegExp(
-    String.raw`\s(?:over|across|in)\s+bars?\s+(?<start>\d+)\s*(?:to|through|-|–)\s*(?<end>\d+)${CLOSING}`,
-    'iu'
+    String.raw`(?<=^|\s)(?:over|across|in|from|during)\s+bars?\s+(?<start>\d+)\s*(?:to|through|-|–)\s*(?:bar\s+)?(?<end>\d+)`,
+    'giu'
 );
 
 const BEAT_RANGE_PATTERN = new RegExp(
-    String.raw`\s(?:over|across)\s+beats?\s+(?<start>\d+(?:\.\d+)?)\s*(?:to|through|-|–)\s*(?<end>\d+(?:\.\d+)?)${CLOSING}`,
-    'iu'
+    String.raw`(?<=^|\s)(?:over|across|from)\s+beats?\s+(?<start>${NUMBER})\s*(?:to|through|-|–)\s*(?:beat\s+)?(?<end>${NUMBER})`,
+    'giu'
 );
 
 const TRAILING_PUNCTUATION_PATTERN = new RegExp(CLOSING, 'u');
 
-function resolves(range: StatedRange, context: ProjectContext): boolean {
-    return (
-        resolveMusicalRange({
-            range,
-            sections: context.sections ?? [],
-            markers: context.markers ?? [],
-            tracks: context.tracks,
-            barStartBeat: getBarStartBeat,
-        }).kind === 'resolved'
-    );
+const ONLY_CLOSING_PATTERN = new RegExp(`^${CLOSING}`, 'u');
+
+/**
+ * Whether the text after a range phrase only finishes the range change: the decibel figure a
+ * request may state after its range ("in Chorus Two by 1.5 dB"), a ramp the range draws with
+ * ("with 0.5 beat ramps in and out", ", ramping in and out over one beat"), and closing punctuation.
+ * Anything else ("but not in the first half", "except the last bar") may narrow the range, which
+ * one range write cannot honour.
+ */
+const RANGE_TAIL_PATTERN = new RegExp(
+    [
+        '^',
+        String.raw`(?:\s+(?:by|to|at)\s+[-+−–]?(?:${NUMBER}|\.\d+)\s*d\s?b)?`,
+        String.raw`(?:\s*,?\s*(?:ramping\s+(?:in\s+and\s+out|in|out)\s+over\s+(?:${NUMBER}|one|a|half\s+a)\s+beats?|with\s+(?:${NUMBER}|one|a|half\s+a)[\s-]*beats?\s+ramps?(?:\s+in\s+and\s+out|\s+in|\s+out)?))?`,
+        CLOSING,
+    ].join(''),
+    'iu'
+);
+
+type RangeResolution = ReturnType<typeof resolveMusicalRange>;
+
+function resolve(range: StatedRange, context: ProjectContext): RangeResolution {
+    return resolveMusicalRange({
+        range,
+        sections: context.sections ?? [],
+        markers: context.markers ?? [],
+        tracks: context.tracks,
+        barStartBeat: getBarStartBeat,
+    });
 }
 
-function findNumericRange(
+function resolveBeats(range: StatedRange, context: ProjectContext): RangeBeats | null {
+    const resolution = resolve(range, context);
+    return resolution.kind === 'resolved' ? { startBeat: resolution.startBeat, endBeat: resolution.endBeat } : null;
+}
+
+function findNumericRanges(
     text: string,
     pattern: RegExp,
     toRange: (start: number, end: number) => StatedRange,
     context: ProjectContext
-): number | null {
-    const match = pattern.exec(text);
-    const start = Number(match?.groups?.start);
-    const end = Number(match?.groups?.end);
-    if (match === null || !Number.isFinite(start) || !Number.isFinite(end)) {
-        return null;
-    }
-    return resolves(toRange(start, end), context) ? match.index : null;
+): RangePhrase[] {
+    return [...text.matchAll(pattern)].flatMap((match) => {
+        const beats = resolveBeats(toRange(Number(match.groups?.start), Number(match.groups?.end)), context);
+        return beats === null ? [] : [{ ...beats, start: match.index, end: match.index + match[0].length }];
+    });
 }
 
-/** The earliest `in <reference>` whose whole remainder names one section or marker the project holds. */
-function findSectionRange(text: string, context: ProjectContext): number | null {
-    for (const match of text.matchAll(SECTION_CONNECTOR_PATTERN)) {
-        const reference = text.slice(match.index + match[0].length).replace(TRAILING_PUNCTUATION_PATTERN, '');
-        if (reference.length > 0 && resolves({ section: reference }, context)) {
-            return match.index;
+/** The section references a reference may be, longest first: each whole-word prefix of the text. */
+function getReferenceCandidates(remainder: string): string[] {
+    const wordEnds = [...remainder.matchAll(/\S+/gu)].map((word) => word.index + word[0].length);
+    return wordEnds.reverse().flatMap((end) => {
+        const candidate = remainder.slice(0, end);
+        const unpunctuated = candidate.replace(TRAILING_PUNCTUATION_PATTERN, '');
+        return unpunctuated === candidate || unpunctuated.length === 0 ? [candidate] : [candidate, unpunctuated];
+    });
+}
+
+/** Each `in <reference>` whose longest whole-word reference names a place the project resolves. */
+function findSectionRanges(text: string, context: ProjectContext): RangePhrase[] {
+    return [...text.matchAll(SECTION_CONNECTOR_PATTERN)].flatMap((match) => {
+        const referenceStart = match.index + match[0].length;
+        for (const reference of getReferenceCandidates(text.slice(referenceStart))) {
+            const beats = resolveBeats({ section: reference }, context);
+            if (beats !== null) {
+                return [{ ...beats, start: match.index, end: referenceStart + reference.length }];
+            }
         }
-    }
-    return null;
+        return [];
+    });
 }
 
 /**
- * Where a closing range phrase starts in `text`, or null when the text does not end on one: `in
- * <section>` naming a place the musical range resolver finds, `over bars N to M`, or `over beats N
- * to M`. The resolver decides what counts as a place, so a phrase names a range only when a range
- * write would resolve it.
+ * Every range phrase `text` states, in text order: `in <section>` naming a place the musical range
+ * resolver finds, `over bars N to M`, or `over beats N to M` (`from beat N to beat M` alike). The
+ * resolver decides what counts as a place, so a phrase names a range only when a range write would
+ * resolve it. A section connector the bar form already read is not read again.
  */
+export function findRangePhrases(text: string, context: ProjectContext): RangePhrase[] {
+    const numeric = [
+        ...findNumericRanges(text, BAR_RANGE_PATTERN, (startBar, endBar) => ({ startBar, endBar }), context),
+        ...findNumericRanges(text, BEAT_RANGE_PATTERN, (startBeat, endBeat) => ({ startBeat, endBeat }), context),
+    ];
+    const sections = findSectionRanges(text, context).filter(
+        (section) => !numeric.some((phrase) => phrase.start === section.start)
+    );
+    return [...numeric, ...sections].sort((left, right) => left.start - right.start);
+}
+
+/** Where a closing range phrase starts in `text`, or null when the text does not end on one. */
 export function findTrailingRangePhrase(text: string, context: ProjectContext): number | null {
-    return (
-        findNumericRange(text, BAR_RANGE_PATTERN, (startBar, endBar) => ({ startBar, endBar }), context) ??
-        findNumericRange(text, BEAT_RANGE_PATTERN, (startBeat, endBeat) => ({ startBeat, endBeat }), context) ??
-        findSectionRange(text, context)
+    const trailing = findRangePhrases(text, context).find((phrase) =>
+        ONLY_CLOSING_PATTERN.test(text.slice(phrase.end))
+    );
+    return trailing?.start ?? null;
+}
+
+/**
+ * The beats the one range phrase `text` states, or null when it states none, several, or anything
+ * after it but a figure, a ramp and closing punctuation.
+ */
+export function readStatedRangeBeats(text: string, context: ProjectContext): RangeBeats | null {
+    const phrases = findRangePhrases(text, context);
+    if (phrases.length !== 1) {
+        return null;
+    }
+    const [phrase] = phrases;
+    return RANGE_TAIL_PATTERN.test(text.slice(phrase!.end)) ? phrase! : null;
+}
+
+function readNumber(value: unknown): number | undefined {
+    return typeof value === 'number' ? value : undefined;
+}
+
+/** How the project resolves a call's own range argument, or null when it is no range object. */
+export function resolveCallRange(range: unknown, context: ProjectContext): RangeResolution | null {
+    if (!isRecord(range)) {
+        return null;
+    }
+    return resolve(
+        {
+            section: typeof range.section === 'string' ? range.section : undefined,
+            startBar: readNumber(range.startBar),
+            endBar: readNumber(range.endBar),
+            startBeat: readNumber(range.startBeat),
+            endBeat: readNumber(range.endBeat),
+        },
+        context
     );
 }

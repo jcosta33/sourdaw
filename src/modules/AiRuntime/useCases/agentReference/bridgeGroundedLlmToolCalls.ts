@@ -129,7 +129,11 @@ import { resolveCommandScopeOverride } from './groundingStrategies/commandScopeO
 import { escapeRegExp } from './groundingStrategies/escapeRegExp';
 import { findPromptNumbers } from './groundingStrategies/findPromptNumbers';
 import { REFERENCE_PLACEHOLDER } from './groundingStrategies/findReferencedIntentPhrase';
-import { findTrailingRangePhrase } from './groundingStrategies/findTrailingRangePhrase';
+import {
+    findTrailingRangePhrase,
+    readStatedRangeBeats,
+    resolveCallRange,
+} from './groundingStrategies/findTrailingRangePhrase';
 import { getAddClipPromptEvidence } from './groundingStrategies/getAddClipPromptEvidence';
 import { getCancellationCues } from './groundingStrategies/getCancellationCues';
 import { getGlueClipPairTargetPattern } from './groundingStrategies/getGlueClipPairTargetPattern';
@@ -4205,6 +4209,61 @@ function groundSourceSetLiftShape(
 }
 
 /**
+ * The request text a range call is read against: from the call's own clause up to the next clause
+ * that states an action of its own or is a protection the protection reader consumes whole. A later
+ * clause that is neither ("but not in the first half") is read with the range it may narrow.
+ */
+function getRangeStatementText(
+    scopeStart: number,
+    prompt: string,
+    catalog: GroundingCatalog,
+    context: ProjectContext
+): string {
+    const clauses = getPromptClauses(prompt, maskProjectReferences(prompt, context));
+    const protections = readExplicitProtections(prompt, context).resolvedTrackClauses;
+    const ownIndex = clauses.findLastIndex((clause) => clause.start <= scopeStart);
+    const nextOther = clauses.findIndex(
+        (clause, index) =>
+            index > ownIndex &&
+            (resolveClauseActionIntent(clause.masked, catalog) !== null ||
+                protections.some((protection) => protection.start < clause.end && clause.start < protection.end))
+    );
+    const end = nextOther > 0 ? clauses[nextOther - 1]!.end : prompt.length;
+    return prompt.slice(scopeStart, end);
+}
+
+/**
+ * The refusal for a range call whose range is not the one the request states, or null when the
+ * range resolves to the same beats as the request's one range phrase. The range is read in the
+ * project the call writes to, so "Chorus 2", "the second chorus" and bars 9 to 12 agree when they
+ * name the same beats; a request stating no range, several, or a qualifier after it is refused, and
+ * so is a range the project does not hold. A section name several sections share ("chorus" beside
+ * two choruses) is left to the range write's own state guard, which asks which one the request means.
+ */
+function groundStatedRange(
+    assertedRange: unknown,
+    scopeStart: number,
+    prompt: string,
+    catalog: GroundingCatalog,
+    context: ProjectContext
+): string | null {
+    const asserted = resolveCallRange(assertedRange, context);
+    if (asserted?.kind === 'ambiguous-section') {
+        return null;
+    }
+    const stated = readStatedRangeBeats(getRangeStatementText(scopeStart, prompt, catalog, context), context);
+    if (
+        asserted?.kind !== 'resolved' ||
+        stated === null ||
+        stated.startBeat !== asserted.startBeat ||
+        stated.endBeat !== asserted.endBeat
+    ) {
+        return getValueMismatchReason('range');
+    }
+    return null;
+}
+
+/**
  * A grounded source set in the order the request names its members, never the order the provider
  * listed them: the set reading checks membership only, so the provider's order would otherwise
  * become the command's.
@@ -5293,6 +5352,18 @@ function groundToolCall({
           );
     if (valueRejection) {
         return rejection(index, call.name, valueRejection);
+    }
+    if (declaresRange(call.name) && !admitsPlanCreatedObject && !admitsCreativeCall) {
+        const rangeRejection = groundStatedRange(
+            groundedArguments.range,
+            resolvedActionScope?.start ?? 0,
+            prompt,
+            catalog,
+            context
+        );
+        if (rangeRejection !== null) {
+            return rejection(index, call.name, rangeRejection);
+        }
     }
     if (hasOnlySourceSetTarget(groundingRules)) {
         const sourceSetRejection = groundSourceSetLiftShape(call, resolvedActionScope?.start, prompt, context);
