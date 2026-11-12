@@ -1,5 +1,5 @@
 /** Runs one owned Git checkpoint and retains bounded, private diagnostic evidence. */
-import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
+import { spawn, type ChildProcess } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
     appendFileSync,
@@ -19,10 +19,12 @@ import {
 } from 'node:fs';
 import { constants as osConstants, homedir } from 'node:os';
 import { join } from 'node:path';
+import type { Readable } from 'node:stream';
 import { fileURLToPath } from 'node:url';
 
+import { checkpointArguments } from './gitCheckpointArguments.ts';
 import { checkpointMountOptions } from './gitCheckpointMount.ts';
-import { checkpointSocketRows } from './gitCheckpointSocket.ts';
+import { command, diagnosticEnv, processIdentity, runCheckpointSample } from './gitCheckpointProcess.ts';
 
 const script = fileURLToPath(import.meta.url);
 const unavailable = 'unavailable';
@@ -72,17 +74,6 @@ function errorCode(error: unknown): string {
         return error.code;
     }
     return unavailable;
-}
-const diagnosticEnv = {
-    ...process.env,
-    GIT_TRACE2: '0',
-    GIT_TRACE2_EVENT: '0',
-    GIT_TRACE2_PERF: '0',
-    GIT_OPTIONAL_LOCKS: '0',
-};
-function command(executable: string, args: string[], env = diagnosticEnv, timeout = 750): string | null {
-    const result = spawnSync(executable, args, { encoding: 'utf8', env, timeout, maxBuffer: 256 * 1024 });
-    return result.status === 0 ? result.stdout.trim() : null;
 }
 let hashBudget = 32 * 1024 * 1024;
 function hash(path: string, noFollow = false): { sha256: string } | { error: string } {
@@ -168,21 +159,20 @@ function observe(
         writeFileSync(partialPath, JSON.stringify(partial), { mode: 0o600 });
     };
     checkpoint('head', command('git', ['rev-parse', '--verify', 'HEAD']));
+    checkpoint('gitVersion', command('git', ['--version']) ?? unavailable);
     const common = command('git', ['rev-parse', '--git-common-dir']);
     checkpoint('common', common);
     const objects = process.env.GIT_OBJECT_DIRECTORY ?? command('git', ['rev-parse', '--git-path', 'objects']);
     checkpoint('objects', objects);
     const index = process.env.GIT_INDEX_FILE ?? command('git', ['rev-parse', '--git-path', 'index']);
     checkpoint('index', index ? hash(index) : { error: unavailable });
-    const staged = command('git', [
-        'diff',
-        '--cached',
-        '--no-ext-diff',
-        '--no-textconv',
-        '--name-only',
-        '-z',
-        '--diff-filter=ACMR',
-    ]);
+    const staged = command(
+        'git',
+        ['diff', '--cached', '--no-ext-diff', '--no-textconv', '--name-only', '-z', '--diff-filter=ACMR'],
+        diagnosticEnv,
+        750,
+        true
+    );
     const stagedPaths = staged?.split('\0').filter(Boolean) ?? [];
     let matched: string[] = [];
     let pathspecDiscovery = 'not requested';
@@ -195,7 +185,7 @@ function observe(
             argumentsForListing.push('--exclude-standard');
         }
         argumentsForListing.push('--', ...new Set(paths));
-        const listing = command('git', argumentsForListing);
+        const listing = command('git', argumentsForListing, diagnosticEnv, 750, true);
         if (listing === null) {
             pathspecDiscovery = unavailable;
         } else {
@@ -203,7 +193,8 @@ function observe(
             pathspecDiscovery = 'complete';
         }
     }
-    const discovered = [...new Set([...paths.filter((path) => !discover), ...matched, ...stagedPaths])];
+    const requestedPaths = discover ? [] : paths;
+    const discovered = [...new Set([...requestedPaths, ...matched, ...stagedPaths])];
     const selected = discovered.slice(0, 256);
     checkpoint('sourceSelection', {
         selected: selected.length,
@@ -326,26 +317,12 @@ function inspect(
         });
     });
 }
-function processIdentity(pid: number): string | null {
-    return command('ps', ['-p', String(pid), '-o', 'pid=,ppid=,pgid=,state=,lstart=,comm=']);
-}
-function sameProcess(first: string | null, second: string | null): boolean {
-    if (!first || !second) {
-        return false;
-    }
-    const stable = (value: string) =>
-        value
-            .trim()
-            .split(/\s+/)
-            .filter((_, index) => index !== 3)
-            .join(' ');
-    return stable(first) === stable(second);
-}
-function sample(pid: number, identity: string | null): string | null {
-    if (process.platform !== 'darwin' || !sameProcess(identity, processIdentity(pid))) {
+function readObservation(path: string): Record<string, unknown> | null {
+    try {
+        return parseRecord(readFileSync(path, 'utf8'));
+    } catch {
         return null;
     }
-    return command('/usr/bin/sample', [String(pid), '1'], diagnosticEnv, 2500);
 }
 function watchForStall(
     child: ChildProcess,
@@ -353,7 +330,8 @@ function watchForStall(
     before: Record<string, unknown>,
     identity: string | null,
     started: bigint,
-    save: () => void
+    save: () => void,
+    partialPath: string
 ): NodeJS.Timeout {
     return setTimeout(() => {
         if (child.exitCode !== null || child.signalCode !== null) {
@@ -376,6 +354,7 @@ function watchForStall(
                     String(child.pid),
                     identity ?? '',
                     JSON.stringify(typeof before.trace2 === 'string' ? before.trace2 : ''),
+                    partialPath,
                 ],
                 { stdio: ['ignore', 'pipe', 'ignore'], detached: true }
             );
@@ -408,13 +387,17 @@ function watchForStall(
                 stopObserver();
             }
         });
-        const timeout = setTimeout(stopObserver, 6000);
+        const timeout = setTimeout(stopObserver, 9000);
         observer.on('error', () => clearTimeout(timeout));
         observer.on('close', () => {
             clearTimeout(timeout);
             const stall = isRecord(evidence.stall) ? evidence.stall : {};
-            const observation = parseRecord(output);
+            const observation = parseRecord(output) ?? readObservation(partialPath);
             if (observation) {
+                if (observation.sample === 'observation pending') {
+                    observation.sample = unavailable;
+                    observation.incomplete = 'observer stopped before completion';
+                }
                 evidence.stall = { ...stall, ...observation };
             } else {
                 evidence.stall = { ...stall, sample: unavailable };
@@ -422,6 +405,30 @@ function watchForStall(
             save();
         });
     }, 5000);
+}
+function captureStderr(
+    stream: Readable,
+    stderrPath: string,
+    evidence: Record<string, unknown>,
+    diagnostic: (action: () => void) => void,
+    save: () => void
+) {
+    const stderr: Buffer[] = [];
+    let stderrSize = 0;
+    let omitted = 0;
+    stream.on('data', (chunk: Buffer) => {
+        process.stderr.write(chunk);
+        const keep = Math.max(0, Math.min(chunk.length, 1024 * 1024 - stderrSize));
+        if (keep) {
+            stderr.push(chunk.subarray(0, keep));
+            diagnostic(() => appendFileSync(stderrPath, chunk.subarray(0, keep)));
+        }
+        stderrSize += keep;
+        omitted += chunk.length - keep;
+        evidence.stderr = { path: stderrPath, omittedBytes: omitted };
+        save();
+    });
+    return () => ({ path: stderrPath, base64: Buffer.concat(stderr).toString('base64'), omittedBytes: omitted });
 }
 async function main(args: string[]) {
     if (args[0] !== 'add' && args[0] !== 'commit') {
@@ -442,6 +449,7 @@ async function main(args: string[]) {
     const includeIgnored = options.some((arg) => arg === '-f' || arg === '--force');
     const trackedOnly = options.some((arg) => arg === '-u' || arg === '--update');
     const started = process.hrtime.bigint();
+    const startedAtUtc = new Date().toISOString();
     let before: Record<string, unknown>;
     try {
         before = await inspect(paths, directory, 'before', discover, includeIgnored, trackedOnly);
@@ -453,6 +461,10 @@ async function main(args: string[]) {
         operation: args[0],
         attempts: 1,
         startedAtMonotonicNs: started.toString(),
+        startedAtUtc,
+        cwd: process.cwd(),
+        runtime: { node: process.version, platform: process.platform, arch: process.arch },
+        arguments: checkpointArguments(args),
         before,
         syscallPath: 'unavailable without prearranged authorized syscall tracing',
         receiver: 'unavailable; shared receiver is not sampled',
@@ -477,6 +489,7 @@ async function main(args: string[]) {
     writeFileSync(receipt, JSON.stringify(evidence, null, 2), { mode: 0o600 });
     console.error(`checkpoint receipt: ${receipt}`);
     evidence.writerStartedAtMonotonicNs = process.hrtime.bigint().toString();
+    evidence.writerStartedAtUtc = new Date().toISOString();
     const child = spawn('git', args, { env: process.env, stdio: ['inherit', 'inherit', 'pipe'] });
     evidence.pid = child.pid ?? null;
     const identity = child.pid ? processIdentity(child.pid) : null;
@@ -487,22 +500,16 @@ async function main(args: string[]) {
     diagnostic(() => writeFileSync(stderrPath, '', { mode: 0o600 }));
     evidence.stderr = { path: stderrPath, omittedBytes: 0 };
     save();
-    const stderr: Buffer[] = [];
-    let stderrSize = 0;
-    let omitted = 0;
-    child.stderr.on('data', (chunk: Buffer) => {
-        process.stderr.write(chunk);
-        const keep = Math.max(0, Math.min(chunk.length, 1024 * 1024 - stderrSize));
-        if (keep) {
-            stderr.push(chunk.subarray(0, keep));
-            diagnostic(() => appendFileSync(stderrPath, chunk.subarray(0, keep)));
-        }
-        stderrSize += keep;
-        omitted += chunk.length - keep;
-        evidence.stderr = { path: stderrPath, omittedBytes: omitted };
-        save();
-    });
-    const timer = watchForStall(child, evidence, before, identity, started, save);
+    const capturedStderr = captureStderr(child.stderr, stderrPath, evidence, diagnostic, save);
+    const timer = watchForStall(
+        child,
+        evidence,
+        before,
+        identity,
+        started,
+        save,
+        join(directory, 'stall-partial.json')
+    );
     const exit = await new Promise<{ code: number | null; signal: NodeJS.Signals | null; error?: string }>(
         (resolve) => {
             child.on('error', (error) => resolve({ code: null, signal: null, error: error.message }));
@@ -511,9 +518,10 @@ async function main(args: string[]) {
     );
     clearTimeout(timer);
     evidence.writerExitedAtMonotonicNs = process.hrtime.bigint().toString();
+    evidence.writerExitedAtUtc = new Date().toISOString();
     evidence.exit = exit;
     evidence.elapsedNs = (process.hrtime.bigint() - started).toString();
-    evidence.stderr = { path: stderrPath, base64: Buffer.concat(stderr).toString('base64'), omittedBytes: omitted };
+    evidence.stderr = capturedStderr();
     const beforeSources = isRecord(before.sources) ? before.sources : {};
     try {
         evidence.after = await inspect([...new Set([...paths, ...Object.keys(beforeSources)])], directory, 'after');
@@ -531,44 +539,7 @@ if (process.argv[2] === '--sample') {
         console.error('invalid sample arguments');
         process.exitCode = 2;
     } else {
-        const current = processIdentity(pid);
-        const socket = trace.match(/af_unix:(?:stream:|dgram:)?(\/[^\s]+)/)?.[1];
-        const capturedAtNs = process.hrtime.bigint().toString();
-        let holders: string | null = null;
-        if (socket) {
-            holders = command('/usr/sbin/lsof', ['-t', '-n', '-a', '-U', socket], diagnosticEnv, 1000);
-        }
-        const holderPids =
-            holders
-                ?.split(/\s+/)
-                .filter((value) => /^\d+$/.test(value))
-                .slice(0, 32) ?? [];
-        const holderIdentities = holderPids.map((value) =>
-            command('ps', ['-p', value, '-o', 'pid=,ppid=,pgid=,state=,lstart='])
-        );
-        let netstat: ReturnType<typeof spawnSync> | null = null;
-        if (socket && process.platform === 'darwin') {
-            netstat = spawnSync('/usr/sbin/netstat', ['-anv', '-f', 'unix'], {
-                encoding: 'utf8',
-                timeout: 1000,
-                maxBuffer: 8 * 1024 * 1024,
-            });
-        }
-        let queue: string[] | null = null;
-        if (socket && netstat?.status === 0 && typeof netstat.stdout === 'string') {
-            queue = checkpointSocketRows(netstat.stdout, socket, pid);
-        }
-        console.log(
-            JSON.stringify({
-                capturedAtNs,
-                identity: current,
-                identityMatches: sameProcess(initial, current),
-                sample: sample(pid, initial),
-                socket,
-                socketHolderIdentities: holderIdentities,
-                queue: queue ?? unavailable,
-            })
-        );
+        console.log(JSON.stringify(runCheckpointSample(pid, initial, trace, process.argv[6])));
     }
 } else if (process.argv[2] === '--observe') {
     const partialPath = process.argv[3];

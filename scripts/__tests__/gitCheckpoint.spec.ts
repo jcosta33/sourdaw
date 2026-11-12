@@ -16,7 +16,10 @@ import { join, resolve } from 'node:path';
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { checkpointArguments } from '../gitCheckpointArguments';
+import { checkpointDaemonLog } from '../gitCheckpointDaemon';
 import { checkpointMountOptions } from '../gitCheckpointMount';
+import { checkpointSamplePayload } from '../gitCheckpointProcess';
 import { checkpointSocketRows } from '../gitCheckpointSocket';
 
 const runner = resolve('scripts/gitCheckpoint.ts');
@@ -88,6 +91,11 @@ describe('Git checkpoint diagnostic', () => {
         expect(readFileSync(join(root, 'hook-ran'), 'utf8')).toBe('ran');
         expect(commitReceipt.after.head).toBe(git('rev-parse', 'HEAD'));
         expect(commitReceipt.exit.code).toBe(0);
+        expect(commitReceipt.startedAtUtc).toMatch(/^\d{4}-/);
+        expect(commitReceipt.writerExitedAtUtc).toMatch(/^\d{4}-/);
+        expect(commitReceipt.cwd).toBe(root);
+        expect(commitReceipt.runtime.node).toBe(process.version);
+        expect(commitReceipt.before.gitVersion).toMatch(/^git version /);
         expect(commitReceipt.before.sources['song.txt'].sha256).not.toBe(
             commitReceipt.after.sources['song.txt'].sha256
         );
@@ -279,6 +287,79 @@ exit 23
         );
         expect(JSON.parse(absent.stdout).sample).toBeNull();
     });
+    it('summarizes flags and pathspecs without commit messages', () => {
+        const result = checkpointArguments([
+            'commit',
+            '-m',
+            'private commit subject',
+            '--author=Test User',
+            '--',
+            'takes/one.wav',
+        ]);
+        expect(result.arguments).toEqual(['-m', '[redacted]', '--author=Test User', '--', 'takes/one.wav']);
+        expect(result.omitted).toBe(1);
+        expect(JSON.stringify(result)).not.toContain('private commit subject');
+        expect(checkpointArguments(['commit', '-mhello']).arguments).toEqual(['-m[redacted]']);
+        expect(checkpointArguments(['commit', '--message=hello']).arguments).toEqual(['--message=[redacted]']);
+        const capped = checkpointArguments(['add', '--', 'x'.repeat(513), ...Array<string>(130).fill('ok')]);
+        expect(capped.arguments.length).toBeLessThanOrEqual(128);
+        expect(capped.omitted).toBeGreaterThan(0);
+    });
+    it('reads only a bounded log for the matched daemon identity', () => {
+        const { root } = fixture();
+        const logs = join(root, 'logs');
+        mkdirSync(logs);
+        const socket = join(root, 'trace2.sock');
+        const pidFile = join(root, 'daemon.pid.json');
+        const start = 'Thu Nov 12 14:31:15 2026';
+        const peer = `abc stream 0 0 0 def 0 0 0 0 8192 8192 git-ai:123 ${socket}`;
+        const request = {
+            socket,
+            expectedSocket: socket,
+            peerRow: peer,
+            pidFile,
+            logDirectory: logs,
+            uid: 501,
+            identity: () => `501 ${start}`,
+        };
+        writeFileSync(pidFile, JSON.stringify({ pid: 123, started_at_ns: Date.parse(start) * 1_000_000 }));
+        const missing = checkpointDaemonLog(request);
+        expect(missing.status).toBe('unavailable');
+        expect(missing.pid).toBe(123);
+        writeFileSync(join(logs, '123.log'), 'short log');
+        const short = checkpointDaemonLog(request);
+        expect(short.status).toBe('available');
+        if (short.status !== 'available') {
+            throw new Error('matching daemon log was unavailable');
+        }
+        expect(Buffer.from(short.base64, 'base64').toString()).toBe('short log');
+        expect(short.omittedBytes).toBe(0);
+        writeFileSync(join(logs, '123.log'), Buffer.alloc(70000, 65));
+        const large = checkpointDaemonLog(request);
+        expect(large.status).toBe('available');
+        if (large.status !== 'available') {
+            throw new Error('matching daemon log was unavailable');
+        }
+        expect(Buffer.from(large.base64, 'base64')).toHaveLength(65536);
+        expect(large.omittedBytes).toBe(4464);
+        const stack = checkpointSamplePayload('a'.repeat(70000));
+        expect(stack.sampleOmittedBytes).toBe(4464);
+        expect(Buffer.byteLength(JSON.stringify({ stack, large }))).toBeLessThan(256 * 1024);
+        expect(checkpointDaemonLog({ ...request, expectedSocket: '/different.sock' }).status).toBe('unavailable');
+        expect(checkpointDaemonLog({ ...request, peerRow: peer.replace('git-ai:123', 'git-ai:124') }).status).toBe(
+            'unavailable'
+        );
+        expect(checkpointDaemonLog({ ...request, identity: () => `502 ${start}` }).status).toBe('unavailable');
+        expect(checkpointDaemonLog({ ...request, identity: () => '501 Thu Nov 12 14:31:19 2026' }).status).toBe(
+            'unavailable'
+        );
+        let identityCalls = 0;
+        const changing = checkpointDaemonLog({
+            ...request,
+            identity: () => (++identityCalls === 1 ? `501 ${start}` : null),
+        });
+        expect(changing.status).toBe('unavailable');
+    });
     it('selects mount options only for the exact filesystem and mountpoint reported by df', () => {
         const df = 'Filesystem 1024-blocks Used Available Capacity Mounted on\n/dev/disk3s1 1000 100 900 10% /work';
         const target = '/dev/disk3s1 on /work (apfs, local, read-only)';
@@ -367,6 +448,11 @@ exit 23
                         expect(child.exitCode, gitStderr).toBeNull();
                         expect(data.stall).toBeDefined();
                         expect(data.stall.sample).not.toBe('observation pending');
+                        expect(data.stall.queueSnapshots).toHaveLength(2);
+                        expect(
+                            BigInt(data.stall.queueSnapshots[1].monotonicNs) >=
+                                BigInt(data.stall.queueSnapshots[0].monotonicNs)
+                        ).toBe(true);
                     },
                     { timeout: 20000, interval: 50 }
                 ),
