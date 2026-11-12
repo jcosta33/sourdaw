@@ -256,19 +256,6 @@ function bodyLooksLikeDerivedStateEffect(body) {
  * @param {string} filename
  * @returns {boolean}
  */
-function isPresentationFile(filename) {
-    const normalized = filename.replaceAll('\\', '/');
-    return (
-        normalized.includes('/presentations/views/') ||
-        normalized.includes('/presentations/hooks/') ||
-        normalized.includes('/presentations/components/')
-    );
-}
-
-/**
- * @param {string} filename
- * @returns {boolean}
- */
 function isDomainLogicFile(filename) {
     const normalized = filename.replaceAll('\\', '/');
     return (
@@ -1660,43 +1647,6 @@ const sourdawPlugin = {
                             context.report({
                                 node,
                                 messageId: 'noManualMemoization',
-                            });
-                        }
-                    },
-                };
-            },
-        },
-
-        'no-tauri-api-in-ui': {
-            meta: {
-                type: 'problem',
-                docs: {
-                    description: 'Disallow direct @tauri-apps/api usage in presentation code.',
-                },
-                schema: [],
-                messages: {
-                    noTauriApiInUi:
-                        'Do not use @tauri-apps/api directly in presentation code. Go through a repository, adapter, or use case.',
-                },
-            },
-            /** @param {import('@typescript-eslint/utils').TSESLint.RuleContext<string, []>} context */
-            create(context) {
-                if (!isPresentationFile(context.filename)) {
-                    return {};
-                }
-
-                return {
-                    /** @param {import('@typescript-eslint/utils').TSESTree.ImportDeclaration} node */
-                    ImportDeclaration(node) {
-                        const value = node.source.value;
-                        if (typeof value !== 'string') {
-                            return;
-                        }
-
-                        if (value.startsWith('@tauri-apps/api')) {
-                            context.report({
-                                node,
-                                messageId: 'noTauriApiInUi',
                             });
                         }
                     },
@@ -3108,7 +3058,6 @@ export default tseslint.config(
             'sourdaw/no-useeffect-fetching': 'error',
             'sourdaw/no-useeffect-derived-state': 'warn',
             'sourdaw/no-manual-memoization': 'error',
-            'sourdaw/no-tauri-api-in-ui': 'error',
 
             'no-restricted-syntax': ['error', ...reactDefaultImportRestrictions],
         },

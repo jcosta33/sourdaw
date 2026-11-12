@@ -341,28 +341,10 @@
                 "no-restricted-imports": [
                     "error",
                     {
-                        "paths": [
-                            {
-                                "name": "@tauri-apps/api/core",
-                                "message": "Do not use Tauri APIs directly in presentation code. Go through repositories, adapters, or use cases."
-                            },
-                            {
-                                "name": "@tauri-apps/api/event",
-                                "message": "Do not use Tauri APIs directly in presentation code. Go through repositories, adapters, or use cases."
-                            },
-                            {
-                                "name": "@tauri-apps/api/window",
-                                "message": "Do not use Tauri APIs directly in presentation code. Go through repositories, adapters, or use cases."
-                            }
-                        ],
                         "patterns": [
                             {
                                 "group": ["**/repositories/**"],
                                 "message": "Do not import repositories directly into presentation code. Go through a hook, use case, or presentation adapter."
-                            },
-                            {
-                                "group": ["**/src-tauri/**", "**/@tauri-apps/api/**"],
-                                "message": "Do not import Tauri bridge code into presentation code. Use repositories/adapters."
                             }
                         ]
                     }
@@ -386,14 +368,6 @@
                             {
                                 "name": "react",
                                 "message": "Do not import React into domain logic. Keep domain logic UI-free."
-                            },
-                            {
-                                "name": "@tauri-apps/api/core",
-                                "message": "Do not import Tauri APIs into domain logic. Use repositories or adapters."
-                            },
-                            {
-                                "name": "@tauri-apps/api/event",
-                                "message": "Do not import Tauri APIs into domain logic. Use repositories or adapters."
                             }
                         ],
                         "patterns": [

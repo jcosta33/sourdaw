@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, rmdirSync, unlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmdirSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
 
 import { ESLint, Linter } from 'eslint';
@@ -114,6 +114,23 @@ describe('ESLint configuration', () => {
         expect(selectors.severity).toBe(1);
         expect(selectors.selectors).toContain(LOCAL_STORAGE_CALL_SELECTOR);
         expect(selectors.selectors).not.toContain(REACT_DEFAULT_IMPORT_SELECTOR);
+    });
+
+    it('enables no rule or restricted import for the removed Tauri bridge', async () => {
+        const eslint = new ESLint();
+        const config = await eslint.calculateConfigForFile(
+            resolve('src/modules/Example/presentations/components/Example.tsx')
+        );
+        if (!config) {
+            throw new Error('ESLint did not load the presentation configuration');
+        }
+        const sourdawRules = Object.keys(config.plugins.sourdaw?.rules ?? {});
+
+        expect(sourdawRules).toContain('no-type-assertion-escape');
+        expect(sourdawRules.filter((name) => /tauri/i.test(name))).toEqual([]);
+        expect(Object.keys(config.rules).filter((name) => /tauri/i.test(name))).toEqual([]);
+        expect(readFileSync('.oxlintrc.json', 'utf8')).toContain('no-restricted-imports');
+        expect(readFileSync('.oxlintrc.json', 'utf8')).not.toMatch(/tauri/i);
     });
 
     it('preserves custom rule diagnostics through the loaded plugin', async () => {
