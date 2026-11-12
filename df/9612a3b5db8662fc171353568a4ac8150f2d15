@@ -1,0 +1,31 @@
+src/modules/ElasticAudio/presentations/views/__tests__/ElasticEditorPanel.spec.tsx
+  s_9307cedd8951f1::t_2860b229da1d2c 469-507
+  s_9307cedd8951f1::t_27b89c21379c27 319-327,384-387,425-429,436-443,446-456,458-459,461-463,467
+  s_9307cedd8951f1::t_632fea0b993168 11,63-73,182,267-268,283-291,305-318,328-329,334-373,380-383,388-412,414-424,444-445,468,508-516,521-524,526-549
+  s_9307cedd8951f1::t_8a34a2886a75a6 330-333,413
+  s_9307cedd8951f1::t_70d8cb06e63b04 374-379,430-435
+  s_9307cedd8951f1::t_e19d0b5bd0f835 457,460,464-466,517-520,525
+  s_9307cedd8951f1::t_4d703d7955eb0d 550-551
+src/modules/ElasticAudio/presentations/views/ElasticEditorPanel.tsx
+  s_9307cedd8951f1::t_2be05f60f11e94 132,169,172,177-192,573,580-591,594-598,614,635-641,659-660,664-665,667-672,677,687,741-752,755-757
+  s_9307cedd8951f1::t_58b291d6bae2eb 666
+  s_9307cedd8951f1::t_41bdceeec0b2cd 592-593,753-754
+  s_9307cedd8951f1::t_70d8cb06e63b04 599-613,617-618,642-658,661-663
+  s_9307cedd8951f1::t_dd98c985970208 615
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "df9612a3b5db8662fc171353568a4ac8150f2d15",
+  "prompts": {},
+  "sessions": {
+    "s_9307cedd8951f1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cee0-9c43-7223-9451-be85d15b1347",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
