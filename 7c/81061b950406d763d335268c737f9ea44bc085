@@ -1,0 +1,90 @@
+src/modules/AiRuntime/repositories/webLlm/toolCalling.ts
+  s_0547b7605037d4::t_592b458c911688 44
+  s_126e3d478b4f75::t_675b497be74919 7,16-17
+src/modules/AiRuntime/repositories/webLlm/__tests__/toolCalling.spec.ts
+  s_126e3d478b4f75::t_1c5cc22a2fd9e9 3,81,97,114
+src/modules/AiRuntime/repositories/webLlm/generateWebLlmCompletion.ts
+  s_9307cedd8951f1::t_2e707d45d0d31f 19-24,53-55,57-60
+src/modules/AiRuntime/stores/llmStatusStore.ts
+  s_9c076bc0ced4d1::t_546dba57e6c36e 9,16-17
+src/modules/AiRuntime/useCases/llmOrchestration/inference.ts
+  s_3ada54e7b1c8ad::t_f3886a17e99362 218-221
+src/modules/AiRuntime/AGENTS.md
+  s_3ada54e7b1c8ad::t_44402d58f69924 49-52
+src/modules/AiRuntime/errors/LocalModelRefusalError.ts
+  s_3ada54e7b1c8ad::t_a0097b745bc391 1-34
+src/modules/AiRuntime/models/LocalModelRefusal.ts
+  s_3ada54e7b1c8ad::t_0449184b4eeb1f 1-8
+src/modules/AiRuntime/repositories/__tests__/webLlmProviderAdapter.spec.ts
+  s_3ada54e7b1c8ad::t_15de35cdfe175e 5-8,10,15,32,159,223,225,241,255-257,269,813-1041
+src/modules/AiRuntime/repositories/webLlm/__tests__/generateWebLlmCompletion.spec.ts
+  s_3ada54e7b1c8ad::t_ee28291c610680 4,94-105,212-305
+src/modules/AiRuntime/repositories/webLlm/createWebLlmAppConfig.ts
+  s_3ada54e7b1c8ad::t_a6dd2944cb574e 2,36
+src/modules/AiRuntime/repositories/webLlm/getWebLlmRequiredFeatures.ts
+  s_3ada54e7b1c8ad::t_e745452566069f 1-8
+src/modules/AiRuntime/repositories/webLlm/initWebLlmEngine.ts
+  s_3ada54e7b1c8ad::t_87b27f739315bb 5,10-11,22-23,108-113,160-161,218-222,242-285
+src/modules/AiRuntime/repositories/webLlm/readWebGpuAdapterFeatures.ts
+  s_3ada54e7b1c8ad::t_adadc6553006cf 1-8
+src/modules/AiRuntime/repositories/webLlm/webLlmArtifactAdmission.ts
+  s_3ada54e7b1c8ad::t_fe41f8cc6fba04 1-4,39-40,97,452-481,524-525
+src/modules/AiRuntime/transformers/__tests__/buildWebLlmDecodingSchema.spec.ts
+  s_3ada54e7b1c8ad::t_b9a91d18b78133 1-206
+src/modules/AiRuntime/transformers/buildWebLlmDecodingSchema.ts
+  s_3ada54e7b1c8ad::t_d6735a01aa6ab7 1-80
+src/modules/AiRuntime/useCases/llmOrchestration/__tests__/mandatoryPlanningTools.spec.ts
+  s_3ada54e7b1c8ad::t_84d17b5891edfb 479-523,945-974
+src/modules/WorkspaceShell/presentations/views/Prompt/LlmStatusBadge.tsx
+  s_3ada54e7b1c8ad::t_6cb21a2d1b6915 42-47,161-172,255-293,309-406
+src/modules/WorkspaceShell/presentations/views/Prompt/__tests__/LlmStatusBadge.spec.tsx
+  s_3ada54e7b1c8ad::t_2fe571e7ab2893 124-200
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7c81061b950406d763d335268c737f9ea44bc085",
+  "prompts": {},
+  "sessions": {
+    "s_0547b7605037d4": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "97f8302c-c50a-45c3-a041-49fd06766716",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_126e3d478b4f75": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cefa-4460-7913-80c3-c339638913d0",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_3ada54e7b1c8ad": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "03a5a80a-25dd-436b-aca5-abe9c78083de",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_9307cedd8951f1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cee0-9c43-7223-9451-be85d15b1347",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_9c076bc0ced4d1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1cffc336-bf8f-4f21-b7f9-895d02854e85",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
