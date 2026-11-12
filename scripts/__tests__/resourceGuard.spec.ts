@@ -460,6 +460,23 @@ describe('resource enforcement', { timeout: GUARDED_CASE_TIMEOUT_MS }, () => {
         });
 
         expect(result.reason).toBe('timeout');
+        expect(result.output).toContain('guard stop diagnostic:');
+        expect(result.output).toContain('"reason":"timeout"');
+        expect(result.output).toContain('"processGroup"');
+    });
+
+    it('reports an unavailable snapshot and still stops the command', async () => {
+        const result = await runIsolatedGuardedCommand({
+            command: process.execPath,
+            args: ['-e', 'setTimeout(() => {}, 5000)'],
+            profile: 'focused',
+            timeoutMs: 50,
+            maxRssBytes: 2 * 1024 ** 3,
+            availableMemoryBytes: abundantMemoryBytes,
+            processSnapshot: () => ({ status: 'unavailable' }),
+        });
+        expect(result.reason).toBe('timeout');
+        expect(result.output).toContain('"processGroup":{"status":"unavailable"}');
     });
 
     it('kills detached descendants after a deadline', async () => {
