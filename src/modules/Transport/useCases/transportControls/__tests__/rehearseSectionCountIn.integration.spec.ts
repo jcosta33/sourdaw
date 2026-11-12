@@ -193,6 +193,7 @@ describe('section rehearsal after an armed count-in', () => {
         clearHandlerRegistry();
         configureAutomergeStoragePort(null);
         removeCrdtDoc('root');
+        vi.useRealTimers();
     });
 
     it.each([
@@ -356,6 +357,95 @@ describe('section rehearsal after an armed count-in', () => {
             expect(workers).toHaveLength(0);
             expect(activeRecordingRef.current).toEqual([]);
             expect(undoHistoryStore.value?.past).toEqual([]);
+        }
+    );
+
+    it.each([
+        { phase: 'recorder flush', loop: false, recordAgain: true },
+        { phase: 'recorder flush', loop: true, recordAgain: true },
+        { phase: 'note panic', loop: false, recordAgain: true },
+        { phase: 'note panic', loop: true, recordAgain: true },
+        { phase: 'recorder flush', loop: false, recordAgain: false },
+        { phase: 'recorder flush', loop: true, recordAgain: false },
+        { phase: 'note panic', loop: false, recordAgain: false },
+        { phase: 'note panic', loop: true, recordAgain: false },
+    ])(
+        'preserves the count-in owner during $phase (loop: $loop, newer Record: $recordAgain)',
+        async ({ phase, loop, recordAgain }) => {
+            const held = Promise.withResolvers<void>();
+            const entered = Promise.withResolvers<void>();
+            const playback = vi.spyOn(playbackModule, 'startPlayback');
+            if (phase === 'recorder flush') {
+                io.stopRecorder.mockImplementationOnce(() => {
+                    entered.resolve();
+                    return held.promise;
+                });
+            } else {
+                vi.spyOn(notePanicParticipants.read('rehearsal test'), 'settleGeneratedNotes').mockImplementationOnce(
+                    () => {
+                        entered.resolve();
+                        return held.promise;
+                    }
+                );
+            }
+
+            await executeAppAction({ type: 'toggleRecording' });
+            expect(recordingLifecycle.countInTimerId).not.toBeNull();
+            const rehearsal = executeAppAction({ type: 'rehearseSection', payload: { sectionId: 'target', loop } });
+            await entered.promise;
+            const boundaryBeat = phase === 'recorder flush' ? 2 : 16;
+            expect(playheadPositionRef.current).toBe(boundaryBeat);
+            expect(transportStore.value?.isPlaying).toBe(false);
+            expect(recordingLifecycle.hasPendingRecordingStart()).toBe(false);
+
+            let countInTimer: ReturnType<typeof setTimeout> | null = null;
+            if (recordAgain) {
+                vi.useFakeTimers();
+                const generation = schedulerSession.generation;
+                await executeAppAction({ type: 'toggleRecording' });
+                countInTimer = recordingLifecycle.countInTimerId;
+                expect(countInTimer).not.toBeNull();
+                expect(schedulerSession.generation).toBe(generation);
+                expect(recordingLifecycle.hasPendingRecordingStart()).toBe(true);
+                expect(io.clicks.mock.calls.slice(-4)).toEqual([
+                    [10, true, 0.5],
+                    [10.5, false, 0.5],
+                    [11, false, 0.5],
+                    [11.5, false, 0.5],
+                ]);
+            }
+
+            held.resolve();
+            await rehearsal;
+            if (recordAgain) {
+                expect(transportStore.value?.isPlaying).toBe(false);
+                expect(playheadPositionRef.current).toBe(boundaryBeat);
+                expect(transportStore.value?.playheadPosition).toBe(boundaryBeat);
+                expect(recordingLifecycle.countInTimerId).toBe(countInTimer);
+                expect(recordingLifecycle.hasPendingRecordingStart()).toBe(true);
+                expect(playback).not.toHaveBeenCalled();
+                expect(workers).toHaveLength(0);
+
+                io.context!.currentTime = 11.999;
+                await vi.advanceTimersByTimeAsync(1999);
+                expect(transportStore.value?.isPlaying).toBe(false);
+                expect(recordingLifecycle.countInTimerId).toBe(countInTimer);
+                expect(io.startRecorder).not.toHaveBeenCalled();
+            } else {
+                expect(playback).toHaveBeenCalledOnce();
+                await playback.mock.results[0]!.value;
+                expect(snapshot()).toMatchObject({
+                    position: 16,
+                    playing: true,
+                    workerStarted: true,
+                    pendingStart: false,
+                });
+            }
+            expect(transportStore.value?.isRecording).toBe(false);
+            expect(transportStore.value).toMatchObject({ loopStart: 16, loopEnd: 24, isLooping: loop });
+            expect(activeRecordingRef.current).toEqual([]);
+            expect(undoHistoryStore.value?.past).toEqual([]);
+            expect(notifications).toEqual([]);
         }
     );
 });
