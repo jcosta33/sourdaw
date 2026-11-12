@@ -3,7 +3,7 @@ import { logger } from '#/infra/logger/appLogger';
 import { MODEL_RELEASE_ADMISSION } from '#/infra/release/modelReleaseAdmission';
 
 import { isLocalModelRefusalError, LocalModelRefusalError } from '../../errors/LocalModelRefusalError';
-import { llmStatusStore } from '../../stores/llmStatusStore';
+import { type LlmEngineStatus, llmStatusStore } from '../../stores/llmStatusStore';
 
 import { engineState, type WebLlmEngine } from './engineLifecycleState';
 import { getWebLlmContextWindowSize } from './getWebLlmContextWindowSize';
@@ -215,11 +215,7 @@ export const initWebLlmEngine = inject({ logger, admitWebLlmModelArtifacts, read
                     engineState.worker = null;
                 }
                 if (!attemptSignal.aborted) {
-                    llmStatusStore.set(
-                        isLocalModelRefusalError(error)
-                            ? { state: 'error', message: error.message, refusal: error.refusal }
-                            : { state: 'error', message: String(error) }
-                    );
+                    llmStatusStore.set(describeLoadFailure(error));
                 }
                 engineState.initPromise = null;
                 engineState.initAttemptId = null;
@@ -238,6 +234,13 @@ export const initWebLlmEngine = inject({ logger, admitWebLlmModelArtifacts, read
             });
         }
 );
+
+function describeLoadFailure(error: unknown): LlmEngineStatus {
+    if (isLocalModelRefusalError(error)) {
+        return { state: 'error', message: error.message, refusal: error.refusal };
+    }
+    return { state: 'error', message: String(error) };
+}
 
 async function refuseMissingAdapterFeatures(
     modelId: string,

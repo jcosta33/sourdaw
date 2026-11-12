@@ -65,6 +65,14 @@ function branchesOf(schema: Record<string, unknown>): Record<string, unknown>[] 
     return items.anyOf.filter(isRecord);
 }
 
+function argumentsOf(branch: Record<string, unknown> | undefined): Record<string, unknown> {
+    const properties = branch?.properties;
+    if (!isRecord(properties) || !isRecord(properties.arguments)) {
+        throw new TypeError('tool branch has no arguments schema');
+    }
+    return properties.arguments;
+}
+
 function allPlanningTools(): ToolSchema[] {
     const context = getProjectContext();
     const prompt = 'Describe the project';
@@ -102,8 +110,7 @@ describe('buildWebLlmDecodingSchema', () => {
     });
 
     it("carries each tool's full parameters schema as its arguments", () => {
-        const [gain] = branchesOf(decodingSchema([GAIN_TOOL]));
-        const args = (gain?.properties as { arguments: Record<string, unknown> }).arguments;
+        const args = argumentsOf(branchesOf(decodingSchema([GAIN_TOOL]))[0]);
 
         expect(args.required).toEqual(['trackId', 'gainDb']);
         expect(args.properties).toMatchObject({ gainDb: { type: 'number', minimum: -60, maximum: 6 } });
@@ -112,8 +119,7 @@ describe('buildWebLlmDecodingSchema', () => {
     // Red when the strict-mode trap is not handled: web-llm's strict compile refuses an unlisted key
     // under any object node that does not state additionalProperties.
     it('states additionalProperties: true on every silent object node and keeps an explicit value', () => {
-        const [gain] = branchesOf(decodingSchema([GAIN_TOOL]));
-        const args = (gain?.properties as { arguments: Record<string, unknown> }).arguments;
+        const args = argumentsOf(branchesOf(decodingSchema([GAIN_TOOL]))[0]);
         const properties = args.properties as Record<string, Record<string, unknown>>;
 
         expect(args.additionalProperties).toBe(true);
