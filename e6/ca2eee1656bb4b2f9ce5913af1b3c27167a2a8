@@ -1,0 +1,36 @@
+src/modules/CommandInterface/useCases/keyboardShortcutActions/handleKeyboardShortcut/handleKeydown.ts
+  s_9307cedd8951f1::t_9ac5ac954c9d03 590,593
+src/modules/CommandInterface/useCases/selectionHelpers/goToNextMarker.ts
+  s_9307cedd8951f1::t_9ac5ac954c9d03 13
+src/modules/Transport/useCases/transportControls/__tests__/rehearseSectionCountIn.integration.spec.ts
+  s_9307cedd8951f1::t_4af3f9ecacab5a 43
+  s_9307cedd8951f1::t_9ac5ac954c9d03 54,122,163
+src/modules/Arrangement/presentations/views/BeatRulerBar.tsx
+  s_9307cedd8951f1::t_9ac5ac954c9d03 251,275
+src/modules/Arrangement/useCases/timelineInteractions/setPlayheadFromClick.ts
+  s_9307cedd8951f1::t_9ac5ac954c9d03 12
+src/modules/CommandInterface/useCases/selectionHelpers/goToPreviousMarker.ts
+  s_9307cedd8951f1::t_9ac5ac954c9d03 13
+src/modules/Transport/handlers/transport/handleNavigateSection.ts
+  s_9307cedd8951f1::t_9ac5ac954c9d03 31
+src/modules/CommandInterface/useCases/commands/TransportCommands.ts
+  s_9307cedd8951f1::t_9ac5ac954c9d03 58,69
+src/modules/Transport/useCases/playheadScheduler/__tests__/punchLoopCapturePlacement.integration.spec.ts
+  s_9307cedd8951f1::t_9ac5ac954c9d03 4793
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e6ca2eee1656bb4b2f9ce5913af1b3c27167a2a8",
+  "prompts": {},
+  "sessions": {
+    "s_9307cedd8951f1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cee0-9c43-7223-9451-be85d15b1347",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
