@@ -302,7 +302,6 @@
     "src/modules/Command/useCases/reconcileProjectCommandBatchEffects.ts": 600,
     "src/modules/Command/useCases/redo.ts": 600,
     "src/modules/Command/useCases/refreshVersionedCommandBatchForApproval.ts": 600,
-    "src/modules/Command/useCases/versionedCommandArgumentKeys.ts": 7331,
     "src/modules/CommandInterface/useCases/keyboardShortcutActions/handleKeyboardShortcut/handleKeydown.ts": 686,
     "src/modules/ContentBrowser/presentations/views/Sidebar.tsx": 600,
     "src/modules/ContentBrowser/presentations/views/Sidebar/EffectsTab.tsx": 600,
