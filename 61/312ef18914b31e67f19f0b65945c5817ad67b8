@@ -1,0 +1,19 @@
+.agents/skills/review-stances/test-timing-and-isolation.md
+  s_eec9d24f84ae15::t_1da1c3ab08050d 61-70
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "61312ef18914b31e67f19f0b65945c5817ad67b8",
+  "prompts": {},
+  "sessions": {
+    "s_eec9d24f84ae15": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cc8d-d36d-71b3-be5c-15c29b38b9aa",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
