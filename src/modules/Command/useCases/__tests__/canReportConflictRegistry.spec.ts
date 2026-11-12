@@ -1,26 +1,54 @@
 import { change, from, type Doc } from '@automerge/automerge';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { act, fireEvent, render, waitFor } from '@testing-library/react';
+import { createElement } from 'react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { getProductionCommandHandlerMaps } from '#/app/getProductionCommandHandlerMaps';
 import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
-import { defaultTrackState, takeLaneStore } from '#/modules/Arrangement/stores';
-import { addClip, createTrack, setTrackStoreState } from '#/modules/Arrangement/useCases';
+import {
+    defaultTrackState,
+    persistDeviceParam,
+    resolveEligibleDeviceWriteTarget,
+    takeLaneStore,
+    trackStore,
+    type Track,
+} from '#/modules/Arrangement/stores';
+import {
+    addClip,
+    clampDeviceParameterValue,
+    createTrack,
+    getAllTracks,
+    persistDevicePatch,
+    setTrackStoreState,
+} from '#/modules/Arrangement/useCases';
+import { updateDeviceParam, updateDevicePatch } from '#/modules/AudioEngine/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import {
     createCrdtDoc,
+    getCrdtDoc,
+    resetCrdtProjectAuthority,
     mutateCrdtDoc,
     registerCrdtStorageRuntime,
     removeCrdtDoc,
 } from '#/modules/CrdtDocument/useCases';
+import { leaveSession } from '#/modules/Collaboration/useCases';
+import { FermenterPanel } from '#/modules/Fermenter/presentations/views';
+import { fermenterStore } from '#/modules/Fermenter/stores';
+import { hydrateFermenterFromProject, setFermenterDependencies } from '#/modules/Fermenter/useCases';
+import { defaultProjectStoreState, projectStore } from '#/modules/Project/stores';
+import { runProjectLoadTransaction, setProjectIdentityTransitionDependencies } from '#/modules/Project/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
 import { defaultTransportState, tempoMapStore, transportStore } from '#/modules/Transport/stores';
 import { setActiveYeastDevice, yeastStore } from '#/modules/Yeast/stores';
 import { type AppAction } from '#/utils/handlerContract';
 
 import { clearHandlerRegistry, getHandlerMap, registerHandlerMap } from '../../stores/handlerRegistry';
+import { undoStore } from '../../stores/undoStore';
+import { clearUndoHistory } from '../clearUndoHistory';
 import { getCommandHandler } from '../getCommandHandler';
 import { materializeCommandHandlerArguments } from '../materializeCommandHandlerArguments';
 
@@ -51,6 +79,8 @@ type DivergedFixture = {
     readonly divergedAction?: AppAction;
     readonly createDivergedAction?: () => AppAction | Promise<AppAction>;
     readonly reason?: string;
+    readonly verifyRefusalNonEffects?: () => void;
+    readonly cleanup?: () => void;
 };
 
 type TempoMapRoot = {
@@ -308,7 +338,140 @@ async function createDivergedAudioSourceAction(actionType: AudioSourceConflictAc
     return action;
 }
 
+function createFermenterConflictFixture(): DivergedFixture {
+    let releaseFixture = (): void => undefined;
+    let verifyNonEffects = (): void => {
+        throw new Error('Expected the admitted and diverged Fermenter fixture');
+    };
+    return {
+        title: 'setFermenterPatch refuses a valid captured inverse after its raw source diverges',
+        actionType: 'setFermenterPatch',
+        createDivergedAction: async () => {
+            const deviceId = 'fermenter-conflict';
+            const productionDependencies = {
+                clampDeviceParameterValue,
+                getAllTracks,
+                persistDeviceParam,
+                persistDevicePatch,
+                resolveEligibleDeviceWriteTarget,
+                updateDeviceParam,
+                updateDevicePatch,
+            };
+            const audio = vi.fn<NonNullable<Parameters<typeof setFermenterDependencies>[0]['updateDevicePatch']>>();
+            const previousFermenter = fermenterStore.value;
+            const previousProject = projectStore.value;
+            const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+            let panel: ReturnType<typeof render> | undefined;
+            releaseFixture = () => {
+                panel?.unmount();
+                client.clear();
+                setFermenterDependencies(productionDependencies);
+                fermenterStore.set(previousFermenter);
+                projectStore.set(previousProject);
+                clearUndoHistory();
+                flushAutomergeStorageWrites();
+            };
+            flushAutomergeStorageWrites();
+            configureAutomergeStoragePort(null);
+            setProjectIdentityTransitionDependencies({ leaveCollaborationSession: leaveSession });
+            const transition = runProjectLoadTransaction();
+            expect(await transition.prepare()).toBe(true);
+            expect(transition.activate()).toBe(true);
+            resetCrdtProjectAuthority('Fermenter registry conflict fixture');
+            removeCrdtDoc('root');
+            createCrdtDoc('root');
+            registerCrdtStorageRuntime();
+            clearUndoHistory();
+            projectStore.set({ ...defaultProjectStoreState, createdAt: 100, updatedAt: 100, loading: false });
+            setTrackStoreState({
+                ...defaultTrackState,
+                tracks: [
+                    {
+                        ...createTrack({
+                            id: 'fermenter-owner',
+                            name: 'Fermenter',
+                            kind: 'midi',
+                            withoutDefaultDevice: true,
+                        }),
+                        devices: [
+                            {
+                                id: deviceId,
+                                type: 'fermenter',
+                                name: 'Fermenter',
+                                bypassed: false,
+                                parameterValues: { filterCutoff: 600 },
+                            },
+                        ],
+                    },
+                ],
+            });
+            takeLaneStore.set({ lanes: [] });
+            fermenterStore.set({});
+            setFermenterDependencies({ ...productionDependencies, updateDevicePatch: audio });
+            flushAutomergeStorageWrites();
+            const rawDevice = () => {
+                const document = getCrdtDoc<{ tracks: { tracks: Track[] } }>('root');
+                const device = document?.tracks.tracks[0]?.devices[0];
+                if (!device || device.id !== deviceId) {
+                    throw new Error('Expected the live raw Fermenter owner');
+                }
+                return device;
+            };
+            expect(rawDevice().deviceState).toBeUndefined();
+            panel = render(createElement(QueryClientProvider, { client }, createElement(FermenterPanel, { deviceId })));
+            fireEvent.click(panel.getByRole('button', { name: 'Superloaf', exact: true }));
+            await waitFor(() => {
+                expect(undoStore.value?.past).toHaveLength(1);
+                expect(audio).toHaveBeenCalledOnce();
+            });
+            expect(rawDevice()).toMatchObject({ deviceState: { data: { patch: { name: 'Superloaf' } } } });
+            expect(trackStore.value?.tracks[0]?.devices[0]).toEqual(rawDevice());
+            const entry = undoStore.value?.past[0];
+            if (
+                entry?.kind !== 'action' ||
+                entry.action.type !== 'setFermenterPatch' ||
+                entry.inverseAction?.type !== 'setFermenterPatch'
+            ) {
+                throw new Error('Expected actual whole-patch history and its captured inverse');
+            }
+            const inverse = entry.inverseAction;
+            const handler = getCommandHandler(inverse);
+            expect(handler?.validate?.(inverse, { actions: [inverse], actionIndex: 0 })).toBe(true);
+            const published = hydrateFermenterFromProject(deviceId);
+            if (!published) {
+                throw new Error('Expected the committed patch before raw divergence');
+            }
+            expect(published.name).toBe('Superloaf');
+            const peerCutoff = published.filterCutoff === 1234 ? 2345 : 1234;
+            act(() => {
+                mutateCrdtDoc<{ tracks: { tracks: Track[] } }>({
+                    id: 'root',
+                    changeFn: (document) => {
+                        document.tracks.tracks[0]!.devices[0]!.parameterValues.filterCutoff = peerCutoff;
+                    },
+                });
+                trackStore.hydrate();
+            });
+            expect(rawDevice().parameterValues.filterCutoff).toBe(peerCutoff);
+            expect(trackStore.value?.tracks[0]?.devices[0]).toEqual(rawDevice());
+            const rawBeforeRefusal = JSON.stringify(getCrdtDoc('root'));
+            const projectionBeforeRefusal = structuredClone(trackStore.value);
+            const historyBeforeRefusal = structuredClone(undoStore.value);
+            verifyNonEffects = () => {
+                expect(JSON.stringify(getCrdtDoc('root'))).toBe(rawBeforeRefusal);
+                expect(trackStore.value).toEqual(projectionBeforeRefusal);
+                expect(undoStore.value).toEqual(historyBeforeRefusal);
+                expect(audio).toHaveBeenCalledOnce();
+            };
+            return inverse;
+        },
+        verifyRefusalNonEffects: () => verifyNonEffects(),
+        cleanup: () => releaseFixture(),
+    };
+}
+
 const CONFLICT_CAPABLE_FIXTURES: readonly DivergedFixture[] = [
+    createFermenterConflictFixture(),
     {
         title: 'enableWarping refuses a missing audio target',
         actionType: 'enableWarping',
@@ -839,18 +1002,23 @@ describe('canReportConflict handler registry honesty (#2881)', () => {
 
     it.each(CONFLICT_CAPABLE_FIXTURES)(
         '$title',
-        async ({ actionType, divergedAction, createDivergedAction, reason }) => {
-            const action = createDivergedAction ? await createDivergedAction() : divergedAction;
-            if (!action) {
-                throw new Error(`Expected a diverged action for ${actionType}`);
-            }
-            const handler = getCommandHandler(action);
+        async ({ actionType, divergedAction, createDivergedAction, reason, verifyRefusalNonEffects, cleanup }) => {
+            try {
+                const action = createDivergedAction ? await createDivergedAction() : divergedAction;
+                if (!action) {
+                    throw new Error(`Expected a diverged action for ${actionType}`);
+                }
+                const handler = getCommandHandler(action);
 
-            expect(action.type).toBe(actionType);
-            expect(handler?.canReportConflict).toBe(true);
-            expect(await handler?.execute(action)).toEqual(
-                reason === undefined ? { status: 'conflict' } : { status: 'conflict', reason }
-            );
+                expect(action.type).toBe(actionType);
+                expect(handler?.canReportConflict).toBe(true);
+                expect(await handler?.execute(action)).toEqual(
+                    reason === undefined ? { status: 'conflict' } : { status: 'conflict', reason }
+                );
+                verifyRefusalNonEffects?.();
+            } finally {
+                cleanup?.();
+            }
         }
     );
 });
