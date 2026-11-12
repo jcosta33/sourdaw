@@ -80,7 +80,7 @@ describe('Toaster pad solo reaches the engine', () => {
     });
 
     function clickSolo(padIndex: number): void {
-        const soloButtons = screen.getAllByRole('button', { name: 'S' });
+        const soloButtons = screen.getAllByRole('button', { name: /^Solo / });
         const button = soloButtons[padIndex];
         if (!button) {
             throw new Error(`expected a solo button for pad ${padIndex}`);

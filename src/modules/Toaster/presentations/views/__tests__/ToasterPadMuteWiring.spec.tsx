@@ -82,7 +82,7 @@ describe('Toaster pad mute reaches the engine', () => {
     });
 
     function clickMute(padIndex: number): void {
-        const muteButtons = screen.getAllByRole('button', { name: 'M' });
+        const muteButtons = screen.getAllByRole('button', { name: /^Mute / });
         const button = muteButtons[padIndex];
         if (!button) {
             throw new Error(`expected a mute button for pad ${padIndex}`);
