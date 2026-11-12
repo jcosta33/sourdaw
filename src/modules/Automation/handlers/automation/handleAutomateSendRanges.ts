@@ -7,6 +7,8 @@ import { applySendAutomationRanges } from '../../useCases/automation/applySendAu
 import { getPlannedBus, getPlannedSend } from '../../useCases/automation/projectBatchSendState';
 import { getAutomationStoreState } from '../../useCases/getAutomationStoreState';
 
+import { isLegacyRangeWriteSessionEntry } from './validateRangeWriteSessionEntries';
+
 type AutomateSendRangesAction = Extract<AppAction, { type: 'automateSendRanges' }>;
 type MaterializedPayload = AutomateSendRangesAction['payload'] & {
     busName: string;
@@ -115,6 +117,7 @@ export const handleAutomateSendRanges = createHandler<'automateSendRanges'>({
             inverseAction: { type: 'removeSendAutomationRanges', payload },
         };
     },
+    validateSessionEntry: isLegacyRangeWriteSessionEntry,
     undoable: true,
     previewExecution: 'isolated-project',
     requiresAbortCompensation: false,

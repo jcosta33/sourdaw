@@ -6,6 +6,7 @@ import { removeAutomationLane } from '../../useCases/automation/removeAutomation
 import { getAutomationStoreState } from '../../useCases/getAutomationStoreState';
 
 import { automationPointSnapshotsMatch } from './automationPointSnapshotsMatch';
+import { isRemoveAutomationLanePayload } from './validateRangeWriteSessionEntries';
 
 type RemoveAutomationLanePayload = Extract<AppAction, { type: 'removeAutomationLane' }>['payload'];
 type RestoreAutomationLanePointsAction = Extract<AppAction, { type: 'restoreAutomationLanePoints' }>;
@@ -121,5 +122,6 @@ export const handleRemoveAutomationLane = createHandler<'removeAutomationLane'>(
     // the whole group on the stack.
     previewExecution: 'isolated-project',
     requiresAbortCompensation: false,
+    validateSessionActionArguments: isRemoveAutomationLanePayload,
     undoable: false,
 });

@@ -2,33 +2,14 @@ import { createHandler } from '#/utils/createHandler';
 import { type AutomationPointSnapshot } from '#/utils/handlerContract';
 
 import { type AutomationPoint } from '../../models/Automation';
-import { is_exact_automation_point, is_sorted_by_beat } from '../../stores/automationStore';
 import { restoreAutomationLanePoints } from '../../useCases/automation/restoreAutomationLanePoints';
 import { getAutomationStoreState } from '../../useCases/getAutomationStoreState';
 
 import { automationPointSnapshotsMatch as pointsMatch } from './automationPointSnapshotsMatch';
-
-/**
- * Every replacement point carries exactly the store's point shape, checked per
- * point the way `restoreAutomationLanes` checks whole lanes — including the
- * ascending-by-beat order `is_exact_automation_lane` requires via
- * `is_sorted_by_beat`. This action arrives from undo/redo of a possibly remote
- * peer's document, so the payload is document data rather than in-memory
- * state: a malformed or out-of-order point set must refuse the restore
- * (conflict-style, like an `expectedPoints` divergence) rather than write
- * garbage into the lane.
- */
-function isRestorablePointSet(points: readonly AutomationPointSnapshot[]): points is AutomationPoint[] {
-    if (!Array.isArray(points)) {
-        return false;
-    }
-    for (let index = 0; index < points.length; index += 1) {
-        if (!Object.hasOwn(points, index) || !is_exact_automation_point(points[index])) {
-            return false;
-        }
-    }
-    return is_sorted_by_beat(points);
-}
+import {
+    isRestorableAutomationPointSet as isRestorablePointSet,
+    isRestoreAutomationLanePointsPayload,
+} from './validateRangeWriteSessionEntries';
 
 type RestorePayload = {
     laneId: string;
@@ -77,6 +58,7 @@ export const handleRestoreAutomationLanePoints = createHandler<'restoreAutomatio
     canReapplyAfterDivergence: (action) =>
         isRestorablePayload(action.payload) && Object.hasOwn(action.payload, 'expectedPoints'),
     describe: () => ({ label: 'Restore automation points' }),
+    validateSessionActionArguments: isRestoreAutomationLanePointsPayload,
     canReportConflict: true,
     previewExecution: 'isolated-project',
     requiresAbortCompensation: false,

@@ -8,6 +8,8 @@ import { getSendAutomationBusId } from '../../useCases/automation/getSendAutomat
 import { planParameterRangeWrite } from '../../useCases/automation/planParameterRangeWrite';
 import { getAutomationStoreState } from '../../useCases/getAutomationStoreState';
 
+import { isParameterRangeWriteSessionEntry } from './validateRangeWriteSessionEntries';
+
 type AutomateParameterRangeAction = Extract<AppAction, { type: 'automateParameterRange' }>;
 
 function ensureWriteId(action: AutomateParameterRangeAction): string {
@@ -248,5 +250,6 @@ export const handleAutomateParameterRange = createHandler<'automateParameterRang
     canReportConflict: true,
     previewExecution: 'isolated-project',
     requiresAbortCompensation: false,
+    validateSessionEntry: isParameterRangeWriteSessionEntry,
     undoable: true,
 });

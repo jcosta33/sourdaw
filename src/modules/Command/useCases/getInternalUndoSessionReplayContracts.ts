@@ -21,6 +21,11 @@ function createInternalReplayContract(
         | 'restoreDrawnClip'
         | 'restoreMidiClipNotes'
         | 'restoreAutomationPointPresence'
+        | 'removeTrackGainAutomationRange'
+        | 'removeSendAutomationRange'
+        | 'removeSendAutomationRanges'
+        | 'removeAutomationLane'
+        | 'restoreAutomationLanePoints'
         | 'restoreTimeOperationState'
         | 'restoreCompRegionInterval'
         | 'restoreTempoEdit'
@@ -106,6 +111,11 @@ export function getInternalUndoSessionReplayContracts(): readonly SessionActionC
         createInternalReplayContract('restoreDrawnClip', 1, 'optional'),
         createInternalReplayContract('restoreMidiClipNotes', 1, 'required'),
         createInternalReplayContract('restoreAutomationPointPresence', 1, 'required'),
+        createInternalReplayContract('removeTrackGainAutomationRange', 1, 'required'),
+        createInternalReplayContract('removeSendAutomationRange', 1, 'required'),
+        createInternalReplayContract('removeSendAutomationRanges', 1, 'required'),
+        createInternalReplayContract('removeAutomationLane', 1, 'required'),
+        createInternalReplayContract('restoreAutomationLanePoints', 1, 'required'),
         createInternalReplayContract('restoreTimeOperationState', 1, 'required'),
         createInternalReplayContract('restoreCompRegionInterval', 1, 'required'),
         createInternalReplayContract('restoreTempoEdit', 1, 'required'),
