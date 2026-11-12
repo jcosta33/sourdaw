@@ -764,6 +764,14 @@ function normalize_track_row(value: unknown): Track | null {
     return normalizeTrack(track_input);
 }
 
+/**
+ * Decodes one captured track row (an undo snapshot) through the same row law
+ * the store projects with, so a restore writes exactly what the store holds.
+ */
+export function decodeTrackSnapshot(value: unknown): Track | null {
+    return normalize_track_row(value);
+}
+
 function normalize_tracks(value: unknown): Track[] {
     if (!Array.isArray(value)) {
         return [];

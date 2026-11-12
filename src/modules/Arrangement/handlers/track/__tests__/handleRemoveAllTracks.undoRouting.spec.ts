@@ -59,7 +59,10 @@ vi.mock('../../../useCases/captureTrackRemovalRuntimeAuthority', () => ({
     }),
 }));
 vi.mock('../../../useCases/comping/insertTakeLane', () => ({ insertTakeLane: vi.fn() }));
-vi.mock('../../../stores/takeLaneStore', () => ({ takeLaneStore: { value: { lanes: [] }, set: vi.fn() } }));
+vi.mock('../../../stores/takeLaneStore', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('../../../stores/takeLaneStore')>()),
+    takeLaneStore: { value: { lanes: [] }, set: vi.fn() },
+}));
 vi.mock('../../../stores/clipSatelliteState', () => ({
     readClipSatelliteEntry: vi.fn(),
     writeClipSatelliteEntry: vi.fn(),

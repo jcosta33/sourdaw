@@ -139,8 +139,9 @@ describe('ESLint configuration', () => {
         if (!config) {
             throw new Error('ESLint did not load the app configuration');
         }
-        const allowedFile = 'src/modules/Arrangement/handlers/restore/handleRestoreTrack.ts';
-        const allowedConfig = await eslint.calculateConfigForFile(resolve(allowedFile));
+        const restoreHandlerConfig = await eslint.calculateConfigForFile(
+            resolve('src/modules/Arrangement/handlers/restore/handleRestoreTrack.ts')
+        );
         const linter = new Linter();
         const lint = (code: string, ruleEntry: Linter.RuleEntry) =>
             linter
@@ -156,7 +157,7 @@ describe('ESLint configuration', () => {
                 )
                 .map((message) => message.messageId);
         const production = config.rules['sourdaw/no-type-assertion-escape'];
-        const allowed = allowedConfig?.rules['sourdaw/no-type-assertion-escape'];
+        const restoreHandler = restoreHandlerConfig?.rules['sourdaw/no-type-assertion-escape'];
 
         expect(production).toEqual([2]);
         expect(lint('const value = input as never;', production)).toEqual(['noAsNever']);
@@ -166,10 +167,16 @@ describe('ESLint configuration', () => {
         expect(lint('const value = input as Thing;', production)).toEqual([]);
         expect(lint('const value = input as unknown;', production)).toEqual([]);
 
-        expect(allowed).toEqual([2, { allowAsNever: true }]);
-        expect(lint('const value = input as never;', allowed)).toEqual([]);
-        expect(lint('const value = input as any;', allowed)).toEqual(['noAsAny']);
-        expect(lint('const value = input as unknown as never;', allowed)).toEqual(['noAsUnknownAs']);
+        expect(lint('const value = <never>input;', production)).toEqual(['noAsNever']);
+        expect(lint('const value = <any>input;', production)).toEqual(['noAsAny']);
+        expect(lint('const value = <Thing>(<unknown>input);', production)).toEqual(['noAsUnknownAs']);
+        expect(lint('const value = <Thing>(input as unknown);', production)).toEqual(['noAsUnknownAs']);
+        expect(lint('const value = (<unknown>input) as Thing;', production)).toEqual(['noAsUnknownAs']);
+        expect(lint('const value = <Thing>input;', production)).toEqual([]);
+        expect(lint('const value = <unknown>input;', production)).toEqual([]);
+
+        expect(restoreHandler).toEqual([2]);
+        expect(lint('const value = input as never;', restoreHandler)).toEqual(['noAsNever']);
     });
 
     it('preserves custom rule diagnostics through the loaded plugin', async () => {
