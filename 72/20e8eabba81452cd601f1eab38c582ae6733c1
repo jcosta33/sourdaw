@@ -1,0 +1,47 @@
+crates/daw-plugin-host/src/vst3_wrapper.rs
+  s_0e1e665b35fffe::t_22b878efef5123 1489-1492
+  s_0e1e665b35fffe::t_104d304d411d51 1493,1496
+crates/daw-engine/src/scheduler.rs
+  s_0e1e665b35fffe::t_054bb4ece55041 5060-5062
+  s_0e1e665b35fffe::t_62692612a5f194 7392
+  s_0e1e665b35fffe::t_b2403479b28173 9916-9949,10126
+  s_0e1e665b35fffe::t_686e31c99af02b 4989-4992,4996
+  s_0e1e665b35fffe::t_bb4f0fcdad412c 5028,10101-10120,10129,10131,10135
+  s_0e1e665b35fffe::t_7b6cc2b5d82174 5145,5151
+  s_0e1e665b35fffe::t_1e3991df881283 6817
+  s_0e1e665b35fffe::t_2c6ab3cdcc6b11 6799
+  s_0e1e665b35fffe::t_398e9255506081 7372-7391,7393-7394,7396-7397
+  s_0e1e665b35fffe::t_e7b9c4bca15b55 5009,5015-5027
+  s_0e1e665b35fffe::t_c22ab0857d1839 5164
+  s_0e1e665b35fffe::t_c68d59ac2d5c6a 5064-5066
+  s_0e1e665b35fffe::t_3f0bfa79e45dec 7464
+  s_c2f4449c5891e9::t_24705688dc4940 5029,9950-9961,10121-10125,10127-10128,10130,10132-10134,10136
+crates/daw-plugin-host/src/vst3_wrapper/tests.rs
+  s_0e1e665b35fffe::t_50f07dc12de584 1870-1892
+evidence/agent-campaign/manifest.json
+  s_0e1e665b35fffe::t_5864a6129da07f 623
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7220e8eabba81452cd601f1eab38c582ae6733c1",
+  "prompts": {},
+  "sessions": {
+    "s_0e1e665b35fffe": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "381a1b33-66ac-43c7-a5f6-c58cf462dac3",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_c2f4449c5891e9": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "7817afe8-15e0-436f-b304-529241ac1a61",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
