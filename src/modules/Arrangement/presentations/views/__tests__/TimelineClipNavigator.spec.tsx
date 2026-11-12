@@ -531,6 +531,87 @@ describe('TimelineClipNavigator', () => {
         expect(timelineViewStore.value).toMatchObject({ scrollX: 820, scrollY: 80, pixelsPerBeat: 10 });
     });
 
+    it('keeps the viewport when an oversized clip and track already cover it', () => {
+        act(() => {
+            trackStore.set({
+                ...defaultTrackState,
+                tracks: [
+                    track('target-track', 'Target', [{ ...clip('target', 'target-track', 0), endBeat: 100 }], {
+                        height: 1000,
+                    }),
+                ],
+            });
+            timelineViewStore.set({
+                scrollX: 500,
+                scrollY: 500,
+                pixelsPerBeat: 10,
+                autoScrollEnabled: true,
+                viewportHeight: 100,
+                viewportWidth: 100,
+            });
+        });
+        openNavigator();
+        fireEvent.keyDown(screen.getByRole('searchbox', { name: 'Search clips' }), { key: 'Enter' });
+        expect(clipSelectionStore.value?.selectedClipIds).toEqual(['target']);
+        expect(timelineViewStore.value).toMatchObject({ scrollX: 500, scrollY: 500 });
+    });
+
+    it('minimally reveals the clipped edge of oversized results', () => {
+        act(() => {
+            trackStore.set({
+                ...defaultTrackState,
+                tracks: [
+                    ...Array.from({ length: 4 }, (_, index) =>
+                        track(`before-${index}`, `Before ${index}`, [], { height: 100 })
+                    ),
+                    track('target-track', 'Target', [{ ...clip('target', 'target-track', 20), endBeat: 55 }], {
+                        height: 150,
+                    }),
+                    ...Array.from({ length: 5 }, (_, index) => track(`after-${index}`, `After ${index}`, [])),
+                ],
+            });
+            timelineViewStore.set({
+                scrollX: 500,
+                scrollY: 500,
+                pixelsPerBeat: 10,
+                autoScrollEnabled: true,
+                viewportHeight: 100,
+                viewportWidth: 100,
+            });
+        });
+        openNavigator();
+        fireEvent.keyDown(screen.getByRole('searchbox', { name: 'Search clips' }), { key: 'Enter' });
+        expect(timelineViewStore.value).toMatchObject({ scrollX: 200, scrollY: 400 });
+    });
+
+    it('reveals oversized results that are fully before the viewport', () => {
+        act(() => {
+            trackStore.set({
+                ...defaultTrackState,
+                tracks: [
+                    ...Array.from({ length: 2 }, (_, index) =>
+                        track(`before-${index}`, `Before ${index}`, [], { height: 100 })
+                    ),
+                    track('target-track', 'Target', [{ ...clip('target', 'target-track', 20), endBeat: 40 }], {
+                        height: 300,
+                    }),
+                    ...Array.from({ length: 8 }, (_, index) => track(`after-${index}`, `After ${index}`, [])),
+                ],
+            });
+            timelineViewStore.set({
+                scrollX: 500,
+                scrollY: 500,
+                pixelsPerBeat: 10,
+                autoScrollEnabled: true,
+                viewportHeight: 100,
+                viewportWidth: 100,
+            });
+        });
+        openNavigator();
+        fireEvent.keyDown(screen.getByRole('searchbox', { name: 'Search clips' }), { key: 'Enter' });
+        expect(timelineViewStore.value).toMatchObject({ scrollX: 200, scrollY: 200 });
+    });
+
     it('minimally reveals a clip before an already scrolled viewport', () => {
         act(() => {
             trackStore.set({

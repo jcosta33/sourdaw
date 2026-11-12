@@ -3,6 +3,30 @@ import { setScrollX, setScrollY, timelineViewStore } from '../stores/timelineVie
 
 import { buildTimelineRenderModel } from './buildTimelineRenderModel';
 
+function getRevealScrollPosition(
+    targetStart: number,
+    targetEnd: number,
+    scrollStart: number,
+    viewportSize: number
+): number {
+    if (viewportSize <= 0) {
+        return targetStart;
+    }
+
+    const scrollEnd = scrollStart + viewportSize;
+    const targetIsVisible = targetStart >= scrollStart && targetEnd <= scrollEnd;
+    const targetCoversViewport = targetStart <= scrollStart && targetEnd >= scrollEnd;
+    if (targetIsVisible || targetCoversViewport) {
+        return scrollStart;
+    }
+
+    if (targetStart < scrollStart) {
+        return targetStart;
+    }
+
+    return targetEnd - viewportSize;
+}
+
 /** Bring a rendered clip into the real timeline viewport without changing zoom. */
 export function revealTimelineClip(clipId: string): void {
     const view = timelineViewStore.value;
@@ -19,28 +43,16 @@ export function revealTimelineClip(clipId: string): void {
     const clipStartX = clip.startBeat * view.pixelsPerBeat;
     const clipEndX = clip.endBeat * view.pixelsPerBeat;
     const viewportWidth = view.viewportWidth ?? 0;
-    const clipVisibleX = viewportWidth > 0 && clipStartX >= view.scrollX && clipEndX <= view.scrollX + viewportWidth;
-    if (!clipVisibleX) {
-        let nextScrollX: number;
-        if (viewportWidth <= 0 || clipEndX - clipStartX > viewportWidth || clipStartX < view.scrollX) {
-            nextScrollX = clipStartX;
-        } else {
-            nextScrollX = clipEndX - viewportWidth;
-        }
+    const nextScrollX = getRevealScrollPosition(clipStartX, clipEndX, view.scrollX, viewportWidth);
+    if (nextScrollX !== view.scrollX) {
         setScrollX(nextScrollX);
     }
 
     const trackTop = getRenderedTrackTops(tracks)[trackIndex]!;
     const trackBottom = trackTop + track.height;
     const viewportHeight = view.viewportHeight ?? 0;
-    const clipVisibleY = viewportHeight > 0 && trackTop >= view.scrollY && trackBottom <= view.scrollY + viewportHeight;
-    if (!clipVisibleY) {
-        let nextScrollY: number;
-        if (viewportHeight <= 0 || track.height > viewportHeight || trackTop < view.scrollY) {
-            nextScrollY = trackTop;
-        } else {
-            nextScrollY = trackBottom - viewportHeight;
-        }
+    const nextScrollY = getRevealScrollPosition(trackTop, trackBottom, view.scrollY, viewportHeight);
+    if (nextScrollY !== view.scrollY) {
         setScrollY(nextScrollY);
     }
 }
