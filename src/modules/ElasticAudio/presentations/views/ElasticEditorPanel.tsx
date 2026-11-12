@@ -129,6 +129,7 @@ export const ElasticEditorPanel = (): ReactElement => {
     const [viewScrollLeft, setViewScrollLeft] = useState(0);
     const containerRef = useRef<HTMLDivElement>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
+    const previousDrawingRef = useRef<WaveformDrawing | null>(null);
     const dragRef = useRef<DragState | null>(null);
     const didDragRef = useRef(false);
 
@@ -165,14 +166,30 @@ export const ElasticEditorPanel = (): ReactElement => {
     const beatWidth = Math.max(1, 40 * zoom);
 
     useEffect(() => {
-        drawWaveform({
+        const args: DrawArgs = {
             canvasRef,
             containerRef,
+            previousDrawingRef,
             beatWidth,
             warpState,
             clipAudioBufferId: clip?.audioBufferId ?? null,
             viewScrollLeft,
-        });
+        };
+        drawWaveform(args);
+        const canvas = canvasRef.current;
+        const invalidate = (): void => {
+            previousDrawingRef.current = null;
+        };
+        const restore = (): void => {
+            invalidate();
+            drawWaveform(args);
+        };
+        canvas?.addEventListener('contextlost', invalidate);
+        canvas?.addEventListener('contextrestored', restore);
+        return () => {
+            canvas?.removeEventListener('contextlost', invalidate);
+            canvas?.removeEventListener('contextrestored', restore);
+        };
     }, [clipId, zoom, warpState, beatWidth, viewScrollLeft, clip?.audioBufferId]);
 
     if (clipId === null || !isAudioClip) {
@@ -553,14 +570,52 @@ function visibleMarkers(
 type DrawArgs = {
     canvasRef: { current: HTMLCanvasElement | null };
     containerRef: { current: HTMLDivElement | null };
+    previousDrawingRef: { current: WaveformDrawing | null };
     beatWidth: number;
     warpState: WarpStateView;
     clipAudioBufferId: string | null;
     viewScrollLeft: number;
 };
 
+type WaveformDrawing = {
+    canvas: HTMLCanvasElement;
+    context: CanvasRenderingContext2D;
+    peaks: Float32Array | null;
+    sourceId: string | null;
+    width: number;
+    height: number;
+    containerWidth: number;
+    dpr: number;
+    beatWidth: number;
+    scrollLeft: number;
+    background: string;
+    cssWidth: string;
+    cssHeight: string;
+    markers: WarpMarkerView[];
+    strokeStyle: CanvasRenderingContext2D['strokeStyle'];
+};
+
+function sameMarkerVisuals(previous: readonly WarpMarkerView[], current: readonly WarpMarkerView[]): boolean {
+    return (
+        previous.length === current.length &&
+        previous.every((marker, index) => {
+            const other = current[index];
+            return (
+                other !== undefined &&
+                marker.id === other.id &&
+                marker.originalBeat === other.originalBeat &&
+                marker.warpedBeat === other.warpedBeat &&
+                marker.origin === other.origin &&
+                marker.confidence === other.confidence &&
+                marker.locked === other.locked
+            );
+        })
+    );
+}
+
 function drawWaveform(args: DrawArgs): void {
-    const { canvasRef, containerRef, beatWidth, warpState, clipAudioBufferId, viewScrollLeft } = args;
+    const { canvasRef, containerRef, previousDrawingRef, beatWidth, warpState, clipAudioBufferId, viewScrollLeft } =
+        args;
     const canvas = canvasRef.current;
     const container = containerRef.current;
     if (!canvas || !container) {
@@ -577,13 +632,49 @@ function drawWaveform(args: DrawArgs): void {
     );
     const width = Math.max(container.clientWidth, contentBeats * beatWidth);
     const height = Math.max(120, container.clientHeight);
-    canvas.width = width * dpr;
-    canvas.height = height * dpr;
+    const backingWidth = Math.floor(width * dpr);
+    const backingHeight = Math.floor(height * dpr);
+    const background = resolveToken('--color-bg-overlay', '#151515');
+    // Peak arrays are retained unchanged by audioBufferCache; publishing/replacing or
+    // removing a source invalidates its waveform cache. A new peak identity must redraw.
+    const peaks = clipAudioBufferId ? audioBufferCache.getWaveformPeaks(clipAudioBufferId, Math.floor(width)) : null;
+    const previous = previousDrawingRef.current;
+    if (
+        previous &&
+        previous.canvas === canvas &&
+        previous.context === ctx &&
+        previous.peaks === peaks &&
+        previous.sourceId === clipAudioBufferId &&
+        previous.width === width &&
+        previous.height === height &&
+        previous.containerWidth === container.clientWidth &&
+        previous.dpr === dpr &&
+        previous.beatWidth === beatWidth &&
+        previous.scrollLeft === viewScrollLeft &&
+        previous.background === background &&
+        canvas.width === backingWidth &&
+        canvas.height === backingHeight &&
+        canvas.style.width === previous.cssWidth &&
+        canvas.style.height === previous.cssHeight &&
+        // Even a same-size backing assignment or context.reset() erases pixels and
+        // resets strokeStyle to black. Every completed draw leaves a nonblack grid/marker stroke.
+        previous.strokeStyle === ctx.strokeStyle &&
+        sameMarkerVisuals(previous.markers, warpState.markers)
+    ) {
+        return;
+    }
+    previousDrawingRef.current = null;
+    if (canvas.width !== backingWidth) {
+        canvas.width = backingWidth;
+    }
+    if (canvas.height !== backingHeight) {
+        canvas.height = backingHeight;
+    }
     canvas.style.width = `${width}px`;
     canvas.style.height = `${height}px`;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-    ctx.fillStyle = resolveToken('--color-bg-overlay', '#151515');
+    ctx.fillStyle = background;
     ctx.fillRect(0, 0, width, height);
 
     const midY = height / 2;
@@ -593,8 +684,7 @@ function drawWaveform(args: DrawArgs): void {
     ctx.lineTo(width, midY);
     ctx.stroke();
 
-    if (clipAudioBufferId) {
-        const peaks = audioBufferCache.getWaveformPeaks(clipAudioBufferId, Math.floor(width));
+    if (peaks) {
         if (peaks.some((v) => v > 0)) {
             ctx.fillStyle = 'rgba(90,150,115,0.5)';
             ctx.beginPath();
@@ -648,6 +738,23 @@ function drawWaveform(args: DrawArgs): void {
             ctx.fillRect(x - 2, 10, 4, 4);
         }
     }
+    previousDrawingRef.current = {
+        canvas,
+        context: ctx,
+        peaks,
+        sourceId: clipAudioBufferId,
+        width,
+        height,
+        containerWidth: container.clientWidth,
+        dpr,
+        beatWidth,
+        scrollLeft: viewScrollLeft,
+        background,
+        cssWidth: canvas.style.width,
+        cssHeight: canvas.style.height,
+        markers: warpState.markers.map((marker) => ({ ...marker })),
+        strokeStyle: ctx.strokeStyle,
+    };
 }
 
 function markerColor(marker: WarpMarkerView): string {
