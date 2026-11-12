@@ -1,0 +1,36 @@
+src/modules/Arrangement/useCases/relinkClipAudioSource.ts
+  s_9307cedd8951f1::t_5f97bd47cf6863 6-7
+src/modules/Project/useCases/__tests__/locateMissingMedia.spec.ts
+  s_9307cedd8951f1::t_af4f24f4ee310c 7-10,23-24
+src/modules/Arrangement/useCases/clipEditing/relinkAudioSourceTargetsMatch.ts
+  s_9307cedd8951f1::t_5f97bd47cf6863 1,18
+src/modules/Arrangement/useCases/__tests__/relinkClipAudioSource.spec.ts
+  s_9307cedd8951f1::t_af4f24f4ee310c 7-8,16-23,30,384-389
+  s_9307cedd8951f1::t_5f97bd47cf6863 28-29
+src/modules/Arrangement/useCases/clipEditing/applyRelinkAudioSourceTargets.ts
+  s_9307cedd8951f1::t_5f97bd47cf6863 1-41
+src/modules/Arrangement/models/RelinkAudioSourceTarget.ts
+  s_9307cedd8951f1::t_5f97bd47cf6863 1-19
+src/modules/Arrangement/useCases/clipEditing/captureRelinkAudioSourceTargets.ts
+  s_9307cedd8951f1::t_5f97bd47cf6863 1-47
+src/modules/Arrangement/handlers/clip/handleRelinkClipAudioSources.ts
+  s_9307cedd8951f1::t_5f97bd47cf6863 4-6
+src/modules/Arrangement/useCases/clipEditing/captureRelinkAudioSourceCommitValidation.ts
+  s_9307cedd8951f1::t_5f97bd47cf6863 1-110
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c9f822a2acc2d6dccf56392581b1e949fcc0b67b",
+  "prompts": {},
+  "sessions": {
+    "s_9307cedd8951f1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cee0-9c43-7223-9451-be85d15b1347",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
