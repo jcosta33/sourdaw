@@ -90,9 +90,11 @@ const WEBLLM_APPLICATION_TOOL_NAMES: ReadonlySet<string> = new Set([
     ANSWER_INTERPRETATION_TOOL_NAME,
 ]);
 
-// Retain the established ceiling while phases publish fewer mandatory tools. Exactly one optional
-// or discovered tool is selected below; spare ceiling capacity never admits another command.
-export const WEBLLM_TOOL_BUDGET = 37;
+// The general-planning mandatory set (the workflow selector, the mandatory planning tools,
+// command-index search, catalog discovery, the joint interpretation tool and every workflow action
+// tool) plus exactly one optional or discovered tool, selected below. A phase that publishes fewer
+// mandatory tools leaves spare capacity, which never admits another command.
+export const WEBLLM_TOOL_BUDGET = 35;
 
 /**
  * What one hosted turn replays: the run's first user message, the turns behind it, and the note

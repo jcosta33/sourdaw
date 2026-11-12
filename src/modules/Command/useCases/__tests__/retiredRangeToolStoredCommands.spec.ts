@@ -656,7 +656,7 @@ function payloadOf(action: AppAction): Record<string, unknown> {
     if (!('payload' in action) || !isRecord(action.payload)) {
         throw new Error(`Expected ${action.type} to carry a payload`);
     }
-    return { ...action.payload };
+    return action.payload;
 }
 
 function replayContract(actionType: string): (payload: unknown) => boolean {

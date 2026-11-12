@@ -129,11 +129,7 @@ import { resolveCommandScopeOverride } from './groundingStrategies/commandScopeO
 import { escapeRegExp } from './groundingStrategies/escapeRegExp';
 import { findPromptNumbers } from './groundingStrategies/findPromptNumbers';
 import { REFERENCE_PLACEHOLDER } from './groundingStrategies/findReferencedIntentPhrase';
-import {
-    findTrailingRangePhrase,
-    readStatedRangeBeats,
-    resolveCallRange,
-} from './groundingStrategies/findTrailingRangePhrase';
+import { findTrailingRangePhrase } from './groundingStrategies/findTrailingRangePhrase';
 import { getAddClipPromptEvidence } from './groundingStrategies/getAddClipPromptEvidence';
 import { getCancellationCues } from './groundingStrategies/getCancellationCues';
 import { getGlueClipPairTargetPattern } from './groundingStrategies/getGlueClipPairTargetPattern';
@@ -158,6 +154,8 @@ import { groundPostTargetScopeAdmission } from './groundingStrategies/postTarget
 import { groundPreScopeAdmission } from './groundingStrategies/preScopeAdmissionStrategy';
 import { type ActionPromptScope, type PromptClause } from './groundingStrategies/promptScope';
 import { readSourceSetLiftShape } from './groundingStrategies/readSourceSetLiftShape';
+import { readStatedRangeBeats } from './groundingStrategies/readStatedRangeBeats';
+import { resolveCallRange } from './groundingStrategies/resolveCallRange';
 import { resolveClauseActionIntent } from './groundingStrategies/resolveClauseActionIntent';
 import { type PromptClauseSpan, splitAttachedSourceClauses } from './groundingStrategies/splitAttachedSourceClauses';
 import { stripPoliteGlueCommandCarrier } from './groundingStrategies/stripPoliteGlueCommandCarrier';
@@ -1363,7 +1361,7 @@ function getCoordinatedListTargetRule(
  */
 function getSendSetScope(input: {
     actionName: string;
-    clause: PromptClause;
+    clause: PromptClauseSpan;
     context: ProjectContext;
     groundingRules: GroundingRules;
     intentPhrase: string;

@@ -434,8 +434,7 @@ describe('mandatory planning tools', () => {
                 ...WORKFLOW_ACTION_TOOL_NAMES,
             ]);
 
-            expect(WEBLLM_TOOL_BUDGET).toBe(37);
-            expect(WEBLLM_TOOL_BUDGET).toBeGreaterThanOrEqual(mandatory.size + 1);
+            expect(WEBLLM_TOOL_BUDGET).toBe(mandatory.size + 1);
             expect(advertised.filter((name) => !mandatory.has(name))).toHaveLength(1);
             expect(advertised).toHaveLength(mandatory.size + 1);
         });
