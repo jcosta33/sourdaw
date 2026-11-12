@@ -175,6 +175,16 @@ describe('ESLint configuration', () => {
         expect(lint('const value = <Thing>input;', production)).toEqual([]);
         expect(lint('const value = <unknown>input;', production)).toEqual([]);
 
+        expect(lint('const value = (input as unknown)! as Thing;', production)).toEqual(['noAsUnknownAs']);
+        expect(lint('const value = (input as unknown satisfies unknown) as Thing;', production)).toEqual([
+            'noAsUnknownAs',
+        ]);
+        expect(lint('const value = <Thing>(<unknown>input)!;', production)).toEqual(['noAsUnknownAs']);
+        expect(lint('const value = <Thing>(<unknown>input satisfies unknown);', production)).toEqual(['noAsUnknownAs']);
+        expect(lint('const value = input!;', production)).toEqual([]);
+        expect(lint('const value = (input as Thing)!;', production)).toEqual([]);
+        expect(lint('const value = (input as Thing)! as Other;', production)).toEqual([]);
+
         expect(restoreHandler).toEqual([2]);
         expect(lint('const value = input as never;', restoreHandler)).toEqual(['noAsNever']);
     });

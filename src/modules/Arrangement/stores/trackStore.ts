@@ -764,12 +764,62 @@ function normalize_track_row(value: unknown): Track | null {
     return normalizeTrack(track_input);
 }
 
+function keeps_every_row(source: unknown, decoded: readonly unknown[]): boolean {
+    return source === undefined || (Array.isArray(source) && source.length === decoded.length);
+}
+
+function keeps_every_clip_row(source: unknown, decoded: readonly Clip[]): boolean {
+    if (source === undefined) {
+        return true;
+    }
+    if (!Array.isArray(source) || !keeps_every_row(source, decoded)) {
+        return false;
+    }
+    return decoded.every((clip, index) => {
+        const source_clip: unknown = source[index];
+        const source_knead = is_plain_object(source_clip) ? source_clip.kneadState : undefined;
+        const source_blobs = is_plain_object(source_knead) ? source_knead.blobs : undefined;
+        return keeps_every_row(source_blobs, clip.kneadState?.blobs ?? []);
+    });
+}
+
+function keeps_every_alternative_row(source: unknown, decoded: readonly TrackAlternative[]): boolean {
+    if (source === undefined) {
+        return true;
+    }
+    if (!Array.isArray(source) || !keeps_every_row(source, decoded)) {
+        return false;
+    }
+    return decoded.every((alternative, index) => {
+        const source_alternative: unknown = source[index];
+        const source_clips = is_plain_object(source_alternative) ? source_alternative.clips : undefined;
+        return keeps_every_clip_row(source_clips, alternative.clips);
+    });
+}
+
+function keeps_every_track_row(source: PlainObject, track: Track): boolean {
+    return (
+        keeps_every_clip_row(source.clips, track.clips) &&
+        keeps_every_row(source.devices, track.devices) &&
+        keeps_every_row(source.sends, track.sends) &&
+        keeps_every_row(source.midiFx, track.midiFx) &&
+        keeps_every_alternative_row(source.alternatives, track.alternatives)
+    );
+}
+
 /**
  * Decodes one captured track row (an undo snapshot) through the same row law
  * the store projects with, so a restore writes exactly what the store holds.
+ * The projection drops a malformed clip, device, send, MIDI effect, alternative
+ * or pitch blob from a stored document; a restore refuses instead, because the
+ * rest of its payload still writes that row's MIDI and satellite data.
  */
 export function decodeTrackSnapshot(value: unknown): Track | null {
-    return normalize_track_row(value);
+    const track = normalize_track_row(value);
+    if (!track || !is_plain_object(value) || !keeps_every_track_row(value, track)) {
+        return null;
+    }
+    return track;
 }
 
 function normalize_tracks(value: unknown): Track[] {

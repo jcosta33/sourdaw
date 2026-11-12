@@ -162,6 +162,33 @@ describe('decodeTrackSnapshot', () => {
         ['a row without an id', { ...fullTrack, id: undefined }],
         ['a row without a kind', { ...fullTrack, kind: undefined }],
         ['a row with an unknown kind', { ...fullTrack, kind: 'video' }],
+        ['a row whose clips are not an array', { ...fullTrack, clips: {} }],
+        ['a row holding a malformed clip', { ...fullTrack, clips: [...fullTrack.clips, { id: 'broken' }] }],
+        [
+            'a row holding a malformed alternative clip',
+            { ...fullTrack, alternatives: [{ id: 'alt-a', name: 'A', clips: [audioClip, { id: 'broken' }] }] },
+        ],
+        ['a row holding a malformed alternative', { ...fullTrack, alternatives: [{ id: 'alt-a' }] }],
+        ['a row holding a malformed device', { ...fullTrack, devices: [{ id: 'broken' }] }],
+        ['a row holding a malformed send', { ...fullTrack, sends: [{ level: 1 }] }],
+        ['a row holding a malformed MIDI effect', { ...fullTrack, midiFx: [{ id: 'fx', type: 'unknown' }] }],
+        [
+            'a row holding a malformed pitch blob',
+            {
+                ...fullTrack,
+                clips: [
+                    {
+                        ...audioClip,
+                        kneadState: {
+                            blobs: [{ id: 'broken' }],
+                            retuneSpeedMs: 1,
+                            humanizePercent: 0,
+                            formantPreserve: false,
+                        },
+                    },
+                ],
+            },
+        ],
     ])('refuses %s', (_label, value) => {
         expect(decodeTrackSnapshot(value)).toBeNull();
     });

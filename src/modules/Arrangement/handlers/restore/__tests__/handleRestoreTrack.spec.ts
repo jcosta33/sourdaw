@@ -105,6 +105,7 @@ vi.mock('#/modules/Automation/useCases', () => ({
 }));
 
 vi.mock('#/modules/MIDI/useCases', () => ({
+    replaceFrozenMidiTakeRow: vi.fn(),
     restoreMidiClipData: mocks.restoreMidiClipData,
 }));
 
@@ -640,12 +641,30 @@ describe('handleRestoreTrack', () => {
                 locked: false,
                 muted: false,
             };
+            const zeroLength = {
+                ...clip,
+                id: 'clip-zero',
+                name: 'Zero',
+                type: 'midi',
+                startBeat: 8,
+                endBeat: 8,
+            } as const;
+            const preRoll = {
+                ...clip,
+                id: 'clip-pre-roll',
+                name: 'Pre-roll',
+                type: 'audio',
+                startBeat: -2,
+                endBeat: 2,
+            } as const;
             const raw = TrackDummy.create({
                 id: removedTrackId,
                 kind: 'midi',
-                clips: [
-                    { ...clip, id: 'clip-zero', name: 'Zero', type: 'midi', startBeat: 8, endBeat: 8 },
-                    { ...clip, id: 'clip-pre-roll', name: 'Pre-roll', type: 'audio', startBeat: -2, endBeat: 2 },
+                clips: [zeroLength, preRoll],
+                activeAlternativeId: 'alt-1',
+                alternatives: [
+                    { id: 'alt-1', name: 'Alternative 1', clips: [zeroLength] },
+                    { id: 'alt-2', name: 'Alternative 2', clips: [preRoll] },
                 ],
             });
             return requireDefined(
@@ -698,13 +717,44 @@ describe('handleRestoreTrack', () => {
             return snapshot;
         }
 
+        // Clip-keyed payload a refused restore must not write either.
+        function withClipData(payload: RestoreTrackPayload): RestoreTrackPayload {
+            const gainEnvelope = { clipId: 'clip-zero', points: [], enabled: true };
+            return {
+                ...payload,
+                midiNotesByClipId: { 'clip-zero': [] },
+                clipSatellites: [{ clipId: 'clip-zero', gainEnvelope, warpState: null }],
+            };
+        }
+
         function expectNothingWritten(action: RestoreTrackAction): void {
             expect(handleRestoreTrack.validate?.(action, { actions: [action], actionIndex: 0 })).toBe(false);
             expect(handleRestoreTrack.execute(action)).toEqual({ status: 'conflict' });
             expect(mocks.setTrackState).not.toHaveBeenCalled();
             expect(mocks.insertTakeLane).not.toHaveBeenCalled();
             expect(mocks.restoreAutomationLanes).not.toHaveBeenCalled();
+            expect(mocks.restoreMidiClipData).not.toHaveBeenCalled();
+            expect(mocks.writeClipSatelliteEntry).not.toHaveBeenCalled();
             expect(mocks.takeLaneStoreState.value).toEqual({ lanes: [survivorLane] });
+        }
+
+        function withExtraClip(row: Track, clip: unknown): unknown {
+            return { ...row, clips: [...row.clips, clip] };
+        }
+
+        function withExtraAlternativeClip(row: Track, clip: unknown): unknown {
+            return {
+                ...row,
+                alternatives: row.alternatives.map((alternative) => ({
+                    ...alternative,
+                    clips: [...alternative.clips, clip],
+                })),
+            };
+        }
+
+        function anotherTracksClip(row: Track): unknown {
+            const clip = requireDefined(row.clips[0], 'a stored clip');
+            return { ...clip, id: 'clip-foreign', trackId: survivor.id };
         }
 
         it('restores a row holding a zero-length clip and a clip before beat 0, with its take lane, exactly', () => {
@@ -728,13 +778,28 @@ describe('handleRestoreTrack', () => {
             ['carries an unknown kind', (row: Track) => ({ ...row, kind: 'video' })],
             ['is not an object', () => null],
             ['belongs to another track', (row: Track) => ({ ...row, id: 'track-2' })],
+            ['holds a malformed clip', (row: Track) => withExtraClip(row, { id: 'clip-broken' })],
+            [
+                'holds a malformed clip in an alternative',
+                (row: Track) => withExtraAlternativeClip(row, { id: 'clip-broken' }),
+            ],
+            ['holds a malformed device', (row: Track) => ({ ...row, devices: [{ id: 'device-broken' }] })],
+            ['holds a malformed send', (row: Track) => ({ ...row, sends: [{ level: 1 }] })],
+            ['holds a clip of another track', (row: Track) => withExtraClip(row, anotherTracksClip(row))],
+            [
+                'holds an alternative clip of another track',
+                (row: Track) => withExtraAlternativeClip(row, anotherTracksClip(row)),
+            ],
         ])('refuses before any write when the track snapshot %s', (_label, corrupt) => {
             const payload = captureRemoval(storeTrackRow(), storeTakeLane());
             const trackSnapshot: unknown = corrupt(storeTrackRow());
 
             expectNothingWritten({
                 type: 'restoreTrack',
-                payload: { ...payload, trackSnapshot: trackSnapshot as RestoreTrackPayload['trackSnapshot'] },
+                payload: withClipData({
+                    ...payload,
+                    trackSnapshot: trackSnapshot as RestoreTrackPayload['trackSnapshot'],
+                }),
             });
         });
 
@@ -748,10 +813,10 @@ describe('handleRestoreTrack', () => {
 
             expectNothingWritten({
                 type: 'restoreTrack',
-                payload: {
+                payload: withClipData({
                     ...payload,
                     takeLaneSnapshots: [corrupted as RestoreTrackPayload['takeLaneSnapshots'][number]],
-                },
+                }),
             });
         });
     });

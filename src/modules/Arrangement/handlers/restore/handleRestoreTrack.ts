@@ -6,8 +6,8 @@ import { createHandler } from '#/utils/createHandler';
 import { type AppAction, type HandlerValidationContext } from '#/utils/handlerContract';
 import { runAllAsyncEffects } from '#/utils/runEffects';
 
-import { writeClipSatelliteEntry } from '../../stores/clipSatelliteState';
 import { type TakeLane } from '../../models/TakeLane';
+import { writeClipSatelliteEntry } from '../../stores/clipSatelliteState';
 import { decodeExactTakeLaneSnapshots, takeLaneStore } from '../../stores/takeLaneStore';
 import { decodeTrackSnapshot, type Track } from '../../stores/trackStore';
 import { captureTrackRemovalRuntimeAuthority } from '../../useCases/captureTrackRemovalRuntimeAuthority';
@@ -231,10 +231,24 @@ type RestoreTrackPayload = Extract<AppAction, { type: 'restoreTrack' }>['payload
 function decodeRestoredRows(payload: RestoreTrackPayload): { track: Track; takeLanes: TakeLane[] } | null {
     const track = decodeTrackSnapshot(payload.trackSnapshot);
     const takeLanes = decodeExactTakeLaneSnapshots(payload.takeLaneSnapshots);
-    if (track?.id !== payload.trackId || !takeLanes || takeLanes.some((lane) => lane.trackId !== payload.trackId)) {
+    if (
+        track?.id !== payload.trackId ||
+        !holdsOnlyOwnClips(track) ||
+        !takeLanes ||
+        takeLanes.some((lane) => lane.trackId !== payload.trackId)
+    ) {
         return null;
     }
     return { track, takeLanes };
+}
+
+// Every clip a track holds, live or in a stored alternative copy, names that
+// track: moves, paste and duplication rewrite `trackId`, and switching or
+// deleting an alternative refuses a clip that names another track.
+function holdsOnlyOwnClips(track: Track): boolean {
+    return [track.clips, ...track.alternatives.map((alternative) => alternative.clips)].every((clips) =>
+        clips.every((clip) => clip.trackId === track.id)
+    );
 }
 
 type RoutingState = {

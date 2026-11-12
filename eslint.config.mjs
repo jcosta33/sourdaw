@@ -2666,10 +2666,20 @@ const sourdawPlugin = {
             create(context) {
                 /** @param {import('@typescript-eslint/utils').TSESTree.Node | undefined} node */
                 function isUnknownAssertion(node) {
+                    // `!` and `satisfies` change no type, so `(x as unknown)!` is still the
+                    // first half of a double assertion. Assertions are not unwrapped here:
+                    // the inner one is the `unknown` step being looked for.
+                    let operand = node;
+                    while (
+                        operand?.type === AST_NODE_TYPES.TSNonNullExpression ||
+                        operand?.type === AST_NODE_TYPES.TSSatisfiesExpression
+                    ) {
+                        operand = operand.expression;
+                    }
                     return (
-                        (node?.type === AST_NODE_TYPES.TSAsExpression ||
-                            node?.type === AST_NODE_TYPES.TSTypeAssertion) &&
-                        node.typeAnnotation?.type === AST_NODE_TYPES.TSUnknownKeyword
+                        (operand?.type === AST_NODE_TYPES.TSAsExpression ||
+                            operand?.type === AST_NODE_TYPES.TSTypeAssertion) &&
+                        operand.typeAnnotation?.type === AST_NODE_TYPES.TSUnknownKeyword
                     );
                 }
                 /** @param {import('@typescript-eslint/utils').TSESTree.TSAsExpression | import('@typescript-eslint/utils').TSESTree.TSTypeAssertion} node */
