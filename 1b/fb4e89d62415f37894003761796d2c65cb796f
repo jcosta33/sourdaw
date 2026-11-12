@@ -1,0 +1,36 @@
+tests/e2e/elasticTransientWorkerPerformance.spec.ts
+  s_9307cedd8951f1::t_5828b32eb2a89d 65-187,195-197,207-209,219-221,230-232,242-251,269-271,284-289
+src/modules/ElasticAudio/presentations/views/__tests__/ElasticEditorPanel.spec.tsx
+  s_9307cedd8951f1::t_2860b229da1d2c 483-521
+  s_9307cedd8951f1::t_27b89c21379c27 319-321,326-327,332-333,395-398,436-440,447-454,457-462,467-470,472-473,475-477,481
+  s_9307cedd8951f1::t_632fea0b993168 11,63-73,182,267-268,283-291,305-310,312-318,334-335,340-377,384,391-394,399-423,425-435,455-456,482,522-529,536-539,541-564
+  s_9307cedd8951f1::t_8a34a2886a75a6 336-339,424
+  s_9307cedd8951f1::t_70d8cb06e63b04 385-390,441-446
+  s_9307cedd8951f1::t_e19d0b5bd0f835 471,474,478-480,532-535,540
+  s_9307cedd8951f1::t_4d703d7955eb0d 565-566
+  s_9307cedd8951f1::t_e883046c4dec7d 323,329
+  s_9307cedd8951f1::t_baa245a0299ae6 311,322,324-325,328,330-331,378-383,463-466,530-531
+src/modules/ElasticAudio/presentations/views/ElasticEditorPanel.tsx
+  s_9307cedd8951f1::t_2be05f60f11e94 132,169,172,177-192,573,580-591,594-598,614,635-641,659-660,664-665,667-672,677,687,741-752,756-757
+  s_9307cedd8951f1::t_58b291d6bae2eb 666
+  s_9307cedd8951f1::t_41bdceeec0b2cd 592-593,753-754
+  s_9307cedd8951f1::t_70d8cb06e63b04 599-613,617-618,642-658,661-663
+  s_9307cedd8951f1::t_dd98c985970208 615
+  s_9307cedd8951f1::t_baa245a0299ae6 755
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1bfb4e89d62415f37894003761796d2c65cb796f",
+  "prompts": {},
+  "sessions": {
+    "s_9307cedd8951f1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cee0-9c43-7223-9451-be85d15b1347",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
