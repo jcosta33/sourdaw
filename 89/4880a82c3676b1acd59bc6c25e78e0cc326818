@@ -1,0 +1,93 @@
+src/modules/AiRuntime/useCases/llmOrchestration/inference.ts
+  s_9307cedd8951f1::t_ad6937b83e6a48 19,22,48,59,394-396,399,410-413,454-456,508,788-799,803
+docs/architecture/decisions/0013-client-side-hosted-llm-adapters.md
+  s_9307cedd8951f1::t_ad6937b83e6a48 5-6,39,49-51
+src/modules/WorkspaceShell/presentations/views/Prompt/__tests__/LlmStatusBadge.spec.tsx
+  s_9307cedd8951f1::t_ad6937b83e6a48 72,84-85
+  s_9307cedd8951f1::t_00466c9e3a9591 86
+src/modules/WorkspaceShell/presentations/views/Prompt/LlmStatusBadge.tsx
+  s_9307cedd8951f1::t_ad6937b83e6a48 19-25,108
+src/utils/handlerContract.ts
+  s_9307cedd8951f1::t_ad6937b83e6a48 179,185
+src/modules/AiRuntime/useCases/aiRuntimeQueries/generateWebLlmCompletion.ts
+  s_9307cedd8951f1::t_ad6937b83e6a48 2,13
+src/modules/Arrangement/stores/isExactClipSnapshot.ts
+  s_9307cedd8951f1::t_ad6937b83e6a48 113-118,121-122,124-125,136-143
+  s_9307cedd8951f1::t_03e73c5401629f 144-145
+src/modules/Arrangement/stores/markerStore.ts
+  s_9307cedd8951f1::t_ad6937b83e6a48 86
+src/modules/AiRuntime/AGENTS.md
+  s_9307cedd8951f1::t_ad6937b83e6a48 49
+.dependency-cruiser.cjs
+  s_9307cedd8951f1::t_ad6937b83e6a48 235-237,242,250-252
+src/modules/AiRuntime/useCases/llmOrchestration/__tests__/mandatoryPlanningTools.spec.ts
+  s_9307cedd8951f1::t_ad6937b83e6a48 13,39,480-484,648,772,776-777,803-804,807-814,816-824,828-840
+  s_9307cedd8951f1::t_c25acdc10f9d62 841
+src/modules/AiRuntime/models/ThreadContext.ts
+  s_9307cedd8951f1::t_ad6937b83e6a48 12
+src/modules/AiRuntime/transformers/localContextWindowRefusal.ts
+  s_9307cedd8951f1::t_ad6937b83e6a48 2,13-20
+  s_9307cedd8951f1::t_8afd39e0410ee8 21
+src/modules/AiRuntime/useCases/llmOrchestration/__tests__/inference.spec.ts
+  s_9307cedd8951f1::t_ad6937b83e6a48 13,1826
+docs/architecture/03-typescript-module.md
+  s_9307cedd8951f1::t_ad6937b83e6a48 926
+docs/architecture/05-boundary-enforcement-limits.md
+  s_9307cedd8951f1::t_ad6937b83e6a48 59-60
+scripts/__tests__/check-dependency-boundaries.spec.ts
+  s_9307cedd8951f1::t_ad6937b83e6a48 18,40,427-545,567,570,578-580,1927
+src/modules/Arrangement/handlers/trackAlternative/isRestorableAlternativeState.ts
+  s_9307cedd8951f1::t_ad6937b83e6a48 1-30
+tests/e2e/browserAiAdmittedPresentation.spec.ts
+  s_9307cedd8951f1::t_ad6937b83e6a48 59,64-65
+src/modules/Arrangement/handlers/trackAlternative/__tests__/handleRestoreTrackAlternativeState.spec.ts
+  s_9307cedd8951f1::t_ad6937b83e6a48 256-393
+src/modules/AiRuntime/repositories/__tests__/webLlmProviderAdapter.spec.ts
+  s_9307cedd8951f1::t_ad6937b83e6a48 5,259,335-337,354-355
+src/modules/Arrangement/handlers/scratchPad/handleRestoreScratchPadState.ts
+  s_9307cedd8951f1::t_ad6937b83e6a48 7-8,36-38,44-45
+src/modules/Arrangement/handlers/trackAlternative/handleRestoreTrackAlternativeState.ts
+  s_9307cedd8951f1::t_ad6937b83e6a48 8,40-46,62,78,80
+src/modules/AiRuntime/models/ModelInfo.ts
+  s_9307cedd8951f1::t_ad6937b83e6a48 28,37,39,46,48,60-61,63,66-71,73
+src/modules/AiRuntime/useCases/index.ts
+  s_9307cedd8951f1::t_ad6937b83e6a48 16
+src/modules/Arrangement/handlers/scratchPad/__tests__/handleRestoreScratchPadState.spec.ts
+  s_9307cedd8951f1::t_ad6937b83e6a48 131-168
+src/modules/Arrangement/handlers/clip/handleRestoreTrackClipStates.ts
+  s_9307cedd8951f1::t_ad6937b83e6a48 693,705
+release/open-source-inventory.json
+  s_9307cedd8951f1::t_ad6937b83e6a48 1217
+tests/e2e/llmBadgeDownload.spec.ts
+  s_9307cedd8951f1::t_ad6937b83e6a48 41
+src/modules/AiRuntime/useCases/aiRuntimeQueries/modelInfo.ts
+  s_9307cedd8951f1::t_ad6937b83e6a48 1,20-26
+.agents/skills/architecture/SKILL.md
+  s_9307cedd8951f1::t_ad6937b83e6a48 47,81
+.agents/decisions/0006-contract-folder-barrels-no-module-root-index.md
+  s_9307cedd8951f1::t_ad6937b83e6a48 57,80
+.agents/skills/architecture-violations/SKILL.md
+  s_9307cedd8951f1::t_ad6937b83e6a48 46
+src/modules/Arrangement/handlers/scratchPad/isRestorableSectionCollection.ts
+  s_9307cedd8951f1::t_ad6937b83e6a48 1-39
+src/modules/AiRuntime/models/LocalPlanningBudget.ts
+  s_9307cedd8951f1::t_ad6937b83e6a48 10-12
+evidence/agent-campaign/manifest.json
+  s_9307cedd8951f1::t_ad6937b83e6a48 386
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "894880a82c3676b1acd59bc6c25e78e0cc326818",
+  "prompts": {},
+  "sessions": {
+    "s_9307cedd8951f1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cee0-9c43-7223-9451-be85d15b1347",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
