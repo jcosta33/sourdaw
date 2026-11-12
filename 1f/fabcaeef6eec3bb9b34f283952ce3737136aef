@@ -1,0 +1,48 @@
+src/modules/AiRuntime/models/MetricGoalAdmission.ts
+  s_3c91dcbb840566::t_4d66c73e297fae 5-11
+src/modules/Arrangement/stores/__tests__/deviceWriteBoundaryClosure.spec.ts
+  s_3c91dcbb840566::t_70afb3bfe92c88 559-563
+src/modules/AiRuntime/useCases/__tests__/metricGoalPreviewRenders.spec.ts
+  s_3c91dcbb840566::t_9c1e70cee0d4b7 217,221-229,231-232,234-237,295-296
+  s_87ae37da66d2f0::t_7868179efc1157 297
+src/modules/AiRuntime/useCases/__tests__/vibeRunRealProject.spec.ts
+  s_3c91dcbb840566::t_2efcc0256b8909 75,80,84-85,92,316
+  s_3c91dcbb840566::t_863f2fd8a227a7 181-187,289,301,307
+  s_3c91dcbb840566::t_6cdd4a9b780449 312-313
+  s_3c91dcbb840566::t_226461e4c7692d 10,287-288,290,292-294,300,302-306,308-311,314-315,322-327,329-332
+  s_3c91dcbb840566::t_01cbcdc222c13d 295-299,328
+  s_3c91dcbb840566::t_c006b9604e81ff 95-110,129-130,145-166,171
+  s_3c91dcbb840566::t_a2e1c891b38c72 76,81,86-91,219,291,317-321
+  s_3c91dcbb840566::t_def95750035264 21,82-83,93
+  s_3c91dcbb840566::t_bf2fdf9f454185 20
+  s_3c91dcbb840566::t_9ba3aec4091c66 77-79,131-144
+  s_3c91dcbb840566::t_5717323dbe9405 111-128
+  s_87ae37da66d2f0::t_49979196e28986 94,333
+src/modules/AiRuntime/useCases/prepareMetricGoalPreview.ts
+  s_3c91dcbb840566::t_1fde492e8820cd 254
+  s_3c91dcbb840566::t_a5ef94c84908e6 255
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1ffabcaeef6eec3bb9b34f283952ce3737136aef",
+  "prompts": {},
+  "sessions": {
+    "s_3c91dcbb840566": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c1058f26-f2e9-46cf-af40-6e3b7eafe1df",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_87ae37da66d2f0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e83ca346-1b25-4729-84f5-4e1a6a613aae",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
