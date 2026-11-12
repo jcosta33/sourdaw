@@ -43,7 +43,7 @@ Trace upstream callers and downstream dependencies. CI's TypeScript typechecks p
 
 ### 5. Restore the contract barrel — never route around it
 
-Cross-module access goes through the contract barrels and their rules (`architecture` rules 1–2: `cross-module-index-only`, `contract-barrel-scope`, `no-self-barrel-import`). Fix a barrel violation by re-establishing that surface, not by inventing new barrels or escape hatches.
+Cross-module access goes through the contract barrels and their rules (`architecture` rules 1–2: `cross-module-index-only`, `contract-barrel-scope`, `no-internal-barrel-import`). Fix a barrel violation by re-establishing that surface, not by inventing new barrels or escape hatches.
 
 **Why:** the barrel is the only curated public surface; deep imports erase ownership.
 

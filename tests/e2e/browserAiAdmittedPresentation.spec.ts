@@ -56,13 +56,13 @@ test('offers browser model onboarding once a WebGPU device is admitted', async (
     // The download button's label is the per-model contract: it names the
     // selected model, so selecting a card retitles it.
     const downloadButton = page.getByRole('button', { name: /Download & Load /i });
-    await expect(downloadButton).toHaveText(/Download & Load Standard/);
+    await expect(downloadButton).toHaveText(/Download & Load Pro/);
 
     // A card is picked by its title alone: the title is the only element whose whole text is the
     // display name, while a description may contain it as a substring ("project" holds "Pro").
     // Strict mode makes a second match fail rather than pick a card silently.
-    await cards.filter({ has: page.getByText('Pro', { exact: true }) }).click();
-    await expect(downloadButton).toHaveText(/Download & Load Pro/);
+    await cards.filter({ has: page.getByText('Standard', { exact: true }) }).click();
+    await expect(downloadButton).toHaveText(/Download & Load Standard/);
 
     await cards.filter({ has: page.getByText('Light', { exact: true }) }).click();
     await expect(downloadButton).toHaveText(/Download & Load Light/);
