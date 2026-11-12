@@ -1,0 +1,22 @@
+scripts/__tests__/checkBarrelMockCoverage.spec.ts
+  s_eec9d24f84ae15::t_55e91b8ae8023e 945-946
+  s_eec9d24f84ae15::t_04c7000700bd75 63,942-944,947-954,991,993-998
+  s_eec9d24f84ae15::t_2a221102cd0ea1 959-973
+  s_eec9d24f84ae15::t_25b3c4fddf2aab 955-958,974-990,992
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1a64269ff681c8e71eb12c40ca841ce2e6c01d64",
+  "prompts": {},
+  "sessions": {
+    "s_eec9d24f84ae15": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cc8d-d36d-71b3-be5c-15c29b38b9aa",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
