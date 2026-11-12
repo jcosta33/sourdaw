@@ -9,21 +9,24 @@ type TestTrack = {
     automationMode: 'read' | 'write' | 'touch' | 'latch';
 };
 
-const { activeRecording, pendingPoints, touchActive, trackSnapshot, transportSnapshot, warn } = vi.hoisted(() => {
-    const activeRecording = new Map<string, import('../recordingSessionState').RecordingSession>();
-    const pendingPoints = new Map<string, import('../../../models/Automation').AutomationPoint[]>();
-    const touchActive = new Set<string>();
-    const trackSnapshot: { value: { tracks: TestTrack[] } | null } = { value: null };
-    const transportSnapshot: { value: { tempo: number } | null } = { value: { tempo: 120 } };
-    return {
-        activeRecording,
-        pendingPoints,
-        touchActive,
-        trackSnapshot,
-        transportSnapshot,
-        warn: vi.fn(),
-    };
-});
+const { activeRecording, pendingPoints, pendingOwners, touchActive, trackSnapshot, transportSnapshot, warn } =
+    vi.hoisted(() => {
+        const activeRecording = new Map<string, import('../recordingSessionState').RecordingSession>();
+        const pendingPoints = new Map<string, import('../../../models/Automation').AutomationPoint[]>();
+        const pendingOwners = new Map<string, Array<symbol | undefined>>();
+        const touchActive = new Set<string>();
+        const trackSnapshot: { value: { tracks: TestTrack[] } | null } = { value: null };
+        const transportSnapshot: { value: { tempo: number } | null } = { value: { tempo: 120 } };
+        return {
+            activeRecording,
+            pendingPoints,
+            pendingOwners,
+            touchActive,
+            trackSnapshot,
+            transportSnapshot,
+            warn: vi.fn(),
+        };
+    });
 
 vi.mock('#/infra/logger/appLogger', () => ({
     logger: { warn, error: vi.fn(), info: vi.fn(), debug: vi.fn() },
@@ -57,6 +60,7 @@ vi.mock('../recordingSessionState', () => ({
     RECORDING_MODES: new Set(['write', 'touch', 'latch']),
     activeRecording,
     pendingPoints,
+    pendingOwners,
     touchActive,
 }));
 
@@ -69,6 +73,7 @@ describe('recordAutomationValue', () => {
         vi.clearAllMocks();
         activeRecording.clear();
         pendingPoints.clear();
+        pendingOwners.clear();
         touchActive.clear();
         trackSnapshot.value = null;
         transportSnapshot.value = { tempo: 120 };
@@ -141,6 +146,7 @@ describe('recordAutomationValue', () => {
         recordAutomationValue('t1', 'gain', 0.6, 3);
         expect(activeRecording.get('t1::gain')?.recordingOwner).toBeUndefined();
         expect(pendingPoints.get('t1::gain')?.map(({ value }) => value)).toEqual([0.2, 0.4, 0.6]);
+        expect(pendingOwners.get('t1::gain')).toEqual([first, second, undefined]);
     });
 
     // Regression (Batch B fix 4): before the transport store hydrates its tempo

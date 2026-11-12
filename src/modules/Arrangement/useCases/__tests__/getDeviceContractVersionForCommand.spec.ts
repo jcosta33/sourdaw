@@ -35,6 +35,8 @@ const INTENTIONAL_DESCRIPTOR_VERSION_BUMPS: Readonly<Record<string, string>> = {
     ...SYNTH_FAMILY_GUIDANCE_VERSION_BUMPS,
     ...FAUST_RENAME_VERSION_BUMPS,
     bacteria: 'descriptor-v1:37015492',
+    // Crust declares the hidden output-bit-depth default used for exact command replay.
+    crust: 'descriptor-v1:8b5fc693',
 };
 
 const BASELINE_DESCRIPTOR_VERSION_PINS: Readonly<Record<string, string>> = {
