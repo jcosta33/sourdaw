@@ -69,8 +69,9 @@ wall-clock) prove ordering, ownership and cleanup; they never establish physical
       rejects. The original CRDT root stays; the pre-load patch token and any edit captured while preparation is held
       remain invalid, while a newly captured discrete preset edit and a continuous frame commit to raw truth,
       projection, panel, runtime and history/Undo/Redo. `runProjectLoadTransaction.spec.ts` cases “never revives an
-      edit captured during a held successor after that successor fails” and “settles only the newest failed
-      preparation while an older revoked preparation remains held” pin the two capture orders. Replacing fresh-edit
+      edit captured during a held successor after that successor fails” (including a premature `activate()` returning
+      false) and “settles only the newest failed preparation while an older revoked preparation remains held” pin
+      the two capture orders. Replacing fresh-edit
       admission with the retired load-ticket check must fail the fresh write; dropping captured admission or its
       monotonic revocation must fail old/held-token refusal. These checks do not establish audible output.
 4. **Shutdown reclamation needs a release inside the poll pass (#2976, #5064).** A whole-cascade wall-clock

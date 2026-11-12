@@ -135,6 +135,7 @@ describe('runProjectLoadTransaction', () => {
         const successor = runProjectLoadTransaction();
         const preparing = successor.prepare();
         await entered.promise;
+        expect(successor.activate()).toBe(false);
         const during = captureProjectTransitionAuthority();
         expect(before.isCurrent()).toBe(false);
         expect(during.isCurrent()).toBe(false);
