@@ -1,0 +1,25 @@
+scripts/__tests__/processSnapshot.spec.ts
+  s_eec9d24f84ae15::t_735952954a4f91 20-22,57-59
+scripts/__tests__/verifyNativeTransportMutations.spec.ts
+  s_eec9d24f84ae15::t_f5c4d5728d7c01 1070-1072
+scripts/nativeCommand.ts
+  s_eec9d24f84ae15::t_5db9ac00e11d09 202-204,267-269
+scripts/processSnapshot.ts
+  s_eec9d24f84ae15::t_5d758faff26170 30-32,40-42,50-55
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "bd4cb69bac543ad379671e8768c50aa0525438eb",
+  "prompts": {},
+  "sessions": {
+    "s_eec9d24f84ae15": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cc8d-d36d-71b3-be5c-15c29b38b9aa",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
