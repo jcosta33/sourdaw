@@ -110,18 +110,19 @@ function hasValidClipFields(value: Record<string, unknown>): boolean {
     );
 }
 
-export function isExactClipSnapshot(value: unknown, clipId: string, trackId: string): value is Clip {
+/**
+ * Every field a `Clip` declares, with its type, and no other key — what the track store's
+ * normalizer leaves on a clip. It imposes no placement law, because the store admits any
+ * finite beats; `isExactClipSnapshot` adds that law for clips an edit is about to write.
+ */
+export function isClipShape(value: unknown): value is Clip {
     return (
         isRecord(value) &&
-        value.id === clipId &&
-        value.trackId === trackId &&
+        typeof value.id === 'string' &&
+        typeof value.trackId === 'string' &&
         typeof value.name === 'string' &&
-        typeof value.startBeat === 'number' &&
-        Number.isFinite(value.startBeat) &&
-        value.startBeat >= 0 &&
-        typeof value.endBeat === 'number' &&
-        Number.isFinite(value.endBeat) &&
-        value.endBeat > value.startBeat &&
+        isFiniteNumber(value.startBeat) &&
+        isFiniteNumber(value.endBeat) &&
         (value.type === 'audio' || value.type === 'midi') &&
         isFiniteNumber(value.fadeInBeats) &&
         isFiniteNumber(value.fadeOutBeats) &&
@@ -130,5 +131,15 @@ export function isExactClipSnapshot(value: unknown, clipId: string, trackId: str
         typeof value.locked === 'boolean' &&
         typeof value.muted === 'boolean' &&
         hasValidClipFields(value)
+    );
+}
+
+export function isExactClipSnapshot(value: unknown, clipId: string, trackId: string): value is Clip {
+    return (
+        isClipShape(value) &&
+        value.id === clipId &&
+        value.trackId === trackId &&
+        value.startBeat >= 0 &&
+        value.endBeat > value.startBeat
     );
 }
