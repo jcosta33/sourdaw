@@ -1,0 +1,89 @@
+src/modules/AiRuntime/useCases/__tests__/vibeRunSilentRanges.spec.ts
+  s_3be4f5919e52bd::t_35e2b7d8e2bada 710-711
+  s_3be4f5919e52bd::t_bddd9563010661 1-23,29-328,330-339,369-580,582-591,593-594,596-597,599-602,667-678,680-682,684,687-694,698,700,704,707,709,712-714
+  s_3be4f5919e52bd::t_3adeaf7fd66fcb 581
+  s_126e3d478b4f75::t_2f2421b5d010a0 329,592,595,598,683,685-686,695-697,699,701-703,705-706,708,715-719
+  s_4a3e27cafb0879::t_b7976a11199129 340-346,367-368,603-666
+  s_9307cedd8951f1::t_bef09a32dd4af3 24-28,347-366,679
+src/modules/AiRuntime/validators/isSilentVibeRunCell.ts
+  s_3be4f5919e52bd::t_88f86eb3486973 1-27
+  s_3df76396fbd4b1::t_1aa15debe03fce 28-74
+src/modules/AiRuntime/models/VibeRunPlan.ts
+  s_3df76396fbd4b1::t_1de6411eddadc4 99-100,104,147-150,157-162
+  s_4a3e27cafb0879::t_0d03cf56242727 124-125,151-156,206-210
+src/modules/AiRuntime/useCases/__tests__/vibeRunInitialBaselines.spec.ts
+  s_3df76396fbd4b1::t_ca8ce42b64907f 785-789,807,810-824,865-866,874,882-890,892-899
+src/modules/AiRuntime/useCases/planWholeProjectVibeRun.ts
+  s_126e3d478b4f75::t_c30124e91ed06a 4,23-24,54-55,274-277,279,290-308,315,332,341-346,403-405,479-481
+  s_4a3e27cafb0879::t_cc213b3d212c02 414,493
+  s_eec9d24f84ae15::t_231a6b961585e7 280-289,353-391,446-450,452
+src/modules/AiRuntime/useCases/vibeRun/planVibeRunSchedule.ts
+  s_126e3d478b4f75::t_bb7cf9f9f9027b 16,67,127-139,152,154,156,162-166,224-240,251,296,299,301-306,312,317,322,329-330,433-442,444-452,454,468-471,473
+  s_4a3e27cafb0879::t_76acaed7e8e856 17,282-295,297-298,300,307-311,313-316,323-328,339,443,472
+  s_eec9d24f84ae15::t_b5260838160938 318-321,354-357,377
+src/modules/AiRuntime/useCases/vibeRun/readVibeBatchRecipeGoals.ts
+  s_126e3d478b4f75::t_dbf04b156c781a 15-21,24,49-51
+src/modules/AiRuntime/validators/readScheduledVibeRunPlan.ts
+  s_126e3d478b4f75::t_2f55ced73d06f5 10,18,123,127,137-141,148-150,154-169,221-225,235,262-265,270-272,285,288,294,296,304,402-430,454-456,462-470,500
+  s_4a3e27cafb0879::t_87b7fc1888ca17 11,230-231,233-234,266,273-284,286-287,289-293,295,297-303
+src/modules/AiRuntime/AGENTS.md
+  s_eec9d24f84ae15::t_df326884f1cc3c 42
+src/modules/AiRuntime/useCases/agentRequestOrchestration/groundVibeRunBatch.ts
+  s_4a3e27cafb0879::t_61f5378659fda5 106
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9cbd87ebddb730ac72085a0bc774a03890a3f4ed",
+  "prompts": {},
+  "sessions": {
+    "s_126e3d478b4f75": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cefa-4460-7913-80c3-c339638913d0",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_3be4f5919e52bd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b2e9d84b-e654-4f9b-af34-dda39dce559f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_3df76396fbd4b1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f8caa473-e64a-4fad-b579-cf6c36add2c2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_4a3e27cafb0879": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_4a3e27cafb0879",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_9307cedd8951f1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cee0-9c43-7223-9451-be85d15b1347",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_eec9d24f84ae15": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cc8d-d36d-71b3-be5c-15c29b38b9aa",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
