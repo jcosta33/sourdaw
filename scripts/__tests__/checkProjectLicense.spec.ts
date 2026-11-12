@@ -16,7 +16,6 @@ import { gzipSync } from 'node:zlib';
 
 import { Header, Pax } from 'tar';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { parseDocument } from 'yaml';
 
 import {
     DISTRIBUTION_PROJECT_NOTICE,
@@ -30,6 +29,7 @@ import {
 } from '../checkProjectLicense';
 import {
     assertLicenseExpressionEvidence,
+    expectedProofIdentities,
     collectNpmLockDependencyLicenses,
     buildDependencyLicenseArtifacts,
     CARGO_RUNTIME_FEATURE_SELECTION,
@@ -48,6 +48,7 @@ import {
     type DependencyLicenseProof,
     type DependencyLicenseRecord,
 } from '../dependencyLicenseReport';
+import { parsePnpmLock } from '../pnpmLock';
 
 const ownershipFiles = [
     '.dependency-cruiser.cjs',
@@ -244,6 +245,34 @@ describe('project license', () => {
         }
     });
 
+    it('reads proof identities from both current lock documents', () => {
+        write(
+            root,
+            'pnpm-lock.yaml',
+            `importers:\n  .:\n    configDependencies: {}\n    packageManagerDependencies:\n      pnpm: {specifier: 12.18.0, version: 12.18.0}\npackages:\n  pnpm@12.18.0:\n    resolution: {integrity: sha512-manager}\n---\npackages:
+  fixture-production@1.0.0:
+    resolution: {integrity: sha512-production}
+`
+        );
+        const record = (name: string, version: string): DependencyLicenseRecord => ({
+            ecosystem: 'npm',
+            name,
+            version,
+            license: 'MIT',
+            legalFiles: [],
+            graphs: ['pnpm-lock.yaml'],
+        });
+        expect(expectedProofIdentities(root, record('fixture-production', '1.0.0'))).toEqual([
+            {
+                source: 'https://registry.npmjs.org/fixture-production/-/fixture-production-1.0.0.tgz',
+                revision: 'sha512-production',
+            },
+        ]);
+        expect(expectedProofIdentities(root, record('pnpm', '12.18.0'))).toEqual([
+            { source: 'https://registry.npmjs.org/pnpm/-/pnpm-12.18.0.tgz', revision: 'sha512-manager' },
+        ]);
+    });
+
     it('parses pnpm-lock.yaml once per artifact build across repeated pnpm proof lookups', () => {
         const legalContents = readFileSync(join(process.cwd(), 'release/spdx-license-texts/MIT.txt'), 'utf8');
         const legalSha256 = createHash('sha256').update(legalContents).digest('hex');
@@ -332,13 +361,7 @@ describe('project license', () => {
         let pnpmLookupCount = 0;
         const loadPnpmLockPackages = (fixtureRoot: string) => {
             parseCount += 1;
-            const document = parseDocument(readFileSync(join(fixtureRoot, 'pnpm-lock.yaml'), 'utf8'));
-            if (document.errors.length > 0) {
-                throw new Error(document.errors[0]!.message);
-            }
-            const packages =
-                (document.toJS() as { packages?: Record<string, { resolution?: { integrity?: unknown } }> }).packages ??
-                {};
+            const packages = parsePnpmLock(readFileSync(join(fixtureRoot, 'pnpm-lock.yaml'), 'utf8')).packages;
             return new Proxy(packages, {
                 ownKeys: (target) => {
                     pnpmLookupCount += 1;

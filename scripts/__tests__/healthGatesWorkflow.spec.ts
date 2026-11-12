@@ -5,7 +5,7 @@ import { delimiter, dirname, join, relative, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { parseAllDocuments, parseDocument } from 'yaml';
+import { parseDocument } from 'yaml';
 
 import {
     getBrowserAiWebGpuHardwareRequirement,
@@ -15,6 +15,7 @@ import {
 import browserAiWebGpuAdmissionConfig from '../../tests/e2e/browserAiWebGpuAdmission.playwright.config';
 import { COLD_FIRST_PAINT_TIMEOUT_MS } from '../../tests/e2e/coldFirstPaintBudget';
 import { assertDeployWebBuildRun, assertDeployWebJobNoVercelPull } from '../deployWebWorkflowContract';
+import { parsePnpmLock } from '../pnpmLock';
 import {
     assertWorkflowFileInventory,
     assertWorkflowSnapshotMatch,
@@ -411,13 +412,7 @@ const DEVICE_WRITE_BOUNDARY_CENSUS_RUN =
 const repositoryRoot = resolve(import.meta.dirname, '../..');
 const parsedPackageManifest: unknown = JSON.parse(readFileSync(join(repositoryRoot, 'package.json'), 'utf8'));
 const packageManifest = asRecord(parsedPackageManifest, 'package manifest');
-const lockDocuments = parseAllDocuments(readFileSync(join(repositoryRoot, 'pnpm-lock.yaml'), 'utf8'), {
-    uniqueKeys: true,
-});
-if (lockDocuments.length !== 2 || lockDocuments.some((document) => document.errors.length > 0)) {
-    throw new Error('pnpm lock must contain valid package-manager and application documents');
-}
-const lockfile = asRecord(lockDocuments[1]!.toJS(), 'application lockfile');
+const lockfile = parsePnpmLock(readFileSync(join(repositoryRoot, 'pnpm-lock.yaml'), 'utf8')).application;
 const browserAiWebGpuConfig = asRecord(browserAiWebGpuAdmissionConfig, 'Browser AI WebGPU config');
 function loadWorkflow(fileName: string): { document: ReturnType<typeof parseDocument>; parsed: UnknownRecord } {
     const document = parseDocument(readFileSync(join(repositoryRoot, '.github/workflows', fileName), 'utf8'));

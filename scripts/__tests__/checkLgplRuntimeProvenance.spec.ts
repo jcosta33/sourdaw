@@ -239,6 +239,35 @@ afterEach(() => {
 });
 
 describe('LGPL runtime provenance', () => {
+    it.each(['PM-only resolution', 'conflicting PM integrity'])(
+        'refuses %s instead of borrowing package-manager authority',
+        (kind) => {
+            const { root, contract } = fixture();
+            const lock = readFileSync(join(root, 'pnpm-lock.yaml'), 'utf8');
+            const boundary = lock.indexOf('packages:');
+            const packageRecords = lock.slice(boundary);
+            const manager =
+                'importers:\n  .:\n    packageManagerDependencies:\n      pnpm: {specifier: 12.18.0, version: 12.18.0}\n' +
+                (kind === 'conflicting PM integrity'
+                    ? packageRecords.replace('sha512-test', 'sha512-foreign')
+                    : packageRecords);
+            const app = kind === 'PM-only resolution' ? lock.slice(0, boundary) + 'packages: {}\n' : lock;
+            write(root, 'pnpm-lock.yaml', `${manager}---\n${app}`);
+            expect(validateLgplRuntimeProvenance(root, contract)).toContain('faustwasm: lock resolution drifted');
+        }
+    );
+
+    it('accepts the application resolution after the current package-manager lock document', () => {
+        const { root, contract } = fixture();
+        const lock = readFileSync(join(root, 'pnpm-lock.yaml'), 'utf8');
+        write(
+            root,
+            'pnpm-lock.yaml',
+            `importers:\n  .:\n    configDependencies: {}\n    packageManagerDependencies:\n      pnpm: {specifier: 12.18.0, version: 12.18.0}\npackages:\n  pnpm@12.18.0:\n    resolution: {integrity: sha512-manager}\n---\n${lock}`
+        );
+        expect(validateLgplRuntimeProvenance(root, contract)).toEqual([]);
+    });
+
     it('accepts exact package, source, license, and shipped-file evidence', () => {
         const { root, contract } = fixture();
         expect(validateLgplRuntimeProvenance(root, contract)).toEqual([]);

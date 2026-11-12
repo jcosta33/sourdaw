@@ -7,8 +7,8 @@ import { basename, dirname, isAbsolute, posix, relative, resolve, sep } from 'no
 
 import parseSpdxExpression from 'spdx-expression-parse';
 import { list as listTarArchive } from 'tar';
-import { parseDocument } from 'yaml';
 
+import { parsePnpmLock } from './pnpmLock.ts';
 import { parseJsonWithUniqueKeys } from './strictJson.ts';
 
 export const DEPENDENCY_LICENSE_REPORT_PATH = 'public/legal/DEPENDENCY-LICENSES.txt';
@@ -909,11 +909,7 @@ type PnpmLockPackageReader = (root: string) => PnpmLockPackages;
 
 function pnpmLockPackages(root: string): PnpmLockPackages {
     const path = resolve(root, 'pnpm-lock.yaml');
-    const document = parseDocument(readFileSync(path, 'utf8'));
-    if (document.errors.length > 0) {
-        throw new Error(`pnpm-lock.yaml: ${document.errors[0]!.message}`);
-    }
-    return (document.toJS() as { packages?: PnpmLockPackages }).packages ?? {};
+    return parsePnpmLock(readFileSync(path, 'utf8')).packages;
 }
 
 function reusePnpmLockPackages(load: PnpmLockPackageReader): PnpmLockPackageReader {

@@ -6,7 +6,8 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import ts from 'typescript';
-import { parseDocument } from 'yaml';
+
+import { parsePnpmLock } from './pnpmLock.ts';
 
 type Source = {
     id: string;
@@ -183,21 +184,18 @@ function sameRecord(actual: Record<string, string>, expected: Record<string, str
 }
 
 function lockHasExactResolution(lock: string, component: Component): boolean {
-    const document = parseDocument(lock, { uniqueKeys: true });
-    if (document.errors.length > 0) {
+    try {
+        const parsed = parsePnpmLock(lock).application;
+        const dependency = parsed.importers?.['.']?.dependencies?.[component.package];
+        const resolution = parsed.packages?.[`${component.package}@${component.version}`]?.resolution;
+        return (
+            dependency?.specifier === component.specifier &&
+            dependency.version === component.version &&
+            resolution?.integrity === component.integrity
+        );
+    } catch {
         return false;
     }
-    const parsed = document.toJS() as {
-        importers?: Record<string, { dependencies?: Record<string, { specifier?: string; version?: string }> }>;
-        packages?: Record<string, { resolution?: { integrity?: string } }>;
-    };
-    const dependency = parsed.importers?.['.']?.dependencies?.[component.package];
-    const resolution = parsed.packages?.[`${component.package}@${component.version}`]?.resolution;
-    return (
-        dependency?.specifier === component.specifier &&
-        dependency.version === component.version &&
-        resolution?.integrity === component.integrity
-    );
 }
 
 function hasRuntimeImport(path: string, specifier: string): boolean {
