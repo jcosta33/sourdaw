@@ -41,6 +41,7 @@ import {
 } from '../prContract.ts';
 import { parsePublishLaneArgs } from '../publishLane.ts';
 import { resolveTrustedExecutable, trustedDependencyGraphs } from '../trustedGithubWriteBootstrap.ts';
+
 import { writeLocalLauncher } from './fixtures/trustedLauncherOrigin.ts';
 
 const HEAD = 'a'.repeat(40);

@@ -57,7 +57,6 @@ import { runRepairReviewFindingCli } from '../repairReviewFinding.ts';
 import { runResolveReviewThreadCli } from '../resolveThread.ts';
 import { runReviewShadowStatusCli } from '../reviewShadowStatus.ts';
 import { runRulesetHardeningCli } from '../rulesetHardening.ts';
-import { launcherFixtureOrigin, publishLauncherOrigin, writeLocalLauncher } from './fixtures/trustedLauncherOrigin.ts';
 import {
     BOOTSTRAP_PATH,
     assertTrustedSourceGraph,
@@ -78,6 +77,8 @@ import {
     type TrustedGithubWriteCommand,
     type OriginFetchSpawn,
 } from '../trustedGithubWriteBootstrap.ts';
+
+import { launcherFixtureOrigin, publishLauncherOrigin, writeLocalLauncher } from './fixtures/trustedLauncherOrigin.ts';
 
 import type {
     DeliveryAuthentication,

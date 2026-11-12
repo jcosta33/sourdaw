@@ -7,6 +7,13 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import { AUTHOR_BOT_NODE_ID, REQUIRED_REPOSITORY } from '../githubAppIdentity.ts';
 import {
+    TRUSTED_COMMON_DIR_ENV,
+    TRUSTED_GH_PATH_ENV,
+    TRUSTED_GIT_PATH_ENV,
+    TRUSTED_ORIGIN_COMMIT_ENV,
+    TRUSTED_PRIMARY_ROOT_ENV,
+} from '../prContract.ts';
+import {
     assertLandedStackParent,
     assertStackAcyclic,
     parseLaneStack,
@@ -20,13 +27,6 @@ import {
     type StackParent,
 } from '../stackedLanes.ts';
 import { syncParentLane, syncParentShellPort, type SyncParentPort } from '../syncParentLane.ts';
-import {
-    TRUSTED_COMMON_DIR_ENV,
-    TRUSTED_GH_PATH_ENV,
-    TRUSTED_GIT_PATH_ENV,
-    TRUSTED_ORIGIN_COMMIT_ENV,
-    TRUSTED_PRIMARY_ROOT_ENV,
-} from '../prContract.ts';
 
 const fork = 'a'.repeat(40);
 const child = 'b'.repeat(40);

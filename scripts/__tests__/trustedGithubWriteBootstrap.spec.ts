@@ -19,7 +19,7 @@ import { deflateSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
 
 import { canonicalJson } from '../canonicalRecord.ts';
-import { launcherFixtureOrigin, publishLauncherOrigin, writeLocalLauncher } from './fixtures/trustedLauncherOrigin.ts';
+import { renderConfirmationReply } from '../confirmReviewRepairs.ts';
 import {
     TRUSTED_COMMON_DIR_ENV,
     TRUSTED_GATE_WORKFLOW_ENV,
@@ -31,7 +31,6 @@ import {
     TRUSTED_PRIMARY_ROOT_ENV,
     TRUSTED_PS_PATH_ENV,
 } from '../prContract.ts';
-import { renderConfirmationReply } from '../confirmReviewRepairs.ts';
 import { renderReviewRepairReply, type ReviewRepairRecord } from '../reviewRepair.ts';
 import {
     BOOTSTRAP_PATH,
@@ -63,6 +62,8 @@ import {
     TRUSTED_PRIMARY_ROOT_ENV as BOOTSTRAP_TRUSTED_PRIMARY_ROOT_ENV,
     TRUSTED_PS_PATH_ENV as BOOTSTRAP_TRUSTED_PS_PATH_ENV,
 } from '../trustedGithubWriteBootstrap.ts';
+
+import { launcherFixtureOrigin, publishLauncherOrigin, writeLocalLauncher } from './fixtures/trustedLauncherOrigin.ts';
 
 const trustedEnvNames = {
     TRUSTED_COMMON_DIR_ENV,

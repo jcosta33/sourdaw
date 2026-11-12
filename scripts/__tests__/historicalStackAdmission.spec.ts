@@ -34,6 +34,7 @@ import {
     type HistoricalStackObservation,
 } from '../syncParentLane.ts';
 import { resolveTrustedExecutable, trustedDependencyGraphs } from '../trustedGithubWriteBootstrap.ts';
+
 import { launcherFixtureOrigin, publishLauncherOrigin, writeLocalLauncher } from './fixtures/trustedLauncherOrigin.ts';
 
 const sha = (letter: string) => letter.repeat(40);
