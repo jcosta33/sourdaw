@@ -1,0 +1,28 @@
+scripts/__tests__/lintSizeBaseline.spec.ts
+  s_4948e77595cfa8::t_3a73886a3ef028 36
+  s_4948e77595cfa8::t_9e9d1111212e47 16-22
+  s_4948e77595cfa8::t_7e7bfe7c12374a 250-258,264-267
+  s_4948e77595cfa8::t_1c5c93ad811872 218-240
+scripts/lintSizeCeilings.ts
+  s_4948e77595cfa8::t_20a6ca52ea561b 6-9
+  s_4948e77595cfa8::t_1d89f63a3a7c7f 131-132,137,143-153
+  s_4948e77595cfa8::t_91c767bcea456d 154
+docs/07-conventions.md
+  s_4948e77595cfa8::t_48af575b8b4512 798
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2bdafcc7ff82a81a3f85956a03ad2adbf113b707",
+  "prompts": {},
+  "sessions": {
+    "s_4948e77595cfa8": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "81366fcc-391e-468f-82b4-ec1c8be4d23c",
+        "model": "claude-fable-5-2"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
