@@ -40,6 +40,9 @@
  *     `MissingMediaPanel` and `TransportBar.tsx` as the consumer.
  */
 
+import { spawnSync } from 'node:child_process';
+import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { loadConfigFromFile, resolveConfig, transformWithOxc } from 'vite';
@@ -621,6 +624,44 @@ function expectDerivedEnough(result: RealTreeScan): void {
  * default while the analysis they were waiting on was clean. One scan per barrel-kind
  * set, hoisted, with a timeout sized to the work instead of to a single-kind scan.
  */
+it('owns and removes a standalone CLI journal after successful help', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'sourdaw-scan-cli-'));
+    try {
+        const env: NodeJS.ProcessEnv = { ...process.env, SOURDAW_VITEST_DIAGNOSTICS_DIR: directory };
+        delete env.SOURDAW_VITEST_PROGRESS;
+        const result = spawnSync(process.execPath, [join(repoRoot, 'scripts/checkBarrelMockCoverage.ts'), '--help'], {
+            cwd: repoRoot,
+            encoding: 'utf8',
+            env,
+        });
+        expect(result.status).toBe(0);
+        expect(result.stderr).toContain('barrel scan progress:');
+        expect(readdirSync(directory)).toEqual([]);
+    } finally {
+        rmSync(directory, { recursive: true, force: true });
+    }
+});
+
+it('persists the synchronous traversal and analysis boundary before analysis can block', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'sourdaw-scan-progress-'));
+    const path = join(directory, 'progress');
+    const stages: string[] = [];
+    try {
+        expect(() =>
+            scanRepository(undefined, undefined, (stage) => {
+                stages.push(stage);
+                writeFileSync(path, stages.join('\n'));
+                if (stage === 'gated-analysis-begin') {
+                    throw new Error('blocked analysis');
+                }
+            })
+        ).toThrow('blocked analysis');
+        expect(readFileSync(path, 'utf8')).toBe('gated-traversal-begin\ngated-traversal-end\ngated-analysis-begin');
+    } finally {
+        rmSync(directory, { recursive: true, force: true });
+    }
+});
+
 describe('checkBarrelMockCoverage — the real tree', () => {
     let gated: RealTreeScan;
     let everyKind: RealTreeScan;

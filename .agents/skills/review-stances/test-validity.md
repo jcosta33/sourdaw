@@ -162,6 +162,14 @@ src/modules/Arrangement/stores/__tests__/deviceWriteBoundaryClosure.spec.ts` and
    mutating that value (a depth-two checkout for a full-history edit) must fail the assertion.
    (#2988, #3060, #1084, #974, #5199)
 
+9. **A fake runner proves argv but never enters a worker.**
+   The zero-test wrapper coverage introduced in #2423 used a fake executable that writes a JSON
+   report. That seam proves report and exit handling, but cannot establish whether a real runner
+   queued a module, a worker entered setup, or an import blocked before collection. Run a tiny real
+   Vitest fixture through the wrapper, hold an import after worker setup, and assert the persisted
+   stages on both sides of that boundary. Remove the reporter or setup marker to make the fixture
+   fail; process presence alone is not a worker-admission oracle. (#5231)
+
 ## Retired lessons
 
 - Listing `vi.mock` barrel factories break when a diff adds a barrel export or import → enforced by `pnpm test:barrel-mocks` (`scripts/checkBarrelMockCoverage.ts`), Validation › Types and contracts › Barrel mock coverage

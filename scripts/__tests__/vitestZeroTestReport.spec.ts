@@ -203,16 +203,18 @@ describe('runZeroTestGuard', () => {
         ],
     });
 
-    function fakeVitest(label: string): { bin: string; argvPath: string; root: string } {
+    function fakeVitest(label: string): { bin: string; argvPath: string; envPath: string; root: string } {
         const root = mkdtempSync(join(tmpdir(), `sourdaw-fake-vitest-${label}-`));
         const bin = join(root, 'vitest');
         const argvPath = join(root, 'argv.json');
+        const envPath = join(root, 'env.json');
         writeFileSync(
             bin,
             [
                 '#!/usr/bin/env node',
                 "import { writeFileSync } from 'node:fs';",
                 `writeFileSync(${JSON.stringify(argvPath)}, JSON.stringify(process.argv.slice(2)));`,
+                `writeFileSync(${JSON.stringify(envPath)}, JSON.stringify({ progress: process.env.SOURDAW_VITEST_PROGRESS }));`,
                 "const output = process.argv.find((argument) => argument.startsWith('--outputFile='));",
                 'if (output === undefined) { process.exit(2); }',
                 "const jsonPath = output.slice('--outputFile='.length);",
@@ -223,7 +225,7 @@ describe('runZeroTestGuard', () => {
             ].join('\n'),
             { encoding: 'utf8', mode: 0o755 }
         );
-        return { bin, argvPath, root };
+        return { bin, argvPath, envPath, root };
     }
 
     it('exits 1 when Vitest reports a passed file with zero assertions', () => {
@@ -313,8 +315,7 @@ describe('runZeroTestGuard', () => {
             });
 
             expect(status).toBe(1);
-            expect(errorSpy).toHaveBeenCalledTimes(1);
-            const [message] = errorSpy.mock.calls[0] as [string];
+            const message = errorSpy.mock.calls.map(([value]) => String(value)).join('\n');
             expect(message).toContain('report.json');
             expect(message).toContain("could not read Vitest's JSON report");
         } finally {
@@ -347,8 +348,7 @@ describe('runZeroTestGuard', () => {
             });
 
             expect(status).toBe(1);
-            expect(errorSpy).toHaveBeenCalledTimes(1);
-            const [message] = errorSpy.mock.calls[0] as [string];
+            const message = errorSpy.mock.calls.map(([value]) => String(value)).join('\n');
             expect(message).toContain("could not read Vitest's JSON report");
             expect(message).toContain('assertionResults[0]');
         } finally {
@@ -381,12 +381,32 @@ describe('runZeroTestGuard', () => {
             });
 
             expect(status).toBe(1);
-            expect(errorSpy).toHaveBeenCalledTimes(1);
-            const [message] = errorSpy.mock.calls[0] as [string];
+            const message = errorSpy.mock.calls.map(([value]) => String(value)).join('\n');
             expect(message).toContain("could not read Vitest's JSON report");
             expect(message).toContain('assertionResults[0]');
         } finally {
             errorSpy.mockRestore();
+            rmSync(fake.root, { recursive: true, force: true });
+        }
+    });
+
+    it('does not inherit a parent journal when its own diagnostic directory is unavailable', () => {
+        const fake = fakeVitest('no-progress-directory');
+        try {
+            const status = runZeroTestGuard({
+                vitestBin: fake.bin,
+                args: ['scripts/__tests__/prContract.spec.ts'],
+                cwd: repoRoot,
+                stdio: 'pipe',
+                env: {
+                    FAKE_VITEST_JSON: passingJson,
+                    SOURDAW_VITEST_PROGRESS: '/parent-journal',
+                    SOURDAW_VITEST_DIAGNOSTICS_DIR: fake.bin,
+                },
+            });
+            expect(status).toBe(0);
+            expect(JSON.parse(readFileSync(fake.envPath, 'utf8'))).toEqual({});
+        } finally {
             rmSync(fake.root, { recursive: true, force: true });
         }
     });
