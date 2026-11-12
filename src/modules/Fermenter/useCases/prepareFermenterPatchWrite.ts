@@ -1,4 +1,8 @@
-import { resolveEligibleDeviceWriteTarget, trackStore } from '#/modules/Arrangement/stores';
+import {
+    type DeviceWriteTargetResolution,
+    resolveEligibleDeviceWriteTarget,
+    trackStore,
+} from '#/modules/Arrangement/stores';
 import { executeUserAppAction } from '#/modules/Command/useCases';
 import { captureProjectIdentity, captureProjectRevision } from '#/modules/CrdtDocument/useCases';
 import { captureProjectTransitionAuthority } from '#/modules/Project/useCases';
@@ -36,9 +40,12 @@ function currentProjectPatch(deviceId: string): FermenterPatch | null {
 
 /** Capture an edit before a frame or Command transaction can yield to another owner. */
 export function prepareFermenterPatchWrite(input: PrepareFermenterPatchWriteInput) {
-    const target = input.continuous
-        ? getFermenterDependencies().resolveEligibleDeviceWriteTarget(input.deviceId)
-        : resolveEligibleDeviceWriteTarget(input.deviceId);
+    let target: DeviceWriteTargetResolution;
+    if (input.continuous) {
+        target = getFermenterDependencies().resolveEligibleDeviceWriteTarget(input.deviceId);
+    } else {
+        target = resolveEligibleDeviceWriteTarget(input.deviceId);
+    }
     if (target.status !== 'eligible') {
         if (!input.continuous) {
             notifyUser('The Fermenter device is missing or cannot be changed.', 'warning');

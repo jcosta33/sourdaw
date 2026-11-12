@@ -68,9 +68,12 @@ export const handleSetFermenterPatch = createHandler<'setFermenterPatch'>({
             if (typeof value !== 'number') {
                 continue;
             }
-            const changed = Object.hasOwn(device.parameterValues, key)
-                ? device.parameterValues[key] !== value
-                : previousValues.get(key) !== value;
+            let changed: boolean;
+            if (Object.hasOwn(device.parameterValues, key)) {
+                changed = device.parameterValues[key] !== value;
+            } else {
+                changed = previousValues.get(key) !== value;
+            }
             if (changed) {
                 getFermenterDependencies().persistDeviceParam(action.payload.deviceId, key, value);
             }

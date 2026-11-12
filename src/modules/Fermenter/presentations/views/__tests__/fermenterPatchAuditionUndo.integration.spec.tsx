@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createEventBus } from '#/infra/events/createEventBus';
@@ -33,9 +34,11 @@ import { actionHistoryStore, agentProjectRepairStateStore } from '#/modules/Crdt
 import {
     clearActionHistory,
     createCrdtDoc,
+    exportSdawFile,
     getCrdtDoc,
     markActionHistoryEntryReverted,
     recordActionHistoryEntry,
+    prepareExternalProjectDocument,
     registerCrdtStorageRuntime,
     removeCrdtDoc,
     resetCrdtProjectAuthority,
@@ -562,6 +565,61 @@ describe('Fermenter whole-patch auditioning through Command', () => {
         raf.mockRestore();
         cancel.mockRestore();
         expect(committedPatch()).toEqual(n);
+    });
+
+    it('binary-reopens complete pending-draft Undo and discrete Redo patches through the project owner', async () => {
+        vi.stubGlobal('indexedDB', new IDBFactory());
+        vi.stubGlobal('IDBKeyRange', IDBKeyRange);
+        const callbacks = new Map<number, FrameRequestCallback>();
+        let nextId = 0;
+        vi.spyOn(globalThis, 'requestAnimationFrame').mockImplementation((callback) => {
+            callbacks.set(++nextId, callback);
+            return nextId;
+        });
+        vi.spyOn(globalThis, 'cancelAnimationFrame').mockImplementation((id) => {
+            callbacks.delete(id);
+        });
+        try {
+            const m = cloneFermenterPatch(initialPatch);
+            m.macros[0] = 0.83;
+            m.macroMappings![0]!.targets[0]!.center = 0.47;
+            act(() => {
+                loadFermenterPatchWithAudio(DEVICE_ID, m);
+                setFermenterParamWithAudio(DEVICE_ID, 'filterCutoff', 1234);
+            });
+            m.filterCutoff = 1234;
+            const n = patchNamed('Saved Redo', 1800);
+            expect(await commit(n)).toBe(true);
+            expect(depth()).toBe(1);
+            expect(callbacks.size).toBe(0);
+            await act(() => undo());
+            expect(committedPatch()).toEqual(m);
+            const savedM = new Uint8Array(await exportSdawFile().arrayBuffer());
+            await act(() => redo());
+            expect(committedPatch()).toEqual(n);
+            const savedN = new Uint8Array(await exportSdawFile().arrayBuffer());
+            const projectId = projectStore.value?.projectId;
+            if (!projectId) {
+                throw new Error('Expected the saved project identity');
+            }
+
+            expect(await commit(patchNamed('Unsaved successor', 2700))).toBe(true);
+            for (const [bytes, expected] of [
+                [savedM, m],
+                [savedN, n],
+            ] as const) {
+                const prepared = await prepareExternalProjectDocument(bytes, projectId);
+                expect(await prepared.commit(() => true)).toBe(true);
+                trackStore.hydrate();
+                fermenterStore.set({});
+                expect(committedPatch()).toEqual(expected);
+                expect(projectedTrack().devices[0]!.parameterValues.filterCutoff).toBe(expected.filterCutoff);
+                expect(hydrateFermenterFromProject(DEVICE_ID)).toEqual(expected);
+                expect(committedPatch(OTHER_DEVICE_ID)).toEqual(otherPatch);
+            }
+        } finally {
+            vi.unstubAllGlobals();
+        }
     });
 
     it('reconciles a pending parameter edit when a queued patch is refused by a revision change', async () => {
