@@ -251,7 +251,8 @@ function previewRequestRead(
         projectRevision: envelope.baseRevision,
         origin: 'approval-preview',
         runId: input.runId,
-        scope: first!.call.scope,
+        // A unit measures one target; the receipt and its proof name every target of the request.
+        scope: request.scope,
         metrics: first!.call.metrics,
         beats: first!.beats,
         commands: first!.commands,

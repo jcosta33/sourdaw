@@ -556,6 +556,11 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // measurement still uses the same grounding and versioned-envelope route, with
         // no device hydration or write.
         'src/modules/AiRuntime/useCases/executePreviewMeasurement.ts': 7,
+        // Count provenance: new file, measured 5 — the `compilePreviewMeasurementProposal`
+        // import, module-path literal and one call, plus the local `compilePrefixes`
+        // declaration and call. A preview unit compiles each prefix it reads into an
+        // immutable Command envelope; it hydrates no device and writes no engine state.
+        'src/modules/AiRuntime/useCases/measurePreviewUnit.ts': 5,
         // Count provenance: new prefix-preview file has an envelope-compiler
         // import, type projection and call, plus a local helper declaration and
         // call. It slices and verifies immutable Command metadata; no device
