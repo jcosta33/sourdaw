@@ -1,0 +1,23 @@
+src/modules/Project/presentations/views/MissingMediaPanel.tsx
+  s_9307cedd8951f1::t_0912992d188e2c 9,55-56
+src/modules/Project/presentations/views/__tests__/MissingMediaPanel.spec.tsx
+  s_9307cedd8951f1::t_01e734afa6d0ca 141-146
+  s_9307cedd8951f1::t_70309561e7c358 1,5,17,33,130-140,147-162
+  s_9307cedd8951f1::t_338d776908f1eb 163
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b6869b93ee64e7095b1de230125875ad0976f1d6",
+  "prompts": {},
+  "sessions": {
+    "s_9307cedd8951f1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cee0-9c43-7223-9451-be85d15b1347",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
