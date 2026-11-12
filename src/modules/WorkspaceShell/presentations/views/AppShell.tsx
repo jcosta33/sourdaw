@@ -77,6 +77,11 @@ import {
     MIN_ARRANGE_COLUMN_WIDTH,
     SHELL_RESIZE_HANDLE_WIDTH,
 } from '#/utils/Layout/allocateMainFirstWidths';
+import {
+    INSPECTOR_WIDTH_BOUNDS,
+    SIDEBAR_WIDTH_BOUNDS,
+    VIRTUAL_KEYBOARD_HEIGHT_BOUNDS,
+} from '#/utils/Layout/panelDimensionBounds';
 import { clamp } from '#/utils/Math/clamp';
 
 import { alphaNoticeStore } from '../../stores/alphaNoticeStore';
@@ -242,7 +247,6 @@ const BOTTOM_TABPANEL_ID = 'bottom-dock-tabpanel';
 
 const EDITOR_MIN_HEIGHT = 280;
 const MIXER_MIN_HEIGHT = 120;
-const VIRTUAL_KEYBOARD_MIN_HEIGHT = 80;
 // Outlasts LaunchScreen's 650 ms exit fade.
 const LAUNCH_EXIT_UNMOUNT_MS = 700;
 
@@ -577,10 +581,10 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
     type ShellSideId = 'sidebar' | 'inspector' | 'chat' | 'ai';
     const shellSides: { id: ShellSideId; preferred: number; min: number }[] = [];
     if (sidebarOpen) {
-        shellSides.push({ id: 'sidebar', preferred: sidebarWidth, min: 180 });
+        shellSides.push({ id: 'sidebar', preferred: sidebarWidth, min: SIDEBAR_WIDTH_BOUNDS.min });
     }
     if (inspectorOpen) {
-        shellSides.push({ id: 'inspector', preferred: inspectorWidth, min: 200 });
+        shellSides.push({ id: 'inspector', preferred: inspectorWidth, min: INSPECTOR_WIDTH_BOUNDS.min });
     }
     if (chatPanelOpen) {
         shellSides.push({ id: 'chat', preferred: chatWidth, min: 200 });
@@ -614,12 +618,14 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
 
     const sidebarNode = (
         <Sidebar
-            style={shellSlotStyle(displayedSidebarWidth, sidebarWidth, 180)}
+            style={shellSlotStyle(displayedSidebarWidth, sidebarWidth, SIDEBAR_WIDTH_BOUNDS.min)}
             onClose={toggleSidebar}
             panelActions={SIDEBAR_PANEL_ACTIONS}
         />
     );
-    const inspectorNode = <InspectorPanel style={shellSlotStyle(displayedInspectorWidth, inspectorWidth, 200)} />;
+    const inspectorNode = (
+        <InspectorPanel style={shellSlotStyle(displayedInspectorWidth, inspectorWidth, INSPECTOR_WIDTH_BOUNDS.min)} />
+    );
     const chatNode = <ChatPanel style={shellSlotStyle(displayedChatWidth, chatWidth, 200)} />;
     const aiNode = (side: 'left' | 'right'): ReactNode => (
         <div
@@ -634,18 +640,19 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
     const sidebarResize: SidePanelResize = {
         label: 'Resize sidebar',
         value: displayedSidebarWidth,
-        min: 180,
-        max: 500,
-        onResize: (d) => setSidebarWidth((w) => clamp(w + d, 180, 500)),
-        onSetSize: (size) => setSidebarWidth(() => clamp(size, 180, 500)),
+        min: SIDEBAR_WIDTH_BOUNDS.min,
+        max: SIDEBAR_WIDTH_BOUNDS.max,
+        onResize: (d) => setSidebarWidth((w) => clamp(w + d, SIDEBAR_WIDTH_BOUNDS.min, SIDEBAR_WIDTH_BOUNDS.max)),
+        onSetSize: (size) => setSidebarWidth(() => clamp(size, SIDEBAR_WIDTH_BOUNDS.min, SIDEBAR_WIDTH_BOUNDS.max)),
     };
     const inspectorResize: SidePanelResize = {
         label: 'Resize inspector',
         value: displayedInspectorWidth,
-        min: 200,
-        max: 500,
-        onResize: (d) => setInspectorWidth((w) => clamp(w + d, 200, 500)),
-        onSetSize: (size) => setInspectorWidth(() => clamp(size, 200, 500)),
+        min: INSPECTOR_WIDTH_BOUNDS.min,
+        max: INSPECTOR_WIDTH_BOUNDS.max,
+        onResize: (d) => setInspectorWidth((w) => clamp(w + d, INSPECTOR_WIDTH_BOUNDS.min, INSPECTOR_WIDTH_BOUNDS.max)),
+        onSetSize: (size) =>
+            setInspectorWidth(() => clamp(size, INSPECTOR_WIDTH_BOUNDS.min, INSPECTOR_WIDTH_BOUNDS.max)),
     };
     const chatResize: SidePanelResize = {
         label: 'Resize chat panel',
@@ -1111,9 +1118,10 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                                     side="top"
                                     aria-label="Resize virtual keyboard"
                                     onResize={(d) => {
-                                        const next = Math.max(
-                                            VIRTUAL_KEYBOARD_MIN_HEIGHT,
-                                            Math.min(400, virtualKeyboardHeight + d)
+                                        const next = clamp(
+                                            virtualKeyboardHeight + d,
+                                            VIRTUAL_KEYBOARD_HEIGHT_BOUNDS.min,
+                                            VIRTUAL_KEYBOARD_HEIGHT_BOUNDS.max
                                         );
                                         updateWorkspaceState({ virtualKeyboardHeight: next });
                                     }}
@@ -1121,7 +1129,10 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                                 <div
                                     className="overflow-hidden"
                                     data-testid="virtual-keyboard-dock"
-                                    style={{ height: virtualKeyboardHeight, minHeight: VIRTUAL_KEYBOARD_MIN_HEIGHT }}
+                                    style={{
+                                        height: virtualKeyboardHeight,
+                                        minHeight: VIRTUAL_KEYBOARD_HEIGHT_BOUNDS.min,
+                                    }}
                                 >
                                     <VirtualKeyboard onClose={toggleVirtualKeyboard} />
                                 </div>

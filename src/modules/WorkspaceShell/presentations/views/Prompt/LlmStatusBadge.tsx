@@ -16,7 +16,13 @@ import {
     hostedLlmProviderStatusStore,
     type LlmEngineStatus,
 } from '#/modules/AiRuntime/stores';
-import { resolveBackend, unloadEngine, WEBLLM_MODELS, getActiveModelId } from '#/modules/AiRuntime/useCases';
+import {
+    DEFAULT_WEBLLM_MODEL,
+    resolveBackend,
+    unloadEngine,
+    WEBLLM_MODELS,
+    getActiveModelId,
+} from '#/modules/AiRuntime/useCases';
 import { capabilityStore } from '#/modules/BrowserAi/stores';
 
 type LlmStatusBadgeProps = {
@@ -99,7 +105,7 @@ export const LlmStatusBadge = ({ status, onLoad }: LlmStatusBadgeProps): ReactEl
             parameterCount: 'Hosted',
         };
     } else {
-        modelInfo = WEBLLM_MODELS.find((message) => message.id === selectedModelId) ?? WEBLLM_MODELS[1]!;
+        modelInfo = WEBLLM_MODELS.find((message) => message.id === selectedModelId) ?? DEFAULT_WEBLLM_MODEL;
     }
 
     if (backend === 'none') {

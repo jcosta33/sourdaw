@@ -1,5 +1,4 @@
 import { addMarker, zoomTimelineBy } from '#/modules/Arrangement/useCases';
-import { executeUserAppAction } from '#/modules/Command/useCases';
 import { transportStore, playheadPositionRef } from '#/modules/Transport/stores';
 import {
     zoomToFit,
@@ -11,6 +10,7 @@ import {
     getToolShortcutHint,
 } from '#/modules/WorkspaceShell/useCases';
 
+import { executeCommandAction } from '../executeCommandAction';
 import { onboardingTourLauncher } from '../onboardingTourLauncher';
 import { type CallableCommandEntry } from '../searchCommandRegistry';
 import { getSelectedClipId } from '../selectionHelpers/getSelectedClipId';
@@ -23,8 +23,9 @@ export const viewCommands: CallableCommandEntry[] = [
         description: 'Fit all clips in the visible timeline',
         category: 'View',
         shortcut: 'F',
-        action: () => {
+        action: (onCommitted?: () => void) => {
             zoomToFit();
+            onCommitted?.();
         },
     },
     {
@@ -33,8 +34,9 @@ export const viewCommands: CallableCommandEntry[] = [
         description: 'Fit selected clips in the visible timeline',
         category: 'View',
         shortcut: '⇧F',
-        action: () => {
+        action: (onCommitted?: () => void) => {
             zoomToSelection();
+            onCommitted?.();
         },
     },
     {
@@ -43,8 +45,9 @@ export const viewCommands: CallableCommandEntry[] = [
         description: 'Zoom into the timeline',
         category: 'View',
         shortcut: '+',
-        action: () => {
+        action: (onCommitted?: () => void) => {
             zoomTimelineBy(4);
+            onCommitted?.();
         },
     },
     {
@@ -53,8 +56,9 @@ export const viewCommands: CallableCommandEntry[] = [
         description: 'Zoom out of the timeline',
         category: 'View',
         shortcut: '-',
-        action: () => {
+        action: (onCommitted?: () => void) => {
             zoomTimelineBy(-4);
+            onCommitted?.();
         },
     },
     {
@@ -63,8 +67,9 @@ export const viewCommands: CallableCommandEntry[] = [
         description: 'Show or hide the sidebar browser',
         category: 'View',
         shortcut: '⌘B',
-        action: () => {
+        action: (onCommitted?: () => void) => {
             toggleSidebar();
+            onCommitted?.();
         },
     },
     {
@@ -73,8 +78,9 @@ export const viewCommands: CallableCommandEntry[] = [
         description: 'Show or hide the inspector panel',
         category: 'View',
         shortcut: '⌘I',
-        action: () => {
+        action: (onCommitted?: () => void) => {
             toggleInspector();
+            onCommitted?.();
         },
     },
     {
@@ -91,8 +97,9 @@ export const viewCommands: CallableCommandEntry[] = [
         description: 'Show or hide the mixer panel',
         category: 'View',
         shortcut: '⌘M',
-        action: () => {
+        action: (onCommitted?: () => void) => {
             toggleMixer();
+            onCommitted?.();
         },
     },
     {
@@ -101,8 +108,9 @@ export const viewCommands: CallableCommandEntry[] = [
         description: 'Show or hide the automation panel',
         category: 'View',
         shortcut: '⌘⇧A',
-        action: () => {
+        action: (onCommitted?: () => void) => {
             toggleAutomationPanel();
+            onCommitted?.();
         },
     },
     {
@@ -127,10 +135,10 @@ export const viewCommands: CallableCommandEntry[] = [
         label: 'Delete Time (Loop Region)',
         description: 'Delete time in the loop region, shifting everything left',
         category: 'Editing',
-        action: () => {
+        action: (onCommitted?: () => void) => {
             const time = transportStore.value;
             if (time) {
-                void executeUserAppAction({
+                void executeCommandAction(onCommitted, {
                     type: 'deleteTime',
                     payload: { startBeat: time.loopStart, endBeat: time.loopEnd },
                 });
@@ -142,10 +150,10 @@ export const viewCommands: CallableCommandEntry[] = [
         label: 'Insert Time at Playhead',
         description: 'Insert empty time at the playhead position (4 beats)',
         category: 'Editing',
-        action: () => {
+        action: (onCommitted?: () => void) => {
             const time = transportStore.value;
             if (time) {
-                void executeUserAppAction({
+                void executeCommandAction(onCommitted, {
                     type: 'insertTime',
                     payload: { atBeat: playheadPositionRef.current, durationBeats: 4 },
                 });
@@ -157,10 +165,10 @@ export const viewCommands: CallableCommandEntry[] = [
         label: 'Duplicate Time Range (Loop Region)',
         description: 'Duplicate the loop region and insert the copy after it',
         category: 'Editing',
-        action: () => {
+        action: (onCommitted?: () => void) => {
             const time = transportStore.value;
             if (time) {
-                void executeUserAppAction({
+                void executeCommandAction(onCommitted, {
                     type: 'duplicateTimeRange',
                     payload: { startBeat: time.loopStart, endBeat: time.loopEnd },
                 });
@@ -172,10 +180,10 @@ export const viewCommands: CallableCommandEntry[] = [
         label: 'Strip Silence',
         description: 'Split the selected audio clip at silent sections',
         category: 'Editing',
-        action: () => {
+        action: (onCommitted?: () => void) => {
             const clipId = getSelectedClipId();
             if (clipId) {
-                void executeUserAppAction({ type: 'stripSilence', payload: { clipId } });
+                void executeCommandAction(onCommitted, { type: 'stripSilence', payload: { clipId } });
             }
         },
     },
@@ -186,9 +194,10 @@ export const viewCommands: CallableCommandEntry[] = [
         label: 'Add Marker',
         description: 'Add a marker at the playhead',
         category: 'Timeline',
-        action: () => {
+        action: (onCommitted?: () => void) => {
             const beat = transportStore.value ? playheadPositionRef.current : 0;
             addMarker(Math.floor(beat), `Marker ${Math.floor(beat) + 1}`);
+            onCommitted?.();
         },
     },
 
@@ -248,8 +257,9 @@ export const viewCommands: CallableCommandEntry[] = [
         label: 'Show Tour Again',
         description: 'Re-run the guided onboarding tour for transport, tracks, inspector, mixer, and command palette',
         category: 'Help',
-        action: () => {
+        action: (onCommitted?: () => void) => {
             onboardingTourLauncher.read('show-onboarding-tour').startTour();
+            onCommitted?.();
         },
     },
 ];
