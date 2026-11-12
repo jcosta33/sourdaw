@@ -203,6 +203,13 @@ export async function loadProject({
                 }
             }
         }
+        // Explicit replacements publish the transition while the outgoing
+        // arrangement still owns the current offsets, so working-view persistence
+        // can flush before hydration. Implicit startup restore is not abortable.
+        const outgoingProjectState = projectStore.value;
+        if ((directory || explicit) && outgoingProjectState && !outgoingProjectState.loading) {
+            projectStore.set({ ...outgoingProjectState, loading: true });
+        }
         batchStoreUpdates(() => {
             preparedBuffers.publish();
             // Reset in-memory module/device state, then discard the reset writes at

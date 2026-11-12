@@ -15,6 +15,7 @@ import { dirname, join, relative, resolve } from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { fileURLToPath } from 'node:url';
 
+import { cruise } from 'dependency-cruiser';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -36,6 +37,7 @@ import {
 
 const require = createRequire(import.meta.url);
 const mainConfig = require('../../.dependency-cruiser.cjs');
+const reachabilityConfig = require('../../.dependency-cruiser.reachability.cjs');
 const testConfig = require('../../.dependency-cruiser.tests.cjs');
 const typeConfig = require('../../.dependency-cruiser.types.cjs');
 
@@ -422,6 +424,125 @@ describe('check-dependency-boundaries', () => {
         expect(violatesSameModuleRule(rule, from, 'src/modules/AB/models/Thing.ts')).toBe(true);
     });
 
+    type PathRule = {
+        name: string;
+        from: { path?: string | string[]; pathNot?: string | string[] };
+        to: {
+            path?: string | string[];
+            pathNot?: string | string[];
+            dependencyTypes?: string[];
+            dependencyTypesNot?: string[];
+        };
+    };
+
+    // Names every path-matching rule that reports one resolved edge, evaluated the
+    // way dependency-cruiser does: `$n` in `to.path` and `to.pathNot` takes the n-th
+    // capture group of the first `from.path` pattern that matches.
+    const rulesReportingEdge = (
+        config: { forbidden: PathRule[] },
+        edge: { from: string; to: string; dependencyTypes: string[] }
+    ): string[] =>
+        config.forbidden
+            .filter((rule) => {
+                if (rule.to.path === undefined) {
+                    return false;
+                }
+                const groups =
+                    rule.from.path === undefined
+                        ? [edge.from]
+                        : [rule.from.path]
+                              .flat()
+                              .map((pattern) => new RegExp(pattern).exec(edge.from))
+                              .find((match) => match !== null);
+                if (!groups) {
+                    return false;
+                }
+                const substitute = (pattern: string): RegExp =>
+                    new RegExp(pattern.replace(/\$(\d)/g, (_, index: string) => groups[Number(index)] ?? ''));
+                const matchesAny = (patterns: string | string[] | undefined, path: string): boolean =>
+                    [patterns ?? []].flat().some((pattern) => substitute(pattern).test(path));
+                const { dependencyTypes, dependencyTypesNot } = rule.to;
+                return (
+                    ![rule.from.pathNot ?? []].flat().some((pattern) => new RegExp(pattern).test(edge.from)) &&
+                    matchesAny(rule.to.path, edge.to) &&
+                    !matchesAny(rule.to.pathNot, edge.to) &&
+                    (dependencyTypes === undefined ||
+                        dependencyTypes.some((type) => edge.dependencyTypes.includes(type))) &&
+                    !(dependencyTypesNot ?? []).some((type) => edge.dependencyTypes.includes(type))
+                );
+            })
+            .map((rule) => rule.name);
+
+    const ALIASED_VALUE_EDGE = ['local', 'aliased', 'aliased-tsconfig'];
+    const ALIASED_TYPE_EDGE = [...ALIASED_VALUE_EDGE, 'type-only'];
+
+    it.each([
+        [
+            'an own module-root barrel',
+            'src/modules/Foo/useCases/run.ts',
+            'src/modules/Foo/index.ts',
+            ['no-internal-barrel-import'],
+        ],
+        [
+            'an own contract barrel',
+            'src/modules/Foo/useCases/run.ts',
+            'src/modules/Foo/stores/index.ts',
+            ['no-internal-barrel-import'],
+        ],
+        [
+            'an own nested barrel',
+            'src/modules/Foo/useCases/run.ts',
+            'src/modules/Foo/useCases/grid/index.ts',
+            ['no-internal-barrel-import'],
+        ],
+        [
+            'the root barrel of a module whose name extends the importer',
+            'src/modules/Foo/useCases/run.ts',
+            'src/modules/FooBar/index.ts',
+            ['cross-module-index-only'],
+        ],
+        [
+            'a private module file from the composition root',
+            'src/app/bootstrap.ts',
+            'src/modules/Transport/handlers/getHandlers.ts',
+            ['external-module-contracts-only'],
+        ],
+        [
+            'a contract barrel from the composition root',
+            'src/app/bootstrap.ts',
+            'src/modules/Transport/useCases/index.ts',
+            [],
+        ],
+    ])('should report a value import of %s under its one boundary rule', (_name, from, to, expected) => {
+        expect(rulesReportingEdge(mainConfig, { from, to, dependencyTypes: ALIASED_VALUE_EDGE })).toEqual(expected);
+    });
+
+    it.each([
+        [
+            'an own module-root barrel',
+            'src/modules/Foo/useCases/run.ts',
+            'src/modules/Foo/index.ts',
+            ['no-internal-barrel-import-type-only'],
+        ],
+        [
+            'a private module file from the composition root',
+            'src/app/bootstrap.ts',
+            'src/modules/Transport/handlers/getHandlers.ts',
+            ['external-module-contracts-only-type-only'],
+        ],
+    ])('should report a type-only import of %s on the types cruise', (_name, from, to, expected) => {
+        expect(rulesReportingEdge(typeConfig, { from, to, dependencyTypes: ALIASED_TYPE_EDGE })).toEqual(expected);
+    });
+
+    it.each([
+        ['main', mainConfig],
+        ['types', typeConfig],
+        ['tests', testConfig],
+        ['reachability', reachabilityConfig],
+    ])("should pass the %s cruise's rules through dependency-cruiser's own validation", async (_name, config) => {
+        await expect(cruise([], { ruleSet: { forbidden: config.forbidden } })).resolves.toBeDefined();
+    });
+
     it('should include tests outside modules and global test setup', () => {
         const ruleConfig = testConfig.forbidden.find(
             (candidate: { name: string }) => candidate.name === 'external-tests-contract-only'
@@ -443,10 +564,10 @@ describe('check-dependency-boundaries', () => {
 
     it('should enforce module contract barrels from the real app composition root', () => {
         const appRule = mainConfig.forbidden.find(
-            (candidate: { name: string }) => candidate.name === 'app-to-modules-public-surface-only'
+            (candidate: { name: string }) => candidate.name === 'external-module-contracts-only'
         );
         const typeAppRule = typeConfig.forbidden.find(
-            (candidate: { name: string }) => candidate.name === 'app-to-modules-public-surface-only-type-only'
+            (candidate: { name: string }) => candidate.name === 'external-module-contracts-only-type-only'
         );
 
         expect(new RegExp(appRule.from.path).test('src/app/bootstrap.ts')).toBe(true);
@@ -454,9 +575,9 @@ describe('check-dependency-boundaries', () => {
         expect(new RegExp(appRule.from.path).test('application/bootstrap.ts')).toBe(false);
         expect(new RegExp(appRule.to.path).test('src/modules/Transport/handlers/getHandlers.ts')).toBe(true);
         expect(
-            appRule.to.pathNot.some((pattern: string) =>
-                new RegExp(pattern).test('src/modules/Transport/useCases/index.ts')
-            )
+            [appRule.to.pathNot]
+                .flat()
+                .some((pattern: string) => new RegExp(pattern).test('src/modules/Transport/useCases/index.ts'))
         ).toBe(true);
     });
 
@@ -1803,7 +1924,7 @@ describe('check-dependency-boundaries', () => {
 
         expect([...typeRuleNames]).toEqual(
             expect.arrayContaining([
-                'app-to-modules-public-surface-only-type-only',
+                'external-module-contracts-only-type-only',
                 'models-are-pure-type-only',
                 'no-relative-cross-module-imports-type-only',
                 'module-runtime-no-worklet-imports-type-only',
