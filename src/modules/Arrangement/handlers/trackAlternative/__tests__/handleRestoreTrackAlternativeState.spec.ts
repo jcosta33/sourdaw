@@ -253,8 +253,94 @@ describe('handleRestoreTrackAlternativeState', () => {
         expect(mocks.setTrackStoreState).not.toHaveBeenCalled();
     });
 
-    // The active alternative stays alt1 in both cases below, so the promotion check
+    it('refuses promoting clips whose id another track already holds, and writes nothing', () => {
+        const liveTrack = makeTrack();
+        const otherTrack = { ...makeTrack({ id: 't2', clips: [makeClip('c9', 't2')] }), alternatives: [] };
+        mocks.getTrackStoreState.mockReturnValue({ tracks: [liveTrack, otherTrack] });
+
+        const collidingClips = [makeClip('c9')];
+        const result = handleRestoreTrackAlternativeState.execute({
+            type: 'restoreTrackAlternativeState',
+            payload: {
+                trackId: 't1',
+                expected: {
+                    alternatives: [{ id: 'alt1' }, { id: 'alt2' }],
+                    activeAlternativeId: 'alt1',
+                    clips: [],
+                },
+                replacement: {
+                    alternatives: [
+                        makeAlternative('alt1', 'Alt 1', [makeClip('c1')]),
+                        makeAlternative('alt2', 'Alt 2', collidingClips),
+                    ],
+                    activeAlternativeId: 'alt2',
+                    clips: collidingClips,
+                },
+            },
+        });
+
+        expect(result).toEqual({ status: 'conflict' });
+        expect(mocks.setTrackStoreState).not.toHaveBeenCalled();
+    });
+
+    // The active alternative stays alt1 in every case below, so the promotion check
     // never runs; only the restore's own shape check stands between the payload and the store.
+    it('restores held clips the track store admits, including zero-length and negative-start clips', () => {
+        const zeroLength = ClipDummy.create({ id: 'c-zero', trackId: 't1', startBeat: 4, endBeat: 4 });
+        const negativeStart = ClipDummy.create({ id: 'c-negative', trackId: 't1', startBeat: -2, endBeat: 2 });
+        const liveTrack = makeTrack({ clips: [zeroLength] });
+        mocks.getTrackStoreState.mockReturnValue({ tracks: [liveTrack] });
+
+        const result = handleRestoreTrackAlternativeState.execute({
+            type: 'restoreTrackAlternativeState',
+            payload: {
+                trackId: 't1',
+                expected: {
+                    alternatives: [{ id: 'alt1' }, { id: 'alt2' }],
+                    activeAlternativeId: 'alt1',
+                    clips: [],
+                },
+                replacement: {
+                    alternatives: [makeAlternative('alt1', 'Alt 1', [zeroLength, negativeStart])],
+                    activeAlternativeId: 'alt1',
+                    clips: [zeroLength, negativeStart],
+                },
+            },
+        });
+
+        expect(result).toEqual({ status: 'written' });
+        expect(mocks.setTrackStoreState.mock.calls[0]?.[0].tracks[0].clips).toEqual([zeroLength, negativeStart]);
+    });
+
+    it.each([
+        ['a non-finite end beat', { endBeat: Number.NaN }],
+        ['a key no clip carries', { unknownField: true }],
+    ])('refuses a replacement clip with %s, and writes nothing', (_label, override) => {
+        const liveTrack = makeTrack();
+        mocks.getTrackStoreState.mockReturnValue({ tracks: [liveTrack] });
+        const malformed = { ...makeClip('c1'), ...override };
+
+        const result = handleRestoreTrackAlternativeState.execute({
+            type: 'restoreTrackAlternativeState',
+            payload: {
+                trackId: 't1',
+                expected: {
+                    alternatives: [{ id: 'alt1' }, { id: 'alt2' }],
+                    activeAlternativeId: 'alt1',
+                    clips: [],
+                },
+                replacement: {
+                    alternatives: [makeAlternative('alt1', 'Alt 1', liveTrack.clips)],
+                    activeAlternativeId: 'alt1',
+                    clips: [malformed],
+                },
+            },
+        });
+
+        expect(result).toEqual({ status: 'conflict' });
+        expect(mocks.setTrackStoreState).not.toHaveBeenCalled();
+    });
+
     it('refuses a replacement alternative that carries only its id, and writes nothing', () => {
         const liveTrack = makeTrack();
         mocks.getTrackStoreState.mockReturnValue({ tracks: [liveTrack] });
