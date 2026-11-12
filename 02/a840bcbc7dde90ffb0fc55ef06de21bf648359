@@ -1,0 +1,32 @@
+src/modules/Fermenter/useCases/prepareFermenterPatchWrite.ts
+  s_9307cedd8951f1::t_38b97e74d27800 1-5,43-48
+src/modules/Fermenter/handlers/handleSetFermenterPatch.ts
+  s_9307cedd8951f1::t_38b97e74d27800 71-76
+src/modules/Fermenter/presentations/views/__tests__/fermenterPatchAuditionUndo.integration.spec.tsx
+  s_9307cedd8951f1::t_d69b567fadee78 3,37,41,570-622
+  s_76ccd61d453edf::t_55abf1361245c4 623-624
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "02a840bcbc7dde90ffb0fc55ef06de21bf648359",
+  "prompts": {},
+  "sessions": {
+    "s_76ccd61d453edf": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "108ea70a-a924-42ce-b7b8-fd9c1012e902",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_9307cedd8951f1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cee0-9c43-7223-9451-be85d15b1347",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
