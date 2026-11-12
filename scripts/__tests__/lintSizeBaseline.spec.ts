@@ -13,11 +13,13 @@
  * scripts/lintSizeCeilings.json records one line ceiling per listed file: a
  * file may not exceed its ceiling, a ceiling left more than the slack above a
  * file that shrank must be lowered, and the ceilings file lists exactly the
- * non-exempt baseline paths, each written once and in sorted order
- * (scripts/lintSizeCeilings.ts holds the rule). Generated files named in its
- * exemption list carry no ceiling; each must exist, name a real generator, and
- * say so in its header. No case here can tell a raised ceiling from a lowered
- * one; review refuses raises.
+ * non-exempt baseline paths, each written once, in sorted order, on a line
+ * whose key matches the parsed key (scripts/lintSizeCeilings.ts holds the
+ * rule). Generated files named in its exemption list carry no ceiling; each
+ * must exist, name a real generator, and say so in its header. A raise that
+ * leaves a ceiling more than the slack above the larger of the file's line
+ * count and the floor fails as stale; a raise within the slack passes here,
+ * and review refuses it.
  */
 
 import { existsSync, readFileSync } from 'node:fs';
@@ -31,6 +33,7 @@ import {
     describeSizeCeilingViolation,
     findSizeCeilingViolations,
     GENERATED_SIZE_EXEMPTIONS,
+    listUnreadableCeilingLines,
     listWrittenCeilingKeys,
     readSizeCeilings,
     SIZE_CEILINGS_PATH,
@@ -212,6 +215,29 @@ const writtenKeysCases: WrittenKeysCase[] = [
     },
 ];
 
+const unreadableLinesCases: WrittenKeysCase[] = [
+    {
+        name: 'a clean three-entry object',
+        text: '{\n    "a.ts": 700,\n    "b.ts": 800,\n    "c.ts": 900\n}\n',
+        expected: [],
+    },
+    {
+        name: 'a repeated key written with spaces before the colon',
+        text: '{\n    "electron/main.ts": 991,\n    "electron/main.ts"  : 1500\n}\n',
+        expected: ['    "electron/main.ts"  : 1500'],
+    },
+    {
+        name: 'a blank line between entries',
+        text: '{\n    "a.ts": 700,\n\n    "b.ts": 800\n}\n',
+        expected: [''],
+    },
+    {
+        name: 'CRLF line endings',
+        text: '{\r\n    "a.ts": 700\r\n}\r\n',
+        expected: ['{\r', '    "a.ts": 700\r', '}\r'],
+    },
+];
+
 function repeatedKeys(keys: readonly string[]): string[] {
     return keys.filter((key, index) => keys.indexOf(key) !== index);
 }
@@ -221,17 +247,24 @@ describe('written ceiling keys', () => {
         expect(listWrittenCeilingKeys(text)).toEqual(expected);
     });
 
-    it('should read fewer keys than JSON.parse from an entry it cannot match, so the coverage check fails', () => {
-        const text = '{\n    "a.ts": 700,\n    "b.ts"  : 800\n}\n';
-        expect(listWrittenCeilingKeys(text)).toEqual(['a.ts']);
-        expect(listWrittenCeilingKeys(text).length).toBeLessThan(Object.keys(JSON.parse(text)).length);
+    it.each(unreadableLinesCases)('should report exactly the unreadable lines for $name', ({ text, expected }) => {
+        expect(listUnreadableCeilingLines(text)).toEqual(expected);
+    });
+
+    it('should not read an escaped key that JSON.parse decodes to an existing key', () => {
+        const text = '{\n    "electron/main.ts": 991,\n    "electron/m\\u0061in.ts": 1500\n}\n';
+        expect(Object.keys(JSON.parse(text))).toEqual(['electron/main.ts']);
+        expect(listWrittenCeilingKeys(text)).toEqual(['electron/main.ts']);
+        expect(listUnreadableCeilingLines(text)).toEqual(['    "electron/m\\u0061in.ts": 1500']);
     });
 });
 
 describe('recorded lint size ceilings', () => {
     it('should write each ceilings key once and in sorted order, so a merge cannot hide a re-added path', () => {
-        const written = listWrittenCeilingKeys(readFileSync(resolve(repoRoot, SIZE_CEILINGS_PATH), 'utf8'));
-        expect(written.length).toBeGreaterThanOrEqual(Object.keys(readSizeCeilings(repoRoot)).length);
+        const text = readFileSync(resolve(repoRoot, SIZE_CEILINGS_PATH), 'utf8');
+        const written = listWrittenCeilingKeys(text);
+        expect(listUnreadableCeilingLines(text)).toEqual([]);
+        expect(written).toEqual(Object.keys(readSizeCeilings(repoRoot)));
         expect(repeatedKeys(written)).toEqual([]);
         expect(written).toEqual([...written].sort());
     });

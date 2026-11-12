@@ -3,9 +3,10 @@
  * conventions). eslint.config.mjs holds every file in eslint.size-baseline.mjs to `warn` instead of
  * `error`, so nothing in lint stops a baselined file from growing. scripts/lintSizeCeilings.json records
  * one line ceiling per baselined file; a file may not exceed it, and a ceiling more than the slack above a
- * file that shrank must be lowered. Nothing here can tell a raised figure from a lowered one; review refuses
- * raises. Generated files listed in
- * GENERATED_SIZE_EXEMPTIONS carry no ceiling: their size follows their generator's input.
+ * file that shrank must be lowered. A raise that leaves the ceiling more than the slack above the larger of
+ * the file's line count and the floor fails as stale; a raise within the slack passes here, and review
+ * refuses it. Generated files listed in GENERATED_SIZE_EXEMPTIONS carry no ceiling: their size follows their
+ * generator's input.
  */
 
 import { readFileSync } from 'node:fs';
@@ -127,15 +128,28 @@ export function describeSizeCeilingViolation(violation: SizeCeilingViolation): s
     }
 }
 
-const WRITTEN_CEILING_ENTRY = /^\s*"([^"]+)": -?\d[\d.eE+-]*,?$/;
+// A key holding a backslash never matches, so an escaped spelling of an existing key is reported unreadable.
+const WRITTEN_CEILING_ENTRY = /^ {4}"([^"\\]+)": -?\d[\d.eE+-]*,?$/;
 
 /**
  * The keys of the formatted ceilings file in written order, repeats included, which `JSON.parse` would
  * collapse. Matches one `"path": number` entry per line; a line it cannot read yields no key, so callers
- * compare the count against the parsed object's keys.
+ * also require listUnreadableCeilingLines to return nothing.
  */
 export function listWrittenCeilingKeys(text: string): string[] {
     return text.split('\n').flatMap((line) => WRITTEN_CEILING_ENTRY.exec(line)?.[1] ?? []);
+}
+
+function isStructuralLine(line: string, index: number, lines: readonly string[]): boolean {
+    const last = lines.length - 1;
+    return (index === 0 && line === '{') || (index === last - 1 && line === '}') || (index === last && line === '');
+}
+
+/** Every line, in written order, that is neither the object's braces, the final empty line, nor an entry. */
+export function listUnreadableCeilingLines(text: string): string[] {
+    return text
+        .split('\n')
+        .filter((line, index, lines) => !isStructuralLine(line, index, lines) && !WRITTEN_CEILING_ENTRY.test(line));
 }
 
 function isCeilingRecord(value: unknown): value is Record<string, number> {
