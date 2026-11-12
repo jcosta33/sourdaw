@@ -1,10 +1,19 @@
 import { spawn } from 'node:child_process';
 
+import { captureProcessGroupSnapshot, type ProcessGroupSnapshot } from './processSnapshot.ts';
+
 type OwnershipDiagnostic = {
     operation: 'inspect' | 'terminate';
     signal: NodeJS.Signals | 0;
     code?: string;
     errno?: number;
+};
+type ProcessDiagnostic = {
+    groupId?: number;
+    timeline: Array<{ event: string; elapsedMs: number; diagnostic?: OwnershipDiagnostic }>;
+    omittedEvents: number;
+    firstUncertainty?: { diagnostic: OwnershipDiagnostic; elapsedMs: number; snapshot: ProcessGroupSnapshot };
+    finalUncertainty?: { elapsedMs: number; snapshot: ProcessGroupSnapshot };
 };
 export type NativeTestResult = {
     code: number | null;
@@ -12,20 +21,32 @@ export type NativeTestResult = {
     output: string;
     failure?: string;
     ownershipDiagnostic?: OwnershipDiagnostic;
+    processDiagnostic?: ProcessDiagnostic;
 };
 
 export class NativeCommandOwnershipError extends Error {
     readonly reason: string;
     readonly ownershipDiagnostic?: OwnershipDiagnostic;
     readonly output: string;
+    readonly processDiagnostic?: ProcessDiagnostic;
 
-    constructor(reason: string, cause?: unknown, ownershipDiagnostic?: OwnershipDiagnostic, output = '') {
+    constructor(
+        reason: string,
+        cause?: unknown,
+        ownershipDiagnostic?: OwnershipDiagnostic,
+        output = '',
+        processDiagnostic?: ProcessDiagnostic
+    ) {
         const details = ownershipDiagnostic === undefined ? '' : `; ${JSON.stringify(ownershipDiagnostic)}`;
-        super(`Native command ownership unconfirmed after SIGKILL: ${reason}${details}`, { cause });
+        super(
+            `Native command ownership unconfirmed after SIGKILL: ${reason}${details}${processDiagnostic === undefined ? '' : `; ${JSON.stringify(processDiagnostic)}`}`,
+            { cause }
+        );
         this.name = 'NativeCommandOwnershipError';
         this.reason = reason;
         this.ownershipDiagnostic = ownershipDiagnostic;
         this.output = output;
+        this.processDiagnostic = processDiagnostic;
     }
 }
 
@@ -42,6 +63,8 @@ type NativeCommandPorts = {
     setTimeout: typeof setTimeout;
     clearTimeout: typeof clearTimeout;
     process: Pick<NodeJS.Process, 'kill' | 'once' | 'removeListener'>;
+    snapshot?: (pid: number) => ProcessGroupSnapshot;
+    now?: () => number;
 };
 
 function isAbsentProcessGroup(error: unknown): boolean {
@@ -71,7 +94,11 @@ function ownershipDiagnostic(
     return diagnostic;
 }
 
-function ownedProcessGroup(pid: number | undefined, processPort: Pick<NodeJS.Process, 'kill'>) {
+function ownedProcessGroup(
+    pid: number | undefined,
+    processPort: Pick<NodeJS.Process, 'kill'>,
+    observe: (event: string, diagnostic?: OwnershipDiagnostic) => void
+) {
     const ownsGroup = pid !== undefined && Number.isSafeInteger(pid) && pid > 1;
     let groupAbsent = false;
     let failure: string | undefined;
@@ -88,13 +115,16 @@ function ownedProcessGroup(pid: number | undefined, processPort: Pick<NodeJS.Pro
         }
         try {
             processPort.kill(-pid, 0);
+            observe('inspect-present');
             return true;
         } catch (error) {
             if (isAbsentProcessGroup(error)) {
                 groupAbsent = true;
                 provisional = undefined;
+                observe('inspect-absent');
                 return false;
             }
+            observe('inspect-error', ownershipDiagnostic(error, 'inspect', 0));
             // Darwin can retain an all-zombie group until reap; only ESRCH retires its identity.
             if (typeof error === 'object' && error !== null && 'code' in error && error.code === 'EPERM') {
                 provisional ??= { cause: error, diagnostic: ownershipDiagnostic(error, 'inspect', 0) };
@@ -111,12 +141,14 @@ function ownedProcessGroup(pid: number | undefined, processPort: Pick<NodeJS.Pro
             return;
         }
         try {
+            observe(`signal-${signal}`);
             processPort.kill(-pid, signal);
         } catch (error) {
             if (isAbsentProcessGroup(error)) {
                 groupAbsent = true;
                 provisional = undefined;
             } else {
+                observe('signal-error', ownershipDiagnostic(error, 'terminate', signal));
                 failure = 'child-termination-failed';
                 cause = error;
                 diagnostic ??= ownershipDiagnostic(error, 'terminate', signal);
@@ -141,12 +173,13 @@ function ownedProcessGroup(pid: number | undefined, processPort: Pick<NodeJS.Pro
         alive,
         terminate,
         result,
-        ownershipError: (reason: string, output: string) =>
+        ownershipError: (reason: string, output: string, processDiagnostic: ProcessDiagnostic) =>
             new NativeCommandOwnershipError(
                 reason,
                 diagnostic === undefined ? provisional?.cause : cause,
                 diagnostic ?? provisional?.diagnostic,
-                output
+                output,
+                processDiagnostic
             ),
     };
 }
@@ -161,7 +194,47 @@ type NativeCommandObservation = {
 
 function observeNativeCommand(input: NativeCommandObservation): void {
     const { child, ports, resolve, reject, timeoutMs } = input;
-    const group = ownedProcessGroup(child.pid, ports.process);
+    const clock = ports.now ?? (() => performance.now());
+    let lastTime = 0;
+    const readClock = () => {
+        try {
+            const value = clock();
+            if (Number.isFinite(value)) lastTime = Math.max(lastTime, value);
+        } catch {
+            // Diagnostics must not affect ownership decisions.
+        }
+        return lastTime;
+    };
+    const started = readClock();
+    const elapsed = () => Math.round(readClock() - started);
+    const processDiagnostic: ProcessDiagnostic = { groupId: child.pid, timeline: [], omittedEvents: 0 };
+    const snapshot = (): ProcessGroupSnapshot => {
+        try {
+            return child.pid === undefined
+                ? { status: 'unavailable' }
+                : (ports.snapshot ?? captureProcessGroupSnapshot)(child.pid);
+        } catch {
+            return { status: 'unavailable' };
+        }
+    };
+    const observe = (event: string, diagnostic?: OwnershipDiagnostic) => {
+        try {
+            const entry = { event, elapsedMs: elapsed(), ...(diagnostic === undefined ? {} : { diagnostic }) };
+            if (processDiagnostic.timeline.length >= 64) {
+                processDiagnostic.timeline.splice(32, 1);
+                processDiagnostic.omittedEvents += 1;
+            }
+            processDiagnostic.timeline.push(entry);
+            if (diagnostic !== undefined && processDiagnostic.firstUncertainty === undefined) {
+                const state = snapshot();
+                processDiagnostic.firstUncertainty = { diagnostic, elapsedMs: elapsed(), snapshot: state };
+            }
+        } catch {
+            // Diagnostics must not affect ownership decisions.
+        }
+    };
+    observe('spawn');
+    const group = ownedProcessGroup(child.pid, ports.process, observe);
     const buffers: Buffer[] = [];
     let size = 0;
     let failure: string | undefined;
@@ -188,7 +261,9 @@ function observeNativeCommand(input: NativeCommandObservation): void {
         }
         settled = true;
         cleanup();
-        resolve(group.result(closed, Buffer.concat(buffers).toString('utf8'), failure));
+        const result = group.result(closed, Buffer.concat(buffers).toString('utf8'), failure);
+        if (processDiagnostic.firstUncertainty !== undefined) result.processDiagnostic = processDiagnostic;
+        resolve(result);
         return true;
     };
     const waitForGroup = () => {
@@ -209,8 +284,10 @@ function observeNativeCommand(input: NativeCommandObservation): void {
             return;
         }
         terminating = true;
+        observe(`stop-${reason}`);
         group.terminate('SIGTERM');
         killTimer = ports.setTimeout(() => {
+            observe('escalate');
             group.terminate('SIGKILL');
             if (finish()) {
                 return;
@@ -221,7 +298,12 @@ function observeNativeCommand(input: NativeCommandObservation): void {
                 }
                 settled = true;
                 cleanup();
-                reject(group.ownershipError(failure ?? reason, Buffer.concat(buffers).toString('utf8')));
+                observe('confirmation-failed');
+                const state = snapshot();
+                processDiagnostic.finalUncertainty = { elapsedMs: elapsed(), snapshot: state };
+                reject(
+                    group.ownershipError(failure ?? reason, Buffer.concat(buffers).toString('utf8'), processDiagnostic)
+                );
             }, 5_000);
         }, 5_000);
         waitForGroup();
@@ -247,6 +329,7 @@ function observeNativeCommand(input: NativeCommandObservation): void {
         stop('child-start-failed');
     });
     child.on('close', (code, signal) => {
+        observe('close');
         closed = { code, signal };
         if (finish()) {
             return;
