@@ -160,18 +160,21 @@ vi.mock('#/components/daw/RotaryKnob', () => ({
         min,
         max,
         defaultValue,
+        'aria-label': ariaLabel,
     }: {
         value: number;
         onChange: (val: number, isTransient?: boolean) => void;
         min: number;
         max: number;
         defaultValue: number;
+        'aria-label'?: string;
     }) => {
         knobProps.last = { min, max, defaultValue, value };
         return (
             <>
                 <input
                     type="number"
+                    aria-label={ariaLabel}
                     value={value}
                     onChange={(e) => onChange(Number(e.target.value), true)}
                     data-testid="rotary-knob"
@@ -221,7 +224,7 @@ describe('TunerPanel', () => {
         render(<TunerPanel deviceId={mockDeviceId} />);
         // Get all "Reference" texts and check that at least one exists
         expect(screen.getAllByText(/Reference/i).length).toBeGreaterThan(0);
-        expect(screen.getByTestId('rotary-knob')).toBeInTheDocument();
+        expect(screen.getByRole('spinbutton', { name: 'Concert A reference' })).toBeInTheDocument();
     });
 
     // The reference readout is the device's stored `a4_hz` — the same row the

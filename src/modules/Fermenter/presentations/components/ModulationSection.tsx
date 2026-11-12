@@ -29,6 +29,7 @@ export const ModulationSection = ({
             <Row align="end" gap={2} className="px-1">
                 <Stack align="center" gap={0.5}>
                     <RotaryKnob
+                        aria-label="MSEG to filter"
                         value={msegToFilter}
                         onChange={(v) => onParam('msegToFilter', v)}
                         min={-1}
@@ -49,6 +50,7 @@ export const ModulationSection = ({
             <Row align="end" gap={2} className="px-1">
                 <Stack align="center" gap={0.5}>
                     <RotaryKnob
+                        aria-label="Step sequencer rate"
                         value={seqRate}
                         onChange={(v) => onParam('seqRate', v)}
                         min={0.5}
@@ -63,6 +65,7 @@ export const ModulationSection = ({
                 </Stack>
                 <Stack align="center" gap={0.5}>
                     <RotaryKnob
+                        aria-label="Step sequencer to pitch"
                         value={seqToPitch}
                         onChange={(v) => onParam('seqToPitch', v)}
                         min={-1}
