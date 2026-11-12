@@ -754,6 +754,11 @@ function isTokenBearingGitChild(args: readonly string[], env: NodeJS.ProcessEnv)
  * `hook.*` key. The listing runs in the child's repository without the token; reading config runs no
  * hook or fsmonitor. `git config --get-regexp` exits 1 with no output when nothing matches; any other
  * failure refuses.
+ *
+ * The refusal reads only the repository the child runs in. A lane-chosen URL rewrite can still send a
+ * token-bearing command to another repository over `file`, whose own config then runs programs (a push
+ * runs `receive-pack` there). Listing and starting the child are separate steps, so config written in
+ * between goes unseen. Both residuals are tracked in #6448.
  */
 function assertNoConfigDefinedHooks(
     childCommand: string,

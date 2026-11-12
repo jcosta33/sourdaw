@@ -48,7 +48,11 @@ askpass, commit and push signing, and the alternate-refs command fetch negotiati
 key, so those programs never run beside a token. Config-defined hooks (`hook.<name>.event` with
 `hook.<name>.command`) ignore `core.hooksPath` and take a lane-chosen name, so a token-bearing Git
 child refuses to start while its repository config defines any `hook.*` key. A child is
-token-bearing when `GH_TOKEN` is in its environment or its arguments install a credential helper. Transports are an allowlist of `https` and `file`;
+token-bearing when `GH_TOKEN` is in its environment or its arguments install a credential helper.
+The refusal covers only the repository the child runs in: a lane-chosen URL rewrite can still send a
+token-bearing command to another repository over `file`, whose own config runs programs (a push runs
+`receive-pack` there), and config written between the check and the child's start goes unseen. Both
+residuals are tracked in #6448. Transports are an allowlist of `https` and `file`;
 `ext::`, `ssh`, and `git` are each refused by their own override, because a repository-level
 per-protocol key outranks the general one. Refusing `git` is what stops `core.gitProxy`, which no
 environment value can override. The list is not complete. Keys whose names the lane chooses still
