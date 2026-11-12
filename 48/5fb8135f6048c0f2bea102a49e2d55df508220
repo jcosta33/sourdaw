@@ -1,0 +1,24 @@
+src/modules/Arrangement/handlers/trackAlternative/__tests__/handleRestoreTrackAlternativeState.spec.ts
+  s_761a32b1e5284e::t_7b23074a7dbc7c 256-286,288-343
+src/modules/Arrangement/stores/isExactClipSnapshot.ts
+  s_761a32b1e5284e::t_7c1dbb0e0af21c 136-145
+  s_761a32b1e5284e::t_fd73694c985d04 113-118,121-122,124-125
+src/modules/Arrangement/handlers/trackAlternative/isRestorableAlternativeState.ts
+  s_761a32b1e5284e::t_8eee211eb606b3 5,13,18-21,29
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "485fb8135f6048c0f2bea102a49e2d55df508220",
+  "prompts": {},
+  "sessions": {
+    "s_761a32b1e5284e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d03f795b-c73f-41c6-b563-635e2e2fc307",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
