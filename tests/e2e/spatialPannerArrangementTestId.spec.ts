@@ -93,11 +93,46 @@ test.describe('SpatialPanner and ArrangementSelector', () => {
         await selector.click();
         const menu = page.getByRole('menu', { name: 'Arrangement menu' });
         const activeRadio = menu.getByRole('menuitemradio', { name: 'Arrangement 2' });
+        const inactiveRadio = menu.getByRole('menuitemradio', { name: 'Arrangement 1' });
+        const activeRename = menu.getByRole('menuitem', { name: 'Rename Arrangement 2' });
+        const inactiveRename = menu.getByRole('menuitem', { name: 'Rename Arrangement 1' });
+        const newArrangement = menu.getByRole('menuitem', { name: 'New Arrangement' });
+        const duplicateArrangement = menu.getByRole('menuitem', { name: 'Duplicate Current' });
         await expect(activeRadio).toBeFocused();
+
+        // Arrow navigation visits each radio and action, wrapping at either end
+        // without activating a different arrangement.
+        await page.keyboard.press('ArrowDown');
+        await expect(activeRename).toBeFocused();
+        await page.keyboard.press('ArrowDown');
+        await expect(newArrangement).toBeFocused();
+        await page.keyboard.press('ArrowDown');
+        await expect(duplicateArrangement).toBeFocused();
+        await page.keyboard.press('ArrowDown');
+        await expect(inactiveRadio).toBeFocused();
+        await page.keyboard.press('ArrowDown');
+        await expect(inactiveRename).toBeFocused();
+        await page.keyboard.press('ArrowDown');
+        await expect(activeRadio).toBeFocused();
+        await expect(activeRadio).toHaveAttribute('aria-checked', 'true');
+        await expect(inactiveRadio).toHaveAttribute('aria-checked', 'false');
+
+        await page.keyboard.press('ArrowUp');
+        await expect(inactiveRename).toBeFocused();
+        await page.keyboard.press('ArrowUp');
+        await expect(inactiveRadio).toBeFocused();
+        await page.keyboard.press('ArrowUp');
+        await expect(duplicateArrangement).toBeFocused();
+        await page.keyboard.press('ArrowUp');
+        await expect(newArrangement).toBeFocused();
+        await page.keyboard.press('ArrowUp');
+        await expect(activeRename).toBeFocused();
+        await page.keyboard.press('ArrowUp');
+        await expect(activeRadio).toBeFocused();
+        await expect(activeRadio).toHaveAttribute('aria-checked', 'true');
 
         await page.keyboard.press('Shift+Tab');
 
-        const inactiveRename = menu.getByRole('menuitem', { name: 'Rename Arrangement 1' });
         await expect(inactiveRename).toBeFocused();
         await expect(inactiveRename).toHaveCSS('opacity', '1');
 
@@ -105,7 +140,6 @@ test.describe('SpatialPanner and ArrangementSelector', () => {
         const renameEditor = menu.getByRole('textbox');
         await expect(renameEditor).toHaveValue('Arrangement 1');
         await page.keyboard.press('Escape');
-        const inactiveRadio = menu.getByRole('menuitemradio', { name: 'Arrangement 1' });
         await expect(inactiveRadio).toBeFocused();
 
         await page.keyboard.press('Tab');
