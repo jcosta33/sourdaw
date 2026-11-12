@@ -1,0 +1,28 @@
+.agents/skills/review-stances/validation-scope-selection.md
+  s_126e3d478b4f75::t_993b2840040339 70-74
+crates/daw-dsp/benches/wasm/deviceRecipes.d.ts
+  s_126e3d478b4f75::t_d0ee60dbec7bd8 1,17-28,42-56,59-83
+  s_126e3d478b4f75::t_cf30cbe9620169 2-16,29-41,57-58
+scripts/test-health-gate-scripts.sh
+  s_126e3d478b4f75::t_993b2840040339 1032,1068
+scripts/__tests__/wasmDeviceRecipes.spec.ts
+  s_126e3d478b4f75::t_19875e91c5f5b0 8
+  s_126e3d478b4f75::t_d0ee60dbec7bd8 11-13,20,28-29
+  s_126e3d478b4f75::t_610303048768ec 1-7,9-10,14-19,21-27,30-53
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a6a95451292d86f0ef05589e4164b252601cb442",
+  "prompts": {},
+  "sessions": {
+    "s_126e3d478b4f75": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cefa-4460-7913-80c3-c339638913d0",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
