@@ -6,6 +6,7 @@ import { Button } from '#/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '#/components/ui/popover';
 import { useStore } from '#/infra/store/useStore';
 import { revealClip } from '#/modules/Arrangement/useCases';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import {
     defaultMissingMediaStoreState,
@@ -51,6 +52,8 @@ export const MissingMediaPanel = (): ReactElement | null => {
         setLocatingBufferId(item.bufferId);
         try {
             await locateMissingMedia({ sourceBufferId: item.bufferId, label: item.label });
+        } catch {
+            notifyUser('Could not finish relinking missing media. Unresolved files remain listed.', 'error');
         } finally {
             setLocatingBufferId(null);
         }
