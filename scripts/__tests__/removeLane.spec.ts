@@ -351,6 +351,25 @@ describe('ignored path framing', () => {
         });
     });
 
+    it.each([
+        ['under a credential-named directory', 'dist/credentials/token.txt'],
+        ['with an upper-case credential name', 'dist/.ENV'],
+    ])('lists a credential %s inside a wholly ignored build directory', (_case, credential) => {
+        withGitFixture(({ repository, git }) => {
+            const lane = join(repository, '.agents/worktrees/feature');
+            mkdirSync(join(lane, 'dist/credentials'), { recursive: true });
+            git(['init', '-b', 'main'], lane);
+            writeFileSync(join(lane, '.gitignore'), 'dist/\n');
+            writeFileSync(join(lane, credential), 'SECRET=keep\n');
+            writeFileSync(join(lane, 'dist/bundle.js'), 'generated\n');
+
+            const ignored = shellPort().ignored(lane);
+
+            expect([...ignored].sort()).toEqual(['dist/', credential]);
+            expect(prunableEntries(ignored)).toEqual([]);
+        });
+    });
+
     it('refuses removal and stranding of a lane whose wholly ignored dist/ holds a credential', () => {
         withCredentialInIgnoredDirectory(({ repository, lane, ignored }) => {
             const removal = fakePort({ root: repository, lane: worktree({ path: lane }), ignored });

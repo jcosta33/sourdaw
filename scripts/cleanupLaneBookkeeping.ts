@@ -193,6 +193,7 @@ export function finishRemovedWorktree(record: CleanupRecord, port: CleanupPort):
         return 'worktree absent from filesystem and registry; newer guard bookkeeping preserved';
     }
     const receipt = parseGuardFailureReceipt(file.bytes.toString('utf8'), path);
+    const replaced = 'guard bookkeeping changed during removal cleanup';
     const result = clearGuardFailureReceiptIfUnchanged(record.primaryRoot, laneName, receipt, {
         rmSync: (claimed, options) => {
             // The native receipt helper claims atomically; recheck file identity and bytes on that
@@ -202,13 +203,15 @@ export function finishRemovedWorktree(record: CleanupRecord, port: CleanupPort):
                 !removedWorktreeAbsent(record, port) ||
                 JSON.stringify(guardReceiptFingerprint(claimed)) !== JSON.stringify(expected)
             ) {
-                throw new Error('guard bookkeeping changed during removal cleanup');
+                throw new Error(replaced);
             }
             rmSync(claimed, options);
         },
     });
     if (result.status === 'error') {
-        throw new Error(result.message);
+        // The receipt helper relays the claim callback's throw as a bare message. Only that exact
+        // refusal, with the claim restored, is lane state; anything else is an inspection failure.
+        throw result.message === replaced ? new LaneSafetyRefusal(replaced) : new Error(result.message);
     }
     return result.status === 'mismatch' ? 'worktree absent; changed guard bookkeeping preserved' : completed;
 }

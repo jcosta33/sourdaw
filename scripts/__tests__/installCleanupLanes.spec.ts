@@ -682,6 +682,53 @@ describe('cleanup installation', () => {
         }
     });
 
+    function failingRollbackBootout(port: CleanupInstallationPort, message: string): CleanupInstallationPort {
+        let bootouts = 0;
+        const failing = failingFirstBootstrap(port);
+        return {
+            ...failing,
+            run: (command, args) => {
+                if (args[0] === 'bootout' && ++bootouts === 2) {
+                    throw new Error(message);
+                }
+                failing.run(command, args);
+            },
+        };
+    }
+
+    it('still restores the previous job when the rollback finds the new job already unloaded', () => {
+        const f = fixture();
+        try {
+            const previous = installCleanupLanes(f.port);
+            const previousBytes = readFileSync(previous.plist, 'utf8');
+            f.events.length = 0;
+            const port = failingRollbackBootout(f.port, 'Boot-out failed: 3: No such process');
+
+            expect(() => installCleanupLanes(port)).toThrow(/^Bootstrap failed: 5: Input\/output error$/);
+
+            expect(readFileSync(previous.plist, 'utf8')).toBe(previousBytes);
+            expect(f.events.at(-1)).toEqual(['bootstrap', 'gui/501', previous.plist]);
+        } finally {
+            f.dispose();
+        }
+    });
+
+    it('reports a rollback bootout failure instead of re-bootstrapping over the loaded job', () => {
+        const f = fixture();
+        try {
+            installCleanupLanes(f.port);
+            f.events.length = 0;
+            const port = failingRollbackBootout(f.port, 'Boot-out failed: 5: Input/output error');
+
+            expect(() => installCleanupLanes(port)).toThrow(
+                /^Bootstrap failed: 5: Input\/output error The previous cleanup job could not be restored: Boot-out failed: 5: Input\/output error$/
+            );
+            expect(f.events.some((args) => args[0] === 'bootstrap')).toBe(false);
+        } finally {
+            f.dispose();
+        }
+    });
+
     it('prunes earlier runtimes only after the new launch is verified, skipping symlinked entries', () => {
         const f = fixture();
         const foreign = realpathSync(mkdtempSync(join(tmpdir(), 'sourdaw-cleanup-runtime-alias-')));

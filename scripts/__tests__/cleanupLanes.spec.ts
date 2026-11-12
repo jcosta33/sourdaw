@@ -860,7 +860,11 @@ describe('automatic lane cleanup', () => {
                 writeGuardFailureReceipt(f.root, receipt);
                 return original(...args);
             });
-            expect(cleanupLanes(f.port)[0]?.status).toBe('pending');
+            expect(cleanupLanes(f.port)[0]).toMatchObject({
+                status: 'protected',
+                reason: 'guard bookkeeping changed during removal cleanup',
+            });
+            expect(existsSync(join(cleanupDirectory(f.root), 'inspection-backoff.json'))).toBe(false);
             expect(existsSync(f.lane)).toBe(false);
             const path = guardFailureReceiptPath(f.root, 'author');
             expect(JSON.parse(readFileSync(path, 'utf8'))).toEqual(receipt);
