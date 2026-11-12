@@ -1,0 +1,31 @@
+src/modules/AiRuntime/useCases/__tests__/vibeRunSilentRanges.spec.ts
+  s_9307cedd8951f1::t_bef09a32dd4af3 24-28,347-366,679
+src/modules/AiRuntime/useCases/planWholeProjectVibeRun.ts
+  s_eec9d24f84ae15::t_231a6b961585e7 280-289,353-391,446-450,452
+src/modules/AiRuntime/useCases/vibeRun/planVibeRunSchedule.ts
+  s_eec9d24f84ae15::t_b5260838160938 318-321,354-357,377
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "fce98903d9486e0dbc6b729fc84c8e0cc36959cc",
+  "prompts": {},
+  "sessions": {
+    "s_9307cedd8951f1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cee0-9c43-7223-9451-be85d15b1347",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_eec9d24f84ae15": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cc8d-d36d-71b3-be5c-15c29b38b9aa",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
