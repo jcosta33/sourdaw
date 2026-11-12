@@ -415,27 +415,52 @@ exit 23
         });
         const name = 's'.repeat(100);
         writeFileSync(join(root, name), 'content');
-        const child = spawn(process.execPath, [runner, 'add', '--', ...Array(1500).fill(name)], {
+        // Linux Unix-stream buffers can be larger, so exercise real backpressure with a larger argv.
+        const pathCount = process.platform === 'linux' ? 5000 : 1500;
+        const child = spawn(process.execPath, [runner, 'add', '--', ...Array(pathCount).fill(name)], {
             cwd: root,
             env: { ...env, GIT_TRACE2_EVENT: `af_unix:stream:${socket}` },
             stdio: ['ignore', 'pipe', 'pipe'],
         });
         child.stdout.resume();
-        let gitStderr = '';
-        child.stderr.on('data', (chunk) => {
-            gitStderr += chunk.toString();
+        const stderrBytes: Buffer[] = [];
+        let stderrSize = 0;
+        let stderrOmitted = 0;
+        let drainReleased = false;
+        child.stderr.on('data', (chunk: Buffer) => {
+            const keep = Math.min(chunk.length, 16384 - stderrSize);
+            if (keep > 0) {
+                stderrBytes.push(chunk.subarray(0, keep));
+            }
+            stderrSize += keep;
+            stderrOmitted += chunk.length - keep;
         });
+        const stderrText = () => Buffer.concat(stderrBytes).toString('utf8');
         try {
             const exitedEarly = new Promise<never>((_resolve, reject) => {
-                child.once('close', (code, signal) =>
-                    reject(new Error(`checkpoint exited early: code=${code} signal=${signal} stderr=${gitStderr}`))
-                );
+                let reported = false;
+                const fail = (detail: string) => {
+                    if (drainReleased || reported) {
+                        return;
+                    }
+                    reported = true;
+                    const message = `checkpoint exited before drain: ${detail}; stderr omitted bytes=${stderrOmitted}; stderr=${stderrText()}`;
+                    console.error(message);
+                    reject(new Error(message));
+                };
+                child.once('error', (error) => {
+                    const text = error.message.slice(0, 2048);
+                    fail(
+                        `spawn error: ${text}; message omitted characters=${Math.max(0, error.message.length - text.length)}`
+                    );
+                });
+                child.once('close', (code, signal) => fail(`code=${code} signal=${signal}`));
             });
             await Promise.race([
                 exitedEarly,
                 vi.waitFor(
                     () => {
-                        expect(child.exitCode, gitStderr).toBeNull();
+                        expect(child.exitCode, stderrText()).toBeNull();
                         const dirs = readdirSync(receiptRoot);
                         expect(dirs).toHaveLength(1);
                         const directory = dirs[0];
@@ -444,8 +469,8 @@ exit 23
                         }
                         const data = JSON.parse(readFileSync(join(receiptRoot, directory, 'receipt.json'), 'utf8'));
                         expect(data.pid).toBeGreaterThan(0);
-                        expect(connections.length, gitStderr).toBeGreaterThan(0);
-                        expect(child.exitCode, gitStderr).toBeNull();
+                        expect(connections.length, stderrText()).toBeGreaterThan(0);
+                        expect(child.exitCode, stderrText()).toBeNull();
                         expect(data.stall).toBeDefined();
                         expect(data.stall.sample).not.toBe('observation pending');
                         expect(data.stall.queueSnapshots).toHaveLength(2);
@@ -457,6 +482,7 @@ exit 23
                     { timeout: 20000, interval: 50 }
                 ),
             ]);
+            drainReleased = true;
             server.close();
             // Drain the exact connection only after observing the blocked writer.
             for (const connection of connections) {
@@ -465,6 +491,7 @@ exit 23
             const code = await new Promise<number | null>((resolve) => child.on('close', resolve));
             expect(code).toBe(0);
         } finally {
+            drainReleased = true;
             for (const connection of connections) {
                 connection.destroy();
             }
