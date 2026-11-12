@@ -44,6 +44,13 @@ Report a probe that cannot run with its exact mutation, named check and limitati
    coherent PCM geometry and the real analysis before setting a case-specific deadline for required work; retain
    programme and gating windows and every functional assertion (#6311, #6350). Do not use global timeouts or
    retries.
+   Static scanners need a deterministic work bound as well as semantic verdicts. #1572 introduced
+   per-spec barrel-mock graph walks without a unique-resolution bound; #5231's investigation after
+   #6419's hook timeout found repeated resolution work, without proving the Linux timeout's cause.
+   Count real resolver computations by exact importer directory and specifier, including misses,
+   across specs with different mock cuts, and require one computation per key within each analysis.
+   Preserve per-spec findings, order, exemptions and derivation counts. Change files between analyses
+   to prove hits and misses are fresh; reverting the cache or bypassing either resolution route must fail.
    Compose stage deadlines (escalation plus proof, navigation plus overlay, every retry attempt plus
    backoff within step and job budgets) and drive a stalled child through the loop. A wall-clock bound
    measures only the budgeted quantity; a count cap is not a deadline. Under induced engine or runner

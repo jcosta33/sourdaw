@@ -256,19 +256,6 @@ function bodyLooksLikeDerivedStateEffect(body) {
  * @param {string} filename
  * @returns {boolean}
  */
-function isPresentationFile(filename) {
-    const normalized = filename.replaceAll('\\', '/');
-    return (
-        normalized.includes('/presentations/views/') ||
-        normalized.includes('/presentations/hooks/') ||
-        normalized.includes('/presentations/components/')
-    );
-}
-
-/**
- * @param {string} filename
- * @returns {boolean}
- */
 function isDomainLogicFile(filename) {
     const normalized = filename.replaceAll('\\', '/');
     return (
@@ -1667,43 +1654,6 @@ const sourdawPlugin = {
             },
         },
 
-        'no-tauri-api-in-ui': {
-            meta: {
-                type: 'problem',
-                docs: {
-                    description: 'Disallow direct @tauri-apps/api usage in presentation code.',
-                },
-                schema: [],
-                messages: {
-                    noTauriApiInUi:
-                        'Do not use @tauri-apps/api directly in presentation code. Go through a repository, adapter, or use case.',
-                },
-            },
-            /** @param {import('@typescript-eslint/utils').TSESLint.RuleContext<string, []>} context */
-            create(context) {
-                if (!isPresentationFile(context.filename)) {
-                    return {};
-                }
-
-                return {
-                    /** @param {import('@typescript-eslint/utils').TSESTree.ImportDeclaration} node */
-                    ImportDeclaration(node) {
-                        const value = node.source.value;
-                        if (typeof value !== 'string') {
-                            return;
-                        }
-
-                        if (value.startsWith('@tauri-apps/api')) {
-                            context.report({
-                                node,
-                                messageId: 'noTauriApiInUi',
-                            });
-                        }
-                    },
-                };
-            },
-        },
-
         'no-react-in-domain-logic': {
             meta: {
                 type: 'problem',
@@ -2693,24 +2643,33 @@ const sourdawPlugin = {
         },
 
         // AGENTS.md L148: `as`, `as any`, or `as unknown as …` to silence compiler errors is forbidden.
-        // Catches `x as any` and the `x as unknown as T` double-assertion escape hatch.
+        // Catches `x as any`, `x as never`, and the `x as unknown as T` double-assertion escape hatch.
         'no-type-assertion-escape': {
             meta: {
                 type: 'problem',
                 docs: {
                     description:
-                        'Disallow `as any` and `as unknown as X` — forbidden soundness escapes (AGENTS.md § TypeScript — soundness).',
+                        'Disallow `as any`, `as never` and `as unknown as X` — forbidden soundness escapes (AGENTS.md § TypeScript — soundness).',
                 },
-                schema: [],
+                schema: [
+                    {
+                        type: 'object',
+                        properties: { allowAsNever: { type: 'boolean' } },
+                        additionalProperties: false,
+                    },
+                ],
                 messages: {
                     noAsAny:
                         '`as any` is forbidden. Fix the value or the type. Use `unknown` + narrowing, `satisfies`, or Zod validation at I/O boundaries.',
                     noAsUnknownAs:
                         '`as unknown as X` double-assertion is forbidden — it silences the type checker. Narrow via `unknown` + type guards or validate with Zod at I/O boundaries.',
+                    noAsNever:
+                        '`as never` is forbidden — it is assignable to every type, so it silences the type checker. Give the value its real type or narrow it.',
                 },
             },
-            /** @param {import('@typescript-eslint/utils').TSESLint.RuleContext<string, []>} context */
+            /** @param {import('@typescript-eslint/utils').TSESLint.RuleContext<string, [{ allowAsNever?: boolean }?]>} context */
             create(context) {
+                const allowAsNever = context.options[0]?.allowAsNever === true;
                 return {
                     /** @param {import('@typescript-eslint/utils').TSESTree.TSAsExpression} node */
                     TSAsExpression(node) {
@@ -2725,6 +2684,11 @@ const sourdawPlugin = {
                             node.expression.typeAnnotation?.type === AST_NODE_TYPES.TSUnknownKeyword
                         ) {
                             context.report({ node, messageId: 'noAsUnknownAs' });
+                            return;
+                        }
+                        // `x as never`
+                        if (node.typeAnnotation?.type === AST_NODE_TYPES.TSNeverKeyword && !allowAsNever) {
+                            context.report({ node, messageId: 'noAsNever' });
                         }
                     },
                 };
@@ -2732,6 +2696,30 @@ const sourdawPlugin = {
         },
     },
 };
+
+const reactDefaultImportRestrictions = [
+    {
+        selector: "ImportDeclaration[source.value='react'] :matches(ImportDefaultSpecifier, ImportNamespaceSpecifier)",
+        message:
+            'Default React import not allowed since we use the TypeScript jsx-transform. If you need a global type that collides with a React named export (such as `MouseEvent`), use `globalThis.MouseEvent`.',
+    },
+];
+
+const localStorageMessage =
+    'Do not use `localStorage` directly; go through a storage adapter in `src/infra/store/storage/` or a repository.';
+const sessionStorageMessage = 'Do not use `sessionStorage` directly; go through a repository that owns the key.';
+const directStorageRestrictions = [
+    { selector: "CallExpression[callee.object.name='localStorage']", message: localStorageMessage },
+    {
+        selector: "CallExpression[callee.object.object.name='window'][callee.object.property.name='localStorage']",
+        message: localStorageMessage,
+    },
+    { selector: "CallExpression[callee.object.name='sessionStorage']", message: sessionStorageMessage },
+    {
+        selector: "CallExpression[callee.object.object.name='window'][callee.object.property.name='sessionStorage']",
+        message: sessionStorageMessage,
+    },
+];
 
 /** @type {import('@typescript-eslint/utils').TSESLint.FlatConfig.Config[]} */
 const sizeBaselineConfig = [];
@@ -3084,18 +3072,8 @@ export default tseslint.config(
             'sourdaw/no-useeffect-fetching': 'error',
             'sourdaw/no-useeffect-derived-state': 'warn',
             'sourdaw/no-manual-memoization': 'error',
-            'sourdaw/no-tauri-api-in-ui': 'error',
 
-            // No default React import
-            'no-restricted-syntax': [
-                'error',
-                {
-                    selector:
-                        "ImportDeclaration[source.value='react'] :matches(ImportDefaultSpecifier, ImportNamespaceSpecifier)",
-                    message:
-                        'Default React import not allowed since we use the TypeScript jsx-transform. If you need a global type that collides with a React named export (such as `MouseEvent`), use `globalThis.MouseEvent`.',
-                },
-            ],
+            'no-restricted-syntax': ['error', ...reactDefaultImportRestrictions],
         },
     },
 
@@ -3130,41 +3108,29 @@ export default tseslint.config(
     },
 
     // ─── Project-specific restrictions ───────────────────────────────────────
+    // Flat config replaces a rule's options instead of merging them, so each
+    // block that sets `no-restricted-syntax` repeats every selector list meant
+    // for its files. Production TSX carries both lists at the React ban's
+    // `error`; no production TSX calls browser storage directly.
     {
-        files: ['**/*.{ts,tsx,mts,cts}'],
+        files: ['**/*.{ts,mts,cts}'],
         ignores: [
-            '**/*.spec.{ts,tsx}',
-            'src/helpers/Store/Storage/LocalStorageStorage.ts',
-            'src/helpers/Store/Storage/SessionStorageStorage.ts',
-            'src/modules/DevTools/repositories/devToolsStorageRepository.ts',
-            'src/modules/Project/repositories/projectRepository.ts',
-            'src/modules/Project/useCases/recentProjects.ts',
-            'src/modules/Command/stores/undoStore.ts',
+            '**/*.spec.ts',
+            // Designated owners of direct browser storage access.
+            'src/infra/store/storage/createLocalStorage.ts',
+            'src/infra/store/storage/createPlainJsonLocalStorage.ts',
+            // Mirrors the undo stacks into sessionStorage for reload recovery.
+            'src/modules/Command/stores/undoSessionMirror.ts',
         ],
         rules: {
-            'no-restricted-syntax': [
-                'warn',
-                {
-                    selector: "CallExpression[callee.object.name='localStorage']",
-                    message: 'Do not use `localStorage` directly, use the `Store` with `LocalStorageStorage` instead.',
-                },
-                {
-                    selector:
-                        "CallExpression[callee.object.object.name='window'][callee.object.property.name='localStorage']",
-                    message: 'Do not use `localStorage` directly, use the `Store` with `LocalStorageStorage` instead.',
-                },
-                {
-                    selector: "CallExpression[callee.object.name='sessionStorage']",
-                    message:
-                        'Do not use `sessionStorage` directly, use the `Store` with `SessionStorageStorage` instead.',
-                },
-                {
-                    selector:
-                        "CallExpression[callee.object.object.name='window'][callee.object.property.name='sessionStorage']",
-                    message:
-                        'Do not use `sessionStorage` directly, use the `Store` with `SessionStorageStorage` instead.',
-                },
-            ],
+            'no-restricted-syntax': ['warn', ...directStorageRestrictions],
+        },
+    },
+    {
+        files: ['**/*.tsx'],
+        ignores: ['**/*.spec.tsx'],
+        rules: {
+            'no-restricted-syntax': ['error', ...reactDefaultImportRestrictions, ...directStorageRestrictions],
         },
     },
 
@@ -3201,6 +3167,17 @@ export default tseslint.config(
             'max-lines-per-function': 'off',
             'max-depth': 'off',
             complexity: 'off',
+        },
+    },
+
+    // ─── Temporary `as never` allowance ────────────────────────────────────
+    // This Arrangement restore handler still casts with `as never`; its
+    // removal lands in a separate change. `as any` and `as unknown as` stay
+    // errors here. Delete this block once the casts are gone.
+    {
+        files: ['src/modules/Arrangement/handlers/restore/handleRestoreTrack.ts'],
+        rules: {
+            'sourdaw/no-type-assertion-escape': ['error', { allowAsNever: true }],
         },
     },
 

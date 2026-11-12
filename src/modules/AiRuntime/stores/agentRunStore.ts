@@ -357,6 +357,7 @@ function readBatch(value: unknown): AgentRunBatch | null {
         'executing',
         'committed',
         'no-op',
+        'skipped',
         'failed',
         'cancelled',
     ];

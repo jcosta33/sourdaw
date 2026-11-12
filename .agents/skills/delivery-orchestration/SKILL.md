@@ -36,6 +36,7 @@ it dispatches. Every step below runs on every delivery; the references hold the 
 | Squash-merge                                                | `pnpm deliver <pr>`                                                                                                                                                                                                              |
 | Recover a crashed delivery                                  | `pnpm deliver --recover-lock <pr> --owner <oid>`                                                                                                                                                                                 |
 | Recover a wedged review post                                | `pnpm review:publish:recover <pr> --owner <oid> [--attest-absent]`                                                                                                                                                               |
+| Remove a dead owner's tracker mutation lease                | `pnpm issue:reconcile --recover-lease <token>`                                                                                                                                                                                   |
 | Reconcile a tracker issue at delivery                       | `pnpm issue:reconcile <issue> --expected-body-sha256 <64-hex> (--edits-file <json> \| --superseded-by <issue>)`                                                                                                                  |
 | Close a superseded PR                                       | `pnpm pr:supersede <old> --head <old-sha> --replacement <merged> [--superseded-parent <closed-unmerged-parent> [--parent-replacement <merged-parent-replacement>]] --lineage <path-to-json>`                                     |
 | Retire an obsolete PR with confirmed repairs                | `pnpm pr:retire <pr> --head <head-sha> --record <path-to-json>`                                                                                                                                                                  |
@@ -71,7 +72,8 @@ issue use manual `gh` under AGENTS.md [Artifacts](../../../AGENTS.md#artifacts).
 Run these package scripts with the protected primary checkout as the working directory, never from a
 lane: `lane:publish`, `lane:sync-parent`, `review:publish`, `review:publish:recover`,
 `review:repair`, `review:confirm`, `review:shadow-status`, `deliver`, `pr:supersede`, `pr:retire`,
-`issue:claim`, `issue:reconcile`, and `ruleset:harden` (the trusted ruleset change);
+`issue:claim`, `issue:reconcile`, `branch:prune`, `release:cut`, and `ruleset:harden` (the trusted
+ruleset change);
 `review:accept` remains only for legacy pre-policy heads, and `review:resolve` only explains its
 retirement. `ruleset:harden` without `--apply` is a dry run that prints the planned change and
 writes nothing. Each routes through `scripts/trustedGithubWriteBootstrap.ts`, which refuses any other
@@ -117,8 +119,9 @@ stamp existed.
 An issue-bound lane claims its issue in the same step: `lane:open` prints the command, and
 `pnpm issue:claim <issue>` — run from the protected primary checkout — adds the `status:active`
 label, removes every other `status:` label, and moves every board item holding the issue to In
-progress, reading the project's field and option ids live. The script refuses an issue that already
-carries `status:active`, making an existing claim visible before work starts; the check is
+progress, reading the project's field and option ids live, and reads the label swap back before
+moving any board. The script refuses a closed issue and an issue that already carries
+`status:active`, making an existing claim visible before work starts; the check is
 read-then-write, not atomic, so the survey before `lane:open` remains the guard against two claims
 racing in one window.
 
@@ -173,7 +176,9 @@ conventional subject first. Publishing neither enables auto-merge nor posts revi
   The same effective title governs body validation, derived metadata, and branch-type warnings.
   Every publish, follow-ups included, also checks that newest lane subject against `TITLE_PATTERN`
   in `scripts/prContract.ts` (`feat`, `fix`, `chore`, `docs`, `test`, `refactor`, `perf`, `build`,
-  `ci`; never `style`) and refuses with `pull-request title is not conventional` when it fails, so
+  `ci`; never `style`, one line, no control characters) and refuses with `pull-request title is not
+conventional` when it fails. Every title source is also refused when it carries an issue-closing
+  reference, because the title becomes the squash commit subject on `main`, so
   the newest lane commit needs a conventional subject before every publish, and on the first
   publish it is the subject the PR should show.
 - **Body flags.** The body follows [`.github/pull_request_template.md`](../../../.github/pull_request_template.md);
@@ -469,7 +474,8 @@ draws miss the floor, a draw declares a tier other than `economy` or `standard`,
 without `modelExhaustion`, or a value is unsafe. It never compares a model name with the review
 cost ceiling: choosing a permitted model for each draw is the orchestrator's duty, and the script
 enforces only the declared tier and author diversity. A bound published record replays exactly, without
-another post. A legacy bundle without a risk plan retains its historical shape. The full refusal and
+another post. A bundle without a risk plan is admitted only for a pull request opened before risk
+plans began; a later one must re-run `review:prepare`. The full refusal and
 replay contract: [review records](references/review-records.md).
 
 Post validated blockers as a `REQUEST_CHANGES` review BEFORE dispatching any repair.
@@ -527,9 +533,14 @@ delivery. Do not merge any other way.
 #### CI admission
 
 Snapshot-backed CI admission is advisory: successful, failed, pending, absent, cancelled, malformed,
-or unavailable evidence does not itself block delivery. GitHub still enforces the live ruleset's
-required `Gate`; `deliver` refuses `BLOCKED` before any remote write, including receipts or merge
-attempts. Dormant required-CI admission retains pinned workflow-derived gate and complete-rollup
+or unavailable rollup evidence does not itself block delivery. GitHub still enforces the live
+ruleset's required `Gate`; `deliver` refuses `BLOCKED` before any remote write, including receipts or
+merge attempts. Independently of admission mode, `deliver` proves which `Gate` it relies on
+(`validateGateProvenance` in `scripts/deliverPullRequest.ts`): no commit status may be named
+`Gate`, every `Gate` check run must be the GitHub Actions job of a `health-gates.yml`
+`pull_request` run on the exact head, the newest must be the successful `Gate` job of the newest
+run, and no non-draft attempt on the head may have failed. A later green rerun never retires such
+a failure; push a new commit. The squash commit message is the validated PR body. Dormant required-CI admission retains pinned workflow-derived gate and complete-rollup
 rules from the launcher's pinned `origin/main` workflow copy; lanes cannot select or reshape it.
 
 #### Refusals and retries
@@ -597,7 +608,8 @@ before every execution. It can refresh only the canonical protected-primary boot
 sources when its HEAD/index or previous verified installation proves the current bytes; a local edit
 refuses. It preserves other primary dirt and never depends on the author lane surviving. Install
 then verifies the job's first launchd launch and, when launchd cannot initialize it, boots the job
-out, removes the plist and fails with the remediation. On macOS a primary on an external volume needs
+out, restores and re-bootstraps the previous plist when one existed (otherwise removes it), and fails
+with the remediation; after a verified launch it prunes superseded runtimes. On macOS a primary on an external volume needs
 the pinned Node binary granted Full Disk Access (or Removable Volumes access). Consult
 `lane:cleanup --status` from a current checkout, `.agents/lane-cleanup/worker*.log`, and
 `launchctl print gui/$(id -u)/com.sourdaw.lane-cleanup` for retained work and scheduler status.
