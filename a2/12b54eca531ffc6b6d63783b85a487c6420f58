@@ -1,0 +1,23 @@
+src/modules/AiRuntime/useCases/agentReference/__tests__/parameterRangeGrounding.spec.ts
+  s_b348f66240d751::t_babd6666eb968e 242-271
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_b348f66240d751::t_0a19c602872a7e 4321,4332-4338,5455
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/findTrailingRangePhrase.ts
+  s_b348f66240d751::t_4dbb7670302689 7-8,57-87,89-94,96-116,198-199,201-205,211-212
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a212b54eca531ffc6b6d63783b85a487c6420f58",
+  "prompts": {},
+  "sessions": {
+    "s_b348f66240d751": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_b348f66240d751",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
