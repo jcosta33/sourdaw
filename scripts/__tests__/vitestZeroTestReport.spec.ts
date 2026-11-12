@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -390,6 +390,42 @@ describe('runZeroTestGuard', () => {
         }
     });
 
+    it('records wrapper entry when the child exits before reporters start', () => {
+        const fake = fakeVitest('early-exit');
+        const outer = join(fake.root, 'outer');
+        mkdirSync(outer);
+        const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        try {
+            const status = runZeroTestGuard({
+                vitestBin: fake.bin,
+                args: ['scripts/__tests__/prContract.spec.ts'],
+                cwd: repoRoot,
+                stdio: 'pipe',
+                env: {
+                    FAKE_VITEST_EXIT: '1',
+                    SOURDAW_VITEST_DIAGNOSTICS_DIR: fake.root,
+                    SOURDAW_VITEST_PROGRESS: outer,
+                },
+            });
+            expect(status).toBe(1);
+            const childEnv = JSON.parse(readFileSync(fake.envPath, 'utf8')) as { progress: string };
+            expect(childEnv.progress).not.toBe(outer);
+            expect(readdirSync(outer)).toEqual([]);
+            const entry = JSON.parse(readFileSync(join(childEnv.progress, 'wrapper-entry.json'), 'utf8')) as {
+                event: string;
+                pid: number;
+                parentPid: number;
+                monotonicNs: string;
+            };
+            expect(entry.event).toBe('wrapper-entry');
+            expect(entry.pid).toBe(process.pid);
+            expect(entry.parentPid).toBe(process.ppid);
+            expect(entry.monotonicNs).toMatch(/^\d+$/);
+        } finally {
+            errorSpy.mockRestore();
+            rmSync(fake.root, { recursive: true, force: true });
+        }
+    });
     it('does not inherit a parent journal when its own diagnostic directory is unavailable', () => {
         const fake = fakeVitest('no-progress-directory');
         try {

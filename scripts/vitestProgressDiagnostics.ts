@@ -7,7 +7,14 @@ import type { ProcessGroupSnapshot } from './processSnapshot.ts';
 export const VITEST_PROGRESS_ENV = 'SOURDAW_VITEST_PROGRESS';
 
 type ProgressEvent =
-    'runner-start' | 'module-queued' | 'worker-setup' | 'module-collected' | 'case-ready' | 'scan' | 'module-failure';
+    | 'wrapper-entry'
+    | 'runner-start'
+    | 'module-queued'
+    | 'worker-setup'
+    | 'module-collected'
+    | 'case-ready'
+    | 'scan'
+    | 'module-failure';
 
 /** Latest event per stage; slots are independent and do not form a correlated timeline. */
 export function recordVitestProgress(
@@ -20,6 +27,16 @@ export function recordVitestProgress(
     if (!directory) {
         return;
     }
+    recordVitestProgressAt(directory, event, detail, observation, caseStatus);
+}
+
+export function recordVitestProgressAt(
+    directory: string,
+    event: ProgressEvent,
+    detail = '',
+    observation?: { monotonicNs: string; processGroup: ProcessGroupSnapshot },
+    caseStatus?: { state: string; mode: string }
+): void {
     const temporary = join(directory, `.${event}-${process.pid % 16}.tmp`);
     let owned = false;
     try {

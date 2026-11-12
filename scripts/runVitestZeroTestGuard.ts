@@ -13,6 +13,7 @@ import { fileURLToPath } from 'node:url';
 
 import {
     createVitestProgress,
+    recordVitestProgressAt,
     removeVitestProgress,
     summarizeVitestProgress,
     VITEST_PROGRESS_ENV,
@@ -47,6 +48,7 @@ export function runZeroTestGuard(options: ZeroTestGuardOptions): number {
     const progress = createVitestProgress(env);
     if (progress !== undefined) {
         env[VITEST_PROGRESS_ENV] = progress;
+        recordVitestProgressAt(progress, 'wrapper-entry');
         console.error(`vitest progress: ${progress}`);
     }
     let succeeded = false;

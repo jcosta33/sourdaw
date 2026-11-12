@@ -167,6 +167,38 @@ describe('Git checkpoint diagnostic', () => {
         );
         expect(git('ls-files', '--error-unmatch', 'takes/note.txt')).toBe('takes/note.txt');
     });
+    it.each([
+        ['add all', ['add', '-A'], true],
+        ['add long all', ['add', '--all'], true],
+        ['add update', ['add', '-u'], false],
+        ['add long update', ['add', '--update'], false],
+        ['commit all', ['commit', '-am', 'test: update'], false],
+        ['commit long flags', ['commit', '-a', '-m', 'test: update'], false],
+        ['commit path', ['commit', '-m', 'test: update', '--', 'tracked.txt'], false],
+    ])('records unstaged source before %s', async (_label, args, includesUntracked) => {
+        const { root, env, git } = fixture();
+        writeFileSync(join(root, 'tracked.txt'), 'old');
+        git('add', '--', 'tracked.txt');
+        git('commit', '-qm', 'test: baseline');
+        writeFileSync(join(root, 'tracked.txt'), 'new source');
+        writeFileSync(join(root, 'untracked.txt'), 'new file');
+        const result = await run(root, env, ...args);
+        expect(result.code, result.stderr).toBe(0);
+        const observed = receipt(result.stderr).value;
+        expect(observed.before.sources['tracked.txt']?.sha256).toBe(
+            createHash('sha256').update('new source').digest('hex')
+        );
+        expect(observed.before.sourceSelection.mode).toBe('conservative');
+        expect(observed.before.sourceSelection.candidateDiscovery.tracked).toBe('complete');
+        if (includesUntracked) {
+            expect(observed.before.sources['untracked.txt']?.sha256).toBe(
+                createHash('sha256').update('new file').digest('hex')
+            );
+        } else {
+            expect(Object.hasOwn(observed.before.sources, 'untracked.txt')).toBe(false);
+        }
+        expect(git('show', ':tracked.txt')).toBe('new source');
+    });
     it('preserves leading whitespace in selected source filenames', async () => {
         const { root, env } = fixture();
         const name = ' leading take.txt';
@@ -197,6 +229,12 @@ describe('Git checkpoint diagnostic', () => {
         expect(forced.code, forced.stderr).toBe(0);
         expect(receipt(forced.stderr).value.before.sources['takes/ignored.tmp'].sha256).toBe(
             createHash('sha256').update('ignored').digest('hex')
+        );
+        writeFileSync(join(root, 'takes', 'combined.tmp'), 'combined force');
+        const combined = await run(root, env, 'add', '-fv', '--', 'takes/combined.tmp');
+        expect(combined.code, combined.stderr).toBe(0);
+        expect(receipt(combined.stderr).value.before.sources['takes/combined.tmp'].sha256).toBe(
+            createHash('sha256').update('combined force').digest('hex')
         );
     });
     it('preserves legal large Git path arguments through checkpoint observation', async () => {

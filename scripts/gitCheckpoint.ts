@@ -22,6 +22,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { checkpointArguments } from './gitCheckpointArguments.ts';
+import { checkpointDiscovery, selectCheckpointSources } from './gitCheckpointDiscovery.ts';
 import { checkpointMountOptions } from './gitCheckpointMount.ts';
 import { command, diagnosticEnv, processIdentity, runCheckpointSample } from './gitCheckpointProcess.ts';
 
@@ -147,30 +148,14 @@ function info(path: string): object {
         return { error: errorCode(error) };
     }
 }
-function discoverPathspecs(paths: string[], discover: boolean, includeIgnored: boolean, trackedOnly: boolean) {
-    if (!discover) {
-        return { matched: [], pathspecDiscovery: 'not requested' };
-    }
-    const argumentsForListing = ['ls-files', '-z', '--cached'];
-    if (!trackedOnly) {
-        argumentsForListing.push('--others');
-    }
-    if (!includeIgnored && !trackedOnly) {
-        argumentsForListing.push('--exclude-standard');
-    }
-    argumentsForListing.push('--', ...new Set(paths));
-    const listing = command('git', argumentsForListing, diagnosticEnv, 750, true);
-    if (listing === null) {
-        return { matched: [], pathspecDiscovery: unavailable };
-    }
-    return { matched: listing.split('\0').filter(Boolean), pathspecDiscovery: 'complete' };
-}
 function observe(
     paths: string[],
     partialPath: string,
     discover: boolean,
     includeIgnored: boolean,
-    trackedOnly: boolean
+    trackedOnly: boolean,
+    conservative: boolean,
+    includeUntracked: boolean
 ) {
     const partial: Record<string, unknown> = {};
     const checkpoint = (key: string, value: unknown) => {
@@ -192,17 +177,16 @@ function observe(
         750,
         true
     );
-    const stagedPaths = staged?.split('\0').filter(Boolean) ?? [];
-    const { matched, pathspecDiscovery } = discoverPathspecs(paths, discover, includeIgnored, trackedOnly);
-    const requestedPaths = discover ? [] : paths;
-    const discovered = [...new Set([...requestedPaths, ...matched, ...stagedPaths])];
-    const selected = discovered.slice(0, 256);
-    checkpoint('sourceSelection', {
-        selected: selected.length,
-        omitted: discovered.length - selected.length,
-        stagedDiscovery: staged === null ? unavailable : 'complete',
-        pathspecDiscovery,
-    });
+    const { selected, sourceSelection } = selectCheckpointSources(
+        paths,
+        staged,
+        discover,
+        includeIgnored,
+        trackedOnly,
+        conservative,
+        includeUntracked
+    );
+    checkpoint('sourceSelection', sourceSelection);
     const sources = new Map<string, object>();
     for (const path of selected) {
         sources.set(path, hashSource(path));
@@ -250,11 +234,20 @@ function inspect(
     phase: string,
     discover = false,
     includeIgnored = false,
-    trackedOnly = false
+    trackedOnly = false,
+    conservative = false,
+    includeUntracked = false
 ): Promise<Record<string, unknown>> {
     const partialPath = join(directory, `${phase}-partial.json`);
     return new Promise((resolve) => {
-        const request = JSON.stringify({ paths, discover, includeIgnored, trackedOnly });
+        const request = JSON.stringify({
+            paths,
+            discover,
+            includeIgnored,
+            trackedOnly,
+            conservative,
+            includeUntracked,
+        });
         if (Buffer.byteLength(request) > 4 * 1024 * 1024) {
             resolve({ error: 'observer request exceeds 4 MiB' });
             return;
@@ -443,20 +436,19 @@ async function main(args: string[]) {
     const directory = mkdtempSync(join(root, 'checkpoint-'));
     chmodSync(directory, 0o700);
     const receipt = join(directory, 'receipt.json');
-    const separator = args.indexOf('--');
-    const paths = args[0] === 'add' && separator >= 0 ? args.slice(separator + 1) : [];
-    const discover = args[0] === 'add' && separator >= 0;
-    const options = args.slice(1, separator);
-    const includeIgnored = options.some((arg) => arg === '-f' || arg === '--force');
-    const trackedOnly = options.some((arg) => arg === '-u' || arg === '--update');
+    const { paths, discover, includeIgnored, trackedOnly, conservative, includeUntracked } = checkpointDiscovery(args);
     const started = process.hrtime.bigint();
     const startedAtUtc = new Date().toISOString();
-    let before: Record<string, unknown>;
-    try {
-        before = await inspect(paths, directory, 'before', discover, includeIgnored, trackedOnly);
-    } catch {
-        before = { error: 'observer unavailable' };
-    }
+    const before: Record<string, unknown> = await inspect(
+        paths,
+        directory,
+        'before',
+        discover,
+        includeIgnored,
+        trackedOnly,
+        conservative,
+        includeUntracked
+    ).catch(() => ({ error: 'observer unavailable' }));
     const evidence: Record<string, unknown> = {
         version: 1,
         operation: args[0],
@@ -561,10 +553,22 @@ if (process.argv[2] === '--sample') {
         partialPath &&
         typeof request?.discover === 'boolean' &&
         typeof request.includeIgnored === 'boolean' &&
-        typeof request.trackedOnly === 'boolean'
+        typeof request.trackedOnly === 'boolean' &&
+        typeof request.conservative === 'boolean' &&
+        typeof request.includeUntracked === 'boolean'
     ) {
         console.log(
-            JSON.stringify(observe(paths, partialPath, request.discover, request.includeIgnored, request.trackedOnly))
+            JSON.stringify(
+                observe(
+                    paths,
+                    partialPath,
+                    request.discover,
+                    request.includeIgnored,
+                    request.trackedOnly,
+                    request.conservative,
+                    request.includeUntracked
+                )
+            )
         );
     } else {
         console.error('invalid observer arguments');
