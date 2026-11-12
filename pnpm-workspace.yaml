@@ -70,3 +70,18 @@ minimumReleaseAgeExclude:
     - eslint-plugin-react-x@5.30.2
     - prettier@3.10.1
     - tar@7.5.23
+
+    - '@babel/generator@7.29.14'
+    - '@babel/helper-module-transforms@7.29.14'
+    - '@babel/helper-string-parser@7.29.14'
+    - '@babel/helpers@7.29.14'
+    - '@babel/parser@7.29.14'
+    - '@babel/runtime@7.29.14'
+    - '@babel/traverse@7.29.14'
+    - '@babel/types@7.29.14'
+    - baseline-browser-mapping@2.11.36
+    - electron-to-chromium@1.5.483
+    - enhanced-resolve@5.26.2
+    - graceful-fs@4.2.12
+    - tldts-core@7.4.26
+    - tldts@7.4.26
