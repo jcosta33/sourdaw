@@ -43,10 +43,14 @@ is trusted, and same-account processes can read credentials. Snapshot and token-
 discard redirecting overrides: Node loaders and preloads, and Git, GitHub CLI, GitHub Actions, and App
 configuration, matched without regard to case. They use the launcher-resolved `git` and `gh`.
 Token-bearing Git children override fixed-name repository config: hooks, fsmonitor, the `ext::`
-transport, askpass, and commit and push signing. Environment-supplied config outranks repository
+transport, askpass, commit and push signing, and the alternate-refs command fetch negotiation runs
+for a planted `objects/info/alternates` store. Environment-supplied config outranks repository
 config for the same key, so those programs never run beside a token. Keys whose names the lane
 chooses still run for token-bearing Git commands working in a lane or the primary: `.gitattributes`
-filters, merge and diff drivers, and custom `name::` remote helpers. Every Git-read environment
+filters, merge and diff drivers, and custom `name::` remote helpers. Network settings that run no
+program still apply: URL-scoped and plain `http.*` keys such as `http.curloptResolve`,
+`http.sslCAInfo`, and `http.proxy` can redirect a token-bearing request. Keeping the token secret
+from same-account processes is outside this boundary. Every Git-read environment
 ignores replace refs. The
 orchestrator User role discards inherited GitHub, Git, and Node overrides the same way during
 credential lookup and isolated execution.

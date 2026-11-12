@@ -386,10 +386,14 @@ const INHERITED_AUTHORITY_PREFIXES = ['GIT_', 'GH_', 'GITHUB_', 'SOURDAW_GITHUB_
  * Repository config is shared by every lane of the primary checkout, so any lane can plant a program
  * there that a Git child would run with this process's environment: a hook (`fetch` runs
  * `reference-transaction`), an fsmonitor (`status` and `diff` run it), an `ext::` transport behind a
- * URL rewrite, an askpass program, or a signing program. Environment-supplied config ranks with
- * `git -c`, above repository config for the same key, so these fixed-name entries disarm them for every
- * child. A key whose name the lane chooses — a `.gitattributes` filter, a merge or diff driver, a
- * custom `name::` remote helper — cannot be named here and still runs.
+ * URL rewrite, an askpass program, a signing program, or an alternate-refs command (`fetch`
+ * negotiation runs it when `objects/info/alternates` names a store). Environment-supplied config ranks
+ * with `git -c`, above repository config for the same key, so these fixed-name entries disarm them for
+ * every child. A key whose name the lane chooses — a `.gitattributes` filter, a merge or diff driver,
+ * a custom `name::` remote helper — cannot be named here and still runs. Network settings that run no
+ * program — URL-scoped or plain `http.*` keys such as `http.curloptResolve`, `http.sslCAInfo`, or
+ * `http.proxy` — can still redirect a token-bearing request; keeping the token from same-account
+ * processes is outside this boundary.
  */
 const REPOSITORY_PROGRAM_OVERRIDES = [
     ['core.hooksPath', '/dev/null'],
@@ -398,6 +402,7 @@ const REPOSITORY_PROGRAM_OVERRIDES = [
     ['core.askPass', ''],
     ['push.gpgSign', 'false'],
     ['commit.gpgSign', 'false'],
+    ['core.alternateRefsCommand', ''],
 ] as const;
 
 /**

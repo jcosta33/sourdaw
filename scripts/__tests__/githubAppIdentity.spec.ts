@@ -94,7 +94,7 @@ describe('orchestrator authentication', () => {
                         expect(options.env[key]).toBeUndefined();
                     }
                     // The inherited count is replaced by the helper's own repository-program overrides.
-                    expect(options.env.GIT_CONFIG_COUNT).toBe('6');
+                    expect(options.env.GIT_CONFIG_COUNT).toBe('7');
                     return 'stored-token';
                 }
                 expect(args).toEqual(['api', '--hostname', 'github.com', 'user']);
@@ -1189,7 +1189,7 @@ describe('isolated gh sessions', () => {
         expect(auth.session.env.GIT_CONFIG_SYSTEM).toBe('/dev/null');
         expect(auth.session.env.GIT_TERMINAL_PROMPT).toBe('0');
         // The inherited `insteadof` entry is replaced by the helper's own repository-program overrides.
-        expect(auth.session.env.GIT_CONFIG_COUNT).toBe('6');
+        expect(auth.session.env.GIT_CONFIG_COUNT).toBe('7');
         expect(auth.session.env.GIT_CONFIG_KEY_0).toBe('core.hooksPath');
         expect(auth.session.env.GIT_CONFIG_VALUE_0).toBe('/dev/null');
         expect(auth.session.env.GIT_CONFIG_PARAMETERS).toBeUndefined();
@@ -1500,7 +1500,7 @@ describe('sterile Git child environments', () => {
             }
             expect(env).toMatchObject({
                 GIT_NO_REPLACE_OBJECTS: '1',
-                GIT_CONFIG_COUNT: '6',
+                GIT_CONFIG_COUNT: '7',
                 GIT_CONFIG_KEY_0: 'core.hooksPath',
                 GIT_CONFIG_VALUE_0: '/dev/null',
                 GIT_CONFIG_KEY_1: 'core.fsmonitor',
@@ -1513,6 +1513,8 @@ describe('sterile Git child environments', () => {
                 GIT_CONFIG_VALUE_4: 'false',
                 GIT_CONFIG_KEY_5: 'commit.gpgSign',
                 GIT_CONFIG_VALUE_5: 'false',
+                GIT_CONFIG_KEY_6: 'core.alternateRefsCommand',
+                GIT_CONFIG_VALUE_6: '',
                 // `trustedChildExecutable` reads the launcher's frozen executable from the child env.
                 SOURDAW_TRUSTED_GIT_PATH: '/usr/bin/git',
             });
@@ -1588,6 +1590,39 @@ describe('sterile Git child environments', () => {
 
             spawnCapture('git', ['status', '--porcelain'], { cwd: root, env: { ...env, GIT_CONFIG_COUNT: '0' } });
             expect(readFileSync(ran, 'utf8')).toBe('ran');
+        });
+    });
+
+    it('runs no alternate-refs command the repository config sets', () => {
+        withScratch('sourdaw-alternate-refs-', (root) => {
+            const leaked = join(root, 'leaked');
+            const command = join(root, 'alternate-refs');
+            const alternate = join(root, 'alternate');
+            const source = join(root, 'source');
+            const repository = join(root, 'repository');
+            for (const path of [alternate, source, repository]) {
+                mkdirSync(path);
+                fixtureGit(path, ['init', '-q', '-b', 'main']);
+            }
+            fixtureGit(alternate, ['commit', '-q', '--allow-empty', '-m', 'chore: alternate']);
+            fixtureGit(source, ['commit', '-q', '--allow-empty', '-m', 'chore: source']);
+            writeFileSync(
+                join(repository, '.git', 'objects', 'info', 'alternates'),
+                `${join(alternate, '.git', 'objects')}\n`
+            );
+            writeExecutable(command, `#!/bin/sh\nprintf '%s' "$GH_TOKEN" > ${JSON.stringify(leaked)}\n`);
+            fixtureGit(repository, ['config', 'core.alternateRefsCommand', command]);
+            const env = githubChildEnv('ghs_sentinel', join(root, 'gh-config'));
+            const fetch = (fetchEnv: NodeJS.ProcessEnv) =>
+                spawnCapture('git', ['fetch', source, 'main'], { cwd: repository, env: fetchEnv });
+
+            fetch(env);
+            expect(existsSync(leaked)).toBe(false);
+
+            // A fetch that has something new to negotiate, without the overrides, runs the command.
+            fixtureGit(source, ['commit', '-q', '--allow-empty', '-m', 'chore: next']);
+            fetch({ ...env, GIT_CONFIG_COUNT: '0' });
+            expect(readFileSync(leaked, 'utf8')).toBe('ghs_sentinel');
         });
     });
 
