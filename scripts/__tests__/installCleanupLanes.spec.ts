@@ -716,7 +716,8 @@ describe('cleanup installation', () => {
     it('reports a rollback bootout failure instead of re-bootstrapping over the loaded job', () => {
         const f = fixture();
         try {
-            installCleanupLanes(f.port);
+            const previous = installCleanupLanes(f.port);
+            const previousBytes = readFileSync(previous.plist, 'utf8');
             f.events.length = 0;
             const port = failingRollbackBootout(f.port, 'Boot-out failed: 5: Input/output error');
 
@@ -724,6 +725,12 @@ describe('cleanup installation', () => {
                 /^Bootstrap failed: 5: Input\/output error The previous cleanup job could not be restored: Boot-out failed: 5: Input\/output error$/
             );
             expect(f.events.some((args) => args[0] === 'bootstrap')).toBe(false);
+            const installed = readFileSync(previous.plist, 'utf8');
+            expect(installed).not.toBe(previousBytes);
+            const runtimes = dirname(previous.runtime);
+            const named = readdirSync(runtimes).filter((entry) => installed.includes(join(runtimes, entry)));
+            expect(named).toHaveLength(1);
+            expect(named).not.toContain(basename(previous.runtime));
         } finally {
             f.dispose();
         }

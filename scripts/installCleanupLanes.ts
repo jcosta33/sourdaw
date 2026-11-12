@@ -344,10 +344,11 @@ function rollBackCleanupJob(port: CleanupInstallationPort, rollback: CleanupRoll
     } catch (error) {
         restoreFailure = error instanceof Error ? error.message : String(error);
     }
-    rmSync(rollback.runtime, { recursive: true });
     if (restoreFailure !== undefined) {
+        // The installed plist may still name the new runtime, so it stays until a reinstall prunes it.
         throw new Error(`${failure.message} The previous cleanup job could not be restored: ${restoreFailure}`);
     }
+    rmSync(rollback.runtime, { recursive: true });
     throw failure;
 }
 

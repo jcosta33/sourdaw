@@ -797,6 +797,23 @@ describe('automatic lane cleanup', () => {
         }
     });
 
+    it('keeps a reported guard-receipt clearing error an inspection failure', () => {
+        const f = fixture();
+        const clear = vi.spyOn(resourceGuard, 'clearGuardFailureReceiptIfUnchanged');
+        try {
+            writeGuardFailureReceipt(f.root, guardReceipt(f.head));
+            clear.mockReturnValueOnce({ status: 'error', message: 'EACCES: permission denied' });
+            expect(cleanupLanes(f.port)[0]).toMatchObject({
+                status: 'pending',
+                reason: 'EACCES: permission denied',
+            });
+            expect(existsSync(join(cleanupDirectory(f.root), 'inspection-backoff.json'))).toBe(true);
+        } finally {
+            clear.mockRestore();
+            f.dispose();
+        }
+    });
+
     it('retries failed post-removal guard housekeeping in a fresh worker scan', () => {
         const f = fixture();
         const clear = vi.spyOn(resourceGuard, 'clearGuardFailureReceiptIfUnchanged');
