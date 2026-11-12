@@ -28,6 +28,7 @@ import {
     type CleanupInstallationPort,
     type CleanupRuntimeBinding,
 } from '../installCleanupLanes.ts';
+import { snapshotImportSpecifiers, trustedLocalImportClosure } from '../trustedGithubWriteBootstrap.ts';
 
 /** Mirrors `launchctl print`: top-level fields one tab deep, nested sections deeper with their own `state`. */
 function printed(fields: { state?: string; pid?: string; runs: string; exit: string }): string {
@@ -841,5 +842,25 @@ describe('cleanup installation', () => {
         } finally {
             f.dispose();
         }
+    });
+
+    /**
+     * The installer builds the scheduled runtime from the worker's local import closure and refuses
+     * any source naming a module other than a Node builtin or a verified sibling. The launcher takes
+     * a `yaml` dependency, so the worker must never reach it.
+     */
+    it('keeps the real worker closure installable: Node builtins and sibling sources only', () => {
+        const repositoryRoot = join(import.meta.dirname, '..', '..');
+        const readSource = (path: string) => readFileSync(join(repositoryRoot, path), 'utf8');
+        const closure = [...trustedLocalImportClosure('scripts/cleanupLanes.ts', readSource)];
+
+        expect(closure).toContain('scripts/removeLane.ts');
+        expect(closure).not.toContain('scripts/trustedGithubWriteBootstrap.ts');
+        const foreign = closure.flatMap((path) =>
+            snapshotImportSpecifiers(readSource(path))
+                .filter((specifier) => !specifier.startsWith('node:') && !specifier.startsWith('./'))
+                .map((specifier) => `${path}: ${specifier}`)
+        );
+        expect(foreign).toEqual([]);
     });
 });
