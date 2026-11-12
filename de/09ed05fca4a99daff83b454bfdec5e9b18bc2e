@@ -1,0 +1,215 @@
+crates/daw-plugin-host/src/vst3_wrapper/tests.rs
+  s_3c91dcbb840566::t_3c54755c7d8dd9 1870-1892
+src/modules/AiRuntime/useCases/agentRequestOrchestration/proposeNextScheduledBatch.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 7,33,35,57-65,68-70,77,220,478,483-484,489-490,497-498,501
+src/modules/AiRuntime/useCases/agentRequestOrchestration/readSkippedVibeBatchPositions.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 1-16
+src/modules/AiRuntime/AGENTS.md
+  s_3c91dcbb840566::t_3c54755c7d8dd9 46,49-52
+  s_3c91dcbb840566::t_35c4bf9981f9f4 42
+src/modules/AiRuntime/errors/LocalModelRefusalError.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 1-39
+scripts/__tests__/vitestProgressDiagnostics.spec.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 1-186
+src/modules/AiRuntime/useCases/__tests__/vibeRunInitialBaselines.spec.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 1239-1240
+src/modules/AiRuntime/useCases/agentRequestOrchestration/readVibeRunCards.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 1-53
+src/modules/AiRuntime/useCases/llmOrchestration/__tests__/mandatoryPlanningTools.spec.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 479-523,945-971,973
+  s_3c91dcbb840566::t_8a12910efe9007 972,974
+.agents/skills/delivery-orchestration/references/lane-publication.md
+  s_3c91dcbb840566::t_3c54755c7d8dd9 38-40,78-81,84-85
+scripts/vitestProgressDiagnostics.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 1-107
+src/modules/AiRuntime/__tests__/vibeRunWorkflowFixture.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 1-284
+src/modules/AiRuntime/useCases/agentRequestOrchestration/postVibeRunSummary.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 1-46
+scripts/gitCheckpointMount.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 1-13
+scripts/__tests__/eslintConfig.spec.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 2,8-24,95-173
+  s_3c91dcbb840566::t_3f2714cfaa1871 174
+.agents/skills/delivery-orchestration/SKILL.md
+  s_3c91dcbb840566::t_3c54755c7d8dd9 39,75-76,122-124,179-181,477-478,536-543,611-612
+.agents/skills/review-stances/test-validity.md
+  s_3c91dcbb840566::t_3c54755c7d8dd9 165-172
+src/modules/Command/useCases/revertActionGroupAtomically.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 1-5,21
+scripts/gitCheckpointArguments.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 1-42
+src/modules/AiRuntime/useCases/cancelPendingChatActions.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 10-11,70-73,75-78
+src/modules/Command/useCases/index.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 111
+scripts/resourceGuard.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 42,134,2269-2290
+src/modules/AiRuntime/repositories/webLlm/toolCalling.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 7,16-17,44
+src/modules/AiRuntime/transformers/buildWebLlmDecodingSchema.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 1-80
+src/modules/AiRuntime/useCases/agentRequestOrchestration/readConfirmationBatchId.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 1-16
+src/modules/AiRuntime/useCases/__tests__/vibeBatchSkip.spec.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 1-343
+scripts/nativeCommandDiagnostics.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 1-70
+scripts/gitCheckpointDaemon.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 1-149
+scripts/gitCheckpointProcess.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 1-155
+scripts/__tests__/vitestZeroTestReport.spec.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 1,206,210,217,228,318,351,384,393-448
+  s_3c91dcbb840566::t_f56d444a827d0d 449
+src/modules/WorkspaceShell/presentations/views/Prompt/__tests__/LlmStatusBadge.spec.tsx
+  s_3c91dcbb840566::t_3c54755c7d8dd9 124-196
+scripts/__tests__/processSnapshot.spec.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 1-75
+src/modules/AiRuntime/useCases/readVibeBatchSkipAvailability.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 1-36
+src/modules/AiRuntime/stores/llmStatusStore.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 9,16-17
+scripts/gitCheckpoint.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 1-588
+scripts/__tests__/checkBarrelMockCoverage.spec.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 43-45,49,56,452-469,613-826,860-927
+crates/daw-plugin-host/src/vst3_wrapper.rs
+  s_3c91dcbb840566::t_3c54755c7d8dd9 1489-1493,1496
+scripts/vitestProgressReporter.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 1-52
+src/modules/AiRuntime/presentations/views/__tests__/ChatPanel.spec.tsx
+  s_3c91dcbb840566::t_3c54755c7d8dd9 62-63,172-173,317,538-634,661,679
+src/modules/AiRuntime/useCases/agentRequestOrchestration/readVibeRunBatchSummaries.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 1-53
+scripts/__tests__/gitCheckpoint.spec.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 1-629
+src/modules/AiRuntime/transformers/__tests__/buildWebLlmDecodingSchema.spec.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 1-212
+scripts/processSnapshot.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 1-92
+scripts/gitCheckpointDiscovery.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 1-117
+scripts/__tests__/agentDeliveryScripts.spec.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 1201,1355
+scripts/gitCheckpointSocket.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 1-18
+scripts/checkBarrelMockCoverage.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 62-69,859,885,889-903,949,1007,1097-1098,1101-1102,1104,1137-1140,1301-1318
+scripts/trustedGithubWriteBootstrap.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 193
+src/modules/AiRuntime/repositories/webLlm/createWebLlmAppConfig.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 2,36
+scripts/nativeCommand.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 3-10,17,24,26-32,34-37,42,59-60,90-94,111,117,120,137,144,169,174-175,188,191-213,238-242,263,266,277-281,296
+src/modules/AiRuntime/repositories/webLlm/getWebLlmRequiredFeatures.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 1-8
+src/modules/AiRuntime/useCases/llmOrchestration/inference.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 218-221
+src/modules/AiRuntime/useCases/__tests__/bulkSetCommands.spec.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 62,1889-1906
+  s_3c91dcbb840566::t_322d6a7ccf9196 1907-1908
+src/modules/AiRuntime/repositories/webLlm/generateWebLlmCompletion.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 19-24,53-55,57-60
+src/modules/AiRuntime/useCases/agentRequestOrchestration/describeAppliedBatches.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 1-20
+scripts/reviewRiskPolicy.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 168
+src/modules/AiRuntime/models/Chat.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 37-41
+src/modules/AiRuntime/useCases/agentRequestOrchestration/readAppliedVibeRunBatches.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 1-40
+crates/daw-engine/src/scheduler.rs
+  s_3c91dcbb840566::t_3c54755c7d8dd9 4989-4992,4996,5009,5015-5029,5060-5062,5064-5066,5145,5151,5164,6799,6817,7372-7394,7396-7397,7464,9916-9961,10101-10134
+  s_3c91dcbb840566::t_b5670d92763c6a 10135-10136
+src/modules/AiRuntime/useCases/readChatThreadContext.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 8,11-12,28
+scripts/runVitestZeroTestGuard.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 14-20,46-54,58-65,71,93,96-102
+src/modules/AiRuntime/useCases/__tests__/multiBatchRun.spec.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 6-8,10,13-14,16-38,55-56,158,162,755,912-1081
+  s_3c91dcbb840566::t_688c26e0f2fe3f 15
+  s_3c91dcbb840566::t_33addb7e9ffbb9 1082
+src/modules/AiRuntime/useCases/agentRunLifecycle.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 62-68,2276
+src/modules/AiRuntime/models/AgentRun.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 242,244-252
+src/modules/Command/useCases/__tests__/revertActionGroupsAtomically.spec.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 1-138
+src/modules/WorkspaceShell/presentations/views/Prompt/LlmStatusBadge.tsx
+  s_3c91dcbb840566::t_3c54755c7d8dd9 42-47,161-172,255-293,309-403,405
+  s_3c91dcbb840566::t_ee0fbcec2ef7cb 404,406
+src/modules/AiRuntime/useCases/vibeRun/describeVibeRunSummary.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 12-25,28,31-72,74-76,79,82-83,85
+src/modules/AiRuntime/presentations/views/ChatPanel.tsx
+  s_3c91dcbb840566::t_14974587f6af89 14
+  s_3c91dcbb840566::t_3c54755c7d8dd9 3-13,15-16,51,54,167-169,251-264,269,273,288-309
+.agents/skills/review-stances/test-timing-and-isolation.md
+  s_3c91dcbb840566::t_3c54755c7d8dd9 47-53
+scripts/__tests__/resourceGuard.spec.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 463-479
+src/modules/AiRuntime/repositories/__tests__/webLlmProviderAdapter.spec.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 5-9,11,16,33,160,224,226,242,256-258,270,814-1087
+  s_3c91dcbb840566::t_0b9969ca5766b9 1088
+src/modules/AiRuntime/repositories/webLlm/readWebGpuAdapterFeatures.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 1-8
+src/modules/AiRuntime/repositories/webLlm/webLlmArtifactAdmission.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 1-4,39-40,97,450-480,523-527
+  s_3c91dcbb840566::t_1ec54b5688eecc 528
+eslint.config.mjs
+  s_3c91dcbb840566::t_3c54755c7d8dd9 2646,2652,2654-2660,2666-2667,2670,2672,2687-2691,2700-2723,3076,3111-3114,3116,3118-3123,3126-3133,3173-3182
+  s_3c91dcbb840566::t_a7c61fe057110a 3183
+src/components/ui/dropdown-menu.tsx
+  s_3c91dcbb840566::t_3c54755c7d8dd9 1,21,23,44-45,65-66,89,91,110-111,137-138,163,165,183-184,198
+.agents/skills/delivery-orchestration/references/review-records.md
+  s_3c91dcbb840566::t_3c54755c7d8dd9 37-40,47-53,61-62,69-70,78-82,111-114,150-152,160-161,168-170
+src/modules/AiRuntime/repositories/webLlm/__tests__/toolCalling.spec.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 3,81,97,114
+src/modules/AiRuntime/stores/agentRunStore.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 374
+AGENTS.md
+  s_3c91dcbb840566::t_3c54755c7d8dd9 180-181,195-196,216-219,227,313-315,389-405,471-474,476-481,694-697
+src/modules/AiRuntime/repositories/webLlm/__tests__/generateWebLlmCompletion.spec.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 4,94-105,212-305
+src/modules/AiRuntime/useCases/skipPendingVibeBatch.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 1-73
+scripts/__tests__/verifyNativeTransportMutations.spec.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 419-422,435-436,444-457,567,985-990,1042-1044,1070-1072,1074-1086
+evidence/agent-campaign/manifest.json
+  s_3c91dcbb840566::t_3c54755c7d8dd9 386,623
+src/modules/AiRuntime/useCases/revertVibeRun.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 1-123
+src/modules/Command/useCases/revertActionGroupsAtomically.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 1-124
+vite.config.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 220-223
+src/components/ui/popover.tsx
+  s_3c91dcbb840566::t_3c54755c7d8dd9 1,11-12
+scripts/verifyNativeTransportMutations.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 51-60,71,131,190,201,263-272,463
+scripts/vitestProgressSetup.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 1-3
+src/modules/AiRuntime/models/LocalModelRefusal.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 1-8
+src/modules/AiRuntime/repositories/webLlm/initWebLlmEngine.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 5-6,10-11,22-23,108-113,160-161,218,238-283
+  s_3c91dcbb840566::t_7c42b76a087904 284
+src/modules/AiRuntime/useCases/getAgentApprovalView.ts
+  s_3c91dcbb840566::t_3c54755c7d8dd9 19,150-151,562
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "de09ed05fca4a99daff83b454bfdec5e9b18bc2e",
+  "prompts": {},
+  "sessions": {
+    "s_3c91dcbb840566": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c1058f26-f2e9-46cf-af40-6e3b7eafe1df",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
