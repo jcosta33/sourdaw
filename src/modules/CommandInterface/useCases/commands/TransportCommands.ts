@@ -55,7 +55,7 @@ export const transportCommands: CallableCommandEntry[] = [
         category: 'Transport',
         shortcut: 'Home',
         action: (onCommitted?: () => void) => {
-            seekPlayhead(0);
+            void seekPlayhead(0);
             onCommitted?.();
         },
     },
@@ -66,7 +66,7 @@ export const transportCommands: CallableCommandEntry[] = [
         category: 'Transport',
         shortcut: 'End',
         action: (onCommitted?: () => void) => {
-            seekPlayhead(getLastClipEndBeat());
+            void seekPlayhead(getLastClipEndBeat());
             onCommitted?.();
         },
     },

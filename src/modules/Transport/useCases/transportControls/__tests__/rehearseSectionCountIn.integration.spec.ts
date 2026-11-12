@@ -40,18 +40,18 @@ import { schedulerSession } from '../../playheadScheduler/schedulerSession';
 import * as seekModule from '../executePlayheadSeek';
 import { notePanicParticipants } from '../notePanicParticipants';
 import { recordingLifecycle } from '../recordingLifecycle';
+import { seekPlayhead } from '../seekPlayhead';
 import * as playbackModule from '../startPlayback';
 import * as recordingStopModule from '../stopActiveRecording';
 import { stopPlayback } from '../stopPlayback';
 import { toggleRecording } from '../toggleRecording';
-import { seekPlayhead } from '../seekPlayhead';
 
 const io = vi.hoisted(() => ({
     context: null as ReturnType<typeof createMockAudioContext> | null,
     initializeStrip: vi.fn(() => ({ acceptance: 'accepted', application: 'applied' })),
     clicks: vi.fn(),
     startRecorder: vi.fn(async () => true),
-    stopRecorder: vi.fn(async () => undefined),
+    stopRecorder: vi.fn<() => Promise<void>>(async () => undefined),
     transport: vi.fn(),
 }));
 
@@ -119,7 +119,7 @@ function snapshot() {
         pendingStart: recordingLifecycle.hasPendingRecordingStart(),
         countInArmed: recordingLifecycle.countInTimerId !== null,
         closing: recordingLifecycle.isClosingRecording(),
-        clock: { ...playheadClockRef },
+        clock: structuredClone(playheadClockRef),
         workerStarted: workers.some((worker) =>
             worker.messages.some(
                 (message) =>
@@ -160,7 +160,7 @@ describe('section rehearsal after an armed count-in', () => {
         });
         takeLaneStore.set({ lanes: [] });
         automationStore.set({ lanes: [] });
-        midiStore.set({ ...defaultMidiStoreState });
+        midiStore.set(structuredClone(defaultMidiStoreState));
         markerStore.set({ markers: [], sections: [] });
         expect(addSection(16, 24, 'Target', 'target')).toBe(true);
         expect(getMarkerState()?.sections[0]).toMatchObject({ id: 'target', startBeat: 16, endBeat: 24 });

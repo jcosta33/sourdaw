@@ -28,7 +28,7 @@ export const handleNavigateSection = createHandler<'navigateSection'>({
         }
         const range = readMusicalRange({ range: { startBeat: target.startBeat, endBeat: target.endBeat } });
         if (range.kind === 'resolved') {
-            seekPlayhead(range.startBeat);
+            void seekPlayhead(range.startBeat);
         }
     },
     describe: (action) => ({ label: action.payload.direction === 'next' ? 'Next section' : 'Previous section' }),
