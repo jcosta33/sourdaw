@@ -34,19 +34,23 @@ either name, the JavaScript dependency manifests, the native addon build, the
 desktop packaging files and entitlements, the fuse, preload and Electron runtime
 scripts, and the review tooling that admits CI or feeds the bundle earn
 `native-security`; worklet sources under `public/audio/worklets/` and their
-generators earn `realtime-audio`. A generated-only change plans `small`.
+generators earn `realtime-audio`, as do Transport clip scheduling and
+`crates/daw-engine/`. Every persisted project-state path
+(`isPersistedProjectStatePath` in `scripts/savedProjectStatePaths.ts`) earns
+`undo`. A generated-only change plans `small`.
 
 `review:publish` prints the review id and posts as reviewer App only if
 GitHub's live head matches the bundle; fresh approvals also require matching
 base context. For a plan-carrying bundle it derives the canonical record from
 `review.json` and the plan, persists it as `dossier.json` before the POST, and
 refuses before any remote write when the plan is missing, malformed, or rebound
-from the head/base/pr it must bind; when `review.json` carries no `draws` and no
-reusable unpublished record supplies them; when
+from the head/base/pr it must bind; when `diff.patch` differs from
+`git diff base...head` or the plan's base is not the live merge base; when
+`review.json` carries no `draws`; when
 the draws miss the plan's draw floor; when any effective draw's tier is not
-economy or standard; or when a value is unsafe. Effective
-draws include an unpublished historical dossier reused by a caller document with
-no draws. These are fresh-publication gates: exact published replay and recovery
+economy or standard; or when a value is unsafe, including a secret shape in the
+review body or an inline comment. An unpublished `dossier.json` never supplies
+draws. These are fresh-publication gates: exact published replay and recovery
 keep their original model and tier metadata without rewriting canonical bytes.
 The record is
 `format: 'dossier-v1'`: an append-only event chain (`stance-completed` per draw,
@@ -54,16 +58,16 @@ The record is
 `previousDigest`, and `digest`, plus `headDigest` and a `dossierDigest` over the
 header identity, the approval evidence, and the recommendation. Re-publication of
 a head whose record binds its publication replays it unchanged; reviewer
-diversity and the freeze are not re-run for that replay, which posts nothing. A
-pre-ADR-0054 bundle whose `review.json` has no `draws` falls back to an
-unpublished record it already holds. `stances.json`, `discarded.json`,
+diversity and the freeze are not re-run for that replay, which posts nothing.
+`stances.json`, `discarded.json`,
 `reassessment.json`, and a caller-written `dossier.json` are ignored with one
 log line, and `semantic-ci.json` is information only.
 
 `review:prepare` logs
 `review-round-freeze:<pr>:request-changes=<n>:threshold=<t>` from the pull
 request's public review history on every run; `review:repair` logs it only at
-or above the threshold. At `REVIEW_ROUND_FREEZE_THRESHOLD` (ten
+or above the threshold. A dismissed reviewer `REQUEST_CHANGES` review that owns
+an inline comment still counts. At `REVIEW_ROUND_FREEZE_THRESHOLD` (ten
 reviewer `REQUEST_CHANGES` rounds, `scripts/reviewRoundEscalation.ts`) the pull
 request is frozen: `review:publish` refuses every fresh reviewer publication,
 approve or request changes, before any remote write, and names the way out —
@@ -71,8 +75,11 @@ respin the change as one consolidated pull request, then close the frozen one
 with `pr:supersede` once the replacement merges. `review:repair` and
 `review:confirm` stay open.
 
-Legacy tolerance: a bundle with no `risk-plan.json` retains its historical shape.
-A fresh publication still meets reviewer cost and diversity rules.
+Legacy tolerance: a bundle with no `risk-plan.json` is admitted only for a pull
+request opened before `PLANLESS_REVIEW_BUNDLE_CUTOVER`
+(`scripts/reviewPublicationBinding.ts`); a later one refuses with a request to
+re-run `review:prepare`. An admitted legacy bundle still meets reviewer cost and
+diversity rules.
 
 ### Headless reviewer dispatch
 
