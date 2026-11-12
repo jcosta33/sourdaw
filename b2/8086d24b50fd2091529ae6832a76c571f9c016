@@ -1,0 +1,28 @@
+scripts/__tests__/pruneRemoteBranches.spec.ts
+  s_76ccd61d453edf::t_03a64bae236ed3 14-21
+scripts/pruneRemoteBranches.ts
+  s_76ccd61d453edf::t_668fc7e4fae52f 32-43
+scripts/reviewRiskPolicy.ts
+  s_76ccd61d453edf::t_03a64bae236ed3 169
+scripts/trustedGithubWriteBootstrap.ts
+  s_76ccd61d453edf::t_03a64bae236ed3 427
+scripts/pruneRemoteBranchesGithub.ts
+  s_76ccd61d453edf::t_668fc7e4fae52f 1-2,5-230
+  s_76ccd61d453edf::t_57ffba81c62b44 3-4
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b28086d24b50fd2091529ae6832a76c571f9c016",
+  "prompts": {},
+  "sessions": {
+    "s_76ccd61d453edf": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "108ea70a-a924-42ce-b7b8-fd9c1012e902",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
