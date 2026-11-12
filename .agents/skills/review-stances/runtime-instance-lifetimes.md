@@ -56,7 +56,13 @@ wall-clock) prove ordering, ownership and cleanup; they never establish physical
       reopen, source replacement and same-ID root replacement: the old gesture leaves native rows and PCM exact,
       settles its callers and releases listeners; only a fresh gesture may act on the new owner; an unrelated
       selection must not override an explicitly opened target. Removing pending-owner invalidation must fail real
-      raw-state controls, not a cancellation flag.
+      raw-state controls, not a cancellation flag. The same owner must survive a committed command's awaited
+      presentation phase: #5843's direct editor completion fenced only clip IDs and request counters, while its
+      analysis owner was already disposed. Hold a real post-commit host receiver after durable history and session
+      Undo exist; source A/B/A, root replacement with identical values, provider replacement, editor reopen,
+      unmount and successor Detect/sensitivity must retire only the outgoing presentation. Ordinary Undo keeps
+      historical success feedback; no late completion may reapply truth or mark a replacement detected. Reverting
+      the direct caller's source/root or revision fence must fail the registered editor integration cases.
 4. **Shutdown reclamation needs a release inside the poll pass (#2976, #5064).** A whole-cascade wall-clock
    assertion names no cascade step and fails on a loaded runner after every stop and destroy assertion passed. Pin
    the scheduler-release transition itself in `crates/sourdaw-native/src/shutdown.rs`: keep an extra runtime owner

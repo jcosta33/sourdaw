@@ -215,8 +215,10 @@ function admissibleSchemaValue(value: unknown, schema: unknown): unknown {
 
 /**
  * Whether a call's schema mismatch is the caller's to answer: only when the caller said it answers
- * one and the provider did not enforce that tool's schema. A WebLLM reply is free text parsed into
- * calls, so nothing enforced it; a hosted one followed the request's strictness, tool by tool.
+ * one and the provider did not enforce that tool's schema. A WebLLM reply is decoded under a
+ * constraint built from the full schemas, which narrows what the model can emit but is not
+ * validation (the grammar cannot express every keyword), so the reply is still checked here; a
+ * hosted one followed the request's strictness, tool by tool.
  */
 function toolCallSchemaMismatch(input: {
     backend: RunnableAiBackend;

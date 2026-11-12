@@ -55,7 +55,7 @@ export const transportCommands: CallableCommandEntry[] = [
         category: 'Transport',
         shortcut: 'Home',
         action: (onCommitted?: () => void) => {
-            seekPlayhead(0);
+            void seekPlayhead(0);
             onCommitted?.();
         },
     },
@@ -66,7 +66,7 @@ export const transportCommands: CallableCommandEntry[] = [
         category: 'Transport',
         shortcut: 'End',
         action: (onCommitted?: () => void) => {
-            seekPlayhead(getLastClipEndBeat());
+            void seekPlayhead(getLastClipEndBeat());
             onCommitted?.();
         },
     },
@@ -91,6 +91,20 @@ export const transportCommands: CallableCommandEntry[] = [
             goToPreviousMarker();
             onCommitted?.();
         },
+    },
+    {
+        id: 'next-section',
+        label: 'Next Section',
+        description: 'Move the playhead to the next section in musical order',
+        category: 'Transport',
+        action: { type: 'navigateSection', payload: { direction: 'next' } },
+    },
+    {
+        id: 'prev-section',
+        label: 'Previous Section',
+        description: 'Move the playhead to the previous section in musical order',
+        category: 'Transport',
+        action: { type: 'navigateSection', payload: { direction: 'previous' } },
     },
     {
         id: 'panic-all-notes',

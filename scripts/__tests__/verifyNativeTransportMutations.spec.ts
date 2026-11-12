@@ -416,6 +416,10 @@ describe('owned command process-group completion', () => {
         'retains only bounded inspection diagnostics after later absence: %s',
         async (code, errno, details) => {
             let inspections = 0;
+            const snapshot = vi.fn(() => {
+                expect(inspections).toBe(1);
+                return { status: 'available' as const, rows: [], truncated: false };
+            });
             const signal = vi.fn((_pid: number, requested: string | number | undefined): true => {
                 expect(requested).toBe(0);
                 inspections += 1;
@@ -428,6 +432,8 @@ describe('owned command process-group completion', () => {
                 spawn,
                 setTimeout,
                 clearTimeout,
+                snapshot,
+                now: () => 42,
                 process: {
                     kill: signal,
                     once: process.once.bind(process),
@@ -435,6 +441,20 @@ describe('owned command process-group completion', () => {
                 },
             });
             expect(result.failure).toBe('child-descendants-survived: child-group-inspection-failed');
+            expect(result.processDiagnostic?.firstUncertainty?.snapshot).toEqual({
+                status: 'available',
+                rows: [],
+                truncated: false,
+            });
+            expect(result.processDiagnostic?.timeline).toEqual(
+                expect.arrayContaining([expect.objectContaining({ event: 'inspect-error', elapsedMs: 0 })])
+            );
+            expect(result.processDiagnostic?.firstUncertainty).toMatchObject({
+                diagnostic: { operation: 'inspect', signal: 0, ...details },
+                elapsedMs: 0,
+            });
+            expect(snapshot).toHaveBeenCalledOnce();
+            expect(() => assertNativeTestResult(result, 'unexecuted')).toThrow('firstUncertainty');
             expect(result.ownershipDiagnostic).toEqual({ operation: 'inspect', signal: 0, ...details });
             expect(JSON.stringify(result)).not.toContain('private diagnostic message');
             expect(signal.mock.calls).toHaveLength(2);
@@ -544,7 +564,7 @@ describe('owned command process-group completion', () => {
                 vi.advanceTimersByTime(50);
                 const result = await completed;
                 console.info(
-                    `native-command-fixture ${reason}: result ${JSON.stringify({ failure: result.failure, ownershipDiagnostic: result.ownershipDiagnostic })}`
+                    `native-command-fixture ${reason}: result ${JSON.stringify({ failure: result.failure, ownershipDiagnostic: result.ownershipDiagnostic, processDiagnostic: result.processDiagnostic })}`
                 );
                 expect(result.failure).toBe(reason);
                 expect(Buffer.byteLength(result.output)).toBeLessThanOrEqual(16 * 1024 * 1024);
@@ -962,7 +982,12 @@ describe('source restoration and completed observable', () => {
             expect(readFileSync(options.sourcePath, 'utf8')).toBe(mutateTransportSource(source, 'adjacent-keep-first'));
             expect(JSON.parse(readFileSync(join(options.evidencePath, 'builds.json'), 'utf8'))).toMatchObject([
                 { phase: 'baseline', status: 'passed' },
-                { phase: 'adjacent-keep-first', status: 'ownership-unconfirmed', ownershipDiagnostic: { code: 'EIO' } },
+                {
+                    phase: 'adjacent-keep-first',
+                    status: 'ownership-unconfirmed',
+                    ownershipDiagnostic: { code: 'EIO' },
+                    processDiagnostic: { firstUncertainty: expect.anything(), finalUncertainty: expect.anything() },
+                },
             ]);
             expect(readFileSync(join(options.evidencePath, 'adjacent-keep-first-build.log'), 'utf8')).toBe(
                 'partial compiler output'
@@ -1014,6 +1039,9 @@ describe('source restoration and completed observable', () => {
                         },
                         setTimeout,
                         clearTimeout,
+                        snapshot: () => {
+                            throw new Error('private snapshot error');
+                        },
                         process: {
                             kill: signal,
                             once: process.once.bind(process),
@@ -1039,7 +1067,23 @@ describe('source restoration and completed observable', () => {
                 expect(settled).toBe(true);
                 const error = await completed;
                 expect(error).toBeInstanceOf(NativeCommandOwnershipError);
+                if (!(error instanceof NativeCommandOwnershipError)) {
+                    throw new TypeError('Expected ownership error');
+                }
                 expect(error).toMatchObject({ reason: 'child-descendants-survived' });
+                expect(error).toHaveProperty('processDiagnostic.firstUncertainty');
+                expect(error).toHaveProperty('processDiagnostic.finalUncertainty');
+                expect(String(error)).toContain('firstUncertainty');
+                expect(error.processDiagnostic?.firstUncertainty?.snapshot).toEqual({ status: 'unavailable' });
+                expect(error.processDiagnostic?.finalUncertainty?.snapshot).toEqual({ status: 'unavailable' });
+                expect(error.processDiagnostic?.timeline.length).toBeLessThanOrEqual(64);
+                expect(error.processDiagnostic?.omittedEvents).toBeGreaterThan(0);
+                const timestamps = error.processDiagnostic?.timeline.map((entry) => entry.elapsedMs) ?? [];
+                expect(timestamps).toEqual([...timestamps].sort((a, b) => a - b));
+                expect(error.processDiagnostic?.finalUncertainty?.elapsedMs).toBeGreaterThanOrEqual(
+                    error.processDiagnostic?.firstUncertainty?.elapsedMs ?? Infinity
+                );
+                expect(String(error)).not.toContain('private snapshot error');
                 expect(error).toMatchObject({
                     ownershipDiagnostic: { operation: 'inspect', signal: 0, code, errno: code === 'EIO' ? -5 : -1 },
                 });
