@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, rmdirSync, unlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmdirSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
 
 import { ESLint, Linter } from 'eslint';
@@ -46,17 +46,33 @@ describe('ESLint configuration', () => {
     });
 
     it('loads the config and applies custom rules to invalid and valid TypeScript', async () => {
-        const eslint = new ESLint();
-        const filePath = resolve('src/app/bootstrap.ts');
-        const [invalid] = await eslint.lintText('enum Fruit { Apple }\n', { filePath });
-        const [valid] = await eslint.lintText('const fruit = { Apple: 1 } as const;\n', { filePath });
-        if (!invalid || !valid) {
-            throw new Error('ESLint did not return both results');
-        }
+        const directory = mkdtempSync(resolve('src/app/eslint-config-fixtures-'));
+        const invalidPath = join(directory, 'invalid.ts');
+        const validPath = join(directory, 'valid.ts');
+        const invalidText = 'enum Fruit { Apple }\n';
+        const validText = 'const fruit = { Apple: 1 } as const;\n';
+        try {
+            writeFileSync(invalidPath, invalidText);
+            writeFileSync(validPath, validText);
+            const eslint = new ESLint();
+            const [invalid] = await eslint.lintText(invalidText, { filePath: invalidPath });
+            const [valid] = await eslint.lintText(validText, { filePath: validPath });
+            if (!invalid || !valid) {
+                throw new Error('ESLint did not return both results');
+            }
 
-        expect(invalid.messages.map((message) => message.ruleId)).toContain('sourdaw/no-enum');
-        expect(valid.messages.map((message) => message.ruleId)).not.toContain('sourdaw/no-enum');
-        expect(valid.messages.filter((message) => message.fatal)).toEqual([]);
+            expect(invalid.messages.map((message) => message.ruleId)).toContain('sourdaw/no-enum');
+            expect(valid.messages.map((message) => message.ruleId)).not.toContain('sourdaw/no-enum');
+            expect(valid.messages.filter((message) => message.fatal)).toEqual([]);
+        } finally {
+            if (existsSync(invalidPath)) {
+                unlinkSync(invalidPath);
+            }
+            if (existsSync(validPath)) {
+                unlinkSync(validPath);
+            }
+            rmdirSync(directory);
+        }
     }, 60_000);
 
     it('preserves custom rule diagnostics through the loaded plugin', async () => {
