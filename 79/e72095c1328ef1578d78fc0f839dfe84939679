@@ -1,0 +1,43 @@
+scripts/gitCheckpointArguments.ts
+  s_eec9d24f84ae15::t_445e00b8270c66 1-2,4-5,7-12,14-18,20-27,30-31,33-34,38-39
+  s_eec9d24f84ae15::t_75517868741cc8 3,6,13,19,28-29,32,35-37,40-42
+scripts/__tests__/gitCheckpoint.spec.ts
+  s_eec9d24f84ae15::t_88f9a998a40e3c 19-20,94-98,290-303,307-325,329-344,348-362,451-455
+  s_eec9d24f84ae15::t_7499feb9b98a95 304-306
+  s_eec9d24f84ae15::t_ef34c9cd8b2d80 22,345-347
+  s_eec9d24f84ae15::t_6c9b36ef0e5b1b 326-328
+scripts/gitCheckpoint.ts
+  s_eec9d24f84ae15::t_802fce714798fd 2,27,542
+  s_eec9d24f84ae15::t_88f9a998a40e3c 22,25,162,169-175,188,196-197,320-323,333-334,357,390,395,397-400,409-432,452,464-467,492,503-512,521,524
+scripts/gitCheckpointDaemon.ts
+  s_eec9d24f84ae15::t_48d7c8b6e9a05d 1,25
+  s_eec9d24f84ae15::t_5b2757ad947ed7 14,16-24,28-32,71-77,85,95-99,109-115,130-138
+  s_eec9d24f84ae15::t_7326a01ca82460 51-56
+  s_eec9d24f84ae15::t_5b72c4dc15e8c9 35
+  s_eec9d24f84ae15::t_9de48986a40c13 2-13,26-27,33-34,36-50,57-70,78-84,86-94,100-108,116-119,125,129,139
+  s_eec9d24f84ae15::t_838efbcbd2e471 15,120-124
+  s_eec9d24f84ae15::t_dd0ebb6a0dec43 126-128
+scripts/gitCheckpointProcess.ts
+  s_eec9d24f84ae15::t_838efbcbd2e471 146
+  s_eec9d24f84ae15::t_48d7c8b6e9a05d 64-68,105-106,132-133
+  s_eec9d24f84ae15::t_802fce714798fd 1-30,32-63,69-79,88-104,107-109,111-115,122-131,134-135,137-142,144,151-153
+  s_eec9d24f84ae15::t_ef34c9cd8b2d80 80-87,110
+  s_eec9d24f84ae15::t_6a7eecd9636cc8 116-121
+  s_eec9d24f84ae15::t_d81d556067cecf 31,136,143,145,147-150
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "79e72095c1328ef1578d78fc0f839dfe84939679",
+  "prompts": {},
+  "sessions": {
+    "s_eec9d24f84ae15": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cc8d-d36d-71b3-be5c-15c29b38b9aa",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
