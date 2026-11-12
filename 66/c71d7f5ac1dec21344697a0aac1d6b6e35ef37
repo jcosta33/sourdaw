@@ -1,0 +1,21 @@
+.agents/skills/delivery-orchestration/references/trust-boundary.md
+  s_7fad8e4459bbd4::t_63dfeadfbc9d65 51-55
+scripts/githubAppIdentity.ts
+  s_7fad8e4459bbd4::t_2ead07f1f489e6 757-761
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "66c71d7f5ac1dec21344697a0aac1d6b6e35ef37",
+  "prompts": {},
+  "sessions": {
+    "s_7fad8e4459bbd4": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_7fad8e4459bbd4",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
