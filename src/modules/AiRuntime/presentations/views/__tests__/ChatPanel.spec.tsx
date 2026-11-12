@@ -55,6 +55,8 @@ vi.mock('../../../useCases/cancelPendingChatActions', () => ({
     cancelPendingChatActions: vi.fn(),
 }));
 vi.mock('../../../useCases/reproposePendingChatActions', () => ({ reproposePendingChatActions: vi.fn() }));
+vi.mock('../../../useCases/skipPendingVibeBatch', () => ({ skipPendingVibeBatch: vi.fn() }));
+vi.mock('../../../useCases/revertVibeRun', () => ({ revertVibeRun: vi.fn() }));
 vi.mock('../../../useCases/aiPanelActions/proposeAnswerSuggestion', () => ({
     proposeAnswerSuggestion: vi.fn(async () => 'requested'),
 }));
@@ -162,6 +164,8 @@ const { useStore: useRealStore } =
 const { sendChatMessage } = await import('#/modules/AiRuntime/useCases/sendChatMessage');
 const { confirmPendingChatActions } = await import('../../../useCases/confirmPendingChatActions');
 const { cancelPendingChatActions } = await import('../../../useCases/cancelPendingChatActions');
+const { skipPendingVibeBatch } = await import('../../../useCases/skipPendingVibeBatch');
+const { revertVibeRun } = await import('../../../useCases/revertVibeRun');
 const { proposeAnswerSuggestion } = await import('../../../useCases/aiPanelActions/proposeAnswerSuggestion');
 const { recoverAgentRunPendingEffects } = await import('../../../useCases/recoverAgentRunPendingEffects');
 const { agentRunStore } = await import('#/modules/AiRuntime/stores/agentRunStore');
@@ -305,6 +309,7 @@ describe('ChatPanel', () => {
             canConfirm: true,
             metricGoals: { status: 'not-required', reason: null, criteria: [] },
             rePreview: { available: false, reason: 'The proposal still matches the current project.' },
+            skip: { available: false, reason: null },
         });
         Element.prototype.scrollIntoView = vi.fn();
         capabilityStore.set({ phase: 'idle' });
@@ -525,6 +530,103 @@ describe('ChatPanel', () => {
         expect(cancelPendingChatActions).toHaveBeenCalledWith({ confirmationId: 'confirm-1' });
     });
 
+    it('offers Skip batch and Stop run on a vibe batch card, skipping that card on activation', () => {
+        usePendingChatState({
+            messages: [
+                {
+                    id: 'vibe-batch-card',
+                    role: 'assistant',
+                    content: 'Batch 2 of 4: warm drums',
+                    timestamp: 1,
+                    isCommandAction: true,
+                    pendingActionConfirmationId: 'vibe-batch-confirmation',
+                    pendingActionConfirmationStatus: 'proposed',
+                },
+            ],
+            isGenerating: false,
+            chatMode: 'prompt',
+            enableReasoning: false,
+        });
+        metricApprovalMock.mockReturnValue({
+            canConfirm: true,
+            metricGoals: { status: 'verified', reason: null, criteria: [] },
+            rePreview: { available: false, reason: 'The proposal still matches the current project.' },
+            skip: { available: true, reason: null },
+        });
+
+        render(<ChatPanel />);
+
+        expect(screen.queryByRole('button', { name: 'Cancel pending actions' })).not.toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Stop run' })).toHaveTextContent('Stop run');
+        const skip = screen.getByRole('button', { name: 'Skip batch' });
+        expect(skip).toHaveTextContent('Skip batch');
+        fireEvent.click(skip);
+        expect(skipPendingVibeBatch).toHaveBeenCalledExactlyOnceWith({ confirmationId: 'vibe-batch-confirmation' });
+        expect(cancelPendingChatActions).not.toHaveBeenCalled();
+        fireEvent.click(screen.getByRole('button', { name: 'Stop run' }));
+        expect(cancelPendingChatActions).toHaveBeenCalledExactlyOnceWith({ confirmationId: 'vibe-batch-confirmation' });
+    });
+
+    it('offers no Skip on a card whose run cannot skip it, keeping its Cancel', () => {
+        usePendingChatState({
+            messages: [
+                {
+                    id: 'plain-card',
+                    role: 'assistant',
+                    content: 'This prompt requires confirmation',
+                    timestamp: 1,
+                    isCommandAction: true,
+                    pendingActionConfirmationId: 'plain-confirmation',
+                    pendingActionConfirmationStatus: 'proposed',
+                },
+            ],
+            isGenerating: false,
+            chatMode: 'prompt',
+            enableReasoning: false,
+        });
+
+        render(<ChatPanel />);
+
+        expect(screen.getByRole('button', { name: 'Cancel pending actions' })).toHaveTextContent('Cancel');
+        expect(screen.queryByRole('button', { name: 'Skip batch' })).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'Stop run' })).not.toBeInTheDocument();
+    });
+
+    it('offers Revert run on a vibe run summary and reverts that run on activation', () => {
+        usePendingChatState({
+            messages: [
+                {
+                    id: 'vibe-run-summary-run-7',
+                    role: 'assistant',
+                    content: 'The vibe run finished: the brief and 1 of 3 batches were applied.',
+                    timestamp: 1,
+                    isCommandAction: true,
+                    agentRunId: 'run-7',
+                    vibeRunRevert: { runId: 'run-7' },
+                },
+                {
+                    id: 'plain-reply',
+                    role: 'assistant',
+                    content: 'An ordinary reply',
+                    timestamp: 2,
+                },
+            ],
+            isGenerating: false,
+            chatMode: 'prompt',
+            enableReasoning: false,
+        });
+
+        render(<ChatPanel />);
+
+        expect(
+            screen.getByText('Revert run undoes every applied batch together; the production brief stays as written.')
+        ).toBeInTheDocument();
+        const revert = screen.getAllByRole('button', { name: 'Revert run' });
+        expect(revert).toHaveLength(1);
+        fireEvent.click(revert[0]!);
+        expect(revertVibeRun).toHaveBeenCalledExactlyOnceWith({ runId: 'run-7' });
+    });
+
     it('keeps Confirm disabled until the subscribed metric approval view verifies the proposal', () => {
         usePendingChatState({
             messages: [
@@ -551,6 +653,7 @@ describe('ChatPanel', () => {
                 criteria: [{ goalId: 'warm-centroid', stepId: 'warm-vocal', criterionText: criterion }],
             },
             rePreview: { available: true, reason: null },
+            skip: { available: false, reason: null },
         });
         render(<ChatPanel />);
         expect(screen.getByText('Warm vocal proposal')).toBeInTheDocument();
@@ -568,6 +671,7 @@ describe('ChatPanel', () => {
                 criteria: [{ goalId: 'warm-centroid', stepId: 'warm-vocal', criterionText: criterion }],
             },
             rePreview: { available: false, reason: 'The proposal still matches the current project.' },
+            skip: { available: false, reason: null },
         });
         act(() => {
             pendingActionConfirmationStore.set({

@@ -107,7 +107,7 @@ export { readUndoEntryForInverse } from './readUndoEntryForInverse';
 export { redo } from './redo';
 export { REDO_NOT_APPLIED } from './redoResult';
 export { revertActionGroup } from './revertActionGroup';
-export { revertActionGroupAtomically } from './revertActionGroupAtomically';
+export { revertActionGroupAtomically, revertActionGroupsAtomically } from './revertActionGroupAtomically';
 export { getActionReplayStatus } from './getActionReplayStatus';
 export { revertAction } from './revertAction';
 export { clearActionHistory } from './clearActionHistory';

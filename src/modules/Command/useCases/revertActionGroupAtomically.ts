@@ -1,7 +1,7 @@
 import { type ExecuteOptions } from '#/utils/handlerContract';
 
 import { type AppActionCommittedError } from '../errors/AppActionExecutionError';
-import { isActionEntry } from '../models/UndoEntry';
+import { isActionEntry, type UndoEntry } from '../models/UndoEntry';
 import { undoStore } from '../stores/undoStore';
 
 import { commitRevertedEntries } from './commitRevertedEntries';
@@ -20,13 +20,31 @@ function readCommittedWarning(error: AppActionCommittedError): string {
 
 type AtomicActionGroupRevertOptions = Pick<ExecuteOptions, 'shouldExecute'>;
 
-async function revertActionGroupAtomicallyImpl(
-    groupId: string,
+function isMemberOf(groupIds: ReadonlySet<string>, entry: UndoEntry): boolean {
+    return entry.groupId !== undefined && groupIds.has(entry.groupId);
+}
+
+/** Every group stands in `past` and none has a member in `future`: each is applied whole. */
+function holdsEveryGroupApplied(
+    groupIds: ReadonlySet<string>,
+    entries: readonly UndoEntry[],
+    future: readonly UndoEntry[]
+): boolean {
+    return (
+        groupIds.size > 0 &&
+        [...groupIds].every((groupId) => entries.some((entry) => entry.groupId === groupId)) &&
+        !future.some((entry) => isMemberOf(groupIds, entry))
+    );
+}
+
+async function revertActionGroupsAtomicallyImpl(
+    requestedGroupIds: readonly string[],
     options: AtomicActionGroupRevertOptions | undefined
 ): Promise<AtomicActionGroupRevert> {
     const state = undoStore.value;
-    const entries = (state?.past ?? []).filter((entry) => entry.groupId === groupId);
-    if (entries.length === 0 || (state?.future ?? []).some((entry) => entry.groupId === groupId)) {
+    const groupIds = new Set(requestedGroupIds);
+    const entries = (state?.past ?? []).filter((entry) => isMemberOf(groupIds, entry));
+    if (!holdsEveryGroupApplied(groupIds, entries, state?.future ?? [])) {
         return {
             status: 'refused',
             reason: 'not-applied',
@@ -105,5 +123,19 @@ export function revertActionGroupAtomically(
     groupId: string,
     options?: AtomicActionGroupRevertOptions
 ): Promise<AtomicActionGroupRevert> {
-    return runUndoRedoExclusive(() => revertActionGroupAtomicallyImpl(groupId, options));
+    return revertActionGroupsAtomically([groupId], options);
+}
+
+/**
+ * Revert several groups as ONE atomic replay, under the same rules as `revertActionGroupAtomically`
+ * applied to them together: every group must stand in `past` whole and every member must carry an
+ * inverse, and all their entries replay in one batch, newest-first across the groups, so nothing is
+ * written unless every inverse of every group applies. Looping the single-group revert instead would
+ * leave the groups it reached first undone when a later one refuses.
+ */
+export function revertActionGroupsAtomically(
+    groupIds: readonly string[],
+    options?: AtomicActionGroupRevertOptions
+): Promise<AtomicActionGroupRevert> {
+    return runUndoRedoExclusive(() => revertActionGroupsAtomicallyImpl(groupIds, options));
 }
