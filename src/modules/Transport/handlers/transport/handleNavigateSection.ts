@@ -1,10 +1,11 @@
-import { playheadPositionRef } from '#/modules/Transport/stores';
-import { seekPlayhead } from '#/modules/Transport/useCases';
+import { readMusicalRange } from '#/modules/Arrangement/stores';
+import { getMarkerState } from '#/modules/Arrangement/useCases';
 import { createHandler } from '#/utils/createHandler';
 
-import { type ArrangementSection } from '../../models/Marker';
-import { readMusicalRange } from '../../stores/readMusicalRange';
-import { getMarkerState } from '../../useCases/timelineQueries';
+import { playheadPositionRef } from '../../stores/playheadPositionRef';
+import { seekPlayhead } from '../../useCases/transportControls/seekPlayhead';
+
+type ArrangementSection = NonNullable<ReturnType<typeof getMarkerState>>['sections'][number];
 
 function compareSections(first: ArrangementSection, second: ArrangementSection): number {
     return first.startBeat - second.startBeat || first.endBeat - second.endBeat || first.id.localeCompare(second.id);

@@ -151,7 +151,7 @@ describe('ArrangementBar', () => {
         const bar = container.querySelector('[role="region"]')!;
         fireEvent.contextMenu(bar, { clientX: 60, clientY: 10 });
 
-        fireEvent.click(screen.getByRole('button', { name: label, exact: true }));
+        fireEvent.click(screen.getByRole('button', { name: label }));
 
         expect(executeUserAppAction).toHaveBeenCalledExactlyOnceWith({
             type: 'rehearseSection',

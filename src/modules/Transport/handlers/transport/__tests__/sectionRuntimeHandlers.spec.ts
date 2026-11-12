@@ -1,28 +1,30 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { playheadPositionRef, transportStore } from '#/modules/Transport/stores';
-import { seekPlayhead, setLoopEnabled, setLoopRegion, setPlayback } from '#/modules/Transport/useCases';
+import { readMusicalRange } from '#/modules/Arrangement/stores';
+import { getMarkerState } from '#/modules/Arrangement/useCases';
 
-import { type MusicalRangeReference } from '../../../models/MusicalRange';
-import { type ArrangementSection } from '../../../models/Marker';
-import { readMusicalRange } from '../../../stores/readMusicalRange';
-import { getMarkerState } from '../../../useCases/timelineQueries';
+import { playheadPositionRef } from '../../../stores/playheadPositionRef';
+import { transportStore } from '../../../stores/transportStore';
+import { seekPlayhead } from '../../../useCases/transportControls/seekPlayhead';
+import { setLoopEnabled } from '../../../useCases/transportControls/setLoopEnabled';
+import { setLoopRegion } from '../../../useCases/transportControls/setLoopRegion';
+import { setPlayback } from '../../../useCases/transportControls/setPlayback';
 import { handleNavigateSection } from '../handleNavigateSection';
 import { handleRehearseSection } from '../handleRehearseSection';
 
-vi.mock('#/modules/Transport/stores', () => ({
-    playheadPositionRef: { current: 0 },
+vi.mock('#/modules/Arrangement/stores', () => ({ readMusicalRange: vi.fn() }));
+vi.mock('#/modules/Arrangement/useCases', () => ({ getMarkerState: vi.fn() }));
+vi.mock('../../../stores/playheadPositionRef', () => ({ playheadPositionRef: { current: 0 } }));
+vi.mock('../../../stores/transportStore', () => ({
     transportStore: { value: { isPlaying: true, playheadPosition: 0 } },
 }));
-vi.mock('#/modules/Transport/useCases', () => ({
-    getTransportState: vi.fn(() => ({ playheadPosition: 0 })),
-    seekPlayhead: vi.fn(),
-    setLoopEnabled: vi.fn(() => true),
-    setLoopRegion: vi.fn(() => true),
-    setPlayback: vi.fn(),
-}));
-vi.mock('../../../stores/readMusicalRange', () => ({ readMusicalRange: vi.fn() }));
-vi.mock('../../../useCases/timelineQueries', () => ({ getMarkerState: vi.fn() }));
+vi.mock('../../../useCases/transportControls/seekPlayhead', () => ({ seekPlayhead: vi.fn() }));
+vi.mock('../../../useCases/transportControls/setLoopEnabled', () => ({ setLoopEnabled: vi.fn(() => true) }));
+vi.mock('../../../useCases/transportControls/setLoopRegion', () => ({ setLoopRegion: vi.fn(() => true) }));
+vi.mock('../../../useCases/transportControls/setPlayback', () => ({ setPlayback: vi.fn() }));
+
+type MusicalRangeReference = Parameters<typeof readMusicalRange>[0]['range'];
+type ArrangementSection = NonNullable<ReturnType<typeof getMarkerState>>['sections'][number];
 
 const section = (id: string, name: string, startBeat: number, endBeat: number): ArrangementSection => ({
     id,

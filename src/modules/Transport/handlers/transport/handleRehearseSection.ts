@@ -1,8 +1,11 @@
-import { seekPlayhead, setLoopEnabled, setLoopRegion, setPlayback } from '#/modules/Transport/useCases';
+import { readMusicalRange } from '#/modules/Arrangement/stores';
+import { getMarkerState } from '#/modules/Arrangement/useCases';
 import { createHandler } from '#/utils/createHandler';
 
-import { readMusicalRange } from '../../stores/readMusicalRange';
-import { getMarkerState } from '../../useCases/timelineQueries';
+import { seekPlayhead } from '../../useCases/transportControls/seekPlayhead';
+import { setLoopEnabled } from '../../useCases/transportControls/setLoopEnabled';
+import { setLoopRegion } from '../../useCases/transportControls/setLoopRegion';
+import { setPlayback } from '../../useCases/transportControls/setPlayback';
 
 export const handleRehearseSection = createHandler<'rehearseSection'>({
     execute: (action) => {
