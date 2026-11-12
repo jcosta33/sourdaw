@@ -1,0 +1,26 @@
+scripts/__tests__/eslintConfig.spec.ts
+  s_eec9d24f84ae15::t_8f1d99e3c78678 68-71
+eslint.config.mjs
+  s_eec9d24f84ae15::t_8ecc7cacc1653c 985-988
+  s_eec9d24f84ae15::t_90bb628eca1d4e 1505,2751
+  s_eec9d24f84ae15::t_09c0a46f148460 2736
+  s_eec9d24f84ae15::t_8763a3dfad533b 2819
+  s_eec9d24f84ae15::t_350733cb24e195 2750
+  s_eec9d24f84ae15::t_3194e572ef1731 726-727,755,819,865,934,1395-1397,2179,2268,2270
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "659a3ad76da68314104a9c3f72a267ccaf4b6e19",
+  "prompts": {},
+  "sessions": {
+    "s_eec9d24f84ae15": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cc8d-d36d-71b3-be5c-15c29b38b9aa",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
