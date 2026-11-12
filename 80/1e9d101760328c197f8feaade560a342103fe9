@@ -1,0 +1,26 @@
+src/modules/Automation/useCases/__tests__/automateParameterRange.spec.ts
+  s_35b9801a6d6336::t_58cac9ddb30722 947,951
+  s_35b9801a6d6336::t_18120a4b57d15f 939-940,942-946,948
+  s_35b9801a6d6336::t_50bf65d72f3e8b 953-961
+  s_35b9801a6d6336::t_fe2abf8c706d0b 938,941,949-950,952,962-970
+  s_35b9801a6d6336::t_7dde55285aa9ab 971-973
+  s_35b9801a6d6336::t_eba18de93aa7ea 974-975
+src/modules/Automation/handlers/automation/handleRemoveAutomationLane.ts
+  s_35b9801a6d6336::t_74b7c09fa25127 118-123
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "801e9d101760328c197f8feaade560a342103fe9",
+  "prompts": {},
+  "sessions": {
+    "s_35b9801a6d6336": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ce7af83b-e436-4138-9187-19965b804ff0",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
