@@ -5,6 +5,7 @@ import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { setTrackStoreState } from '../../useCases/setTrackStoreState';
 
 import { isPromotableRuntimeClipCollection } from './isPromotableRuntimeClipCollection';
+import { isRestorableAlternatives, isRestorableClips } from './isRestorableAlternativeState';
 
 type TrackState = NonNullable<ReturnType<typeof getTrackStoreState>>;
 type Track = TrackState['tracks'][number];
@@ -36,8 +37,13 @@ export const handleRestoreTrackAlternativeState = createHandler<'restoreTrackAlt
             return { status: 'conflict' };
         }
 
-        const replacementActiveAlternativeId = replacement.activeAlternativeId;
-        if (typeof replacementActiveAlternativeId !== 'string' || replacementActiveAlternativeId.length === 0) {
+        const { activeAlternativeId: replacementActiveAlternativeId, alternatives, clips } = replacement;
+        if (
+            typeof replacementActiveAlternativeId !== 'string' ||
+            replacementActiveAlternativeId.length === 0 ||
+            !isRestorableAlternatives(alternatives) ||
+            !isRestorableClips(clips)
+        ) {
             return { status: 'conflict' };
         }
 
@@ -53,7 +59,7 @@ export const handleRestoreTrackAlternativeState = createHandler<'restoreTrackAlt
         if (track.activeAlternativeId !== replacementActiveAlternativeId) {
             if (
                 !isPromotableRuntimeClipCollection({
-                    value: replacement.clips,
+                    value: clips,
                     targetTrackId: trackId,
                     tracks: state.tracks,
                     source: { kind: 'alternative', trackId, alternativeId: replacementActiveAlternativeId },
@@ -69,13 +75,9 @@ export const handleRestoreTrackAlternativeState = createHandler<'restoreTrackAlt
                 candidate.id === trackId
                     ? {
                           ...candidate,
-                          // The contract types pin only the identity fields the guard
-                          // compares; the payload actually carries whole alternative and
-                          // clip objects via `structuredClone`, the same convention
-                          // `TrackSnapshot` / `handleRestoreTrack` already use.
-                          alternatives: replacement.alternatives as never,
+                          alternatives,
                           activeAlternativeId: replacementActiveAlternativeId,
-                          clips: replacement.clips as never,
+                          clips,
                       }
                     : candidate
             ),

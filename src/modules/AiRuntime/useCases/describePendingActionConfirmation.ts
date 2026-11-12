@@ -19,6 +19,7 @@ import { unionProtectedObjects } from '../transformers/unionProtectedObjects';
 import { getApplicationProtectedObjects } from './agentReference/getApplicationProtectedObjects';
 import { describePlannedAction } from './describePlannedAction';
 import { getPlannedActionAffectedIds } from './getPlannedActionAffectedIds';
+import { compilePerceptualConstraints } from './perceptualConstraints/compilePerceptualConstraints';
 
 type DescribePendingActionConfirmationInput = {
     actions: readonly AppAction[];
@@ -317,6 +318,26 @@ function describeExactAction(action: AppAction, actions: readonly AppAction[], c
     return describePlannedAction({ action, context });
 }
 
+/**
+ * A brief batch changes no sound, so no goal carries its request's unmeasured clauses onto the card;
+ * the card states each one itself. A brief is never a refinement, so its own request is the whole
+ * reading, taken when the card is made.
+ */
+function describeUnmeasuredBriefClauses(
+    actions: readonly AppAction[],
+    prompt: string,
+    context: ProjectContext
+): string {
+    if (!actions.some((action) => action.type === 'setProductionBrief')) {
+        return '';
+    }
+    return compilePerceptualConstraints(prompt, context)
+        .unsupported.map(
+            ({ clause }) => `\n\nNot measured: “${clause}” — nothing the application measures shows that it holds.`
+        )
+        .join('');
+}
+
 export function describePendingActionConfirmation({
     actions,
     context,
@@ -367,6 +388,7 @@ export function describePendingActionConfirmation({
     const affectedSummary = affectedIds.join(', ');
     const riskReason = risk.reason ? ` — ${risk.reason}` : '';
     const protectedLine = protectedSummary ? `\n\nProtected unchanged: ${protectedSummary}` : '';
-    const content = `This prompt requires confirmation before execution.\n\nRisk: ${risk.level}${riskReason}\n\nIntended changes:\n${intendedChanges}\n\nAffected IDs: ${affectedSummary}${protectedLine}`;
+    const unmeasuredLines = describeUnmeasuredBriefClauses(actions, prompt, context);
+    const content = `This prompt requires confirmation before execution.\n\nRisk: ${risk.level}${riskReason}\n\nIntended changes:\n${intendedChanges}\n\nAffected IDs: ${affectedSummary}${protectedLine}${unmeasuredLines}`;
     return { actionLabels, affectedIds, risk, protectedUnchanged, content };
 }

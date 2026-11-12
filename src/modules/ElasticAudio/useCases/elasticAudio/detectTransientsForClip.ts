@@ -10,7 +10,7 @@ import { elasticRootIdentityProviderState } from './elasticRootIdentityProviderS
 import { readProductTransientOnsets } from './readProductTransientOnsets';
 import { transientDetectionLifecycle } from './transientDetectionLifecycle';
 
-/** Align visible commits; a hidden page can finish without its suspended animation frame. */
+/** Yield past visible rendering; a hidden page can finish without its suspended animation frame. */
 function waitForCommitFrame(signal: AbortSignal): Promise<boolean> {
     if (signal.aborted) {
         return Promise.resolve(false);
@@ -19,6 +19,7 @@ function waitForCommitFrame(signal: AbortSignal): Promise<boolean> {
         return Promise.resolve(true);
     }
     return new Promise((resolve) => {
+        const channel = new MessageChannel();
         let frame: number | undefined;
         let settled = false;
         const finish = (admitted: boolean): void => {
@@ -29,6 +30,8 @@ function waitForCommitFrame(signal: AbortSignal): Promise<boolean> {
             if (frame !== undefined) {
                 cancelAnimationFrame(frame);
             }
+            channel.port1.close();
+            channel.port2.close();
             signal.removeEventListener('abort', abort);
             document.removeEventListener('visibilitychange', visibilityChanged);
             window.removeEventListener('pagehide', abort);
@@ -43,7 +46,14 @@ function waitForCommitFrame(signal: AbortSignal): Promise<boolean> {
         signal.addEventListener('abort', abort, { once: true });
         document.addEventListener('visibilitychange', visibilityChanged);
         window.addEventListener('pagehide', abort, { once: true });
-        frame = requestAnimationFrame(() => finish(true));
+        channel.port1.onmessage = () => finish(true);
+        frame = requestAnimationFrame(() => {
+            frame = undefined;
+            if (!settled) {
+                // Promise continuations must run in a new task, outside rendering's microtask checkpoint.
+                channel.port2.postMessage(undefined);
+            }
+        });
     });
 }
 

@@ -38,9 +38,7 @@ test.describe('LlmStatusBadge — model download affordances', () => {
             const cards = page.getByRole('button').filter({ hasText: /GB/ });
             await expect(cards.nth(0)).toBeVisible({ timeout: 10_000 });
             expect(await cards.count()).toBeGreaterThan(1);
-            await expect(page.getByRole('button', { name: /Download & Load /i })).toHaveText(
-                /Download & Load Standard/
-            );
+            await expect(page.getByRole('button', { name: /Download & Load /i })).toHaveText(/Download & Load Pro/);
             await expect(page.getByText(/Downloads and verifies this model/i)).toBeVisible();
         }
 

@@ -15,7 +15,7 @@ import { approvedProjectRevision } from './approvedProjectRevision';
 import { evaluateMetricGoalAdmission } from './evaluateMetricGoalAdmission';
 import { getProviderRouteView } from './getProviderRouteView';
 import { metricGoalStateCodec } from './metricGoalStateCodec';
-import { OBJECTIVE_METRIC_LABELS } from './objectiveMetricProjection';
+import { OBJECTIVE_METRIC_LABELS, OBJECTIVE_METRIC_UNITS } from './objectiveMetricProjection';
 import { validateAgentRiskApproval } from './validateAgentRiskApproval';
 
 type ApprovalSnapshot = PendingAppActionConfirmation['approvalSnapshot'];
@@ -392,6 +392,31 @@ function projectRisk(agentApproval: ApprovalSnapshot['agentApproval']): AgentApp
     };
 }
 
+type MetricGoalCriterion = MetricGoalEvaluation['criteria'][number];
+
+function readCriterionUnit(criterion: MetricGoalCriterion): string {
+    // Before a preview measures it, a criterion's unit is still its metric's own.
+    const unit =
+        criterion.unit ?? Object.entries(OBJECTIVE_METRIC_UNITS).find(([id]) => id === criterion.metricId)?.[1] ?? '';
+    return unit === 'hertz' ? 'Hz' : unit;
+}
+
+function describeCriterionTolerance(criterion: MetricGoalCriterion, unit: string): string {
+    if (criterion.relation === 'match-current') {
+        return ` within ${String(criterion.tolerance)} LU (application objective policy)`;
+    }
+    if (criterion.tolerance <= 0) {
+        return '';
+    }
+    if (criterion.relation === 'hold') {
+        return ` within ${String(criterion.tolerance)} ${unit}`;
+    }
+    if (criterion.relation === 'no-increase' || criterion.relation === 'no-decrease') {
+        return ` by more than ${String(criterion.tolerance)} ${unit}`;
+    }
+    return '';
+}
+
 function projectMetricGoals(metricEvaluation: MetricGoalEvaluation): AgentApprovalView['metricGoals'] {
     const metricRecipeCatalog = getMixRecipeCatalog();
     const metricGoals: AgentApprovalView['metricGoals'] = {
@@ -407,10 +432,7 @@ function projectMetricGoals(metricEvaluation: MetricGoalEvaluation): AgentApprov
                     })
                     .map((name) => `“${name}”`)
                     .join(', ');
-            let unit = criterion.unit ?? '';
-            if (unit === 'hertz') {
-                unit = 'Hz';
-            }
+            const unit = readCriterionUnit(criterion);
             const range =
                 criterion.range === null
                     ? 'range unavailable'
@@ -437,6 +459,8 @@ function projectMetricGoals(metricEvaluation: MetricGoalEvaluation): AgentApprov
                 increase: 'must increase',
                 decrease: 'must decrease',
                 hold: 'must stay equal',
+                'no-increase': 'must not rise',
+                'no-decrease': 'must not fall',
                 'match-current': 'must match the current reference preview',
                 'greater-than-current': 'must exceed the current reference preview',
                 'less-than-current': 'must be below the current reference preview',
@@ -447,12 +471,13 @@ function projectMetricGoals(metricEvaluation: MetricGoalEvaluation): AgentApprov
             if (criterion.referenceTargetIds.length > 0) {
                 reference = `; reference ${names(criterion.referenceTargetIds)} in this preview: ${criterion.reference.map(String).join(', ') || 'unavailable'} ${unit}`;
             }
-            let tolerance = '';
-            if (criterion.relation === 'match-current') {
-                tolerance = ` within ${String(criterion.tolerance)} LU (application objective policy)`;
-            }
-            if (criterion.relation === 'hold' && criterion.tolerance > 0) {
-                tolerance = ` within ${String(criterion.tolerance)} ${unit}`;
+            const tolerance = describeCriterionTolerance(criterion, unit);
+            // A clause no measurement verifies has no metric, subject or figures to state, only its words.
+            if (criterion.source.kind === 'constraint' && criterion.source.constraintId === 'unsupported') {
+                return {
+                    ...criterion,
+                    criterionText: `${source}: nothing the application measures shows that it holds, so this batch cannot be approved as verified.`,
+                };
             }
             return {
                 ...criterion,
