@@ -13,7 +13,7 @@ import {
 } from '../models/FermenterPatchState';
 import { fermenterStore } from '../stores/fermenterStore';
 
-import { cancelPendingFermenterPatchWrites } from './fermenterParamBridge/loadFermenterPatchWithAudio';
+import { cancelPendingFermenterPatchWrites } from './fermenterParamBridge/cancelPendingFermenterPatchWrites';
 
 export type CommitFermenterPatchInput = {
     deviceId: string;

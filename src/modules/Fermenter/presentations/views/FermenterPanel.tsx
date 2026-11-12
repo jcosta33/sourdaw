@@ -33,9 +33,10 @@ import { applyFermenterMacroMapping } from '../../useCases/applyFermenterMacroMa
 import { commitFermenterPatch } from '../../useCases/commitFermenterPatch';
 import { loadFermenterPatchWithAudio } from '../../useCases/fermenterParamBridge/loadFermenterPatchWithAudio';
 import { setFermenterParamWithAudio } from '../../useCases/fermenterParamBridge/setFermenterParamWithAudio';
+import { resolveFermenterPresetPatch } from '../../useCases/fermenterPatchOperations';
 import { FERMENTER_PRESETS } from '../../useCases/fermenterQueries/helpers';
-import { randomizeFermenterPatch, resolveFermenterPresetPatch } from '../../useCases/fermenterPatchOperations';
 import { hydrateFermenterFromProject } from '../../useCases/hydrateFermenterFromProject';
+import { randomizeFermenterPatch } from '../../useCases/randomizeFermenterPatch';
 import { selectFermenterFilterChoice } from '../../useCases/selectFermenterFilterChoice';
 import { selectFermenterOscillatorEngine } from '../../useCases/selectFermenterOscillatorEngine';
 import { loadUserPatches } from '../../useCases/user-patches/load-user-patches';

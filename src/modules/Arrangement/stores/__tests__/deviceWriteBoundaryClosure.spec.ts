@@ -250,10 +250,17 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // updateDeviceParam dependency and its single guarded call; this path
         // intentionally contains no persistence identifier.
         'src/modules/Fermenter/useCases/applyFermenterRuntimeParam.ts': 2,
+        // Count provenance: new file, measured 1 — the committed whole-patch
+        // action writes deviceState through setDeviceState, then mirrors its
+        // scalar fields into legacy parameterValues for project compatibility.
+        'src/modules/Fermenter/handlers/handleSetFermenterPatch.ts': 1,
         'src/modules/Fermenter/useCases/fermenterParamBridge/helpers.ts': 2,
         'src/modules/Fermenter/useCases/fermenterParamBridge/loadFermenterPatchWithAudio.ts': 6,
         'src/modules/Fermenter/useCases/fermenterParamBridge/setFermenterParamWithAudio.ts': 4,
         'src/modules/Fermenter/useCases/presetMorph/applyMorphedPatch.ts': 6,
+        // Count provenance: new file, measured 1 — the after-commit effect
+        // restores only the audible engine from the committed whole patch.
+        'src/modules/Fermenter/useCases/reconcileFermenterPatchFromProject.ts': 1,
         // Count provenance: measured 5, was 4. #1437 added `previewParam`, the
         // transient half of a knob gesture — it drives the engine and writes
         // nothing to project truth, so it contributes one `updateDeviceParam`
@@ -732,7 +739,10 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // DSP-id mapping — #548). That write class stays censused under
         // 'persistence-runtime' at count 6.
         // 'src/modules/Fermenter/useCases/presetMorph/applyMorphedPatch.ts': removed (0),
-        'src/modules/Fermenter/presentations/views/FermenterPanel.tsx': 7,
+        // Count provenance: measured 4, was 7 — whole-patch preset auditioning
+        // now commits through Command; the remaining macro/mapping preview
+        // calls and their shared import are the only live engine-load route.
+        'src/modules/Fermenter/presentations/views/FermenterPanel.tsx': 4,
         'src/modules/Gluten/useCases/glutenParamBridge/loadGlutenPatchWithAudio.ts': 2,
         'src/modules/Gluten/presentations/views/GlutenPanel.tsx': 3,
         'src/modules/GrandBoule/presentations/components/PianoModel3D.tsx': 4,

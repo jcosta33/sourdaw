@@ -1,4 +1,4 @@
-import { cancelPendingFermenterPatchWrites } from './fermenterParamBridge/loadFermenterPatchWithAudio';
+import { cancelPendingFermenterPatchWrites } from './fermenterParamBridge/cancelPendingFermenterPatchWrites';
 import { mapFermenterPatchToDspPatch } from './fermenterParamBridge/mapFermenterPatchToDspPatch';
 import { getFermenterDependencies } from './getFermenterDependencies';
 import { hydrateFermenterFromProject } from './hydrateFermenterFromProject';
