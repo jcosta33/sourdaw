@@ -9,7 +9,9 @@ import { projectCommands } from '../../useCases/commands/ProjectCommands';
 import { trackCommands } from '../../useCases/commands/TrackCommands';
 import { transportCommands } from '../../useCases/commands/TransportCommands';
 import { viewCommands } from '../../useCases/commands/ViewCommands';
+import { discoverCommands } from '../../useCases/discoverCommands';
 import { type CallableCommandEntry, searchCommandRegistry } from '../../useCases/searchCommandRegistry';
+import { updateRecentCommandIds } from '../../useCases/updateRecentCommandIds';
 
 /**
  * Command registry — aggregates all commands from per-category sub-files.
@@ -28,7 +30,7 @@ import { type CallableCommandEntry, searchCommandRegistry } from '../../useCases
 // ── Re-exports for in-module consumers ────────────────────────────────────
 
 export type CommandEntry = CallableCommandEntry;
-export { discoverCommands, updateRecentCommandIds } from '../../models/CommandSearch';
+export { discoverCommands, updateRecentCommandIds };
 
 // ── Aggregated registry ────────────────────────────────────────────────────
 
