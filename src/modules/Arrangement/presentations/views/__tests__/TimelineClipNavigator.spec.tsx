@@ -12,10 +12,12 @@ import { useGlobalKeyboardShortcuts } from '#/modules/CommandInterface/presentat
 import { ElasticEditorPanel } from '#/modules/ElasticAudio/presentations/views';
 import { elasticAudioStore } from '#/modules/ElasticAudio/stores';
 import { defaultProjectStoreState, projectLoadFailureStore, projectStore } from '#/modules/Project/stores';
+import { defaultWorkspaceState, workspaceStore } from '#/modules/WorkspaceShell/stores';
 import { type ActionHandler } from '#/utils/handlerContract';
 
 import { createTrack, type Clip, type Track } from '../../../models/Track';
 import { clipSelectionStore, defaultClipSelectionState } from '../../../stores/clipSelectionStore';
+import { timelineViewStore } from '../../../stores/timelineViewStore';
 import { defaultTrackState, trackStore } from '../../../stores/trackStore';
 import { getWarpState } from '../../../stores/warpStates';
 import { moveClip } from '../../../useCases/clip/moveClip';
@@ -110,6 +112,14 @@ describe('TimelineClipNavigator', () => {
         act(() => {
             clipSelectionStore.set(defaultClipSelectionState);
             trackStore.set({ ...defaultTrackState, tracks: [] });
+            timelineViewStore.set({
+                scrollX: 0,
+                scrollY: 0,
+                pixelsPerBeat: 12,
+                autoScrollEnabled: true,
+                viewportHeight: 0,
+                viewportWidth: 0,
+            });
         });
     });
 
@@ -121,6 +131,7 @@ describe('TimelineClipNavigator', () => {
         act(() => {
             clipSelectionStore.set(defaultClipSelectionState);
             trackStore.set({ ...defaultTrackState, tracks: [] });
+            timelineViewStore.set(null);
         });
     });
 
@@ -135,11 +146,13 @@ describe('TimelineClipNavigator', () => {
             });
         });
         const listbox = openNavigator();
-        expect(listbox).toHaveFocus();
+        const search = screen.getByRole('searchbox', { name: 'Search clips' });
+        expect(search).toHaveFocus();
         expect(activeOption(listbox)).toHaveAccessibleName(/Verse, Voice, MIDI clip, start beat 0, end beat 2/);
         expect(within(listbox).getAllByRole('option')).toHaveLength(2);
 
-        fireEvent.keyDown(listbox, { key: 'ArrowDown' });
+        fireEvent.keyDown(search, { key: 'ArrowDown' });
+        expect(listbox).toHaveFocus();
         expect(activeOption(listbox)).toHaveAccessibleName(/Fill, Drums, MIDI clip, start beat 8, end beat 10/);
         expect(clipSelectionStore.value?.selectedClipIds).toEqual([]);
         expect(within(listbox).getByRole('option', { name: /Fill/ })).toHaveAttribute('aria-selected', 'false');
@@ -254,7 +267,7 @@ describe('TimelineClipNavigator', () => {
             })
         );
         expect(activeOption(listbox)).toHaveAccessibleName(/near/);
-        expect(listbox).toHaveFocus();
+        expect(screen.getByRole('searchbox', { name: 'Search clips' })).toHaveFocus();
 
         act(() => trackStore.set({ ...defaultTrackState, tracks: [] }));
         expect(screen.getByText('No clips')).toBeInTheDocument();
@@ -339,6 +352,26 @@ describe('TimelineClipNavigator', () => {
         }
     });
 
+    it('allows the palette shortcut from navigator search like a normal input', () => {
+        registerHandlerMap({ togglePlayback: togglePlaybackHandler });
+        act(() => workspaceStore.set({ ...defaultWorkspaceState, commandPaletteOpen: false }));
+        render(
+            <>
+                <ShortcutHost />
+                <input aria-label="ordinary input" />
+            </>
+        );
+        const ordinary = screen.getByRole('textbox', { name: 'ordinary input' });
+        fireEvent.keyDown(ordinary, { key: 'k', code: 'KeyK', metaKey: true });
+        expect(workspaceStore.value?.commandPaletteOpen).toBe(true);
+
+        act(() => workspaceStore.set({ ...defaultWorkspaceState, commandPaletteOpen: false }));
+        openNavigator();
+        const search = screen.getByRole('searchbox', { name: 'Search clips' });
+        fireEvent.keyDown(search, { key: 'k', code: 'KeyK', metaKey: true });
+        expect(workspaceStore.value?.commandPaletteOpen).toBe(true);
+    });
+
     it('keeps an Elastic marker intact when Delete is pressed in the timeline listbox', async () => {
         const audioClip: Clip = { ...clip('one', 'voice', 0), type: 'audio' };
         act(() => trackStore.set({ ...defaultTrackState, tracks: [track('voice', 'Voice', [audioClip])] }));
@@ -362,11 +395,297 @@ describe('TimelineClipNavigator', () => {
         expect(details).toHaveTextContent('0 transients, 1 user, 0 locked');
 
         const listbox = openNavigator();
-        expect(listbox).toHaveFocus();
+        expect(screen.getByRole('searchbox', { name: 'Search clips' })).toHaveFocus();
         fireEvent.keyDown(listbox, { key: 'Delete' });
         fireEvent.keyDown(listbox, { key: 'Backspace' });
 
         expect(getWarpState('one').markers).toEqual(before);
         expect(details).toHaveTextContent('0 transients, 1 user, 0 locked');
+    });
+
+    it('steps to the previous result when ArrowUp is pressed in the search field', () => {
+        act(() => {
+            trackStore.set({
+                ...defaultTrackState,
+                tracks: [
+                    track('voice', 'Voice', [
+                        clip('one', 'voice', 0, 'One'),
+                        clip('two', 'voice', 4, 'Two'),
+                        clip('three', 'voice', 8, 'Three'),
+                    ]),
+                ],
+            });
+        });
+        const listbox = openNavigator();
+        const search = screen.getByRole('searchbox', { name: 'Search clips' });
+        fireEvent.keyDown(search, { key: 'ArrowDown' });
+        fireEvent.keyDown(listbox, { key: 'ArrowDown' });
+        expect(activeOption(listbox)).toHaveAccessibleName(/Three, Voice/);
+
+        act(() => search.focus());
+        fireEvent.keyDown(search, { key: 'ArrowUp' });
+
+        expect(activeOption(listbox)).toHaveAccessibleName(/Two, Voice/);
+        expect(listbox).toHaveFocus();
+        fireEvent.keyDown(listbox, { key: 'Enter' });
+        expect(clipSelectionStore.value?.selectedClipIds).toEqual(['two']);
+    });
+
+    it('filters clip and track names by type and current track with announced counts', () => {
+        const audioTake: Clip = { ...clip('take', 'voice', 4, 'Take'), type: 'audio' };
+        act(() => {
+            trackStore.set({
+                ...defaultTrackState,
+                selectedTrackId: 'voice',
+                tracks: [
+                    track('voice', 'Voice', [clip('lead', 'voice', 0, 'Lead'), audioTake]),
+                    track('drums', 'Drums', [clip('fill', 'drums', 8, 'Fill')]),
+                ],
+            });
+        });
+        const listbox = openNavigator();
+        const search = screen.getByRole('searchbox', { name: 'Search clips' });
+        expect(screen.getByText('3 of 3 clips')).toBeInTheDocument();
+
+        fireEvent.change(search, { target: { value: 'drums' } });
+        expect(within(listbox).getAllByRole('option')).toHaveLength(1);
+        expect(activeOption(listbox)).toHaveAccessibleName(/Fill, Drums, MIDI clip/);
+        expect(screen.getByText('1 of 3 clips')).toBeInTheDocument();
+
+        fireEvent.change(search, { target: { value: 'TAK' } });
+        expect(within(listbox).getAllByRole('option')).toHaveLength(1);
+        expect(activeOption(listbox)).toHaveAccessibleName(/Take, Voice, audio clip/);
+        expect(screen.getByText('1 of 3 clips')).toBeInTheDocument();
+
+        fireEvent.click(screen.getByRole('button', { name: 'MIDI' }));
+        expect(within(listbox).queryAllByRole('option')).toHaveLength(0);
+        expect(screen.getByText('No matching clips')).toBeInTheDocument();
+        expect(screen.getByText('0 of 3 clips')).toBeInTheDocument();
+        expect(listbox).not.toHaveAttribute('aria-activedescendant');
+
+        fireEvent.change(search, { target: { value: '' } });
+        expect(
+            within(listbox)
+                .getAllByRole('option')
+                .map((option) => option.textContent)
+        ).toEqual(['Lead · Voice', 'Fill · Drums']);
+        fireEvent.click(screen.getByRole('button', { name: 'Current track' }));
+        expect(within(listbox).getAllByRole('option')).toHaveLength(1);
+        expect(activeOption(listbox)).toHaveAccessibleName(/Lead, Voice, MIDI clip/);
+        expect(screen.getByText('1 of 3 clips')).toBeInTheDocument();
+        expect(trackStore.value?.selectedTrackId).toBe('voice');
+        expect(clipSelectionStore.value?.selectedClipIds).toEqual([]);
+
+        act(() => trackStore.set({ ...trackStore.value!, selectedTrackId: null }));
+        expect(screen.getByRole('button', { name: 'Current track' })).toBeDisabled();
+        expect(screen.getByRole('button', { name: 'Current track' })).toHaveAttribute('aria-pressed', 'false');
+        expect(within(listbox).getAllByRole('option')).toHaveLength(2);
+        expect(screen.getByText('2 of 3 clips')).toBeInTheDocument();
+
+        fireEvent.keyDown(search, { key: 'Escape' });
+        expect(screen.queryByRole('listbox', { name: 'Timeline clips' })).not.toBeInTheDocument();
+    });
+
+    it('selects and minimally reveals an off-screen result without changing zoom', () => {
+        act(() => {
+            trackStore.set({
+                ...defaultTrackState,
+                tracks: [
+                    track('near-track', 'Near', [clip('near', 'near-track', 0, 'Near')]),
+                    track('far-track', 'Far', [clip('far', 'far-track', 100, 'Far')]),
+                ],
+            });
+            selectClipWithFocus('near');
+            timelineViewStore.set({
+                scrollX: 0,
+                scrollY: 0,
+                pixelsPerBeat: 10,
+                autoScrollEnabled: true,
+                viewportHeight: 80,
+                viewportWidth: 200,
+            });
+        });
+        const listbox = openNavigator();
+        const search = screen.getByRole('searchbox', { name: 'Search clips' });
+        fireEvent.change(search, { target: { value: 'Far' } });
+
+        fireEvent.keyDown(search, { key: 'Enter' });
+
+        expect(trackStore.value?.selectedTrackId).toBe('far-track');
+        expect(clipSelectionStore.value?.selectedClipIds).toEqual(['far']);
+        expect(timelineViewStore.value).toMatchObject({
+            scrollX: 820,
+            scrollY: 80,
+            pixelsPerBeat: 10,
+        });
+        const clipStartX = 100 * 10;
+        const clipEndX = 102 * 10;
+        const { scrollX = 0, scrollY = 0 } = timelineViewStore.value ?? {};
+        expect(clipStartX).toBeGreaterThanOrEqual(scrollX);
+        expect(clipEndX).toBeLessThanOrEqual(scrollX + 200);
+        expect(80).toBeGreaterThanOrEqual(scrollY);
+        expect(160).toBeLessThanOrEqual(scrollY + 80);
+        expect(screen.getByRole('listbox', { name: 'Timeline clips' })).toBe(listbox);
+
+        fireEvent.keyDown(search, { key: 'Enter' });
+        expect(timelineViewStore.value).toMatchObject({ scrollX: 820, scrollY: 80, pixelsPerBeat: 10 });
+    });
+
+    it('keeps the viewport when an oversized clip and track already cover it', () => {
+        act(() => {
+            trackStore.set({
+                ...defaultTrackState,
+                tracks: [
+                    track('target-track', 'Target', [{ ...clip('target', 'target-track', 0), endBeat: 100 }], {
+                        height: 1000,
+                    }),
+                ],
+            });
+            timelineViewStore.set({
+                scrollX: 500,
+                scrollY: 500,
+                pixelsPerBeat: 10,
+                autoScrollEnabled: true,
+                viewportHeight: 100,
+                viewportWidth: 100,
+            });
+        });
+        openNavigator();
+        fireEvent.keyDown(screen.getByRole('searchbox', { name: 'Search clips' }), { key: 'Enter' });
+        expect(clipSelectionStore.value?.selectedClipIds).toEqual(['target']);
+        expect(timelineViewStore.value).toMatchObject({ scrollX: 500, scrollY: 500 });
+    });
+
+    it('minimally reveals the clipped edge of oversized results', () => {
+        act(() => {
+            trackStore.set({
+                ...defaultTrackState,
+                tracks: [
+                    ...Array.from({ length: 4 }, (_, index) =>
+                        track(`before-${index}`, `Before ${index}`, [], { height: 100 })
+                    ),
+                    track('target-track', 'Target', [{ ...clip('target', 'target-track', 20), endBeat: 55 }], {
+                        height: 150,
+                    }),
+                    ...Array.from({ length: 5 }, (_, index) => track(`after-${index}`, `After ${index}`, [])),
+                ],
+            });
+            timelineViewStore.set({
+                scrollX: 500,
+                scrollY: 500,
+                pixelsPerBeat: 10,
+                autoScrollEnabled: true,
+                viewportHeight: 100,
+                viewportWidth: 100,
+            });
+        });
+        openNavigator();
+        fireEvent.keyDown(screen.getByRole('searchbox', { name: 'Search clips' }), { key: 'Enter' });
+        expect(timelineViewStore.value).toMatchObject({ scrollX: 450, scrollY: 450 });
+    });
+
+    it('reveals oversized results that are fully before the viewport', () => {
+        act(() => {
+            trackStore.set({
+                ...defaultTrackState,
+                tracks: [
+                    ...Array.from({ length: 2 }, (_, index) =>
+                        track(`before-${index}`, `Before ${index}`, [], { height: 100 })
+                    ),
+                    track('target-track', 'Target', [{ ...clip('target', 'target-track', 20), endBeat: 40 }], {
+                        height: 300,
+                    }),
+                    ...Array.from({ length: 8 }, (_, index) => track(`after-${index}`, `After ${index}`, [])),
+                ],
+            });
+            timelineViewStore.set({
+                scrollX: 500,
+                scrollY: 500,
+                pixelsPerBeat: 10,
+                autoScrollEnabled: true,
+                viewportHeight: 100,
+                viewportWidth: 100,
+            });
+        });
+        openNavigator();
+        fireEvent.keyDown(screen.getByRole('searchbox', { name: 'Search clips' }), { key: 'Enter' });
+        expect(timelineViewStore.value).toMatchObject({ scrollX: 300, scrollY: 400 });
+    });
+
+    it('minimally reveals oversized results clipped beyond the viewport end', () => {
+        act(() => {
+            trackStore.set({
+                ...defaultTrackState,
+                tracks: [
+                    ...Array.from({ length: 5 }, (_, index) =>
+                        track(`before-${index}`, `Before ${index}`, [], { height: 110 })
+                    ),
+                    track('target-track', 'Target', [{ ...clip('target', 'target-track', 55), endBeat: 100 }], {
+                        height: 450,
+                    }),
+                    ...Array.from({ length: 5 }, (_, index) => track(`after-${index}`, `After ${index}`, [])),
+                ],
+            });
+            timelineViewStore.set({
+                scrollX: 500,
+                scrollY: 500,
+                pixelsPerBeat: 10,
+                autoScrollEnabled: true,
+                viewportHeight: 100,
+                viewportWidth: 100,
+            });
+        });
+        openNavigator();
+        fireEvent.keyDown(screen.getByRole('searchbox', { name: 'Search clips' }), { key: 'Enter' });
+        expect(timelineViewStore.value).toMatchObject({ scrollX: 550, scrollY: 550 });
+    });
+
+    it('minimally reveals a clip before an already scrolled viewport', () => {
+        act(() => {
+            trackStore.set({
+                ...defaultTrackState,
+                tracks: Array.from({ length: 10 }, (_, index) =>
+                    track(
+                        `track-${index}`,
+                        `Track ${index}`,
+                        index === 4 ? [clip('target', 'track-4', 30, 'Target')] : []
+                    )
+                ),
+            });
+            timelineViewStore.set({
+                scrollX: 500,
+                scrollY: 500,
+                pixelsPerBeat: 10,
+                autoScrollEnabled: true,
+                viewportHeight: 200,
+                viewportWidth: 100,
+            });
+        });
+        openNavigator();
+        fireEvent.keyDown(screen.getByRole('searchbox', { name: 'Search clips' }), { key: 'Enter' });
+        expect(timelineViewStore.value).toMatchObject({ scrollX: 300, scrollY: 320 });
+    });
+
+    it('retargets a filtered active descendant after deletion and undo restoration', () => {
+        const first = clip('first', 'voice', 0, 'Keep A');
+        const second = clip('second', 'voice', 4, 'Keep B');
+        act(() => trackStore.set({ ...defaultTrackState, tracks: [track('voice', 'Voice', [first, second])] }));
+        const listbox = openNavigator();
+        const search = screen.getByRole('searchbox', { name: 'Search clips' });
+        fireEvent.change(search, { target: { value: 'Keep' } });
+        fireEvent.keyDown(search, { key: 'ArrowDown' });
+        fireEvent.keyDown(listbox, { key: 'End' });
+        expect(activeOption(listbox)).toHaveAccessibleName(/Keep B/);
+
+        act(() => trackStore.set({ ...defaultTrackState, tracks: [track('voice', 'Voice', [first])] }));
+        expect(activeOption(listbox)).toHaveAccessibleName(/Keep A/);
+        expect(document.getElementById(listbox.getAttribute('aria-activedescendant')!)).toBeInTheDocument();
+
+        act(() => trackStore.set({ ...defaultTrackState, tracks: [track('voice', 'Voice', [first, second])] }));
+        fireEvent.keyDown(listbox, { key: 'End' });
+        expect(activeOption(listbox)).toHaveAccessibleName(/Keep B/);
+        act(() => trackStore.set({ ...defaultTrackState, tracks: [] }));
+        expect(screen.getByText('No clips')).toBeInTheDocument();
+        expect(listbox).not.toHaveAttribute('aria-activedescendant');
     });
 });

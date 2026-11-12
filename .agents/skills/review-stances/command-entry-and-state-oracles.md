@@ -1,7 +1,8 @@
 # Lesson library: command entry and state oracles
 
 Defects where a user mutation bypasses Command or half-applies, where acceptance counts notifications instead of
-committed project truth, and where regeneration or interval edits drop material outside their footprint. Split out of
+committed project truth, where regeneration or interval edits drop material outside their footprint, and where
+overlapping inputs read state before an earlier input commits. Saved projects and saved history belong to
 `project-integrity.md`; project truth is the CRDT root and every projection is a witness.
 Each probe names the input or state that breaks and the check that must go red. Drive production actions and
 real Automerge bytes (save, binary reload, fresh projections, hydrated history) and read raw CRDT truth beside
@@ -36,6 +37,15 @@ boundaries.
    choices (filter type/model) restore an absent leaf on first-selection Undo, a hidden non-SVF Type stays stored,
    Model and Type each own pending authority by device and parameter, and an old queued direct parameter frame
    cannot overwrite the newer choice.
+   Crust's initial numeric panel bridge (`cd59903255`, no associated PR returned by commit lookup) persisted
+   preview samples outside semantic history; its historical review brief and stance coverage are unestablished.
+   Drive keyboard and multi-sample pointer gestures through the real panel, Command and CRDT: previews leave
+   complete project/history unchanged, one physical terminal records one action/inverse, and Undo/Redo keeps the
+   device installed. Preserve exact original leaf absence and hydrate its default without erasing a still-owned
+   preview after an unrelated edit. Hold snapshot admission across replacement, cancel and unmount; stale work
+   cannot commit or restore over newer runtime. Observe event-time automation samples at movement and physical
+   release, with synthetic settlement and canonical/replay writes suppressed; real controller call-through is not
+   audible-output proof. Restoring the direct bridge must fail history, inverse and raw/projection assertions.
 3. **A multi-unit edit half-applies or a linked follower write never reaches the sampler (#4506; #931, #4392).**
    Failure: a generator or batch leaves partial items, or a follower point is stored where playback ignores it. Probe:
    a generator spanning pads or lanes submits one compensated batch bound to project and document identity: fail a
@@ -47,11 +57,7 @@ boundaries.
    singleton `executeAppActionBatch` leaves document, links, samples and history unchanged, with a positive
    source-write Undo/Redo control reaching the follower. Multi-action `addAutomationPoint` batches are a separate
    Command contract, never inferred from singleton proof: drive one whose refusal leaks no follower-point write.
-4. **A mounted reader misses a history transition (#5247).** Failure: a reader derived from the map (ruler basis
-   after Insert Time) keeps its pre-Undo drawing. Probe: capture raw and projected figures around the real Command
-   and require a fresh drawing per Undo and Redo (a matching earlier frame is not a fresh read); replacing its map
-   subscription with an imperative read must fail the stopped map-change and history paint checks.
-5. **Regeneration keeps protected rows outside its footprint (#5515).** Failure: redetection drops or rewrites
+4. **Regeneration keeps protected rows outside its footprint (#5515).** Failure: redetection drops or rewrites
    locked user material. Probe: a moved locked automatic marker beside user, grid and unlocked automatic rows: real
    Detect and re-detection at another sensitivity keep exact ID, original/warped beat, lock and confidence in raw
    and projection and suppress near-hit detections; unlocking makes the row replaceable. Dropping locked-row
@@ -60,38 +66,68 @@ boundaries.
    edit to refuse replay without writing. Switch source/project, replace PCM, change tempo or cancel before commit:
    raw CRDT, projections, other clips and cached PCM stay unchanged while visible counts reflect only committed
    truth. Compare original PCM bytes, not merely buffer identity.
-6. **An interval edit keeps everything outside `[start, end)` (#645).** Failure: a range edit drops adjacent user
+5. **An interval edit keeps everything outside `[start, end)` (#645).** Failure: a range edit drops adjacent user
    material. Probe: a comp selection over `[start, end)` keeps both complements at each beat; guarded semantic
    Undo/Redo applies to current state without touching other lanes or selections outside the footprint; a
    source-count assertion does not prove the resolved playback keeps the selected source phase, so verify source
    timing separately. Selected-range deletion: add peer facets afterward and only fragment-owned facets retire,
    recovered exactly after a later publication failure.
-7. **Command entry and identity-scoped replay reach every authority and survive owner replacement (#4082).**
+6. **Command entry and identity-scoped replay reach every authority and survive owner replacement (#4082).**
    Failure: a visible flag updates while the decoder rejects the value (a Loop control kept an invalid region), or
    Undo/Redo replays onto an aggregate replaced by a new owner reusing track and child IDs, or from empty prior
    state. Probe: public command entry, then raw document, owner projection, control state and engine projection
    agree. Replace the aggregate reusing IDs and exercise an empty prior state; create history through the real
    producer, persist, reload, hydrate, replay (an injected entry proves neither producer nor saved contract).
-8. **Transcription completes only after every generated entity commits (`4f410257b2`, retained by
-   resolver consolidation `5a17842492`).** GitHub commit-to-PR lookup exposes no associated PR for either historical
-   commit; original review attribution is unavailable. The missing probe is source-owned atomic completion. Direct clip/note writes and a dispatched but unawaited destination cannot
-   witness one completed conversion. Drive the registered runtime command and each rendered caller with real decoded
-   PCM: a held snapshot queue keeps completion pending, one compensated child batch creates track, clip and all
-   128-note chunks, and a failure in the final chunk leaves raw CRDT, projections and history unchanged. Require one
-   grouped Undo/Redo/Undo, and macro playback of the committed children without another transcription. Replace the
-   awaited batch with fire-and-forget dispatch or a direct note write: the completion, atomicity or history case must
-   fail. Caller tests must reject cancelled, refused and no-op outcomes without a success notice.
-
-9. **Overlapping duplicate presses capture one stale source (#6218).** Failure: both presses finish after a held
-   snapshot transaction and copy the original interval. Probe the real shortcut handler, Command and CRDT with
-   two presses before releasing that wait: single, next-bar and unequal-span multi selection must chain geometry,
-   copy content and select the last copies, with one Undo/Redo group per press. Change selection away and back
-   inside one store batch, or replace the project reusing IDs, while admission or a staged handler waits: no old
-   publication or completion may overwrite newer truth or selection; fresh input must recover. Keep every selected
-   ID alive and retain the same selection reference in a separate real replacement case so project identity is
-   independently necessary. Insert an inapplicable next-bar input between valid multi-clip duplicates: ignoring that
+7. **Transcription completes only after every generated entity commits.** Failure: a conversion reports success
+   while its track, clip or note chunks are still uncommitted or only partly written. Direct clip/note writes and a
+   dispatched but unawaited destination cannot witness one completed conversion. Drive the registered runtime
+   command and each rendered caller with real decoded PCM: a held snapshot queue keeps completion pending, one
+   compensated child batch creates track, clip and all 128-note chunks, and a failure in the final chunk leaves raw
+   CRDT, projections and history unchanged. Require one grouped Undo/Redo/Undo, and macro playback of the committed
+   children without another transcription. Replace the awaited batch with fire-and-forget dispatch or a direct note
+   write: the completion, atomicity or history case must fail. Caller tests must reject cancelled, refused and
+   no-op outcomes without a success notice.
+8. **Overlapping duplicate presses capture one stale source (#6218).** Failure: both presses finish after a held
+   snapshot transaction and copy the original interval. Probe the real shortcut handler, Command and CRDT with two
+   presses dispatched while the first is held at the real snapshot-transaction boundary, before any copy selection
+   exists; a test that waits for the first copy selection before its second press proves completed serial input
+   only. Single, next-bar and unequal-span multi selection must chain geometry (unequal spans distinguish
+   continuation from two copies of the original), copy content and select the last copies, with one Undo/Redo
+   group per press; assert raw CRDT, owner projections, selected IDs and per-input Undo/Redo content. Observe
+   settlement through the actual returned intent promises; a fixed microtask count proves no scheduling boundary.
+   Change selection away and back inside one store batch, or replace the project reusing IDs, while admission or a
+   staged handler waits: no old publication or completion may overwrite newer truth or selection; fresh input must
+   recover. Test each authority predicate while the others remain valid: replacing the root and reselecting a clip
+   changes both project and selection, so it cannot detect removal of the project-identity check alone; keep every
+   selected ID alive and retain the same selection reference in a separate real replacement case, then remove only
+   that identity check. Insert an inapplicable next-bar input between valid multi-clip duplicates: ignoring that
    input must preserve both valid groups, while actual refusal still retires its failed chain. Revert ordering or
-   remove the route's execution/publication authority predicate and the corresponding integration must fail.
-   A committed-error or ambiguous result uses preallocated live copy IDs as witnesses, reports the error and never
-   replays the mutation. The introducing helper's completed-press test missed overlap; prior review stances are not
-   established by that test.
+   remove the route's execution/publication authority predicate and the corresponding integration must fail. Use
+   controlled Command outcomes only for error interpretation, labelled as such; they cannot prove kernel
+   admission or publication fences. A committed-error or ambiguous result uses preallocated live copy IDs as
+   witnesses, reports the error and never replays the mutation.
+9. **Default names are planned at the owning write boundary (#6202).** Failure: two overlapping nameless track
+   additions read the same default-name state before the snapshot wait and commit duplicate names; sequential
+   completed additions cannot exhibit it. Hold a real snapshot transaction, start two nameless UI dispatches and
+   observe both admissions before release, then await every command. Distinct committed IDs, complete raw and
+   projected track arrays and recorded history names must agree before requiring consecutive names; transient
+   selection and ghost state are not persisted-slot fields. Undo/Redo/Undo keeps each row's recorded identity and
+   name; explicit names remain verbatim and a peer's higher number never renumbers Redo. The owner opts fresh
+   singleton naming into the post-wait synchronous read/write continuation; reverting only that late naming phase
+   must fail the overlap case under `pnpm guard --profile focused -- pnpm test:run
+src/modules/Arrangement/handlers/track/__tests__/handleAddTrackDefaultName.integration.spec.ts`. Cleanup
+   releases and settles every created promise even when an earlier assertion fails, and a later await preserves
+   the original command failure. Preserve highest-per-kind numbering, compiler and supplied-envelope digests,
+   early admission/runtime captures, isolated materialized observers and authenticated pending-Redo bindings.
+   A batch materializes arguments before member writes, so addition-only prefixes miss renamed, removed and
+   restored name sets. Project identity/kind/name in order: actual captured restore rows, exact non-master
+   removals with children surviving, and anonymous raw additions kept separately without minted IDs, distinguishing
+   actual stored names from event metadata. Prefer canonical prepared prefixes and preserve supplied names.
+   Require real remove/rename-then-add batches to agree in raw tracks, projection and recorded names through
+   Undo/Redo/Undo; restoring the append-only planner must fail. Singleton-only operations remain rejected in
+   multi-action batches.
+
+## Relocated
+
+- Mounted reader missing a history transition (ruler fresh drawing after Insert Time Undo/Redo, #5247) →
+  `rendered-ui-layout.md` probe 4.

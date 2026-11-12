@@ -69,7 +69,7 @@ describe('LlmStatusBadge', () => {
         // offer to load AI over a panel that still knows no backend is the
         // stale half of a two-answer availability read.
         fireEvent.click(screen.getByRole('button', { name: 'Load AI' }));
-        expect(screen.getByRole('button', { name: /^Standard/ })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /^Pro/ })).toBeInTheDocument();
     });
 
     it('names the selected model on the download button and states what downloading does', () => {
@@ -79,10 +79,10 @@ describe('LlmStatusBadge', () => {
         fireEvent.click(screen.getByRole('button', { name: 'Load AI' }));
 
         const downloadButton = screen.getByRole('button', { name: /^Download & Load/ });
-        expect(downloadButton).toHaveTextContent('Download & Load Standard');
-
-        fireEvent.click(screen.getByRole('button', { name: /^Pro/ }));
         expect(downloadButton).toHaveTextContent('Download & Load Pro');
+
+        fireEvent.click(screen.getByRole('button', { name: /^Standard/ }));
+        expect(downloadButton).toHaveTextContent('Download & Load Standard');
 
         fireEvent.click(screen.getByRole('button', { name: /^Light/ }));
         expect(downloadButton).toHaveTextContent('Download & Load Light');
@@ -120,5 +120,78 @@ describe('LlmStatusBadge', () => {
 
         fireEvent.click(readyButton);
         expect(screen.getByRole('button', { name: 'Unload from Memory' })).toBeInTheDocument();
+    });
+
+    describe('when this machine cannot run the requested model', () => {
+        const storageRefusal = {
+            state: 'error' as const,
+            message:
+                'The Pro model needs 4.63 GB to download, but this browser has 1.20 GB of storage left. Free some space or pick a smaller model. Nothing was downloaded.',
+            refusal: {
+                reason: 'insufficient-storage' as const,
+                modelId: 'Qwen3-8B-q4f16_1-MLC',
+                requiredBytes: 4_630_000_000,
+                availableBytes: 1_200_000_000,
+            },
+        };
+
+        function renderRefused(status: Parameters<typeof LlmStatusBadge>[0]['status'], onLoad = vi.fn()): void {
+            capabilityStore.set({ phase: 'done', report: verifiedWebGpuReport });
+            render(<LlmStatusBadge status={status} onLoad={onLoad} />);
+        }
+
+        it.each([
+            { label: 'storage', status: storageRefusal, trigger: 'Not enough storage', sentence: /4\.63 GB.*1\.20 GB/ },
+            {
+                label: 'shader-f16',
+                status: {
+                    state: 'error' as const,
+                    message:
+                        'The Pro model cannot run here: this GPU or browser lacks the WebGPU shader-f16 feature it needs. Nothing was downloaded.',
+                    refusal: { reason: 'shader-f16-unavailable' as const, modelId: 'Qwen3-8B-q4f16_1-MLC' },
+                },
+                trigger: 'Needs shader-f16',
+                sentence: /lacks the WebGPU shader-f16 feature/,
+            },
+            {
+                label: 'gpu memory',
+                status: {
+                    state: 'error' as const,
+                    message:
+                        'The Pro model did not fit in GPU memory: it needs ~10.3 GB of GPU memory. The download is kept; pick a smaller model or free GPU memory and try again.',
+                    refusal: { reason: 'gpu-memory' as const, modelId: 'Qwen3-8B-q4f16_1-MLC' },
+                },
+                trigger: 'Not enough GPU memory',
+                sentence: /needs ~10\.3 GB of GPU memory/,
+            },
+        ])('labels a $label refusal and explains it in full once opened', ({ status, trigger, sentence }) => {
+            renderRefused(status);
+
+            expect(screen.queryByRole('button', { name: 'Retry Model Download' })).not.toBeInTheDocument();
+            fireEvent.click(screen.getByRole('button', { name: trigger }));
+
+            expect(screen.getByRole('alert')).toHaveTextContent(sentence);
+        });
+
+        it('offers the model chooser and Download & Load beside the refusal, loading the chosen model', () => {
+            const onLoad = vi.fn();
+            renderRefused(storageRefusal, onLoad);
+
+            fireEvent.click(screen.getByRole('button', { name: 'Not enough storage' }));
+            fireEvent.click(screen.getByRole('button', { name: /^Light/ }));
+            fireEvent.click(screen.getByRole('button', { name: /^Download & Load Light/ }));
+
+            expect(onLoad).toHaveBeenCalledWith('Qwen3-1.7B-q4f16_1-MLC');
+        });
+
+        it('keeps a plain error as the retry button', () => {
+            const onLoad = vi.fn();
+            renderRefused({ state: 'error', message: 'network went away' }, onLoad);
+
+            fireEvent.click(screen.getByRole('button', { name: 'Retry Model Download' }));
+
+            expect(onLoad).toHaveBeenCalledWith();
+            expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+        });
     });
 });

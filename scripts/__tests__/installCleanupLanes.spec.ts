@@ -6,6 +6,7 @@ import {
     mkdirSync,
     mkdtempSync,
     readFileSync,
+    readdirSync,
     realpathSync,
     renameSync,
     rmSync,
@@ -27,6 +28,7 @@ import {
     type CleanupInstallationPort,
     type CleanupRuntimeBinding,
 } from '../installCleanupLanes.ts';
+import { snapshotImportSpecifiers, trustedLocalImportClosure } from '../trustedGithubWriteBootstrap.ts';
 
 /** Mirrors `launchctl print`: top-level fields one tab deep, nested sections deeper with their own `state`. */
 function printed(fields: { state?: string; pid?: string; runs: string; exit: string }): string {
@@ -576,9 +578,182 @@ describe('cleanup installation', () => {
             expect(f.events.at(-2)?.[0]).toBe('print');
             expect(f.events.at(-1)).toEqual(['bootout', `gui/501/${CLEANUP_LABEL}`]);
             expect(existsSync(join(f.root, 'Library/LaunchAgents', `${CLEANUP_LABEL}.plist`))).toBe(false);
+            expect(readdirSync(join(f.root, '.agents/lane-cleanup/runtimes'))).toEqual([]);
             expect(f.waits).toHaveLength(0);
         } finally {
             f.dispose();
+        }
+    });
+
+    it('restores and re-bootstraps the previous job and removes the new runtime when a reinstall cannot launch', () => {
+        const f = fixture();
+        try {
+            const previous = installCleanupLanes(f.port);
+            const previousBytes = readFileSync(previous.plist, 'utf8');
+            const runtimes = dirname(previous.runtime);
+            f.events.length = 0;
+            f.launch.prints = [printed({ runs: '1', exit: '78: EX_CONFIG' })];
+
+            expect(() => installCleanupLanes(f.port)).toThrow(/could not initialize.*Full Disk Access/);
+
+            expect(readFileSync(previous.plist, 'utf8')).toBe(previousBytes);
+            expect(f.events.slice(-3)).toEqual([
+                ['print', `gui/501/${CLEANUP_LABEL}`],
+                ['bootout', `gui/501/${CLEANUP_LABEL}`],
+                ['bootstrap', 'gui/501', previous.plist],
+            ]);
+            expect(readdirSync(runtimes)).toEqual([basename(previous.runtime)]);
+        } finally {
+            f.dispose();
+        }
+    });
+
+    it('says the previous job could not be restored when its re-bootstrap fails', () => {
+        const f = fixture();
+        try {
+            const previous = installCleanupLanes(f.port);
+            const previousBytes = readFileSync(previous.plist, 'utf8');
+            f.launch.prints = [printed({ runs: '1', exit: '78: EX_CONFIG' })];
+            let bootstraps = 0;
+            const port: CleanupInstallationPort = {
+                ...f.port,
+                run: (command, args) => {
+                    if (args[0] === 'bootstrap' && ++bootstraps === 2) {
+                        throw new Error('Bootstrap failed: 5: Input/output error');
+                    }
+                    f.port.run(command, args);
+                },
+            };
+
+            expect(() => installCleanupLanes(port)).toThrow(
+                /could not initialize.*previous cleanup job could not be restored: Bootstrap failed: 5/
+            );
+            expect(readFileSync(previous.plist, 'utf8')).toBe(previousBytes);
+        } finally {
+            f.dispose();
+        }
+    });
+
+    function failingFirstBootstrap(port: CleanupInstallationPort): CleanupInstallationPort {
+        let bootstraps = 0;
+        return {
+            ...port,
+            run: (command, args) => {
+                if (args[0] === 'bootstrap' && ++bootstraps === 1) {
+                    throw new Error('Bootstrap failed: 5: Input/output error');
+                }
+                port.run(command, args);
+            },
+        };
+    }
+
+    it('restores the previous job and removes the new runtime when the new bootstrap throws', () => {
+        const f = fixture();
+        try {
+            const previous = installCleanupLanes(f.port);
+            const previousBytes = readFileSync(previous.plist, 'utf8');
+            f.events.length = 0;
+
+            expect(() => installCleanupLanes(failingFirstBootstrap(f.port))).toThrow(
+                /^Bootstrap failed: 5: Input\/output error$/
+            );
+
+            expect(readFileSync(previous.plist, 'utf8')).toBe(previousBytes);
+            expect(f.events.slice(-2)).toEqual([
+                ['bootout', `gui/501/${CLEANUP_LABEL}`],
+                ['bootstrap', 'gui/501', previous.plist],
+            ]);
+            expect(readdirSync(dirname(previous.runtime))).toEqual([basename(previous.runtime)]);
+        } finally {
+            f.dispose();
+        }
+    });
+
+    it('removes the new plist and runtime when the first bootstrap throws with no previous job', () => {
+        const f = fixture();
+        try {
+            expect(() => installCleanupLanes(failingFirstBootstrap(f.port))).toThrow(
+                /^Bootstrap failed: 5: Input\/output error$/
+            );
+
+            expect(existsSync(join(f.root, 'Library/LaunchAgents', `${CLEANUP_LABEL}.plist`))).toBe(false);
+            expect(readdirSync(join(f.root, '.agents/lane-cleanup/runtimes'))).toEqual([]);
+        } finally {
+            f.dispose();
+        }
+    });
+
+    function failingRollbackBootout(port: CleanupInstallationPort, message: string): CleanupInstallationPort {
+        let bootouts = 0;
+        const failing = failingFirstBootstrap(port);
+        return {
+            ...failing,
+            run: (command, args) => {
+                if (args[0] === 'bootout' && ++bootouts === 2) {
+                    throw new Error(message);
+                }
+                failing.run(command, args);
+            },
+        };
+    }
+
+    it('still restores the previous job when the rollback finds the new job already unloaded', () => {
+        const f = fixture();
+        try {
+            const previous = installCleanupLanes(f.port);
+            const previousBytes = readFileSync(previous.plist, 'utf8');
+            f.events.length = 0;
+            const port = failingRollbackBootout(f.port, 'Boot-out failed: 3: No such process');
+
+            expect(() => installCleanupLanes(port)).toThrow(/^Bootstrap failed: 5: Input\/output error$/);
+
+            expect(readFileSync(previous.plist, 'utf8')).toBe(previousBytes);
+            expect(f.events.at(-1)).toEqual(['bootstrap', 'gui/501', previous.plist]);
+        } finally {
+            f.dispose();
+        }
+    });
+
+    it('reports a rollback bootout failure instead of re-bootstrapping over the loaded job', () => {
+        const f = fixture();
+        try {
+            const previous = installCleanupLanes(f.port);
+            const previousBytes = readFileSync(previous.plist, 'utf8');
+            f.events.length = 0;
+            const port = failingRollbackBootout(f.port, 'Boot-out failed: 5: Input/output error');
+
+            expect(() => installCleanupLanes(port)).toThrow(
+                /^Bootstrap failed: 5: Input\/output error The previous cleanup job could not be restored: Boot-out failed: 5: Input\/output error$/
+            );
+            expect(f.events.some((args) => args[0] === 'bootstrap')).toBe(false);
+            const installed = readFileSync(previous.plist, 'utf8');
+            expect(installed).not.toBe(previousBytes);
+            const runtimes = dirname(previous.runtime);
+            const named = readdirSync(runtimes).filter((entry) => installed.includes(join(runtimes, entry)));
+            expect(named).toHaveLength(1);
+            expect(named).not.toContain(basename(previous.runtime));
+        } finally {
+            f.dispose();
+        }
+    });
+
+    it('prunes earlier runtimes only after the new launch is verified, skipping symlinked entries', () => {
+        const f = fixture();
+        const foreign = realpathSync(mkdtempSync(join(tmpdir(), 'sourdaw-cleanup-runtime-alias-')));
+        try {
+            const first = installCleanupLanes(f.port);
+            const runtimes = dirname(first.runtime);
+            writeFileSync(join(foreign, 'keep'), 'foreign bytes\n');
+            symlinkSync(foreign, join(runtimes, 'aliased-runtime'), 'dir');
+
+            const second = installCleanupLanes(f.port);
+
+            expect(readdirSync(runtimes).sort()).toEqual([basename(second.runtime), 'aliased-runtime'].sort());
+            expect(existsSync(first.runtime)).toBe(false);
+            expect(readFileSync(join(foreign, 'keep'), 'utf8')).toBe('foreign bytes\n');
+        } finally {
+            f.dispose();
+            rmSync(foreign, { recursive: true });
         }
     });
 
@@ -667,5 +842,25 @@ describe('cleanup installation', () => {
         } finally {
             f.dispose();
         }
+    });
+
+    /**
+     * The installer builds the scheduled runtime from the worker's local import closure and refuses
+     * any source naming a module other than a Node builtin or a verified sibling. The launcher takes
+     * a `yaml` dependency, so the worker must never reach it.
+     */
+    it('keeps the real worker closure installable: Node builtins and sibling sources only', () => {
+        const repositoryRoot = join(import.meta.dirname, '..', '..');
+        const readSource = (path: string) => readFileSync(join(repositoryRoot, path), 'utf8');
+        const closure = [...trustedLocalImportClosure('scripts/cleanupLanes.ts', readSource)];
+
+        expect(closure).toContain('scripts/removeLane.ts');
+        expect(closure).not.toContain('scripts/trustedGithubWriteBootstrap.ts');
+        const foreign = closure.flatMap((path) =>
+            snapshotImportSpecifiers(readSource(path))
+                .filter((specifier) => !specifier.startsWith('node:') && !specifier.startsWith('./'))
+                .map((specifier) => `${path}: ${specifier}`)
+        );
+        expect(foreign).toEqual([]);
     });
 });

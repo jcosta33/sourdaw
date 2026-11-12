@@ -44,6 +44,12 @@ vi.mock('#/modules/Collaboration/useCases', async (importOriginal) => ({
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     ...(await importOriginal<any>()),
     getCachedAudioBuffer: vi.fn(),
+    restoreUnpinnedAudioBuffersFromIdb: vi.fn().mockResolvedValue({
+        absentIds: [],
+        initiallyUncachedIds: [],
+        restoredBuffers: new Map<string, AudioBuffer>(),
+        release: vi.fn(),
+    }),
 }));
 
 vi.mock('#/utils/Notification/notifyUser', () => ({
@@ -137,8 +143,9 @@ describe('addBrowserSample', () => {
     });
 
     it('re-obtains an uncached factory sample buffer before placing it', async () => {
-        vi.mocked(getCachedAudioBuffer).mockReturnValue(null);
-        mocks.ensureFactorySampleBuffer.mockResolvedValue({ status: 'resolved', buffer: bufferOf(2) });
+        const factoryBuffer = bufferOf(2);
+        vi.mocked(getCachedAudioBuffer).mockReturnValueOnce(null).mockReturnValue(factoryBuffer);
+        mocks.ensureFactorySampleBuffer.mockResolvedValue({ status: 'resolved', buffer: factoryBuffer });
 
         await addBrowserSample({ id: 'factory-kick', name: 'Factory Kick' });
 

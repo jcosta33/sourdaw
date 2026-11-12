@@ -36,16 +36,19 @@ it dispatches. Every step below runs on every delivery; the references hold the 
 | Squash-merge                                                | `pnpm deliver <pr>`                                                                                                                                                                                                              |
 | Recover a crashed delivery                                  | `pnpm deliver --recover-lock <pr> --owner <oid>`                                                                                                                                                                                 |
 | Recover a wedged review post                                | `pnpm review:publish:recover <pr> --owner <oid> [--attest-absent]`                                                                                                                                                               |
+| Remove a dead owner's tracker mutation lease                | `pnpm issue:reconcile --recover-lease <token>`                                                                                                                                                                                   |
 | Reconcile a tracker issue at delivery                       | `pnpm issue:reconcile <issue> --expected-body-sha256 <64-hex> (--edits-file <json> \| --superseded-by <issue>)`                                                                                                                  |
 | Close a superseded PR                                       | `pnpm pr:supersede <old> --head <old-sha> --replacement <merged> [--superseded-parent <closed-unmerged-parent> [--parent-replacement <merged-parent-replacement>]] --lineage <path-to-json>`                                     |
 | Retire an obsolete PR with confirmed repairs                | `pnpm pr:retire <pr> --head <head-sha> --record <path-to-json>`                                                                                                                                                                  |
-| Prune spent remote branches                                 | `pnpm branch:prune [--apply] [--limit <n>]`                                                                                                                                                                                      |
+| Prune spent remote branches                                 | `pnpm branch:prune [--apply] [--limit <n>] [--branch <name>]...`                                                                                                                                                                 |
 | Retry/discover pending post-merge cleanup                   | `pnpm lane:cleanup [--status]`                                                                                                                                                                                                   |
 | Install/refresh macOS cleanup job                           | `pnpm lane:cleanup:install`                                                                                                                                                                                                      |
 | Remove a spent lane                                         | `pnpm lane:remove <path>`                                                                                                                                                                                                        |
 | Strand an abandoned lane                                    | `pnpm lane:strand <path> --reason "<text>"`                                                                                                                                                                                      |
 | Prune lane artifacts                                        | `pnpm lane:prune <path> \| --all \| --stale-days <days>`                                                                                                                                                                         |
 | Restamp author identity on lanes                            | `pnpm lane:identity`                                                                                                                                                                                                             |
+| Post the reviewer's non-required shadow status              | `pnpm review:shadow-status <pr> --head <full-sha>`                                                                                                                                                                               |
+| Plan, or with `--apply` make, the trusted ruleset change    | `pnpm ruleset:harden [--apply]`                                                                                                                                                                                                  |
 
 `review:resolve` is retired: valid invocations refuse before authentication or GitHub access, and
 `pnpm review:resolve --help` explains the replacement — the author records each repair with
@@ -69,9 +72,11 @@ issue use manual `gh` under AGENTS.md [Artifacts](../../../AGENTS.md#artifacts).
 Run these package scripts with the protected primary checkout as the working directory, never from a
 lane: `lane:publish`, `lane:sync-parent`, `review:publish`, `review:publish:recover`,
 `review:repair`, `review:confirm`, `review:shadow-status`, `deliver`, `pr:supersede`, `pr:retire`,
-`issue:claim`, `issue:reconcile`, and `ruleset:harden` (the trusted ruleset change);
+`issue:claim`, `issue:reconcile`, `branch:prune`, `release:cut`, and `ruleset:harden` (the trusted
+ruleset change);
 `review:accept` remains only for legacy pre-policy heads, and `review:resolve` only explains its
-retirement. Each routes through `scripts/trustedGithubWriteBootstrap.ts`, which refuses any other
+retirement. `ruleset:harden` without `--apply` is a dry run that prints the planned change and
+writes nothing. Each routes through `scripts/trustedGithubWriteBootstrap.ts`, which refuses any other
 launch location with `trusted GitHub writes must be launched from the protected primary checkout`
 and runs the script closure from one pinned `origin/main` snapshot. Lane files are data, never
 executable delivery code. Snapshot and environment controls: [trust boundary](references/trust-boundary.md).
@@ -114,8 +119,9 @@ stamp existed.
 An issue-bound lane claims its issue in the same step: `lane:open` prints the command, and
 `pnpm issue:claim <issue>` — run from the protected primary checkout — adds the `status:active`
 label, removes every other `status:` label, and moves every board item holding the issue to In
-progress, reading the project's field and option ids live. The script refuses an issue that already
-carries `status:active`, making an existing claim visible before work starts; the check is
+progress, reading the project's field and option ids live, and reads the label swap back before
+moving any board. The script refuses a closed issue and an issue that already carries
+`status:active`, making an existing claim visible before work starts; the check is
 read-then-write, not atomic, so the survey before `lane:open` remains the guard against two claims
 racing in one window.
 
@@ -144,8 +150,8 @@ that model. The author works only in the lane and commits there; it never pushes
       `pnpm wasm:manifest`, stage the artifacts, then `pnpm wasm:verify`. AGENTS.md
       [Delivery](../../../AGENTS.md#delivery) holds the full rule.
     - **Agent evidence manifest**: `evidence/agent-campaign/manifest.json` pins the SHA-256 of every
-      fixture its suites read, and `scripts/__tests__/agentCampaignHarness.spec.ts` fails in push
-      Unit validation when a pinned file changes. `pnpm evidence:gate --manifest evidence/agent-campaign/manifest.json`
+      fixture its suites read, and `scripts/__tests__/agentCampaignHarness.spec.ts` fails in the
+      pull request's unit validation when a pinned file changes. `pnpm evidence:gate --manifest evidence/agent-campaign/manifest.json`
       lists stale digests; regenerate with
       `pnpm evidence:gate --manifest evidence/agent-campaign/manifest.json --write` and commit the
       rewrite.
@@ -170,7 +176,9 @@ conventional subject first. Publishing neither enables auto-merge nor posts revi
   The same effective title governs body validation, derived metadata, and branch-type warnings.
   Every publish, follow-ups included, also checks that newest lane subject against `TITLE_PATTERN`
   in `scripts/prContract.ts` (`feat`, `fix`, `chore`, `docs`, `test`, `refactor`, `perf`, `build`,
-  `ci`; never `style`) and refuses with `pull-request title is not conventional` when it fails, so
+  `ci`; never `style`, one line, no control characters) and refuses with `pull-request title is not
+conventional` when it fails. Every title source is also refused when it carries an issue-closing
+  reference, because the title becomes the squash commit subject on `main`, so
   the newest lane commit needs a conventional subject before every publish, and on the first
   publish it is the subject the PR should show.
 - **Body flags.** The body follows [`.github/pull_request_template.md`](../../../.github/pull_request_template.md);
@@ -254,7 +262,7 @@ three stances is not this procedure: stop and dispatch the third.
 
 Stances are the mechanism, not the paperwork. One reader finds what the reader already expects; three
 blind stances with distinct failure modes find the silent ones — a check that cannot fail, a suite the
-push workflow never ran, the state a theme was never given. A change is absolutely tiny and harmless
+pull-request workflow never ran, the state a theme was never given. A change is absolutely tiny and harmless
 only when it cannot alter what the product does, what a test proves, what a rule, procedure, contract
 or decision requires or records, which document or section a requirement points at, a persisted or
 generated artifact, or a build or delivery path; such a change may honestly run one, subject to the
@@ -344,8 +352,10 @@ behavior from the request or contract, `verification` is the exact command, chec
 comparison, and `observed` is the decisive result or excerpt. Keep the body to a short conclusion.
 Publication posts only that reviewer-written body; the structured evidence stays unpublished in
 `review.json`/`acceptance.json`, bound to the head by `headSha`. `review:accept` validates only
-`acceptance.json`'s own head-bound evidence; `review.json`'s evidence is read by the orchestrator,
-not by any script. The posted body must fit 600 Unicode code points; reject excess and report the
+`acceptance.json`'s own head-bound evidence. `review:publish` checks `review.json`'s evidence
+structurally (`assertPublicationEvidence` in `scripts/reviewDocumentParser.ts`): an `APPROVE`
+without `evidence` or without `format: compact-v1` is refused, and so is evidence whose `headSha`
+is not the live pull-request head. No script checks that the claims are true. The posted body must fit 600 Unicode code points; reject excess and report the
 actual and allowed lengths, never truncate. Record completeness and head binding do not prove
 truthful execution; the orchestrator remains responsible for verifying the claims.
 `REQUEST_CHANGES` must not carry approval evidence. Unknown fresh formats fail closed. Historical
@@ -460,9 +470,12 @@ A minimal `APPROVE` on the same plan, with three clean draws:
 `pnpm review:publish <pr>` posts `review.json` as the reviewer App only when GitHub's live head
 matches the bundle; a fresh approval also requires matching base context. It validates the plan and
 the document, derives the head's canonical record, and refuses before any remote write when the
-draws miss the floor, a model exceeds the review cost ceiling, a reviewer model matches an author
-without `modelExhaustion`, or a value is unsafe. A bound published record replays exactly, without
-another post. A legacy bundle without a risk plan retains its historical shape. The full refusal and
+draws miss the floor, a draw declares a tier other than `economy` or `standard`, a reviewer model matches an author
+without `modelExhaustion`, or a value is unsafe. It never compares a model name with the review
+cost ceiling: choosing a permitted model for each draw is the orchestrator's duty, and the script
+enforces only the declared tier and author diversity. A bound published record replays exactly, without
+another post. A bundle without a risk plan is admitted only for a pull request opened before risk
+plans began; a later one must re-run `review:prepare`. The full refusal and
 replay contract: [review records](references/review-records.md).
 
 Post validated blockers as a `REQUEST_CHANGES` review BEFORE dispatching any repair.
@@ -483,6 +496,10 @@ ran for the non-draft head, and a later push starts it again.
    and strictly descending the commit the thread's root finding reviewed (it may equal the live
    head). It refuses an already resolved thread, a stale `--head`, or a commit that predates or is
    the reviewed revision. It never resolves; re-running the same head and commit posts nothing.
+   The optional `--evidence` file is a JSON array of at most eight
+   `{ "observable", "verification", "observed" }` string entries, the same claim fields as approval
+   evidence, each single-line and edge-trimmed (`parseRepairEvidence` in
+   `scripts/repairReviewFinding.ts`, bounds in `scripts/reviewRepair.ts`); omit the flag to record none.
 5. The reviewer App confirms with `pnpm review:confirm <pr> --head <full-sha>`, resolving only the
    threads whose recorded repair validates; any refusal resolves nothing and names the ambiguity to
    fix before re-running.
@@ -494,9 +511,11 @@ clarify code, not threads. Full eligibility, ancestry, and crash-recovery mechan
 
 ### l. Gate and deliver
 
-`Gate` already ran on this head. A later push starts it again and needs a fresh review. The merge is your decision: run `pnpm deliver <pr>` from the
-protected primary checkout, and the script squash-merges as the immutable author App after the
-reviewer APPROVE and a green `Gate`.
+`Gate` already ran on this head. A later push starts it again and needs a fresh review. The merge
+is your decision: confirm the whole `Health gates` workflow succeeded on this head (step e), then run
+`pnpm deliver <pr>` from the protected primary checkout. The script squash-merges as the immutable
+author App once the reviewer APPROVE binds the current head. GitHub's live ruleset requires the
+`Gate` context by name; what `deliver` checks itself is under [CI admission](#ci-admission).
 
 #### Validation order
 
@@ -514,9 +533,14 @@ delivery. Do not merge any other way.
 #### CI admission
 
 Snapshot-backed CI admission is advisory: successful, failed, pending, absent, cancelled, malformed,
-or unavailable evidence does not itself block delivery. GitHub still enforces the live ruleset's
-required `Gate`; `deliver` refuses `BLOCKED` before any remote write, including receipts or merge
-attempts. Dormant required-CI admission retains pinned workflow-derived gate and complete-rollup
+or unavailable rollup evidence does not itself block delivery. GitHub still enforces the live
+ruleset's required `Gate`; `deliver` refuses `BLOCKED` before any remote write, including receipts or
+merge attempts. Independently of admission mode, `deliver` proves which `Gate` it relies on
+(`validateGateProvenance` in `scripts/deliverPullRequest.ts`): no commit status may be named
+`Gate`, every `Gate` check run must be the GitHub Actions job of a `health-gates.yml`
+`pull_request` run on the exact head, the newest must be the successful `Gate` job of the newest
+run, and no non-draft attempt on the head may have failed. A later green rerun never retires such
+a failure; push a new commit. The squash commit message is the validated PR body. Dormant required-CI admission retains pinned workflow-derived gate and complete-rollup
 rules from the launcher's pinned `origin/main` workflow copy; lanes cannot select or reshape it.
 
 #### Refusals and retries
@@ -556,7 +580,8 @@ it to obtain green. Diagnostic retries never replace the original failure or aut
 - Delivery removes its own lane (below). When it reports cleanup pending, `pnpm lane:cleanup
 --status` names the refusal and the scheduled job retries; `pnpm lane:remove <path>` from outside
   the lane remains the manual route, and its author lock remains until removal succeeds.
-- Delete the leftover local branch, which neither route deletes (AGENTS.md
+- Delete the leftover local branch, which neither delivery cleanup nor `lane:remove` deletes;
+  only `lane:strand` deletes its lane's branch (AGENTS.md
   [Worktrees](../../../AGENTS.md#worktrees)).
 
 #### Local cleanup after delivery
@@ -583,7 +608,8 @@ before every execution. It can refresh only the canonical protected-primary boot
 sources when its HEAD/index or previous verified installation proves the current bytes; a local edit
 refuses. It preserves other primary dirt and never depends on the author lane surviving. Install
 then verifies the job's first launchd launch and, when launchd cannot initialize it, boots the job
-out, removes the plist and fails with the remediation. On macOS a primary on an external volume needs
+out, restores and re-bootstraps the previous plist when one existed (otherwise removes it), and fails
+with the remediation; after a verified launch it prunes superseded runtimes. On macOS a primary on an external volume needs
 the pinned Node binary granted Full Disk Access (or Removable Volumes access). Consult
 `lane:cleanup --status` from a current checkout, `.agents/lane-cleanup/worker*.log`, and
 `launchctl print gui/$(id -u)/com.sourdaw.lane-cleanup` for retained work and scheduler status.

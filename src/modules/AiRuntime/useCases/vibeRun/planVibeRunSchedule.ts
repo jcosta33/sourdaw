@@ -13,6 +13,8 @@ import {
     type ScheduledVibeRunBatch,
     type MeasuredScheduledVibeRunPlan,
     type VibeRunInitialWitness,
+    type VibeRunSilentRange,
+    type VibeRunSilentTarget,
     type VibeRunInitialBaselineRefusal,
     type VibeRunVerificationRange,
     type VibeRunExcludedTargetReason,
@@ -62,6 +64,7 @@ const EXCLUSION_REASONS: Readonly<Record<VibeRunExcludedTargetReason, string>> =
     frozen: 'it is frozen',
     'unclassified-role': 'it has no role a recipe serves',
     'no-applicable-recipe': 'no requested recipe applies to it',
+    silent: 'it is silent in every measured range',
 };
 
 const UNPLANNED_REASONS: Readonly<Record<VibeRunUnplannedRole['reason'], string>> = {
@@ -121,6 +124,19 @@ function trackName(context: ProjectContext, trackId: string): string {
     return context.tracks.find((track) => track.id === trackId)?.name ?? trackId;
 }
 
+function describeLeftOut(plan: VibeRunPlan, context: ProjectContext): string[] {
+    return [
+        ...plan.excludedTargets.map(
+            (excluded) =>
+                `Not planned: ${trackName(context, excluded.targetId)}, because ${EXCLUSION_REASONS[excluded.reason]}.`
+        ),
+        ...plan.unplannedRoles.map(
+            (unplanned) =>
+                `No batch for the ${unplanned.role} tracks (${unplanned.targetIds.map((id) => trackName(context, id)).join(', ')}): ${UNPLANNED_REASONS[unplanned.reason]}.`
+        ),
+    ];
+}
+
 function describePlannedRun(input: {
     plan: VibeRunPlan;
     batches: readonly ScheduledVibeRunBatch[];
@@ -133,17 +149,19 @@ function describePlannedRun(input: {
             (batch) =>
                 `- Batch ${String(batch.ordinal + BRIEF_POSITION)} of ${String(input.total)}: ${describeVibeRunObjective(batch)} — ${batch.targetIds.map((id) => trackName(input.context, id)).join(', ')}`
         ),
+        ...describeLeftOut(input.plan, input.context),
     ];
-    for (const excluded of input.plan.excludedTargets) {
+    for (const cell of input.batches.flatMap((batch) => batch.silentRanges ?? [])) {
         lines.push(
-            `Not planned: ${trackName(input.context, excluded.targetId)}, because ${EXCLUSION_REASONS[excluded.reason]}.`
+            `No goal for ${trackName(input.context, cell.targetId)} over ${describeRange(input.context, cell.range)}: it is silent there.`
         );
     }
-    for (const unplanned of input.plan.unplannedRoles) {
-        const names = unplanned.targetIds.map((id) => trackName(input.context, id)).join(', ');
-        lines.push(`No batch for the ${unplanned.role} tracks (${names}): ${UNPLANNED_REASONS[unplanned.reason]}.`);
-    }
     return lines;
+}
+
+function describeRange(context: ProjectContext, range: VibeRunVerificationRange): string {
+    const section = context.sections?.find((candidate) => candidate.id === range.sectionId);
+    return `${section?.name ?? 'the arrangement'} [${String(range.startBeat)}, ${String(range.endBeat)}]`;
 }
 
 type ScheduleInput = {
@@ -203,6 +221,23 @@ function readInitialGoals(
     return { status: 'read' as const, goals };
 }
 
+/** The admitted initial receipts of the source revision that measured one target over exactly one range. */
+function readExactRangeReceipts(
+    input: ScheduleInput,
+    collected: Collected,
+    targetId: string,
+    range: VibeRunVerificationRange
+): Collected['measurements'] {
+    return collected.measurements.filter(
+        (receipt) =>
+            receipt.revision === input.sourceRevision &&
+            receipt.data.range.sectionId === range.sectionId &&
+            receipt.data.range.startBeat === range.startBeat &&
+            receipt.data.range.endBeat === range.endBeat &&
+            receipt.data.targets.some((target) => target.targetId === targetId)
+    );
+}
+
 function readInitialWitnesses(input: ScheduleInput, collected: Collected, goals: readonly MetricGoal[]) {
     const witnesses: VibeRunInitialWitness[] = [];
     const lines: string[] = [];
@@ -213,14 +248,7 @@ function readInitialWitnesses(input: ScheduleInput, collected: Collected, goals:
             continue;
         }
         for (const targetId of goal.targetIds) {
-            const candidates = collected.measurements.filter(
-                (receipt) =>
-                    receipt.revision === input.sourceRevision &&
-                    receipt.data.range.sectionId === range.sectionId &&
-                    receipt.data.range.startBeat === range.startBeat &&
-                    receipt.data.range.endBeat === range.endBeat &&
-                    receipt.data.targets.some((target) => target.targetId === targetId)
-            );
+            const candidates = readExactRangeReceipts(input, collected, targetId, range);
             const receipt = candidates.length === 1 ? candidates[0] : undefined;
             const entry = receipt?.data.targets.find((target) => target.targetId === targetId)?.measurements[metricId];
             const projected = objectiveMetricProjection(metricId, entry, goal.band);
@@ -251,6 +279,55 @@ function readInitialWitnesses(input: ScheduleInput, collected: Collected, goals:
     return { witnesses, lines, refusals };
 }
 
+/** Binds one silent cell to the one receipt that shows it, found exactly as a witness finds its receipt. */
+function bindSilence(
+    input: ScheduleInput,
+    collected: Collected,
+    targetId: string,
+    range: VibeRunVerificationRange
+): VibeRunSilentRange | string {
+    const [receipt, ...others] = readExactRangeReceipts(input, collected, targetId, range);
+    if (receipt === undefined || others.length > 0) {
+        return `${targetId}, ${range.sectionId ?? 'arrangement'}: no single receipt shows its silence`;
+    }
+    return { targetId, range, receiptCallId: receipt.callId, receiptDigest: digest(receipt) };
+}
+
+/**
+ * The measured plan's batches as the schedule stores them and its silent exclusions, each silent
+ * cell bound to the receipt that shows it.
+ */
+function readMeasuredSilences(
+    input: ScheduleInput,
+    collected: Collected,
+    plan: VibeRunPlan,
+    ranges: readonly VibeRunVerificationRange[]
+) {
+    const refusals: string[] = [];
+    const bind = (targetId: string, range: VibeRunVerificationRange): VibeRunSilentRange[] => {
+        const bound = bindSilence(input, collected, targetId, range);
+        if (typeof bound === 'string') {
+            refusals.push(bound);
+            return [];
+        }
+        return [bound];
+    };
+    const batches = plan.batches.map((batch): ScheduledVibeRunBatch => {
+        const silentRanges = batch.silentRanges.flatMap((cell) => bind(cell.targetId, cell.range));
+        const scheduled = { ...toScheduledBatch(batch), verificationRanges: ranges };
+        if (silentRanges.length === 0) {
+            return scheduled;
+        }
+        return { ...scheduled, silentRanges };
+    });
+    const silentTargets = plan.silentTargets.map((target): VibeRunSilentTarget => ({
+        targetId: target.targetId,
+        metrics: [...target.metrics],
+        silences: ranges.flatMap((range) => bind(target.targetId, range)),
+    }));
+    return { batches, silentTargets, refusals };
+}
+
 function buildMeasuredPlan(input: {
     source: ScheduleInput;
     candidate: ReturnType<typeof readCandidates>;
@@ -259,6 +336,7 @@ function buildMeasuredPlan(input: {
     arrangementRange: VibeRunVerificationRange;
     collected: Collected;
     witnesses: readonly VibeRunInitialWitness[];
+    silentTargets: readonly VibeRunSilentTarget[];
 }): MeasuredScheduledVibeRunPlan {
     const { source, candidate, witnesses } = input;
     const batches = input.batches.map((batch) => ({
@@ -273,6 +351,10 @@ function buildMeasuredPlan(input: {
             )
             .map((witness) => witness.id),
     }));
+    const silentEvidence: { silentTargets?: readonly VibeRunSilentTarget[] } = {};
+    if (input.silentTargets.length > 0) {
+        silentEvidence.silentTargets = input.silentTargets;
+    }
     const initial: MeasuredScheduledVibeRunPlan['initial'] = {
         origin: 'vibe-run-initial-baselines',
         sourceRevision: source.sourceRevision,
@@ -292,6 +374,7 @@ function buildMeasuredPlan(input: {
         arrangementRange: input.arrangementRange,
         receipts: input.collected.receipts,
         witnesses,
+        ...silentEvidence,
     };
     const initialDigest = digest(initial);
     return {
@@ -337,20 +420,38 @@ function completeMeasuredSchedule(input: {
     source: ScheduleInput;
     candidate: ReturnType<typeof readCandidates>;
     catalog: Catalog;
-    batches: readonly ScheduledVibeRunBatch[];
     ranges: readonly VibeRunVerificationRange[];
     arrangementRange: VibeRunVerificationRange;
-    goals: readonly MetricGoal[];
     reading: PerceptualConstraintReading;
     collected: Collected;
 }): PlannedVibeRunSchedule {
-    const evidence = readInitialWitnesses(input.source, input.collected, input.goals);
     const measuredPlan = planWholeProjectVibeRun({
         ...input.candidate.plannerInput,
         measurements: input.collected.measurements.map((receipt) => receipt.data),
         requiredRanges: input.ranges,
     });
+    if (measuredPlan.batches.length === 0) {
+        return {
+            status: 'unscheduled',
+            lines: [
+                'No batches were scheduled after the brief: every planned track is silent in every measured range.',
+                ...describeLeftOut(measuredPlan, input.source.context),
+            ],
+            receipts: input.collected.receipts,
+        };
+    }
+    const measured = readMeasuredSilences(input.source, input.collected, measuredPlan, input.ranges);
+    const goals = readInitialGoals(measured.batches, input.catalog, input.arrangementRange);
+    if (goals.status === 'refused') {
+        return {
+            status: 'unscheduled',
+            lines: [`No batches were scheduled after the brief: ${goals.reason}.`],
+            receipts: input.collected.receipts,
+        };
+    }
+    const evidence = readInitialWitnesses(input.source, input.collected, goals.goals);
     const refusals = [
+        ...measured.refusals,
         ...evidence.refusals,
         ...measuredPlan.coverageRefusals.map(
             (cell) =>
@@ -364,7 +465,12 @@ function completeMeasuredSchedule(input: {
             receipts: input.collected.receipts,
         };
     }
-    const plan = buildMeasuredPlan({ ...input, witnesses: evidence.witnesses });
+    const plan = buildMeasuredPlan({
+        ...input,
+        batches: measured.batches,
+        witnesses: evidence.witnesses,
+        silentTargets: measured.silentTargets,
+    });
     if (readScheduledVibeRunPlan(JSON.stringify(plan)) === null) {
         return {
             status: 'unscheduled',
@@ -505,10 +611,8 @@ async function planSchedule(input: ScheduleInput): Promise<PlannedVibeRunSchedul
         source: input,
         candidate,
         catalog,
-        batches,
         ranges,
         arrangementRange,
-        goals: initial.goals,
         reading,
         collected,
     });

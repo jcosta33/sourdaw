@@ -35,7 +35,9 @@ already exists there at an ancestor of the head, otherwise the same base the
 title derives from — always excluding what the resolved bases reach, both
 origin/main and any stack parent head, because commits they already carry are
 not the lane's to author. Every remaining commit, merges included, must carry
-the author App's commit identity; a refusal names each offending commit and
+the author App's stamped identity as both author and committer (name and
+email). The gate checks recorded git identity, not provenance: lane config can
+forge it. A refusal names each offending commit and
 email. Publication also refuses outright while the lane repository's shared
 object store carries rewrites a push bypasses — an `info/grafts` file in the
 common dir or any `refs/replace/*` ref — because `git log` follows the graft
@@ -72,8 +74,15 @@ refuses if the PR is no longer open when the push lands.
 
 ## branch:prune
 
-`branch:prune` defaults to dry run and deletes only branches whose every PR is
-merged or closed. It retains a branch that is the last remote holder of a
+`pnpm branch:prune [--apply] [--limit <n>] [--branch <name>]...` defaults to
+dry run and deletes only branches whose work reached `main`: every PR on the
+branch is closed and one merged into `main`. A branch whose PR closed unmerged,
+or merged into another base, is kept. Deletion is a compare-and-swap on the
+branch tip, so a branch that moved since the read is kept. Each
+`--branch` narrows the run to that remote branch and refuses a name the remote
+does not list; pass your own spent branches so a prune never decides another
+agent's. It runs through the trusted launcher, so only from the protected
+primary checkout. It retains a branch that is the last remote holder of a
 measurement source revision a tracked table records, because the admission
 resolves that revision by SHA and squash delivery never lands the lane head on
 `main`. A recorded revision the remote independently confirms is gone is

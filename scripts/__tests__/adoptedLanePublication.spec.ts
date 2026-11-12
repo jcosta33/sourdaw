@@ -78,7 +78,15 @@ function fixture() {
         aheadBehind: () => ({ ahead: 2, behind: 0 }),
         dirty: () => false,
         laneSubject: () => 'feat: retain parent history',
-        commitAuthorEmails: () => [{ sha: HEAD, email: AUTHOR_BOT_COMMIT_EMAIL }],
+        commitIdentities: () => [
+            {
+                sha: HEAD,
+                authorName: AUTHOR_BOT_COMMIT_NAME,
+                authorEmail: AUTHOR_BOT_COMMIT_EMAIL,
+                committerName: AUTHOR_BOT_COMMIT_NAME,
+                committerEmail: AUTHOR_BOT_COMMIT_EMAIL,
+            },
+        ],
         objectStoreRewrites: () => ({ graftsFile: undefined, replaceRefs: 0 }),
         headSha: () => source,
         remoteBranchSha: () => ({ kind: 'present', sha: remote }),
@@ -245,10 +253,18 @@ describe('one successor of the exact adopted PR', () => {
     });
     it('never excludes inherited noncanonical commits from the existing author gate', () => {
         const f = fixture();
-        f.port.commitAuthorEmails = (_path, delta, excluded) => {
+        f.port.commitIdentities = (_path, delta, excluded) => {
             expect(delta).toBe(OLD);
             expect(excluded).toEqual([BASE]);
-            return [{ sha: HEAD, email: 'foreign@example.invalid' }];
+            return [
+                {
+                    sha: HEAD,
+                    authorName: AUTHOR_BOT_COMMIT_NAME,
+                    authorEmail: 'foreign@example.invalid',
+                    committerName: AUTHOR_BOT_COMMIT_NAME,
+                    committerEmail: AUTHOR_BOT_COMMIT_EMAIL,
+                },
+            ];
         };
         expect(() => publishLane(12, f.port)).toThrow('foreign@example.invalid');
         expect(f.effects).toEqual([]);

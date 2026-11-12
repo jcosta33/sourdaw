@@ -10,6 +10,7 @@ import { CREATIVE_INTERPRETATION_TOOL_NAME } from '../../../models/CreativeInter
 import { TOOL_PLAN_MAX_OUTPUT_TOKENS } from '../../../models/HostedToolPlanLimits';
 import { type HostedTurnHistory } from '../../../models/HostedTurnHistory';
 import { LOCAL_PLANNING_TEMPLATE_OVERHEAD_TOKENS } from '../../../models/LocalPlanningBudget';
+import { DEFAULT_WEBLLM_MODEL_ID } from '../../../models/ModelInfo';
 import { type ModelProviderResult } from '../../../models/ModelProviderProtocol';
 import { type ToolSchema } from '../../../models/ToolDefinitions';
 import { WORKFLOW_ACTION_TOOL_NAMES } from '../../../models/WorkflowCapability';
@@ -1822,7 +1823,7 @@ describe('generateToolPlanningOutcome', () => {
         expect(mocks.llmStatusSet).toHaveBeenLastCalledWith({
             state: 'ready',
             backend: 'webllm',
-            modelId: 'Qwen3-4B-q4f16_1-MLC',
+            modelId: DEFAULT_WEBLLM_MODEL_ID,
         });
     });
 

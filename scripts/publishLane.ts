@@ -33,6 +33,7 @@ import {
 import {
     assertConventionalSubject,
     assertIssueNumber,
+    assertTitleCarriesNoClosingReference,
     canonicalPath,
     composePublishBody,
     containsPath,
@@ -44,6 +45,7 @@ import {
     LEGACY_LANE_BRANCH_PREFIX,
     parseLaneBranch,
     readGuardFailureReceipt,
+    TITLE_PATTERN,
     TRUSTED_COMMON_DIR_ENV,
     TRUSTED_GH_PATH_ENV,
     TRUSTED_GIT_PATH_ENV,
@@ -52,6 +54,7 @@ import {
     whatFromBody,
     type GuardFailureReceipt,
     type IssueRelationship,
+    type LaneChangeType,
     assertNoAdoptionGuardFailure,
     readLaneAdoptionRecord,
     saveLaneAdoptionRecord,
@@ -449,21 +452,23 @@ export function descriptiveLabelNames(labels: LabelRow[]): string[] {
         .map((label) => label.name);
 }
 
-const SUBJECT_TYPE_LABELS: Readonly<Record<string, string>> = {
-    feat: 'enhancement',
-    fix: 'bug',
-    docs: 'documentation',
-};
+const SUBJECT_TYPE_LABELS: ReadonlyMap<LaneChangeType, string> = new Map([
+    ['feat', 'enhancement'],
+    ['fix', 'bug'],
+    ['docs', 'documentation'],
+]);
 
 /**
  * An explicit, deliberately small map: only the three conventional types whose meaning matches an
  * existing repository label. Every other type (chore, test, refactor, build, ...) names work that
  * is none of these, and guessing beyond the map would put wrong descriptors on pull requests. The
- * optional `!` matches TITLE_PATTERN's breaking-change marker, so `feat!:` derives like `feat:`.
+ * type is read by `conventionalType`, so only an allowed type of a whole conventional subject (the
+ * breaking-change `!` included) can derive anything, and a `Map` lookup never reaches an object
+ * prototype key such as `constructor`.
  */
 export function derivedLabelFromSubject(subject: string): string | undefined {
-    const type = /^([a-z]+)(?:\([^)]*\))?!?:/.exec(subject)?.[1];
-    return type === undefined ? undefined : SUBJECT_TYPE_LABELS[type];
+    const type = conventionalType(subject);
+    return type === undefined ? undefined : SUBJECT_TYPE_LABELS.get(type);
 }
 
 /**
@@ -472,15 +477,15 @@ export function derivedLabelFromSubject(subject: string): string | undefined {
  * no board either, and the derived title is still proven against the live project listing before it
  * is applied — this table names a board, it does not assert one exists.
  */
-const TYPE_LABEL_PROJECTS: Readonly<Record<string, string>> = {
-    bug: 'Sourdaw Bugs',
-    enhancement: 'Sourdaw Roadmap',
-    documentation: 'Sourdaw Roadmap',
-};
+const TYPE_LABEL_PROJECTS: ReadonlyMap<string, string> = new Map([
+    ['bug', 'Sourdaw Bugs'],
+    ['enhancement', 'Sourdaw Roadmap'],
+    ['documentation', 'Sourdaw Roadmap'],
+]);
 
 export function derivedProjectFromSubject(subject: string): string | undefined {
     const label = derivedLabelFromSubject(subject);
-    return label === undefined ? undefined : TYPE_LABEL_PROJECTS[label];
+    return label === undefined ? undefined : TYPE_LABEL_PROJECTS.get(label);
 }
 
 /**
@@ -582,10 +587,13 @@ export function isProductScopeChange(paths: readonly ReviewChangedPath[]): boole
     );
 }
 
-/** One commit the authorship gate read named: its short sha and the email it is authored as. */
-export type CommitAuthorEmail = {
+/** One commit the authorship gate read: its short sha and its recorded author and committer identity. */
+export type CommitIdentity = {
     sha: string;
-    email: string;
+    authorName: string;
+    authorEmail: string;
+    committerName: string;
+    committerEmail: string;
 };
 
 /**
@@ -620,16 +628,16 @@ export type PublishLanePort = {
     dirty: (lane: string) => boolean;
     laneSubject: (lane: string, baseSha: string, headSha: string, excludedBaseShas: string[]) => string | undefined;
     /**
-     * Author email of every commit reachable from `headSha` but from neither `deltaBaseSha` nor any
-     * `excludedBaseSha`, merges included, read in the lane itself without replacement objects, so
-     * the gate sees exactly the objects a push would send.
+     * Author and committer identity of every commit reachable from `headSha` but from neither
+     * `deltaBaseSha` nor any `excludedBaseSha`, merges included, read in the lane itself without
+     * replacement objects, so the gate sees exactly the objects a push would send.
      */
-    commitAuthorEmails: (
+    commitIdentities: (
         lane: string,
         deltaBaseSha: string,
         excludedBaseShas: string[],
         headSha: string
-    ) => CommitAuthorEmail[];
+    ) => CommitIdentity[];
     /**
      * The lane repository's object-store rewrites, resolved in the lane itself before any remote
      * write: a graft file or replace ref lets the object store show one history to a traversal and
@@ -1048,8 +1056,12 @@ function resolvedBaseShas(comparisonHead: string, baseSha: string, stackParentHe
  * derives from, so a stack child gates its own delta rather than its parent's — always excluding
  * everything the resolved bases (origin/main and any stack parent head) reach, because base-side
  * commits a lane merged are not the lane's to author; the bases' own publications gate them. Every
- * remaining commit, merges included, must carry the author App's commit email — the identity lane
- * worktrees are stamped with at open — and the refusal names each offending commit. Its remedy
+ * remaining commit, merges included, must record the author App's commit name and email as both
+ * author and committer — the identity lane worktrees are stamped with at open, which every commit,
+ * merge, and the offered rebase in a lane writes into both fields — and the refusal names each
+ * offending commit and the fields that differ. The gate reads recorded git identity, which anyone
+ * holding the lane's configuration can set; it keeps lane history on the stamped identity and does
+ * not prove who wrote a change. Its remedy
  * cannot rewrite base-side history: the offered rebase is gated on its root dominating every
  * excluded base, and when no such rewrite exists — as under an open parent head that does not
  * contain the main commits the lane merged, or a merged parent's pre-squash head that squash
@@ -1069,8 +1081,8 @@ function assertBotAuthoredDelta(
     // whose delta base is the comparison head.
     const deltaBase = remoteRead.kind === 'present' ? remoteRead.sha : comparisonHead;
     const offending = port
-        .commitAuthorEmails(lane.path, deltaBase, excludedBaseShas, headSha)
-        .filter((commit) => commit.email !== AUTHOR_BOT_COMMIT_EMAIL);
+        .commitIdentities(lane.path, deltaBase, excludedBaseShas, headSha)
+        .filter((commit) => identityMismatches(commit).length > 0);
     if (offending.length === 0) {
         return;
     }
@@ -1093,28 +1105,40 @@ function assertBotAuthoredDelta(
 /** At most this many offending commits are named one by one before the refusal counts the rest. */
 const MAX_NAMED_OFFENDING_COMMITS = 8;
 
+/** Each recorded identity field the gate compares, with the stamped value it must equal. */
+const STAMPED_IDENTITY_FIELDS = [
+    { field: 'authorName', label: 'author name', expected: AUTHOR_BOT_COMMIT_NAME },
+    { field: 'authorEmail', label: 'author email', expected: AUTHOR_BOT_COMMIT_EMAIL },
+    { field: 'committerName', label: 'committer name', expected: AUTHOR_BOT_COMMIT_NAME },
+    { field: 'committerEmail', label: 'committer email', expected: AUTHOR_BOT_COMMIT_EMAIL },
+] as const;
+
+/** The fields of one commit's recorded identity that differ from the stamped one, each with the value found. */
+function identityMismatches(commit: CommitIdentity): string[] {
+    return STAMPED_IDENTITY_FIELDS.filter(({ field, expected }) => commit[field] !== expected).map(
+        ({ field, label }) => `${label} ${displayIdentityValue(commit[field])}`
+    );
+}
+
 /**
- * The refusal names each offending commit and each distinct offending email, states the base-side
- * exclusion, and prescribes only remedies that cannot replace history the lane does not own: the
- * rebase is rooted at the comparison base and offered exactly when the remote branch holds none of
- * the lane's commits and that base dominates every excluded one, so the rewritten range carries no
- * base-side commit; otherwise, and with a pushed lane history, the named commits must be re-created.
- * A rewrite rooted at the remote tip would replay base-side commits the lane merged and re-author
- * them as the App, so the remote tip never roots one.
+ * The refusal names each offending commit with every identity field that differs and the value it
+ * carries, states the base-side exclusion, and prescribes only remedies that cannot replace history
+ * the lane does not own: the rebase is rooted at the comparison base and offered exactly when the
+ * remote branch holds none of the lane's commits and that base dominates every excluded one, so the
+ * rewritten range carries no base-side commit; otherwise, and with a pushed lane history, the named
+ * commits must be re-created. A rewrite rooted at the remote tip would replay base-side commits the
+ * lane merged and re-author them as the App, so the remote tip never roots one.
  */
 function authorshipRefusal(
     branch: string,
     deltaBase: string,
     comparisonHead: string,
-    offending: CommitAuthorEmail[],
+    offending: CommitIdentity[],
     offersRebase: boolean
 ): string {
-    const distinctEmails = Array.from(new Set(offending.map((commit) => commit.email)))
-        .map(displayCommitAuthorEmail)
-        .join(', ');
     const namedCommits = offending
         .slice(0, MAX_NAMED_OFFENDING_COMMITS)
-        .map((commit) => `${commit.sha} ${displayCommitAuthorEmail(commit.email)}`);
+        .map((commit) => `${commit.sha} (${identityMismatches(commit).join(', ')})`);
     const more = offending.length - namedCommits.length;
     if (more > 0) {
         namedCommits.push(`+${more} more`);
@@ -1123,11 +1147,12 @@ function authorshipRefusal(
         ? `git rebase --rebase-merges --exec 'git commit --amend --reset-author --no-edit' ${comparisonHead}`
         : 're-create the listed offending commits with the stamped identity';
     return (
-        `${branch} carries commits above ${deltaBase} authored as ${distinctEmails}; offending commits: ` +
-        `${namedCommits.join(', ')}. Lane commits must be authored as ${AUTHOR_BOT_COMMIT_NAME} ` +
-        `<${AUTHOR_BOT_COMMIT_EMAIL}> through the lane worktree's stamped identity. Commits the resolved ` +
-        "bases (origin/main and any stack parent head) already reach are not the lane's to author and are " +
-        `excluded here. Restamp the lane with pnpm lane:identity, then ${remedy}`
+        `${branch} carries commits above ${deltaBase} whose recorded git identity is not the stamped author ` +
+        `App identity; offending commits: ${namedCommits.join(', ')}. Lane commits must carry ` +
+        `${AUTHOR_BOT_COMMIT_NAME} <${AUTHOR_BOT_COMMIT_EMAIL}> as both author and committer, the identity ` +
+        'the lane worktree is stamped with. Commits the resolved bases (origin/main and any stack parent ' +
+        "head) already reach are not the lane's to author and are excluded here. Restamp the lane with " +
+        `pnpm lane:identity, then ${remedy}`
     );
 }
 
@@ -1149,9 +1174,9 @@ function objectStoreRewritesRefusal(branch: string, rewrites: ObjectStoreRewrite
     );
 }
 
-/** An empty author email renders readably; a bare comma in the refusal would name nothing. */
-function displayCommitAuthorEmail(email: string): string {
-    return email === '' ? '(empty author email)' : email;
+/** An empty identity field renders readably; a bare label in the refusal would name nothing. */
+function displayIdentityValue(value: string): string {
+    return value === '' ? '(empty)' : value;
 }
 
 /**
@@ -1323,9 +1348,6 @@ export function publishLane(
     // written, not even the branch push.
     const metadata = resolvePublishMetadata(lane, laneIssue, write?.effectiveTitle, metadataFlags, port);
     port.reportDiff?.(lane.path, comparisonHead, headSha);
-    if (stack !== undefined) {
-        port.pinStackParent?.(lane.branch, stack.parentNumber);
-    }
     const assertStackContext = () => {
         if (stack === undefined) {
             return;
@@ -1400,6 +1422,11 @@ export function publishLane(
     }
     assertStackContext();
     const mutationPort = adopted?.bind() ?? port;
+    // The pin is permanent (a recorded parent pull request is never replaced), so it waits until
+    // no pre-push refusal can fire: a refused publication must leave the descriptor as it found it.
+    if (stack !== undefined) {
+        port.pinStackParent?.(lane.branch, stack.parentNumber);
+    }
     mutationPort.push(lane.path, lane.branch, headSha);
     if (port.baseSha() !== baseSha) {
         fail('origin/main changed after its permission-scoped token was minted');
@@ -1932,8 +1959,15 @@ function pullRequestWrite(
     if (existing !== undefined && typeof existingTitle !== 'string') {
         fail('existing pull-request title is unreadable');
     }
-    // An explicit --relates/--closes needs nothing recovered from the existing body, so a body
-    // with no line naming the lane issue (an umbrella-carried extra, say) does not block it.
+    // A title edited by hand on GitHub becomes the effective title unless --title replaces it, and
+    // it feeds the body check, the derived labels and the squash subject, so it is held to the same
+    // contract as a lane subject before anything is written.
+    if (title === undefined && typeof existingTitle === 'string') {
+        assertKeptTitle(existingTitle);
+    }
+    // An explicit --relates needs nothing recovered from the existing body, so a body with no line
+    // naming the lane issue (an umbrella-carried extra, say) does not block it. Without the flag
+    // an existing body's relationship carries forward, and a new pull request defaults to closes.
     const existingRelationship =
         existing === undefined || relationship !== undefined
             ? undefined
@@ -1973,6 +2007,15 @@ function pullRequestWrite(
         ),
         existing,
     };
+}
+
+/** An existing title kept on a rerun meets the whole title contract, or `--title` must replace it. */
+function assertKeptTitle(existingTitle: string): void {
+    const label = `existing pull-request title ${JSON.stringify(existingTitle)}`;
+    if (!TITLE_PATTERN.test(existingTitle)) {
+        fail(`${label} is not conventional; pass --title "<conventional-subject>" to replace it`);
+    }
+    assertTitleCarriesNoClosingReference(existingTitle, label);
 }
 
 /**
@@ -2019,38 +2062,61 @@ function laneSubjectArgs(baseSha: string, headSha: string, excludedBaseShas: str
  * log` honors `refs/replace/*` while `git push` packs the original objects, so a read that honors
  * replacements could pass a bot-authored clone while the remote receives the human original.
  */
-function commitAuthorEmailArgs(deltaBaseSha: string, excludedBaseShas: string[], headSha: string): string[] {
+function commitIdentityArgs(deltaBaseSha: string, excludedBaseShas: string[], headSha: string): string[] {
     return [
         '--no-replace-objects',
         'log',
-        '--format=%h %ae',
+        '--format=%h%x00%an%x00%ae%x00%cn%x00%ce',
         `${deltaBaseSha}..${headSha}`,
         ...excludedBaseShas.map((sha) => `^${sha}`),
     ];
 }
 
-function readCommitAuthorEmails(
+function readCommitIdentities(
     lane: string,
     deltaBaseSha: string,
     excludedBaseShas: string[],
     headSha: string,
     capture: (args: string[], cwd: string) => string
-): CommitAuthorEmail[] {
-    const lines = capture(commitAuthorEmailArgs(deltaBaseSha, excludedBaseShas, headSha), lane).split('\n');
-    // The capture ends in exactly one blank line; strip only that one, so a commit whose author
-    // email is genuinely empty survives as an offending value instead of vanishing with a filter.
-    if (lines[lines.length - 1] === '') {
-        lines.pop();
-    }
-    return lines.map(parseCommitAuthorEmail);
+): CommitIdentity[] {
+    return parseCommitIdentities(capture(commitIdentityArgs(deltaBaseSha, excludedBaseShas, headSha), lane));
 }
 
-/** `%h %ae` splits on the first space; a genuinely empty email leaves the email part empty. */
-function parseCommitAuthorEmail(line: string): CommitAuthorEmail {
-    const separator = line.indexOf(' ');
-    return separator === -1
-        ? { sha: line, email: '' }
-        : { sha: line.slice(0, separator), email: line.slice(separator + 1) };
+const COMMIT_IDENTITY_FIELD_COUNT = 5;
+const ABBREVIATED_SHA_PATTERN = /^[0-9a-f]{4,64}$/;
+
+/**
+ * Fields are NUL-separated because a commit header can carry neither NUL nor a newline, so no name
+ * or email can forge a field or record boundary. Every record ends in one newline; the parse
+ * splits off only that terminator, so a genuinely empty field survives as an offending value, and
+ * any record that is not exactly a sha plus four fields refuses rather than being skipped.
+ */
+export function parseCommitIdentities(output: string): CommitIdentity[] {
+    if (output === '') {
+        return [];
+    }
+    if (!output.endsWith('\n')) {
+        fail('authorship gate read a malformed commit identity record: missing record terminator');
+    }
+    return output
+        .slice(0, -1)
+        .split('\n')
+        .map((record) => {
+            const fields = record.split('\0');
+            const [sha, authorName, authorEmail, committerName, committerEmail] = fields;
+            if (
+                fields.length !== COMMIT_IDENTITY_FIELD_COUNT ||
+                sha === undefined ||
+                !ABBREVIATED_SHA_PATTERN.test(sha) ||
+                authorName === undefined ||
+                authorEmail === undefined ||
+                committerName === undefined ||
+                committerEmail === undefined
+            ) {
+                fail(`authorship gate read a malformed commit identity record: ${JSON.stringify(record)}`);
+            }
+            return { sha, authorName, authorEmail, committerName, committerEmail };
+        });
 }
 
 /**
@@ -2211,10 +2277,10 @@ export function shellPort(
                 cwd: lane,
                 env: session.env,
             }) || undefined,
-        commitAuthorEmails: (lane, deltaBaseSha, excludedBaseShas, headSha) =>
-            readCommitAuthorEmails(lane, deltaBaseSha, excludedBaseShas, headSha, (args, cwd) =>
-                // Untrimmed: the parse strips exactly one trailing blank itself, so a genuinely
-                // empty author email line survives the read instead of vanishing into the trim.
+        commitIdentities: (lane, deltaBaseSha, excludedBaseShas, headSha) =>
+            readCommitIdentities(lane, deltaBaseSha, excludedBaseShas, headSha, (args, cwd) =>
+                // Untrimmed: the parse splits off exactly one record terminator itself, so a
+                // genuinely empty trailing field survives the read instead of vanishing into the trim.
                 spawnCapture(executables.git, args, { cwd, env: session.env, trim: false })
             ),
         objectStoreRewrites: (lane) =>

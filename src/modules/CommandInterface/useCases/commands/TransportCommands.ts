@@ -54,8 +54,9 @@ export const transportCommands: CallableCommandEntry[] = [
         description: 'Move playhead to beat 0',
         category: 'Transport',
         shortcut: 'Home',
-        action: () => {
-            seekPlayhead(0);
+        action: (onCommitted?: () => void) => {
+            void seekPlayhead(0);
+            onCommitted?.();
         },
     },
     {
@@ -64,8 +65,9 @@ export const transportCommands: CallableCommandEntry[] = [
         description: 'Move playhead to last clip end',
         category: 'Transport',
         shortcut: 'End',
-        action: () => {
-            seekPlayhead(getLastClipEndBeat());
+        action: (onCommitted?: () => void) => {
+            void seekPlayhead(getLastClipEndBeat());
+            onCommitted?.();
         },
     },
     {
@@ -74,8 +76,9 @@ export const transportCommands: CallableCommandEntry[] = [
         description: 'Jump to the next marker',
         category: 'Transport',
         shortcut: ']',
-        action: () => {
+        action: (onCommitted?: () => void) => {
             goToNextMarker();
+            onCommitted?.();
         },
     },
     {
@@ -84,9 +87,24 @@ export const transportCommands: CallableCommandEntry[] = [
         description: 'Jump to the previous marker',
         category: 'Transport',
         shortcut: '[',
-        action: () => {
+        action: (onCommitted?: () => void) => {
             goToPreviousMarker();
+            onCommitted?.();
         },
+    },
+    {
+        id: 'next-section',
+        label: 'Next Section',
+        description: 'Move the playhead to the next section in musical order',
+        category: 'Transport',
+        action: { type: 'navigateSection', payload: { direction: 'next' } },
+    },
+    {
+        id: 'prev-section',
+        label: 'Previous Section',
+        description: 'Move the playhead to the previous section in musical order',
+        category: 'Transport',
+        action: { type: 'navigateSection', payload: { direction: 'previous' } },
     },
     {
         id: 'panic-all-notes',
@@ -94,10 +112,12 @@ export const transportCommands: CallableCommandEntry[] = [
         description: 'Force every held note to release: live MIDI input, every instrument, Yeast racks and Crumbs',
         category: 'Transport',
         shortcut: 'Shift+Esc',
-        action: () => {
-            void panicAllNotes().catch((error: unknown) => {
-                logger.error(new Error('MIDI panic failed', { cause: error }));
-            });
+        action: (onCommitted?: () => void) => {
+            void panicAllNotes()
+                .then(onCommitted)
+                .catch((error: unknown) => {
+                    logger.error(new Error('MIDI panic failed', { cause: error }));
+                });
         },
     },
 ];

@@ -69,6 +69,8 @@ const CRUST_DESCRIPTOR_DATA: PluginDescriptor = {
     format: 'builtin',
     category: 'effect',
     hasCustomUI: true,
+    // The panel's format choice is not automatable; semantic Undo still needs its absent-field default.
+    undeclaredParameterDefaults: { outputBitDepth: 24 },
     parameters: CRUST_PARAMS.map((param) => ({
         id: param.id,
         deviceId: 'crust',

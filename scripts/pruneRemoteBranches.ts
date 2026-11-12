@@ -1,16 +1,14 @@
-#!/usr/bin/env node
+import { isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
     AUTHOR_BOT_NODE_ID,
     REQUIRED_BASE_BRANCH,
-    REQUIRED_REPOSITORY,
     assertRequiredRepository,
     assertTrustedExecutingBlob,
     authenticateRole,
     isAuthorBotNodeId,
     originMainBlob,
-    parseGraphqlResponse,
     resolvePrimaryRoot,
     spawnCapture,
     type GhSession,
@@ -22,19 +20,36 @@ import {
     type BranchClass,
     type RemoteBranch,
 } from './measurementRevisionHolders.ts';
-import { fail, PR_STATE, type PullRequestState } from './prContract.ts';
+import {
+    fail,
+    PR_STATE,
+    TRUSTED_GH_PATH_ENV,
+    TRUSTED_GIT_PATH_ENV,
+    TRUSTED_ORIGIN_COMMIT_ENV,
+    TRUSTED_PRIMARY_ROOT_ENV,
+    type PullRequestState,
+} from './prContract.ts';
+import {
+    deleteRemoteBranch,
+    fetchBranchTip,
+    fetchRepositoryId,
+    listRemoteBranches,
+    pullRequestsForBranches,
+    queryBaseDependents,
+    type BranchPullRequest,
+    type DeleteOutcome,
+    type Gh,
+    type PullRequestListing,
+} from './pruneRemoteBranchesGithub.ts';
 
 export type { PullRequestState };
-export type BranchPullRequest = { number: number; state: PullRequestState; headRefOid: string };
-export type DeleteOutcome = 'deleted' | 'already-gone';
-export type PullRequestListing = { pullRequests: BranchPullRequest[]; complete: boolean };
 
 export type PruneRemoteBranchesPort = {
     listBranches: () => RemoteBranch[];
     pullRequestsFor: (branches: string[]) => Map<string, PullRequestListing>;
     baseDependentsFor: (branches: string[]) => Map<string, PullRequestListing>;
     branchTip: (name: string) => string | undefined;
-    deleteBranch: (name: string) => DeleteOutcome;
+    deleteBranch: (branch: RemoteBranch) => DeleteOutcome;
     recordedMeasurementRevisions: () => string[];
     baseBranchTip: () => RemoteBranch;
     branchHoldsRevision: (branch: RemoteBranch, revision: string) => boolean;
@@ -44,7 +59,6 @@ export type PruneRemoteBranchesArgs = { apply: boolean; limit?: number; help: bo
 
 const usage = 'usage: pnpm branch:prune [--apply] [--limit <n>] [--branch <name>]...';
 const BATCH_SIZE = 50;
-const [REQUIRED_OWNER, REQUIRED_NAME] = REQUIRED_REPOSITORY.split('/') as [string, string];
 
 export function parsePruneRemoteBranchesArgs(args: string[]): PruneRemoteBranchesArgs {
     if (args.length === 1 && args[0] === '--help') {
@@ -103,10 +117,6 @@ function parsePositiveLimit(value: string | undefined): number {
     return parsed;
 }
 
-export function encodeBranchRefPath(name: string): string {
-    return name.split('/').map(encodeURIComponent).join('/');
-}
-
 export function classifyRemoteBranch(
     branch: RemoteBranch,
     pullRequests: BranchPullRequest[],
@@ -127,7 +137,22 @@ export function classifyRemoteBranch(
     if (!pullRequests.some((pullRequest) => pullRequest.headRefOid === branch.tip)) {
         return 'moved';
     }
+    if (!pullRequests.some((pullRequest) => landedTip(branch, pullRequest))) {
+        return 'unmerged';
+    }
     return 'spent';
+}
+
+/**
+ * Only a merge into main proves a branch's work landed: a closed-unmerged pull request leaves its
+ * commits nowhere else, and a child merged into its parent's branch has not reached main yet.
+ */
+function landedTip(branch: RemoteBranch, pullRequest: BranchPullRequest): boolean {
+    return (
+        pullRequest.state === PR_STATE.MERGED &&
+        pullRequest.baseRefName === REQUIRED_BASE_BRANCH &&
+        pullRequest.headRefOid === branch.tip
+    );
 }
 
 function batchNames(names: string[], size: number): string[][] {
@@ -201,6 +226,7 @@ function countByClass(classes: Map<string, BranchClass>): Record<BranchClass, nu
         open: 0,
         unpublished: 0,
         moved: 0,
+        unmerged: 0,
         spent: 0,
     };
     for (const value of classes.values()) {
@@ -210,7 +236,7 @@ function countByClass(classes: Map<string, BranchClass>): Record<BranchClass, nu
 }
 
 function matchingPullRequest(branch: RemoteBranch, pullRequests: BranchPullRequest[]): BranchPullRequest {
-    const matching = pullRequests.find((pullRequest) => pullRequest.headRefOid === branch.tip);
+    const matching = pullRequests.find((pullRequest) => landedTip(branch, pullRequest));
     if (matching === undefined) {
         fail(`spent branch ${branch.name} has no matching pull request`);
     }
@@ -260,6 +286,7 @@ function printPlan(
         }
     }
     printNamesUnderHeading('moved', branches, classes, log);
+    printNamesUnderHeading('unmerged', branches, classes, log);
     printNamesUnderHeading('unpublished', branches, classes, log);
     printUnlistedBranches(branches, classes, log);
 }
@@ -278,10 +305,12 @@ function applyDeletion(
     port: PruneRemoteBranchesPort,
     log: (message: string) => void
 ): DeleteOutcome {
-    const outcome = port.deleteBranch(branch.name);
+    const outcome = port.deleteBranch(branch);
     if (outcome === 'deleted') {
         const pr = matchingPullRequest(branch, freshPullRequests);
         log(`deleted ${branch.name} (${branch.tip.slice(0, 9)}, #${pr.number} ${pr.state})`);
+    } else if (outcome === 'moved') {
+        log(`kept ${branch.name}: moved at delete`);
     } else {
         log(`already gone ${branch.name}`);
     }
@@ -344,6 +373,8 @@ function applySpentBranches(
         }
         if (outcome === 'deleted') {
             deleted += 1;
+        } else if (outcome === 'moved') {
+            keptAtRecheck += 1;
         } else {
             alreadyGone += 1;
         }
@@ -406,188 +437,22 @@ export function pruneRemoteBranches(
     return 0;
 }
 
-type Gh = (args: string[]) => string;
-
-function graphql(gh: Gh, query: string, fields: string[], label: string): unknown {
-    return parseGraphqlResponse(gh(['api', 'graphql', '-f', `query=${query}`, ...fields]), label);
-}
-
-function toRemoteBranch(value: unknown): RemoteBranch {
-    const node = value as { name?: unknown; target?: { oid?: unknown } | null };
-    if (typeof node.name !== 'string' || typeof node.target?.oid !== 'string') {
-        fail('invalid remote branch node');
-    }
-    return { name: node.name, tip: node.target.oid };
-}
-
-function listRemoteBranchesPage(
-    gh: Gh,
-    cursor: string | undefined
-): { branches: RemoteBranch[]; hasNextPage: boolean; endCursor: unknown } {
-    const query = `query($cursor:String){repository(owner:"${REQUIRED_OWNER}",name:"${REQUIRED_NAME}"){refs(refPrefix:"refs/heads/",first:100,after:$cursor){pageInfo{hasNextPage endCursor} nodes{name target{oid}}}}}`;
-    const fields = cursor === undefined ? [] : ['-f', `cursor=${cursor}`];
-    const response = graphql(gh, query, fields, 'list remote branches') as {
-        data?: {
-            repository?: { refs?: { pageInfo?: { hasNextPage?: unknown; endCursor?: unknown }; nodes?: unknown } };
-        };
-    };
-    const refs = response.data?.repository?.refs;
-    if (!Array.isArray(refs?.nodes) || typeof refs.pageInfo?.hasNextPage !== 'boolean') {
-        fail('invalid remote branch listing');
-    }
-    return {
-        branches: refs.nodes.map(toRemoteBranch),
-        hasNextPage: refs.pageInfo.hasNextPage,
-        endCursor: refs.pageInfo.endCursor,
-    };
-}
-
-function listRemoteBranches(gh: Gh): RemoteBranch[] {
-    let cursor: string | undefined;
-    const cursors = new Set<string>();
-    const branches: RemoteBranch[] = [];
-    for (;;) {
-        const page = listRemoteBranchesPage(gh, cursor);
-        branches.push(...page.branches);
-        if (!page.hasNextPage) {
-            return branches;
-        }
-        if (typeof page.endCursor !== 'string' || page.endCursor === '' || cursors.has(page.endCursor)) {
-            fail('invalid remote branch pagination');
-        }
-        cursors.add(page.endCursor);
-        cursor = page.endCursor;
-    }
-}
-
-function toBranchPullRequest(value: unknown): BranchPullRequest {
-    const node = value as { number?: unknown; state?: unknown; headRefOid?: unknown };
-    if (
-        typeof node.number !== 'number' ||
-        !Number.isSafeInteger(node.number) ||
-        (node.state !== PR_STATE.OPEN && node.state !== PR_STATE.MERGED && node.state !== PR_STATE.CLOSED) ||
-        typeof node.headRefOid !== 'string'
-    ) {
-        fail('invalid pull-request node');
-    }
-    return { number: node.number, state: node.state, headRefOid: node.headRefOid };
-}
-
-function pullRequestBatchQuery(size: number): string {
-    const params = Array.from({ length: size }, (_unused, index) => `$n${index}:String!`).join(',');
-    const aliases = Array.from(
-        { length: size },
-        (_unused, index) =>
-            `b${index}: pullRequests(headRefName:$n${index}, first:10, states:[OPEN,MERGED,CLOSED], orderBy:{field:CREATED_AT,direction:DESC}){totalCount nodes{number state headRefOid}}`
-    ).join(' ');
-    return `query(${params}){repository(owner:"${REQUIRED_OWNER}",name:"${REQUIRED_NAME}"){${aliases}}}`;
-}
-
-function baseDependentBatchQuery(size: number): string {
-    const params = Array.from({ length: size }, (_unused, index) => `$n${index}:String!`).join(',');
-    const aliases = Array.from(
-        { length: size },
-        (_unused, index) =>
-            `b${index}: pullRequests(baseRefName:$n${index}, first:10, states:[OPEN], orderBy:{field:CREATED_AT,direction:DESC}){totalCount nodes{number state headRefOid}}`
-    ).join(' ');
-    return `query(${params}){repository(owner:"${REQUIRED_OWNER}",name:"${REQUIRED_NAME}"){${aliases}}}`;
-}
-
-export function parsePullRequestListing(alias: unknown, name: string): PullRequestListing {
-    const node = alias as { nodes?: unknown; totalCount?: unknown } | undefined;
-    if (node === undefined || !Array.isArray(node.nodes)) {
-        fail(`missing pull-request alias for ${name}`);
-    }
-    if (typeof node.totalCount !== 'number') {
-        fail(`invalid pull-request total count for ${name}`);
-    }
-    const pullRequests = node.nodes.map(toBranchPullRequest);
-    return { pullRequests, complete: pullRequests.length === node.totalCount };
-}
-
-function pullRequestsForBranches(names: string[], gh: Gh): Map<string, PullRequestListing> {
-    if (names.length === 0) {
-        return new Map();
-    }
-    const query = pullRequestBatchQuery(names.length);
-    const fields = names.flatMap((name, index) => ['-f', `n${index}=${name}`]);
-    const response = graphql(gh, query, fields, 'branch pull requests') as {
-        data?: { repository?: Record<string, unknown> };
-    };
-    const repository = response.data?.repository;
-    if (repository === undefined) {
-        fail('invalid branch pull-request response');
-    }
-    const result = new Map<string, PullRequestListing>();
-    for (const [index, name] of names.entries()) {
-        result.set(name, parsePullRequestListing(repository[`b${index}`], name));
-    }
-    return result;
-}
-
-export function queryBaseDependents(names: string[], gh: Gh): Map<string, PullRequestListing> {
-    if (names.length === 0) {
-        return new Map();
-    }
-    const query = baseDependentBatchQuery(names.length);
-    const fields = names.flatMap((name, index) => ['-f', `n${index}=${name}`]);
-    const response = graphql(gh, query, fields, 'base-dependent pull requests') as {
-        data?: { repository?: Record<string, unknown> };
-    };
-    const repository = response.data?.repository;
-    if (repository === undefined) {
-        fail('invalid base-dependent pull-request response');
-    }
-    return new Map(names.map((name, index) => [name, parsePullRequestListing(repository[`b${index}`], name)]));
-}
-
-function fetchBranchTip(name: string, gh: Gh): string | undefined {
-    const query = `query($name:String!){repository(owner:"${REQUIRED_OWNER}",name:"${REQUIRED_NAME}"){ref(qualifiedName:$name){target{oid}}}}`;
-    const response = graphql(gh, query, ['-f', `name=refs/heads/${name}`], `branch tip for ${name}`) as {
-        data?: { repository?: { ref?: { target?: { oid?: unknown } | null } | null } };
-    };
-    const repository = response.data?.repository;
-    if (repository === undefined || !Object.hasOwn(repository, 'ref')) {
-        fail(`invalid branch tip response for ${name}`);
-    }
-    const ref = repository.ref;
-    if (ref === null) {
-        return undefined;
-    }
-    if (typeof ref?.target?.oid !== 'string') {
-        fail(`invalid branch tip response for ${name}`);
-    }
-    return ref.target.oid;
-}
-
-export function deleteRemoteBranch(name: string, gh: Gh): DeleteOutcome {
-    const path = `repos/${REQUIRED_REPOSITORY}/git/refs/heads/${encodeBranchRefPath(name)}`;
-    try {
-        gh(['api', '-X', 'DELETE', path]);
-        return 'deleted';
-    } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        // Deleting an absent ref has answered both 422 and, while two prunes raced, 404; both carry
-        // this body, while an access failure reads `Not Found`.
-        if (/\bHTTP 4(?:04|22)\b/u.test(message) && message.includes('Reference does not exist')) {
-            return 'already-gone';
-        }
-        throw new Error(`delete branch ${name}: ${message}`, { cause: error });
-    }
-}
-
 export function shellPort(session: GhSession, cwd: string = process.cwd()): PruneRemoteBranchesPort {
     const primaryRoot = resolvePrimaryRoot(
         (command, args, directory) => spawnCapture(command, args, { cwd: directory }),
         cwd
     );
     const gh: Gh = (args) => spawnCapture('gh', args, { cwd: primaryRoot, env: session.env });
+    let repositoryId: string | undefined;
     return {
         listBranches: () => listRemoteBranches(gh),
         pullRequestsFor: (names) => pullRequestsForBranches(names, gh),
         baseDependentsFor: (names) => queryBaseDependents(names, gh),
         branchTip: (name) => fetchBranchTip(name, gh),
-        deleteBranch: (name) => deleteRemoteBranch(name, gh),
+        deleteBranch: (branch) => {
+            repositoryId ??= fetchRepositoryId(gh);
+            return deleteRemoteBranch(branch, repositoryId, gh, (name) => fetchBranchTip(name, gh));
+        },
         recordedMeasurementRevisions: () => fetchRecordedMeasurementRevisions(gh),
         baseBranchTip: () => {
             const base = listRemoteBranches(gh).find((branch) => branch.name === REQUIRED_BASE_BRANCH);
@@ -600,19 +465,43 @@ export function shellPort(session: GhSession, cwd: string = process.cwd()): Prun
     };
 }
 
-async function main(): Promise<number> {
-    const parsed = parsePruneRemoteBranchesArgs(process.argv.slice(2));
+/**
+ * The launcher hands its runner the primary root, the commit it pinned, and the git and gh it froze.
+ * A run without them was not launched through the protected primary checkout, whose snapshot is the
+ * only source of this closure trusted beside the author key, so it stops before authenticating.
+ */
+export function trustedPruneRuntime(env: NodeJS.ProcessEnv): { primaryRoot: string; originCommit: string } {
+    const primaryRoot = env[TRUSTED_PRIMARY_ROOT_ENV];
+    const originCommit = env[TRUSTED_ORIGIN_COMMIT_ENV];
+    const gitPath = env[TRUSTED_GIT_PATH_ENV];
+    const ghPath = env[TRUSTED_GH_PATH_ENV];
+    if (
+        primaryRoot === undefined ||
+        originCommit === undefined ||
+        gitPath === undefined ||
+        ghPath === undefined ||
+        !isAbsolute(primaryRoot) ||
+        !isAbsolute(gitPath) ||
+        !isAbsolute(ghPath) ||
+        !/^[0-9a-f]{40,64}$/.test(originCommit)
+    ) {
+        fail('branch:prune must run through the protected primary checkout launcher');
+    }
+    return { primaryRoot, originCommit };
+}
+
+export async function runPruneRemoteBranchesCli(args: string[], env: NodeJS.ProcessEnv = process.env): Promise<number> {
+    const parsed = parsePruneRemoteBranchesArgs(args);
     if (parsed.help) {
         console.log(`Usage: ${usage.slice('usage: '.length)}`);
         return 0;
     }
-    const cwd = process.cwd();
+    const { primaryRoot, originCommit } = trustedPruneRuntime(env);
     assertTrustedExecutingBlob(
         'scripts/pruneRemoteBranches.ts',
         fileURLToPath(import.meta.url),
-        originMainBlob('scripts/pruneRemoteBranches.ts', cwd)
+        originMainBlob('scripts/pruneRemoteBranches.ts', primaryRoot, undefined, 'git', originCommit)
     );
-    const primaryRoot = resolvePrimaryRoot();
     const auth = await authenticateRole({ primaryRoot, role: 'author' });
     try {
         if (!isAuthorBotNodeId(auth.minted.actorNodeId)) {
@@ -624,17 +513,8 @@ async function main(): Promise<number> {
                 cwd: primaryRoot,
             })
         );
-        return pruneRemoteBranches(parsed, shellPort(auth.session), (message) => console.log(message));
+        return pruneRemoteBranches(parsed, shellPort(auth.session, primaryRoot), (message) => console.log(message));
     } finally {
         auth.session.dispose();
     }
-}
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
-    void main().then(
-        (code) => process.exit(code),
-        (error: unknown) => {
-            console.error(error instanceof Error ? error.message : error);
-            process.exit(1);
-        }
-    );
 }

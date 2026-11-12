@@ -41,12 +41,16 @@ export type Refill = {
     position: number;
     audioTime: number;
 };
+export type LoopAudioProgrammeTrack = {
+    id: string;
+    media: readonly string[];
+};
 export type LoopAudioScheduleState = {
     passes: Map<number, Pass>;
     dirtyPasses: Map<Pass, Reconciliation>;
     anchor: { beat: number; time: number; firstEnd: number; duration: number } | null;
     geometry: unknown;
-    programme: unknown;
+    programme: readonly LoopAudioProgrammeTrack[] | null;
     buffers: Map<string, AudioBuffer>;
     active: boolean;
     recoveredThisRefill: boolean;

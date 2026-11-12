@@ -16,29 +16,29 @@ Look at and poke the running app without polluting the maintained E2E suite. Eph
 
 ## Rules
 
-### 1. Agent scripts live in `.agents/ui-scripts/`
+### 1. Probe scripts live under `~/.agents/artifacts/`, never in the repository
 
-Never place an ad-hoc agent script in `tests/e2e/`, which is reserved for maintained `@playwright/test` assertions.
+Write probe scripts and their screenshots under `~/.agents/artifacts/` (for example `~/.agents/artifacts/ui-scripts/`). Never place them in the repository — not in `.agents/ui-scripts/`, whose only tracked file is the shared `utils.ts` and which ignores only its `*.png`, and never in `tests/e2e/`, which is reserved for maintained `@playwright/test` assertions. Delete scripts and screenshots once you no longer need them.
 
-**Why:** throwaway probes and version-controlled gates have opposite lifecycles; mixing them makes the suite flaky and the probes unfindable.
-
-**Enforced by:** review only.
-
-### 2. Run scripts directly, not via the test runner
-
-Write standard Node scripts against the `playwright` core library and execute them with `node .agents/ui-scripts/<script-name>.ts`.
-
-**Why:** the test runner adds assertion and reporter machinery a one-off probe does not want, and it dirties the stdout the JSON contract owns.
+**Why:** throwaway probes and version-controlled gates have opposite lifecycles; a script written inside a checkout sits untracked in a tree other lanes share, and mixing probes into the suite makes it flaky and the probes unfindable. One-offs belong in `~/.agents/artifacts` (root `AGENTS.md`, Artifacts).
 
 **Enforced by:** review only.
 
-### 3. Use `setupAgentBrowser`
+### 2. Serve the lane in e2e mode, then run the script with Node
 
-Initialize with `setupAgentBrowser` from `.agents/ui-scripts/utils.ts`: it launches headless Chromium, navigates to `process.env.BASE_URL` or, absent that, the port `SOURDAW_E2E_PORT` selects (5173 by default, like e2e), and returns `{ browser, page }`. Before navigating it asserts the serving checkout's identity and refuses a dev server belonging to another checkout.
+Export a lane-unique `SOURDAW_E2E_PORT` (derive it from the lane slug, root `AGENTS.md` Worktrees), then from the lane start the server in the background with `node scripts/e2eDevServer.ts "$SOURDAW_E2E_PORT"` — the command `playwright.config.ts` uses as its web server. It serves in e2e mode, whose responses carry the serving checkout's identity marker (`sourdawE2eServingCheckoutPlugin` in `vite.config.ts`). Never probe against plain `pnpm dev`: it carries no marker, so the identity assertion cannot refuse another checkout's server. Write a standard Node script against the `playwright` core library and run it with `node ~/.agents/artifacts/ui-scripts/<script-name>.ts`, never through the test runner. Stop the server when you are done.
 
-**Why:** one shared launcher is one place to fix flakiness.
+**Why:** the test runner adds assertion and reporter machinery a one-off probe does not want, and it dirties the stdout the JSON contract owns; a server without the marker lets a probe silently inspect another lane's build.
 
-**Enforced by:** `setupAgentBrowser` itself refuses a dev server belonging to another checkout; using it is review only.
+**Enforced by:** review only.
+
+### 3. Use `setupAgentBrowser` from the lane's `utils.ts`
+
+Import `setupAgentBrowser` from the lane's `.agents/ui-scripts/utils.ts` by absolute path, with the explicit `.ts` extension: Node type stripping does not resolve extensionless TypeScript imports. `utils.ts` resolves `playwright` and its checkout identity from its own location, so the identity check binds to the lane whose `utils.ts` you import. It launches headless Chromium, navigates to `process.env.BASE_URL` or, absent that, the port `SOURDAW_E2E_PORT` selects (5173 by default, like e2e), and returns `{ browser, page }`. Before navigating it asserts the serving checkout's identity and refuses a dev server belonging to another checkout.
+
+**Why:** one shared launcher is one place to fix flakiness, and importing it from the lane under test is what points its identity check at that lane.
+
+**Enforced by:** `setupAgentBrowser` itself refuses a dev server whose marker names another checkout; importing it from the right lane is review only.
 
 ### 4. Structured output: JSON to stdout only
 
@@ -50,7 +50,7 @@ Emit one structured JSON object on stdout. Send errors and debug to `console.err
 
 ### 5. Screenshots report `screenshotPath`
 
-Write screenshots under `.agents/ui-scripts/` and report the path in the JSON as `screenshotPath`.
+Write screenshots under `~/.agents/artifacts/` beside the script (rule 1) and report the absolute path in the JSON as `screenshotPath`.
 
 **Why:** a screenshot the next reader cannot locate is wasted work.
 
@@ -67,10 +67,18 @@ Use `page.getByRole`, `page.getByTestId`, and `page.getByLabel` over CSS-path se
 ### 7. Close the browser in `finally`
 
 ```typescript
+import type { Page } from 'playwright';
+
+import { setupAgentBrowser } from '/absolute/path/to/lane/.agents/ui-scripts/utils.ts';
+
+async function inspect(page: Page) {
+    return { title: await page.title() };
+}
+
 const { browser, page } = await setupAgentBrowser();
 try {
-    // …
-    console.log(JSON.stringify({ success: true /* … */ }, null, 2));
+    const result = await inspect(page);
+    console.log(JSON.stringify({ success: true, ...result }, null, 2));
 } catch (error) {
     console.error(
         JSON.stringify(
@@ -110,5 +118,7 @@ An element's inline `style.height` is its requested CSS size; its bounding recta
 
 ## References
 
-- `.agents/ui-scripts/utils.ts` — `setupAgentBrowser` shared launcher.
+- `.agents/ui-scripts/utils.ts` — `setupAgentBrowser` shared launcher; import it from the lane under test by absolute path.
+- `scripts/e2eDevServer.ts` and `playwright.config.ts` — the e2e-mode server command and lane-scoped port.
+- [AGENTS.md](../../../AGENTS.md) — Artifacts (where one-offs live) and Worktrees (lane-unique `SOURDAW_E2E_PORT`).
 - [docs/06-testing.md](../../../docs/06-testing.md) — Vitest/unit testing (not this bridge); maintained E2E stays under `tests/e2e/`.

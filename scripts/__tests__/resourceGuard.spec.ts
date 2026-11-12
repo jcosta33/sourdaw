@@ -11,11 +11,19 @@ import {
     symlinkSync,
     writeFileSync,
 } from 'node:fs';
+import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 import { afterAll, describe, expect, it } from 'vitest';
 
+import {
+    SOURDAW_E2E_PORT_ENV,
+    SOURDAW_E2E_ROOT_HEADER,
+    SOURDAW_E2E_RUN_TOKEN_ENV,
+    SOURDAW_E2E_RUN_TOKEN_HEADER,
+} from '../e2eServerIdentity';
 import { GUARD_FAILURES_DIR, guardFailureReceiptPath, type GuardFailureReceipt } from '../prContract';
 import {
     acquireResourceLock,
@@ -60,6 +68,37 @@ function runIsolatedGuardedCommand(
         storageRoot: join(enforcementAdmissionRoot, 'storage'),
         ...input,
         admissionRoot: enforcementAdmissionRoot,
+    });
+}
+
+function startMarkerServer(
+    root: string,
+    port = 0,
+    runToken?: string
+): Promise<{ port: number; close: () => Promise<void> }> {
+    const server = createServer((_request, response) => {
+        response.setHeader(SOURDAW_E2E_ROOT_HEADER, encodeURIComponent(root));
+        if (runToken !== undefined) {
+            response.setHeader(SOURDAW_E2E_RUN_TOKEN_HEADER, runToken);
+        }
+        response.end('ok');
+    });
+    return new Promise((resolve, reject) => {
+        server.once('error', reject);
+        server.listen(port, '127.0.0.1', () => {
+            const address = server.address();
+            if (address === null || typeof address === 'string') {
+                reject(new Error('marker server did not bind a port'));
+                return;
+            }
+            resolve({
+                port: address.port,
+                close: () =>
+                    new Promise<void>((resolve, reject) =>
+                        server.close((closeError) => (closeError === undefined ? resolve() : reject(closeError)))
+                    ),
+            });
+        });
     });
 }
 
@@ -421,6 +460,23 @@ describe('resource enforcement', { timeout: GUARDED_CASE_TIMEOUT_MS }, () => {
         });
 
         expect(result.reason).toBe('timeout');
+        expect(result.output).toContain('guard stop diagnostic:');
+        expect(result.output).toContain('"reason":"timeout"');
+        expect(result.output).toContain('"processGroup"');
+    });
+
+    it('reports an unavailable snapshot and still stops the command', async () => {
+        const result = await runIsolatedGuardedCommand({
+            command: process.execPath,
+            args: ['-e', 'setTimeout(() => {}, 5000)'],
+            profile: 'focused',
+            timeoutMs: 50,
+            maxRssBytes: 2 * 1024 ** 3,
+            availableMemoryBytes: abundantMemoryBytes,
+            processSnapshot: () => ({ status: 'unavailable' }),
+        });
+        expect(result.reason).toBe('timeout');
+        expect(result.output).toContain('"processGroup":{"status":"unavailable"}');
     });
 
     it('kills detached descendants after a deadline', async () => {
@@ -2159,6 +2215,809 @@ describe('guard failure stop enforcement', { timeout: GUARDED_CASE_TIMEOUT_MS },
                 receiptPath: guardFailureReceiptPath(repoRoot, laneName),
             };
         }
+
+        function createStoppedDevServerFixture(label: string, port = 5387) {
+            const fixture = createStoppedLaneFixture(label);
+            const receipt: GuardFailureReceipt = {
+                ...fixture.receipt,
+                args: ['dev', '--host', '127.0.0.1', '--port', String(port)],
+            };
+            writeGuardFailureReceipt(fixture.repoRoot, receipt);
+            return { ...fixture, receipt };
+        }
+
+        async function reserveFreePort(): Promise<number> {
+            const probe = createServer();
+            await new Promise<void>((resolve) => probe.listen(0, '127.0.0.1', resolve));
+            const address = probe.address();
+            if (address === null || typeof address === 'string') {
+                throw new Error('port probe did not bind');
+            }
+            await new Promise<void>((resolve, reject) =>
+                probe.close((closeError) => (closeError === undefined ? resolve() : reject(closeError)))
+            );
+            return address.port;
+        }
+
+        // The receipt's port is reserved but deliberately left unserved: the
+        // guard refuses a proof whose recorded origin already answers, so the
+        // proof command itself must bring the marker server up. The run token
+        // the guard issued for the proof comes back through the command's
+        // environment, the same route vite.config.ts reads it on.
+        async function createProofServedDevServerFixture(label: string) {
+            const port = await reserveFreePort();
+            const fixture = createStoppedDevServerFixture(label, port);
+            return {
+                ...fixture,
+                port,
+                startProofServer: (runToken?: string) =>
+                    startMarkerServer(realpathSync(fixture.lane.worktreePath), port, runToken),
+            };
+        }
+
+        async function createStoppedE2eServerFixture(label: string) {
+            const fixture = await createProofServedDevServerFixture(label);
+            mkdirSync(join(fixture.lane.worktreePath, 'scripts'));
+            writeFileSync(join(fixture.lane.worktreePath, 'scripts', 'e2eDevServer.ts'), 'export {};');
+            const receipt: GuardFailureReceipt = {
+                ...fixture.receipt,
+                command: 'node',
+                args: ['scripts/e2eDevServer.ts', String(fixture.port)],
+                reason: 'timeout',
+            };
+            writeGuardFailureReceipt(fixture.repoRoot, receipt);
+            return { ...fixture, receipt };
+        }
+
+        it('runs an explicit finite dev-server recovery proof instead of replaying the server', async () => {
+            const fixture = await createProofServedDevServerFixture('recover-dev-proof');
+            const calls: Parameters<typeof runGuardedCommand>[0][] = [];
+            let marker: { close: () => Promise<void> } | undefined;
+
+            try {
+                const code = await runGuardCli(
+                    ['--recover', '--', 'pnpm', 'test:e2e', 'tests/e2e/launchFlows.spec.ts'],
+                    {
+                        cwd: fixture.lane.worktreePath,
+                        detectLane: () => fixture.lane,
+                        runCommand: async (input) => {
+                            calls.push(input);
+                            marker = await fixture.startProofServer(input.env?.[SOURDAW_E2E_RUN_TOKEN_ENV]);
+                            return fakeResult({ code: 0 });
+                        },
+                    }
+                );
+
+                expect(code).toBe(0);
+                // Exactly one execution, and it is the proof — never the server replay.
+                expect(calls).toHaveLength(1);
+                expect(calls[0]?.command).toBe('pnpm');
+                expect(calls[0]?.args).toEqual(['test:e2e', 'tests/e2e/launchFlows.spec.ts']);
+                expect(calls[0]?.cwd).toBe(realpathSync(fixture.lane.worktreePath));
+                expect(calls[0]?.env?.[SOURDAW_E2E_PORT_ENV]).toBe(String(fixture.port));
+                expect(readGuardFailureReceipt(fixture.repoRoot, fixture.laneName)).toBeUndefined();
+            } finally {
+                await marker?.close();
+                rmSync(fixture.repoRoot, { recursive: true, force: true });
+            }
+        });
+
+        it('budgets an explicit proof against its own command instead of the dev receipt', async () => {
+            const fixture = await createProofServedDevServerFixture('recover-dev-proof-limits');
+            const receipt: GuardFailureReceipt = {
+                ...fixture.receipt,
+                profile: 'broad',
+                maxRssBytes: 7 * 1024 ** 3,
+            };
+            writeGuardFailureReceipt(fixture.repoRoot, receipt);
+            let replayInput: Parameters<typeof runGuardedCommand>[0] | undefined;
+            let marker: { close: () => Promise<void> } | undefined;
+
+            try {
+                const code = await runGuardCli(['--recover', '--', 'pnpm', 'test:e2e', 'launch.spec.ts'], {
+                    cwd: fixture.lane.worktreePath,
+                    detectLane: () => fixture.lane,
+                    runCommand: async (input) => {
+                        replayInput = input;
+                        marker = await fixture.startProofServer(input.env?.[SOURDAW_E2E_RUN_TOKEN_ENV]);
+                        return fakeResult({ code: 0 });
+                    },
+                });
+
+                expect(code).toBe(0);
+                expect(replayInput?.profile).toBe('broad');
+                // The measured test:e2e budget, not the stopped dev receipt's 7 GiB cap.
+                expect(replayInput?.maxRssBytes).toBe(8 * 1024 ** 3);
+            } finally {
+                await marker?.close();
+                rmSync(fixture.repoRoot, { recursive: true, force: true });
+            }
+        });
+
+        it('refuses an explicit proof while the recorded origin already answers', async () => {
+            const fixture = await createProofServedDevServerFixture('recover-dev-origin-occupied');
+            const marker = await fixture.startProofServer();
+            const errors: string[] = [];
+            let commandRan = false;
+
+            try {
+                const code = await runGuardCli(['--recover', '--', 'pnpm', 'test:e2e', 'launch.spec.ts'], {
+                    cwd: fixture.lane.worktreePath,
+                    detectLane: () => fixture.lane,
+                    runCommand: async () => {
+                        commandRan = true;
+                        return fakeResult({ code: 0 });
+                    },
+                    error: (message) => errors.push(message),
+                });
+
+                expect(code).toBe(1);
+                expect(commandRan).toBe(false);
+                expect(readGuardFailureReceipt(fixture.repoRoot, fixture.laneName)).toEqual(fixture.receipt);
+                expect(errors.join('\n')).toContain('already answers');
+            } finally {
+                await marker.close();
+                rmSync(fixture.repoRoot, { recursive: true, force: true });
+            }
+        });
+
+        it('preserves a stopped dev receipt when an arbitrary command exits zero without server proof', async () => {
+            const fixture = createStoppedDevServerFixture('recover-dev-unrelated-proof');
+            const errors: string[] = [];
+
+            try {
+                const code = await runGuardCli(['--recover', '--', 'true'], {
+                    cwd: fixture.lane.worktreePath,
+                    detectLane: () => fixture.lane,
+                    runCommand: async () => fakeResult({ code: 0 }),
+                    error: (message) => errors.push(message),
+                });
+
+                expect(code).toBe(1);
+                expect(readGuardFailureReceipt(fixture.repoRoot, fixture.laneName)).toEqual(fixture.receipt);
+                expect(errors.join('\n')).toContain('did not verify the recorded dev server');
+            } finally {
+                rmSync(fixture.repoRoot, { recursive: true, force: true });
+            }
+        });
+
+        it('preserves a stopped dev receipt when an unmarked server answers at the recorded origin', async () => {
+            const fixture = await createProofServedDevServerFixture('recover-dev-unmarked-server');
+            const errors: string[] = [];
+            let unmarked: ReturnType<typeof createServer> | undefined;
+
+            try {
+                const code = await runGuardCli(['--recover', '--', 'pnpm', 'test:e2e', 'launch.spec.ts'], {
+                    cwd: fixture.lane.worktreePath,
+                    detectLane: () => fixture.lane,
+                    runCommand: async () => {
+                        // The proof itself brings up a server without the e2e
+                        // checkout marker (a plain dev server), which the guard
+                        // must not accept as the recorded browser server.
+                        unmarked = createServer((_request, response) => {
+                            response.end('ok');
+                        });
+                        await new Promise<void>((resolve) => unmarked?.listen(fixture.port, '127.0.0.1', resolve));
+                        return fakeResult({ code: 0 });
+                    },
+                    error: (message) => errors.push(message),
+                });
+
+                expect(code).toBe(1);
+                expect(readGuardFailureReceipt(fixture.repoRoot, fixture.laneName)).toEqual(fixture.receipt);
+                expect(errors.join('\n')).toContain('did not verify the recorded dev server');
+            } finally {
+                if (unmarked !== undefined) {
+                    const server = unmarked;
+                    await new Promise<void>((resolve, reject) =>
+                        server.close((closeError) => (closeError === undefined ? resolve() : reject(closeError)))
+                    );
+                }
+                rmSync(fixture.repoRoot, { recursive: true, force: true });
+            }
+        });
+
+        it('preserves a stopped dev receipt when the recorded origin serves another checkout', async () => {
+            const fixture = await createProofServedDevServerFixture('recover-dev-foreign-server');
+            const errors: string[] = [];
+            let marker: { close: () => Promise<void> } | undefined;
+
+            try {
+                const code = await runGuardCli(['--recover', '--', 'pnpm', 'test:e2e', 'launch.spec.ts'], {
+                    cwd: fixture.lane.worktreePath,
+                    detectLane: () => fixture.lane,
+                    runCommand: async (input) => {
+                        // The proof brings up a server stamped with a foreign
+                        // checkout root on the recorded port, holding this run's
+                        // token so only the root comparison can refuse it.
+                        marker = await startMarkerServer(
+                            fixture.repoRoot,
+                            fixture.port,
+                            input.env?.[SOURDAW_E2E_RUN_TOKEN_ENV]
+                        );
+                        return fakeResult({ code: 0 });
+                    },
+                    error: (message) => errors.push(message),
+                });
+
+                expect(code).toBe(1);
+                expect(readGuardFailureReceipt(fixture.repoRoot, fixture.laneName)).toEqual(fixture.receipt);
+                const output = errors.join('\n');
+                expect(output).toContain('did not verify the recorded dev server');
+                expect(output).toContain(`serves ${fixture.repoRoot}, not`);
+            } finally {
+                await marker?.close();
+                rmSync(fixture.repoRoot, { recursive: true, force: true });
+            }
+        });
+
+        it('preserves a stopped dev receipt when a leftover lane server binds during the proof', async () => {
+            const fixture = await createProofServedDevServerFixture('recover-dev-leftover-server');
+            const errors: string[] = [];
+            let marker: { close: () => Promise<void> } | undefined;
+
+            try {
+                const code = await runGuardCli(['--recover', '--', 'pnpm', 'test:e2e', 'launch.spec.ts'], {
+                    cwd: fixture.lane.worktreePath,
+                    detectLane: () => fixture.lane,
+                    runCommand: async () => {
+                        // A leftover e2e server for this same lane finishes
+                        // booting after the unserved-origin check: it stamps
+                        // the lane root, but the guarded tree never started it,
+                        // so it carries no run token and must not satisfy the
+                        // observation.
+                        marker = await startMarkerServer(realpathSync(fixture.lane.worktreePath), fixture.port);
+                        return fakeResult({ code: 0 });
+                    },
+                    error: (message) => errors.push(message),
+                });
+
+                expect(code).toBe(1);
+                expect(readGuardFailureReceipt(fixture.repoRoot, fixture.laneName)).toEqual(fixture.receipt);
+                expect(errors.join('\n')).toContain('did not verify the recorded dev server');
+            } finally {
+                await marker?.close();
+                rmSync(fixture.repoRoot, { recursive: true, force: true });
+            }
+        });
+
+        it('verifies the marker against the lane root for a receipt recorded in a subdirectory', async () => {
+            const fixture = await createProofServedDevServerFixture('recover-dev-subdir-receipt');
+            const nestedCwd = join(fixture.lane.worktreePath, 'nested');
+            mkdirSync(nestedCwd, { recursive: true });
+            const receipt: GuardFailureReceipt = { ...fixture.receipt, cwd: realpathSync(nestedCwd) };
+            writeGuardFailureReceipt(fixture.repoRoot, receipt);
+            let marker: { close: () => Promise<void> } | undefined;
+
+            try {
+                const code = await runGuardCli(['--recover', '--', 'pnpm', 'test:e2e', 'launch.spec.ts'], {
+                    cwd: fixture.lane.worktreePath,
+                    detectLane: () => fixture.lane,
+                    runCommand: async (input) => {
+                        // The real e2e server stamps the checkout root, which a
+                        // receipt recorded from an in-lane subdirectory is not.
+                        marker = await fixture.startProofServer(input.env?.[SOURDAW_E2E_RUN_TOKEN_ENV]);
+                        return fakeResult({ code: 0 });
+                    },
+                });
+
+                expect(code).toBe(0);
+                expect(readGuardFailureReceipt(fixture.repoRoot, fixture.laneName)).toBeUndefined();
+            } finally {
+                await marker?.close();
+                rmSync(fixture.repoRoot, { recursive: true, force: true });
+            }
+        });
+
+        it('refuses lint-target replacement combined with an explicit dev-server proof', async () => {
+            const fixture = createStoppedDevServerFixture('recover-dev-proof-lint-replacement');
+            const errors: string[] = [];
+            let commandRan = false;
+
+            try {
+                const code = await runGuardCli(
+                    [
+                        '--recover',
+                        '--replace-lint-target',
+                        'src/old.ts=src/new.ts',
+                        '--',
+                        'pnpm',
+                        'test:e2e',
+                        'launch.spec.ts',
+                    ],
+                    {
+                        cwd: fixture.lane.worktreePath,
+                        detectLane: () => fixture.lane,
+                        runCommand: async () => {
+                            commandRan = true;
+                            return fakeResult({ code: 0 });
+                        },
+                        error: (message) => errors.push(message),
+                    }
+                );
+
+                expect(code).toBe(1);
+                expect(commandRan).toBe(false);
+                expect(errors).toEqual(['--replace-lint-target cannot be combined with an explicit recovery proof']);
+                expect(readGuardFailureReceipt(fixture.repoRoot, fixture.laneName)).toEqual(fixture.receipt);
+            } finally {
+                rmSync(fixture.repoRoot, { recursive: true, force: true });
+            }
+        });
+
+        it('rejects an explicit recovery proof for a finite command receipt', async () => {
+            const fixture = createStoppedLaneFixture('recover-finite-proof-refused');
+            writeGuardFailureReceipt(fixture.repoRoot, fixture.receipt);
+            const originalBytes = readFileSync(fixture.receiptPath, 'utf8');
+            const errors: string[] = [];
+            let commandRan = false;
+
+            try {
+                const code = await runGuardCli(['--recover', '--', 'pnpm', 'test:run', 'light.spec.ts'], {
+                    cwd: fixture.lane.worktreePath,
+                    detectLane: () => fixture.lane,
+                    runCommand: async () => {
+                        commandRan = true;
+                        return fakeResult({ code: 0 });
+                    },
+                    error: (message) => errors.push(message),
+                });
+
+                expect(code).toBe(1);
+                expect(commandRan).toBe(false);
+                expect(errors[0]).toContain('explicit recovery proof is only valid for a recorded pnpm dev command');
+                expect(readFileSync(fixture.receiptPath, 'utf8')).toBe(originalBytes);
+            } finally {
+                rmSync(fixture.repoRoot, { recursive: true, force: true });
+            }
+        });
+
+        it('rejects a recorded dev command whose port argument is missing', async () => {
+            const fixture = createStoppedDevServerFixture('recover-dev-missing-port');
+            const receipt: GuardFailureReceipt = { ...fixture.receipt, args: ['dev', '--port'] };
+            writeGuardFailureReceipt(fixture.repoRoot, receipt);
+            const errors: string[] = [];
+            let commandRan = false;
+
+            try {
+                const code = await runGuardCli(['--recover', '--', 'pnpm', 'test:e2e', 'launch.spec.ts'], {
+                    cwd: fixture.lane.worktreePath,
+                    detectLane: () => fixture.lane,
+                    runCommand: async () => {
+                        commandRan = true;
+                        return fakeResult({ code: 0 });
+                    },
+                    error: (message) => errors.push(message),
+                });
+
+                expect(code).toBe(1);
+                expect(commandRan).toBe(false);
+                expect(errors).toEqual(['recorded pnpm dev command has a missing port']);
+                expect(readGuardFailureReceipt(fixture.repoRoot, fixture.laneName)).toEqual(receipt);
+            } finally {
+                rmSync(fixture.repoRoot, { recursive: true, force: true });
+            }
+        });
+
+        it('keeps the original dev-server stop when its explicit recovery proof fails', async () => {
+            const fixture = createStoppedDevServerFixture('recover-dev-proof-failed');
+            let replayInput: Parameters<typeof runGuardedCommand>[0] | undefined;
+            const errors: string[] = [];
+
+            try {
+                const code = await runGuardCli(['--recover', '--', 'pnpm', 'test:e2e', 'failing.spec.ts'], {
+                    cwd: fixture.lane.worktreePath,
+                    detectLane: () => fixture.lane,
+                    runCommand: async (input) => {
+                        replayInput = input;
+                        return fakeResult({ code: 1 });
+                    },
+                    error: (message) => errors.push(message),
+                });
+
+                expect(code).toBe(1);
+                expect(replayInput?.args).toEqual(['test:e2e', 'failing.spec.ts']);
+                expect(readGuardFailureReceipt(fixture.repoRoot, fixture.laneName)).toEqual(fixture.receipt);
+                expect(errors).toContain(`guard: recovery failed; lane ${fixture.laneName} remains stopped`);
+            } finally {
+                rmSync(fixture.repoRoot, { recursive: true, force: true });
+            }
+        });
+
+        it('stops watching the recorded origin when the proof command cannot start', async () => {
+            const fixture = await createProofServedDevServerFixture('recover-dev-proof-unspawnable');
+            const errors: string[] = [];
+            // Node's _getActiveHandles() no longer reports timers, so observe
+            // the observer directly: track every interval the run creates and
+            // require each one cleared. A left-over repeating timer here keeps
+            // the process alive — the CLI would print the spawn error and hang.
+            const realSetInterval = globalThis.setInterval;
+            const realClearInterval = globalThis.clearInterval;
+            const created: ReturnType<typeof realSetInterval>[] = [];
+            const cleared = new Set<ReturnType<typeof realSetInterval>>();
+            globalThis.setInterval = ((callback: () => void, ms?: number) => {
+                const timer = realSetInterval(callback, ms);
+                created.push(timer);
+                return timer;
+            }) as typeof globalThis.setInterval;
+            globalThis.clearInterval = ((timer?: ReturnType<typeof realSetInterval>) => {
+                if (timer !== undefined) {
+                    cleared.add(timer);
+                }
+                realClearInterval(timer);
+            }) as typeof globalThis.clearInterval;
+
+            try {
+                const code = await runGuardCli(['--recover', '--', 'pnpm', 'test:e2e', 'missing.spec.ts'], {
+                    cwd: fixture.lane.worktreePath,
+                    detectLane: () => fixture.lane,
+                    runCommand: async () => {
+                        throw new Error('spawn pnpm ENOENT');
+                    },
+                    error: (message) => errors.push(message),
+                });
+
+                expect(code).toBe(1);
+                expect(errors.join('\n')).toContain('spawn pnpm ENOENT');
+                expect(readGuardFailureReceipt(fixture.repoRoot, fixture.laneName)).toEqual(fixture.receipt);
+                const leaked = created.filter((timer) => !cleared.has(timer));
+                expect(leaked).toEqual([]);
+            } finally {
+                globalThis.setInterval = realSetInterval;
+                globalThis.clearInterval = realClearInterval;
+                for (const timer of created) {
+                    realClearInterval(timer);
+                }
+                rmSync(fixture.repoRoot, { recursive: true, force: true });
+            }
+        });
+
+        // The generated proof child imports the real marker middleware; under
+        // Vitest import.meta.url is an HTTP module URL, so anchor at the
+        // checkout root the test run executes from instead.
+        const identityModuleSpecifier = pathToFileURL(join(process.cwd(), 'scripts', 'e2eServerIdentity.ts')).href;
+
+        const writeMarkerProof = (fixture: { lane: { worktreePath: string } }, tokenExpression: string): void => {
+            writeFileSync(
+                join(fixture.lane.worktreePath, 'package.json'),
+                JSON.stringify({
+                    name: 'guard-dev-real-proof',
+                    private: true,
+                    scripts: { 'test:e2e': 'node proof.mts' },
+                })
+            );
+            writeFileSync(
+                join(fixture.lane.worktreePath, 'proof.mts'),
+                [
+                    "import { createServer } from 'node:http';",
+                    "import { writeFileSync } from 'node:fs';",
+                    `import { createSourdawRootHeaderMiddleware } from '${identityModuleSpecifier}';`,
+                    '// The proof serves the recorded port through the same marker middleware',
+                    '// a Playwright-run e2e server mounts, fed the run token the guard',
+                    '// handed this proof through the environment.',
+                    `const marker = createSourdawRootHeaderMiddleware(process.cwd(), ${tokenExpression});`,
+                    'const server = createServer((request, response) => {',
+                    '    marker(request, response, () => {',
+                    "        response.end('ok');",
+                    '    });',
+                    '});',
+                    "server.listen(Number(process.env.SOURDAW_E2E_PORT), '127.0.0.1', () => {",
+                    "    writeFileSync('observed.json', JSON.stringify({",
+                    '        cwd: process.cwd(),',
+                    '        args: process.argv.slice(2),',
+                    '        port: process.env.SOURDAW_E2E_PORT,',
+                    '    }));',
+                    '    setTimeout(() => process.exit(0), 800);',
+                    '});',
+                ].join('\n')
+            );
+        };
+
+        it(
+            'discharges a stopped node E2E server through a real finite guarded proof',
+            async () => {
+                const fixture = await createStoppedE2eServerFixture('recover-node-e2e-real-proof');
+                writeMarkerProof(fixture, 'process.env.SOURDAW_E2E_RUN_TOKEN');
+
+                try {
+                    const code = await runGuardCli(['--recover', '--', 'pnpm', 'test:e2e', 'launch.spec.ts'], {
+                        cwd: fixture.lane.worktreePath,
+                        detectLane: () => fixture.lane,
+                        runCommand: async (input) =>
+                            runIsolatedGuardedCommand({
+                                ...input,
+                                availableMemoryBytes: abundantMemoryBytes,
+                            }),
+                        assertModulesPreflight: () => undefined,
+                    });
+
+                    expect(code).toBe(0);
+                    expect(JSON.parse(readFileSync(join(fixture.lane.worktreePath, 'observed.json'), 'utf8'))).toEqual({
+                        cwd: realpathSync(fixture.lane.worktreePath),
+                        args: ['launch.spec.ts'],
+                        port: String(fixture.port),
+                    });
+                    expect(readGuardFailureReceipt(fixture.repoRoot, fixture.laneName)).toBeUndefined();
+                } finally {
+                    rmSync(fixture.repoRoot, { recursive: true, force: true });
+                }
+            },
+            GUARDED_CASE_TIMEOUT_MS
+        );
+
+        it.each([
+            { label: 'another script', args: ['scripts/otherServer.ts', '5387'] },
+            { label: 'inline node code', args: ['-e', 'process.exit(0)'] },
+            { label: 'missing port', args: ['scripts/e2eDevServer.ts'] },
+            { label: 'empty port', args: ['scripts/e2eDevServer.ts', ''] },
+            { label: 'zero port', args: ['scripts/e2eDevServer.ts', '0'] },
+            { label: 'out-of-range port', args: ['scripts/e2eDevServer.ts', '65536'] },
+            { label: 'malformed port', args: ['scripts/e2eDevServer.ts', '5387suffix'] },
+            { label: 'exponential port', args: ['scripts/e2eDevServer.ts', '5e3'] },
+            { label: 'whitespace port', args: ['scripts/e2eDevServer.ts', ' 5387'] },
+            { label: 'extra argument', args: ['scripts/e2eDevServer.ts', '5387', '5388'] },
+        ])('refuses a node E2E receipt with $label before starting a proof', async ({ label, args }) => {
+            const fixture = await createStoppedE2eServerFixture(`recover-node-e2e-${label.replaceAll(' ', '-')}`);
+            const receipt = { ...fixture.receipt, args };
+            writeGuardFailureReceipt(fixture.repoRoot, receipt);
+            const originalBytes = readFileSync(fixture.receiptPath, 'utf8');
+            let commandRan = false;
+
+            try {
+                const code = await runGuardCli(['--recover', '--', 'true'], {
+                    cwd: fixture.lane.worktreePath,
+                    detectLane: () => fixture.lane,
+                    runCommand: async () => {
+                        commandRan = true;
+                        return fakeResult({ code: 0 });
+                    },
+                    assertModulesPreflight: () => undefined,
+                });
+
+                expect(code).toBe(1);
+                expect(commandRan).toBe(false);
+                expect(readFileSync(fixture.receiptPath, 'utf8')).toBe(originalBytes);
+            } finally {
+                rmSync(fixture.repoRoot, { recursive: true, force: true });
+            }
+        });
+
+        it.each(['foreign script', 'symlinked script', 'symlinked scripts directory', 'nested cwd'])(
+            'refuses a node E2E receipt with a %s before starting a proof',
+            async (label) => {
+                const fixture = await createStoppedE2eServerFixture(`recover-node-e2e-${label.replaceAll(' ', '-')}`);
+                const foreignDirectory = join(fixture.repoRoot, 'foreign');
+                mkdirSync(foreignDirectory);
+                const foreignScript = join(foreignDirectory, 'e2eDevServer.ts');
+                writeFileSync(foreignScript, 'export {};');
+                const script = join(fixture.lane.worktreePath, 'scripts', 'e2eDevServer.ts');
+                let receipt = fixture.receipt;
+                if (label === 'foreign script') {
+                    receipt = { ...receipt, args: [foreignScript, String(fixture.port)] };
+                } else if (label === 'symlinked script') {
+                    rmSync(script);
+                    symlinkSync(foreignScript, script);
+                } else if (label === 'symlinked scripts directory') {
+                    rmSync(script);
+                    rmSync(join(fixture.lane.worktreePath, 'scripts'), { recursive: true });
+                    symlinkSync(foreignDirectory, join(fixture.lane.worktreePath, 'scripts'));
+                } else {
+                    const nestedCwd = join(fixture.lane.worktreePath, 'nested');
+                    mkdirSync(nestedCwd);
+                    receipt = { ...receipt, cwd: realpathSync(nestedCwd) };
+                }
+                writeGuardFailureReceipt(fixture.repoRoot, receipt);
+                const originalBytes = readFileSync(fixture.receiptPath, 'utf8');
+                let commandRan = false;
+
+                try {
+                    const code = await runGuardCli(['--recover', '--', 'true'], {
+                        cwd: fixture.lane.worktreePath,
+                        detectLane: () => fixture.lane,
+                        runCommand: async () => {
+                            commandRan = true;
+                            return fakeResult({ code: 0 });
+                        },
+                        assertModulesPreflight: () => undefined,
+                    });
+
+                    expect(code).toBe(1);
+                    expect(commandRan).toBe(false);
+                    expect(readFileSync(fixture.receiptPath, 'utf8')).toBe(originalBytes);
+                } finally {
+                    rmSync(fixture.repoRoot, { recursive: true, force: true });
+                }
+            }
+        );
+
+        it('refuses a node E2E proof when the recorded origin already answers', async () => {
+            const fixture = await createStoppedE2eServerFixture('recover-node-e2e-occupied');
+            const marker = await fixture.startProofServer();
+            const errors: string[] = [];
+            let commandRan = false;
+
+            try {
+                const code = await runGuardCli(['--recover', '--', 'true'], {
+                    cwd: fixture.lane.worktreePath,
+                    detectLane: () => fixture.lane,
+                    runCommand: async () => {
+                        commandRan = true;
+                        return fakeResult({ code: 0 });
+                    },
+                    assertModulesPreflight: () => undefined,
+                    error: (message) => errors.push(message),
+                });
+
+                expect(code).toBe(1);
+                expect(commandRan).toBe(false);
+                expect(errors.join('\n')).toContain('already answers');
+                expect(readGuardFailureReceipt(fixture.repoRoot, fixture.laneName)).toEqual(fixture.receipt);
+            } finally {
+                await marker.close();
+                rmSync(fixture.repoRoot, { recursive: true, force: true });
+            }
+        });
+
+        it.each(['another checkout', 'stale token', 'missing token', 'failed command', 'failed cleanup'])(
+            'keeps a node E2E stop when its proof has %s',
+            async (label) => {
+                const fixture = await createStoppedE2eServerFixture(`recover-node-e2e-${label.replaceAll(' ', '-')}`);
+                const errors: string[] = [];
+                let marker: { close: () => Promise<void> } | undefined;
+
+                try {
+                    const code = await runGuardCli(['--recover', '--', 'true'], {
+                        cwd: fixture.lane.worktreePath,
+                        detectLane: () => fixture.lane,
+                        runCommand: async (input) => {
+                            let token = input.env?.[SOURDAW_E2E_RUN_TOKEN_ENV];
+                            if (label === 'missing token') {
+                                token = undefined;
+                            }
+                            if (label === 'stale token') {
+                                token = 'stale-token-from-another-run';
+                            }
+                            marker = await startMarkerServer(
+                                label === 'another checkout' ? fixture.repoRoot : fixture.lane.worktreePath,
+                                fixture.port,
+                                token
+                            );
+                            if (label === 'failed cleanup') {
+                                return fakeResult({ code: 0, reason: 'leak' });
+                            }
+                            return fakeResult({ code: label === 'failed command' ? 1 : 0 });
+                        },
+                        assertModulesPreflight: () => undefined,
+                        error: (message) => errors.push(message),
+                    });
+
+                    expect(code).toBe(1);
+                    const retained = readGuardFailureReceipt(fixture.repoRoot, fixture.laneName);
+                    expect(retained).toMatchObject({ command: 'node', args: fixture.receipt.args });
+                    if (label === 'failed cleanup') {
+                        expect(retained?.reason).toBe('leak');
+                    } else {
+                        expect(retained).toEqual(fixture.receipt);
+                    }
+                    expect(errors.join('\n')).toContain(
+                        label === 'failed command' || label === 'failed cleanup'
+                            ? 'recovery failed'
+                            : 'did not verify the recorded dev server'
+                    );
+                } finally {
+                    await marker?.close();
+                    rmSync(fixture.repoRoot, { recursive: true, force: true });
+                }
+            }
+        );
+
+        it('discharges a stopped dev server through a real finite guarded proof', async () => {
+            const fixture = await createProofServedDevServerFixture('recover-dev-real-proof');
+            writeMarkerProof(fixture, 'process.env.SOURDAW_E2E_RUN_TOKEN');
+
+            try {
+                const code = await runGuardCli(['--recover', '--', 'pnpm', 'test:e2e', 'launch.spec.ts'], {
+                    cwd: fixture.lane.worktreePath,
+                    detectLane: () => fixture.lane,
+                    runCommand: async (input) =>
+                        runIsolatedGuardedCommand({
+                            ...input,
+                            availableMemoryBytes: abundantMemoryBytes,
+                        }),
+                    assertModulesPreflight: () => undefined,
+                });
+
+                expect(code).toBe(0);
+                expect(JSON.parse(readFileSync(join(fixture.lane.worktreePath, 'observed.json'), 'utf8'))).toEqual({
+                    cwd: realpathSync(fixture.lane.worktreePath),
+                    args: ['launch.spec.ts'],
+                    port: String(fixture.port),
+                });
+                expect(readGuardFailureReceipt(fixture.repoRoot, fixture.laneName)).toBeUndefined();
+            } finally {
+                rmSync(fixture.repoRoot, { recursive: true, force: true });
+            }
+        });
+
+        it('preserves a stopped dev receipt when the proof serves a stale run token', async () => {
+            const fixture = await createProofServedDevServerFixture('recover-dev-stale-token');
+            writeMarkerProof(fixture, "'stale-token-from-another-run'");
+            const errors: string[] = [];
+
+            try {
+                const code = await runGuardCli(['--recover', '--', 'pnpm', 'test:e2e', 'launch.spec.ts'], {
+                    cwd: fixture.lane.worktreePath,
+                    detectLane: () => fixture.lane,
+                    runCommand: async (input) =>
+                        runIsolatedGuardedCommand({
+                            ...input,
+                            availableMemoryBytes: abundantMemoryBytes,
+                        }),
+                    assertModulesPreflight: () => undefined,
+                    error: (message) => errors.push(message),
+                });
+
+                expect(code).toBe(1);
+                expect(readGuardFailureReceipt(fixture.repoRoot, fixture.laneName)).toEqual(fixture.receipt);
+                expect(errors.join('\n')).toContain("without this run's marker");
+            } finally {
+                rmSync(fixture.repoRoot, { recursive: true, force: true });
+            }
+        });
+
+        it('requires an active receipt before running an explicit recovery proof', async () => {
+            const fixture = createStoppedLaneFixture('recover-dev-proof-no-receipt');
+            const errors: string[] = [];
+            let commandRan = false;
+
+            try {
+                const code = await runGuardCli(['--recover', '--', 'pnpm', 'test:e2e', 'launch.spec.ts'], {
+                    cwd: fixture.lane.worktreePath,
+                    detectLane: () => fixture.lane,
+                    runCommand: async () => {
+                        commandRan = true;
+                        return fakeResult({ code: 0 });
+                    },
+                    error: (message) => errors.push(message),
+                });
+
+                expect(code).toBe(1);
+                expect(commandRan).toBe(false);
+                expect(errors).toEqual(['explicit recovery proof requires an active guard-failure receipt']);
+            } finally {
+                rmSync(fixture.repoRoot, { recursive: true, force: true });
+            }
+        });
+
+        it('records an explicit proof resource stop against the original dev-server command', async () => {
+            const fixture = createStoppedDevServerFixture('recover-dev-proof-resource-stop');
+            let replayInput: Parameters<typeof runGuardedCommand>[0] | undefined;
+
+            try {
+                const code = await runGuardCli(['--recover', '--', 'pnpm', 'test:e2e', 'heavy.spec.ts'], {
+                    cwd: fixture.lane.worktreePath,
+                    detectLane: () => fixture.lane,
+                    runCommand: async (input) => {
+                        replayInput = input;
+                        return fakeResult({
+                            code: null,
+                            reason: 'memory',
+                            peakRssBytes: 5 * 1024 ** 3,
+                        });
+                    },
+                });
+
+                expect(code).toBe(1);
+                expect(replayInput?.args).toEqual(['test:e2e', 'heavy.spec.ts']);
+                const updated = readGuardFailureReceipt(fixture.repoRoot, fixture.laneName);
+                expect(updated?.command).toBe('pnpm');
+                expect(updated?.args).toEqual(fixture.receipt.args);
+                expect(updated?.reason).toBe('memory');
+                expect(updated?.peakRssBytes).toBe(5 * 1024 ** 3);
+            } finally {
+                rmSync(fixture.repoRoot, { recursive: true, force: true });
+            }
+        });
 
         it('refuses a mapping that leaves the package-root lint target present', async () => {
             const fixture = createLintRecoveryFixture('package-root-target-present');

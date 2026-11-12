@@ -220,12 +220,17 @@ export const CrustMeteringStrip = ({
                         onClick={onResetTp}
                         aria-label="Reset true peak indicator"
                         title="Reset true peak indicator"
-                        className="size-2 rounded-full border-0 bg-[var(--color-state-success)] p-0"
-                        style={{
-                            background: truepeakExceeded ? 'var(--color-state-clip)' : 'var(--color-state-success)',
-                            cursor: 'pointer',
-                        }}
-                    />
+                        className="size-6 shrink-0 rounded-full border-0 bg-transparent p-0"
+                    >
+                        <span
+                            data-testid="true-peak-status-light"
+                            aria-hidden="true"
+                            className="size-2 rounded-full"
+                            style={{
+                                background: truepeakExceeded ? 'var(--color-state-clip)' : 'var(--color-state-success)',
+                            }}
+                        />
+                    </Button>
                 }
             >
                 <Row justify="between">

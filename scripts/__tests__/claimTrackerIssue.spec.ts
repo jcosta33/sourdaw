@@ -88,12 +88,22 @@ function fieldListJson(projectNumber: number): string {
     });
 }
 
-function fakeGh(labels: string[], boards: BoardFixture[]) {
+type IssueFixture = { state?: string; ignoreLabelEdit?: boolean };
+
+/** The label edit applies to the fake's own label set, so the claim's read-back observes it. */
+function appliedLabelEdit(labels: string[], args: string[]): string[] {
+    const added = args.flatMap((token, index) => (args[index - 1] === '--add-label' ? [token] : []));
+    const removed = args.flatMap((token, index) => (args[index - 1] === '--remove-label' ? [token] : []));
+    return [...labels.filter((label) => !removed.includes(label)), ...added.filter((label) => !labels.includes(label))];
+}
+
+function fakeGh(initialLabels: string[], boards: BoardFixture[], issue: IssueFixture = {}) {
     const calls: string[][] = [];
+    let labels = initialLabels;
     const gh: Gh = (args) => {
         calls.push(args);
         if (args[0] === 'issue' && args[1] === 'view') {
-            return JSON.stringify({ labels: labels.map((name) => ({ name })) });
+            return JSON.stringify({ labels: labels.map((name) => ({ name })), state: issue.state ?? 'OPEN' });
         }
         if (args[0] === 'api') {
             return boardsGraphql(boards);
@@ -105,6 +115,9 @@ function fakeGh(labels: string[], boards: BoardFixture[]) {
             return '';
         }
         if (args[0] === 'issue' && args[1] === 'edit') {
+            if (issue.ignoreLabelEdit !== true) {
+                labels = appliedLabelEdit(labels, args);
+            }
             return 'https://github.com/jcosta33/sourdaw/issues/4342';
         }
         throw new Error(`unexpected gh call: ${args.join(' ')}`);
@@ -199,8 +212,56 @@ describe('claim tracker issue', () => {
 
         expect(() => claimTrackerIssue(7, gh, () => undefined)).toThrow(/already carries status:active/);
         expect(calls).toHaveLength(1);
-        expect(calls[0]).toEqual(['issue', 'view', '7', '--repo', 'jcosta33/sourdaw', '--json', 'labels']);
+        expect(calls[0]).toEqual(['issue', 'view', '7', '--repo', 'jcosta33/sourdaw', '--json', 'labels,state']);
         expect(calls.some((call) => call[0] === 'project')).toBe(false);
+    });
+
+    it('refuses a closed issue before any write', () => {
+        const { gh, calls } = fakeGh(['bug', 'status:ready'], [ROADMAP], { state: 'CLOSED' });
+
+        expect(() => claimTrackerIssue(7, gh, () => undefined)).toThrow(/issue #7 is closed; /);
+        expect(calls).toEqual([['issue', 'view', '7', '--repo', 'jcosta33/sourdaw', '--json', 'labels,state']]);
+    });
+
+    it('reads the labels back after the edit and refuses before any board write when the swap is not observed', () => {
+        const { gh, calls } = fakeGh(['bug', 'status:ready'], [ROADMAP], { ignoreLabelEdit: true });
+
+        expect(() => claimTrackerIssue(7, gh, () => undefined)).toThrow(
+            /issue #7 label edit was not observed: status:active missing, status:ready still present/
+        );
+        expect(callsWith(calls, ['issue', 'view'])).toHaveLength(2);
+        expect(calls.some((call) => call[0] === 'api' || call[0] === 'project')).toBe(false);
+    });
+
+    it('refuses an issue closed during the claim before any board write', () => {
+        const { gh, calls } = fakeGh(['bug', 'status:ready'], [ROADMAP]);
+        const closesOnEdit: Gh = (args) => {
+            const output = gh(args);
+            if (args[0] === 'issue' && args[1] === 'view' && callsWith(calls, ['issue', 'edit']).length > 0) {
+                return JSON.stringify({ ...JSON.parse(output), state: 'CLOSED' });
+            }
+            return output;
+        };
+
+        expect(() => claimTrackerIssue(7, closesOnEdit, () => undefined)).toThrow(
+            'issue #7 closed during the claim; status labels were edited, no board was moved'
+        );
+        expect(callsWith(calls, ['issue', 'edit'])).toHaveLength(1);
+        expect(calls.some((call) => call[0] === 'api' || call[0] === 'project')).toBe(false);
+    });
+
+    it('reads the labels back after the edit and refuses when only a planned removal is still present', () => {
+        const { gh, calls } = fakeGh(['bug', 'status:ready'], [ROADMAP]);
+        const keepsReady: Gh = (args) => {
+            const output = gh(args);
+            if (args[0] === 'issue' && args[1] === 'view' && callsWith(calls, ['issue', 'edit']).length > 0) {
+                return JSON.stringify({ labels: [{ name: 'status:active' }, { name: 'status:ready' }], state: 'OPEN' });
+            }
+            return output;
+        };
+
+        expect(() => claimTrackerIssue(7, keepsReady, () => undefined)).toThrow(/status:ready still present/);
+        expect(calls.some((call) => call[0] === 'api' || call[0] === 'project')).toBe(false);
     });
 
     it('claims a no-board issue with the label swap alone, touching no board', () => {
@@ -360,7 +421,9 @@ describe('claim launcher binding', () => {
 
     it('admits the primary root with the pinned source', () => {
         expect(() => assertTrustedClaimLauncherBinding(binding)).not.toThrow();
-        expect(() => assertTrustedClaimLauncherBinding({ ...binding, originSource: undefined })).not.toThrow();
+        expect(() => assertTrustedClaimLauncherBinding({ ...binding, originSource: undefined })).toThrow(
+            'scripts/claimTrackerIssue.ts has no blob on origin/main; refusing to run an unverifiable copy'
+        );
     });
 
     it('refuses a lane worktree even with fully forged launcher env', () => {
@@ -402,14 +465,16 @@ describe('claim cli wiring', () => {
 
     it('binds the launcher, then authenticates, then hands gh the authenticated session, disposing it last', async () => {
         const order: string[] = [];
+        let claimed = false;
         const { deps, createGhSessions, authSession } = recordingDeps(order, (args) => {
             if (args[0] === 'issue' && args[1] === 'view') {
-                return JSON.stringify({ labels: [] });
+                return JSON.stringify({ labels: claimed ? [{ name: 'status:active' }] : [], state: 'OPEN' });
             }
             if (args[0] === 'api') {
                 return boardsGraphql([]);
             }
             if (args[0] === 'issue' && args[1] === 'edit') {
+                claimed = true;
                 return '';
             }
             throw new Error(`unexpected gh call: ${args.join(' ')}`);
@@ -417,7 +482,7 @@ describe('claim cli wiring', () => {
 
         await expect(runClaimTrackerIssueCli(['9'], deps)).resolves.toBe(0);
 
-        expect(order).toEqual(['bind', 'authenticate', 'gh', 'gh', 'gh', 'dispose']);
+        expect(order).toEqual(['bind', 'authenticate', 'gh', 'gh', 'gh', 'gh', 'dispose']);
         expect(createGhSessions).toHaveLength(1);
         expect(createGhSessions[0]).toBe(authSession);
     });
@@ -426,7 +491,7 @@ describe('claim cli wiring', () => {
         const order: string[] = [];
         const { deps } = recordingDeps(order, (args) => {
             if (args[0] === 'issue' && args[1] === 'view') {
-                return JSON.stringify({ labels: [{ name: 'status:active' }] });
+                return JSON.stringify({ labels: [{ name: 'status:active' }], state: 'OPEN' });
             }
             throw new Error(`unexpected gh call: ${args.join(' ')}`);
         });

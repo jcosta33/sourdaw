@@ -11,6 +11,7 @@ type TestTrack = {
 const {
     activeRecording,
     pendingPoints,
+    pendingOwners,
     touchActive,
     laneBaselines,
     automationSnapshot,
@@ -19,6 +20,7 @@ const {
 } = vi.hoisted(() => {
     const activeRecording = new Map<string, import('../recordingSessionState').RecordingSession>();
     const pendingPoints = new Map<string, import('../../../models/Automation').AutomationPoint[]>();
+    const pendingOwners = new Map<string, Array<symbol | undefined>>();
     const touchActive = new Set<string>();
     const laneBaselines = new Map<string, import('../../../models/Automation').AutomationPoint[]>();
     const automationSnapshot: {
@@ -29,6 +31,7 @@ const {
     return {
         activeRecording,
         pendingPoints,
+        pendingOwners,
         touchActive,
         laneBaselines,
         automationSnapshot,
@@ -65,6 +68,7 @@ vi.mock('../recordingSessionState', () => ({
     RECORDING_MODES: new Set(['write', 'touch', 'latch']),
     activeRecording,
     pendingPoints,
+    pendingOwners,
     touchActive,
     laneBaselines,
 }));
@@ -91,6 +95,7 @@ describe('startAutomationRecording', () => {
             lastValue: null,
         });
         pendingPoints.set('stale', []);
+        pendingOwners.set('stale', []);
         touchActive.add('stale');
         laneBaselines.set('stale-lane', [{ beat: 0, value: 0.5, curve: 'linear', tension: 0 }]);
         automationSnapshot.value = null;

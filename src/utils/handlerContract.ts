@@ -176,13 +176,13 @@ export type ClipStateSnapshot = {
     readonly sourceScaleName?: string;
     readonly overrides?: Readonly<Record<string, boolean>>;
     readonly kneadState?: {
-        readonly blobs: readonly {
+        readonly blobs: {
             readonly id: string;
             readonly startTime: number;
             readonly endTime: number;
             readonly pitchCenterCents: number;
             readonly originalPitchCenterCents?: number;
-            readonly pitchCurveCents: readonly number[];
+            readonly pitchCurveCents: number[];
             readonly voicedConfidence: number;
         }[];
         readonly retuneSpeedMs: number;
@@ -2088,6 +2088,8 @@ export type AppAction =
     | { type: 'resizeSection'; payload: { sectionId: string; startBeat: number; endBeat: number } }
     | { type: 'setSectionColor'; payload: { sectionId: string; color: string } }
     | { type: 'reorderSection'; payload: { sectionId: string; direction: 'left' | 'right' } }
+    | { type: 'navigateSection'; payload: { direction: 'previous' | 'next' } }
+    | { type: 'rehearseSection'; payload: { sectionId: string; loop: boolean } }
     | {
           /** Internal guarded inverse for `reorderSection`: restores BOTH swapped
            *  sections' exact pre-reorder beat spans and list positions, the gap
@@ -3719,8 +3721,13 @@ type ActionHandlerCommon<Action extends AppAction> = {
     canReportConflict?: boolean;
     /** Resolve deterministic application-owned payload fields, without project/runtime writes, before hashing. */
     materializeCommandArguments?: (action: Action, context?: HandlerMaterializationContext) => void;
-    /** Capture read-only project authority synchronously when a batch is admitted, before its snapshot wait. */
-    materializeCommandArgumentsAt?: 'admission';
+    /**
+     * `admission` captures batch authority before its snapshot wait. `execution` opts fresh project singleton
+     * dispatches into materialization after that wait and cancellation, before admission guards and execution.
+     * Runtime, supplied-envelope and authenticated Redo dispatches retain early materialization; compilation and
+     * batch materialization are unchanged. Omission retains the existing early singleton behavior.
+     */
+    materializeCommandArgumentsAt?: 'admission' | 'execution';
     /** Owner-provided strict validation for a payload after application-owned materialization. */
     validateMaterializedCommandArguments?: (payload: unknown) => boolean;
     /** Owner-provided strict validation for an internal persisted replay payload. */

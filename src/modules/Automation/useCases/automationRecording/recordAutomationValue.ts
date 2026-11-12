@@ -7,7 +7,7 @@ import { type AutomationPoint } from '../../models/Automation';
 import { commitRecordedPass } from './commitRecordedPass';
 import { latencyCompensatedBeat } from './latencyCompensatedBeat';
 import { makeKey } from './makeKey';
-import { RECORDING_MODES, activeRecording, pendingPoints, touchActive } from './recordingSessionState';
+import { RECORDING_MODES, activeRecording, pendingOwners, pendingPoints, touchActive } from './recordingSessionState';
 
 export function recordAutomationValue(
     trackId: string,
@@ -45,6 +45,7 @@ export function recordAutomationValue(
         };
         activeRecording.set(key, session);
         pendingPoints.set(key, []);
+        pendingOwners.set(key, []);
     }
 
     // Capture tempo once, at the session's first value. Reusing it for the rest
@@ -103,6 +104,10 @@ export function recordAutomationValue(
     // — the old per-value clearPointsInRange ran a full lane re-map at ~100Hz.
     const points = pendingPoints.get(key);
     points?.push(point);
+    // Ledger entry index-for-index with the point, so a later discard can
+    // remove only this producer's samples (undefined is its own class:
+    // ownerless samples are removed only by an ownerless discarding authority).
+    pendingOwners.get(key)?.push(recordingOwner);
     session.lastValue = value;
     // Every admitted producer supersedes the previous release authority, including
     // ownerless MIDI writes. A nonrecording runtime write never reaches this door.

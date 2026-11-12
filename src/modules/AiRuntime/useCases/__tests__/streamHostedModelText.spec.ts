@@ -1,8 +1,10 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { DEFAULT_AGENT_RESOURCE_LIMITS } from '../../models/AgentResourceLimits';
+import { type AiBackendPreference } from '../../models/LlmOrchestrationTypes';
 import { type ModelProviderRequestInput } from '../../models/ModelProviderProtocol';
 import { agentResourceLimitsStore } from '../../stores/agentResourceLimitsStore';
+import { aiBackendPreferenceStore } from '../../stores/aiBackendPreferenceStore';
 import { configureAgentResourceLimits } from '../configureAgentResourceLimits';
 import { streamHostedModelText } from '../streamHostedModelText';
 
@@ -10,6 +12,20 @@ const mocks = vi.hoisted(() => ({
     streamCloudChatCompletion: vi.fn(),
     getCloudProviderInfo: vi.fn(() => ({ provider: 'anthropic' as const, model: 'hosted-model' })),
     compileRequest: vi.fn((_input: ModelProviderRequestInput) => undefined),
+    isCloudAvailable: vi.fn(() => true),
+    isWebGpuAvailable: vi.fn(() => true),
+}));
+
+vi.mock('#/infra/release/modelReleaseAdmission', () => ({
+    MODEL_RELEASE_ADMISSION: { webLlm: true },
+}));
+
+vi.mock('#/modules/BrowserAi/stores', () => ({
+    isWebGpuAvailable: mocks.isWebGpuAvailable,
+}));
+
+vi.mock('../../repositories/cloudLlm/isCloudAvailable', () => ({
+    isCloudAvailable: mocks.isCloudAvailable,
 }));
 
 vi.mock('../../repositories/cloudLlm/cloudInference/streamCloudChatCompletion', () => ({
@@ -35,6 +51,68 @@ vi.mock('../modelProviderProtocol', async (importOriginal) => {
             };
         },
     };
+});
+
+beforeEach(() => {
+    mocks.streamCloudChatCompletion.mockReset();
+    mocks.isCloudAvailable.mockReturnValue(true);
+    aiBackendPreferenceStore.set('cloud');
+});
+
+afterEach(() => {
+    aiBackendPreferenceStore.set('auto');
+});
+
+describe('streamHostedModelText backend admission', () => {
+    it.each<AiBackendPreference>(['auto', 'webllm'])(
+        'sends nothing to a configured hosted provider while the backend preference is %s',
+        async (preference) => {
+            aiBackendPreferenceStore.set(preference);
+            mocks.streamCloudChatCompletion.mockResolvedValue({ status: 'complete' as const });
+            const onToken = vi.fn();
+
+            const result = await streamHostedModelText({
+                correlationId: `hosted-refused-${preference}`,
+                messages: [{ role: 'user', content: 'Track: Lead vocal' }],
+                maxOutputTokens: 1_000,
+                onToken,
+            });
+
+            expect(mocks.streamCloudChatCompletion).not.toHaveBeenCalled();
+            expect(onToken).not.toHaveBeenCalled();
+            expect(result.status).toBe('unavailable');
+            expect(result.failure?.code).toBe('hosted-provider-not-selected');
+            expect(result.remoteDisclosure).toBeUndefined();
+        }
+    );
+
+    it('sends the request to the hosted provider once the user selects it', async () => {
+        mocks.streamCloudChatCompletion.mockResolvedValue({ status: 'complete' as const });
+
+        const result = await streamHostedModelText({
+            correlationId: 'hosted-selected',
+            messages: [{ role: 'user', content: 'Track: Lead vocal' }],
+            maxOutputTokens: 1_000,
+            onToken: vi.fn(),
+        });
+
+        expect(mocks.streamCloudChatCompletion).toHaveBeenCalledTimes(1);
+        expect(result.status).toBe('complete');
+    });
+
+    it('sends nothing when the hosted provider is selected but unavailable', async () => {
+        mocks.isCloudAvailable.mockReturnValue(false);
+
+        const result = await streamHostedModelText({
+            correlationId: 'hosted-selected-unavailable',
+            messages: [{ role: 'user', content: 'Track: Lead vocal' }],
+            maxOutputTokens: 1_000,
+            onToken: vi.fn(),
+        });
+
+        expect(mocks.streamCloudChatCompletion).not.toHaveBeenCalled();
+        expect(result.status).toBe('unavailable');
+    });
 });
 
 describe('streamHostedModelText', () => {

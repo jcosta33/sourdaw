@@ -10,6 +10,7 @@ import {
 } from '../../../models/CreativeInterpretation';
 import {
     LOCAL_CONTEXT_WINDOW_EXCEEDED_FAILURE_CODE,
+    LOCAL_PLANNER_REQUIRED_FAILURE_CODE,
     LOCAL_PLANNING_REPLY_RESERVE_TOKENS,
     LOCAL_PLANNING_TEMPLATE_OVERHEAD_TOKENS,
 } from '../../../models/LocalPlanningBudget';
@@ -35,6 +36,7 @@ import { getWebLlmContextWindowSize } from '../../../repositories/webLlm/getWebL
 import { initWebLlmEngine } from '../../../repositories/webLlm/initWebLlmEngine';
 import { agentReferenceStore } from '../../../stores/agentReferenceStore';
 import { readAgentResourceLimits } from '../../../stores/agentResourceLimitsStore';
+import { llmStatusStore } from '../../../stores/llmStatusStore';
 import { buildPlanningSystemPrompt } from '../../../transformers/buildPlanningSystemPrompt';
 import { estimateConservativePromptTokens } from '../../../transformers/estimateConservativePromptTokens';
 import { describeLocalContextWindowShortfall } from '../../../transformers/localContextWindowRefusal';
@@ -474,7 +476,57 @@ describe('mandatory planning tools', () => {
             expectAllMandatory(advertised);
         });
 
+        // The constraint narrows what the model can emit but is not validation: a call off the full
+        // schema still becomes a retryable receipt, and nothing runs for it.
+        it('answers a local call that violates the full schema with a retryable receipt and runs nothing', async () => {
+            mocks.backendChain.value = ['webllm'];
+            mocks.generateWebLlmToolCalls.mockResolvedValue({
+                status: 'complete',
+                toolCalls: [
+                    { id: 'bad-call', name: PROJECT_DISCOVERY_TOOL_NAME, arguments: { type: 'no-such-query' } },
+                ],
+            });
+            const outcome = await generateToolPlanningOutcome(
+                'system',
+                'list the tracks',
+                productionToolSchemas(),
+                undefined,
+                'list the tracks',
+                undefined,
+                undefined,
+                undefined,
+                AUTO_TOOL_CHOICE,
+                { firstUserMessage: 'list the tracks', history: [], budgetNote: '', answersSchemaInvalidCalls: true }
+            );
+            if (outcome.status !== 'complete') {
+                throw new Error(`Expected the call to be admitted as data, got ${JSON.stringify(outcome)}`);
+            }
+            const requestTurn = vi
+                .fn()
+                .mockResolvedValueOnce(outcome)
+                .mockResolvedValueOnce({ status: 'complete', toolCalls: [] });
+
+            const result = await runApplicationOwnedToolLoop({
+                loopId: 'loop-local-invalid-arguments',
+                terminalToolNames: new Set(['setTempo']),
+                requestTurn,
+            });
+
+            expect(outcome.toolCalls[0]?.argumentSchemaViolation).toBeDefined();
+            const receipt = result.receipts.find((entry) => entry.callId === 'bad-call');
+            expect(receipt).toMatchObject({
+                status: 'failure',
+                error: { code: 'invalid-tool-arguments', retryable: true },
+            });
+            expect(receipt?.data ?? null).toBeNull();
+        });
+
         describe('the whole local request', () => {
+            const PRO_MODEL_ID = 'Qwen3-8B-q4f16_1-MLC';
+
+            afterEach(() => {
+                engineState.activeModelId = DEFAULT_WEBLLM_MODEL_ID;
+            });
             const REQUEST = 'make the chorus wider and tame the harshness on the lead vocal';
             const RECEIPT_EVIDENCE_CHARACTERS = 8_192;
 
@@ -638,6 +690,7 @@ describe('mandatory planning tools', () => {
             });
 
             it('fits a discovered 64-hit source-onset receipt and a full thread in the five-track local window', async () => {
+                engineState.activeModelId = PRO_MODEL_ID;
                 mocks.generateWebLlmCompletion.mockResolvedValue('[]');
                 const identity = 'x'.repeat(256);
                 const receipt = {
@@ -761,11 +814,12 @@ describe('mandatory planning tools', () => {
                         estimateConservativePromptTokens(userText) +
                         LOCAL_PLANNING_TEMPLATE_OVERHEAD_TOKENS +
                         LOCAL_PLANNING_REPLY_RESERVE_TOKENS
-                ).toBeLessThanOrEqual(32_768);
+                ).toBeLessThanOrEqual(getWebLlmContextWindowSize(PRO_MODEL_ID));
                 expect(LOCAL_PLANNING_REPLY_RESERVE_TOKENS).toBe(2_048);
             });
 
-            it('refuses a 64-track project with the typed code, before the engine loads or runs', async () => {
+            it('refuses a 64-track project on Pro with the typed code, before the engine loads or runs', async () => {
+                engineState.activeModelId = PRO_MODEL_ID;
                 mocks.isWebLlmLoaded.mockReturnValue(false);
 
                 const { outcome, providerResults } = await sendLocalRequest(
@@ -791,26 +845,44 @@ describe('mandatory planning tools', () => {
                 });
             });
 
-            it.each(['Qwen3-1.7B-q4f16_1-MLC', 'Qwen3-8B-q4f16_1-MLC'])(
-                'refuses a five-track request on %s and points at the local model whose window holds it',
+            it.each(['Qwen3-1.7B-q4f16_1-MLC', 'Qwen3-4B-q4f16_1-MLC'])(
+                'refuses even an empty-project request on %s before the engine loads or runs, naming Pro and a hosted model',
                 async (modelId) => {
                     engineState.activeModelId = modelId;
-                    try {
-                        const { outcome, providerResults } = await sendLocalRequest(fiveTrackProject());
+                    mocks.isWebLlmLoaded.mockReturnValue(false);
+                    const { outcome, providerResults } = await sendLocalRequest(emptyProject());
 
-                        expect(mocks.generateWebLlmCompletion).not.toHaveBeenCalled();
-                        expect(outcome).toMatchObject({
-                            status: 'rejected',
-                            reason: expect.stringContaining(
-                                `the window holds ${getWebLlmContextWindowSize(modelId).toLocaleString('en-US')}. Switch to the Standard local model, whose window holds it, or use a hosted model.`
-                            ),
-                        });
-                        expect(providerResults[0]?.failure?.code).toBe(LOCAL_CONTEXT_WINDOW_EXCEEDED_FAILURE_CODE);
-                    } finally {
-                        engineState.activeModelId = DEFAULT_WEBLLM_MODEL_ID;
+                    expect(initWebLlmEngine).not.toHaveBeenCalled();
+                    expect(mocks.generateWebLlmCompletion).not.toHaveBeenCalled();
+                    expect(mocks.generateWebLlmToolCalls).not.toHaveBeenCalled();
+                    if (outcome.status !== 'rejected') {
+                        throw new Error('Expected the non-planning local model to be refused.');
                     }
+                    expect(outcome.reason).toContain('Pro');
+                    expect(outcome.reason).toContain('hosted model');
+                    expect(providerResults).toHaveLength(1);
+                    expect(providerResults[0]?.failure).toMatchObject({
+                        code: LOCAL_PLANNER_REQUIRED_FAILURE_CODE,
+                        retryable: false,
+                        safeMessage: outcome.reason,
+                    });
+                    expect(LOCAL_PLANNER_REQUIRED_FAILURE_CODE).not.toBe(LOCAL_CONTEXT_WINDOW_EXCEEDED_FAILURE_CODE);
                 }
             );
+
+            it('reports the loaded non-planning model, not the default, after refusing on it', async () => {
+                engineState.activeModelId = 'Qwen3-4B-q4f16_1-MLC';
+                mocks.isWebLlmLoaded.mockReturnValue(true);
+
+                const { outcome } = await sendLocalRequest(emptyProject());
+
+                expect(outcome.status).toBe('rejected');
+                expect(llmStatusStore.value).toEqual({
+                    state: 'ready',
+                    backend: 'webllm',
+                    modelId: 'Qwen3-4B-q4f16_1-MLC',
+                });
+            });
 
             it("refuses the request the same way when the engine's own count overflows the window", async () => {
                 mocks.generateWebLlmCompletion.mockRejectedValue(
@@ -867,6 +939,36 @@ describe('mandatory planning tools', () => {
                     for (const name of MANDATORY_PLANNING_TOOL_NAMES) {
                         expect(text, `${name} must stay in the prompt`).toContain(`- ${name}:`);
                     }
+                }
+            );
+
+            // Red when the decoding schema is built from a different list than the prompt serializes:
+            // the model would be constrained to tools it was never told about, or told about tools it
+            // cannot emit.
+            it.each(['add an eq device to the vocals', 'the bass is muddy, clean it up'])(
+                'constrains the local reply to exactly the tools its system prompt lists for "%s"',
+                async (prompt) => {
+                    const { text } = await serializeWebLlmPrompt(prompt);
+
+                    const options = mocks.generateWebLlmCompletion.mock.calls[0]?.[2] as
+                        { responseFormatSchema?: string } | undefined;
+                    if (options?.responseFormatSchema === undefined) {
+                        throw new TypeError('Expected the local request to carry a decoding schema.');
+                    }
+                    const schema = JSON.parse(options.responseFormatSchema) as {
+                        items: { anyOf: { properties: { name: { const: string } } }[] };
+                    };
+                    const constrained = schema.items.anyOf.map((branch) => branch.properties.name.const);
+                    const listed = Array.from(
+                        text
+                            .split('Available tools:\n')[1]
+                            ?.split('\n\n')[0]
+                            ?.matchAll(/^- ([^\s:]+)/gm) ?? [],
+                        (match) => match[1]
+                    );
+
+                    expect(constrained.length).toBeGreaterThanOrEqual(MANDATORY_PLANNING_TOOL_NAMES.length);
+                    expect(new Set(constrained)).toEqual(new Set(listed));
                 }
             );
 

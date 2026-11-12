@@ -16,9 +16,10 @@ import { type HostedTurnHistory } from '../../models/HostedTurnHistory';
 import { type RunnableAiBackend } from '../../models/LlmOrchestrationTypes';
 import {
     LOCAL_CONTEXT_WINDOW_EXCEEDED_FAILURE_CODE,
+    LOCAL_PLANNER_REQUIRED_FAILURE_CODE,
     LOCAL_PLANNING_REPLY_RESERVE_TOKENS,
 } from '../../models/LocalPlanningBudget';
-import { WEBLLM_CONTEXT_WINDOW_TOKENS, WEBLLM_MODEL_ID, WEBLLM_MODELS } from '../../models/ModelInfo';
+import { WEBLLM_CONTEXT_WINDOW_TOKENS, WEBLLM_MODELS, WEBLLM_PLANNING_MODEL_IDS } from '../../models/ModelInfo';
 import {
     estimateCompiledProviderRequestTokenCeiling,
     type ProviderAttemptCostEstimate,
@@ -44,6 +45,7 @@ import {
 } from '../../repositories/cloudLlm/cloudInference/hostedToolPlan';
 import { getCloudProviderInfo } from '../../repositories/cloudLlm/getCloudProviderInfo';
 import { usesStrictCloudToolSchemas } from '../../repositories/cloudLlm/usesStrictCloudToolSchemas';
+import { getActiveModelId } from '../../repositories/webLlm/getActiveModelId';
 import { getWebLlmContextWindowSize } from '../../repositories/webLlm/getWebLlmContextWindowSize';
 import { initWebLlmEngine } from '../../repositories/webLlm/initWebLlmEngine';
 import { isWebLlmLoaded } from '../../repositories/webLlm/isWebLlmLoaded';
@@ -54,6 +56,7 @@ import { llmStatusStore } from '../../stores/llmStatusStore';
 import { budgetLocalPlanningRequest } from '../../transformers/budgetLocalPlanningRequest';
 import {
     describeLocalContextWindowShortfall,
+    describeLocalPlannerRequired,
     type LocalContextWindowShortfall,
     readEngineContextWindowShortfall,
 } from '../../transformers/localContextWindowRefusal';
@@ -212,8 +215,10 @@ function admissibleSchemaValue(value: unknown, schema: unknown): unknown {
 
 /**
  * Whether a call's schema mismatch is the caller's to answer: only when the caller said it answers
- * one and the provider did not enforce that tool's schema. A WebLLM reply is free text parsed into
- * calls, so nothing enforced it; a hosted one followed the request's strictness, tool by tool.
+ * one and the provider did not enforce that tool's schema. A WebLLM reply is decoded under a
+ * constraint built from the full schemas, which narrows what the model can emit but is not
+ * validation (the grammar cannot express every keyword), so the reply is still checked here; a
+ * hosted one followed the request's strictness, tool by tool.
  */
 function toolCallSchemaMismatch(input: {
     backend: RunnableAiBackend;
@@ -388,10 +393,12 @@ function preSessionProviderResult(input: {
 }
 
 type LocalToolPlanningAttempt =
-    { status: 'generated'; outcome: unknown } | { status: 'exceeded'; shortfall: LocalContextWindowShortfall };
+    | { status: 'generated'; outcome: unknown }
+    | { status: 'exceeded'; shortfall: LocalContextWindowShortfall }
+    | { status: 'not-a-planner'; reason: string };
 
 /**
- * Plans on the local model only when the whole request fits its window: the serialized system
+ * Plans only on a planning-capable local model, and then only when the whole request fits its window: the serialized system
  * prompt, the user message and the template, plus a reserve for the reply. The engine is never
  * called over budget, and an overflow its own tokenizer finds is the same refusal.
  */
@@ -402,6 +409,10 @@ async function generateLocalToolPlanningOutcome(input: {
     configuredMaxOutputTokens: number;
     signal?: AbortSignal;
 }): Promise<LocalToolPlanningAttempt> {
+    const activeModelId = getActiveModelId();
+    if (!WEBLLM_PLANNING_MODEL_IDS.has(activeModelId)) {
+        return { status: 'not-a-planner', reason: describeLocalPlannerRequired(activeModelId) };
+    }
     const windowTokens = getWebLlmContextWindowSize();
     const budget = budgetLocalPlanningRequest({
         systemPrompt: serializeWebLlmToolPlanningPrompt(input.systemPrompt, input.tools),
@@ -442,6 +453,9 @@ async function generateLocalToolPlanningOutcome(input: {
 /** The display name of a local model whose larger window would hold a refused request, if one exists. */
 function findLocalModelHolding(shortfall: LocalContextWindowShortfall): string | undefined {
     return WEBLLM_MODELS.find((model) => {
+        if (!WEBLLM_PLANNING_MODEL_IDS.has(model.id)) {
+            return false;
+        }
         const windowTokens = WEBLLM_CONTEXT_WINDOW_TOKENS[model.id] ?? 0;
         return windowTokens > shortfall.windowTokens && windowTokens >= shortfall.neededTokens;
     })?.displayName;
@@ -493,7 +507,7 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
         if (backend === 'cloud') {
             return getCloudProviderInfo()?.model ?? 'cloud';
         }
-        return WEBLLM_MODEL_ID;
+        return getActiveModelId();
     }
 
     function getProviderName(backend: RunnableAiBackend): ModelProviderName {
@@ -773,15 +787,22 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                         configuredMaxOutputTokens: providerRequest.limits.maxOutputTokens,
                         signal,
                     });
-                    if (local.status === 'exceeded') {
-                        const reason = describeLocalContextWindowShortfall(
-                            local.shortfall,
-                            findLocalModelHolding(local.shortfall)
-                        );
+                    if (local.status !== 'generated') {
+                        const refusal =
+                            local.status === 'exceeded'
+                                ? {
+                                      code: LOCAL_CONTEXT_WINDOW_EXCEEDED_FAILURE_CODE,
+                                      reason: describeLocalContextWindowShortfall(
+                                          local.shortfall,
+                                          findLocalModelHolding(local.shortfall)
+                                      ),
+                                  }
+                                : { code: LOCAL_PLANNER_REQUIRED_FAILURE_CODE, reason: local.reason };
+                        const { reason } = refusal;
                         const refusedResult = providerSource.finish({
                             reason: 'error',
                             failure: {
-                                code: LOCAL_CONTEXT_WINDOW_EXCEEDED_FAILURE_CODE,
+                                code: refusal.code,
                                 retryable: false,
                                 safeMessage: reason,
                             },

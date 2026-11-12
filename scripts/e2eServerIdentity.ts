@@ -1,5 +1,4 @@
-import { realpathSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { sameCheckoutRoot } from './guardRecoveryProof.ts';
 
 import type { IncomingMessage, ServerResponse } from 'node:http';
 
@@ -55,6 +54,15 @@ export function e2eOrigin(port: number): string {
 export const SOURDAW_E2E_ROOT_HEADER = 'X-Sourdaw-Root';
 
 /**
+ * Env var through which the guard hands a recovery proof its per-run token,
+ * and the response header the server stamps it on. A leftover e2e server that
+ * binds after the unserved-origin check carries no token, so the guard's
+ * observation can tell this run's server apart from one it never started.
+ */
+export const SOURDAW_E2E_RUN_TOKEN_ENV = 'SOURDAW_E2E_RUN_TOKEN';
+export const SOURDAW_E2E_RUN_TOKEN_HEADER = 'X-Sourdaw-Run-Token';
+
+/**
  * The identity marker exists only when the dev server runs `--mode e2e`. A
  * human's plain `pnpm dev` and the WebGPU admission proof's server
  * deliberately run without that mode, so they carry no marker and reuse of
@@ -75,9 +83,12 @@ export type RootHeaderMiddleware = (request: IncomingMessage, response: ServerRe
  * and a checkout path such as an accented macOS home directory in its
  * default NFD spelling would make every e2e-mode response throw.
  */
-export function createSourdawRootHeaderMiddleware(root: string): RootHeaderMiddleware {
+export function createSourdawRootHeaderMiddleware(root: string, runToken?: string): RootHeaderMiddleware {
     return (_request, response, next) => {
         response.setHeader(SOURDAW_E2E_ROOT_HEADER, encodeURIComponent(root));
+        if (runToken !== undefined && runToken !== '') {
+            response.setHeader(SOURDAW_E2E_RUN_TOKEN_HEADER, runToken);
+        }
         next();
     };
 }
@@ -95,12 +106,23 @@ function decodeSourdawRoot(stamped: string): string {
     }
 }
 
+export type ServingCheckoutMarker = {
+    root: string | null;
+    runToken: string | null;
+};
+
+/** Read both serving-checkout markers; either is null when the server omits it. */
+export async function readServingCheckoutMarker(origin: string): Promise<ServingCheckoutMarker> {
+    const response = await fetch(origin);
+    const stampedRoot = response.headers.get(SOURDAW_E2E_ROOT_HEADER);
+    const runToken = response.headers.get(SOURDAW_E2E_RUN_TOKEN_HEADER);
+    await response.body?.cancel();
+    return { root: stampedRoot === null ? null : decodeSourdawRoot(stampedRoot), runToken };
+}
+
 /** Read the serving checkout's marker, or null when the server carries none. */
 export async function readServingCheckoutRoot(origin: string): Promise<string | null> {
-    const response = await fetch(origin);
-    const stamped = response.headers.get(SOURDAW_E2E_ROOT_HEADER);
-    await response.body?.cancel();
-    return stamped === null ? null : decodeSourdawRoot(stamped);
+    return (await readServingCheckoutMarker(origin)).root;
 }
 
 export async function originAnswers(origin: string): Promise<boolean> {
@@ -113,25 +135,10 @@ export async function originAnswers(origin: string): Promise<boolean> {
 }
 
 /**
- * Compare roots the way two spellings of one directory stay equal: a worktree
- * path can be reached through symlinked directories, and Vite reports its
- * cwd-lexical root while the importing module may hold the realpath. A false
- * mismatch here would abort every run, so both sides go through realpath
- * before comparison. The reported mismatch message keeps the raw strings.
- */
-function comparableRoot(root: string): string {
-    try {
-        return realpathSync(root);
-    } catch {
-        return resolve(root);
-    }
-}
-
-/**
  * Assert that the server at `origin` belongs to `expectedRoot` before this
  * run reuses it. A marker naming a different checkout aborts with both roots
- * and the origin, naming the port. A missing marker passes: only e2e-mode
- * servers carry one (see isSourdawE2eServeMode).
+ * and the origin, naming the port. A missing marker passes outside recovery:
+ * only e2e-mode servers carry one (see isSourdawE2eServeMode).
  */
 export async function assertServingCheckoutIdentity(origin: string, expectedRoot: string): Promise<void> {
     let servingRoot: string | null;
@@ -140,16 +147,12 @@ export async function assertServingCheckoutIdentity(origin: string, expectedRoot
     } catch (error) {
         throw new Error(`Cannot verify the serving checkout: no server answered at ${origin}.`, { cause: error });
     }
-    if (servingRoot === null) {
-        return;
+    if (servingRoot !== null && !sameCheckoutRoot(servingRoot, expectedRoot)) {
+        throw new Error(
+            `Refusing to reuse a dev server from another checkout: ${origin} serves ${servingRoot}, but this browser verification runs from ${expectedRoot}. ` +
+                `Stop that server or set ${SOURDAW_E2E_PORT_ENV} to a lane-unique port.`
+        );
     }
-    if (comparableRoot(servingRoot) === comparableRoot(expectedRoot)) {
-        return;
-    }
-    throw new Error(
-        `Refusing to reuse a dev server from another checkout: ${origin} serves ${servingRoot}, but this browser verification runs from ${expectedRoot}. ` +
-            `Stop that server or set ${SOURDAW_E2E_PORT_ENV} to a lane-unique port.`
-    );
 }
 
 /** The required affected shard already owns an e2e build and preview. */

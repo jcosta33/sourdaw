@@ -623,6 +623,28 @@ describe('already recovered landed receipt binds its modern dossier', { timeout:
         expect(readPullRequestMutationLockOid(root, pullRequestMutationLockRef(number), number)).toBeUndefined();
     });
 
+    it.each([
+        ['an unparseable', '{ not json'],
+        ['a non-object', '[]'],
+        ['a malformed generated list in a', JSON.stringify({ pr: number, headSha: head, generated: 'risk-plan.json' })],
+    ])(
+        'refuses a planless landed receipt over %s manifest instead of reporting it recovered',
+        async (_label, manifest) => {
+            const { root, ownerOid } = fixture({ planCarrying: false });
+            writeFileSync(join(bundlePath(root), 'manifest.json'), manifest);
+            const github = remote();
+
+            await expect(recover(root, ownerOid, github.gh)).rejects.toThrow(
+                /review-publication recovery (cannot read|found a malformed)/u
+            );
+
+            expect(console.log).not.toHaveBeenCalledWith(
+                `review-publication-lock-already-recovered:${number}:${ownerOid}`
+            );
+            expect(github.state.posts).toBe(0);
+        }
+    );
+
     it('replays a legacy version-1 landed receipt as already recovered without inspecting or binding', async () => {
         const { root, ownerOid } = fixture({ legacyReceipt: true });
         const before = readFileSync(join(bundlePath(root), 'dossier.json'), 'utf8');

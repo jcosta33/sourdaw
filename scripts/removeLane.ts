@@ -45,6 +45,7 @@ export type IssueComment = {
     authorNodeId: string | null;
     authorLogin: string | null;
     authorType: string | null;
+    createdAt: string | null;
 };
 
 export type ReplacementPullRequest = {
@@ -68,6 +69,7 @@ export type LaneRemovalPort = {
     pullRequests: (branch: string) => PullRequest[];
     commitPullRequests?: (head: string) => PullRequest[];
     comments: (number: number) => IssueComment[];
+    reopenedAt: (number: number) => string[];
     replacement: (number: number) => ReplacementPullRequest;
     lock: (path: string, reason?: string) => void;
     unlock: (path: string) => void;
@@ -82,8 +84,18 @@ export type ShellRunner = {
     run: (command: string, args: string[]) => void;
 };
 
+/**
+ * The lane's own state forbids removal: a cadence recheck, never evidence that inspection itself is
+ * unavailable. Plain errors stay inspection failures, so callers classify by kind, not by message.
+ */
+export class LaneSafetyRefusal extends Error {}
+
 function fail(message: string): never {
     throw new Error(message);
+}
+
+function refuse(message: string): never {
+    throw new LaneSafetyRefusal(message);
 }
 
 export function inside(parent: string, candidate: string): boolean {
@@ -160,14 +172,65 @@ function underProtectedAgentState(rawPath: string): boolean {
 }
 
 /**
+ * Credential file-name globs: the one source for both the path-component test below and the git
+ * pathspecs `listIgnored` uses to find credentials inside wholly ignored directories.
+ */
+const CREDENTIAL_GLOBS = [
+    '.env',
+    '.env.*',
+    '*.pem',
+    '*.key',
+    '*.p12',
+    '*.pfx',
+    '*.keystore',
+    '*.jks',
+    'id_rsa*',
+    'id_ed25519*',
+    'id_ecdsa*',
+    '.npmrc',
+    '.netrc',
+    '.pgpass',
+    'credentials*',
+];
+
+function globPattern(glob: string): string {
+    return glob
+        .split('*')
+        .map((literal) => literal.replaceAll(/[.+?^${}()|[\]\\]/g, '\\$&'))
+        .join('.*');
+}
+
+const CREDENTIAL_NAME = new RegExp(`^(?:${CREDENTIAL_GLOBS.map(globPattern).join('|')})$`, 'i');
+
+/** Files named like a credential, or under a directory named like one; `node_modules` is skipped. */
+const CREDENTIAL_PATHSPECS = [
+    ...CREDENTIAL_GLOBS.flatMap((glob) => [`:(glob,icase)**/${glob}`, `:(glob,icase)**/${glob}/**`]),
+    ':(exclude,glob)**/node_modules/**',
+];
+
+/** A credential is never regenerable output, whatever build-product directory it sits under. */
+function credentialShaped(rawPath: string): boolean {
+    return rawPath.split('/').some((component) => CREDENTIAL_NAME.test(component));
+}
+
+/**
  * The one shared definition of ignored output that is safe to discard: regenerable build and test
  * products, nothing else. Removal refuses a lane carrying ignored data that is not this, and
  * pruning (`lane:prune`) deletes exactly what this admits — the same contract read from both ends.
+ * A credential-shaped name is never admitted, even inside a build-product directory.
+ *
+ * Git reports a wholly ignored directory as one entry, so `listIgnored` adds every ignored file
+ * named like a credential beneath one. It deliberately skips `node_modules` subtrees: packages
+ * routinely ship `*.pem` and `*.key` fixtures, and refusing them would strand almost every lane, so
+ * a credential placed inside `node_modules` is not protected.
  */
 export function disposableIgnored(path: string): boolean {
     // Git's `-z` pathname output is verbatim. Its slash separators define path components; a
     // backslash in an ignored path is part of a component and must not create a disposable match.
     const rawPath = path;
+    if (credentialShaped(rawPath)) {
+        return false;
+    }
     // The explicit `.agents/` admissions run first: everything else under `.agents/` is protected
     // agent state the component regex below must never reach (#5560).
     if (
@@ -186,6 +249,26 @@ export function disposableIgnored(path: string): boolean {
         /^crates\/sourdaw-native\/[^/]+\.node$/.test(rawPath) ||
         /^crates\/sourdaw-native\/sourdaw-plugin-scan-helper(?:\.exe)?$/.test(rawPath)
     );
+}
+
+function ignoredListing(path: string, shell: Pick<ShellRunner, 'capture'>, args: string[]): string[] {
+    return shell
+        .capture('git', ['-C', path, 'ls-files', '--others', '--ignored', '--exclude-standard', ...args], {
+            preserveStdout: true,
+        })
+        .split('\0')
+        .filter((candidate) => candidate !== '');
+}
+
+/**
+ * Ignored paths as removal and pruning judge them. `-z` is the byte-faithful form: no quoting, so an
+ * unusual path can never be misread. `--directory` keeps a wholly ignored build tree to one entry;
+ * the second listing names the credential-shaped files that one entry would otherwise hide.
+ */
+export function listIgnored(path: string, shell: Pick<ShellRunner, 'capture'>): string[] {
+    const entries = ignoredListing(path, shell, ['--directory', '-z']);
+    const credentials = ignoredListing(path, shell, ['-z', '--', ...CREDENTIAL_PATHSPECS]);
+    return [...new Set([...entries, ...credentials])];
 }
 
 export function parseWorktrees(value: string): Worktree[] {
@@ -227,27 +310,27 @@ function locateAgentWorktree(target: string, verb: string, port: LaneRemovalPort
         fail(`${target} is not a registered worktree`);
     }
     if (matches.length !== 1) {
-        fail(`${target} does not identify one registered worktree`);
+        refuse(`${target} does not identify one registered worktree`);
     }
     const [lane] = matches;
     if (lane === undefined) {
-        fail(`${target} does not identify one registered worktree`);
+        refuse(`${target} does not identify one registered worktree`);
     }
     if (canonicalTarget === canonicalRoot) {
-        fail(`refusing to ${verb} the primary worktree`);
+        refuse(`refusing to ${verb} the primary worktree`);
     }
     const agentRoot = canonicalPath(join(canonicalRoot, '.agents', 'worktrees'));
     if (
         (canonicalTarget === agentRoot || !inside(agentRoot, canonicalTarget)) &&
         !(lane.detached && lane.branch === undefined && isExpectedReviewLanePath(canonicalTarget, canonicalRoot))
     ) {
-        fail(`${target} is not an agent worktree`);
+        refuse(`${target} is not an agent worktree`);
     }
     if (inside(canonicalTarget, canonicalPath(port.currentDirectory()))) {
-        fail(`refusing to ${verb} the active worktree`);
+        refuse(`refusing to ${verb} the active worktree`);
     }
     if (port.active(target)) {
-        fail('worktree is active in another process');
+        refuse('worktree is active in another process');
     }
     return lane;
 }
@@ -269,7 +352,7 @@ function admitLaneLock(target: string, lane: Worktree, port: LaneRemovalPort, re
     if (lane.lockReason === AUTHOR_LOCK_REASON) {
         return lane;
     }
-    return fail('worktree is locked or shared');
+    return refuse('worktree is locked or shared');
 }
 
 function identifyLane(target: string, port: LaneRemovalPort): Worktree {
@@ -280,7 +363,7 @@ function identifyLane(target: string, port: LaneRemovalPort): Worktree {
     }
     const isReviewLane = lane.detached && lane.branch === undefined && isExpectedReviewLanePath(lane.path, root.path);
     if (lane.bare || lane.prunable || (!isReviewLane && (lane.detached || lane.branch === undefined))) {
-        fail('worktree ownership is unknown');
+        refuse('worktree ownership is unknown');
     }
     return admitLaneLock(target, lane, port, () => identifyLane(target, port));
 }
@@ -292,7 +375,7 @@ function identifyLane(target: string, port: LaneRemovalPort): Worktree {
 function identifyStrandLane(target: string, port: LaneRemovalPort): Worktree {
     const lane = locateAgentWorktree(target, 'strand', port);
     if (lane.bare || lane.prunable) {
-        fail('worktree holds no directory to strand');
+        refuse('worktree holds no directory to strand');
     }
     return admitLaneLock(target, lane, port, () => identifyStrandLane(target, port));
 }
@@ -328,9 +411,25 @@ function restPullRequestState(state: unknown, mergedAt: unknown): string {
     return normalized === PR_STATE.CLOSED && mergedTimestamp(mergedAt) !== null ? PR_STATE.MERGED : normalized;
 }
 
+function assertNotReopenedSinceReceipt(number: number, receiptCreatedAt: string | null, port: LaneRemovalPort): void {
+    const receiptAt = mergedTimestamp(receiptCreatedAt);
+    if (receiptAt === null) {
+        refuse(`PR #${number} supersession receipt has no readable timestamp`);
+    }
+    for (const reopenedAt of port.reopenedAt(number)) {
+        const reopened = mergedTimestamp(reopenedAt);
+        if (reopened === null) {
+            refuse(`PR #${number} reopen history has an unreadable timestamp`);
+        }
+        if (Date.parse(reopened) >= Date.parse(receiptAt)) {
+            refuse(`PR #${number} was reopened after its supersession receipt`);
+        }
+    }
+}
+
 function assertMainMergeBase(number: number, baseRefName: string | null): void {
     if (baseRefName !== REQUIRED_BASE_BRANCH) {
-        fail(`PR #${number} is not proven merged into ${REQUIRED_BASE_BRANCH}`);
+        refuse(`PR #${number} is not proven merged into ${REQUIRED_BASE_BRANCH}`);
     }
 }
 
@@ -350,24 +449,34 @@ function assertMainMergeBase(number: number, baseRefName: string | null): void {
  * refused. Reading the receipt back is not enough on its own: it says where the work went, not
  * that it arrived, so the named replacement must itself be merged before this lane counts as
  * spent.
+ *
+ * What this checks beyond the receipt is only that the pull request was not reopened at or after
+ * the receipt was posted, and that the receipt's time is readable. GitHub cannot move a closed pull
+ * request's head without a reopen, so that rules out pushes after closing. It does not cover the
+ * window between posting the receipt and closing, while the pull request is still open: that rests
+ * on `pr:supersede` verifying the head after it closes the pull request.
  */
 function supersededReplacement(number: number, port: LaneRemovalPort): { number: number; mergedAt: string } {
     const receipts = port
         .comments(number)
         .filter((comment) => comment.authorType === 'Bot' && isAuthorBotNodeId(comment.authorNodeId))
-        .map((comment) => supersessionReplacement(comment.body))
-        .filter((parsed): parsed is number => parsed !== undefined);
-    const [replacement] = receipts;
-    if (receipts.length !== 1 || replacement === undefined) {
-        fail(`PR #${number} is closed without a supersession receipt`);
+        .flatMap((comment) => {
+            const replacement = supersessionReplacement(comment.body);
+            return replacement === undefined ? [] : [{ replacement, createdAt: comment.createdAt }];
+        });
+    const [receipt] = receipts;
+    if (receipts.length !== 1 || receipt === undefined) {
+        refuse(`PR #${number} is closed without a supersession receipt`);
     }
+    const { replacement } = receipt;
     if (replacement === number) {
-        fail(`PR #${number} names itself as its replacement`);
+        refuse(`PR #${number} names itself as its replacement`);
     }
+    assertNotReopenedSinceReceipt(number, receipt.createdAt, port);
     const landed = port.replacement(replacement);
     const mergedAt = mergedTimestamp(landed.mergedAt);
     if (landed.number !== replacement || landed.state !== PR_STATE.MERGED || mergedAt === null) {
-        fail(`PR #${number} was superseded by #${replacement}, which is not merged`);
+        refuse(`PR #${number} was superseded by #${replacement}, which is not merged`);
     }
     assertMainMergeBase(landed.number, landed.baseRefName);
     return { number: replacement, mergedAt };
@@ -392,55 +501,55 @@ function validateOwnership(
         current.prunable ||
         !current.locked
     ) {
-        fail('worktree identity changed during removal');
+        refuse('worktree identity changed during removal');
     }
     if (port.dirty(target)) {
-        fail('worktree is dirty');
+        refuse('worktree is dirty');
     }
     if (port.active(target)) {
-        fail('worktree is active in another process');
+        refuse('worktree is active in another process');
     }
     const ignored = port.ignored(target);
     const unsafeIgnored = ignored.filter((path) => !disposableIgnored(path));
     if (unsafeIgnored.length > 0) {
-        fail(`worktree contains ignored data: ${unsafeIgnored.slice(0, 3).join(', ')}`);
+        refuse(`worktree contains ignored data: ${unsafeIgnored.slice(0, 3).join(', ')}`);
     }
     const operation = port.operation(target);
     if (operation !== undefined) {
-        fail(`worktree has an active ${operation}`);
+        refuse(`worktree has an active ${operation}`);
     }
 
     if (expected.detached) {
         const root = port.worktrees()[0];
         if (root === undefined || !isExpectedReviewLanePath(target, root.path)) {
-            fail('worktree ownership is unknown');
+            refuse('worktree ownership is unknown');
         }
         const queryPullRequests = port.commitPullRequests ?? port.pullRequests;
         let candidates = queryPullRequests(expected.head).filter((pr) => pr.headRefOid === expected.head);
         if (candidates.length === 0) {
-            fail('detached review lane head ownership is unproven');
+            refuse('detached review lane head ownership is unproven');
         }
         const lanePr = parseReviewLanePrNumber(basename(target));
         if (lanePr !== undefined) {
             candidates = candidates.filter((pr) => pr.number === lanePr);
             if (candidates.length === 0) {
-                fail(`PR head ${expected.head} does not match lane PR #${lanePr}`);
+                refuse(`PR head ${expected.head} does not match lane PR #${lanePr}`);
             }
         }
         if (candidates.length !== 1) {
-            fail(`detached review lane head ${expected.head} does not identify one pull request`);
+            refuse(`detached review lane head ${expected.head} does not identify one pull request`);
         }
         const [pullRequest] = candidates;
         if (pullRequest === undefined) {
-            fail(`detached review lane head ${expected.head} does not identify one pull request`);
+            refuse(`detached review lane head ${expected.head} does not identify one pull request`);
         }
         if (pullRequest.headRepository?.toLowerCase() !== repository.toLowerCase()) {
-            fail(`PR #${pullRequest.number} is foreign`);
+            refuse(`PR #${pullRequest.number} is foreign`);
         }
         const mergedAt = mergedTimestamp(pullRequest.mergedAt);
         const merged = pullRequest.state === PR_STATE.MERGED && mergedAt !== null;
         if (!merged) {
-            fail(
+            refuse(
                 pullRequest.state === PR_STATE.OPEN
                     ? `PR #${pullRequest.number} is still active`
                     : `PR #${pullRequest.number} is not merged`
@@ -448,7 +557,7 @@ function validateOwnership(
         }
         assertMainMergeBase(pullRequest.number, pullRequest.baseRefName);
         if (port.dirty(target) || port.active(target)) {
-            fail('worktree changed during removal');
+            refuse('worktree changed during removal');
         }
         return {
             head: current.head,
@@ -461,18 +570,18 @@ function validateOwnership(
 
     const branch = expected.branch;
     if (branch === undefined) {
-        fail('worktree ownership is unknown');
+        refuse('worktree ownership is unknown');
     }
     const pullRequests = port.pullRequests(branch);
     if (pullRequests.length !== 1) {
-        fail(`branch ${branch} does not identify one pull request`);
+        refuse(`branch ${branch} does not identify one pull request`);
     }
     const pullRequest = pullRequests[0];
     if (pullRequest === undefined) {
-        fail(`branch ${branch} has no pull request`);
+        refuse(`branch ${branch} has no pull request`);
     }
     if (pullRequest.headRepository?.toLowerCase() !== repository.toLowerCase()) {
-        fail(`PR #${pullRequest.number} is foreign`);
+        refuse(`PR #${pullRequest.number} is foreign`);
     }
     const mergedAt = mergedTimestamp(pullRequest.mergedAt);
     const merged = pullRequest.state === PR_STATE.MERGED && mergedAt !== null;
@@ -483,7 +592,7 @@ function validateOwnership(
     // a draft pull request against a genuinely merged replacement, and that lane must still be able
     // to prove it through the receipt path below.
     if (!merged && pullRequest.state !== PR_STATE.CLOSED) {
-        fail(`PR #${pullRequest.number} is still active`);
+        refuse(`PR #${pullRequest.number} is still active`);
     }
     if (merged) {
         assertMainMergeBase(pullRequest.number, pullRequest.baseRefName);
@@ -491,7 +600,7 @@ function validateOwnership(
     const replacement = merged ? undefined : supersededReplacement(pullRequest.number, port);
     const landedAt = replacement?.mergedAt ?? mergedAt;
     if (landedAt === null) {
-        fail(`PR #${pullRequest.number} merge completion is unproven`);
+        refuse(`PR #${pullRequest.number} merge completion is unproven`);
     }
     const remoteHead = port.remoteHead(branch);
     if (
@@ -499,10 +608,10 @@ function validateOwnership(
         pullRequest.headRefOid !== expected.head ||
         (remoteHead !== undefined && remoteHead !== expected.head)
     ) {
-        fail(`branch ${branch} head ownership is unproven`);
+        refuse(`branch ${branch} head ownership is unproven`);
     }
     if (port.dirty(target) || port.active(target)) {
-        fail('worktree changed during removal');
+        refuse('worktree changed during removal');
     }
     return {
         head: current.head,
@@ -553,7 +662,7 @@ function assertLocalRemovalState(target: string, expected: Worktree, port: LaneR
         current[0]?.detached !== expected.detached ||
         current[0]?.path !== expected.path
     ) {
-        fail('worktree identity changed during removal');
+        refuse('worktree identity changed during removal');
     }
     if (
         port.dirty(target) ||
@@ -561,7 +670,26 @@ function assertLocalRemovalState(target: string, expected: Worktree, port: LaneR
         port.operation(target) !== undefined ||
         port.ignored(target).some((path) => !disposableIgnored(path))
     ) {
-        fail('worktree changed during removal');
+        refuse('worktree changed during removal');
+    }
+}
+
+/**
+ * The author lock is dropped just before the native removal; when that removal fails and leaves the
+ * same lane behind unlocked, the owner's lock goes back on rather than leave the lane unclaimed.
+ */
+function restoreAuthorLock(target: string, lane: Worktree, port: LaneRemovalPort, expected?: LaneIdentity): void {
+    const remaining = matchingWorktrees(target, port.worktrees());
+    const [survivor] = remaining;
+    if (
+        remaining.length === 1 &&
+        survivor !== undefined &&
+        survivor.head === lane.head &&
+        survivor.branch === lane.branch &&
+        !survivor.locked &&
+        (expected === undefined || sameLaneIdentity(expected, laneIdentity(survivor)))
+    ) {
+        port.lock(target, AUTHOR_LOCK_REASON);
     }
 }
 
@@ -570,7 +698,7 @@ export function removeLane(target: string, port: LaneRemovalPort, expected?: Lan
     const repository = port.repository();
     const lane = identifyLane(target, port);
     if (expected !== undefined && !sameLaneIdentity(expected, laneIdentity(lane))) {
-        fail('queued worktree identity changed');
+        refuse('queued worktree identity changed');
     }
     const laneName = basename(target);
     const authorLocked = lane.locked && lane.lockReason === AUTHOR_LOCK_REASON;
@@ -582,11 +710,11 @@ export function removeLane(target: string, port: LaneRemovalPort, expected?: Lan
         const initial = validateOwnership(target, lane, repository, port);
         const final = validateOwnership(target, lane, repository, port);
         if (JSON.stringify(initial) !== JSON.stringify(final)) {
-            fail('worktree authority changed during removal');
+            refuse('worktree authority changed during removal');
         }
         assertLocalRemovalState(target, lane, port);
         if (expected !== undefined && !sameLaneIdentity(expected, laneIdentity(lane))) {
-            fail('queued worktree identity changed');
+            refuse('queued worktree identity changed');
         }
         port.unlock(target);
         releaseOnFailure = false;
@@ -594,20 +722,12 @@ export function removeLane(target: string, port: LaneRemovalPort, expected?: Lan
             // Native, deliberately without --force: Git remains the last dirt/submodule gate.
             assertLocalRemovalState(target, lane, port);
             if (expected !== undefined && !sameLaneIdentity(expected, laneIdentity(lane))) {
-                fail('queued worktree identity changed');
+                refuse('queued worktree identity changed');
             }
             port.remove(target);
         } catch (error) {
-            const remaining = matchingWorktrees(target, port.worktrees());
-            if (
-                authorLocked &&
-                remaining.length === 1 &&
-                remaining[0]?.head === lane.head &&
-                remaining[0]?.branch === lane.branch &&
-                !remaining[0]?.locked &&
-                (expected === undefined || sameLaneIdentity(expected, laneIdentity(remaining[0])))
-            ) {
-                port.lock(target, AUTHOR_LOCK_REASON);
+            if (authorLocked) {
+                restoreAuthorLock(target, lane, port, expected);
             }
             throw error;
         }
@@ -634,9 +754,20 @@ export const STRAND_USAGE = 'usage: pnpm lane:strand <worktree-path> --reason "<
  */
 export const STRAND_RECEIPTS_DIR = '.agents/lane-strands';
 
+/**
+ * A recorded SHA alone recovers nothing once its last ref is gone: an unpushed or detached commit
+ * becomes unreachable when the worktree and branch are deleted, and `git gc` may prune it. This ref
+ * in the shared repository keeps the stranded head reachable until a human deletes it.
+ */
+export function strandRef(laneName: string): string {
+    return `refs/sourdaw/strands/${laneName}`;
+}
+
 export type LaneStrandPort = LaneRemovalPort & {
     readReceipt: (laneName: string) => string | undefined;
     writeReceipt: (laneName: string, body: string) => void;
+    readRef: (ref: string) => string | undefined;
+    createRef: (ref: string, head: string) => void;
     deleteBranch: (branch: string) => void;
     log: (message: string) => void;
 };
@@ -686,22 +817,22 @@ function validateStrand(target: string, expected: Worktree, port: LaneRemovalPor
         current.prunable ||
         !current.locked
     ) {
-        fail('worktree identity changed during stranding');
+        refuse('worktree identity changed during stranding');
     }
     if (port.dirty(target)) {
-        fail('worktree is dirty');
+        refuse('worktree is dirty');
     }
     if (port.active(target)) {
-        fail('worktree is active in another process');
+        refuse('worktree is active in another process');
     }
     const ignored = port.ignored(target);
     const unsafeIgnored = ignored.filter((path) => !disposableIgnored(path));
     if (unsafeIgnored.length > 0) {
-        fail(`worktree contains ignored data: ${unsafeIgnored.slice(0, 3).join(', ')}`);
+        refuse(`worktree contains ignored data: ${unsafeIgnored.slice(0, 3).join(', ')}`);
     }
     const operation = port.operation(target);
     if (operation !== undefined) {
-        fail(`worktree has an active ${operation}`);
+        refuse(`worktree has an active ${operation}`);
     }
     if (expected.branch === undefined) {
         return { head: current.head, branch: null, ignored: [...ignored].sort() };
@@ -710,10 +841,10 @@ function validateStrand(target: string, expected: Worktree, port: LaneRemovalPor
         .pullRequests(expected.branch)
         .find((pullRequest) => pullRequest.state !== PR_STATE.MERGED && pullRequest.state !== PR_STATE.CLOSED);
     if (open !== undefined) {
-        fail(`PR #${open.number} is still active`);
+        refuse(`PR #${open.number} is still active`);
     }
     if (port.dirty(target) || port.active(target)) {
-        fail('worktree changed during stranding');
+        refuse('worktree changed during stranding');
     }
     return { head: current.head, branch: expected.branch, ignored: [...ignored].sort() };
 }
@@ -750,13 +881,28 @@ function refuseReceiptConflict(laneName: string, head: string, port: LaneStrandP
 }
 
 /**
+ * Create-only: the same head is the idempotent retry, any other head belongs to an earlier strand
+ * of a reused lane name and is never moved.
+ */
+function preserveStrandedHead(ref: string, head: string, port: LaneStrandPort): void {
+    const existing = port.readRef(ref);
+    if (existing === head) {
+        return;
+    }
+    if (existing !== undefined) {
+        fail(`strand ref ${ref} already records head ${existing}; refusing to move it for head ${head}`);
+    }
+    port.createRef(ref, head);
+}
+
+/**
  * The receipted exit for lanes the strict gate can never prove: a branch whose head ownership is
  * unproven (late push), a closed pull request without a supersession receipt, a lane with no
  * branch at all. The strict gates stay untouched — this path is weaker by design, and the reason
- * the caller must supply is the price: it is written, with the branch and head, into a receipt
- * under the primary root before anything is destroyed (the `pr:supersede` ordering), so the
- * abandonment is auditable and the branch tip stays recoverable from the recorded head after the
- * force-delete.
+ * the caller must supply is the price. Before anything is destroyed (the `pr:supersede` ordering),
+ * the head is pinned under `strandRef(laneName)` and the reason, branch, head and ref are written
+ * into a receipt under the primary root, so the abandonment is auditable and the tip — pushed or
+ * not, on a branch or detached — stays reachable through that ref after the force-delete.
  */
 export function strandLane(target: string, reason: string, port: LaneStrandPort): void {
     port.fetch();
@@ -770,16 +916,19 @@ export function strandLane(target: string, reason: string, port: LaneStrandPort)
         const initial = validateStrand(target, lane, port);
         const final = validateStrand(target, lane, port);
         if (JSON.stringify(initial) !== JSON.stringify(final)) {
-            fail('worktree authority changed during stranding');
+            refuse('worktree authority changed during stranding');
         }
         const laneName = basename(target);
         refuseReceiptConflict(laneName, final.head, port);
+        const ref = strandRef(laneName);
+        preserveStrandedHead(ref, final.head, port);
         const receipt = `${JSON.stringify(
             {
                 lane: laneName,
                 path: target,
                 branch: final.branch,
                 head: final.head,
+                ref,
                 reason,
                 strandedAt: new Date().toISOString(),
             },
@@ -789,12 +938,19 @@ export function strandLane(target: string, reason: string, port: LaneStrandPort)
         port.writeReceipt(laneName, receipt);
         port.unlock(target);
         releaseOnFailure = false;
-        port.remove(target);
+        try {
+            port.remove(target);
+        } catch (error) {
+            if (authorLocked) {
+                restoreAuthorLock(target, lane, port);
+            }
+            throw error;
+        }
         if (final.branch !== null) {
             port.deleteBranch(final.branch);
         }
         port.clearGuardFailure(laneName);
-        port.log(`stranded ${laneName}; receipt in ${STRAND_RECEIPTS_DIR}/${laneName}.json`);
+        port.log(`stranded ${laneName}; receipt in ${STRAND_RECEIPTS_DIR}/${laneName}.json, head kept at ${ref}`);
     } finally {
         if (releaseOnFailure) {
             port.unlock(target);
@@ -881,15 +1037,7 @@ export function shellPort(shell: ShellRunner = { capture, run }, root?: string):
             }
         },
         dirty: (path) => shell.capture('git', ['-C', path, 'status', '--porcelain=v1', '--untracked-files=all']) !== '',
-        ignored: (path) =>
-            shell
-                .capture(
-                    'git',
-                    ['-C', path, 'ls-files', '--others', '--ignored', '--exclude-standard', '--directory', '-z'],
-                    { preserveStdout: true }
-                )
-                .split('\0')
-                .filter((candidate) => candidate !== ''),
+        ignored: (path) => listIgnored(path, shell),
         operation: (path) => {
             const candidates = [
                 ['index update', 'index.lock'],
@@ -997,7 +1145,13 @@ export function shellPort(shell: ShellRunner = { capture, run }, root?: string):
         },
         comments: (number) => {
             const pages = parseJson<
-                Array<Array<{ body: string; user: { node_id: string; login: string; type: string } | null }>>
+                Array<
+                    Array<{
+                        body: string;
+                        created_at?: unknown;
+                        user: { node_id: string; login: string; type: string } | null;
+                    }>
+                >
             >(
                 shell.capture('gh', [
                     'api',
@@ -1012,7 +1166,23 @@ export function shellPort(shell: ShellRunner = { capture, run }, root?: string):
                 authorNodeId: comment.user?.node_id ?? null,
                 authorLogin: comment.user?.login ?? null,
                 authorType: comment.user?.type ?? null,
+                createdAt: typeof comment.created_at === 'string' ? comment.created_at : null,
             }));
+        },
+        reopenedAt: (number) => {
+            const pages = parseJson<Array<Array<{ event?: unknown; created_at?: unknown }>>>(
+                shell.capture('gh', [
+                    'api',
+                    '--paginate',
+                    '--slurp',
+                    `repos/${repository()}/issues/${number}/events?per_page=100`,
+                ]),
+                'pull-request event query'
+            );
+            return pages
+                .flat()
+                .filter((event) => event.event === 'reopened')
+                .map((event) => (typeof event.created_at === 'string' ? event.created_at : ''));
         },
         replacement: (number) => {
             const pullRequest = parseJson<{
@@ -1041,6 +1211,15 @@ export function shellPort(shell: ShellRunner = { capture, run }, root?: string):
             mkdirSync(directory, { recursive: true });
             writeFileSync(join(directory, `${laneName}.json`), body);
         },
+        readRef: (ref) => {
+            const heads = shell.capture('git', ['for-each-ref', '--format=%(objectname)', ref]);
+            if (heads.includes('\n')) {
+                fail(`strand ref ${ref} does not name one ref`);
+            }
+            return heads === '' ? undefined : heads;
+        },
+        // An empty old value makes the update create-only: it fails if the ref appeared meanwhile.
+        createRef: (ref, head) => shell.run('git', ['update-ref', ref, head, '']),
         deleteBranch: (branch) => shell.run('git', ['branch', '-D', branch]),
         clearGuardFailure: (laneName) => clearGuardFailureReceipt(primaryRoot, laneName),
         log: (message) => {
@@ -1056,18 +1235,20 @@ function main(): number {
             console.log('Usage: node scripts/removeLane.ts <worktree-path>');
             console.log('       pnpm lane:strand <worktree-path> --reason "<why this lane is being abandoned>"');
             console.log('');
-            console.log('Removes a spent agent worktree. The lane must be clean, unlocked, idle, and');
-            console.log('hold the head of exactly one pull request in this repository that either');
-            console.log('merged, or was superseded by a pull request that merged.');
+            console.log('Removes a spent agent worktree. The lane must be clean, idle, unlocked or');
+            console.log('holding only its author lock, and hold the head of exactly one pull request');
+            console.log('in this repository that either merged, or was superseded by a pull request');
+            console.log('that merged.');
             console.log('');
             console.log('--strand is the receipted exit for lanes that gate can never prove (unproven');
             console.log('head ownership, a closed pull request without a supersession receipt, no');
             console.log('branch at all). It refuses a lane holding an open pull request or uncommitted');
-            console.log('work, records a receipt (reason, date, branch, head) under');
-            console.log('.agents/lane-strands/ in the primary checkout, then removes the worktree and');
-            console.log('force-deletes the branch; the recorded head keeps the tip recoverable. A');
-            console.log('receipt already naming the same lane with a different head is refused, never');
-            console.log('overwritten.');
+            console.log('work, pins the head at refs/sourdaw/strands/<lane>, records a receipt');
+            console.log('(reason, date, branch, head, ref) under .agents/lane-strands/ in the primary');
+            console.log('checkout, then removes the worktree and force-deletes the branch; the ref keeps');
+            console.log('the tip reachable (git branch <name> refs/sourdaw/strands/<lane> revives it).');
+            console.log('A receipt or ref already naming the same lane with a different head is');
+            console.log('refused, never overwritten.');
             return 0;
         }
         const cwd = process.cwd();

@@ -42,6 +42,8 @@ describe('transportCommands', () => {
             { id: 'go-to-end', label: 'Go to End', category: 'Transport' },
             { id: 'next-marker', label: 'Next Marker', category: 'Transport' },
             { id: 'prev-marker', label: 'Previous Marker', category: 'Transport' },
+            { id: 'next-section', label: 'Next Section', category: 'Transport' },
+            { id: 'prev-section', label: 'Previous Section', category: 'Transport' },
             { id: 'panic-all-notes', label: 'MIDI Panic — All Notes Off', category: 'Transport' },
         ]);
     });
@@ -60,6 +62,8 @@ describe('transportCommands', () => {
             { id: 'toggle-recording', action: { type: 'toggleRecording' } },
             { id: 'toggle-loop', action: { type: 'toggleLoop' } },
             { id: 'toggle-metronome', action: { type: 'toggleMetronome' } },
+            { id: 'next-section', action: { type: 'navigateSection', payload: { direction: 'next' } } },
+            { id: 'prev-section', action: { type: 'navigateSection', payload: { direction: 'previous' } } },
         ];
 
         for (const { id, action } of staticEntries) {

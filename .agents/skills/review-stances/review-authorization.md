@@ -8,7 +8,7 @@ entry, never a fixture that supplies a preselected binding, and require refusal 
 
 ## Standing probes
 
-1. **A lost generated artifact must not downgrade a modern bundle (#4573 `f32b620c10`).** The delivery reader
+1. **A lost generated artifact must not downgrade a modern bundle (#4573).** The delivery reader
    returned `legacy` whenever `risk-plan.json` was absent although `review:prepare` had recorded it in
    `manifest.json.generated`, disabling the dossier requirement; the PR's tests supplied a chosen binding through
    `fakePort`. Trace every generated bundle file from `review:prepare` through the manifest and every consumer that
@@ -16,9 +16,10 @@ entry, never a fixture that supplies a preselected binding, and require refusal 
    `risk-plan.json`) while leaving the manifest and other caller records intact and call the production reader:
    refusal before a remote write. A malformed or missing manifest and a surviving dossier with no plan also refuse,
    while a complete planned bundle returns the bound authorization and its pre-authorization dossier digest.
+   Restoring the absent-plan `legacy` return must fail `scripts/__tests__/deliveryRiskPlanLoss.spec.ts`.
 2. **Manifest provenance: the oldest real shape is the positive control (#5057).** The original `prepareReview`
-   producer at `6517347907b1d255aca9eff0545b488a824e95d6` wrote only `{ pr, baseSha, headSha }`, and the first
-   repair's reader rejected that genuine pre-plan bundle because its control still supplied `generated`. Keep the
+   producer wrote only `{ pr, baseSha, headSha }`, and a reader whose control still supplied `generated` rejected
+   that genuine pre-plan bundle. Keep the
    exact three-field manifest as a positive control beside later pre-contract manifests whose `generated` list
    excludes the new artifact; make each manifest absent, unreadable, malformed or bound to another head. Unknown
    provenance never becomes legacy authority.
@@ -37,11 +38,12 @@ entry, never a fixture that supplies a preselected binding, and require refusal 
    may bind its publication (byte-identical replay, no second POST) but authorizes delivery only while the latest
    independent review is that same APPROVED review ID with no unresolved threads. Cover a later change request,
    comment, dismissal and different approval ID; keep the unchanged latest approval as the positive control.
-6. **A retired mutation command refuses through its real trusted entry (#4411).** #4411 kept `review:resolve` for
-   legacy roots but never established legacy eligibility, and its tests exercised it as a normal author mutation, so
-   a modern finding still accepted author `Done` and resolution. Run the actual trusted CLI entry with a modern
-   OPEN/current-head finding and sentinel authentication and GitHub ports: zero authentication, GitHub reads, replies
-   and resolutions; restoring the old implementation must fail. An old PR number, a bare author `Done` or a missing
+6. **A retired mutation command refuses through its real trusted entry (#4411).** Keeping `review:resolve` for
+   legacy roots without establishing legacy eligibility, and testing it as a normal author mutation, let a modern
+   finding accept author `Done` and resolution. Drive `runResolveReviewThreadCli` in `scripts/resolveThread.ts`
+   (the entry `scripts/trustedGithubWriteBootstrap.ts` routes `review:resolve` to) with a modern OPEN/current-head
+   finding and sentinel authentication and GitHub ports: zero authentication, GitHub reads, replies and
+   resolutions; restoring the old implementation must fail `scripts/__tests__/resolveThread.spec.ts`. An old PR number, a bare author `Done` or a missing
    bundle artifact never restores author-side resolution. Keep historical repair-record readers separate from retired
    mutation authority.
 7. **Receipt recovery re-establishes publication authority (#5111).** Receipt shape and exact owner alone did not
@@ -63,15 +65,18 @@ entry, never a fixture that supplies a preselected binding, and require refusal 
    an approved head; every fixture shared one `databaseId`. List the newest review first with the earliest timestamp
    and older ones after it with later timestamps, and require the newest by `databaseId` to decide; pair the inverse
    (an older APPROVE listed last behind a newer CHANGES_REQUESTED must not read as approved), and require a null or
-   duplicate reviewer id to refuse instead of guessing.
-10. **Delivery authority must come from the final PR state (#4586, extended by #5032; 2026-10-09).** #4586 appended
-    `delivery-authorized` without a final PR state and head read; #5032's recovery stance covered a head already
-    moved at inspection, not a merge, close or move after both inspections. Hold the landed review exact across both
+   duplicate reviewer id to refuse instead of guessing. Reading the last connection node must fail
+   `scripts/__tests__/orchestratorReviewState.spec.ts` or `scripts/__tests__/deliverPullRequest.spec.ts`.
+10. **Delivery authority must come from the final PR state (#4586, #5032).** Appending `delivery-authorized`
+    without a final PR state and head read admits a merge, close or move after both inspections; a recovery stance
+    covering a head already moved at inspection does not reach it. Hold the landed review exact across both
     inspections, change the PR state or head before the final authorization read, and require a publication-only
     dossier with zero review POSTs; keep an open, unchanged PR as the positive authorization control.
-11. **A minted token must admit every mutation its script performs (#4411, 2026-09-19).** `review:confirm` resolved
-    threads through a reviewer token minted `contents: read`; GitHub gates `resolveReviewThread` on repository write
-    access, so every confirm failed with "Resource not accessible by integration" and the universal author-side
-    `Done` fallback masked it. For every GitHub mutation a shipped script performs, prove the minted permission set
-    admits that mutation class: resolve or create one real thread under the minted identity in a fixture repository
-    and require the mutation to succeed before the flow lands.
+11. **A minted token must admit every mutation its script performs (#4411).** Runs: orchestrator. `review:confirm`
+    resolved threads through a reviewer token minted `contents: read`; GitHub gates `resolveReviewThread` on
+    repository write access, so every confirm failed with "Resource not accessible by integration" and the
+    universal author-side `Done` fallback masked it. For every GitHub mutation a shipped script performs, the
+    orchestrator proves the minted permission set admits that mutation class by resolving or creating one real
+    thread under the minted identity in a fixture repository before the flow lands. The reviewer checks at the
+    fixed commit that each mutation the diff adds is listed beside a permission in the minting request whose
+    documented GitHub scope admits it.

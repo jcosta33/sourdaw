@@ -19,18 +19,30 @@ concrete break or none.
    with a launcher-resolved POSIX `ps`, and observe the acquired process identity before the first PR read;
    verify Windows PowerShell selection independently. Inherited forged pins must not survive snapshot
    isolation, and a missing platform tool refuses rather than falling back to ambient execution. Omitting the
-   command from the fenced set, or restoring a direct package route to the transaction script, must fail before
-   any remote port call; lock fixtures that inject owner fences cannot show it.
-2. **Validated tree vs merged tree (#5243).** When the base tip moved after the head's last run, especially in
-   the same file, require evidence covering base plus head; reverting either contributing hunk must fail that
-   combined typecheck.
-3. **A forced notes fetch must not drop a divergent local notes history (#4271).** A forced fetch can replace a
-   local notes history that is not an ancestor of the remote; a local preimage was later absent from the
-   refreshed notes. With a disposable bare remote holding independent local and remote notes histories, check
-   reachability of the exact observed local commit and its unique note blob after the actual fetch, not the
-   refspec or the later non-forced push. Probe refusal before fetch when inspection or create-only recovery
-   pinning fails. A recovery ref preserves an observation, not concurrent writers or a union.
-4. **Optional notes publication preserves concurrent writers (#4271 `c5bfeda9bf`).** The forced
+   command from the fenced set, or restoring a direct package route to the transaction script, must fail
+   `scripts/__tests__/trustedGithubWriteBootstrap.spec.ts` or `scripts/__tests__/supersedePullRequest.spec.ts`
+   before any remote port call; lock fixtures that inject owner fences cannot show it.
+2. **Validated tree vs merged tree (#5243).** Runs: CI; the reviewer reads the Types and contracts job on the
+   head. When the base tip moved after the head's last run, especially in the same file, require evidence covering
+   base plus head: the job's checked-out merge commit must contain the current base tip, and reverting either
+   contributing hunk must fail that combined typecheck.
+3. **A forced notes fetch preserves the history observed at replacement (#4271, #5802).** The forced
+   refresh introduced by #4271 could discard divergent local history; #5802 pinned the initial delivery
+   observation but left a concurrent local writer during network I/O unpreserved and let Git's stale
+   expected-old check abort delivery. The missed probe was a second writer, not another single-writer
+   preimage assertion. In `scripts/__tests__/deliverPullRequest.spec.ts`, use a real bare remote with
+   divergent notes and inject a canonical writer at the fetch boundary: its exact commit and unique blob
+   must remain reachable under the recovery namespace while the canonical ref takes the captured remote
+   commit. Inject another writer after the latest pin and before installation: compare-and-swap must
+   refuse, retaining that newer canonical ref without retry. Run both authenticated routes, initial
+   absence and missing remote notes, and retain the before-fetch inspection/pinning refusal controls.
+   Move the invocation's capture ref before installation and immediately before cleanup; its changed
+   identity must refuse replacement or deletion. Restoring a direct canonical fetch must fail the
+   concurrent-preimage case; removing the canonical expected-old argument must fail the late-writer
+   case; removing the cleanup expected-old argument must fail the capture-change case. The equivalent
+   divergent-preimage probe in `scripts/__tests__/publishLane.spec.ts` remains required for publication.
+   Recovery refs preserve observations, never a merged notes union.
+4. **Optional notes publication preserves concurrent writers (#4271).** The forced
    `+refs/notes/ai:refs/notes/ai` publication, tested only by a single-writer fixture, let a later title-only
    republish replace divergent remote notes with its stale local map. Publish the exact reviewed source commit
    with normal non-forced admission, then notes separately from a captured object ID to a non-forced fixed
@@ -47,25 +59,25 @@ concrete break or none.
    durable-pin repair did not carry the push hook boundary to that new mutation. Seed real local notes before
    activating that hook, make it emit only a harmless marker when the fixture token is present, and prove
    publication creates no marker while the exact source, notes and pending ref still arrive. Removing the
-   update-ref hook override must fail the case.
-6. **The post-merge rewrite destination is the landed squash's sole parent (#4271, #5711).** #4271 forwarded the
-   cached PR base into authorship rewriting; with unrelated commits on main before a three-commit feature squash,
-   git-ai 1.7.5 could classify the squash as a rebase and select unrelated main commits, and the delivery test
-   asserted the forwarding without building the graph that makes it wrong. Read the boundary from immutable
+   update-ref hook override must fail the `scripts/__tests__/publishLane.spec.ts` case.
+6. **The post-merge rewrite destination is the landed squash's sole parent (#4271, #5711).** Runs: author.
+   Forwarding the cached PR base into authorship rewriting let the installed git-ai, with unrelated commits on main
+   before a three-commit feature squash, classify the squash as a rebase and select unrelated main commits; a
+   delivery test asserted the forwarding without building the graph that makes it wrong. Read the boundary from immutable
    commit headers after fetching; neither the cached PR base nor a later main tip proves it. Exercise the actual
    delivery shell adapter over a real Git graph with three source commits, unrelated annotated main commits and
    main advanced both before and after the squash: the emitted destination equals the raw landed commit's sole
    parent, and restoring cached-base forwarding must fail. Unavailable, zero, multiple and malformed parents
-   skip the optional rewrite and notes upload, observably, before any rewrite or notes push. An adapter test
-   proves argument selection only: exercise the installed tool in a hermetic repository for squash
+   skip the optional rewrite and notes upload, observably, before any rewrite or notes push; the reviewer runs
+   `scripts/__tests__/deliverAuthorshipBoundary.spec.ts` with cached-base forwarding restored. That adapter test
+   proves argument selection only: the author exercises the installed tool in a hermetic repository for squash
    classification, the full source-note union on the squash and byte-identical unrelated note blobs.
-7. **Publication metadata derives from the lane's own commits (#5701; context from #4252).** After synchronization
-   #5701 inherited its parent's `fix(review): pass resolver fixture paths as process data` title: a squash-landed
-   parent leaves its original commits reachable from the child but absent from main (#2746 only pinned an
-   existing main-only range). Exclude every commit reached by resolved main and parent heads when deriving a
+7. **Publication metadata derives from the lane's own commits (#2746, #4252, #5701).** A synchronized child can
+   inherit its parent's commit title: a squash-landed parent leaves its original commits reachable from the child
+   but absent from main, so pinning only a main-only range is insufficient. Exclude every commit reached by resolved main and parent heads when deriving a
    title. Use real Git history with a child commit followed by a later-dated parent repair, then synchronize the
    parent and its squash landing into the child: the native creation title names the child, and removing the
-   parent-head exclusion makes the same spec select the parent repair and fail. Explicit title changes pass the
+   parent-head exclusion makes `scripts/__tests__/publishLane.spec.ts` select the parent repair and fail. Explicit title changes pass the
    same owned-lane boundary and drive body validation, derived labels and projects, and type warnings from the
    title GitHub will show; observe the actual authenticated edit arguments for an explicit correction and the
    absence of a title argument on a default republish.

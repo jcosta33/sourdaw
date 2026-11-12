@@ -9,7 +9,7 @@
  */
 
 import { fail } from './prContract.ts';
-import { isUndoPath } from './savedProjectStatePaths.ts';
+import { isPersistedProjectStatePath } from './savedProjectStatePaths.ts';
 
 import type { ReviewChangedPath } from './reviewDiffSummary.ts';
 
@@ -70,6 +70,7 @@ const REQUIRED_STANCES: Record<ReviewRiskClass, readonly ReviewStanceId[]> = {
 
 const REALTIME_AUDIO_PREFIXES = [
     'crates/daw-dsp/',
+    'crates/daw-engine/',
     'src/modules/AudioEngine/',
     'public/wasm/',
     'public/audio/worklets/',
@@ -82,11 +83,14 @@ const REALTIME_AUDIO_PATHS = [
     'scripts/workletPolyfills.ts',
 ] as const;
 /**
- * Playback-timing surfaces (#3377 AC-009 calibration): the playhead scheduler is not on the audio
- * thread, but a defect there moves the audible playhead, so it earns the realtime-audio class the
- * same way the DSP prefixes do.
+ * Playback-timing surfaces (#3377 AC-009 calibration): the playhead scheduler, clip scheduling and
+ * automation application are not on the audio thread, but a defect there moves what is heard and
+ * when, so they earn the realtime-audio class the same way the DSP prefixes do.
  */
-const REALTIME_TIMING_PREFIXES = ['src/modules/Transport/useCases/playheadScheduler/'] as const;
+const REALTIME_TIMING_PREFIXES = [
+    'src/modules/Transport/useCases/playheadScheduler/',
+    'src/modules/Transport/useCases/scheduling/',
+] as const;
 const NATIVE_SECURITY_PREFIXES = ['electron/', 'crates/', '.github/workflows/'] as const;
 /**
  * The Cargo workspace root: every crate, the DSP engine included, resolves its dependencies through
@@ -124,6 +128,7 @@ const NATIVE_SECURITY_PATHS = [
     'scripts/electronRuntimeContract.ts',
     'scripts/checkElectronRuntimeProvenance.ts',
     'scripts/installCleanupLanes.ts',
+    'scripts/cleanupLanesCli.ts',
 ] as const;
 /** macOS entitlement files the packaging config signs with, `build/entitlements.mac.plist` and kin. */
 const ENTITLEMENTS_PATTERN = /^build\/entitlements[^/]*\.plist$/u;
@@ -145,18 +150,25 @@ export const GOVERNANCE_TRANSITION_PATHS = [
     'scripts/cleanupLaneBookkeeping.ts',
     'scripts/cleanupLanes.ts',
     'scripts/confirmReviewRepairs.ts',
+    'scripts/cutRelease.ts',
     'scripts/deliverPullRequest.ts',
     'scripts/deliveryLockLegacyIncidents.ts',
     'scripts/deliveryRemoteInspection.ts',
+    'scripts/e2eServerIdentity.ts',
     'scripts/evidenceSafety.ts',
     'scripts/findingLineage.ts',
     'scripts/gitAncestry.ts',
     'scripts/githubAppIdentity.ts',
+    'scripts/guardRecoveryProof.ts',
     'scripts/laneActivity.ts',
     'scripts/laneStackForkMarkers.ts',
+    'scripts/measurementRevisionHolders.ts',
     'scripts/pnpmModulesPreflight.ts',
     'scripts/prContract.ts',
     'scripts/prepareReview.ts',
+    'scripts/processSnapshot.ts',
+    'scripts/pruneRemoteBranches.ts',
+    'scripts/pruneRemoteBranchesGithub.ts',
     'scripts/publishLane.ts',
     'scripts/publishReview.ts',
     'scripts/pullRequestMutationLock.ts',
@@ -165,6 +177,8 @@ export const GOVERNANCE_TRANSITION_PATHS = [
     'scripts/reconstructReviewRounds.ts',
     'scripts/recoverDeliveryLock.ts',
     'scripts/recoverPublishReviewLock.ts',
+    'scripts/releaseHistory.ts',
+    'scripts/releaseVersion.ts',
     'scripts/removeLane.ts',
     'scripts/repairReviewFinding.ts',
     'scripts/resolveThread.ts',
@@ -301,8 +315,9 @@ function nativeSecurityFindings(sides: readonly PathSide[]): RiskFinding[] {
     return triggers.length === 0 ? [] : [{ riskClass: 'native-security', triggers }];
 }
 
+/** Project persistence earns the `undo` class however small the diff (#3377); undo paths are a subset. */
 function undoFindings(sides: readonly PathSide[]): RiskFinding[] {
-    const triggers = sides.filter((side) => isUndoPath(side.path)).map((side) => `undo:${side.path}`);
+    const triggers = sides.filter((side) => isPersistedProjectStatePath(side.path)).map((side) => `undo:${side.path}`);
     return triggers.length === 0 ? [] : [{ riskClass: 'undo', triggers }];
 }
 
