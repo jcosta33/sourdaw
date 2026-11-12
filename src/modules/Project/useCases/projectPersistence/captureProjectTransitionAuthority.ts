@@ -1,12 +1,6 @@
 import { projectTransitionEpoch } from '../../stores/projectTransitionEpoch';
 
-type ProjectTransitionAuthority = {
-    isCurrent: () => boolean;
-};
-
-export function captureProjectTransitionAuthority(): ProjectTransitionAuthority {
-    const epoch = projectTransitionEpoch.current;
-    return {
-        isCurrent: () => projectTransitionEpoch.isCurrent(epoch),
-    };
+/** Fresh operations capture the retained active project, not a retired load ticket. */
+export function captureProjectTransitionAuthority() {
+    return projectTransitionEpoch.captureEditAuthority();
 }

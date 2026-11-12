@@ -59,7 +59,11 @@ import {
     transactSnapshot,
 } from '#/modules/CrdtDocument/useCases';
 import { defaultProjectStoreState, projectStore } from '#/modules/Project/stores';
-import { runProjectLoadTransaction, setProjectIdentityTransitionDependencies } from '#/modules/Project/useCases';
+import {
+    loadProject,
+    runProjectLoadTransaction,
+    setProjectIdentityTransitionDependencies,
+} from '#/modules/Project/useCases';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
 import {
     type ConfirmPayload,
@@ -717,6 +721,73 @@ describe('Fermenter whole-patch auditioning through Command', () => {
         } finally {
             vi.unstubAllGlobals();
         }
+    });
+
+    it('admits fresh whole-patch edits after a public load fails before replacing the retained project', async () => {
+        const root = getCrdtDoc('root');
+        renderPanel();
+        await waitFor(() => expect(getFermenterState(DEVICE_ID).patch).toEqual(initialPatch));
+        const stale = prepareFermenterPatchWrite({
+            deviceId: DEVICE_ID,
+            patch: patchNamed('Queued before failed load', 1200),
+            label: 'Queued patch',
+        });
+        expect(stale?.isCurrent()).toBe(true);
+        const failure = new Error('collaboration shutdown failed');
+        const entered = Promise.withResolvers<void>();
+        const shutdown = Promise.withResolvers<void>();
+        setProjectIdentityTransitionDependencies({
+            leaveCollaborationSession: () => {
+                entered.resolve();
+                return shutdown.promise;
+            },
+        });
+        const loading = loadProject({ transaction: runProjectLoadTransaction(), explicit: true });
+        await entered.promise;
+        const denied = patchNamed('Denied while opening', 1400);
+        act(() => loadFermenterPatchWithAudio(DEVICE_ID, denied));
+        expect(await commit(denied)).toBe(false);
+        expect(getFermenterState(DEVICE_ID).patch).toEqual(initialPatch);
+        expect(committedPatch()).toEqual(initialPatch);
+        expect(depth()).toBe(0);
+        expect(audio.updateDevicePatch).not.toHaveBeenCalled();
+        expect(notices.some((notice) => notice.message.includes('project change'))).toBe(true);
+
+        shutdown.reject(failure);
+        await expect(loading).resolves.toBe(false);
+        expect(getCrdtDoc('root')).toBe(root);
+        expect(committedPatch()).toEqual(initialPatch);
+        expect(stale?.isCurrent()).toBe(false);
+        setProjectIdentityTransitionDependencies({ leaveCollaborationSession: leaveSession });
+
+        const next = patchNamed('Fresh after failed load', 1800);
+        expect(await commit(next)).toBe(true);
+        expect(committedPatch()).toEqual(next);
+        expect(readFermenterPatchFromProjectDevice(projectedTrack().devices[0]!)).toEqual(next);
+        expect(depth()).toBe(1);
+        await act(() => undo());
+        expect(committedPatch()).toEqual(initialPatch);
+        await act(() => redo());
+        expect(committedPatch()).toEqual(next);
+        expect(stale?.isCurrent()).toBe(false);
+
+        const callbacks: FrameRequestCallback[] = [];
+        const raf = vi.spyOn(globalThis, 'requestAnimationFrame').mockImplementation((callback) => {
+            callbacks.push(callback);
+            return callbacks.length;
+        });
+        const continuous = patchNamed('Fresh continuous frame', 2200);
+        act(() => loadFermenterPatchWithAudio(DEVICE_ID, continuous));
+        expect(getFermenterState(DEVICE_ID).patch).toEqual(continuous);
+        expect(committedPatch()).toEqual(next);
+        expect(callbacks).toHaveLength(1);
+        act(() => callbacks[0]!(0));
+        await waitFor(() => expect(committedPatch()).toEqual(continuous));
+        expect(readFermenterPatchFromProjectDevice(projectedTrack().devices[0]!)).toEqual(continuous);
+        expect(getFermenterState(DEVICE_ID).patch).toEqual(continuous);
+        expect(audio.updateDevicePatch.mock.calls.at(-1)?.[2]?.cutoff).toBe(continuous.filterCutoff);
+        expect(depth()).toBe(1);
+        raf.mockRestore();
     });
 
     it('reconciles a pending parameter edit when a queued patch is refused by a revision change', async () => {

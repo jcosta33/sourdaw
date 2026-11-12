@@ -101,6 +101,12 @@ export function runProjectLoadTransaction({
         }
     }
 
+    function settleEditReplacement(): void {
+        if (projectTransitionState.pendingEditReplacement === transitionId) {
+            projectTransitionState.pendingEditReplacement = null;
+        }
+    }
+
     return {
         prepare: () => {
             preparation ??= (async () => {
@@ -127,6 +133,8 @@ export function runProjectLoadTransaction({
                 // even though the success path deliberately keeps this transition
                 // counted until it activates.
                 projectTransitionState.latestPrepared = transitionId;
+                projectTransitionState.editRevocation += 1;
+                projectTransitionState.pendingEditReplacement = transitionId;
                 claimRevocableAuthority();
                 countedAsPreparing = true;
                 preparingProjectTransitionCount += 1;
@@ -136,6 +144,7 @@ export function runProjectLoadTransaction({
                     await projectIdentityTransitionDependencies.leaveCollaborationSession();
                     if (transitionId !== projectTransitionState.latestPrepared) {
                         releasePreparingCount();
+                        settleEditReplacement();
                         revoke();
                         return false;
                     }
@@ -143,6 +152,7 @@ export function runProjectLoadTransaction({
                     return true;
                 } catch (error) {
                     releasePreparingCount();
+                    settleEditReplacement();
                     revoke();
                     throw error;
                 }
@@ -164,11 +174,13 @@ export function runProjectLoadTransaction({
                 transitionId < projectTransitionState.active ||
                 transitionId !== projectTransitionState.latestPrepared
             ) {
+                settleEditReplacement();
                 revoke();
                 return false;
             }
             projectTransitionState.active = transitionId;
             activated = true;
+            settleEditReplacement();
 
             activeProjectTransitionHasExplicitAuthority = !yieldToInFlight;
             cancelPendingAudioBufferImport();

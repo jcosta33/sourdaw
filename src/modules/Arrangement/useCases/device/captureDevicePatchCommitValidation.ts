@@ -175,13 +175,16 @@ export function captureDevicePatchCommitValidation(input: Input) {
     const fingerprint = JSON.stringify(before.value);
     const trackIdentity = before.track ? getObjectId(before.track) : undefined;
     const deviceIdentity = before.owners[0] ? getObjectId(before.owners[0].device) : undefined;
-    const transitionEpoch = projectTransitionEpoch.current;
+    const transition = projectTransitionEpoch.captureEditAuthority();
+    if (!transition.isCurrent()) {
+        return null;
+    }
     const identity = captureProjectIdentity();
     const headsAtAdmission = getHeads(root).toSorted();
     const matchesSource = (document: Readonly<Record<string, unknown>>): boolean => {
         const current = read(document, input);
         return (
-            projectTransitionEpoch.isCurrent(transitionEpoch) &&
+            transition.isCurrent() &&
             captureProjectIdentity() === identity &&
             current !== null &&
             matchesJsonFingerprint(current.value, fingerprint) &&

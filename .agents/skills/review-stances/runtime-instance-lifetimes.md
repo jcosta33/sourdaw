@@ -63,6 +63,16 @@ wall-clock) prove ordering, ownership and cleanup; they never establish physical
       unmount and successor Detect/sensitivity must retire only the outgoing presentation. Ordinary Undo keeps
       historical success feedback; no late completion may reapply truth or mark a replacement detected. Reverting
       the direct caller's source/root or revision fence must fail the registered editor integration cases.
+    - Retained project after failed preparation (#293, caught during #6420): in
+      `fermenterPatchAuditionUndo.integration.spec.tsx` case “admits fresh whole-patch edits after a public load fails
+      before replacing the retained project”, call public `loadProject` with an explicit transaction whose preparation
+      rejects. The original CRDT root stays; the pre-load patch token and any edit captured while preparation is held
+      remain invalid, while a newly captured discrete preset edit and a continuous frame commit to raw truth,
+      projection, panel, runtime and history/Undo/Redo. `runProjectLoadTransaction.spec.ts` cases “never revives an
+      edit captured during a held successor after that successor fails” and “settles only the newest failed
+      preparation while an older revoked preparation remains held” pin the two capture orders. Replacing fresh-edit
+      admission with the retired load-ticket check must fail the fresh write; dropping captured admission or its
+      monotonic revocation must fail old/held-token refusal. These checks do not establish audible output.
 4. **Shutdown reclamation needs a release inside the poll pass (#2976, #5064).** A whole-cascade wall-clock
    assertion names no cascade step and fails on a loaded runner after every stop and destroy assertion passed. Pin
    the scheduler-release transition itself in `crates/sourdaw-native/src/shutdown.rs`: keep an extra runtime owner

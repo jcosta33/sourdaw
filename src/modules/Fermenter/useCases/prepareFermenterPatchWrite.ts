@@ -137,13 +137,19 @@ function supersedePreviousWrite(input: PrepareFermenterPatchWriteInput): void {
 
 /** Capture an edit before a frame or Command transaction can yield to another owner. */
 export function prepareFermenterPatchWrite(input: PrepareFermenterPatchWriteInput): PreparedFermenterPatchWrite | null {
+    const authority = captureProjectTransitionAuthority();
+    if (!authority.isCurrent()) {
+        if (!input.continuous) {
+            notifyUser('Wait for the project change to finish before editing the Fermenter patch.', 'warning');
+        }
+        return null;
+    }
     const source = capturePatchWriteSource(input);
     if (!source) {
         return null;
     }
     const { admittedOwner, device, projectBefore, before, patch, clamp, expectedProject, beforeProject } = source;
     supersedePreviousWrite(input);
-    const authority = captureProjectTransitionAuthority();
     const identity = captureProjectIdentity();
     const revision = captureProjectRevision();
     const ownsProject = (): boolean => authority.isCurrent() && captureProjectIdentity() === identity;

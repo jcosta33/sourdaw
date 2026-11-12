@@ -28,6 +28,13 @@ that must fail the case.
    an activated replacement reusing the project ID: neither outgoing request writes or notifies in the successor.
    Pair those refusals with a current successful import, current failures and ordinary edits during the wait, which
    the accepted import must preserve. Removing the project-lifetime conjunct must fail the replacement case.
+   Also run `importSclFile.spec.ts` case “keeps a pending import retired but admits a fresh import after a failed
+   project preparation”: a settled failed prepare leaves the original project, permanently rejects the old import,
+   and admits a newly requested import into that retained project. The public-load counterpart is
+   `fermenterPatchAuditionUndo.integration.spec.tsx` case “admits fresh whole-patch edits after a public load fails
+   before replacing the retained project”. Restoring the old load-ticket check must fail the fresh import; omitting
+   capture-time admission or generation must fail the old import's non-effect. The Scala spec uses a mocked picker,
+   parser and project store, so the public-load case owns real CRDT/history evidence.
 4. **A completed import never reaches storage or autosave admission (#4883, #5397, #5761).** An import that writes
    project tuning without calling `markDirty` reaches the real store and CRDT while leaving `dirty: false`; the
    installed tracker watches tracks and tempo, so their positive controls do not prove import bookkeeping, and

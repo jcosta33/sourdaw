@@ -71,12 +71,21 @@ describe('device patch publication transition authority', () => {
             expect(successor.activate()).toBe(false);
             expect(getCrdtDoc('root')).toBe(raw);
             expect(proof?.isCurrent()).toBe(false);
+            expect(
+                captureDevicePatchCommitValidation({ trackId: 'owner', deviceId: 'not-installed', parameterIds: [] })
+            ).toBeNull();
             if (outcome === 'fail') {
                 const failure = new Error('collaboration shutdown failed');
                 const rejected = expect(preparing).rejects.toBe(failure);
                 shutdown.reject(failure);
                 await rejected;
                 expect(successor.activate()).toBe(false);
+                const fresh = captureDevicePatchCommitValidation({
+                    trackId: 'owner',
+                    deviceId: 'not-installed',
+                    parameterIds: [],
+                });
+                expect(fresh?.isCurrent()).toBe(true);
             } else {
                 shutdown.resolve();
                 expect(await preparing).toBe(true);
