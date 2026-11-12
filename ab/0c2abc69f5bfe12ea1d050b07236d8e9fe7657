@@ -1,0 +1,65 @@
+src/modules/AiRuntime/useCases/__tests__/vibeRunSilentRanges.spec.ts
+  s_3be4f5919e52bd::t_35e2b7d8e2bada 616-617
+  s_3be4f5919e52bd::t_bddd9563010661 1-324,326-547,549-558,560-561,563-564,566-588,590,593-600,604,606,610,613,615,618-620
+  s_3be4f5919e52bd::t_3adeaf7fd66fcb 548
+  s_126e3d478b4f75::t_2f2421b5d010a0 325,559,562,565,589,591-592,601-603,605,607-609,611-612,614,621-625
+src/modules/AiRuntime/validators/isSilentVibeRunCell.ts
+  s_3be4f5919e52bd::t_88f86eb3486973 1-27
+  s_3df76396fbd4b1::t_1aa15debe03fce 28-74
+src/modules/AiRuntime/AGENTS.md
+  s_eec9d24f84ae15::t_0ecf72c0425be4 42
+src/modules/AiRuntime/models/VibeRunPlan.ts
+  s_3df76396fbd4b1::t_1de6411eddadc4 99-100,104,145-154,198-199
+src/modules/AiRuntime/useCases/__tests__/vibeRunInitialBaselines.spec.ts
+  s_3df76396fbd4b1::t_ca8ce42b64907f 785-789,807,810-824,865-866,874,882-890,892-899
+src/modules/AiRuntime/useCases/agentRequestOrchestration/groundVibeRunBatch.ts
+  s_3df76396fbd4b1::t_9ed4aec255c243 8,85-107,130
+src/modules/AiRuntime/useCases/planWholeProjectVibeRun.ts
+  s_126e3d478b4f75::t_c30124e91ed06a 4,24-25,55-56,275-278,280-281,288-308,315,332,341-346,364-366,416-422,455-457
+src/modules/AiRuntime/useCases/vibeRun/planVibeRunSchedule.ts
+  s_126e3d478b4f75::t_bb7cf9f9f9027b 16,66,126-138,151,153,155,161-165,223-239,250,281-314,323,357,413-432,434,448-455
+src/modules/AiRuntime/useCases/vibeRun/readVibeBatchRecipeGoals.ts
+  s_126e3d478b4f75::t_dbf04b156c781a 15-21,24,49-51
+src/modules/AiRuntime/validators/readScheduledVibeRunPlan.ts
+  s_126e3d478b4f75::t_2f55ced73d06f5 10,17,122,126,136-140,147-149,153-168,220-224,229,231-232,259-263,267-285,383-411,435-437,443-451,481
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ab0c2abc69f5bfe12ea1d050b07236d8e9fe7657",
+  "prompts": {},
+  "sessions": {
+    "s_126e3d478b4f75": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cefa-4460-7913-80c3-c339638913d0",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_3be4f5919e52bd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b2e9d84b-e654-4f9b-af34-dda39dce559f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_3df76396fbd4b1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f8caa473-e64a-4fad-b579-cf6c36add2c2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_eec9d24f84ae15": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cc8d-d36d-71b3-be5c-15c29b38b9aa",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
