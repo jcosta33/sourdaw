@@ -59,3 +59,20 @@ impl BranchingSmoother {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::BranchingSmoother;
+
+    /// Zero and negative times are a coefficient of 0.0: the smoother jumps to
+    /// its target in one sample.
+    #[test]
+    fn smoother_time_at_or_below_zero_is_a_coefficient_of_zero() {
+        assert_eq!(BranchingSmoother::ms_to_coeff(0.0, 48_000.0), 0.0);
+        assert_eq!(BranchingSmoother::ms_to_coeff(-1.0, 48_000.0), 0.0);
+        assert_eq!(
+            BranchingSmoother::ms_to_coeff(5.0, 48_000.0).to_bits(),
+            0x3f7e_ef80
+        );
+    }
+}

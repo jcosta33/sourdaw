@@ -241,6 +241,23 @@ impl InputConditioner {
 mod tests {
     use super::{InputConditioner, NoiseGate};
 
+    /// Zero and negative times clamp to 0.01 ms, the pole 0x3dff0173 at 48 kHz.
+    #[test]
+    fn gate_time_at_or_below_zero_clamps_to_the_ten_microsecond_pole() {
+        assert_eq!(
+            NoiseGate::time_to_coeff(0.0, 48_000.0).to_bits(),
+            0x3dff_0173
+        );
+        assert_eq!(
+            NoiseGate::time_to_coeff(-1.0, 48_000.0).to_bits(),
+            0x3dff_0173
+        );
+        assert_eq!(
+            NoiseGate::time_to_coeff(5.0, 48_000.0).to_bits(),
+            0x3f7e_ef80
+        );
+    }
+
     fn conditioned_burst_metrics(input_mode: f32) -> (f32, f32, f32) {
         let sample_rate = 48_000.0;
         let mut conditioner = InputConditioner::new(sample_rate);

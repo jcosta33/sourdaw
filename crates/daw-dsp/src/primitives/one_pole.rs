@@ -67,9 +67,9 @@ mod tests {
         }
     }
 
-    /// Pins the measured values at 48 kHz, so an edit that changes the
-    /// evaluation (a reordered product, a fused reciprocal) fails here even if
-    /// it changes the reference expression above in the same way.
+    /// Pins measured pole bits at 48 kHz, so an edit that moves the evaluation
+    /// fails here even if it changes the reference expression above in the
+    /// same way.
     #[test]
     fn pole_values_at_48k_are_pinned() {
         assert_eq!(pole_from_ms(0.01, SAMPLE_RATE).to_bits(), 0x3dff_0173);
@@ -83,5 +83,17 @@ mod tests {
             (1.0 - pole_from_samples(0.001 * SAMPLE_RATE)).to_bits(),
             0x3ca8_e6c0
         );
+    }
+
+    /// `0.001 * sample_rate` rounds up at both rates (48 kHz gives
+    /// 48.000004), so grouping the product as `ms * (0.001 * sample_rate)`
+    /// lands one ulp away from the left-to-right `(ms * 0.001) * sample_rate`
+    /// at these points. The values were found by search; most points agree
+    /// under either grouping, which is why the pins above do not catch it.
+    #[test]
+    fn pole_from_ms_keeps_the_left_to_right_product_order() {
+        // Regrouped, these give 0x3f6da4cd and 0x3f7a7a8c.
+        assert_eq!(pole_from_ms(0.28, SAMPLE_RATE).to_bits(), 0x3f6d_a4cc);
+        assert_eq!(pole_from_ms(1.04, 44_100.0).to_bits(), 0x3f7a_7a8b);
     }
 }

@@ -188,3 +188,21 @@ impl SvfFilter {
         self.comb_write_pos = 0;
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::SvfFilter;
+
+    /// The filter envelope freezes at zero and negative times: a coefficient of
+    /// 1.0 holds `env_level` where it is. Pinned as found, not endorsed — the
+    /// other millisecond followers in this crate go instant at 0 ms instead.
+    #[test]
+    fn filter_envelope_time_at_or_below_zero_is_a_coefficient_of_one() {
+        assert_eq!(SvfFilter::time_to_coeff(0.0, 48_000.0), 1.0);
+        assert_eq!(SvfFilter::time_to_coeff(-1.0, 48_000.0), 1.0);
+        assert_eq!(
+            SvfFilter::time_to_coeff(5.0, 48_000.0).to_bits(),
+            0x3f7e_ef80
+        );
+    }
+}
