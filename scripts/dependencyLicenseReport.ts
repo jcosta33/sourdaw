@@ -201,7 +201,7 @@ const LICENSE_SIGNATURES: Readonly<Record<string, readonly RegExp[]>> = {
     ],
     'LGPL-2.1-or-later': [
         /GNU Lesser General Public License/iu,
-        /either version 2\.1 of the License, or \(at your option\) any later version/iu,
+        /either\s+version\s+2\.1\s+of\s+the\s+License,\s+or\s+\(at\s+your\s+option\)\s+any\s+later\s+version/iu,
         /without any warranty/iu,
     ],
     'LGPL-3.0': [/GNU Lesser General Public License/iu, /version 3, 29 June 2007/iu, /GNU General Public License/iu],
@@ -1102,11 +1102,19 @@ function matchesSignatures(contents: string, signatures: readonly RegExp[]): boo
 }
 
 function hasLicenseEvidence(license: string, files: readonly LegalFile[]): boolean {
-    const signatures = LICENSE_SIGNATURES[license];
+    const signatures = LICENSE_SIGNATURES[license === 'LGPL-2.1' ? 'LGPL-2.1-or-later' : license];
     if (signatures === undefined) {
         throw new Error(`unsupported SPDX evidence signature: ${license}`);
     }
-    return files.some(({ contents }) => matchesSignatures(contents, signatures));
+    return files.some(({ contents }) => {
+        // Deprecated metadata does not establish an or-later grant. The license's application
+        // example is a template, so require that grant in the actual notice preceding its text.
+        const evidence =
+            license === 'LGPL-2.1'
+                ? (contents.split(/GNU LESSER GENERAL PUBLIC LICENSE\s+Version 2\.1/iu, 1)[0] ?? '')
+                : contents;
+        return matchesSignatures(evidence, signatures);
+    });
 }
 
 function hasExceptionEvidence(exception: string, files: readonly LegalFile[]): boolean {

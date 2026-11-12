@@ -16,24 +16,34 @@ Chromium, Node, FFmpeg, and bundled-component notice file as `electron-LICENSES.
 
 ## LGPL runtimes
 
-Sourdaw uses two LGPL packages without source modifications. FaustWasm runtime files are copied
-byte-for-byte from its package. Vite bundles lamejs into Sourdaw's application code.
+Sourdaw uses two LGPL runtime packages without modifying their distributed executable bytes.
+FaustWasm compiler files are copied byte-for-byte from its package. Vite bundles lamejs into the application.
 
-| Component | Version | License           | Source                                                                                                                                                                                                              |
-| --------- | ------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| FaustWasm | 0.18.5  | LGPL-2.1-or-later | [wrapper](https://github.com/grame-cncm/faustwasm/archive/ba611eaeefcb41f935cab1481ea9580b470ae8eb.tar.gz), [compiler](https://github.com/grame-cncm/faust/archive/ada86ab32fe875f5d1d028c3a99f17e3a83e0ad8.tar.gz) |
-| lamejs    | 1.2.7   | LGPL-3.0-only     | [source](https://github.com/gideonstele/lamejs/archive/1fb0ef5fa177413107e2e107d054a9b994e3f79c.tar.gz)                                                                                                             |
+| Component | Version | License           | Source                                                                                                                                                                                                                                                                                                     |
+| --------- | ------- | ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| FaustWasm | 0.20.2  | LGPL-2.1-or-later | [wrapper corresponding source](./faustwasm-0.20.2-corresponding-source.tar.gz), [compiler](https://github.com/grame-cncm/faust/archive/21884a6d63713ff99dca2fef95c33aecaedfe643.tar.gz), [libraries](https://github.com/grame-cncm/faustlibraries/archive/42fab480c778df7bad5c6b620ca4fd005b2bfe9b.tar.gz) |
+| lamejs    | 1.2.7   | LGPL-3.0-only     | [source](https://github.com/gideonstele/lamejs/archive/1fb0ef5fa177413107e2e107d054a9b994e3f79c.tar.gz)                                                                                                                                                                                                    |
 
-FaustWasm's `COPYING.txt` grants LGPL-2.1-or-later despite the package metadata naming LGPL-3.0.
-Its notice is preserved. lamejs declares LGPL-3.0. The upstream notices and complete license texts
-are beside this file.
+FaustWasm 0.20.2 declares the deprecated metadata identifier LGPL-2.1. Its retained `COPYING.txt`
+explicitly grants LGPL version 2.1 or, at your option, any later version. lamejs declares LGPL-3.0.
+The original notices and complete license texts are beside this file.
 
-FaustWasm's package source is pinned by npm `gitHead`. The bundled compiler identifies itself as
-2.89.2; the matching Faust version commit is pinned, but a reproducible rebuild has not yet proven
-that exact compiler commit produced the binary.
+The registry records FaustWasm gitHead `4403c779a3e92af4e4f44b5abda98b3ac5fa57d9`, whose upstream
+archive was unavailable when this source package was prepared. We do not claim another upstream
+commit is that release. The shipped `public/legal/faustwasm-0.20.2-corresponding-source.tar.gz`
+is an explicitly labeled Sourdaw reconstruction: verified preferred source from the published package,
+unchanged upstream source from 0.20.1, and reconstructed mono/poly/FFT entrypoints and build script.
+Its editable TypeScript and pinned recipe reproduced all three released worklet strings and the main
+ESM wrapper byte-for-byte in two fresh builds on macOS arm64. Source hashes, exact executable hashes,
+all 55 bundled library source files and their attribution are included. Other-platform execution has
+not been established by that proof; its lock provisions the recipient platform's build tool.
 
-See [SOURCES.json](./SOURCES.json) for exact package, source, and file identities. See
-[RELINKING.md](./RELINKING.md) to replace either library and rebuild Sourdaw.
+The bundled compiler identifies itself as 2.90.19. Its matching version commit and exact libraries
+revision are pinned above; a reproducible compiler WASM rebuild has not established which compiler
+source commit produced that binary. Wrapper reconstruction does not claim a compiler binary rebuild.
+
+See [SOURCES.json](./SOURCES.json) for exact package, source and file identities, and
+[RELINKING.md](./RELINKING.md) to modify, replace and rebuild either library.
 
 ## JavaScript and Rust dependencies
 
