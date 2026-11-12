@@ -136,6 +136,19 @@ describe('Git checkpoint diagnostic', () => {
             expect(result.stderr).not.toContain('node:internal');
         }
     });
+    it('preserves legal large Git path arguments through checkpoint observation', async () => {
+        const { root, env } = fixture();
+        const name = '"'.repeat(100);
+        writeFileSync(join(root, name), 'content');
+        const paths = Array<string>(1500).fill(name);
+        const direct = spawnSync('git', ['add', '--', ...paths], { cwd: root, env, encoding: 'utf8' });
+        expect(direct.error, direct.stderr).toBeUndefined();
+        expect(direct.status, direct.stderr).toBe(0);
+        const result = await run(root, env, 'add', '--', ...paths);
+        expect(result.code, result.stderr).toBe(0);
+        const observed = receipt(result.stderr).value;
+        expect(observed.before.sources[name].sha256).toBe(createHash('sha256').update('content').digest('hex'));
+    });
     it('records source filenames that are object prototype keys', async () => {
         const { root, env } = fixture();
         writeFileSync(join(root, '__proto__'), 'source');
