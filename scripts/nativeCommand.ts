@@ -1,20 +1,12 @@
 import { spawn } from 'node:child_process';
 
-import { captureProcessGroupSnapshot, type ProcessGroupSnapshot } from './processSnapshot.ts';
+import {
+    createNativeCommandDiagnostics,
+    type OwnershipDiagnostic,
+    type ProcessDiagnostic,
+} from './nativeCommandDiagnostics.ts';
+import type { ProcessGroupSnapshot } from './processSnapshot.ts';
 
-type OwnershipDiagnostic = {
-    operation: 'inspect' | 'terminate';
-    signal: NodeJS.Signals | 0;
-    code?: string;
-    errno?: number;
-};
-type ProcessDiagnostic = {
-    groupId?: number;
-    timeline: Array<{ event: string; elapsedMs: number; diagnostic?: OwnershipDiagnostic }>;
-    omittedEvents: number;
-    firstUncertainty?: { diagnostic: OwnershipDiagnostic; elapsedMs: number; snapshot: ProcessGroupSnapshot };
-    finalUncertainty?: { elapsedMs: number; snapshot: ProcessGroupSnapshot };
-};
 export type NativeTestResult = {
     code: number | null;
     signal: string | null;
@@ -192,57 +184,32 @@ type NativeCommandObservation = {
     timeoutMs: number;
 };
 
-function observeNativeCommand(input: NativeCommandObservation): void {
-    const { child, ports, resolve, reject, timeoutMs } = input;
-    const clock = ports.now ?? (() => performance.now());
-    let lastTime = 0;
-    const readClock = () => {
-        try {
-            const value = clock();
-            if (Number.isFinite(value)) {
-                lastTime = Math.max(lastTime, value);
-            }
-        } catch {
-            // Diagnostics must not affect ownership decisions.
-        }
-        return lastTime;
-    };
-    const started = readClock();
-    const elapsed = () => Math.round(readClock() - started);
-    const processDiagnostic: ProcessDiagnostic = { groupId: child.pid, timeline: [], omittedEvents: 0 };
-    const snapshot = (): ProcessGroupSnapshot => {
-        try {
-            if (child.pid === undefined) {
-                return { status: 'unavailable' };
-            }
-            return (ports.snapshot ?? captureProcessGroupSnapshot)(child.pid);
-        } catch {
-            return { status: 'unavailable' };
-        }
-    };
-    const observe = (event: string, diagnostic?: OwnershipDiagnostic) => {
-        try {
-            const entry: ProcessDiagnostic['timeline'][number] = { event, elapsedMs: elapsed() };
-            if (diagnostic !== undefined) {
-                entry.diagnostic = diagnostic;
-            }
-            if (processDiagnostic.timeline.length >= 64) {
-                processDiagnostic.timeline.splice(32, 1);
-                processDiagnostic.omittedEvents += 1;
-            }
-            processDiagnostic.timeline.push(entry);
-            if (diagnostic !== undefined && processDiagnostic.firstUncertainty === undefined) {
-                const state = snapshot();
-                processDiagnostic.firstUncertainty = { diagnostic, elapsedMs: elapsed(), snapshot: state };
-            }
-        } catch {
-            // Diagnostics must not affect ownership decisions.
-        }
-    };
-    observe('spawn');
-    const group = ownedProcessGroup(child.pid, ports.process, observe);
+function createOutputCollector(isSettled: () => boolean, stop: (reason: string) => void) {
     const buffers: Buffer[] = [];
     let size = 0;
+    const collect = (buffer: Buffer) => {
+        if (isSettled()) {
+            return;
+        }
+        size += buffer.length;
+        if (size > 16 * 1024 * 1024) {
+            stop('output-limit');
+        } else {
+            buffers.push(buffer);
+        }
+    };
+    return { buffers, collect };
+}
+
+function observeNativeCommand(input: NativeCommandObservation): void {
+    const { child, ports, resolve, reject, timeoutMs } = input;
+    const { processDiagnostic, observe, finalUncertainty } = createNativeCommandDiagnostics(child.pid, ports);
+    observe('spawn');
+    const group = ownedProcessGroup(child.pid, ports.process, observe);
+    const { buffers, collect } = createOutputCollector(
+        () => settled,
+        (reason) => stop(reason)
+    );
     let failure: string | undefined;
     let closed: { code: number | null; signal: NodeJS.Signals | null } | undefined;
     let terminating = false;
@@ -307,8 +274,7 @@ function observeNativeCommand(input: NativeCommandObservation): void {
                 settled = true;
                 cleanup();
                 observe('confirmation-failed');
-                const state = snapshot();
-                processDiagnostic.finalUncertainty = { elapsedMs: elapsed(), snapshot: state };
+                finalUncertainty();
                 reject(
                     group.ownershipError(failure ?? reason, Buffer.concat(buffers).toString('utf8'), processDiagnostic)
                 );
@@ -320,17 +286,6 @@ function observeNativeCommand(input: NativeCommandObservation): void {
     ports.process.once('SIGINT', interrupt);
     ports.process.once('SIGTERM', interrupt);
     const timeout = ports.setTimeout(() => stop('timeout'), timeoutMs);
-    const collect = (buffer: Buffer) => {
-        if (settled) {
-            return;
-        }
-        size += buffer.length;
-        if (size > 16 * 1024 * 1024) {
-            stop('output-limit');
-        } else {
-            buffers.push(buffer);
-        }
-    };
     child.stdout.on('data', collect);
     child.stderr.on('data', collect);
     child.on('error', () => {
