@@ -1,0 +1,19 @@
+src/modules/CommandInterface/useCases/selectionHelpers/getSelectedClipIdOfType.ts
+  s_9307cedd8951f1::t_0bdd55363f67b8 4
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0a20740d33a3c96ff3f73e894d422c63efd5b5bc",
+  "prompts": {},
+  "sessions": {
+    "s_9307cedd8951f1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cee0-9c43-7223-9451-be85d15b1347",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
