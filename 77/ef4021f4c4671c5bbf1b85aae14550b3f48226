@@ -1,0 +1,21 @@
+src/modules/AiRuntime/AGENTS.md
+  s_3c91dcbb840566::t_ea2f3255916b80 33,42
+src/modules/AudioRendering/AGENTS.md
+  s_3c91dcbb840566::t_ea2f3255916b80 26
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "77ef4021f4c4671c5bbf1b85aae14550b3f48226",
+  "prompts": {},
+  "sessions": {
+    "s_3c91dcbb840566": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c1058f26-f2e9-46cf-af40-6e3b7eafe1df",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
