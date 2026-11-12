@@ -1,0 +1,21 @@
+src/modules/AiRuntime/useCases/__tests__/perceptualConstraints.spec.ts
+  s_68108e50fab8ff::t_ada7a3dc5c6a0b 1166-1169,1183-1186,1401-1514,1650-1651,1671-1672
+src/modules/AiRuntime/useCases/perceptualConstraints/compilePerceptualConstraints.ts
+  s_68108e50fab8ff::t_fb95a506d71c10 68-72,129-130,132,271-275,299,308,333-337
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5cf5f315be0c082a487ab72f09c28a90022fdf79",
+  "prompts": {},
+  "sessions": {
+    "s_68108e50fab8ff": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_68108e50fab8ff",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
