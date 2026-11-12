@@ -1,0 +1,59 @@
+src/modules/Arrangement/useCases/device/__tests__/captureDevicePatchCommitValidation.spec.ts
+  s_9307cedd8951f1::t_7c54b75772d764 1-2,14-30,35-49,71,100,102
+  s_9307cedd8951f1::t_e3c3b1da25ed58 3-13,31-34,50-70,72-99,101
+src/modules/Fermenter/models/__tests__/FermenterPatchProjectState.spec.ts
+  s_9307cedd8951f1::t_1f7a91ac04a772 5-8
+  s_9307cedd8951f1::t_23be0629cc83e8 4
+src/modules/Fermenter/useCases/__tests__/findFermenterPresetId.spec.ts
+  s_9307cedd8951f1::t_1f7a91ac04a772 5
+src/modules/Project/stores/projectTransitionEpoch.ts
+  s_9307cedd8951f1::t_e6353a886de8f1 1-15
+src/modules/Project/useCases/projectPersistence/helpers/__tests__/runProjectLoadTransaction.spec.ts
+  s_9307cedd8951f1::t_771864299d0053 5,59-92,98-112
+  s_9307cedd8951f1::t_e3c3b1da25ed58 93-97
+  s_9307cedd8951f1::t_9100457dbeb9c6 113
+src/modules/Fermenter/useCases/fermenterParamBridge/setFermenterParamWithAudio.ts
+  s_9307cedd8951f1::t_1f7a91ac04a772 4
+src/modules/Arrangement/useCases/device/captureDevicePatchCommitValidation.ts
+  s_9307cedd8951f1::t_e6353a886de8f1 5,73-74,178,184
+src/modules/Fermenter/presentations/views/FermenterPanel.tsx
+  s_9307cedd8951f1::t_1f7a91ac04a772 41
+  s_9307cedd8951f1::t_bc24e2fd696bd3 39
+src/modules/Fermenter/useCases/__tests__/presetMorph.spec.ts
+  s_9307cedd8951f1::t_e3c3b1da25ed58 145-189
+  s_9307cedd8951f1::t_30f5b467789380 1-2,5-6,10,13,138-144,190-193
+src/modules/Arrangement/handlers/device/handleSetDeviceParameter.ts
+  s_9307cedd8951f1::t_1f7a91ac04a772 14
+src/modules/Project/stores/index.ts
+  s_9307cedd8951f1::t_e6353a886de8f1 20-21
+src/modules/Project/useCases/projectPersistence/helpers/runProjectLoadTransaction.ts
+  s_9307cedd8951f1::t_e6353a886de8f1 40,43,118,129,137,164-165,170,179-180
+  s_9307cedd8951f1::t_771864299d0053 4
+  s_9307cedd8951f1::t_b08e4a693f0be4 157,181
+src/modules/Fermenter/useCases/fermenterParamBridge/loadFermenterPatchWithAudio.ts
+  s_9307cedd8951f1::t_1f7a91ac04a772 2
+src/modules/Fermenter/presentations/views/__tests__/FermenterControlKeyboard.integration.spec.tsx
+  s_9307cedd8951f1::t_3e25802f8e6cb9 32
+src/modules/Project/useCases/projectPersistence/captureProjectTransitionAuthority.ts
+  s_9307cedd8951f1::t_e6353a886de8f1 1,8,10
+src/modules/Fermenter/handlers/handleSetFermenterPatch.ts
+  s_9307cedd8951f1::t_1f7a91ac04a772 14
+src/modules/Fermenter/presentations/views/__tests__/fermenterFilterSelectionUndo.integration.spec.tsx
+  s_9307cedd8951f1::t_1f7a91ac04a772 56
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "18f668bc6995ada34ec7c3a8a161d2ff64bb5622",
+  "prompts": {},
+  "sessions": {
+    "s_9307cedd8951f1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cee0-9c43-7223-9451-be85d15b1347",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
