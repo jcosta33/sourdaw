@@ -1,0 +1,34 @@
+.agents/skills/architecture-violations/SKILL.md
+  s_3df76396fbd4b1::t_571d1374610f4d 46
+scripts/__tests__/check-dependency-boundaries.spec.ts
+  s_3df76396fbd4b1::t_c1f077da71fc02 1916
+  s_3df76396fbd4b1::t_df7ea1c1bc76ee 556,559,567-569
+  s_3df76396fbd4b1::t_90a6c07f05687a 467-468,508-513
+  s_3df76396fbd4b1::t_34de2096431d90 425-466,469-507,514-534
+.agents/decisions/0006-contract-folder-barrels-no-module-root-index.md
+  s_3df76396fbd4b1::t_571d1374610f4d 57,80
+docs/architecture/05-boundary-enforcement-limits.md
+  s_3df76396fbd4b1::t_571d1374610f4d 59-60
+.agents/skills/architecture/SKILL.md
+  s_3df76396fbd4b1::t_571d1374610f4d 47,81
+.dependency-cruiser.cjs
+  s_3df76396fbd4b1::t_df1e5931d0a2f3 235-237,242,250-252
+docs/architecture/03-typescript-module.md
+  s_3df76396fbd4b1::t_571d1374610f4d 926
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9ee599e1d5c4fa6e880baf56a19daa760f3b02ec",
+  "prompts": {},
+  "sessions": {
+    "s_3df76396fbd4b1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f8caa473-e64a-4fad-b579-cf6c36add2c2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
