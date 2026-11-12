@@ -14,13 +14,14 @@ export function launcherFixtureOrigin(repository: string): string {
 }
 
 /**
- * Rewrites the launcher's GitHub URL to the fixture origin, and refuses a source that would still
- * reach github.com: a missed rewrite must fail here, not clone the real repository.
+ * Rewrites the launcher's GitHub URL to the fixture origin, and refuses a source that still carries
+ * that URL: the launcher reaches GitHub only through `GITHUB_ORIGIN_URL`, so a missed rewrite must
+ * fail here, not clone the real repository.
  */
 export function localLauncherSource(source: string, originPath: string): string {
     const localUrl = pathToFileURL(originPath).href;
     const rewritten = source.replaceAll(GITHUB_ORIGIN_URL, localUrl);
-    if (rewritten.includes('github.com') || !rewritten.includes(localUrl)) {
+    if (rewritten.includes(GITHUB_ORIGIN_URL) || !rewritten.includes(localUrl)) {
         throw new Error('fixture launcher does not pin a local origin');
     }
     return rewritten;
