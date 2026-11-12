@@ -1,0 +1,19 @@
+src/modules/Command/useCases/__tests__/retiredRangeToolStoredCommands.spec.ts
+  s_99d03971054b79::t_1ceb4138f4a925 1,4-8,10-11,18-30,32-33,35,37,42,46,48-50,52,290-745
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d749128ce8dfebddf91c3efa833c972dd0f1d48b",
+  "prompts": {},
+  "sessions": {
+    "s_99d03971054b79": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_99d03971054b79",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
