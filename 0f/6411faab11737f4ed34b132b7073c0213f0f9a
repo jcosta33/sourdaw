@@ -1,0 +1,63 @@
+src/modules/AiRuntime/__tests__/vibeRunWorkflowFixture.ts
+  s_126e3d478b4f75::t_07636cbbd020b4 35-38
+src/modules/AiRuntime/useCases/__tests__/vibeBatchSkip.spec.ts
+  s_3c91dcbb840566::t_9e1be948b49949 216
+src/modules/AiRuntime/useCases/agentRequestOrchestration/describeAppliedBatches.ts
+  s_3c91dcbb840566::t_f7cb52efb24f84 3-6
+src/modules/AiRuntime/useCases/agentRequestOrchestration/postVibeRunSummary.ts
+  s_eec9d24f84ae15::t_17802ecbd92d5c 3,9,33,41-45
+src/modules/AiRuntime/useCases/agentRequestOrchestration/proposeNextScheduledBatch.ts
+  s_eec9d24f84ae15::t_9c9883ad6be87f 34
+src/modules/AiRuntime/useCases/agentRequestOrchestration/readAppliedVibeRunBatches.ts
+  s_eec9d24f84ae15::t_a59bfbbe92a9f8 1-40
+src/modules/AiRuntime/useCases/agentRequestOrchestration/readSkippedVibeBatchPositions.ts
+  s_eec9d24f84ae15::t_7a06b905b208ae 1-16
+src/modules/AiRuntime/useCases/agentRequestOrchestration/readVibeRunBatchSummaries.ts
+  s_eec9d24f84ae15::t_8f21d5690e3886 6,14,17-23
+src/modules/AiRuntime/useCases/cancelPendingChatActions.ts
+  s_eec9d24f84ae15::t_a520f96563c471 11
+src/modules/AiRuntime/useCases/revertVibeRun.ts
+  s_126e3d478b4f75::t_3cf570c3c98683 8,12-15,49,57-61
+src/modules/Command/useCases/__tests__/revertActionGroupsAtomically.spec.ts
+  s_3c91dcbb840566::t_80d4aad4ae89cf 4
+src/modules/Command/useCases/index.ts
+  s_3c91dcbb840566::t_a3fb9945fa4954 110-111
+src/modules/Command/useCases/revertActionGroupAtomically.ts
+  s_3c91dcbb840566::t_1c98462dfe6a4e 1-5
+src/modules/Command/useCases/revertActionGroupsAtomically.ts
+  s_3c91dcbb840566::t_62beb74f8d9ae3 1-124
+src/modules/AiRuntime/useCases/agentRequestOrchestration/readVibeRunCards.ts
+  s_3c91dcbb840566::t_f3a0aea2dcf8d2 1-53
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0f6411faab11737f4ed34b132b7073c0213f0f9a",
+  "prompts": {},
+  "sessions": {
+    "s_126e3d478b4f75": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cefa-4460-7913-80c3-c339638913d0",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_3c91dcbb840566": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c1058f26-f2e9-46cf-af40-6e3b7eafe1df",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_eec9d24f84ae15": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cc8d-d36d-71b3-be5c-15c29b38b9aa",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
