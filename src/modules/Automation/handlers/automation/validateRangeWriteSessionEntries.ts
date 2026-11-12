@@ -4,6 +4,7 @@ import { isRecord } from '#/utils/structuralEquality';
 
 import { type AutomationPoint } from '../../models/Automation';
 import { is_exact_automation_point, is_sorted_by_beat } from '../../stores/automationStore';
+import { getAutomationStoreState } from '../../useCases/getAutomationStoreState';
 
 /**
  * Session-history validators for the range writes and the guarded inverses that undo them. A saved
@@ -206,31 +207,91 @@ export function isLegacyRangeWriteSessionEntry(entry: HandlerSessionActionEntry)
 }
 
 /**
- * A parameter range write undoes by removing the lane it created, only while that lane holds the
- * points it wrote, or by restoring the points of the lane it rewrote, only while that lane holds
- * what it wrote; it redoes by replaying the write, whose application-assigned `writeId` names the
- * same lane and points again.
+ * Whether `points` hold the run of points this write placed: the ids `<writeId>-point-0`, `-1`, …
+ * in order, side by side, inside the written range, and no other point carrying the write's
+ * identity. Only the lane the write addressed can hold them, so an undo that expects them names
+ * that lane and no other.
+ */
+function carriesWriteIdentity(point: AutomationPoint, writeId: string): boolean {
+    return point.id?.startsWith(`${writeId}-point-`) === true;
+}
+
+function holdsWrittenRun(
+    points: readonly AutomationPoint[],
+    writeId: string,
+    startBeat: number,
+    endBeat: number
+): boolean {
+    const first = points.findIndex((point) => carriesWriteIdentity(point, writeId));
+    if (first < 0) {
+        return false;
+    }
+    const run = points.slice(first).filter((point) => carriesWriteIdentity(point, writeId));
+    return run.every(
+        (point, index) =>
+            points[first + index] === point &&
+            point.id === `${writeId}-point-${String(index)}` &&
+            point.beat >= startBeat &&
+            point.beat <= endBeat
+    );
+}
+
+/**
+ * Whether the lane a restore names is, while the project holds it, the track's own lane for the
+ * parameter the write addresses. A lane the project no longer holds is left to the restore's own
+ * guard: a later entry may have removed it, and undoing that entry brings it back first.
+ */
+function isLaneOfWriteTarget(laneId: string, trackId: string, parameterId: string): boolean {
+    const lane = getAutomationStoreState()?.lanes.find((candidate) => candidate.id === laneId);
+    return lane === undefined || (!lane.clipId && lane.trackId === trackId && lane.parameterId === parameterId);
+}
+
+/**
+ * A parameter range write undoes by removing the lane it created, `<writeId>-lane`, only while that
+ * lane holds exactly the points it wrote, or by restoring the points of the lane it rewrote, only
+ * while that lane holds what it wrote. Either way the undo expects the write's own run of points,
+ * which binds it to the lane the write addressed; a write never restores the lane it creates. It
+ * redoes by replaying the write, whose application-assigned `writeId` names the same lane and points
+ * again.
  */
 export function isParameterRangeWriteSessionEntry(entry: HandlerSessionActionEntry): boolean {
     const { action, inverseAction, redoAction } = entry;
     if (action.type !== 'automateParameterRange' || redoAction !== undefined || inverseAction === null) {
         return false;
     }
-    const { writeId, startBeat, endBeat } = action.payload;
-    if (!isNonEmptyString(writeId) || !isBeatSpan(startBeat, endBeat)) {
+    const { writeId, startBeat, endBeat, trackId, parameterId } = action.payload;
+    if (
+        !isNonEmptyString(writeId) ||
+        !isFiniteNumber(startBeat) ||
+        !isFiniteNumber(endBeat) ||
+        !isBeatSpan(startBeat, endBeat)
+    ) {
         return false;
     }
+    const createdLaneId = `${writeId}-lane`;
     if (inverseAction.type === 'removeAutomationLane') {
+        const { laneId, expectedPoints } = inverseAction.payload;
         return (
             isRemoveAutomationLanePayload(inverseAction.payload) &&
-            inverseAction.payload.laneId === `${writeId}-lane` &&
-            inverseAction.payload.expectedPoints !== undefined &&
-            inverseAction.payload.expectedPoints.length > 0
+            laneId === createdLaneId &&
+            expectedPoints !== undefined &&
+            isRestorableAutomationPointSet(expectedPoints) &&
+            expectedPoints.every((point) => carriesWriteIdentity(point, writeId)) &&
+            holdsWrittenRun(expectedPoints, writeId, startBeat, endBeat)
         );
     }
+    if (inverseAction.type !== 'restoreAutomationLanePoints') {
+        return false;
+    }
+    const { laneId, points, expectedPoints } = inverseAction.payload;
     return (
-        inverseAction.type === 'restoreAutomationLanePoints' &&
         isRestoreAutomationLanePointsPayload(inverseAction.payload) &&
-        inverseAction.payload.expectedPoints !== undefined
+        laneId !== createdLaneId &&
+        expectedPoints !== undefined &&
+        isRestorableAutomationPointSet(expectedPoints) &&
+        isRestorableAutomationPointSet(points) &&
+        holdsWrittenRun(expectedPoints, writeId, startBeat, endBeat) &&
+        !points.some((point) => carriesWriteIdentity(point, writeId)) &&
+        isLaneOfWriteTarget(laneId, trackId, parameterId)
     );
 }

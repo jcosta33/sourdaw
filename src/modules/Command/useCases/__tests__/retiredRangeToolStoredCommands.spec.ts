@@ -538,6 +538,94 @@ describe('a range write in the undo history a project reload restores', () => {
         expect(pastTypes()).toEqual([]);
     });
 
+    /** Older edit, bus gain lane, a write that created the vocal gain lane, one that rewrote it, newer edit. */
+    async function writeHistoryAroundTwoRangeWrites(): Promise<{ afterCreatedLane: unknown }> {
+        await recolorVocal('#ff5500');
+        await executeVersionedCommandEnvelope(store(storedTrackGainRange()));
+        await writeRanges([VOCAL_GAIN_DIP]);
+        const afterCreatedLane = lanes();
+        await writeRanges([VOCAL_GAIN_DEEPER_DIP]);
+        await recolorVocal('#0000ff');
+        return { afterCreatedLane };
+    }
+
+    function busGainLane(): { id: string; points: unknown } {
+        const lane = automationStore.value?.lanes.find((candidate) => candidate.trackId === 'bus-hall');
+        if (!lane) {
+            throw new Error('Expected the bus gain lane');
+        }
+        return { id: lane.id, points: structuredClone(lane.points) };
+    }
+
+    /** The saved history with the inverse of its `index`th entry rewritten as an earlier build or a peer might. */
+    function withSavedInverse(
+        index: number,
+        rewrite: (inverse: Record<string, unknown>, payload: Record<string, unknown>) => void
+    ): (saved: SavedHistory) => SavedHistory {
+        return (saved) => {
+            const past = structuredClone(saved.past);
+            const entry = past[index];
+            const inverse = isRecord(entry) ? entry.inverseAction : undefined;
+            if (!isRecord(inverse) || !isRecord(inverse.payload)) {
+                throw new Error(`Expected saved entry ${String(index)} to carry an inverse`);
+            }
+            rewrite(inverse, inverse.payload);
+            return { ...saved, past };
+        };
+    }
+
+    it.each([
+        {
+            case: 'names another track lane',
+            rewrite: (bus: { id: string; points: unknown }) =>
+                withSavedInverse(3, (_inverse, payload) => {
+                    payload.laneId = bus.id;
+                }),
+        },
+        {
+            case: 'names another track lane by the points it holds',
+            rewrite: (bus: { id: string; points: unknown }) =>
+                withSavedInverse(3, (_inverse, payload) => {
+                    payload.laneId = bus.id;
+                    payload.expectedPoints = bus.points;
+                }),
+        },
+    ])('drops a saved range write whose restore $case, with everything older', async ({ rewrite }) => {
+        await writeHistoryAroundTwoRangeWrites();
+        const bus = busGainLane();
+        const written = lanes();
+
+        const savedHistory = reloadSavedProject(rewrite(bus));
+
+        expect(savedTypes(savedHistory.past)[3]).toBe('automateParameterRange');
+        // The mirror keeps only the unbroken run nearest the present, so the refused entry strands
+        // every entry older than it.
+        expect(pastTypes()).toEqual(['setTrackColor']);
+        await undo();
+        expect(vocalColor()).toBe('#ff5500');
+        expect(lanes()).toEqual(written);
+        expect(busGainLane()).toEqual(bus);
+        expect(pastTypes()).toEqual([]);
+    });
+
+    it('drops a saved write that created its lane when its undo restores that lane instead', async () => {
+        const { afterCreatedLane } = await writeHistoryAroundTwoRangeWrites();
+
+        const savedHistory = reloadSavedProject(
+            withSavedInverse(2, (inverse, payload) => {
+                inverse.type = 'restoreAutomationLanePoints';
+                payload.points = [];
+            })
+        );
+
+        expect(savedHistory.past[2]).toMatchObject({ inverseAction: { type: 'removeAutomationLane' } });
+        expect(pastTypes()).toEqual(['automateParameterRange', 'setTrackColor']);
+        await undo();
+        await undo();
+        expect(lanes()).toEqual(afterCreatedLane);
+        expect(pastTypes()).toEqual([]);
+    });
+
     it('loads a history saved before range writes were kept and undoes it as before', async () => {
         const originalColor = vocalColor();
         await recolorVocal('#ff5500');
@@ -700,7 +788,7 @@ describe('the saved-history contracts of the range-write inverses', () => {
         expect(handler.validateSessionEntry({ action, inverseAction: removal, redoAction: action })).toBe(false);
     });
 
-    it('keeps a saved parameter range write only when its undo names the lane its write id created', () => {
+    it('keeps a saved parameter range write only when its undo expects the points that write placed', () => {
         const validateSessionEntry = getHandlerByType('automateParameterRange')?.validateSessionEntry;
         if (!validateSessionEntry) {
             throw new Error('Expected automateParameterRange to validate its saved entries');
@@ -709,37 +797,55 @@ describe('the saved-history contracts of the range-write inverses', () => {
             type: 'automateParameterRange',
             payload: { trackId: 'track-vocal', parameterId: 'gain', range: { section: 'Chorus' }, deltaDb: -3 },
         } satisfies AppAction;
+        const writeId = 'automation-range-command-1';
         const action = {
             ...unmaterialized,
-            payload: { ...unmaterialized.payload, startBeat: 16, endBeat: 32, writeId: 'automation-range-command-1' },
+            payload: { ...unmaterialized.payload, startBeat: 16, endBeat: 32, writeId },
         } satisfies AppAction;
+        const before = { ...POINT, beat: 8 };
+        const opening = { ...POINT, id: `${writeId}-point-0` };
+        const closing = { ...LATER_POINT, id: `${writeId}-point-1` };
         const removal = {
             type: 'removeAutomationLane',
-            payload: { laneId: 'automation-range-command-1-lane', expectedPoints: [POINT, LATER_POINT] },
+            payload: { laneId: `${writeId}-lane`, expectedPoints: [opening, closing] },
         } satisfies AppAction;
         const restore = {
             type: 'restoreAutomationLanePoints',
-            payload: { laneId: 'lane-gain', points: [POINT], expectedPoints: [POINT, LATER_POINT] },
+            payload: { laneId: 'lane-gain', points: [before], expectedPoints: [before, opening, closing] },
         } satisfies AppAction;
+        const refusedRemovals = {
+            'another lane': { laneId: 'lane-gain', expectedPoints: [opening, closing] },
+            'no expected points': { laneId: removal.payload.laneId },
+            'a point the write did not place': {
+                laneId: removal.payload.laneId,
+                expectedPoints: [before, opening, closing],
+            },
+        };
+        const refusedRestores = {
+            'no expected points': { laneId: 'lane-gain', points: [before] },
+            'expected points the write did not place': {
+                laneId: 'lane-gain',
+                points: [before],
+                expectedPoints: [before, POINT],
+            },
+            'its written points out of order': {
+                laneId: 'lane-gain',
+                points: [before],
+                expectedPoints: [before, { ...opening, id: closing.id }, { ...closing, id: opening.id }],
+            },
+            'the lane the write creates': { ...restore.payload, laneId: removal.payload.laneId },
+            'prior points carrying the write identity': { ...restore.payload, points: [opening] },
+        };
 
         expect(validateSessionEntry({ action, inverseAction: removal })).toBe(true);
         expect(validateSessionEntry({ action, inverseAction: restore })).toBe(true);
         expect(validateSessionEntry({ action: unmaterialized, inverseAction: removal })).toBe(false);
-        expect(
-            validateSessionEntry({
-                action,
-                inverseAction: { ...removal, payload: { laneId: 'lane-gain', expectedPoints: [POINT] } },
-            })
-        ).toBe(false);
-        expect(
-            validateSessionEntry({ action, inverseAction: { ...removal, payload: { laneId: removal.payload.laneId } } })
-        ).toBe(false);
-        expect(
-            validateSessionEntry({
-                action,
-                inverseAction: { ...restore, payload: { laneId: 'lane-gain', points: [POINT] } },
-            })
-        ).toBe(false);
         expect(validateSessionEntry({ action, inverseAction: removal, redoAction: action })).toBe(false);
+        for (const [reason, payload] of Object.entries(refusedRemovals)) {
+            expect(validateSessionEntry({ action, inverseAction: { ...removal, payload } }), reason).toBe(false);
+        }
+        for (const [reason, payload] of Object.entries(refusedRestores)) {
+            expect(validateSessionEntry({ action, inverseAction: { ...restore, payload } }), reason).toBe(false);
+        }
     });
 });
