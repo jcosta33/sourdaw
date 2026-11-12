@@ -1,0 +1,23 @@
+scripts/vitestProgressReporter.ts
+  s_eec9d24f84ae15::t_c20853adc17e5b 1-3,6-18
+scripts/resourceGuard.ts
+  s_eec9d24f84ae15::t_c20853adc17e5b 42
+scripts/vitestProgressDiagnostics.ts
+  s_eec9d24f84ae15::t_c20853adc17e5b 5
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d12b70296f581d6d8fd4c7582a646ac7f2b13f26",
+  "prompts": {},
+  "sessions": {
+    "s_eec9d24f84ae15": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cc8d-d36d-71b3-be5c-15c29b38b9aa",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
