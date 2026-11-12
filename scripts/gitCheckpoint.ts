@@ -18,10 +18,11 @@ import {
     writeFileSync,
 } from 'node:fs';
 import { constants as osConstants, homedir } from 'node:os';
-import { isAbsolute, join } from 'node:path';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { checkpointSocketRows } from './gitCheckpointSocket.ts';
+
 import { checkpointMountOptions } from './gitCheckpointMount.ts';
+import { checkpointSocketRows } from './gitCheckpointSocket.ts';
 
 const script = fileURLToPath(import.meta.url);
 const unavailable = 'unavailable';
@@ -154,7 +155,13 @@ function info(path: string): object {
         return { error: errorCode(error) };
     }
 }
-function observe(paths: string[], partialPath: string) {
+function observe(
+    paths: string[],
+    partialPath: string,
+    discover: boolean,
+    includeIgnored: boolean,
+    trackedOnly: boolean
+) {
     const partial: Record<string, unknown> = {};
     const checkpoint = (key: string, value: unknown) => {
         partial[key] = value;
@@ -177,12 +184,32 @@ function observe(paths: string[], partialPath: string) {
         '--diff-filter=ACMR',
     ]);
     const stagedPaths = staged?.split('\0').filter(Boolean) ?? [];
-    const discovered = [...new Set([...paths, ...stagedPaths])];
+    let matched: string[] = [];
+    let pathspecDiscovery = 'not requested';
+    if (discover) {
+        const argumentsForListing = ['ls-files', '-z', '--cached'];
+        if (!trackedOnly) {
+            argumentsForListing.push('--others');
+        }
+        if (!includeIgnored && !trackedOnly) {
+            argumentsForListing.push('--exclude-standard');
+        }
+        argumentsForListing.push('--', ...new Set(paths));
+        const listing = command('git', argumentsForListing);
+        if (listing === null) {
+            pathspecDiscovery = unavailable;
+        } else {
+            matched = listing.split('\0').filter(Boolean);
+            pathspecDiscovery = 'complete';
+        }
+    }
+    const discovered = [...new Set([...paths.filter((path) => !discover), ...matched, ...stagedPaths])];
     const selected = discovered.slice(0, 256);
     checkpoint('sourceSelection', {
         selected: selected.length,
         omitted: discovered.length - selected.length,
         stagedDiscovery: staged === null ? unavailable : 'complete',
+        pathspecDiscovery,
     });
     const sources = new Map<string, object>();
     for (const path of selected) {
@@ -225,16 +252,30 @@ function observe(paths: string[], partialPath: string) {
         trace2: trace2 ?? unavailable,
     };
 }
-function inspect(paths: string[], directory: string, phase: string): Promise<Record<string, unknown>> {
+function inspect(
+    paths: string[],
+    directory: string,
+    phase: string,
+    discover = false,
+    includeIgnored = false,
+    trackedOnly = false
+): Promise<Record<string, unknown>> {
     const partialPath = join(directory, `${phase}-partial.json`);
     return new Promise((resolve) => {
-        const child = spawn(process.execPath, [script, '--observe', JSON.stringify(paths), partialPath], {
+        const request = JSON.stringify({ paths, discover, includeIgnored, trackedOnly });
+        if (Buffer.byteLength(request) > 4 * 1024 * 1024) {
+            resolve({ error: 'observer request exceeds 4 MiB' });
+            return;
+        }
+        const child = spawn(process.execPath, [script, '--observe', partialPath], {
             env: { ...diagnosticEnv, SOURDAW_CHECKPOINT_TRACE2_INHERITED: process.env.GIT_TRACE2_EVENT ?? '__unset__' },
-            stdio: ['ignore', 'pipe', 'ignore'],
+            stdio: ['pipe', 'pipe', 'ignore'],
             detached: true,
         });
         let output = '';
         let done = false;
+        child.stdin.on('error', () => {});
+        child.stdin.end(request);
         const partial = (): Record<string, unknown> => {
             try {
                 const snapshot = parseRecord(readFileSync(partialPath, 'utf8'));
@@ -325,17 +366,30 @@ function watchForStall(
             queue: unavailable,
         };
         save();
-        const observer = spawn(
-            process.execPath,
-            [
-                script,
-                '--sample',
-                String(child.pid),
-                identity ?? '',
-                JSON.stringify(typeof before.trace2 === 'string' ? before.trace2 : ''),
-            ],
-            { stdio: ['ignore', 'pipe', 'ignore'], detached: true }
-        );
+        let observer: ReturnType<typeof spawn>;
+        try {
+            observer = spawn(
+                process.execPath,
+                [
+                    script,
+                    '--sample',
+                    String(child.pid),
+                    identity ?? '',
+                    JSON.stringify(typeof before.trace2 === 'string' ? before.trace2 : ''),
+                ],
+                { stdio: ['ignore', 'pipe', 'ignore'], detached: true }
+            );
+        } catch {
+            evidence.stall = { sample: unavailable, reason: 'observer spawn failed' };
+            save();
+            return;
+        }
+        if (!observer.stdout) {
+            evidence.stall = { sample: unavailable, reason: 'observer output unavailable' };
+            save();
+            return;
+        }
+        const observerOutput = observer.stdout;
         let output = '';
         const stopObserver = () => {
             if (observer.pid && observer.exitCode === null && observer.signalCode === null) {
@@ -345,10 +399,10 @@ function watchForStall(
                     /* already exited */
                 }
             }
-            observer.stdout.destroy();
+            observerOutput.destroy();
             observer.unref();
         };
-        observer.stdout.on('data', (chunk: Buffer) => {
+        observerOutput.on('data', (chunk: Buffer) => {
             output += chunk.toString();
             if (output.length > 256 * 1024) {
                 stopObserver();
@@ -382,9 +436,18 @@ async function main(args: string[]) {
     chmodSync(directory, 0o700);
     const receipt = join(directory, 'receipt.json');
     const separator = args.indexOf('--');
-    const paths = args[0] === 'add' && separator >= 0 ? args.slice(separator + 1).filter((p) => !isAbsolute(p)) : [];
+    const paths = args[0] === 'add' && separator >= 0 ? args.slice(separator + 1) : [];
+    const discover = args[0] === 'add' && separator >= 0;
+    const options = args.slice(1, separator);
+    const includeIgnored = options.some((arg) => arg === '-f' || arg === '--force');
+    const trackedOnly = options.some((arg) => arg === '-u' || arg === '--update');
     const started = process.hrtime.bigint();
-    const before = await inspect(paths, directory, 'before');
+    let before: Record<string, unknown>;
+    try {
+        before = await inspect(paths, directory, 'before', discover, includeIgnored, trackedOnly);
+    } catch {
+        before = { error: 'observer unavailable' };
+    }
     const evidence: Record<string, unknown> = {
         version: 1,
         operation: args[0],
@@ -508,13 +571,32 @@ if (process.argv[2] === '--sample') {
         );
     }
 } else if (process.argv[2] === '--observe') {
-    const rawPaths = process.argv[3];
-    const partialPath = process.argv[4];
-    const paths = rawPaths === undefined ? null : parseStrings(rawPaths);
-    if (paths && partialPath) {
-        console.log(JSON.stringify(observe(paths, partialPath)));
+    const partialPath = process.argv[3];
+    let input = '';
+    for await (const received of process.stdin) {
+        const chunk: unknown = received;
+        if (!Buffer.isBuffer(chunk) && typeof chunk !== 'string') {
+            break;
+        }
+        input += chunk.toString();
+        if (Buffer.byteLength(input) > 4 * 1024 * 1024) {
+            break;
+        }
+    }
+    const request = Buffer.byteLength(input) <= 4 * 1024 * 1024 ? parseRecord(input) : null;
+    const paths = request && Array.isArray(request.paths) ? parseStrings(JSON.stringify(request.paths)) : null;
+    if (
+        paths &&
+        partialPath &&
+        typeof request?.discover === 'boolean' &&
+        typeof request.includeIgnored === 'boolean' &&
+        typeof request.trackedOnly === 'boolean'
+    ) {
+        console.log(
+            JSON.stringify(observe(paths, partialPath, request.discover, request.includeIgnored, request.trackedOnly))
+        );
     } else {
-        console.error('invalid observer paths');
+        console.error('invalid observer arguments');
         process.exitCode = 2;
     }
 } else {

@@ -10,12 +10,14 @@ import {
     mkdirSync,
     symlinkSync,
 } from 'node:fs';
-import { tmpdir } from 'node:os';
 import { createServer } from 'node:net';
+import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
+
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { checkpointSocketRows } from '../gitCheckpointSocket';
+
 import { checkpointMountOptions } from '../gitCheckpointMount';
+import { checkpointSocketRows } from '../gitCheckpointSocket';
 
 const runner = resolve('scripts/gitCheckpoint.ts');
 const roots: string[] = [];
@@ -110,6 +112,17 @@ describe('Git checkpoint diagnostic', () => {
                 .digest('hex')
         );
     });
+    it('rejects malformed private observer request data', () => {
+        for (const input of ['{', '[]', JSON.stringify({ paths: [1], discover: true, includeIgnored: false })]) {
+            const result = spawnSync(process.execPath, [runner, '--observe', '/tmp/unwritten'], {
+                encoding: 'utf8',
+                input,
+            });
+            expect(result.status).toBe(2);
+            expect(result.stderr).toContain('invalid observer arguments');
+            expect(result.stderr).not.toContain('node:internal');
+        }
+    });
     it('records dangling symlink text without opening its missing target', async () => {
         const { root, env } = fixture();
         symlinkSync('missing-target', join(root, 'dangling'));
@@ -122,9 +135,7 @@ describe('Git checkpoint diagnostic', () => {
     it('rejects malformed observer arguments without an internal stack', () => {
         for (const args of [
             ['--observe'],
-            ['--observe', '{', '/tmp/unwritten'],
-            ['--observe', '[1]', '/tmp/unwritten'],
-            ['--observe', '[]'],
+            ['--observe', '/tmp/unwritten'],
             ['--sample'],
             ['--sample', '0', '', JSON.stringify('')],
             ['--sample', '1', '', '{'],
@@ -147,6 +158,27 @@ describe('Git checkpoint diagnostic', () => {
             createHash('sha256').update('recorded take').digest('hex')
         );
         expect(git('ls-files', '--error-unmatch', 'takes/note.txt')).toBe('takes/note.txt');
+    });
+    it('respects update and force when discovering files selected by Git', async () => {
+        const { root, env, git } = fixture();
+        mkdirSync(join(root, 'takes'));
+        writeFileSync(join(root, '.gitignore'), '*.tmp\n');
+        writeFileSync(join(root, 'takes', 'tracked.wav'), 'before');
+        git('add', '--', '.gitignore', 'takes/tracked.wav');
+        git('commit', '-qm', 'test: baseline');
+        writeFileSync(join(root, 'takes', 'tracked.wav'), 'after');
+        writeFileSync(join(root, 'takes', 'untracked.wav'), 'untracked');
+        writeFileSync(join(root, 'takes', 'ignored.tmp'), 'ignored');
+        const updated = await run(root, env, 'add', '-u', '--', 'takes');
+        expect(updated.code, updated.stderr).toBe(0);
+        const updatedSources = receipt(updated.stderr).value.before.sources;
+        expect(updatedSources['takes/tracked.wav'].sha256).toBe(createHash('sha256').update('after').digest('hex'));
+        expect(Object.hasOwn(updatedSources, 'takes/untracked.wav')).toBe(false);
+        const forced = await run(root, env, 'add', '-f', '--', 'takes/ignored.tmp');
+        expect(forced.code, forced.stderr).toBe(0);
+        expect(receipt(forced.stderr).value.before.sources['takes/ignored.tmp'].sha256).toBe(
+            createHash('sha256').update('ignored').digest('hex')
+        );
     });
     it('preserves legal large Git path arguments through checkpoint observation', async () => {
         const { root, env } = fixture();
@@ -302,23 +334,32 @@ exit 23
             gitStderr += chunk.toString();
         });
         try {
-            await vi.waitFor(
-                () => {
-                    const dirs = readdirSync(receiptRoot);
-                    expect(dirs).toHaveLength(1);
-                    const directory = dirs[0];
-                    if (directory === undefined) {
-                        throw new Error('missing checkpoint receipt directory');
-                    }
-                    const data = JSON.parse(readFileSync(join(receiptRoot, directory, 'receipt.json'), 'utf8'));
-                    expect(data.pid).toBeGreaterThan(0);
-                    expect(connections.length, gitStderr).toBeGreaterThan(0);
-                    expect(child.exitCode, gitStderr).toBeNull();
-                    expect(data.stall).toBeDefined();
-                    expect(data.stall.sample).not.toBe('observation pending');
-                },
-                { timeout: 20000, interval: 50 }
-            );
+            const exitedEarly = new Promise<never>((_resolve, reject) => {
+                child.once('close', (code, signal) =>
+                    reject(new Error(`checkpoint exited early: code=${code} signal=${signal} stderr=${gitStderr}`))
+                );
+            });
+            await Promise.race([
+                exitedEarly,
+                vi.waitFor(
+                    () => {
+                        expect(child.exitCode, gitStderr).toBeNull();
+                        const dirs = readdirSync(receiptRoot);
+                        expect(dirs).toHaveLength(1);
+                        const directory = dirs[0];
+                        if (directory === undefined) {
+                            throw new Error('missing checkpoint receipt directory');
+                        }
+                        const data = JSON.parse(readFileSync(join(receiptRoot, directory, 'receipt.json'), 'utf8'));
+                        expect(data.pid).toBeGreaterThan(0);
+                        expect(connections.length, gitStderr).toBeGreaterThan(0);
+                        expect(child.exitCode, gitStderr).toBeNull();
+                        expect(data.stall).toBeDefined();
+                        expect(data.stall.sample).not.toBe('observation pending');
+                    },
+                    { timeout: 20000, interval: 50 }
+                ),
+            ]);
             server.close();
             // Drain the exact connection only after observing the blocked writer.
             for (const connection of connections) {
