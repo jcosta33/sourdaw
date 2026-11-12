@@ -2,12 +2,19 @@ import { mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, 
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
+import { captureProcessGroupOfPid, type ProcessGroupSnapshot } from './processSnapshot.ts';
+
 export const VITEST_PROGRESS_ENV = 'SOURDAW_VITEST_PROGRESS';
 
-type ProgressEvent = 'runner-start' | 'module-queued' | 'worker-setup' | 'module-collected' | 'test-start' | 'scan';
+type ProgressEvent =
+    'runner-start' | 'module-queued' | 'worker-setup' | 'module-collected' | 'test-start' | 'scan' | 'module-failure';
 
 /** Latest event per stage; slots are independent and do not form a correlated timeline. */
-export function recordVitestProgress(event: ProgressEvent, detail = ''): void {
+export function recordVitestProgress(
+    event: ProgressEvent,
+    detail = '',
+    observation?: { monotonicNs: string; processGroup: ProcessGroupSnapshot }
+): void {
     const directory = process.env[VITEST_PROGRESS_ENV];
     if (!directory) {
         return;
@@ -21,7 +28,9 @@ export function recordVitestProgress(event: ProgressEvent, detail = ''): void {
                 event,
                 monotonicNs: process.hrtime.bigint().toString(),
                 pid: process.pid,
+                parentPid: process.ppid,
                 detail: detail.slice(0, 512),
+                ...(observation === undefined ? {} : { observation }),
             }),
             { mode: 0o600, flag: 'wx' }
         );
@@ -36,6 +45,20 @@ export function recordVitestProgress(event: ProgressEvent, detail = ''): void {
                 /* Best effort. */
             }
         }
+    }
+}
+
+/** The first failed module is observed before Vitest tears the runner down. */
+export function recordVitestModuleFailure(moduleId: string): void {
+    if (!process.env[VITEST_PROGRESS_ENV]) {
+        return;
+    }
+    try {
+        const monotonicNs = process.hrtime.bigint().toString();
+        const processGroup = captureProcessGroupOfPid(process.pid);
+        recordVitestProgress('module-failure', moduleId, { monotonicNs, processGroup });
+    } catch {
+        // An unavailable diagnostic must not alter the test result.
     }
 }
 

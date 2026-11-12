@@ -7,15 +7,18 @@ import { expect, it, vi } from 'vitest';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '../..');
 
-it('retains real runner, worker, collection and test-start events on failure', () => {
+it('retains runner and process-group evidence when a real worker hook times out', () => {
     const fixture = mkdtempSync(join(root, 'scripts/__tests__/vitest-progress-'));
     try {
         const spec = join(fixture, 'failure.spec.ts');
         const config = join(fixture, 'vitest.config.mjs');
-        writeFileSync(spec, "import { it, expect } from 'vitest'; it('fails', () => expect(1).toBe(2));\n");
+        writeFileSync(
+            spec,
+            "import { beforeEach, it, expect } from 'vitest'; beforeEach(() => new Promise(() => {})); it('fails', () => expect(1).toBe(2));\n"
+        );
         writeFileSync(
             config,
-            `export default { test: { include: [${JSON.stringify(spec)}], environment: 'node', setupFiles: [${JSON.stringify(join(root, 'scripts/vitestProgressSetup.ts'))}] } };\n`
+            `export default { test: { include: [${JSON.stringify(spec)}], environment: 'node', hookTimeout: 50, setupFiles: [${JSON.stringify(join(root, 'scripts/vitestProgressSetup.ts'))}] } };\n`
         );
         const result = spawnSync(
             process.execPath,
@@ -27,6 +30,7 @@ it('retains real runner, worker, collection and test-start events on failure', (
             }
         );
         expect(result.status).not.toBe(0);
+        expect(result.stdout + result.stderr).toContain('Hook timed out');
         const journal = readdirSync(fixture).find((name) => name.startsWith('vitest-progress-'));
         expect(journal).toBeDefined();
         const journalPath = join(fixture, journal!);
@@ -39,6 +43,21 @@ it('retains real runner, worker, collection and test-start events on failure', (
             expect(text).toContain(event);
         }
         expect(result.stderr).toContain(journal);
+        const runner = JSON.parse(readFileSync(join(journalPath, 'runner-start.json'), 'utf8'));
+        const failure = JSON.parse(readFileSync(join(journalPath, 'module-failure.json'), 'utf8'));
+        expect(failure).toMatchObject({
+            event: 'module-failure',
+            detail: spec,
+            pid: runner.pid,
+            parentPid: runner.parentPid,
+            observation: { monotonicNs: expect.stringMatching(/^\d+$/), processGroup: { status: expect.any(String) } },
+        });
+        expect(['available', 'unavailable']).toContain(failure.observation.processGroup.status);
+        if (failure.observation.processGroup.status === 'available') {
+            expect(failure.observation.processGroup.rows).toContainEqual(
+                expect.objectContaining({ pid: runner.pid, parentPid: runner.parentPid })
+            );
+        }
     } finally {
         rmSync(fixture, { recursive: true, force: true });
     }

@@ -3,7 +3,7 @@ import { once } from 'node:events';
 
 import { expect, it } from 'vitest';
 
-import { captureProcessGroupSnapshot, parseProcessGroupSnapshot } from '../processSnapshot';
+import { captureProcessGroupOfPid, captureProcessGroupSnapshot, parseProcessGroupSnapshot } from '../processSnapshot';
 
 it.skipIf(process.platform === 'win32')('captures a detached process group without command arguments', async () => {
     const child = spawn(
@@ -59,4 +59,17 @@ it('fails closed on malformed census and reports a bounded group explicitly', ()
     }
     expect(snapshot.rows).toHaveLength(32);
     expect(snapshot.truncated).toBe(true);
+});
+
+it.skipIf(process.platform === 'win32')('finds the caller in its own group without command arguments', () => {
+    const snapshot = captureProcessGroupOfPid(process.pid);
+    expect(snapshot.status).toBe('available');
+    if (snapshot.status !== 'available') {
+        throw new Error('Expected snapshot');
+    }
+    expect(snapshot.rows[0]).toMatchObject({ pid: process.pid, parentPid: process.ppid });
+});
+
+it('reports an absent process unavailable', () => {
+    expect(captureProcessGroupOfPid(2147483647)).toEqual({ status: 'unavailable' });
 });
