@@ -16,7 +16,6 @@ const FIXTURE_PRESETS: Preset[] = [
 
 function defaultProps(overrides: Partial<ComponentProps<typeof PresetBrowser>> = {}) {
     return {
-        currentName: 'Init',
         userPatches: [{ id: 'u1', name: 'My Patch' }],
         presets: FIXTURE_PRESETS,
         onLoadPreset: vi.fn(),
@@ -165,23 +164,32 @@ describe('PresetBrowser', () => {
     });
 
     describe('current-preset highlight', () => {
-        it('highlights the preset whose stripped name equals currentName', () => {
-            render(<PresetBrowser {...defaultProps({ currentName: 'Bass Acid' })} />);
-            const bassButton = screen.getByText('Bass Acid').closest('button')!;
-            expect(bassButton.className).toContain('bg-[var(--color-accent-lavender)]/15');
+        it('highlights the same preset identity that filtered stepping uses', () => {
+            render(<PresetBrowser {...defaultProps({ currentPresetId: 'p2' })} />);
+            expect(screen.getByRole('button', { name: 'Bass Acid' }).className).toContain(
+                'bg-[var(--color-accent-lavender)]/15'
+            );
+            expect(screen.getByRole('button', { name: 'Lead One' }).className).not.toContain(
+                'bg-[var(--color-accent-lavender)]/15'
+            );
         });
 
-        it('also highlights when currentName still carries the "Fermenter — " prefix', () => {
-            render(<PresetBrowser {...defaultProps({ currentName: 'Fermenter — Lead One' })} />);
-            const leadButton = screen.getByText('Lead One').closest('button')!;
-            expect(leadButton.className).toContain('bg-[var(--color-accent-lavender)]/15');
+        it('does not highlight a same-name successor with a different preset identity', () => {
+            const presets = [
+                ...FIXTURE_PRESETS,
+                { id: 'replacement', name: 'Fermenter — Lead One', category: 'lead', tags: [] },
+            ];
+            render(<PresetBrowser {...defaultProps({ presets })} />);
+            const matches = screen.getAllByRole('button', { name: 'Lead One' });
+            expect(matches[0]!.className).toContain('bg-[var(--color-accent-lavender)]/15');
+            expect(matches[1]!.className).not.toContain('bg-[var(--color-accent-lavender)]/15');
         });
 
-        it('does not highlight a non-current preset', () => {
-            render(<PresetBrowser {...defaultProps({ currentName: 'Bass Acid' })} />);
-            const leadButton = screen.getByText('Lead One').closest('button')!;
-            expect(leadButton.className).not.toContain('bg-[var(--color-accent-lavender)]/15');
-            expect(leadButton.className).toContain('hover:bg-surface-raised');
+        it('leaves every preset unhighlighted when the actual patch has no registry identity', () => {
+            render(<PresetBrowser {...defaultProps({ currentPresetId: null })} />);
+            expect(screen.getByRole('button', { name: 'Lead One' }).className).not.toContain(
+                'bg-[var(--color-accent-lavender)]/15'
+            );
         });
     });
 

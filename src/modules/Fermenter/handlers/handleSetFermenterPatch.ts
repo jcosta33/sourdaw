@@ -44,16 +44,37 @@ function guardsMatch(action: PatchAction): boolean {
 }
 
 export const handleSetFermenterPatch = createHandler<'setFermenterPatch'>({
+    validate: (action) =>
+        fromFermenterDeviceState(action.payload.before) !== null &&
+        fromFermenterDeviceState(action.payload.after) !== null &&
+        guardsMatch(action),
     execute: (action) => {
         const before = fromFermenterDeviceState(action.payload.before);
         const after = fromFermenterDeviceState(action.payload.after);
         if (!before || !after || !guardsMatch(action)) {
             return { status: 'conflict' };
         }
+        const { device } = currentTarget(action);
+        if (!device) {
+            return { status: 'conflict' };
+        }
+        const previousValues = new Map(Object.entries(readFermenterPatchFromProjectDevice(device)));
         if (!setDeviceState({ deviceId: action.payload.deviceId, state: toFermenterDeviceState(after) })) {
             return { status: 'no-write' };
         }
-        getFermenterDependencies().persistDevicePatch?.(action.payload.deviceId, after);
+        // Scalar edits retain unrelated absent leaves. Existing mirrors still
+        // follow the full snapshot, so hydration cannot overlay an older value.
+        for (const [key, value] of Object.entries(after)) {
+            if (typeof value !== 'number') {
+                continue;
+            }
+            const changed = Object.hasOwn(device.parameterValues, key)
+                ? device.parameterValues[key] !== value
+                : previousValues.get(key) !== value;
+            if (changed) {
+                getFermenterDependencies().persistDeviceParam(action.payload.deviceId, key, value);
+            }
+        }
         const reconcile = (): void => reconcileFermenterPatchFromProject(action.payload.deviceId);
         return { status: 'written', afterCommit: reconcile, afterAmbiguousCommit: reconcile };
     },
@@ -68,7 +89,10 @@ export const handleSetFermenterPatch = createHandler<'setFermenterPatch'>({
                 expectedCurrent: action.payload.after,
             },
         },
-        redoAction: action,
+        redoAction: {
+            ...action,
+            payload: { ...action.payload, expectedCurrent: action.payload.before },
+        },
     }),
     isNoop: (action) => {
         const after = fromFermenterDeviceState(action.payload.after);

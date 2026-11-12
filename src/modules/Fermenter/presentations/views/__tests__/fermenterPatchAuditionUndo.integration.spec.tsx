@@ -59,12 +59,20 @@ import {
 } from '../../../models/FermenterPatchState';
 import { fermenterStore, getFermenterState, loadFermenterPatch } from '../../../stores/fermenterStore';
 import { commitFermenterPatch } from '../../../useCases/commitFermenterPatch';
+import { loadFermenterPatchWithAudio } from '../../../useCases/fermenterParamBridge/loadFermenterPatchWithAudio';
+import { setFermenterParamWithAudio } from '../../../useCases/fermenterParamBridge/setFermenterParamWithAudio';
+import { hydrateFermenterFromProject } from '../../../useCases/hydrateFermenterFromProject';
+import { resolveFermenterPresetPatch } from '../../../useCases/fermenterPatchOperations';
+import { applyMorphedPatch } from '../../../useCases/presetMorph/applyMorphedPatch';
 import { setFermenterDependencies } from '../../../useCases/fermenterDependencies';
 import { FERMENTER_PRESETS } from '../../../useCases/fermenterQueries/helpers';
 import { getFermenterHandlers } from '../../../useCases/getFermenterHandlers';
 import { FermenterPanel } from '../FermenterPanel';
 
-const audio = vi.hoisted(() => ({ updateDeviceParam: vi.fn(), updateDevicePatch: vi.fn() }));
+const audio = vi.hoisted(() => ({
+    updateDeviceParam: vi.fn<(trackId: string, deviceId: string, paramId: string, value: number) => void>(),
+    updateDevicePatch: vi.fn<(trackId: string, deviceId: string, patch: Record<string, unknown>) => void>(),
+}));
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
     updateDeviceParam: audio.updateDeviceParam,
@@ -247,6 +255,7 @@ describe('Fermenter whole-patch auditioning through Command', () => {
 
     afterEach(() => {
         cleanup();
+        vi.restoreAllMocks();
         agentProjectRepairStateStore.set(null);
         registerCrdtStorageRuntime();
         flushAutomergeStorageWrites();
@@ -257,6 +266,28 @@ describe('Fermenter whole-patch auditioning through Command', () => {
             clear: () => undefined,
         });
     });
+
+    async function modifiedAudition(): Promise<FermenterPatch> {
+        renderPanel();
+        await waitFor(() => expect(getFermenterState(DEVICE_ID).patch).toEqual(initialPatch));
+        fireEvent.click(screen.getByRole('button', { name: 'Superloaf', exact: true }));
+        await waitFor(() => expect(depth()).toBe(1));
+        const previousMacro = getFermenterState(DEVICE_ID).patch.macros[0];
+        const callbacks: FrameRequestCallback[] = [];
+        const raf = vi.spyOn(globalThis, 'requestAnimationFrame').mockImplementation((callback) => {
+            callbacks.push(callback);
+            return callbacks.length;
+        });
+        fireEvent.keyDown(screen.getByRole('slider', { name: 'Brightness', exact: true }), { key: 'ArrowUp' });
+        const edited = cloneFermenterPatch(getFermenterState(DEVICE_ID).patch);
+        expect(edited.macros[0]).not.toBe(previousMacro);
+        act(() => callbacks[0]!(0));
+        await waitFor(() => expect(committedPatch()).toEqual(edited));
+        raf.mockRestore();
+        expect(screen.getByText('Modified')).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Show patch A' })).toBeEnabled();
+        return edited;
+    }
 
     it('restores project truth, panel state, runtime, and every nested patch field on undo and redo', async () => {
         const after = patchNamed('Auditioned', 1800);
@@ -302,6 +333,23 @@ describe('Fermenter whole-patch auditioning through Command', () => {
         expect(committedPatch()).toEqual(initialPatch);
     });
 
+    it('hydrates Blank Dough preset context before stepping to Superloaf in Synth', async () => {
+        const firstPatch = resolveFermenterPresetPatch('fermenter-init', []);
+        const secondPatch = resolveFermenterPresetPatch('fermenter-supersaw', []);
+        if (!firstPatch || !secondPatch) {
+            throw new Error('Expected both factory patches');
+        }
+        expect(await commit(firstPatch)).toBe(true);
+        fermenterStore.set({});
+        renderPanel();
+        await waitFor(() => expect(getFermenterState(DEVICE_ID).patch).toEqual(firstPatch));
+        fireEvent.click(screen.getByRole('button', { name: 'Synth', exact: true }));
+        fireEvent.click(screen.getByRole('button', { name: 'Next preset' }));
+        await waitFor(() => expect(committedPatch()).toEqual(secondPatch));
+        expect(getFermenterState(DEVICE_ID).patch).toEqual(secondPatch);
+        expect(depth()).toBe(2);
+    });
+
     it('keeps independent A/B edits on both sides and reports Modified only against the active reference', async () => {
         renderPanel();
         await waitFor(() => expect(getFermenterState(DEVICE_ID).patch).toEqual(initialPatch));
@@ -340,6 +388,64 @@ describe('Fermenter whole-patch auditioning through Command', () => {
         await waitFor(() => expect(getFermenterState(DEVICE_ID).patch).toEqual(editedA));
         expect(screen.getByText('Modified')).toBeInTheDocument();
         expect(depth()).toBe(4);
+    });
+
+    it('keeps A/B references and Modified through a real continuous patch commit, then clears them on Undo', async () => {
+        const edited = await modifiedAudition();
+        expect(depth()).toBe(1);
+        fireEvent.click(screen.getByRole('button', { name: 'Show patch A' }));
+        await waitFor(() => expect(committedPatch()).toEqual(initialPatch));
+        fireEvent.click(screen.getByRole('button', { name: 'Show patch B' }));
+        await waitFor(() => expect(committedPatch()).toEqual(edited));
+        expect(screen.getByText('Modified')).toBeInTheDocument();
+        await act(() => undo());
+        await waitFor(() => expect(committedPatch()).toEqual(initialPatch));
+        expect(screen.getByRole('button', { name: 'Show patch A' })).toBeDisabled();
+        expect(screen.getByRole('button', { name: 'Show patch B' })).toBeDisabled();
+        expect(screen.queryByText('Modified')).toBeNull();
+    });
+
+    it('clears A/B and Modified when a foreign project patch replaces a local continuous echo', async () => {
+        await modifiedAudition();
+        const foreign = patchNamed('Foreign project patch', 1200);
+        expect(await commit(foreign)).toBe(true);
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Show patch A' })).toBeDisabled());
+        expect(screen.getByRole('button', { name: 'Show patch B' })).toBeDisabled();
+        expect(screen.queryByText('Modified')).toBeNull();
+        expect(committedPatch()).toEqual(foreign);
+    });
+
+    it('does not carry a local echo or A/B session into an equal-value successor project with reused IDs', async () => {
+        const edited = await modifiedAudition();
+        const successor = structuredClone(projectedTrack());
+        await act(() => activateProject());
+        act(() => {
+            resetCrdtProjectAuthority('Equal-value successor');
+            removeCrdtDoc('root');
+            createCrdtDoc('root');
+            registerCrdtStorageRuntime();
+            replaceTrack(successor);
+            flushAutomergeStorageWrites();
+        });
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Show patch A' })).toBeDisabled());
+        expect(screen.getByRole('button', { name: 'Show patch B' })).toBeDisabled();
+        expect(screen.queryByText('Modified')).toBeNull();
+        expect(committedPatch()).toEqual(edited);
+    });
+
+    it('does not mistake an equal-value replacement device for its previous local echo', async () => {
+        const edited = await modifiedAudition();
+        const owner = structuredClone(projectedTrack());
+        act(() => {
+            replaceTrack({ ...owner, devices: owner.devices.filter((device) => device.id !== DEVICE_ID) });
+            flushAutomergeStorageWrites();
+            replaceTrack(owner);
+            flushAutomergeStorageWrites();
+        });
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Show patch A' })).toBeDisabled());
+        expect(screen.getByRole('button', { name: 'Show patch B' })).toBeDisabled();
+        expect(screen.queryByText('Modified')).toBeNull();
+        expect(committedPatch()).toEqual(edited);
     });
 
     it('makes Reset and Randomize one undo step each', async () => {
@@ -403,6 +509,137 @@ describe('Fermenter whole-patch auditioning through Command', () => {
         expect(screen.getByRole('button', { name: 'Show patch B' })).toBeDisabled();
         expect(screen.queryByText('Modified')).toBeNull();
     });
+
+    it.each([
+        { label: 'macro', apply: loadFermenterPatchWithAudio },
+        { label: 'morph', apply: applyMorphedPatch },
+    ])('persists $label arrays in raw truth and fresh hydration after a whole patch', async ({ apply }) => {
+        const whole = patchNamed('Whole', 1800);
+        expect(await commit(whole)).toBe(true);
+        const callbacks: FrameRequestCallback[] = [];
+        const raf = vi.spyOn(globalThis, 'requestAnimationFrame').mockImplementation((callback) => {
+            callbacks.push(callback);
+            return callbacks.length;
+        });
+        const edited = cloneFermenterPatch(whole);
+        edited.macros[0] = 0.8;
+        edited.macroMappings![0]!.targets[0]!.center = 0.42;
+        act(() => apply(DEVICE_ID, edited));
+        expect(callbacks).toHaveLength(1);
+        act(() => callbacks[0]!(0));
+        await waitFor(() => expect(committedPatch().macros[0]).toBe(0.8));
+        flushAutomergeStorageWrites();
+        const raw = committedPatch();
+        fermenterStore.set({});
+        const hydrated = hydrateFermenterFromProject(DEVICE_ID);
+        raf.mockRestore();
+        expect({
+            rawMacro: raw.macros[0],
+            rawCenter: raw.macroMappings![0]!.targets[0]!.center,
+            hydratedMacro: hydrated!.macros[0],
+            hydratedCenter: hydrated!.macroMappings![0]!.targets[0]!.center,
+        }).toEqual({ rawMacro: 0.8, rawCenter: 0.42, hydratedMacro: 0.8, hydratedCenter: 0.42 });
+    });
+
+    it('redo preserves a whole patch after a pending macro patch', async () => {
+        const callbacks = new Map<number, FrameRequestCallback>();
+        let nextId = 0;
+        const raf = vi.spyOn(globalThis, 'requestAnimationFrame').mockImplementation((callback) => {
+            callbacks.set(++nextId, callback);
+            return nextId;
+        });
+        const cancel = vi.spyOn(globalThis, 'cancelAnimationFrame').mockImplementation((id) => {
+            callbacks.delete(id);
+        });
+        const m = cloneFermenterPatch(initialPatch);
+        m.macros[0] = 0.8;
+        act(() => loadFermenterPatchWithAudio(DEVICE_ID, m));
+        const n = patchNamed('Next', 1800);
+        expect(await commit(n)).toBe(true);
+        await act(() => undo());
+        expect(committedPatch()).toEqual(m);
+        await act(() => redo());
+        raf.mockRestore();
+        cancel.mockRestore();
+        expect(committedPatch()).toEqual(n);
+    });
+
+    it('reconciles a pending parameter edit when a queued patch is refused by a revision change', async () => {
+        const callbacks = new Map<number, FrameRequestCallback>();
+        let nextId = 0;
+        const raf = vi.spyOn(globalThis, 'requestAnimationFrame').mockImplementation((callback) => {
+            callbacks.set(++nextId, callback);
+            return nextId;
+        });
+        const cancel = vi.spyOn(globalThis, 'cancelAnimationFrame').mockImplementation((id) => {
+            callbacks.delete(id);
+        });
+        act(() => setFermenterParamWithAudio(DEVICE_ID, 'filterCutoff', 1200));
+        const hold = await holdSnapshot();
+        let pending!: Promise<boolean>;
+        act(() => {
+            pending = commitFermenterPatch({ deviceId: DEVICE_ID, patch: patchNamed('Next', 1800), label: 'Audition' });
+        });
+        hold.change(() => replaceTrack({ ...projectedTrack(), name: 'Concurrent edit' }));
+        await act(async () => {
+            await hold.finish();
+        });
+        expect(await pending).toBe(false);
+        act(() => {
+            for (const callback of callbacks.values()) {
+                callback(0);
+            }
+        });
+        flushAutomergeStorageWrites();
+        const observed = {
+            panel: getFermenterState(DEVICE_ID).patch.filterCutoff,
+            project: rawDevice().parameterValues.filterCutoff,
+            runtime: audio.updateDevicePatch.mock.calls.at(-1)?.[2]?.cutoff,
+        };
+        raf.mockRestore();
+        cancel.mockRestore();
+        expect(observed).toEqual({ panel: 600, project: 600, runtime: 600 });
+    });
+
+    it.each(['project', 'device'] as const)(
+        'rejects a queued continuous frame after %s replacement without touching successor runtime',
+        async (replacement) => {
+            const callbacks: FrameRequestCallback[] = [];
+            const raf = vi.spyOn(globalThis, 'requestAnimationFrame').mockImplementation((callback) => {
+                callbacks.push(callback);
+                return callbacks.length;
+            });
+            const hold = await holdSnapshot();
+            act(() => loadFermenterPatchWithAudio(DEVICE_ID, patchNamed('Stale draft', 1200)));
+            act(() => callbacks[0]!(0));
+            if (replacement === 'project') {
+                await activateProject();
+            }
+            const successor = patchNamed('Successor', 3300);
+            hold.change(() =>
+                replaceTrack({
+                    ...projectedTrack(),
+                    devices: projectedTrack().devices.map((device) =>
+                        device.id === DEVICE_ID
+                            ? {
+                                  ...device,
+                                  deviceState: toFermenterDeviceState(successor),
+                                  parameterValues: { filterCutoff: 3300 },
+                              }
+                            : device
+                    ),
+                })
+            );
+            await act(async () => {
+                await hold.finish();
+            });
+            raf.mockRestore();
+            await waitFor(() => expect(committedPatch()).toEqual(successor));
+            expect(audio.updateDevicePatch).not.toHaveBeenCalled();
+            expect(depth()).toBe(0);
+            expect(hydrateFermenterFromProject(DEVICE_ID)).toEqual(successor);
+        }
+    );
 
     it('refuses a queued action after a non-target project revision', async () => {
         const hold = await holdSnapshot();

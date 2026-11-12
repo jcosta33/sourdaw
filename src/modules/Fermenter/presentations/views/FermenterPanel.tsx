@@ -33,8 +33,10 @@ import { applyFermenterMacroMapping } from '../../useCases/applyFermenterMacroMa
 import { commitFermenterPatch } from '../../useCases/commitFermenterPatch';
 import { loadFermenterPatchWithAudio } from '../../useCases/fermenterParamBridge/loadFermenterPatchWithAudio';
 import { setFermenterParamWithAudio } from '../../useCases/fermenterParamBridge/setFermenterParamWithAudio';
+import { findFermenterPresetId } from '../../useCases/findFermenterPresetId';
 import { resolveFermenterPresetPatch } from '../../useCases/fermenterPatchOperations';
 import { FERMENTER_PRESETS } from '../../useCases/fermenterQueries/helpers';
+import { isLocalFermenterPatchWrite } from '../../useCases/isLocalFermenterPatchWrite';
 import { hydrateFermenterFromProject } from '../../useCases/hydrateFermenterFromProject';
 import { randomizeFermenterPatch } from '../../useCases/randomizeFermenterPatch';
 import { selectFermenterFilterChoice } from '../../useCases/selectFermenterFilterChoice';
@@ -73,6 +75,7 @@ import { XYPad } from '../components/XYPad';
 import { TransformPad } from './TransformPad';
 
 const USER_PATCHES_QUERY_KEY = ['fermenter', 'user-patches'] as const;
+const EMPTY_USER_PATCHES: ReturnType<typeof loadUserPatches> = [];
 
 const LEVELS = [
     { id: 1, label: 'Play', eyebrow: 'Scene' },
@@ -453,6 +456,18 @@ export const FermenterPanel = ({ deviceId }: { deviceId: string }): ReactElement
         (a, b) => a.patch === b.patch && a.activeVoices === b.activeVoices && a.uiLevel === b.uiLevel
     );
 
+    // User patches come from the TanStack Query cache — never a render-body
+    // read (a per-render loadUserPatches() put a synchronous localStorage
+    // read + JSON.parse on the gesture path, and the React Compiler's
+    // memoization made the post-save list permanently stale). The save flow
+    // invalidates the key below to refresh the preset browser.
+    const queryClient = useQueryClient();
+    const { data: userPatches = EMPTY_USER_PATCHES } = useQuery({
+        queryKey: USER_PATCHES_QUERY_KEY,
+        queryFn: loadUserPatches,
+        staleTime: Infinity,
+    });
+
     const [section, setSection] = useState<FermenterSection>('osc');
     const [showSave, setShowSave] = useState(false);
     const [saveName, setSaveName] = useState('');
@@ -480,7 +495,7 @@ export const FermenterPanel = ({ deviceId }: { deviceId: string }): ReactElement
     function restoreProjectReference(value: FermenterPatch): void {
         updateReference(value);
         updateSession(null);
-        setCurrentPresetId(null);
+        setCurrentPresetId(findFermenterPresetId(value, userPatches));
     }
 
     useEffect(() => {
@@ -494,6 +509,9 @@ export const FermenterPanel = ({ deviceId }: { deviceId: string }): ReactElement
             localCommitRef.current = null;
             observedLocalCommitRef.current = false;
             restoreProjectReference(hydrated);
+            return;
+        }
+        if (isLocalFermenterPatchWrite(deviceId, hydrated)) {
             return;
         }
         if (localCommitRef.current) {
@@ -511,17 +529,12 @@ export const FermenterPanel = ({ deviceId }: { deviceId: string }): ReactElement
         restoreProjectReference(hydrated);
     }, [deviceId, projectDeviceState]);
 
-    // User patches come from the TanStack Query cache — never a render-body
-    // read (a per-render loadUserPatches() put a synchronous localStorage
-    // read + JSON.parse on the gesture path, and the React Compiler's
-    // memoization made the post-save list permanently stale). The save flow
-    // invalidates the key below to refresh the preset browser.
-    const queryClient = useQueryClient();
-    const { data: userPatches = [] } = useQuery({
-        queryKey: USER_PATCHES_QUERY_KEY,
-        queryFn: loadUserPatches,
-        staleTime: Infinity,
-    });
+    useEffect(() => {
+        if (!auditionSessionRef.current) {
+            setCurrentPresetId(findFermenterPresetId(getFermenterState(deviceId).patch, userPatches));
+        }
+    }, [deviceId, userPatches]);
+
     const sectionMeta = getSectionMeta(section);
     const modified = !fermenterPatchesEqual(patch, referencePatch);
 
@@ -790,7 +803,6 @@ export const FermenterPanel = ({ deviceId }: { deviceId: string }): ReactElement
 
                 <div className="fermenter-window min-h-[160px] flex-1 shrink-0 overflow-hidden">
                     <PresetBrowser
-                        currentName={patch.name}
                         currentPresetId={currentPresetId}
                         userPatches={userPatches}
                         presets={FERMENTER_PRESETS}

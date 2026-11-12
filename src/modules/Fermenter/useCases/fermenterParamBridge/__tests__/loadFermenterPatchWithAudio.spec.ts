@@ -1,95 +1,58 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-vi.mock('../../../stores/fermenterStore', () => ({
-    loadFermenterPatch: vi.fn(),
-}));
-
-import { clampDeviceParameterValue } from '#/modules/Arrangement/useCases';
-
+import { createPatchWriteHarness } from '../../../__tests__/patchWriteHarness';
 import { DEFAULT_PATCH } from '../../../models/FermenterPatch';
-import { loadFermenterPatch } from '../../../stores/fermenterStore';
-import { setFermenterDependencies } from '../../fermenterDependencies';
+import { getFermenterState } from '../../../stores/fermenterStore';
 import { loadFermenterPatchWithAudio } from '../loadFermenterPatchWithAudio';
 
+const harness = createPatchWriteHarness();
 describe('loadFermenterPatchWithAudio', () => {
-    const updateDeviceParam = vi.fn();
-    const persistDeviceParam = vi.fn();
-    const updateDevicePatch = vi.fn();
-    const persistDevicePatch = vi.fn();
+    beforeEach(() => harness.setup());
+    afterEach(() => harness.teardown());
 
-    beforeEach(() => {
-        vi.useFakeTimers();
-        vi.clearAllMocks();
-        vi.stubGlobal(
-            'requestAnimationFrame',
-            vi.fn((callback: FrameRequestCallback) => {
-                return window.setTimeout(() => callback(0), 16);
-            })
-        );
-        vi.stubGlobal(
-            'cancelAnimationFrame',
-            vi.fn((id: number) => {
-                window.clearTimeout(id);
-            })
-        );
-        setFermenterDependencies({
-            clampDeviceParameterValue,
-            getAllTracks: () => [{ id: 't1', devices: [{ id: 'd1' }] }] as never,
-            resolveEligibleDeviceWriteTarget: () => ({ status: 'eligible', trackId: 't1', deviceId: 'd1' }),
-            updateDeviceParam,
-            persistDeviceParam,
-            updateDevicePatch,
-            persistDevicePatch,
-        });
-    });
-
-    afterEach(() => {
-        vi.useRealTimers();
-        vi.unstubAllGlobals();
-    });
-
-    it('updates the UI store immediately but sends DSP ids to the audio engine on the next frame', () => {
-        loadFermenterPatchWithAudio('d1', DEFAULT_PATCH);
-
-        // Store write is synchronous; engine/persist are deferred to the rAF flush.
-        expect(loadFermenterPatch).toHaveBeenCalledWith('d1', DEFAULT_PATCH);
-        expect(updateDevicePatch).not.toHaveBeenCalled();
-        expect(persistDevicePatch).not.toHaveBeenCalled();
-
-        vi.advanceTimersByTime(16);
-
-        expect(updateDevicePatch).toHaveBeenCalledWith(
+    it('updates the panel immediately and commits complete project truth and DSP ids on the next frame', async () => {
+        const patch = { ...DEFAULT_PATCH, filterCutoff: 777 };
+        loadFermenterPatchWithAudio('d1', patch);
+        expect(getFermenterState('d1').patch).toEqual(patch);
+        expect(harness.patch()).toEqual(DEFAULT_PATCH);
+        expect(harness.updateDevicePatch).not.toHaveBeenCalled();
+        await harness.frame();
+        expect(harness.patch()).toEqual(patch);
+        expect(harness.updateDevicePatch).toHaveBeenCalledWith(
             't1',
             'd1',
             expect.objectContaining({
-                engine: DEFAULT_PATCH.oscEngine,
-                cutoff: DEFAULT_PATCH.filterCutoff,
-                resonance: DEFAULT_PATCH.filterResonance,
-                mod_env_to_filter: DEFAULT_PATCH.filterEnvAmount,
+                engine: patch.oscEngine,
+                cutoff: 777,
+                resonance: patch.filterResonance,
+                mod_env_to_filter: patch.filterEnvAmount,
             })
         );
-        expect(updateDevicePatch).not.toHaveBeenCalledWith('t1', 'd1', expect.objectContaining({ oscEngine: 0 }));
-        expect(persistDevicePatch).toHaveBeenCalledWith('d1', DEFAULT_PATCH);
+        expect(harness.updateDevicePatch.mock.lastCall?.[2]).not.toHaveProperty('filterCutoff');
     });
 
-    it('coalesces rapid successive loads to a single engine + persist flush carrying the latest patch', () => {
-        const first = { ...DEFAULT_PATCH, filterCutoff: 1000 };
-        const second = { ...DEFAULT_PATCH, filterCutoff: 5000 };
-        const third = { ...DEFAULT_PATCH, filterCutoff: 9000 };
-
-        loadFermenterPatchWithAudio('d1', first);
-        loadFermenterPatchWithAudio('d1', second);
-        loadFermenterPatchWithAudio('d1', third);
-
-        // Three pointer-rate writes within one frame.
-        expect(updateDevicePatch).not.toHaveBeenCalled();
-        expect(persistDevicePatch).not.toHaveBeenCalled();
-
-        vi.advanceTimersByTime(16);
-
-        expect(updateDevicePatch).toHaveBeenCalledTimes(1);
-        expect(persistDevicePatch).toHaveBeenCalledTimes(1);
-        expect(updateDevicePatch).toHaveBeenCalledWith('t1', 'd1', expect.objectContaining({ cutoff: 9000 }));
-        expect(persistDevicePatch).toHaveBeenCalledWith('d1', expect.objectContaining({ filterCutoff: 9000 }));
+    it('coalesces rapid successive loads into one committed engine flush carrying the latest patch', async () => {
+        for (const filterCutoff of [1000, 5000, 9000]) {
+            loadFermenterPatchWithAudio('d1', { ...DEFAULT_PATCH, filterCutoff });
+        }
+        expect(harness.updateDevicePatch).not.toHaveBeenCalled();
+        await harness.frame();
+        expect(harness.updateDevicePatch).toHaveBeenCalledOnce();
+        expect(harness.persistParam).toHaveBeenCalledOnce();
+        expect(harness.patch().filterCutoff).toBe(9000);
+        expect(harness.updateDevicePatch.mock.lastCall?.[2]).toHaveProperty('cutoff', 9000);
+    });
+    it('reports a post-commit runtime failure while retaining the complete committed project patch', async () => {
+        harness.updateDevicePatch.mockImplementation(() => {
+            throw new Error('Engine unavailable');
+        });
+        const patch = { ...DEFAULT_PATCH, filterCutoff: 777 };
+        loadFermenterPatchWithAudio('d1', patch);
+        await harness.frame();
+        expect(harness.patch()).toEqual(patch);
+        expect(harness.notices).toContainEqual({
+            level: 'warning',
+            message: expect.stringContaining('Engine unavailable'),
+        });
     });
 });

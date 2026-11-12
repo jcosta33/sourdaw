@@ -19,7 +19,6 @@ type SoundPreset = {
 };
 
 type PresetBrowserProps = {
-    currentName: string;
     currentPresetId?: string | null;
     userPatches: Array<{ id: string; name: string }>;
     presets: SoundPreset[];
@@ -58,7 +57,6 @@ const TAGS = [
 ];
 
 export const PresetBrowser = ({
-    currentName,
     currentPresetId = null,
     userPatches,
     presets,
@@ -201,7 +199,7 @@ export const PresetBrowser = ({
                             key={preset.id}
                             type="button"
                             className={`w-full flex items-center justify-between px-2 py-1 rounded text-left transition-all ${
-                                preset.name === currentName || preset.name === currentName.replace('Fermenter — ', '')
+                                preset.id === currentPresetId
                                     ? 'bg-[var(--color-accent-lavender)]/15 text-foreground'
                                     : 'hover:bg-surface-raised text-foreground/80'
                             }`}
