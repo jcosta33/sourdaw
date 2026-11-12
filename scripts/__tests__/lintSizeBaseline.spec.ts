@@ -13,9 +13,11 @@
  * scripts/lintSizeCeilings.json records one line ceiling per listed file: a
  * file may not exceed its ceiling, a ceiling left more than the slack above a
  * file that shrank must be lowered, and the ceilings file lists exactly the
- * baseline paths (scripts/lintSizeCeilings.ts holds the rule). Generated files
- * named in its exemption list carry no ceiling; each must exist, name a real
- * generator, and say so in its header.
+ * non-exempt baseline paths, each written once and in sorted order
+ * (scripts/lintSizeCeilings.ts holds the rule). Generated files named in its
+ * exemption list carry no ceiling; each must exist, name a real generator, and
+ * say so in its header. No case here can tell a raised ceiling from a lowered
+ * one; review refuses raises.
  */
 
 import { existsSync, readFileSync } from 'node:fs';
@@ -29,7 +31,9 @@ import {
     describeSizeCeilingViolation,
     findSizeCeilingViolations,
     GENERATED_SIZE_EXEMPTIONS,
+    listWrittenCeilingKeys,
     readSizeCeilings,
+    SIZE_CEILINGS_PATH,
     type SizeCeilingViolation,
 } from '../lintSizeCeilings';
 
@@ -183,10 +187,53 @@ describe('lint size ceilings rule', () => {
     );
 });
 
+type WrittenKeysCase = { name: string; text: string; expected: string[] };
+
+const writtenKeysCases: WrittenKeysCase[] = [
+    {
+        name: 'a clean three-entry object',
+        text: '{\n    "a.ts": 700,\n    "b.ts": 800,\n    "c.ts": 900\n}\n',
+        expected: ['a.ts', 'b.ts', 'c.ts'],
+    },
+    {
+        name: 'an adjacent repeated key with a different value',
+        text: '{\n    "a.ts": 700,\n    "a.ts": 900,\n    "b.ts": 800\n}\n',
+        expected: ['a.ts', 'a.ts', 'b.ts'],
+    },
+    {
+        name: 'a non-adjacent repeated key',
+        text: '{\n    "a.ts": 700,\n    "b.ts": 800,\n    "a.ts": 900\n}\n',
+        expected: ['a.ts', 'b.ts', 'a.ts'],
+    },
+    {
+        name: 'keys out of order',
+        text: '{\n    "b.ts": 800,\n    "a.ts": 700\n}\n',
+        expected: ['b.ts', 'a.ts'],
+    },
+];
+
+function repeatedKeys(keys: readonly string[]): string[] {
+    return keys.filter((key, index) => keys.indexOf(key) !== index);
+}
+
+describe('written ceiling keys', () => {
+    it.each(writtenKeysCases)('should return every key in written order for $name', ({ text, expected }) => {
+        expect(listWrittenCeilingKeys(text)).toEqual(expected);
+    });
+
+    it('should read fewer keys than JSON.parse from an entry it cannot match, so the coverage check fails', () => {
+        const text = '{\n    "a.ts": 700,\n    "b.ts"  : 800\n}\n';
+        expect(listWrittenCeilingKeys(text)).toEqual(['a.ts']);
+        expect(listWrittenCeilingKeys(text).length).toBeLessThan(Object.keys(JSON.parse(text)).length);
+    });
+});
+
 describe('recorded lint size ceilings', () => {
-    it('should keep the ceilings keys sorted, so a merge cannot hide a re-added path', () => {
-        const keys = Object.keys(readSizeCeilings(repoRoot));
-        expect(keys).toEqual([...keys].sort());
+    it('should write each ceilings key once and in sorted order, so a merge cannot hide a re-added path', () => {
+        const written = listWrittenCeilingKeys(readFileSync(resolve(repoRoot, SIZE_CEILINGS_PATH), 'utf8'));
+        expect(written.length).toBeGreaterThanOrEqual(Object.keys(readSizeCeilings(repoRoot)).length);
+        expect(repeatedKeys(written)).toEqual([]);
+        expect(written).toEqual([...written].sort());
     });
 
     it('should hold every baselined file within its recorded ceiling', () => {

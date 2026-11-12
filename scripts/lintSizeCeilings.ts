@@ -2,8 +2,9 @@
  * Per-file line ceilings for the size-ceiling burn-down baseline (docs/07-conventions.md — Lint-aligned
  * conventions). eslint.config.mjs holds every file in eslint.size-baseline.mjs to `warn` instead of
  * `error`, so nothing in lint stops a baselined file from growing. scripts/lintSizeCeilings.json records
- * one line ceiling per baselined file; a file may not exceed it, and a ceiling left far above a file that
- * shrank must be lowered, so the recorded figures only move down. Generated files listed in
+ * one line ceiling per baselined file; a file may not exceed it, and a ceiling more than the slack above a
+ * file that shrank must be lowered. Nothing here can tell a raised figure from a lowered one; review refuses
+ * raises. Generated files listed in
  * GENERATED_SIZE_EXEMPTIONS carry no ceiling: their size follows their generator's input.
  */
 
@@ -124,6 +125,17 @@ export function describeSizeCeilingViolation(violation: SizeCeilingViolation): s
         case 'below-floor':
             return `${violation.path}: ceiling ${violation.ceiling} is not a whole number of at least ${SIZE_CEILING_FLOOR}; record the file's line count, or ${SIZE_CEILING_FLOOR} if it is shorter.`;
     }
+}
+
+const WRITTEN_CEILING_ENTRY = /^\s*"([^"]+)": -?\d[\d.eE+-]*,?$/;
+
+/**
+ * The keys of the formatted ceilings file in written order, repeats included, which `JSON.parse` would
+ * collapse. Matches one `"path": number` entry per line; a line it cannot read yields no key, so callers
+ * compare the count against the parsed object's keys.
+ */
+export function listWrittenCeilingKeys(text: string): string[] {
+    return text.split('\n').flatMap((line) => WRITTEN_CEILING_ENTRY.exec(line)?.[1] ?? []);
 }
 
 function isCeilingRecord(value: unknown): value is Record<string, number> {
