@@ -1,5 +1,6 @@
 import {
-    PERCEPTUAL_CONSTRAINT_IDS,
+    EXCLUDING_PERCEPTUAL_CONSTRAINT_IDS,
+    MEASURED_PERCEPTUAL_CONSTRAINT_IDS,
     type PerceptualConstraint,
     type PerceptualConstraintReading,
     type PerceptualExcludedDimension,
@@ -34,19 +35,22 @@ function readConstraint(value: unknown): PerceptualConstraint | null {
         return null;
     }
     const { constraintId: storedId, protection } = value;
-    if (!isRecord(protection)) {
+    const scope = readScope(value.scope);
+    if (!isRecord(protection) || scope === null) {
         return null;
     }
-    const constraintId = PERCEPTUAL_CONSTRAINT_IDS.find((id) => id !== 'unsupported' && id === storedId);
+    // Each id carries exactly one kind of protection, so a stored exclusion is never read back as a
+    // measured hold that would let the excluded edit through.
+    if (protection.kind === 'measured') {
+        const constraintId = MEASURED_PERCEPTUAL_CONSTRAINT_IDS.find((id) => id === storedId);
+        if (constraintId === undefined) {
+            return null;
+        }
+        return { constraintId, clause: value.clause, scope, protection: { kind: 'measured' } };
+    }
+    const constraintId = EXCLUDING_PERCEPTUAL_CONSTRAINT_IDS.find((id) => id === storedId);
     const dimension = EXCLUDED_DIMENSIONS.find((entry) => entry === protection.dimension);
-    const scope = readScope(value.scope);
-    if (
-        constraintId === undefined ||
-        constraintId === 'unsupported' ||
-        protection.kind !== 'exclude-dimension' ||
-        dimension === undefined ||
-        scope === null
-    ) {
+    if (constraintId === undefined || protection.kind !== 'exclude-dimension' || dimension === undefined) {
         return null;
     }
     return { constraintId, clause: value.clause, scope, protection: { kind: 'exclude-dimension', dimension } };

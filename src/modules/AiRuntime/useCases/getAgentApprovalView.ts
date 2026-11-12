@@ -15,7 +15,7 @@ import { approvedProjectRevision } from './approvedProjectRevision';
 import { evaluateMetricGoalAdmission } from './evaluateMetricGoalAdmission';
 import { getProviderRouteView } from './getProviderRouteView';
 import { metricGoalStateCodec } from './metricGoalStateCodec';
-import { OBJECTIVE_METRIC_LABELS } from './objectiveMetricProjection';
+import { OBJECTIVE_METRIC_LABELS, OBJECTIVE_METRIC_UNITS } from './objectiveMetricProjection';
 import { validateAgentRiskApproval } from './validateAgentRiskApproval';
 
 type ApprovalSnapshot = PendingAppActionConfirmation['approvalSnapshot'];
@@ -407,7 +407,11 @@ function projectMetricGoals(metricEvaluation: MetricGoalEvaluation): AgentApprov
                     })
                     .map((name) => `“${name}”`)
                     .join(', ');
-            let unit = criterion.unit ?? '';
+            // Before a preview measures it, a criterion's unit is still its metric's own.
+            let unit =
+                criterion.unit ??
+                Object.entries(OBJECTIVE_METRIC_UNITS).find(([id]) => id === criterion.metricId)?.[1] ??
+                '';
             if (unit === 'hertz') {
                 unit = 'Hz';
             }
@@ -437,6 +441,8 @@ function projectMetricGoals(metricEvaluation: MetricGoalEvaluation): AgentApprov
                 increase: 'must increase',
                 decrease: 'must decrease',
                 hold: 'must stay equal',
+                'no-increase': 'must not rise',
+                'no-decrease': 'must not fall',
                 'match-current': 'must match the current reference preview',
                 'greater-than-current': 'must exceed the current reference preview',
                 'less-than-current': 'must be below the current reference preview',
@@ -453,6 +459,19 @@ function projectMetricGoals(metricEvaluation: MetricGoalEvaluation): AgentApprov
             }
             if (criterion.relation === 'hold' && criterion.tolerance > 0) {
                 tolerance = ` within ${String(criterion.tolerance)} ${unit}`;
+            }
+            if (
+                (criterion.relation === 'no-increase' || criterion.relation === 'no-decrease') &&
+                criterion.tolerance > 0
+            ) {
+                tolerance = ` by more than ${String(criterion.tolerance)} ${unit}`;
+            }
+            // A clause no measurement verifies has no metric, subject or figures to state, only its words.
+            if (criterion.source.kind === 'constraint' && criterion.source.constraintId === 'unsupported') {
+                return {
+                    ...criterion,
+                    criterionText: `${source}: nothing the application measures shows that it holds, so this batch cannot be approved as verified.`,
+                };
             }
             return {
                 ...criterion,
