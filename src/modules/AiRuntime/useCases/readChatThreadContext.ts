@@ -1,32 +1,17 @@
 import { undoHistoryStore } from '#/modules/Command/stores';
-import { parseVersionedCommandBatchEnvelope } from '#/modules/Command/useCases';
 import { captureProjectIdentity } from '#/modules/CrdtDocument/useCases';
 
 import { type ThreadContext } from '../models/ThreadContext';
 import { agentRunStore } from '../stores/agentRunStore';
 import { aiActionHistoryStore } from '../stores/aiActionHistoryStore';
 import { chatStore } from '../stores/chatStore';
-import {
-    type PendingAppActionConfirmation,
-    pendingActionConfirmationStore,
-} from '../stores/pendingActionConfirmationStore';
+import { pendingActionConfirmationStore } from '../stores/pendingActionConfirmationStore';
 import { buildThreadContext } from '../transformers/buildThreadContext';
+
+import { readConfirmationBatchId } from './agentRequestOrchestration/readConfirmationBatchId';
 
 function groupIdsOf(entries: ReadonlyArray<{ groupId?: string }>): ReadonlySet<string> {
     return new Set(entries.flatMap((entry) => (entry.groupId === undefined ? [] : [entry.groupId])));
-}
-
-/**
- * The id of the command batch a confirmation records. Confirming it claims its work, groups its
- * undo entries and receipts it under this id, whatever group id the confirmation carries.
- */
-function recordedBatchId(confirmation: PendingAppActionConfirmation): string | null {
-    const commandBatch = confirmation.approvalSnapshot.commandBatch;
-    if (commandBatch === undefined) {
-        return null;
-    }
-    const parsed = parseVersionedCommandBatchEnvelope(commandBatch.serialized, commandBatch.authority);
-    return parsed.status === 'valid' ? parsed.envelope.batchId : null;
 }
 
 /**
@@ -40,7 +25,7 @@ export function readChatThreadContext(): ThreadContext | null {
         messages: chatStore.value?.messages ?? [],
         confirmations: (pendingActionConfirmationStore.value?.confirmations ?? []).map((confirmation) => ({
             ...confirmation,
-            batchId: recordedBatchId(confirmation),
+            batchId: readConfirmationBatchId(confirmation),
         })),
         runs: agentRunStore.value?.runs ?? [],
         actionGroups: aiActionHistoryStore.value?.groups ?? [],

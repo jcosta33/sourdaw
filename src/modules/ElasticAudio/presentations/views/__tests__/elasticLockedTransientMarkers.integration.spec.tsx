@@ -12,7 +12,7 @@ import {
     toJS,
 } from '@automerge/automerge';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
 import { createEventBus } from '#/infra/events/createEventBus';
@@ -34,9 +34,22 @@ import { createTrack, getArrangementHandlers, updateWarpMarkerBeat } from '#/mod
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
 import { getFinalFeatureHandlers } from '#/modules/AudioEngine/useCases';
 import { clearHandlerRegistry, registerHandlerMap, undoHistoryStore } from '#/modules/Command/stores';
-import { clearUndoHistory, executeAppAction, undo, redo } from '#/modules/Command/useCases';
+import {
+    clearUndoHistory,
+    executeAppAction,
+    executeAppActionBatch,
+    undo,
+    redo,
+    revertAction,
+    setActionHistoryMetadataPort,
+} from '#/modules/Command/useCases';
+import { actionHistoryStore } from '#/modules/CrdtDocument/stores';
 import {
     createCrdtDoc,
+    clearActionHistory,
+    recordActionHistoryEntry,
+    recordActionHistoryEntries,
+    markActionHistoryEntryReverted,
     captureProjectRootIdentity,
     getCrdtDoc,
     registerCrdtStorageRuntime,
@@ -61,6 +74,7 @@ import {
 } from '../../../models/TransientOnsetWorker';
 import { defaultElasticAudioState, elasticAudioStore } from '../../../stores/elasticAudio';
 import { addManualMarker } from '../../../useCases/elasticAudio/addManualMarker';
+import { detectElasticEditorTransients } from '../../../useCases/elasticAudio/detectElasticEditorTransients';
 import { detectTransients } from '../../../useCases/elasticAudio/detectTransients';
 import { setElasticSensitivityRootIdentityCapture } from '../../../useCases/elasticAudio/elasticSensitivityDependencies';
 import { openElasticEditor } from '../../../useCases/elasticAudio/openElasticEditor';
@@ -264,6 +278,49 @@ function holdAnimationFrames() {
     };
 }
 
+function holdCompletionTasks(shouldHold: () => boolean, failures: { scheduling?: number } = {}) {
+    const NativeMessageChannel = MessageChannel;
+    const tasks: {
+        deliver: () => void;
+        failDelivery: () => void;
+        closeFirst: MockInstance<() => void>;
+        closeSecond: MockInstance<() => void>;
+    }[] = [];
+    vi.stubGlobal(
+        'MessageChannel',
+        class {
+            readonly port1: MessagePort;
+            readonly port2: MessagePort;
+            constructor() {
+                const channel = new NativeMessageChannel();
+                this.port1 = channel.port1;
+                this.port2 = channel.port2;
+                const held = shouldHold();
+                const post = channel.port2.postMessage.bind(channel.port2);
+                vi.spyOn(channel.port2, 'postMessage').mockImplementation((message) => {
+                    if (!held) {
+                        post(message);
+                        return;
+                    }
+                    const receiver = channel.port1.onmessage;
+                    const failedReceiver = channel.port1.onmessageerror;
+                    tasks.push({
+                        failDelivery: () => failedReceiver?.call(channel.port1, new MessageEvent('messageerror')),
+                        deliver: () => receiver?.call(channel.port1, new MessageEvent('message', { data: message })),
+                        closeFirst: vi.spyOn(channel.port1, 'close'),
+                        closeSecond: vi.spyOn(channel.port2, 'close'),
+                    });
+                    if ((failures.scheduling ?? 0) > 0) {
+                        failures.scheduling = (failures.scheduling ?? 0) - 1;
+                        throw new Error('Completion scheduling failed');
+                    }
+                });
+            }
+        }
+    );
+    return tasks;
+}
+
 describe('locked transient markers through the real Elastic editor', () => {
     beforeEach(() => {
         MaterializationWorker.instances = [];
@@ -376,6 +433,566 @@ describe('locked transient markers through the real Elastic editor', () => {
         clipSelectionStore.set(defaultClipSelectionState);
         vi.unstubAllGlobals();
     });
+
+    it.each(['single', 'batch'] as const)(
+        '%s settles real authority, durable history and replay before awaiting the completion host task',
+        async (route) => {
+            const samples = burstSamples();
+            const originalPcm = samples.slice();
+            supplyBuffer(samples);
+            setActionHistoryMetadataPort({
+                record: recordActionHistoryEntry,
+                recordBatch: recordActionHistoryEntries,
+                markReverted: markActionHistoryEntryReverted,
+                clear: clearActionHistory,
+            });
+            const notices: NotifyPayload[] = [];
+            const eventBus = createEventBus<{
+                'ui.notify': NotifyPayload;
+                'ui.confirm': ConfirmPayload;
+                'ui.prompt': PromptPayload;
+            }>();
+            injectDependencies(notifyUser, { eventBus });
+            eventBus.on('ui.notify', (notice) => {
+                notices.push(notice);
+            });
+            let committed = false;
+            const tasks = holdCompletionTasks(() => committed);
+            let settled = false;
+            const action = { type: 'detectTransients' as const, payload: { clipId: CLIP_ID } };
+            const options = {
+                onCommitted: () => {
+                    committed = true;
+                },
+            };
+            const dispatched =
+                route === 'single' ? executeAppAction(action, options) : executeAppActionBatch([action], options);
+            const execution = dispatched.then(() => {
+                settled = true;
+            });
+            try {
+                await waitFor(() => expect(undoHistoryStore.value?.past).toHaveLength(1));
+                expect(rawWarpState().markers).toHaveLength(2);
+                expect(getWarpState(CLIP_ID)).toEqual(rawWarpState());
+                expect(samples).toEqual(originalPcm);
+                const history = actionHistoryStore.value?.entries.at(-1);
+                expect(history?.actionKind).toBe('detectTransients');
+                const document = getCrdtDoc<{ actionHistory: { entries: unknown[] } }>('root');
+                expect(document?.actionHistory.entries).toEqual(actionHistoryStore.value?.entries);
+                expect(notices).toEqual([]);
+                expect(settled).toBe(false);
+                expect(tasks).toHaveLength(1);
+                const task = tasks[0]!;
+                // Public replay proves the durable entry already has its executable inverse.
+                expect(await revertAction(history!.id)).toEqual({ status: 'executed' });
+                expect(rawWarpState().markers).toEqual([lockedMarker]);
+                const afterReplay = JSON.stringify(getCrdtDoc('root'));
+                task.deliver();
+                await execution;
+                expect(notices).toEqual([{ message: 'Detected 1 transients (1 preserved)', level: 'success' }]);
+                expect(settled).toBe(true);
+                expect(JSON.stringify(getCrdtDoc('root'))).toBe(afterReplay);
+                expect(task.closeFirst).toHaveBeenCalledOnce();
+                expect(task.closeSecond).toHaveBeenCalledOnce();
+                task.deliver();
+                expect(notices).toHaveLength(1);
+            } finally {
+                for (const task of tasks) {
+                    task.deliver();
+                }
+                await execution;
+                setActionHistoryMetadataPort({
+                    record: () => [],
+                    markReverted: () => ({ status: 'unavailable' }),
+                    clear: () => undefined,
+                });
+            }
+        }
+    );
+
+    it.each([
+        ['Detect', 'source replacement'],
+        ['Detect', 'source ABA'],
+        ['Detect', 'root ABA'],
+        ['sensitivity', 'source replacement'],
+        ['sensitivity', 'source ABA'],
+        ['sensitivity', 'root ABA'],
+        ['Detect', 'provider replacement'],
+        ['sensitivity', 'provider replacement'],
+        ['Detect', 'editor reopen'],
+        ['sensitivity', 'editor reopen'],
+    ] as const)(
+        'does not complete replacement presentation from %s after post-commit %s',
+        async (caller, replacement) => {
+            supplyBuffer(burstSamples());
+            const tasks = holdCompletionTasks(() => (undoHistoryStore.value?.past.length ?? 0) > 0);
+            render(<ElasticEditorPanel />);
+            if (caller === 'Detect') {
+                fireEvent.click(screen.getByRole('button', { name: 'Detect' }));
+            } else {
+                fireEvent.keyDown(screen.getByRole('slider', { name: 'Transient detection sensitivity' }), {
+                    key: 'ArrowRight',
+                });
+            }
+            await waitFor(() => expect(tasks).toHaveLength(1));
+            expect(screen.getByRole('status')).toHaveTextContent('Detecting');
+            expect(rawWarpState().markers).toHaveLength(2);
+            act(() => {
+                if (replacement === 'source replacement' || replacement === 'source ABA') {
+                    const original = trackStore.value;
+                    trackStore.update((state) => {
+                        if (!state) {
+                            return state;
+                        }
+                        return {
+                            ...state,
+                            tracks: state.tracks.map((track) => ({
+                                ...track,
+                                clips: track.clips.map((clip) =>
+                                    clip.id === CLIP_ID ? { ...clip, audioBufferId: 'replacement' } : clip
+                                ),
+                            })),
+                        };
+                    });
+                    flushAutomergeStorageWrites();
+                    if (replacement === 'source ABA') {
+                        trackStore.set(original);
+                        flushAutomergeStorageWrites();
+                    }
+                } else if (replacement === 'provider replacement') {
+                    if (caller === 'Detect') {
+                        setElasticRootIdentityProvider(() => captureProjectRootIdentity());
+                    } else {
+                        setElasticSensitivityRootIdentityCapture(() => captureProjectRootIdentity());
+                    }
+                } else if (replacement === 'editor reopen') {
+                    elasticAudioStore.set(defaultElasticAudioState);
+                    openElasticEditor(CLIP_ID);
+                } else {
+                    const original = getCrdtDoc('root');
+                    if (!original) {
+                        throw new Error('Expected committed root');
+                    }
+                    createCrdtDoc('root');
+                    replaceCrdtDocInLineage({ id: 'root', doc: clone(original) });
+                }
+            });
+            const replaced = JSON.stringify(getCrdtDoc('root'));
+            await act(async () => {
+                tasks[0]!.deliver();
+            });
+            await waitFor(() => expect(screen.getByRole('status')).not.toHaveTextContent('Detecting'));
+            expect(elasticAudioStore.value?.detected).toBe(false);
+            expect(screen.getByRole('status')).not.toHaveTextContent('Detection complete');
+            expect(JSON.stringify(getCrdtDoc('root'))).toBe(replaced);
+        }
+    );
+
+    it.each([
+        ['Detect', 'Detect'],
+        ['Detect', 'sensitivity'],
+        ['sensitivity', 'Detect'],
+        ['sensitivity', 'sensitivity'],
+        ['Detect', 'none'],
+        ['sensitivity', 'none'],
+    ] as const)('keeps completion ownership from %s with a %s successor', async (caller, successor) => {
+        supplyBuffer(burstSamples());
+        let hold = true;
+        const tasks = holdCompletionTasks(() => hold && (undoHistoryStore.value?.past.length ?? 0) > 0);
+        const eventBus = createEventBus<{
+            'ui.notify': NotifyPayload;
+            'ui.confirm': ConfirmPayload;
+            'ui.prompt': PromptPayload;
+        }>();
+        const notices: NotifyPayload[] = [];
+        eventBus.on('ui.notify', (notice) => {
+            notices.push(notice);
+        });
+        injectDependencies(notifyUser, { eventBus });
+        const start = (kind: 'Detect' | 'sensitivity'): void => {
+            if (kind === 'Detect') {
+                fireEvent.click(screen.getByRole('button', { name: 'Detect' }));
+            } else {
+                fireEvent.keyDown(screen.getByRole('slider', { name: 'Transient detection sensitivity' }), {
+                    key: 'ArrowRight',
+                });
+            }
+        };
+        render(<ElasticEditorPanel />);
+        start(caller);
+        await waitFor(() => expect(tasks).toHaveLength(1));
+        expect(elasticAudioStore.value?.detected).toBe(false);
+        expect(notices).toEqual([]);
+        hold = false;
+        const result = Promise.withResolvers<TransientOnsetWorkerResult>();
+        if (successor !== 'none') {
+            const started = Promise.withResolvers<void>();
+            worker.mockImplementationOnce(() => {
+                started.resolve();
+                return result.promise;
+            });
+            start(successor);
+            await started.promise;
+        }
+        const committed = JSON.stringify(getCrdtDoc('root'));
+        const history = JSON.stringify(undoHistoryStore.value);
+        try {
+            await act(async () => {
+                tasks[0]!.deliver();
+            });
+            expect(JSON.stringify(getCrdtDoc('root'))).toBe(committed);
+            expect(JSON.stringify(undoHistoryStore.value)).toBe(history);
+            expect(notices).toEqual([{ message: 'Detected 1 transients (1 preserved)', level: 'success' }]);
+            if (successor === 'none') {
+                expect(elasticAudioStore.value?.detected).toBe(true);
+                expect(screen.getByRole('status')).not.toHaveTextContent('Detecting');
+            } else {
+                expect(screen.getByRole('status')).toHaveTextContent('Detecting');
+                expect(elasticAudioStore.value?.detected).toBe(false);
+            }
+        } finally {
+            await act(async () => {
+                result.resolve({ status: 'complete', hits: [{ sampleOffset: 512, confidence: 1 }] });
+            });
+        }
+        if (successor !== 'none') {
+            await waitFor(() => expect(screen.getByRole('status')).not.toHaveTextContent('Detecting'));
+            expect(elasticAudioStore.value?.detected).toBe(true);
+            expect(rawWarpState()).toEqual(getWarpState(CLIP_ID));
+            expect(rawWarpState().markers).toContainEqual(
+                expect.objectContaining({ originalBeat: (512 / SAMPLE_RATE) * 2 })
+            );
+            expect(undoHistoryStore.value?.past).toHaveLength(2);
+            expect(notices).toHaveLength(2);
+        }
+        tasks[0]!.deliver();
+        expect(notices).toHaveLength(successor === 'none' ? 1 : 2);
+    });
+
+    it('retires an unchanged sensitivity receipt when its success notification starts a direct Detect', async () => {
+        supplyBuffer(new Float32Array(SAMPLE_RATE));
+        warpStateStore.set({ states: { 'other-clip': otherWarpState } });
+        flushAutomergeStorageWrites();
+        const detect = worker.getMockImplementation();
+        if (!detect) {
+            throw new Error('Expected the configured real detector fixture');
+        }
+        const result = Promise.withResolvers<TransientOnsetWorkerResult>();
+        const started = Promise.withResolvers<void>();
+        let reads = 0;
+        worker.mockImplementation((request) => {
+            reads++;
+            if (reads === 1) {
+                return detect(request);
+            }
+            started.resolve();
+            return result.promise;
+        });
+        const eventBus = createEventBus<{
+            'ui.notify': NotifyPayload;
+            'ui.confirm': ConfirmPayload;
+            'ui.prompt': PromptPayload;
+        }>();
+        const notices: NotifyPayload[] = [];
+        eventBus.on('ui.notify', (notice) => {
+            notices.push(notice);
+            if (notice.message === 'Detected 0 transients (0 preserved)') {
+                fireEvent.click(screen.getByRole('button', { name: 'Detect' }));
+            }
+        });
+        injectDependencies(notifyUser, { eventBus });
+        render(<ElasticEditorPanel />);
+        await act(async () => {
+            fireEvent.keyDown(screen.getByRole('slider', { name: 'Transient detection sensitivity' }), {
+                key: 'ArrowRight',
+            });
+            await started.promise;
+        });
+        try {
+            expect(screen.getByRole('status')).toHaveTextContent('Detecting');
+            expect(elasticAudioStore.value?.detected).toBe(false);
+            expectCanonicalWarpAbsence();
+            expect(undoHistoryStore.value?.past).toHaveLength(0);
+            expect(notices).toEqual([{ message: 'Detected 0 transients (0 preserved)', level: 'success' }]);
+        } finally {
+            await act(async () => {
+                result.resolve({ status: 'complete', hits: [{ sampleOffset: 512, confidence: 1 }] });
+            });
+        }
+        await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Detection complete'));
+        expect(elasticAudioStore.value?.detected).toBe(true);
+        expect(undoHistoryStore.value?.past).toHaveLength(1);
+        expect(notices).toEqual([
+            { message: 'Detected 0 transients (0 preserved)', level: 'success' },
+            { message: 'Detected 1 transients (0 preserved)', level: 'success' },
+        ]);
+    });
+
+    it('refuses a retired target before it can cancel the current editor detection', async () => {
+        supplyBuffer(burstSamples());
+        const started = Promise.withResolvers<AbortSignal | undefined>();
+        const result = Promise.withResolvers<TransientOnsetWorkerResult>();
+        worker.mockImplementationOnce((request) => {
+            started.resolve(request.signal);
+            return result.promise;
+        });
+        const current = detectElasticEditorTransients(CLIP_ID, 0.5);
+        const signal = await started.promise;
+        expect(signal?.aborted).toBe(false);
+        expect(await detectElasticEditorTransients('other-clip', 0.5)).toBe(false);
+        expect(signal?.aborted).toBe(false);
+        result.resolve({ status: 'complete', hits: [{ sampleOffset: 512, confidence: 1 }] });
+        expect(await current).toBe(true);
+        expect(rawWarpState().markers).toHaveLength(2);
+        expect(undoHistoryStore.value?.past).toHaveLength(1);
+    });
+
+    it('does not revive an unmounted editor when its committed Detect completes', async () => {
+        supplyBuffer(burstSamples());
+        const tasks = holdCompletionTasks(() => (undoHistoryStore.value?.past.length ?? 0) > 0);
+        const view = render(<ElasticEditorPanel />);
+        fireEvent.click(screen.getByRole('button', { name: 'Detect' }));
+        await waitFor(() => expect(tasks).toHaveLength(1));
+        view.unmount();
+        const committed = JSON.stringify(getCrdtDoc('root'));
+        await act(async () => {
+            tasks[0]!.deliver();
+        });
+        expect(elasticAudioStore.value?.detected).toBe(false);
+        expect(JSON.stringify(getCrdtDoc('root'))).toBe(committed);
+        expect(undoHistoryStore.value?.past).toHaveLength(1);
+    });
+
+    it.each([
+        'Undo',
+        'UndoRedo',
+        'external abort',
+        'hidden',
+        'pagehide',
+        'editor reopen',
+        'project',
+        'source',
+        'root ABA',
+        'successor Detect',
+        'successor sensitivity',
+    ] as const)('keeps committed authority and settled disposition after held completion and %s', async (late) => {
+        supplyBuffer(burstSamples());
+        const eventBus = createEventBus<{
+            'ui.notify': NotifyPayload;
+            'ui.confirm': ConfirmPayload;
+            'ui.prompt': PromptPayload;
+        }>();
+        const notices: NotifyPayload[] = [];
+        eventBus.on('ui.notify', (notice) => {
+            notices.push(notice);
+        });
+        injectDependencies(notifyUser, { eventBus });
+        const controller = new AbortController();
+        let hold = false;
+        const tasks = holdCompletionTasks(() => hold);
+        let settled = false;
+        const execution = executeAppAction(
+            { type: 'detectTransients', payload: { clipId: CLIP_ID } },
+            {
+                signal: controller.signal,
+                onCommitted: () => {
+                    hold = true;
+                },
+            }
+        ).then(() => {
+            settled = true;
+        });
+        await waitFor(() => expect(tasks).toHaveLength(1));
+        expect(settled).toBe(false);
+        expect(rawWarpState().markers).toHaveLength(2);
+        expect(undoHistoryStore.value?.past).toHaveLength(1);
+        hold = false;
+        if (late === 'Undo' || late === 'UndoRedo') {
+            expect((await undo()).headConsumed).toBe(true);
+            expect(rawWarpState().markers).toEqual([lockedMarker]);
+            if (late === 'UndoRedo') {
+                await redo();
+                expect(rawWarpState().markers).toHaveLength(2);
+            }
+        }
+        if (late === 'external abort') {
+            controller.abort();
+        }
+        if (late === 'hidden') {
+            vi.spyOn(document, 'hidden', 'get').mockReturnValue(true);
+            document.dispatchEvent(new Event('visibilitychange'));
+            expect(settled).toBe(false);
+        }
+        if (late === 'editor reopen') {
+            elasticAudioStore.set(defaultElasticAudioState);
+            openElasticEditor(CLIP_ID);
+        }
+        if (late === 'project') {
+            projectStore.set({
+                ...defaultProjectStoreState,
+                initialized: true,
+                loading: false,
+                projectId: crypto.randomUUID(),
+            });
+        }
+        if (late === 'source') {
+            trackStore.update((state) => {
+                if (!state) {
+                    return state;
+                }
+                return {
+                    ...state,
+                    tracks: state.tracks.map((track) => ({
+                        ...track,
+                        clips: track.clips.map((clip) =>
+                            clip.id === CLIP_ID ? { ...clip, audioBufferId: 'replacement' } : clip
+                        ),
+                    })),
+                };
+            });
+            flushAutomergeStorageWrites();
+        }
+        if (late === 'root ABA') {
+            const original = getCrdtDoc('root');
+            if (!original) {
+                throw new Error('Expected committed root');
+            }
+            createCrdtDoc('root');
+            replaceCrdtDocInLineage({ id: 'root', doc: clone(original) });
+        }
+        if (late === 'successor Detect') {
+            await executeAppAction({ type: 'detectTransients', payload: { clipId: CLIP_ID } });
+        }
+        if (late === 'successor sensitivity') {
+            await setElasticSensitivity(0.82);
+        }
+        const previousNotices = notices.length;
+        const afterLateAction = JSON.stringify(getCrdtDoc('root'));
+        const history = JSON.stringify(undoHistoryStore.value);
+        const presentation = JSON.stringify(elasticAudioStore.value);
+        if (late === 'pagehide') {
+            window.dispatchEvent(new Event('pagehide'));
+        } else {
+            tasks[0]!.deliver();
+        }
+        await execution;
+        expect(settled).toBe(true);
+        expect(notices).toHaveLength(previousNotices + 1);
+        expect(notices.at(-1)).toEqual({ message: 'Detected 1 transients (1 preserved)', level: 'success' });
+        expect(JSON.stringify(getCrdtDoc('root'))).toBe(afterLateAction);
+        expect(JSON.stringify(undoHistoryStore.value)).toBe(history);
+        expect(JSON.stringify(elasticAudioStore.value)).toBe(presentation);
+        expect(tasks[0]!.closeFirst).toHaveBeenCalledOnce();
+        expect(tasks[0]!.closeSecond).toHaveBeenCalledOnce();
+        tasks[0]!.deliver();
+        expect(notices).toHaveLength(previousNotices + 1);
+        expect(JSON.stringify(getCrdtDoc('root'))).toBe(afterLateAction);
+    });
+
+    it.each(['scheduling', 'notification', 'delivery'] as const)(
+        'reconciles one failed post-commit %s attempt without duplicating valid feedback',
+        async (failure) => {
+            supplyBuffer(burstSamples());
+            let committed = false;
+            const tasks = holdCompletionTasks(() => committed, { scheduling: failure === 'scheduling' ? 1 : 0 });
+            const eventBus = createEventBus<{
+                'ui.notify': NotifyPayload;
+                'ui.confirm': ConfirmPayload;
+                'ui.prompt': PromptPayload;
+            }>();
+            const notices: NotifyPayload[] = [];
+            eventBus.on('ui.notify', (notice) => {
+                notices.push(notice);
+            });
+            injectDependencies(notifyUser, { eventBus });
+            if (failure === 'notification') {
+                vi.spyOn(eventBus, 'emit').mockImplementationOnce(() => {
+                    throw new Error('Notification failed');
+                });
+            }
+            const execution = executeAppAction(
+                { type: 'detectTransients', payload: { clipId: CLIP_ID } },
+                {
+                    onCommitted: () => {
+                        committed = true;
+                    },
+                }
+            );
+            if (failure !== 'scheduling') {
+                await waitFor(() => expect(tasks).toHaveLength(1));
+                if (failure === 'delivery') {
+                    tasks[0]!.failDelivery();
+                } else {
+                    tasks[0]!.deliver();
+                }
+            }
+            await waitFor(() => expect(tasks).toHaveLength(2));
+            expect(notices).toEqual([]);
+            expect(rawWarpState().markers).toHaveLength(2);
+            expect(undoHistoryStore.value?.past).toHaveLength(1);
+            tasks[1]!.deliver();
+            await execution;
+            expect(notices).toEqual([{ message: 'Detected 1 transients (1 preserved)', level: 'success' }]);
+            for (const task of tasks) {
+                expect(task.closeFirst).toHaveBeenCalledOnce();
+                expect(task.closeSecond).toHaveBeenCalledOnce();
+                task.deliver();
+                task.failDelivery();
+            }
+            expect(notices).toHaveLength(1);
+        }
+    );
+
+    it.each(['scheduling', 'notification'] as const)(
+        'reports persistent post-commit %s failure as committed with intact Undo',
+        async (failure) => {
+            supplyBuffer(burstSamples());
+            let committed = false;
+            const tasks = holdCompletionTasks(() => committed, { scheduling: failure === 'scheduling' ? 2 : 0 });
+            const eventBus = createEventBus<{
+                'ui.notify': NotifyPayload;
+                'ui.confirm': ConfirmPayload;
+                'ui.prompt': PromptPayload;
+            }>();
+            injectDependencies(notifyUser, { eventBus });
+            const emit = vi.spyOn(eventBus, 'emit');
+            if (failure === 'notification') {
+                emit.mockImplementation(() => {
+                    throw new Error('Notification failed');
+                });
+            }
+            const execution = executeAppAction(
+                { type: 'detectTransients', payload: { clipId: CLIP_ID } },
+                {
+                    onCommitted: () => {
+                        committed = true;
+                    },
+                }
+            );
+            const rejected = expect(execution).rejects.toThrow(
+                'Action committed but post-commit processing failed: detectTransients'
+            );
+            if (failure === 'notification') {
+                await waitFor(() => expect(tasks).toHaveLength(1));
+                tasks[0]!.deliver();
+                await waitFor(() => expect(tasks).toHaveLength(2));
+                tasks[1]!.deliver();
+            }
+            await rejected;
+            expect(tasks).toHaveLength(2);
+            expect(rawWarpState().markers).toHaveLength(2);
+            expect(getWarpState(CLIP_ID)).toEqual(rawWarpState());
+            expect(undoHistoryStore.value?.past).toHaveLength(1);
+            expect(emit).toHaveBeenCalledTimes(failure === 'notification' ? 2 : 0);
+            await undo();
+            expect(rawWarpState().markers).toEqual([lockedMarker]);
+            for (const task of tasks) {
+                expect(task.closeFirst).toHaveBeenCalledOnce();
+                expect(task.closeSecond).toHaveBeenCalledOnce();
+                task.deliver();
+            }
+        }
+    );
 
     it.each(['Detect', 'sensitivity'] as const)(
         'review repair: completes silent absent state through %s without creating Undo history',

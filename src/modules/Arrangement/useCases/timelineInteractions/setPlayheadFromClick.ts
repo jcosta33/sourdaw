@@ -9,5 +9,5 @@ export function setPlayheadFromClick(canvasX: number): void {
     }
 
     const beat = canvasX / viewState.pixelsPerBeat + viewState.scrollX / viewState.pixelsPerBeat;
-    seekPlayhead(Math.max(0, beat));
+    void seekPlayhead(Math.max(0, beat));
 }

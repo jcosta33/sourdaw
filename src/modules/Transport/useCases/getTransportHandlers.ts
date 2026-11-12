@@ -1,5 +1,7 @@
 import { handleAddTimeSignatureChange } from '../handlers/transport/handleAddTimeSignatureChange';
 import { handleEditTempoMap } from '../handlers/transport/handleEditTempoMap';
+import { handleNavigateSection } from '../handlers/transport/handleNavigateSection';
+import { handleRehearseSection } from '../handlers/transport/handleRehearseSection';
 import { handleRemoveTimeSignatureChange } from '../handlers/transport/handleRemoveTimeSignatureChange';
 import { handleRestoreLoopRegion } from '../handlers/transport/handleRestoreLoopRegion';
 import { handleRestoreMasterGain } from '../handlers/transport/handleRestoreMasterGain';
@@ -35,6 +37,8 @@ export type TransportHandlersMap = {
     restorePunchRegion: typeof handleRestorePunchRegion;
     restoreLoopRegion: typeof handleRestoreLoopRegion;
     restoreMasterGain: typeof handleRestoreMasterGain;
+    navigateSection: typeof handleNavigateSection;
+    rehearseSection: typeof handleRehearseSection;
     seekPlayhead: typeof handleSeekPlayhead;
     setCountInBars: typeof handleSetCountInBars;
     setLoopEnabled: typeof handleSetLoopEnabled;
@@ -84,6 +88,8 @@ export function getTransportHandlers(): TransportHandlersMap {
         setMetronomeVolume: handleSetMetronomeVolume,
         setPlayback: handleSetPlayback,
         setLoopRegion: handleSetLoopRegion,
+        navigateSection: handleNavigateSection,
+        rehearseSection: handleRehearseSection,
         seekPlayhead: handleSeekPlayhead,
         setPunchIn: handleSetPunchIn,
         setPunchEnabled: handleSetPunchEnabled,

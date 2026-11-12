@@ -59,6 +59,13 @@ import {
 } from './agentRequestOrchestration/settleAgentRunWorkLease';
 import { projectAgentRunReceiptSaga, type AgentRunReceiptSagaInput } from './projectAgentRunReceiptSaga';
 
+/** Batches a cancellation leaves as they settled: what committed, changed nothing, or was skipped stays so. */
+const SETTLED_BATCH_STATUSES: ReadonlySet<AgentRunBatch['status']> = new Set<AgentRunBatch['status']>([
+    'committed',
+    'no-op',
+    'skipped',
+]);
+
 const DEFAULT_SCOPE: AgentRunScope = {
     targetIds: [],
     targetRanges: [],
@@ -2266,7 +2273,7 @@ function cancelAgentRun(input: { runId: string; reason: string; requestedAt?: nu
                 consumerAcknowledgedAt: requestedAt,
             },
             batches: run.batches.map((batch) =>
-                batch.status === 'committed' || batch.status === 'no-op' ? batch : { ...batch, status: 'cancelled' }
+                SETTLED_BATCH_STATUSES.has(batch.status) ? batch : { ...batch, status: 'cancelled' }
             ),
             workLeases: run.workLeases.map((lease) =>
                 lease.terminalState === null ? { ...lease, terminalState: 'cancelled', settledAt: requestedAt } : lease
