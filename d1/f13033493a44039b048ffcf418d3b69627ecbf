@@ -1,0 +1,28 @@
+src/modules/AiRuntime/repositories/__tests__/webLlmProviderAdapter.spec.ts
+  s_0547b7605037d4::t_cefe84520b4c34 941-962,1040-1048
+  s_0547b7605037d4::t_9af62f61219d11 11
+  s_0547b7605037d4::t_0944a3483de518 1049
+src/modules/WorkspaceShell/presentations/views/Prompt/__tests__/LlmStatusBadge.spec.tsx
+  s_0547b7605037d4::t_b8f93db0e977f7 129,144
+  s_0547b7605037d4::t_5f0dbbdff9df36 133
+src/modules/AiRuntime/errors/LocalModelRefusalError.ts
+  s_0547b7605037d4::t_cefe84520b4c34 4-10,20
+src/modules/AiRuntime/repositories/webLlm/webLlmArtifactAdmission.ts
+  s_0547b7605037d4::t_cefe84520b4c34 522-525
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d1f13033493a44039b048ffcf418d3b69627ecbf",
+  "prompts": {},
+  "sessions": {
+    "s_0547b7605037d4": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "97f8302c-c50a-45c3-a041-49fd06766716",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
