@@ -1,0 +1,21 @@
+scripts/nativeCommand.ts
+  s_eec9d24f84ae15::t_d4e64ee8e43463 3-8,187-192,194-198,201-206,209-212,277
+scripts/nativeCommandDiagnostics.ts
+  s_eec9d24f84ae15::t_d4e64ee8e43463 1-70
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0d4dab21b9d8206574d613dcddadeaa3c5fb15af",
+  "prompts": {},
+  "sessions": {
+    "s_eec9d24f84ae15": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cc8d-d36d-71b3-be5c-15c29b38b9aa",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
