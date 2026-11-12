@@ -72,7 +72,8 @@ const MEASURABLE_TRACK_KINDS = new Set(['audio', 'midi', 'bus']);
 const WORD = String.raw`(?!(?:and|or|but|louder|quieter|softer|is|are|be|not|never|without|cannot|do|does|will|must|should|may|can|don['’]?t|doesn['’]?t|won['’]?t|mustn['’]?t|shouldn['’]?t|can['’]?t)(?![\p{L}\p{N}'’]))[^\s,.;:!?]+`;
 const MIX_PRONOUN = String.raw`(?:it|everything|anything)`;
 /** The role and mix words an object member may open with, longest first, so "lead vocal" is one member. */
-const SCOPE_WORD = [...ROLE_WORDS.keys(), ...MIX_WORDS]
+const SCOPE_WORD = Array.from(ROLE_WORDS.keys())
+    .concat(Array.from(MIX_WORDS))
     .toSorted((left, right) => right.length - left.length)
     .map((word) =>
         word
@@ -135,7 +136,10 @@ const UNREADABLE_DIRECTION = new RegExp(
 const RAISING_VERB = /^(?:rais|increas|boost|push|turn(?:ing)?\s+up)/iu;
 const LOWERING_VERB = /^(?:lower|reduc|decreas|turn(?:ing)?\s+down)/iu;
 const MIX_PRONOUNS = new Set(['it', 'everything', 'anything']);
-const SCOPE_NAMED = new RegExp(String.raw`□|\b(?:${[...ROLE_WORDS.keys()].map(escapeRegExp).join('|')})\b`, 'iu');
+const SCOPE_NAMED = new RegExp(
+    String.raw`□|\b(?:${Array.from(ROLE_WORDS.keys(), (word) => escapeRegExp(word)).join('|')})\b`,
+    'iu'
+);
 const QUALITY_OF: Readonly<Record<MeasuredConstraintId, string>> = {
     'loudness-held-v1': 'loudness',
     'loudness-not-raised-v1': 'loudness',
@@ -334,7 +338,7 @@ function readHoldClauses(masked: string, prompt: string): HoldClause[] {
     const unclaimed = unreadable.filter(
         (clause) => !readable.some((other) => other.start < clause.end && clause.start < other.end)
     );
-    const clauses = [...readable, ...unclaimed].toSorted((left, right) => left.start - right.start);
+    const clauses = readable.concat(unclaimed).toSorted((left, right) => left.start - right.start);
     return clauses.filter(
         (clause, index) =>
             !clauses.slice(0, index).some((other) => other.start < clause.end && clause.start < other.end)
@@ -367,7 +371,7 @@ function pushMeasuredHolds(
     context: ProjectContext
 ) {
     const { clause, object, constraintIds } = hold;
-    const qualities = [...new Set(constraintIds.map((id) => QUALITY_OF[id]))].join(' and ');
+    const qualities = Array.from(new Set(constraintIds.map((id) => QUALITY_OF[id]))).join(' and ');
     if (hold.unreadable !== null) {
         reading.unsupported.push({ constraintId: 'unsupported', clause, reason: hold.unreadable });
         return;
