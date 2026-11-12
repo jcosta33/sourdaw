@@ -1,0 +1,40 @@
+scripts/githubAppIdentity.ts
+  s_76ccd61d453edf::t_49593152259bfe 723,737,774,786
+  s_3df76396fbd4b1::t_adeec8415a0257 5,389-394,701-722,724-736,738-773,775-785,787-798,805-806,808,835-836,838
+.agents/skills/delivery-orchestration/references/trust-boundary.md
+  s_9307cedd8951f1::t_44dab4fc7b83d5 45-46,48-51
+scripts/__tests__/githubAppIdentity.spec.ts
+  s_3df76396fbd4b1::t_63229b1373521d 1629-1675
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b57b7d22c495912f95fa32ddaaef22dcc6afba52",
+  "prompts": {},
+  "sessions": {
+    "s_3df76396fbd4b1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f8caa473-e64a-4fad-b579-cf6c36add2c2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_76ccd61d453edf": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "108ea70a-a924-42ce-b7b8-fd9c1012e902",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_9307cedd8951f1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cee0-9c43-7223-9451-be85d15b1347",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
