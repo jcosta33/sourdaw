@@ -1,4 +1,5 @@
 import { getWebLlmArtifactUrl } from './getWebLlmArtifactUrl';
+import { getWebLlmRequiredFeatures } from './getWebLlmRequiredFeatures';
 import { type WebLlmArtifactManifestModel } from './webLlmArtifactManifest';
 
 import type { AppConfig, ModelRecord } from '@mlc-ai/web-llm';
@@ -32,6 +33,7 @@ export function createWebLlmAppConfig(model: WebLlmArtifactManifestModel): AppCo
         model_lib: getWebLlmArtifactUrl(model, wasmArtifact),
         vram_required_MB: model.engine.vramRequiredMb,
         low_resource_required: model.engine.lowResourceRequired,
+        required_features: [...getWebLlmRequiredFeatures(model.modelId)],
         overrides: {
             context_window_size: model.engine.contextWindowSize,
         },
