@@ -67,6 +67,8 @@ export type HeadCheckRun = {
 
 export type PullRequestSnapshot = {
     number: number;
+    /** GitHub's own creation instant; no caller-editable file can move it. */
+    createdAt: string;
     state: string;
     isDraft: boolean;
     title: string;
@@ -99,11 +101,42 @@ export type StackedPullRequest = Pick<
  * branch. Only the one caller that judges the head asks for check runs.
  */
 export type CheckEvidencePort = {
+    /** Raw facts identifying every `Gate` on the head, read completely or not at all. */
+    gateProvenance: (number: number, headRefOid: string) => GateProvenanceFacts;
     gateRequiredCheckNames: () => ReadonlySet<string>;
     gateRequiredSkipAliases: () => ReadonlyMap<string, string>;
     headCheckRuns: (number: number, headRefOid: string) => HeadCheckRun[];
     /** The `required_status_checks` contexts on the live `main` ruleset, read fresh from GitHub. */
     requiredStatusCheckContexts: () => string[];
+};
+
+/**
+ * The REST facts that say which `Gate` satisfies the ruleset. The ruleset requires the context by
+ * name with no integration pin, so any app's check run or a commit status named `Gate` would count.
+ * Statuses and conclusions are GitHub's lower-case REST values.
+ */
+export type GateProvenanceFacts = {
+    commitStatusContexts: string[];
+    gateCheckRuns: Array<{
+        id: number;
+        status: string;
+        conclusion: string | null;
+        appNodeId: string | null;
+        checkSuiteId: number | null;
+    }>;
+    /** The health-gates.yml `pull_request` runs for the head, each with every attempt it made. */
+    workflowRuns: Array<{
+        id: number;
+        path: string;
+        headSha: string;
+        checkSuiteId: number;
+        runAttempt: number;
+        attempts: Array<{
+            attempt: number;
+            conclusion: string | null;
+            jobs: Array<{ id: number; name: string; conclusion: string | null }>;
+        }>;
+    }>;
 };
 
 export type DeliveryPort = CheckEvidencePort & {
@@ -113,7 +146,20 @@ export type DeliveryPort = CheckEvidencePort & {
     reviewBundleDeliveryAuthorization: (number: number, head: string) => DeliveryAuthorizationBinding;
     dependents: (baseBranch: string) => StackedPullRequest[];
     repositoryDeletesMergedBranches: () => boolean;
-    merge: (number: number, expectedHead: string, hasDependents: boolean, expectedTitle?: string) => void;
+    /** The full message of a commit on the repository, exactly as GitHub stores it. */
+    mergeCommitMessage: (oid: string) => string;
+    /**
+     * `expectedMessage` pins the squash commit body. Without it GitHub composes the message from the
+     * live pull-request body at merge time, so an edit landing after the final validated read would
+     * reach history unvalidated.
+     */
+    merge: (
+        number: number,
+        expectedHead: string,
+        hasDependents: boolean,
+        expectedTitle?: string,
+        expectedMessage?: string
+    ) => void;
     retarget: (number: number, baseBranch: string) => void;
     deliveryReceipts: (number: number) => DeliveryReceiptComment[];
     deliveryReceiptProof: (number: number) => DeliveryReceiptProof;
@@ -149,6 +195,14 @@ export type DeliveryAuthorizationBinding =
           /** The dossier digest with any delivery-authorized event stripped — what acceptance authorized. */
           dossierDigest: string;
       };
+
+/**
+ * `review:prepare` has generated a risk plan for every bundle since the policy merged (PR #4399).
+ * The bundle files are gitignored and caller-editable, so deleting the plan cannot be told apart from
+ * a bundle that never had one; only a pull request GitHub records as opened strictly before this
+ * instant may still be delivered on a plan-less bundle.
+ */
+export const RISK_PLAN_POLICY_CUTOVER = '2026-09-19T06:51:45Z';
 
 /**
  * A plan-less bundle is legacy only when its head-bound manifest says it never generated one.
@@ -231,6 +285,7 @@ const SETTLED_CHECK_STATUS = 'COMPLETED';
 const SUPERSEDED_CONCLUSION = 'CANCELLED';
 const PASSING_CONCLUSION = 'SUCCESS';
 const SKIPPED_CONCLUSION = 'SKIPPED';
+const FAILED_CONCLUSION = 'FAILURE';
 /**
  * `SKIPPED` is a designed outcome: the workflow's path filters skip whole legs, and `Gate` is built
  * to pass on a skipped dependency. Nothing in it is designed to conclude `NEUTRAL`, which reports a
@@ -410,9 +465,115 @@ function validatePullRequest(
 function validateCiAdmission(pullRequest: PullRequestSnapshot, checks: CheckEvidencePort, mode: CiAdmissionMode): void {
     if (mode === 'advisory') {
         validateAdvisoryMergeGate(pullRequest, checks);
-        return;
+    } else {
+        validateRequiredCiAdmission(pullRequest, checks);
     }
-    validateRequiredCiAdmission(pullRequest, checks);
+    validateGateProvenance(pullRequest, checks.gateProvenance(pullRequest.number, pullRequest.headRefOid));
+}
+
+/** GitHub Actions' immutable app node id; the app's slug and name are display only. */
+const GITHUB_ACTIONS_APP_NODE_ID = 'MDM6QXBwMTUzNjg=';
+/**
+ * The health-gates.yml `scope` job, which a draft run skips by design. A draft run's `Gate` fails
+ * without having judged anything, so only a failed attempt whose scope job did not skip is a verdict.
+ */
+const DRAFT_SKIPPED_SCOPE_JOB_NAME = 'Plan required checks';
+/**
+ * A job verdict that stands even when its attempt was later cancelled (a convert-to-draft cancels the
+ * run in progress). `Gate` is judged by the attempt conclusion instead: under `always()` a cancelled
+ * run's `Gate` fails derivatively, without any job having failed.
+ */
+const REAL_JOB_FAILURE_CONCLUSIONS = new Set(['failure', 'timed_out']);
+
+/**
+ * Positively identifies the `Gate` deliver relies on: no commit status may claim the name, every
+ * `Gate` check run must be a GitHub Actions job in a health-gates.yml `pull_request` run for this
+ * exact head, and the newest of them must be the succeeded `Gate` job of the newest run's latest
+ * attempt. Check-run ids are allocated in increasing order, so the highest id is the newest run.
+ *
+ * A real `Gate` failure on the head is never retired by a later success: a rerun to green is the
+ * flake the repository rules forbid laundering, and the remedy is a new push. A draft run's failure
+ * and a superseded run's cancellation are not verdicts and stay tolerated.
+ */
+function validateGateProvenance(pullRequest: PullRequestSnapshot, facts: GateProvenanceFacts): void {
+    const head = pullRequest.headRefOid;
+    const label = `PR #${pullRequest.number} Gate on ${head}`;
+    if (facts.commitStatusContexts.includes(REQUIRED_CHECK_NAME)) {
+        fail(
+            `${label} has a commit status named ${REQUIRED_CHECK_NAME}; only the health-gates Gate job may satisfy it`
+        );
+    }
+    const runs = facts.workflowRuns.filter((run) => run.path === HEALTH_GATES_WORKFLOW_PATH && run.headSha === head);
+    if (runs.length === 0) {
+        fail(`${label} has no health-gates pull_request run`);
+    }
+    const suites = new Set(runs.map((run) => run.checkSuiteId));
+    const foreign = facts.gateCheckRuns.find(
+        (run) =>
+            run.appNodeId !== GITHUB_ACTIONS_APP_NODE_ID || run.checkSuiteId === null || !suites.has(run.checkSuiteId)
+    );
+    if (foreign !== undefined) {
+        fail(`${label}: check run ${foreign.id} named ${REQUIRED_CHECK_NAME} is not the health-gates Gate job`);
+    }
+    for (const run of runs) {
+        assertNoRealGateFailure(label, run);
+    }
+    assertNewestGateIsNewestRunGateJob(label, runs, facts.gateCheckRuns);
+}
+
+function assertNoRealGateFailure(label: string, run: GateProvenanceFacts['workflowRuns'][number]): void {
+    const numbers = run.attempts.map((attempt) => attempt.attempt).sort((left, right) => left - right);
+    if (numbers.length !== run.runAttempt || numbers.some((attempt, index) => attempt !== index + 1)) {
+        fail(`${label}: the attempts of health-gates run ${run.id} are incomplete`);
+    }
+    for (const attempt of run.attempts) {
+        const scope = attempt.jobs.find((job) => job.name === DRAFT_SKIPPED_SCOPE_JOB_NAME);
+        if (scope?.conclusion === 'skipped') {
+            continue;
+        }
+        const failedJob = attempt.jobs.find(
+            (job) => job.name !== REQUIRED_CHECK_NAME && REAL_JOB_FAILURE_CONCLUSIONS.has(job.conclusion ?? '')
+        );
+        if (attempt.conclusion === 'failure' || failedJob !== undefined) {
+            fail(
+                `${label}: attempt ${attempt.attempt} of health-gates run ${run.id} failed, and a later success ` +
+                    `never retires a real Gate failure; push a new commit`
+            );
+        }
+    }
+}
+
+function assertNewestGateIsNewestRunGateJob(
+    label: string,
+    runs: GateProvenanceFacts['workflowRuns'],
+    gateCheckRuns: GateProvenanceFacts['gateCheckRuns']
+): void {
+    const newestGate = gateCheckRuns.reduce<GateProvenanceFacts['gateCheckRuns'][number] | undefined>(
+        (newest, run) => (newest === undefined || run.id > newest.id ? run : newest),
+        undefined
+    );
+    if (newestGate === undefined) {
+        fail(`${label}: no ${REQUIRED_CHECK_NAME} check run reported`);
+    }
+    if (newestGate.status !== 'completed' || newestGate.conclusion !== 'success') {
+        fail(
+            `${label}: the newest ${REQUIRED_CHECK_NAME} check run ${newestGate.id} is ` +
+                `${newestGate.status === 'completed' ? (newestGate.conclusion ?? 'unconcluded') : newestGate.status}`
+        );
+    }
+    const newestRun = runs.reduce((newest, run) => (run.id > newest.id ? run : newest));
+    const latestAttempt = newestRun.attempts.find((attempt) => attempt.attempt === newestRun.runAttempt);
+    const gateJobs = latestAttempt?.jobs.filter((job) => job.name === REQUIRED_CHECK_NAME) ?? [];
+    const gateJob = gateJobs.length === 1 ? gateJobs[0] : undefined;
+    if (gateJob === undefined) {
+        fail(`${label}: the latest attempt of health-gates run ${newestRun.id} has no single Gate job`);
+    }
+    if (gateJob.id !== newestGate.id) {
+        fail(
+            `${label}: the newest ${REQUIRED_CHECK_NAME} check run ${newestGate.id} is not the Gate job ` +
+                `${gateJob.id} of the latest attempt of health-gates run ${newestRun.id}`
+        );
+    }
 }
 
 /**
@@ -619,9 +780,13 @@ function unretiredFailedCheckRun(checkRuns: HeadCheckRun[]): HeadCheckRun | unde
  *
  * Attempts GitHub reports no start for, and attempts that share a start, order nothing and so retire
  * nothing: absent or ambiguous recency leaves the failure standing rather than guessing it away.
+ *
+ * A `FAILURE` is never retired at all. It is a real verdict on this commit, and a green rerun over it
+ * is the retry-to-green the repository forbids treating as clean; the remedy is a new push.
  */
 function retiresAttempt(candidate: HeadCheckRun, attempt: HeadCheckRun): boolean {
     return (
+        attempt.conclusion !== FAILED_CONCLUSION &&
         candidate.name === attempt.name &&
         candidate.status === SETTLED_CHECK_STATUS &&
         !NON_VERDICT_CONCLUSIONS.has(candidate.conclusion ?? '') &&
@@ -1402,9 +1567,15 @@ function validateReview(number: number, review: ReviewState): void {
  * and the authorized evidence is exactly the evidence this head carries. `parseReviewDossier` has
  * already proven the persisted chain when the port read the record.
  */
-function validateDeliveryAuthorization(number: number, head: string, review: ReviewState, port: DeliveryPort): void {
+function validateDeliveryAuthorization(
+    pullRequest: PullRequestSnapshot,
+    review: ReviewState,
+    port: DeliveryPort
+): void {
+    const { number, headRefOid: head } = pullRequest;
     const binding = port.reviewBundleDeliveryAuthorization(number, head);
     if (binding.kind === 'legacy') {
+        validateLegacyBundleAdmission(pullRequest);
         return;
     }
     const authorization = binding.authorization;
@@ -1424,6 +1595,28 @@ function validateDeliveryAuthorization(number: number, head: string, review: Rev
     ) {
         fail(`PR #${number} delivery authorization does not bind the live reviewer approval review`);
     }
+}
+
+function validateLegacyBundleAdmission(pullRequest: Pick<PullRequestSnapshot, 'number' | 'createdAt'>): void {
+    const createdAt = parseIsoInstant(pullRequest.createdAt);
+    if (createdAt === undefined) {
+        fail(`PR #${pullRequest.number} creation instant ${JSON.stringify(pullRequest.createdAt)} is malformed`);
+    }
+    if (createdAt >= Date.parse(RISK_PLAN_POLICY_CUTOVER)) {
+        fail(
+            `PR #${pullRequest.number} has a plan-less review bundle, and a plan-less review bundle cannot ` +
+                `authorize a pull request created after the risk-plan policy (${RISK_PLAN_POLICY_CUTOVER}); ` +
+                `re-run review:prepare and review:publish on the current head`
+        );
+    }
+}
+
+function parseIsoInstant(value: unknown): number | undefined {
+    if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/u.test(value)) {
+        return undefined;
+    }
+    const instant = Date.parse(value);
+    return Number.isFinite(instant) ? instant : undefined;
 }
 
 /**
@@ -2789,6 +2982,44 @@ function completeIssueAfterMerge(
     }
 }
 
+function squashCommitTitle(pullRequest: Pick<PullRequestSnapshot, 'number' | 'title'>): string {
+    return `${pullRequest.title} (#${pullRequest.number})`;
+}
+
+/**
+ * What GitHub may append after the pinned squash message: a final newline, and a co-author trailer
+ * block, optionally behind its `---------` separator. Anything else means the message is not the one
+ * deliver pinned.
+ */
+const SQUASH_MESSAGE_TRAILER_PATTERN =
+    /^(?:\n\n(?:-{9}\n\n)?Co-authored-by: [^\n]+(?:\nCo-authored-by: [^\n]+)*)?\n?$/u;
+
+/**
+ * Without a receipt, the only closing target this recovery has is the live pull-request body, which
+ * stays editable after merge. The squash message deliver pins is that body as it was validated, so
+ * the target is trusted only when the merged commit still carries exactly the current title and body.
+ * Older merges whose message GitHub composed and line-wrapped itself cannot be bound this way.
+ */
+function assertClosingTargetBoundToMergeCommit(
+    pullRequest: PullRequestSnapshot,
+    target: number,
+    port: Pick<DeliveryPort, 'mergeCommitMessage'>
+): void {
+    const unbound =
+        `PR #${pullRequest.number} closing target #${target} cannot be bound to the merged commit; ` +
+        `if closing #${target} is appropriate, close it by hand`;
+    const oid = pullRequest.mergeCommit?.oid;
+    if (oid === undefined || oid === '') {
+        fail(`${unbound} (the merge commit is unknown)`);
+    }
+    const body = pullRequest.body ?? '';
+    const pinned = body === '' ? squashCommitTitle(pullRequest) : `${squashCommitTitle(pullRequest)}\n\n${body}`;
+    const message = port.mergeCommitMessage(oid);
+    if (!message.startsWith(pinned) || !SQUASH_MESSAGE_TRAILER_PATTERN.test(message.slice(pinned.length))) {
+        fail(`${unbound} (merge commit ${oid} does not carry the current title and body)`);
+    }
+}
+
 function validateFreshMerger(pullRequest: PullRequestSnapshot): void {
     if (!isAuthorBotNodeId(pullRequest.mergedByActorNodeId)) {
         fail(`PR #${pullRequest.number} fresh merge was not performed by the author App`);
@@ -2858,6 +3089,9 @@ function deliverPullRequestWithCiAdmission(
                     port.log(`PR #${number} was already merged; repaired 0 remaining dependent(s)`);
                     return;
                 }
+                if (target !== undefined) {
+                    assertClosingTargetBoundToMergeCommit(initial, target, port);
+                }
                 recoveryPostMergeValidation = persistedPreparedPostMergeValidation(initial, target);
                 receipt = ensureDeliveryReceipt(initial, target, port, ciAdmissionMode);
                 receiptPayload = assertDeliveryReceiptForHead(receipt, initial);
@@ -2885,7 +3119,7 @@ function deliverPullRequestWithCiAdmission(
     validatePullRequest(initial, port, ciAdmissionMode);
     const initialReview = port.reviewState(number, initial.headRefOid);
     validateReview(number, initialReview);
-    validateDeliveryAuthorization(number, initial.headRefOid, initialReview, port);
+    validateDeliveryAuthorization(initial, initialReview, port);
 
     const dependents = port.dependents(initial.headRefName).filter((candidate) => candidate.number !== number);
     if (dependents.length > 0 && port.repositoryDeletesMergedBranches()) {
@@ -2960,7 +3194,7 @@ function deliverPullRequestWithCiAdmission(
                 validateBaseBranch(finalSnapshot);
                 const finalReview = port.reviewState(number, finalSnapshot.headRefOid);
                 validateReview(number, finalReview);
-                validateDeliveryAuthorization(number, finalSnapshot.headRefOid, finalReview, port);
+                validateDeliveryAuthorization(finalSnapshot, finalReview, port);
                 const finalDependents = port
                     .dependents(finalSnapshot.headRefName)
                     .filter((candidate) => candidate.number !== number);
@@ -2998,7 +3232,13 @@ function deliverPullRequestWithCiAdmission(
         fail('automatic merged-branch deletion must be disabled before delivering a stacked PR');
     }
     try {
-        port.merge(number, finalSnapshot.headRefOid, hasDependents, `${finalSnapshot.title} (#${number})`);
+        port.merge(
+            number,
+            finalSnapshot.headRefOid,
+            hasDependents,
+            squashCommitTitle(finalSnapshot),
+            finalSnapshot.body ?? ''
+        );
     } catch (error) {
         if (error instanceof DeliveryMergeRejectedError) {
             if (error.certainty === 'definitive-no-merge') {
@@ -3585,6 +3825,158 @@ function readRequiredStatusCheckContexts(repository: string, shell: ShellRunner)
     return [...new Set(requiredStatusCheckArrays.flat().map((check) => check.context))];
 }
 
+function readPaginatedRestPages(shell: Pick<ShellRunner, 'capture'>, path: string, label: string): unknown[] {
+    const pages = parseJson<unknown>(shell.capture('gh', ['api', '--paginate', '--slurp', path]), label);
+    if (!Array.isArray(pages) || pages.length === 0) {
+        fail(`${label} is unreadable`);
+    }
+    return pages;
+}
+
+/** Every item of a `{ total_count, <key>: [] }` listing, refused unless the pages add up to the total. */
+function readCountedRestItems(
+    shell: Pick<ShellRunner, 'capture'>,
+    path: string,
+    key: string,
+    label: string
+): Record<string, unknown>[] {
+    let total: number | undefined;
+    const items: unknown[] = [];
+    for (const page of readPaginatedRestPages(shell, path, label)) {
+        if (!isRecord(page) || !Number.isSafeInteger(page.total_count) || !Array.isArray(page[key])) {
+            fail(`${label} is unreadable`);
+        }
+        if (total !== undefined && total !== page.total_count) {
+            fail(`${label} changed while it was read`);
+        }
+        total = page.total_count as number;
+        items.push(...(page[key] as unknown[]));
+    }
+    if (items.length !== total) {
+        fail(`${label} is incomplete: ${items.length} of ${String(total)} item(s) read`);
+    }
+    if (!items.every(isRecord)) {
+        fail(`${label} is unreadable`);
+    }
+    return items;
+}
+
+function isPositiveInteger(value: unknown): value is number {
+    return typeof value === 'number' && Number.isSafeInteger(value) && value > 0;
+}
+
+function isNullableString(value: unknown): value is string | null {
+    return value === null || typeof value === 'string';
+}
+
+function readGateProvenance(
+    repository: string,
+    number: number,
+    head: string,
+    shell: Pick<ShellRunner, 'capture'>
+): GateProvenanceFacts {
+    const label = `PR #${number} Gate provenance on ${head}`;
+    const commit = `repos/${repository}/commits/${encodeURIComponent(head)}`;
+    const commitStatusContexts = readPaginatedRestPages(
+        shell,
+        `${commit}/statuses?per_page=100`,
+        `${label} commit statuses`
+    ).flatMap((page) => {
+        if (!Array.isArray(page) || !page.every((status) => isRecord(status) && typeof status.context === 'string')) {
+            fail(`${label} commit statuses are unreadable`);
+        }
+        return page.map((status: { context: string }) => status.context);
+    });
+    const gateCheckRuns = readCountedRestItems(
+        shell,
+        `${commit}/check-runs?check_name=${REQUIRED_CHECK_NAME}&filter=all&per_page=100`,
+        'check_runs',
+        `${label} check runs`
+    ).map((run) => {
+        const app = run.app;
+        const suite = run.check_suite;
+        if (
+            !isPositiveInteger(run.id) ||
+            run.name !== REQUIRED_CHECK_NAME ||
+            typeof run.status !== 'string' ||
+            !isNullableString(run.conclusion) ||
+            (app !== null && !isRecord(app)) ||
+            (suite !== null && !isRecord(suite))
+        ) {
+            fail(`${label} check runs are unreadable`);
+        }
+        const appNodeId = app?.node_id;
+        const checkSuiteId = suite?.id;
+        return {
+            id: run.id,
+            status: run.status,
+            conclusion: run.conclusion,
+            appNodeId: typeof appNodeId === 'string' ? appNodeId : null,
+            checkSuiteId: isPositiveInteger(checkSuiteId) ? checkSuiteId : null,
+        };
+    });
+    const listedRuns = readCountedRestItems(
+        shell,
+        `repos/${repository}/actions/runs?head_sha=${encodeURIComponent(head)}&event=pull_request&per_page=100`,
+        'workflow_runs',
+        `${label} workflow runs`
+    ).map((run) => {
+        if (
+            !isPositiveInteger(run.id) ||
+            typeof run.path !== 'string' ||
+            typeof run.head_sha !== 'string' ||
+            !isPositiveInteger(run.check_suite_id) ||
+            !isPositiveInteger(run.run_attempt)
+        ) {
+            fail(`${label} workflow runs are unreadable`);
+        }
+        return {
+            id: run.id,
+            path: run.path,
+            headSha: run.head_sha,
+            checkSuiteId: run.check_suite_id,
+            runAttempt: run.run_attempt,
+        };
+    });
+    const healthGatesRuns = listedRuns.filter((run) => run.path === HEALTH_GATES_WORKFLOW_PATH && run.headSha === head);
+    const workflowRuns = healthGatesRuns.map((run) => ({
+        ...run,
+        attempts: readWorkflowRunAttempts(repository, run, label, shell),
+    }));
+    return { commitStatusContexts, gateCheckRuns, workflowRuns };
+}
+
+function readWorkflowRunAttempts(
+    repository: string,
+    run: { id: number; runAttempt: number },
+    label: string,
+    shell: Pick<ShellRunner, 'capture'>
+): GateProvenanceFacts['workflowRuns'][number]['attempts'] {
+    return Array.from({ length: run.runAttempt }, (_unused, index) => {
+        const attempt = index + 1;
+        const path = `repos/${repository}/actions/runs/${run.id}/attempts/${attempt}`;
+        const attemptLabel = `${label} run ${run.id} attempt ${attempt}`;
+        const summary = parseJson<unknown>(shell.capture('gh', ['api', path]), attemptLabel);
+        if (
+            !isRecord(summary) ||
+            summary.id !== run.id ||
+            summary.run_attempt !== attempt ||
+            !isNullableString(summary.conclusion)
+        ) {
+            fail(`${attemptLabel} is unreadable`);
+        }
+        const jobs = readCountedRestItems(shell, `${path}/jobs?per_page=100`, 'jobs', `${attemptLabel} jobs`).map(
+            (job) => {
+                if (!isPositiveInteger(job.id) || typeof job.name !== 'string' || !isNullableString(job.conclusion)) {
+                    fail(`${attemptLabel} jobs are unreadable`);
+                }
+                return { id: job.id, name: job.name, conclusion: job.conclusion };
+            }
+        );
+        return { attempt, conclusion: summary.conclusion, jobs };
+    });
+}
+
 export function shellPort(
     repository: string,
     shell: ShellRunner = { capture, run },
@@ -3603,6 +3995,7 @@ export function shellPort(
     const primaryRoot = options.primaryRoot ?? process.cwd();
     const pullRequestFields = [
         'number',
+        'createdAt',
         'state',
         'isDraft',
         'title',
@@ -3706,6 +4099,7 @@ export function shellPort(
                 mergedByActorNodeId: readMergedByActorNodeId(number, { owner, name }, shell),
             };
         },
+        gateProvenance: (number, headRefOid) => readGateProvenance(repository, number, headRefOid, shell),
         headCheckRuns: (number, headRefOid) =>
             readHeadCheckRuns(number, (cursor) => readRollupPage(number, headRefOid, cursor)),
         gateRequiredCheckNames: () => readGateRequiredCheckNames(),
@@ -3759,7 +4153,20 @@ export function shellPort(
         },
         repositoryDeletesMergedBranches: () =>
             shell.capture('gh', ['api', `repos/${repository}`, '--jq', '.delete_branch_on_merge']) === 'true',
-        merge: (number, expectedHead, hasDependents, expectedTitle) => {
+        mergeCommitMessage: (oid) => {
+            if (!/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/u.test(oid)) {
+                fail(`merge commit ${oid} is not a commit object id`);
+            }
+            const message = parseJson<unknown>(
+                shell.capture('gh', ['api', `repos/${repository}/commits/${oid}`, '--jq', '.commit.message | tojson']),
+                `merge commit ${oid} message`
+            );
+            if (typeof message !== 'string') {
+                fail(`merge commit ${oid} message is unreadable`);
+            }
+            return message;
+        },
+        merge: (number, expectedHead, hasDependents, expectedTitle, expectedMessage) => {
             const policy = repositoryMergePolicy(repository, shell);
             if (hasDependents && policy.deletesMergedBranches) {
                 fail('automatic merged-branch deletion must be disabled before delivering a stacked PR');
@@ -3776,6 +4183,7 @@ export function shellPort(
                 '-f',
                 `merge_method=${policy.method}`,
                 ...(expectedTitle === undefined ? [] : ['-f', `commit_title=${expectedTitle}`]),
+                ...(expectedMessage === undefined ? [] : ['-f', `commit_message=${expectedMessage}`]),
             ];
             let response: string;
             try {

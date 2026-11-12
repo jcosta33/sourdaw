@@ -167,13 +167,13 @@ export function useSliderGesture({
     };
 
     const handlePointerDown = (event: PointerEvent<HTMLDivElement>): void => {
+        const state = stateRef.current;
+        settleGesture(state);
         onPointerDown?.(event);
         // Radix starts no slide for a pointerdown a caller prevented.
         if (event.defaultPrevented) {
             return;
         }
-        const state = stateRef.current;
-        settleGesture(state);
         state.settled = null;
         state.keyStep = false;
         state.pointerId = event.pointerId;

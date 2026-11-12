@@ -26,6 +26,7 @@ import {
     gateRequiredSkipAliases,
     parseCliArgs,
     readGateRequiredCheckNames,
+    RISK_PLAN_POLICY_CUTOVER,
     runDeliverCli,
     shellPort,
     withPullRequestDeliveryLock,
@@ -42,6 +43,7 @@ import {
     type StackedPullRequest,
     type TrackerCompletionPort,
     type DeliveryAuthorizationBinding,
+    type GateProvenanceFacts,
     run,
 } from '../deliverPullRequest';
 import {
@@ -314,6 +316,12 @@ function persistedPostMergeValidation(
 }
 
 const body = relationshipBody('None.');
+const MERGE_COMMIT_OID = 'f'.repeat(40);
+
+/** The squash message GitHub writes when deliver pins `commit_title` and `commit_message`. */
+function squashMessage(pullRequestBody: string, title = 'feat(delivery): add gate'): string {
+    return `${title} (#42)\n\n${pullRequestBody}`;
+}
 const ORDERED_RECEIPT_PROOF_QUERY_FRAGMENT =
     'comments(first:100,after:$cursor,orderBy:{field:UPDATED_AT,direction:ASC}){totalCount pageInfo{hasNextPage endCursor} nodes{id lastEditedAt}}';
 const ORDERED_RECEIPT_PROOF_QUERY = `query=query($owner:String!,$name:String!,$number:Int!,$cursor:String){repository(owner:$owner,name:$name){pullRequest(number:$number){${ORDERED_RECEIPT_PROOF_QUERY_FRAGMENT}}}}`;
@@ -564,6 +572,10 @@ function stackedDeliveryPort(finalSettings: MergeSettings, primaryRoot: string) 
             if (joined.includes('.delete_branch_on_merge')) {
                 return 'false';
             }
+            const gateProvenance = shellGateProvenanceResponse(args);
+            if (gateProvenance !== undefined) {
+                return gateProvenance;
+            }
             if (joined.includes('issues/42/comments?per_page=100')) {
                 return JSON.stringify([
                     [
@@ -632,9 +644,17 @@ function stackedDeliveryPort(finalSettings: MergeSettings, primaryRoot: string) 
     return { captures, mergeCaptures, port };
 }
 
+/**
+ * The fake port's default review binding is `legacy`, so the default fixture models a pull request
+ * opened before the risk-plan policy; cases about the plan-carrying era set a later `createdAt`.
+ */
+const PRE_RISK_PLAN_CREATED_AT = '2026-09-18T12:00:00Z';
+const POST_RISK_PLAN_CREATED_AT = '2026-11-11T08:00:00Z';
+
 function pullRequest(overrides: Partial<PullRequestSnapshot> = {}): PullRequestSnapshot {
     return {
         number: 42,
+        createdAt: PRE_RISK_PLAN_CREATED_AT,
         state: 'OPEN',
         isDraft: false,
         title: 'feat(delivery): add gate',
@@ -683,6 +703,134 @@ function shellMergedByGraphql(
             },
         },
     });
+}
+
+const ACTIONS_APP_NODE_ID = 'MDM6QXBwMTUzNjg=';
+type GateWorkflowRunFixture = GateProvenanceFacts['workflowRuns'][number];
+type GateWorkflowAttemptFixture = GateWorkflowRunFixture['attempts'][number];
+
+function gateAttempt(
+    attempt: number,
+    conclusion: string,
+    gateJobId: number,
+    planConclusion: string = 'success'
+): GateWorkflowAttemptFixture {
+    return {
+        attempt,
+        conclusion,
+        jobs: [
+            { id: gateJobId - 1, name: 'Plan required checks', conclusion: planConclusion },
+            { id: gateJobId, name: 'Gate', conclusion: conclusion === 'cancelled' ? 'failure' : conclusion },
+        ],
+    };
+}
+
+function gateWorkflowRun(
+    id: number,
+    head: string,
+    attempts: GateWorkflowAttemptFixture[],
+    overrides: Partial<GateWorkflowRunFixture> = {}
+): GateWorkflowRunFixture {
+    return {
+        id,
+        path: WORKFLOW_PATH,
+        headSha: head,
+        checkSuiteId: id * 10,
+        runAttempt: attempts.length,
+        attempts,
+        ...overrides,
+    };
+}
+
+/** The Gate check runs GitHub reports for these runs: one per attempt, carrying its Gate job's id. */
+function gateCheckRunsFor(runs: GateWorkflowRunFixture[]): GateProvenanceFacts['gateCheckRuns'] {
+    return runs.flatMap((run) =>
+        run.attempts.flatMap((attempt) =>
+            attempt.jobs
+                .filter((job) => job.name === 'Gate')
+                .map((job) => ({
+                    id: job.id,
+                    status: 'completed',
+                    conclusion: job.conclusion,
+                    appNodeId: ACTIONS_APP_NODE_ID,
+                    checkSuiteId: run.checkSuiteId,
+                }))
+        )
+    );
+}
+
+function gateProvenanceFor(runs: GateWorkflowRunFixture[]): GateProvenanceFacts {
+    return { commitStatusContexts: [], gateCheckRuns: gateCheckRunsFor(runs), workflowRuns: runs };
+}
+
+/**
+ * GitHub's REST answers for one clean health-gates run on `head`, for shell-port fixtures that run a
+ * whole delivery. Returns undefined for any other read so the fixture keeps refusing unknown calls.
+ */
+function shellGateProvenanceResponse(args: string[], head = 'head'): string | undefined {
+    const endpoint = args.at(-1) ?? '';
+    const paginated = args.includes('--paginate') && args.includes('--slurp');
+    const commit = `repos/jcosta33/sourdaw/commits/${head}`;
+    const attempt = 'repos/jcosta33/sourdaw/actions/runs/100/attempts/1';
+    if (paginated && endpoint === `${commit}/statuses?per_page=100`) {
+        return JSON.stringify([[]]);
+    }
+    if (paginated && endpoint === `${commit}/check-runs?check_name=Gate&filter=all&per_page=100`) {
+        return JSON.stringify([
+            {
+                total_count: 1,
+                check_runs: [
+                    {
+                        id: 2002,
+                        name: 'Gate',
+                        status: 'completed',
+                        conclusion: 'success',
+                        app: { node_id: ACTIONS_APP_NODE_ID },
+                        check_suite: { id: 1000 },
+                    },
+                ],
+            },
+        ]);
+    }
+    if (
+        paginated &&
+        endpoint === `repos/jcosta33/sourdaw/actions/runs?head_sha=${head}&event=pull_request&per_page=100`
+    ) {
+        return JSON.stringify([
+            {
+                total_count: 2,
+                workflow_runs: [
+                    { id: 100, path: WORKFLOW_PATH, head_sha: head, check_suite_id: 1000, run_attempt: 1 },
+                    {
+                        id: 101,
+                        path: '.github/workflows/pr-checks.yml',
+                        head_sha: head,
+                        check_suite_id: 1010,
+                        run_attempt: 1,
+                    },
+                ],
+            },
+        ]);
+    }
+    if (!paginated && endpoint === attempt) {
+        return JSON.stringify({ id: 100, run_attempt: 1, conclusion: 'success' });
+    }
+    if (paginated && endpoint === `${attempt}/jobs?per_page=100`) {
+        return JSON.stringify([
+            {
+                total_count: 2,
+                jobs: [
+                    { id: 2001, name: 'Plan required checks', conclusion: 'success' },
+                    { id: 2002, name: 'Gate', conclusion: 'success' },
+                ],
+            },
+        ]);
+    }
+    return undefined;
+}
+
+function cleanGateProvenance(head: string): GateProvenanceFacts {
+    return gateProvenanceFor([gateWorkflowRun(100, head, [gateAttempt(1, 'success', 2002)])]);
 }
 
 function checkRun(overrides: Partial<HeadCheckRun> = {}): HeadCheckRun {
@@ -884,6 +1032,9 @@ type FakeInput = {
     deliveryReceiptProof?: DeliveryReceiptProof;
     mergedPrimaryAfterMerge?: Partial<PullRequestSnapshot>;
     syncAuthorshipNotes?: DeliveryPort['syncAuthorshipNotes'];
+    mergeCommitMessages?: Record<string, string>;
+    gateProvenance?: GateProvenanceFacts | Error;
+    gateProvenanceReads?: Array<GateProvenanceFacts | Error>;
 };
 
 type DeliveryReceiptComment = {
@@ -1000,6 +1151,7 @@ function fakePort(input: FakeInput = {}) {
     const reviewStates = [...(input.reviewStates ?? [])];
     const dependentSets = input.dependentSets?.map((set) => [...set]) ?? [[stacked()], [stacked()]];
     const headCheckRunReads = input.headCheckRunReads?.map((entry) => (entry instanceof Error ? entry : [...entry]));
+    const gateProvenanceReads = [...(input.gateProvenanceReads ?? [])];
     const pullRequests = new Map<number, PullRequestSnapshot>();
     if (input.dependents !== undefined) {
         for (const dependent of input.dependents) {
@@ -1111,6 +1263,14 @@ function fakePort(input: FakeInput = {}) {
             }
             return structuredClone(runs);
         },
+        gateProvenance: (number, headRefOid) => {
+            calls.push(`gate-provenance:${number}:${headRefOid}`);
+            const facts = gateProvenanceReads.shift() ?? input.gateProvenance ?? cleanGateProvenance(headRefOid);
+            if (facts instanceof Error) {
+                throw facts;
+            }
+            return structuredClone(facts);
+        },
         reviewState: (number, expectedHead) => {
             calls.push(`review:${number}:${expectedHead}`);
             return (
@@ -1155,10 +1315,19 @@ function fakePort(input: FakeInput = {}) {
             });
         },
         repositoryDeletesMergedBranches: () => input.deletesMergedBranches ?? false,
-        merge: (number, head, hasDependents, expectedTitle) => {
+        mergeCommitMessage: (oid) => {
+            calls.push(`merge-commit-message:${oid}`);
+            const message = input.mergeCommitMessages?.[oid];
+            if (message === undefined) {
+                throw new Error(`missing merge commit ${oid} fixture`);
+            }
+            return message;
+        },
+        merge: (number, head, hasDependents, expectedTitle, expectedMessage) => {
             calls.push(`merge:${number}:${head}`);
             calls.push(`merge-has-dependents:${hasDependents}`);
             calls.push(`merge-title:${expectedTitle ?? 'none'}`);
+            calls.push(`merge-message:${expectedMessage ?? 'none'}`);
             if (lastPrimary === undefined) {
                 throw new Error('merge requires a primary snapshot');
             }
@@ -1703,9 +1872,15 @@ describe('pull-request delivery', () => {
             const { port, calls, tracker } = fakePort({
                 primary: [
                     pullRequest({ body, mergeable: 'UNKNOWN' }),
-                    pullRequest({ body, state: 'MERGED', mergedByActorNodeId: AUTHOR_BOT_NODE_ID }),
+                    pullRequest({
+                        body,
+                        state: 'MERGED',
+                        mergedByActorNodeId: AUTHOR_BOT_NODE_ID,
+                        mergeCommit: { oid: MERGE_COMMIT_OID },
+                    }),
                 ],
                 dependentSets: recoveryWork ? [[stacked()], [stacked()]] : [[], []],
+                mergeCommitMessages: { [MERGE_COMMIT_OID]: squashMessage(body) },
             });
             deliverPullRequest(42, port, tracker);
             expect(calls.some((call) => call.startsWith('merge:'))).toBe(false);
@@ -1736,10 +1911,17 @@ describe('pull-request delivery', () => {
                         state: initialState,
                         mergeable: 'UNKNOWN',
                         mergedByActorNodeId: initialState === 'MERGED' ? merger : null,
+                        ...(initialState === 'MERGED' ? { mergeCommit: { oid: MERGE_COMMIT_OID } } : {}),
                     }),
-                    pullRequest({ body, state: 'MERGED', mergedByActorNodeId: merger }),
+                    pullRequest({
+                        body,
+                        state: 'MERGED',
+                        mergedByActorNodeId: merger,
+                        mergeCommit: { oid: MERGE_COMMIT_OID },
+                    }),
                 ],
                 dependentSets: recoveryWork ? [[stacked()], [stacked()]] : [[], []],
+                mergeCommitMessages: { [MERGE_COMMIT_OID]: squashMessage(body) },
             });
             deliverPullRequest(42, port, tracker);
             expect(calls.some((call) => call.startsWith('merge:'))).toBe(false);
@@ -1863,6 +2045,17 @@ describe('pull-request delivery', () => {
         deliverPullRequest(42, port, tracker);
 
         expect(calls).toContain('merge-title:feat(delivery): retitled in UI (#42)');
+    });
+
+    it('pins the squash commit message to the validated final body rather than letting GitHub read it live', () => {
+        const closes = relationshipBody('Closes #2372');
+        const { port, calls, tracker } = fakePort({
+            primary: [pullRequest({ body: closes }), pullRequest({ body: closes })],
+        });
+
+        deliverPullRequest(42, port, tracker);
+
+        expect(calls).toContain(`merge-message:${closes}`);
     });
 
     it('fails closed when an UNKNOWN initial refresh becomes a merged author-App head with no persisted receipt authority', () => {
@@ -6698,7 +6891,68 @@ describe('pull-request delivery', () => {
     });
 
     it('merges a legacy bundle head without any recorded delivery authorization', () => {
-        const { port, calls } = fakePort({ deliveryAuthorization: { kind: 'legacy' } });
+        const { port, calls } = fakePort({
+            primary: [pullRequest({ createdAt: PRE_RISK_PLAN_CREATED_AT })],
+            deliveryAuthorization: { kind: 'legacy' },
+        });
+
+        deliverPullRequest(42, port);
+
+        expect(calls).toContain('merge:42:head');
+    });
+
+    it.each([
+        ['created after the risk-plan policy', POST_RISK_PLAN_CREATED_AT],
+        ['created at the risk-plan policy instant', RISK_PLAN_POLICY_CUTOVER],
+    ])('refuses a plan-less bundle for a pull request %s before any remote write', (_label, createdAt) => {
+        const { port, calls } = fakePort({
+            primary: [pullRequest({ createdAt })],
+            deliveryAuthorization: { kind: 'legacy' },
+        });
+
+        expect(() => deliverPullRequest(42, port)).toThrow(
+            /plan-less review bundle cannot authorize a pull request created after the risk-plan policy.*review:prepare/
+        );
+        expect(calls).not.toContain('merge:42:head');
+        expect(calls).not.toContain('add-receipt:42');
+        expect(calls.filter((call) => call.startsWith('receipt-authority:write'))).toHaveLength(0);
+    });
+
+    it.each(['', 'yesterday', '2026-13-45T00:00:00Z'])(
+        'refuses a plan-less bundle when the pull-request creation instant %j is malformed',
+        (createdAt) => {
+            const { port, calls } = fakePort({
+                primary: [pullRequest({ createdAt })],
+                deliveryAuthorization: { kind: 'legacy' },
+            });
+
+            expect(() => deliverPullRequest(42, port)).toThrow(/creation instant .* is malformed/);
+            expect(calls).not.toContain('merge:42:head');
+            expect(calls).not.toContain('add-receipt:42');
+        }
+    );
+
+    it('delivers a pull request created after the risk-plan policy through its required authorization', () => {
+        const digest = 'd'.repeat(64);
+        const { port, calls } = fakePort({
+            primary: [pullRequest({ createdAt: POST_RISK_PLAN_CREATED_AT })],
+            review: {
+                latestReviewerReviewDatabaseId: 777,
+                latestReviewerStateOnHead: 'APPROVED',
+                unresolvedThreads: 0,
+            },
+            deliveryAuthorization: {
+                kind: 'required',
+                authorization: {
+                    reviewId: 777,
+                    approvalReviewId: 777,
+                    evidenceManifestDigest: digest,
+                    unresolvedThreads: 0,
+                    intent: 'deliver',
+                },
+                dossierDigest: digest,
+            },
+        });
 
         deliverPullRequest(42, port);
 
@@ -7536,13 +7790,31 @@ describe('pull-request delivery', () => {
      * head carries both attempts, the newest is the verdict, and counting the retired one refuses a
      * head whose every check has since been decided.
      */
-    it('merges an UNSTABLE head whose failed check was rerun to success on the same commit', () => {
+    it('refuses an UNSTABLE head whose failed check was rerun to success on the same commit', () => {
         const unstable = { mergeStateStatus: 'UNSTABLE' };
         const { port, calls } = fakePort({
             primary: [pullRequest(unstable), pullRequest(unstable)],
             headCheckRuns: [
                 ...withGatedCoverage(supersededRunCheckRuns()),
                 checkRun({ name: 'Validation / Unit suite 2/4', conclusion: 'FAILURE', startedAt: PUSH_RUN_START }),
+                checkRun({ name: 'Validation / Unit suite 2/4', startedAt: REVIEW_RUN_START }),
+            ],
+        });
+
+        expect(() => deliverPullRequestWithRequiredCi(42, port)).toThrow(
+            'PR #42 merge state is UNSTABLE and check Validation / Unit suite 2/4 concluded FAILURE'
+        );
+        expect(calls).not.toContain('add-receipt:42');
+        expect(calls).not.toContain('merge:42:head');
+    });
+
+    it('still retires a non-FAILURE verdict such as TIMED_OUT behind a later success on the same commit', () => {
+        const unstable = { mergeStateStatus: 'UNSTABLE' };
+        const { port, calls } = fakePort({
+            primary: [pullRequest(unstable), pullRequest(unstable)],
+            headCheckRuns: [
+                ...withGatedCoverage(supersededRunCheckRuns()),
+                checkRun({ name: 'Validation / Unit suite 2/4', conclusion: 'TIMED_OUT', startedAt: PUSH_RUN_START }),
                 checkRun({ name: 'Validation / Unit suite 2/4', startedAt: REVIEW_RUN_START }),
             ],
         });
@@ -8387,6 +8659,101 @@ describe('pull-request delivery', () => {
             expect(calls).toContain('PR #42 was already merged; repaired 0 remaining dependent(s)');
             expect(calls.filter((call) => call.startsWith('complete:'))).toHaveLength(0);
             expect(calls.filter((call) => call.startsWith('add-receipt:'))).toHaveLength(0);
+            expect(calls.filter((call) => call.startsWith('merge-commit-message:'))).toHaveLength(0);
+        });
+
+        it.each([
+            ['carries a trailing newline', (message: string) => `${message}\n`],
+            [
+                'carries the co-author trailer block GitHub appends',
+                (message: string) =>
+                    `${message}\n\n---------\n\nCo-authored-by: a <a@example.test>\nCo-authored-by: b <b@example.test>\n`,
+            ],
+        ])('completes the closing issue when the merge commit message %s', (_label, decorate) => {
+            const closes = relationshipBody('Closes #2372');
+            const { port, calls, tracker } = fakePort({
+                primary: [
+                    pullRequest({
+                        state: 'MERGED',
+                        body: closes,
+                        mergedByActorNodeId: AUTHOR_BOT_NODE_ID,
+                        mergeCommit: { oid: MERGE_COMMIT_OID },
+                    }),
+                ],
+                dependentSets: [[]],
+                receipts: [],
+                persistedReceiptAuthority: undefined,
+                mergeCommitMessages: { [MERGE_COMMIT_OID]: decorate(squashMessage(closes)) },
+            });
+
+            deliverPullRequest(42, port, tracker);
+
+            expect(calls).toContain('complete:2372');
+        });
+
+        it.each([
+            [
+                'the body was edited after merge to close an issue the merged commit never named',
+                squashMessage(relationshipBody('None.')),
+            ],
+            [
+                'GitHub line-wrapped the body it composed for an older merge',
+                squashMessage(relationshipBody('Closes #2372')).replace('issues & additional', 'issues &\nadditional'),
+            ],
+            [
+                'the merged commit carries a trailer other than co-authors',
+                `${squashMessage(relationshipBody('Closes #2372'))}\n\nSigned-off-by: someone <s@example.test>`,
+            ],
+            ['the pull request was retitled after merge', squashMessage(relationshipBody('Closes #2372'), 'feat: old')],
+        ])('refuses to close the target when %s', (_label, mergedMessage) => {
+            const closes = relationshipBody('Closes #2372');
+            const { port, calls, tracker } = fakePort({
+                primary: [
+                    pullRequest({
+                        state: 'MERGED',
+                        body: closes,
+                        mergedByActorNodeId: AUTHOR_BOT_NODE_ID,
+                        mergeCommit: { oid: MERGE_COMMIT_OID },
+                    }),
+                ],
+                dependentSets: [[]],
+                receipts: [],
+                persistedReceiptAuthority: undefined,
+                mergeCommitMessages: { [MERGE_COMMIT_OID]: mergedMessage },
+            });
+
+            expect(() => deliverPullRequest(42, port, tracker)).toThrow(
+                /closing target #2372 cannot be bound to the merged commit.*close it by hand/
+            );
+            expect(calls.filter((call) => call.startsWith('complete:'))).toHaveLength(0);
+            expect(calls.filter((call) => call.startsWith('add-receipt:'))).toHaveLength(0);
+            expect(calls.filter((call) => call.startsWith('receipt-authority:write'))).toHaveLength(0);
+        });
+
+        it.each([
+            ['absent', {}],
+            ['null', { mergeCommit: null }],
+        ])('refuses to close the target when the merge commit is %s', (_label, mergeCommit) => {
+            const closes = relationshipBody('Closes #2372');
+            const { port, calls, tracker } = fakePort({
+                primary: [
+                    pullRequest({
+                        state: 'MERGED',
+                        body: closes,
+                        mergedByActorNodeId: AUTHOR_BOT_NODE_ID,
+                        ...mergeCommit,
+                    }),
+                ],
+                dependentSets: [[]],
+                receipts: [],
+                persistedReceiptAuthority: undefined,
+            });
+
+            expect(() => deliverPullRequest(42, port, tracker)).toThrow(
+                /closing target #2372 cannot be bound to the merged commit/
+            );
+            expect(calls.filter((call) => call.startsWith('complete:'))).toHaveLength(0);
+            expect(calls.filter((call) => call.startsWith('add-receipt:'))).toHaveLength(0);
         });
 
         it('mints missing delivery receipt and completes issue when merged with missing receipt authority and an open closing issue', () => {
@@ -8397,14 +8764,17 @@ describe('pull-request delivery', () => {
                         state: 'MERGED',
                         body: closes,
                         mergedByActorNodeId: AUTHOR_BOT_NODE_ID,
+                        mergeCommit: { oid: MERGE_COMMIT_OID },
                     }),
                 ],
                 dependentSets: [[]],
                 receipts: [],
                 persistedReceiptAuthority: undefined,
+                mergeCommitMessages: { [MERGE_COMMIT_OID]: squashMessage(closes) },
             });
 
             expect(() => deliverPullRequest(42, port, tracker)).not.toThrow();
+            expect(calls).toContain(`merge-commit-message:${MERGE_COMMIT_OID}`);
             expect(calls).toContain('add-receipt:42');
             expect(calls).toContain('complete:2372');
             expect(calls).toContain('receipt-authority:write:merge-authorized:IC_delivery_42_1');
@@ -8458,16 +8828,19 @@ describe('pull-request delivery', () => {
                         state: 'MERGED',
                         body: closes,
                         mergedByActorNodeId: AUTHOR_BOT_NODE_ID,
+                        mergeCommit: { oid: MERGE_COMMIT_OID },
                     }),
                     pullRequest({
                         state: 'MERGED',
                         body: closes,
                         mergedByActorNodeId: AUTHOR_BOT_NODE_ID,
+                        mergeCommit: { oid: MERGE_COMMIT_OID },
                     }),
                 ],
                 dependentSets: [[], []],
                 receipts: [],
                 persistedReceiptAuthority: undefined,
+                mergeCommitMessages: { [MERGE_COMMIT_OID]: squashMessage(closes) },
             });
 
             expect(() => deliverPullRequest(42, port, tracker)).not.toThrow();
@@ -8488,6 +8861,206 @@ describe('pull-request delivery', () => {
                 expect(authority.postMergeValidation).toEqual(persistedPostMergeValidation('head', closes, 2372));
             }
         });
+    });
+});
+
+describe('Gate provenance', () => {
+    const modes = [
+        ['advisory', deliverPullRequest],
+        ['required', deliverPullRequestWithRequiredCi],
+    ] as const;
+    const draftFailure = gateWorkflowRun(100, 'head', [gateAttempt(1, 'failure', 1002, 'skipped')]);
+    const cancelledRun = gateWorkflowRun(101, 'head', [gateAttempt(1, 'cancelled', 1102, 'cancelled')]);
+    const greenRun = gateWorkflowRun(102, 'head', [gateAttempt(1, 'success', 1202)]);
+    const clean = gateProvenanceFor([greenRun]);
+    function cancelledAttemptWith(conclusion: string): GateWorkflowAttemptFixture {
+        const attempt = gateAttempt(1, 'cancelled', 1102);
+        return { ...attempt, jobs: [...attempt.jobs, { id: 1100, name: 'Validation / Lint', conclusion }] };
+    }
+    const draftFailureAfterGreen = gateWorkflowRun(103, 'head', [gateAttempt(1, 'failure', 1302, 'skipped')]);
+
+    const refusals: Array<[string, GateProvenanceFacts, RegExp]> = [
+        [
+            'a commit status named Gate',
+            { ...clean, commitStatusContexts: ['ci/other', 'Gate'] },
+            /commit status named Gate/,
+        ],
+        [
+            'a Gate check run from another app',
+            {
+                ...clean,
+                gateCheckRuns: [
+                    ...clean.gateCheckRuns,
+                    {
+                        id: 999,
+                        status: 'completed',
+                        conclusion: 'success',
+                        appNodeId: 'MDM6QXBwOTk5OTk=',
+                        checkSuiteId: greenRun.checkSuiteId,
+                    },
+                ],
+            },
+            /check run 999 named Gate is not the health-gates Gate job/,
+        ],
+        [
+            'a GitHub Actions Gate check run outside every health-gates pull_request suite',
+            {
+                ...clean,
+                gateCheckRuns: [
+                    ...clean.gateCheckRuns,
+                    {
+                        id: 999,
+                        status: 'completed',
+                        conclusion: 'success',
+                        appNodeId: ACTIONS_APP_NODE_ID,
+                        checkSuiteId: 4242,
+                    },
+                ],
+            },
+            /check run 999 named Gate is not the health-gates Gate job/,
+        ],
+        [
+            'a health-gates run for another head',
+            gateProvenanceFor([gateWorkflowRun(102, 'other-head', greenRun.attempts)]),
+            /no health-gates pull_request run/,
+        ],
+        [
+            'a newest Gate that has not succeeded',
+            {
+                ...clean,
+                gateCheckRuns: clean.gateCheckRuns.map((run) => ({
+                    ...run,
+                    status: 'in_progress',
+                    conclusion: null,
+                })),
+            },
+            /newest Gate check run 1202 is in_progress/,
+        ],
+        [
+            'a newest Gate that is not the latest attempt Gate job of the newest run',
+            {
+                ...clean,
+                workflowRuns: [gateWorkflowRun(102, 'head', [gateAttempt(1, 'success', 1302)])],
+                gateCheckRuns: clean.gateCheckRuns.map((run) => ({ ...run, checkSuiteId: 1020 })),
+            },
+            /newest Gate check run 1202 is not the Gate job 1302/,
+        ],
+        ['no Gate check run at all', { ...clean, gateCheckRuns: [] }, /no Gate check run/],
+        [
+            'a real Gate failure retried to green on the same head',
+            gateProvenanceFor([
+                gateWorkflowRun(102, 'head', [gateAttempt(1, 'failure', 1202), gateAttempt(2, 'success', 1302)]),
+            ]),
+            /attempt 1 of health-gates run 102 failed.*push a new commit/,
+        ],
+        [
+            'an earlier real failure under an older run beside a later green run',
+            gateProvenanceFor([gateWorkflowRun(100, 'head', [gateAttempt(1, 'failure', 1002)]), greenRun]),
+            /attempt 1 of health-gates run 100 failed/,
+        ],
+        [
+            'a cancelled non-draft attempt whose Validation job had already failed',
+            gateProvenanceFor([gateWorkflowRun(101, 'head', [cancelledAttemptWith('failure')]), greenRun]),
+            /attempt 1 of health-gates run 101 failed/,
+        ],
+        [
+            'a cancelled non-draft attempt whose Validation job had already timed out',
+            gateProvenanceFor([gateWorkflowRun(101, 'head', [cancelledAttemptWith('timed_out')]), greenRun]),
+            /attempt 1 of health-gates run 101 failed/,
+        ],
+        [
+            'a newest Gate job that concluded failure on a draft run after an earlier green run',
+            gateProvenanceFor([greenRun, draftFailureAfterGreen]),
+            /newest Gate check run 1302 is failure/,
+        ],
+        [
+            'a run whose attempts are incompletely listed',
+            gateProvenanceFor([gateWorkflowRun(102, 'head', [gateAttempt(2, 'success', 1302)], { runAttempt: 2 })]),
+            /attempts of health-gates run 102 are incomplete/,
+        ],
+    ];
+
+    for (const [mode, deliver] of modes) {
+        it.each(refusals)(`refuses ${mode} delivery on %s before any remote write`, (_label, facts, message) => {
+            const { port, calls, tracker } = fakePort({ gateProvenance: facts });
+
+            expect(() => deliver(42, port, tracker)).toThrow(message);
+            expect(calls).toContain('gate-provenance:42:head');
+            expect(calls).not.toContain('add-receipt:42');
+            expect(calls).not.toContain('merge:42:head');
+            expect(calls.filter((call) => call.startsWith('receipt-authority:write'))).toHaveLength(0);
+        });
+
+        it.each([
+            ['one clean health-gates run', clean],
+            ['a draft-run failure followed by a non-draft success', gateProvenanceFor([draftFailure, greenRun])],
+            ['a cancelled superseded run followed by a success', gateProvenanceFor([cancelledRun, greenRun])],
+            [
+                'a cancelled attempt whose other jobs only succeeded, skipped, or were cancelled, then a green run',
+                gateProvenanceFor([
+                    gateWorkflowRun(101, 'head', [
+                        {
+                            ...cancelledAttemptWith('cancelled'),
+                            jobs: [
+                                ...cancelledAttemptWith('cancelled').jobs,
+                                { id: 1098, name: 'Validation / Build', conclusion: 'success' },
+                                { id: 1099, name: 'Validation / Native audio backend (macOS)', conclusion: 'skipped' },
+                            ],
+                        },
+                    ]),
+                    greenRun,
+                ]),
+            ],
+            [
+                'a draft run whose jobs failed, then a green run',
+                gateProvenanceFor([
+                    gateWorkflowRun(100, 'head', [
+                        {
+                            ...gateAttempt(1, 'failure', 1002, 'skipped'),
+                            jobs: [
+                                ...gateAttempt(1, 'failure', 1002, 'skipped').jobs,
+                                { id: 1000, name: 'Validation / Lint', conclusion: 'failure' },
+                            ],
+                        },
+                    ]),
+                    greenRun,
+                ]),
+            ],
+            [
+                'a run whose cancelled first attempt was re-run to green, judged on its latest attempt',
+                gateProvenanceFor([
+                    gateWorkflowRun(102, 'head', [
+                        gateAttempt(1, 'cancelled', 1202, 'cancelled'),
+                        gateAttempt(2, 'success', 1302),
+                    ]),
+                ]),
+            ],
+        ])(`delivers in ${mode} mode on %s`, (_label, facts) => {
+            const { port, calls, tracker } = fakePort({ gateProvenance: facts });
+
+            deliver(42, port, tracker);
+
+            expect(calls).toContain('merge:42:head');
+        });
+
+        it(`re-proves Gate provenance at the final ${mode} validation`, () => {
+            const retried = gateProvenanceFor([
+                gateWorkflowRun(102, 'head', [gateAttempt(1, 'failure', 1202), gateAttempt(2, 'success', 1302)]),
+            ]);
+            const { port, calls, tracker } = fakePort({ gateProvenanceReads: [clean, retried] });
+
+            expect(() => deliver(42, port, tracker)).toThrow(/attempt 1 of health-gates run 102 failed/);
+            expect(calls.filter((call) => call === 'gate-provenance:42:head')).toHaveLength(2);
+            expect(calls).not.toContain('merge:42:head');
+        });
+    }
+
+    it('refuses when the Gate provenance read is unavailable', () => {
+        const { port, calls, tracker } = fakePort({ gateProvenance: new Error('actions api offline') });
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/actions api offline/);
+        expect(calls).not.toContain('add-receipt:42');
+        expect(calls).not.toContain('merge:42:head');
     });
 });
 
@@ -9569,6 +10142,12 @@ describe('delivery author authentication', () => {
             };
         };
         const buildPort = (): DeliveryPort => ({
+            gateProvenance: () => {
+                throw new Error('classification never reads Gate provenance');
+            },
+            mergeCommitMessage: () => {
+                throw new Error('classification never reads a merge commit');
+            },
             gateRequiredCheckNames: () => new Set(['Gate']),
             gateRequiredSkipAliases: () => new Map(),
             headCheckRuns: () => [],
@@ -11398,6 +11977,10 @@ describe('delivery shell boundary', () => {
                             captures.push('merge-attempted');
                             return JSON.stringify({ merged: true, message: 'merged' });
                         }
+                        const gateProvenance = shellGateProvenanceResponse(args);
+                        if (gateProvenance !== undefined) {
+                            return gateProvenance;
+                        }
                         throw new Error(`unexpected capture: ${joined}`);
                     },
                     run: () => undefined,
@@ -12342,7 +12925,7 @@ describe('delivery shell boundary', () => {
         });
         expect(port.dependents('feat/gate')).toEqual([stacked()]);
         expect(port.repositoryDeletesMergedBranches()).toBe(false);
-        port.merge(42, 'head', false, 'feat(delivery): committed subject');
+        port.merge(42, 'head', false, 'feat(delivery): committed subject', 'validated body\n\nsecond paragraph');
         port.retarget(43, 'main');
 
         expect(
@@ -12363,6 +12946,8 @@ describe('delivery shell boundary', () => {
                 'merge_method=squash',
                 '-f',
                 'commit_title=feat(delivery): committed subject',
+                '-f',
+                'commit_message=validated body\n\nsecond paragraph',
             ],
         });
         expect(runs).toContainEqual({
@@ -12370,6 +12955,117 @@ describe('delivery shell boundary', () => {
             args: ['api', '--method', 'PATCH', 'repos/jcosta33/sourdaw/pulls/43', '-f', 'base=main', '--silent'],
         });
     });
+
+    it('reads Gate provenance through complete paginated REST listings for the exact head', () => {
+        const captures: string[][] = [];
+        const shell: ShellRunner = {
+            capture: (_command, args) => {
+                captures.push(args);
+                return shellGateProvenanceResponse(args) ?? expect.fail(`unexpected capture: ${args.join(' ')}`);
+            },
+            run: () => expect.fail('reading Gate provenance must not write'),
+        };
+
+        expect(shellPort('jcosta33/sourdaw', shell).gateProvenance(42, 'head')).toEqual(cleanGateProvenance('head'));
+        expect(captures).toEqual([
+            ['api', '--paginate', '--slurp', 'repos/jcosta33/sourdaw/commits/head/statuses?per_page=100'],
+            [
+                'api',
+                '--paginate',
+                '--slurp',
+                'repos/jcosta33/sourdaw/commits/head/check-runs?check_name=Gate&filter=all&per_page=100',
+            ],
+            [
+                'api',
+                '--paginate',
+                '--slurp',
+                'repos/jcosta33/sourdaw/actions/runs?head_sha=head&event=pull_request&per_page=100',
+            ],
+            ['api', 'repos/jcosta33/sourdaw/actions/runs/100/attempts/1'],
+            ['api', '--paginate', '--slurp', 'repos/jcosta33/sourdaw/actions/runs/100/attempts/1/jobs?per_page=100'],
+        ]);
+    });
+
+    it.each([
+        [
+            'a check-run listing shorter than its total',
+            (args: string[]) =>
+                args.at(-1)?.includes('check-runs')
+                    ? JSON.stringify([{ total_count: 2, check_runs: [] }])
+                    : shellGateProvenanceResponse(args),
+            /check runs is incomplete/,
+        ],
+        [
+            'a workflow-run listing whose total moves between pages',
+            (args: string[]) =>
+                args.at(-1)?.includes('actions/runs?')
+                    ? JSON.stringify([
+                          { total_count: 1, workflow_runs: [] },
+                          { total_count: 2, workflow_runs: [] },
+                      ])
+                    : shellGateProvenanceResponse(args),
+            /workflow runs changed while it was read/,
+        ],
+        [
+            'an attempt summary for a different attempt',
+            (args: string[]) =>
+                args.at(-1) === 'repos/jcosta33/sourdaw/actions/runs/100/attempts/1'
+                    ? JSON.stringify({ id: 100, run_attempt: 2, conclusion: 'success' })
+                    : shellGateProvenanceResponse(args),
+            /run 100 attempt 1 is unreadable/,
+        ],
+        [
+            'a commit-status page that is not a list',
+            (args: string[]) =>
+                args.at(-1)?.includes('/statuses')
+                    ? JSON.stringify([{ context: 'Gate' }])
+                    : shellGateProvenanceResponse(args),
+            /commit statuses are unreadable/,
+        ],
+    ])('fails closed on %s', (_label, answer, message) => {
+        const shell: ShellRunner = {
+            capture: (_command, args) => answer(args) ?? expect.fail(`unexpected capture: ${args.join(' ')}`),
+            run: () => expect.fail('reading Gate provenance must not write'),
+        };
+
+        expect(() => shellPort('jcosta33/sourdaw', shell).gateProvenance(42, 'head')).toThrow(message);
+    });
+
+    it('reads a merge commit message exactly as GitHub stores it, trailing newline included', () => {
+        const captures: Array<{ command: string; args: string[] }> = [];
+        const shell: ShellRunner = {
+            capture: (command, args) => {
+                captures.push({ command, args });
+                return JSON.stringify('feat: subject (#42)\n\nbody\n');
+            },
+            run: () => expect.fail('reading a commit message must not write'),
+        };
+
+        expect(shellPort('jcosta33/sourdaw', shell).mergeCommitMessage('a'.repeat(40))).toBe(
+            'feat: subject (#42)\n\nbody\n'
+        );
+        expect(captures).toEqual([
+            {
+                command: 'gh',
+                args: ['api', `repos/jcosta33/sourdaw/commits/${'a'.repeat(40)}`, '--jq', '.commit.message | tojson'],
+            },
+        ]);
+    });
+
+    it.each([['not-an-oid'], [JSON.stringify({ message: 'x' })]])(
+        'refuses an unreadable merge commit message read (%s)',
+        (variant) => {
+            const shell: ShellRunner = {
+                capture: () => (variant === 'not-an-oid' ? expect.fail('must not read') : variant),
+                run: () => expect.fail('reading a commit message must not write'),
+            };
+            const oid = variant === 'not-an-oid' ? variant : 'a'.repeat(40);
+
+            expect(() => shellPort('jcosta33/sourdaw', shell).mergeCommitMessage(oid)).toThrow(
+                /not a commit object id|message is unreadable/
+            );
+        }
+    );
 
     it.each([
         [

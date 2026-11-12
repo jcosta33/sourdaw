@@ -1,7 +1,7 @@
 # Lesson library: test observation scope
 
 A test is invalid when it observes project truth or output in one place only, or when the boundary its claim depends on
-is replaced by a controlled one. Split out of `test-validity.md`.
+is replaced by a controlled one.
 Each probe answers the baseline question from the Review section of root `AGENTS.md` (what must break for this
 check to fail, and does it observe what its name claims?) and carries its baseline mechanical probe unrestated:
 revert the behavioral hunk or apply one targeted mutation, run the named spec, and a remaining green fails the
@@ -33,8 +33,7 @@ Report a probe that cannot run with its exact mutation, named check and limitati
    Restoring the common oscillator route must fail buffer admission; substituting one common PCM buffer
    across presets must fail musical discrimination. Admit project/history preservation only after the
    inspection bridge observes a genuine UI edit in the same app singleton; an empty bridge must fail.
-   The original preset placeholder asserted its common tone rather than the sound it claimed to audition
-   (introduced in `22a84b216658f593391e7e141d90f7c84d13648b`, retained through #6180).
+   A placeholder that asserts its common tone rather than the sound it claims to audition is the blind form.
    (#187, #5013, #4904, #5812)
 
 4. **Fixtures or history bytes the real producer would never write.**
@@ -87,8 +86,8 @@ Report a probe that cannot run with its exact mutation, named check and limitati
     cases. (#1572)
 
     A module-initialization guard must distinguish lazy function bodies from executed initializers (#6307, #6367).
-    The retired whole-file constructor regex rejected a lazy `new Set()` in the real inspection reader; restoring
-    it must fail the positive entry case. Classify AST initializers after normalizing erased assertions,
+    A whole-file constructor regex rejects a lazy `new Set()` in the real inspection reader; substituting one for
+    the AST classification must fail the positive entry case. Classify AST initializers after normalizing erased assertions,
     `satisfies`, non-null and generic-instantiation wrappers. Accept identifier aliases only to imported runtime
     bindings, implemented local functions or prior validated bindings. Type-only imports and `declare function`
     declarations emit no binding: read an ambient getter with the emitted JavaScript and require that control to
@@ -101,7 +100,8 @@ Report a probe that cannot run with its exact mutation, named check and limitati
    configuration, drive checkout depth through a real fetch topology, and prove a reload by a changed
    `performance.timeOrigin`. Confirm the run checked the integration that lands.
    For keyboard controls, assert owned effects and that unowned keys during playback cause no state change or
-   default prevention. In the live app, verify Follow survives Tab and focus moves.
+   default prevention. Follow surviving Tab and focus moves needs a browser case: read the affected end-to-end
+   job that runs it on the head, since a component case cannot show it.
    (#5243, #3548, #3170)
 
 8. **The evidence claims more than its scope.**
@@ -111,13 +111,7 @@ Report a probe that cannot run with its exact mutation, named check and limitati
    run as its only evidence.
    (#5595, #3170)
 
-9. **A test awaits away the disputed input interval (#6218).**
-   Probe: dispatch a second shortcut while the first is held at the real snapshot-transaction boundary, before any
-   copy selection exists. Unequal source spans distinguish continuation from two copies of the original; assert
-   raw CRDT, owner projections, selected IDs and per-input Undo/Redo content. A test that waits for the first copy
-   selection before its second press proves completed serial input only. Observe settlement through the actual
-   returned intent promises; a fixed microtask count proves no scheduling boundary. Use controlled Command outcomes
-   only for error interpretation, and label them as such; they cannot prove kernel admission or publication fences.
-   Test each independent authority predicate while the others remain valid: replacing the root and reselecting a
-   clip changes both project and selection, so it cannot detect removal of the project-identity check alone. Retain
-   the existing selection reference naturally, with all selected IDs present, then remove only that identity check.
+## Relocated
+
+- A test awaiting away the disputed input interval of overlapping duplicate presses (#6218) →
+  `command-entry-and-state-oracles.md` probe 8.

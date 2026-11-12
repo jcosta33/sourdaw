@@ -652,13 +652,68 @@ describe('scheduleAudioClips', () => {
         expect(mockCreateBufferSource).not.toHaveBeenCalled();
     });
 
-    it('skips an audio track whose kind is not audio and a muted track', () => {
-        mockResolveClips.mockReturnValue([makeAudioClip()] as never);
+    it('starts an audio clip on a MIDI track through that track’s strip', () => {
+        const source = makeFakeSource();
+        mockCreateBufferSource.mockReturnValue(source as unknown as AudioBufferSourceNode);
+        mockGetCachedAudioBuffer.mockReturnValue({ duration: 16 } as AudioBuffer);
+        const clip = {
+            id: 'mixed-audio',
+            trackId: 'midi-track',
+            name: 'Imported WAV',
+            type: 'audio',
+            muted: false,
+            audioBufferId: 'buf-1',
+            regionStartBeat: 0,
+            regionEndBeat: 4,
+            sourceStartBeat: 0,
+            startBeat: 0,
+            endBeat: 4,
+            fadeInBeats: 0,
+            fadeOutBeats: 0,
+            gain: 1,
+            color: '#fff',
+            locked: false,
+            stretchMode: 'off',
+            stretchRatio: 1,
+            loopEnabled: false,
+            audioOffsetBeats: 0,
+        } satisfies ReturnType<typeof resolveClipsWithComping>[number];
+        mockResolveClips.mockReturnValue([clip]);
         trackStoreState.value = {
             tracks: [
                 {
                     id: 'midi-track',
                     kind: 'midi',
+                    muted: false,
+                    sends: [],
+                    clips: [clip],
+                    freezeState: { status: 'unfrozen' },
+                },
+            ],
+        };
+
+        scheduleAudioClips(0, 4, 0, new Set(), new Set(), [], defaultTransportState);
+
+        expect(source.start).toHaveBeenCalledTimes(1);
+        expect(mockResolveClips).toHaveBeenCalledWith('midi-track', [clip]);
+        expect(ensureTrackStrip).toHaveBeenCalledWith('midi-track');
+    });
+
+    it('skips non-track kinds, muted MIDI, and frozen MIDI owned by the note scheduler', () => {
+        mockResolveClips.mockReturnValue([]);
+        trackStoreState.value = {
+            tracks: [
+                {
+                    id: 'bus-track',
+                    kind: 'bus',
+                    muted: false,
+                    sends: [],
+                    clips: [],
+                    freezeState: { status: 'active' },
+                },
+                {
+                    id: 'master-track',
+                    kind: 'master',
                     muted: false,
                     sends: [],
                     clips: [],
@@ -672,12 +727,30 @@ describe('scheduleAudioClips', () => {
                     clips: [],
                     freezeState: { status: 'active' },
                 },
+                {
+                    id: 'muted-midi',
+                    kind: 'midi',
+                    muted: true,
+                    sends: [],
+                    clips: [],
+                    freezeState: { status: 'active' },
+                },
+                {
+                    id: 'frozen-midi',
+                    kind: 'midi',
+                    muted: false,
+                    sends: [],
+                    clips: [],
+                    freezeState: { status: 'frozen', frozenBufferId: 'bake' },
+                },
             ],
         };
 
         scheduleAudioClips(0, 16, 0, new Set(), new Set(), [], defaultTransportState);
 
         expect(mockCreateBufferSource).not.toHaveBeenCalled();
+        expect(mockResolveClips).not.toHaveBeenCalled();
+        expect(vi.mocked(scheduleFrozenTrack)).not.toHaveBeenCalled();
     });
 
     // ── Muted tracks with pre-fader sends (#3651) ───────────────────────────
