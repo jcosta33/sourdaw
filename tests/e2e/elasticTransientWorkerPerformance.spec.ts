@@ -1,3 +1,4 @@
+import { writeFile } from 'node:fs/promises';
 import { cpus, platform, release } from 'node:os';
 
 import { type Page, type TestInfo } from '@playwright/test';
@@ -31,6 +32,201 @@ const FRAME_GAP_FREEZE_MS = 100;
  * — Worker stall, recomputed prepared write — is an order of magnitude, not 10%.
  */
 const DETECT_WALL_HANG_MS = 5000;
+
+type TaskAttribution = {
+    name: string;
+    containerType: string;
+    containerSrc: string;
+    containerId: string;
+    containerName: string;
+};
+type CapturedLongTask = {
+    start: number;
+    duration: number;
+    name: string;
+    attribution: TaskAttribution[];
+};
+type AttributedPerformanceEntry = PerformanceEntry & { attribution?: readonly TaskAttribution[] };
+type ElasticTaskTrace = { stop(): Promise<void>; attach(): Promise<string[]> };
+const elasticTaskTraces = new WeakMap<TestInfo, ElasticTaskTrace[]>();
+const TRACE_BYTE_CAP = 32 * 1024 * 1024;
+const TRACE_CATEGORIES = [
+    'devtools.timeline',
+    'v8',
+    'blink.user_timing',
+    'disabled-by-default-v8.cpu_profiler',
+    'disabled-by-default-devtools.timeline',
+];
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+async function startElasticTaskTrace(page: Page, info: TestInfo, phase: string): Promise<ElasticTaskTrace> {
+    const session = await page.context().newCDPSession(page);
+    const failures: string[] = [];
+    const chunks: Buffer[] = [];
+    let byteLength = 0;
+    let complete = false;
+    let dataLossOccurred = false;
+    let hasCpuStacks = false;
+    let hasTaskEvents = false;
+    let started = false;
+    let stopping: Promise<void> | undefined;
+    const completion = new Promise<{ stream?: string; dataLossOccurred?: boolean }>((resolve) => {
+        session.once('Tracing.tracingComplete', resolve);
+    });
+    const capture = {
+        stop(): Promise<void> {
+            stopping ??= (async () => {
+                try {
+                    if (!started) return;
+                    await session.send('Tracing.end');
+                    let timeout: ReturnType<typeof setTimeout> | undefined;
+                    const ended = await Promise.race([
+                        completion,
+                        new Promise<never>((_, reject) => {
+                            timeout = setTimeout(() => reject(new Error('Elastic trace completion timed out')), 5000);
+                        }),
+                    ]).finally(() => clearTimeout(timeout));
+                    dataLossOccurred = ended.dataLossOccurred === true;
+                    if (!ended.stream) throw new Error('Elastic trace completion did not provide a stream');
+                    const handle = ended.stream;
+                    try {
+                        while (!complete) {
+                            const part = await session.send('IO.read', { handle, size: 1024 * 1024 });
+                            const bytes = Buffer.from(part.data, part.base64Encoded ? 'base64' : 'utf8');
+                            const remaining = TRACE_BYTE_CAP - byteLength;
+                            chunks.push(bytes.subarray(0, remaining));
+                            byteLength += Math.min(bytes.length, remaining);
+                            if (bytes.length > remaining) throw new Error('Elastic trace exceeded its 32 MiB byte cap');
+                            complete = part.eof === true;
+                        }
+                    } finally {
+                        await session.send('IO.close', { handle });
+                    }
+                    const trace: unknown = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+                    if (!isRecord(trace) || !Array.isArray(trace.traceEvents)) {
+                        throw new Error('Elastic trace did not contain a traceEvents array');
+                    }
+                    const inputMark = trace.traceEvents.find(
+                        (event: unknown) => isRecord(event) && event.name === 'elastic-detect-input-start'
+                    );
+                    if (!isRecord(inputMark)) throw new Error('Elastic trace omitted its input clock mark');
+                    const pageProfile = trace.traceEvents.find(
+                        (event: unknown) =>
+                            isRecord(event) &&
+                            event.name === 'Profile' &&
+                            event.pid === inputMark.pid &&
+                            event.tid === inputMark.tid
+                    );
+                    hasTaskEvents = trace.traceEvents.some(
+                        (event: unknown) =>
+                            isRecord(event) &&
+                            event.name === 'RunTask' &&
+                            event.pid === inputMark.pid &&
+                            event.tid === inputMark.tid
+                    );
+                    hasCpuStacks =
+                        isRecord(pageProfile) &&
+                        trace.traceEvents.some((event: unknown) => {
+                            if (
+                                !isRecord(event) ||
+                                event.name !== 'ProfileChunk' ||
+                                event.pid !== pageProfile.pid ||
+                                event.id !== pageProfile.id ||
+                                !isRecord(event.args)
+                            )
+                                return false;
+                            const data = event.args.data;
+                            if (!isRecord(data) || !isRecord(data.cpuProfile) || !Array.isArray(data.cpuProfile.nodes))
+                                return false;
+                            return data.cpuProfile.nodes.some(
+                                (node: unknown) =>
+                                    isRecord(node) &&
+                                    isRecord(node.callFrame) &&
+                                    typeof node.callFrame.url === 'string' &&
+                                    node.callFrame.url.length > 0
+                            );
+                        });
+                    if (dataLossOccurred || !hasCpuStacks || !hasTaskEvents) {
+                        throw new Error('Elastic trace lost events or omitted task/CPU attribution');
+                    }
+                } catch (error) {
+                    failures.push(String(error));
+                } finally {
+                    try {
+                        await session.detach();
+                    } catch (error) {
+                        failures.push(String(error));
+                    }
+                }
+            })();
+            return stopping;
+        },
+        async attach(): Promise<string[]> {
+            try {
+                await capture.stop();
+            } finally {
+                const path = info.outputPath(`elastic-${phase}-task-trace${complete ? '' : '.partial'}.json`);
+                try {
+                    await writeFile(path, Buffer.concat(chunks));
+                    await info.attach(`elastic-${phase}-task-trace`, { path, contentType: 'application/json' });
+                } catch (error) {
+                    failures.push(String(error));
+                }
+                await info.attach(`elastic-${phase}-task-trace-status`, {
+                    body: JSON.stringify({
+                        phase,
+                        complete,
+                        byteLength,
+                        dataLossOccurred,
+                        hasCpuStacks,
+                        hasTaskEvents,
+                        failures,
+                    }),
+                    contentType: 'application/json',
+                });
+            }
+            return failures;
+        },
+    };
+    const captures = elasticTaskTraces.get(info) ?? [];
+    elasticTaskTraces.set(info, [...captures, capture]);
+    try {
+        // Sampling perturbs scheduling. Start/stop outside the measured span; retain the
+        // unchanged verdict and clock marks so a profile never excuses a failed budget.
+        await session.send('Tracing.start', {
+            transferMode: 'ReturnAsStream',
+            traceConfig: {
+                recordMode: 'recordUntilFull',
+                traceBufferSizeInKb: 16384,
+                includedCategories: TRACE_CATEGORIES,
+            },
+        });
+        started = true;
+    } catch (error) {
+        failures.push(String(error));
+        await capture.stop();
+    }
+    return capture;
+}
+
+test.afterEach(async ({ page: _page }, info) => {
+    const failures: string[] = [];
+    for (const capture of elasticTaskTraces.get(info) ?? []) {
+        try {
+            failures.push(...(await capture.attach()));
+        } catch (error) {
+            failures.push(String(error));
+        }
+    }
+    elasticTaskTraces.delete(info);
+    // Keep the original assertion/measurement error when diagnostics also fail.
+    if (failures.length > 0 && info.status === info.expectedStatus) {
+        throw new Error(`Elastic task attribution failed: ${failures.join('; ')}`);
+    }
+});
 
 const RATE = 48_000;
 const SECONDS = 120;
@@ -154,14 +350,15 @@ test('120-second stereo Detect includes cold Worker, copy and atomic commit with
     await expect(panel.getByTestId('elastic-detect-button')).toBeEnabled();
     const workers: string[] = [];
     page.on('worker', (worker) => workers.push(worker.url()));
+    const coldTrace = await startElasticTaskTrace(page, info, 'cold-detect');
     await page.evaluate(async () => {
         type Metrics = {
             start: number;
             end: number;
             frames: number[];
             observedFrames: number[];
-            tasks: { start: number; duration: number }[];
-            measures: { name: string; duration: number }[];
+            tasks: CapturedLongTask[];
+            measures: { name: string; duration: number; startTime: number }[];
         };
         const metrics: Metrics = { start: 0, end: 0, frames: [], observedFrames: [], tasks: [], measures: [] };
         const target = window as Window & { elasticMeasurement?: Promise<Metrics> };
@@ -177,7 +374,18 @@ test('120-second stereo Detect includes cold Worker, copy and atomic commit with
         requestAnimationFrame(frame);
         const tasks = new PerformanceObserver((list) => {
             for (const entry of list.getEntries())
-                metrics.tasks.push({ start: entry.startTime, duration: entry.duration });
+                metrics.tasks.push({
+                    start: entry.startTime,
+                    duration: entry.duration,
+                    name: entry.name,
+                    attribution: Array.from((entry as AttributedPerformanceEntry).attribution ?? [], (value) => ({
+                        name: value.name,
+                        containerType: value.containerType,
+                        containerSrc: value.containerSrc,
+                        containerId: value.containerId,
+                        containerName: value.containerName,
+                    })),
+                });
         });
         tasks.observe({ type: 'longtask', buffered: false });
         const measures = new PerformanceObserver((list) => {
@@ -187,7 +395,7 @@ test('120-second stereo Detect includes cold Worker, copy and atomic commit with
                     entry.name === 'automerge-storage-prepared-publication' ||
                     entry.name === 'automerge-storage-materialization-handoff-task'
                 )
-                    metrics.measures.push({ name: entry.name, duration: entry.duration });
+                    metrics.measures.push({ name: entry.name, duration: entry.duration, startTime: entry.startTime });
         });
         measures.observe({ type: 'measure', buffered: false });
         target.elasticMeasurement = new Promise((resolve, reject) => {
@@ -201,6 +409,7 @@ test('120-second stereo Detect includes cold Worker, copy and atomic commit with
             const observer = new MutationObserver(() => {
                 if (status.textContent !== 'Detection complete') return;
                 metrics.end = performance.now();
+                performance.mark('elastic-detect-dom-complete');
                 observer.disconnect();
                 requestAnimationFrame((time) => {
                     metrics.frames.push(time);
@@ -221,6 +430,7 @@ test('120-second stereo Detect includes cold Worker, copy and atomic commit with
                 'click',
                 () => {
                     metrics.start = performance.now();
+                    performance.mark('elastic-detect-input-start');
                 },
                 { once: true, capture: true }
             );
@@ -235,13 +445,14 @@ test('120-second stereo Detect includes cold Worker, copy and atomic commit with
                 end: number;
                 frames: number[];
                 observedFrames: number[];
-                tasks: { start: number; duration: number }[];
-                measures: { name: string; duration: number }[];
+                tasks: CapturedLongTask[];
+                measures: { name: string; duration: number; startTime: number }[];
             }>;
         };
         if (!target.elasticMeasurement) throw new Error('Measurement was not installed');
         return target.elasticMeasurement;
     });
+    await coldTrace.stop();
     const after = await sourceState(page);
     const gaps = measured.frames.slice(1).flatMap((time, index) => {
         const previous = measured.frames[index]!;
@@ -350,9 +561,10 @@ test('120-second stereo Detect includes cold Worker, copy and atomic commit with
     const retained = populated.projected.filter((marker) => marker.locked || marker.origin === 'user');
     expect(retained).toHaveLength(2);
 
+    const repeatedTrace = await startElasticTaskTrace(page, info, 're-detect-populated');
     await armPopulatedMeasurement(page, 'click');
     await panel.getByTestId('elastic-detect-button').click();
-    await assertPopulatedMeasurement(page, info, 're-detect-populated', populated, retained);
+    await assertPopulatedMeasurement(page, info, 're-detect-populated', populated, retained, repeatedTrace);
     expect(workers.filter((url) => url.includes('transientOnsetWorker'))).toHaveLength(2);
     const redetected = await sourceState(page);
     await page.keyboard.press(`${modifier}+z`);
@@ -360,9 +572,10 @@ test('120-second stereo Detect includes cold Worker, copy and atomic commit with
     await page.keyboard.press(`${modifier}+Shift+z`);
     await expect.poll(async () => (await sourceState(page)).projected).toEqual(redetected.projected);
 
+    const sensitivityTrace = await startElasticTaskTrace(page, info, 'sensitivity-populated');
     await armPopulatedMeasurement(page, 'sensitivity');
     await panel.getByRole('slider', { name: 'Transient detection sensitivity' }).press('End');
-    await assertPopulatedMeasurement(page, info, 'sensitivity-populated', populated, retained);
+    await assertPopulatedMeasurement(page, info, 'sensitivity-populated', populated, retained, sensitivityTrace);
     expect(workers.filter((url) => url.includes('transientOnsetWorker'))).toHaveLength(3);
     const sensitive = await sourceState(page);
     await page.keyboard.press(`${modifier}+z`);
@@ -569,8 +782,8 @@ async function armPopulatedMeasurement(page: Page, route: 'click' | 'sensitivity
             end: number;
             frames: number[];
             observedFrames: number[];
-            tasks: { start: number; duration: number }[];
-            measures: { name: string; duration: number }[];
+            tasks: CapturedLongTask[];
+            measures: { name: string; duration: number; startTime: number }[];
         };
         const metrics: Metrics = { start: 0, end: 0, frames: [], observedFrames: [], tasks: [], measures: [] };
         const target = window as Window & { populatedElasticMeasurement?: Promise<Metrics> };
@@ -591,7 +804,18 @@ async function armPopulatedMeasurement(page: Page, route: 'click' | 'sensitivity
         requestAnimationFrame(frame);
         const tasks = new PerformanceObserver((list) => {
             for (const entry of list.getEntries())
-                metrics.tasks.push({ start: entry.startTime, duration: entry.duration });
+                metrics.tasks.push({
+                    start: entry.startTime,
+                    duration: entry.duration,
+                    name: entry.name,
+                    attribution: Array.from((entry as AttributedPerformanceEntry).attribution ?? [], (value) => ({
+                        name: value.name,
+                        containerType: value.containerType,
+                        containerSrc: value.containerSrc,
+                        containerId: value.containerId,
+                        containerName: value.containerName,
+                    })),
+                });
         });
         tasks.observe({ type: 'longtask', buffered: false });
         const measures = new PerformanceObserver((list) => {
@@ -601,7 +825,7 @@ async function armPopulatedMeasurement(page: Page, route: 'click' | 'sensitivity
                     entry.name === 'automerge-storage-prepared-publication' ||
                     entry.name === 'automerge-storage-materialization-handoff-task'
                 )
-                    metrics.measures.push({ name: entry.name, duration: entry.duration });
+                    metrics.measures.push({ name: entry.name, duration: entry.duration, startTime: entry.startTime });
         });
         measures.observe({ type: 'measure', buffered: false });
         target.populatedElasticMeasurement = new Promise((resolve, reject) => {
@@ -621,6 +845,7 @@ async function armPopulatedMeasurement(page: Page, route: 'click' | 'sensitivity
                 )
                     return;
                 metrics.end = performance.now();
+                performance.mark('elastic-detect-dom-complete');
                 observer.disconnect();
                 requestAnimationFrame((time) => {
                     metrics.frames.push(time);
@@ -641,6 +866,7 @@ async function armPopulatedMeasurement(page: Page, route: 'click' | 'sensitivity
                 route === 'click' ? 'click' : 'keydown',
                 () => {
                     metrics.start = performance.now();
+                    performance.mark('elastic-detect-input-start');
                 },
                 { once: true, capture: true }
             );
@@ -654,7 +880,8 @@ async function assertPopulatedMeasurement(
     info: TestInfo,
     phase: string,
     before: Awaited<ReturnType<typeof sourceState>>,
-    retained: Awaited<ReturnType<typeof sourceState>>['projected']
+    retained: Awaited<ReturnType<typeof sourceState>>['projected'],
+    trace: ElasticTaskTrace
 ): Promise<void> {
     const measured = await page.evaluate(async () => {
         const target = window as Window & {
@@ -663,13 +890,14 @@ async function assertPopulatedMeasurement(
                 end: number;
                 frames: number[];
                 observedFrames: number[];
-                tasks: { start: number; duration: number }[];
-                measures: { name: string; duration: number }[];
+                tasks: CapturedLongTask[];
+                measures: { name: string; duration: number; startTime: number }[];
             }>;
         };
         if (!target.populatedElasticMeasurement) throw new Error('Measurement is missing');
         return target.populatedElasticMeasurement;
     });
+    await trace.stop();
     const gaps = measured.frames
         .slice(1)
         .flatMap((time, index) => (time >= measured.start ? [time - measured.frames[index]!] : []));
