@@ -28,7 +28,7 @@ Unclassified state is how DAW truth corrupts: a store field that is half project
 | Local component   | Draft input, popover open                                                                            | `useState` / form in that component                        |
 | Engine/runtime    | `AudioContext`, audio nodes, live graph, plugin instances                                            | Engine/runtime only — non-serializable                     |
 | Async fetch/cache | Server/query results                                                                                 | TanStack Query or equivalent — not business writes         |
-| Telemetry         | Meters, playhead display, underruns, CPU load                                                        | Runtime/relay layer — never fed back into truth            |
+| Telemetry         | Published meter readings, playhead display, underruns, CPU load (accumulators stay engine state)     | Runtime/relay layer — never fed back into truth            |
 
 Never invent a new category: fit the value or split it.
 
@@ -46,7 +46,7 @@ Feature A never mutates feature B’s project slice. Cross-feature intent goes t
 
 ### 3. Stores are a public read contract, not a write API for business truth
 
-Foreign modules may `useStore` / select. A business store is written only by its owning module's write path (handler / use case), and a CRDT-backed store only while that write runs inside an action's transaction — the synchronous part of `executeAppAction`, or a `scope(...)` captured before the first `await` (`crdt-collaboration` rule 2). Everyone else dispatches through the owner's use cases or `executeAppAction`. A business-store write from presentation, a write to a foreign module's store, or a CRDT-backed write outside any action transaction is the defect. Leaf components must not **directly** import business stores.
+Foreign modules may `useStore` / select. A business store is written only by its owning module's write path (handler / use case), and a CRDT-backed store only while that write runs inside an action's transaction — the synchronous part of `executeAppAction`, or a `scope(...)` captured before the first `await` (`crdt-collaboration` rule 2). Everyone else dispatches through the owner's use cases or an action: a dispatch a person triggered enters through `executeUserAppAction`, while programmatic, agent, and handler dispatch use `executeAppAction` directly (canonical: `ui-patterns` rule 8). A business-store write from presentation, a write to a foreign module's store, or a CRDT-backed write outside any action transaction is the defect. Leaf components must not **directly** import business stores.
 
 **Why:** write discipline is what prevents global mutability, and a write outside the owner's transaction is never seen by the document, undo, persistence, or collaboration.
 
