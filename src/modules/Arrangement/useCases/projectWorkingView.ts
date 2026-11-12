@@ -6,7 +6,3 @@ export function restoreTimelineWorkingView(
 ): void {
     replaceTimelineWorkingView(view, options);
 }
-
-export function resetTimelineWorkingView(): void {
-    replaceTimelineWorkingView(null);
-}

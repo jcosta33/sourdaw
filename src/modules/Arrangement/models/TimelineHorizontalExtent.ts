@@ -1,7 +1,7 @@
 import { getArrangementEndBeat } from './ArrangementEnd';
 import { showsVariationLanes } from './TimelineTrackExtent';
-import { getHeldClips } from './TrackAlternativeClips';
 import { type Track } from './Track';
+import { getHeldClips } from './TrackAlternativeClips';
 
 export const MIN_TIMELINE_CONTENT_BEATS = 256;
 

@@ -11,13 +11,16 @@ import { defaultProjectStoreState, projectStore } from '#/modules/Project/stores
 
 import { createDefaultProjectWorkingView, type ProjectWorkingView } from '../../models/ProjectWorkingView';
 import { defaultWorkspaceState } from '../../models/WorkspaceState';
-import { readProjectWorkingView, writeProjectWorkingView } from '../../repositories/projectWorkingViewStorage';
+import { readProjectWorkingView } from '../../repositories/projectWorkingViewStorage';
+import { writeProjectWorkingView } from '../../repositories/writeProjectWorkingView';
 import { workspaceStore } from '../../stores/workspaceStore';
 import { initProjectWorkingViewPersistence } from '../initProjectWorkingViewPersistence';
 import { updateWorkspaceState } from '../workspaceState';
 
 vi.mock('../../repositories/projectWorkingViewStorage', () => ({
     readProjectWorkingView: vi.fn(),
+}));
+vi.mock('../../repositories/writeProjectWorkingView', () => ({
     writeProjectWorkingView: vi.fn(),
 }));
 

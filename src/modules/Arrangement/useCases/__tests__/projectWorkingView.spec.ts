@@ -13,7 +13,8 @@ import { defaultTrackState, trackStore } from '../../stores/trackStore';
 import { addClip } from '../clip/addClip';
 import { getTimelineHorizontalContentWidth } from '../getTimelineHorizontalContentWidth';
 import { initTimelineScrollClamp } from '../initTimelineScrollClamp';
-import { resetTimelineWorkingView, restoreTimelineWorkingView } from '../projectWorkingView';
+import { restoreTimelineWorkingView } from '../projectWorkingView';
+import { resetTimelineWorkingView } from '../resetTimelineWorkingView';
 
 function addTrackWithClip(id: string, endBeat: number): void {
     const tracks = trackStore.value?.tracks ?? [];

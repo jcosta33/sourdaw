@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
-import { defaultWorkspaceState } from '../WorkspaceState';
 import {
     captureProjectWorkingView,
     createDefaultProjectWorkingView,
     decodeProjectWorkingView,
     projectWorkingViewEquals,
 } from '../ProjectWorkingView';
+import { defaultWorkspaceState } from '../WorkspaceState';
 
 describe('ProjectWorkingView', () => {
     it('captures only durable timeline and working-panel fields', () => {

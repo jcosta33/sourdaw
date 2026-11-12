@@ -1,5 +1,5 @@
-import { resetTimelineWorkingView, restoreTimelineWorkingView } from '#/modules/Arrangement/useCases';
 import { timelineViewStore } from '#/modules/Arrangement/stores';
+import { resetTimelineWorkingView, restoreTimelineWorkingView } from '#/modules/Arrangement/useCases';
 import { getSettledProjectId, projectStore } from '#/modules/Project/stores';
 
 import {
@@ -8,7 +8,8 @@ import {
     projectWorkingViewEquals,
     type ProjectWorkingView,
 } from '../models/ProjectWorkingView';
-import { readProjectWorkingView, writeProjectWorkingView } from '../repositories/projectWorkingViewStorage';
+import { readProjectWorkingView } from '../repositories/projectWorkingViewStorage';
+import { writeProjectWorkingView } from '../repositories/writeProjectWorkingView';
 import { workspaceStore } from '../stores/workspaceStore';
 
 import { updateWorkspaceState } from './workspaceState';
