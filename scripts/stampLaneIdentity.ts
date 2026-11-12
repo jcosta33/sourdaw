@@ -11,7 +11,7 @@
 // worktree — is simply set again.
 
 import { spawnSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 import {
@@ -43,12 +43,13 @@ export function authorLanes(worktrees: Worktree[]): Worktree[] {
 
 export type LaneIdentityStamp = { lane: string; changedKeys: string[] };
 
-/** A locked lane whose directory is gone is `missing`: it is reported, and the run goes on. */
+/** A locked lane that is no worktree root on disk is `missing`: it is reported, and the run goes on. */
 export type LaneIdentityRun = { stamps: LaneIdentityStamp[]; missing: string[] };
 
 export type StampLaneIdentityPort = {
     worktrees: () => Worktree[];
-    pathExists: (path: string) => boolean;
+    /** Whether `path` exists and git resolves it as its own worktree root. */
+    isWorktreeRoot: (path: string) => boolean;
     /** Runs one git command in `cwd`, failing loudly on a nonzero exit. */
     run: (command: string, args: string[], cwd: string) => void;
     /** Reads one git config value in `cwd`; `undefined` when the key is unset. */
@@ -66,8 +67,9 @@ export function stampLaneIdentities(port: StampLaneIdentityPort): LaneIdentityRu
     const stamps: LaneIdentityStamp[] = [];
     const missing: string[] = [];
     for (const lane of authorLanes(port.worktrees())) {
-        // Git never marks a locked worktree prunable, so a deleted lane directory still lists here.
-        if (!port.pathExists(lane.path)) {
+        // Git never marks a locked worktree prunable, so a deleted lane directory still lists here,
+        // and a directory without its `.git` link would let git walk up and stamp the primary.
+        if (!port.isWorktreeRoot(lane.path)) {
             missing.push(lane.path);
             port.log(`${lane.path} is missing on disk; skipped`);
             continue;
@@ -112,7 +114,13 @@ export function shellPort(cwd: string = process.cwd()): StampLaneIdentityPort {
     return {
         worktrees: () =>
             parseWorktrees(spawnCapture('git', ['worktree', 'list', '--porcelain', '-z'], { cwd: primaryRoot })),
-        pathExists: (path) => existsSync(path),
+        isWorktreeRoot: (path) => {
+            if (!existsSync(path)) {
+                return false;
+            }
+            const topLevel = spawnSync('git', ['rev-parse', '--show-toplevel'], { cwd: path, encoding: 'utf8' });
+            return topLevel.status === 0 && realpathSync(topLevel.stdout.trim()) === realpathSync(path);
+        },
         run: (command, args, runCwd) => {
             spawnRun(command, args, { cwd: runCwd });
         },

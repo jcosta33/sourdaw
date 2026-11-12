@@ -153,6 +153,22 @@ describe('lane identity stamping', () => {
         expect(fixtureGit(f.typedIssueLane, ['config', 'user.email'])).toBe(AUTHOR_BOT_COMMIT_EMAIL);
         expect(logs).toContain(`${f.typedIssuelessLane} is missing on disk; skipped`);
     });
+
+    it('reports a locked author lane whose directory lost its git link instead of stamping the primary', () => {
+        const f = primaryFixture();
+        // Without its `.git` file the directory is no worktree, so git would walk up to the primary.
+        rmSync(join(f.typedIssuelessLane, '.git'));
+        const logs: string[] = [];
+        const port = { ...shellPort(f.root), log: (message: string) => logs.push(message) };
+
+        const run = stampLaneIdentities(port);
+
+        expect(run.missing).toEqual([f.typedIssuelessLane]);
+        expect(run.stamps.map((stamp) => stamp.lane).sort()).toEqual([f.authorLane, f.typedIssueLane].sort());
+        expect(logs).toContain(`${f.typedIssuelessLane} is missing on disk; skipped`);
+        expect(existsSync(join(f.root, '.git', 'config.worktree'))).toBe(false);
+        expect(summarizeLaneIdentityRun(run, () => undefined)).toBe(1);
+    });
 });
 
 describe('lane identity summary', () => {
