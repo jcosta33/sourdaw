@@ -222,6 +222,9 @@ describe('native Edit focus with the timeline clip navigator', () => {
 
         render(<NativeMenuHost />);
         expect(document.activeElement).toBe(screen.getByRole('searchbox', { name: 'Search clips' }));
+        const listbox = screen.getByRole('listbox', { name: 'Timeline clips' });
+        act(() => listbox.focus());
+        expect(document.activeElement).toBe(listbox);
         cut?.click?.();
 
         expect(dispatch).not.toHaveBeenCalled();

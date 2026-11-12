@@ -15,13 +15,12 @@ import { Input } from '#/components/ui/input';
 import { clipSelectionStore, defaultClipSelectionState } from '../../stores/clipSelectionStore';
 import { trackStore } from '../../stores/trackStore';
 import { selectClipWithFocus } from '../../useCases/clipSelection/selectClipWithFocus';
-import { setClipSelection } from '../../useCases/clipSelection/setClipSelection';
 import { getTimelineClipNavigationSnapshot } from '../../useCases/getTimelineClipNavigationSnapshot';
 import { revealTimelineClip } from '../../useCases/revealTimelineClip';
 import { selectTrack } from '../../useCases/toggleTrackState/selectTrack';
 
-type TimelineClip = ReturnType<typeof getTimelineClipNavigationSnapshot>[number];
-type ClipTypeFilter = 'all' | 'midi' | 'audio';
+import { getTimelineClipNavigatorKeyboardHandlers } from './timelineClipNavigatorKeyboard';
+import { type ClipTypeFilter, filterTimelineClips, type TimelineClip } from './timelineClipNavigatorModel';
 
 function describeClip(item: TimelineClip): string {
     const { clip, track } = item;
@@ -66,20 +65,7 @@ export function TimelineClipNavigator({ onClose }: { onClose: () => void }): Rea
         const selected = new Set(selectedClipIds(selection));
         return clips.find((item) => selected.has(item.clip.id))?.clip.id ?? clips[0]?.clip.id ?? null;
     });
-    const normalizedQuery = query.trim().toLocaleLowerCase();
-    const filteredClips = clips.filter((item) => {
-        if (typeFilter !== 'all' && item.clip.type !== typeFilter) {
-            return false;
-        }
-        if (currentTrackOnly && selectedTrackId && item.track.id !== selectedTrackId) {
-            return false;
-        }
-        return (
-            normalizedQuery.length === 0 ||
-            item.clip.name.toLocaleLowerCase().includes(normalizedQuery) ||
-            item.track.name.toLocaleLowerCase().includes(normalizedQuery)
-        );
-    });
+    const filteredClips = filterTimelineClips(clips, query, typeFilter, currentTrackOnly, selectedTrackId);
     const lastIndex = useRef(0);
     const foundIndex = filteredClips.findIndex((item) => item.clip.id === activeClipId);
     const activeIndex = foundIndex >= 0 ? foundIndex : Math.min(lastIndex.current, filteredClips.length - 1);
@@ -124,68 +110,17 @@ export function TimelineClipNavigator({ onClose }: { onClose: () => void }): Rea
         revealTimelineClip(active.clip.id);
     }
 
-    function handleSearchKeyDown(event: KeyboardEvent<HTMLInputElement>): void {
-        event.stopPropagation();
-        if (!['ArrowDown', 'ArrowUp', 'Enter', 'Escape'].includes(event.key)) {
-            return;
-        }
-        event.preventDefault();
-        if (event.key === 'Enter') {
-            commitActive();
-            return;
-        }
-        if (event.key === 'Escape') {
-            onClose();
-            return;
-        }
-        if (event.key === 'ArrowDown') {
-            moveTo(Math.min(activeIndex + 1, filteredClips.length - 1));
-        } else {
-            moveTo(Math.max(activeIndex - 1, 0));
-        }
-        listboxRef.current?.focus();
-    }
-
-    function handleKeyDown(event: KeyboardEvent<HTMLDivElement>): void {
-        const claimed = ['ArrowDown', 'ArrowUp', 'Home', 'End', ' ', 'Spacebar', 'Enter', 'Escape'];
-        if (!claimed.includes(event.key)) {
-            event.stopPropagation();
-            return;
-        }
-        event.preventDefault();
-        event.stopPropagation();
-
-        switch (event.key) {
-            case 'ArrowDown':
-                moveTo(Math.min(activeIndex + 1, filteredClips.length - 1));
-                break;
-            case 'ArrowUp':
-                moveTo(Math.max(activeIndex - 1, 0));
-                break;
-            case 'Home':
-                moveTo(0);
-                break;
-            case 'End':
-                moveTo(filteredClips.length - 1);
-                break;
-            case ' ':
-            case 'Spacebar':
-                if (active) {
-                    if (selected.has(active.clip.id)) {
-                        setClipSelection(selectedIds.filter((clipId) => clipId !== active.clip.id));
-                    } else {
-                        setClipSelection([...selectedIds, active.clip.id]);
-                    }
-                }
-                break;
-            case 'Enter':
-                commitActive();
-                break;
-            case 'Escape':
-                onClose();
-                break;
-        }
-    }
+    const { handleKeyDown, handleSearchKeyDown } = getTimelineClipNavigatorKeyboardHandlers({
+        active,
+        activeIndex,
+        filteredClips,
+        selected,
+        selectedIds,
+        listboxRef,
+        moveTo,
+        commitActive,
+        onClose,
+    });
 
     return (
         <TimelineClipNavigatorView
@@ -234,6 +169,51 @@ type TimelineClipNavigatorViewProps = {
     readonly status: string;
 };
 
+type TimelineClipNavigatorFiltersProps = Pick<
+    TimelineClipNavigatorViewProps,
+    'typeFilter' | 'onTypeFilterChange' | 'currentTrackOnly' | 'currentTrackAvailable' | 'onCurrentTrackOnlyChange'
+>;
+
+function TimelineClipNavigatorFilters({
+    typeFilter,
+    onTypeFilterChange,
+    currentTrackOnly,
+    currentTrackAvailable,
+    onCurrentTrackOnlyChange,
+}: TimelineClipNavigatorFiltersProps): ReactElement {
+    const filters: readonly { value: ClipTypeFilter; label: string }[] = [
+        { value: 'all', label: 'All' },
+        { value: 'midi', label: 'MIDI' },
+        { value: 'audio', label: 'Audio' },
+    ];
+    return (
+        <div role="group" aria-label="Clip filters" className="mb-2 flex flex-wrap gap-1">
+            {filters.map((filter) => (
+                <Button
+                    key={filter.value}
+                    type="button"
+                    size="sm"
+                    variant={typeFilter === filter.value ? 'secondary' : 'ghost'}
+                    aria-pressed={typeFilter === filter.value}
+                    onClick={() => onTypeFilterChange(filter.value)}
+                >
+                    {filter.label}
+                </Button>
+            ))}
+            <Button
+                type="button"
+                size="sm"
+                variant={currentTrackOnly ? 'secondary' : 'ghost'}
+                aria-pressed={currentTrackOnly}
+                disabled={!currentTrackAvailable}
+                onClick={() => onCurrentTrackOnlyChange(!currentTrackOnly)}
+            >
+                Current track
+            </Button>
+        </div>
+    );
+}
+
 function TimelineClipNavigatorView({
     id,
     searchRef,
@@ -255,11 +235,6 @@ function TimelineClipNavigatorView({
     unfilteredTotal,
     status,
 }: TimelineClipNavigatorViewProps): ReactElement {
-    const filters: readonly { value: ClipTypeFilter; label: string }[] = [
-        { value: 'all', label: 'All' },
-        { value: 'midi', label: 'MIDI' },
-        { value: 'audio', label: 'Audio' },
-    ];
     return (
         <div className="max-w-sm rounded border border-border bg-surface-base p-2 text-sm shadow-lg">
             <Input
@@ -275,30 +250,13 @@ function TimelineClipNavigatorView({
                 className="mb-2"
                 autoComplete="off"
             />
-            <div role="group" aria-label="Clip filters" className="mb-2 flex flex-wrap gap-1">
-                {filters.map((filter) => (
-                    <Button
-                        key={filter.value}
-                        type="button"
-                        size="sm"
-                        variant={typeFilter === filter.value ? 'secondary' : 'ghost'}
-                        aria-pressed={typeFilter === filter.value}
-                        onClick={() => onTypeFilterChange(filter.value)}
-                    >
-                        {filter.label}
-                    </Button>
-                ))}
-                <Button
-                    type="button"
-                    size="sm"
-                    variant={currentTrackOnly ? 'secondary' : 'ghost'}
-                    aria-pressed={currentTrackOnly}
-                    disabled={!currentTrackAvailable}
-                    onClick={() => onCurrentTrackOnlyChange(!currentTrackOnly)}
-                >
-                    Current track
-                </Button>
-            </div>
+            <TimelineClipNavigatorFilters
+                typeFilter={typeFilter}
+                onTypeFilterChange={onTypeFilterChange}
+                currentTrackOnly={currentTrackOnly}
+                currentTrackAvailable={currentTrackAvailable}
+                onCurrentTrackOnlyChange={onCurrentTrackOnlyChange}
+            />
             <p id={`${id}-help`} className="mb-2 text-foreground/70">
                 Type to filter. Arrow Down enters results; arrows, Home and End browse. Space toggles selection; Enter
                 selects and reveals. Escape closes.
