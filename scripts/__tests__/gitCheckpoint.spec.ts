@@ -136,6 +136,18 @@ describe('Git checkpoint diagnostic', () => {
             expect(result.stderr).not.toContain('node:internal');
         }
     });
+    it('captures files selected by a directory pathspec before staging', async () => {
+        const { root, env, git } = fixture();
+        mkdirSync(join(root, 'takes'));
+        writeFileSync(join(root, 'takes', 'note.txt'), 'recorded take');
+        const result = await run(root, env, 'add', '--', 'takes');
+        expect(result.code, result.stderr).toBe(0);
+        const observed = receipt(result.stderr).value;
+        expect(observed.before.sources['takes/note.txt']?.sha256).toBe(
+            createHash('sha256').update('recorded take').digest('hex')
+        );
+        expect(git('ls-files', '--error-unmatch', 'takes/note.txt')).toBe('takes/note.txt');
+    });
     it('preserves legal large Git path arguments through checkpoint observation', async () => {
         const { root, env } = fixture();
         const name = '"'.repeat(100);
