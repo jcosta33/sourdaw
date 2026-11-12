@@ -57,6 +57,9 @@ export function captureRelinkAudioSourceTargets(sourceBufferId: string, replacem
             capture(clip, null);
         }
         for (const alternative of track.alternatives) {
+            if (alternative.id === track.activeAlternativeId) {
+                continue;
+            }
             for (const clip of alternative.clips) {
                 capture(clip, alternative.id);
             }
@@ -112,6 +115,9 @@ export function relinkAudioSourceTargetsMatch(targets: readonly RelinkTarget[]):
         }
         let clips = track.clips;
         if (target.alternativeId !== null) {
+            if (target.alternativeId === track.activeAlternativeId) {
+                return false;
+            }
             const alternatives = track.alternatives.filter((item) => item.id === target.alternativeId);
             if (alternatives.length !== 1) {
                 return false;
@@ -154,6 +160,9 @@ function documentMatches(
         }
         let clips: unknown = owner.clips;
         if (target.alternativeId !== null) {
+            if (target.alternativeId === owner.activeAlternativeId) {
+                return false;
+            }
             if (!Array.isArray(owner.alternatives)) {
                 return false;
             }
@@ -234,10 +243,15 @@ export function applyRelinkAudioSourceTargets(targets: readonly RelinkTarget[]):
         tracks: state.tracks.map((track) => ({
             ...track,
             clips: track.clips.map((clip) => update(track.id, null, clip)),
-            alternatives: track.alternatives.map((alternative) => ({
-                ...alternative,
-                clips: alternative.clips.map((clip) => update(track.id, alternative.id, clip)),
-            })),
+            alternatives: track.alternatives.map((alternative) => {
+                if (alternative.id === track.activeAlternativeId) {
+                    return alternative;
+                }
+                return {
+                    ...alternative,
+                    clips: alternative.clips.map((clip) => update(track.id, alternative.id, clip)),
+                };
+            }),
         })),
     });
 }

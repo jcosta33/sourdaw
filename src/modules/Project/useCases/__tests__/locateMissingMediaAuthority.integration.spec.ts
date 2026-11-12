@@ -13,7 +13,7 @@ import {
     readUndoHistoryAudioBufferIds,
 } from '#/modules/Arrangement/useCases';
 import { clearHandlerRegistry, registerHandlerMap, undoStore, undoHistoryStore } from '#/modules/Command/stores';
-import { clearUndoHistory, redo, resetActionReplayAuthority, undo } from '#/modules/Command/useCases';
+import { clearUndoHistory, executeAppAction, redo, resetActionReplayAuthority, undo } from '#/modules/Command/useCases';
 import { agentProjectRepairStateStore } from '#/modules/CrdtDocument/stores';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 import {
@@ -171,6 +171,62 @@ describe('missing-media recovery through real CRDT and Command', () => {
         await redo();
         flushAutomergeStorageWrites();
         expect(rawClip().audioBufferId).toBe('replacement');
+    });
+
+    it('relinks live aliases through real history while leaving a locked stale active snapshot untouched', async () => {
+        const state = trackStore.value!;
+        trackStore.set({
+            ...state,
+            tracks: state.tracks.map((owner) => ({
+                ...owner,
+                activeAlternativeId: 'active',
+                alternatives: [{ id: 'active', name: 'Active', clips: [{ ...clip('clip-a'), locked: true }] }],
+            })),
+        });
+        flushAutomergeStorageWrites();
+        const staleBefore = JSON.stringify(getCrdtDoc<Root>('root')?.tracks.tracks[0]?.alternatives[0]?.clips);
+        await locateMissingMedia({ sourceBufferId: 'missing', label: 'clip-a.wav' });
+        expect(rawClip().audioBufferId).toBe('replacement');
+        expect(rawClip('clip-alias').audioBufferId).toBe('replacement');
+        expect(undoHistoryStore.value?.past).toHaveLength(1);
+        await undo();
+        expect(rawClip().audioBufferId).toBe('missing');
+        await redo();
+        expect(rawClip().audioBufferId).toBe('replacement');
+        expect(JSON.stringify(getCrdtDoc<Root>('root')?.tracks.tracks[0]?.alternatives[0]?.clips)).toBe(staleBefore);
+    });
+
+    it('atomically refuses a constructed typed action addressing the stored active snapshot', async () => {
+        const state = trackStore.value!;
+        const owner = {
+            ...state.tracks[0]!,
+            activeAlternativeId: 'active',
+            alternatives: [{ id: 'active', name: 'Active', clips: [clip('clip-a')] }],
+        };
+        trackStore.set({ ...state, tracks: [owner] });
+        flushAutomergeStorageWrites();
+        const before = JSON.stringify(getCrdtDoc<Root>('root')?.tracks);
+        const target = {
+            trackId: owner.id,
+            trackKind: owner.kind,
+            activeAlternativeId: 'active',
+            clipId: 'clip-a',
+            before: { audioBufferId: 'missing' },
+            after: { audioBufferId: 'replacement' },
+        };
+        await expect(
+            executeAppAction({
+                type: 'relinkClipAudioSources',
+                payload: {
+                    targets: [
+                        { ...target, alternativeId: null },
+                        { ...target, alternativeId: 'active' },
+                    ],
+                },
+            })
+        ).rejects.toThrow('conflicts with current project state');
+        expect(JSON.stringify(getCrdtDoc<Root>('root')?.tracks)).toBe(before);
+        expect(undoHistoryStore.value?.past).toEqual([]);
     });
 
     it.each(['supported source replacement', 'authoritative CRDT publication'])(

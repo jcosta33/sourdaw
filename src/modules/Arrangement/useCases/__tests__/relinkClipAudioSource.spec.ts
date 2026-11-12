@@ -13,6 +13,7 @@ import {
 } from '#/infra/store/storage/createAutomergeStorage';
 import {
     createCrdtDoc,
+    getCrdtDoc,
     removeCrdtDoc,
     registerCrdtStorageRuntime,
     resetCrdtProjectAuthority,
@@ -25,6 +26,11 @@ import { TrackDummy } from '../../__tests__/TrackDummy';
 import { type Clip } from '../../models/Track';
 import { trackStore } from '../../stores/trackStore';
 import { relinkClipAudioSource } from '../relinkClipAudioSource';
+import {
+    captureRelinkAudioSourceCommitValidation,
+    relinkAudioSourceTargetsMatch,
+} from '../clipEditing/relinkAudioSourceTargets';
+import { type AppAction } from '#/utils/handlerContract';
 
 const mocks = vi.hoisted(() => ({
     getCachedAudioBuffer: vi.fn<(input: { bufferId: string }) => AudioBuffer | null>(),
@@ -231,6 +237,38 @@ describe('relinkClipAudioSource', () => {
         await relinkClipAudioSource({ sourceBufferId: 'buf-missing', replacementBufferId: 'buf-new' });
 
         expect(mocks.clearClipPitchAnalysis.mock.calls.map((call) => call[0])).toEqual(['clip-a', 'clip-b']);
+    });
+
+    it('rejects active-snapshot addresses at projected and raw publication boundaries', () => {
+        const owner = TrackDummy.create({
+            id: 'track-1',
+            clips: [clipA],
+            activeAlternativeId: 'active',
+            alternatives: [{ id: 'active', name: 'Active', clips: [clipA] }],
+        });
+        trackStore.set({ tracks: [owner], selectedTrackId: null });
+        flushAutomergeStorageWrites();
+        const targets: Extract<AppAction, { type: 'relinkClipAudioSources' }>['payload']['targets'] = [
+            {
+                trackId: owner.id,
+                trackKind: owner.kind,
+                activeAlternativeId: 'active',
+                alternativeId: 'active',
+                clipId: clipA.id,
+                before: { audioBufferId: 'buf-missing', audioOffsetBeats: 2 },
+                after: { audioBufferId: 'buf-new', audioOffsetBeats: 2 },
+            },
+        ];
+        const document = getCrdtDoc<Record<string, unknown>>('root');
+        if (!document) {
+            throw new Error('Expected the committed track document');
+        }
+        const validation = captureRelinkAudioSourceCommitValidation(targets);
+        expect(relinkAudioSourceTargetsMatch(targets)).toBe(false);
+        expect(validation.beforeCommit()).not.toBeNull();
+        expect(validation.beforeMutation).toBeTypeOf('function');
+        expect(validation.beforeMutation!(document)).not.toBeNull();
+        validation.release();
     });
 
     it('restores an omitted source pointer exactly when the clip ID is its missing cache key', async () => {
