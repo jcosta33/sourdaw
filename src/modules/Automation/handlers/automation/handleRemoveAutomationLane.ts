@@ -115,5 +115,11 @@ export const handleRemoveAutomationLane = createHandler<'removeAutomationLane'>(
     validate: (action, context) => canRemoveLane(action.payload, context),
     canReapplyAfterDivergence: (action, context) => canRemoveLane(action.payload, context),
     describe: () => ({ label: 'Remove automation lane' }),
+    // The removal writes only the automation store, which an aborted batch's transaction rolls
+    // back with every other member; there is no runtime state to compensate for. A group undo that
+    // removes one lane before a later member conflicts therefore reports that conflict and keeps
+    // the whole group on the stack.
+    previewExecution: 'isolated-project',
+    requiresAbortCompensation: false,
     undoable: false,
 });

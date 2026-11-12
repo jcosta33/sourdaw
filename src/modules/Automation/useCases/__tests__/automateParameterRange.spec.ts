@@ -935,6 +935,44 @@ describe('automateParameterRange', () => {
             expect(trackStore.value?.tracks).toEqual(tracksBefore);
         });
 
+        it('keeps the whole group on the undo stack, writing nothing, when someone edits a point the later range wrote', async () => {
+            // The pan lane the batch creates last is the first thing undo takes back, so the
+            // edited send lane must refuse before that removal runs, not after it.
+            await executeAppActionBatch(
+                [
+                    createPlateBus(),
+                    addPlateSend(),
+                    plateTail(28, 32),
+                    plateTail(60, 64),
+                    rangeAction({
+                        trackId: BUS_ID,
+                        parameterId: 'pan',
+                        range: { startBeat: 8, endBeat: 12 },
+                        value: 0.5,
+                    }),
+                ],
+                ATOMIC_GROUP
+            );
+            expect(automationStore.value?.lanes.map((lane) => lane.trackId)).toEqual([VOCAL_ID, BUS_ID]);
+            const tracksAfter = structuredClone(trackStore.value?.tracks);
+            // A collaborator moves the target the second range ramps to.
+            const edited = structuredClone(automationStore.value?.lanes ?? []).map((lane) => ({
+                ...lane,
+                points: lane.points.map((point) =>
+                    point.beat === 64 && point.value === TARGET_LEVEL ? { ...point, value: TARGET_LEVEL / 2 } : point
+                ),
+            }));
+            expect(edited).not.toEqual(automationStore.value?.lanes);
+            automationStore.set({ lanes: edited });
+            const pastBefore = undoStore.value?.past.length ?? 0;
+
+            await undo();
+
+            expect(automationStore.value?.lanes).toEqual(edited);
+            expect(trackStore.value?.tracks).toEqual(tracksAfter);
+            expect(undoStore.value?.past).toHaveLength(pastBefore);
+        });
+
         it('rewrites a lane the track already has inside an atomic batch, and undo restores its exact points', async () => {
             seed({ lanes: [gainLane()] });
             const before = laneFor('gain');
