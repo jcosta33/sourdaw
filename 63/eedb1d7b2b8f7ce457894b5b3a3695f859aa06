@@ -1,0 +1,23 @@
+.agents/skills/review-stances/test-validity.md
+  s_9307cedd8951f1::t_34492b5670827e 97-105
+.agents/skills/review-stances/command-entry-and-state-oracles.md
+  s_9307cedd8951f1::t_34492b5670827e 49-58
+.agents/skills/review-stances/project-integrity.md
+  s_9307cedd8951f1::t_34492b5670827e 137-145
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "63eedb1d7b2b8f7ce457894b5b3a3695f859aa06",
+  "prompts": {},
+  "sessions": {
+    "s_9307cedd8951f1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cee0-9c43-7223-9451-be85d15b1347",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
