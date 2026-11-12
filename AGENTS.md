@@ -473,9 +473,10 @@ counting once the old PR is reopened at or after it. Removal and `lane:prune` ne
 credential-shaped ignored files (`.env*`, `*.pem`, `*.key`, SSH keys, `.npmrc` and the like) as
 disposable, except inside `node_modules`. Other closed PRs
 are abandonments: use `lane:strand` to preserve their unlanded work. It refuses open PRs or
-uncommitted work, pins the abandoned tip at `refs/sourdaw/strands/<lane>` before anything else and
-records it, with that ref, in a receipt in the primary checkout; it refuses when the ref already
-exists or to overwrite a same-lane receipt with a different head. After writing the receipt it
+uncommitted work, pins the abandoned tip at `refs/sourdaw/strands/<lane>` before writing the receipt
+or removing anything, and records it, with that ref, in a receipt in the primary checkout. It refuses
+when that ref or a same-lane receipt already records a different head; a retry at the same head
+reuses both. After writing the receipt it
 removes the worktree and deletes the lane's local branch with `git branch -D`;
 `git branch <name> refs/sourdaw/strands/<lane>` revives the work. `lane:remove` leaves the local branch: delete it after removal.
 

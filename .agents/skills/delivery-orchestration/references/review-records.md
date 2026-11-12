@@ -47,7 +47,7 @@ refuses before any remote write when the plan is missing, malformed, or rebound
 from the head/base/pr it must bind; when `diff.patch` differs from
 `git diff base...head` or the plan's base is not the live merge base; when
 `review.json` carries no `draws`; when
-the draws miss the plan's draw floor; when any effective draw's tier is not
+the draws miss the plan's draw floor; when any draw's tier is not
 economy or standard; or when a value is unsafe, including a secret shape in the
 review body or an inline comment. An unpublished `dossier.json` never supplies
 draws. These are fresh-publication gates: exact published replay and recovery
@@ -108,8 +108,8 @@ replays — the exact same review must stand live: actor, head, state, body, and
 comments — instead of re-posting, and a recorded publication that no longer
 stands exact fails closed before any write. `review:accept` refuses a
 plan-carrying bundle whose dossier is missing, records no publication, or
-leaves an accepted finding without its public comment binding; a legacy bundle
-without a risk plan publishes and accepts exactly as before.
+leaves an accepted finding without its public comment binding; a bundle without
+a risk plan publishes and accepts as before only under the legacy-tolerance cutover above.
 
 `pnpm review:reconstruct <pr>` is read-only: it rebuilds every governed round
 from public channels alone — reviews, review comments, author
@@ -145,8 +145,8 @@ authorization (#4584): a reviewer APPROVE on a plan-carrying bundle records one
 dossier digest, in the same persisted write as the publication bindings.
 `review.json` carrying `authorization` is refused. `review:accept` refuses a
 plan-carrying head whose dossier already carries that reviewer-recorded
-authorization — refusing the duplicate — and keeps working for legacy bundles
-without a risk plan. New deliveries never call it.
+authorization — refusing the duplicate — and keeps working for plan-less bundles
+the legacy cutover admits. New deliveries never call it.
 
 A pre-policy plan-carrying head is not deliverable and cannot be re-authorized
 in place: re-publication replays the recorded publication rather than posting a
@@ -154,12 +154,14 @@ fresh reviewer APPROVE, so no reviewer-bound `delivery-authorized` event is ever
 recorded. This holds whether the dossier already records the old orchestrator
 acceptance authorization (`deliver` refuses its ids, which do not both bind the
 live reviewer approval) or records an old-flow APPROVE with no authorization at
-all (`deliver` refuses for want of one). Bundles with no `risk-plan.json` stay
-exempt and still merge. Such a stuck head needs a new commit and a fresh review
+all (`deliver` refuses for want of one). Bundles with no `risk-plan.json` that
+the legacy cutover admits stay exempt and still merge. Such a stuck head needs a new commit and a fresh review
 round.
 
 `deliver` consumes the record: a plan-carrying head bundle with no recorded
 authorization, an authorization whose digest is not the
 dossier-minus-authorization digest, or one whose `reviewId`/`approvalReviewId`
 do not both bind the live reviewer approval review refuses delivery before any
-merge. Legacy bundles without a risk plan deliver exactly as before.
+merge. A bundle without a risk plan delivers as before only when its pull
+request was opened before the cutover (`RISK_PLAN_POLICY_CUTOVER` in
+`scripts/deliverPullRequest.ts`, the same instant).
