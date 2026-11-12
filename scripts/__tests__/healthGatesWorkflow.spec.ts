@@ -4740,7 +4740,7 @@ describe('health gates workflow contract', () => {
             'fetch-depth': 0,
             'persist-credentials': false,
         });
-        expect(recordAt(shard, 'env').VITEST_MAX_WORKERS).toBe(4);
+        expect(recordAt(shard, 'env').VITEST_MAX_WORKERS).toBe(2);
         // One shard's failure must not cancel the others' evidence.
         expect(recordAt(unit, 'strategy')['fail-fast']).toBe(false);
     });

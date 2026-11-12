@@ -40,7 +40,7 @@ function nativeBytes(platform: NodeJS.Platform = process.platform): Buffer {
         bytes.writeUInt32LE(0xfeedfacf);
         bytes.writeUInt32LE(process.arch === 'arm64' ? 0x0100000c : 0x01000007, 4);
     } else {
-        bytes.write('\x7fELF');
+        bytes.write('\x7FELF');
         bytes[4] = 2;
         bytes[5] = 1;
         bytes.writeUInt16LE(process.arch === 'arm64' ? 183 : 62, 18);
@@ -509,7 +509,9 @@ describe('verified native pnpm setup', () => {
             const input = fixture();
             input.run.mockImplementation((file, args, options) => {
                 const result = input.implementation(file, args, options);
-                if (args.includes('--eval')) chmodSync(input.target, mode);
+                if (args.includes('--eval')) {
+                    chmodSync(input.target, mode);
+                }
                 return result;
             });
             expect(() => setupPnpm(input.options)).toThrow('independent installation');
@@ -545,7 +547,9 @@ writeFileSync(join(directory,'package.json'),JSON.stringify({type:'module'}));
 writeFileSync(join(directory,'index.js'),${JSON.stringify(downloader)});`;
             writeFileSync(join(nodeDirectory, 'node_modules/npm/bin/npm-cli.js'), npm);
             const run = vi.fn<NonNullable<SetupPnpmOptions['run']>>((file, args, options) => {
-                if (file === target) return { status: 0, stdout: '12.18.0' };
+                if (file === target) {
+                    return { status: 0, stdout: '12.18.0' };
+                }
                 const result = spawnSync(file, args, { ...options, encoding: 'utf8' });
                 return { status: result.status, stdout: result.stdout ?? '' };
             });
@@ -588,12 +592,24 @@ writeFileSync(join(directory,'index.js'),${JSON.stringify(downloader)});`;
                 const result = input.implementation(file, args, options);
                 if (args.includes('--eval')) {
                     let bytes = nativeBytes();
-                    if (kind === 'script') bytes = Buffer.from('#!/bin/sh\nprintf "12.18.0"\n');
-                    if (kind === 'other-platform')
+                    if (kind === 'script') {
+                        bytes = Buffer.from('#!/bin/sh\nprintf "12.18.0"\n');
+                    }
+                    if (kind === 'other-platform') {
                         bytes = nativeBytes(process.platform === 'win32' ? 'linux' : 'win32');
-                    if (kind === 'wrong-machine')
-                        bytes.fill(0, process.platform === 'darwin' ? 4 : process.platform === 'win32' ? 132 : 18);
-                    if (kind === 'truncated') bytes = bytes.subarray(0, 3);
+                    }
+                    if (kind === 'wrong-machine') {
+                        let offset = 18;
+                        if (process.platform === 'darwin') {
+                            offset = 4;
+                        } else if (process.platform === 'win32') {
+                            offset = 132;
+                        }
+                        bytes.fill(0, offset);
+                    }
+                    if (kind === 'truncated') {
+                        bytes = bytes.subarray(0, 3);
+                    }
                     writeFileSync(input.target, bytes);
                 }
                 return result;

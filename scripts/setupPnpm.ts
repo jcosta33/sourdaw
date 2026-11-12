@@ -214,7 +214,7 @@ function installedEntrypoint(bin: string, platform: NodeJS.Platform): string {
             header.readUInt32LE(4) === (process.arch === 'arm64' ? 0x0100000c : 0x01000007);
     } else if (platform === 'linux' && length >= 20) {
         native =
-            header.toString('ascii', 0, 4) === '\x7fELF' &&
+            header.toString('ascii', 0, 4) === '\x7FELF' &&
             header[4] === 2 &&
             header[5] === 1 &&
             header.readUInt16LE(18) === (process.arch === 'arm64' ? 183 : 62);

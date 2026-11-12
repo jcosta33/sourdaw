@@ -12,8 +12,11 @@ const originalLog = process.env.CARGO_METADATA_TEST_LOG;
 
 afterEach(() => {
     process.env.PATH = originalPath;
-    if (originalLog === undefined) delete process.env.CARGO_METADATA_TEST_LOG;
-    else process.env.CARGO_METADATA_TEST_LOG = originalLog;
+    if (originalLog === undefined) {
+        delete process.env.CARGO_METADATA_TEST_LOG;
+    } else {
+        process.env.CARGO_METADATA_TEST_LOG = originalLog;
+    }
     rmSync(directory, { recursive: true, force: true });
 });
 
@@ -85,7 +88,7 @@ it('selects the lane toolchain and runs both metadata shapes from outside its an
     ]);
     writeFileSync(
         rustup,
-        `#!/bin/sh\nif [ \"$1\" = show ]; then echo '1.99.1-aarch64-apple-darwin (overridden by test)'; else echo 'metadata failure sentinel' >&2; exit 31; fi\n`
+        `#!/bin/sh\nif [ "$1" = show ]; then echo '1.99.1-aarch64-apple-darwin (overridden by test)'; else echo 'metadata failure sentinel' >&2; exit 31; fi\n`
     );
     expect(() => cargoMetadata(lane, ['--no-deps', '--format-version', '1'])).toThrow('metadata failure sentinel');
 });

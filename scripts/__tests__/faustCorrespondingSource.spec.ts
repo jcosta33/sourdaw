@@ -51,7 +51,9 @@ function fixture(): string {
 }
 
 afterEach(() => {
-    for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
+    for (const root of roots.splice(0)) {
+        rmSync(root, { recursive: true, force: true });
+    }
 });
 
 describe('Faust corresponding-source capsule', () => {
@@ -66,18 +68,18 @@ describe('Faust corresponding-source capsule', () => {
     it.each(['../escape', '/absolute', 'nested/../alias', 'nested\\alias', './alias'])(
         'rejects noncanonical archive member %s',
         (name) => {
-            expect(() => readFaustSourceArchive(packed(member(prefix + name)))).toThrow('noncanonical');
+            expect(() => readFaustSourceArchive(packed(member(`${prefix}${name}`)))).toThrow('noncanonical');
         }
     );
 
     it('rejects duplicate effective members', () => {
-        expect(() => readFaustSourceArchive(packed(member(prefix + 'same'), member(prefix + 'same')))).toThrow(
+        expect(() => readFaustSourceArchive(packed(member(`${prefix}same`), member(`${prefix}same`)))).toThrow(
             'repeats'
         );
     });
 
     it('rejects archive links without extracting or following them', () => {
-        expect(() => readFaustSourceArchive(packed(member(prefix + 'link', 'SymbolicLink')))).toThrow('nonregular');
+        expect(() => readFaustSourceArchive(packed(member(`${prefix}link`, 'SymbolicLink')))).toThrow('nonregular');
     });
 
     it('bounds decompression before parsing members', () => {

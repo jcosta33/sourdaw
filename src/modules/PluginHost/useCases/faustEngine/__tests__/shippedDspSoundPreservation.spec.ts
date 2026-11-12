@@ -299,9 +299,12 @@ describe('shipped Faust PCM against immutable pre-upgrade sound', () => {
             throw new Error('The real first DSP render must exist before probing its comparison');
         }
         const actual = firstRender;
-        const expected = capture
-            ? encodeSoundStreams(actual)
-            : gunzipSync(readFileSync(join(FIXTURE_DIR, `${profiles[0].id}.f32.gz`)));
+        let expected: Buffer;
+        if (capture) {
+            expected = encodeSoundStreams(actual);
+        } else {
+            expected = gunzipSync(readFileSync(join(FIXTURE_DIR, `${profiles[0].id}.f32.gz`)));
+        }
         const perturbed = Buffer.from(expected);
         perturbed.writeFloatLE(perturbed.readFloatLE(4) + 0.01, 4);
         expect(() => compareSoundStreams(perturbed, actual)).toThrow('PCM drift');

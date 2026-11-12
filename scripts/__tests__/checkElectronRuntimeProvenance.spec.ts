@@ -175,12 +175,12 @@ describe('Electron runtime provenance', () => {
             const lock = readFileSync(join(root, 'pnpm-lock.yaml'), 'utf8');
             const boundary = lock.indexOf('packages:');
             const packageRecords = lock.slice(boundary);
-            const manager =
-                'importers:\n  .:\n    packageManagerDependencies:\n      pnpm: {specifier: 12.18.0, version: 12.18.0}\n' +
-                (kind === 'conflicting PM integrity'
-                    ? packageRecords.replace('sha512-test', 'sha512-foreign')
-                    : packageRecords);
-            const app = kind === 'PM-only resolution' ? lock.slice(0, boundary) + 'packages: {}\n' : lock;
+            let managerPackages = packageRecords;
+            if (kind === 'conflicting PM integrity') {
+                managerPackages = packageRecords.replace('sha512-test', 'sha512-foreign');
+            }
+            const manager = `importers:\n  .:\n    packageManagerDependencies:\n      pnpm: {specifier: 12.18.0, version: 12.18.0}\n${managerPackages}`;
+            const app = kind === 'PM-only resolution' ? `${lock.slice(0, boundary)}packages: {}\n` : lock;
             write(root, 'pnpm-lock.yaml', `${manager}---\n${app}`);
             expect(validateElectronRuntimeProvenance(root, contract)).toContain('Electron lock resolution drifted');
         }

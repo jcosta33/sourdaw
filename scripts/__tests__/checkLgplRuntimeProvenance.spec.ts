@@ -251,7 +251,9 @@ describe('LGPL runtime provenance', () => {
             source.archiveSha256 = '7a6f0939e8905e40b7733f8e17cf5c806f3c89fb6c5291985dcc6deb883b3682';
             source.upstreamRevisionAvailable = false;
         });
-        if (kind === 'tampered') write(root, archive, 'not the source archive');
+        if (kind === 'tampered') {
+            write(root, archive, 'not the source archive');
+        }
         expect(validateLgplRuntimeProvenance(root, fixtureContract(root))).toContain(
             `faustwasm: corresponding source archive ${kind === 'missing' ? 'missing' : 'digest drifted'}`
         );
@@ -264,12 +266,12 @@ describe('LGPL runtime provenance', () => {
             const lock = readFileSync(join(root, 'pnpm-lock.yaml'), 'utf8');
             const boundary = lock.indexOf('packages:');
             const packageRecords = lock.slice(boundary);
-            const manager =
-                'importers:\n  .:\n    packageManagerDependencies:\n      pnpm: {specifier: 12.18.0, version: 12.18.0}\n' +
-                (kind === 'conflicting PM integrity'
-                    ? packageRecords.replace('sha512-test', 'sha512-foreign')
-                    : packageRecords);
-            const app = kind === 'PM-only resolution' ? lock.slice(0, boundary) + 'packages: {}\n' : lock;
+            let managerPackages = packageRecords;
+            if (kind === 'conflicting PM integrity') {
+                managerPackages = packageRecords.replace('sha512-test', 'sha512-foreign');
+            }
+            const manager = `importers:\n  .:\n    packageManagerDependencies:\n      pnpm: {specifier: 12.18.0, version: 12.18.0}\n${managerPackages}`;
+            const app = kind === 'PM-only resolution' ? `${lock.slice(0, boundary)}packages: {}\n` : lock;
             write(root, 'pnpm-lock.yaml', `${manager}---\n${app}`);
             expect(validateLgplRuntimeProvenance(root, contract)).toContain('faustwasm: lock resolution drifted');
         }

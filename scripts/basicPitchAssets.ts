@@ -9,6 +9,15 @@ const moduleId = 'virtual:sourdaw-basic-pitch-model';
 const resolvedModuleId = `\0${moduleId}`;
 const shardName = 'group1-shard1of1.bin';
 
+function isExpectedWeightsManifest(value: unknown): boolean {
+    return (
+        typeof value === 'object' &&
+        value !== null &&
+        'paths' in value &&
+        JSON.stringify(value.paths) === JSON.stringify([shardName])
+    );
+}
+
 export function basicPitchAssets(): Plugin {
     const packageRoot = dirname(createRequire(import.meta.url).resolve('@spotify/basic-pitch/package.json'));
     const model = readFileSync(join(packageRoot, 'model/model.json'));
@@ -20,7 +29,7 @@ export function basicPitchAssets(): Plugin {
         !('weightsManifest' in manifest) ||
         !Array.isArray(manifest.weightsManifest) ||
         manifest.weightsManifest.length !== 1 ||
-        JSON.stringify(manifest.weightsManifest[0]?.paths) !== JSON.stringify([shardName])
+        !isExpectedWeightsManifest(manifest.weightsManifest[0])
     ) {
         throw new Error('Basic Pitch model weights manifest changed');
     }
@@ -52,11 +61,17 @@ export function basicPitchAssets(): Plugin {
             });
         },
         resolveId(id) {
-            if (id === moduleId) return resolvedModuleId;
+            if (id === moduleId) {
+                return resolvedModuleId;
+            }
         },
         load(id) {
-            if (id !== resolvedModuleId) return;
-            if (serving) return `export default ${JSON.stringify(`${base}${directory}/model.json`)}`;
+            if (id !== resolvedModuleId) {
+                return;
+            }
+            if (serving) {
+                return `export default ${JSON.stringify(`${base}${directory}/model.json`)}`;
+            }
             const referenceId = this.emitFile({ type: 'asset', fileName: `${directory}/model.json`, source: model });
             this.emitFile({ type: 'asset', fileName: `${directory}/${shardName}`, source: shard });
             return `export default import.meta.ROLLDOWN_FILE_URL_${referenceId}`;

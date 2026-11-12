@@ -44,7 +44,7 @@ function importers(value: unknown): Record<string, Importer> | undefined {
     }
     return Object.fromEntries(
         Object.entries(mapping(value, 'importers')).map(([name, value]) => {
-            const importer: Importer = { ...mapping(value, `importers.${name}`) };
+            const importer: Importer = Object.fromEntries(Object.entries(mapping(value, `importers.${name}`)));
             for (const field of ['dependencies', 'devDependencies', 'optionalDependencies'] as const) {
                 if (importer[field] !== undefined) {
                     importer[field] = dependencies(importer[field], `importers.${name}.${field}`);
@@ -62,7 +62,7 @@ function importers(value: unknown): Record<string, Importer> | undefined {
 
 function packages(value: unknown): PnpmLockPackages {
     return Object.fromEntries(
-        Object.entries(mapping(value, 'packages')).map(([name, value]) => {
+        Object.entries(mapping(value, 'packages')).map(([name, value]): [string, PnpmLockPackages[string]] => {
             const entry = mapping(value, `packages.${name}`);
             if (entry.resolution === undefined) {
                 return [name, { ...entry, resolution: undefined }];
@@ -97,7 +97,7 @@ function isTooling(document: LockDocument): boolean {
 /** Keep importer authority separate while binding proof identities across both current lock documents. */
 export function parsePnpmLock(source: string): PnpmLock {
     const documents = parseAllDocuments(source, { uniqueKeys: true });
-    if (documents.length < 1 || documents.length > 2) {
+    if (documents.length === 0 || documents.length > 2) {
         throw new Error('pnpm-lock.yaml: expected one application document and at most one package-manager document');
     }
     let application: LockDocument | undefined;

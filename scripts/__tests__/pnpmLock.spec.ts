@@ -75,8 +75,8 @@ describe('pnpm lock document authority', () => {
     });
 
     it.each([
-        ['package-manager', tooling.replace('packages:', 'packages: {}\npackages:') + '---\n' + application],
-        ['application', tooling + '---\n' + application.replace('packages:', 'packages: {}\npackages:')],
+        ['package-manager', `${tooling.replace('packages:', 'packages: {}\npackages:')}---\n${application}`],
+        ['application', `${tooling}---\n${application.replace('packages:', 'packages: {}\npackages:')}`],
     ])('rejects duplicate keys in the %s document', (_name, source) => {
         expect(() => parsePnpmLock(source)).toThrow('Map keys must be unique');
     });
@@ -104,15 +104,13 @@ describe('pnpm lock document authority', () => {
         ['nonstrings version', 'importers: {.: {dependencies: {fixture: {version: []}}}}\npackages: {}'],
         [
             'PM importer masquerade',
-            tooling.replace('configDependencies: {}', 'dependencies: {electron: {specifier: 1.2.3, version: 1.2.3}}') +
-                '---\n' +
-                application,
+            `${tooling.replace('configDependencies: {}', 'dependencies: {electron: {specifier: 1.2.3, version: 1.2.3}}')}---\n${application}`,
         ],
-        ['PM document masquerade', tooling + 'settings: {}\n---\n' + application],
-        ['conflicting exact identity', tooling + '---\n' + application.replace('electron@1.2.3:', 'pnpm@12.18.0:')],
+        ['PM document masquerade', `${tooling}settings: {}\n---\n${application}`],
+        ['conflicting exact identity', `${tooling}---\n${application.replace('electron@1.2.3:', 'pnpm@12.18.0:')}`],
         [
             'conflicting peer identity',
-            tooling + '---\n' + application.replace('electron@1.2.3:', 'pnpm@12.18.0(peer@1.0.0):'),
+            `${tooling}---\n${application.replace('electron@1.2.3:', 'pnpm@12.18.0(peer@1.0.0):')}`,
         ],
         [
             'conflicting local peer identity',

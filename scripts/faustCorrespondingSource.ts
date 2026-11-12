@@ -37,7 +37,9 @@ function hash(bytes: Buffer): string {
 
 /** Read only: never extract executable source into the checkout or follow archive links. */
 export function readFaustSourceArchive(bytes: Buffer): Map<string, Buffer> {
-    if (bytes.length > 1024 * 1024) throw new Error('corresponding source archive exceeds compressed limit');
+    if (bytes.length > 1024 * 1024) {
+        throw new Error('corresponding source archive exceeds compressed limit');
+    }
     const raw = gunzipSync(bytes, { maxOutputLength: 8 * 1024 * 1024 });
     const files = new Map<string, Buffer>();
     let failure: Error | undefined;
@@ -66,22 +68,32 @@ export function readFaustSourceArchive(bytes: Buffer): Map<string, Buffer> {
         }
         const chunks: Buffer[] = [];
         entry.on('data', (chunk: Buffer) => {
-            if (!failure) chunks.push(chunk);
+            if (!failure) {
+                chunks.push(chunk);
+            }
         });
         entry.on('end', () => {
-            if (!failure) files.set(name, Buffer.concat(chunks));
+            if (!failure) {
+                files.set(name, Buffer.concat(chunks));
+            }
         });
         entry.resume();
     });
     parser.end(raw);
-    if (failure) throw failure;
-    if (files.size === 0) throw new Error('corresponding source archive is empty');
+    if (failure) {
+        throw failure;
+    }
+    if (files.size === 0) {
+        throw new Error('corresponding source archive is empty');
+    }
     return files;
 }
 
 function json<Value>(files: Map<string, Buffer>, name: string): Value {
     const bytes = files.get(name);
-    if (!bytes) throw new Error(`corresponding source lacks ${name}`);
+    if (!bytes) {
+        throw new Error(`corresponding source lacks ${name}`);
+    }
     return parseJsonWithUniqueKeys<Value>(bytes.toString('utf8'), name);
 }
 
@@ -114,11 +126,14 @@ export function assertFaustSourceContents(files: Map<string, Buffer>): void {
         'provision.mjs',
         'package-lock.json',
     ]) {
-        if (!files.get(name)?.length) throw new Error(`corresponding source lacks ${name}`);
+        if (!files.get(name)?.length) {
+            throw new Error(`corresponding source lacks ${name}`);
+        }
     }
     const expected = json<typeof EXECUTABLES>(files, 'provenance/expected-executables.json');
-    if (JSON.stringify(expected) !== JSON.stringify(EXECUTABLES))
+    if (JSON.stringify(expected) !== JSON.stringify(EXECUTABLES)) {
         throw new Error('corresponding source executable identities drifted');
+    }
     const upstream = json<{ name: string; version: string; license: string }>(
         files,
         'provenance/upstream-package.json'
@@ -131,12 +146,16 @@ export function assertFaustSourceContents(files: Map<string, Buffer>): void {
 /** The reviewed immutable capsule and installed package hashes, not caller JSON, authorize these source bytes. */
 export function validateFaustCorrespondingSource(root: string): string[] {
     const path = resolve(root, FAUST_SOURCE_ARCHIVE);
-    if (!existsSync(path)) return ['faustwasm: corresponding source archive missing'];
+    if (!existsSync(path)) {
+        return ['faustwasm: corresponding source archive missing'];
+    }
     const stat = lstatSync(path);
     if (!stat.isFile() || realpathSync(path) !== resolve(realpathSync(root), FAUST_SOURCE_ARCHIVE)) {
         return ['faustwasm: corresponding source archive is not a contained regular file'];
     }
-    if (stat.size !== ARCHIVE_BYTES) return ['faustwasm: corresponding source archive digest drifted'];
+    if (stat.size !== ARCHIVE_BYTES) {
+        return ['faustwasm: corresponding source archive digest drifted'];
+    }
     const bytes = readFileSync(path);
     if (bytes.length !== ARCHIVE_BYTES || hash(bytes) !== FAUST_SOURCE_SHA256) {
         return ['faustwasm: corresponding source archive digest drifted'];
@@ -153,17 +172,21 @@ export function validateFaustCorrespondingSource(root: string): string[] {
             sources: string[];
             sourcesContent: string[];
         };
-        if (map.sources.length !== 27 || map.sourcesContent.length !== 27)
+        if (map.sources.length !== 27 || map.sourcesContent.length !== 27) {
             throw new Error('installed wrapper source map census drifted');
+        }
         for (let index = 0; index < map.sources.length; index++) {
             const source = map.sources[index]!;
             const content = map.sourcesContent[index];
-            if (typeof content !== 'string' || !source.startsWith('../../'))
+            if (typeof content !== 'string' || !source.startsWith('../../')) {
                 throw new Error('installed wrapper source map malformed');
+            }
             const name = source.slice(6);
             if (name === 'src/generated/workletSources.ts') {
                 const records = [...content.matchAll(/^export const (\w+) = (.*);$/gmu)];
-                if (records.length !== 3) throw new Error('installed generated worklets malformed');
+                if (records.length !== 3) {
+                    throw new Error('installed generated worklets malformed');
+                }
                 for (const record of records) {
                     const expected = EXECUTABLES.worklets[record[1] as keyof typeof EXECUTABLES.worklets];
                     const text: unknown = JSON.parse(record[2]!);
@@ -181,19 +204,23 @@ export function validateFaustCorrespondingSource(root: string): string[] {
             const capsulePath = name.startsWith('node_modules/')
                 ? `preferred-dependency-sources/${name.slice(13)}`
                 : name;
-            if (!files.get(capsulePath)?.equals(Buffer.from(content)))
+            if (!files.get(capsulePath)?.equals(Buffer.from(content))) {
                 throw new Error(`installed preferred source differs: ${name}`);
+            }
         }
         const library = json<{
             libraryRevision: string;
             libraries: { path: string; sourcePath: string; start: number; end: number; sha256: string }[];
         }>(files, 'provenance/library-source-match.json');
-        if (library.libraryRevision !== LIBRARY_REVISION || library.libraries.length !== 55)
+        if (library.libraryRevision !== LIBRARY_REVISION || library.libraries.length !== 55) {
             throw new Error('compiler library source census drifted');
+        }
         const data = readFileSync(resolve(packageRoot, 'libfaust-wasm/libfaust-wasm.data'));
         const js = readFileSync(resolve(packageRoot, 'libfaust-wasm/libfaust-wasm.js'), 'utf8');
         const bundled = [...js.matchAll(/filename:"([^"]+\.lib)",start:(\d+),end:(\d+)/gu)];
-        if (bundled.length !== 55) throw new Error('installed compiler library census drifted');
+        if (bundled.length !== 55) {
+            throw new Error('installed compiler library census drifted');
+        }
         for (const [path, start, end] of bundled.map(
             (record) => [record[1]!.replace('/usr/share/faust/', ''), Number(record[2]), Number(record[3])] as const
         )) {
@@ -205,11 +232,13 @@ export function validateFaustCorrespondingSource(root: string): string[] {
                 start < 0 ||
                 end > data.length ||
                 end <= start
-            )
+            ) {
                 throw new Error('installed compiler library offsets drifted');
+            }
             const source = files.get(`faustlibraries/${record.sourcePath}`);
-            if (!source || hash(source) !== record.sha256 || !source.equals(data.subarray(start, end)))
+            if (!source || hash(source) !== record.sha256 || !source.equals(data.subarray(start, end))) {
                 throw new Error(`compiler library source differs: ${path}`);
+            }
         }
         return [];
     } catch (error) {

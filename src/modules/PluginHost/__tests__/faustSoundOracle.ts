@@ -42,9 +42,7 @@ export type SoundUi = {
 /** Compiler memory offsets and generated variable names are outside the address-based control contract. */
 export function publicSoundUi(items: SoundUi[]): SoundUi[] {
     return items.map((item) => {
-        const publicItem = { ...item };
-        delete publicItem.index;
-        delete publicItem.varname;
+        const { index: _index, varname: _varname, ...publicItem } = item;
         if (item.items) {
             publicItem.items = publicSoundUi(item.items);
         }
@@ -150,12 +148,20 @@ function inputSample(profile: SoundProfile, channel: number, frame: number): num
     if (time >= 0.8) {
         return 0;
     }
-    const programme =
-        channel === 0
-            ? 0.2 * Math.sin(2 * Math.PI * 997 * time) + 0.05 * Math.sin(2 * Math.PI * 83 * time)
-            : 0.13 * Math.sin(2 * Math.PI * 2039 * time) - 0.03 * Math.sin(2 * Math.PI * 173 * time);
+    let programme: number;
+    if (channel === 0) {
+        programme = 0.2 * Math.sin(2 * Math.PI * 997 * time) + 0.05 * Math.sin(2 * Math.PI * 83 * time);
+    } else {
+        programme = 0.13 * Math.sin(2 * Math.PI * 2039 * time) - 0.03 * Math.sin(2 * Math.PI * 173 * time);
+    }
     if (profile.input === 'amplitude-steps') {
-        return programme * (time < 0.15 ? 0.01 : time < 0.45 ? 3.2 : 0.16);
+        let multiplier = 0.16;
+        if (time < 0.15) {
+            multiplier = 0.01;
+        } else if (time < 0.45) {
+            multiplier = 3.2;
+        }
+        return programme * multiplier;
     }
     return programme;
 }
@@ -170,7 +176,7 @@ function applyEvent(processor: Processor, controls: ReturnType<typeof controlTab
         return;
     }
     if (!(processor instanceof FaustPolyWebAudioDsp)) {
-        throw new Error('A MIDI event requires the real poly DSP');
+        throw new TypeError('A MIDI event requires the real poly DSP');
     }
     if (event.type === 'on') {
         processor.keyOn(event.channel, event.pitch, event.velocity);
@@ -224,7 +230,7 @@ export async function renderSoundProfile(device: CompiledSoundDevice, profile: S
             control.value = value;
         }
         const paths = new Set(processor.getParams());
-        const appliedControls = [...controls].map(([name, control]) => ({ name, ...control }));
+        const appliedControls = Array.from(controls, ([name, control]) => ({ name, ...control }));
         for (const { address, value } of appliedControls) {
             if (!paths.has(address)) {
                 throw new Error(`${profile.id}: processor is missing compiled control ${address}`);
@@ -320,7 +326,7 @@ export function compareSoundStreams(
         const baseline = view.getFloat32(offset, true);
         const sample = actual.readFloatLE(offset);
         if (!Number.isFinite(baseline) || !Number.isFinite(sample)) {
-            throw new Error(`Non-finite PCM at planar sample ${offset / 4}`);
+            throw new RangeError(`Non-finite PCM at planar sample ${offset / 4}`);
         }
         const error = Math.abs(sample - baseline);
         if (error !== 0 && firstChangedSample === null) {

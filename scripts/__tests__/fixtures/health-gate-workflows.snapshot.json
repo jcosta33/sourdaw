@@ -903,7 +903,7 @@
             "name": "Run shard",
             "id": "run_shard",
             "env": {
-              "VITEST_MAX_WORKERS": 4
+              "VITEST_MAX_WORKERS": 2
             },
             "run": "node scripts/runIsolatedUnitShard.ts shard --context \"${{ steps.unit_isolation.outputs.context }}\" --shard=${{ matrix.shard }}/4"
           },
@@ -1717,7 +1717,7 @@
             "name": "Run shard",
             "id": "run_shard",
             "env": {
-              "VITEST_MAX_WORKERS": 4
+              "VITEST_MAX_WORKERS": 2
             },
             "run": "node scripts/runIsolatedUnitShard.ts shard --context \"${{ steps.unit_isolation.outputs.context }}\" --shard=${{ matrix.shard }}/4"
           },

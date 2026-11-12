@@ -535,13 +535,11 @@ jobs:
         timeout-minutes: 2
         run: node scripts/runIsolatedUnitShard.ts browsers --context "${{ steps.unit_isolation.outputs.context }}"
 
-      # The suite is dominated by jsdom construction and module loading rather
-      # than assertions, so worker count is the lever that matters. The local
-      # default of two exists for the agent resource guard, not for CI.
+      # Keep the shard within the repository's two-worker test limit.
       - name: Run shard
         id: run_shard
         env:
-          VITEST_MAX_WORKERS: 4
+          VITEST_MAX_WORKERS: 2
         run: node scripts/runIsolatedUnitShard.ts shard --context "${{ steps.unit_isolation.outputs.context }}" --shard=${{ matrix.shard }}/4
 
       # The shard failure is already fatal above; this only names which of the

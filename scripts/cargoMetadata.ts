@@ -15,19 +15,23 @@ export function cargoMetadata(root: string, args: string[], maxBuffer?: number):
     }
     const legacyConfig = join(workspace, '.cargo', 'config');
     const tomlConfig = join(workspace, '.cargo', 'config.toml');
-    const config = existsSync(legacyConfig) ? legacyConfig : existsSync(tomlConfig) ? tomlConfig : undefined;
-    return execFileSync(
-        'rustup',
-        [
-            'run',
-            toolchain,
-            'cargo',
-            ...(config === undefined ? [] : ['--config', config]),
-            'metadata',
-            '--manifest-path',
-            join(workspace, 'Cargo.toml'),
-            ...args,
-        ],
-        { cwd: parse(workspace).root, encoding: 'utf8', ...(maxBuffer === undefined ? {} : { maxBuffer }) }
-    );
+    let config: string | undefined;
+    if (existsSync(legacyConfig)) {
+        config = legacyConfig;
+    } else if (existsSync(tomlConfig)) {
+        config = tomlConfig;
+    }
+    const commandArgs = ['run', toolchain, 'cargo'];
+    if (config !== undefined) {
+        commandArgs.push('--config', config);
+    }
+    commandArgs.push('metadata', '--manifest-path', join(workspace, 'Cargo.toml'), ...args);
+    const options: { cwd: string; encoding: 'utf8'; maxBuffer?: number } = {
+        cwd: parse(workspace).root,
+        encoding: 'utf8',
+    };
+    if (maxBuffer !== undefined) {
+        options.maxBuffer = maxBuffer;
+    }
+    return execFileSync('rustup', commandArgs, options);
 }
