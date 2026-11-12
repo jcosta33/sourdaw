@@ -1,5 +1,15 @@
 import { spawn, spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync, mkdirSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import {
+    mkdtempSync,
+    readFileSync,
+    readdirSync,
+    rmSync,
+    statSync,
+    writeFileSync,
+    mkdirSync,
+    symlinkSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { createServer } from 'node:net';
 import { join, resolve } from 'node:path';
@@ -81,6 +91,24 @@ describe('Git checkpoint diagnostic', () => {
         );
         expect(commitReceipt.syscallPath).toContain('unavailable');
         expect(JSON.stringify(commitReceipt)).not.toContain('test: checkpoint');
+    });
+    it('hashes symlink text while retaining the index byte digest', async () => {
+        const { root, env } = fixture();
+        writeFileSync(join(root, 'target.txt'), 'target bytes differ from link text');
+        symlinkSync('target.txt', join(root, 'link.txt'));
+        const result = await run(root, env, 'add', '--', 'link.txt');
+        expect(result.code).toBe(0);
+        const observed = receipt(result.stderr).value;
+        const linkDigest = createHash('sha256').update('target.txt').digest('hex');
+        const targetDigest = createHash('sha256').update('target bytes differ from link text').digest('hex');
+        expect(observed.before.sources['link.txt'].kind).toBe('symlink');
+        expect(observed.before.sources['link.txt'].sha256).toBe(linkDigest);
+        expect(observed.before.sources['link.txt'].sha256).not.toBe(targetDigest);
+        expect(observed.after.index.sha256).toBe(
+            createHash('sha256')
+                .update(readFileSync(join(root, '.git', 'index')))
+                .digest('hex')
+        );
     });
     it('records source filenames that are object prototype keys', async () => {
         const { root, env } = fixture();
