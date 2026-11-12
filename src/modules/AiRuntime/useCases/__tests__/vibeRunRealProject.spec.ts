@@ -15,7 +15,7 @@ import { readScheduledVibeRunPlan } from '../../validators/readScheduledVibeRunP
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import {
     APPLICATION_OWNED_TOOL_LOOP_LIMITS,
-    APPLICATION_VERIFICATION_RECEIPT_LIMITS,
+    readApplicationVerificationReceiptLimits,
 } from '../applicationOwnedToolLoop';
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
 import { generateToolPlanningOutcome } from '../llmOrchestration/inference';
@@ -275,10 +275,12 @@ describe('a whole-project vibe run on a song of ordinary size', () => {
                     APPLICATION_OWNED_TOOL_LOOP_LIMITS.maxReceiptBytesPerTurn
                 );
                 expect(byteLength(collection)).toBeLessThanOrEqual(
-                    APPLICATION_VERIFICATION_RECEIPT_LIMITS.maxBytesPerCollection
+                    readApplicationVerificationReceiptLimits(collection.length).maxBytesPerCollection
                 );
             }
-            expect(byteLength(receipts)).toBeLessThanOrEqual(APPLICATION_VERIFICATION_RECEIPT_LIMITS.maxTotalBytes);
+            expect(byteLength(receipts)).toBeLessThanOrEqual(
+                readApplicationVerificationReceiptLimits(receipts.length).maxTotalBytes
+            );
         },
         REAL_PROJECT_TIMEOUT_MS * 2
     );

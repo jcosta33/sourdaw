@@ -21,7 +21,7 @@ import { agentRunWorkLease } from './agentRunWorkLease';
 import { agentWorkBudget } from './agentWorkBudget';
 import {
     APPLICATION_OWNED_TOOL_LOOP_LIMITS,
-    APPLICATION_VERIFICATION_RECEIPT_LIMITS,
+    readApplicationVerificationReceiptLimits,
 } from './applicationOwnedToolLoop';
 import { bindMetricGoalsToBatch } from './bindMetricGoalsToBatch';
 import { agentRunCancellation } from './cancelAgentRun';
@@ -368,12 +368,13 @@ async function measurePreviewRequests(
             });
         }
     }
+    const limits = readApplicationVerificationReceiptLimits(rawReceipts.length);
     const receipts = admitTurnReadReceipts({
         realReceipts: rawReceipts,
         turn: 0,
         totalReceiptBytesSoFar: priorBytes,
-        maxReceiptBytesPerTurn: APPLICATION_VERIFICATION_RECEIPT_LIMITS.maxBytesPerCollection,
-        maxTotalReceiptBytes: APPLICATION_VERIFICATION_RECEIPT_LIMITS.maxTotalBytes,
+        maxReceiptBytesPerTurn: limits.maxBytesPerCollection,
+        maxTotalReceiptBytes: limits.maxTotalBytes,
     });
     return { compilations, receipts };
 }

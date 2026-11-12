@@ -152,16 +152,20 @@ vi.hoisted(() => {
     });
 });
 
-/** The verification-receipt allowance, read live so one case can shrink it below what its reads hold. */
-const verificationLimits = vi.hoisted(() => ({
-    configured: { maxBytesPerCollection: 0, maxTotalBytes: 0 },
-    live: { maxBytesPerCollection: 0, maxTotalBytes: 0 },
+/** The verification-receipt allowance, overridden live so one case can shrink it below what its reads hold. */
+const verificationLimits = vi.hoisted((): { maxBytesPerCollection: number | null } => ({
+    maxBytesPerCollection: null,
 }));
 vi.mock('../applicationOwnedToolLoop', async (importOriginal) => {
     const original = await importOriginal<typeof import('../applicationOwnedToolLoop')>();
-    Object.assign(verificationLimits.configured, original.APPLICATION_VERIFICATION_RECEIPT_LIMITS);
-    Object.assign(verificationLimits.live, original.APPLICATION_VERIFICATION_RECEIPT_LIMITS);
-    return { ...original, APPLICATION_VERIFICATION_RECEIPT_LIMITS: verificationLimits.live };
+    return {
+        ...original,
+        readApplicationVerificationReceiptLimits: (collectionReceipts: number) => {
+            const limits = original.readApplicationVerificationReceiptLimits(collectionReceipts);
+            const { maxBytesPerCollection } = verificationLimits;
+            return maxBytesPerCollection === null ? limits : { ...limits, maxBytesPerCollection };
+        },
+    };
 });
 
 const audio = vi.hoisted(() => ({
@@ -392,7 +396,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-    Object.assign(verificationLimits.live, verificationLimits.configured);
+    verificationLimits.maxBytesPerCollection = null;
     for (const trackId of [DRUMS_ID, VOCAL_ID, BASS_ID]) {
         removeTrackStrip(trackId);
     }
@@ -1080,7 +1084,7 @@ describe('initial role and exact-section baselines through the brief pipeline', 
 
     it('refuses successful raw reads whose admitted receipt does not fit the verification-receipt allowance', async () => {
         keepDrumsOnly();
-        verificationLimits.live.maxBytesPerCollection = 8_192;
+        verificationLimits.maxBytesPerCollection = 8_192;
         const markers = markerStore.value;
         const tracks = trackStore.value;
         if (markers === null || tracks === null) {

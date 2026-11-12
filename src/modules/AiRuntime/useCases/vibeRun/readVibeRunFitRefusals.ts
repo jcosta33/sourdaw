@@ -10,6 +10,7 @@ import {
 } from '../../models/SemanticCommandList';
 import { type ScheduledVibeRunBatch } from '../../models/VibeRunPlan';
 import { readAgentResourceLimits } from '../../stores/agentResourceLimitsStore';
+import { MAX_PLAN_APPLICATION_TOOL_RECEIPTS } from '../../stores/agentRunStore';
 import { hasContradictoryMetricGoals } from '../hasContradictoryMetricGoals';
 import { type MetricGoal } from '../metricGoalContractTypes';
 import { readPerceptualConstraintGoals } from '../perceptualConstraints/readPerceptualConstraintGoals';
@@ -63,8 +64,12 @@ function previewRequests(pairs: readonly VibeBatchPair[], goals: readonly Metric
 }
 
 type InitialRead = Parameters<typeof planMetricMeasurementRequests>[0]['reads'][number];
-type RunWork = { renders: number; analyses: number; commands: number; targets: number };
-type Budget = { category: 'maxRenderJobs' | 'localAnalysis' | 'maxCommands'; field: keyof RunWork; remaining: number };
+type RunWork = { renders: number; analyses: number; receipts: number; commands: number; targets: number };
+type Budget = {
+    category: 'maxRenderJobs' | 'localAnalysis' | 'applicationToolReceipts' | 'maxCommands';
+    field: keyof RunWork;
+    remaining: number;
+};
 
 function readRemaining(budgets: AgentRunBudgets, category: string): number {
     const limit = budgets.limits[category] ?? Number.POSITIVE_INFINITY;
@@ -73,7 +78,8 @@ function readRemaining(budgets: AgentRunBudgets, category: string): number {
 
 /**
  * What the initial measurements and every batch preview spend, counted by the rule execution
- * admits each measurement unit by (`countMeasurementWork`), so what fits is what runs.
+ * admits each measurement unit by (`countMeasurementWork`), so what fits is what runs. Each
+ * measurement request reports in one receipt the run persists, so the receipts are its requests.
  */
 function readRunWork(input: {
     batches: readonly ScheduledVibeRunBatch[];
@@ -81,31 +87,26 @@ function readRunWork(input: {
     context: ProjectContext;
     batchGoals: ReadonlyMap<string, { pairs: readonly VibeBatchPair[]; goals: readonly MetricGoal[] }>;
 }): RunWork {
-    const initial = countMeasurementWork(
-        planMetricMeasurementUnits({
-            requests: planMetricMeasurementRequests({ context: input.context, reads: input.initialReads }),
-            subject: 'project',
-        })
-    );
+    const initialRequests = planMetricMeasurementRequests({ context: input.context, reads: input.initialReads });
+    const initial = countMeasurementWork(planMetricMeasurementUnits({ requests: initialRequests, subject: 'project' }));
     let renders = initial.renderJobs;
     let analyses = initial.analyses;
+    let receipts = initialRequests.length;
     for (const batch of input.batches) {
         const planned = input.batchGoals.get(batch.id);
         if (planned === undefined) {
             continue;
         }
-        const work = countMeasurementWork(
-            planMetricMeasurementUnits({
-                requests: previewRequests(planned.pairs, planned.goals, input.context),
-                subject: 'preview',
-            })
-        );
+        const requests = previewRequests(planned.pairs, planned.goals, input.context);
+        const work = countMeasurementWork(planMetricMeasurementUnits({ requests, subject: 'preview' }));
         renders += work.renderJobs;
         analyses += work.analyses;
+        receipts += requests.length;
     }
     return {
         renders,
         analyses,
+        receipts,
         commands: BRIEF_COMMAND_COUNT + input.batches.reduce((total, batch) => total + batch.commandCount, 0),
         targets: new Set(input.batches.flatMap((batch) => batch.targetIds)).size,
     };
@@ -179,8 +180,9 @@ function describeFittingFamilies(input: Parameters<typeof readRunWork>[0], budge
 
 /**
  * Why the planned batches cannot all run as planned, checked before anything is scheduled: every
- * batch's preview must fit the run's render budget and each measurement's seconds ceilings, its
- * goals must not contradict each other or the request's holds, and every command must fit the run's
+ * batch's preview must fit the run's render budget and each measurement's seconds ceilings, the
+ * receipts they persist must fit the plan's receipt bound beside those it already holds, its goals
+ * must not contradict each other or the request's holds, and every command must fit the run's
  * command budget. A run that does not fit is not scheduled at all, never shrunk to what fits; a
  * budget refusal names the largest set of role families that would fit, for the user to ask for.
  */
@@ -190,6 +192,8 @@ export function readVibeRunFitRefusals(input: {
     reading: PerceptualConstraintReading;
     budgets: AgentRunBudgets;
     initialReads: readonly InitialRead[];
+    /** Receipts the run's plan already holds, which share its receipt bound. */
+    priorReceipts: number;
 }): string[] {
     const range = readArrangementRange(input.context);
     if (range === null) {
@@ -232,6 +236,11 @@ export function readVibeRunFitRefusals(input: {
     const budgets: Budget[] = [
         { category: 'maxRenderJobs', field: 'renders', remaining: readRemaining(input.budgets, 'maxRenderJobs') },
         { category: 'localAnalysis', field: 'analyses', remaining: readRemaining(input.budgets, 'localAnalysis') },
+        {
+            category: 'applicationToolReceipts',
+            field: 'receipts',
+            remaining: MAX_PLAN_APPLICATION_TOOL_RECEIPTS - input.priorReceipts,
+        },
         { category: 'maxCommands', field: 'commands', remaining: readRemaining(input.budgets, 'maxCommands') },
     ];
     const exceeded = budgets.filter((budget) => work[budget.field] > budget.remaining);
@@ -240,6 +249,8 @@ export function readVibeRunFitRefusals(input: {
             `initial measurements and previewing every batch need ${String(needed)} renders, more than the ${String(remaining)} this run's maxRenderJobs budget has left`,
         localAnalysis: (needed, remaining) =>
             `initial measurements and every preview need ${String(needed)} reductions, more than the ${String(remaining)} this run's localAnalysis budget has left`,
+        applicationToolReceipts: (needed, remaining) =>
+            `initial measurements and every preview need ${String(needed)} receipts, more than the ${String(remaining)} this run's plan has room for under its bound of ${String(MAX_PLAN_APPLICATION_TOOL_RECEIPTS)}`,
         maxCommands: (needed, remaining) =>
             `the brief and every batch need ${String(needed)} commands, more than the ${String(remaining)} this run's maxCommands budget has left`,
     };

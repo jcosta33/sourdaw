@@ -13,7 +13,7 @@ import { composeOfflineStripLevel } from './composeOfflineStripLevel';
 import { connectOfflineToasterPadRoutes } from './connectOfflineToasterPadRoutes';
 import { createOfflineAdjustmentBusChain } from './createOfflineAdjustmentBusChain';
 import { type WebAudioOfflineBackend } from './createWebAudioOfflineBackend';
-import { resolveTrackAdjustmentComposition } from './offlineAdjustmentLayers';
+import { conservativeSpanEndBeat, resolveTrackAdjustmentComposition } from './offlineAdjustmentLayers';
 import { prepareOfflineContext } from './prepareOfflineContext';
 import { readOfflineAdjustmentLayerSnapshot } from './readOfflineAdjustmentLayerSnapshot';
 import { type resolveOfflineMixPlan } from './resolveOfflineMixPlan';
@@ -50,23 +50,6 @@ function assertBatchApplied(result: AudioGraphApplyResult, attempt: string): voi
         return;
     }
     throw createExportError(`The audio backend refused to ${attempt}: ${result.reason}`);
-}
-
-/**
- * The render's beat span, widened conservatively: the last tempo change's beat
- * plus the whole duration walked at the slowest tempo in the map. Used only to
- * classify whether an adjustment layer's blend *moves* across the render — a
- * wider span can only answer "moves" more often, which costs the seed fold and
- * schedules the identical curve, never bakes a wrong level.
- */
-function conservativeSpanEndBeat(
-    durationSeconds: number,
-    defaultTempo: number,
-    changes: { beat: number; tempo: number }[]
-): number {
-    const slowestTempo = Math.min(defaultTempo, ...changes.map((change) => change.tempo));
-    const lastChangeBeat = changes.reduce((beat, change) => Math.max(beat, change.beat), 0);
-    return lastChangeBeat + (durationSeconds / 60) * slowestTempo;
 }
 
 async function routeOfflineStrips(

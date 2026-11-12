@@ -518,6 +518,7 @@ function readWholeRunFit(
         reading,
         budgets: run.budgets,
         initialReads,
+        priorReceipts: input.priorReceipts.length,
     });
     if (run.activeSince !== null && Date.now() - run.activeSince > readAgentResourceLimits().runDurationMs) {
         refusals.push('runDurationMs: this run has no active time left');

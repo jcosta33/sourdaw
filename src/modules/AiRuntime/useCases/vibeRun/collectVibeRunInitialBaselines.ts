@@ -14,7 +14,7 @@ import { agentRunWorkLease } from '../agentRunWorkLease';
 import {
     ApplicationOwnedToolLoopRequestError,
     APPLICATION_OWNED_TOOL_LOOP_LIMITS,
-    APPLICATION_VERIFICATION_RECEIPT_LIMITS,
+    readApplicationVerificationReceiptLimits,
 } from '../applicationOwnedToolLoop';
 import { agentRunCancellation } from '../cancelAgentRun';
 import { measurementFailureReceipt, projectMeasurementReceipt } from '../executeAnalysisMeasure';
@@ -117,12 +117,13 @@ async function measureRequests(
                 }
             }
             raw.sort((left, right) => left.requestIndex - right.requestIndex);
+            const limits = readApplicationVerificationReceiptLimits(raw.length);
             receipts = admitTurnReadReceipts({
                 realReceipts: raw.map((entry) => entry.receipt),
                 turn: 0,
                 totalReceiptBytesSoFar: priorBytes,
-                maxReceiptBytesPerTurn: APPLICATION_VERIFICATION_RECEIPT_LIMITS.maxBytesPerCollection,
-                maxTotalReceiptBytes: APPLICATION_VERIFICATION_RECEIPT_LIMITS.maxTotalBytes,
+                maxReceiptBytesPerTurn: limits.maxBytesPerCollection,
+                maxTotalReceiptBytes: limits.maxTotalBytes,
             });
             assertCurrent();
             const failed = receipts.find((receipt) => readVibeRunInitialReceipt(receipt) === null);

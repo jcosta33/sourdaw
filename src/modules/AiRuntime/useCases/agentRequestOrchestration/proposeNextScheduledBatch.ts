@@ -33,6 +33,7 @@ import { persistPromptActionConfirmation } from './persistPromptActionConfirmati
 import { postVibeRunSummary } from './postVibeRunSummary';
 import { readBulkSetSliceEvidence } from './readBulkSetSliceEvidence';
 import { readSkippedVibeBatchPositions } from './readSkippedVibeBatchPositions';
+import { settleStoppedBatchPreparation } from './settleStoppedBatchPreparation';
 import { rebaseBulkSetSliceEvidence } from './rebaseBulkSetSliceEvidence';
 
 type ScheduledBatchOutcome =
@@ -207,20 +208,6 @@ function groundScheduledSlice(
 
 type MaterializedBatch = Extract<ReturnType<typeof materializePromptCommandPlan>, { status: 'prepared' }>;
 
-function settleStoppedBatchPreparation(
-    assistantMessageId: string,
-    position: number,
-    total: number,
-    current: AgentRun | null
-): void {
-    const cancelled = current !== null && current.cancellation.requestedAt !== null;
-    updateChatMessage(assistantMessageId, {
-        pendingActionConfirmationStatus: cancelled ? 'cancelled' : undefined,
-        stoppableRunId: undefined,
-        content: `${cancelled ? 'Cancelled' : 'Stopped'} preparation of batch ${String(position)} of ${String(total)}. ${describeAppliedBatches(position, readSkippedVibeBatchPositions(current))}`,
-    });
-}
-
 /**
  * A vibe-run batch always waits for approval with a measured preview: the preview renders the live
  * project and the batch for every recipe step, under the run's own render budget, before the card
@@ -273,6 +260,8 @@ async function proposeMeasuredVibeBatch(input: {
             settleStoppedBatchPreparation(input.assistantMessageId, position, schedule.total, current);
             return { status: 'stopped' };
         }
+        // The run goes on to refuse this batch in a message of its own; this one keeps no progress line.
+        settleStoppedBatchPreparation(input.assistantMessageId, position, schedule.total, current);
         agentRunLifecycle.updateBatchStatus({ runId: run.runId, batchId, status: 'failed' });
         return { status: 'rejected', reason: error instanceof Error ? error.message : String(error) };
     }

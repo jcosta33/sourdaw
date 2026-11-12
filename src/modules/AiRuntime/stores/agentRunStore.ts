@@ -56,10 +56,11 @@ const MAX_PREPARED_STEM_IMPORT_RECOVERIES = 256;
 const MAX_COLLECTION_LENGTH = 256;
 /**
  * Every batch preview of a run appends its verification receipts to the plan, so the list grows
- * with the run rather than with one turn. Their bytes are bounded by
- * `APPLICATION_VERIFICATION_RECEIPT_LIMITS`; this count admits every batch's receipts for an
- * ordinary song, whose complete vibe run (24 tracks, eight sections, eleven batches) persisted 487,
- * with about twice that as headroom.
+ * with the run rather than with one turn. A vibe run knows that count before it is scheduled — one
+ * receipt per measurement request — and its whole-run fit refuses a run that would pass this bound,
+ * so a scheduled run never meets it. The verification receipts' byte allowances are derived from
+ * it (`readApplicationVerificationReceiptLimits`). An ordinary song's complete vibe run (24 tracks,
+ * eight sections, eleven batches) persists 487, about half of it.
  */
 export const MAX_PLAN_APPLICATION_TOOL_RECEIPTS = 1024;
 /**

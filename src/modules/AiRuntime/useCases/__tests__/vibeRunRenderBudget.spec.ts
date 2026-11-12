@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { registerSupportingServicePorts } from '#/app/registerSupportingServicePorts';
+import { flushAutomergeStorageWrites } from '#/infra/store/storage/createAutomergeStorage';
+import { adjustmentLayerStore, type AdjustmentLayer } from '#/modules/Arrangement/stores';
 import { measureAgentScopeRender } from '#/modules/AudioAnalysis/useCases';
 import { type renderTrackSubgraphOffline } from '#/modules/AudioEngine/useCases';
 import { getAgentMeasurementArtifacts, retainAgentMeasurementRenders } from '#/modules/AudioRendering/useCases';
@@ -11,14 +13,20 @@ import { getProjectHandlers } from '#/modules/Project/useCases';
 
 import { DEFAULT_AGENT_RESOURCE_LIMITS } from '../../models/AgentResourceLimits';
 import { agentResourceLimitsStore, readAgentResourceLimits } from '../../stores/agentResourceLimitsStore';
+import { chatStore } from '../../stores/chatStore';
 import { agentRunLifecycle } from '../agentRunLifecycle';
+import { agentRunCancellation } from '../cancelAgentRun';
 import { agentWorkBudget } from '../agentWorkBudget';
 import { configureAgentResourceLimits } from '../configureAgentResourceLimits';
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
 import { getProjectContext } from '../getProjectContext';
 import { generateToolPlanningOutcome } from '../llmOrchestration/inference';
 import { measureProjectUnit } from '../measureProjectUnit';
-import { planMetricMeasurementRequests, planMetricMeasurementUnits } from '../planMetricMeasurementRequests';
+import {
+    countMeasurementUnitWork,
+    planMetricMeasurementRequests,
+    planMetricMeasurementUnits,
+} from '../planMetricMeasurementRequests';
 import { sendChatMessage } from '../sendChatMessage';
 
 import { configureMetricGoalProject, metricGoalAudioBuffer, resetMetricGoalProject } from './metricGoalWorkflowFixture';
@@ -38,6 +46,7 @@ import {
     vibeSections,
     vibeTrack,
     type VibeRenderInput,
+    type VibeConfirmation,
     type VibeTrackSpec,
 } from './vibeRunProjectFixture';
 
@@ -75,6 +84,18 @@ vi.mock('../llmOrchestration/inference', async (importOriginal) => ({
         throw new Error('Unscripted provider planning request.');
     }),
 }));
+
+/** The plan's receipt bound, lowered by one case below to just under what its run persists. */
+const receiptBound = vi.hoisted((): { value: number | null } => ({ value: null }));
+vi.mock('../../stores/agentRunStore', async (importOriginal) => {
+    const original = await importOriginal<typeof import('../../stores/agentRunStore')>();
+    return {
+        ...original,
+        get MAX_PLAN_APPLICATION_TOOL_RECEIPTS() {
+            return receiptBound.value ?? original.MAX_PLAN_APPLICATION_TOOL_RECEIPTS;
+        },
+    };
+});
 
 const audio = vi.hoisted(() => ({
     renderTrackSubgraphOffline: vi.fn<typeof renderTrackSubgraphOffline>(),
@@ -155,6 +176,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+    receiptBound.value = null;
     releaseVibeRunEngine([...DRUM_KIT, ...ORDINARY_SONG_TRACKS]);
     agentResourceLimitsStore.set(DEFAULT_AGENT_RESOURCE_LIMITS);
     resetMetricGoalProject();
@@ -239,6 +261,200 @@ describe('a section figure', () => {
         };
         // The chorus plays eight times louder than the verse.
         expect(rms(2) - rms(1)).toBeCloseTo(20 * Math.log10(8), 1);
+    });
+});
+
+describe('a section figure under an adjustment layer', () => {
+    const VERSE = { id: 'verse', name: 'Verse', startBeat: 0, endBeat: 8, color: '#ffffff' };
+    const CHORUS = { id: 'chorus', name: 'Chorus', startBeat: 8, endBeat: 16, color: '#ffffff' };
+    const KICK = DRUM_KIT[0]!;
+    /** An EQ layer over the verse alone: steady across a render ending at the verse, moving across one past it. */
+    const VERSE_EQ: AdjustmentLayer = {
+        id: 'verse-eq',
+        name: 'Verse EQ',
+        effectType: 'eq',
+        parameters: [{ name: 'Low Gain', value: -6, min: -24, max: 24, unit: 'dB' }],
+        affectedTrackIds: [KICK.id],
+        insertionIndex: 0,
+        regions: [{ id: 'verse', startBeat: 0, endBeat: VERSE.endBeat, blend: 1, fadeInBeats: 0, fadeOutBeats: 0 }],
+        enabled: true,
+        mix: 1,
+        color: '#fff',
+    };
+    const EQ_LEVEL = 0.5;
+
+    /**
+     * The offline render's law for a DSP layer, stated independently of the planner: the render
+     * classifies the layer over its whole span from beat 0 and applies it only when every region
+     * reaching that span covers it whole without fades; a moving layer is skipped.
+     */
+    function layerRender(input: VibeRenderInput): AudioBuffer {
+        const steady = VERSE_EQ.regions.every(
+            (region) =>
+                region.endBeat <= 0 ||
+                region.startBeat >= input.endBeat ||
+                (region.startBeat <= 0 &&
+                    region.endBeat >= input.endBeat &&
+                    region.fadeInBeats === 0 &&
+                    region.fadeOutBeats === 0)
+        );
+        const eq = steady ? EQ_LEVEL : 1;
+        return renderVibeTimeline(input, (seconds) => (seconds < VERSE.endBeat * SECONDS_PER_BEAT ? eq : 1));
+    }
+
+    afterEach(() => {
+        adjustmentLayerStore.set({ layers: [] });
+        flushAutomergeStorageWrites();
+    });
+
+    it('renders apart the ranges a moving-layer threshold separates, each figure the one its range alone reads', async () => {
+        useProject([KICK], [VERSE, CHORUS], 16);
+        adjustmentLayerStore.set({ layers: [VERSE_EQ] });
+        // The layer reaches the document before the measurement reads its revision.
+        flushAutomergeStorageWrites();
+        audio.renderTrackSubgraphOffline.mockImplementation(async (input) => layerRender(input));
+        const context = getProjectContext();
+        const ranges = [
+            { startBeat: VERSE.startBeat, endBeat: VERSE.endBeat, sectionId: VERSE.id },
+            { startBeat: CHORUS.startBeat, endBeat: CHORUS.endBeat, sectionId: CHORUS.id },
+        ];
+        const [unit, ...rest] = planMetricMeasurementUnits({
+            requests: planMetricMeasurementRequests({
+                context,
+                reads: ranges.map((range) => ({ prefix: 'initial', range, metricId: 'rms', targetIds: [KICK.id] })),
+            }),
+            subject: 'project',
+        });
+        expect(rest).toEqual([]);
+        // One render ending at the verse, where the layer is steady, and one for the chorus past it.
+        expect(unit?.groups.map(({ startBeat, endBeat }) => ({ startBeat, endBeat }))).toEqual([
+            { startBeat: 0, endBeat: 8 },
+            { startBeat: 8, endBeat: 16 },
+        ]);
+        expect(countMeasurementUnitWork(unit!).renderJobs).toBe(2);
+        const measured = await measureProjectUnit(
+            { projectRevision: captureProjectRevision(), sections: context.sections ?? [] },
+            unit!
+        );
+        if (measured.status !== 'measured') {
+            throw new Error(`Expected the unit to measure: ${measured.failure.safeMessage}`);
+        }
+        expect(audio.renderTrackSubgraphOffline).toHaveBeenCalledTimes(2);
+        const input = audio.renderTrackSubgraphOffline.mock.calls[0]![0];
+        for (const [index, range] of ranges.entries()) {
+            const alone = measureAgentScopeRender(
+                layerRender({ ...input, startBeat: range.startBeat, endBeat: range.endBeat }),
+                ['rms']
+            );
+            expect(measured.reads[index]?.measurement.range).toMatchObject(range);
+            expect(measured.reads[index]?.measurement.targets[0]?.measurements.rms).toEqual(alone.rms);
+        }
+        // The verse alone carries the layer's cut; a render reaching into the chorus would have dropped it.
+        const verse = measured.reads[0]?.measurement.targets[0]?.measurements.rms;
+        const uncut = measureAgentScopeRender(
+            layerRender({ ...input, startBeat: VERSE.startBeat, endBeat: CHORUS.endBeat }),
+            ['rms']
+        );
+        expect(verse).not.toEqual(uncut.rms);
+    });
+
+    describe('a batch preview unit that does not finish', () => {
+        type Spend = { renders: number; analyses: number };
+
+        /** A one-target run over the verse and the chorus, whose layer splits the preview unit into two range groups. */
+        async function proposeBrief(): Promise<VibeConfirmation> {
+            useProject([KICK], [VERSE, CHORUS], 16);
+            adjustmentLayerStore.set({ layers: [VERSE_EQ] });
+            flushAutomergeStorageWrites();
+            scriptVibeBriefRoute({ descriptors: ['warm'] });
+            await sendVibeMessage('make this mix warmer', (prompt) => sendChatMessage(prompt));
+            return requireOnlyProposedVibeCard();
+        }
+
+        function readSpend(runId: string): Spend {
+            const consumed = agentRunLifecycle.get(runId)?.budgets.consumed;
+            return { renders: consumed?.maxRenderJobs ?? 0, analyses: consumed?.localAnalysis ?? 0 };
+        }
+
+        function readRetained() {
+            return getAgentMeasurementArtifacts().map(({ contentAddress, sourceRevision }) => ({
+                contentAddress,
+                sourceRevision,
+            }));
+        }
+
+        function preparingLine(): string | undefined {
+            return chatStore.value?.messages.find((message) => message.content.startsWith('Preparing batch'))?.content;
+        }
+
+        /** Confirms the brief, so its one batch previews, and reports what the preview spent and left behind. */
+        async function confirmAndRead(brief: VibeConfirmation, renders: () => number) {
+            const before = { retained: readRetained(), spent: readSpend(brief.runId) };
+            await confirmPendingChatActions({ confirmationId: brief.id });
+            const after = readSpend(brief.runId);
+            return {
+                retainedUnchanged: readRetained(),
+                before: before.retained,
+                spent: {
+                    renders: after.renders - before.spent.renders,
+                    analyses: after.analyses - before.spent.analyses,
+                },
+                rendered: renders(),
+            };
+        }
+
+        it('stops on the run’s cancel mid-render, retaining nothing and spending the one render that ran', async () => {
+            const brief = await proposeBrief();
+            let rendered = 0;
+            audio.renderTrackSubgraphOffline.mockImplementation(async (input) => {
+                rendered += 1;
+                // What the panel's Stop does, while the first preview render runs.
+                void agentRunCancellation.cancel({ runId: brief.runId, reason: 'Cancelled by user' });
+                return sounding(input);
+            });
+            const read = await confirmAndRead(brief, () => rendered);
+            expect(read.retainedUnchanged).toEqual(read.before);
+            expect(read).toMatchObject({ rendered: 1, spent: { renders: 1, analyses: 0 } });
+        });
+
+        it('times out past its wall-clock allowance, retaining nothing and spending the render that ran', async () => {
+            const brief = await proposeBrief();
+            configureAgentResourceLimits({ measurementWallClockMs: 50 });
+            let rendered = 0;
+            audio.renderTrackSubgraphOffline.mockImplementation(async (input) => {
+                rendered += 1;
+                await new Promise((resolve) => setTimeout(resolve, 100));
+                return sounding(input);
+            });
+            const read = await confirmAndRead(brief, () => rendered);
+            expect(read.retainedUnchanged).toEqual(read.before);
+            expect(read).toMatchObject({ rendered: 1, spent: { renders: 1, analyses: 0 } });
+        });
+
+        it('is refused in its second range group after the first rendered and reduced, retaining none of the first', async () => {
+            const brief = await proposeBrief();
+            let rendered = 0;
+            const lines: (string | undefined)[] = [];
+            audio.renderTrackSubgraphOffline.mockImplementation(async (input) => {
+                rendered += 1;
+                lines.push(preparingLine());
+                // The first group renders the project and the batch over the verse; the second
+                // group's project render fails.
+                if (rendered === 3) {
+                    throw new Error('second group render failed');
+                }
+                return sounding(input);
+            });
+            const read = await confirmAndRead(brief, () => rendered);
+            expect(lines).toEqual([
+                'Preparing batch 2 of 2: rendering Kick as it is now, ranges 1 of 2...',
+                'Preparing batch 2 of 2: rendering Kick with the whole batch applied, ranges 1 of 2...',
+                'Preparing batch 2 of 2: rendering Kick as it is now, ranges 2 of 2...',
+            ]);
+            expect(read.retainedUnchanged).toEqual(read.before);
+            // Three renders started; the verse read of the first group was reduced.
+            expect(read).toMatchObject({ rendered: 3, spent: { renders: 3, analyses: 1 } });
+        });
     });
 });
 
@@ -352,6 +568,33 @@ describe('a measurement unit that does not finish', () => {
         expect(audio.renderTrackSubgraphOffline).not.toHaveBeenCalled();
         expect(readRetained()).toEqual(before);
         expect(agentRunLifecycle.get(RUN_ID)?.budgets.consumed.maxRenderJobs ?? 0).toBe(0);
+    });
+});
+
+describe('a run whose receipts would pass the plan’s receipt bound', () => {
+    it('is refused before scheduling with what it needs and what is left, and renders nothing', async () => {
+        useProject(DRUM_KIT, [], 16);
+        await readExecutedRenders(['warm']);
+        const brief = requireOnlyProposedVibeCard();
+        const receipts = agentRunLifecycle.get(brief.runId)?.plan?.applicationToolReceipts ?? [];
+        const verification = receipts.filter((receipt) => receipt.origin === 'application-verification').length;
+        const prior = receipts.length - verification;
+        expect(verification).toBeGreaterThan(0);
+        resetMetricGoalProject();
+        audio.renderTrackSubgraphOffline.mockClear();
+
+        // One receipt short of what the run persists.
+        receiptBound.value = receipts.length - 1;
+        useProject(DRUM_KIT, [], 16);
+        scriptVibeBriefRoute({ descriptors: ['warm'] });
+        await sendVibeMessage('make this mix warmer', (prompt) => sendChatMessage(prompt));
+
+        const refused = requireOnlyProposedVibeCard();
+        expect(vibeCardContent(refused)).toContain(
+            `No batches were scheduled after the brief: initial measurements and every preview need ${String(verification)} receipts, more than the ${String(receipts.length - 1 - prior)} this run's plan has room for under its bound of ${String(receipts.length - 1)}; no role family fits on its own.`
+        );
+        expect(agentRunLifecycle.get(refused.runId)?.plan?.batchSchedule).toBeUndefined();
+        expect(audio.renderTrackSubgraphOffline).not.toHaveBeenCalled();
     });
 });
 
