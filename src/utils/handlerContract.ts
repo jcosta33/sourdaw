@@ -2482,6 +2482,52 @@ export type AppAction =
     | { type: 'importMidiFile'; payload?: undefined }
     | { type: 'normalizeClip'; payload: { clipId: string; mode?: 'peak' | 'rms' | 'lufs'; targetDb?: number } }
     | {
+          type: 'relinkClipAudioSources';
+          payload: {
+              targets: Array<{
+                  trackId: string;
+                  trackKind: 'audio' | 'midi' | 'bus' | 'master' | 'folder' | 'vca';
+                  activeAlternativeId: string;
+                  alternativeId: string | null;
+                  clipId: string;
+                  before: Pick<
+                      ClipStateSnapshot,
+                      | 'audioBufferId'
+                      | 'fileId'
+                      | 'assetHash'
+                      | 'audioOffsetBeats'
+                      | 'audioOffsetSeconds'
+                      | 'audioUnwrappedOffsetSeconds'
+                      | 'audioLoopStartSeconds'
+                      | 'audioLoopPassEntrySeconds'
+                      | 'audioLoopPassOriginBeat'
+                      | 'stretchMode'
+                      | 'stretchRatio'
+                      | 'loopEnabled'
+                      | 'loopLength'
+                      | 'loopOriginBeat'
+                  >;
+                  after: Pick<
+                      ClipStateSnapshot,
+                      | 'audioBufferId'
+                      | 'fileId'
+                      | 'assetHash'
+                      | 'audioOffsetBeats'
+                      | 'audioOffsetSeconds'
+                      | 'audioUnwrappedOffsetSeconds'
+                      | 'audioLoopStartSeconds'
+                      | 'audioLoopPassEntrySeconds'
+                      | 'audioLoopPassOriginBeat'
+                      | 'stretchMode'
+                      | 'stretchRatio'
+                      | 'loopEnabled'
+                      | 'loopLength'
+                      | 'loopOriginBeat'
+                  >;
+              }>;
+          };
+      }
+    | {
           type: 'reverseClip';
           payload: {
               clipId: string;

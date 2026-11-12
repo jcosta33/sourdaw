@@ -5,6 +5,7 @@ export { getProjectSnapshotKey } from './projectPersistence/getProjectSnapshotKe
 export { quiesceProjectSession } from './projectPersistence/quiesceProjectSession';
 export { cancelProjectSessionQuiesce } from './projectPersistence/cancelProjectSessionQuiesce';
 export { captureProjectTransitionAuthority } from './projectPersistence/captureProjectTransitionAuthority';
+export { captureArrangementMediaAuthority } from './captureArrangementMediaAuthority';
 export { saveProject } from './projectPersistence/saveProject/saveProject';
 export { saveProjectBeforeReplacement } from './projectPersistence/saveProject/saveProjectBeforeReplacement';
 export { pendingProjectReplacements } from './projectPersistence/pendingProjectReplacements';
@@ -25,6 +26,7 @@ export { reportProjectLoadFailure } from './reportProjectLoadFailure';
 export { setProjectKeyRoot } from './setProjectKeyRoot';
 export { setProjectScaleName } from './setProjectScaleName';
 export { pickFiles } from './fileDialog';
+export { locateMissingMedia } from './locateMissingMedia';
 export { createFromTemplate } from './projectTemplates/templateDefinitions/createFromTemplate';
 export { getTemplates } from './projectTemplates/templateDefinitions/getTemplates';
 export { getPreviewLoop } from './projectTemplates/templatePreviews/previewLoops';

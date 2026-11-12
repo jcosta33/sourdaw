@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 
+import { handleRelinkClipAudioSources } from '../../handlers/clip/handleRelinkClipAudioSources';
 import { handleReorderDevices } from '../../handlers/device/handleReorderDevices';
 import { handleCreatePatternInstance } from '../../handlers/patternInstance/handleCreatePatternInstance';
 import { handleDetachPatternInstance } from '../../handlers/patternInstance/handleDetachPatternInstance';
@@ -8,6 +9,9 @@ import { handleDiscardCreatedTrack } from '../../handlers/track/discardCreatedTr
 import * as subject from '../getArrangementHandlers';
 
 describe('getArrangementHandlers', () => {
+    it('registers the guarded source-relink handler', () => {
+        expect(subject.getArrangementHandlers().relinkClipAudioSources).toBe(handleRelinkClipAudioSources);
+    });
     it('owns linked clip creation, detachment and guarded link replay', () => {
         const handlers = subject.getArrangementHandlers();
         expect(handlers.createPatternInstance).toBe(handleCreatePatternInstance);

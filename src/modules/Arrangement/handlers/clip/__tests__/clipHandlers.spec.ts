@@ -5,6 +5,7 @@ import { handleAddClip } from '../handleAddClip';
 import { handleDiscardDuplicatedClip } from '../handleDiscardDuplicatedClip';
 import { handleDuplicateClip } from '../handleDuplicateClip';
 import { handleMoveClip } from '../handleMoveClip';
+import { handleRelinkClipAudioSources } from '../handleRelinkClipAudioSources';
 import { handleRemoveClip } from '../handleRemoveClip';
 import { handleRestoreClipPlacement } from '../handleRestoreClipPlacement';
 
@@ -16,6 +17,7 @@ describe('clipHandlers', () => {
         expect(clipHandlers).toHaveProperty('discardDuplicatedClip');
         expect(clipHandlers).toHaveProperty('duplicateClip');
         expect(clipHandlers).toHaveProperty('removeClip');
+        expect(clipHandlers).toHaveProperty('relinkClipAudioSources');
 
         expect(clipHandlers.addClip).toBe(handleAddClip);
         expect(clipHandlers.moveClip).toBe(handleMoveClip);
@@ -23,6 +25,7 @@ describe('clipHandlers', () => {
         expect(clipHandlers.discardDuplicatedClip).toBe(handleDiscardDuplicatedClip);
         expect(clipHandlers.duplicateClip).toBe(handleDuplicateClip);
         expect(clipHandlers.removeClip).toBe(handleRemoveClip);
+        expect(clipHandlers.relinkClipAudioSources).toBe(handleRelinkClipAudioSources);
     });
 
     it('contains all expected clip handlers', () => {
@@ -40,6 +43,7 @@ describe('clipHandlers', () => {
             'duplicateClip',
             'duplicateClipToNextBar',
             'removeClip',
+            'relinkClipAudioSources',
             'renameClip',
             'splitClip',
             'restoreClipSplitState',

@@ -7,6 +7,7 @@ import {
     type InlineMidiGeometryClip,
 } from '../../../models/InlineMidiGeometry';
 import { type TimelineRenderModel } from '../../../models/TimelineRenderModel';
+import { VARIATION_LANE_HEIGHT } from '../../../models/TimelineTrackExtent';
 import { drawClip } from '../clipDrawing';
 import { CLIP_LABEL_ASCENT_CSS_PX, CLIP_LABEL_INSET_CSS_PX } from '../clipLabel';
 
@@ -431,6 +432,37 @@ describe('createWebGpuRenderer clip name labels', () => {
         expect(handles.labelFillText).toHaveBeenCalledWith('Audio Clip', 0, CLIP_LABEL_ASCENT_CSS_PX, 10);
         expect(10).toBeLessThan(100 - CLIP_LABEL_INSET_CSS_PX * 2);
         expect(handles.setBindGroup).toHaveBeenCalled();
+    });
+
+    it('draws a variation-lane clip body and label below its owning track', async () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = 400;
+        canvas.height = 80;
+        const handles = install_webgpu_mocks(canvas);
+        const { createWebGpuRenderer } = await import('../createWebGpuRenderer');
+        const renderer = await createWebGpuRenderer(canvas);
+        if (!renderer) {
+            throw new Error('expected WebGPU renderer');
+        }
+        const base = create_test_model();
+        const track = base.tracks[0]!;
+        const clip = { ...track.clips[0]!, name: 'Variation Clip' };
+
+        renderer.render({
+            ...base,
+            tracks: [
+                {
+                    ...track,
+                    clips: [],
+                    variationLanes: [{ id: 'variation-1', name: 'Variation 1', clips: [clip] }],
+                },
+            ],
+        });
+
+        expect(handles.labelFillText).toHaveBeenCalledWith('Variation Clip', 0, CLIP_LABEL_ASCENT_CSS_PX, 10);
+        expect(decode_rects(handles, canvas)).toContainEqual(
+            expect.objectContaining({ x1: 50, y1: 50, x2: 150, y2: 48 + VARIATION_LANE_HEIGHT - 2 })
+        );
     });
 
     it('skips the label when the clip is too narrow to hold any text', async () => {

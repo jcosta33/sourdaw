@@ -94,6 +94,15 @@ src/modules/Arrangement/stores/__tests__/deviceWriteBoundaryClosure.spec.ts` and
    `src/modules/AudioEngine/handlers/finalFeature/__tests__/publicWarpActionsAuthority.integration.spec.ts` "enables
    repitch from %s with exact undo/redo and durable history", whose rate assertions observe that projection; a mock
    call cannot prove clip enablement, output or reversible project history.
+   Missing-source relink (#4013; provenance in `command-entry-and-state-oracles.md` probe 6) was covered by captured
+   callback invocation without real Command conflict handling or a later authoritative source. Drive the real
+   Locate caller, CRDT adapter and Undo/Redo with active and inactive aliases; change one source/owner after the
+   commit and require a whole-unit refusal while unrelated gain survives valid replay. Hold the actual picker or
+   decoder promise across arrangement A → B → A with a shared missing buffer and assert no stale repair or retained
+   decoded asset. Removing the source guard or arrangement binding must fail
+   `src/modules/Project/useCases/__tests__/locateMissingMediaAuthority.integration.spec.ts`; doubled picker/audio IO
+   proves neither a browser picker, network peer delivery nor audible output. Read raw truth before blaming a
+   store write: this adapter persisted it even though the callback inverse lacked replay authority.
    (#3905, #2648, #1049, #5277, #5339, #4128, #2811, #2083, #5643, #5254, #5247, #5215, #474, #5798, #5565, #5387, #5805)
 
 4. **The oracle is computed by the code under test.**

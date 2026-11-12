@@ -5,12 +5,14 @@ import { getProductionCommandHandlerMaps } from '#/app/getProductionCommandHandl
 import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
+    runWithAutomergeStorageTransaction,
 } from '#/infra/store/storage/createAutomergeStorage';
-import { defaultTrackState, takeLaneStore } from '#/modules/Arrangement/stores';
+import { defaultTrackState, takeLaneStore, trackStore } from '#/modules/Arrangement/stores';
 import { addClip, createTrack, setTrackStoreState } from '#/modules/Arrangement/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import {
     createCrdtDoc,
+    getCrdtDoc,
     mutateCrdtDoc,
     registerCrdtStorageRuntime,
     removeCrdtDoc,
@@ -308,7 +310,120 @@ async function createDivergedAudioSourceAction(actionType: AudioSourceConflictAc
     return action;
 }
 
+async function createDivergedRelinkSourceAction(edit: 'source' | 'owner'): Promise<AppAction> {
+    flushAutomergeStorageWrites();
+    configureAutomergeStoragePort(null);
+    removeCrdtDoc('root');
+    createCrdtDoc('root');
+    registerCrdtStorageRuntime();
+    setTrackStoreState({
+        ...defaultTrackState,
+        tracks: [createTrack({ id: 'relink-track', name: 'Relink', kind: 'audio' })],
+    });
+    const ids = ['relink-a', 'relink-b'];
+    for (const id of ids) {
+        expect(
+            addClip({
+                id,
+                trackId: 'relink-track',
+                startBeat: 0,
+                endBeat: 4,
+                name: id,
+                type: 'audio',
+                audioBufferId: 'relink-original',
+                audioOffsetBeats: 0.5,
+            })
+        ).not.toBeNull();
+    }
+    flushAutomergeStorageWrites();
+    const track = trackStore.value?.tracks[0];
+    if (!track) {
+        throw new Error('Expected the authoritative relink track');
+    }
+    const action: Extract<AppAction, { type: 'relinkClipAudioSources' }> = {
+        type: 'relinkClipAudioSources',
+        payload: {
+            targets: ids.map((clipId) => ({
+                trackId: track.id,
+                trackKind: track.kind,
+                activeAlternativeId: track.activeAlternativeId,
+                alternativeId: null,
+                clipId,
+                before: { audioBufferId: 'relink-original', audioOffsetBeats: 0.5 },
+                after: { audioBufferId: 'relink-replacement', audioOffsetBeats: 0.5 },
+            })),
+        },
+    };
+    const handler = getCommandHandler(action);
+    const inverse = handler?.describe(action).inverseAction;
+    if (!handler || inverse?.type !== 'relinkClipAudioSources') {
+        throw new Error('Expected the registered relink handler and its captured inverse');
+    }
+    expect(handler.validate?.(action, { actions: [action], actionIndex: 0 })).toBe(true);
+    const transaction = runWithAutomergeStorageTransaction(undefined, () => handler.execute(action));
+    if (transaction.status !== 'returned') {
+        throw transaction.error;
+    }
+    const written = await transaction.value;
+    const proof = written?.commitValidation;
+    if (written?.status !== 'written' || !proof) {
+        transaction.abort();
+        throw new Error('Expected a valid relink before introducing divergence');
+    }
+    try {
+        transaction.validateCommit(proof.beforeCommit);
+        transaction.validateDocument(proof.documentId, proof.validateDocument, proof.beforeMutation);
+        proof.release();
+        transaction.commit();
+    } catch (error) {
+        transaction.abort();
+        throw error;
+    } finally {
+        proof.release();
+    }
+    type Root = { tracks: NonNullable<typeof trackStore.value> };
+    expect(getCrdtDoc<Root>('root')?.tracks.tracks[0]?.clips.map((clip) => clip.audioBufferId)).toEqual([
+        'relink-replacement',
+        'relink-replacement',
+    ]);
+    expect(handler.validate?.(inverse, { actions: [inverse], actionIndex: 0 })).toBe(true);
+    mutateCrdtDoc<Root>({
+        id: 'root',
+        changeFn: (document) => {
+            const owner = document.tracks.tracks[0]!;
+            if (edit === 'source') {
+                owner.clips[1]!.audioBufferId = 'relink-peer';
+            } else {
+                owner.kind = 'midi';
+            }
+        },
+    });
+    trackStore.hydrate();
+    expect(handler.validate?.(inverse, { actions: [inverse], actionIndex: 0 })).toBe(false);
+    const beforeRaw = structuredClone(getCrdtDoc<Root>('root'));
+    const beforeProjection = structuredClone(trackStore.value);
+    const refusal = runWithAutomergeStorageTransaction(undefined, () => handler.execute(inverse));
+    if (refusal.status !== 'returned') {
+        throw refusal.error;
+    }
+    const refused = await refusal.value;
+    try {
+        expect(refused).toEqual({ status: 'conflict' });
+        expect(getCrdtDoc<Root>('root')).toEqual(beforeRaw);
+        expect(trackStore.value).toEqual(beforeProjection);
+    } finally {
+        refused?.commitValidation?.release();
+        refusal.abort();
+    }
+    return inverse;
+}
+
 const CONFLICT_CAPABLE_FIXTURES: readonly DivergedFixture[] = [
+    ...(['source', 'owner'] as const).map((edit) => ({
+        title: `relinkClipAudioSources refuses an otherwise valid replay after its ${edit} changes`,
+        actionType: 'relinkClipAudioSources',
+        createDivergedAction: () => createDivergedRelinkSourceAction(edit),
+    })),
     {
         title: 'enableWarping refuses a missing audio target',
         actionType: 'enableWarping',

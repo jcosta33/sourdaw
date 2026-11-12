@@ -76,6 +76,7 @@ export { retainedCreation } from './creationBatch';
 export { updateClip } from './updateClip';
 export { replaceClipAudioBuffer } from './replaceClipAudioBuffer';
 export { relinkClipAudioSource } from './relinkClipAudioSource';
+export { readRelinkAudioSourceEligibility } from './readRelinkAudioSourceEligibility';
 
 // ── Clip Editing ──────────────────────────────────────────────────────────────
 
@@ -135,6 +136,7 @@ export { toggleClipInSelection } from './clipSelection/toggleClipInSelection';
 export { selectAllClips } from './clipSelection/selectAllClips';
 export { clearClipSelection } from './clipSelection/clearClipSelection';
 export { setMarqueeSelection } from './clipSelection/setMarqueeSelection';
+export { revealClip } from './revealClip';
 
 // ── Device Selection ──────────────────────────────────────────────────────────
 

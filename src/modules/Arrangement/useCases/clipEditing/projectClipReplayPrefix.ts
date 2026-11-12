@@ -38,6 +38,7 @@ import { planRippleDelete } from '../rippleDelete/planRippleDelete';
 
 import { clipSplitStateRestorable } from './clipSplitStateRestorable';
 import { preparedClipSplits } from './preparedClipSplit';
+import { projectRelinkAudioSourceTracks } from './projectRelinkAudioSourceTracks';
 import { resolveClipRestoreInsertionIndex } from './resolveClipRestoreInsertionIndex';
 import { resolveClipSplitInsertionIndex } from './resolveClipSplitInsertionIndex';
 
@@ -524,6 +525,20 @@ function projectClipAction(
             return projectSplitReplay(state, action);
         case 'restoreClip':
             return projectClipRestore(state, action, trackIds);
+        case 'relinkClipAudioSources': {
+            if (!state.tracks) {
+                return null;
+            }
+            const tracks = projectRelinkAudioSourceTracks(state.tracks, [action]);
+            if (!tracks) {
+                return null;
+            }
+            return {
+                ...state,
+                tracks,
+                clips: tracks.flatMap((track) => track.clips.map((clip) => ({ owningTrackId: track.id, clip }))),
+            };
+        }
         default:
             return state;
     }
