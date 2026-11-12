@@ -1,0 +1,24 @@
+src/modules/AiRuntime/transformers/__tests__/buildWebLlmDecodingSchema.spec.ts
+  s_0547b7605037d4::t_b79ec48a5a32de 68-75,113,122
+evidence/agent-campaign/manifest.json
+  s_0547b7605037d4::t_5ad6e6edf5c3f5 386
+src/modules/AiRuntime/repositories/webLlm/initWebLlmEngine.ts
+  s_0547b7605037d4::t_b79ec48a5a32de 6,218,238-243
+  s_0547b7605037d4::t_ad87d6d5cdf6bb 244
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "19cc713affec46a2ca4d170bea536d8a0e25c368",
+  "prompts": {},
+  "sessions": {
+    "s_0547b7605037d4": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "97f8302c-c50a-45c3-a041-49fd06766716",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
