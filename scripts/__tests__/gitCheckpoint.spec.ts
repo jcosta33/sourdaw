@@ -159,6 +159,17 @@ describe('Git checkpoint diagnostic', () => {
         );
         expect(git('ls-files', '--error-unmatch', 'takes/note.txt')).toBe('takes/note.txt');
     });
+    it('preserves leading whitespace in selected source filenames', async () => {
+        const { root, env } = fixture();
+        const name = ' leading take.txt';
+        writeFileSync(join(root, name), 'leading filename');
+        const result = await run(root, env, 'add', '--', name);
+        expect(result.code, result.stderr).toBe(0);
+        const observed = receipt(result.stderr).value;
+        expect(observed.before.sources[name]?.sha256).toBe(
+            createHash('sha256').update('leading filename').digest('hex')
+        );
+    });
     it('respects update and force when discovering files selected by Git', async () => {
         const { root, env, git } = fixture();
         mkdirSync(join(root, 'takes'));
