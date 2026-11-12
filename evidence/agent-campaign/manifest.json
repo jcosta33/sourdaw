@@ -692,7 +692,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/AiRuntime/useCases/__tests__/wholeProjectVibeMixPlan.spec.ts",
-                    "digest": "62f45fcfab469296a33bcab9de623cf0766368d60398a90020fcbf3fe487cc74"
+                    "digest": "61efcab73487d1a1e436df533547ab12dc57645a997aca9ec0890b17e8afb3de"
                 }
             ]
         },
@@ -841,7 +841,7 @@
             "fixtures": [
                 {
                     "path": "src/app/__tests__/agentSourceExamples.spec.ts",
-                    "digest": "bbb675f93f709da42621889a4e00b0b4e21f44d8db352af29f094660854158ed"
+                    "digest": "1982da241996b8e378bf04ee7bdad4de92d97dfb370b01c7877f42917ec3115b"
                 }
             ]
         },
