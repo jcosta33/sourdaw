@@ -13,8 +13,9 @@ import { agentRunLifecycle } from '../agentRunLifecycle';
 import { agentRunWorkLease } from '../agentRunWorkLease';
 import { ApplicationOwnedToolLoopRequestError, APPLICATION_OWNED_TOOL_LOOP_LIMITS } from '../applicationOwnedToolLoop';
 import { agentRunCancellation } from '../cancelAgentRun';
-import { executeAnalysisMeasure } from '../executeAnalysisMeasure';
-import { type planMetricMeasurementRequests } from '../planMetricMeasurementRequests';
+import { measurementFailureReceipt, projectMeasurementReceipt } from '../executeAnalysisMeasure';
+import { measureProjectUnit, type MeasurementUnitProgress } from '../measureProjectUnit';
+import { planMetricMeasurementUnits, type planMetricMeasurementRequests } from '../planMetricMeasurementRequests';
 import { settledProjectContentMatches } from '../settledProjectContentMatches';
 
 type VibeRunInitialReceipt = NonNullable<ReturnType<typeof readVibeRunInitialReceipt>>;
@@ -31,6 +32,8 @@ type CollectionInput = {
     admit: MeasurementAdmitter;
     priorReceipts: readonly ApplicationToolReceipt[];
     requests: ReturnType<typeof planMetricMeasurementRequests>;
+    /** Called as each render begins, naming the target and the range group it renders. */
+    onProgress?: (progress: MeasurementUnitProgress) => void;
 };
 
 function priorReceiptBytes(receipts: readonly ApplicationToolReceipt[]): number {
@@ -47,46 +50,71 @@ function priorReceiptBytes(receipts: readonly ApplicationToolReceipt[]): number 
     );
 }
 
+function bound(receipt: ApplicationToolReceipt): ApplicationToolReceipt {
+    return boundReceipt(
+        { ...receipt, origin: 'application-verification' },
+        APPLICATION_OWNED_TOOL_LOOP_LIMITS.maxReceiptBytesPerCall
+    );
+}
+
+/**
+ * Each unit renders its targets once over every range and reports one receipt per range it reads,
+ * exactly as one `analysis.measure` call per range would, so every exact-range reader is unchanged.
+ */
 async function measureRequests(
     input: CollectionInput,
     signal: AbortSignal,
     assertCurrent: () => void
 ): Promise<Collected> {
-    const raw: ApplicationToolReceipt[] = [];
+    const raw: { requestIndex: number; receipt: ApplicationToolReceipt }[] = [];
     let receipts: ApplicationToolReceipt[] = [];
     const priorBytes = priorReceiptBytes(input.priorReceipts);
     try {
         assertCurrent();
-        for (const request of input.requests) {
+        for (const unit of planMetricMeasurementUnits({ requests: input.requests, subject: 'project' })) {
             assertCurrent();
-            const callId = `vibe-initial-${crypto.randomUUID()}`;
-            let range: { startBeat: number; endBeat: number } | { sectionId: string };
-            if (request.range.sectionId === null) {
-                range = { startBeat: request.range.startBeat, endBeat: request.range.endBeat };
-            } else {
-                range = { sectionId: request.range.sectionId };
-            }
-            const read = await executeAnalysisMeasure({
-                call: {
-                    id: callId,
-                    name: 'analysis.measure',
-                    arguments: { subject: 'project', scope: request.scope, range, metrics: request.metrics },
+            const measured = await measureProjectUnit(
+                {
+                    projectRevision: input.sourceRevision,
+                    sections: input.context.sections ?? [],
+                    signal,
+                    admit: input.admit,
+                    onProgress: input.onProgress,
                 },
-                callId,
-                turn: 0,
-                projectRevision: input.sourceRevision,
-                sections: input.context.sections ?? [],
-                signal,
-                admit: input.admit,
-            });
-            raw.push(
-                boundReceipt(
-                    { ...read.receipt, origin: 'application-verification' },
-                    APPLICATION_OWNED_TOOL_LOOP_LIMITS.maxReceiptBytesPerCall
-                )
+                unit
             );
+            if (measured.status === 'failed') {
+                const [first] = unit.reads;
+                raw.push({
+                    requestIndex: first?.requestIndex ?? 0,
+                    receipt: bound(
+                        measurementFailureReceipt(
+                            { callId: `vibe-initial-${crypto.randomUUID()}`, turn: 0 },
+                            measured.failure
+                        )
+                    ),
+                });
+            } else {
+                for (const [index, read] of measured.reads.entries()) {
+                    raw.push({
+                        requestIndex: unit.reads[index]!.requestIndex,
+                        receipt: bound(
+                            projectMeasurementReceipt(
+                                {
+                                    callId: `vibe-initial-${crypto.randomUUID()}`,
+                                    turn: 0,
+                                    projectRevision: input.sourceRevision,
+                                },
+                                read.call,
+                                read.measurement
+                            )
+                        ),
+                    });
+                }
+            }
+            raw.sort((left, right) => left.requestIndex - right.requestIndex);
             receipts = admitTurnReadReceipts({
-                realReceipts: raw,
+                realReceipts: raw.map((entry) => entry.receipt),
                 turn: 0,
                 totalReceiptBytesSoFar: priorBytes,
                 maxReceiptBytesPerTurn: APPLICATION_OWNED_TOOL_LOOP_LIMITS.maxReceiptBytesPerTurn,

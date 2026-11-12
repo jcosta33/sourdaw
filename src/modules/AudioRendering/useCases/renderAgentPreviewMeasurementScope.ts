@@ -14,13 +14,21 @@ import {
 import { readSecondsAtBeat } from '#/modules/Transport/stores';
 import { canonicalJson } from '#/utils/canonicalDigest';
 
-import { renderAgentMeasurementTargets } from './renderAgentMeasurementTargets';
+import {
+    readAgentMeasurementSpan,
+    readAgentMeasurementTimeline,
+    type AgentMeasurementTimeline,
+    type AgentMeasurementWindow,
+} from './cutAgentMeasurementWindow';
+import { renderAgentMeasurementTargets, type AgentMeasurementRenderStart } from './renderAgentMeasurementTargets';
 
 type MeasurementScope = Parameters<typeof resolveAgentMeasurementTargets>[0];
 type TargetResolution = ReturnType<typeof resolveAgentMeasurementTargets>;
 type ResolvedTargets = Extract<TargetResolution, { status: 'resolved' }>;
 type TargetsRender = Awaited<ReturnType<typeof renderAgentMeasurementTargets>>;
-type RenderedMeasurementTarget = Extract<TargetsRender, { status: 'rendered' }>['targets'][number];
+type WindowedMeasurementTarget = Extract<TargetsRender, { status: 'rendered' }>['targets'][number];
+type RenderedMeasurementTarget = Omit<WindowedMeasurementTarget, 'windows'> &
+    WindowedMeasurementTarget['windows'][number];
 type ProjectSource = ReturnType<typeof captureOfflineRenderProjectSource>;
 type RootDocument = Readonly<Record<string, unknown>>;
 
@@ -40,37 +48,60 @@ type RangeSeconds = {
     renderedSeconds: number;
 };
 
-type RenderAgentPreviewMeasurementScopeInput = {
+type RenderAgentPreviewMeasurementWindowsInput = {
     scope: MeasurementScope;
-    startBeat: number;
-    endBeat: number;
+    /** Every range read out of each target's one render in each document. */
+    windows: readonly AgentMeasurementWindow[];
     /**
-     * The revision the preview workspace was created at. The baseline is the
-     * live project at it, and both renders refuse once the live project leaves it.
+     * The revision every preview workspace was created at. The baseline is the
+     * live project at it, and every render refuses once the live project leaves it.
      */
     sourceRevision: string;
-    /** Ceilings each document's range must keep, read through that document's own tempo map. */
+    /** Ceilings each document's rendered span must keep, read through that document's own tempo map. */
     rangeCeilings: RangeSeconds;
+    /** Each released by this call on every outcome, before anything renders. */
+    previews: readonly PreviewWorkspace[];
+    signal?: AbortSignal;
+    /** Called as each target's render begins, in any document; `previewIndex` is null for the live project. */
+    onRenderStart?: (render: AgentMeasurementRenderStart & { previewIndex: number | null }) => void;
+};
+
+type RenderAgentPreviewMeasurementScopeInput = Omit<
+    RenderAgentPreviewMeasurementWindowsInput,
+    'windows' | 'previews' | 'onRenderStart'
+> & {
+    startBeat: number;
+    endBeat: number;
     /** Released by this call on every outcome, before anything renders. */
     preview: PreviewWorkspace;
-    signal?: AbortSignal;
     /** Called as each target's render begins, in either document. */
     onRenderStart?: () => void;
 };
 
 type Subject = 'baseline' | 'preview';
 
-type SubjectCapture = { resolution: TargetResolution; rangeSeconds: RangeSeconds };
+type SubjectCapture = {
+    resolution: TargetResolution;
+    /** The seconds the rendered span covers, which the ceilings bound. */
+    spanSeconds: RangeSeconds;
+    /** Each window's own seconds, in window order. */
+    windowSeconds: RangeSeconds[];
+    timeline: AgentMeasurementTimeline;
+};
+
+type PreviewCapture = {
+    subject: SubjectCapture;
+    project: ProjectSource;
+    /** Yeast devices whose rack this preview document stores differently from the live document. */
+    divergentYeastDeviceIds: ReadonlySet<string>;
+};
 
 type ComparisonCapture = {
     status: 'captured';
     baseline: SubjectCapture;
-    preview: SubjectCapture;
-    project: ProjectSource;
-    /** Every device the live project holds; any other device in the preview is one the proposal created. */
+    previews: PreviewCapture[];
+    /** Every device the live project holds; any other device in a preview is one its proposal created. */
     liveDeviceIds: ReadonlySet<string>;
-    /** Yeast devices whose rack the preview document stores differently from the live document. */
-    divergentYeastDeviceIds: ReadonlySet<string>;
 };
 
 type PreviewRefusalCode =
@@ -92,6 +123,15 @@ type PreviewRefusal = {
     deviceId: string | null;
 };
 
+type WindowedSubject = {
+    soloActive: boolean;
+    /** Each window's own seconds, in window order. */
+    windowSeconds: RangeSeconds[];
+    targets: WindowedMeasurementTarget[];
+    /** Renderer warnings. */
+    warnings: string[];
+};
+
 type RenderedSubject = {
     soloActive: boolean;
     rangeSeconds: RangeSeconds;
@@ -99,6 +139,11 @@ type RenderedSubject = {
     /** Renderer warnings. */
     warnings: string[];
 };
+
+type RenderAgentPreviewMeasurementWindowsResult =
+    | { status: 'rendered'; baseline: WindowedSubject; previews: WindowedSubject[] }
+    | PreviewRefusal
+    | { status: 'cancelled' };
 
 type RenderAgentPreviewMeasurementScopeResult =
     | { status: 'rendered'; baseline: RenderedSubject; preview: RenderedSubject }
@@ -125,14 +170,19 @@ function readLiveDocument<Result>(read: () => Result): Result {
     return read();
 }
 
-/** One document's targets and range seconds, each read with that document's stores answering. */
+/** One document's targets, seconds and timeline, each read with that document's stores answering. */
 function captureSubject(
-    input: RenderAgentPreviewMeasurementScopeInput,
+    input: RenderAgentPreviewMeasurementWindowsInput,
     readDocument: PreviewWorkspace['scope']
 ): SubjectCapture {
+    const span = readAgentMeasurementSpan(input.windows);
     return {
         resolution: readDocument(() => resolveAgentMeasurementTargets(input.scope)),
-        rangeSeconds: readDocument(() => readRangeSeconds(input.startBeat, input.endBeat)),
+        spanSeconds: readDocument(() => readRangeSeconds(span.startBeat, span.endBeat)),
+        windowSeconds: input.windows.map((window) =>
+            readDocument(() => readRangeSeconds(window.startBeat, window.endBeat))
+        ),
+        timeline: readDocument(readAgentMeasurementTimeline),
     };
 }
 
@@ -202,13 +252,26 @@ function findMovedLegacyRackOwners(
     );
 }
 
+function capturePreview(input: RenderAgentPreviewMeasurementWindowsInput, preview: PreviewWorkspace): PreviewCapture {
+    const project = captureOfflineRenderProjectSource(preview.scope);
+    return {
+        subject: captureSubject(input, preview.scope),
+        project,
+        divergentYeastDeviceIds: findDivergentYeastRacks(
+            project,
+            preview.getProjectDocument(),
+            readLegacyRackOwners(preview.scope)
+        ),
+    };
+}
+
 /**
- * Everything both renders read from their documents, taken synchronously; the
+ * Everything every render reads from its document, taken synchronously; each
  * workspace is released before this returns or throws, so no preview outlives
  * the capture and none is active while anything renders.
  */
 function captureComparison(
-    input: RenderAgentPreviewMeasurementScopeInput
+    input: RenderAgentPreviewMeasurementWindowsInput
 ): ComparisonCapture | PreviewRefusal | { status: 'cancelled' } {
     try {
         if (input.signal?.aborted) {
@@ -217,21 +280,16 @@ function captureComparison(
         if (!projectRevisionMatchesLiveIgnoringSaveWrites(input.sourceRevision)) {
             return refused('stale-revision', null);
         }
-        const project = captureOfflineRenderProjectSource(input.preview.scope);
         return {
             status: 'captured',
             baseline: captureSubject(input, readLiveDocument),
-            preview: captureSubject(input, input.preview.scope),
-            project,
+            previews: input.previews.map((preview) => capturePreview(input, preview)),
             liveDeviceIds: readLiveDeviceIds(),
-            divergentYeastDeviceIds: findDivergentYeastRacks(
-                project,
-                input.preview.getProjectDocument(),
-                readLegacyRackOwners(input.preview.scope)
-            ),
         };
     } finally {
-        input.preview.release();
+        for (const preview of input.previews) {
+            preview.release();
+        }
     }
 }
 
@@ -248,7 +306,7 @@ function refuseSubject(
     if (capture.resolution.status === 'refused') {
         return { ...capture.resolution, subject, deviceId: null };
     }
-    if (exceedsCeilings(capture.rangeSeconds, ceilings)) {
+    if (exceedsCeilings(capture.spanSeconds, ceilings)) {
         return refused('range-exceeds-ceiling', subject);
     }
     return capture.resolution;
@@ -269,13 +327,17 @@ function previewRenderedTracks(targets: ResolvedTargets, project: ProjectSource)
  * would carry as silence. Either way the delta would describe a document
  * nobody rendered, so the preview refuses instead.
  */
-function refusePreviewDevices(targets: ResolvedTargets, captured: ComparisonCapture): PreviewRefusal | null {
-    const devices = previewRenderedTracks(targets, captured.project).flatMap((track) => track.devices);
-    const unprojectable = devices.find((device) => captured.divergentYeastDeviceIds.has(device.id));
+function refusePreviewDevices(
+    targets: ResolvedTargets,
+    preview: PreviewCapture,
+    liveDeviceIds: ReadonlySet<string>
+): PreviewRefusal | null {
+    const devices = previewRenderedTracks(targets, preview.project).flatMap((track) => track.devices);
+    const unprojectable = devices.find((device) => preview.divergentYeastDeviceIds.has(device.id));
     if (unprojectable !== undefined) {
         return refused('unprojectable-device-state', 'preview', { deviceId: unprojectable.id });
     }
-    const created = devices.filter((device) => !captured.liveDeviceIds.has(device.id));
+    const created = devices.filter((device) => !liveDeviceIds.has(device.id));
     const [unrenderable] = findUnloadedHostedPluginDevices(created);
     if (unrenderable !== undefined) {
         return refused('unrenderable-preview-device', 'preview', { deviceId: unrenderable.id });
@@ -295,20 +357,21 @@ function subjectRefusal(
 }
 
 async function renderSubject(
-    input: RenderAgentPreviewMeasurementScopeInput,
+    input: RenderAgentPreviewMeasurementWindowsInput,
     capture: SubjectCapture,
     resolution: ResolvedTargets,
-    project: ProjectSource | undefined
-): Promise<{ status: 'rendered'; subject: RenderedSubject } | Exclude<TargetsRender, { status: 'rendered' }>> {
+    source: { project: ProjectSource; previewIndex: number } | null
+): Promise<{ status: 'rendered'; subject: WindowedSubject } | Exclude<TargetsRender, { status: 'rendered' }>> {
     const warnings: string[] = [];
+    const previewIndex = source?.previewIndex ?? null;
     const rendered = await renderAgentMeasurementTargets({
         targets: resolution.targets,
-        startBeat: input.startBeat,
-        endBeat: input.endBeat,
+        windows: input.windows,
+        timeline: capture.timeline,
         sourceRevision: input.sourceRevision,
         signal: input.signal,
-        project,
-        onRenderStart: input.onRenderStart,
+        project: source?.project,
+        onRenderStart: (render) => input.onRenderStart?.({ ...render, previewIndex }),
         onWarning: (message) => warnings.push(message),
     });
     if (rendered.status !== 'rendered') {
@@ -318,33 +381,55 @@ async function renderSubject(
         status: 'rendered',
         subject: {
             soloActive: resolution.soloActive,
-            rangeSeconds: capture.rangeSeconds,
+            windowSeconds: capture.windowSeconds,
             targets: rendered.targets,
             warnings,
         },
     };
 }
 
+/** Every preview's targets, after its own refusals, decided before anything renders. */
+function refusePreviews(
+    input: RenderAgentPreviewMeasurementWindowsInput,
+    captured: ComparisonCapture
+): PreviewRefusal | ResolvedTargets[] {
+    const resolved: ResolvedTargets[] = [];
+    for (const preview of captured.previews) {
+        const targets = refuseSubject('preview', preview.subject, input.rangeCeilings);
+        if (targets.status === 'refused') {
+            return targets;
+        }
+        const deviceRefusal = refusePreviewDevices(targets, preview, captured.liveDeviceIds);
+        if (deviceRefusal !== null) {
+            return deviceRefusal;
+        }
+        resolved.push(targets);
+    }
+    return resolved;
+}
+
 /**
- * Render one agent measurement scope twice over the same beat range — the
- * live project at the preview's base revision, then the isolated preview of a
- * proposal. Nothing is retained here: the caller retains both documents'
- * renders once it has reported on them (`retainAgentMeasurementRenders`).
+ * Render one agent measurement scope once in the live project at the previews'
+ * base revision, then once in each isolated preview of a proposal, each render
+ * covering the span of every window and handing back each window's own
+ * samples. One live render therefore serves the comparison with every preview.
+ * Nothing is retained here: the caller retains the renders once it has
+ * reported on them (`retainAgentMeasurementRenders`).
  *
- * Every store read either render needs is taken before anything renders, the
+ * Every store read any render needs is taken before anything renders, each
  * preview's through its workspace, which is released before the first render
- * starts. The preview therefore renders from a detached copy of its document:
+ * starts. Each preview therefore renders from a detached copy of its document:
  * nothing it does can reach the live document or stores, and no preview stays
- * active across the asynchronous renders. Ranges are converted to seconds
- * through each document's own tempo map. A preview device the render cannot
- * carry from the preview's own data refuses the comparison rather than
- * rendering something else. Both renders are bound to the base revision: once
+ * active across the asynchronous renders. Ranges are converted to seconds and
+ * frames through each document's own tempo map. A preview device the render
+ * cannot carry from that preview's own data refuses the comparison rather than
+ * rendering something else. Every render is bound to the base revision: once
  * the live project leaves it, the comparison refuses as a whole and retains
  * nothing.
  */
-export async function renderAgentPreviewMeasurementScope(
-    input: RenderAgentPreviewMeasurementScopeInput
-): Promise<RenderAgentPreviewMeasurementScopeResult> {
+export async function renderAgentPreviewMeasurementWindows(
+    input: RenderAgentPreviewMeasurementWindowsInput
+): Promise<RenderAgentPreviewMeasurementWindowsResult> {
     const captured = captureComparison(input);
     if (captured.status !== 'captured') {
         return captured;
@@ -353,24 +438,62 @@ export async function renderAgentPreviewMeasurementScope(
     if (baselineTargets.status === 'refused') {
         return baselineTargets;
     }
-    const previewTargets = refuseSubject('preview', captured.preview, input.rangeCeilings);
-    if (previewTargets.status === 'refused') {
+    const previewTargets = refusePreviews(input, captured);
+    if (!Array.isArray(previewTargets)) {
         return previewTargets;
-    }
-    const deviceRefusal = refusePreviewDevices(previewTargets, captured);
-    if (deviceRefusal !== null) {
-        return deviceRefusal;
     }
     if (input.scope.kind === 'master' && isExportActive()) {
         return refused('render-busy', null);
     }
-    const baseline = await renderSubject(input, captured.baseline, baselineTargets, undefined);
+    const baseline = await renderSubject(input, captured.baseline, baselineTargets, null);
     if (baseline.status !== 'rendered') {
         return subjectRefusal(baseline, 'baseline');
     }
-    const preview = await renderSubject(input, captured.preview, previewTargets, captured.project);
-    if (preview.status !== 'rendered') {
-        return subjectRefusal(preview, 'preview');
+    const previews: WindowedSubject[] = [];
+    for (const [previewIndex, preview] of captured.previews.entries()) {
+        const rendered = await renderSubject(input, preview.subject, previewTargets[previewIndex]!, {
+            project: preview.project,
+            previewIndex,
+        });
+        if (rendered.status !== 'rendered') {
+            return subjectRefusal(rendered, 'preview');
+        }
+        previews.push(rendered.subject);
     }
-    return { status: 'rendered', baseline: baseline.subject, preview: preview.subject };
+    return { status: 'rendered', baseline: baseline.subject, previews };
+}
+
+function singleWindowSubject(subject: WindowedSubject): RenderedSubject {
+    return {
+        soloActive: subject.soloActive,
+        rangeSeconds: subject.windowSeconds[0]!,
+        targets: subject.targets.map(({ windows, ...target }) => ({ ...target, ...windows[0]! })),
+        warnings: subject.warnings,
+    };
+}
+
+/**
+ * Render one agent measurement scope twice over the same beat range — the
+ * live project at the preview's base revision, then the isolated preview of a
+ * proposal: the windowed comparison with one preview and that range as its
+ * only window.
+ */
+export async function renderAgentPreviewMeasurementScope(
+    input: RenderAgentPreviewMeasurementScopeInput
+): Promise<RenderAgentPreviewMeasurementScopeResult> {
+    const { startBeat, endBeat, preview, onRenderStart, ...rest } = input;
+    const rendered = await renderAgentPreviewMeasurementWindows({
+        ...rest,
+        windows: [{ startBeat, endBeat }],
+        previews: [preview],
+        onRenderStart: onRenderStart === undefined ? undefined : () => onRenderStart(),
+    });
+    if (rendered.status !== 'rendered') {
+        return rendered;
+    }
+    return {
+        status: 'rendered',
+        baseline: singleWindowSubject(rendered.baseline),
+        preview: singleWindowSubject(rendered.previews[0]!),
+    };
 }

@@ -1,0 +1,207 @@
+import { vi } from 'vitest';
+
+import { flushAutomergeStorageWrites } from '#/infra/store/storage/createAutomergeStorage';
+import { type markerStore, type trackStore } from '#/modules/Arrangement/stores';
+import { createTrack } from '#/modules/Arrangement/useCases';
+import { type renderTrackSubgraphOffline } from '#/modules/AudioEngine/useCases';
+import { defaultProjectStoreState, projectStore } from '#/modules/Project/stores';
+
+import { type ToolCallResult } from '../../models/ToolCallResult';
+import { type ToolSchema } from '../../models/ToolDefinitions';
+import { chatStore } from '../../stores/chatStore';
+import { pendingActionConfirmationStore } from '../../stores/pendingActionConfirmationStore';
+import { getBriefMixIntentCatalog } from '../getBriefMixIntentCatalog';
+import { generateToolPlanningOutcome } from '../llmOrchestration/inference';
+
+import { readCreativeInterpretationCatalog, selectCreativeInterpretationCall } from './highLevelIntentWorkflowFixture';
+import { landProjectEdit } from './landProjectEdit';
+import { metricGoalAudioBuffer } from './metricGoalWorkflowFixture';
+
+/**
+ * A whole-project vibe-run harness over the real planner, compiler, CRDT and measurement path: only
+ * the provider turns and the offline renderer are scripted. Each spec still declares its own
+ * `vi.mock` of the provider routing and of `#/modules/AudioEngine/useCases`, which hoisting needs.
+ */
+export type VibeRenderInput = Parameters<typeof renderTrackSubgraphOffline>[0];
+type ProviderRequest = { userMessage: string; schemas: readonly ToolSchema[] };
+type ScriptedPlanningTurn = (request: ProviderRequest) => ToolCallResult[];
+type Track = NonNullable<typeof trackStore.value>['tracks'][number];
+type Section = NonNullable<typeof markerStore.value>['sections'][number];
+export type VibeConfirmation = NonNullable<typeof pendingActionConfirmationStore.value>['confirmations'][number];
+
+export const VIBE_BRIEF_REVISION = 4;
+/** At 120 BPM a beat lasts half a second, which every scripted render reads its timeline through. */
+export const SECONDS_PER_BEAT = 0.5;
+
+export type VibeTrackSpec = { id: string; name: string; role: string };
+
+export function vibeTrack(spec: VibeTrackSpec, endBeat: number): Track {
+    return {
+        ...createTrack({ id: spec.id, name: spec.name, kind: 'audio' }),
+        clips: [
+            {
+                id: `${spec.id}-clip`,
+                trackId: spec.id,
+                name: 'Take',
+                type: 'audio' as const,
+                audioBufferId: `${spec.id}-buffer`,
+                startBeat: 0,
+                endBeat,
+                fadeInBeats: 0,
+                fadeOutBeats: 0,
+                gain: 1,
+                color: '#ffffff',
+                locked: false,
+                muted: false,
+            },
+        ],
+    };
+}
+
+/** Consecutive sections of equal length, named in order, covering `count × beats` from beat 0. */
+export function vibeSections(names: readonly string[], beats: number): Section[] {
+    return names.map((name, index) => ({
+        id: name.toLowerCase().replaceAll(' ', '-'),
+        name,
+        startBeat: index * beats,
+        endBeat: (index + 1) * beats,
+        color: '#ffffff',
+    }));
+}
+
+/** Seeds the brief at its starting revision, stating each listed track's role as the user had. */
+export function seedVibeBrief(roles: readonly VibeTrackSpec[] = []): void {
+    landProjectEdit(() => {
+        projectStore.set({
+            ...structuredClone(defaultProjectStoreState),
+            productionBrief: {
+                ...structuredClone(defaultProjectStoreState.productionBrief),
+                revision: VIBE_BRIEF_REVISION,
+                createdAt: 100,
+                updatedAt: 100,
+                trackRoles: roles.map((track) => ({
+                    id: `role-${track.id}`,
+                    trackId: track.id,
+                    role: track.role,
+                    createdAt: 100,
+                })),
+            },
+        });
+    });
+}
+
+const briefIntake: ScriptedPlanningTurn = ({ userMessage, schemas }) => {
+    const catalog = readCreativeInterpretationCatalog(userMessage, schemas);
+    const base = selectCreativeInterpretationCall({ catalog, modeId: 'brief' });
+    return [
+        {
+            ...base,
+            id: 'brief-intake',
+            arguments: {
+                ...base.arguments,
+                answer: null,
+                metricIntent: { kind: 'non-acoustic', uncertainty: 'none', objectives: [] },
+            },
+        },
+    ];
+};
+
+const proposeBrief: ScriptedPlanningTurn = () => [
+    {
+        id: 'brief-proposal',
+        name: 'command.batch.propose',
+        arguments: {
+            commands: [],
+            compiledCallIds: ['brief-compile'],
+            plan: {
+                semantic: { classification: 'simple', uncertainty: [] },
+                objective: 'Record the project intent the request describes.',
+                constraints: [],
+                scope: { targetIds: [], targetRanges: [], protectedTargetIds: [], protectedRanges: [] },
+                capabilityIds: [],
+                assetIds: [],
+                alternatives: [],
+                validationStrategy: ['Compare the brief revision before writing.'],
+                stoppingConditions: ['Stop if the brief changes before Confirm.'],
+            },
+        },
+    },
+];
+
+/** The provider admits a brief, compiles it with these characters, and proposes it. */
+export function scriptVibeBriefRoute(input: { descriptors: readonly string[] }): void {
+    const compile: ScriptedPlanningTurn = () => [
+        {
+            id: 'brief-compile',
+            name: 'brief.compile',
+            arguments: {
+                vision: 'A chosen sound',
+                mixIntent: {
+                    catalogId: getBriefMixIntentCatalog().catalogId,
+                    requestedDescriptors: [...input.descriptors],
+                },
+            },
+        },
+    ];
+    const turns = [briefIntake, compile, proposeBrief];
+    let calls = 0;
+    vi.mocked(generateToolPlanningOutcome).mockImplementation(async (_system, userMessage, schemas) => {
+        const turn = turns[calls];
+        calls += 1;
+        if (turn === undefined) {
+            throw new Error(`Expected at most ${String(turns.length)} provider turns`);
+        }
+        return { status: 'complete', toolCalls: turn({ userMessage, schemas }) };
+    });
+}
+
+/**
+ * One rendered track as a timeline: a 100 Hz body beside a 3 kHz top, each scaled by the shelf
+ * gains of the EQs the track carries and by `level` at each absolute second of the song. A render
+ * starts at its own beat, so its first frame is the song at that beat, never at zero.
+ */
+export function renderVibeTimeline(input: VibeRenderInput, level: (songSeconds: number) => number): AudioBuffer {
+    const track = input.renderTracks.find((candidate) => candidate.id === input.targetTrackId);
+    if (track === undefined) {
+        throw new Error('The render target is absent.');
+    }
+    const parameter = (id: string) =>
+        track.devices.reduce((total, device) => total + (device.parameterValues[id] ?? 0), 0);
+    const low = 10 ** (parameter('eq-low-gain') / 20);
+    const high = 10 ** (parameter('eq-high-gain') / 20);
+    const startSeconds = input.startBeat * SECONDS_PER_BEAT;
+    return metricGoalAudioBuffer(
+        (time) => {
+            const song = startSeconds + time;
+            return (
+                level(song) *
+                (0.4 * low * Math.sin(2 * Math.PI * 100 * song) + 0.2 * high * Math.sin(2 * Math.PI * 3000 * song))
+            );
+        },
+        (input.endBeat - input.startBeat) * SECONDS_PER_BEAT
+    );
+}
+
+export async function sendVibeMessage(prompt: string, send: (prompt: string) => Promise<void>): Promise<void> {
+    flushAutomergeStorageWrites();
+    await send(prompt);
+}
+
+export function proposedVibeCards(): VibeConfirmation[] {
+    return (pendingActionConfirmationStore.value?.confirmations ?? []).filter((card) => card.status === 'proposed');
+}
+
+export function requireOnlyProposedVibeCard(): VibeConfirmation {
+    const cards = proposedVibeCards();
+    if (cards.length !== 1 || cards[0] === undefined) {
+        const last = chatStore.value?.messages.at(-1);
+        throw new TypeError(
+            `Expected one proposed card, found ${String(cards.length)}: ${last?.error ?? last?.content ?? 'no reply'}`
+        );
+    }
+    return cards[0];
+}
+
+export function vibeCardContent(card: VibeConfirmation): string {
+    return chatStore.value?.messages.find((message) => message.id === card.assistantMessageId)?.content ?? '';
+}

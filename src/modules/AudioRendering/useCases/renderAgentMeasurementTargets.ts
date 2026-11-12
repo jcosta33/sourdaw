@@ -9,6 +9,13 @@ import {
 import { projectRevisionMatchesLiveIgnoringSaveWrites } from '#/modules/CrdtDocument/useCases';
 import { getAudioBufferContentAddress } from '#/utils/agentRenderReceipt';
 
+import {
+    cutAgentMeasurementWindow,
+    readAgentMeasurementSpan,
+    type AgentMeasurementTimeline,
+    type AgentMeasurementWindow,
+} from './cutAgentMeasurementWindow';
+
 /**
  * The master mixdown renders at this rate; an isolated track or bus renders at
  * the live context's rate. Every measured metric is defined in physical units
@@ -21,10 +28,15 @@ type ResolvedTargets = Extract<ReturnType<typeof resolveAgentMeasurementTargets>
 type MeasurementTarget = ResolvedTargets['targets'][number];
 type ProjectSource = ReturnType<typeof captureOfflineRenderProjectSource>;
 
+/** Which render began: the target, and whether the live project or a supplied document renders it. */
+export type AgentMeasurementRenderStart = { targetId: string; document: 'project' | 'preview' };
+
 type RenderAgentMeasurementTargetsInput = {
     targets: readonly MeasurementTarget[];
-    startBeat: number;
-    endBeat: number;
+    /** Each range read out of every target's one render, which covers them all. */
+    windows: readonly AgentMeasurementWindow[];
+    /** The timeline of the document the targets render from, which places each window's frames. */
+    timeline: AgentMeasurementTimeline;
     /** The revision every render must still find the live project at, before it starts and after it ends. */
     sourceRevision: string;
     signal?: AbortSignal;
@@ -32,14 +44,11 @@ type RenderAgentMeasurementTargetsInput = {
     project?: ProjectSource;
     onWarning: (message: string) => void;
     /** Called as each target's render begins, so a caller counts the renders that actually ran. */
-    onRenderStart?: () => void;
+    onRenderStart?: (render: AgentMeasurementRenderStart) => void;
 };
 
-type RenderedMeasurementTarget = {
-    targetId: string;
-    targetKind: MeasurementTarget['targetKind'];
-    route: 'mixdown' | 'isolated-subgraph';
-    liveAudibility: MeasurementTarget['liveAudibility'];
+/** One window's own samples and the content address they are retained and cited by. */
+type RenderedMeasurementWindow = {
     buffer: AudioBuffer;
     artifact: {
         contentAddress: string;
@@ -48,6 +57,15 @@ type RenderedMeasurementTarget = {
         channelCount: number;
         durationSeconds: number;
     };
+};
+
+type RenderedMeasurementTarget = {
+    targetId: string;
+    targetKind: MeasurementTarget['targetKind'];
+    route: 'mixdown' | 'isolated-subgraph';
+    liveAudibility: MeasurementTarget['liveAudibility'];
+    /** One entry per requested window, in order. */
+    windows: RenderedMeasurementWindow[];
 };
 
 type TargetRefusal = {
@@ -87,11 +105,11 @@ function renderMixdownBuffer(
  * running beside this render, which read it, for a stop nobody asked them to take. A freeze or
  * bounce reads none of it.
  */
-function renderMixdown(input: RenderAgentMeasurementTargetsInput): Promise<AudioBuffer> {
+function renderMixdown(input: RenderAgentMeasurementTargetsInput, span: AgentMeasurementWindow): Promise<AudioBuffer> {
     return renderMixdownBuffer(
         {
-            startBeat: input.startBeat,
-            durationBeats: input.endBeat - input.startBeat,
+            startBeat: span.startBeat,
+            durationBeats: span.endBeat - span.startBeat,
             sampleRate: ANALYSIS_MEASURE_MIXDOWN_SAMPLE_RATE,
             tailSeconds: 0,
             onWarning: input.onWarning,
@@ -105,17 +123,18 @@ function renderMixdown(input: RenderAgentMeasurementTargetsInput): Promise<Audio
 
 async function renderTarget(
     target: MeasurementTarget,
-    input: RenderAgentMeasurementTargetsInput
+    input: RenderAgentMeasurementTargetsInput,
+    span: AgentMeasurementWindow
 ): Promise<TargetRenderOutcome> {
     try {
         if (target.subgraph === null) {
-            return { status: 'buffer', buffer: await renderMixdown(input) };
+            return { status: 'buffer', buffer: await renderMixdown(input, span) };
         }
         const buffer = await renderAgentMeasurementTarget({
             targetId: target.targetId,
             subgraph: target.subgraph,
-            startBeat: input.startBeat,
-            endBeat: input.endBeat,
+            startBeat: span.startBeat,
+            endBeat: span.endBeat,
             abortSignal: input.signal,
             onWarning: input.onWarning,
             source: input.project === undefined ? undefined : { project: input.project },
@@ -130,7 +149,20 @@ async function renderTarget(
     }
 }
 
-/** One target rendered between two live revision checks, or why it was not. */
+async function readRenderedWindow(buffer: AudioBuffer): Promise<RenderedMeasurementWindow> {
+    return {
+        buffer,
+        artifact: {
+            contentAddress: await getAudioBufferContentAddress(buffer),
+            sampleRate: buffer.sampleRate,
+            frameCount: buffer.length,
+            channelCount: buffer.numberOfChannels,
+            durationSeconds: buffer.duration,
+        },
+    };
+}
+
+/** One target rendered once over the span of its windows between two live revision checks, or why it was not. */
 async function renderMeasurementTarget(
     target: MeasurementTarget,
     input: RenderAgentMeasurementTargetsInput
@@ -141,8 +173,9 @@ async function renderMeasurementTarget(
     if (!projectRevisionMatchesLiveIgnoringSaveWrites(input.sourceRevision)) {
         return refused('stale-revision', target.targetId);
     }
-    input.onRenderStart?.();
-    const outcome = await renderTarget(target, input);
+    const span = readAgentMeasurementSpan(input.windows);
+    input.onRenderStart?.({ targetId: target.targetId, document: input.project === undefined ? 'project' : 'preview' });
+    const outcome = await renderTarget(target, input, span);
     if (outcome.status === 'cancelled' || input.signal?.aborted) {
         return { status: 'cancelled' };
     }
@@ -156,7 +189,14 @@ async function renderMeasurementTarget(
     if (buffer === null || buffer.length === 0 || buffer.numberOfChannels === 0) {
         return refused('empty-render', target.targetId);
     }
-    const contentAddress = await getAudioBufferContentAddress(buffer);
+    const windows: RenderedMeasurementWindow[] = [];
+    for (const window of input.windows) {
+        const cut = cutAgentMeasurementWindow({ buffer, span, window, timeline: input.timeline });
+        if (cut === null) {
+            return refused('empty-render', target.targetId);
+        }
+        windows.push(await readRenderedWindow(cut));
+    }
     if (input.signal?.aborted) {
         return { status: 'cancelled' };
     }
@@ -170,21 +210,15 @@ async function renderMeasurementTarget(
             targetKind: target.targetKind,
             route: target.subgraph === null ? 'mixdown' : 'isolated-subgraph',
             liveAudibility: target.liveAudibility,
-            buffer,
-            artifact: {
-                contentAddress,
-                sampleRate: buffer.sampleRate,
-                frameCount: buffer.length,
-                channelCount: buffer.numberOfChannels,
-                durationSeconds: buffer.duration,
-            },
+            windows,
         },
     };
 }
 
 /**
- * Render resolved measurement targets one after another, each between two
- * live revision checks, stopping at the first that does not render.
+ * Render resolved measurement targets one after another, each once over the
+ * span of the requested windows and between two live revision checks, then cut
+ * each window out of that render; stop at the first target that does not render.
  *
  * The live revision binds a supplied document too: it is the revision the
  * document was taken from, and once the live project leaves it the document no

@@ -503,7 +503,7 @@ function readWholeRunFit(
     input: ScheduleInput,
     batches: readonly ScheduledVibeRunBatch[],
     reading: PerceptualConstraintReading,
-    initialRequests: ReturnType<typeof planMetricMeasurementRequests>
+    initialReads: Parameters<typeof planMetricMeasurementRequests>[0]['reads']
 ): string[] {
     const run = agentRunLifecycle.get(input.runId);
     if (run === null) {
@@ -514,7 +514,7 @@ function readWholeRunFit(
         context: input.context,
         reading,
         budgets: run.budgets,
-        initialRequests,
+        initialReads,
     });
     if (run.activeSince !== null && Date.now() - run.activeSince > readAgentResourceLimits().runDurationMs) {
         refusals.push('runDurationMs: this run has no active time left');
@@ -569,17 +569,15 @@ async function planSchedule(input: ScheduleInput): Promise<PlannedVibeRunSchedul
     if (initial.status === 'refused') {
         return { status: 'unscheduled', lines: [`No batches were scheduled after the brief: ${initial.reason}.`] };
     }
-    const initialRequests = planMetricMeasurementRequests({
-        context: input.context,
-        reads: initial.goals.flatMap((goal) => {
-            if (goal.metricId === null || goal.range === null) {
-                return [];
-            }
-            return [{ prefix: 'initial', range: goal.range, metricId: goal.metricId, targetIds: goal.targetIds }];
-        }),
+    const initialReads = initial.goals.flatMap((goal) => {
+        if (goal.metricId === null || goal.range === null) {
+            return [];
+        }
+        return [{ prefix: 'initial', range: goal.range, metricId: goal.metricId, targetIds: goal.targetIds }];
     });
+    const initialRequests = planMetricMeasurementRequests({ context: input.context, reads: initialReads });
     const reading = compilePerceptualConstraints(input.prompt, input.context);
-    const refusals = readWholeRunFit(input, batches, reading, initialRequests);
+    const refusals = readWholeRunFit(input, batches, reading, initialReads);
     if (refusals.length > 0) {
         return { status: 'unscheduled', lines: [`No batches were scheduled after the brief: ${refusals.join('; ')}.`] };
     }

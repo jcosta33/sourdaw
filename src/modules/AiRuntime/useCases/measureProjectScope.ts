@@ -27,7 +27,7 @@ type RenderedScopeTarget = Extract<ScopeRender, { status: 'rendered' }>['targets
 /** What a project measurement reads of a call: the scope, the range and the metrics. */
 type ProjectMeasurementRequest = Pick<ParsedArguments, 'scope' | 'range' | 'metrics'>;
 
-type ProjectMeasurementInput = {
+export type ProjectMeasurementInput = {
     /** The revision the planning loop read the project at. */
     projectRevision: string;
     /** The sections the loop's project reads report, which a `sectionId` range names. */
@@ -53,7 +53,7 @@ export type MeasuredRange = {
     renderedSeconds: number;
 };
 
-type ProjectMeasurement = {
+export type ProjectMeasurement = {
     range: MeasuredRange;
     targets: readonly ReducedTarget[];
     /** Retention lines lead: the cap cuts from the end, and a cited render left unnamed is the worse loss. */
@@ -64,7 +64,7 @@ type ProjectMeasurementResult =
     { status: 'measured'; measurement: ProjectMeasurement } | { status: 'failed'; failure: MeasurementFailure };
 
 /** The beat range the arguments name, with the seconds it measures and the seconds its render processes. */
-function resolveRange(
+export function resolveMeasuredRange(
     range: ProjectMeasurementRequest['range'],
     sections: readonly ProjectContextSection[]
 ): { status: 'range'; range: MeasuredRange } | { status: 'failure'; failure: MeasurementFailure } {
@@ -89,7 +89,10 @@ function resolveRange(
     return { status: 'range', range: { startBeat, endBeat, sectionId, measuredSeconds, renderedSeconds } };
 }
 
-function refusalFailure(refusal: ScopeRefusal, scope: ProjectMeasurementRequest['scope']): MeasurementFailure {
+export function projectRefusalFailure(
+    refusal: ScopeRefusal,
+    scope: ProjectMeasurementRequest['scope']
+): MeasurementFailure {
     const target = refusal.targetId ?? 'master';
     const failures: Readonly<Record<ScopeRefusal['code'], Omit<MeasurementFailure, 'code'>>> = {
         'unknown-target': { safeMessage: `Target ${target} is not in the project.`, retryable: true },
@@ -116,7 +119,7 @@ function refusalFailure(refusal: ScopeRefusal, scope: ProjectMeasurementRequest[
     return { code: refusal.code, ...failures[refusal.code] };
 }
 
-function boundedWarnings(warnings: readonly string[]): string[] {
+export function boundedMeasurementWarnings(warnings: readonly string[]): string[] {
     return warnings
         .slice(0, ANALYSIS_MEASURE_MAX_WARNINGS)
         .map((warning) => warning.slice(0, ANALYSIS_MEASURE_MAX_WARNING_LENGTH));
@@ -141,7 +144,7 @@ async function renderAndReduce(
         return { status: 'failed', failure: describeMeasurementStop(run.stopReason() ?? 'cancelled') };
     }
     if (rendered.status === 'refused') {
-        return { status: 'failed', failure: refusalFailure(rendered, scope) };
+        return { status: 'failed', failure: projectRefusalFailure(rendered, scope) };
     }
     const reduction = await reduceMeasuredTargets({
         targets: rendered.targets,
@@ -172,7 +175,7 @@ async function renderAndReduce(
         measurement: {
             range,
             targets: reduction.reduced,
-            warnings: boundedWarnings([...retentionWarnings, ...rendered.warnings]),
+            warnings: boundedMeasurementWarnings([...retentionWarnings, ...rendered.warnings]),
         },
     };
 }
@@ -190,7 +193,7 @@ export async function measureProjectScope(
     input: ProjectMeasurementInput,
     request: ProjectMeasurementRequest
 ): Promise<ProjectMeasurementResult> {
-    const resolved = resolveRange(request.range, input.sections);
+    const resolved = resolveMeasuredRange(request.range, input.sections);
     if (resolved.status === 'failure') {
         return { status: 'failed', failure: resolved.failure };
     }

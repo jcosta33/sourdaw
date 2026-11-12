@@ -28,7 +28,11 @@ type ExecuteAnalysisMeasureInput = {
 
 type ParsedArguments = Extract<ReturnType<typeof parseAnalysisMeasureArguments>, { status: 'valid' }>['value'];
 
-function failureReceipt(input: ExecuteAnalysisMeasureInput, failure: MeasurementFailure): ApplicationToolReceipt {
+/** The receipt of a measurement that failed, as `analysis.measure` reports one. */
+export function measurementFailureReceipt(
+    input: Pick<ExecuteAnalysisMeasureInput, 'callId' | 'turn'>,
+    failure: MeasurementFailure
+): ApplicationToolReceipt {
     return {
         schema: 'sourdaw.application-tool-receipt',
         schemaVersion: 1,
@@ -44,9 +48,10 @@ function failureReceipt(input: ExecuteAnalysisMeasureInput, failure: Measurement
     };
 }
 
-function successReceipt(
-    input: ExecuteAnalysisMeasureInput,
-    parsed: ParsedArguments,
+/** The receipt of a successful project measurement, as `analysis.measure` reports one. */
+export function projectMeasurementReceipt(
+    input: Pick<ExecuteAnalysisMeasureInput, 'callId' | 'turn' | 'projectRevision'>,
+    parsed: Pick<ParsedArguments, 'scope' | 'metrics'>,
     measurement: { range: MeasuredRange; targets: readonly ReducedTarget[]; warnings: readonly string[] }
 ): ApplicationToolReceipt {
     const { range, targets } = measurement;
@@ -90,13 +95,15 @@ function read(receipt: ApplicationToolReceipt): AnalysisMeasureRead {
 export async function executeAnalysisMeasure(input: ExecuteAnalysisMeasureInput): Promise<AnalysisMeasureRead> {
     const parsed = parseAnalysisMeasureArguments(input.call.arguments);
     if (parsed.status === 'invalid') {
-        return read(failureReceipt(input, { code: 'invalid-arguments', safeMessage: parsed.reason, retryable: true }));
+        return read(
+            measurementFailureReceipt(input, { code: 'invalid-arguments', safeMessage: parsed.reason, retryable: true })
+        );
     }
     const { subject } = parsed.value;
     if (subject.kind === 'preview') {
         if (input.preview === undefined) {
             return read(
-                failureReceipt(input, {
+                measurementFailureReceipt(input, {
                     code: 'preview-unavailable',
                     safeMessage: 'Measuring a proposal preview is unavailable to this run.',
                     retryable: false,
@@ -112,10 +119,10 @@ export async function executeAnalysisMeasure(input: ExecuteAnalysisMeasureInput)
     }
     const measured = await measureProjectScope(input, parsed.value);
     if (measured.status === 'failed') {
-        return read(failureReceipt(input, measured.failure));
+        return read(measurementFailureReceipt(input, measured.failure));
     }
     return {
-        ...read(successReceipt(input, parsed.value, measured.measurement)),
+        ...read(projectMeasurementReceipt(input, parsed.value, measured.measurement)),
         answerMeasurement: {
             revision: input.projectRevision,
             scope: parsed.value.scope,

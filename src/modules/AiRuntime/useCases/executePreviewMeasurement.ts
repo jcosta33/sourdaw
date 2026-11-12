@@ -34,12 +34,13 @@ import { resolveAnalysisMeasureBeats } from './resolveAnalysisMeasureBeats';
 
 type ParsedArguments = Extract<ReturnType<typeof parseAnalysisMeasureArguments>, { status: 'valid' }>['value'];
 type PreviewRender = Awaited<ReturnType<typeof renderAgentPreviewMeasurementScope>>;
-type PreviewRefusal = Extract<PreviewRender, { status: 'refused' }>;
+type PreviewRefusal = Pick<Extract<PreviewRender, { status: 'refused' }>, 'code' | 'subject' | 'targetId' | 'deviceId'>;
 type RenderedPreview = Extract<PreviewRender, { status: 'rendered' }>;
-type RenderedTarget = RenderedPreview['baseline']['targets'][number];
+export type RenderedPreviewTarget = RenderedPreview['baseline']['targets'][number];
+type RenderedTarget = RenderedPreviewTarget;
 type Failure = { code: string; safeMessage: string; retryable: boolean };
 
-type ExecutePreviewMeasurementInput = {
+export type ExecutePreviewMeasurementInput = {
     call: ToolCallResult;
     callId: string;
     turn: number;
@@ -82,7 +83,7 @@ function failure(input: ExecutePreviewMeasurementInput, reason: Failure): Analys
     return { receipt, commands: null, measuredPreview: null };
 }
 
-function refusalFailure(refusal: PreviewRefusal): Failure {
+export function previewRefusalFailure(refusal: PreviewRefusal): Failure {
     const { measurementMeasuredSeconds, measurementRenderedSeconds } = readAgentResourceLimits();
     const target = refusal.targetId ?? 'master';
     const device = refusal.deviceId ?? 'unknown';
@@ -121,7 +122,10 @@ function refusalFailure(refusal: PreviewRefusal): Failure {
     return { code: refusal.code, ...failures[refusal.code] };
 }
 
-function previewFailure(status: 'no-op' | 'rejected' | 'conflicted' | 'failed', reason: string | undefined): Failure {
+export function previewFailure(
+    status: 'no-op' | 'rejected' | 'conflicted' | 'failed',
+    reason: string | undefined
+): Failure {
     if (status === 'no-op') {
         return {
             code: 'preview-unavailable',
@@ -136,7 +140,7 @@ function previewFailure(status: 'no-op' | 'rejected' | 'conflicted' | 'failed', 
     };
 }
 
-function measureTarget(
+export function measurePreviewTarget(
     baseline: RenderedTarget,
     preview: RenderedTarget,
     metrics: ParsedArguments['metrics']
@@ -201,7 +205,7 @@ function boundedWarnings(rendered: RenderedPreview, retentionWarnings: readonly 
         .map((warning) => warning.slice(0, ANALYSIS_MEASURE_MAX_WARNING_LENGTH));
 }
 
-function artifactOf(target: RenderedTarget) {
+export function artifactOf(target: RenderedTarget) {
     return { route: target.route, artifact: target.artifact };
 }
 
@@ -213,6 +217,110 @@ function measuredPreviewWithSource(
         return base;
     }
     return { ...base, recipeSource };
+}
+
+/** Everything one preview receipt reports, whichever renders its figures were read from. */
+export type PreviewReadCore = {
+    callId: string;
+    turn: number;
+    projectRevision: string;
+    origin: 'planner' | 'approval-preview';
+    runId: string;
+    scope: ParsedArguments['scope'];
+    metrics: ParsedArguments['metrics'];
+    beats: MeasuredPreview['range'];
+    commands: readonly RetainedCommand[];
+    batchContentHash: string;
+    recipeSource?: MeasuredPreview['recipeSource'];
+    targets: MeasuredPreview['targets'];
+    /** Each target's two cited renders, in `targets` order. */
+    renders: readonly {
+        targetId: string;
+        baseline: ReturnType<typeof artifactOf>;
+        preview: ReturnType<typeof artifactOf>;
+    }[];
+    baselineSeconds: RenderedPreview['baseline']['rangeSeconds'];
+    previewSeconds: RenderedPreview['preview']['rangeSeconds'];
+    warnings: string[];
+};
+
+export function measuredPreviewRead(core: PreviewReadCore): AnalysisMeasureRead {
+    const { commands, batchContentHash, targets } = core;
+    const { startBeat, endBeat, sectionId } = core.beats;
+    const measuredPreview: MeasuredPreview = measuredPreviewWithSource(
+        {
+            provenance: {
+                origin: core.origin,
+                callId: core.callId,
+                turn: core.turn,
+                runId: core.runId,
+                targets: core.renders.map((render) => ({
+                    targetId: render.targetId,
+                    baseline: render.baseline,
+                    preview: render.preview,
+                })),
+            },
+            scope: core.scope,
+            range: { startBeat, endBeat, sectionId },
+            targets,
+            batchContentHash,
+            revision: core.projectRevision,
+        },
+        core.recipeSource
+    );
+    const measuredSummary = `Measured the proposal preview against the project for ${String(targets.length)} target(s) over beats ${String(startBeat)} to ${String(endBeat)}.`;
+    const data = {
+        kind: 'analysis-measurement',
+        schemaVersion: 1,
+        subject: 'preview',
+        scope: core.scope,
+        sourceRevisionDigest: digest(core.projectRevision),
+        range: {
+            startBeat,
+            endBeat,
+            sectionId,
+            baselineSeconds: core.baselineSeconds,
+            previewSeconds: core.previewSeconds,
+        },
+        metrics: core.metrics,
+        targets: targets.map((target, index) => ({
+            targetId: target.targetId,
+            targetKind: target.targetKind,
+            baseline: target.baseline,
+            preview: target.preview,
+            deltas: target.deltas,
+            baselineRender: core.renders[index]!.baseline,
+            previewRender: core.renders[index]!.preview,
+        })),
+    };
+    const receipt: ApplicationToolReceipt = {
+        schema: 'sourdaw.application-tool-receipt',
+        schemaVersion: 1,
+        callId: core.callId,
+        toolName: ANALYSIS_MEASURE_TOOL_NAME,
+        turn: core.turn,
+        status: 'success',
+        revision: core.projectRevision,
+        data,
+        summary: measuredSummary,
+        warnings: core.warnings,
+        error: null,
+    };
+    if (core.origin === 'approval-preview') {
+        // The card already holds the batch and no provider adopts it, so its proof is figures alone.
+        return { receipt, commands, measuredPreview };
+    }
+    const adoptable: ApplicationToolReceipt = {
+        ...receipt,
+        data: {
+            ...data,
+            commands: materializeTransformToolCalls([
+                { callId: core.callId, revision: core.projectRevision, commands },
+            ]),
+        },
+        summary: `${measuredSummary} Adopt exactly these commands with compiledCallIds ["${core.callId}"].`,
+    };
+    return { receipt: adoptable, commands, measuredPreview };
 }
 
 function successRead(
@@ -228,83 +336,28 @@ function successRead(
         retentionWarnings: readonly string[];
     }
 ): AnalysisMeasureRead {
-    const { parsed } = input;
-    const { commands, batchContentHash, targets, retentionWarnings } = measured;
-    const { startBeat, endBeat, sectionId } = measured.beats;
-    const measuredPreview: MeasuredPreview = measuredPreviewWithSource(
-        {
-            provenance: {
-                origin: input.preview.origin ?? 'planner',
-                callId: input.callId,
-                turn: input.turn,
-                runId: input.preview.runId,
-                targets: pairs.map(([baseline, preview]) => ({
-                    targetId: baseline.targetId,
-                    baseline: artifactOf(baseline),
-                    preview: artifactOf(preview),
-                })),
-            },
-            scope: parsed.scope,
-            range: { startBeat, endBeat, sectionId },
-            targets,
-            batchContentHash,
-            revision: input.projectRevision,
-        },
-        measured.recipeSource
-    );
-    const measuredSummary = `Measured the proposal preview against the project for ${String(targets.length)} target(s) over beats ${String(startBeat)} to ${String(endBeat)}.`;
-    const data = {
-        kind: 'analysis-measurement',
-        schemaVersion: 1,
-        subject: 'preview',
-        scope: parsed.scope,
-        sourceRevisionDigest: digest(input.projectRevision),
-        range: {
-            startBeat,
-            endBeat,
-            sectionId,
-            baselineSeconds: rendered.baseline.rangeSeconds,
-            previewSeconds: rendered.preview.rangeSeconds,
-        },
-        metrics: parsed.metrics,
-        targets: targets.map((target, index) => ({
-            targetId: target.targetId,
-            targetKind: target.targetKind,
-            baseline: target.baseline,
-            preview: target.preview,
-            deltas: target.deltas,
-            baselineRender: artifactOf(pairs[index]![0]),
-            previewRender: artifactOf(pairs[index]![1]),
-        })),
-    };
-    const receipt: ApplicationToolReceipt = {
-        schema: 'sourdaw.application-tool-receipt',
-        schemaVersion: 1,
+    return measuredPreviewRead({
         callId: input.callId,
-        toolName: ANALYSIS_MEASURE_TOOL_NAME,
         turn: input.turn,
-        status: 'success',
-        revision: input.projectRevision,
-        data,
-        summary: measuredSummary,
-        warnings: boundedWarnings(rendered, retentionWarnings),
-        error: null,
-    };
-    if (input.preview.origin === 'approval-preview') {
-        // The card already holds the batch and no provider adopts it, so its proof is figures alone.
-        return { receipt, commands, measuredPreview };
-    }
-    const adoptable: ApplicationToolReceipt = {
-        ...receipt,
-        data: {
-            ...data,
-            commands: materializeTransformToolCalls([
-                { callId: input.callId, revision: input.projectRevision, commands },
-            ]),
-        },
-        summary: `${measuredSummary} Adopt exactly these commands with compiledCallIds ["${input.callId}"].`,
-    };
-    return { receipt: adoptable, commands, measuredPreview };
+        projectRevision: input.projectRevision,
+        origin: input.preview.origin ?? 'planner',
+        runId: input.preview.runId,
+        scope: input.parsed.scope,
+        metrics: input.parsed.metrics,
+        beats: measured.beats,
+        commands: measured.commands,
+        batchContentHash: measured.batchContentHash,
+        recipeSource: measured.recipeSource,
+        targets: measured.targets,
+        renders: pairs.map(([baseline, preview]) => ({
+            targetId: baseline.targetId,
+            baseline: artifactOf(baseline),
+            preview: artifactOf(preview),
+        })),
+        baselineSeconds: rendered.baseline.rangeSeconds,
+        previewSeconds: rendered.preview.rangeSeconds,
+        warnings: boundedWarnings(rendered, measured.retentionWarnings),
+    });
 }
 
 function sourceRecipe(input: ExecutePreviewMeasurementInput) {
@@ -414,7 +467,7 @@ async function renderAndReduce(
         return failure(input, describeMeasurementStop(run.stopReason() ?? 'cancelled'));
     }
     if (rendered.status === 'refused') {
-        return failure(input, refusalFailure(rendered));
+        return failure(input, previewRefusalFailure(rendered));
     }
     const pairs = pairTargets(rendered);
     if (pairs === null) {
@@ -427,7 +480,7 @@ async function renderAndReduce(
     const reduction = await reduceMeasuredTargets({
         targets: pairs,
         run,
-        reduce: ([baseline, previewTarget]) => measureTarget(baseline, previewTarget, input.parsed.metrics),
+        reduce: ([baseline, previewTarget]) => measurePreviewTarget(baseline, previewTarget, input.parsed.metrics),
     });
     if (reduction.status === 'stopped') {
         return failure(input, describeMeasurementStop(reduction.reason));

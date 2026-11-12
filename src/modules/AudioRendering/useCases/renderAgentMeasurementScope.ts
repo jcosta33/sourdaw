@@ -1,27 +1,53 @@
 import { resolveAgentMeasurementTargets } from '#/modules/Arrangement/useCases';
 import { isExportActive } from '#/modules/AudioEngine/useCases';
 
-import { renderAgentMeasurementTargets } from './renderAgentMeasurementTargets';
+import { readAgentMeasurementTimeline, type AgentMeasurementWindow } from './cutAgentMeasurementWindow';
+import { renderAgentMeasurementTargets, type AgentMeasurementRenderStart } from './renderAgentMeasurementTargets';
 
 type MeasurementScope = Parameters<typeof resolveAgentMeasurementTargets>[0];
 type TargetsRender = Awaited<ReturnType<typeof renderAgentMeasurementTargets>>;
-type RenderedMeasurementTarget = Extract<TargetsRender, { status: 'rendered' }>['targets'][number];
+type WindowedMeasurementTarget = Extract<TargetsRender, { status: 'rendered' }>['targets'][number];
+type RenderedMeasurementTarget = Omit<WindowedMeasurementTarget, 'windows'> &
+    WindowedMeasurementTarget['windows'][number];
 
-type RenderAgentMeasurementScopeInput = {
+type RenderAgentMeasurementWindowsInput = {
     scope: MeasurementScope;
-    startBeat: number;
-    endBeat: number;
+    /** Every range read out of each target's one render. */
+    windows: readonly AgentMeasurementWindow[];
     /** The revision the caller read the project at; every render must still describe it. */
     sourceRevision: string;
     signal?: AbortSignal;
     /** Called as each target's render begins. */
-    onRenderStart?: () => void;
+    onRenderStart?: (render: AgentMeasurementRenderStart) => void;
+};
+
+type RenderAgentMeasurementScopeInput = Omit<RenderAgentMeasurementWindowsInput, 'windows'> & {
+    startBeat: number;
+    endBeat: number;
 };
 
 type MeasurementScopeRefusalCode =
     | Extract<ReturnType<typeof resolveAgentMeasurementTargets>, { status: 'refused' }>['code']
     | Extract<TargetsRender, { status: 'refused' }>['code']
     | 'render-busy';
+
+type ScopeRefusal = {
+    status: 'refused';
+    code: MeasurementScopeRefusalCode;
+    targetId: string | null;
+    contributorId: string | null;
+};
+
+type RenderAgentMeasurementWindowsResult =
+    | {
+          status: 'rendered';
+          soloActive: boolean;
+          targets: WindowedMeasurementTarget[];
+          /** Renderer warnings. */
+          warnings: string[];
+      }
+    | ScopeRefusal
+    | { status: 'cancelled' };
 
 type RenderAgentMeasurementScopeResult =
     | {
@@ -31,17 +57,13 @@ type RenderAgentMeasurementScopeResult =
           /** Renderer warnings. */
           warnings: string[];
       }
-    | {
-          status: 'refused';
-          code: MeasurementScopeRefusalCode;
-          targetId: string | null;
-          contributorId: string | null;
-      }
+    | ScopeRefusal
     | { status: 'cancelled' };
 
 /**
- * Render every target of one agent measurement scope offline at the caller's
- * project revision.
+ * Render every target of one agent measurement scope offline once, over the
+ * span of the windows the caller reads, at the caller's project revision, and
+ * hand back each window's own samples per target.
  *
  * Targets are resolved and every refusal is decided before anything renders.
  * The live revision is compared before and after each render; a mismatch, an
@@ -50,9 +72,9 @@ type RenderAgentMeasurementScopeResult =
  * (`retainAgentMeasurementRenders`), so a measurement that stops first leaves
  * the artifact store exactly as it found it.
  */
-export async function renderAgentMeasurementScope(
-    input: RenderAgentMeasurementScopeInput
-): Promise<RenderAgentMeasurementScopeResult> {
+export async function renderAgentMeasurementWindows(
+    input: RenderAgentMeasurementWindowsInput
+): Promise<RenderAgentMeasurementWindowsResult> {
     if (input.signal?.aborted) {
         return { status: 'cancelled' };
     }
@@ -66,8 +88,8 @@ export async function renderAgentMeasurementScope(
     const warnings: string[] = [];
     const rendered = await renderAgentMeasurementTargets({
         targets: resolution.targets,
-        startBeat: input.startBeat,
-        endBeat: input.endBeat,
+        windows: input.windows,
+        timeline: readAgentMeasurementTimeline(),
         sourceRevision: input.sourceRevision,
         signal: input.signal,
         onRenderStart: input.onRenderStart,
@@ -77,4 +99,19 @@ export async function renderAgentMeasurementScope(
         return rendered;
     }
     return { status: 'rendered', soloActive: resolution.soloActive, targets: rendered.targets, warnings };
+}
+
+/** Render one scope over one beat range: the windowed render with that range as its only window. */
+export async function renderAgentMeasurementScope(
+    input: RenderAgentMeasurementScopeInput
+): Promise<RenderAgentMeasurementScopeResult> {
+    const { startBeat, endBeat, ...rest } = input;
+    const rendered = await renderAgentMeasurementWindows({ ...rest, windows: [{ startBeat, endBeat }] });
+    if (rendered.status !== 'rendered') {
+        return rendered;
+    }
+    return {
+        ...rendered,
+        targets: rendered.targets.map(({ windows, ...target }) => ({ ...target, ...windows[0]! })),
+    };
 }

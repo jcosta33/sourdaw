@@ -265,10 +265,20 @@ function seededBrief(): ProductionBrief {
 }
 
 /**
- * Every track sounds a 100 Hz body beside a 3 kHz top, each scaled by the low and high shelf gains
- * of the EQs it carries, so a warming recipe raises the bass band and lowers the centroid.
+ * A render as the song it holds: its first frame is the song at its start beat (two beats a second),
+ * so every range read out of a wider render holds that range's own samples.
  */
-function renderTrack(input: RenderInput, chorusStart = 2): AudioBuffer {
+function renderSong(input: RenderInput, sample: (songSeconds: number) => number): AudioBuffer {
+    const startSeconds = input.startBeat / 2;
+    return metricGoalAudioBuffer((time) => sample(startSeconds + time), (input.endBeat - input.startBeat) / 2);
+}
+
+/**
+ * Every track sounds a 100 Hz body beside a 3 kHz top, each scaled by the low and high shelf gains
+ * of the EQs it carries, so a warming recipe raises the bass band and lowers the centroid; the top is
+ * brighter from the chorus on.
+ */
+function trackSample(input: RenderInput, chorusStart = 2): (songSeconds: number) => number {
     const track = input.renderTracks.find((candidate) => candidate.id === input.targetTrackId);
     if (track === undefined) {
         throw new Error('The render target is absent.');
@@ -277,15 +287,18 @@ function renderTrack(input: RenderInput, chorusStart = 2): AudioBuffer {
         track.devices.reduce((total, device) => total + (device.parameterValues[id] ?? 0), 0);
     const low = 10 ** (parameter('eq-low-gain') / 20);
     const high = 10 ** (parameter('eq-high-gain') / 20);
-    const seconds = (input.endBeat - input.startBeat) / 2;
     const frequency = input.targetTrackId === DRUMS_ID ? 100 : 220;
-    const brightness = input.startBeat === chorusStart ? 0.35 : 0.15;
-    return metricGoalAudioBuffer(
-        (time) =>
-            0.4 * low * Math.sin(2 * Math.PI * frequency * time) +
-            brightness * high * Math.sin(2 * Math.PI * 3000 * time),
-        seconds
-    );
+    return (song) => {
+        const brightness = song >= chorusStart / 2 ? 0.35 : 0.15;
+        return (
+            0.4 * low * Math.sin(2 * Math.PI * frequency * song) +
+            brightness * high * Math.sin(2 * Math.PI * 3000 * song)
+        );
+    };
+}
+
+function renderTrack(input: RenderInput, chorusStart = 2): AudioBuffer {
+    return renderSong(input, trackSample(input, chorusStart));
 }
 
 async function sendChatMessage(prompt: string, options?: Parameters<typeof sendChatMessageWithoutDocumentFlush>[1]) {
@@ -585,13 +598,16 @@ describe('initial role and exact-section baselines through the brief pipeline', 
         const initial = measuredPlan(brief).initial;
         audio.renderTrackSubgraphOffline.mockImplementation(async (input: RenderInput) => {
             const track = input.renderTracks.find((track) => track.id === input.targetTrackId);
-            if (input.startBeat === 2 && (track?.devices.length ?? 0) > 0) {
-                return metricGoalAudioBuffer(
-                    (time) => 0.01 * Math.sin(2 * Math.PI * 100 * time) + 0.6 * Math.sin(2 * Math.PI * 3000 * time),
-                    1
-                );
+            const sounding = trackSample(input);
+            if ((track?.devices.length ?? 0) === 0) {
+                return renderTrack(input);
             }
-            return renderTrack(input);
+            // The processed chorus loses its body and turns harsh, while the verse still improves.
+            return renderSong(input, (song) =>
+                song >= 1
+                    ? 0.01 * Math.sin(2 * Math.PI * 100 * song) + 0.6 * Math.sin(2 * Math.PI * 3000 * song)
+                    : sounding(song)
+            );
         });
         await expect(confirmPendingChatActions({ confirmationId: brief.id })).resolves.toEqual({ status: 'executed' });
         const batch = requireOnlyProposedCard();
@@ -873,9 +889,10 @@ describe('initial role and exact-section baselines through the brief pipeline', 
 
     it('schedules around a silent required section and never invents zero as its figure', async () => {
         keepDrumsOnly();
-        audio.renderTrackSubgraphOffline.mockImplementation(async (input: RenderInput) =>
-            input.startBeat === 2 ? metricGoalAudioBuffer(() => 0, 1) : renderTrack(input)
-        );
+        audio.renderTrackSubgraphOffline.mockImplementation(async (input: RenderInput) => {
+            const sounding = trackSample(input);
+            return renderSong(input, (song) => (song >= 1 ? 0 : sounding(song)));
+        });
         scriptPlanningTurns(BRIEF_ROUTE);
         await sendChatMessage(PROMPT);
         const card = requireOnlyProposedCard();
