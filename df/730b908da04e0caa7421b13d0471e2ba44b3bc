@@ -1,0 +1,34 @@
+.agents/skills/review-stances/bundled-model-assets.md
+  s_126e3d478b4f75::t_285ff8a83a17eb 46-61
+scripts/__tests__/releaseProof.spec.ts
+  s_126e3d478b4f75::t_97ec1897d7c9da 93
+src/modules/AiRuntime/repositories/webLlm/__tests__/webLlmModelLibraryAbi.spec.ts
+  s_126e3d478b4f75::t_332a6590f8f175 25-36,59-69,71,77-79,86
+  s_126e3d478b4f75::t_0badc64821a047 74-76,82-85,88-110,112
+  s_126e3d478b4f75::t_95b8141886894d 1-24,37-58,70,72-73,80-81,87,111,113
+src/modules/AiRuntime/repositories/__tests__/webLlmProviderAdapter.spec.ts
+  s_126e3d478b4f75::t_dd0d8fc99df52d 324-325
+  s_126e3d478b4f75::t_256c8ed597bd89 327-330,334-346
+  s_126e3d478b4f75::t_e1f490bae926fb 347-348
+scripts/__tests__/checkReleaseInventory.spec.ts
+  s_126e3d478b4f75::t_eb915fc921a43b 119-122
+  s_126e3d478b4f75::t_0badc64821a047 710-716
+  s_126e3d478b4f75::t_cce69e759b17cc 123-125,693-696,725-730,744,749-751,1632-1634,1655-1672
+  s_126e3d478b4f75::t_a14d782055b741 1673-1675
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "df730b908da04e0caa7421b13d0471e2ba44b3bc",
+  "prompts": {},
+  "sessions": {
+    "s_126e3d478b4f75": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cefa-4460-7913-80c3-c339638913d0",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
