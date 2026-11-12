@@ -1,0 +1,78 @@
+src/modules/Arrangement/models/DevicePatchState.ts
+  s_9307cedd8951f1::t_27bdb5319999f5 1-7
+src/modules/Arrangement/models/PlannedDeviceWrite.ts
+  s_9307cedd8951f1::t_e786a938629eb8 1-21,26-36,38-43
+  s_9307cedd8951f1::t_ccc89c46530f6f 22,24-25
+  s_3df76396fbd4b1::t_7ff6705ceb5d83 23,37
+src/modules/Arrangement/useCases/device/applyDevicePatchState.ts
+  s_9307cedd8951f1::t_43dcbac716ce92 35
+  s_9307cedd8951f1::t_feca09e7879cbb 3-8,11-24,27-34,37-40
+  s_eec9d24f84ae15::t_c5f6e1c09ea89a 1-2,9-10,25-26,36
+src/modules/Arrangement/models/planDevicePatchWrite.ts
+  s_9307cedd8951f1::t_e786a938629eb8 1-8,10-50,52-74,76-90,92-98,100-115,117-142,149-150,162-170,175-200
+  s_9307cedd8951f1::t_ccc89c46530f6f 143-148,151-157,159-161,171-172,174
+  s_3df76396fbd4b1::t_e668bcead81bab 9,51,75,91,99,116,158,173
+src/modules/Arrangement/handlers/__tests__/projectTrackThroughPriorBatchActions.spec.ts
+  s_9307cedd8951f1::t_bd029c2db6ec0d 51-53,63-65,70-73,107-108
+  s_9307cedd8951f1::t_a77bb10cfa6033 54-62,66-69,74-78,80-83,85-94,96-99,102-106
+  s_eec9d24f84ae15::t_9a5231d04062d7 79,84,95,100-101
+src/modules/Arrangement/models/projectCapturedDevicePatch.ts
+  s_9307cedd8951f1::t_27bdb5319999f5 1-50
+src/modules/Arrangement/models/__tests__/planDevicePatchWrite.spec.ts
+  s_9307cedd8951f1::t_6c944944931be9 1-7,9-14,16-18,20-44,46-62,66-80,82-97,99-126,128-139,142-150,152-166,168-206,209-216,241-243,245,247-251,254-258
+  s_3ada54e7b1c8ad::t_8cf1a7bf86be6a 8,15,19,45,63-65,81,98,127,140-141,151,167,207-208,217-240,244,246,252-253
+src/modules/Arrangement/models/projectDeviceChainAction.ts
+  s_9307cedd8951f1::t_27bdb5319999f5 1-49,51-74,76-86,88-101
+  s_3ada54e7b1c8ad::t_04f940f1a8fd1a 50,75,87
+src/modules/Arrangement/useCases/device/__tests__/applyDevicePatchState.spec.ts
+  s_9307cedd8951f1::t_c8b6f05052af61 26-29,36-38,53-57,71-77,87-88,90-91
+  s_9307cedd8951f1::t_50ad61ed0c57fb 1-3,5-25,30-35,39-52,58-70,83-86,89,92-114
+  s_9307cedd8951f1::t_fc04ba65138adc 78-82
+  s_9307cedd8951f1::t_bc6c52c9601383 4
+src/modules/Arrangement/models/projectDeviceSnapshots.ts
+  s_9307cedd8951f1::t_27bdb5319999f5 1-29
+src/modules/Arrangement/handlers/preset/toPresetProjectDevices.ts
+  s_eec9d24f84ae15::t_88da606b75a566 3,5-7
+src/modules/Arrangement/handlers/projectTrackThroughPriorBatchActions.ts
+  s_3df76396fbd4b1::t_3fae170d822d84 9,17-24
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1dd465828bc239b35d3b999b18a5e2f51a71c8c6",
+  "prompts": {},
+  "sessions": {
+    "s_3ada54e7b1c8ad": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "03a5a80a-25dd-436b-aca5-abe9c78083de",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_3df76396fbd4b1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f8caa473-e64a-4fad-b579-cf6c36add2c2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_9307cedd8951f1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cee0-9c43-7223-9451-be85d15b1347",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_eec9d24f84ae15": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cc8d-d36d-71b3-be5c-15c29b38b9aa",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
