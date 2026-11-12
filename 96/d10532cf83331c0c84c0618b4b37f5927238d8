@@ -1,0 +1,16 @@
+src/modules/ElasticAudio/presentations/views/ElasticEditorPanel.tsx
+  h_beb54bf43b47b7 693-696
+tests/e2e/elasticTransientWorkerPerformance.spec.ts
+  h_beb54bf43b47b7 103-104,192
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "96d10532cf83331c0c84c0618b4b37f5927238d8",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
