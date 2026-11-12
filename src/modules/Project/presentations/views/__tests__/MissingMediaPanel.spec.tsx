@@ -12,7 +12,10 @@ import {
 import { locateMissingMedia } from '../../../useCases/locateMissingMedia';
 import { MissingMediaPanel } from '../MissingMediaPanel';
 
-vi.mock('#/modules/Arrangement/useCases', () => ({ revealClip: vi.fn() }));
+vi.mock('#/modules/Arrangement/useCases', () => ({
+    revealClip: vi.fn(),
+    readRelinkAudioSourceEligibility: vi.fn(() => 'eligible'),
+}));
 vi.mock('../../../useCases/locateMissingMedia', () => ({ locateMissingMedia: vi.fn() }));
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: vi.fn() }));
 

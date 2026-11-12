@@ -3,7 +3,7 @@ import { type HandlerValidationContext } from '#/utils/handlerContract';
 import { type RelinkTarget, RELINK_AUDIO_SOURCE_KEYS } from '../../models/RelinkAudioSourceTarget';
 import { type Clip, type Track } from '../../models/Track';
 import { resolveEligibleClipWriteTarget } from '../../stores/resolveEligibleClipWriteTarget';
-import { trackStore } from '../../stores/trackStore';
+import { type TrackStoreState, trackStore } from '../../stores/trackStore';
 
 import { projectRelinkAudioSourceTracks } from './projectRelinkAudioSourceTracks';
 
@@ -25,8 +25,11 @@ function matches(track: Track, clip: Clip, target: RelinkTarget): boolean {
     );
 }
 
-function readRelinkSourceState(context?: HandlerValidationContext): typeof trackStore.value {
-    let state = trackStore.value;
+function readRelinkSourceState(
+    context?: HandlerValidationContext,
+    sourceState = trackStore.value
+): typeof trackStore.value {
+    let state = sourceState;
     if (state && context && context.actionIndex > 0) {
         const tracks = projectRelinkAudioSourceTracks(state.tracks, context.actions.slice(0, context.actionIndex));
         if (!tracks) {
@@ -39,9 +42,10 @@ function readRelinkSourceState(context?: HandlerValidationContext): typeof track
 
 export function relinkAudioSourceTargetsMatch(
     targets: readonly RelinkTarget[],
-    context?: HandlerValidationContext
+    context?: HandlerValidationContext,
+    sourceState?: TrackStoreState | null
 ): boolean {
-    const state = readRelinkSourceState(context);
+    const state = readRelinkSourceState(context, sourceState);
     if (targets.length === 0) {
         return false;
     }

@@ -5,7 +5,8 @@ import { AlertTriangle } from 'lucide-react';
 import { Button } from '#/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '#/components/ui/popover';
 import { useStore } from '#/infra/store/useStore';
-import { revealClip } from '#/modules/Arrangement/useCases';
+import { defaultTrackState, trackStore } from '#/modules/Arrangement/stores';
+import { readRelinkAudioSourceEligibility, revealClip } from '#/modules/Arrangement/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import {
@@ -15,11 +16,20 @@ import {
 } from '../../stores/missingMediaStore';
 import { locateMissingMedia } from '../../useCases/locateMissingMedia';
 
-/** Frozen tracks have no relink affordance — the repair is to unfreeze and
- * re-render — so the two kinds get different guidance. */
-function describeRepair(item: MissingMediaItem): string {
+/** Frozen renders require re-rendering; a missing source can be relinked only
+ * when every clip owner is editable. */
+function describeRepair(
+    item: MissingMediaItem,
+    eligibility: ReturnType<typeof readRelinkAudioSourceEligibility>
+): string {
     if (item.kind === 'frozenTrack') {
         return 'Unfreeze the track to re-render its audio';
+    }
+    if (eligibility === 'frozen') {
+        return 'Unfreeze every track using this source, then locate the replacement file';
+    }
+    if (eligibility !== 'eligible') {
+        return 'This source cannot be relinked until its clip owners are editable';
     }
     return 'Drop a replacement file on the clip to relink it';
 }
@@ -37,14 +47,17 @@ function rowKey(item: MissingMediaItem): string {
 
 export const MissingMediaPanel = (): ReactElement | null => {
     const missingMedia = useStore(missingMediaStore, defaultMissingMediaStoreState);
+    const tracks = useStore(trackStore, defaultTrackState);
     const [open, setOpen] = useState(false);
     const [locatingBufferId, setLocatingBufferId] = useState<string | null>(null);
 
     const items = missingMedia.items;
     const primaryRowByBuffer = new Map<string, string>();
+    const eligibilityByBuffer = new Map<string, ReturnType<typeof readRelinkAudioSourceEligibility>>();
     for (const item of items) {
         if (item.kind === 'clip' && !primaryRowByBuffer.has(item.bufferId)) {
             primaryRowByBuffer.set(item.bufferId, rowKey(item));
+            eligibilityByBuffer.set(item.bufferId, readRelinkAudioSourceEligibility(item.bufferId, tracks));
         }
     }
 
@@ -96,10 +109,13 @@ export const MissingMediaPanel = (): ReactElement | null => {
                             <li className="px-2 py-1.5" key={rowKey(item)}>
                                 <p className="text-sm">{item.label}</p>
                                 <p className="text-xs text-muted-foreground">{item.trackName}</p>
-                                <p className="text-xs text-muted-foreground/80">{describeRepair(item)}</p>
+                                <p className="text-xs text-muted-foreground/80">
+                                    {describeRepair(item, eligibilityByBuffer.get(item.bufferId) ?? 'missing')}
+                                </p>
                                 {item.kind === 'clip' ? (
                                     <div className="mt-1 flex gap-1">
-                                        {primaryRowByBuffer.get(item.bufferId) === rowKey(item) ? (
+                                        {primaryRowByBuffer.get(item.bufferId) === rowKey(item) &&
+                                        eligibilityByBuffer.get(item.bufferId) === 'eligible' ? (
                                             <Button
                                                 size="sm"
                                                 variant="outline"

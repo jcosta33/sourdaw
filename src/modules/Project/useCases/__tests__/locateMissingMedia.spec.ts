@@ -286,6 +286,39 @@ describe('locateMissingMedia', () => {
         expect(missingMediaStore.value).toEqual(defaultMissingMediaStoreState);
     });
 
+    it('does not offer a same-folder picker for a source owned by a frozen track', async () => {
+        arrange([
+            audioClip('clip-guitar', 'track-one', 'buf-guitar', 'Guitar.wav'),
+            audioClip('clip-bass', 'track-two', 'buf-bass', 'Bass.wav'),
+        ]);
+        const state = trackStore.value!;
+        trackStore.set({
+            ...state,
+            tracks: state.tracks.map((owner) =>
+                owner.id === 'track-two'
+                    ? { ...owner, frozen: true, freezeState: { status: 'frozen', frozenBufferId: 'rendered-bass' } }
+                    : owner
+            ),
+        });
+        flushAutomergeStorageWrites();
+        mocks.buffers.set('rendered-bass', {} as AudioBuffer);
+        vi.mocked(pickFilesFromNativeDialog).mockResolvedValue([replacement('guitar-replacement.wav')]);
+        vi.mocked(confirmUser).mockResolvedValue(true);
+
+        await locateMissingMedia({ sourceBufferId: 'buf-guitar', label: 'Guitar.wav' });
+
+        expect(pickFilesFromNativeDialog).toHaveBeenCalledOnce();
+        expect(confirmUser).not.toHaveBeenCalled();
+        expect(mocks.decodeAudioFile).toHaveBeenCalledOnce();
+        expect(trackStore.value?.tracks.map((owner) => owner.clips[0]?.audioBufferId)).toEqual([
+            'decoded-guitar-replacement.wav',
+            'buf-bass',
+        ]);
+        expect(missingMediaStore.value?.items).toEqual([
+            expect.objectContaining({ bufferId: 'buf-bass', clipId: 'clip-bass' }),
+        ]);
+    });
+
     it('skips one missing source matched by two selected files and warns without relinking it', async () => {
         arrange([
             audioClip('clip-guitar', 'track-one', 'buf-guitar', 'Guitar.wav'),

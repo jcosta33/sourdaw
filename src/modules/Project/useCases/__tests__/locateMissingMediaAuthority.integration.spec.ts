@@ -1,3 +1,5 @@
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { createElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MockAudioBuffer } from '#/helpers/__tests__/audioContext.mock';
@@ -11,6 +13,7 @@ import {
     getArrangementHandlers,
     replaceClipAudioBuffer,
     readUndoHistoryAudioBufferIds,
+    unfreezeTrack,
 } from '#/modules/Arrangement/useCases';
 import { clearHandlerRegistry, registerHandlerMap, undoStore, undoHistoryStore } from '#/modules/Command/stores';
 import { clearUndoHistory, executeAppAction, redo, resetActionReplayAuthority, undo } from '#/modules/Command/useCases';
@@ -28,6 +31,7 @@ import {
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { pickFiles } from '../../repositories/nativeFileDialog/pickFiles';
+import { MissingMediaPanel } from '../../presentations/views/MissingMediaPanel';
 import { type ArrangementSnapshot, arrangementStore } from '../../stores/arrangementStore';
 import { missingMediaStore } from '../../stores/missingMediaStore';
 import { defaultProjectStoreState, projectStore } from '../../stores/projectStore';
@@ -171,6 +175,59 @@ describe('missing-media recovery through real CRDT and Command', () => {
         await redo();
         flushAutomergeStorageWrites();
         expect(rawClip().audioBufferId).toBe('replacement');
+    });
+
+    it('withholds Locate for every alias of a frozen source until its owner is unfrozen', async () => {
+        const state = trackStore.value!;
+        const frozen = {
+            ...state.tracks[0]!,
+            frozen: true,
+            freezeState: { status: 'frozen' as const, frozenBufferId: 'frozen-render' },
+        };
+        const other = {
+            ...track([{ ...clip('other'), trackId: 'track-two' }]),
+            id: 'track-two',
+            name: 'Other',
+        };
+        trackStore.set({ ...state, tracks: [frozen, other] });
+        io.buffers.set('frozen-render', MockAudioBuffer.create(1, 8, 48000));
+        flushAutomergeStorageWrites();
+        verifyAudioBufferReferences();
+        expect(missingMediaStore.value?.items.map(({ kind, clipId }) => ({ kind, clipId }))).toEqual([
+            { kind: 'clip', clipId: 'clip-a' },
+            { kind: 'clip', clipId: 'clip-alias' },
+            { kind: 'clip', clipId: 'other' },
+        ]);
+        const before = JSON.stringify(getCrdtDoc<Root>('root')?.tracks);
+        const view = render(createElement(MissingMediaPanel));
+        fireEvent.click(screen.getByRole('button', { name: /1 missing file/ }));
+        expect(screen.getAllByText(/Unfreeze/)).toHaveLength(3);
+        expect(screen.queryByRole('button', { name: 'Locate…' })).toBeNull();
+        await act(async () => {
+            await locateMissingMedia({ sourceBufferId: 'missing', label: 'clip-a.wav' });
+        });
+        expect(pickFiles).not.toHaveBeenCalled();
+        expect(io.decode).not.toHaveBeenCalled();
+        expect(JSON.stringify(getCrdtDoc<Root>('root')?.tracks)).toBe(before);
+        expect(undoHistoryStore.value?.past).toHaveLength(0);
+
+        act(() => {
+            unfreezeTrack('track-one');
+            flushAutomergeStorageWrites();
+        });
+        expect(getCrdtDoc<Root>('root')?.tracks.tracks[0]?.freezeState.status).toBe('unfrozen');
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Locate…' })).toBeEnabled());
+        await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Locate…' })));
+        await waitFor(() => expect(rawClip('other').audioBufferId).toBe('replacement'));
+        expect(rawClip('clip-a').audioBufferId).toBe('replacement');
+        expect(rawClip('clip-alias').audioBufferId).toBe('replacement');
+        expect(undoHistoryStore.value?.past).toHaveLength(1);
+        view.unmount();
+        await undo();
+        expect(rawClip('clip-a').audioBufferId).toBe('missing');
+        expect(rawClip('other').audioBufferId).toBe('missing');
+        await redo();
+        expect(rawClip('clip-alias').audioBufferId).toBe('replacement');
     });
 
     it('relinks live aliases through real history while leaving a locked stale active snapshot untouched', async () => {

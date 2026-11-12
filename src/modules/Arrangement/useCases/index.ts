@@ -76,6 +76,7 @@ export { retainedCreation } from './creationBatch';
 export { updateClip } from './updateClip';
 export { replaceClipAudioBuffer } from './replaceClipAudioBuffer';
 export { relinkClipAudioSource } from './relinkClipAudioSource';
+export { readRelinkAudioSourceEligibility } from './readRelinkAudioSourceEligibility';
 
 // ── Clip Editing ──────────────────────────────────────────────────────────────
 

@@ -1,6 +1,6 @@
 import { type RelinkTarget, RELINK_AUDIO_SOURCE_KEYS } from '../../models/RelinkAudioSourceTarget';
 import { type Clip } from '../../models/Track';
-import { trackStore } from '../../stores/trackStore';
+import { type TrackStoreState, trackStore } from '../../stores/trackStore';
 
 function captureSource(clip: Clip): RelinkTarget['before'] {
     const source: RelinkTarget['before'] = {};
@@ -13,9 +13,13 @@ function captureSource(clip: Clip): RelinkTarget['before'] {
     return source;
 }
 
-export function captureRelinkAudioSourceTargets(sourceBufferId: string, replacementBufferId: string): RelinkTarget[] {
+export function captureRelinkAudioSourceTargets(
+    sourceBufferId: string,
+    replacementBufferId: string,
+    state: TrackStoreState | null = trackStore.value
+): RelinkTarget[] {
     const targets: RelinkTarget[] = [];
-    for (const track of trackStore.value?.tracks ?? []) {
+    for (const track of state?.tracks ?? []) {
         const capture = (clip: Clip, alternativeId: string | null): void => {
             if (clip.type !== 'audio' || (clip.audioBufferId ?? clip.id) !== sourceBufferId) {
                 return;

@@ -1,4 +1,4 @@
-import { relinkClipAudioSource } from '#/modules/Arrangement/useCases';
+import { readRelinkAudioSourceEligibility, relinkClipAudioSource } from '#/modules/Arrangement/useCases';
 import { decodeAudioFile, discardDecodedAudioFile } from '#/modules/AudioEngine/useCases';
 import { AUDIO_EXTENSION_ROSTER, AUDIO_EXTENSIONS, isAudioFile } from '#/utils/audioFileExtensions';
 import { confirmUser } from '#/utils/Notification/confirmUser';
@@ -80,7 +80,12 @@ async function relinkReplacement(source: MissingSource, file: File, isCurrent: (
 function remainingSources(excludedBufferId: string): MissingSource[] {
     const sources = new Map<string, MissingSource>();
     for (const item of missingMediaStore.value?.items ?? []) {
-        if (item.kind !== 'clip' || item.bufferId === excludedBufferId || sources.has(item.bufferId)) {
+        if (
+            item.kind !== 'clip' ||
+            item.bufferId === excludedBufferId ||
+            sources.has(item.bufferId) ||
+            readRelinkAudioSourceEligibility(item.bufferId) !== 'eligible'
+        ) {
             continue;
         }
         sources.set(item.bufferId, { sourceBufferId: item.bufferId, label: item.label });
@@ -132,6 +137,10 @@ async function offerSameFolderRecovery(excludedBufferId: string, isCurrent: () =
             continue;
         }
         const source = matches[0]!;
+        if (readRelinkAudioSourceEligibility(source.sourceBufferId) !== 'eligible') {
+            skippedCount++;
+            continue;
+        }
         if (await relinkReplacement(source, file, isCurrent)) {
             matchedBufferIds.add(source.sourceBufferId);
             repaired = true;
@@ -156,6 +165,15 @@ export async function locateMissingMedia(source: MissingSource): Promise<void> {
     const authority = captureArrangementMediaAuthority();
     const isCurrent = authority.isCurrent;
     try {
+        const eligibility = readRelinkAudioSourceEligibility(source.sourceBufferId);
+        if (eligibility !== 'eligible') {
+            if (eligibility === 'frozen') {
+                notifyUser('Unfreeze every track using this source before locating a replacement file.', 'warning');
+            } else if (eligibility === 'blocked') {
+                notifyUser('Make every clip owner editable before locating a replacement file.', 'warning');
+            }
+            return;
+        }
         const files = await pickReplacements(false);
         const file = files?.[0];
         if (!file || !isCurrent()) {
