@@ -289,7 +289,7 @@ export const vocalMixRecipes: readonly MixRecipe[] = [
         ],
         metrics: [
             { metric: 'frequencyBandEnergy', band: 'low-mid', direction: 'decrease' },
-            { metric: 'interTrackMasking', direction: 'decrease' },
+            { metric: 'rms', direction: 'decrease' },
         ],
         source: 'Vocal mud collects between 250 Hz and 400 Hz where proximity effect and room modes overlap, which is below the mid band the descriptor normally reaches; the narrower Q keeps the cut off the vowel fundamentals just above it. The shallower low shelf removes the broad shoulder underneath without hollowing the chest.',
     },

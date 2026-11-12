@@ -91,7 +91,7 @@ export const busMixRecipes: readonly MixRecipe[] = [
         ],
         metrics: [
             { metric: 'crestFactor', direction: 'decrease' },
-            { metric: 'busHeadroom', direction: 'increase' },
+            { metric: 'truePeak', direction: 'decrease' },
         ],
         source: 'Summing several sources stacks their low-frequency shoulders, so trimming that region before compression stops it dominating the detector. The shorter release then shortens the decay of the group as a whole, which is what tightness means at bus level.',
     },
@@ -264,7 +264,7 @@ export const busMixRecipes: readonly MixRecipe[] = [
         ],
         metrics: [
             { metric: 'frequencyBandEnergy', band: 'low-mid', direction: 'decrease' },
-            { metric: 'interTrackMasking', direction: 'decrease' },
+            { metric: 'rms', direction: 'decrease' },
         ],
         source: 'Several sources each carrying a modest 250 Hz to 400 Hz shoulder sum into a buildup none of them shows alone, which is exactly the case a bus cut answers. The bell sits below the mid band the descriptor usually reaches because that is where the summation happens.',
     },
@@ -295,7 +295,7 @@ export const busMixRecipes: readonly MixRecipe[] = [
         ],
         metrics: [
             { metric: 'frequencyBandEnergy', band: 'bass', direction: 'increase' },
-            { metric: 'busHeadroom', direction: 'decrease' },
+            { metric: 'truePeak', direction: 'increase' },
         ],
         source: 'A low-end lift on a bus stacks across every source feeding it, so bus amounts stay near half of single-track amounts and the headroom cost is stated as an expected consequence rather than a surprise. The broad bell above the shelf fills the region between weight and body without narrow resonance.',
     },
@@ -326,7 +326,7 @@ export const busMixRecipes: readonly MixRecipe[] = [
         ],
         metrics: [
             { metric: 'dynamicRangeEstimate', direction: 'decrease' },
-            { metric: 'busHeadroom', direction: 'increase' },
+            { metric: 'truePeak', direction: 'decrease' },
         ],
         source: 'Glue is the audible consequence of every source on a bus sharing one slow gain envelope, which needs a soft knee and a release long enough to span a bar rather than a beat. Two or three decibels of reduction is the working range; past that the envelope itself becomes the thing you hear.',
     },

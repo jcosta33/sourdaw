@@ -262,7 +262,7 @@ export const keysMixRecipes: readonly MixRecipe[] = [
         ],
         metrics: [
             { metric: 'frequencyBandEnergy', band: 'low-mid', direction: 'decrease' },
-            { metric: 'interTrackMasking', direction: 'decrease' },
+            { metric: 'rms', direction: 'decrease' },
         ],
         source: 'Dense left-hand voicings pile several notes into the 250 Hz to 450 Hz region, below the mid band the descriptor usually reaches, and that is also where bass harmonics and vocal body sit. A bell narrow enough to sit between those voicings clears the collision without hollowing the part.',
     },
