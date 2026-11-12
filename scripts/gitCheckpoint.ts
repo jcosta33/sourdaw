@@ -470,7 +470,6 @@ async function main(args: string[]) {
         receiver: 'unavailable; shared receiver is not sampled',
         sampleIdentityLimit:
             'best-effort ps identity; second-resolution start and non-atomic recheck can race PID reuse',
-        timeline: [],
     };
     let diagnosticFailed = false;
     function diagnostic(action: () => void) {
