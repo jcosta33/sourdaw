@@ -1,0 +1,50 @@
+src/modules/AudioAnalysis/useCases/__tests__/polyphonicAudioToMidi.spec.ts
+  s_126e3d478b4f75::t_6f3328c3229471 43,46,76,137-146
+  s_126e3d478b4f75::t_532d90c7da4071 67
+src/modules/AudioAnalysis/repositories/__tests__/loadBasicPitchModel.assets.spec.ts
+  s_126e3d478b4f75::t_86dbc6593a6d7f 48-60
+  s_126e3d478b4f75::t_532d90c7da4071 8-9,17-18
+  s_126e3d478b4f75::t_d73d0da0c972ad 44-47
+  s_126e3d478b4f75::t_5cf95847fb57bc 24
+src/modules/AudioAnalysis/useCases/__tests__/polyphonicAudioToMidi.realModel.integration.spec.ts
+  s_126e3d478b4f75::t_6f3328c3229471 29,42-44,79-80,84
+  s_126e3d478b4f75::t_532d90c7da4071 20,41,49,85
+src/modules/AudioAnalysis/repositories/loadBasicPitchModel.ts
+  s_126e3d478b4f75::t_a5ff0098420998 2,5-7
+vite.config.ts
+  s_126e3d478b4f75::t_a5ff0098420998 17-18,20,199-200
+scripts/basicPitchAssets.ts
+  s_126e3d478b4f75::t_a5ff0098420998 1-46,51-65
+  s_126e3d478b4f75::t_c0a43025c8b346 47-50
+package.json
+  s_126e3d478b4f75::t_59bd3b40d54a3c 147,151,161,189
+src/modules/AudioAnalysis/repositories/__tests__/loadBasicPitchModel.spec.ts
+  s_126e3d478b4f75::t_c0a43025c8b346 23-26
+  s_126e3d478b4f75::t_1dedba66d5437a 1-14,16-22,27-29,31-32
+  s_126e3d478b4f75::t_532d90c7da4071 15,30
+patches/vite@8.3.8.patch
+  s_126e3d478b4f75::t_59bd3b40d54a3c 1-58
+pnpm-workspace.yaml
+  s_126e3d478b4f75::t_59bd3b40d54a3c 38
+  s_126e3d478b4f75::t_fa57b3c942059e 42
+vite-env.d.ts
+  s_126e3d478b4f75::t_a5ff0098420998 2-6
+pnpm-lock.yaml
+  s_126e3d478b4f75::t_87bc3920a71ca2 166,273-274,280,285-286,315-316,399-400,403,609-611,615-617,621-623,977-983,2119-2120,2125-2126,2131-2132,2137-2138,2143-2144,2149-2150,2155-2156,2162-2163,2169-2170,2176-2177,2183-2184,2190-2191,2197-2198,2203-2209,2214-2215,2220-2221,2548-2550,2552-2554,2558,2573-2575,3083-3084,5134-5135,5599-5600,5921-5922,5955-5956,6100-6105,6111-6115,6121-6125,6422-6428,7435-7438,7441,7444,7447,7450,7453,7456,7459,7462,7465,7468,7471,7474-7478,7481,7484,7487,7492,7495,7677,7682,7727,7731,7740,7746-7747,7749,7753,7764,7893,8243,8246,8248,8261,8269,8276,10767,10772-10787,11173,11181,11183,11262,11267,11277,11280,11291
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "92a1f61eb15dc7d137be9f0241fc0df8079a4c14",
+  "prompts": {},
+  "sessions": {
+    "s_126e3d478b4f75": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cefa-4460-7913-80c3-c339638913d0",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
