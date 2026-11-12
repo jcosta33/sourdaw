@@ -1,0 +1,21 @@
+scripts/resourceGuard.ts
+  s_9307cedd8951f1::t_04016f3e86f1e2 231-255,262
+scripts/__tests__/resourceGuard.spec.ts
+  s_9307cedd8951f1::t_ddf06b1a2cfb30 2873-2879,2885-2888
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c12fe757b4c08a15ea85147930042517b7578d7c",
+  "prompts": {},
+  "sessions": {
+    "s_9307cedd8951f1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cee0-9c43-7223-9451-be85d15b1347",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
