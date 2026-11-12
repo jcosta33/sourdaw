@@ -642,7 +642,7 @@ it('owns and removes a standalone CLI journal after successful help', () => {
     }
 });
 
-it('persists the synchronous traversal and analysis boundary before analysis can block', () => {
+it('calls an injected progress observer before synchronous analysis can block', () => {
     const directory = mkdtempSync(join(tmpdir(), 'sourdaw-scan-progress-'));
     const path = join(directory, 'progress');
     const stages: string[] = [];
@@ -661,6 +661,36 @@ it('persists the synchronous traversal and analysis boundary before analysis can
         rmSync(directory, { recursive: true, force: true });
     }
 });
+
+it('writes the production scan journal through the default progress observer', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'sourdaw-scan-default-'));
+    const previous = process.env.SOURDAW_VITEST_PROGRESS;
+    process.env.SOURDAW_VITEST_PROGRESS = directory;
+    try {
+        const before = process.hrtime.bigint();
+        const result = scanRepository();
+        const after = process.hrtime.bigint();
+        const record = JSON.parse(readFileSync(join(directory, 'scan.json'), 'utf8')) as {
+            event: string;
+            detail: string;
+            pid: number;
+            monotonicNs: string;
+        };
+        expect(record).toMatchObject({ event: 'scan', detail: 'gated-analysis-end', pid: process.pid });
+        const recordedAt = BigInt(record.monotonicNs);
+        expect(recordedAt).toBeGreaterThanOrEqual(before);
+        expect(recordedAt).toBeLessThanOrEqual(after);
+        expect(result.specCount).toBeGreaterThan(0);
+        expectDerivedEnough(result);
+    } finally {
+        if (previous === undefined) {
+            delete process.env.SOURDAW_VITEST_PROGRESS;
+        } else {
+            process.env.SOURDAW_VITEST_PROGRESS = previous;
+        }
+        rmSync(directory, { recursive: true, force: true });
+    }
+}, 120_000);
 
 describe('checkBarrelMockCoverage — the real tree', () => {
     let gated: RealTreeScan;
