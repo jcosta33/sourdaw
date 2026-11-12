@@ -1,0 +1,19 @@
+scripts/__tests__/agentDeliveryScripts.spec.ts
+  s_1078145bfbea58::t_ac52b14b50cecc 3556-3557
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0e51e07574df1bfd995e4fe7174464931be59461",
+  "prompts": {},
+  "sessions": {
+    "s_1078145bfbea58": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_1078145bfbea58",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
