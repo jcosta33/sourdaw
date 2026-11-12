@@ -8,6 +8,7 @@ type TrackStoreSubscribe = (typeof import('#/modules/Arrangement/stores'))['trac
 
 const mocks = vi.hoisted(() => {
     const callOrder: string[] = [];
+    const waveformPeaks = new Map<string, Float32Array>();
     const trackStoreValue: {
         tracks: { id: string; clips: { id: string; type: string; audioBufferId: string | undefined }[] }[];
         selectedTrackId: string;
@@ -59,7 +60,17 @@ const mocks = vi.hoisted(() => {
         updateWarpMarkerBeat: vi.fn(),
         commitWarpMarkerBeatDrag: vi.fn(),
         setDefaultAlgorithm: vi.fn(),
-        getWaveformPeaks: vi.fn((..._args: unknown[]) => new Float32Array(200).fill(0.3)),
+        background: '#151515',
+        waveformPeaks,
+        getWaveformPeaks: vi.fn((...args: unknown[]) => {
+            const key = `${String(args[0])}:${String(args[1])}`;
+            let peaks = waveformPeaks.get(key);
+            if (!peaks) {
+                peaks = new Float32Array(Number(args[1])).fill(0.3);
+                waveformPeaks.set(key, peaks);
+            }
+            return peaks;
+        }),
         trackStoreValue,
         timelineEditingValue,
         clipSelectionValue,
@@ -168,7 +179,7 @@ vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
 });
 
 vi.mock('#/utils/UI/resolveToken', () => ({
-    resolveToken: (_name: string, fallback: string) => fallback,
+    resolveToken: () => mocks.background,
 }));
 
 vi.mock('../../../stores/elasticAudio', () => ({
@@ -253,6 +264,8 @@ import { ElasticEditorPanel } from '../ElasticEditorPanel';
 describe('ElasticEditorPanel', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        mocks.waveformPeaks.clear();
+        mocks.background = '#151515';
         preferencesStore.trySet(defaultPreferences);
         mocks.callOrder.length = 0;
         mocks.trackStoreValue = {
@@ -267,6 +280,15 @@ describe('ElasticEditorPanel', () => {
             selectedMarkerIds: [],
             detected: true,
         };
+        mocks.warpStates.set('c1', {
+            enabled: true,
+            markers: [
+                { id: 'm1', originalBeat: 1, warpedBeat: 1, origin: 'transient-auto', confidence: 0.9 },
+                { id: 'm2', originalBeat: 2, warpedBeat: 2, origin: 'user' },
+            ],
+            stretchMode: 'phase-vocoder',
+            originalTempo: null,
+        });
     });
 
     afterEach(() => {
@@ -278,6 +300,268 @@ describe('ElasticEditorPanel', () => {
         render(<ElasticEditorPanel />);
         expect(screen.getByTestId('elastic-waveform-canvas')).toBeInTheDocument();
         expect(screen.getByTestId('elastic-detail-strip')).toHaveTextContent('1 transient, 1 user, 0 locked');
+    });
+
+    describe('waveform drawing', () => {
+        function publishEquivalentSnapshot(): void {
+            const state = mocks.warpStates.get('c1');
+            if (!state) {
+                throw new Error('Missing fixture warp state');
+            }
+            mocks.warpStates.set('c1', structuredClone(state));
+        }
+
+        function observeDrawing() {
+            const context = document.createElement('canvas').getContext('2d');
+            if (!context) {
+                throw new Error('Missing fixture canvas context');
+            }
+            const strokeColors: string[] = [];
+            const fillColors: string[] = [];
+            vi.spyOn(context, 'stroke').mockImplementation(() => {
+                if (typeof context.strokeStyle !== 'string') {
+                    throw new TypeError('Expected a string stroke color');
+                }
+                strokeColors.push(context.strokeStyle);
+            });
+            const fill = vi.spyOn(context, 'fillRect').mockImplementation(() => {
+                if (typeof context.fillStyle !== 'string') {
+                    throw new TypeError('Expected a string fill color');
+                }
+                fillColors.push(context.fillStyle);
+            });
+            return { context, fill, line: vi.spyOn(context, 'lineTo'), strokeColors, fillColors };
+        }
+
+        afterEach(() => {
+            vi.restoreAllMocks();
+            vi.unstubAllGlobals();
+        });
+
+        it('does not clear or resubmit pixels for a distinct authoritative snapshot with equal visual inputs', () => {
+            const drawing = observeDrawing();
+            const view = render(<ElasticEditorPanel />);
+            const canvas = screen.getByTestId<HTMLCanvasElement>('elastic-waveform-canvas');
+            expect(drawing.fill).toHaveBeenCalledWith(0, 0, 2560, 120);
+            expect(drawing.line).toHaveBeenCalledWith(40, 120);
+            const fills = drawing.fill.mock.calls.length;
+            const lines = drawing.line.mock.calls.length;
+            const backingWidth = vi.spyOn(canvas, 'width', 'set');
+            const backingHeight = vi.spyOn(canvas, 'height', 'set');
+            publishEquivalentSnapshot();
+            view.rerender(<ElasticEditorPanel />);
+            expect(drawing.fill).toHaveBeenCalledTimes(fills);
+            expect(drawing.line).toHaveBeenCalledTimes(lines);
+            expect(backingWidth).not.toHaveBeenCalled();
+            expect(backingHeight).not.toHaveBeenCalled();
+        });
+
+        it.each(['warpedBeat', 'originalBeat', 'origin', 'confidence', 'locked'] as const)(
+            'redraws changed marker %s even when the marker array identity is retained',
+            (field) => {
+                const drawing = observeDrawing();
+                const view = render(<ElasticEditorPanel />);
+                drawing.fill.mockClear();
+                drawing.line.mockClear();
+                const state = mocks.warpStates.get('c1');
+                const marker = state?.markers[0];
+                if (!state || !marker) {
+                    throw new Error('Missing fixture marker');
+                }
+                if (field === 'origin') {
+                    marker.origin = 'grid-snap';
+                } else if (field === 'locked') {
+                    marker.locked = true;
+                } else {
+                    marker[field] = field === 'confidence' ? 0.2 : 80;
+                }
+                mocks.warpStates.set('c1', {
+                    enabled: state.enabled,
+                    markers: state.markers,
+                    stretchMode: state.stretchMode,
+                    originalTempo: state.originalTempo,
+                });
+                view.rerender(<ElasticEditorPanel />);
+                expect(drawing.fill).toHaveBeenCalledWith(
+                    0,
+                    0,
+                    field === 'originalBeat' || field === 'warpedBeat' ? 3520 : 2560,
+                    120
+                );
+                if (field === 'warpedBeat') {
+                    expect(drawing.line).toHaveBeenCalledWith(3200, 120);
+                } else if (field === 'locked') {
+                    expect(drawing.fill).toHaveBeenCalledWith(38, 10, 4, 4);
+                } else if (field === 'origin') {
+                    expect(drawing.strokeColors).toContain('rgba(120, 190, 130, 0.85)');
+                } else if (field === 'confidence') {
+                    expect(drawing.strokeColors).toContain('rgba(99, 160, 214, 0.46)');
+                }
+            }
+        );
+
+        it.each(['source', 'peaks', 'width', 'height', 'dpr', 'theme', 'zoom', 'scroll'])(
+            'redraws after changing %s',
+            (input) => {
+                const drawing = observeDrawing();
+                const view = render(<ElasticEditorPanel />);
+                const canvas = screen.getByTestId<HTMLCanvasElement>('elastic-waveform-canvas');
+                const container = canvas.parentElement;
+                if (!container) {
+                    throw new Error('Missing waveform container');
+                }
+                drawing.fill.mockClear();
+                if (input === 'source') {
+                    mocks.trackStoreValue.tracks[0]!.clips[0]!.audioBufferId = 'buf-2';
+                } else if (input === 'peaks') {
+                    mocks.waveformPeaks.set('buf-1:2560', new Float32Array(2560).fill(0.8));
+                } else if (input === 'width' || input === 'height') {
+                    Object.defineProperty(container, input === 'width' ? 'clientWidth' : 'clientHeight', {
+                        configurable: true,
+                        value: input === 'width' ? 3000 : 180,
+                    });
+                } else if (input === 'dpr') {
+                    vi.stubGlobal('devicePixelRatio', 2);
+                } else if (input === 'theme') {
+                    mocks.background = '#202020';
+                } else if (input === 'zoom') {
+                    fireEvent.keyDown(screen.getByRole('slider', { name: 'Waveform zoom' }), { key: 'ArrowRight' });
+                } else {
+                    container.scrollLeft = 40;
+                    fireEvent.scroll(container);
+                }
+                publishEquivalentSnapshot();
+                view.rerender(<ElasticEditorPanel />);
+                expect(drawing.fill).toHaveBeenCalled();
+                if (input === 'source') {
+                    expect(mocks.getWaveformPeaks).toHaveBeenLastCalledWith('buf-2', 2560);
+                } else if (input === 'peaks') {
+                    expect(drawing.line).toHaveBeenCalledWith(0, expect.closeTo(16.8, 4));
+                } else if (input === 'width' || input === 'height') {
+                    expect(drawing.fill).toHaveBeenCalledWith(
+                        0,
+                        0,
+                        input === 'width' ? 3000 : 2560,
+                        input === 'height' ? 180 : 120
+                    );
+                } else if (input === 'dpr') {
+                    expect(canvas.width).toBe(5120);
+                    expect(canvas.height).toBe(240);
+                } else if (input === 'theme') {
+                    expect(drawing.fillColors).toContain('#202020');
+                } else if (input === 'zoom') {
+                    expect(canvas.width).toBe(3200);
+                }
+            }
+        );
+
+        it('redraws after the canvas or its context is replaced', () => {
+            const drawing = observeDrawing();
+            const view = render(<ElasticEditorPanel />);
+            const originalCanvas = screen.getByTestId<HTMLCanvasElement>('elastic-waveform-canvas');
+            const replacementContext = { ...drawing.context, fillRect: vi.fn() };
+            Object.defineProperty(originalCanvas, 'getContext', {
+                configurable: true,
+                value: (kind: string) => (kind === '2d' ? replacementContext : null),
+            });
+            publishEquivalentSnapshot();
+            view.rerender(<ElasticEditorPanel />);
+            expect(replacementContext.fillRect).toHaveBeenCalledWith(0, 0, 2560, 120);
+
+            mocks.elasticStoreValue = { ...mocks.elasticStoreValue, openClipId: 'missing' };
+            view.rerender(<ElasticEditorPanel />);
+            drawing.fill.mockClear();
+            mocks.elasticStoreValue = { ...mocks.elasticStoreValue, openClipId: 'c1' };
+            view.rerender(<ElasticEditorPanel />);
+            expect(screen.getByTestId('elastic-waveform-canvas')).not.toBe(originalCanvas);
+            expect(drawing.fill).toHaveBeenCalledWith(0, 0, 2560, 120);
+            drawing.fill.mockClear();
+            fireEvent(originalCanvas, new Event('contextrestored'));
+            expect(drawing.fill).not.toHaveBeenCalled();
+        });
+
+        it('updates the visible marker window on scroll and container resize without changing content width', () => {
+            const state = mocks.warpStates.get('c1');
+            if (!state) {
+                throw new Error('Missing fixture warp state');
+            }
+            state.markers = Array.from({ length: 201 }, (_, index) => ({
+                id: `marker-${index}`,
+                originalBeat: index * 2,
+                warpedBeat: index * 2,
+            }));
+            const drawing = observeDrawing();
+            const view = render(<ElasticEditorPanel />);
+            const canvas = screen.getByTestId<HTMLCanvasElement>('elastic-waveform-canvas');
+            const container = canvas.parentElement;
+            if (!container) {
+                throw new Error('Missing waveform container');
+            }
+            Object.defineProperty(container, 'clientWidth', { configurable: true, value: 100 });
+            publishEquivalentSnapshot();
+            drawing.line.mockClear();
+            view.rerender(<ElasticEditorPanel />);
+            expect(drawing.line).toHaveBeenCalledWith(5, 0);
+            expect(drawing.line).not.toHaveBeenCalledWith(8005, 0);
+
+            drawing.line.mockClear();
+            container.scrollLeft = 8000;
+            fireEvent.scroll(container);
+            expect(drawing.line).toHaveBeenCalledWith(8005, 0);
+            expect(drawing.line).not.toHaveBeenCalledWith(5, 0);
+            expect(drawing.line).not.toHaveBeenCalledWith(8245, 0);
+
+            Object.defineProperty(container, 'clientWidth', { configurable: true, value: 300 });
+            publishEquivalentSnapshot();
+            drawing.line.mockClear();
+            view.rerender(<ElasticEditorPanel />);
+            expect(canvas.width).toBe(16320);
+            expect(drawing.line).toHaveBeenCalledWith(8245, 0);
+        });
+
+        it.each(['width', 'height', 'context reset', 'context restored'])(
+            'restores pixels after an external %s even when visual inputs are unchanged',
+            (reset) => {
+                const drawing = observeDrawing();
+                const view = render(<ElasticEditorPanel />);
+                const canvas = screen.getByTestId<HTMLCanvasElement>('elastic-waveform-canvas');
+                drawing.fill.mockClear();
+                if (reset === 'width' || reset === 'height') {
+                    const size = canvas[reset];
+                    canvas[reset] = size;
+                }
+                if (reset !== 'context restored') {
+                    // jsdom does not implement the default drawing-state reset of native Canvas2D.
+                    drawing.context.strokeStyle = '#000000';
+                }
+                if (reset === 'context restored') {
+                    fireEvent(canvas, new Event('contextlost'));
+                    fireEvent(canvas, new Event('contextrestored'));
+                    expect(drawing.fill).toHaveBeenCalledWith(0, 0, 2560, 120);
+                }
+                publishEquivalentSnapshot();
+                view.rerender(<ElasticEditorPanel />);
+                expect(drawing.fill).toHaveBeenCalledWith(0, 0, 2560, 120);
+                expect(drawing.context.strokeStyle).not.toBe('#000000');
+            }
+        );
+
+        it('truncates fractional backing dimensions once and retains them during a material marker redraw', () => {
+            const drawing = observeDrawing();
+            mocks.warpStates.get('c1')!.markers[0]!.originalBeat = 80.123;
+            const view = render(<ElasticEditorPanel />);
+            const canvas = screen.getByTestId<HTMLCanvasElement>('elastic-waveform-canvas');
+            expect(canvas.width).toBe(3524);
+            const backingWidth = vi.spyOn(canvas, 'width', 'set');
+            const backingHeight = vi.spyOn(canvas, 'height', 'set');
+            mocks.warpStates.get('c1')!.markers[0]!.locked = true;
+            publishEquivalentSnapshot();
+            drawing.fill.mockClear();
+            view.rerender(<ElasticEditorPanel />);
+            expect(drawing.fill).toHaveBeenCalledWith(38, 10, 4, 4);
+            expect(backingWidth).not.toHaveBeenCalled();
+            expect(backingHeight).not.toHaveBeenCalled();
+        });
     });
 
     it('uses the selected audio target without requiring an explicitly opened editor', () => {

@@ -2,7 +2,7 @@ import { spawnSync } from 'node:child_process';
 import { createSign } from 'node:crypto';
 import { chmodSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, isAbsolute, join, resolve } from 'node:path';
+import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
 
 import { fail, TRUSTED_GH_PATH_ENV, TRUSTED_GIT_PATH_ENV } from './prContract.ts';
 
@@ -380,31 +380,80 @@ function committedDiffPathArgs(baseSha: string, headSha: string): string[] {
     ];
 }
 
+const INHERITED_AUTHORITY_PREFIXES = ['GIT_', 'GH_', 'GITHUB_', 'SOURDAW_GITHUB_APP_', 'NODE_'] as const;
+
+/**
+ * Repository config is shared by every lane of the primary checkout, so any lane can plant a program
+ * there that a Git child would run with this process's environment. Environment-supplied config ranks
+ * with `git -c`, above repository config for the same key, so each fixed-name entry below disarms one
+ * such program for every child: the hook directory (`fetch` runs `reference-transaction`), fsmonitor
+ * (`status` and `diff` run it), askpass, commit and push signing, and the alternate-refs command fetch
+ * negotiation runs for a planted `objects/info/alternates` store. Config-defined hooks
+ * (`hook.<name>.command`) ignore `core.hooksPath` and carry a lane-chosen name, so
+ * `spawnCapture` and `spawnRun` instead refuse a token-bearing git child while any `hook.*` key is
+ * defined.
+ *
+ * Transports are an allowlist: only `https` (GitHub) and `file` (local remotes) are allowed. A
+ * repository-level `protocol.<name>.allow` outranks the general `protocol.allow`, so every transport
+ * that runs a program gets its own override: `ext::` runs its command, `ssh` its client, and `git`
+ * runs `core.gitProxy`. That proxy key is multi-valued and the repository's value matches first, so
+ * no environment value disarms it; refusing the `git` transport is the defence.
+ *
+ * This list is not complete. Keys whose names the lane chooses — a `.gitattributes` filter, a merge or
+ * diff driver, a custom `name::` remote helper — cannot be named here and still run. Network settings
+ * that run no program — URL-scoped or plain `http.*` keys such as `http.curloptResolve`,
+ * `http.sslCAInfo`, or `http.proxy` — can still redirect a token-bearing request. Any further
+ * fixed-name key not listed here is also outside it (#6448). Keeping the token from same-account
+ * processes is outside this boundary.
+ */
+const REPOSITORY_PROGRAM_OVERRIDES = [
+    ['core.hooksPath', '/dev/null'],
+    ['core.fsmonitor', 'false'],
+    ['protocol.ext.allow', 'never'],
+    ['core.askPass', ''],
+    ['push.gpgSign', 'false'],
+    ['commit.gpgSign', 'false'],
+    ['core.alternateRefsCommand', ''],
+    ['protocol.allow', 'never'],
+    ['protocol.https.allow', 'always'],
+    ['protocol.file.allow', 'always'],
+    ['protocol.git.allow', 'never'],
+    ['protocol.ssh.allow', 'never'],
+] as const;
+
 /**
  * Authorization reads use only the repository named by `cwd`. Inherited Git routing can redirect
- * even a local `git diff` through `GIT_DIR` or `GIT_WORK_TREE`, so none of it crosses this boundary.
- * The replacement values disable ambient config, credentials, prompts, and SSH for the read.
+ * even a local `git diff` through `GIT_DIR` or `GIT_WORK_TREE`, so none of it crosses this boundary;
+ * the match ignores case because the environment of a Windows child does. The replacement values
+ * disable ambient config, credentials, prompts, SSH, lane-writable `refs/replace` objects, and
+ * repository-configured programs for the read.
+ *
+ * `SOURDAW_TRUSTED_*` deliberately crosses: `trustedChildExecutable` reads the launcher's frozen
+ * git and gh paths from the very environment handed to the child.
  */
 export function githubAuthorizationGitEnv(parent: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
     const env: NodeJS.ProcessEnv = { ...parent };
     for (const key of Object.keys(env)) {
+        const normalizedKey = key.toUpperCase();
         if (
-            key.startsWith('GIT_') ||
-            key.startsWith('GH_') ||
-            key.startsWith('GITHUB_') ||
-            key.startsWith('SOURDAW_GITHUB_APP_') ||
-            key.startsWith('NODE_') ||
-            key === 'SSH_AUTH_SOCK'
+            INHERITED_AUTHORITY_PREFIXES.some((prefix) => normalizedKey.startsWith(prefix)) ||
+            normalizedKey === 'SSH_AUTH_SOCK'
         ) {
             delete env[key];
         }
     }
     env.GIT_CONFIG_GLOBAL = '/dev/null';
     env.GIT_CONFIG_SYSTEM = '/dev/null';
+    env.GIT_NO_REPLACE_OBJECTS = '1';
     env.GIT_TERMINAL_PROMPT = '0';
     env.GIT_SSH_COMMAND = '/usr/bin/false';
     env.GIT_SSH = '/usr/bin/false';
     env.GCM_INTERACTIVE = 'never';
+    env.GIT_CONFIG_COUNT = String(REPOSITORY_PROGRAM_OVERRIDES.length);
+    for (const [index, [key, value]] of REPOSITORY_PROGRAM_OVERRIDES.entries()) {
+        env[`GIT_CONFIG_KEY_${String(index)}`] = key;
+        env[`GIT_CONFIG_VALUE_${String(index)}`] = value;
+    }
     return env;
 }
 
@@ -624,28 +673,7 @@ export function githubChildEnv(
     configDir: string,
     parent: NodeJS.ProcessEnv = process.env
 ): NodeJS.ProcessEnv {
-    const env: NodeJS.ProcessEnv = { ...parent };
-    for (const key of Object.keys(env)) {
-        if (
-            key.startsWith('SOURDAW_GITHUB_APP_') ||
-            key.startsWith('GH_') ||
-            key.startsWith('GITHUB_') ||
-            key.startsWith('GIT_') ||
-            key.startsWith('NODE_') ||
-            key === 'SSH_AUTH_SOCK'
-        ) {
-            delete env[key];
-        }
-    }
-    env.GH_TOKEN = token;
-    env.GH_CONFIG_DIR = configDir;
-    env.GIT_CONFIG_GLOBAL = '/dev/null';
-    env.GIT_CONFIG_SYSTEM = '/dev/null';
-    env.GIT_TERMINAL_PROMPT = '0';
-    env.GIT_SSH_COMMAND = '/usr/bin/false';
-    env.GIT_SSH = '/usr/bin/false';
-    env.GCM_INTERACTIVE = 'never';
-    return env;
+    return { ...githubAuthorizationGitEnv(parent), GH_TOKEN: token, GH_CONFIG_DIR: configDir };
 }
 
 export function gitCredentialHelperPath(helperDir: string): string {
@@ -670,14 +698,122 @@ export function gitAuthenticatedArgs(token: string, helperDir: string, args: str
     return ['-c', 'credential.helper=', '-c', `credential.helper=${gitCredentialHelperValue(helperPath)}`, ...args];
 }
 
+const VALUELESS_GIT_GLOBAL_OPTIONS = new Set([
+    '--no-replace-objects',
+    '--no-pager',
+    '--no-optional-locks',
+    '--literal-pathspecs',
+    '--bare',
+]);
+
+/**
+ * The options before a git subcommand, which can change the repository and config it reads. `-C` and
+ * `-c` pairs, `--name=value` forms, and the listed valueless flags are recognised; any other leading
+ * option throws, because the hook listing must read the repository the child will run in.
+ */
+function gitGlobalOptions(args: readonly string[]): string[] {
+    const options: string[] = [];
+    for (let index = 0; index < args.length; index += 1) {
+        const arg = args[index];
+        if (arg === undefined) {
+            return options;
+        }
+        if (arg === '-C' || arg === '-c') {
+            const value = args[index + 1];
+            if (value === undefined) {
+                throw new Error(`git option ${arg} has no value`);
+            }
+            options.push(arg, value);
+            index += 1;
+        } else if ((arg.startsWith('--') && arg.includes('=')) || VALUELESS_GIT_GLOBAL_OPTIONS.has(arg)) {
+            options.push(arg);
+        } else if (arg.startsWith('-')) {
+            throw new Error(`refusing a token-bearing git child: unrecognised leading option ${arg}`);
+        } else {
+            return options;
+        }
+    }
+    return options;
+}
+
+/**
+ * A git child carries a token when `GH_TOKEN` is in its environment, or when its arguments install a
+ * credential helper: a hook could call `git credential fill` through the `-c` overrides git passes
+ * down in `GIT_CONFIG_PARAMETERS` and read the token back.
+ */
+function isTokenBearingGitChild(args: readonly string[], env: NodeJS.ProcessEnv): boolean {
+    if (env.GH_TOKEN !== undefined) {
+        return true;
+    }
+    return args.some(
+        (arg, index) => args[index - 1] === '-c' && arg.startsWith('credential.helper=') && arg !== 'credential.helper='
+    );
+}
+
+/**
+ * Config-defined hooks (`hook.<name>.event` with `hook.<name>.command`) run whatever
+ * `core.hooksPath` says, and `<name>` is the lane's choice, so no fixed-name override disarms them.
+ * A token-bearing git child therefore refuses to start while its repository config defines any
+ * `hook.*` key. The listing runs in the child's repository without the token; reading config runs no
+ * hook or fsmonitor. `git config --get-regexp` exits 1 with no output when nothing matches; any other
+ * failure refuses.
+ *
+ * The refusal reads only the repository the child runs in. A lane-chosen URL rewrite can still send a
+ * token-bearing command to another repository over `file`, whose own config then runs programs (a push
+ * runs `receive-pack` there). Listing and starting the child are separate steps, so config written in
+ * between goes unseen. Both residuals are tracked in #6448.
+ */
+function assertNoConfigDefinedHooks(
+    childCommand: string,
+    args: readonly string[],
+    cwd: string,
+    env: NodeJS.ProcessEnv
+): void {
+    const tokenFree: NodeJS.ProcessEnv = { ...env };
+    delete tokenFree.GH_TOKEN;
+    const listing = spawnSync(childCommand, [...gitGlobalOptions(args), 'config', '-z', '--get-regexp', '^hook\\.'], {
+        cwd,
+        env: tokenFree,
+        encoding: 'utf8',
+        shell: false,
+    });
+    if (listing.error !== undefined) {
+        throw listing.error;
+    }
+    if (listing.status === 1 && listing.stdout === '') {
+        return;
+    }
+    if (listing.status !== 0) {
+        throw new Error(
+            `refusing a token-bearing git child: cannot list hook config (${listing.stderr.trim() || `exit ${String(listing.status ?? 'signal')}`})`
+        );
+    }
+    const firstKey = listing.stdout.split('\n')[0];
+    throw new Error(`refusing a token-bearing git child: repository config defines ${firstKey}`);
+}
+
+function assertTokenBearingGitChildIsHookFree(
+    childCommand: string,
+    args: readonly string[],
+    cwd: string,
+    env: NodeJS.ProcessEnv
+): void {
+    if (basename(childCommand) !== 'git' || !isTokenBearingGitChild(args, env)) {
+        return;
+    }
+    assertNoConfigDefinedHooks(childCommand, args, cwd, env);
+}
+
 export function spawnCapture(
     command: string,
     args: string[],
     options: { cwd?: string; env?: NodeJS.ProcessEnv; input?: string; trim?: boolean } = {}
 ): string {
     const childCommand = trustedChildExecutable(command, options.env ?? process.env);
+    const cwd = options.cwd ?? process.cwd();
+    assertTokenBearingGitChildIsHookFree(childCommand, args, cwd, options.env ?? process.env);
     const result = spawnSync(childCommand, args, {
-        cwd: options.cwd ?? process.cwd(),
+        cwd,
         env: options.env,
         encoding: 'utf8',
         // Sized at 64 MiB: spawnSync's 1 MiB default kills any larger capture with ENOBUFS.
@@ -704,8 +840,10 @@ export function spawnRun(
     options: { cwd?: string; env?: NodeJS.ProcessEnv } = {}
 ): void {
     const childCommand = trustedChildExecutable(command, options.env ?? process.env);
+    const cwd = options.cwd ?? process.cwd();
+    assertTokenBearingGitChildIsHookFree(childCommand, args, cwd, options.env ?? process.env);
     const result = spawnSync(childCommand, args, {
-        cwd: options.cwd ?? process.cwd(),
+        cwd,
         env: options.env,
         // Captured stderr keeps a failing child's own words in the thrown error (#4344).
         stdio: ['inherit', 'inherit', 'pipe'],
@@ -761,6 +899,9 @@ export function originMainBlob(
     gitCommand: string = 'git',
     revision: string = 'origin/main'
 ): string | undefined {
+    // Only an absent path at a readable revision means "no blob"; an unresolvable revision or a
+    // failing git throws here, so it can never pass for a missing file.
+    spawnCapture(gitCommand, ['rev-parse', '--verify', '--quiet', `${revision}^{commit}`], { cwd, env });
     try {
         spawnCapture(gitCommand, ['cat-file', '-e', `${revision}:${repoRelativePath}`], { cwd, env });
     } catch {
@@ -776,10 +917,47 @@ export function assertTrustedExecutingBlob(
     executingSource: string = readFileSync(executingFile, 'utf8')
 ): void {
     if (originBlob === undefined) {
-        return;
+        fail(`${repoRelativePath} has no blob on origin/main; refusing to run an unverifiable copy`);
     }
     if (originBlob !== executingSource) {
         fail(`${repoRelativePath} does not match origin/main; refusing to run a mutated copy`);
+    }
+}
+
+export type ImportSpecifierScanner = (source: string) => readonly string[];
+
+/**
+ * Asserts that the entry and every module it reaches through relative imports, walked from the
+ * working tree, are byte-identical to their `origin/main` blobs. Paths are taken relative to the
+ * directory above the entry's own, where every executable script lives. Every relative import joins
+ * the walked set, so none can escape the check; one resolving outside the repository has no blob and
+ * refuses. The scanner is injected because the syntax-walking one lives in the launcher, which this
+ * module must not import.
+ */
+export function assertTrustedImportClosure(
+    executingFile: string,
+    cwd: string,
+    scanImportSpecifiers: ImportSpecifierScanner,
+    readFile: (path: string) => string = (path) => readFileSync(path, 'utf8')
+): void {
+    const repositoryRoot = dirname(dirname(executingFile));
+    const sources = new Map<string, string>();
+    const pending = [relative(repositoryRoot, executingFile)];
+    while (pending.length > 0) {
+        const path = pending.pop();
+        if (path === undefined || sources.has(path)) {
+            continue;
+        }
+        const source = readFile(join(repositoryRoot, path));
+        sources.set(path, source);
+        for (const specifier of scanImportSpecifiers(source)) {
+            if (specifier.startsWith('.')) {
+                pending.push(join(dirname(path), specifier));
+            }
+        }
+    }
+    for (const [path, source] of sources) {
+        assertTrustedExecutingBlob(path, path, originMainBlob(path, cwd), source);
     }
 }
 
