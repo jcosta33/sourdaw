@@ -8,7 +8,7 @@ export const handleSeekPlayhead = createHandler<'seekPlayhead'>({
         const completion = executePlayheadSeek(action.payload.beat);
         return {
             status: 'written',
-            afterRuntimeExecution: () => completion,
+            afterRuntimeExecution: () => completion.then(() => undefined),
         };
     },
     describe: (action) => ({ label: `Seek to beat ${action.payload.beat}` }),

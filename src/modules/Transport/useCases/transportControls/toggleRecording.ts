@@ -21,6 +21,7 @@ import { getTransportState } from '../../repositories/transport/getTransportStat
 import { updateTransportState } from '../../repositories/transport/updateTransportState';
 import { playheadClockRef } from '../../stores/playheadClockRef';
 import { playheadPositionRef } from '../../stores/playheadPositionRef';
+import { playheadSeekRequestRef } from '../../stores/playheadSeekRequestRef';
 import { tempoMapStore } from '../../stores/tempoMapStore';
 import { timeSignatureMapStore } from '../../stores/timeSignatureMapStore';
 import { DEFAULT_TEMPO_BPM } from '../../stores/transportStore';
@@ -710,6 +711,7 @@ function armCountInRecordingStart(countInEndTimeSec: number, countInDurationSec:
 
 export function toggleRecording(): void {
     audioEngine.beginAudioPreviewIntent().release();
+    playheadSeekRequestRef.current++;
     const state = getTransportState();
     if (!state) {
         return;

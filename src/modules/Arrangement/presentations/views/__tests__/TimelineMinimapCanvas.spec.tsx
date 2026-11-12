@@ -1,11 +1,17 @@
-import { act, render } from '@testing-library/react';
+import { act, cleanup, render } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { applyDocumentTheme } from '#/utils/UI/applyDocumentTheme';
+import { resetResolvedTokenCache, resolveToken } from '#/utils/UI/resolveToken';
+
+import { type ArrangementSection } from '../../../models/Marker';
 import { TimelineMinimap } from '../TimelineMinimap';
 
 const stores = vi.hoisted(() => ({
     trackStore: { kind: 'tracks' },
+    markerStore: { kind: 'markers' },
     timelineViewStore: { kind: 'view' },
+    markers: { markers: [], sections: [] as ArrangementSection[] },
     tracks: {
         tracks: [
             {
@@ -24,6 +30,9 @@ vi.mock('#/infra/store/useStore', () => ({
         if (store === stores.trackStore) {
             return stores.tracks;
         }
+        if (store === stores.markerStore) {
+            return stores.markers;
+        }
         if (store === stores.timelineViewStore) {
             return stores.view;
         }
@@ -37,6 +46,10 @@ vi.mock('#/modules/Transport/stores', async (importOriginal) => ({
 }));
 
 vi.mock('../../../stores/trackStore', () => ({ trackStore: stores.trackStore }));
+vi.mock('../../../stores/markerStore', () => ({
+    markerStore: stores.markerStore,
+    defaultMarkerStoreState: { markers: [], sections: [] },
+}));
 vi.mock('../../../stores/timelineViewStore', () => ({ timelineViewStore: stores.timelineViewStore }));
 vi.mock('../../../useCases/setTimelineMinimapScrollX', () => ({ setTimelineMinimapScrollX: vi.fn() }));
 vi.mock('../../../useCases/setTimelineMinimapAutoScroll', () => ({ setTimelineMinimapAutoScroll: vi.fn() }));
@@ -89,13 +102,34 @@ const context = {
     strokeStyle: '',
     lineWidth: 1,
     globalAlpha: 1,
+    font: '',
+    textBaseline: '',
+    fillText: vi.fn(),
+    measureText: vi.fn(),
 };
+
+const labelFillStyles: string[] = [];
+const measuredLabelFonts: string[] = [];
 
 describe('TimelineMinimap canvas sizing and drawing', () => {
     let cssWidth = 200;
 
     beforeEach(() => {
         vi.clearAllMocks();
+        resetResolvedTokenCache();
+        document.documentElement.style.removeProperty('--color-text-primary');
+        labelFillStyles.length = 0;
+        measuredLabelFonts.length = 0;
+        context.fillStyle = '';
+        context.font = '10px sans-serif';
+        context.fillText.mockImplementation(() => {
+            labelFillStyles.push(context.fillStyle);
+        });
+        context.measureText.mockImplementation((text: string) => {
+            measuredLabelFonts.push(context.font);
+            return { width: text.length * 5 };
+        });
+        stores.markers = { markers: [], sections: [] };
         resizeObserverHarness.callback = null;
         densityObserverHarness.query = null;
         cssWidth = 200;
@@ -130,6 +164,9 @@ describe('TimelineMinimap canvas sizing and drawing', () => {
     });
 
     afterEach(() => {
+        cleanup();
+        document.documentElement.style.removeProperty('--color-text-primary');
+        resetResolvedTokenCache();
         vi.restoreAllMocks();
         vi.unstubAllGlobals();
     });
@@ -200,6 +237,124 @@ describe('TimelineMinimap canvas sizing and drawing', () => {
         for (const value of expandedClip.slice(0, 4)) {
             expect(Number.isFinite(Number(value))).toBe(true);
         }
+    });
+
+    it('draws sparse section labels above clips and keeps the viewport overlay last', () => {
+        stores.markers.sections = [
+            { id: 'intro', name: 'Intro', startBeat: 0, endBeat: 16, color: '#aa3300' },
+            { id: 'verse', name: 'Verse', startBeat: 16, endBeat: 32, color: '#00aa33' },
+        ];
+
+        render(<TimelineMinimap height={28} />);
+
+        expect(context.fillText.mock.calls.map(([text]) => text)).toEqual(['Intro', 'Verse']);
+        const clip = context.roundRect.mock.calls[0];
+        if (!clip) {
+            throw new Error('Expected the clip to be drawn');
+        }
+        expect(Number(clip[1])).toBeGreaterThanOrEqual(11);
+        expect(context.strokeRect).toHaveBeenCalledTimes(1);
+        expect(context.strokeRect.mock.invocationCallOrder[0]).toBeGreaterThan(
+            context.fillText.mock.invocationCallOrder.at(-1)!
+        );
+    });
+
+    it('resolves label color from the theme and sets the font before every measurement', () => {
+        document.documentElement.style.setProperty('--color-text-primary', '#123456');
+        stores.markers.sections = [
+            { id: 'intro', name: 'Intro', startBeat: 0, endBeat: 16, color: '#aa3300' },
+            { id: 'verse', name: 'Verse', startBeat: 16, endBeat: 32, color: '#00aa33' },
+        ];
+
+        render(<TimelineMinimap height={28} />);
+
+        expect(labelFillStyles).toEqual(['#123456', '#123456']);
+        expect(measuredLabelFonts).toEqual(['9px sans-serif', '9px sans-serif']);
+    });
+
+    it('repaints section labels on a document theme change without resizing', async () => {
+        const root = document.documentElement;
+        const originalClass = root.className;
+        const originalStyle = root.getAttribute('style');
+        const themeColor = document.querySelector('meta[name="theme-color"]');
+        const originalThemeColor = themeColor?.getAttribute('content');
+        const style = document.createElement('style');
+        style.textContent =
+            ':root.dark { --color-text-primary: #eeeeee; } :root.light { --color-text-primary: #111111; }';
+        let unmount = (): void => {};
+
+        try {
+            document.head.append(style);
+            applyDocumentTheme('dark');
+            stores.markers.sections = [{ id: 'intro', name: 'Intro', startBeat: 0, endBeat: 16, color: '#aa3300' }];
+            const view = render(<TimelineMinimap height={28} />);
+            unmount = view.unmount;
+            expect(labelFillStyles.at(-1)).toBe('#eeeeee');
+
+            await act(async () => {
+                await new Promise<void>((resolve) => {
+                    const observer = new MutationObserver(() => {
+                        observer.disconnect();
+                        resolve();
+                    });
+                    observer.observe(root, { attributes: true, attributeFilter: ['class'] });
+                    applyDocumentTheme('light');
+                });
+            });
+
+            expect(resolveToken('--color-text-primary', 'missing')).toBe('#111111');
+            expect(labelFillStyles.at(-1)).toBe('#111111');
+
+            cssWidth = 201;
+            act(() => {
+                resizeObserverHarness.callback?.([], {} as ResizeObserver);
+            });
+            expect(labelFillStyles.at(-1)).toBe('#111111');
+        } finally {
+            unmount();
+            style.remove();
+            root.className = originalClass;
+            if (originalStyle === null) {
+                root.removeAttribute('style');
+            } else {
+                root.setAttribute('style', originalStyle);
+            }
+            if (themeColor) {
+                if (originalThemeColor === null) {
+                    themeColor.removeAttribute('content');
+                } else if (originalThemeColor !== undefined) {
+                    themeColor.setAttribute('content', originalThemeColor);
+                }
+            }
+            resetResolvedTokenCache();
+        }
+    });
+
+    it('suppresses labels at dense landmark spacing without dropping boundaries or the viewport', () => {
+        stores.markers.sections = Array.from({ length: 24 }, (_, index) => ({
+            id: `section-${index}`,
+            name: `Section ${index}`,
+            startBeat: index * 2,
+            endBeat: index * 2 + 2,
+            color: '#778899',
+        }));
+
+        render(<TimelineMinimap height={28} />);
+
+        expect(context.fillText).not.toHaveBeenCalled();
+        expect(context.moveTo).toHaveBeenCalledTimes(49);
+        expect(context.strokeRect).toHaveBeenCalledTimes(1);
+    });
+
+    it('redraws labels from the current section snapshot after an edit', () => {
+        stores.markers.sections = [{ id: 'intro', name: 'Intro', startBeat: 0, endBeat: 16, color: '#aa3300' }];
+        const { rerender } = render(<TimelineMinimap height={28} />);
+        expect(context.fillText).toHaveBeenCalledWith('Intro', expect.any(Number), expect.any(Number));
+
+        stores.markers.sections = [{ id: 'intro', name: 'Opening', startBeat: 0, endBeat: 16, color: '#aa3300' }];
+        rerender(<TimelineMinimap height={28} />);
+
+        expect(context.fillText).toHaveBeenCalledWith('Opening', expect.any(Number), expect.any(Number));
     });
 
     it('survives a zero-to-positive width transition with finite geometry', () => {
