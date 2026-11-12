@@ -221,7 +221,10 @@ function observeNativeCommand(input: NativeCommandObservation): void {
     };
     const observe = (event: string, diagnostic?: OwnershipDiagnostic) => {
         try {
-            const entry = { event, elapsedMs: elapsed(), ...(diagnostic === undefined ? {} : { diagnostic }) };
+            const entry: ProcessDiagnostic['timeline'][number] = { event, elapsedMs: elapsed() };
+            if (diagnostic !== undefined) {
+                entry.diagnostic = diagnostic;
+            }
             if (processDiagnostic.timeline.length >= 64) {
                 processDiagnostic.timeline.splice(32, 1);
                 processDiagnostic.omittedEvents += 1;
