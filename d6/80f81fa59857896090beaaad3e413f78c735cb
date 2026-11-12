@@ -1,0 +1,62 @@
+scripts/__tests__/fixtures/relativeImportClosure.ts
+  s_126e3d478b4f75::t_ce702e4c030dd0 1-23
+docs/06-testing.md
+  s_126e3d478b4f75::t_ce702e4c030dd0 916-919,926-929
+scripts/__tests__/resourceGuard.spec.ts
+  s_126e3d478b4f75::t_ce702e4c030dd0 2258-2271,2716-2912
+  s_126e3d478b4f75::t_cc976688af1c0f 2913
+scripts/prValidationScope.ts
+  s_126e3d478b4f75::t_ce702e4c030dd0 32,107
+scripts/deliverPullRequest.ts
+  s_126e3d478b4f75::t_ce702e4c030dd0 29,456
+scripts/__tests__/oxlintWarnLevels.spec.ts
+  s_126e3d478b4f75::t_ce702e4c030dd0 1-122
+scripts/__tests__/agentDeliveryScripts.spec.ts
+  s_126e3d478b4f75::t_ce702e4c030dd0 1038,1159
+scripts/__tests__/deliverPullRequest.spec.ts
+  s_126e3d478b4f75::t_ce702e4c030dd0 2105-2139
+release/open-source-inventory.json
+  s_126e3d478b4f75::t_6b59f01b436084 173,1891
+scripts/__tests__/openLane.spec.ts
+  s_126e3d478b4f75::t_ce702e4c030dd0 13,29-30
+scripts/__tests__/checkBarrelMockCoverage.spec.ts
+  s_126e3d478b4f75::t_ce702e4c030dd0 1-2,67-71
+  s_126e3d478b4f75::t_3c0e7bbb44a806 72
+scripts/__tests__/cleanupLanesCli.spec.ts
+  s_126e3d478b4f75::t_ce702e4c030dd0 1-86
+release/dependency-license-proofs.json
+  s_126e3d478b4f75::t_6b59f01b436084 64
+scripts/resourceGuard.ts
+  s_126e3d478b4f75::t_ce702e4c030dd0 231-263,3345-3352,3357-3359
+scripts/cleanupLanesCli.ts
+  s_126e3d478b4f75::t_ce702e4c030dd0 1-38
+package.json
+  s_126e3d478b4f75::t_ce702e4c030dd0 52
+scripts/reviewRiskPolicy.ts
+  s_126e3d478b4f75::t_ce702e4c030dd0 131
+scripts/__tests__/prValidationScope.spec.ts
+  s_126e3d478b4f75::t_ce702e4c030dd0 1145
+scripts/__tests__/installCleanupLanes.spec.ts
+  s_126e3d478b4f75::t_ce702e4c030dd0 31,846-864
+  s_126e3d478b4f75::t_dfb60ef63e8821 865
+.agents/skills/review-stances/guard-reclamation-proof.md
+  s_126e3d478b4f75::t_ce702e4c030dd0 119-129
+.oxlintrc.json
+  s_126e3d478b4f75::t_ce702e4c030dd0 231,234-236
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d680f81fa59857896090beaaad3e413f78c735cb",
+  "prompts": {},
+  "sessions": {
+    "s_126e3d478b4f75": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cefa-4460-7913-80c3-c339638913d0",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
