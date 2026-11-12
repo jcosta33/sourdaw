@@ -9,7 +9,9 @@ type ProgressEvent = 'runner-start' | 'module-queued' | 'worker-setup' | 'module
 /** Latest event per stage; slots are independent and do not form a correlated timeline. */
 export function recordVitestProgress(event: ProgressEvent, detail = ''): void {
     const directory = process.env[VITEST_PROGRESS_ENV];
-    if (!directory) return;
+    if (!directory) {
+        return;
+    }
     const temporary = join(directory, `.${event}-${process.pid % 16}.tmp`);
     let owned = false;
     try {
@@ -49,11 +51,11 @@ export function createVitestProgress(env: NodeJS.ProcessEnv): string | undefined
 
 export function summarizeVitestProgress(directory: string): string {
     try {
-        return readdirSync(directory)
+        const names = readdirSync(directory)
             .filter((name) => name.endsWith('.json'))
-            .sort()
-            .map((name) => readFileSync(join(directory, name), 'utf8'))
-            .join('\n');
+            .sort();
+        const records = names.map((name) => readFileSync(join(directory, name), 'utf8'));
+        return records.join('\n');
     } catch {
         return 'progress unavailable';
     }
