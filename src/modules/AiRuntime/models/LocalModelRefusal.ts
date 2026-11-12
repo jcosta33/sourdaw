@@ -5,4 +5,4 @@
 export type LocalModelRefusal =
     | { reason: 'shader-f16-unavailable'; modelId: string }
     | { reason: 'insufficient-storage'; modelId: string; requiredBytes: number; availableBytes: number }
-    | { reason: 'gpu-memory'; modelId: string; requiredGpuMemoryMb: number };
+    | { reason: 'gpu-memory'; modelId: string };

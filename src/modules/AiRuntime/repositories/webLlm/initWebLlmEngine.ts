@@ -274,11 +274,7 @@ function classifyWebLlmLoadFailure(error: unknown, modelId: string): unknown {
         return new LocalModelRefusalError({ reason: 'shader-f16-unavailable', modelId });
     }
     if (text.startsWith('DeviceLostError') || OUT_OF_MEMORY.test(text)) {
-        return new LocalModelRefusalError({
-            reason: 'gpu-memory',
-            modelId,
-            requiredGpuMemoryMb: getWebLlmArtifactManifestModel(modelId).engine.vramRequiredMb,
-        });
+        return new LocalModelRefusalError({ reason: 'gpu-memory', modelId });
     }
     return error;
 }

@@ -984,11 +984,10 @@ describe('WebLLM provider artifact admission', () => {
 
             await expect(load(STANDARD, { downloadConsent: true })).rejects.toMatchObject({
                 name: 'LocalModelRefusalError',
-                refusal: {
-                    reason: 'gpu-memory',
-                    modelId: STANDARD,
-                    requiredGpuMemoryMb: getWebLlmArtifactManifestModel(STANDARD).engine.vramRequiredMb,
-                },
+                refusal: { reason: 'gpu-memory', modelId: STANDARD },
+                message: expect.stringContaining(
+                    `needs ${WEBLLM_MODELS.find((model) => model.id === STANDARD)?.ramUsage ?? 'unknown'} of GPU memory`
+                ),
             });
 
             await vi.waitFor(() => expect(engineState.initPromise).toBeNull());

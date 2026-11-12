@@ -158,15 +158,11 @@ describe('LlmStatusBadge', () => {
                 status: {
                     state: 'error' as const,
                     message:
-                        'The Pro model did not fit in GPU memory: it needs at least 5.0 GB. The download is kept; pick a smaller model or free GPU memory and try again.',
-                    refusal: {
-                        reason: 'gpu-memory' as const,
-                        modelId: 'Qwen3-8B-q4f16_1-MLC',
-                        requiredGpuMemoryMb: 4_800,
-                    },
+                        'The Pro model did not fit in GPU memory: it needs ~10.3 GB of GPU memory. The download is kept; pick a smaller model or free GPU memory and try again.',
+                    refusal: { reason: 'gpu-memory' as const, modelId: 'Qwen3-8B-q4f16_1-MLC' },
                 },
                 trigger: 'Not enough GPU memory',
-                sentence: /needs at least 5\.0 GB/,
+                sentence: /needs ~10\.3 GB of GPU memory/,
             },
         ])('labels a $label refusal and explains it in full once opened', ({ status, trigger, sentence }) => {
             renderRefused(status);
