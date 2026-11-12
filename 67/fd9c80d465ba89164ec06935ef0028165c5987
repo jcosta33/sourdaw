@@ -1,0 +1,25 @@
+scripts/__tests__/gitCheckpoint.spec.ts
+  s_eec9d24f84ae15::t_0f7c6a00487bf6 14,16,18,20,138
+  s_eec9d24f84ae15::t_54e2c966abd4fa 115-125,337-362
+  s_eec9d24f84ae15::t_21237fc3cb6ee9 162-182
+scripts/gitCheckpoint.ts
+  s_eec9d24f84ae15::t_1703a411aaea53 158-164,190-194,260-261,265,441-443,447,576-580,588-597
+  s_eec9d24f84ae15::t_54e2c966abd4fa 369-392,402,405
+  s_eec9d24f84ae15::t_0f7c6a00487bf6 21,23,25,187-189,195-206,212,255-259,262,266-270,272,277-278,439-440,445-446,448-450,574-575,581-587,599
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "67fd9c80d465ba89164ec06935ef0028165c5987",
+  "prompts": {},
+  "sessions": {
+    "s_eec9d24f84ae15": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cc8d-d36d-71b3-be5c-15c29b38b9aa",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
